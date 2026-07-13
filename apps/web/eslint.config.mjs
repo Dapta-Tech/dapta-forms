@@ -1,1 +1,1 @@
-export { default } from '@slate/config/eslint';
+export { default } from '@quill/config/eslint';

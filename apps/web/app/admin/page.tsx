@@ -1,77 +1,64 @@
 import Link from 'next/link';
-import { getMessages, t } from '@slate/shared';
 import { adminApi } from '@/lib/admin-api';
-import { getLocale } from '@/lib/locale';
 import { CopyLink } from '@/components/copy-link';
+import { createFormAction } from './actions';
+import { FormRowActions } from './form-row-actions';
 
 export const dynamic = 'force-dynamic';
 
 export default async function AdminHome() {
-  const me = await adminApi.me();
-  const [eventTypes, bookings, teams] = await Promise.all([
-    adminApi.listEventTypes(),
-    adminApi.listBookings('limit=100'),
-    adminApi.listTeams(),
-  ]);
-  const upcoming = bookings.items.filter(
-    (b) => b.status === 'accepted' && new Date(b.startUtc).getTime() > Date.now(),
-  );
-  const publicUrl = me?.handle ? `/${me.accountCode}/${me.handle}` : null;
-  const h = getMessages(await getLocale()).admin.home;
-  const firstName = me?.displayName?.split(' ')[0];
+  const [me, forms] = await Promise.all([adminApi.me(), adminApi.listForms()]);
 
   return (
-    <div className="mx-auto max-w-[1520px] px-8 py-10">
-      <h1 className="mb-1 text-3xl font-semibold tracking-tight">
-        {firstName ? t(h.welcomeNamed, { name: firstName }) : h.welcome}
-      </h1>
-      <p className="mb-8 text-muted-foreground">{h.subtitle}</p>
-
-      {/* Every member has an auto-assigned handle (short-links §3), so the
-          shareable link always exists — the old "set a handle" nag is gone. */}
-      {publicUrl ? (
-        <div className="mb-8 flex flex-col gap-2 rounded-md border border-border bg-card p-5">
-          <span className="text-sm text-muted-foreground">{h.bookingLink}</span>
-          <CopyLink path={publicUrl} labels={{ copy: h.copy, copied: h.copied, open: h.open }} />
+    <div className="mx-auto max-w-[1100px] px-8 py-10">
+      <div className="mb-8 flex items-center justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-semibold tracking-tight">Forms</h1>
+          <p className="text-muted-foreground">Build a form, share the public link, collect submissions.</p>
         </div>
-      ) : null}
-
-      <div className="mb-8 grid grid-cols-3 gap-4">
-        <Stat label={h.statEventTypes} value={eventTypes.length} href="/admin/event-types" />
-        <Stat label={h.statUpcoming} value={upcoming.length} href="/admin/bookings" />
-        <Stat label={h.statTeams} value={teams.length} href="/admin/teams" />
+        <form action={createFormAction} className="flex items-center gap-2">
+          <input
+            name="name"
+            placeholder="New form name"
+            className="rounded-md border border-border bg-background px-3 py-2 text-sm"
+          />
+          <button
+            type="submit"
+            className="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground active:scale-[0.98]"
+          >
+            Create form
+          </button>
+        </form>
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
-        <Shortcut href="/admin/event-types" title={h.createEvent} desc={h.createEventDesc} />
-        <Shortcut href="/admin/availability" title={h.setAvailability} desc={h.setAvailabilityDesc} />
-        <Shortcut href="/admin/settings/booking-page" title={h.stylePage} desc={h.stylePageDesc} />
-        <Shortcut href="/admin/settings/developer" title={h.apiKeys} desc={h.apiKeysDesc} />
-      </div>
+      {forms.length === 0 ? (
+        <div className="rounded-md border border-dashed border-border p-12 text-center text-muted-foreground">
+          No forms yet. Create your first form above.
+        </div>
+      ) : (
+        <ul className="flex flex-col gap-3">
+          {forms.map((f) => {
+            const publicPath = `/${me.accountCode}/${me.handle ?? 'me'}/${f.slug}`;
+            return (
+              <li
+                key={f.id}
+                className="flex items-center justify-between gap-4 rounded-md border border-border bg-card p-4"
+              >
+                <div className="flex min-w-0 flex-col gap-1">
+                  <Link href={`/admin/forms/${f.id}/edit`} className="font-medium hover:underline">
+                    {f.name}
+                  </Link>
+                  <CopyLink path={publicPath} labels={{ copy: 'Copy link', copied: 'Copied', open: 'Open' }} />
+                  <span className="text-xs text-muted-foreground">
+                    Updated {new Date(f.updatedAt).toLocaleString()}
+                  </span>
+                </div>
+                <FormRowActions id={f.id} />
+              </li>
+            );
+          })}
+        </ul>
+      )}
     </div>
-  );
-}
-
-function Stat({ label, value, href }: { label: string; value: number; href: string }) {
-  return (
-    <Link
-      href={href}
-      className="flex flex-col gap-1 rounded-md border border-border bg-card p-5 transition-transform hover:border-primary active:scale-[0.99]"
-    >
-      <span className="text-3xl font-semibold">{value}</span>
-      <span className="text-sm text-muted-foreground">{label}</span>
-    </Link>
-  );
-}
-
-function Shortcut({ href, title, desc }: { href: string; title: string; desc: string }) {
-  return (
-    <Link
-      href={href}
-      className="flex flex-col gap-1 rounded-md border border-border bg-card p-5 transition-transform hover:border-primary active:scale-[0.99]"
-    >
-      <span className="font-medium">{title}</span>
-      <span className="text-sm text-muted-foreground">{desc}</span>
-    </Link>
   );
 }

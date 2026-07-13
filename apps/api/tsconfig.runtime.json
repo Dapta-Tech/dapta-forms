@@ -1,6 +1,6 @@
 {
   "$schema": "https://json.schemastore.org/tsconfig",
-  "//": "Runtime tsconfig for tsx inside the pruned `pnpm deploy` bundle. The dev tsconfig.json extends @slate/config, but that extends chain fails to resolve in the deployed layout and tsx then silently drops the WHOLE config — losing experimentalDecorators and crash-looping Nest at boot. This file is deliberately self-contained (no extends). Used only by the Dockerfile CMD: tsx --tsconfig tsconfig.runtime.json.",
+  "//": "Runtime tsconfig for tsx inside the pruned `pnpm deploy` bundle. The dev tsconfig.json extends @quill/config, but that extends chain fails to resolve in the deployed layout and tsx then silently drops the WHOLE config — losing experimentalDecorators and crash-looping Nest at boot. This file is deliberately self-contained (no extends). Used only by the Dockerfile CMD: tsx --tsconfig tsconfig.runtime.json.",
   "compilerOptions": {
     "module": "ESNext",
     "moduleResolution": "Bundler",

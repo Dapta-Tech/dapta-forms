@@ -6,7 +6,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  // @slate/* ship plain compiled ES2022 JS, so Next consumes them as normal ESM
+  // @quill/* ship plain compiled ES2022 JS, so Next consumes them as normal ESM
   // — no transpilePackages (re-transpiling them injects unresolvable @swc/helpers
   // under pnpm's isolated layout).
   // Node runtime only — deployment-agnostic (self-host on any Node/Docker host

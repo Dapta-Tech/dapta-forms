@@ -1,93 +1,65 @@
 /**
- * Hand-curated OpenAPI 3.1 description of Slate's integrator-facing surfaces
- * (public booking + machine/agent). Dependency-free (Slate validates with zod,
+ * Hand-curated OpenAPI 3.1 description of Quill's integrator-facing surfaces
+ * (public forms + host/dashboard). Dependency-free (Quill validates with zod,
  * not class-validator, so there is no decorator metadata to auto-generate from).
- * Kept intentionally focused on the endpoints external integrations consume;
- * the full route list is in API-CONTRACT.md. R15: NO vendor/internal names here
- * (asserted by openapi.spec.ts).
+ * R15: NO vendor/internal names here.
  */
 export const openapiSpec = {
   openapi: '3.1.0',
   info: {
-    title: 'Slate API',
+    title: 'Quill API',
     version: '1.0.0',
-    description: 'Open-source scheduling — public booking + machine/agent surfaces.',
+    description: 'Open-source forms — public form rendering + submission surfaces.',
     license: { name: 'MIT' },
   },
   servers: [{ url: '/', description: 'This deployment' }],
   components: {
     securitySchemes: {
-      // Machine/agent surface — API key.
-      apiKey: { type: 'http', scheme: 'bearer', description: 'dcl_ API key (Authorization: Bearer …).' },
-      // Host/dashboard surface — pluggable AuthProvider (session/JWT in prod).
-      hostSession: { type: 'apiKey', in: 'header', name: 'authorization', description: 'Host session (AuthProvider).' },
+      apiKey: { type: 'http', scheme: 'bearer', description: 'API key (Authorization: Bearer …).' },
+      hostSession: {
+        type: 'apiKey',
+        in: 'header',
+        name: 'authorization',
+        description: 'Host session (AuthProvider).',
+      },
     },
   },
   paths: {
     '/health': {
-      get: {
-        summary: 'Liveness + DB probe',
-        responses: { '200': { description: 'ok | degraded' } },
-      },
+      get: { summary: 'Liveness + DB probe', responses: { '200': { description: 'ok | degraded' } } },
     },
-    '/v1/availability': {
+    '/v1/public/forms/{accountCode}/{slug}': {
       get: {
-        summary: 'Public availability (slots, seat-aware)',
-        parameters: ['accountCode', 'handle', 'slug', 'from', 'to'].map((name) => ({
+        summary: 'Fetch a published form (public renderer config)',
+        parameters: ['accountCode', 'slug'].map((name) => ({
           name,
-          in: 'query',
-          required: name !== 'to',
+          in: 'path',
+          required: true,
           schema: { type: 'string' },
         })),
-        responses: { '200': { description: 'Availability with slots[{startUtc,spotsLeft?,capacity?}]' } },
+        responses: { '200': { description: 'The published form' }, '404': { description: 'Not found' } },
       },
     },
-    '/v1/reservations': {
+    '/v1/public/forms/{accountCode}/{slug}/submissions': {
       post: {
-        summary: 'Place a 10-minute hold on a slot',
-        responses: {
-          '201': { description: '{reservationUid,expiresAt}' },
-          '400': { description: 'INVALID_SLOT' },
-          '429': { description: 'RATE_LIMITED' },
-        },
+        summary: 'Submit answers (score recomputed server-side)',
+        responses: { '201': { description: 'Recorded' }, '400': { description: 'Invalid' } },
       },
     },
-    '/v1/bookings': {
+    '/v1/public/forms/{accountCode}/{slug}/events': {
       post: {
-        summary: 'Create a booking (consumes a hold; intake-validated)',
-        responses: {
-          '201': { description: 'BookingView (+ one-time manageUrl)' },
-          '409': { description: 'SLOT_TAKEN' },
-          '410': { description: 'RESERVATION_EXPIRED' },
-          '400': { description: 'INTAKE_INVALID' },
-        },
+        summary: 'Record a funnel event',
+        responses: { '202': { description: 'Accepted' } },
       },
     },
-    '/v1/machine/availability': {
-      get: {
-        summary: 'Agent availability (60-day cap)',
-        security: [{ apiKey: [] }],
-        responses: { '200': { description: 'Availability' }, '403': { description: 'out-of-scope' } },
-      },
+    '/v1/forms': {
+      get: { summary: 'List forms (host)', security: [{ hostSession: [] }], responses: { '200': { description: 'Forms' } } },
+      post: { summary: 'Create a form (host)', security: [{ hostSession: [] }], responses: { '201': { description: 'Created' } } },
     },
-    '/v1/machine/bookings': {
-      post: {
-        summary: 'Agent create booking (attendees[]; Idempotency-Key)',
-        security: [{ apiKey: [] }],
-        responses: { '201': { description: '{uid,status,startUtc,endUtc}' } },
-      },
-      get: {
-        summary: 'Agent list bookings',
-        security: [{ apiKey: [] }],
-        responses: { '200': { description: '{items,nextCursor}' } },
-      },
-    },
-    '/v1/machine/bookings/{uid}': {
-      patch: {
-        summary: 'Agent reschedule',
-        security: [{ apiKey: [] }],
-        responses: { '200': { description: 'rescheduled' }, '403': { description: 'out-of-scope' } },
-      },
+    '/v1/forms/{id}': {
+      get: { summary: 'Get a form (host)', security: [{ hostSession: [] }], responses: { '200': { description: 'Form' } } },
+      put: { summary: 'Update a form (host)', security: [{ hostSession: [] }], responses: { '200': { description: 'Updated' } } },
+      delete: { summary: 'Delete a form (host)', security: [{ hostSession: [] }], responses: { '204': { description: 'Deleted' } } },
     },
   },
 } as const;

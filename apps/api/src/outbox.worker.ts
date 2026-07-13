@@ -7,31 +7,27 @@ import {
 } from '@nestjs/common';
 import {
   claimDueOutbox,
-  deliverWebhookEvent,
   markOutboxDone,
   markOutboxFailed,
   markOutboxRetry,
   markOutboxSkipped,
   type Db,
   type OutboxRow,
-} from '@slate/db';
-import type { ServerEnv } from '@slate/config/env';
-import { CalendarEffects, type CalendarAction } from './calendar-effects';
+} from '@quill/db';
+import type { ServerEnv } from '@quill/config/env';
 import { EmailEffects, OutboxSkipError } from './email-effects';
 import { DB, ENV } from './tokens';
 
 /**
  * The OUTBOX WORKER (B7 / audit DM1). Polls the `outbox` table and drains due
  * rows, executing each durable side-effect and retrying with exponential
- * backoff until it succeeds or exhausts its attempts. This is what turns the old
- * fire-and-forget calendar/webhook calls into no-silent-loss delivery.
+ * backoff until it succeeds or exhausts its attempts. This is what turns
+ * fire-and-forget side-effects into no-silent-loss delivery.
  *
  *   - Success → the row is marked `done`.
  *   - Failure → attempts++ and the row is rescheduled (backoff); once attempts
  *     reach `max_attempts` it is marked `failed` and logged (the row remains as
  *     the delivery-log record — nothing is silently dropped).
- *   - Idempotent: calendar write-out is guarded by the DH1 claim, so a retry
- *     cannot double-create a remote event.
  *
  * The poll loop starts on module init (unless disabled or under `NODE_ENV=test`)
  * and stops on destroy. `drainOnce` is public so tests can pump the queue
@@ -49,10 +45,9 @@ export class OutboxWorker implements OnModuleInit, OnModuleDestroy {
   constructor(
     @Inject(DB) private readonly db: Db,
     @Inject(ENV) private readonly env: ServerEnv,
-    // Explicit tokens: esbuild/tsx elides type-only imports, so relying on
-    // reflected metadata for these class deps injects `undefined`. @Inject keeps
+    // Explicit token: esbuild/tsx elides type-only imports, so relying on
+    // reflected metadata for this class dep injects `undefined`. @Inject keeps
     // the class a value and gives Nest the token directly.
-    @Inject(CalendarEffects) private readonly calendar: CalendarEffects,
     @Inject(EmailEffects) private readonly email: EmailEffects,
   ) {}
 
@@ -126,26 +121,13 @@ export class OutboxWorker implements OnModuleInit, OnModuleDestroy {
 
   /** Perform the row's side-effect. Throws on failure so `process` can retry. */
   private async execute(row: OutboxRow): Promise<void> {
-    if (row.kind === 'calendar') {
-      if (!row.bookingUid) throw new Error('calendar outbox row missing booking_uid');
-      await this.calendar.runCalendarJob(row.action as CalendarAction, row.bookingUid);
-      return;
-    }
-    if (row.kind === 'webhook') {
-      if (!row.webhookId || row.payload == null)
-        throw new Error('webhook outbox row missing webhook_id/payload');
-      await deliverWebhookEvent(
-        this.db,
-        { webhookId: row.webhookId, body: row.payload },
-        this.fetchImpl,
-      );
-      return;
-    }
     if (row.kind === 'email') {
       if (row.payload == null) throw new Error('email outbox row missing payload');
       await this.email.deliver(row.action, row.payload, row.accountId);
       return;
     }
+    // Forms only enqueues `email` today; a future webhook/integration port can
+    // add its own kind here (reusing the same outbox + retry machinery).
     throw new Error(`unknown outbox kind: ${String(row.kind)}`);
   }
 }

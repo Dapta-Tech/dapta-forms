@@ -1,13 +1,11 @@
 /**
- * @slate/notifications — hexagonal notifications. Callers depend on the
+ * @quill/notifications — hexagonal notifications. Callers depend on the
  * EmailProvider port; a provider is chosen by configuration (default log-only,
- * so a bare fork runs). Booking emails render via BookingNotifier.
+ * so a bare fork runs). Submission emails render via SubmissionNotifier.
  */
 export * from './email.port';
 export * from './factory';
-export * from './booking-notifier';
-export * from './templates';
-export * from './ics';
+export * from './submission-notifier';
 export { LogOnlyEmailProvider } from './adapters/log-only';
 export { NoopEmailProvider } from './adapters/noop';
 export { SmtpEmailProvider, type SmtpOptions } from './adapters/smtp';

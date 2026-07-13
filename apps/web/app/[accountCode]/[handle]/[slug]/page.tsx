@@ -1,106 +1,43 @@
 import type { Metadata } from 'next';
-import { notFound, permanentRedirect } from 'next/navigation';
-import Link from 'next/link';
-import { getMessages, t } from '@slate/shared';
-import { getAvailability, getProfile } from '@/lib/api';
+import { notFound } from 'next/navigation';
+import { getPublicForm } from '@/lib/api';
 import { publicLocale } from '@/lib/locale';
-import { BookingFlow } from '@/components/booking-flow';
-import { BrandedShell } from '@/components/branded-shell';
 import { MadeWithBadge } from '@/components/made-with-badge';
+import { FormRenderer } from './form-renderer';
 
-// Per-page SEO/OG from event + host data (R11 audit). getProfile is
-// request-cached (shared with the page render); the event's public listing
-// carries everything the tags need — no availability call here.
 export async function generateMetadata({
   params,
-  searchParams,
 }: {
-  params: Promise<{ accountCode: string; handle: string; slug: string }>;
-  searchParams: Promise<{ lang?: string }>;
+  params: Promise<{ accountCode: string; slug: string }>;
 }): Promise<Metadata> {
-  const { accountCode, handle, slug } = await params;
-  const { lang } = await searchParams;
-  const profile = await getProfile(accountCode, handle);
-  const event = profile?.eventTypes.find((e) => e.slug === slug);
-  if (!profile || !event) return {};
-  const name = profile.member.displayName ?? profile.member.handle;
-  const title = `${event.title} — ${name}`;
-  const description =
-    event.description ||
-    t(getMessages(await publicLocale(lang)).growth.seoEvent, {
-      event: event.title,
-      name,
-      minutes: event.lengthMinutes,
-    });
-  const avatar = profile.member.avatarUrl;
-  const images = avatar && /^https?:\/\//i.test(avatar) ? [avatar] : undefined;
-  return {
-    title,
-    description,
-    openGraph: { title, description, type: 'website', images },
-    twitter: { card: 'summary', title, description, images },
-  };
+  const { accountCode, slug } = await params;
+  const form = await getPublicForm(accountCode, slug);
+  if (!form) return {};
+  return { title: form.name, openGraph: { title: form.name, type: 'website' } };
 }
 
-// Public booking page. A Server Component fetches slots (free SEO + streaming);
-// the interactive slot picker + form is a client island (BookingFlow).
-export default async function BookingPage({
+// Public form page. The Server Component fetches the published config; the
+// interactive multi-step flow is a client island (FormRenderer).
+export default async function PublicFormPage({
   params,
   searchParams,
 }: {
   params: Promise<{ accountCode: string; handle: string; slug: string }>;
   searchParams: Promise<{ lang?: string }>;
 }) {
-  const { accountCode, handle, slug } = await params;
+  const { accountCode, slug } = await params;
   const { lang } = await searchParams;
   const locale = await publicLocale(lang);
 
-  const now = new Date();
-  const from = now.toISOString();
-  const to = new Date(now.getTime() + 21 * 86_400_000).toISOString();
-
-  const [profile, availability] = await Promise.all([
-    getProfile(accountCode, handle),
-    getAvailability({ accountCode, handle, slug, from, to }),
-  ]);
-
-  if (!profile || !availability) notFound();
-
-  // Canonical-code guard (short-links §4): alias URLs 308 to the canonical code.
-  const code = profile!.account.code;
-  if (accountCode !== code) {
-    permanentRedirect(`/${code}/${handle}/${slug}${lang ? `?lang=${lang}` : ''}`);
-  }
+  const form = await getPublicForm(accountCode, slug);
+  if (!form) notFound();
 
   return (
-    <BrandedShell brandColor={profile.member.brandColor} style={profile.member.style}>
-      <main className="mx-auto max-w-4xl px-6 py-12">
-        <header className="mb-8 flex flex-col gap-1">
-        <Link
-          href={`/${code}/${handle}`}
-          className="text-sm text-muted-foreground hover:text-foreground"
-        >
-          ← {profile.member.displayName ?? profile.member.handle}
-        </Link>
-        <h1 className="text-3xl font-semibold tracking-tight">{availability.eventType.title}</h1>
-        <p className="text-sm text-muted-foreground">
-          {availability.eventType.lengthMinutes} min · with{' '}
-          {profile.member.displayName ?? profile.member.handle}
-        </p>
-      </header>
-
-        <BookingFlow
-          accountCode={accountCode}
-          ownerSlug={handle}
-          slug={slug}
-          slots={availability.slots}
-          emptyReason={availability.emptyReason}
-          bookingFields={availability.eventType.bookingFields}
-          initialTimeZone={availability.timeZone}
-          locale={locale}
-        />
+    <>
+      <main className="mx-auto flex min-h-dvh max-w-xl flex-col justify-center px-6 py-12">
+        <FormRenderer accountCode={accountCode} slug={slug} name={form.name} config={form.config} />
       </main>
       <MadeWithBadge locale={locale} accountCode={accountCode} />
-    </BrandedShell>
+    </>
   );
 }

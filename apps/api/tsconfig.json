@@ -1,5 +1,5 @@
 {
-  "extends": "@slate/config/tsconfig/nest.json",
+  "extends": "@quill/config/tsconfig/nest.json",
   "compilerOptions": {
     "module": "ESNext",
     "moduleResolution": "Bundler",

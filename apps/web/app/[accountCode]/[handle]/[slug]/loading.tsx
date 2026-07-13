@@ -1,6 +1,6 @@
 import { Skeleton } from '@/components/skeleton';
 
-export default function BookingLoading() {
+export default function FormLoading() {
   return (
     <main className="mx-auto max-w-3xl px-6 py-12">
       <div className="mb-8 flex flex-col gap-2">

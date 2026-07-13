@@ -2,41 +2,28 @@
  * SQLite schema — a PORTABLE SUBSET of the Postgres source-of-truth
  * (schema.pg.ts), for zero-infra local dev only. Mirrors Postgres 1:1 on
  * table/column names (so the repository is dialect-agnostic). Where Postgres
- * uses jsonb / the GiST EXCLUDE constraint, SQLite uses text / an app-level
- * check. SQLite never dictates the schema — Postgres does; this only tracks it.
+ * uses jsonb, SQLite uses text JSON. SQLite never dictates the schema — Postgres
+ * does; this only tracks it.
  *
  * Portable column choices: text UUID PKs (crypto.randomUUID()), instants as
- * INTEGER epoch-ms, dates "YYYY-MM-DD" / times "HH:mm" as TEXT, booleans as
- * INTEGER 0/1, arrays / structured config as TEXT JSON.
+ * INTEGER epoch-ms, booleans as INTEGER 0/1, config/answers as TEXT JSON.
  */
 import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core';
 
+// --- Platform (identity / delivery) — kept from the shared platform ----------
+
 export const account = sqliteTable('account', {
   id: text('id').primaryKey(),
-  // The canonical public code: a 6-char unambiguous short code for new
-  // accounts (see @slate/engine short-links); legacy `acct-…`/`dev-…` codes
-  // are re-coded by the migrate() data fixup and kept alive in account_alias.
   code: text('code').notNull().unique(),
   name: text('name').notNull(),
-  // Stable id of this account in an upstream identity service, used by the
-  // `workos` auth provider to project the external tenant onto a local account.
-  // Nullable + unique (NULLs distinct): seeded/local accounts have none.
   externalId: text('external_id'),
-  // Premium vanity slug (globally unique, [a-z0-9-]{3,30}); when set it is the
-  // canonical public code and `code` stays as a permanent alias.
   vanitySlug: text('vanity_slug'),
-  // Cached IAM verdict ('paid' | 'free'; NULL = never checked) + check time.
-  // IAM is the source of truth — this is never a Calendars-side billing state.
   daptaEntitlement: text('dapta_entitlement'),
   entitlementCheckedAt: integer('entitlement_checked_at'),
   createdAt: integer('created_at').notNull(),
 });
 
-/**
- * Retired public codes (legacy `acct-…`/`dev-…`, re-coded short codes): each
- * alias permanently resolves to its account so no shared link ever breaks —
- * the web layer 308-redirects alias URLs to the canonical code.
- */
+/** Retired public codes — each alias permanently resolves to its account. */
 export const accountAlias = sqliteTable('account_alias', {
   alias: text('alias').primaryKey(),
   accountId: text('account_id').notNull(),
@@ -46,183 +33,15 @@ export const accountAlias = sqliteTable('account_alias', {
 export const member = sqliteTable('member', {
   id: text('id').primaryKey(),
   accountId: text('account_id').notNull(),
-  // Stable id of this member's user in an upstream identity service (the JWT
-  // `sub`). Unique per account; the `workos` provider resolves/creates the
-  // member projection by it. Nullable: seeded/local members have none.
   externalId: text('external_id'),
   handle: text('handle'),
   displayName: text('display_name'),
   email: text('email'),
-  // Account-level role (distinct from team_membership.role): `owner` | `admin` |
-  // `member`. Every account keeps ≥1 owner (last-owner guard). Default `member`;
-  // the first member of an account is promoted to `owner` (seed + migration backfill).
   role: text('role').notNull().default('member'),
-  // Lifecycle: `active` | `invited` (invited-by-email, not yet signed in) |
-  // `disabled` (revoked access, row kept for history). Default `active`.
   status: text('status').notNull().default('active'),
   avatarUrl: text('avatar_url'),
-  coverUrl: text('cover_url'),
-  brandColor: text('brand_color'),
-  layout: text('layout'),
-  bookingPageStyle: text('booking_page_style'),
-  timeZone: text('time_zone').notNull().default('UTC'),
-  weekStart: text('week_start').notNull().default('sunday'),
   locale: text('locale'),
-  timeFormat: integer('time_format').notNull().default(12),
-  defaultScheduleId: text('default_schedule_id'),
   createdAt: integer('created_at').notNull(),
-});
-
-export const schedule = sqliteTable('schedule', {
-  id: text('id').primaryKey(),
-  accountId: text('account_id').notNull(),
-  memberId: text('member_id').notNull(),
-  name: text('name').notNull(),
-  timeZone: text('time_zone').notNull().default('UTC'),
-  createdAt: integer('created_at').notNull(),
-});
-
-export const availability = sqliteTable('availability', {
-  id: text('id').primaryKey(),
-  scheduleId: text('schedule_id').notNull(),
-  days: text('days'),
-  startTime: text('start_time').notNull(),
-  endTime: text('end_time').notNull(),
-  date: text('date'),
-});
-
-export const team = sqliteTable('team', {
-  id: text('id').primaryKey(),
-  accountId: text('account_id').notNull(),
-  name: text('name').notNull(),
-  slug: text('slug'),
-  bio: text('bio'),
-  logoUrl: text('logo_url'),
-  timeZone: text('time_zone').notNull().default('UTC'),
-  hideBranding: integer('hide_branding').notNull().default(0),
-  createdAt: integer('created_at').notNull(),
-});
-
-export const teamMembership = sqliteTable('team_membership', {
-  id: text('id').primaryKey(),
-  accountId: text('account_id').notNull(),
-  teamId: text('team_id').notNull(),
-  memberId: text('member_id').notNull(),
-  role: text('role').notNull().default('member'),
-  accepted: integer('accepted').notNull().default(0),
-  createdAt: integer('created_at').notNull(),
-});
-
-export const eventType = sqliteTable('event_type', {
-  id: text('id').primaryKey(),
-  accountId: text('account_id').notNull(),
-  memberId: text('member_id'),
-  teamId: text('team_id'),
-  slug: text('slug').notNull(),
-  title: text('title').notNull(),
-  description: text('description'),
-  lengthMinutes: integer('length_minutes').notNull(),
-  scheduleId: text('schedule_id'),
-  hidden: integer('hidden').notNull().default(0),
-  schedulingType: text('scheduling_type'),
-  locations: text('locations'),
-  bookingFields: text('booking_fields'),
-  metadata: text('metadata'),
-  minimumBookingNotice: integer('minimum_booking_notice').notNull().default(120),
-  beforeEventBuffer: integer('before_event_buffer').notNull().default(0),
-  afterEventBuffer: integer('after_event_buffer').notNull().default(0),
-  slotInterval: integer('slot_interval'),
-  requiresConfirmation: integer('requires_confirmation').notNull().default(0),
-  seatsPerTimeSlot: integer('seats_per_time_slot'),
-  createdAt: integer('created_at').notNull(),
-});
-
-export const eventTypeHost = sqliteTable('event_type_host', {
-  id: text('id').primaryKey(),
-  accountId: text('account_id').notNull(),
-  eventTypeId: text('event_type_id').notNull(),
-  memberId: text('member_id').notNull(),
-  isFixed: integer('is_fixed').notNull().default(0),
-  priority: integer('priority'),
-  weight: integer('weight'),
-  scheduleId: text('schedule_id'),
-  createdAt: integer('created_at').notNull(),
-});
-
-export const booking = sqliteTable('booking', {
-  id: text('id').primaryKey(),
-  accountId: text('account_id').notNull(),
-  uid: text('uid').notNull().unique(),
-  eventTypeId: text('event_type_id'),
-  hostMemberId: text('host_member_id'),
-  teamId: text('team_id'),
-  title: text('title').notNull(),
-  startMs: integer('start_ms').notNull(),
-  endMs: integer('end_ms').notNull(),
-  status: text('status').notNull().default('accepted'),
-  location: text('location'),
-  meetingUrl: text('meeting_url'),
-  attendeeTimeZone: text('attendee_time_zone'),
-  responses: text('responses'),
-  metadata: text('metadata'),
-  cancellationReason: text('cancellation_reason'),
-  cancelledBy: text('cancelled_by'),
-  rescheduled: integer('rescheduled'),
-  fromReschedule: text('from_reschedule'),
-  recurringEventId: text('recurring_event_id'),
-  idempotencyKey: text('idempotency_key').unique(),
-  createdAt: integer('created_at').notNull(),
-  updatedAt: integer('updated_at').notNull(),
-});
-
-export const bookingAttendee = sqliteTable('booking_attendee', {
-  id: text('id').primaryKey(),
-  bookingId: text('booking_id').notNull(),
-  name: text('name').notNull(),
-  email: text('email').notNull(),
-  timeZone: text('time_zone'),
-  phone: text('phone'),
-  notes: text('notes'),
-  createdAt: integer('created_at').notNull(),
-});
-
-/** Assigned host set for multi-host bookings (collective / fixed_round_robin). */
-export const bookingHost = sqliteTable('booking_host', {
-  id: text('id').primaryKey(),
-  bookingId: text('booking_id').notNull(),
-  memberId: text('member_id').notNull(),
-  isFixed: integer('is_fixed').notNull().default(0),
-  createdAt: integer('created_at').notNull(),
-});
-
-export const slotReservation = sqliteTable('slot_reservation', {
-  id: text('id').primaryKey(),
-  accountId: text('account_id').notNull(),
-  eventTypeId: text('event_type_id').notNull(),
-  memberId: text('member_id').notNull(),
-  slotStartMs: integer('slot_start_ms').notNull(),
-  slotEndMs: integer('slot_end_ms').notNull(),
-  uid: text('uid').notNull(),
-  releaseAtMs: integer('release_at_ms').notNull(),
-  isSeat: integer('is_seat').notNull().default(0),
-  createdAt: integer('created_at').notNull(),
-});
-
-export const connectedCalendar = sqliteTable('connected_calendar', {
-  id: text('id').primaryKey(),
-  accountId: text('account_id').notNull(),
-  memberId: text('member_id').notNull(),
-  /** Generic provider key (e.g. "google" | "outlook"); NO vendor bridge name. */
-  provider: text('provider').notNull(),
-  externalId: text('external_id').notNull(),
-  primaryEmail: text('primary_email'),
-  isDestination: integer('is_destination').notNull().default(0),
-  checkConflicts: integer('check_conflicts').notNull().default(1),
-  createdAt: integer('created_at').notNull(),
-  /** Persisted health (last explicit probe): NULL last_check_at = never checked. */
-  lastCheckAt: integer('last_check_at'),
-  lastCheckOk: integer('last_check_ok'),
-  lastCheckDetail: text('last_check_detail'),
 });
 
 export const apiKey = sqliteTable('api_key', {
@@ -233,44 +52,18 @@ export const apiKey = sqliteTable('api_key', {
   last4: text('last4').notNull(),
   keyHash: text('key_hash').notNull().unique(),
   scopes: text('scopes'),
-  eventTypeIds: text('event_type_ids'),
   lastUsedAtMs: integer('last_used_at_ms'),
   expiresAtMs: integer('expires_at_ms'),
   revokedAtMs: integer('revoked_at_ms'),
   createdAt: integer('created_at').notNull(),
 });
 
-export const webhook = sqliteTable('webhook', {
-  id: text('id').primaryKey(),
-  accountId: text('account_id').notNull(),
-  memberId: text('member_id'),
-  teamId: text('team_id'),
-  eventTypeId: text('event_type_id'),
-  subscriberUrl: text('subscriber_url').notNull(),
-  secret: text('secret'),
-  eventTriggers: text('event_triggers'),
-  active: integer('active').notNull().default(1),
-  createdAt: integer('created_at').notNull(),
-});
-
-export const bookingReference = sqliteTable('booking_reference', {
-  id: text('id').primaryKey(),
-  bookingId: text('booking_id').notNull(),
-  /** DH1: destination (connection ref) this event was written to; UNIQUE with booking_id. */
-  destination: text('destination'),
-  type: text('type').notNull(),
-  externalEventId: text('external_event_id'),
-  externalCalendarId: text('external_calendar_id'),
-  meetingUrl: text('meeting_url'),
-  createdAt: integer('created_at').notNull(),
-});
-
-/** B7/DM1: durable side-effect queue (calendar write-out + webhook delivery). */
+/** Durable side-effect queue (submission emails, future webhooks). */
 export const outbox = sqliteTable('outbox', {
   id: text('id').primaryKey(),
   kind: text('kind').notNull(),
   action: text('action').notNull(),
-  bookingUid: text('booking_uid'),
+  subjectUid: text('subject_uid'),
   accountId: text('account_id'),
   webhookId: text('webhook_id'),
   payload: text('payload'),
@@ -283,11 +76,7 @@ export const outbox = sqliteTable('outbox', {
   updatedAt: integer('updated_at').notNull(),
 });
 
-/**
- * Per-account notification controls (toggles + template overrides). Absent row
- * = shipped default (enabled, stock template); subject/body NULL = stock
- * template; reminder_lead_minutes = TEXT JSON array (reminder key only).
- */
+/** Per-account notification controls (toggles + template overrides). */
 export const notificationSetting = sqliteTable('notification_setting', {
   id: text('id').primaryKey(),
   accountId: text('account_id').notNull(),
@@ -300,23 +89,52 @@ export const notificationSetting = sqliteTable('notification_setting', {
   updatedAt: integer('updated_at').notNull(),
 });
 
+// --- Forms domain ------------------------------------------------------------
+
+/** A form: one versioned JSON `config` blob drives the whole public flow. */
+export const form = sqliteTable('form', {
+  id: text('id').primaryKey(),
+  accountId: text('account_id').notNull(),
+  name: text('name').notNull(),
+  /** Unique per account (app-enforced + composite UNIQUE index). */
+  slug: text('slug').notNull(),
+  /** Versioned form config as TEXT JSON. */
+  config: text('config').notNull(),
+  createdAt: integer('created_at').notNull(),
+  updatedAt: integer('updated_at').notNull(),
+});
+
+/** One persisted submission (partial or complete) per session. */
+export const submission = sqliteTable('submission', {
+  id: text('id').primaryKey(),
+  formId: text('form_id').notNull(),
+  sessionId: text('session_id').notNull(),
+  /** Answers as TEXT JSON. */
+  data: text('data').notNull(),
+  score: integer('score').notNull().default(0),
+  startedAt: integer('started_at').notNull(),
+  completedAt: integer('completed_at'),
+  partialAt: integer('partial_at'),
+});
+
+/** Funnel telemetry — one row per tracked step in the public flow. */
+export const formEvent = sqliteTable('form_event', {
+  id: text('id').primaryKey(),
+  formId: text('form_id').notNull(),
+  sessionId: text('session_id').notNull(),
+  type: text('type').notNull(),
+  stepIndex: integer('step_index'),
+  createdAt: integer('created_at').notNull(),
+});
+
 export const sqliteSchema = {
   account,
+  accountAlias,
   member,
-  schedule,
-  availability,
-  team,
-  teamMembership,
-  eventType,
-  eventTypeHost,
-  booking,
-  bookingAttendee,
-  bookingHost,
-  slotReservation,
-  connectedCalendar,
   apiKey,
-  webhook,
-  bookingReference,
   outbox,
   notificationSetting,
+  form,
+  submission,
+  formEvent,
 };
