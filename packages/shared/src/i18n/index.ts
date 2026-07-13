@@ -195,6 +195,69 @@ export interface FormsMessages {
         close: string;
       };
     };
+    /** Cross-page tabs shown on a form's analytics/submissions surfaces. */
+    nav: {
+      edit: string;
+      analytics: string;
+      submissions: string;
+      backToForms: string;
+    };
+    /** The analytics dashboard (funnel + per-step drop-off). */
+    analytics: {
+      title: string;
+      subtitle: string;
+      metricViews: string;
+      metricStarts: string;
+      metricSubmissions: string;
+      metricCompletionRate: string;
+      metricAvgTime: string;
+      metricPartials: string;
+      rangeLast7: string;
+      rangeLast30: string;
+      rangeLast90: string;
+      rangeAll: string;
+      rangeCustom: string;
+      rangeFrom: string;
+      rangeTo: string;
+      rangeApply: string;
+      dropoffTitle: string;
+      dropoffSubtitle: string;
+      colStep: string;
+      colViews: string;
+      colDropoff: string;
+      coverRow: string;
+      emptyTitle: string;
+      emptyBody: string;
+      error: string;
+      retry: string;
+      seconds: string; // short unit, e.g. "s"
+    };
+    /** The submissions table (responses + CSV export + delete). */
+    submissions: {
+      title: string;
+      subtitle: string;
+      statusAll: string;
+      statusCompleted: string;
+      statusPartial: string;
+      badgeCompleted: string;
+      badgePartial: string;
+      colSubmitted: string;
+      colStatus: string;
+      colScore: string;
+      export: string;
+      exporting: string;
+      delete: string;
+      deleteConfirm: string;
+      emptyTitle: string;
+      emptyBody: string;
+      prev: string;
+      next: string;
+      /** "{from}–{to} of {total}" */
+      showing: string;
+      na: string;
+      error: string;
+      retry: string;
+    };
   };
 }
 
@@ -384,6 +447,65 @@ export const en: FormsMessages = {
         close: 'Close',
       },
     },
+    nav: {
+      edit: 'Edit',
+      analytics: 'Analytics',
+      submissions: 'Submissions',
+      backToForms: 'Back to forms',
+    },
+    analytics: {
+      title: 'Analytics',
+      subtitle: 'Funnel performance and question-by-question drop-off.',
+      metricViews: 'Views',
+      metricStarts: 'Starts',
+      metricSubmissions: 'Submissions',
+      metricCompletionRate: 'Completion rate',
+      metricAvgTime: 'Avg. time to complete',
+      metricPartials: 'Partial submits',
+      rangeLast7: 'Last 7 days',
+      rangeLast30: 'Last 30 days',
+      rangeLast90: 'Last 90 days',
+      rangeAll: 'All time',
+      rangeCustom: 'Custom',
+      rangeFrom: 'From',
+      rangeTo: 'To',
+      rangeApply: 'Apply',
+      dropoffTitle: 'Question-by-question drop-off',
+      dropoffSubtitle: 'How many people reach each step, and how many leave.',
+      colStep: 'Step',
+      colViews: 'Views',
+      colDropoff: 'Drop-off',
+      coverRow: 'Cover / landing',
+      emptyTitle: 'No data yet',
+      emptyBody: 'Once people open and fill out this form, the funnel and drop-off will appear here.',
+      error: 'Couldn’t load analytics.',
+      retry: 'Try again',
+      seconds: 's',
+    },
+    submissions: {
+      title: 'Submissions',
+      subtitle: 'Every response to this form.',
+      statusAll: 'All',
+      statusCompleted: 'Completed',
+      statusPartial: 'Partial',
+      badgeCompleted: 'Completed',
+      badgePartial: 'Partial',
+      colSubmitted: 'Submitted',
+      colStatus: 'Status',
+      colScore: 'Score',
+      export: 'Download CSV',
+      exporting: 'Preparing…',
+      delete: 'Delete',
+      deleteConfirm: 'Delete this submission? This cannot be undone.',
+      emptyTitle: 'No submissions yet',
+      emptyBody: 'Responses will show up here as people complete the form.',
+      prev: 'Previous',
+      next: 'Next',
+      showing: '{from}–{to} of {total}',
+      na: '—',
+      error: 'Couldn’t load submissions.',
+      retry: 'Try again',
+    },
   },
 };
 
@@ -572,6 +694,65 @@ export const es: FormsMessages = {
         desktop: 'Escritorio',
         close: 'Cerrar',
       },
+    },
+    nav: {
+      edit: 'Editar',
+      analytics: 'Analíticas',
+      submissions: 'Respuestas',
+      backToForms: 'Volver a formularios',
+    },
+    analytics: {
+      title: 'Analíticas',
+      subtitle: 'Rendimiento del embudo y abandono pregunta por pregunta.',
+      metricViews: 'Vistas',
+      metricStarts: 'Inicios',
+      metricSubmissions: 'Respuestas',
+      metricCompletionRate: 'Tasa de finalización',
+      metricAvgTime: 'Tiempo promedio para completar',
+      metricPartials: 'Envíos parciales',
+      rangeLast7: 'Últimos 7 días',
+      rangeLast30: 'Últimos 30 días',
+      rangeLast90: 'Últimos 90 días',
+      rangeAll: 'Todo el tiempo',
+      rangeCustom: 'Personalizado',
+      rangeFrom: 'Desde',
+      rangeTo: 'Hasta',
+      rangeApply: 'Aplicar',
+      dropoffTitle: 'Abandono pregunta por pregunta',
+      dropoffSubtitle: 'Cuántas personas llegan a cada paso y cuántas se van.',
+      colStep: 'Paso',
+      colViews: 'Vistas',
+      colDropoff: 'Abandono',
+      coverRow: 'Portada / inicio',
+      emptyTitle: 'Aún no hay datos',
+      emptyBody: 'Cuando las personas abran y completen este formulario, verás aquí el embudo y el abandono.',
+      error: 'No se pudieron cargar las analíticas.',
+      retry: 'Reintentar',
+      seconds: 's',
+    },
+    submissions: {
+      title: 'Respuestas',
+      subtitle: 'Todas las respuestas a este formulario.',
+      statusAll: 'Todas',
+      statusCompleted: 'Completadas',
+      statusPartial: 'Parciales',
+      badgeCompleted: 'Completada',
+      badgePartial: 'Parcial',
+      colSubmitted: 'Enviada',
+      colStatus: 'Estado',
+      colScore: 'Puntaje',
+      export: 'Descargar CSV',
+      exporting: 'Preparando…',
+      delete: 'Eliminar',
+      deleteConfirm: '¿Eliminar esta respuesta? No se puede deshacer.',
+      emptyTitle: 'Aún no hay respuestas',
+      emptyBody: 'Las respuestas aparecerán aquí a medida que las personas completen el formulario.',
+      prev: 'Anterior',
+      next: 'Siguiente',
+      showing: '{from}–{to} de {total}',
+      na: '—',
+      error: 'No se pudieron cargar las respuestas.',
+      retry: 'Reintentar',
     },
   },
 };

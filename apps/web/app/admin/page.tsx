@@ -11,7 +11,9 @@ export const dynamic = 'force-dynamic';
 
 export default async function AdminHome() {
   const locale = await getLocale();
-  const m = getMessages(locale).admin.forms;
+  const messages = getMessages(locale).admin;
+  const m = messages.forms;
+  const nav = messages.nav;
   const [me, forms] = await Promise.all([adminApi.me(), adminApi.listForms()]);
 
   const createLabels = {
@@ -63,7 +65,11 @@ export default async function AdminHome() {
                     {t(m.updated, { when: new Date(f.updatedAt).toLocaleDateString(locale) })}
                   </span>
                 </div>
-                <FormRowActions id={f.id} labels={rowLabels} />
+                <FormRowActions
+                  id={f.id}
+                  labels={rowLabels}
+                  nav={{ analytics: nav.analytics, submissions: nav.submissions }}
+                />
               </li>
             );
           })}

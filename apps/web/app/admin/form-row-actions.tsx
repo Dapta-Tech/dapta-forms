@@ -1,19 +1,41 @@
 'use client';
 
+import Link from 'next/link';
 import { useTransition } from 'react';
 import { duplicateFormAction, deleteFormAction } from './actions';
 
-/** Duplicate / delete buttons for a form row (client → server actions). */
+/**
+ * Per-row actions for a form: cross-links to its Analytics + Submissions pages
+ * (analytics track — additive) plus localized Duplicate / Delete (builder track).
+ */
 export function FormRowActions({
   id,
   labels,
+  nav,
 }: {
   id: string;
   labels: { duplicate: string; delete: string; deleteConfirm: string };
+  nav?: { analytics: string; submissions: string };
 }) {
   const [pending, start] = useTransition();
   return (
     <div className="flex items-center gap-3 text-sm">
+      {nav ? (
+        <>
+          <Link
+            href={`/admin/forms/${id}/analytics`}
+            className="text-muted-foreground transition-colors hover:text-foreground"
+          >
+            {nav.analytics}
+          </Link>
+          <Link
+            href={`/admin/forms/${id}/submissions`}
+            className="text-muted-foreground transition-colors hover:text-foreground"
+          >
+            {nav.submissions}
+          </Link>
+        </>
+      ) : null}
       <button
         type="button"
         disabled={pending}
