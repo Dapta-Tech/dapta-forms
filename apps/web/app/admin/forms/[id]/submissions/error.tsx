@@ -2,11 +2,7 @@
 
 import { getMessages } from '@quill/shared';
 
-/** Read the persisted admin locale on the client (mirrors the server cookie). */
-function clientLocale(): 'en' | 'es' {
-  if (typeof document !== 'undefined' && /(?:^|;\s*)quill_locale=es\b/.test(document.cookie)) return 'es';
-  return 'en';
-}
+import { clientLocale } from '@/lib/client-locale';
 
 export default function SubmissionsError({ reset }: { error: Error; reset: () => void }) {
   const m = getMessages(clientLocale()).admin.submissions;
