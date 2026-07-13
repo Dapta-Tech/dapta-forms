@@ -1,6 +1,6 @@
-# Contributing to Slate
+# Contributing to Quill (Dapta Forms)
 
-Thanks for your interest! Slate is built to be easy to hack on — clone-and-run
+Thanks for your interest! Quill is built to be easy to hack on — clone-and-run
 with zero infrastructure.
 
 ## Getting started
@@ -31,7 +31,7 @@ pnpm-workspaces monorepo.
    ```
 4. Commit with a **Conventional Commit** message and a **DCO sign-off** (below).
 5. Open a PR. CI runs lint, typecheck, tests on **SQLite** and a **Postgres**
-   parity job (which exercises the double-booking `EXCLUDE` path), builds both
+   parity job (which exercises the submission-integrity unique-index path), builds both
    apps, and runs the publish-gate secret scan.
 
 ## Commit conventions

@@ -32,24 +32,24 @@ jobs:
       - run: pnpm build
 
   postgres:
-    name: Test on Postgres (source of truth — EXCLUDE / double-booking)
+    name: Test on Postgres (source of truth — submission integrity)
     runs-on: ubuntu-latest
     services:
       postgres:
         image: postgres:16
         env:
-          POSTGRES_USER: slate
-          POSTGRES_PASSWORD: slate
-          POSTGRES_DB: slate
+          POSTGRES_USER: quill
+          POSTGRES_PASSWORD: quill
+          POSTGRES_DB: quill
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U slate"
+          --health-cmd "pg_isready -U quill"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
     env:
-      DATABASE_URL: postgres://slate:slate@localhost:5432/slate
+      DATABASE_URL: postgres://quill:quill@localhost:5432/quill
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -61,14 +61,14 @@ jobs:
       - run: pnpm build:packages
       - name: Migrate + seed on Postgres
         run: pnpm db:migrate && pnpm db:seed
-      - name: Booking + double-booking on real Postgres (EXCLUDE constraint)
-        # repository.pg.spec.ts runs against DATABASE_URL: it books, rejects the
-        # double-book (app-level + EXCLUDE), and directly asserts the
-        # booking_no_overlap GiST constraint raises 23P01 on an overlap. This is
-        # the tested truth — Postgres is what we trust.
-        run: pnpm --filter @slate/db test
+      - name: Submission integrity on real Postgres (unique-per-session upsert)
+        # submission.spec.ts runs against DATABASE_URL: it upserts one submission
+        # per (form, session), and directly asserts the submission_form_session_uq
+        # unique index rejects a duplicate insert. Same test, both dialects —
+        # that is the SQLite↔Postgres parity guarantee for Forms.
+        run: pnpm --filter @quill/db test
         env:
-          DATABASE_URL: postgres://slate:slate@localhost:5432/slate
+          DATABASE_URL: postgres://quill:quill@localhost:5432/quill
 
   publish-gate:
     name: Publish gate (secret scan)

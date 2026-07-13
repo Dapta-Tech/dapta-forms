@@ -21,7 +21,7 @@ echo "== publish-gate: internal-token scan =="
 # The denylist: internal hosts, cloud/account markers, internal service names,
 # and WIP markers that must never reach public history. Extend as needed.
 # Matched case-insensitively (grep -i) so "Aurora"/"aurora" both trip it.
-PATTERN='[a-z0-9-]+\.dapta\.(ai|dev)|daptatech|amazonaws|aurora|\bbooking_ms\b|dapta_lab|dapta-iam|integration\.app|apps-configs-flux2|DO[ -]NOT[ -]MERGE'
+PATTERN='[a-z0-9-]+\.dapta\.(ai|dev)|daptatech|amazonaws|aurora|\bdapta_forms\b|\bforms_ms\b|dapta_lab|dapta-iam|integration\.app|apps-configs-flux2|DO[ -]NOT[ -]MERGE'
 PUBLIC_HOST_ALLOW='^\./(README\.md|\.env\.example|apps/web/lib/growth\.ts|packages/shared/src/growth\.(ts|spec\.ts))\b.*\b(app|www)\.dapta\.ai'
 
 # Scan tracked/working files, excluding vendored/build/self paths. The deploy/
