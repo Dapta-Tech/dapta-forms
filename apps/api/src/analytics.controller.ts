@@ -11,7 +11,7 @@ import {
   Res,
 } from '@nestjs/common';
 import type { Db } from '@quill/db';
-import { getFormById, querySubmissions } from '@quill/db';
+import { getFormById } from '@quill/db';
 import type { FormConfig } from '@quill/types';
 import { AuthService, type ReqLike } from './auth.service';
 import { AnalyticsService } from './analytics.service';
@@ -64,7 +64,9 @@ export class AnalyticsController {
   /**
    * Stream the form's submissions as CSV. Answers flatten to one column per
    * configured step key (form config order), after the fixed metadata columns.
-   * Paged internally so a large export never buffers the whole set in memory.
+   * Uses the un-paginated export query (`allSubmissionsForExport`) — the table
+   * query caps `limit` at 200, so paging through it would silently truncate and
+   * skip rows on large exports. Rows are still written incrementally.
    */
   @Get('forms/:id/submissions.csv')
   async exportCsv(
@@ -89,30 +91,25 @@ export class AnalyticsController {
 
     res.write(csvRow(['id', 'session_id', 'status', 'score', 'started_at', 'completed_at', ...stepKeys]));
 
-    const q = {
+    const rows = await this.analytics.exportSubmissions(id, {
       status: parseStatus(status),
       from: parseBound(from, false),
       to: parseBound(to, true),
-    };
-    const pageSize = 500;
-    for (let offset = 0; ; offset += pageSize) {
-      const page = await querySubmissions(this.db, id, { ...q, limit: pageSize, offset });
-      for (const s of page.items) {
-        const data = (s.data ?? {}) as Record<string, unknown>;
-        const st = s.completedAt != null ? 'completed' : s.partialAt != null ? 'partial' : 'in_progress';
-        res.write(
-          csvRow([
-            s.id,
-            s.sessionId,
-            st,
-            s.score,
-            iso(s.startedAt),
-            iso(s.completedAt),
-            ...stepKeys.map((k) => data[k]),
-          ]),
-        );
-      }
-      if (offset + pageSize >= page.total) break;
+    });
+    for (const s of rows) {
+      const data = (s.data ?? {}) as Record<string, unknown>;
+      const st = s.completedAt != null ? 'completed' : s.partialAt != null ? 'partial' : 'in_progress';
+      res.write(
+        csvRow([
+          s.id,
+          s.sessionId,
+          st,
+          s.score,
+          iso(s.startedAt),
+          iso(s.completedAt),
+          ...stepKeys.map((k) => data[k]),
+        ]),
+      );
     }
     res.end();
   }

@@ -38,7 +38,7 @@ import { SubmissionService } from './submission.service';
 import { AnalyticsService } from './analytics.service';
 import { AuthService, type ReqLike } from './auth.service';
 import { assertAdmin, assertCanManageTarget, assertNotSelf } from './permissions';
-import { parseBound, parseStatus } from './query-params';
+import { parseBound, parseIntParam, parseStatus } from './query-params';
 import { DB } from './tokens';
 
 function parse<T>(schema: { parse: (v: unknown) => T }, body: unknown): T {
@@ -159,8 +159,8 @@ export class AdminCrudController {
       status: parseStatus(status),
       from: parseBound(from, false),
       to: parseBound(to, true),
-      limit: limit ? Number(limit) : undefined,
-      offset: offset ? Number(offset) : undefined,
+      limit: parseIntParam(limit),
+      offset: parseIntParam(offset),
     });
   }
 

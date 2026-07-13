@@ -25,3 +25,14 @@ export function parseBound(v: string | undefined, endOfDay: boolean): number | n
 export function parseStatus(v: string | undefined): SubmissionStatus {
   return v === 'completed' || v === 'partial' ? v : 'all';
 }
+
+/**
+ * Parse a non-negative integer query param (limit/offset). Non-numeric input
+ * must resolve to `undefined` — a raw `Number('abc')` is NaN, which would reach
+ * SQL as `LIMIT NaN` (empty result on SQLite, ERROR on Postgres).
+ */
+export function parseIntParam(v: string | undefined): number | undefined {
+  if (!v) return undefined;
+  const n = Number(v);
+  return Number.isFinite(n) ? Math.trunc(n) : undefined;
+}

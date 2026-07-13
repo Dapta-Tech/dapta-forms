@@ -18,6 +18,10 @@ import {
   type Db,
 } from '@quill/db';
 import { AnalyticsService } from './analytics.service';
+import { AnalyticsController } from './analytics.controller';
+import type { AuthService } from './auth.service';
+import { csvField } from './csv';
+import { parseIntParam } from './query-params';
 
 let db: Db;
 let svc: AnalyticsService;
@@ -162,5 +166,103 @@ describe('delete submission (account-scoped, idempotent)', () => {
     const other = (await querySubmissions(db, formId, { status: 'completed', limit: 1 })).items[0]!;
     expect(await deleteSubmissionForAccount(db, 'wrong-account', other.id)).toBe(false);
     expect((await querySubmissions(db, formId, { status: 'completed' })).total).toBe(2);
+  });
+});
+
+describe('CSV export (large sets, un-paginated)', () => {
+  /** Drive the real controller with a stub auth + capture-only response. */
+  async function runExport(): Promise<string[]> {
+    const auth = {
+      resolveHost: async () => ({ accountId, memberId: 'test-member', role: 'owner' as const }),
+    } as unknown as AuthService;
+    const ctrl = new AnalyticsController(db, auth, svc);
+    const chunks: string[] = [];
+    const res = {
+      setHeader: () => {},
+      write: (c: string) => {
+        chunks.push(c);
+      },
+      end: () => {},
+    };
+    await ctrl.exportCsv({ headers: {} }, res, formId, undefined, undefined, undefined);
+    return chunks.join('').trimEnd().split('\r\n');
+  }
+
+  it('exports EVERY row past the 200-row table cap (250 seeded → 250 CSV rows)', async () => {
+    // beforeEach seeded 5 submissions; add 245 more → exactly 250 total. The
+    // paginated table query caps limit at 200, so this proves the export path
+    // does NOT truncate or skip rows (OptiBot blocker).
+    for (let i = 0; i < 245; i++) {
+      await insertSubmission({
+        session: `bulk-${i}`,
+        data: { role: 'individual', email: `bulk${i}@x.io` },
+        score: 2,
+        startedAt: NOW + i,
+        completedAt: NOW + i + 1000,
+      });
+    }
+    expect((await querySubmissions(db, formId, {})).total).toBe(250);
+
+    const lines = await runExport();
+    expect(lines[0]).toMatch(/^id,session_id,status,score,started_at,completed_at/);
+    expect(lines.length - 1).toBe(250); // header + one row per submission
+  });
+
+  it('neutralizes a formula payload end-to-end in the exported CSV', async () => {
+    await insertSubmission({
+      session: 'inject-1',
+      data: { role: '=HYPERLINK("http://evil.example","click")', email: '@import' },
+      score: 0,
+      startedAt: NOW,
+      completedAt: NOW + 1,
+    });
+    const csv = (await runExport()).join('\n');
+    expect(csv).toContain(`'=HYPERLINK`);
+    expect(csv).toContain(`'@import`);
+    expect(csv).not.toMatch(/(^|,)=HYPERLINK/m); // no bare leading formula
+  });
+});
+
+describe('csvField formula-injection neutralization', () => {
+  it('prefixes a quote on formula-trigger strings', () => {
+    expect(csvField('=1+2')).toBe("'=1+2");
+    expect(csvField('+SUM(A1)')).toBe("'+SUM(A1)");
+    expect(csvField('-cmd')).toBe("'-cmd");
+    expect(csvField('@import')).toBe("'@import");
+    expect(csvField('\tpayload')).toBe("'\tpayload");
+  });
+
+  it('still RFC-4180-quotes when the neutralized value needs it', () => {
+    // Leading `=` AND a comma: neutralize first, then quote.
+    expect(csvField('=HYPERLINK("http://e.x","y")')).toBe('"\'=HYPERLINK(""http://e.x"",""y"")"');
+  });
+
+  it('leaves genuine numbers/booleans and plain strings untouched', () => {
+    expect(csvField(-5)).toBe('-5'); // negative score stays numeric
+    expect(csvField(true)).toBe('true');
+    expect(csvField('hello')).toBe('hello');
+    expect(csvField(null)).toBe('');
+  });
+
+  it('neutralizes an array whose flattened head is a trigger', () => {
+    expect(csvField(['=evil', 'b'])).toBe("'=evil; b");
+  });
+});
+
+describe('parseIntParam (NaN guard for limit/offset)', () => {
+  it('parses numeric strings and rejects everything else', () => {
+    expect(parseIntParam('50')).toBe(50);
+    expect(parseIntParam('0')).toBe(0);
+    expect(parseIntParam('12.9')).toBe(12); // truncated to an int
+    expect(parseIntParam('abc')).toBeUndefined(); // NaN must never reach SQL
+    expect(parseIntParam('1e309')).toBeUndefined(); // Infinity guarded too
+    expect(parseIntParam('')).toBeUndefined();
+    expect(parseIntParam(undefined)).toBeUndefined();
+  });
+
+  it('undefined falls back to the query default (no LIMIT NaN)', async () => {
+    const page = await querySubmissions(db, formId, { limit: parseIntParam('abc') });
+    expect(page.limit).toBe(25); // default, not NaN
+    expect(page.items.length).toBeGreaterThan(0);
   });
 });
