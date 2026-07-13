@@ -12,6 +12,8 @@ import {
   runtimeSteps,
   partialSubmitKey,
   nameFields,
+  isSafeHttpUrl,
+  isSafeImageUrl,
   type FormConfig,
   type FormStep,
 } from './form-logic';
@@ -249,5 +251,42 @@ describe('partialSubmitKey', () => {
   it('resolves the 1-based threshold step key or null', () => {
     expect(partialSubmitKey({ ...config, partialSubmitAfterStep: 4 })).toBe('email');
     expect(partialSubmitKey(config)).toBeNull();
+  });
+});
+
+describe('corporateEmailOnly validation parity (validateAnswer ⇄ validateAnswerCode)', () => {
+  // Both validators must agree on the SAME address — validateAnswer previously
+  // only checked PERSONAL_EMAIL_DOMAINS while validateAnswerCode used the fuller
+  // isPersonalEmail() (domain list + free-mail bases). Now both use isPersonalEmail().
+  const s = step({ key: 'e', type: 'email', corporateEmailOnly: true });
+  it.each([
+    ['user@msn.com', false], // free-mail base "msn"
+    ['user@hotmail.co.uk', false], // free-mail base "hotmail" on a cc-TLD
+    ['a@gmail.com', false], // exact personal domain
+    ['jane@acme.com', true], // corporate → accepted
+  ])('agrees on %s (accepted=%s)', (email, expectedOk) => {
+    expect(validateAnswer(s, email).ok).toBe(expectedOk);
+    expect(validateAnswerCode(s, email).ok).toBe(expectedOk);
+  });
+});
+
+describe('URL safety guards (XSS)', () => {
+  it('isSafeHttpUrl allows only http(s)', () => {
+    expect(isSafeHttpUrl('https://example.com/thanks')).toBe(true);
+    expect(isSafeHttpUrl('http://localhost:3000/x')).toBe(true);
+    expect(isSafeHttpUrl('  HTTPS://Example.com ')).toBe(true);
+    expect(isSafeHttpUrl('javascript:alert(1)')).toBe(false);
+    expect(isSafeHttpUrl('data:text/html,<script>alert(1)</script>')).toBe(false);
+    expect(isSafeHttpUrl('vbscript:msgbox(1)')).toBe(false);
+    expect(isSafeHttpUrl('/relative/path')).toBe(false);
+  });
+  it('isSafeImageUrl blocks script protocols but allows images/relative', () => {
+    expect(isSafeImageUrl('https://cdn.example.com/logo.png')).toBe(true);
+    expect(isSafeImageUrl('//cdn.example.com/logo.png')).toBe(true);
+    expect(isSafeImageUrl('/assets/logo.svg')).toBe(true);
+    expect(isSafeImageUrl('data:image/png;base64,iVBORw0KGgo=')).toBe(true);
+    expect(isSafeImageUrl('javascript:alert(1)')).toBe(false);
+    expect(isSafeImageUrl('vbscript:msgbox(1)')).toBe(false);
+    expect(isSafeImageUrl('data:text/html,<script>alert(1)</script>')).toBe(false);
   });
 });

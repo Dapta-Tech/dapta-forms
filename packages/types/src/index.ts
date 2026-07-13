@@ -5,7 +5,13 @@
  * from the same schema (never trust the client; validate on both sides).
  */
 import { z } from 'zod';
-import { FORM_FIELD_TYPES } from '@quill/engine';
+import { FORM_FIELD_TYPES, isSafeHttpUrl, isSafeImageUrl } from '@quill/engine';
+
+/** A URL rendered into `<img src>` — reject script protocols (XSS defense-in-depth). */
+const safeImageUrl = z
+  .string()
+  .max(2048)
+  .refine(isSafeImageUrl, { message: 'Image URL protocol not allowed.' });
 
 // --- Identity enums (kept from the platform, portable across SQLite & PG) ----
 
@@ -56,7 +62,7 @@ const sliderScoringSchema = z.object({
 
 const clientLogoSchema = z.object({
   name: z.string().min(1).max(80),
-  src: z.string().max(2048).nullable().optional(),
+  src: safeImageUrl.nullable().optional(),
 });
 
 export const formStepSchema = z.object({
@@ -105,13 +111,13 @@ export const formCoverSchema = z.object({
   subheadline: z.string().max(500).nullable().optional(),
   ctaText: z.string().max(80).nullable().optional(),
   trustBadge: z.string().max(200).nullable().optional(),
-  logo: z.string().max(2048).nullable().optional(),
+  logo: safeImageUrl.nullable().optional(),
   clientLogos: z.array(clientLogoSchema).max(24).optional(),
 });
 
 export const formBrandingSchema = z.object({
   primaryColor: z.string().max(32).nullable().optional(),
-  logo: z.string().max(2048).nullable().optional(),
+  logo: safeImageUrl.nullable().optional(),
   clientLogos: z.array(clientLogoSchema).max(24).optional(),
 });
 
@@ -125,7 +131,15 @@ export const formOutcomeSchema = z.object({
   id: z.string().min(1).max(64),
   label: z.string().min(1).max(200),
   minScore: z.number().int().optional(),
-  redirectUrl: z.string().url().nullable().optional(),
+  // http(s) only: the renderer navigates here (`window.location`), so a
+  // `javascript:`/`data:` URL — which `.url()` alone would accept — is a stored
+  // XSS vector. Guarded again at the sink in the renderer (belt-and-braces).
+  redirectUrl: z
+    .string()
+    .url()
+    .refine(isSafeHttpUrl, { message: 'redirectUrl must use http(s).' })
+    .nullable()
+    .optional(),
 });
 
 // --- Submission destinations (pluggable CRM / webhook sync) ------------------

@@ -274,11 +274,10 @@ export function validateAnswer(step: FormStep, value: AnswerValue): ValidationRe
     case 'email': {
       const email = String(value).trim().toLowerCase();
       if (!EMAIL_RE.test(email)) return { ok: false, error: 'Enter a valid email address.' };
-      if (step.corporateEmailOnly) {
-        const domain = email.split('@')[1] ?? '';
-        if (PERSONAL_EMAIL_DOMAINS.has(domain))
-          return { ok: false, error: 'Please use your work email address.' };
-      }
+      // Use the SAME personal-email test as validateAnswerCode (domain list +
+      // free-mail bases) so both validators agree on any given address.
+      if (step.corporateEmailOnly && isPersonalEmail(email))
+        return { ok: false, error: 'Please use your work email address.' };
       return { ok: true };
     }
     case 'phone': {
@@ -507,4 +506,32 @@ export function partialSubmitKey(config: FormConfig): string | null {
   const n = config.partialSubmitAfterStep;
   if (n == null || n < 1) return null;
   return config.steps[n - 1]?.key ?? null;
+}
+
+// ---------------------------------------------------------------------------
+// URL safety (XSS). Shared by the zod config schema (server-side validation on
+// save) AND the public renderer (a runtime guard before navigating). Belt-and-
+// braces: a config could reach the renderer from an older/looser source, so the
+// sink is guarded too — never assign a non-http(s) URL to `window.location`.
+// ---------------------------------------------------------------------------
+
+/**
+ * True only for http(s) URLs — the allowlist for anything assigned to
+ * `window.location` (e.g. an outcome `redirectUrl`). Rejects `javascript:`,
+ * `data:`, `vbscript:`, etc., which `URL`/zod `.url()` would otherwise accept.
+ */
+export function isSafeHttpUrl(url: string): boolean {
+  return /^https?:\/\//i.test(url.trim());
+}
+
+/**
+ * True for URLs safe to render into an `<img src>`: http(s), protocol-relative
+ * (`//host`), root/relative paths, and `data:image/…` URIs. Rejects script
+ * protocols (`javascript:`/`vbscript:`) and non-image `data:` payloads.
+ */
+export function isSafeImageUrl(url: string): boolean {
+  const s = url.trim().toLowerCase();
+  if (s.startsWith('javascript:') || s.startsWith('vbscript:')) return false;
+  if (s.startsWith('data:') && !s.startsWith('data:image/')) return false;
+  return true;
 }

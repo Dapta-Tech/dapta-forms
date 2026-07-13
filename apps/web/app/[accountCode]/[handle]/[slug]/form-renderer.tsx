@@ -18,6 +18,7 @@ import {
   resolveOutcome,
   partialSubmitKey,
   nameFields,
+  isSafeHttpUrl,
   type Answers,
   type AnswerValue,
   type FormStep,
@@ -162,8 +163,14 @@ export function FormRenderer({
       const score = res.score ?? 0;
       const outcome = resolveOutcome(engineConfig, score);
       if (outcome?.redirectUrl) {
-        window.location.href = outcome.redirectUrl;
-        return;
+        // Runtime XSS guard: only navigate to http(s). A non-http(s) protocol
+        // (javascript:/data:) is ignored + logged, falling through to the
+        // thank-you screen (the schema also rejects it on save — belt-and-braces).
+        if (isSafeHttpUrl(outcome.redirectUrl)) {
+          window.location.href = outcome.redirectUrl;
+          return;
+        }
+        console.warn('[forms] ignored non-http(s) redirectUrl');
       }
       setDone({ score, outcome: res.outcome ?? null });
       setPhase('done');
@@ -280,13 +287,20 @@ export function FormRenderer({
     }
   }
 
+  // Latest finalize + answers via refs so the reveal timer arms once per
+  // reveal-phase entry (not on every answers change) without a stale closure.
+  const finalizeRef = useRef(finalize);
+  finalizeRef.current = finalize;
+  const answersRef = useRef(answers);
+  answersRef.current = answers;
+
   // Drive the reveal interstitial: after REVEAL_MS, continue or finalize.
   useEffect(() => {
     if (phase !== 'reveal') return;
     const timer = setTimeout(() => {
       if (submitAfterReveal.current) {
         submitAfterReveal.current = false;
-        void finalize(answers);
+        void finalizeRef.current(answersRef.current);
       } else {
         setAnimKey((k) => k + 1);
         setPhase('steps');
