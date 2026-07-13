@@ -15,9 +15,11 @@ import type { Db } from '@quill/db';
 import { HealthController, DocsController } from './controllers';
 import { PublicController } from './public.controller';
 import { AdminCrudController } from './admin-crud.controller';
+import { AnalyticsController } from './analytics.controller';
+import { AnalyticsService } from './analytics.service';
 
 @Module({
-  controllers: [HealthController, DocsController, PublicController, AdminCrudController],
+  controllers: [HealthController, DocsController, PublicController, AdminCrudController, AnalyticsController],
   providers: [
     { provide: ENV, useFactory: () => loadServerEnv() },
     { provide: DB, useFactory: () => createDb() },
@@ -68,6 +70,7 @@ import { AdminCrudController } from './admin-crud.controller';
     { provide: RATE_LIMITER, useFactory: (env: ServerEnv) => createRateLimiter(env), inject: [ENV] },
     RateLimitGuard,
     SubmissionService,
+    AnalyticsService,
     AdminService,
     AuthService,
     EmailEffects,

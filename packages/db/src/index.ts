@@ -6,6 +6,7 @@
 export * from './client';
 export * from './crud';
 export * from './forms';
+export * from './analytics';
 export * from './members';
 export * from './short-links';
 export * from './outbox';

@@ -196,6 +196,69 @@ export const formEventSchema = z.object({
 });
 export type FormEventInput = z.infer<typeof formEventSchema>;
 
+// --- Analytics (funnel + per-step drop-off) ----------------------------------
+// ADDITIVE: new exports only. These describe the admin analytics dashboard
+// response (GET /v1/forms/:id/analytics) — a funnel summary plus a
+// question-by-question drop-off table (a cover row + one row per configured
+// step). Computed server-side from form_event + submission; works identically
+// on SQLite and Postgres.
+
+/** One row of the question-by-question drop-off table. */
+export const dropoffRowSchema = z.object({
+  /** -1 for the synthetic cover/landing row, otherwise the 0-based step index. */
+  stepIndex: z.number().int(),
+  /** The step's field key (null for the cover row). */
+  key: z.string().nullable(),
+  /** Human label for the row (the step question, or the cover title). */
+  question: z.string(),
+  /** True for the synthetic cover/landing row. */
+  isCover: z.boolean(),
+  /** Sessions that viewed this step (form views for the cover row). */
+  views: z.number().int(),
+  /** Sessions lost between this row and the next (never negative). */
+  dropoff: z.number().int(),
+  /** Drop-off as a percentage of this row's views (1 decimal). */
+  dropoffPercent: z.number(),
+});
+export type DropoffRow = z.infer<typeof dropoffRowSchema>;
+
+/** The funnel summary + drop-off table for a form over an optional date range. */
+export const analyticsResponseSchema = z.object({
+  /** Count of `view` events. */
+  views: z.number().int(),
+  /** Count of `start` events. */
+  starts: z.number().int(),
+  /** Count of completed submissions (completedAt set). */
+  submissions: z.number().int(),
+  /** submissions / starts as a percentage (1 decimal); 0 when starts=0. */
+  completionRate: z.number(),
+  /** Average seconds from startedAt→completedAt over completed submissions. */
+  avgTimeToComplete: z.number().int(),
+  /** Partial-only submissions (partialAt set, completedAt null). */
+  partialSubmits: z.number().int(),
+  /** Cover row + one row per configured step. */
+  dropoff: z.array(dropoffRowSchema),
+  /** Echoes the resolved range (epoch ms) so the client can render it. */
+  range: z.object({ from: z.number().nullable(), to: z.number().nullable() }),
+});
+export type AnalyticsResponse = z.infer<typeof analyticsResponseSchema>;
+
+// --- Submissions listing (paginated + filtered) ------------------------------
+// ADDITIVE: the admin submissions table response. `status` narrows to complete
+// or partial; `from`/`to` bound by startedAt; `limit`/`offset` paginate.
+
+export const submissionStatusFilter = ['all', 'completed', 'partial'] as const;
+export type SubmissionStatusFilter = (typeof submissionStatusFilter)[number];
+
+export const submissionsPageSchema = z.object({
+  items: z.array(submissionViewSchema),
+  /** Total rows matching the filter (before pagination). */
+  total: z.number().int(),
+  limit: z.number().int(),
+  offset: z.number().int(),
+});
+export type SubmissionsPage = z.infer<typeof submissionsPageSchema>;
+
 // --- Member management (workspace roster) ------------------------------------
 
 export const memberInviteSchema = z.object({

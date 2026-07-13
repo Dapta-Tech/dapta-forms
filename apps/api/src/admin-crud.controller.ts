@@ -12,6 +12,7 @@ import {
   Patch,
   Post,
   Put,
+  Query,
   Req,
 } from '@nestjs/common';
 import type { Db } from '@quill/db';
@@ -34,8 +35,10 @@ import { formInputSchema, memberInviteSchema, memberPatchSchema } from '@quill/t
 import { ZodError } from 'zod';
 import { AdminService } from './admin.service';
 import { SubmissionService } from './submission.service';
+import { AnalyticsService } from './analytics.service';
 import { AuthService, type ReqLike } from './auth.service';
 import { assertAdmin, assertCanManageTarget, assertNotSelf } from './permissions';
+import { parseBound, parseStatus } from './query-params';
 import { DB } from './tokens';
 
 function parse<T>(schema: { parse: (v: unknown) => T }, body: unknown): T {
@@ -62,6 +65,7 @@ export class AdminCrudController {
     @Inject(AuthService) private readonly auth: AuthService,
     @Inject(AdminService) private readonly admin: AdminService,
     @Inject(SubmissionService) private readonly submissions: SubmissionService,
+    @Inject(AnalyticsService) private readonly analytics: AnalyticsService,
   ) {}
 
   // --- Identity ----------------------------------------------------------
@@ -132,12 +136,32 @@ export class AdminCrudController {
     await deleteForm(this.db, p.accountId, id);
   }
 
+  /**
+   * A page of a form's submissions. Optional query: `status`
+   * (all|completed|partial), `from`/`to` (epoch ms or YYYY-MM-DD, bound by
+   * startedAt), `limit`/`offset`. Returns a paginated envelope `{ items, total,
+   * limit, offset }` so the admin table can render page counts.
+   */
   @Get('forms/:id/submissions')
-  async formSubmissions(@Req() req: ReqLike, @Param('id') id: string) {
+  async formSubmissions(
+    @Req() req: ReqLike,
+    @Param('id') id: string,
+    @Query('status') status?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('limit') limit?: string,
+    @Query('offset') offset?: string,
+  ) {
     const p = await this.auth.resolveHost(req);
     const f = await getFormById(this.db, p.accountId, id);
     if (!f) throw new NotFoundException({ error: 'NOT_FOUND', message: 'Not found.' });
-    return this.submissions.listSubmissions(id);
+    return this.analytics.submissionsPage(id, {
+      status: parseStatus(status),
+      from: parseBound(from, false),
+      to: parseBound(to, true),
+      limit: limit ? Number(limit) : undefined,
+      offset: offset ? Number(offset) : undefined,
+    });
   }
 
   // --- Members (workspace roster; admin/owner-only) ----------------------
