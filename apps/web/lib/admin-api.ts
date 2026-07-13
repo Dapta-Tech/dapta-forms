@@ -5,7 +5,7 @@
  * into a redirect to /login.
  */
 import { redirect } from 'next/navigation';
-import type { FormConfig } from '@quill/types';
+import type { AnalyticsResponse, FormConfig, FormDestination, SubmissionsPage } from '@quill/types';
 import { getSession, clearSession, authProvider } from './auth-session';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
@@ -107,7 +107,42 @@ export interface AccountMember {
   createdAt: number;
 }
 
+export type { AnalyticsResponse, SubmissionsPage } from '@quill/types';
+
+export interface SubmissionsQuery {
+  status?: 'all' | 'completed' | 'partial';
+  from?: number;
+  to?: number;
+  limit?: number;
+  offset?: number;
+}
+
+/** Build a `?a=b&…` string from defined params only. */
+function qs(params: Record<string, string | number | undefined | null>): string {
+  const sp = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (v === undefined || v === null || v === '') continue;
+    sp.set(k, String(v));
+  }
+  const s = sp.toString();
+  return s ? `?${s}` : '';
+}
+
 export const isAdminRole = (role: AccountRole): boolean => role === 'owner' || role === 'admin';
+
+/** A HubSpot contact property surfaced to the mapping UI. */
+export interface HubSpotProperty {
+  name: string;
+  label: string;
+  type: string;
+}
+
+/** The property-picker response: disabled (no server token) or the property list. */
+export type HubSpotPropertiesResponse =
+  | { enabled: false; reason: string }
+  | { enabled: true; cached: boolean; properties: HubSpotProperty[] };
+
+export type { FormDestination };
 
 export const adminApi = {
   me: () => req<Me>('GET', '/v1/me'),
@@ -122,7 +157,20 @@ export const adminApi = {
     req<FormDetail>('PUT', `/v1/forms/${id}`, b),
   duplicateForm: (id: string) => req<FormDetail>('POST', `/v1/forms/${id}/duplicate`),
   deleteForm: (id: string) => req<void>('DELETE', `/v1/forms/${id}`),
-  listSubmissions: (id: string) => req<Submission[]>('GET', `/v1/forms/${id}/submissions`),
+
+  // Analytics + submissions (this track)
+  getAnalytics: (id: string, range: { from?: number; to?: number } = {}) =>
+    req<AnalyticsResponse>('GET', `/v1/forms/${id}/analytics${qs(range)}`),
+  listSubmissions: (id: string, q: SubmissionsQuery = {}) =>
+    req<SubmissionsPage>('GET', `/v1/forms/${id}/submissions${qs({ ...q })}`),
+  deleteSubmission: (id: string) => req<void>('DELETE', `/v1/submissions/${id}`),
+
+  // Integrations
+  hubspotProperties: () =>
+    req<HubSpotPropertiesResponse>('GET', '/v1/integrations/hubspot/properties'),
+  /** Partial write: replaces ONLY the config's `destinations` key server-side. */
+  updateFormDestinations: (id: string, destinations: FormDestination[]) =>
+    req<FormDetail>('PUT', `/v1/forms/${id}/destinations`, { destinations }),
 
   // Members (workspace roster — admin/owner only)
   listMembers: () => req<AccountMember[]>('GET', '/v1/members'),

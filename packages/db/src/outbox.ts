@@ -26,7 +26,13 @@ import { randomUUID } from 'node:crypto';
 import { sql } from 'drizzle-orm';
 import type { Db } from './client';
 
-export type OutboxKind = 'webhook' | 'email';
+/**
+ * `email` = submission lifecycle emails; `webhook`/`hubspot` = pluggable
+ * submission destinations (drained by the same worker + retry machinery). Adding
+ * a destination kind here is all the queue needs — the delivery logic lives in
+ * the API's DestinationEffects.
+ */
+export type OutboxKind = 'webhook' | 'email' | 'hubspot';
 /**
  * `skipped` = deliberately not performed (e.g. an email row whose tenant
  * context is unrecoverable on a transport that requires it) — recorded ONCE

@@ -5,7 +5,13 @@
  * from the same schema (never trust the client; validate on both sides).
  */
 import { z } from 'zod';
-import { FORM_FIELD_TYPES } from '@quill/engine';
+import { FORM_FIELD_TYPES, isSafeHttpUrl, isSafeImageUrl } from '@quill/engine';
+
+/** A URL rendered into `<img src>` — reject script protocols (XSS defense-in-depth). */
+const safeImageUrl = z
+  .string()
+  .max(2048)
+  .refine(isSafeImageUrl, { message: 'Image URL protocol not allowed.' });
 
 // --- Identity enums (kept from the platform, portable across SQLite & PG) ----
 
@@ -54,6 +60,11 @@ const sliderScoringSchema = z.object({
   points: z.number().int(),
 });
 
+const clientLogoSchema = z.object({
+  name: z.string().min(1).max(80),
+  src: safeImageUrl.nullable().optional(),
+});
+
 export const formStepSchema = z.object({
   key: z.string().min(1).max(64),
   type: z.enum(formFieldType),
@@ -74,32 +85,143 @@ export const formStepSchema = z.object({
   flowGroup: z.enum(['qualification', 'lead_capture']).optional(),
   corporateEmailOnly: z.boolean().optional(),
   phoneMinDigits: z.number().int().positive().optional(),
+  // --- Builder + runtime extensions (all optional; back-compat) -------------
+  /** Dynamic question: pick the text from the answer to this earlier field. */
+  questionField: z.string().min(1).max(64).nullable().optional(),
+  /** value → question text (a `*` key is the fallback); `[field]` interpolated. */
+  questionVariants: z.record(z.string(), z.string().max(500)).optional(),
+  fields: z.array(z.string().min(1).max(64)).max(4).optional(),
+  placeholders: z.record(z.string(), z.string().max(200)).optional(),
+  sliderLabelVariants: z.record(z.string(), z.string().max(80)).optional(),
+  sliderUnitLabel: z.string().max(80).nullable().optional(),
+  showIcons: z.boolean().optional(),
+  showForPersonalEmailOnly: z.boolean().optional(),
+  terminal: z.boolean().optional(),
+  triggersReveal: z.boolean().optional(),
 });
 export type FormStepInput = z.infer<typeof formStepSchema>;
 
 export const formCoverSchema = z.object({
   enabled: z.boolean().optional(),
+  /** A sticky banner line shown above the form throughout the flow. */
+  bannerText: z.string().max(200).nullable().optional(),
   eyebrow: z.string().max(200).nullable().optional(),
+  badge: z.string().max(200).nullable().optional(),
   headline: z.string().max(300).nullable().optional(),
   subheadline: z.string().max(500).nullable().optional(),
   ctaText: z.string().max(80).nullable().optional(),
   trustBadge: z.string().max(200).nullable().optional(),
+  logo: safeImageUrl.nullable().optional(),
+  clientLogos: z.array(clientLogoSchema).max(24).optional(),
+});
+
+export const formBrandingSchema = z.object({
+  primaryColor: z.string().max(32).nullable().optional(),
+  logo: safeImageUrl.nullable().optional(),
+  clientLogos: z.array(clientLogoSchema).max(24).optional(),
+});
+
+export const formRevealSchema = z.object({
+  enabled: z.boolean().optional(),
+  headline: z.string().max(300).nullable().optional(),
+  subtitle: z.string().max(500).nullable().optional(),
 });
 
 export const formOutcomeSchema = z.object({
   id: z.string().min(1).max(64),
   label: z.string().min(1).max(200),
   minScore: z.number().int().optional(),
-  redirectUrl: z.string().url().nullable().optional(),
+  // http(s) only: the renderer navigates here (`window.location`), so a
+  // `javascript:`/`data:` URL — which `.url()` alone would accept — is a stored
+  // XSS vector. Guarded again at the sink in the renderer (belt-and-braces).
+  redirectUrl: z
+    .string()
+    .url()
+    .refine(isSafeHttpUrl, { message: 'redirectUrl must use http(s).' })
+    .nullable()
+    .optional(),
 });
+
+// --- Submission destinations (pluggable CRM / webhook sync) ------------------
+
+/** The configurable destination kinds a form may deliver submissions to. */
+export const destinationType = ['webhook', 'hubspot'] as const;
+export type DestinationType = (typeof destinationType)[number];
+
+/** A property map: form stepKey / utmKey -> external property name. */
+const propertyMapSchema = z.record(z.string().min(1).max(200), z.string().min(1).max(200));
+
+/**
+ * Webhook destination — POST each submission as JSON to a URL, optionally HMAC
+ * signed. The secret is server-side config, never leaked to the public renderer
+ * (the API strips `destinations` before serving a public form).
+ */
+export const webhookDestinationSchema = z.object({
+  type: z.literal('webhook'),
+  enabled: z.boolean().default(false),
+  settings: z.object({
+    // https-only, with ONE exception: plain http for localhost/127.0.0.1 (local
+    // dev catcher). Mirrors the admin UI validation — keep the two in sync.
+    url: z
+      .string()
+      .url()
+      .refine(
+        // Already a valid URL per .url(); prefix checks avoid the URL global
+        // (not in this package's lib set).
+        (v) => v.startsWith('https://') || /^http:\/\/(localhost|127\.0\.0\.1)([:/?#]|$)/.test(v),
+        { message: 'Webhook URL must use https (plain http is allowed only for localhost).' },
+      ),
+    /** HMAC-SHA256 signing secret (optional). */
+    secret: z.string().max(500).nullable().optional(),
+    /** Header the signature is sent in (defaults to `X-Quill-Signature`). */
+    signatureHeader: z.string().max(128).nullable().optional(),
+    /** Per-request timeout in ms (defaults to 10s). */
+    timeoutMs: z.number().int().positive().max(60_000).optional(),
+  }),
+});
+export type WebhookDestination = z.infer<typeof webhookDestinationSchema>;
+
+/**
+ * HubSpot destination — upsert the respondent as a contact and (on complete)
+ * attach a Note. The private-app token is a server-side env secret
+ * (`HUBSPOT_PRIVATE_APP_TOKEN`), NOT stored in the form config.
+ */
+export const hubspotDestinationSchema = z.object({
+  type: z.literal('hubspot'),
+  enabled: z.boolean().default(false),
+  settings: z.object({ note: z.boolean().optional() }).default({}),
+  /** stepKey -> contact property (one property SHOULD be `email`). */
+  fieldMappings: propertyMapSchema.default({}),
+  /** utm_source/medium/campaign/term/content -> contact property. */
+  utmMappings: propertyMapSchema.default({}),
+  /** Contact property to receive the score (complete submissions). */
+  scoreProperty: z.string().max(200).nullable().optional(),
+  /** Contact date property to receive the submitted date. */
+  dateProperty: z.string().max(200).nullable().optional(),
+});
+export type HubspotDestination = z.infer<typeof hubspotDestinationSchema>;
+
+export const formDestinationSchema = z.discriminatedUnion('type', [
+  webhookDestinationSchema,
+  hubspotDestinationSchema,
+]);
+export type FormDestination = z.infer<typeof formDestinationSchema>;
 
 /** The versioned config blob. `version` gates future migrations of the shape. */
 export const formConfigSchema = z.object({
   version: z.literal(1),
+  branding: formBrandingSchema.nullable().optional(),
   cover: formCoverSchema.nullable().optional(),
   steps: z.array(formStepSchema).default([]),
   scoring: z.object({ enabled: z.boolean().optional() }).nullable().optional(),
   outcomes: z.array(formOutcomeSchema).optional(),
+  /**
+   * Pluggable submission destinations (CRM/webhook sync via the durable outbox).
+   * ADDITIVE — absent on every legacy config; the renderer never receives it.
+   */
+  destinations: z.array(formDestinationSchema).optional(),
+  reveal: formRevealSchema.nullable().optional(),
+  partialSubmitAfterStep: z.number().int().positive().optional(),
 });
 export type FormConfig = z.infer<typeof formConfigSchema>;
 
@@ -137,10 +259,22 @@ export type PublicForm = z.infer<typeof publicFormSchema>;
 
 // --- Submissions -------------------------------------------------------------
 
-/** One submission's answers: fieldName -> value. */
+/**
+ * One submission's answers: fieldName -> value. Most values are scalars (or a
+ * string[] for multi-select); the reserved `utm` key carries a flat string map
+ * of the URL's `utm_*` params (additive — captured from the public URL, never a
+ * new column: it rides inside the free-form answers JSON).
+ */
 export const submissionAnswersSchema = z.record(
   z.string(),
-  z.union([z.string(), z.number(), z.boolean(), z.array(z.string()), z.null()]),
+  z.union([
+    z.string(),
+    z.number(),
+    z.boolean(),
+    z.array(z.string()),
+    z.record(z.string(), z.string()),
+    z.null(),
+  ]),
 );
 export type SubmissionAnswers = z.infer<typeof submissionAnswersSchema>;
 
@@ -183,6 +317,69 @@ export const formEventSchema = z.object({
   stepIndex: z.number().int().min(0).nullable().optional(),
 });
 export type FormEventInput = z.infer<typeof formEventSchema>;
+
+// --- Analytics (funnel + per-step drop-off) ----------------------------------
+// ADDITIVE: new exports only. These describe the admin analytics dashboard
+// response (GET /v1/forms/:id/analytics) — a funnel summary plus a
+// question-by-question drop-off table (a cover row + one row per configured
+// step). Computed server-side from form_event + submission; works identically
+// on SQLite and Postgres.
+
+/** One row of the question-by-question drop-off table. */
+export const dropoffRowSchema = z.object({
+  /** -1 for the synthetic cover/landing row, otherwise the 0-based step index. */
+  stepIndex: z.number().int(),
+  /** The step's field key (null for the cover row). */
+  key: z.string().nullable(),
+  /** Human label for the row (the step question, or the cover title). */
+  question: z.string(),
+  /** True for the synthetic cover/landing row. */
+  isCover: z.boolean(),
+  /** Sessions that viewed this step (form views for the cover row). */
+  views: z.number().int(),
+  /** Sessions lost between this row and the next (never negative). */
+  dropoff: z.number().int(),
+  /** Drop-off as a percentage of this row's views (1 decimal). */
+  dropoffPercent: z.number(),
+});
+export type DropoffRow = z.infer<typeof dropoffRowSchema>;
+
+/** The funnel summary + drop-off table for a form over an optional date range. */
+export const analyticsResponseSchema = z.object({
+  /** Count of `view` events. */
+  views: z.number().int(),
+  /** Count of `start` events. */
+  starts: z.number().int(),
+  /** Count of completed submissions (completedAt set). */
+  submissions: z.number().int(),
+  /** submissions / starts as a percentage (1 decimal); 0 when starts=0. */
+  completionRate: z.number(),
+  /** Average seconds from startedAt→completedAt over completed submissions. */
+  avgTimeToComplete: z.number().int(),
+  /** Partial-only submissions (partialAt set, completedAt null). */
+  partialSubmits: z.number().int(),
+  /** Cover row + one row per configured step. */
+  dropoff: z.array(dropoffRowSchema),
+  /** Echoes the resolved range (epoch ms) so the client can render it. */
+  range: z.object({ from: z.number().nullable(), to: z.number().nullable() }),
+});
+export type AnalyticsResponse = z.infer<typeof analyticsResponseSchema>;
+
+// --- Submissions listing (paginated + filtered) ------------------------------
+// ADDITIVE: the admin submissions table response. `status` narrows to complete
+// or partial; `from`/`to` bound by startedAt; `limit`/`offset` paginate.
+
+export const submissionStatusFilter = ['all', 'completed', 'partial'] as const;
+export type SubmissionStatusFilter = (typeof submissionStatusFilter)[number];
+
+export const submissionsPageSchema = z.object({
+  items: z.array(submissionViewSchema),
+  /** Total rows matching the filter (before pagination). */
+  total: z.number().int(),
+  limit: z.number().int(),
+  offset: z.number().int(),
+});
+export type SubmissionsPage = z.infer<typeof submissionsPageSchema>;
 
 // --- Member management (workspace roster) ------------------------------------
 

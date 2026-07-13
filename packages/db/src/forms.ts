@@ -231,6 +231,33 @@ export async function updateForm(
   return { ok: true, value: (await getFormById(db, accountId, id))! };
 }
 
+/**
+ * Replace ONLY the `destinations` key of a form's config, merging against the
+ * row's FRESH config in one server-side call — so the integrations screen never
+ * clobbers steps/cover/scoring saved by a concurrent editor session (the web
+ * tier no longer does its own read-then-write across two requests).
+ *
+ * NOTE (optimistic locking): without a config version / compare-and-set, a
+ * concurrent FULL-config save can still interleave between this read and write.
+ * That general problem applies to every config writer and is out of scope here;
+ * full config versioning is tracked separately.
+ */
+export async function updateFormDestinations(
+  db: Db,
+  accountId: string,
+  id: string,
+  destinations: unknown[],
+): Promise<CrudResult<FormRow>> {
+  const existing = await getFormById(db, accountId, id);
+  if (!existing) return { ok: false, reason: 'NOT_FOUND' };
+  const config = { ...(existing.config as Record<string, unknown>), destinations };
+  await db.run(
+    sql`UPDATE form SET config = ${jsonParam(config)}, updated_at = ${Date.now()}
+        WHERE account_id = ${accountId} AND id = ${id}`,
+  );
+  return { ok: true, value: (await getFormById(db, accountId, id))! };
+}
+
 export async function duplicateForm(
   db: Db,
   accountId: string,
@@ -321,13 +348,19 @@ export async function upsertSubmission(
   },
 ): Promise<SubmissionRow> {
   const now = input.now ?? Date.now();
-  const existing = await db.get<{ id: string; started_at: number }>(
-    sql`SELECT id, started_at FROM submission
+  const existing = await db.get<{ id: string; started_at: number; completed_at: number | null }>(
+    sql`SELECT id, started_at, completed_at FROM submission
         WHERE form_id = ${input.formId} AND session_id = ${input.sessionId} LIMIT 1`,
   );
   const completedAt = input.partial ? null : now;
   const partialAt = input.partial ? now : null;
   if (existing) {
+    // Reorder guard: a fire-and-forget partial can land AFTER the complete
+    // submit. Once a row is completed, only a complete submit may update it —
+    // a late partial must NOT overwrite the finalized data/score.
+    if (input.partial && existing.completed_at != null) {
+      return (await getSubmissionById(db, existing.id))!;
+    }
     await db.run(
       sql`UPDATE submission
           SET data = ${jsonParam(input.data)}, score = ${input.score},

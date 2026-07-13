@@ -7,6 +7,7 @@ import { SubmissionService } from './submission.service';
 import { AdminService } from './admin.service';
 import { AuthService } from './auth.service';
 import { EmailEffects } from './email-effects';
+import { DestinationEffects } from './destination-effects';
 import { OutboxWorker } from './outbox.worker';
 import { RateLimitGuard, createRateLimiter } from './rate-limit';
 import { resolveEntitlementsProvider } from './entitlements.provider';
@@ -15,9 +16,24 @@ import type { Db } from '@quill/db';
 import { HealthController, DocsController } from './controllers';
 import { PublicController } from './public.controller';
 import { AdminCrudController } from './admin-crud.controller';
+import { AnalyticsController } from './analytics.controller';
+import { AnalyticsService } from './analytics.service';
+import {
+  FormDestinationsController,
+  HubspotPropertiesService,
+  IntegrationsController,
+} from './integrations.controller';
 
 @Module({
-  controllers: [HealthController, DocsController, PublicController, AdminCrudController],
+  controllers: [
+    HealthController,
+    DocsController,
+    PublicController,
+    AdminCrudController,
+    AnalyticsController,
+    IntegrationsController,
+    FormDestinationsController,
+  ],
   providers: [
     { provide: ENV, useFactory: () => loadServerEnv() },
     { provide: DB, useFactory: () => createDb() },
@@ -68,11 +84,22 @@ import { AdminCrudController } from './admin-crud.controller';
     { provide: RATE_LIMITER, useFactory: (env: ServerEnv) => createRateLimiter(env), inject: [ENV] },
     RateLimitGuard,
     SubmissionService,
+    AnalyticsService,
     AdminService,
     AuthService,
     EmailEffects,
-    // Drains the durable outbox (submission emails) with retry+backoff — no
-    // silent loss on a provider outage (B1/B7/DM1).
+    // Fans submissions out to enabled destinations (webhook/HubSpot) via the
+    // durable outbox; delivery never blocks or fails submission handling.
+    DestinationEffects,
+    // Server-side HubSpot property lookup for the mapping UI (5-min cache, clear
+    // disabled state without a token). Factory so `fetch` isn't DI-reflected.
+    {
+      provide: HubspotPropertiesService,
+      useFactory: (env: ServerEnv) => new HubspotPropertiesService(env),
+      inject: [ENV],
+    },
+    // Drains the durable outbox (submission emails + destinations) with
+    // retry+backoff — no silent loss on a provider outage (B1/B7/DM1).
     OutboxWorker,
   ],
 })
