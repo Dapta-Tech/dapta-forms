@@ -1,0 +1,14 @@
+{
+  "extends": "@slate/config/tsconfig/base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "src",
+    "types": ["node"],
+    // The engine is a verbatim carry-over with its own established unit-test
+    // suite; it predates noUncheckedIndexedAccess. Relaxed here (only here) so
+    // the crown-jewel logic stays byte-for-byte identical rather than reshaped.
+    "noUncheckedIndexedAccess": false
+  },
+  "include": ["src/**/*"],
+  "exclude": ["**/*.spec.ts", "dist", "node_modules"]
+}

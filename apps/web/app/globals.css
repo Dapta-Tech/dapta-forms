@@ -1,0 +1,198 @@
+@import 'tailwindcss';
+
+/* Ported design tokens (dark-first) — the shadcn CSS-variable contract. */
+@import '@slate/shared/tokens.css';
+
+/* Map the token variables into Tailwind's theme so components use semantic
+   utilities (bg-background, text-foreground, bg-primary, border-border …) —
+   never arbitrary values or raw hex. */
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --radius-md: var(--radius);
+  /* Poppins is the brand font, self-hosted via next/font (--font-poppins);
+     falls back to a system stack if the variable is ever absent. */
+  --font-sans: var(--font-poppins), 'Poppins', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+
+* {
+  border-color: var(--border);
+}
+
+html,
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Lime focus ring (WCAG) honored everywhere. */
+:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+/* Themed scrollbars app-wide — a native white track on the dark theme is an
+   automatic FAIL (Design Quality Bar §1). Thin, on-surface, transparent track;
+   applies to the page and every overflow region (Firefox + WebKit). */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--muted-foreground);
+  background-clip: padding-box;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * Booking-page branding classes (R25). The .branded-surface wrapper carries
+ * brandingClassOf() output + the --bp-* custom properties (widgetStyleVars).
+ * These rules make ALL 9 axes reach the DOM so the studio preview == the live
+ * public page. Corners/buttons/density/font come from the vars; cardStyle/
+ * slotLayout/dayGroup/slotSelect/template come from these classes.
+ * ------------------------------------------------------------------------- */
+.branded-surface {
+  font-family: var(--bp-font-body);
+}
+.branded-surface .bp-card {
+  border-radius: var(--bp-radius);
+  padding: var(--bp-pad);
+}
+/* cardStyle */
+.branded-surface.card-outline .bp-card {
+  border: 1px solid var(--border);
+  background: var(--card);
+}
+.branded-surface.card-elevated .bp-card {
+  border: none;
+  background: var(--card);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+}
+.branded-surface.card-filled .bp-card {
+  border: none;
+  background: var(--accent-soft);
+}
+/* slotLayout */
+.branded-surface .bp-slots {
+  display: grid;
+  gap: var(--bp-gap);
+}
+.branded-surface.slots-grid .bp-slots {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+@media (min-width: 640px) {
+  .branded-surface.slots-grid .bp-slots {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+.branded-surface.slots-list .bp-slots {
+  grid-template-columns: 1fr;
+}
+/* dayGroup */
+.branded-surface .bp-day + .bp-day {
+  margin-top: var(--bp-gap);
+}
+.branded-surface.day-boxed .bp-day {
+  border: 1px solid var(--border);
+  border-radius: var(--bp-radius);
+  padding: var(--bp-pad);
+}
+/* Sticky day header (Design Quality Bar §3) — grouped slots always keep their
+   date context as the page scrolls; never a row of orphan "AM" fragments. */
+.branded-surface .bp-day > h3 {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--background);
+  padding-block: 0.375rem;
+}
+/* slot chip base + selected treatment (slotSelect). Fixed height + never-wrap
+   text → a consistent grid of single-line "11:00 AM" buttons (Bar §4). */
+.branded-surface .bp-slot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.75rem; /* 44px hit target (R28) */
+  border: 1px solid var(--border);
+  border-radius: var(--bp-btn-radius);
+  padding: var(--bp-slot-pad);
+  background: var(--card);
+  text-align: center;
+  white-space: nowrap;
+  transition:
+    transform 120ms var(--ease-standard, ease),
+    border-color 120ms var(--ease-standard, ease);
+}
+.branded-surface .bp-slot:hover {
+  border-color: var(--accent);
+}
+.branded-surface .bp-slot:active {
+  transform: scale(0.97);
+}
+/* Selected: unmistakable at a glance (Bar §5) — accent ring + fill + weight,
+   both slotSelect axes. */
+.branded-surface.sel-soft .bp-slot[aria-pressed='true'] {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+  color: var(--foreground);
+  font-weight: 600;
+}
+.branded-surface.sel-solid .bp-slot[aria-pressed='true'] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-contrast);
+  font-weight: 600;
+}
+/* accent buttons on branded surfaces */
+.branded-surface .bp-btn {
+  border-radius: var(--bp-btn-radius);
+  background: var(--accent);
+  color: var(--accent-contrast);
+}
+/* template: banded shows a cover band; split widens the canvas */
+.branded-surface.tpl-banded .bp-cover {
+  height: 7rem;
+}
+.branded-surface.tpl-split .bp-canvas {
+  max-width: 44rem;
+}

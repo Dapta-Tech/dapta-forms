@@ -1,0 +1,16 @@
+node_modules
+**/node_modules
+.git
+.turbo
+**/.turbo
+**/dist
+**/.next
+.data
+*.db
+*.db-*
+.env
+.env.*
+!.env.example
+deploy
+.design-shots
+coverage

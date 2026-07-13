@@ -1,0 +1,29 @@
+# Full local Postgres parity — the "trust Postgres" dev mode.
+#
+#   docker compose up -d db     # or: pnpm dev:pg  (starts this, migrates, seeds, runs the apps)
+#
+# `pnpm dev` (no compose) uses SQLite for a 30-second zero-infra start. This
+# mode gives you the SAME database engine as CI and production (managed Postgres), so the
+# GiST EXCLUDE double-booking guarantee is exercised locally.
+services:
+  db:
+    image: postgres:16
+    container_name: slate-postgres
+    environment:
+      POSTGRES_USER: slate
+      POSTGRES_PASSWORD: slate
+      POSTGRES_DB: slate
+    # Host port is configurable so it doesn't collide with a local Postgres
+    # (e.g. Homebrew on 5432): set PG_PORT to remap. Container port stays 5432.
+    ports:
+      - '${PG_PORT:-5432}:5432'
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U slate -d slate']
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    volumes:
+      - slate-pgdata:/var/lib/postgresql/data
+
+volumes:
+  slate-pgdata:

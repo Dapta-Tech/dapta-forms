@@ -1,0 +1,55 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build output
+dist/
+build/
+.next/
+out/
+*.tsbuildinfo
+
+# Turbo
+.turbo/
+
+# Local database (SQLite) & data
+.data/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+
+# Environment & secrets — NEVER commit real env or keys
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+*.p12
+
+# Internal deploy overlay — private, never in the public repo
+/deploy/
+
+# QA / screenshot dumps
+.design-shots/
+.design-shots-ux/
+*-screenshots/
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+coverage/
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# internal deploy/auth docs — never publish (infra names)
+WORKOS-STATUS.md
+AUTH-WEB-CONTRACT.md
+CALENDAR-INTEGRATION-PLAN.md
+*-STATUS.md

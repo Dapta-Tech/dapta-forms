@@ -1,0 +1,36 @@
+{
+  "name": "@slate/config",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Shared config: zod env schema + tsconfig/eslint/prettier presets.",
+  "main": "./dist/env.js",
+  "types": "./dist/env.d.ts",
+  "exports": {
+    "./env": {
+      "types": "./dist/env.d.ts",
+      "import": "./dist/env.js"
+    },
+    "./tsconfig/base.json": "./tsconfig/base.json",
+    "./tsconfig/nest.json": "./tsconfig/nest.json",
+    "./tsconfig/next.json": "./tsconfig/next.json",
+    "./eslint": "./eslint.config.js",
+    "./prettier": "./prettier.config.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "lint": "echo \"(config) no lint\"",
+    "test": "echo \"(config) no tests\"",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.17.0",
+    "@types/node": "^22.10.2",
+    "eslint": "^9.17.0",
+    "typescript": "^5.7.2",
+    "typescript-eslint": "^8.18.1"
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "extends": "@slate/config/tsconfig/base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "src",
+    "types": ["node"]
+  },
+  "include": ["src/**/*"],
+  "exclude": ["**/*.spec.ts", "dist", "node_modules"]
+}

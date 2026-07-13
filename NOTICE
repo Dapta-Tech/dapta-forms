@@ -1,0 +1,23 @@
+Slate — open-source scheduling
+Copyright (c) 2026 Dapta
+
+This product is licensed under the MIT License (see LICENSE).
+
+This software includes or builds upon the following third-party open-source
+components, each under its own license:
+
+- Next.js, React, React DOM — MIT License
+- Tailwind CSS, shadcn/ui, Radix UI — MIT License
+- NestJS — MIT License
+- Drizzle ORM — Apache-2.0 License
+- better-sqlite3 — MIT License
+- postgres (postgres.js) — Unlicense
+- nodemailer — MIT License
+- zod — MIT License
+- Turborepo, Changesets — MIT License
+
+The design tokens and scheduling engine originate from Dapta's internal
+Calendars codebase and are released here under the MIT License.
+
+Full license texts for dependencies are available in their respective packages
+under node_modules/.

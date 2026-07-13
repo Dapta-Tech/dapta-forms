@@ -1,0 +1,28 @@
+{
+  "name": "@slate/types",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Shared domain types + zod contracts (the web↔api boundary).",
+  "license": "MIT",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "lint": "eslint src",
+    "test": "echo \"(types) no tests\"",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@slate/engine": "workspace:*",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@slate/config": "workspace:*",
+    "eslint": "^9.17.0",
+    "typescript": "^5.7.2"
+  }
+}

@@ -1,0 +1,23 @@
+version: 2
+updates:
+  # Application & workspace dependencies (pnpm workspace, resolved at the root
+  # lockfile). Grouped so routine bumps arrive as one reviewable PR.
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    groups:
+      all-dependencies:
+        patterns:
+          - "*"
+    commit-message:
+      prefix: "chore(deps)"
+
+  # Keep the GitHub Actions we pin in .github/workflows up to date.
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "chore(ci)"

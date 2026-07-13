@@ -1,0 +1,12 @@
+# Finding-level allowlist for the trufflehog layer of scripts/publish-gate.sh.
+#
+# One entry per line: <DetectorName>:<repo-relative path>:<line>
+#   e.g.  Postgres:docker-compose.yml:12
+#
+# Use this ONLY for a documented placeholder that trufflehog cannot verify on
+# the CI runner (no DB/DNS egress) and therefore reports as "unknown". Each
+# entry pins ONE finding — the detector, the file, and the exact line — so the
+# rest of the file stays fully scanned. Whole-file exclusions are forbidden
+# (see publish-gate-exclude.txt).
+#
+# Currently empty: every repo file passes the scan with no exceptions.

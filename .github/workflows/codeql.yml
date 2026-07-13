@@ -1,0 +1,40 @@
+name: CodeQL
+
+# Static security analysis of the TypeScript sources. Runs on PRs, on pushes to
+# main, and weekly so newly-published advisories catch regressions. Findings
+# surface in the repo's Security tab; this does not block the build.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "27 3 * * 1"
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: Analyze (javascript-typescript)
+    # Code scanning upload requires GitHub Code Security, which private repos only
+    # get with Advanced Security. Skip until the repo flips public (where it is free).
+    if: ${{ !github.event.repository.private }}
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v7
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: javascript-typescript
+          # JS/TS needs no compilation for CodeQL — no build step required.
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: "/language:javascript-typescript"

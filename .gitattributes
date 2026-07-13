@@ -1,0 +1,17 @@
+# Normalize line endings
+* text=auto eol=lf
+
+# Binary assets
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+
+# Lockfile — keep diffs collapsed in reviews
+pnpm-lock.yaml linguist-generated=true -diff
+
+# Generated migrations are code, keep them reviewable
+packages/db/migrations/** linguist-generated=false

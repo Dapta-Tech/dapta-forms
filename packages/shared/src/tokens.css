@@ -1,0 +1,81 @@
+/**
+ * Design tokens → shadcn/Tailwind CSS-variable contract. Dark-first, mapped 1:1
+ * from the source design system. Consumed by apps/web/app/globals.css. Semantic
+ * names only — components reference these via Tailwind theme tokens, never raw
+ * hex. The lime accent always pairs with near-black foreground (WCAG AA).
+ */
+
+:root {
+  /* Base surfaces (dark-first canvas). */
+  --background: #222222;
+  --foreground: #eeeeee;
+  --card: #292929;
+  --card-foreground: #eeeeee;
+  --popover: #1a1a1c;
+  --popover-foreground: #eeeeee;
+
+  /* Accent — the one lime accent; pairs with near-black text. */
+  --primary: #cbe84f;
+  --primary-foreground: #1a1a1c;
+
+  /* Secondary — purple. */
+  --secondary: #9059fc;
+  --secondary-foreground: #fafafa;
+
+  /* Muted / raised surfaces. */
+  --muted: #323232;
+  --muted-foreground: #7a7a7c;
+  --accent: #323232;
+  --accent-foreground: #eeeeee;
+
+  /* Feedback. */
+  --destructive: #ec655f;
+  --destructive-foreground: #fafafa;
+
+  /* Lines & focus. */
+  --border: #404040;
+  --input: #404040;
+  --ring: rgba(203, 232, 79, 0.45);
+
+  --radius: 0.5rem; /* 8px control standard; cards use 16px */
+}
+
+/* Light theme override — honored via the theme toggle / prefers-color-scheme. */
+:root[data-theme='light'] {
+  --background: #fafafa;
+  --foreground: #1a1a1c;
+  --card: #ffffff;
+  --card-foreground: #1a1a1c;
+  --popover: #ffffff;
+  --popover-foreground: #1a1a1c;
+  --primary: #cbe84f;
+  --primary-foreground: #1a1a1c;
+  --secondary: #9059fc;
+  --secondary-foreground: #fafafa;
+  --muted: #f0f0f0;
+  --muted-foreground: #6a6a6c;
+  --accent: #f0f0f0;
+  --accent-foreground: #1a1a1c;
+  --destructive: #ec655f;
+  --destructive-foreground: #fafafa;
+  --border: #e2e2e2;
+  --input: #e2e2e2;
+  --ring: rgba(203, 232, 79, 0.55);
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme='dark']) {
+    --background: #fafafa;
+    --foreground: #1a1a1c;
+    --card: #ffffff;
+    --card-foreground: #1a1a1c;
+    --popover: #ffffff;
+    --popover-foreground: #1a1a1c;
+    --muted: #f0f0f0;
+    --muted-foreground: #6a6a6c;
+    --accent: #f0f0f0;
+    --accent-foreground: #1a1a1c;
+    --border: #e2e2e2;
+    --input: #e2e2e2;
+  }
+}

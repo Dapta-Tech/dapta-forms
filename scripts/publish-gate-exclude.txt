@@ -1,0 +1,15 @@
+# Paths excluded from the trufflehog layer of scripts/publish-gate.sh (regex,
+# one per line). ONLY vendored/build/runtime infrastructure belongs here — the
+# directories that are gitignored and never part of the published tree.
+#
+# NEVER exclude a repo file by path — especially not .env.example or the
+# docker-compose files: those are exactly where credentials get pasted by
+# mistake, so the gate must always scan them. If a documented placeholder
+# false-positives, allowlist that single FINDING (detector + file + line) in
+# publish-gate-allowlist.txt instead.
+/node_modules/
+/\.git/
+/dist/
+/\.next/
+/\.turbo/
+/\.data/
