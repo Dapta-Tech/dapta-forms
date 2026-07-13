@@ -30,6 +30,23 @@ describe('formConfigSchema destinations (additive)', () => {
     expect(r.success).toBe(false);
   });
 
+  it('rejects a plain-http webhook URL for a non-localhost host (https-only)', () => {
+    const r = formDestinationSchema.safeParse({
+      type: 'webhook',
+      enabled: true,
+      settings: { url: 'http://acme.io/hook' },
+    });
+    expect(r.success).toBe(false);
+  });
+
+  it('accepts plain http for localhost (documented dev-testing exception)', () => {
+    for (const url of ['http://localhost:9099/hook', 'http://127.0.0.1:9099/hook']) {
+      expect(
+        formDestinationSchema.safeParse({ type: 'webhook', enabled: true, settings: { url } }).success,
+      ).toBe(true);
+    }
+  });
+
   it('accepts a hubspot destination with mappings + score/date properties', () => {
     const r = formDestinationSchema.safeParse({
       type: 'hubspot',

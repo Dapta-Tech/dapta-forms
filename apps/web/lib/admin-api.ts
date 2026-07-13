@@ -168,6 +168,9 @@ export const adminApi = {
   // Integrations
   hubspotProperties: () =>
     req<HubSpotPropertiesResponse>('GET', '/v1/integrations/hubspot/properties'),
+  /** Partial write: replaces ONLY the config's `destinations` key server-side. */
+  updateFormDestinations: (id: string, destinations: FormDestination[]) =>
+    req<FormDetail>('PUT', `/v1/forms/${id}/destinations`, { destinations }),
 
   // Members (workspace roster — admin/owner only)
   listMembers: () => req<AccountMember[]>('GET', '/v1/members'),

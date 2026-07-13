@@ -59,10 +59,32 @@ export class DestinationEffects {
   async enqueueSubmissionDeliveries(input: SubmissionDeliveryInput): Promise<void> {
     try {
       const destinations = extractDestinations(input.config);
-      for (const destination of destinations) {
-        if (destination.enabled === false) continue;
+      const enabled = destinations
+        .map((destination, index) => ({ destination, index }))
+        .filter(({ destination }) => destination.enabled !== false);
+
+      // A re-submit of the same session+phase replaces every not-yet-sent
+      // delivery: cancel pending rows ONCE per kind BEFORE the enqueue loop.
+      // Deleting inside the loop would cancel a sibling destination of the same
+      // type that was just enqueued (two webhooks are legal — only the last one
+      // would ever deliver).
+      const kinds = new Set<OutboxKind>(
+        enabled.map(({ destination }) => destination.type as OutboxKind),
+      );
+      for (const kind of kinds) {
+        await deletePendingOutbox(this.db, {
+          subjectUid: input.submissionId,
+          kind,
+          action: input.phase,
+        });
+      }
+
+      for (const { destination, index } of enabled) {
         const kind = destination.type as OutboxKind;
-        const idempotencyKey = `submission:${input.submissionId}:${input.phase}:${destination.type}`;
+        // Per-destination identity: the config-array index disambiguates two
+        // destinations of the same type, so each delivery carries its own
+        // idempotency key (receivers de-dup per destination, not per type).
+        const idempotencyKey = `submission:${input.submissionId}:${input.phase}:${destination.type}:${index}`;
         const ctx: DestinationContext = {
           idempotencyKey,
           submissionId: input.submissionId,
@@ -78,12 +100,6 @@ export class DestinationEffects {
           utm: extractUtm(input.data),
         };
         const payload: DestinationOutboxPayload = { destination, ctx };
-        // A re-submit of the same session+phase replaces a not-yet-sent delivery.
-        await deletePendingOutbox(this.db, {
-          subjectUid: input.submissionId,
-          kind,
-          action: input.phase,
-        });
         await enqueueOutbox(this.db, {
           kind,
           action: input.phase,

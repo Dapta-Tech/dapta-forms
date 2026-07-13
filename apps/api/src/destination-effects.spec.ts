@@ -72,6 +72,50 @@ describe('destination enqueue on submission', () => {
     expect(rows[0]!.subjectUid).toBe((out as { id: string }).id);
   });
 
+  it('TWO destinations of the SAME type both enqueue and both deliver (per-destination identity)', async () => {
+    const account = await getAccountByCode(db, 'acme');
+    const forms = await listForms(db, account!.id);
+    const form = forms.find((f) => f.slug === 'lead-qualifier')!;
+    const full = await db.get<{ config: string }>(sql`SELECT config FROM form WHERE id = ${form.id}`);
+    const config = JSON.parse(full!.config);
+    config.destinations = [
+      { type: 'webhook', enabled: true, settings: { url: 'https://first.example/hook' } },
+      { type: 'webhook', enabled: true, settings: { url: 'https://second.example/hook' } },
+    ];
+    await updateForm(db, account!.id, form.id, { config });
+
+    const out = await svc.submit('acme', 'lead-qualifier', {
+      sessionId: 'sess-two',
+      data: { role: 'founder', team_size: 20, email: 'lead@acme.io' },
+    });
+    expect('error' in out).toBe(false);
+
+    // Both rows survive enqueue (the per-loop delete used to cancel the first).
+    const rows = await listOutbox(db, { kind: 'webhook' });
+    expect(rows).toHaveLength(2);
+    expect(rows.every((r) => r.status === 'pending')).toBe(true);
+    // Distinct per-destination idempotency keys (type alone is not an identity).
+    const keys = rows.map(
+      (r) => (JSON.parse(r.payload!) as { ctx: { idempotencyKey: string } }).ctx.idempotencyKey,
+    );
+    expect(new Set(keys).size).toBe(2);
+
+    // Drain: BOTH endpoints receive their delivery.
+    const urls: string[] = [];
+    destinations.fetchImpl = (async (url: string) => {
+      urls.push(url);
+      return new Response('{}', { status: 200 });
+    }) as unknown as typeof fetch;
+    const env = { OUTBOX_WORKER_ENABLED: false, OUTBOX_POLL_MS: 5000, NODE_ENV: 'test' } as never;
+    const email = new EmailEffects(new SubmissionNotifier(new LogOnlyEmailProvider()), db);
+    const worker = new OutboxWorker(db, env, email, destinations);
+    await worker.drainOnce();
+
+    expect(urls.sort()).toEqual(['https://first.example/hook', 'https://second.example/hook']);
+    const after = await listOutbox(db, { kind: 'webhook' });
+    expect(after.every((r) => r.status === 'done')).toBe(true);
+  });
+
   it('extracts UTM from the NESTED data.utm object (renderer convention, PR #4), flat utm_* only as fallback', async () => {
     // Exercised at the effects level: the renderer POSTs `data.utm` as an object;
     // the widened submission union ships with the renderer track.

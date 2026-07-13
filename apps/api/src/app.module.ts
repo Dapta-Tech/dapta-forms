@@ -18,7 +18,11 @@ import { PublicController } from './public.controller';
 import { AdminCrudController } from './admin-crud.controller';
 import { AnalyticsController } from './analytics.controller';
 import { AnalyticsService } from './analytics.service';
-import { HubspotPropertiesService, IntegrationsController } from './integrations.controller';
+import {
+  FormDestinationsController,
+  HubspotPropertiesService,
+  IntegrationsController,
+} from './integrations.controller';
 
 @Module({
   controllers: [
@@ -28,6 +32,7 @@ import { HubspotPropertiesService, IntegrationsController } from './integrations
     AdminCrudController,
     AnalyticsController,
     IntegrationsController,
+    FormDestinationsController,
   ],
   providers: [
     { provide: ENV, useFactory: () => loadServerEnv() },

@@ -1,7 +1,22 @@
-import { Controller, Get, Inject, Injectable, Req } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  Inject,
+  Injectable,
+  NotFoundException,
+  Param,
+  Put,
+  Req,
+} from '@nestjs/common';
+import { z, ZodError } from 'zod';
+import type { Db } from '@quill/db';
+import { updateFormDestinations } from '@quill/db';
+import { formDestinationSchema } from '@quill/types';
 import type { ServerEnv } from '@quill/config/env';
 import { AuthService, type ReqLike } from './auth.service';
-import { ENV } from './tokens';
+import { DB, ENV } from './tokens';
 
 /** A HubSpot contact property surfaced to the mapping UI. */
 export interface HubSpotPropertyDto {
@@ -85,5 +100,38 @@ export class IntegrationsController {
     // Any authenticated host may read the property list (it drives their mapping UI).
     await this.auth.resolveHost(req);
     return this.hubspot.listProperties();
+  }
+}
+
+const destinationsBodySchema = z.object({ destinations: z.array(formDestinationSchema) });
+
+/**
+ * Auth-gated PARTIAL config write for the integrations screen: replaces ONLY the
+ * `destinations` key, merged against the row's fresh config server-side in one
+ * request — the web tier no longer reads the whole config and writes it back
+ * (which raced a concurrent editor save). See updateFormDestinations for the
+ * optimistic-locking caveat.
+ */
+@Controller('v1')
+export class FormDestinationsController {
+  constructor(
+    @Inject(DB) private readonly db: Db,
+    @Inject(AuthService) private readonly auth: AuthService,
+  ) {}
+
+  @Put('forms/:id/destinations')
+  async putDestinations(@Req() req: ReqLike, @Param('id') id: string, @Body() body: unknown) {
+    const p = await this.auth.resolveHost(req);
+    let destinations: unknown[];
+    try {
+      destinations = destinationsBodySchema.parse(body).destinations;
+    } catch (err) {
+      if (err instanceof ZodError)
+        throw new BadRequestException({ error: 'BAD_REQUEST', message: err.issues[0]?.message });
+      throw err;
+    }
+    const out = await updateFormDestinations(this.db, p.accountId, id, destinations);
+    if (!out.ok) throw new NotFoundException({ error: 'NOT_FOUND', message: 'Not found.' });
+    return out.value;
   }
 }

@@ -563,7 +563,7 @@ export const en: FormsMessages = {
       webhookDesc: 'POST each submission as JSON to a URL you control.',
       webhookUrl: 'Endpoint URL',
       webhookUrlPlaceholder: 'https://example.com/webhooks/forms',
-      webhookUrlInvalid: 'Enter a valid https URL.',
+      webhookUrlInvalid: 'Enter a valid https:// URL (plain http is allowed only for localhost).',
       webhookSecret: 'Signing secret (optional)',
       webhookSecretHelp:
         'When set, each request is signed with HMAC-SHA256 in the X-Quill-Signature header so you can verify it.',
@@ -852,7 +852,7 @@ export const es: FormsMessages = {
       webhookDesc: 'Envía cada respuesta como JSON (POST) a una URL que tú controlas.',
       webhookUrl: 'URL del endpoint',
       webhookUrlPlaceholder: 'https://ejemplo.com/webhooks/forms',
-      webhookUrlInvalid: 'Introduce una URL https válida.',
+      webhookUrlInvalid: 'Introduce una URL https:// válida (http solo se permite para localhost).',
       webhookSecret: 'Secreto de firma (opcional)',
       webhookSecretHelp:
         'Si se define, cada solicitud se firma con HMAC-SHA256 en la cabecera X-Quill-Signature para que puedas verificarla.',

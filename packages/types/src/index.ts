@@ -122,7 +122,17 @@ export const webhookDestinationSchema = z.object({
   type: z.literal('webhook'),
   enabled: z.boolean().default(false),
   settings: z.object({
-    url: z.string().url(),
+    // https-only, with ONE exception: plain http for localhost/127.0.0.1 (local
+    // dev catcher). Mirrors the admin UI validation — keep the two in sync.
+    url: z
+      .string()
+      .url()
+      .refine(
+        // Already a valid URL per .url(); prefix checks avoid the URL global
+        // (not in this package's lib set).
+        (v) => v.startsWith('https://') || /^http:\/\/(localhost|127\.0\.0\.1)([:/?#]|$)/.test(v),
+        { message: 'Webhook URL must use https (plain http is allowed only for localhost).' },
+      ),
     /** HMAC-SHA256 signing secret (optional). */
     secret: z.string().max(500).nullable().optional(),
     /** Header the signature is sent in (defaults to `X-Quill-Signature`). */

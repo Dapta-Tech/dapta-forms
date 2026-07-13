@@ -56,9 +56,17 @@ function initialHubspot(destinations: FormDestination[]): HubspotState {
   return { enabled: false, fieldMappings: [], utmMappings: {}, scoreProperty: '', dateProperty: '', note: true };
 }
 
-const isHttpsUrl = (v: string): boolean => {
+/**
+ * https-only, with ONE documented exception: plain http is allowed for
+ * localhost/127.0.0.1 so a developer can point a form at a local catcher while
+ * testing. Any other http host is rejected (mirrors the server-side zod refine
+ * on the webhook settings URL — keep the two in sync).
+ */
+const isHttpsOrLocalhostUrl = (v: string): boolean => {
   try {
-    return new URL(v).protocol === 'https:' || new URL(v).protocol === 'http:';
+    const u = new URL(v);
+    if (u.protocol === 'https:') return true;
+    return u.protocol === 'http:' && (u.hostname === 'localhost' || u.hostname === '127.0.0.1');
   } catch {
     return false;
   }
@@ -86,7 +94,7 @@ export function IntegrationsEditor({
   function buildDestinations(): FormDestination[] | { error: string } {
     const out: FormDestination[] = [];
     if (webhook.enabled || webhook.url.trim()) {
-      if (!isHttpsUrl(webhook.url.trim())) return { error: m.webhookUrlInvalid };
+      if (!isHttpsOrLocalhostUrl(webhook.url.trim())) return { error: m.webhookUrlInvalid };
       out.push({
         type: 'webhook',
         enabled: webhook.enabled,
