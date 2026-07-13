@@ -1,5 +1,5 @@
 /**
- * Growth loop — the "Made with Dapta Calendars" attribution on public pages.
+ * Growth loop — the "Made with Dapta Forms" attribution on public pages.
  *
  * Open-core rule: like the app-switcher's platform URL, the signup destination
  * comes ONLY from the deployment (NEXT_PUBLIC_SIGNUP_URL) — no internal host
@@ -13,7 +13,7 @@
 /** UTM values are fixed product-wide; only the medium varies by surface. */
 export type SignupMedium = 'badge' | 'confirmation';
 
-export const UTM_SOURCE = 'dapta-calendars';
+export const UTM_SOURCE = 'dapta-forms';
 export const UTM_CAMPAIGN = 'made-with-dapta';
 
 /**

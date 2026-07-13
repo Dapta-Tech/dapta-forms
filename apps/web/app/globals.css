@@ -1,7 +1,7 @@
 @import 'tailwindcss';
 
 /* Ported design tokens (dark-first) — the shadcn CSS-variable contract. */
-@import '@slate/shared/tokens.css';
+@import '@quill/shared/tokens.css';
 
 /* Map the token variables into Tailwind's theme so components use semantic
    utilities (bg-background, text-foreground, bg-primary, border-border …) —
@@ -83,7 +83,7 @@ body {
 }
 
 /* ---------------------------------------------------------------------------
- * Booking-page branding classes (R25). The .branded-surface wrapper carries
+ * Public-page branding classes (R25). The .branded-surface wrapper carries
  * brandingClassOf() output + the --bp-* custom properties (widgetStyleVars).
  * These rules make ALL 9 axes reach the DOM so the studio preview == the live
  * public page. Corners/buttons/density/font come from the vars; cardStyle/

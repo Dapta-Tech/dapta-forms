@@ -4,7 +4,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { authProvider } from '@/lib/auth-session';
 import { requestOrigin } from '@/lib/request-origin';
 
-const OAUTH_STATE_COOKIE = 'slate_oauth_state';
+const OAUTH_STATE_COOKIE = 'quill_oauth_state';
 
 /**
  * WorkOS login hand-off (AUTH-WEB-CONTRACT §3.1). The web holds NO WorkOS secret;

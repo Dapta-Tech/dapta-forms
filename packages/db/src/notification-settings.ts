@@ -1,13 +1,13 @@
 /**
  * Per-account NOTIFICATION SETTINGS — the storage behind Settings →
- * Notifications (Zoho-Bookings-style controls). One row per (account,
+ * Notifications (per-key toggle + template controls). One row per (account,
  * email_key); an ABSENT row means "shipped default": enabled, stock template.
  * `subject`/`body` NULL = stock template (so "reset to default" is just
  * NULLing them); `reminder_lead_minutes` is a JSON array of minutes-before-
  * start, meaningful only on the reminder key.
  *
  * This module is pure storage and deliberately does NOT know the catalog of
- * valid keys or the shipped template copy — those live in @slate/notifications
+ * valid keys or the shipped template copy — those live in @quill/notifications
  * (the rendering side); the API layer validates keys before writing. Keeping
  * the dependency pointing that way avoids a db↔notifications cycle.
  */

@@ -12,7 +12,7 @@ import type { ReactNode } from 'react';
  *    the primary action stays reachable while the form scrolls.
  *
  * A list page uses ONLY PageHeader; a detail page uses ONLY FormHeader — never
- * both stacked (that was the "double header" bug on /availability).
+ * both stacked (a regression the original platform hit).
  */
 
 export function PageHeader({

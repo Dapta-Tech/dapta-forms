@@ -17,7 +17,7 @@ export interface SmtpOptions {
  * SMTP transport via nodemailer. A pooled transporter is created once and
  * reused. A transport failure THROWS (the durable outbox worker catches it and
  * retries with backoff — B1/DM1); it is never swallowed to `delivered:false`,
- * which would look like success and silently drop the mail. A booking is still
+ * which would look like success and silently drop the mail. A submission is still
  * never rolled back on an email failure — the effect runs out-of-band.
  */
 export class SmtpEmailProvider implements EmailProvider {

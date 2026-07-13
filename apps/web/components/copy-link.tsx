@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 
 const stripProtocol = (u: string) => u.replace(/^https?:\/\//, '');
 
-/** The booking link with a copy-to-clipboard button (F1). Absolute URL resolved
+/** The public form link with a copy-to-clipboard button (F1). Absolute URL resolved
  *  client-side from the real origin; a 2s "Copied" flash confirms (R22).
  *  The displayed text starts as the server-stable `path` so SSR and the first
  *  client render match (no hydration mismatch), then upgrades to the absolute

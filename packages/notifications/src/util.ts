@@ -17,7 +17,7 @@ export function formatSender(fromEmail: string, fromName?: string): string {
 }
 
 /**
- * HTML-escape a string for safe interpolation into email HTML bodies. Booking
+ * HTML-escape a string for safe interpolation into email HTML bodies. Form
  * fields (attendee name, event title, cancellation reason) are attacker-
  * controlled; interpolating them raw is stored XSS (E8). Escape EVERY dynamic
  * value on the HTML path.

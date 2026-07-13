@@ -1,12 +1,12 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { getMessages } from '@slate/shared';
+import { getMessages } from '@quill/shared';
 import { getLocale } from '@/lib/locale';
 import { authProvider } from '@/lib/auth-session';
 import { LoginForm } from './login-form';
 
-// Customer-facing name (build-time inlined); "Slate" never surfaces in the UI.
-const productName = process.env.NEXT_PUBLIC_PRODUCT_NAME || 'Calendars';
+// Customer-facing name (build-time inlined); "Quill" never surfaces in the UI.
+const productName = process.env.NEXT_PUBLIC_PRODUCT_NAME || 'Forms';
 
 export const metadata = { title: `Sign in — ${productName}` };
 

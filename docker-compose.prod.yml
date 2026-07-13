@@ -1,8 +1,8 @@
-# Slate — production self-host smoke test.
+# Quill — production self-host smoke test.
 #
 # Builds and runs the SAME deployment-agnostic images that ship to EKS, wired to
 # a local Postgres — the "does the whole thing come up on any Docker host?"
-# check. This is what an OSS adopter self-hosting Slate would run; it proves the
+# check. This is what an OSS adopter self-hosting Quill would run; it proves the
 # images are not EKS-specific.
 #
 #   docker compose -f docker-compose.prod.yml up --build
@@ -18,25 +18,25 @@ services:
   db:
     image: postgres:16
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-slate}
+      POSTGRES_USER: ${POSTGRES_USER:-quill}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
-      POSTGRES_DB: ${POSTGRES_DB:-slate}
+      POSTGRES_DB: ${POSTGRES_DB:-quill}
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U "$${POSTGRES_USER:-slate}" -d "$${POSTGRES_DB:-slate}"']
+      test: ['CMD-SHELL', 'pg_isready -U "$${POSTGRES_USER:-quill}" -d "$${POSTGRES_DB:-quill}"']
       interval: 5s
       timeout: 5s
       retries: 12
     volumes:
-      - slate-prod-pgdata:/var/lib/postgresql/data
+      - quill-prod-pgdata:/var/lib/postgresql/data
 
   # One-shot: run DB migrations, then exit. Uses the API image (it carries
-  # @slate/db + the migrations).
+  # @quill/db + the migrations).
   migrate:
     build:
       context: .
       dockerfile: apps/api/Dockerfile
     # The api image is a PRUNED single-package bundle (no monorepo root, so no
-    # root `db:migrate` script). Run the @slate/db migrate CLI via the tsx JS
+    # root `db:migrate` script). Run the @quill/db migrate CLI via the tsx JS
     # entrypoint EXACTLY like the API's CMD: the distroless image has no shell,
     # so its node entrypoint cannot exec the node_modules/.bin/tsx shell shim —
     # only a .mjs/.js file. (--tsconfig mirrors the CMD; the dev tsconfig's
@@ -46,7 +46,7 @@ services:
         'node_modules/tsx/dist/cli.mjs',
         '--tsconfig',
         'tsconfig.runtime.json',
-        'node_modules/@slate/db/src/cli/migrate.ts',
+        'node_modules/@quill/db/src/cli/migrate.ts',
       ]
     environment:
       DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
@@ -97,4 +97,4 @@ services:
       - api
 
 volumes:
-  slate-prod-pgdata:
+  quill-prod-pgdata:

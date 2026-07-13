@@ -1,6 +1,6 @@
 /**
  * Handle shape contract (ported verbatim from the original util) — validate +
- * normalize a public booking handle as the host types. The API stays the source
+ * normalize a public handle as the member types. The API stays the source
  * of truth for global uniqueness; this pre-empts obviously-invalid input.
  */
 
@@ -11,8 +11,8 @@ export const HANDLE_MAX_LENGTH = 40;
 export const RESERVED_HANDLES: ReadonlySet<string> = new Set([
   'team',
   'teams',
-  'bookings',
-  'booking',
+  'forms',
+  'form',
   'reservations',
   'reservation',
   'api',
@@ -27,8 +27,6 @@ export const RESERVED_HANDLES: ReadonlySet<string> = new Set([
   'auth',
   'home',
   'settings',
-  'availability',
-  'event-types',
   'events',
   'connections',
   'admin',
@@ -48,8 +46,6 @@ export const RESERVED_HANDLES: ReadonlySet<string> = new Set([
   'favicon',
   'robots',
   'sitemap',
-  'calendar',
-  'calendars',
   'null',
   'undefined',
 ]);

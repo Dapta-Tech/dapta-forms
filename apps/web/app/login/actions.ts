@@ -7,7 +7,7 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /**
  * Local dev login (AUTH_PROVIDER=local): establish a session that carries the
- * email. `admin-api.ts` sends it as `x-slate-email`; the API's local stub
+ * email. `admin-api.ts` sends it as `x-quill-email`; the API's local stub
  * resolves (or JIT-creates) that member's own account. Returns a field error
  * instead of throwing so the form can show it.
  */

@@ -1,18 +1,18 @@
 /**
  * Entitlements PORT — "is this account a paying Dapta AI customer?"
  *
- * Dapta Calendars is ALWAYS free: there is no Calendars-side plan or billing,
+ * Dapta Forms is ALWAYS free: there is no Forms-side plan or billing,
  * ever. Premium unlocks (vanity slug, future perks) come with the customer's
  * Dapta AI subscription, validated against the upstream entitlement service.
- * Open-core split, same shape as the CalendarProvider port:
+ * Open-core split (public port, private adapter):
  *   - OSS default: DisabledEntitlementsProvider (no upstream wired). Combined
  *     with `PREMIUM_FEATURES=open` (the default) forks get premium features
  *     unlocked — we don't upsell forks, they just don't get cloud entitlements.
  *   - Cloud: HttpEntitlementsProvider + `PREMIUM_FEATURES=locked` gates on the
  *     upstream verdict, which the caller caches on the account row (TTL) so
- *     public/booking paths never block on the upstream service.
+ *     public paths never block on the upstream service.
  */
-import type { ServerEnv } from '@slate/config/env';
+import type { ServerEnv } from '@quill/config/env';
 
 export interface EntitlementKeys {
   /** The account owner's email (the upstream service resolves customers by owner email). */
@@ -82,7 +82,7 @@ export class HttpEntitlementsProvider implements EntitlementsProvider {
   }
 }
 
-/** Env-driven selection (mirrors resolveCalendarProvider). */
+/** Env-driven selection (disabled unless the upstream service is configured). */
 export function resolveEntitlementsProvider(
   env: Pick<ServerEnv, 'ENTITLEMENTS_API_URL' | 'ENTITLEMENTS_API_KEY'>,
 ): EntitlementsProvider {

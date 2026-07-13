@@ -1,8 +1,8 @@
-import { getMessages } from '@slate/shared';
+import { getMessages } from '@quill/shared';
 import { signupHref } from '@/lib/growth';
 
 /**
- * "Made with Dapta Calendars" — the growth-loop attribution on every public
+ * "Made with Dapta Forms" — the growth-loop attribution on every public
  * surface (R11). A discreet centered footer pill: semantic tokens only, so it
  * follows dark/light and any host branding without competing with it. Renders
  * only when the deployment configures NEXT_PUBLIC_SIGNUP_URL, and never when

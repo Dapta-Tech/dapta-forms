@@ -1,8 +1,8 @@
 import { cookies, headers } from 'next/headers';
-import type { Locale } from '@slate/shared';
+import type { Locale } from '@quill/shared';
 
 /** Persisted admin-UI language choice (F8 parity with the old app's toggle). */
-export const LOCALE_COOKIE = 'slate_locale';
+export const LOCALE_COOKIE = 'quill_locale';
 
 /**
  * The admin surface's locale, read from the persisted cookie the language

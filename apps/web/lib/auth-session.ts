@@ -9,7 +9,7 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 /**
  * Web session lifecycle (per AUTH-WEB-CONTRACT §1–4). The web owns the session;
  * the API owns identity resolution. Two shapes, one per provider:
- *  - local  → carries the dev-login email (sent as `x-slate-email`).
+ *  - local  → carries the dev-login email (sent as `x-quill-email`).
  *  - workos → carries the IAM-minted platform JWT (sent as `Authorization: Bearer`).
  * Stored ONLY in an httpOnly cookie — never exposed to client JS.
  */
@@ -23,7 +23,7 @@ export const authProvider = (): 'local' | 'workos' =>
 const secret = () => process.env.WEB_SESSION_SECRET ?? '';
 
 /**
- * Default-deny: an UNSIGNED session cookie is a forgeable `x-slate-email`/JWT
+ * Default-deny: an UNSIGNED session cookie is a forgeable `x-quill-email`/JWT
  * carrier, so we only permit it for the zero-risk `local` dev provider. Any
  * non-local deployment MUST set WEB_SESSION_SECRET — otherwise we fail loud
  * rather than silently accept forgeable sessions.
@@ -75,13 +75,13 @@ export async function getSession(): Promise<Session | null> {
 /**
  * Identity headers for a raw host `fetch()` that doesn't route through
  * admin-api's `req()` (a few server actions post directly). Same contract as
- * admin-api (§1): Bearer for workos, x-slate-email for local, nothing when
+ * admin-api (§1): Bearer for workos, x-quill-email for local, nothing when
  * logged out (→ the API 401s → the gate redirects).
  */
 export async function hostHeaders(): Promise<Record<string, string>> {
   const s = await getSession();
   if (s?.provider === 'workos') return { authorization: `Bearer ${s.accessToken}` };
-  if (s?.provider === 'local') return { 'x-slate-email': s.email };
+  if (s?.provider === 'local') return { 'x-quill-email': s.email };
   return {};
 }
 

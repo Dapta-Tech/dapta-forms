@@ -1,8 +1,8 @@
 {
-  "name": "@slate/web",
+  "name": "@quill/web",
   "version": "0.0.0",
   "private": true,
-  "description": "Slate web — Next.js public booking pages + dashboard.",
+  "description": "Quill web — Next.js public form pages + dashboard.",
   "license": "MIT",
   "scripts": {
     "dev": "next dev -p 3000",
@@ -12,8 +12,9 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@slate/shared": "workspace:*",
-    "@slate/types": "workspace:*",
+    "@quill/engine": "workspace:*",
+    "@quill/shared": "workspace:*",
+    "@quill/types": "workspace:*",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "next": "^16.2.10",
@@ -24,7 +25,7 @@
     "zod": "^3.24.1"
   },
   "devDependencies": {
-    "@slate/config": "workspace:*",
+    "@quill/config": "workspace:*",
     "@tailwindcss/postcss": "^4.0.0",
     "@types/node": "^22.10.2",
     "@types/react": "^19.0.2",

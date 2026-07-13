@@ -14,9 +14,9 @@
  */
 import { UnauthorizedException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
-import type { Db, AccountRole } from '@slate/db';
-import { deriveUniqueHandle, getAccountByCode, insertAccountWithShortCode, sql } from '@slate/db';
-import type { ServerEnv } from '@slate/config/env';
+import type { Db, AccountRole } from '@quill/db';
+import { deriveUniqueHandle, getAccountByCode, insertAccountWithShortCode, sql } from '@quill/db';
+import type { ServerEnv } from '@quill/config/env';
 // The concrete `workos` adapter. The cycle (adapter imports the port/`header`
 // from here) is safe: each side references the other only inside function
 // bodies, never during module evaluation.
@@ -77,8 +77,8 @@ function legacyDevCodeFromEmail(email: string): string {
  * provider in production, so it is doubly impossible to spoof in prod).
  *
  * Resolution order (dev/test only):
- *   1. `x-slate-account` + `x-slate-member` — explicit impersonation (unchanged).
- *   2. an email — from the `x-slate-email` header, else `DEV_LOGIN_EMAIL` env:
+ *   1. `x-quill-account` + `x-quill-member` — explicit impersonation (unchanged).
+ *   2. an email — from the `x-quill-email` header, else `DEV_LOGIN_EMAIL` env:
  *      resolve the member with that email, JIT-provisioning a fresh
  *      account+member if none exists (so a developer lands in THEIR workspace,
  *      not the first seeded demo account). Mirrors the workos adapter's JIT.
@@ -97,12 +97,12 @@ export class LocalAuthProvider implements AuthProvider {
   async resolveHost(req: ReqLike): Promise<ResolvedHost> {
     if (this.env.NODE_ENV !== 'production') {
       // 1. Explicit impersonation (highest precedence, unchanged).
-      const accountId = header(req, 'x-slate-account');
-      const memberId = header(req, 'x-slate-member');
+      const accountId = header(req, 'x-quill-account');
+      const memberId = header(req, 'x-quill-member');
       if (accountId && memberId) return { accountId, memberId };
 
       // 2. Email-aware dev login (header wins over the env default).
-      const email = header(req, 'x-slate-email') ?? this.env.DEV_LOGIN_EMAIL;
+      const email = header(req, 'x-quill-email') ?? this.env.DEV_LOGIN_EMAIL;
       if (email) return this.resolveByEmail(email);
     }
 

@@ -1,7 +1,7 @@
 import { ForbiddenException, Inject, Injectable, UnauthorizedException } from '@nestjs/common';
-import type { Db } from '@slate/db';
-import { verifyApiKey, getMemberRole } from '@slate/db';
-import type { ApiScope } from '@slate/types';
+import type { Db } from '@quill/db';
+import { verifyApiKey, getMemberRole } from '@quill/db';
+import type { ApiScope } from '@quill/types';
 import { AUTH_PROVIDER, DB } from './tokens';
 import { header, type AuthProvider, type HostPrincipal, type ReqLike } from './auth.provider';
 

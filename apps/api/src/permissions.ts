@@ -7,12 +7,12 @@
  * Capability model (see ROLES-PERMISSIONS-PLAN):
  *   - owner  — everything (+ transfer / delete workspace, act on other owners)
  *   - admin  — manage members (except owners) and everyone's resources; NOT owners
- *   - member — own resources only (their event-types / schedules / connections)
+ *   - member — own resources only
  *
  * This is the ACCOUNT role, distinct from the per-team `team_membership.role`.
  */
 import { ForbiddenException } from '@nestjs/common';
-import type { AccountRole } from '@slate/db';
+import type { AccountRole } from '@quill/db';
 
 /** Just enough of the principal to make an authorization decision. */
 export interface RoledPrincipal {
@@ -39,9 +39,9 @@ export function assertOwner(p: RoledPrincipal): void {
 }
 
 /**
- * Own-resource routes (event-types, schedules): a plain member may act only on a
+ * Own-resource routes: a plain member may act only on a
  * resource they own; admin/owner may act on anyone's. A resource with no owning
- * member (e.g. a team-owned event-type, `ownerMemberId === null`) is admin-only.
+ * member (an account-owned resource, `ownerMemberId === null`) is admin-only.
  */
 export function assertOwnsOrAdmin(p: RoledPrincipal, ownerMemberId: string | null): void {
   if (isAdmin(p.role)) return;

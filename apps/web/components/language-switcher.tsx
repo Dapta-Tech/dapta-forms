@@ -1,7 +1,7 @@
 'use client';
 
 import { useTransition } from 'react';
-import type { Locale } from '@slate/shared';
+import type { Locale } from '@quill/shared';
 import { setLocaleAction } from '@/app/admin/locale-actions';
 
 /** F8 language toggle — persists the choice via a cookie (server action) and

@@ -7,5 +7,5 @@
   "access": "public",
   "baseBranch": "main",
   "updateInternalDependencies": "patch",
-  "ignore": ["@slate/web", "@slate/api"]
+  "ignore": ["@quill/web", "@quill/api"]
 }

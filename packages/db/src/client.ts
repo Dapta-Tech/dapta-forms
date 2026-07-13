@@ -4,18 +4,16 @@
  *   "postgres://…"    -> Postgres (postgres-js)
  *
  * Returns a small dialect-agnostic `Db` handle. Reads/writes go through
- * `all/get/run` (portable Drizzle `sql` templates). The ONE operation that
- * legitimately differs — the booking overlap-check-in-a-transaction — uses the
- * native primitives each engine exposes (`sqlite.txn` runs synchronously so the
- * check+insert is genuinely atomic; `pg.transaction` is async and backed by the
- * DB-level EXCLUDE constraint). See repository.createBooking.
+ * `all/get/run` (portable Drizzle `sql` templates). Native handles (`sqlite.txn`,
+ * `pg.drizzle`) stay available for operations that legitimately need each
+ * engine's own primitives.
  */
 import { existsSync, mkdirSync } from 'node:fs';
 import { dirname, isAbsolute, resolve } from 'node:path';
 import { sql, type SQL } from 'drizzle-orm';
 import type { BetterSQLite3Database } from 'drizzle-orm/better-sqlite3';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
-import { isPostgresUrl } from '@slate/config/env';
+import { isPostgresUrl } from '@quill/config/env';
 
 export type Dialect = 'sqlite' | 'postgres';
 

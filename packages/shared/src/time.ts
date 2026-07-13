@@ -1,5 +1,5 @@
 /**
- * Timezone helpers for the booking surface (ported from the original FE utils).
+ * Timezone helpers (ported from the original FE utils).
  * All slot instants cross the wire as ISO-8601 UTC; the UI renders them in the
  * visitor's chosen IANA zone. Dependency-free — leans on `Intl.DateTimeFormat`
  * so DST transitions are honored by the platform's IANA database.
@@ -63,7 +63,7 @@ export function formatSlotDateTime(utcIso: string, timeZone: string, locale = 'e
   }).format(new Date(utcIso));
 }
 
-/** The calendar day ("2026-07-06") a UTC instant falls on when viewed in `timeZone`. */
+/** The civil day ("2026-07-06") a UTC instant falls on when viewed in `timeZone`. */
 export function zonedDayKey(utcIso: string, timeZone: string): string {
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone,

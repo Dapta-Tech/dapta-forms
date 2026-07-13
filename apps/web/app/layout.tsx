@@ -14,13 +14,13 @@ const poppins = Poppins({
 });
 
 // Customer-facing name comes from the deployment (NEXT_PUBLIC_PRODUCT_NAME,
-// inlined at build time) — "Dapta Calendars" in Dapta's builds, "Calendars"
-// for a bare fork. "Slate" is the internal/repo identifier only and must
+// inlined at build time) — "Dapta Forms" in Dapta's builds, "Forms"
+// for a bare fork. "Quill" is the internal/repo identifier only and must
 // never surface in the UI.
-const productName = process.env.NEXT_PUBLIC_PRODUCT_NAME || 'Calendars';
+const productName = process.env.NEXT_PUBLIC_PRODUCT_NAME || 'Forms';
 
 // Absolute base for OG/twitter URLs (PUBLIC_APP_URL is the deployment's public
-// web origin — already in .env for manage/booking links). Bad value → localhost.
+// web origin — already in .env for public form links). Bad value → localhost.
 function appBaseUrl(): URL {
   try {
     return new URL(process.env.PUBLIC_APP_URL || 'http://localhost:3000');
@@ -31,8 +31,8 @@ function appBaseUrl(): URL {
 
 export const metadata: Metadata = {
   metadataBase: appBaseUrl(),
-  title: `${productName} — open-source scheduling`,
-  description: `${productName} is open-source scheduling. Clone, run, and book — anywhere.`,
+  title: `${productName} — open-source forms`,
+  description: `${productName} is open-source forms. Clone, run, and collect — anywhere.`,
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

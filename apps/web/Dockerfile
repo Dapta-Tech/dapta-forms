@@ -1,7 +1,7 @@
-# Slate web — deployment-agnostic production image (Next standalone, Node runtime).
+# Quill web — deployment-agnostic production image (Next standalone, Node runtime).
 #
 # Build context = repository ROOT:
-#   docker build -f apps/web/Dockerfile -t slate-web .
+#   docker build -f apps/web/Dockerfile -t quill-web .
 #
 # Uses Next's `output: 'standalone'` (already set in next.config.mjs), which
 # traces the monorepo and bundles the server + only the node_modules it needs —
@@ -27,9 +27,9 @@ WORKDIR /repo
 ARG NEXT_PUBLIC_API_URL=http://localhost:4000
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 # Brand + growth-loop link — also NEXT_PUBLIC (inlined at build). Vendor-neutral
-# defaults keep the OSS build generic; Dapta's CI passes "Dapta Calendars" + the
+# defaults keep the OSS build generic; Dapta's CI passes "Dapta Forms" + the
 # platform URL. (Deploy-enabling change per ECR-CI-PLAN §3.)
-ARG NEXT_PUBLIC_PRODUCT_NAME=Calendars
+ARG NEXT_PUBLIC_PRODUCT_NAME=Forms
 ENV NEXT_PUBLIC_PRODUCT_NAME=$NEXT_PUBLIC_PRODUCT_NAME
 ARG NEXT_PUBLIC_PLATFORM_URL=
 ENV NEXT_PUBLIC_PLATFORM_URL=$NEXT_PUBLIC_PLATFORM_URL
@@ -37,7 +37,7 @@ COPY . .
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
     pnpm install --frozen-lockfile
 RUN pnpm build:packages
-RUN pnpm --filter @slate/web build
+RUN pnpm --filter @quill/web build
 
 # ---- run: standalone server, non-root ----------------------------------------
 FROM base AS run
@@ -47,7 +47,7 @@ ENV NODE_ENV=production
 # title, switcher) carries the brand too. Same values CI passes to build.
 ARG NEXT_PUBLIC_API_URL=http://localhost:4000
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
-ARG NEXT_PUBLIC_PRODUCT_NAME=Calendars
+ARG NEXT_PUBLIC_PRODUCT_NAME=Forms
 ENV NEXT_PUBLIC_PRODUCT_NAME=$NEXT_PUBLIC_PRODUCT_NAME
 ARG NEXT_PUBLIC_PLATFORM_URL=
 ENV NEXT_PUBLIC_PLATFORM_URL=$NEXT_PUBLIC_PLATFORM_URL

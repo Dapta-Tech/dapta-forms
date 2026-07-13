@@ -6,7 +6,7 @@ import { rmSync } from 'node:fs';
 import { createDb, sqlitePathFromUrl } from '../client';
 import { migrate } from '../migrate';
 import { seed } from '../seed';
-import { isPostgresUrl } from '@slate/config/env';
+import { isPostgresUrl } from '@quill/config/env';
 
 async function main() {
   const url = process.env.DATABASE_URL ?? 'file:./.data/dev.db';
@@ -28,7 +28,7 @@ async function main() {
   const db = await createDb(url);
   await migrate(db);
   const result = await seed(db);
-  console.log(`[reset] fresh database ready. Booking page: ${result.bookingPagePath}`);
+  console.log(`[reset] fresh database ready. Form: ${result.formPath}`);
   await db.close();
 }
 

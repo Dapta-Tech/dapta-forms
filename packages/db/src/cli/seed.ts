@@ -7,8 +7,8 @@ async function main() {
   const db = await createDb();
   await migrate(db);
   const result = await seed(db);
-  console.log(`[seed] done (${db.dialect}). Try the booking page at:`);
-  console.log(`  ${result.bookingPagePath}`);
+  console.log(`[seed] done (${db.dialect}). Try the form at:`);
+  console.log(`  ${result.formPath}`);
   await db.close();
 }
 

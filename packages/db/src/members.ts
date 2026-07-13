@@ -192,11 +192,9 @@ export async function setMemberStatus(
 }
 
 /**
- * Remove a member from the workspace. Guards the last owner. Cascades the
- * member's personal resources (schedules + availability, own event-types + their
- * host rows, host memberships in team events, connected calendars, slot holds,
- * team memberships, own webhooks). Historical bookings are kept (host_member_id
- * left intact as a record).
+ * Remove a member from the workspace. Guards the last owner. Forms are
+ * account-owned (not member-owned), so removing a member leaves the account's
+ * forms and their submissions intact — only the roster row is deleted.
  */
 export async function removeMember(
   db: Db,
@@ -209,24 +207,6 @@ export async function removeMember(
     if ((await otherActiveOwners(db, accountId, memberId)) === 0)
       return { ok: false, reason: 'LAST_OWNER', message: 'A workspace must keep at least one owner.' };
   }
-
-  // Availability rows hang off the member's schedules — delete them first.
-  await db.run(
-    sql`DELETE FROM availability WHERE schedule_id IN
-          (SELECT id FROM schedule WHERE account_id = ${accountId} AND member_id = ${memberId})`,
-  );
-  await db.run(sql`DELETE FROM schedule WHERE account_id = ${accountId} AND member_id = ${memberId}`);
-  // Host rows: both the member's own event-types and their seat in team events.
-  await db.run(
-    sql`DELETE FROM event_type_host WHERE account_id = ${accountId}
-          AND (member_id = ${memberId}
-            OR event_type_id IN (SELECT id FROM event_type WHERE account_id = ${accountId} AND member_id = ${memberId}))`,
-  );
-  await db.run(sql`DELETE FROM event_type WHERE account_id = ${accountId} AND member_id = ${memberId}`);
-  await db.run(sql`DELETE FROM connected_calendar WHERE account_id = ${accountId} AND member_id = ${memberId}`);
-  await db.run(sql`DELETE FROM slot_reservation WHERE account_id = ${accountId} AND member_id = ${memberId}`);
-  await db.run(sql`DELETE FROM team_membership WHERE account_id = ${accountId} AND member_id = ${memberId}`);
-  await db.run(sql`DELETE FROM webhook WHERE account_id = ${accountId} AND member_id = ${memberId}`);
   await db.run(sql`DELETE FROM member WHERE account_id = ${accountId} AND id = ${memberId}`);
   return { ok: true, value: { id: memberId } };
 }

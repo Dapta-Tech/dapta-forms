@@ -2,9 +2,9 @@ import { createHash, randomBytes, timingSafeEqual } from 'crypto';
 
 /**
  * Attendee "manage" tokens for public cancel/reschedule links (API-CONTRACT
- * §Engine rules 3): random 256-bit, HASHED at rest, single active per booking.
+ * §Engine rules 3): random 256-bit, HASHED at rest, single active per subject.
  *
- * The plaintext token is returned ONCE (in the booking-create response and the
+ * The plaintext token is returned ONCE (in the create response and the
  * confirmation email's manage URL) and never stored; only its SHA-256 hash is
  * persisted. Verification is constant-time. Rotating (reschedule) mints a fresh
  * token and overwrites the stored hash, so at most one token is ever valid.

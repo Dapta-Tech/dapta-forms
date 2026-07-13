@@ -1,6 +1,6 @@
 /**
  * Short public links — the data side. Pure rules (alphabet, validation,
- * handle derivation, the premium gate) live in @slate/engine; this module owns
+ * handle derivation, the premium gate) live in @quill/engine; this module owns
  * everything that needs the DB:
  *   - unique short-code generation (collision retry across code/vanity/alias)
  *   - the account_alias ledger (retired codes resolve forever — no broken links)
@@ -15,7 +15,7 @@ import {
   handleCandidate,
   isReservedPublicSlug,
   validateVanitySlug,
-} from '@slate/engine';
+} from '@quill/engine';
 import type { Db } from './client';
 
 /** The code public URLs should use: the vanity slug when claimed, else the short code. */

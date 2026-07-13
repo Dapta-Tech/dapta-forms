@@ -41,7 +41,7 @@ export interface HttpEmailOptions {
 }
 
 /**
- * HTTP mailer adapter — POSTs a booking email to an external email service and
+ * HTTP mailer adapter — POSTs a submission email to an external email service and
  * treats a successful dispatch as delivered. The concrete endpoint + auth live
  * outside the public repo, in deployment config; no provider is hardcoded here.
  *

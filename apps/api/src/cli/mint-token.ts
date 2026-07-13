@@ -5,12 +5,12 @@
  * a minted token always verifies. This is a convenience for offline dev; against
  * a real deployment you use the token the upstream login issues instead.
  *
- *   pnpm --filter @slate/api auth:mint -- --account acct_123 --sub user_456 \
+ *   pnpm --filter @quill/api auth:mint -- --account acct_123 --sub user_456 \
  *     --email you@example.com --name "You" --ttl 86400
  *
  * Prints the token to stdout. Refuses to run under NODE_ENV=production.
  */
-import { loadServerEnv } from '@slate/config/env';
+import { loadServerEnv } from '@quill/config/env';
 import { signJwtHs256 } from '../jwt';
 
 function arg(name: string): string | undefined {

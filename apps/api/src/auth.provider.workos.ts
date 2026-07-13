@@ -20,9 +20,9 @@
  */
 import { UnauthorizedException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
-import type { Db, AccountRole } from '@slate/db';
-import { deriveUniqueHandle, insertAccountWithShortCode, sql } from '@slate/db';
-import type { ServerEnv } from '@slate/config/env';
+import type { Db, AccountRole } from '@quill/db';
+import { deriveUniqueHandle, insertAccountWithShortCode, sql } from '@quill/db';
+import type { ServerEnv } from '@quill/config/env';
 import { header, type AuthProvider, type ResolvedHost, type ReqLike } from './auth.provider';
 import { verifyJwtHs256, JwtError, type JwtClaims } from './jwt';
 
@@ -32,7 +32,7 @@ function unauthenticated(message: string): UnauthorizedException {
   return new UnauthorizedException({ error: 'UNAUTHENTICATED', message });
 }
 
-// Account codes are 6-char short codes from @slate/db (generateUniqueShortCode)
+// Account codes are 6-char short codes from @quill/db (generateUniqueShortCode)
 // — the old `acct-<hex>` derivation leaked machine garbage into every public
 // URL. Idempotency across concurrent first-logins is anchored on external_id
 // (ON CONFLICT), so the code no longer needs to be deterministic.

@@ -3,7 +3,7 @@ import { normalizeRecipients } from '../util';
 
 /**
  * The default provider. Logs that an email *would* have been sent, without a
- * transport — so a bare clone runs booking flows end-to-end with nothing
+ * transport — so a bare clone runs submission flows end-to-end with nothing
  * configured. Logs recipients/subject/attachment names only, never the body
  * (avoids dumping PII into logs).
  */

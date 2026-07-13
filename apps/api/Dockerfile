@@ -1,10 +1,10 @@
-# Slate API — deployment-agnostic production image (Node runtime).
+# Quill API — deployment-agnostic production image (Node runtime).
 #
 # Build context = repository ROOT:
-#   docker build -f apps/api/Dockerfile -t slate-api .
+#   docker build -f apps/api/Dockerfile -t quill-api .
 #
 # Small, pnpm-workspace-aware, non-root. Uses `pnpm deploy` to emit a pruned,
-# production-only bundle (only @slate/api + its runtime workspace deps — no dev
+# production-only bundle (only @quill/api + its runtime workspace deps — no dev
 # deps, no other apps, no unrelated package source) instead of shipping the
 # whole monorepo in the runtime layer.
 #
@@ -26,12 +26,12 @@ WORKDIR /repo
 COPY . .
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
     pnpm install --frozen-lockfile
-# Build the workspace packages the API imports (@slate/engine, @slate/db, …) to
+# Build the workspace packages the API imports (@quill/engine, @quill/db, …) to
 # their dist/ outputs, then produce a self-contained production bundle.
 RUN pnpm build:packages
 # --legacy: pnpm v10 refuses `deploy` without inject-workspace-packages; we build
 # workspace deps to dist/ ourselves, so the legacy copy-based deploy is correct.
-RUN pnpm --filter @slate/api deploy --legacy --prod /prod/api
+RUN pnpm --filter @quill/api deploy --legacy --prod /prod/api
 # Zero-infra default: with no DATABASE_URL the API opens SQLite at ./.data under
 # its own cwd (/app). Distroless has no shell to mkdir at runtime and its
 # nonroot user (uid 65532) cannot create directories in the root-owned /app —
@@ -52,11 +52,11 @@ WORKDIR /app
 COPY --from=build /prod/api ./
 EXPOSE 4000
 ENV API_PORT=4000
-# Start the API only. tsx is a runtime dependency of @slate/api; the bundle
+# Start the API only. tsx is a runtime dependency of @quill/api; the bundle
 # carries the compiled workspace deps under node_modules. The distroless Node
 # entrypoint executes the JavaScript CLI directly, without `/usr/bin/env`, a
 # shell, or a package manager.
 # --tsconfig tsconfig.runtime.json: the dev tsconfig's extends chain
-# (@slate/config) doesn't resolve inside the pruned bundle and tsx would drop
+# (@quill/config) doesn't resolve inside the pruned bundle and tsx would drop
 # the whole config (losing experimentalDecorators → Nest crash at boot).
 CMD ["node_modules/tsx/dist/cli.mjs", "--tsconfig", "tsconfig.runtime.json", "src/main.ts"]

@@ -1,5 +1,5 @@
 {
-  "name": "@slate/notifications",
+  "name": "@quill/notifications",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -20,7 +20,7 @@
     "nodemailer": "^6.9.16"
   },
   "devDependencies": {
-    "@slate/config": "workspace:*",
+    "@quill/config": "workspace:*",
     "@types/node": "^22.10.2",
     "@types/nodemailer": "^6.4.17",
     "eslint": "^9.17.0",

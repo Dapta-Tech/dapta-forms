@@ -4,8 +4,8 @@
  * the error itself or on `.driverError`.
  *
  * The critical one: `23P01` exclusion_violation, raised by the
- * `booking_no_overlap` EXCLUDE constraint — the last line of defense against
- * double-booking, mapped to 409 SLOT_TAKEN (API-CONTRACT §Engine rules 2).
+ * DB-level constraints (unique indexes, EXCLUDE) — the last line of defense
+ * for integrity guarantees, mapped to 409 conflicts at the API.
  */
 
 /** SQLSTATE codes we care about. */
@@ -21,7 +21,7 @@ export function pgErrorCode(err: unknown): string | undefined {
   return undefined;
 }
 
-/** True when the error is the anti-double-booking EXCLUDE violation. */
+/** True when the error is an EXCLUDE (exclusion-constraint) violation. */
 export function isExclusionViolation(err: unknown): boolean {
   return pgErrorCode(err) === PG_EXCLUSION_VIOLATION;
 }

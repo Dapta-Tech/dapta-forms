@@ -3,7 +3,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { setSession } from '@/lib/auth-session';
 import { requestOrigin } from '@/lib/request-origin';
 
-const OAUTH_STATE_COOKIE = 'slate_oauth_state';
+const OAUTH_STATE_COOKIE = 'quill_oauth_state';
 
 /**
  * WorkOS callback contract verified against the private deployment adapter:

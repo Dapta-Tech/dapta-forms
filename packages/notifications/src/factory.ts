@@ -39,7 +39,7 @@ export interface EmailConfig {
 /**
  * Select the EmailProvider from configuration. Falls back to log-only whenever a
  * chosen provider is missing its required settings, so the app always boots and
- * booking flows always complete (rule 1: a bare fork runs with nothing set).
+ * submission flows always complete (rule 1: a bare fork runs with nothing set).
  */
 export function createEmailProvider(config: EmailConfig): EmailProvider {
   switch (config.provider) {
@@ -67,7 +67,7 @@ export function createEmailProvider(config: EmailConfig): EmailProvider {
           // Config gaps must NEVER crash the API at boot (never-break-env-vars):
           // an upgraded deployment that still carries only the legacy static key
           // keeps sending (deprecated Bearer fallback); with no credential at
-          // all we degrade to log-only and say so loudly — bookings never block
+          // all we degrade to log-only and say so loudly — submissions never block
           // on mail config.
           const legacyKey = config.http.apiKey || config.http.token;
           if (!legacyKey) {

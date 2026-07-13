@@ -1,12 +1,12 @@
 'use client';
 
 import { useActionState } from 'react';
-import type { BookingMessages } from '@slate/shared';
+import type { FormsMessages } from '@quill/shared';
 import { signInAction } from './actions';
 
-/** Local dev login: email → session (sent as x-slate-email). A successful
+/** Local dev login: email → session (sent as x-quill-email). A successful
  *  action redirects, so only the invalid-email branch returns here. */
-export function LoginForm({ messages: m }: { messages: BookingMessages['admin']['login'] }) {
+export function LoginForm({ messages: m }: { messages: FormsMessages['admin']['login'] }) {
   const [state, action, pending] = useActionState(signInAction, null);
   return (
     <form action={action} className="flex flex-col gap-3">

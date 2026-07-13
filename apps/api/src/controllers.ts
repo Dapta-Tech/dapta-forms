@@ -1,6 +1,6 @@
 import { Controller, Get, Header, HttpException, HttpStatus, Inject } from '@nestjs/common';
-import type { Db } from '@slate/db';
-import { countOutbox, sql } from '@slate/db';
+import type { Db } from '@quill/db';
+import { countOutbox, sql } from '@quill/db';
 import { DB } from './tokens';
 import { openapiSpec } from './openapi';
 
@@ -25,7 +25,7 @@ export class HealthController {
   @Get()
   async health() {
     const db = await this.dbState();
-    return { status: db === 'up' ? 'ok' : 'degraded', service: 'calendars-api', db, dialect: this.db.dialect };
+    return { status: db === 'up' ? 'ok' : 'degraded', service: 'forms-api', db, dialect: this.db.dialect };
   }
 
   /**
@@ -49,7 +49,7 @@ export class HealthController {
         outbox = null;
       }
     }
-    const body = { status: db === 'up' ? 'ready' : 'unavailable', service: 'calendars-api', db, outbox };
+    const body = { status: db === 'up' ? 'ready' : 'unavailable', service: 'forms-api', db, outbox };
     if (db !== 'up') throw new HttpException(body, HttpStatus.SERVICE_UNAVAILABLE);
     return body;
   }
@@ -67,10 +67,10 @@ export class DocsController {
   @Header('content-type', 'text/html; charset=utf-8')
   docs(): string {
     // No CDN (offline/CSP-safe): pretty-print the spec with a link to the raw JSON.
-    return `<!doctype html><html><head><title>Slate API</title>
+    return `<!doctype html><html><head><title>Quill API</title>
 <style>body{font:14px/1.5 system-ui,sans-serif;max-width:900px;margin:2rem auto;padding:0 1rem}
 pre{background:#f6f8fa;padding:1rem;border-radius:8px;overflow:auto}a{color:#2563eb}</style></head>
-<body><h1>Slate API</h1><p>OpenAPI 3.1 · <a href="/openapi.json">/openapi.json</a></p>
+<body><h1>Quill API</h1><p>OpenAPI 3.1 · <a href="/openapi.json">/openapi.json</a></p>
 <pre>${JSON.stringify(openapiSpec, null, 2).replace(/</g, '&lt;')}</pre></body></html>`;
   }
 }

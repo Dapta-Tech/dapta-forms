@@ -28,8 +28,8 @@ export const serverEnvSchema = z.object({
 
   // Email / notifications
   EMAIL_PROVIDER: z.enum(['log-only', 'noop', 'smtp', 'http']).default('log-only'),
-  MAIL_FROM_EMAIL: z.string().default('bookings@example.com'),
-  MAIL_FROM_NAME: z.string().default('Calendars'),
+  MAIL_FROM_EMAIL: z.string().default('forms@example.com'),
+  MAIL_FROM_NAME: z.string().default('Forms'),
 
   // SMTP adapter
   SMTP_HOST: z.string().optional(),
@@ -55,7 +55,7 @@ export const serverEnvSchema = z.object({
   // Message category for `transactional-v1` (defaults to `lifecycle`).
   EMAIL_HTTP_CATEGORY: z.string().optional(),
 
-  // Premium features (vanity slug + future perks). Calendars is ALWAYS free —
+  // Premium features (vanity slug + future perks). Forms is ALWAYS free —
   // `locked` gates premium on the customer's Dapta AI subscription via the
   // entitlement service below; `open` (default) unlocks everything, so a bare
   // OSS fork gets every feature with no upstream wired.
@@ -69,7 +69,7 @@ export const serverEnvSchema = z.object({
   AUTH_PROVIDER: z.enum(['local', 'workos']).default('local'),
 
   // DEV ONLY — which host the local stub logs in as. When AUTH_PROVIDER=local
-  // and this is set (or an `x-slate-email` header is sent), the stub resolves
+  // and this is set (or an `x-quill-email` header is sent), the stub resolves
   // the member with this email, JIT-creating a fresh account+member if none
   // exists — so a developer lands in THEIR own workspace instead of the first
   // seeded demo account. Ignored in production (the stub refuses to boot there).
@@ -77,7 +77,7 @@ export const serverEnvSchema = z.object({
 
   // DEV ONLY — when true, the local stub does NOT fall back to the seeded/
   // DEV_LOGIN_EMAIL account: a request with no identity (no impersonation
-  // headers, no `x-slate-email`) resolves to 401 UNAUTHENTICATED. This gives
+  // headers, no `x-quill-email`) resolves to 401 UNAUTHENTICATED. This gives
   // local dev a real "logged out" state so a web login/logout flow can bounce
   // to the sign-in screen (mirrors the old app). Default false keeps OSS
   // clone-and-run frictionless (always logged in, zero auth setup).
@@ -94,29 +94,7 @@ export const serverEnvSchema = z.object({
   JWT_ISSUER: z.string().optional(),
   JWT_AUDIENCE: z.string().optional(),
 
-  // Calendar — `disabled` (default) runs with no external calendar: slots
-  // subtract only local busy and no events are written out. `external` selects
-  // the concrete generic-HTTP adapter (`ExternalCalendarProvider`); selecting it
-  // without a backend configured (below) fails loud rather than silent-disabling.
-  CALENDAR_PROVIDER: z.enum(['disabled', 'external']).default('disabled'),
-
-  // External calendar backend (only read when CALENDAR_PROVIDER=external). The
-  // adapter speaks a generic REST contract to CALENDAR_API_BASE_URL, authorized
-  // by a bearer. Two ways to supply the bearer + request shaping:
-  //   - Self-host / simple REST backend: set CALENDAR_API_TOKEN (a static bearer)
-  //     and the committed GenericRestWire is used.
-  //   - Real integration platform: set CALENDAR_BACKEND_MODULE to a PRIVATE
-  //     overlay module (gitignored, e.g. under deploy/) that default-exports a
-  //     factory `(env) => { baseUrl, tokenSource, wire }` — the JWT authority +
-  //     vendor request mapping live there, never in this public build (R15).
-  // Base URL / token / module path are all left to deploy config or a local
-  // .env — never hardcoded here (same rule as JWT_ISSUER/JWT_AUDIENCE).
-  CALENDAR_API_BASE_URL: z.string().url().optional(),
-  CALENDAR_API_TOKEN: z.string().optional(),
-  CALENDAR_BACKEND_MODULE: z.string().optional(),
-  CALENDAR_HTTP_TIMEOUT_MS: z.coerce.number().int().positive().default(30_000),
-
-  // Outbox worker (B7/DM1): drains durable side-effects (calendar write-out,
+  // Outbox worker (B7/DM1): drains durable side-effects (submission emails,
   // webhook delivery) with retry+backoff. Enabled by default; the poll interval
   // and retry ceiling are tunable. Set OUTBOX_WORKER_ENABLED=false to run the
   // API without the background drainer (e.g. when a separate worker process owns
@@ -127,11 +105,11 @@ export const serverEnvSchema = z.object({
 
   // CORS: a comma-separated allowlist of origins permitted to call the API from
   // a browser. When UNSET we default to PUBLIC_APP_URL only (the app's own web
-  // origin) — NOT reflect-any. To embed the public booking widget on other
+  // origin) — NOT reflect-any. To embed the public form widget on other
   // domains, list them here, e.g. CORS_ORIGINS="https://acme.com,https://foo.io".
   CORS_ORIGINS: z.string().optional(),
 
-  // Rate limiting (public booking/availability). A per-IP token bucket: burst up
+  // Rate limiting (public form submission). A per-IP token bucket: burst up
   // to CAPACITY, sustained REFILL tokens/sec. Enabled by default; a fork can
   // disable it or plug a distributed limiter in the private overlay.
   RATE_LIMIT_ENABLED: boolish.default('true'),

@@ -11,7 +11,7 @@ export type EmailDriver = 'log-only' | 'noop' | 'smtp' | 'http';
 export interface EmailAttachment {
   filename: string;
   content: string | Buffer;
-  /** MIME type, e.g. `text/calendar; method=REQUEST; charset=utf-8`. */
+  /** MIME type, e.g. `application/pdf; charset=utf-8`. */
   contentType?: string;
 }
 
@@ -28,11 +28,11 @@ export interface EmailMessage {
   replyTo?: string;
   headers?: Record<string, string>;
   /**
-   * Stable, event-specific de-duplication key. The BookingNotifier sets one per
-   * message so a retried delivery (same booking + same lifecycle event) is
-   * de-duplicated by a managed service, while distinct events (e.g. two separate
-   * reschedules to different times) get distinct keys. The generic wire ignores
-   * it; the `transactional-v1` profile forwards it as `idempotencyKey`.
+   * Stable, event-specific de-duplication key. The SubmissionNotifier sets one
+   * per message so a retried delivery (same submission + same lifecycle event)
+   * is de-duplicated by a managed service, while distinct events get distinct
+   * keys. The generic wire ignores it; the `transactional-v1` profile forwards
+   * it as `idempotencyKey`.
    */
   idempotencyKey?: string;
 }
@@ -48,7 +48,7 @@ export interface EmailProvider {
   /**
    * Deliver one email. Implementations resolve with `delivered:false` for an
    * ordinary failure they can report; they throw only for programmer errors
-   * (e.g. a message with no recipient). A booking is never rolled back on an
+   * (e.g. a message with no recipient). A submission is never rolled back on an
    * email failure — the caller decides whether to retry.
    */
   send(message: EmailMessage): Promise<EmailResult>;

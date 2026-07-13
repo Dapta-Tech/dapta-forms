@@ -6,13 +6,13 @@ import {
   Inject,
   Injectable,
 } from '@nestjs/common';
-import type { ServerEnv } from '@slate/config/env';
+import type { ServerEnv } from '@quill/config/env';
 import { RATE_LIMITER } from './tokens';
 
 /**
  * Rate limiting for the unauthenticated public surface (P1-5). The old service
- * had none — public booking/availability/manage were unthrottled, so booking
- * spam and availability scraping were free. This is a pluggable port: the OSS
+ * had none — the public surface was unthrottled, so submission spam and
+ * config scraping were free. This is a pluggable port: the OSS
  * default is an in-process per-IP token bucket; a deployment can disable it or
  * swap a distributed limiter (Redis) behind the same interface in the overlay.
  */

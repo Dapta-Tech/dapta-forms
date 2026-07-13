@@ -5,7 +5,7 @@
  *   - auto-handle derivation from a display name / email
  *   - the paid-plan gate for claiming a vanity slug (OSS-unlockable via env)
  *
- * Collision handling (retry loops against the DB) lives in @slate/db; these
+ * Collision handling (retry loops against the DB) lives in @quill/db; these
  * helpers only generate candidates and validate shapes.
  */
 import { randomInt } from 'node:crypto';
@@ -38,8 +38,8 @@ export function isShortCode(value: string): boolean {
  * per-account handle blocklists so an account slug can't shadow app routes.
  */
 export const RESERVED_PUBLIC_SLUGS = new Set([
-  'about', 'admin', 'api', 'app', 'apps', 'assets', 'auth', 'availability', 'billing', 'blog', 'booking',
-  'bookings', 'calendar', 'calendars', 'connections', 'contact', 'dashboard', 'demo', 'dev',
+  'about', 'admin', 'api', 'app', 'apps', 'assets', 'auth', 'billing', 'blog',
+  'forms', 'form', 'submissions', 'connections', 'contact', 'dashboard', 'demo', 'dev',
   'docs', 'events', 'event-types', 'favicon', 'health', 'help', 'home', 'internal', 'login',
   'logout', 'mail', 'manage', 'me', 'null', 'oauth', 'pricing', 'privacy', 'public', 'reserved',
   'robots', 'root', 'settings', 'signin', 'signup', 'sitemap', 'static', 'status', 'support',
@@ -63,8 +63,8 @@ export function validateVanitySlug(slug: string): VanitySlugIssue {
 }
 
 /**
- * The single policy gate for claiming a vanity slug (open-core). Calendars is
- * ALWAYS free — there is no Calendars-side plan. Premium unlocks come from the
+ * The single policy gate for claiming a vanity slug (open-core). Forms is
+ * ALWAYS free — there is no Forms-side plan. Premium unlocks come from the
  * customer's Dapta AI subscription, validated upstream (IAM) and passed in
  * here as `isPaidDaptaCustomer`. OSS forks default to `open`
  * (`PREMIUM_FEATURES=open`): no upsell, they just don't get cloud entitlements.

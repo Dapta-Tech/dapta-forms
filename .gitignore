@@ -51,5 +51,4 @@ pnpm-debug.log*
 # internal deploy/auth docs — never publish (infra names)
 WORKOS-STATUS.md
 AUTH-WEB-CONTRACT.md
-CALENDAR-INTEGRATION-PLAN.md
 *-STATUS.md
