@@ -54,6 +54,11 @@ const sliderScoringSchema = z.object({
   points: z.number().int(),
 });
 
+const clientLogoSchema = z.object({
+  name: z.string().min(1).max(80),
+  src: z.string().max(2048).nullable().optional(),
+});
+
 export const formStepSchema = z.object({
   key: z.string().min(1).max(64),
   type: z.enum(formFieldType),
@@ -74,10 +79,19 @@ export const formStepSchema = z.object({
   flowGroup: z.enum(['qualification', 'lead_capture']).optional(),
   corporateEmailOnly: z.boolean().optional(),
   phoneMinDigits: z.number().int().positive().optional(),
+  // --- Builder + runtime extensions (all optional; back-compat) -------------
   /** Dynamic question: pick the text from the answer to this earlier field. */
-  questionField: z.string().min(1).nullable().optional(),
+  questionField: z.string().min(1).max(64).nullable().optional(),
   /** value → question text (a `*` key is the fallback); `[field]` interpolated. */
   questionVariants: z.record(z.string(), z.string().max(500)).optional(),
+  fields: z.array(z.string().min(1).max(64)).max(4).optional(),
+  placeholders: z.record(z.string(), z.string().max(200)).optional(),
+  sliderLabelVariants: z.record(z.string(), z.string().max(80)).optional(),
+  sliderUnitLabel: z.string().max(80).nullable().optional(),
+  showIcons: z.boolean().optional(),
+  showForPersonalEmailOnly: z.boolean().optional(),
+  terminal: z.boolean().optional(),
+  triggersReveal: z.boolean().optional(),
 });
 export type FormStepInput = z.infer<typeof formStepSchema>;
 
@@ -86,15 +100,25 @@ export const formCoverSchema = z.object({
   /** A sticky banner line shown above the form throughout the flow. */
   bannerText: z.string().max(200).nullable().optional(),
   eyebrow: z.string().max(200).nullable().optional(),
+  badge: z.string().max(200).nullable().optional(),
   headline: z.string().max(300).nullable().optional(),
   subheadline: z.string().max(500).nullable().optional(),
   ctaText: z.string().max(80).nullable().optional(),
   trustBadge: z.string().max(200).nullable().optional(),
+  logo: z.string().max(2048).nullable().optional(),
+  clientLogos: z.array(clientLogoSchema).max(24).optional(),
 });
 
-/** Per-form branding — the single accent color drives the public surface. */
 export const formBrandingSchema = z.object({
   primaryColor: z.string().max(32).nullable().optional(),
+  logo: z.string().max(2048).nullable().optional(),
+  clientLogos: z.array(clientLogoSchema).max(24).optional(),
+});
+
+export const formRevealSchema = z.object({
+  enabled: z.boolean().optional(),
+  headline: z.string().max(300).nullable().optional(),
+  subtitle: z.string().max(500).nullable().optional(),
 });
 
 export const formOutcomeSchema = z.object({
@@ -172,8 +196,8 @@ export type FormDestination = z.infer<typeof formDestinationSchema>;
 /** The versioned config blob. `version` gates future migrations of the shape. */
 export const formConfigSchema = z.object({
   version: z.literal(1),
-  cover: formCoverSchema.nullable().optional(),
   branding: formBrandingSchema.nullable().optional(),
+  cover: formCoverSchema.nullable().optional(),
   steps: z.array(formStepSchema).default([]),
   scoring: z.object({ enabled: z.boolean().optional() }).nullable().optional(),
   outcomes: z.array(formOutcomeSchema).optional(),
@@ -182,6 +206,8 @@ export const formConfigSchema = z.object({
    * ADDITIVE — absent on every legacy config; the renderer never receives it.
    */
   destinations: z.array(formDestinationSchema).optional(),
+  reveal: formRevealSchema.nullable().optional(),
+  partialSubmitAfterStep: z.number().int().positive().optional(),
 });
 export type FormConfig = z.infer<typeof formConfigSchema>;
 
@@ -219,10 +245,22 @@ export type PublicForm = z.infer<typeof publicFormSchema>;
 
 // --- Submissions -------------------------------------------------------------
 
-/** One submission's answers: fieldName -> value. */
+/**
+ * One submission's answers: fieldName -> value. Most values are scalars (or a
+ * string[] for multi-select); the reserved `utm` key carries a flat string map
+ * of the URL's `utm_*` params (additive — captured from the public URL, never a
+ * new column: it rides inside the free-form answers JSON).
+ */
 export const submissionAnswersSchema = z.record(
   z.string(),
-  z.union([z.string(), z.number(), z.boolean(), z.array(z.string()), z.null()]),
+  z.union([
+    z.string(),
+    z.number(),
+    z.boolean(),
+    z.array(z.string()),
+    z.record(z.string(), z.string()),
+    z.null(),
+  ]),
 );
 export type SubmissionAnswers = z.infer<typeof submissionAnswersSchema>;
 

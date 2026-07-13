@@ -16,6 +16,37 @@ export interface FormsMessages {
     /** SEO/OG meta description for a public form page. */
     seoForm: string;
   };
+  /** Public form-renderer chrome (all user content comes from the form config). */
+  renderer: {
+    start: string;
+    back: string;
+    next: string;
+    submit: string;
+    submitting: string;
+    thankYouTitle: string;
+    thankYouBody: string; // {name}
+    ctaQuestion: string;
+    ctaAction: string;
+    progressLabel: string; // {current} {total}
+    revealHeadline: string;
+    revealSubtitle: string;
+    noSteps: string;
+    dropdownPlaceholder: string;
+    dropdownEmpty: string;
+    trustedBy: string;
+    newTab: string;
+    errors: {
+      required: string;
+      email: string;
+      work_email: string;
+      phone: string;
+      number: string;
+      too_low: string;
+      too_high: string;
+      option: string;
+      submit: string;
+    };
+  };
   admin: {
     login: {
       title: string;
@@ -309,6 +340,36 @@ export const en: FormsMessages = {
     ctaAction: 'Get Dapta Forms — free',
     seoForm: 'Fill out {name} online.',
   },
+  renderer: {
+    start: 'Start',
+    back: 'Back',
+    next: 'Next',
+    submit: 'Submit',
+    submitting: 'Submitting…',
+    thankYouTitle: 'Thank you!',
+    thankYouBody: 'Your responses to “{name}” were recorded.',
+    ctaQuestion: 'Want your own form?',
+    ctaAction: 'Get Dapta Forms — free',
+    progressLabel: 'Step {current} of {total}',
+    revealHeadline: 'Reviewing your answers…',
+    revealSubtitle: 'One moment while we match you with the best next step.',
+    noSteps: 'This form has no steps yet.',
+    dropdownPlaceholder: 'Type to search…',
+    dropdownEmpty: 'No results found',
+    trustedBy: 'Trusted by',
+    newTab: '(opens in a new tab)',
+    errors: {
+      required: 'This field is required.',
+      email: 'Enter a valid email address.',
+      work_email: 'Please use your work email address.',
+      phone: 'Enter a valid phone number.',
+      number: 'Enter a number.',
+      too_low: 'Value is too low.',
+      too_high: 'Value is too high.',
+      option: 'Choose one of the available options.',
+      submit: 'Could not submit — please try again.',
+    },
+  },
   admin: {
     login: {
       title: 'Sign in',
@@ -597,6 +658,36 @@ export const es: FormsMessages = {
     ctaQuestion: '¿Quieres tu propio formulario?',
     ctaAction: 'Consigue Dapta Forms — gratis',
     seoForm: 'Completa {name} en línea.',
+  },
+  renderer: {
+    start: 'Comenzar',
+    back: 'Atrás',
+    next: 'Siguiente',
+    submit: 'Enviar',
+    submitting: 'Enviando…',
+    thankYouTitle: '¡Gracias!',
+    thankYouBody: 'Tus respuestas a «{name}» quedaron registradas.',
+    ctaQuestion: '¿Quieres tu propio formulario?',
+    ctaAction: 'Consigue Dapta Forms — gratis',
+    progressLabel: 'Paso {current} de {total}',
+    revealHeadline: 'Revisando tus respuestas…',
+    revealSubtitle: 'Un momento mientras encontramos el mejor siguiente paso para ti.',
+    noSteps: 'Este formulario aún no tiene pasos.',
+    dropdownPlaceholder: 'Escribe para buscar…',
+    dropdownEmpty: 'No se encontraron resultados',
+    trustedBy: 'Confían en nosotros',
+    newTab: '(se abre en una pestaña nueva)',
+    errors: {
+      required: 'Este campo es obligatorio.',
+      email: 'Introduce un correo válido.',
+      work_email: 'Usa tu correo corporativo.',
+      phone: 'Introduce un número de teléfono válido.',
+      number: 'Introduce un número.',
+      too_low: 'El valor es muy bajo.',
+      too_high: 'El valor es muy alto.',
+      option: 'Elige una de las opciones disponibles.',
+      submit: 'No se pudo enviar. Inténtalo de nuevo.',
+    },
   },
   admin: {
     login: {

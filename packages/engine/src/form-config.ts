@@ -12,8 +12,6 @@ import type {
   FormFieldType,
   FormOption,
   FormOutcome,
-  Answers,
-  AnswerValue,
 } from './form-logic';
 
 /** Field kinds that capture the lead and therefore never score. */
@@ -196,26 +194,5 @@ export function normalizeConfig(config: FormConfig): FormConfig {
   return next;
 }
 
-/** Replace `[field]` tokens with the respondent's answer to that field. */
-export function interpolate(template: string, answers: Answers): string {
-  return template.replace(/\[([a-zA-Z0-9_]+)\]/g, (_, field: string) => {
-    const value: AnswerValue = answers[field];
-    if (value == null) return '';
-    return Array.isArray(value) ? value.join(', ') : String(value);
-  });
-}
-
-/**
- * The question to show for a step given the answers so far: a `questionVariants`
- * match on `questionField` (falling back to `*` then the plain `question`), with
- * `[field]` interpolation applied to the result.
- */
-export function resolveQuestion(step: FormStep, answers: Answers): string {
-  let text = step.question ?? '';
-  if (step.questionField && step.questionVariants) {
-    const raw = answers[step.questionField];
-    const key = raw == null ? '' : Array.isArray(raw) ? raw.join(',') : String(raw);
-    text = step.questionVariants[key] ?? step.questionVariants['*'] ?? text;
-  }
-  return interpolate(text, answers);
-}
+// `interpolate` and `resolveQuestion` are unified in ./form-logic (the core the
+// runtime and the builder preview both call) — re-exported via the package index.

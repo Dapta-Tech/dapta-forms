@@ -2,8 +2,16 @@ import { describe, it, expect } from 'vitest';
 import {
   visibleSteps,
   validateAnswer,
+  validateAnswerCode,
   computeScore,
   resolveOutcome,
+  isPersonalEmail,
+  orderSteps,
+  interpolate,
+  resolveStepDisplay,
+  runtimeSteps,
+  partialSubmitKey,
+  nameFields,
   type FormConfig,
   type FormStep,
 } from './form-logic';
@@ -124,5 +132,122 @@ describe('resolveOutcome', () => {
   it('picks the highest bucket the score clears', () => {
     expect(resolveOutcome(config, 15)?.id).toBe('high');
     expect(resolveOutcome(config, 3)?.id).toBe('low');
+  });
+});
+
+describe('isPersonalEmail', () => {
+  it('flags free-mail domains and passes corporate ones', () => {
+    expect(isPersonalEmail('a@gmail.com')).toBe(true);
+    expect(isPersonalEmail('a@hotmail.co.uk')).toBe(true);
+    expect(isPersonalEmail('a@acme.io')).toBe(false);
+    expect(isPersonalEmail(null)).toBe(false);
+    expect(isPersonalEmail(123)).toBe(false);
+  });
+});
+
+describe('orderSteps', () => {
+  it('puts qualification before lead_capture, preserving order within a phase', () => {
+    const steps: FormStep[] = [
+      step({ key: 'email', type: 'email', flowGroup: 'lead_capture' }),
+      step({ key: 'q1', type: 'text', flowGroup: 'qualification' }),
+      step({ key: 'phone', type: 'phone', flowGroup: 'lead_capture' }),
+      step({ key: 'q2', type: 'text' }), // no group → qualification
+    ];
+    expect(orderSteps(steps).map((s) => s.key)).toEqual(['q1', 'q2', 'email', 'phone']);
+  });
+});
+
+describe('personal-email branch (showForPersonalEmailOnly)', () => {
+  const branchCfg: FormConfig = {
+    version: 1,
+    steps: [
+      step({ key: 'email', type: 'email', flowGroup: 'lead_capture' }),
+      step({ key: 'website', type: 'text', flowGroup: 'lead_capture', showForPersonalEmailOnly: true }),
+      step({ key: 'phone', type: 'phone', flowGroup: 'lead_capture' }),
+    ],
+  };
+  it('hides the branch for a corporate email and shows it for a personal one', () => {
+    expect(visibleSteps(branchCfg, { email: 'a@acme.io' }).map((s) => s.key)).toEqual(['email', 'phone']);
+    expect(visibleSteps(branchCfg, { email: 'a@gmail.com' }).map((s) => s.key)).toEqual([
+      'email',
+      'website',
+      'phone',
+    ]);
+  });
+});
+
+describe('interpolate + resolveStepDisplay', () => {
+  it('substitutes [key] tokens, removing unknown/empty tokens', () => {
+    expect(interpolate('Hi [firstname]!', { firstname: 'Ada' })).toBe('Hi Ada!');
+    expect(interpolate('Hi [firstname]!', {})).toBe('Hi !');
+  });
+  it('picks the dynamic question variant and slider unit label', () => {
+    const s = step({
+      key: 'volume',
+      type: 'slider',
+      question: 'How much?',
+      questionField: 'problem',
+      questionVariants: { leads: 'How many leads, [firstname]?' },
+      sliderLabelVariants: { leads: 'leads / mo' },
+    });
+    const resolved = resolveStepDisplay(s, { problem: 'leads', firstname: 'Sam' });
+    expect(resolved.question).toBe('How many leads, Sam?');
+    expect(resolved.sliderUnitLabel).toBe('leads / mo');
+  });
+});
+
+describe('runtimeSteps', () => {
+  it('orders two-phase, applies skip-logic, and resolves display', () => {
+    const cfg: FormConfig = {
+      version: 1,
+      steps: [
+        step({ key: 'email', type: 'email', flowGroup: 'lead_capture' }),
+        step({
+          key: 'problem',
+          type: 'dropdown',
+          flowGroup: 'qualification',
+          question: 'What is the problem?',
+          options: [{ label: 'Leads', value: 'leads' }],
+        }),
+        step({
+          key: 'detail',
+          type: 'text',
+          flowGroup: 'qualification',
+          question: 'Tell us more about [problem].',
+          showWhen: { field: 'problem', values: ['leads'] },
+        }),
+      ],
+    };
+    const walked = runtimeSteps(cfg, { problem: 'leads' });
+    expect(walked.map((s) => s.key)).toEqual(['problem', 'detail', 'email']);
+    expect(walked[1].question).toBe('Tell us more about leads.');
+  });
+});
+
+describe('validateAnswerCode', () => {
+  it('returns stable codes for each failure', () => {
+    expect(validateAnswerCode(step({ key: 'x', type: 'text', required: true }), '')).toEqual({
+      ok: false,
+      code: 'required',
+    });
+    expect(validateAnswerCode(step({ key: 'e', type: 'email', required: true }), 'nope').code).toBe('email');
+    expect(
+      validateAnswerCode(step({ key: 'e', type: 'email', corporateEmailOnly: true }), 'a@gmail.com').code,
+    ).toBe('work_email');
+    expect(validateAnswerCode(step({ key: 'p', type: 'phone', phoneMinDigits: 8 }), '12').code).toBe('phone');
+    expect(validateAnswerCode(step({ key: 's', type: 'slider', min: 0, max: 5 }), 9).code).toBe('too_high');
+  });
+  it('checks both name sub-fields', () => {
+    const s = step({ key: 'name', type: 'name', required: true });
+    expect(validateAnswerCode(s, undefined, { firstname: 'Ada', lastname: '' }).ok).toBe(false);
+    expect(validateAnswerCode(s, undefined, { firstname: 'Ada', lastname: 'Lovelace' }).ok).toBe(true);
+    expect(nameFields(s)).toEqual(['firstname', 'lastname']);
+  });
+});
+
+describe('partialSubmitKey', () => {
+  it('resolves the 1-based threshold step key or null', () => {
+    expect(partialSubmitKey({ ...config, partialSubmitAfterStep: 4 })).toBe('email');
+    expect(partialSubmitKey(config)).toBeNull();
   });
 });
