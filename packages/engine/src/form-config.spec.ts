@@ -7,9 +7,9 @@ import {
   createEmptyOutcome,
   hasScoringSignal,
   normalizeConfig,
-  interpolate,
-  resolveQuestion,
 } from './form-config';
+// interpolate + resolveQuestion are unified in ./form-logic (shared by builder + runtime).
+import { interpolate, resolveQuestion } from './form-logic';
 import type { FormConfig, FormStep } from './form-logic';
 
 const step = (p: Partial<FormStep> & Pick<FormStep, 'key' | 'type'>): FormStep => p;

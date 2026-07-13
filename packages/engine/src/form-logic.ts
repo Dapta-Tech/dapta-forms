@@ -75,6 +75,11 @@ export interface FormStep {
   corporateEmailOnly?: boolean;
   /** Phone validation: minimum digit count. */
   phoneMinDigits?: number;
+  // --- Builder + runtime extensions (all optional; back-compat) -------------
+  /** `name` step: the two fields collected on one slide (default firstname+lastname). */
+  fields?: string[];
+  /** `name` step: per-field placeholders keyed by field name. */
+  placeholders?: Record<string, string>;
   /**
    * Dynamic question variants: pick the question text from the answer to
    * `questionField`. `questionVariants[value]` overrides `question` when the
@@ -82,7 +87,26 @@ export interface FormStep {
    * plain `question`) is the fallback. Lets one step ask a tailored question.
    */
   questionField?: string | null;
+  /** Question text per value of `questionField` (falls back to `question`). */
   questionVariants?: Record<string, string>;
+  /** Slider unit label per value of `questionField` (falls back to `sliderUnitLabel`). */
+  sliderLabelVariants?: Record<string, string>;
+  /** Static unit label shown next to the slider value (e.g. "leads / mo"). */
+  sliderUnitLabel?: string | null;
+  /** `multiple_choice`: render as an icon grid instead of a radio list. */
+  showIcons?: boolean;
+  /**
+   * Branch insertion: show this step ONLY when the `email` answer is a personal/
+   * free-mail domain (the pilot's "ask for company/website when email is personal").
+   */
+  showForPersonalEmailOnly?: boolean;
+  /**
+   * Terminal step (disqualify path): completing it ends the flow — the submission
+   * is finalized and the outcome resolved, skipping any reveal/booking screen.
+   */
+  terminal?: boolean;
+  /** Show the processing/reveal interstitial after this step completes. */
+  triggersReveal?: boolean;
 }
 
 export interface FormOutcome {
@@ -93,32 +117,67 @@ export interface FormOutcome {
   redirectUrl?: string | null;
 }
 
+/** A client logo chip on the cover marquee (image `src`, or the `name` as text). */
+export interface FormClientLogo {
+  name: string;
+  src?: string | null;
+}
+
 export interface FormCover {
   enabled?: boolean;
-  /** A sticky banner line shown above the form throughout the flow. */
+  /** A sticky banner line (promo strip) shown above every screen throughout the flow. */
   bannerText?: string | null;
   eyebrow?: string | null;
+  /** Alias for eyebrow (pilot `badge`); eyebrow wins when both are set. */
+  badge?: string | null;
   headline?: string | null;
   subheadline?: string | null;
   ctaText?: string | null;
   trustBadge?: string | null;
+  /** Cover logo image URL (falls back to branding.logo, then the product mark). */
+  logo?: string | null;
+  /** Optional "trusted by" marquee shown on the cover. */
+  clientLogos?: FormClientLogo[];
 }
 
-/** Per-form branding — the single accent color drives the public surface. */
+/** Per-form branding — the accent color threads the banner/CTA/selected states. */
 export interface FormBranding {
   primaryColor?: string | null;
+  logo?: string | null;
+  clientLogos?: FormClientLogo[];
+}
+
+/** Optional processing/result-reveal interstitial (generic, templated copy). */
+export interface FormReveal {
+  enabled?: boolean;
+  headline?: string | null;
+  subtitle?: string | null;
 }
 
 export interface FormConfig {
   version: 1;
-  cover?: FormCover | null;
   branding?: FormBranding | null;
+  cover?: FormCover | null;
   steps: FormStep[];
   scoring?: { enabled?: boolean } | null;
   outcomes?: FormOutcome[];
+  reveal?: FormReveal | null;
+  /**
+   * Persist a partial submission once the step at this 1-based position in
+   * `steps` is completed (typically just past the lead-capture email). Absent =
+   * no partial save.
+   */
+  partialSubmitAfterStep?: number;
 }
 
-export type AnswerValue = string | string[] | number | boolean | null | undefined;
+export type AnswerValue =
+  | string
+  | string[]
+  | number
+  | boolean
+  | Record<string, string>
+  | null
+  | undefined;
 export type Answers = Record<string, AnswerValue>;
 
 /** Normalize an answer to the set of string tokens it represents (for matching). */
@@ -136,14 +195,36 @@ function conditionHolds(cond: StepCondition, answers: Answers): boolean {
 
 /**
  * The steps to show given the answers so far, in config order. A step appears
- * when its `showWhen` holds (or is absent) AND its `hideWhen` does not hold.
+ * when its `showWhen` holds (or is absent) AND its `hideWhen` does not hold —
+ * and, for a personal-email-only branch step, only when the email is personal.
  */
 export function visibleSteps(config: FormConfig, answers: Answers): FormStep[] {
   return config.steps.filter((step) => {
     if (step.showWhen && !conditionHolds(step.showWhen, answers)) return false;
     if (step.hideWhen && conditionHolds(step.hideWhen, answers)) return false;
+    if (step.showForPersonalEmailOnly) {
+      const emailKey = findEmailKey(config);
+      if (!emailKey || !isPersonalEmail(answers[emailKey])) return false;
+    }
     return true;
   });
+}
+
+/** The first `email`-typed step's key (the branch pivot for personal-email logic). */
+function findEmailKey(config: FormConfig): string | null {
+  return config.steps.find((s) => s.type === 'email')?.key ?? null;
+}
+
+/**
+ * True when the answer looks like a personal/free-mail address. Accepts an
+ * answer value (or a raw string); non-strings and empties are never personal.
+ */
+export function isPersonalEmail(value: AnswerValue): boolean {
+  if (typeof value !== 'string') return false;
+  const domain = value.trim().toLowerCase().split('@')[1] ?? '';
+  if (!domain) return false;
+  const base = domain.split('.')[0] ?? '';
+  return PERSONAL_EMAIL_DOMAINS.has(domain) || FREE_EMAIL_BASES.has(base);
 }
 
 export type ValidationResult = { ok: true } | { ok: false; error: string };
@@ -160,6 +241,19 @@ const PERSONAL_EMAIL_DOMAINS = new Set([
   'aol.com',
   'proton.me',
   'protonmail.com',
+]);
+/** Domain "base" tokens (before the first dot) also treated as free-mail. */
+const FREE_EMAIL_BASES = new Set([
+  'gmail',
+  'hotmail',
+  'outlook',
+  'yahoo',
+  'icloud',
+  'live',
+  'aol',
+  'msn',
+  'proton',
+  'protonmail',
 ]);
 
 /** Validate one answer against its step. Pure; used on both client and server. */
@@ -180,11 +274,10 @@ export function validateAnswer(step: FormStep, value: AnswerValue): ValidationRe
     case 'email': {
       const email = String(value).trim().toLowerCase();
       if (!EMAIL_RE.test(email)) return { ok: false, error: 'Enter a valid email address.' };
-      if (step.corporateEmailOnly) {
-        const domain = email.split('@')[1] ?? '';
-        if (PERSONAL_EMAIL_DOMAINS.has(domain))
-          return { ok: false, error: 'Please use your work email address.' };
-      }
+      // Use the SAME personal-email test as validateAnswerCode (domain list +
+      // free-mail bases) so both validators agree on any given address.
+      if (step.corporateEmailOnly && isPersonalEmail(email))
+        return { ok: false, error: 'Please use your work email address.' };
       return { ok: true };
     }
     case 'phone': {
@@ -257,4 +350,188 @@ export function resolveOutcome(config: FormConfig, score: number): FormOutcome |
     .filter((o) => (o.minScore ?? 0) <= score)
     .sort((a, b) => (b.minScore ?? 0) - (a.minScore ?? 0));
   return buckets[0] ?? null;
+}
+
+// ---------------------------------------------------------------------------
+// Phase-1 runtime helpers (pure; unit-tested). The renderer walks these so the
+// public experience is fully engine-driven — client and server agree on flow,
+// score, and outcome. Existing signatures above are untouched; these are new.
+// ---------------------------------------------------------------------------
+
+/** Stable-code validation for localized inline errors (renderer maps code→copy). */
+export type ValidationCode =
+  | 'required'
+  | 'email'
+  | 'work_email'
+  | 'phone'
+  | 'number'
+  | 'too_low'
+  | 'too_high'
+  | 'option';
+
+export type ValidationCodeResult = { ok: true } | { ok: false; code: ValidationCode };
+
+/**
+ * Like `validateAnswer` but returns a stable machine code instead of English
+ * copy — the renderer resolves the code to a localized message. For a `name`
+ * step, pass the full answers object so both sub-fields are checked.
+ */
+export function validateAnswerCode(
+  step: FormStep,
+  value: AnswerValue,
+  answers: Answers = {},
+): ValidationCodeResult {
+  if (step.type === 'message') return { ok: true };
+
+  if (step.type === 'name') {
+    const fields = nameFields(step);
+    for (const f of fields) {
+      const v = answers[f];
+      const empty = v == null || String(v).trim() === '';
+      if (empty && step.required) return { ok: false, code: 'required' };
+    }
+    return { ok: true };
+  }
+
+  const empty =
+    value == null || value === '' || (Array.isArray(value) && value.length === 0);
+  if (empty) return step.required ? { ok: false, code: 'required' } : { ok: true };
+
+  switch (step.type) {
+    case 'email': {
+      const email = String(value).trim().toLowerCase();
+      if (!EMAIL_RE.test(email)) return { ok: false, code: 'email' };
+      if (step.corporateEmailOnly && isPersonalEmail(email))
+        return { ok: false, code: 'work_email' };
+      return { ok: true };
+    }
+    case 'phone': {
+      const digits = String(value).replace(/\D/g, '');
+      if (digits.length < (step.phoneMinDigits ?? 7)) return { ok: false, code: 'phone' };
+      return { ok: true };
+    }
+    case 'slider': {
+      const n = Number(value);
+      if (Number.isNaN(n)) return { ok: false, code: 'number' };
+      if (step.min != null && n < step.min) return { ok: false, code: 'too_low' };
+      if (step.max != null && n > step.max) return { ok: false, code: 'too_high' };
+      return { ok: true };
+    }
+    case 'dropdown':
+    case 'multiple_choice': {
+      const allowed = new Set((step.options ?? []).map((o) => o.value));
+      if (tokens(value).some((t) => !allowed.has(t))) return { ok: false, code: 'option' };
+      return { ok: true };
+    }
+    default:
+      return { ok: true };
+  }
+}
+
+/** The sub-fields a `name` step collects (default firstname + lastname). */
+export function nameFields(step: FormStep): string[] {
+  if (step.type === 'name') return step.fields ?? ['firstname', 'lastname'];
+  return [step.key];
+}
+
+/**
+ * Two-phase order: qualification steps first, then lead-capture — a stable
+ * partition that preserves each step's relative order within its phase. Steps
+ * with no `flowGroup` are treated as qualification.
+ */
+export function orderSteps(steps: FormStep[]): FormStep[] {
+  const qualification = steps.filter((s) => s.flowGroup !== 'lead_capture');
+  const leadCapture = steps.filter((s) => s.flowGroup === 'lead_capture');
+  return [...qualification, ...leadCapture];
+}
+
+/** Replace `[key]` tokens in copy with the corresponding answer (empty → left as-is). */
+export function interpolate(template: string, answers: Answers): string {
+  return template.replace(/\[([a-zA-Z0-9_]+)\]/g, (_m, field: string) => {
+    const value: AnswerValue = answers[field];
+    if (value == null) return '';
+    return Array.isArray(value) ? value.join(', ') : String(value);
+  });
+}
+
+/** The lookup token a `questionField` answer resolves to for variant selection. */
+function variantKey(raw: AnswerValue): string {
+  return raw == null ? '' : Array.isArray(raw) ? raw.join(',') : String(raw);
+}
+
+/**
+ * The question to show for a step given the answers so far: a `questionVariants`
+ * match on `questionField` (falling back to `*` then the plain `question`), with
+ * `[field]` interpolation applied to the result. Shared by the builder preview
+ * and the public renderer so both resolve dynamic questions identically.
+ */
+export function resolveQuestion(step: FormStep, answers: Answers): string {
+  let text = step.question ?? '';
+  if (step.questionField && step.questionVariants) {
+    const key = variantKey(answers[step.questionField]);
+    text = step.questionVariants[key] ?? step.questionVariants['*'] ?? text;
+  }
+  return interpolate(text, answers);
+}
+
+/**
+ * Resolve a step for display against the answers: pick the dynamic question
+ * variant (via `resolveQuestion`), interpolate `[key]` tokens in the question,
+ * and resolve the slider unit label variant. Returns a shallow copy — never
+ * mutates the config.
+ */
+export function resolveStepDisplay(step: FormStep, answers: Answers): FormStep {
+  const question = resolveQuestion(step, answers);
+  let sliderUnitLabel = step.sliderUnitLabel ?? null;
+  if (step.questionField && step.sliderLabelVariants) {
+    const key = variantKey(answers[step.questionField]);
+    if (step.sliderLabelVariants[key]) sliderUnitLabel = step.sliderLabelVariants[key];
+  }
+  return { ...step, question, sliderUnitLabel };
+}
+
+/**
+ * The ordered, visible, display-resolved steps the renderer walks — the single
+ * source of truth for the public flow. Composes `orderSteps` (two-phase) +
+ * `visibleSteps` (skip-logic + personal-email branch) + `resolveStepDisplay`
+ * (dynamic variants + interpolation).
+ */
+export function runtimeSteps(config: FormConfig, answers: Answers): FormStep[] {
+  const ordered: FormConfig = { ...config, steps: orderSteps(config.steps) };
+  return visibleSteps(ordered, answers).map((s) => resolveStepDisplay(s, answers));
+}
+
+/** The key of the step at `partialSubmitAfterStep` (1-based over `steps`), or null. */
+export function partialSubmitKey(config: FormConfig): string | null {
+  const n = config.partialSubmitAfterStep;
+  if (n == null || n < 1) return null;
+  return config.steps[n - 1]?.key ?? null;
+}
+
+// ---------------------------------------------------------------------------
+// URL safety (XSS). Shared by the zod config schema (server-side validation on
+// save) AND the public renderer (a runtime guard before navigating). Belt-and-
+// braces: a config could reach the renderer from an older/looser source, so the
+// sink is guarded too — never assign a non-http(s) URL to `window.location`.
+// ---------------------------------------------------------------------------
+
+/**
+ * True only for http(s) URLs — the allowlist for anything assigned to
+ * `window.location` (e.g. an outcome `redirectUrl`). Rejects `javascript:`,
+ * `data:`, `vbscript:`, etc., which `URL`/zod `.url()` would otherwise accept.
+ */
+export function isSafeHttpUrl(url: string): boolean {
+  return /^https?:\/\//i.test(url.trim());
+}
+
+/**
+ * True for URLs safe to render into an `<img src>`: http(s), protocol-relative
+ * (`//host`), root/relative paths, and `data:image/…` URIs. Rejects script
+ * protocols (`javascript:`/`vbscript:`) and non-image `data:` payloads.
+ */
+export function isSafeImageUrl(url: string): boolean {
+  const s = url.trim().toLowerCase();
+  if (s.startsWith('javascript:') || s.startsWith('vbscript:')) return false;
+  if (s.startsWith('data:') && !s.startsWith('data:image/')) return false;
+  return true;
 }

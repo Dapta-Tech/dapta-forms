@@ -348,13 +348,19 @@ export async function upsertSubmission(
   },
 ): Promise<SubmissionRow> {
   const now = input.now ?? Date.now();
-  const existing = await db.get<{ id: string; started_at: number }>(
-    sql`SELECT id, started_at FROM submission
+  const existing = await db.get<{ id: string; started_at: number; completed_at: number | null }>(
+    sql`SELECT id, started_at, completed_at FROM submission
         WHERE form_id = ${input.formId} AND session_id = ${input.sessionId} LIMIT 1`,
   );
   const completedAt = input.partial ? null : now;
   const partialAt = input.partial ? now : null;
   if (existing) {
+    // Reorder guard: a fire-and-forget partial can land AFTER the complete
+    // submit. Once a row is completed, only a complete submit may update it —
+    // a late partial must NOT overwrite the finalized data/score.
+    if (input.partial && existing.completed_at != null) {
+      return (await getSubmissionById(db, existing.id))!;
+    }
     await db.run(
       sql`UPDATE submission
           SET data = ${jsonParam(input.data)}, score = ${input.score},

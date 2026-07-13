@@ -54,6 +54,32 @@ describe('submission upsert', () => {
     expect(rows[0]!.partialAt).not.toBeNull(); // earlier partial preserved
   });
 
+  it('ignores a late partial that arrives AFTER the complete submit', async () => {
+    // Reorder race: the fire-and-forget partial lands after the final submit.
+    // A completed row must NOT be overwritten by a partial payload.
+    const session = 'reorder';
+    await upsertSubmission(db, {
+      formId,
+      sessionId: session,
+      data: { a: 1, b: 2, done: true },
+      score: 9,
+    });
+    // Late partial with stale/lesser data + score — must be a no-op on data/score.
+    await upsertSubmission(db, {
+      formId,
+      sessionId: session,
+      data: { a: 1 },
+      score: 3,
+      partial: true,
+    });
+
+    const rows = await listSubmissions(db, formId);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.score).toBe(9); // completed score preserved
+    expect(rows[0]!.data).toEqual({ a: 1, b: 2, done: true }); // completed data intact
+    expect(rows[0]!.completedAt).not.toBeNull();
+  });
+
   it('creates distinct rows for distinct sessions', async () => {
     await upsertSubmission(db, { formId, sessionId: 'a', data: {}, score: 0 });
     await upsertSubmission(db, { formId, sessionId: 'b', data: {}, score: 0 });
