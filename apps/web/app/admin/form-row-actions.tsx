@@ -6,7 +6,8 @@ import { duplicateFormAction, deleteFormAction } from './actions';
 
 /**
  * Per-row actions for a form: cross-links to its Analytics + Submissions pages
- * (analytics track — additive) plus localized Duplicate / Delete (builder track).
+ * (analytics track) and Integrations page (destinations track — additive), plus
+ * localized Duplicate / Delete (builder track).
  */
 export function FormRowActions({
   id,
@@ -15,7 +16,7 @@ export function FormRowActions({
 }: {
   id: string;
   labels: { duplicate: string; delete: string; deleteConfirm: string };
-  nav?: { analytics: string; submissions: string };
+  nav?: { analytics: string; submissions: string; integrations?: string };
 }) {
   const [pending, start] = useTransition();
   return (
@@ -34,6 +35,14 @@ export function FormRowActions({
           >
             {nav.submissions}
           </Link>
+          {nav.integrations ? (
+            <Link
+              href={`/admin/forms/${id}/integrations`}
+              className="text-muted-foreground transition-colors hover:text-foreground"
+            >
+              {nav.integrations}
+            </Link>
+          ) : null}
         </>
       ) : null}
       <button

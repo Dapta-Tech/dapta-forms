@@ -16,6 +16,7 @@ import {
 } from '@quill/db';
 import type { ServerEnv } from '@quill/config/env';
 import { EmailEffects, OutboxSkipError } from './email-effects';
+import { DestinationEffects } from './destination-effects';
 import { DB, ENV } from './tokens';
 
 /**
@@ -49,6 +50,7 @@ export class OutboxWorker implements OnModuleInit, OnModuleDestroy {
     // reflected metadata for this class dep injects `undefined`. @Inject keeps
     // the class a value and gives Nest the token directly.
     @Inject(EmailEffects) private readonly email: EmailEffects,
+    @Inject(DestinationEffects) private readonly destinations: DestinationEffects,
   ) {}
 
   onModuleInit(): void {
@@ -126,8 +128,11 @@ export class OutboxWorker implements OnModuleInit, OnModuleDestroy {
       await this.email.deliver(row.action, row.payload, row.accountId);
       return;
     }
-    // Forms only enqueues `email` today; a future webhook/integration port can
-    // add its own kind here (reusing the same outbox + retry machinery).
+    if (row.kind === 'webhook' || row.kind === 'hubspot') {
+      if (row.payload == null) throw new Error(`${row.kind} outbox row missing payload`);
+      await this.destinations.deliver(row.action, row.payload);
+      return;
+    }
     throw new Error(`unknown outbox kind: ${String(row.kind)}`);
   }
 }

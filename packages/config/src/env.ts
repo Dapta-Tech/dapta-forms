@@ -55,6 +55,12 @@ export const serverEnvSchema = z.object({
   // Message category for `transactional-v1` (defaults to `lifecycle`).
   EMAIL_HTTP_CATEGORY: z.string().optional(),
 
+  // Submission destinations (CRM/webhook sync). Webhook destinations are fully
+  // self-configured per form; HubSpot needs a server-side private-app token.
+  // Unset = the HubSpot destination + property picker report a disabled state
+  // (a webhook-only fork needs nothing here). Never sent to the browser.
+  HUBSPOT_PRIVATE_APP_TOKEN: z.string().optional(),
+
   // Premium features (vanity slug + future perks). Forms is ALWAYS free —
   // `locked` gates premium on the customer's Dapta AI subscription via the
   // entitlement service below; `open` (default) unlocks everything, so a bare

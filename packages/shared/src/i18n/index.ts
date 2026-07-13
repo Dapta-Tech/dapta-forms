@@ -200,6 +200,7 @@ export interface FormsMessages {
       edit: string;
       analytics: string;
       submissions: string;
+      integrations: string;
       backToForms: string;
     };
     /** The analytics dashboard (funnel + per-step drop-off). */
@@ -257,6 +258,46 @@ export interface FormsMessages {
       na: string;
       error: string;
       retry: string;
+    };
+    integrations: {
+      title: string;
+      subtitle: string;
+      back: string;
+      save: string;
+      saving: string;
+      saved: string;
+      saveError: string;
+      loadError: string;
+      enabled: string;
+      disabled: string;
+      // Webhook
+      webhookTitle: string;
+      webhookDesc: string;
+      webhookUrl: string;
+      webhookUrlPlaceholder: string;
+      webhookUrlInvalid: string;
+      webhookSecret: string;
+      webhookSecretHelp: string;
+      // HubSpot
+      hubspotTitle: string;
+      hubspotDesc: string;
+      hubspotDisabled: string;
+      hubspotLoading: string;
+      fieldMappings: string;
+      fieldMappingsHelp: string;
+      utmMappings: string;
+      utmMappingsHelp: string;
+      scoreProperty: string;
+      dateProperty: string;
+      createNote: string;
+      createNoteHelp: string;
+      selectProperty: string;
+      noProperty: string;
+      addMapping: string;
+      remove: string;
+      stepKey: string;
+      property: string;
+      emptyMappings: string;
     };
   };
 }
@@ -451,6 +492,7 @@ export const en: FormsMessages = {
       edit: 'Edit',
       analytics: 'Analytics',
       submissions: 'Submissions',
+      integrations: 'Integrations',
       backToForms: 'Back to forms',
     },
     analytics: {
@@ -505,6 +547,46 @@ export const en: FormsMessages = {
       na: '—',
       error: 'Couldn’t load submissions.',
       retry: 'Try again',
+    },
+    integrations: {
+      title: 'Integrations',
+      subtitle: 'Send each submission to your CRM or a webhook. Delivery is durable and retried.',
+      back: '← Back to forms',
+      save: 'Save integrations',
+      saving: 'Saving…',
+      saved: 'Integrations saved.',
+      saveError: 'Could not save integrations.',
+      loadError: 'Could not load integrations.',
+      enabled: 'Enabled',
+      disabled: 'Disabled',
+      webhookTitle: 'Webhook',
+      webhookDesc: 'POST each submission as JSON to a URL you control.',
+      webhookUrl: 'Endpoint URL',
+      webhookUrlPlaceholder: 'https://example.com/webhooks/forms',
+      webhookUrlInvalid: 'Enter a valid https:// URL (plain http is allowed only for localhost).',
+      webhookSecret: 'Signing secret (optional)',
+      webhookSecretHelp:
+        'When set, each request is signed with HMAC-SHA256 in the X-Quill-Signature header so you can verify it.',
+      hubspotTitle: 'HubSpot',
+      hubspotDesc: 'Upsert the respondent as a contact and attach a note on completed submissions.',
+      hubspotDisabled:
+        'HubSpot is not configured on this server (HUBSPOT_PRIVATE_APP_TOKEN). Property lookup is unavailable, but you can still save a mapping to use once it is set.',
+      hubspotLoading: 'Loading HubSpot properties…',
+      fieldMappings: 'Field mappings',
+      fieldMappingsHelp: 'Map a form step key to a HubSpot contact property. Map one step to “email”.',
+      utmMappings: 'UTM mappings',
+      utmMappingsHelp: 'Map captured UTM values to HubSpot contact properties.',
+      scoreProperty: 'Score property',
+      dateProperty: 'Submitted-date property',
+      createNote: 'Create a note on completed submissions',
+      createNoteHelp: 'Attaches a note with the form name and score to the contact.',
+      selectProperty: 'Select a property…',
+      noProperty: '— none —',
+      addMapping: 'Add mapping',
+      remove: 'Remove',
+      stepKey: 'Form step key',
+      property: 'HubSpot property',
+      emptyMappings: 'No mappings yet.',
     },
   },
 };
@@ -699,6 +781,7 @@ export const es: FormsMessages = {
       edit: 'Editar',
       analytics: 'Analíticas',
       submissions: 'Respuestas',
+      integrations: 'Integraciones',
       backToForms: 'Volver a formularios',
     },
     analytics: {
@@ -753,6 +836,46 @@ export const es: FormsMessages = {
       na: '—',
       error: 'No se pudieron cargar las respuestas.',
       retry: 'Reintentar',
+    },
+    integrations: {
+      title: 'Integraciones',
+      subtitle: 'Envía cada respuesta a tu CRM o a un webhook. La entrega es duradera y con reintentos.',
+      back: '← Volver a formularios',
+      save: 'Guardar integraciones',
+      saving: 'Guardando…',
+      saved: 'Integraciones guardadas.',
+      saveError: 'No se pudieron guardar las integraciones.',
+      loadError: 'No se pudieron cargar las integraciones.',
+      enabled: 'Activado',
+      disabled: 'Desactivado',
+      webhookTitle: 'Webhook',
+      webhookDesc: 'Envía cada respuesta como JSON (POST) a una URL que tú controlas.',
+      webhookUrl: 'URL del endpoint',
+      webhookUrlPlaceholder: 'https://ejemplo.com/webhooks/forms',
+      webhookUrlInvalid: 'Introduce una URL https:// válida (http solo se permite para localhost).',
+      webhookSecret: 'Secreto de firma (opcional)',
+      webhookSecretHelp:
+        'Si se define, cada solicitud se firma con HMAC-SHA256 en la cabecera X-Quill-Signature para que puedas verificarla.',
+      hubspotTitle: 'HubSpot',
+      hubspotDesc: 'Crea o actualiza el contacto y adjunta una nota en las respuestas completadas.',
+      hubspotDisabled:
+        'HubSpot no está configurado en este servidor (HUBSPOT_PRIVATE_APP_TOKEN). La búsqueda de propiedades no está disponible, pero puedes guardar un mapeo para usarlo cuando se configure.',
+      hubspotLoading: 'Cargando propiedades de HubSpot…',
+      fieldMappings: 'Mapeo de campos',
+      fieldMappingsHelp: 'Asigna la clave de un paso del formulario a una propiedad de contacto de HubSpot. Asigna un paso a “email”.',
+      utmMappings: 'Mapeo de UTM',
+      utmMappingsHelp: 'Asigna los valores UTM capturados a propiedades de contacto de HubSpot.',
+      scoreProperty: 'Propiedad de puntuación',
+      dateProperty: 'Propiedad de fecha de envío',
+      createNote: 'Crear una nota en respuestas completadas',
+      createNoteHelp: 'Adjunta al contacto una nota con el nombre del formulario y la puntuación.',
+      selectProperty: 'Selecciona una propiedad…',
+      noProperty: '— ninguna —',
+      addMapping: 'Añadir mapeo',
+      remove: 'Quitar',
+      stepKey: 'Clave del paso',
+      property: 'Propiedad de HubSpot',
+      emptyMappings: 'Aún no hay mapeos.',
     },
   },
 };

@@ -5,7 +5,7 @@
  * into a redirect to /login.
  */
 import { redirect } from 'next/navigation';
-import type { AnalyticsResponse, FormConfig, SubmissionsPage } from '@quill/types';
+import type { AnalyticsResponse, FormConfig, FormDestination, SubmissionsPage } from '@quill/types';
 import { getSession, clearSession, authProvider } from './auth-session';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
@@ -130,6 +130,20 @@ function qs(params: Record<string, string | number | undefined | null>): string 
 
 export const isAdminRole = (role: AccountRole): boolean => role === 'owner' || role === 'admin';
 
+/** A HubSpot contact property surfaced to the mapping UI. */
+export interface HubSpotProperty {
+  name: string;
+  label: string;
+  type: string;
+}
+
+/** The property-picker response: disabled (no server token) or the property list. */
+export type HubSpotPropertiesResponse =
+  | { enabled: false; reason: string }
+  | { enabled: true; cached: boolean; properties: HubSpotProperty[] };
+
+export type { FormDestination };
+
 export const adminApi = {
   me: () => req<Me>('GET', '/v1/me'),
   vanityStatus: () =>
@@ -150,6 +164,13 @@ export const adminApi = {
   listSubmissions: (id: string, q: SubmissionsQuery = {}) =>
     req<SubmissionsPage>('GET', `/v1/forms/${id}/submissions${qs({ ...q })}`),
   deleteSubmission: (id: string) => req<void>('DELETE', `/v1/submissions/${id}`),
+
+  // Integrations
+  hubspotProperties: () =>
+    req<HubSpotPropertiesResponse>('GET', '/v1/integrations/hubspot/properties'),
+  /** Partial write: replaces ONLY the config's `destinations` key server-side. */
+  updateFormDestinations: (id: string, destinations: FormDestination[]) =>
+    req<FormDetail>('PUT', `/v1/forms/${id}/destinations`, { destinations }),
 
   // Members (workspace roster — admin/owner only)
   listMembers: () => req<AccountMember[]>('GET', '/v1/members'),

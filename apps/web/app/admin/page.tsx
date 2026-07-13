@@ -68,7 +68,11 @@ export default async function AdminHome() {
                 <FormRowActions
                   id={f.id}
                   labels={rowLabels}
-                  nav={{ analytics: nav.analytics, submissions: nav.submissions }}
+                  nav={{
+                    analytics: nav.analytics,
+                    submissions: nav.submissions,
+                    integrations: nav.integrations,
+                  }}
                 />
               </li>
             );

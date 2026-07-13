@@ -41,6 +41,9 @@ importers:
       '@quill/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@quill/destinations':
+        specifier: workspace:*
+        version: link:../../packages/destinations
       '@quill/engine':
         specifier: workspace:*
         version: link:../../packages/engine
@@ -201,6 +204,28 @@ importers:
       tsx:
         specifier: ^4.19.2
         version: 4.23.0
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@22.20.1)(lightningcss@1.32.0)
+
+  packages/destinations:
+    dependencies:
+      '@quill/types':
+        specifier: workspace:*
+        version: link:../types
+    devDependencies:
+      '@quill/config':
+        specifier: workspace:*
+        version: link:../config
+      '@types/node':
+        specifier: ^22.10.2
+        version: 22.20.1
+      eslint:
+        specifier: ^9.17.0
+        version: 9.39.5(jiti@2.7.0)
       typescript:
         specifier: ^5.7.2
         version: 5.9.3
