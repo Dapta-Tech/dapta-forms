@@ -30,6 +30,171 @@ export interface FormsMessages {
       error: string;
       retry: string;
     };
+    /** The forms list (index) page. */
+    forms: {
+      title: string;
+      subtitle: string;
+      create: string;
+      createTitle: string;
+      nameLabel: string;
+      namePlaceholder: string;
+      cancel: string;
+      emptyTitle: string;
+      emptyBody: string;
+      updated: string;
+      duplicate: string;
+      delete: string;
+      deleteConfirm: string;
+      copy: string;
+      copied: string;
+      open: string;
+    };
+    /** The form editor (builder). */
+    editor: {
+      back: string;
+      save: string;
+      saving: string;
+      saved: string;
+      saveError: string;
+      previewBtn: string;
+      formNamePlaceholder: string;
+      tabs: { build: string; cover: string; outcomes: string; flow: string };
+      steps: {
+        title: string;
+        add: string;
+        addType: string;
+        empty: string;
+        select: string;
+        delete: string;
+        deleteConfirm: string;
+        dragHint: string;
+        stepN: string;
+        untitled: string;
+      };
+      types: {
+        text: string;
+        name: string;
+        email: string;
+        phone: string;
+        dropdown: string;
+        multiple_choice: string;
+        slider: string;
+        textarea: string;
+        message: string;
+      };
+      props: {
+        type: string;
+        question: string;
+        questionPlaceholder: string;
+        helper: string;
+        placeholder: string;
+        required: string;
+        buttonText: string;
+        buttonTextPlaceholder: string;
+        flowGroup: string;
+        qualification: string;
+        leadCapture: string;
+        flowGroupHint: string;
+        corporateEmailOnly: string;
+        corporateEmailHint: string;
+        phoneMinDigits: string;
+        sliderMin: string;
+        sliderMax: string;
+        sliderStep: string;
+        sliderDefault: string;
+      };
+      options: {
+        title: string;
+        add: string;
+        label: string;
+        value: string;
+        points: string;
+        icon: string;
+        remove: string;
+        empty: string;
+      };
+      sliderScoring: {
+        title: string;
+        hint: string;
+        add: string;
+        min: string;
+        max: string;
+        points: string;
+        remove: string;
+        empty: string;
+      };
+      logic: {
+        title: string;
+        showWhen: string;
+        hideWhen: string;
+        none: string;
+        field: string;
+        values: string;
+        valuesHint: string;
+        clear: string;
+        noPriorFields: string;
+      };
+      variants: {
+        title: string;
+        hint: string;
+        enable: string;
+        field: string;
+        add: string;
+        matchValue: string;
+        matchValuePlaceholder: string;
+        variantQuestion: string;
+        fallback: string;
+        remove: string;
+        interpolationHint: string;
+      };
+      cover: {
+        title: string;
+        subtitle: string;
+        enabled: string;
+        bannerText: string;
+        eyebrow: string;
+        headline: string;
+        subheadline: string;
+        ctaText: string;
+        trustBadge: string;
+        branding: string;
+        primaryColor: string;
+        primaryColorHint: string;
+      };
+      outcomes: {
+        title: string;
+        subtitle: string;
+        scoringEnabled: string;
+        scoringHint: string;
+        add: string;
+        label: string;
+        labelPlaceholder: string;
+        minScore: string;
+        redirectUrl: string;
+        redirectPlaceholder: string;
+        remove: string;
+        empty: string;
+      };
+      flow: {
+        title: string;
+        subtitle: string;
+        cover: string;
+        end: string;
+        conditional: string;
+        empty: string;
+      };
+      preview: {
+        title: string;
+        empty: string;
+        coverTitle: string;
+        step: string;
+        of: string;
+        device: string;
+        mobile: string;
+        desktop: string;
+        close: string;
+      };
+    };
   };
 }
 
@@ -56,6 +221,169 @@ export const en: FormsMessages = {
       error: 'Something went wrong signing in. Please try again.',
       retry: 'Try again',
     },
+    forms: {
+      title: 'Forms',
+      subtitle: 'Build a form, share the public link, collect submissions.',
+      create: 'Create form',
+      createTitle: 'Create a new form',
+      nameLabel: 'Form name',
+      namePlaceholder: 'e.g. Lead qualification quiz',
+      cancel: 'Cancel',
+      emptyTitle: 'No forms yet',
+      emptyBody: 'Create your first form to start collecting responses.',
+      updated: 'Updated {when}',
+      duplicate: 'Duplicate',
+      delete: 'Delete',
+      deleteConfirm: 'Delete this form and all its submissions?',
+      copy: 'Copy link',
+      copied: 'Copied',
+      open: 'Open',
+    },
+    editor: {
+      back: 'Back to forms',
+      save: 'Save',
+      saving: 'Saving…',
+      saved: 'Saved.',
+      saveError: 'Could not save — please try again.',
+      previewBtn: 'Preview',
+      formNamePlaceholder: 'Form name',
+      tabs: { build: 'Build', cover: 'Cover', outcomes: 'Outcomes', flow: 'Flow' },
+      steps: {
+        title: 'Steps',
+        add: 'Add step',
+        addType: 'Step type',
+        empty: 'No steps yet. Add your first step.',
+        select: 'Select a step to edit it.',
+        delete: 'Delete step',
+        deleteConfirm: 'Delete this step?',
+        dragHint: 'Drag to reorder',
+        stepN: 'Step {n}',
+        untitled: 'Untitled step',
+      },
+      types: {
+        text: 'Text',
+        name: 'Full name',
+        email: 'Email',
+        phone: 'Phone',
+        dropdown: 'Dropdown',
+        multiple_choice: 'Multiple choice',
+        slider: 'Slider',
+        textarea: 'Long text',
+        message: 'Message (no input)',
+      },
+      props: {
+        type: 'Type',
+        question: 'Question',
+        questionPlaceholder: 'What do you want to ask?',
+        helper: 'Helper text',
+        placeholder: 'Placeholder',
+        required: 'Required',
+        buttonText: 'Button text',
+        buttonTextPlaceholder: 'Continue',
+        flowGroup: 'Flow group',
+        qualification: 'Qualification',
+        leadCapture: 'Lead capture',
+        flowGroupHint: 'Lead-capture fields (name, email, phone) never contribute to the score.',
+        corporateEmailOnly: 'Require work email',
+        corporateEmailHint: 'Blocks Gmail, Hotmail, Yahoo and other personal domains.',
+        phoneMinDigits: 'Minimum digits',
+        sliderMin: 'Min',
+        sliderMax: 'Max',
+        sliderStep: 'Step',
+        sliderDefault: 'Default',
+      },
+      options: {
+        title: 'Options',
+        add: 'Add option',
+        label: 'Label',
+        value: 'Value',
+        points: 'Points',
+        icon: 'Icon',
+        remove: 'Remove option',
+        empty: 'No options yet.',
+      },
+      sliderScoring: {
+        title: 'Slider scoring',
+        hint: 'Award points when the value falls inside a range.',
+        add: 'Add range',
+        min: 'From',
+        max: 'To',
+        points: 'Points',
+        remove: 'Remove range',
+        empty: 'No scoring ranges — the slider does not score.',
+      },
+      logic: {
+        title: 'Conditional visibility',
+        showWhen: 'Show when',
+        hideWhen: 'Hide when',
+        none: 'Always show',
+        field: 'Field',
+        values: 'Matches any of',
+        valuesHint: 'Comma-separated values from that field’s options.',
+        clear: 'Clear',
+        noPriorFields: 'Add a step before this one to branch on its answer.',
+      },
+      variants: {
+        title: 'Dynamic question',
+        hint: 'Ask a different question depending on an earlier answer.',
+        enable: 'Vary the question by a field',
+        field: 'Based on field',
+        add: 'Add variant',
+        matchValue: 'When answer is',
+        matchValuePlaceholder: 'e.g. founder',
+        variantQuestion: 'Ask instead',
+        fallback: 'Fallback (any other answer)',
+        remove: 'Remove variant',
+        interpolationHint: 'Use [field] to insert an earlier answer into the question.',
+      },
+      cover: {
+        title: 'Cover screen',
+        subtitle: 'The intro screen shown before the first step.',
+        enabled: 'Show a cover screen',
+        bannerText: 'Banner text',
+        eyebrow: 'Eyebrow',
+        headline: 'Headline',
+        subheadline: 'Subheadline',
+        ctaText: 'Start button text',
+        trustBadge: 'Trust badge',
+        branding: 'Branding',
+        primaryColor: 'Primary color',
+        primaryColorHint: 'Drives the accent on the public form. Auto-adjusted for contrast.',
+      },
+      outcomes: {
+        title: 'Outcomes',
+        subtitle: 'Route respondents by their score. The highest bucket they clear wins.',
+        scoringEnabled: 'Enable scoring',
+        scoringHint: 'When off, every submission scores 0 and no outcome is resolved.',
+        add: 'Add outcome',
+        label: 'Label',
+        labelPlaceholder: 'e.g. Hot lead',
+        minScore: 'Minimum score',
+        redirectUrl: 'Redirect URL',
+        redirectPlaceholder: 'https://…',
+        remove: 'Remove outcome',
+        empty: 'No outcomes yet. Add buckets to route by score.',
+      },
+      flow: {
+        title: 'Flow overview',
+        subtitle: 'A read-only map of the form, including conditional branches.',
+        cover: 'Cover',
+        end: 'End',
+        conditional: 'Conditional',
+        empty: 'Add steps to see the flow.',
+      },
+      preview: {
+        title: 'Live preview',
+        empty: 'Select a step to preview it.',
+        coverTitle: 'Cover',
+        step: 'Step',
+        of: 'of',
+        device: 'Device preview',
+        mobile: 'Mobile',
+        desktop: 'Desktop',
+        close: 'Close',
+      },
+    },
   },
 };
 
@@ -81,6 +409,169 @@ export const es: FormsMessages = {
       workosSubtitle: 'Te redirigiremos para iniciar sesión de forma segura.',
       error: 'Algo salió mal al iniciar sesión. Inténtalo de nuevo.',
       retry: 'Reintentar',
+    },
+    forms: {
+      title: 'Formularios',
+      subtitle: 'Crea un formulario, comparte el enlace público y recibe respuestas.',
+      create: 'Crear formulario',
+      createTitle: 'Crear un formulario nuevo',
+      nameLabel: 'Nombre del formulario',
+      namePlaceholder: 'p. ej. Cuestionario de calificación de leads',
+      cancel: 'Cancelar',
+      emptyTitle: 'Aún no hay formularios',
+      emptyBody: 'Crea tu primer formulario para empezar a recibir respuestas.',
+      updated: 'Actualizado {when}',
+      duplicate: 'Duplicar',
+      delete: 'Eliminar',
+      deleteConfirm: '¿Eliminar este formulario y todas sus respuestas?',
+      copy: 'Copiar enlace',
+      copied: 'Copiado',
+      open: 'Abrir',
+    },
+    editor: {
+      back: 'Volver a formularios',
+      save: 'Guardar',
+      saving: 'Guardando…',
+      saved: 'Guardado.',
+      saveError: 'No se pudo guardar — inténtalo de nuevo.',
+      previewBtn: 'Vista previa',
+      formNamePlaceholder: 'Nombre del formulario',
+      tabs: { build: 'Construir', cover: 'Portada', outcomes: 'Resultados', flow: 'Flujo' },
+      steps: {
+        title: 'Pasos',
+        add: 'Añadir paso',
+        addType: 'Tipo de paso',
+        empty: 'Aún no hay pasos. Añade el primero.',
+        select: 'Selecciona un paso para editarlo.',
+        delete: 'Eliminar paso',
+        deleteConfirm: '¿Eliminar este paso?',
+        dragHint: 'Arrastra para reordenar',
+        stepN: 'Paso {n}',
+        untitled: 'Paso sin título',
+      },
+      types: {
+        text: 'Texto',
+        name: 'Nombre completo',
+        email: 'Correo',
+        phone: 'Teléfono',
+        dropdown: 'Desplegable',
+        multiple_choice: 'Opción múltiple',
+        slider: 'Deslizador',
+        textarea: 'Texto largo',
+        message: 'Mensaje (sin campo)',
+      },
+      props: {
+        type: 'Tipo',
+        question: 'Pregunta',
+        questionPlaceholder: '¿Qué quieres preguntar?',
+        helper: 'Texto de ayuda',
+        placeholder: 'Marcador de posición',
+        required: 'Obligatorio',
+        buttonText: 'Texto del botón',
+        buttonTextPlaceholder: 'Continuar',
+        flowGroup: 'Grupo de flujo',
+        qualification: 'Calificación',
+        leadCapture: 'Captura de lead',
+        flowGroupHint: 'Los campos de captura (nombre, correo, teléfono) nunca suman al puntaje.',
+        corporateEmailOnly: 'Exigir correo corporativo',
+        corporateEmailHint: 'Bloquea Gmail, Hotmail, Yahoo y otros dominios personales.',
+        phoneMinDigits: 'Dígitos mínimos',
+        sliderMin: 'Mín',
+        sliderMax: 'Máx',
+        sliderStep: 'Paso',
+        sliderDefault: 'Predeterminado',
+      },
+      options: {
+        title: 'Opciones',
+        add: 'Añadir opción',
+        label: 'Etiqueta',
+        value: 'Valor',
+        points: 'Puntos',
+        icon: 'Ícono',
+        remove: 'Quitar opción',
+        empty: 'Aún no hay opciones.',
+      },
+      sliderScoring: {
+        title: 'Puntaje del deslizador',
+        hint: 'Otorga puntos cuando el valor cae dentro de un rango.',
+        add: 'Añadir rango',
+        min: 'Desde',
+        max: 'Hasta',
+        points: 'Puntos',
+        remove: 'Quitar rango',
+        empty: 'Sin rangos de puntaje — el deslizador no suma.',
+      },
+      logic: {
+        title: 'Visibilidad condicional',
+        showWhen: 'Mostrar cuando',
+        hideWhen: 'Ocultar cuando',
+        none: 'Mostrar siempre',
+        field: 'Campo',
+        values: 'Coincide con',
+        valuesHint: 'Valores separados por comas de las opciones de ese campo.',
+        clear: 'Limpiar',
+        noPriorFields: 'Añade un paso antes de este para ramificar por su respuesta.',
+      },
+      variants: {
+        title: 'Pregunta dinámica',
+        hint: 'Haz una pregunta distinta según una respuesta anterior.',
+        enable: 'Variar la pregunta según un campo',
+        field: 'Según el campo',
+        add: 'Añadir variante',
+        matchValue: 'Cuando la respuesta sea',
+        matchValuePlaceholder: 'p. ej. fundador',
+        variantQuestion: 'Preguntar en su lugar',
+        fallback: 'Alternativa (cualquier otra respuesta)',
+        remove: 'Quitar variante',
+        interpolationHint: 'Usa [campo] para insertar una respuesta anterior en la pregunta.',
+      },
+      cover: {
+        title: 'Portada',
+        subtitle: 'La pantalla de introducción antes del primer paso.',
+        enabled: 'Mostrar una portada',
+        bannerText: 'Texto del banner',
+        eyebrow: 'Antetítulo',
+        headline: 'Titular',
+        subheadline: 'Subtítulo',
+        ctaText: 'Texto del botón de inicio',
+        trustBadge: 'Sello de confianza',
+        branding: 'Marca',
+        primaryColor: 'Color primario',
+        primaryColorHint: 'Define el acento del formulario público. Se ajusta para contraste.',
+      },
+      outcomes: {
+        title: 'Resultados',
+        subtitle: 'Enruta según el puntaje. Gana el rango más alto que alcancen.',
+        scoringEnabled: 'Activar puntaje',
+        scoringHint: 'Si está desactivado, todo suma 0 y no se resuelve ningún resultado.',
+        add: 'Añadir resultado',
+        label: 'Etiqueta',
+        labelPlaceholder: 'p. ej. Lead caliente',
+        minScore: 'Puntaje mínimo',
+        redirectUrl: 'URL de redirección',
+        redirectPlaceholder: 'https://…',
+        remove: 'Quitar resultado',
+        empty: 'Aún no hay resultados. Añade rangos para enrutar por puntaje.',
+      },
+      flow: {
+        title: 'Vista del flujo',
+        subtitle: 'Un mapa de solo lectura del formulario, incluidas las ramas condicionales.',
+        cover: 'Portada',
+        end: 'Fin',
+        conditional: 'Condicional',
+        empty: 'Añade pasos para ver el flujo.',
+      },
+      preview: {
+        title: 'Vista previa en vivo',
+        empty: 'Selecciona un paso para previsualizarlo.',
+        coverTitle: 'Portada',
+        step: 'Paso',
+        of: 'de',
+        device: 'Vista por dispositivo',
+        mobile: 'Móvil',
+        desktop: 'Escritorio',
+        close: 'Cerrar',
+      },
     },
   },
 };

@@ -75,6 +75,14 @@ export interface FormStep {
   corporateEmailOnly?: boolean;
   /** Phone validation: minimum digit count. */
   phoneMinDigits?: number;
+  /**
+   * Dynamic question variants: pick the question text from the answer to
+   * `questionField`. `questionVariants[value]` overrides `question` when the
+   * respondent's answer to that earlier field matches a key; a `*` key (or the
+   * plain `question`) is the fallback. Lets one step ask a tailored question.
+   */
+  questionField?: string | null;
+  questionVariants?: Record<string, string>;
 }
 
 export interface FormOutcome {
@@ -87,6 +95,8 @@ export interface FormOutcome {
 
 export interface FormCover {
   enabled?: boolean;
+  /** A sticky banner line shown above the form throughout the flow. */
+  bannerText?: string | null;
   eyebrow?: string | null;
   headline?: string | null;
   subheadline?: string | null;
@@ -94,9 +104,15 @@ export interface FormCover {
   trustBadge?: string | null;
 }
 
+/** Per-form branding — the single accent color drives the public surface. */
+export interface FormBranding {
+  primaryColor?: string | null;
+}
+
 export interface FormConfig {
   version: 1;
   cover?: FormCover | null;
+  branding?: FormBranding | null;
   steps: FormStep[];
   scoring?: { enabled?: boolean } | null;
   outcomes?: FormOutcome[];

@@ -10,6 +10,7 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   visibleSteps,
   validateAnswer,
+  resolveQuestion,
   type Answers,
   type FormStep,
 } from '@quill/engine';
@@ -107,6 +108,11 @@ export function FormRenderer({
   if (!started && cover) {
     return (
       <div className="flex flex-col items-center gap-4 rounded-md border border-border bg-card p-8 text-center">
+        {cover.bannerText ? (
+          <div className="mb-1 w-full rounded-md bg-primary/15 px-3 py-1.5 text-xs font-medium text-foreground">
+            {cover.bannerText}
+          </div>
+        ) : null}
         {cover.eyebrow ? (
           <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             {cover.eyebrow}
@@ -151,7 +157,7 @@ export function FormRenderer({
       </div>
 
       <div className="flex flex-col gap-1">
-        <h2 className="text-xl font-semibold">{step.question ?? step.key}</h2>
+        <h2 className="text-xl font-semibold">{resolveQuestion(step, answers) || step.key}</h2>
         {step.helper ? <p className="text-sm text-muted-foreground">{step.helper}</p> : null}
       </div>
 

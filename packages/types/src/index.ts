@@ -74,16 +74,27 @@ export const formStepSchema = z.object({
   flowGroup: z.enum(['qualification', 'lead_capture']).optional(),
   corporateEmailOnly: z.boolean().optional(),
   phoneMinDigits: z.number().int().positive().optional(),
+  /** Dynamic question: pick the text from the answer to this earlier field. */
+  questionField: z.string().min(1).nullable().optional(),
+  /** value → question text (a `*` key is the fallback); `[field]` interpolated. */
+  questionVariants: z.record(z.string(), z.string().max(500)).optional(),
 });
 export type FormStepInput = z.infer<typeof formStepSchema>;
 
 export const formCoverSchema = z.object({
   enabled: z.boolean().optional(),
+  /** A sticky banner line shown above the form throughout the flow. */
+  bannerText: z.string().max(200).nullable().optional(),
   eyebrow: z.string().max(200).nullable().optional(),
   headline: z.string().max(300).nullable().optional(),
   subheadline: z.string().max(500).nullable().optional(),
   ctaText: z.string().max(80).nullable().optional(),
   trustBadge: z.string().max(200).nullable().optional(),
+});
+
+/** Per-form branding — the single accent color drives the public surface. */
+export const formBrandingSchema = z.object({
+  primaryColor: z.string().max(32).nullable().optional(),
 });
 
 export const formOutcomeSchema = z.object({
@@ -97,6 +108,7 @@ export const formOutcomeSchema = z.object({
 export const formConfigSchema = z.object({
   version: z.literal(1),
   cover: formCoverSchema.nullable().optional(),
+  branding: formBrandingSchema.nullable().optional(),
   steps: z.array(formStepSchema).default([]),
   scoring: z.object({ enabled: z.boolean().optional() }).nullable().optional(),
   outcomes: z.array(formOutcomeSchema).optional(),
