@@ -20,6 +20,7 @@
     "@nestjs/platform-express": "^10.4.15",
     "@quill/config": "workspace:*",
     "@quill/db": "workspace:*",
+    "@quill/destinations": "workspace:*",
     "@quill/engine": "workspace:*",
     "@quill/notifications": "workspace:*",
     "@quill/shared": "workspace:*",

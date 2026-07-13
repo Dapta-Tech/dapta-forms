@@ -104,6 +104,61 @@ export const formOutcomeSchema = z.object({
   redirectUrl: z.string().url().nullable().optional(),
 });
 
+// --- Submission destinations (pluggable CRM / webhook sync) ------------------
+
+/** The configurable destination kinds a form may deliver submissions to. */
+export const destinationType = ['webhook', 'hubspot'] as const;
+export type DestinationType = (typeof destinationType)[number];
+
+/** A property map: form stepKey / utmKey -> external property name. */
+const propertyMapSchema = z.record(z.string().min(1).max(200), z.string().min(1).max(200));
+
+/**
+ * Webhook destination — POST each submission as JSON to a URL, optionally HMAC
+ * signed. The secret is server-side config, never leaked to the public renderer
+ * (the API strips `destinations` before serving a public form).
+ */
+export const webhookDestinationSchema = z.object({
+  type: z.literal('webhook'),
+  enabled: z.boolean().default(false),
+  settings: z.object({
+    url: z.string().url(),
+    /** HMAC-SHA256 signing secret (optional). */
+    secret: z.string().max(500).nullable().optional(),
+    /** Header the signature is sent in (defaults to `X-Quill-Signature`). */
+    signatureHeader: z.string().max(128).nullable().optional(),
+    /** Per-request timeout in ms (defaults to 10s). */
+    timeoutMs: z.number().int().positive().max(60_000).optional(),
+  }),
+});
+export type WebhookDestination = z.infer<typeof webhookDestinationSchema>;
+
+/**
+ * HubSpot destination — upsert the respondent as a contact and (on complete)
+ * attach a Note. The private-app token is a server-side env secret
+ * (`HUBSPOT_PRIVATE_APP_TOKEN`), NOT stored in the form config.
+ */
+export const hubspotDestinationSchema = z.object({
+  type: z.literal('hubspot'),
+  enabled: z.boolean().default(false),
+  settings: z.object({ note: z.boolean().optional() }).default({}),
+  /** stepKey -> contact property (one property SHOULD be `email`). */
+  fieldMappings: propertyMapSchema.default({}),
+  /** utm_source/medium/campaign/term/content -> contact property. */
+  utmMappings: propertyMapSchema.default({}),
+  /** Contact property to receive the score (complete submissions). */
+  scoreProperty: z.string().max(200).nullable().optional(),
+  /** Contact date property to receive the submitted date. */
+  dateProperty: z.string().max(200).nullable().optional(),
+});
+export type HubspotDestination = z.infer<typeof hubspotDestinationSchema>;
+
+export const formDestinationSchema = z.discriminatedUnion('type', [
+  webhookDestinationSchema,
+  hubspotDestinationSchema,
+]);
+export type FormDestination = z.infer<typeof formDestinationSchema>;
+
 /** The versioned config blob. `version` gates future migrations of the shape. */
 export const formConfigSchema = z.object({
   version: z.literal(1),
@@ -112,6 +167,11 @@ export const formConfigSchema = z.object({
   steps: z.array(formStepSchema).default([]),
   scoring: z.object({ enabled: z.boolean().optional() }).nullable().optional(),
   outcomes: z.array(formOutcomeSchema).optional(),
+  /**
+   * Pluggable submission destinations (CRM/webhook sync via the durable outbox).
+   * ADDITIVE — absent on every legacy config; the renderer never receives it.
+   */
+  destinations: z.array(formDestinationSchema).optional(),
 });
 export type FormConfig = z.infer<typeof formConfigSchema>;
 
