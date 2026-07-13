@@ -1,30 +1,34 @@
-import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import { getMessages } from '@quill/shared';
 import { adminApi, ApiError } from '@/lib/admin-api';
+import { getLocale } from '@/lib/locale';
 import { FormEditor } from './form-editor';
 
 export const dynamic = 'force-dynamic';
 
 export default async function EditFormPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  const locale = await getLocale();
+  const m = getMessages(locale).admin.editor;
+
   let form: Awaited<ReturnType<typeof adminApi.getForm>>;
+  let me: Awaited<ReturnType<typeof adminApi.me>>;
   try {
-    form = await adminApi.getForm(id);
+    [form, me] = await Promise.all([adminApi.getForm(id), adminApi.me()]);
   } catch (e) {
     if (e instanceof ApiError && e.status === 404) notFound();
     throw e;
   }
 
+  const publicPath = `/${me.accountCode}/${me.handle ?? 'me'}/${form.slug}`;
+
   return (
-    <div className="mx-auto max-w-[900px] px-8 py-10">
-      <Link href="/admin" className="text-sm text-muted-foreground hover:text-foreground">
-        ← Back to forms
-      </Link>
-      <FormEditor
-        id={form.id}
-        initialName={form.name}
-        initialConfig={JSON.stringify(form.config, null, 2)}
-      />
-    </div>
+    <FormEditor
+      id={form.id}
+      initialName={form.name}
+      initialConfig={form.config}
+      publicPath={publicPath}
+      m={m}
+    />
   );
 }
