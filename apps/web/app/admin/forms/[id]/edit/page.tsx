@@ -28,6 +28,7 @@ export default async function EditFormPage({ params }: { params: Promise<{ id: s
       initialName={form.name}
       initialConfig={form.config}
       publicPath={publicPath}
+      locale={locale}
       m={m}
     />
   );

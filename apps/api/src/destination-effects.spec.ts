@@ -200,7 +200,7 @@ describe('destination enqueue on submission', () => {
     const got = received!;
     expect(got.url).toBe('https://acme.io/hook');
     // The signature validates against the exact body delivered.
-    expect(got.headers['x-quill-signature']).toBe(signWebhookBody(got.body, 'shh'));
+    expect(got.headers['x-forms-signature']).toBe(signWebhookBody(got.body, 'shh'));
     const payload = JSON.parse(got.body);
     expect(payload.submission.id).toBe((out as { id: string }).id);
     expect(payload.submission.score).toBe(18);

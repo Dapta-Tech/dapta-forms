@@ -18,6 +18,7 @@ import {
   resolveOutcome,
   partialSubmitKey,
   nameFields,
+  isMultiSelect,
   isSafeHttpUrl,
   type Answers,
   type AnswerValue,
@@ -252,7 +253,10 @@ export function FormRenderer({
 
   function onKeyDown(e: React.KeyboardEvent) {
     if (e.key !== 'Enter' || !step) return;
-    if (step.type === 'textarea' || step.type === 'dropdown' || step.type === 'multiple_choice') return;
+    // Single-select choices/dropdowns auto-advance on tap; a multi-select
+    // choice (checkboxes) and a textarea let Enter submit the current answer.
+    if (step.type === 'textarea' || step.type === 'dropdown') return;
+    if (step.type === 'multiple_choice' && !isMultiSelect(step)) return;
     // Name: hop to the second field if the first is filled and the second empty.
     if (step.type === 'name') {
       const [, second] = nameFields(step);
@@ -406,7 +410,10 @@ export function FormRenderer({
     );
   }
 
-  const showContinue = step.type !== 'multiple_choice' && step.type !== 'dropdown';
+  // Single-select choices and dropdowns auto-advance; everything else — incl. a
+  // multi-select choice (pick several, then Continue) — shows the button.
+  const autoAdvances = step.type === 'dropdown' || (step.type === 'multiple_choice' && !isMultiSelect(step));
+  const showContinue = !autoAdvances;
   const logo = cover?.logo ?? config.branding?.logo ?? null;
 
   return (

@@ -148,6 +148,16 @@ export interface FormsMessages {
       inviteErrorTaken: string;
       inviteErrorInvalid: string;
       inviteErrorFailed: string;
+      membersMenu: string;
+      makeAdmin: string;
+      makeMember: string;
+      removeMember: string;
+      removeConfirm: string;
+      roleChangeSuccess: string;
+      removeSuccess: string;
+      manageErrorLastOwner: string;
+      manageErrorForbidden: string;
+      manageErrorFailed: string;
     };
     login: {
       title: string;
@@ -568,6 +578,16 @@ export const en: FormsMessages = {
       inviteErrorTaken: 'A member with that email already exists.',
       inviteErrorInvalid: 'Enter a valid email address.',
       inviteErrorFailed: 'Could not add the member. Please try again.',
+      membersMenu: 'Member actions',
+      makeAdmin: 'Change to Admin',
+      makeMember: 'Change to Member',
+      removeMember: 'Remove member',
+      removeConfirm: 'Remove this member? They will lose access to this workspace.',
+      roleChangeSuccess: 'Role updated.',
+      removeSuccess: 'Member removed.',
+      manageErrorLastOwner: 'A workspace must keep at least one owner.',
+      manageErrorForbidden: 'You do not have permission to do that.',
+      manageErrorFailed: 'Something went wrong. Please try again.',
     },
     login: {
       title: 'Sign in',
@@ -826,7 +846,7 @@ export const en: FormsMessages = {
       webhookUrlInvalid: 'Enter a valid https:// URL (plain http is allowed only for localhost).',
       webhookSecret: 'Signing secret (optional)',
       webhookSecretHelp:
-        'When set, each request is signed with HMAC-SHA256 in the X-Quill-Signature header so you can verify it.',
+        'When set, each request is signed with HMAC-SHA256 in the X-Forms-Signature header so you can verify it.',
       webhookSecretSetPlaceholder: 'A secret is set — leave blank to keep it, or type a new one.',
       hubspotTitle: 'HubSpot',
       hubspotDesc: 'Upsert the respondent as a contact and attach a note on completed submissions.',
@@ -984,6 +1004,16 @@ export const es: FormsMessages = {
       inviteErrorTaken: 'Ya existe un miembro con ese correo.',
       inviteErrorInvalid: 'Introduce un correo válido.',
       inviteErrorFailed: 'No se pudo añadir el miembro. Inténtalo de nuevo.',
+      membersMenu: 'Acciones de miembro',
+      makeAdmin: 'Cambiar a Administrador',
+      makeMember: 'Cambiar a Miembro',
+      removeMember: 'Quitar miembro',
+      removeConfirm: '¿Quitar a este miembro? Perderá el acceso a este espacio de trabajo.',
+      roleChangeSuccess: 'Rol actualizado.',
+      removeSuccess: 'Miembro eliminado.',
+      manageErrorLastOwner: 'Un espacio de trabajo debe conservar al menos un propietario.',
+      manageErrorForbidden: 'No tienes permiso para hacer eso.',
+      manageErrorFailed: 'Algo salió mal. Inténtalo de nuevo.',
     },
     login: {
       title: 'Iniciar sesión',
@@ -1242,7 +1272,7 @@ export const es: FormsMessages = {
       webhookUrlInvalid: 'Introduce una URL https:// válida (http solo se permite para localhost).',
       webhookSecret: 'Secreto de firma (opcional)',
       webhookSecretHelp:
-        'Si se define, cada solicitud se firma con HMAC-SHA256 en la cabecera X-Quill-Signature para que puedas verificarla.',
+        'Si se define, cada solicitud se firma con HMAC-SHA256 en la cabecera X-Forms-Signature para que puedas verificarla.',
       webhookSecretSetPlaceholder: 'Hay un secreto guardado — déjalo en blanco para conservarlo o escribe uno nuevo.',
       hubspotTitle: 'HubSpot',
       hubspotDesc: 'Crea o actualiza el contacto y adjunta una nota en las respuestas completadas.',

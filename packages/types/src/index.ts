@@ -50,6 +50,17 @@ const conditionSchema = z.object({
   values: z.array(z.string()),
 });
 
+/**
+ * A forward branching rule (additive, back-compat): when the owning step's
+ * answer intersects `values`, jump to `target` (a step key) or skip to the end
+ * (`target: null`). The engine only honors forward jumps, so a config can never
+ * loop; unknown/backward targets are ignored at runtime.
+ */
+const gotoRuleSchema = z.object({
+  values: z.array(z.string()).min(1),
+  target: z.string().min(1).max(64).nullable(),
+});
+
 const sliderScoringSchema = z.object({
   min: z.number(),
   max: z.number(),
@@ -77,6 +88,10 @@ export const formStepSchema = z.object({
   sliderScoring: z.array(sliderScoringSchema).optional(),
   showWhen: conditionSchema.nullable().optional(),
   hideWhen: conditionSchema.nullable().optional(),
+  /** Forward branching rules on this step's answer (jump to a step / skip to end). */
+  goto: z.array(gotoRuleSchema).optional(),
+  /** Choice select mode (`multiple_choice` only): 'multiple' = checkboxes, else single. */
+  selectionMode: z.enum(['single', 'multiple']).optional(),
   points: z.number().int().optional(),
   flowGroup: z.enum(['qualification', 'lead_capture']).optional(),
   corporateEmailOnly: z.boolean().optional(),
@@ -194,7 +209,7 @@ export const webhookDestinationSchema = z.object({
       ),
     /** HMAC-SHA256 signing secret (optional). */
     secret: z.string().max(500).nullable().optional(),
-    /** Header the signature is sent in (defaults to `X-Quill-Signature`). */
+    /** Header the signature is sent in (defaults to `X-Forms-Signature`). */
     signatureHeader: z.string().max(128).nullable().optional(),
     /** Per-request timeout in ms (defaults to 10s). */
     timeoutMs: z.number().int().positive().max(60_000).optional(),

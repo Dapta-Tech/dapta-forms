@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { createHmac } from 'node:crypto';
-import { WebhookDestination, signWebhookBody } from './webhook';
+import { WebhookDestination, signWebhookBody, DEFAULT_SIGNATURE_HEADER } from './webhook';
 import type { DestinationContext } from '../destination.port';
 
 /** A resolver that maps every host to a public IP — keeps tests off real DNS. */
@@ -51,8 +51,8 @@ describe('WebhookDestination', () => {
 
     const { init } = calls[0]!;
     const headers = init.headers as Record<string, string>;
-    expect(headers['x-quill-delivery']).toBe(c.idempotencyKey);
-    expect(headers['x-quill-event']).toBe('form.submission');
+    expect(headers['x-forms-delivery']).toBe(c.idempotencyKey);
+    expect(headers['x-forms-event']).toBe('form.submission');
     // The signature validates against the exact body sent.
     const body = init.body as string;
     expect(headers['x-sig']).toBe(signWebhookBody(body, 'shh'));
@@ -73,7 +73,21 @@ describe('WebhookDestination', () => {
       { url: 'https://acme.io/hook', resolveDns: publicResolver },
       fetchImpl,
     ).deliver(ctx());
-    expect(headers['x-quill-signature']).toBeUndefined();
+    expect(headers['x-forms-signature']).toBeUndefined();
+  });
+
+  it('defaults the signature header to X-Forms-Signature', async () => {
+    expect(DEFAULT_SIGNATURE_HEADER).toBe('X-Forms-Signature');
+    let headers: Record<string, string> = {};
+    const fetchImpl = (async (_url: string, init: RequestInit) => {
+      headers = init.headers as Record<string, string>;
+      return new Response('{}', { status: 200 });
+    }) as unknown as typeof fetch;
+    await new WebhookDestination(
+      { url: 'https://acme.io/hook', secret: 'shh', resolveDns: publicResolver },
+      fetchImpl,
+    ).deliver(ctx());
+    expect(headers['x-forms-signature']).toBeDefined();
   });
 
   it('THROWS on a non-2xx response so the outbox retries', async () => {

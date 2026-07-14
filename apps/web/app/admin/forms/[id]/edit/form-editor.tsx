@@ -1,86 +1,124 @@
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import type { FormConfig, FormStep, FormCover, FormBranding, FormOutcome, FormFieldType } from '@quill/engine';
-import { createEmptyStep, normalizeConfig } from '@quill/engine';
+import type {
+  FormConfig,
+  FormStep,
+  FormCover,
+  FormBranding,
+  FormOutcome,
+} from '@quill/engine';
+import { normalizeConfig } from '@quill/engine';
 import { saveFormAction } from '@/app/admin/actions';
 import { useToast } from '@/components/toast';
-import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/cn';
-import { StepList } from './_components/step-list';
-import { StepProperties } from './_components/step-properties';
+import { QuestionSpine } from './_components/question-spine';
+import { CanvasQuestion } from './_components/canvas-question';
+import { QuestionSettings } from './_components/question-settings';
+import { TypeGallery } from './_components/type-gallery';
+import { LogicMap } from './_components/logic-map';
+import { ResultsView } from './_components/results-view';
+import { EmptyState } from './_components/empty-state';
 import { CoverPanel } from './_components/cover-panel';
-import { OutcomesPanel } from './_components/outcomes-panel';
-import { FlowDiagram } from './_components/flow-diagram';
-import { LivePreview } from './_components/live-preview';
 import { DevicePreviewModal } from './_components/device-preview-modal';
-import type { PriorField } from './_components/condition-editor';
+import { stepFromGalleryItem, type GalleryItem } from './_components/question-types';
+import { TEMPLATES } from './_components/templates';
+import { getBuilderMessages, tb, type TemplateId } from './_components/builder-messages';
 import type { EditorMessages } from './_components/messages';
+import './_components/builder.css';
 
-type Tab = 'build' | 'cover' | 'outcomes' | 'flow';
+type Tab = 'build' | 'logic' | 'results' | 'design';
+type SaveStatus = 'saved' | 'saving' | 'draft' | 'error';
+const AUTOSAVE_MS = 900;
 
 /**
- * The form editor: a step builder (drag-reorder list · per-step properties ·
- * live preview), a cover/branding tab, an outcomes/scoring tab and a read-only
- * flow overview. Config is normalized on save (dedupe keys, canonical order,
- * derived flags) via @quill/engine so the persisted blob is always canonical.
+ * The redesigned builder shell: Build (spine · WYSIWYG canvas · settings),
+ * Logic (editable map), Results (scoring + ranges), Design (cover + branding),
+ * with debounced autosave and a Publish primary action. The guided empty state
+ * (templates + scratch) shows until the form has questions.
  */
 export function FormEditor({
   id,
   initialName,
   initialConfig,
   publicPath,
+  locale,
   m,
 }: {
   id: string;
   initialName: string;
   initialConfig: FormConfig;
   publicPath: string;
+  locale: string;
   m: EditorMessages;
 }) {
+  const bm = getBuilderMessages(locale);
   const toast = useToast();
   const [name, setName] = useState(initialName);
   const [config, setConfig] = useState<FormConfig>(initialConfig);
   const [tab, setTab] = useState<Tab>('build');
   const [selected, setSelected] = useState<number | null>(initialConfig.steps.length ? 0 : null);
-  const [deviceOpen, setDeviceOpen] = useState(false);
-  const [pending, start] = useTransition();
+  const [device, setDevice] = useState<'desktop' | 'mobile'>('desktop');
+  const [galleryOpen, setGalleryOpen] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [status, setStatus] = useState<SaveStatus>(initialConfig.steps.length ? 'saved' : 'draft');
+  const [focusCanvas, setFocusCanvas] = useState(0);
+  const dirty = useRef(false);
 
-  /** Fields defined before `index` — the pool skip-logic / variants can read. */
-  const priorFieldsFor = (index: number): PriorField[] =>
-    config.steps.slice(0, index).map((s) => ({
-      key: s.key,
-      label: s.question?.trim() || s.key,
-      options: s.options?.map((o) => ({ label: o.label, value: o.value })),
-    }));
+  // --- Autosave (debounced) -------------------------------------------------
+  const persist = useCallback(
+    async (nextName: string, nextConfig: FormConfig) => {
+      setStatus('saving');
+      const res = await saveFormAction(id, { name: nextName, config: normalizeConfig(nextConfig) });
+      setStatus(res.ok ? 'saved' : 'error');
+    },
+    [id],
+  );
 
-  function patchStep(index: number, patch: Partial<FormStep>) {
-    setConfig((c) => ({ ...c, steps: c.steps.map((s, i) => (i === index ? { ...s, ...patch } : s)) }));
+  useEffect(() => {
+    if (!dirty.current) return;
+    const t = setTimeout(() => void persist(name, config), AUTOSAVE_MS);
+    return () => clearTimeout(t);
+  }, [name, config, persist]);
+
+  function mutate(updater: (c: FormConfig) => FormConfig) {
+    dirty.current = true;
+    setStatus('saving');
+    setConfig(updater);
+  }
+  function rename(next: string) {
+    dirty.current = true;
+    setStatus('saving');
+    setName(next);
   }
 
-  function addStep(type: FormFieldType) {
-    setConfig((c) => {
-      const step = createEmptyStep(type, new Set(c.steps.map((s) => s.key)));
+  // --- Step operations ------------------------------------------------------
+  function patchStep(index: number, patch: Partial<FormStep>) {
+    mutate((c) => ({ ...c, steps: c.steps.map((s, i) => (i === index ? { ...s, ...patch } : s)) }));
+  }
+  function addFromGallery(item: GalleryItem) {
+    mutate((c) => {
+      const step = stepFromGalleryItem(item, new Set(c.steps.map((s) => s.key)));
       const steps = [...c.steps, step];
       setSelected(steps.length - 1);
       return { ...c, steps };
     });
+    setGalleryOpen(false);
+    setTab('build');
+    setFocusCanvas((n) => n + 1);
   }
-
   function deleteStep(index: number) {
-    setConfig((c) => ({ ...c, steps: c.steps.filter((_, i) => i !== index) }));
+    mutate((c) => ({ ...c, steps: c.steps.filter((_, i) => i !== index) }));
     setSelected((sel) => {
-      if (sel == null) return null;
       const nextLen = config.steps.length - 1;
-      if (nextLen === 0) return null;
+      if (sel == null || nextLen === 0) return null;
       if (sel === index) return Math.max(0, index - 1);
       return sel > index ? sel - 1 : sel;
     });
   }
-
   function reorderSteps(from: number, to: number) {
-    setConfig((c) => {
+    mutate((c) => {
       const steps = [...c.steps];
       const [moved] = steps.splice(from, 1);
       if (!moved) return c;
@@ -95,76 +133,76 @@ export function FormEditor({
       return sel;
     });
   }
-
-  function patchCover(patch: Partial<FormCover>) {
-    setConfig((c) => ({ ...c, cover: { ...c.cover, ...patch } }));
-  }
-  function patchBranding(patch: Partial<FormBranding>) {
-    setConfig((c) => ({ ...c, branding: { ...c.branding, ...patch } }));
-  }
-  function setScoring(enabled: boolean) {
-    setConfig((c) => ({ ...c, scoring: { enabled } }));
-  }
-  function setOutcomes(outcomes: FormOutcome[]) {
-    setConfig((c) => ({ ...c, outcomes }));
+  function applyTemplate(tid: TemplateId) {
+    const cfg = TEMPLATES[tid];
+    dirty.current = true;
+    setName(bm.empty.templates[tid].name);
+    setConfig(cfg);
+    setSelected(0);
+    setTab('build');
+    setStatus('saving');
   }
 
-  function save() {
-    const normalized = normalizeConfig(config);
-    start(async () => {
-      const res = await saveFormAction(id, { name, config: normalized });
-      if (res.ok) {
-        setConfig(normalized);
-        // Selection index may shift if empty steps were reordered; clamp it.
-        setSelected((sel) => (sel == null ? null : Math.min(sel, normalized.steps.length - 1)));
-        toast.success(m.saved);
-      } else {
-        toast.error(res.message ?? m.saveError);
-      }
-    });
-  }
+  const patchCover = (patch: Partial<FormCover>) =>
+    mutate((c) => ({ ...c, cover: { ...c.cover, ...patch } }));
+  const patchBranding = (patch: Partial<FormBranding>) =>
+    mutate((c) => ({ ...c, branding: { ...c.branding, ...patch } }));
+  const setScoring = (enabled: boolean) => mutate((c) => ({ ...c, scoring: { enabled } }));
+  const setOutcomes = (outcomes: FormOutcome[]) => mutate((c) => ({ ...c, outcomes }));
 
-  const tabs: { id: Tab; label: string }[] = [
-    { id: 'build', label: m.tabs.build },
-    { id: 'cover', label: m.tabs.cover },
-    { id: 'outcomes', label: m.tabs.outcomes },
-    { id: 'flow', label: m.tabs.flow },
-  ];
+  async function publish() {
+    await persist(name, config);
+    toast.success(bm.shell.published);
+  }
 
   const selectedStep = selected != null ? config.steps[selected] : undefined;
+  const scoringEnabled = config.scoring?.enabled !== false;
+  const hasQuestions = config.steps.length > 0;
+
+  const tabs: { id: Tab; label: string; icon: string }[] = [
+    { id: 'build', label: bm.shell.tabBuild, icon: 'pi-th-large' },
+    { id: 'logic', label: bm.shell.tabLogic, icon: 'pi-sitemap' },
+    { id: 'results', label: bm.shell.tabResults, icon: 'pi-chart-line' },
+    { id: 'design', label: bm.shell.tabDesign, icon: 'pi-palette' },
+  ];
+
+  const statusLabel =
+    status === 'saving'
+      ? bm.shell.saving
+      : status === 'error'
+        ? bm.shell.saveError
+        : hasQuestions
+          ? bm.shell.saved
+          : bm.shell.draft;
+  const statusDot =
+    status === 'error' ? 'bg-destructive' : status === 'saving' ? 'bg-muted-foreground' : 'bg-primary';
 
   return (
-    <div className="min-h-dvh">
-      {/* Sticky header: back · name · preview + save (one primary CTA — R30). */}
-      <div className="sticky top-0 z-30 border-b border-border bg-background/90 backdrop-blur supports-[backdrop-filter]:bg-background/75">
-        <div className="mx-auto flex max-w-[1520px] flex-col gap-3 px-4 pb-3 pt-4 sm:px-6">
-          <Link
-            href="/admin/forms"
-            className="inline-flex w-fit items-center gap-1 text-sm text-muted-foreground transition-colors hover:text-foreground"
-          >
-            <i aria-hidden className="pi pi-chevron-left" style={{ fontSize: 12 }} />
-            {m.back}
-          </Link>
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder={m.formNamePlaceholder}
-              aria-label={m.formNamePlaceholder}
-              className="min-w-0 flex-1 rounded-md border border-transparent bg-transparent px-1 py-1 text-2xl font-semibold tracking-tight hover:border-border focus-visible:border-input focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            />
-            <div className="flex shrink-0 items-center gap-2">
-              <Button variant="outline" onClick={() => setDeviceOpen(true)}>
-                <i aria-hidden className="pi pi-eye" style={{ fontSize: 13 }} /> {m.previewBtn}
-              </Button>
-              <Button onClick={save} disabled={pending} className="min-w-[92px]">
-                {pending ? m.saving : m.save}
-              </Button>
-            </div>
-          </div>
+    <div className="flex h-[100dvh] flex-col overflow-hidden bg-background">
+      {/* Topbar */}
+      <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border px-3 sm:px-4">
+        <Link
+          href="/admin/forms"
+          className="inline-flex shrink-0 items-center gap-1.5 rounded-md px-1 text-sm text-muted-foreground transition-colors hover:text-foreground"
+        >
+          <i aria-hidden className="pi pi-chevron-left" style={{ fontSize: 12 }} />
+          <span className="hidden sm:inline">{bm.shell.back}</span>
+        </Link>
+        <input
+          value={name}
+          onChange={(e) => rename(e.target.value)}
+          placeholder={bm.shell.formNamePlaceholder}
+          aria-label={bm.shell.formNamePlaceholder}
+          className="min-w-0 max-w-[38ch] flex-1 rounded-md border border-transparent bg-transparent px-1.5 py-1 text-base font-semibold tracking-tight hover:border-border focus-visible:border-input focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:flex-none sm:text-lg"
+        />
+        <span className="hidden items-center gap-1.5 text-xs text-muted-foreground sm:inline-flex">
+          <span className={cn('h-1.5 w-1.5 rounded-full', statusDot)} />
+          {statusLabel}
+        </span>
 
-          {/* Tabs */}
-          <div className="flex gap-1 overflow-x-auto">
+        <div className="ml-auto flex items-center gap-2">
+          {/* Tabs (segmented) */}
+          <nav className="hidden items-center gap-0.5 rounded-lg border border-border bg-card p-0.5 md:flex" aria-label="Sections">
             {tabs.map((t) => (
               <button
                 key={t.id}
@@ -172,76 +210,183 @@ export function FormEditor({
                 onClick={() => setTab(t.id)}
                 aria-current={tab === t.id}
                 className={cn(
-                  'whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
-                  tab === t.id
-                    ? 'bg-muted text-foreground'
-                    : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground',
+                  'inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
+                  tab === t.id ? 'bg-muted text-foreground' : 'text-muted-foreground hover:text-foreground',
                 )}
               >
+                <i aria-hidden className={`pi ${t.icon}`} style={{ fontSize: 12 }} />
                 {t.label}
               </button>
             ))}
-          </div>
+          </nav>
+
+          <button
+            type="button"
+            onClick={() => setPreviewOpen(true)}
+            className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-border px-3 text-sm font-medium text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <i aria-hidden className="pi pi-eye" style={{ fontSize: 13 }} />
+            <span className="hidden sm:inline">{bm.shell.preview}</span>
+          </button>
+          <button
+            type="button"
+            onClick={publish}
+            className="inline-flex h-9 items-center rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground transition-transform hover:brightness-105 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            {bm.shell.publish}
+          </button>
         </div>
-      </div>
+      </header>
 
-      <div className="mx-auto max-w-[1520px] px-4 py-6 sm:px-6">
+      {/* Mobile tab bar */}
+      <nav className="flex shrink-0 items-center gap-1 border-b border-border px-2 py-1.5 md:hidden" aria-label="Sections">
+        {tabs.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            onClick={() => setTab(t.id)}
+            aria-current={tab === t.id}
+            className={cn(
+              'inline-flex flex-1 items-center justify-center gap-1.5 rounded-md py-2 text-xs font-medium transition-colors',
+              tab === t.id ? 'bg-muted text-foreground' : 'text-muted-foreground',
+            )}
+          >
+            <i aria-hidden className={`pi ${t.icon}`} style={{ fontSize: 12 }} />
+            {t.label}
+          </button>
+        ))}
+      </nav>
+
+      {/* Body */}
+      <div className="min-h-0 flex-1 overflow-hidden">
         {tab === 'build' ? (
-          <div className="grid gap-4 lg:grid-cols-[minmax(220px,260px)_minmax(0,1fr)_minmax(320px,400px)]">
-            <aside className="lg:sticky lg:top-[9.5rem] lg:self-start">
-              <StepList
-                steps={config.steps}
-                selectedIndex={selected}
-                onSelect={setSelected}
-                onReorder={reorderSteps}
-                onAdd={addStep}
-                m={m}
-              />
-            </aside>
-
-            <div className="min-w-0">
-              {selectedStep && selected != null ? (
-                <StepProperties
-                  step={selectedStep}
-                  index={selected}
-                  priorFields={priorFieldsFor(selected)}
-                  onUpdate={(patch) => patchStep(selected, patch)}
-                  onDelete={() => deleteStep(selected)}
-                  m={m}
+          hasQuestions ? (
+            <div className="grid h-full grid-cols-1 lg:grid-cols-[260px_minmax(0,1fr)_360px]">
+              {/* Left spine */}
+              <aside className="hidden min-h-0 overflow-y-auto lg:block">
+                <QuestionSpine
+                  steps={config.steps}
+                  selectedIndex={selected}
+                  onSelect={setSelected}
+                  onReorder={reorderSteps}
+                  onAdd={() => setGalleryOpen(true)}
+                  m={bm}
                 />
-              ) : (
-                <div className="rounded-lg border border-dashed border-border p-10 text-center text-sm text-muted-foreground">
-                  {m.steps.select}
-                </div>
-              )}
-            </div>
+              </aside>
 
-            <aside className="lg:sticky lg:top-[9.5rem] lg:self-start">
-              <p className="mb-2 text-sm font-semibold text-foreground">{m.preview.title}</p>
-              <LivePreview config={config} selected={selected ?? 'cover'} m={m.preview} />
-            </aside>
-          </div>
-        ) : tab === 'cover' ? (
-          <CoverPanel config={config} onCoverChange={patchCover} onBrandingChange={patchBranding} m={m} />
-        ) : tab === 'outcomes' ? (
-          <OutcomesPanel config={config} onScoringChange={setScoring} onOutcomesChange={setOutcomes} m={m} />
-        ) : (
-          <div>
-            <div className="mb-4">
-              <h2 className="text-sm font-semibold text-foreground">{m.flow.title}</h2>
-              <p className="text-xs text-muted-foreground">{m.flow.subtitle}</p>
+              {/* Center canvas */}
+              <main className="flex min-h-0 flex-col overflow-y-auto">
+                <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-2.5 text-sm text-muted-foreground">
+                  <span className="truncate">
+                    {selected != null
+                      ? `${tb(bm.shell.questionOfTotal, { n: selected + 1, total: config.steps.length })} · ${bm.shell.editingLive}`
+                      : ''}
+                  </span>
+                  <div className="flex shrink-0 items-center gap-0.5 rounded-lg border border-border bg-card p-0.5">
+                    {(['desktop', 'mobile'] as const).map((d) => (
+                      <button
+                        key={d}
+                        type="button"
+                        onClick={() => setDevice(d)}
+                        aria-current={device === d}
+                        className={cn(
+                          'rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
+                          device === d ? 'bg-muted text-foreground' : 'text-muted-foreground hover:text-foreground',
+                        )}
+                      >
+                        {d === 'desktop' ? bm.shell.desktop : bm.shell.mobile}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="flex-1 px-4 py-6 sm:px-8">
+                  {selectedStep && selected != null ? (
+                    <CanvasQuestion
+                      key={`${selected}-${focusCanvas}`}
+                      config={config}
+                      step={selectedStep}
+                      index={selected}
+                      total={config.steps.length}
+                      device={device}
+                      onUpdate={(patch) => patchStep(selected, patch)}
+                      m={bm}
+                    />
+                  ) : (
+                    <p className="py-16 text-center text-sm text-muted-foreground">{bm.settings.empty}</p>
+                  )}
+                </div>
+                {/* Mobile question strip */}
+                <div className="flex gap-2 overflow-x-auto border-t border-border px-3 py-2 lg:hidden">
+                  {config.steps.map((s, i) => (
+                    <button
+                      key={s.key}
+                      type="button"
+                      onClick={() => setSelected(i)}
+                      className={cn(
+                        'inline-flex shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs',
+                        i === selected ? 'border-primary bg-primary/10 text-foreground' : 'border-border text-muted-foreground',
+                      )}
+                    >
+                      <span className="font-bold tabular-nums">{i + 1}</span>
+                      <span className="max-w-[9ch] truncate">{s.question?.trim() || bm.canvas.titlePlaceholder}</span>
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => setGalleryOpen(true)}
+                    aria-label={bm.shell.addQuestion}
+                    className="inline-flex shrink-0 items-center justify-center rounded-lg border border-dashed border-border px-3 py-1.5 text-muted-foreground"
+                  >
+                    <i aria-hidden className="pi pi-plus" style={{ fontSize: 12 }} />
+                  </button>
+                </div>
+              </main>
+
+              {/* Right settings */}
+              <aside className="min-h-0 overflow-y-auto border-t border-border lg:border-t-0">
+                {selectedStep && selected != null ? (
+                  <QuestionSettings
+                    step={selectedStep}
+                    index={selected}
+                    steps={config.steps}
+                    scoringEnabled={scoringEnabled}
+                    onUpdate={(patch) => patchStep(selected, patch)}
+                    onDelete={() => deleteStep(selected)}
+                    onScoringChange={setScoring}
+                    bm={bm}
+                    em={m}
+                  />
+                ) : null}
+              </aside>
             </div>
-            <FlowDiagram config={config} m={m} />
+          ) : (
+            <div className="h-full overflow-y-auto">
+              <EmptyState onPickTemplate={applyTemplate} onScratch={() => setGalleryOpen(true)} m={bm} />
+            </div>
+          )
+        ) : tab === 'logic' ? (
+          <div className="h-full overflow-y-auto px-4 py-6 sm:px-8">
+            <p className="mb-4 text-sm text-muted-foreground">{bm.map.title}</p>
+            <LogicMap config={config} m={bm} />
+          </div>
+        ) : tab === 'results' ? (
+          <div className="h-full overflow-y-auto">
+            <ResultsView
+              config={config}
+              onScoringChange={setScoring}
+              onOutcomesChange={setOutcomes}
+              m={bm}
+            />
+          </div>
+        ) : (
+          <div className="h-full overflow-y-auto px-4 py-6 sm:px-8">
+            <CoverPanel config={config} onCoverChange={patchCover} onBrandingChange={patchBranding} m={m} />
           </div>
         )}
       </div>
 
-      <DevicePreviewModal
-        open={deviceOpen}
-        onClose={() => setDeviceOpen(false)}
-        publicPath={publicPath}
-        m={m.preview}
-      />
+      <TypeGallery open={galleryOpen} onClose={() => setGalleryOpen(false)} onPick={addFromGallery} m={bm} />
+      <DevicePreviewModal open={previewOpen} onClose={() => setPreviewOpen(false)} publicPath={publicPath} m={m.preview} />
     </div>
   );
 }

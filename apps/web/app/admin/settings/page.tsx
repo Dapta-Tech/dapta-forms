@@ -5,6 +5,7 @@ import { adminApi, isAdminRole, type AccountMember, type AccountRole, type Membe
 import { getLocale } from '@/lib/locale';
 import { PageHeader } from '@/components/ui/page-header';
 import { InviteMember } from './invite-member';
+import { MemberRowActions } from './member-row-actions';
 
 export const dynamic = 'force-dynamic';
 
@@ -90,6 +91,11 @@ export default async function SettingsPage() {
             <ul className="mt-5 flex flex-col gap-2">
               {members.map((mem) => {
                 const isYou = mem.id === me.memberId;
+                // The API is the real gate (assertAdmin + assertCanManageTarget +
+                // assertNotSelf). Mirror it here so the controls only render when
+                // they'd succeed: never yourself, and an admin may not manage an
+                // owner (only an owner can). The whole section is already admin-only.
+                const canManage = !isYou && (me.role === 'owner' || mem.role !== 'owner');
                 const initial = (mem.displayName?.trim()?.charAt(0) || mem.email?.charAt(0) || '?').toUpperCase();
                 return (
                   <li
@@ -116,6 +122,26 @@ export default async function SettingsPage() {
                       {roleLabel[mem.role]}
                     </span>
                     <span className="shrink-0 text-xs text-muted-foreground">{statusLabel[mem.status]}</span>
+                    {canManage ? (
+                      <MemberRowActions
+                        memberId={mem.id}
+                        role={mem.role}
+                        labels={{
+                          membersMenu: s.membersMenu,
+                          makeAdmin: s.makeAdmin,
+                          makeMember: s.makeMember,
+                          removeMember: s.removeMember,
+                          removeConfirm: s.removeConfirm,
+                          roleChangeSuccess: s.roleChangeSuccess,
+                          removeSuccess: s.removeSuccess,
+                          manageErrorLastOwner: s.manageErrorLastOwner,
+                          manageErrorForbidden: s.manageErrorForbidden,
+                          manageErrorFailed: s.manageErrorFailed,
+                        }}
+                      />
+                    ) : (
+                      <span aria-hidden className="h-9 w-9 shrink-0" />
+                    )}
                   </li>
                 );
               })}

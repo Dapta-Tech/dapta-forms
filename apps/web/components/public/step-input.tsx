@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from 'react';
 import type { Answers, AnswerValue, FormStep } from '@quill/engine';
-import { nameFields } from '@quill/engine';
+import { nameFields, isMultiSelect } from '@quill/engine';
 import { SearchableDropdown } from './searchable-dropdown';
 
 interface StepInputProps {
@@ -11,10 +11,17 @@ interface StepInputProps {
   answers: Answers;
   onChange: (value: AnswerValue) => void;
   onFieldChange: (field: string, value: AnswerValue) => void;
-  /** Choice/dropdown selection auto-advances the form. */
+  /** Choice/dropdown selection auto-advances the form (single-select only). */
   onSelect: (value: string) => void;
   dropdownPlaceholder: string;
   dropdownEmpty: string;
+}
+
+/** The current multi-select answer as a string[] (defensive against scalars). */
+function asArray(value: AnswerValue): string[] {
+  if (Array.isArray(value)) return value.map(String);
+  if (value == null || value === '') return [];
+  return [String(value)];
 }
 
 /** Renders the input for a single step. `message` renders info copy, no input. */
@@ -99,6 +106,33 @@ export function StepInput({
       );
 
     case 'multiple_choice':
+      // Multi-select (checkboxes): toggle values in/out of an array; the form's
+      // Continue button submits. No auto-advance (you may pick several).
+      if (isMultiSelect(step)) {
+        const picked = asArray(value);
+        return (
+          <div className="pf-choices--list" role="group" aria-label={step.question ?? step.key}>
+            {(step.options ?? []).map((opt) => {
+              const on = picked.includes(opt.value);
+              return (
+                <button
+                  key={opt.value}
+                  type="button"
+                  role="checkbox"
+                  aria-checked={on}
+                  className={`pf-choice-list pf-choice-list--multi${on ? ' pf-choice-list--selected' : ''}`}
+                  onClick={() =>
+                    onChange(on ? picked.filter((v) => v !== opt.value) : [...picked, opt.value])
+                  }
+                >
+                  <span className="pf-choice-list__check" aria-hidden="true" />
+                  <span className="pf-choice-list__text">{opt.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        );
+      }
       if (step.showIcons) {
         return (
           <div className="pf-choices--icons" role="radiogroup" aria-label={step.question ?? step.key}>
