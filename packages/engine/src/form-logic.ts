@@ -102,7 +102,7 @@ export interface FormStep {
   showForPersonalEmailOnly?: boolean;
   /**
    * Terminal step (disqualify path): completing it ends the flow — the submission
-   * is finalized and the outcome resolved, skipping any reveal/booking screen.
+   * is finalized and the outcome resolved, skipping any reveal screen.
    */
   terminal?: boolean;
   /** Show the processing/reveal interstitial after this step completes. */

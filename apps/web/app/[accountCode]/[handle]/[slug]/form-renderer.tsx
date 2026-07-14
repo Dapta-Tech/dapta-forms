@@ -200,7 +200,7 @@ export function FormRenderer({
           });
         }
 
-        // Terminal (disqualify) step → finalize now, skip reveal/booking.
+        // Terminal (disqualify) step → finalize now, skip the reveal screen.
         if (completed.terminal) {
           await finalize(nextAnswers);
           return;
