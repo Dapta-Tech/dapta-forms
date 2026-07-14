@@ -16,7 +16,9 @@
   --pf-text: #111114;
   --pf-muted: #6b6b73;
   --pf-border: #d9dade;
-  --pf-focus: #2563eb;
+  /* Focus follows the per-form accent so border + glow always match the brand
+     color (falls back to the lime default when no branding.primaryColor is set). */
+  --pf-focus: var(--pf-primary);
   --pf-danger: #dc2626;
   --pf-radius: 12px;
   --pf-radius-sm: 8px;
@@ -231,7 +233,7 @@
 }
 .pf-input:focus {
   border-color: var(--pf-focus);
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.18);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--pf-focus) 30%, transparent);
 }
 .pf-name-fields {
   display: grid;
