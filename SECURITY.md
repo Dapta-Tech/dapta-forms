@@ -8,8 +8,7 @@ Instead, report them privately via one of:
 
 - A [GitHub Security Advisory](https://docs.github.com/en/code-security/security-advisories/guidance-on-reporting-and-writing-information-about-vulnerabilities/privately-reporting-a-security-vulnerability)
   ("Report a vulnerability" on the Security tab), or
-- Email to **security@example.com** _(replace with the project's real security
-  contact before publishing)._
+- Email to **security@dapta.ai**.
 
 Please include:
 

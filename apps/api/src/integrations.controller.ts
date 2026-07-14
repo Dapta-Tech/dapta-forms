@@ -13,7 +13,7 @@ import {
 import { z, ZodError } from 'zod';
 import type { Db } from '@quill/db';
 import { updateFormDestinations } from '@quill/db';
-import { formDestinationSchema } from '@quill/types';
+import { formDestinationSchema, maskConfigSecrets } from '@quill/types';
 import type { ServerEnv } from '@quill/config/env';
 import { AuthService, type ReqLike } from './auth.service';
 import { DB, ENV } from './tokens';
@@ -132,6 +132,7 @@ export class FormDestinationsController {
     }
     const out = await updateFormDestinations(this.db, p.accountId, id, destinations);
     if (!out.ok) throw new NotFoundException({ error: 'NOT_FOUND', message: 'Not found.' });
-    return out.value;
+    // Never echo the stored webhook secret back to the client (mask on READ).
+    return { ...out.value, config: maskConfigSecrets(out.value.config) };
   }
 }

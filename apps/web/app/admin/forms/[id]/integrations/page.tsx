@@ -34,7 +34,7 @@ export default async function IntegrationsPage({ params }: { params: Promise<{ i
 
   return (
     <div className="mx-auto max-w-[900px] px-8 py-10">
-      <Link href="/admin" className="text-sm text-muted-foreground hover:text-foreground">
+      <Link href="/admin/forms" className="text-sm text-muted-foreground hover:text-foreground">
         {m.back}
       </Link>
       <div className="mt-4 mb-6">

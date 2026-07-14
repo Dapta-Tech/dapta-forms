@@ -180,23 +180,39 @@ export async function allSubmissionsForExport(
 // --- Account-scoped submission delete ----------------------------------------
 
 /**
- * Delete a submission, but ONLY if it belongs to a form the account owns.
- * Idempotent: returns false when the row is absent or out-of-account (both
- * indistinguishable to the caller — no cross-account existence leak). The
- * account scope is enforced in SQL via the form join, so a forged id can't
- * touch another tenant's data.
+ * Outcome of an account-scoped submission delete:
+ *  - `deleted`   — the row belonged to the account and was removed.
+ *  - `absent`    — no such submission anywhere (already-deleted or never
+ *                  existed) → the caller treats this as an idempotent success.
+ *  - `forbidden` — the row exists but belongs to ANOTHER account → the caller
+ *                  surfaces a 404 (mirrors GET, and never mutates the row).
+ */
+export type DeleteSubmissionResult = 'deleted' | 'absent' | 'forbidden';
+
+/**
+ * Delete a submission, but ONLY if it belongs to a form the account owns. The
+ * account scope is enforced in SQL via the form join, so a forged id can never
+ * touch another tenant's data. Cross-account and same-account-already-deleted
+ * are distinguished (a second existence probe) so the HTTP layer can idempotent-
+ * 204 a genuine already-gone row while 404-ing a cross-account id.
  */
 export async function deleteSubmissionForAccount(
   db: Db,
   accountId: string,
   submissionId: string,
-): Promise<boolean> {
+): Promise<DeleteSubmissionResult> {
   const owned = await db.get<{ id: string }>(
     sql`SELECT s.id FROM submission s
         JOIN form f ON f.id = s.form_id
         WHERE s.id = ${submissionId} AND f.account_id = ${accountId} LIMIT 1`,
   );
-  if (!owned) return false;
-  await db.run(sql`DELETE FROM submission WHERE id = ${submissionId}`);
-  return true;
+  if (owned) {
+    await db.run(sql`DELETE FROM submission WHERE id = ${submissionId}`);
+    return 'deleted';
+  }
+  // Not owned: does it exist under a different account, or is it simply gone?
+  const exists = await db.get<{ id: string }>(
+    sql`SELECT id FROM submission WHERE id = ${submissionId} LIMIT 1`,
+  );
+  return exists ? 'forbidden' : 'absent';
 }

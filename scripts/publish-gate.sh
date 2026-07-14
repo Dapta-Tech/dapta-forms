@@ -7,21 +7,27 @@
 #   3. an internal-token grep — the project-specific denylist the generic
 #      scanners don't know about.
 #
-# Layers 1 & 2 are skipped with a warning if the tools aren't installed locally
-# (CI installs them). Layer 3 always runs — it needs nothing but grep.
+# Layers 1 & 2 FAIL the gate if the tools aren't installed — a green gate must
+# mean both engines actually ran, never that they silently no-op'd (H4). A local
+# developer without the scanners installed can downgrade the missing-tool FAIL to
+# a WARN with PUBLISH_GATE_LOCAL=1; CI never sets it, so a broken install fails.
+# Layer 3 always runs — it needs nothing but grep.
 #
-# Usage: bash scripts/publish-gate.sh
+# Usage: bash scripts/publish-gate.sh            (CI / pre-publish: strict)
+#        PUBLISH_GATE_LOCAL=1 bash scripts/publish-gate.sh   (local: scanners optional)
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 FAIL=0
+LOCAL="${PUBLISH_GATE_LOCAL:-}"
 
 echo "== publish-gate: internal-token scan =="
 # The denylist: internal hosts, cloud/account markers, internal service names,
-# and WIP markers that must never reach public history. Extend as needed.
+# credential shapes (WorkOS ids, AWS keys, Stripe secret keys), and WIP markers
+# that must never reach public history. Extend as needed.
 # Matched case-insensitively (grep -i) so "Aurora"/"aurora" both trip it.
-PATTERN='[a-z0-9-]+\.dapta\.(ai|dev)|daptatech|amazonaws|aurora|\bdapta_forms\b|\bforms_ms\b|dapta_lab|dapta-iam|integration\.app|apps-configs-flux2|DO[ -]NOT[ -]MERGE'
+PATTERN='[a-z0-9-]+\.dapta\.(ai|dev|com)|daptatech|amazonaws|aurora|\bdapta_forms\b|\bforms_ms\b|dapta_lab|dapta-iam|integration\.app|apps-configs-flux2|DO[ -]NOT[ -]MERGE|(client|org)_01[0-9a-z]{22,}|AKIA[0-9A-Z]{16}|(sk|rk)_(live|test)_[0-9a-z]{16,}'
 PUBLIC_HOST_ALLOW='^\./(README\.md|\.env\.example|apps/web/lib/growth\.ts|packages/shared/src/growth\.(ts|spec\.ts))\b.*\b(app|www)\.dapta\.ai'
 
 # Scan tracked/working files, excluding vendored/build/self paths. The deploy/
@@ -63,8 +69,11 @@ echo "== publish-gate: gitleaks =="
 if command -v gitleaks >/dev/null 2>&1; then
   gitleaks detect --no-banner --redact -v || FAIL=1
   gitleaks detect --no-git --no-banner --redact -v || FAIL=1
+elif [ -n "$LOCAL" ]; then
+  echo "WARN: gitleaks not installed — skipped (PUBLISH_GATE_LOCAL=1)."
 else
-  echo "WARN: gitleaks not installed — skipped locally (runs in CI)."
+  echo "FAIL: gitleaks not installed — required (set PUBLISH_GATE_LOCAL=1 to skip locally)."
+  FAIL=1
 fi
 
 echo
@@ -121,8 +130,11 @@ if command -v trufflehog >/dev/null 2>&1; then
     fi
   fi
   rm -f "$TH_JSON" "$TH_ERR"
+elif [ -n "$LOCAL" ]; then
+  echo "WARN: trufflehog not installed — skipped (PUBLISH_GATE_LOCAL=1)."
 else
-  echo "WARN: trufflehog not installed — skipped locally (runs in CI)."
+  echo "FAIL: trufflehog not installed — required (set PUBLISH_GATE_LOCAL=1 to skip locally)."
+  FAIL=1
 fi
 
 echo

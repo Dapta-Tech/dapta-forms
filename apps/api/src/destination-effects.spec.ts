@@ -49,6 +49,8 @@ beforeEach(async () => {
   await seed(db);
   const email = new EmailEffects(new SubmissionNotifier(new LogOnlyEmailProvider()), db);
   destinations = new DestinationEffects(db);
+  // Keep the webhook SSRF guard off real DNS: map every host to a public IP.
+  destinations.resolveDns = async () => ['93.184.216.34'];
   svc = new SubmissionService(db, email, destinations);
 });
 

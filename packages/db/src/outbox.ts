@@ -17,10 +17,14 @@
  * mechanics. `subject_uid` is the domain anchor a row belongs to (a submission
  * id for email rows) so related pending work can be cancelled together.
  *
- * Concurrency: the OSS default runs a single API process with a single worker,
- * so a plain "select due → process → mark" loop is correct. The worker guards
- * against overlapping ticks in-process. Multi-instance deployments should add a
- * row lease (SELECT ... FOR UPDATE SKIP LOCKED on PG) in the private overlay.
+ * Concurrency (H2): due rows are ATOMICALLY CLAIMED before processing, so
+ * multiple API replicas draining the same table never deliver a row twice
+ * (prod runs an HPA — multiple `forms-api` pods). On Postgres the claim is
+ * `UPDATE ... WHERE id IN (SELECT ... FOR UPDATE SKIP LOCKED) RETURNING`; on
+ * SQLite (single writer) the same UPDATE ... RETURNING is atomic without locks.
+ * A claim older than `staleClaimMs` is reclaimable so a crashed worker's rows
+ * are not stranded. The worker's in-process `running` guard prevents overlapping
+ * ticks in one process; the claim prevents overlap ACROSS processes.
  */
 import { randomUUID } from 'node:crypto';
 import { sql } from 'drizzle-orm';
@@ -55,6 +59,10 @@ export interface OutboxRow {
   lastError: string | null;
   createdAt: number;
   updatedAt: number;
+  /** Lease marker: epoch-ms this row was claimed by a worker (null = unclaimed). */
+  claimedAt: number | null;
+  /** Which worker instance holds the claim (diagnostics). */
+  claimedBy: string | null;
 }
 
 export interface EnqueueOutboxInput {
@@ -138,16 +146,53 @@ function mapRow(r: Record<string, unknown>): OutboxRow {
     lastError: (r.last_error as string | null) ?? null,
     createdAt: Number(r.created_at),
     updatedAt: Number(r.updated_at),
+    claimedAt: r.claimed_at == null ? null : Number(r.claimed_at),
+    claimedBy: (r.claimed_by as string | null) ?? null,
   };
 }
 
-/** Pending rows that are due (`next_attempt_at <= now`), oldest first. */
-export async function claimDueOutbox(db: Db, now: number, limit = 50): Promise<OutboxRow[]> {
+/** Default lease before a claim is considered stale and reclaimable (5 min). */
+export const DEFAULT_STALE_CLAIM_MS = 5 * 60_000;
+
+export interface ClaimOptions {
+  /** Max rows to claim in one call. */
+  limit?: number;
+  /** Identifies the claiming worker (host:pid). Stored for diagnostics. */
+  workerId?: string;
+  /** A claim older than this (ms) is reclaimable — a crashed worker's rows. */
+  staleClaimMs?: number;
+}
+
+/**
+ * Atomically CLAIM up to `limit` due rows and return them (H2). A row is due
+ * when `status='pending'` and `next_attempt_at <= now`; it is claimable when it
+ * is unclaimed OR its claim is stale (older than `staleClaimMs`). The claim sets
+ * `claimed_at`/`claimed_by` in the SAME statement that selects the rows, so two
+ * workers never receive the same row. `status` stays `pending` throughout (the
+ * lifecycle transitions live in markOutbox*); a retry clears the claim so the
+ * row can be picked up again after its backoff.
+ */
+export async function claimDueOutbox(
+  db: Db,
+  now: number,
+  opts: ClaimOptions = {},
+): Promise<OutboxRow[]> {
+  const limit = opts.limit ?? 50;
+  const workerId = opts.workerId ?? 'worker';
+  const staleBefore = now - (opts.staleClaimMs ?? DEFAULT_STALE_CLAIM_MS);
+  const claimable = sql`status = 'pending' AND next_attempt_at <= ${now}
+      AND (claimed_at IS NULL OR claimed_at <= ${staleBefore})`;
+  // Postgres: FOR UPDATE SKIP LOCKED makes concurrent claims skip locked rows.
+  // SQLite: single writer serializes the UPDATE, so no row-lock clause is needed
+  // (and it isn't supported). Both use UPDATE ... RETURNING for the claimed set.
+  const selectDue =
+    db.dialect === 'postgres'
+      ? sql`SELECT id FROM outbox WHERE ${claimable} ORDER BY next_attempt_at ASC LIMIT ${limit} FOR UPDATE SKIP LOCKED`
+      : sql`SELECT id FROM outbox WHERE ${claimable} ORDER BY next_attempt_at ASC LIMIT ${limit}`;
   const rows = await db.all<Record<string, unknown>>(
-    sql`SELECT * FROM outbox
-        WHERE status = 'pending' AND next_attempt_at <= ${now}
-        ORDER BY next_attempt_at ASC
-        LIMIT ${limit}`,
+    sql`UPDATE outbox SET claimed_at = ${now}, claimed_by = ${workerId}
+        WHERE id IN (${selectDue})
+        RETURNING *`,
   );
   return rows.map(mapRow);
 }
@@ -171,10 +216,12 @@ export async function markOutboxRetry(
 ): Promise<void> {
   const now = args.now ?? Date.now();
   const nextAt = now + backoffMs(args.attempts);
+  // Clear the claim so the row is reclaimable once its backoff elapses.
   await db.run(
     sql`UPDATE outbox
         SET attempts = ${args.attempts}, next_attempt_at = ${nextAt},
-            last_error = ${args.error.slice(0, 1000)}, updated_at = ${now}
+            last_error = ${args.error.slice(0, 1000)}, updated_at = ${now},
+            claimed_at = NULL, claimed_by = NULL
         WHERE id = ${id}`,
   );
 }

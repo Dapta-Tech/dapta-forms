@@ -78,8 +78,27 @@ jobs:
         with:
           fetch-depth: 0
       - name: Install scanners
+        # No `|| true`: a failed scanner install must fail the job, never let the
+        # gate pass on the grep layer alone (H4). The gate itself also FAILs if a
+        # scanner is missing at run time.
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          curl -sSfL https://raw.githubusercontent.com/gitleaks/gitleaks/master/install.sh | sh -s -- -b /usr/local/bin || true
-          curl -sSfL https://raw.githubusercontent.com/trufflesecurity/trufflehog/main/scripts/install.sh | sh -s -- -b /usr/local/bin || true
+          set -euo pipefail
+          # gitleaks: install from the release binary — the old raw install.sh path
+          # 404s. Resolve the latest tag, then extract the linux/x64 binary.
+          GL_TAG=$(curl -sSfL -H "Authorization: Bearer $GH_TOKEN" \
+            https://api.github.com/repos/gitleaks/gitleaks/releases/latest \
+            | grep -oE '"tag_name": *"v[0-9.]+"' | grep -oE 'v[0-9.]+' | head -1)
+          GL_VER=${GL_TAG#v}
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/${GL_TAG}/gitleaks_${GL_VER}_linux_x64.tar.gz" \
+            | tar -xz -C /usr/local/bin gitleaks
+          # trufflehog: official installer.
+          curl -sSfL https://raw.githubusercontent.com/trufflesecurity/trufflehog/main/scripts/install.sh | sh -s -- -b /usr/local/bin
+      - name: Verify scanners are installed
+        run: |
+          command -v gitleaks
+          command -v trufflehog
+          gitleaks version
       - name: Run publish gate
         run: bash scripts/publish-gate.sh

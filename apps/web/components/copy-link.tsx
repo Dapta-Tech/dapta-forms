@@ -35,16 +35,18 @@ export function CopyLink({
   };
 
   return (
-    <div className="flex items-center gap-3">
-      <code className="rounded-sm bg-muted px-2 py-1 text-sm">{display}</code>
+    <div className="flex min-w-0 items-center gap-3">
+      <code className="min-w-0 flex-1 truncate rounded-sm bg-muted px-2 py-1 text-sm" title={display}>
+        {display}
+      </code>
       <button
         type="button"
         onClick={copy}
-        className="rounded-md border border-border px-3 py-1 text-sm transition-transform hover:border-primary active:scale-[0.98]"
+        className="shrink-0 whitespace-nowrap rounded-md border border-border px-3 py-1.5 text-sm transition-transform hover:border-primary active:scale-[0.98]"
       >
         {copied ? (labels?.copied ?? 'Copied ✓') : (labels?.copy ?? 'Copy')}
       </button>
-      <a href={path} className="text-sm text-primary hover:underline">
+      <a href={path} className="shrink-0 whitespace-nowrap text-sm text-primary hover:underline">
         {labels?.open ?? 'Open'} →
       </a>
     </div>

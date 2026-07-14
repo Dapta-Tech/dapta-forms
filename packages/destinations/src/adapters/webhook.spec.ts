@@ -3,6 +3,9 @@ import { createHmac } from 'node:crypto';
 import { WebhookDestination, signWebhookBody } from './webhook';
 import type { DestinationContext } from '../destination.port';
 
+/** A resolver that maps every host to a public IP — keeps tests off real DNS. */
+const publicResolver = async () => ['93.184.216.34'];
+
 function ctx(over: Partial<DestinationContext> = {}): DestinationContext {
   return {
     idempotencyKey: 'submission:sub-1:complete:webhook',
@@ -38,7 +41,7 @@ describe('WebhookDestination', () => {
     }) as unknown as typeof fetch;
 
     const dest = new WebhookDestination(
-      { url: 'https://acme.io/hook', secret: 'shh', signatureHeader: 'X-Sig' },
+      { url: 'https://acme.io/hook', secret: 'shh', signatureHeader: 'X-Sig', resolveDns: publicResolver },
       fetchImpl,
     );
     const c = ctx();
@@ -66,14 +69,17 @@ describe('WebhookDestination', () => {
       headers = init.headers as Record<string, string>;
       return new Response('{}', { status: 200 });
     }) as unknown as typeof fetch;
-    await new WebhookDestination({ url: 'https://acme.io/hook' }, fetchImpl).deliver(ctx());
+    await new WebhookDestination(
+      { url: 'https://acme.io/hook', resolveDns: publicResolver },
+      fetchImpl,
+    ).deliver(ctx());
     expect(headers['x-quill-signature']).toBeUndefined();
   });
 
   it('THROWS on a non-2xx response so the outbox retries', async () => {
     const fetchImpl = (async () => new Response('nope', { status: 500 })) as unknown as typeof fetch;
     await expect(
-      new WebhookDestination({ url: 'https://acme.io/hook' }, fetchImpl).deliver(ctx()),
+      new WebhookDestination({ url: 'https://acme.io/hook', resolveDns: publicResolver }, fetchImpl).deliver(ctx()),
     ).rejects.toThrow(/HTTP 500/);
   });
 
@@ -81,7 +87,7 @@ describe('WebhookDestination', () => {
     const fetchImpl = (async () =>
       new Response(null, { status: 302 })) as unknown as typeof fetch;
     await expect(
-      new WebhookDestination({ url: 'https://acme.io/hook' }, fetchImpl).deliver(ctx()),
+      new WebhookDestination({ url: 'https://acme.io/hook', resolveDns: publicResolver }, fetchImpl).deliver(ctx()),
     ).rejects.toThrow(/redirect/i);
   });
 
@@ -92,7 +98,69 @@ describe('WebhookDestination', () => {
         init.signal?.addEventListener('abort', () => reject(new Error('aborted')));
       })) as unknown as typeof fetch;
     await expect(
-      new WebhookDestination({ url: 'https://acme.io/hook', timeoutMs: 10 }, fetchImpl).deliver(ctx()),
+      new WebhookDestination(
+        { url: 'https://acme.io/hook', timeoutMs: 10, resolveDns: publicResolver },
+        fetchImpl,
+      ).deliver(ctx()),
     ).rejects.toThrow();
+  });
+
+  // --- SSRF egress guard (H1) ------------------------------------------------
+
+  it('blocks a private-range IP literal and never calls fetch', async () => {
+    let called = false;
+    const fetchImpl = (async () => {
+      called = true;
+      return new Response('{}', { status: 200 });
+    }) as unknown as typeof fetch;
+    await expect(
+      new WebhookDestination({ url: 'https://10.0.0.5/hook' }, fetchImpl).deliver(ctx()),
+    ).rejects.toThrow(/private\/reserved|blocked/i);
+    expect(called).toBe(false);
+  });
+
+  it('blocks the cloud metadata address (169.254.169.254)', async () => {
+    const fetchImpl = (async () => new Response('{}', { status: 200 })) as unknown as typeof fetch;
+    await expect(
+      new WebhookDestination({ url: 'https://169.254.169.254/latest/meta-data' }, fetchImpl).deliver(ctx()),
+    ).rejects.toThrow(/blocked/i);
+  });
+
+  it('blocks a DNS name that resolves to a private address (rebind) and never calls fetch', async () => {
+    let called = false;
+    const fetchImpl = (async () => {
+      called = true;
+      return new Response('{}', { status: 200 });
+    }) as unknown as typeof fetch;
+    const resolveDns = async () => ['10.1.2.3'];
+    await expect(
+      new WebhookDestination({ url: 'https://evil.example.com/hook', resolveDns }, fetchImpl).deliver(ctx()),
+    ).rejects.toThrow(/private\/reserved/i);
+    expect(called).toBe(false);
+  });
+
+  it('blocks loopback when allowLocalhost is not set (production posture)', async () => {
+    const fetchImpl = (async () => new Response('{}', { status: 200 })) as unknown as typeof fetch;
+    await expect(
+      new WebhookDestination({ url: 'http://127.0.0.1:9000/hook' }, fetchImpl).deliver(ctx()),
+    ).rejects.toThrow(/loopback|localhost|blocked/i);
+  });
+
+  it('permits localhost when allowLocalhost is set (non-prod dev catcher)', async () => {
+    const fetchImpl = (async () => new Response('{}', { status: 200 })) as unknown as typeof fetch;
+    const res = await new WebhookDestination(
+      { url: 'http://localhost:9000/hook', allowLocalhost: true },
+      fetchImpl,
+    ).deliver(ctx());
+    expect(res.delivered).toBe(true);
+  });
+
+  it('delivers to a public host that resolves publicly', async () => {
+    const fetchImpl = (async () => new Response('{}', { status: 200 })) as unknown as typeof fetch;
+    const res = await new WebhookDestination(
+      { url: 'https://acme.io/hook', resolveDns: publicResolver },
+      fetchImpl,
+    ).deliver(ctx());
+    expect(res.delivered).toBe(true);
   });
 });

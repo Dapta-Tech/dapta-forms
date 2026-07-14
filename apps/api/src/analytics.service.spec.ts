@@ -157,14 +157,39 @@ describe('submissions query', () => {
 });
 
 describe('delete submission (account-scoped, idempotent)', () => {
-  it('deletes an owned submission and is a no-op on repeat / wrong account', async () => {
+  it('classifies deleted / absent / forbidden and never touches a cross-account row', async () => {
     const one = (await querySubmissions(db, formId, { status: 'completed', limit: 1 })).items[0]!;
-    expect(await deleteSubmissionForAccount(db, accountId, one.id)).toBe(true);
-    // Idempotent second call.
-    expect(await deleteSubmissionForAccount(db, accountId, one.id)).toBe(false);
-    // Wrong account never touches the row.
+    // Owned → deleted.
+    expect(await deleteSubmissionForAccount(db, accountId, one.id)).toBe('deleted');
+    // Same-account repeat on an already-gone row → absent (idempotent 204).
+    expect(await deleteSubmissionForAccount(db, accountId, one.id)).toBe('absent');
+    // A cross-account id → forbidden (HTTP 404), and the row is left intact.
     const other = (await querySubmissions(db, formId, { status: 'completed', limit: 1 })).items[0]!;
-    expect(await deleteSubmissionForAccount(db, 'wrong-account', other.id)).toBe(false);
+    expect(await deleteSubmissionForAccount(db, 'wrong-account', other.id)).toBe('forbidden');
+    expect((await querySubmissions(db, formId, { status: 'completed' })).total).toBe(2);
+    // A never-existed id → absent (not a leak-y 404).
+    expect(await deleteSubmissionForAccount(db, accountId, 'no-such-id')).toBe('absent');
+  });
+});
+
+describe('delete submission (controller HTTP semantics)', () => {
+  function ctrlFor(actAccount: string) {
+    const auth = {
+      resolveHost: async () => ({ accountId: actAccount, memberId: 'm', role: 'owner' as const }),
+    } as unknown as AuthService;
+    return new AnalyticsController(db, auth, svc);
+  }
+
+  it('204s an owned delete + idempotent repeat, but 404s a cross-account id', async () => {
+    const one = (await querySubmissions(db, formId, { status: 'completed', limit: 1 })).items[0]!;
+    // Owner: deletes (no throw) and repeat is a no-op (no throw).
+    await expect(ctrlFor(accountId).deleteSubmission({} as never, one.id)).resolves.toBeUndefined();
+    await expect(ctrlFor(accountId).deleteSubmission({} as never, one.id)).resolves.toBeUndefined();
+    // Attacker: a real (other-account) submission → 404, row untouched.
+    const other = (await querySubmissions(db, formId, { status: 'completed', limit: 1 })).items[0]!;
+    await expect(ctrlFor('attacker-account').deleteSubmission({} as never, other.id)).rejects.toMatchObject({
+      status: 404,
+    });
     expect((await querySubmissions(db, formId, { status: 'completed' })).total).toBe(2);
   });
 });

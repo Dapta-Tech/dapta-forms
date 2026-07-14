@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useTransition } from 'react';
 import type { FormsMessages } from '@quill/shared';
-import type { FormDestination } from '@quill/types';
+import { WEBHOOK_SECRET_MASK, type FormDestination } from '@quill/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
@@ -20,9 +20,14 @@ interface Pair {
 }
 
 interface WebhookState {
+  /** Stable destination id (round-tripped so the server merges secrets by identity). */
+  id?: string;
   enabled: boolean;
   url: string;
+  /** What the user has typed. Empty + `hasSecret` = "keep the stored secret". */
   secret: string;
+  /** A signing secret is already stored server-side (returned masked on READ). */
+  hasSecret: boolean;
 }
 interface HubspotState {
   enabled: boolean;
@@ -36,9 +41,12 @@ interface HubspotState {
 function initialWebhook(destinations: FormDestination[]): WebhookState {
   const w = destinations.find((d) => d.type === 'webhook');
   if (w && w.type === 'webhook') {
-    return { enabled: w.enabled, url: w.settings.url ?? '', secret: w.settings.secret ?? '' };
+    // The API masks a stored secret to WEBHOOK_SECRET_MASK on READ — surface it
+    // as "set" (empty input, placeholder) rather than leaking the ciphertext.
+    const hasSecret = w.settings.secret === WEBHOOK_SECRET_MASK;
+    return { id: w.id, enabled: w.enabled, url: w.settings.url ?? '', secret: '', hasSecret };
   }
-  return { enabled: false, url: '', secret: '' };
+  return { enabled: false, url: '', secret: '', hasSecret: false };
 }
 
 function initialHubspot(destinations: FormDestination[]): HubspotState {
@@ -95,12 +103,18 @@ export function IntegrationsEditor({
     const out: FormDestination[] = [];
     if (webhook.enabled || webhook.url.trim()) {
       if (!isHttpsOrLocalhostUrl(webhook.url.trim())) return { error: m.webhookUrlInvalid };
+      // Secret write semantics: a typed value overwrites; an empty field keeps
+      // the stored secret (send the sentinel the server merges back) when one is
+      // set, or stays cleared/null when none exists.
+      const typed = webhook.secret.trim();
+      const secret = typed ? typed : webhook.hasSecret ? WEBHOOK_SECRET_MASK : null;
       out.push({
         type: 'webhook',
+        ...(webhook.id ? { id: webhook.id } : {}),
         enabled: webhook.enabled,
         settings: {
           url: webhook.url.trim(),
-          secret: webhook.secret.trim() || null,
+          secret,
         },
       });
     }
@@ -293,6 +307,7 @@ function WebhookCard({
           type="text"
           value={state.secret}
           autoComplete="off"
+          placeholder={state.hasSecret ? m.webhookSecretSetPlaceholder : undefined}
           onChange={(e) => onChange({ ...state, secret: e.target.value })}
         />
       </Field>

@@ -48,6 +48,95 @@ export interface FormsMessages {
     };
   };
   admin: {
+    /** App shell chrome shared across every admin page (sidebar/header/footer). */
+    chrome: {
+      signOut: string;
+      viewPublic: string;
+      collapse: string;
+      expand: string;
+      openNav: string;
+      /** Left-nav item labels (icon + label). */
+      nav: {
+        home: string;
+        forms: string;
+        submissions: string;
+        analytics: string;
+        integrations: string;
+        settings: string;
+      };
+      /** The Dapta suite app-switcher. */
+      switcher: {
+        trigger: string;
+        menuLabel: string;
+        eyebrow: string;
+        dapta: string;
+        calendars: string;
+        opensNewTab: string;
+      };
+    };
+    /** The dashboard home (/admin) — greeting, public link, stats, quick actions. */
+    home: {
+      welcome: string;
+      welcomeNamed: string; // {name}
+      subtitle: string;
+      publicLink: string;
+      copy: string;
+      copied: string;
+      open: string;
+      statForms: string;
+      statSubmissions: string;
+      statCompletion: string;
+      createForm: string;
+      createFormDesc: string;
+      branding: string;
+      brandingDesc: string;
+      integrations: string;
+      integrationsDesc: string;
+      analytics: string;
+      analyticsDesc: string;
+    };
+    /** The global submissions/analytics/integrations landing pages (form picker). */
+    picker: {
+      submissionsTitle: string;
+      submissionsSubtitle: string;
+      analyticsTitle: string;
+      analyticsSubtitle: string;
+      integrationsTitle: string;
+      integrationsSubtitle: string;
+      emptyTitle: string;
+      emptyBody: string;
+      viewSubmissions: string;
+      viewAnalytics: string;
+      configure: string;
+      submissionsCount: string; // {n}
+      completionValue: string; // {n}
+      completionLabel: string;
+    };
+    /** The workspace settings page (/admin/settings). */
+    settings: {
+      title: string;
+      subtitle: string;
+      workspaceHeading: string;
+      workspaceSubtitle: string;
+      displayName: string;
+      email: string;
+      handle: string;
+      accountCode: string;
+      vanity: string;
+      vanityNone: string;
+      publicPage: string;
+      viewPublic: string;
+      membersHeading: string;
+      membersSubtitle: string;
+      roleOwner: string;
+      roleAdmin: string;
+      roleMember: string;
+      statusActive: string;
+      statusInvited: string;
+      statusDisabled: string;
+      membersEmpty: string;
+      you: string;
+    };
     login: {
       title: string;
       subtitle: string;
@@ -73,6 +162,8 @@ export interface FormsMessages {
       emptyTitle: string;
       emptyBody: string;
       updated: string;
+      actions: string;
+      edit: string;
       duplicate: string;
       delete: string;
       deleteConfirm: string;
@@ -277,7 +368,6 @@ export interface FormsMessages {
       colStatus: string;
       colScore: string;
       export: string;
-      exporting: string;
       delete: string;
       deleteConfirm: string;
       emptyTitle: string;
@@ -309,6 +399,7 @@ export interface FormsMessages {
       webhookUrlInvalid: string;
       webhookSecret: string;
       webhookSecretHelp: string;
+      webhookSecretSetPlaceholder: string;
       // HubSpot
       hubspotTitle: string;
       hubspotDesc: string;
@@ -371,6 +462,89 @@ export const en: FormsMessages = {
     },
   },
   admin: {
+    chrome: {
+      signOut: 'Sign out',
+      viewPublic: 'View public page',
+      collapse: 'Collapse sidebar',
+      expand: 'Expand sidebar',
+      openNav: 'Open navigation',
+      nav: {
+        home: 'Home',
+        forms: 'Forms',
+        submissions: 'Submissions',
+        analytics: 'Analytics',
+        integrations: 'Integrations',
+        settings: 'Settings',
+      },
+      switcher: {
+        trigger: 'Switch product',
+        menuLabel: 'Dapta products',
+        eyebrow: 'Dapta',
+        dapta: 'Dapta AI',
+        calendars: 'Dapta Calendars',
+        opensNewTab: '(opens in a new tab)',
+      },
+    },
+    home: {
+      welcome: 'Welcome',
+      welcomeNamed: 'Welcome, {name}',
+      subtitle: 'Your forms at a glance.',
+      publicLink: 'Your public form link',
+      copy: 'Copy',
+      copied: 'Copied',
+      open: 'Open',
+      statForms: 'Forms',
+      statSubmissions: 'Total submissions',
+      statCompletion: 'Completion rate',
+      createForm: 'Create a form',
+      createFormDesc: 'Build a new form and share its link.',
+      branding: 'Branding & style',
+      brandingDesc: 'Cover, colors and the public look.',
+      integrations: 'Integrations & webhooks',
+      integrationsDesc: 'Send responses to your CRM or a webhook.',
+      analytics: 'Analytics',
+      analyticsDesc: 'Funnel performance and drop-off.',
+    },
+    picker: {
+      submissionsTitle: 'Submissions',
+      submissionsSubtitle: 'Pick a form to see its responses.',
+      analyticsTitle: 'Analytics',
+      analyticsSubtitle: 'Pick a form to see its funnel and drop-off.',
+      integrationsTitle: 'Integrations',
+      integrationsSubtitle: 'Pick a form to configure its CRM and webhook delivery.',
+      emptyTitle: 'No forms yet',
+      emptyBody: 'Create your first form to unlock this view.',
+      viewSubmissions: 'View submissions',
+      viewAnalytics: 'View analytics',
+      configure: 'Configure',
+      submissionsCount: '{n} submissions',
+      completionValue: '{n}%',
+      completionLabel: 'completion',
+    },
+    settings: {
+      title: 'Settings',
+      subtitle: 'Your workspace and team.',
+      workspaceHeading: 'Workspace',
+      workspaceSubtitle: 'Your identity and public link.',
+      displayName: 'Name',
+      email: 'Email',
+      handle: 'Handle',
+      accountCode: 'Account code',
+      vanity: 'Vanity slug',
+      vanityNone: 'Not set',
+      publicPage: 'Public page',
+      viewPublic: 'View public page',
+      membersHeading: 'Members',
+      membersSubtitle: 'People with access to this workspace.',
+      roleOwner: 'Owner',
+      roleAdmin: 'Admin',
+      roleMember: 'Member',
+      statusActive: 'Active',
+      statusInvited: 'Invited',
+      statusDisabled: 'Disabled',
+      membersEmpty: 'No members yet.',
+      you: 'You',
+    },
     login: {
       title: 'Sign in',
       subtitle:
@@ -397,6 +571,8 @@ export const en: FormsMessages = {
       emptyTitle: 'No forms yet',
       emptyBody: 'Create your first form to start collecting responses.',
       updated: 'Updated {when}',
+      actions: 'Actions',
+      edit: 'Edit',
       duplicate: 'Duplicate',
       delete: 'Delete',
       deleteConfirm: 'Delete this form and all its submissions?',
@@ -597,7 +773,6 @@ export const en: FormsMessages = {
       colStatus: 'Status',
       colScore: 'Score',
       export: 'Download CSV',
-      exporting: 'Preparing…',
       delete: 'Delete',
       deleteConfirm: 'Delete this submission? This cannot be undone.',
       emptyTitle: 'No submissions yet',
@@ -628,6 +803,7 @@ export const en: FormsMessages = {
       webhookSecret: 'Signing secret (optional)',
       webhookSecretHelp:
         'When set, each request is signed with HMAC-SHA256 in the X-Quill-Signature header so you can verify it.',
+      webhookSecretSetPlaceholder: 'A secret is set — leave blank to keep it, or type a new one.',
       hubspotTitle: 'HubSpot',
       hubspotDesc: 'Upsert the respondent as a contact and attach a note on completed submissions.',
       hubspotDisabled:
@@ -690,6 +866,89 @@ export const es: FormsMessages = {
     },
   },
   admin: {
+    chrome: {
+      signOut: 'Cerrar sesión',
+      viewPublic: 'Ver página pública',
+      collapse: 'Contraer barra lateral',
+      expand: 'Expandir barra lateral',
+      openNav: 'Abrir navegación',
+      nav: {
+        home: 'Inicio',
+        forms: 'Formularios',
+        submissions: 'Respuestas',
+        analytics: 'Analíticas',
+        integrations: 'Integraciones',
+        settings: 'Ajustes',
+      },
+      switcher: {
+        trigger: 'Cambiar producto',
+        menuLabel: 'Productos Dapta',
+        eyebrow: 'Dapta',
+        dapta: 'Dapta AI',
+        calendars: 'Dapta Calendars',
+        opensNewTab: '(se abre en una pestaña nueva)',
+      },
+    },
+    home: {
+      welcome: 'Bienvenido',
+      welcomeNamed: 'Bienvenido, {name}',
+      subtitle: 'Tus formularios de un vistazo.',
+      publicLink: 'Tu enlace público',
+      copy: 'Copiar',
+      copied: 'Copiado',
+      open: 'Abrir',
+      statForms: 'Formularios',
+      statSubmissions: 'Respuestas totales',
+      statCompletion: 'Tasa de finalización',
+      createForm: 'Crear un formulario',
+      createFormDesc: 'Crea un formulario nuevo y comparte su enlace.',
+      branding: 'Marca y estilo',
+      brandingDesc: 'Portada, colores y la apariencia pública.',
+      integrations: 'Integraciones y webhooks',
+      integrationsDesc: 'Envía respuestas a tu CRM o a un webhook.',
+      analytics: 'Analíticas',
+      analyticsDesc: 'Rendimiento del embudo y abandono.',
+    },
+    picker: {
+      submissionsTitle: 'Respuestas',
+      submissionsSubtitle: 'Elige un formulario para ver sus respuestas.',
+      analyticsTitle: 'Analíticas',
+      analyticsSubtitle: 'Elige un formulario para ver su embudo y abandono.',
+      integrationsTitle: 'Integraciones',
+      integrationsSubtitle: 'Elige un formulario para configurar su CRM y la entrega por webhook.',
+      emptyTitle: 'Aún no hay formularios',
+      emptyBody: 'Crea tu primer formulario para habilitar esta vista.',
+      viewSubmissions: 'Ver respuestas',
+      viewAnalytics: 'Ver analíticas',
+      configure: 'Configurar',
+      submissionsCount: '{n} respuestas',
+      completionValue: '{n}%',
+      completionLabel: 'finalización',
+    },
+    settings: {
+      title: 'Ajustes',
+      subtitle: 'Tu espacio de trabajo y tu equipo.',
+      workspaceHeading: 'Espacio de trabajo',
+      workspaceSubtitle: 'Tu identidad y tu enlace público.',
+      displayName: 'Nombre',
+      email: 'Correo',
+      handle: 'Alias',
+      accountCode: 'Código de cuenta',
+      vanity: 'Slug personalizado',
+      vanityNone: 'Sin definir',
+      publicPage: 'Página pública',
+      viewPublic: 'Ver página pública',
+      membersHeading: 'Miembros',
+      membersSubtitle: 'Personas con acceso a este espacio de trabajo.',
+      roleOwner: 'Propietario',
+      roleAdmin: 'Administrador',
+      roleMember: 'Miembro',
+      statusActive: 'Activo',
+      statusInvited: 'Invitado',
+      statusDisabled: 'Desactivado',
+      membersEmpty: 'Aún no hay miembros.',
+      you: 'Tú',
+    },
     login: {
       title: 'Iniciar sesión',
       subtitle:
@@ -716,6 +975,8 @@ export const es: FormsMessages = {
       emptyTitle: 'Aún no hay formularios',
       emptyBody: 'Crea tu primer formulario para empezar a recibir respuestas.',
       updated: 'Actualizado {when}',
+      actions: 'Acciones',
+      edit: 'Editar',
       duplicate: 'Duplicar',
       delete: 'Eliminar',
       deleteConfirm: '¿Eliminar este formulario y todas sus respuestas?',
@@ -916,7 +1177,6 @@ export const es: FormsMessages = {
       colStatus: 'Estado',
       colScore: 'Puntaje',
       export: 'Descargar CSV',
-      exporting: 'Preparando…',
       delete: 'Eliminar',
       deleteConfirm: '¿Eliminar esta respuesta? No se puede deshacer.',
       emptyTitle: 'Aún no hay respuestas',
@@ -947,6 +1207,7 @@ export const es: FormsMessages = {
       webhookSecret: 'Secreto de firma (opcional)',
       webhookSecretHelp:
         'Si se define, cada solicitud se firma con HMAC-SHA256 en la cabecera X-Quill-Signature para que puedas verificarla.',
+      webhookSecretSetPlaceholder: 'Hay un secreto guardado — déjalo en blanco para conservarlo o escribe uno nuevo.',
       hubspotTitle: 'HubSpot',
       hubspotDesc: 'Crea o actualiza el contacto y adjunta una nota en las respuestas completadas.',
       hubspotDisabled:

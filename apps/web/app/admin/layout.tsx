@@ -1,14 +1,18 @@
 import type { ReactNode } from 'react';
-import Link from 'next/link';
+import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
+import { getMessages } from '@quill/shared';
 import { adminApi, ApiError } from '@/lib/admin-api';
+import { AdminShell } from '@/components/admin-shell';
+import { getLocale } from '@/lib/locale';
 import { ToastProvider } from '@/components/toast';
 
-// Customer-facing name (build-time inlined); the codename never surfaces in the UI.
-const productName = process.env.NEXT_PUBLIC_PRODUCT_NAME || 'Forms';
-
 export default async function AdminLayout({ children }: { children: ReactNode }) {
-  // The real auth gate: identity is whatever `/v1/me` resolves. A 401 → /login.
+  const jar = await cookies();
+
+  // The real auth gate: identity is whatever `/v1/me` resolves. A 401 (no/invalid
+  // session — e.g. after logout, or an expired token) → /login. A non-401 error
+  // (API down) surfaces to the error boundary.
   let me: Awaited<ReturnType<typeof adminApi.me>>;
   try {
     me = await adminApi.me();
@@ -17,24 +21,20 @@ export default async function AdminLayout({ children }: { children: ReactNode })
     throw e;
   }
 
+  // Server-read the collapse pref so the sidebar renders at the right width on
+  // first paint (no rail FOUC).
+  const initialCollapsed = jar.get('forms.nav.collapsed')?.value === '1';
+  const chrome = getMessages(await getLocale()).admin.chrome;
+
   return (
     <ToastProvider>
-      <div className="min-h-dvh">
-        <header className="flex items-center justify-between border-b border-border px-6 py-3">
-          <Link href="/admin" className="flex items-center gap-2 font-semibold">
-            <span className="rounded-md bg-primary px-2 py-0.5 text-sm text-primary-foreground">
-              {productName}
-            </span>
-          </Link>
-          <div className="flex items-center gap-4 text-sm text-muted-foreground">
-            <span>{me.displayName ?? me.email ?? me.handle}</span>
-            <a href="/api/auth/logout" className="hover:text-foreground">
-              Sign out
-            </a>
-          </div>
-        </header>
+      <AdminShell
+        initialCollapsed={initialCollapsed}
+        messages={chrome}
+        user={{ displayName: me.displayName, handle: me.handle, accountCode: me.accountCode }}
+      >
         {children}
-      </div>
+      </AdminShell>
     </ToastProvider>
   );
 }

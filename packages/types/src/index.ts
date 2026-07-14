@@ -30,10 +30,6 @@ export type AccountRole = (typeof accountRole)[number];
 export const memberStatus = ['active', 'invited', 'disabled'] as const;
 export type MemberStatus = (typeof memberStatus)[number];
 
-/** API-key scopes for the machine surface. */
-export const apiScope = ['forms:read', 'submissions:read', 'submissions:write'] as const;
-export type ApiScope = (typeof apiScope)[number];
-
 // --- Form field kinds --------------------------------------------------------
 
 /** The step/field kinds a form may ask (mirrors @quill/engine FORM_FIELD_TYPES). */
@@ -115,8 +111,25 @@ export const formCoverSchema = z.object({
   clientLogos: z.array(clientLogoSchema).max(24).optional(),
 });
 
+/**
+ * A CSS color value flowing into an inline custom property (`--pf-primary`) on
+ * the public renderer. Constrain the format (hex / rgb(a) / hsl(a) / named) so a
+ * value like `red;} body{...` can't break out of the color context — CSS-
+ * injection defense-in-depth on top of the 32-char cap (L2).
+ */
+const cssColor = z
+  .string()
+  .max(32)
+  .refine(
+    (v) =>
+      /^#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/.test(v) ||
+      /^(?:rgb|rgba|hsl|hsla)\([0-9.,%\s/-]+\)$/.test(v) ||
+      /^[a-zA-Z]+$/.test(v),
+    { message: 'primaryColor must be a hex, rgb(a)/hsl(a), or named CSS color.' },
+  );
+
 export const formBrandingSchema = z.object({
-  primaryColor: z.string().max(32).nullable().optional(),
+  primaryColor: cssColor.nullable().optional(),
   logo: safeImageUrl.nullable().optional(),
   clientLogos: z.array(clientLogoSchema).max(24).optional(),
 });
@@ -158,6 +171,14 @@ const propertyMapSchema = z.record(z.string().min(1).max(200), z.string().min(1)
  */
 export const webhookDestinationSchema = z.object({
   type: z.literal('webhook'),
+  /**
+   * Stable per-destination id (additive). Minted on first save and round-tripped
+   * by the admin UI so `mergeWebhookSecrets` can match a masked-secret write to
+   * its stored counterpart by IDENTITY, not array position — correct even when
+   * multiple webhooks are reordered or one is deleted. Optional for back-compat
+   * (legacy configs have none; the merge self-heals by minting one on save).
+   */
+  id: z.string().max(64).optional(),
   enabled: z.boolean().default(false),
   settings: z.object({
     // https-only, with ONE exception: plain http for localhost/127.0.0.1 (local
@@ -206,6 +227,91 @@ export const formDestinationSchema = z.discriminatedUnion('type', [
   hubspotDestinationSchema,
 ]);
 export type FormDestination = z.infer<typeof formDestinationSchema>;
+
+/**
+ * Sentinel returned in place of a stored webhook signing secret on every ADMIN
+ * READ (GET /v1/forms/:id and the create/update/duplicate/destinations
+ * responses) so the plaintext secret never leaves the server. It doubles as the
+ * "unchanged" marker on WRITE: when the integrations UI submits this value back
+ * (the operator left the field untouched), the server keeps the stored secret —
+ * see `mergeWebhookSecrets`. Distinctive so a real secret can never collide.
+ */
+export const WEBHOOK_SECRET_MASK = '__DAPTA_FORMS_SECRET_KEEP__';
+
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null && !Array.isArray(v);
+}
+
+/** Isomorphic UUID (Web Crypto in Node 20+ and modern browsers) with a fallback. */
+function newDestinationId(): string {
+  const g = globalThis as unknown as { crypto?: { randomUUID?: () => string } };
+  return (
+    g.crypto?.randomUUID?.() ??
+    `wh_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`
+  );
+}
+
+/**
+ * Return a copy of a destinations array with every non-empty webhook signing
+ * secret replaced by `WEBHOOK_SECRET_MASK` (so a READ never exposes plaintext).
+ * Destinations with no secret are returned untouched. Defensive against loosely
+ * typed stored JSON — non-webhook / malformed entries pass through unchanged.
+ */
+export function maskDestinationSecrets(destinations: unknown): unknown {
+  if (!Array.isArray(destinations)) return destinations;
+  return destinations.map((d) => {
+    if (!isRecord(d) || d.type !== 'webhook' || !isRecord(d.settings)) return d;
+    const secret = d.settings.secret;
+    if (typeof secret === 'string' && secret.length > 0) {
+      return { ...d, settings: { ...d.settings, secret: WEBHOOK_SECRET_MASK } };
+    }
+    return d;
+  });
+}
+
+/** Return a copy of a form config with its destinations' webhook secrets masked. */
+export function maskConfigSecrets(config: unknown): unknown {
+  if (!isRecord(config) || !('destinations' in config)) return config;
+  return { ...config, destinations: maskDestinationSecrets(config.destinations) };
+}
+
+/**
+ * Merge an incoming destinations array against the currently-stored one: any
+ * webhook whose incoming secret is `WEBHOOK_SECRET_MASK` keeps the stored secret
+ * (the UI left the field untouched). A real string overwrites it; an empty
+ * string / null clears it.
+ *
+ * Matching is by STABLE ID (M3): each webhook carries an `id` (minted here on
+ * first save and round-tripped by the admin UI), so a masked-secret write is
+ * paired with its stored counterpart by identity — correct even when multiple
+ * webhooks are reordered or one is deleted. Legacy configs with no ids fall back
+ * to positional matching among webhook entries and self-heal (an id is minted
+ * and persisted on this write).
+ */
+export function mergeWebhookSecrets(incoming: unknown[], existing: unknown): unknown[] {
+  const storedWebhooks = (Array.isArray(existing) ? existing : []).filter(
+    (d): d is Record<string, unknown> => isRecord(d) && d.type === 'webhook',
+  );
+  const storedById = new Map<string, Record<string, unknown>>();
+  for (const w of storedWebhooks) {
+    if (typeof w.id === 'string' && w.id.length > 0) storedById.set(w.id, w);
+  }
+  let positional = 0; // fallback cursor for legacy (id-less) configs
+  return incoming.map((d) => {
+    if (!isRecord(d) || d.type !== 'webhook') return d;
+    const id = typeof d.id === 'string' && d.id.length > 0 ? d.id : newDestinationId();
+    const settings = isRecord(d.settings) ? d.settings : {};
+    // Prefer a stable-id match; fall back to positional for id-less legacy configs.
+    const prev =
+      (typeof d.id === 'string' ? storedById.get(d.id) : undefined) ?? storedWebhooks[positional];
+    positional += 1;
+    if (settings.secret === WEBHOOK_SECRET_MASK) {
+      const prevSecret = isRecord(prev?.settings) ? prev!.settings.secret : undefined;
+      return { ...d, id, settings: { ...settings, secret: prevSecret ?? null } };
+    }
+    return { ...d, id };
+  });
+}
 
 /** The versioned config blob. `version` gates future migrations of the shape. */
 export const formConfigSchema = z.object({

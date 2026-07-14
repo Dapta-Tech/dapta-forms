@@ -74,6 +74,9 @@ export const outbox = pgTable('outbox', {
   lastError: text('last_error'),
   createdAt: bigint('created_at', { mode: 'number' }).notNull(),
   updatedAt: bigint('updated_at', { mode: 'number' }).notNull(),
+  // Worker claim/lease (H2): set atomically when a row is claimed for delivery.
+  claimedAt: bigint('claimed_at', { mode: 'number' }),
+  claimedBy: text('claimed_by'),
 });
 
 export const notificationSetting = pgTable('notification_setting', {
@@ -106,16 +109,23 @@ export const form = pgTable(
   }),
 );
 
-export const submission = pgTable('submission', {
-  id: text('id').primaryKey(),
-  formId: text('form_id').notNull(),
-  sessionId: text('session_id').notNull(),
-  data: jsonb('data').notNull(),
-  score: integer('score').notNull().default(0),
-  startedAt: bigint('started_at', { mode: 'number' }).notNull(),
-  completedAt: bigint('completed_at', { mode: 'number' }),
-  partialAt: bigint('partial_at', { mode: 'number' }),
-});
+export const submission = pgTable(
+  'submission',
+  {
+    id: text('id').primaryKey(),
+    formId: text('form_id').notNull(),
+    sessionId: text('session_id').notNull(),
+    data: jsonb('data').notNull(),
+    score: integer('score').notNull().default(0),
+    startedAt: bigint('started_at', { mode: 'number' }).notNull(),
+    completedAt: bigint('completed_at', { mode: 'number' }),
+    partialAt: bigint('partial_at', { mode: 'number' }),
+  },
+  (t) => ({
+    // One persisted submission per (form, session) — the upsert relies on this.
+    submissionFormSessionUq: uniqueIndex('submission_form_session_uq').on(t.formId, t.sessionId),
+  }),
+);
 
 export const formEvent = pgTable('form_event', {
   id: text('id').primaryKey(),

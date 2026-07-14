@@ -139,7 +139,7 @@ export function FormEditor({
       <div className="sticky top-0 z-30 border-b border-border bg-background/90 backdrop-blur supports-[backdrop-filter]:bg-background/75">
         <div className="mx-auto flex max-w-[1520px] flex-col gap-3 px-4 pb-3 pt-4 sm:px-6">
           <Link
-            href="/admin"
+            href="/admin/forms"
             className="inline-flex w-fit items-center gap-1 text-sm text-muted-foreground transition-colors hover:text-foreground"
           >
             <i aria-hidden className="pi pi-chevron-left" style={{ fontSize: 12 }} />
