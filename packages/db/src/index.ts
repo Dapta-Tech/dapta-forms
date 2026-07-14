@@ -8,6 +8,7 @@ export * from './crud';
 export * from './forms';
 export * from './analytics';
 export * from './members';
+export * from './demo-form';
 export * from './short-links';
 export * from './outbox';
 export * from './notification-settings';
