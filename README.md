@@ -23,12 +23,15 @@ pnpm install          # Node >= 20, pnpm >= 10
 pnpm dev              # builds packages, creates + seeds a SQLite DB, starts both apps
 ```
 
-Then open (local dev convention: web **3400** / api **4400**; the defaults
-without env are 3000/4000):
+Then open (`pnpm dev` binds web **3000** and api **4000**):
 
 - **Web** → http://localhost:3000 — a seeded demo form at
   [`/acme/alex-rivera/lead-qualifier`](http://localhost:3000/acme/alex-rivera/lead-qualifier)
 - **API** → http://localhost:4000/health
+
+> Relocating ports: set `API_PORT` (the API reads it) and point the web app at it
+> with `NEXT_PUBLIC_API_URL`. The web dev port comes from the `apps/web` dev
+> script — run it elsewhere with `pnpm --filter @quill/web exec next dev -p <port>`.
 
 No Docker, no Postgres, no VPN, no accounts. The database is a file at
 `.data/dev.db`; email is `log-only` (submission notices print to the API log).
@@ -92,6 +95,9 @@ The web app talks to the API over HTTP — it never imports the database directl
 so the two deploy independently. The engine is pure and shared by both, so the
 client preview and the server verdict always agree.
 
+See [`ARCHITECTURE.md`](ARCHITECTURE.md) for the full request-flow diagram, the
+package dependency direction, and the ports/adapters seams.
+
 ### Submission integrity (dual enforcement)
 
 One persisted submission per (form, session) is guaranteed by:
@@ -114,7 +120,7 @@ Everything has a safe default (see [`.env.example`](.env.example)). Copy it to
 | `DATABASE_URL` | `file:./.data/dev.db` | `postgres://…` switches to Postgres |
 | `EMAIL_PROVIDER` | `log-only` | `noop` \| `smtp` \| `http` |
 | `EMAIL_HTTP_PROFILE` | `generic` | `transactional-v1` opts into the managed contract (see `.env.example`) |
-| `API_PORT` | `4000` | local dev convention: `4400` |
+| `API_PORT` | `4000` | port the API listens on |
 | `NEXT_PUBLIC_API_URL` | `http://localhost:4000` | where the web app reaches the API |
 
 ## Scripts
@@ -149,6 +155,11 @@ Quill is **deployment-agnostic** (Node runtime, no host-only APIs).
 
 Read [`CONTRIBUTING.md`](CONTRIBUTING.md). PRs are DCO-signed (`git commit -s`),
 Conventional-Commit titled, and green on CI (SQLite + a Postgres parity job).
+
+Working with Claude Code or another AI coding agent? [`CLAUDE.md`](CLAUDE.md) is
+the agent guide (run/test commands, architecture invariants, common-task file
+pointers), and `.claude/agents/` ships a read-only **forms-reviewer** and a
+**forms-contributor** agent you can run in this repo.
 
 ## License
 
