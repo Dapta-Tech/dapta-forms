@@ -223,7 +223,9 @@
 }
 .pf-input:focus {
   border-color: var(--pf-primary);
-  box-shadow: 0 0 0 3px var(--ring);
+  /* Glow derives from the per-form accent so border + glow always match the
+     brand color (--ring is fixed lime and mismatched a custom primaryColor). */
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--pf-primary) 30%, transparent);
 }
 .pf-name-fields {
   display: grid;
