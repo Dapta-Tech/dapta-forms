@@ -1,84 +1,105 @@
 import Link from 'next/link';
+import type { ReactNode } from 'react';
 import { getMessages, t } from '@quill/shared';
 import { adminApi } from '@/lib/admin-api';
 import { getLocale } from '@/lib/locale';
 import { CopyLink } from '@/components/copy-link';
-import { PageHeader } from '@/components/ui/page-header';
-import { CreateFormButton } from './create-form-button';
-import { FormRowActions } from './form-row-actions';
+import { CreateForm } from './forms/create-form';
 
 export const dynamic = 'force-dynamic';
 
 export default async function AdminHome() {
   const locale = await getLocale();
   const messages = getMessages(locale).admin;
-  const m = messages.forms;
-  const nav = messages.nav;
+  const h = messages.home;
   const [me, forms] = await Promise.all([adminApi.me(), adminApi.listForms()]);
 
+  // Aggregate submissions + completion across every form (reuse per-form
+  // analytics — no new endpoint). Weighted completion = Σsubmissions / Σstarts.
+  const analytics = await Promise.all(
+    forms.map((f) => adminApi.getAnalytics(f.id).catch(() => null)),
+  );
+  const totalSubmissions = analytics.reduce((n, a) => n + (a?.submissions ?? 0), 0);
+  const totalStarts = analytics.reduce((n, a) => n + (a?.starts ?? 0), 0);
+  const completionRate = totalStarts > 0 ? Math.round((totalSubmissions / totalStarts) * 1000) / 10 : 0;
+
+  // The dashboard's shareable link points at the most recently updated form.
+  const latest = [...forms].sort((a, b) => b.updatedAt - a.updatedAt)[0];
+  const publicUrl = latest ? `/${me.accountCode}/${me.handle ?? 'me'}/${latest.slug}` : null;
+  const brandingHref = latest ? `/admin/forms/${latest.id}/edit` : '/admin/forms';
+
+  const firstName = me.displayName?.split(' ')[0];
   const createLabels = {
-    create: m.create,
-    createTitle: m.createTitle,
-    nameLabel: m.nameLabel,
-    namePlaceholder: m.namePlaceholder,
-    cancel: m.cancel,
+    create: messages.forms.create,
+    createTitle: messages.forms.createTitle,
+    nameLabel: messages.forms.nameLabel,
+    namePlaceholder: messages.forms.namePlaceholder,
+    cancel: messages.forms.cancel,
   };
-  const rowLabels = { duplicate: m.duplicate, delete: m.delete, deleteConfirm: m.deleteConfirm };
 
   return (
-    <div className="mx-auto max-w-[1100px] px-6 py-10 sm:px-8">
-      <PageHeader
-        title={m.title}
-        subtitle={m.subtitle}
-        action={forms.length > 0 ? <CreateFormButton labels={createLabels} /> : undefined}
-      />
+    <div className="mx-auto max-w-[1520px] px-6 py-10 sm:px-8">
+      <h1 className="mb-1 text-3xl font-semibold tracking-tight">
+        {firstName ? t(h.welcomeNamed, { name: firstName }) : h.welcome}
+      </h1>
+      <p className="mb-8 text-muted-foreground">{h.subtitle}</p>
 
-      {forms.length === 0 ? (
-        <div className="flex flex-col items-center gap-4 rounded-lg border border-dashed border-border p-12 text-center">
-          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
-            <i aria-hidden className="pi pi-file-edit" style={{ fontSize: 20 }} />
-          </div>
-          <div>
-            <p className="font-medium text-foreground">{m.emptyTitle}</p>
-            <p className="mt-1 text-sm text-muted-foreground">{m.emptyBody}</p>
-          </div>
-          <CreateFormButton labels={createLabels} />
+      {publicUrl ? (
+        <div className="mb-8 flex flex-col gap-2 rounded-md border border-border bg-card p-5">
+          <span className="text-sm text-muted-foreground">{h.publicLink}</span>
+          <CopyLink path={publicUrl} labels={{ copy: h.copy, copied: h.copied, open: h.open }} />
         </div>
-      ) : (
-        <ul className="flex flex-col gap-3">
-          {forms.map((f) => {
-            const publicPath = `/${me.accountCode}/${me.handle ?? 'me'}/${f.slug}`;
-            return (
-              <li
-                key={f.id}
-                className="flex flex-col gap-3 rounded-lg border border-border bg-card p-4 sm:flex-row sm:items-center sm:justify-between"
-              >
-                <div className="flex min-w-0 flex-col gap-1">
-                  <Link
-                    href={`/admin/forms/${f.id}/edit`}
-                    className="w-fit font-medium transition-colors hover:text-primary hover:underline"
-                  >
-                    {f.name}
-                  </Link>
-                  <CopyLink path={publicPath} labels={{ copy: m.copy, copied: m.copied, open: m.open }} />
-                  <span className="text-xs text-muted-foreground">
-                    {t(m.updated, { when: new Date(f.updatedAt).toLocaleDateString(locale) })}
-                  </span>
-                </div>
-                <FormRowActions
-                  id={f.id}
-                  labels={rowLabels}
-                  nav={{
-                    analytics: nav.analytics,
-                    submissions: nav.submissions,
-                    integrations: nav.integrations,
-                  }}
-                />
-              </li>
-            );
-          })}
-        </ul>
-      )}
+      ) : null}
+
+      <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <Stat label={h.statForms} value={String(forms.length)} href="/admin/forms" />
+        <Stat label={h.statSubmissions} value={String(totalSubmissions)} href="/admin/submissions" />
+        <Stat label={h.statCompletion} value={`${completionRate}%`} href="/admin/analytics" />
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <CreateForm labels={createLabels} variant="card" cardTitle={h.createForm} cardDesc={h.createFormDesc} />
+        <Shortcut href={brandingHref} icon="pi-palette" title={h.branding} desc={h.brandingDesc} />
+        <Shortcut href="/admin/integrations" icon="pi-link" title={h.integrations} desc={h.integrationsDesc} />
+        <Shortcut href="/admin/analytics" icon="pi-chart-bar" title={h.analytics} desc={h.analyticsDesc} />
+      </div>
     </div>
+  );
+}
+
+function Stat({ label, value, href }: { label: string; value: string; href: string }): ReactNode {
+  return (
+    <Link
+      href={href}
+      className="flex flex-col gap-1 rounded-md border border-border bg-card p-5 transition-transform hover:border-primary active:scale-[0.99]"
+    >
+      <span className="text-3xl font-semibold tracking-tight">{value}</span>
+      <span className="text-sm text-muted-foreground">{label}</span>
+    </Link>
+  );
+}
+
+function Shortcut({
+  href,
+  icon,
+  title,
+  desc,
+}: {
+  href: string;
+  icon: string;
+  title: string;
+  desc: string;
+}): ReactNode {
+  return (
+    <Link
+      href={href}
+      className="flex flex-col gap-1 rounded-md border border-border bg-card p-5 transition-transform hover:border-primary active:scale-[0.99]"
+    >
+      <span className="mb-1 flex h-9 w-9 items-center justify-center rounded-md bg-muted text-foreground">
+        <i aria-hidden className={`pi ${icon}`} style={{ fontSize: 14 }} />
+      </span>
+      <span className="font-medium">{title}</span>
+      <span className="text-sm text-muted-foreground">{desc}</span>
+    </Link>
   );
 }

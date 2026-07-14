@@ -26,7 +26,7 @@ export function FormTabs({
   return (
     <div className="mb-6">
       <Link
-        href="/admin"
+        href="/admin/forms"
         className="inline-flex items-center gap-1 text-sm text-muted-foreground transition-colors hover:text-foreground"
       >
         <i aria-hidden className="pi pi-chevron-left" style={{ fontSize: 12 }} />
