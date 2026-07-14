@@ -170,7 +170,8 @@ export function loadServerEnv(source: NodeJS.ProcessEnv = process.env): ServerEn
   return parsed.data;
 }
 
-/** True when DATABASE_URL points at Postgres (vs SQLite). */
+/** True when DATABASE_URL points at Postgres (vs SQLite). Scheme is case-insensitive. */
 export function isPostgresUrl(url: string): boolean {
-  return url.startsWith('postgres://') || url.startsWith('postgresql://');
+  const u = url.toLowerCase();
+  return u.startsWith('postgres://') || u.startsWith('postgresql://');
 }

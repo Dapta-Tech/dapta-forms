@@ -11,6 +11,10 @@
       "types": "./dist/env.d.ts",
       "import": "./dist/env.js"
     },
+    "./dotenv": {
+      "types": "./dist/dotenv.d.ts",
+      "import": "./dist/dotenv.js"
+    },
     "./tsconfig/base.json": "./tsconfig/base.json",
     "./tsconfig/nest.json": "./tsconfig/nest.json",
     "./tsconfig/next.json": "./tsconfig/next.json",
@@ -24,6 +28,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "dotenv": "^16.4.7",
     "zod": "^3.24.1"
   },
   "devDependencies": {

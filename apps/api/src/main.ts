@@ -1,9 +1,13 @@
 import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
 import { loadServerEnv } from '@quill/config/env';
+import { loadDotenv } from '@quill/config/dotenv';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
+  // Load .env (root + app-local) before reading env — a self-hoster's .env must
+  // actually take effect. Real deployment env is never overridden (H3).
+  loadDotenv();
   const env = loadServerEnv();
   const app = await NestFactory.create(AppModule, { logger: ['error', 'warn', 'log'] });
   // CORS (P1-4): NEVER reflect an arbitrary origin. Use the explicit allowlist
