@@ -12,10 +12,16 @@
  * Machine identity is a separate, production-grade path (a hashed API key) and
  * lives on `AuthService`.
  */
-import { UnauthorizedException } from '@nestjs/common';
+import { Logger, UnauthorizedException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import type { Db, AccountRole } from '@quill/db';
-import { deriveUniqueHandle, getAccountByCode, insertAccountWithShortCode, sql } from '@quill/db';
+import {
+  deriveUniqueHandle,
+  getAccountByCode,
+  insertAccountWithShortCode,
+  seedDemoFormForAccount,
+  sql,
+} from '@quill/db';
 import type { ServerEnv } from '@quill/config/env';
 // The concrete `workos` adapter. The cycle (adapter imports the port/`header`
 // from here) is safe: each side references the other only inside function
@@ -45,6 +51,29 @@ export interface HostPrincipal extends ResolvedHost {
 export function header(req: ReqLike, name: string): string | undefined {
   const v = req.headers[name];
   return Array.isArray(v) ? v[0] : v;
+}
+
+/**
+ * Best-effort demo-form seed, shared by every AuthProvider that JIT-creates a
+ * new account+owner. Gated by `SEED_DEMO_FORM` (env, default ON) and idempotent
+ * in the DB layer (`seedDemoFormForAccount` only writes when the account has zero
+ * forms), so a repeat login never duplicates it. Seeding NEVER fails a login: a
+ * DB error here is logged and swallowed — the user still lands in their (empty)
+ * workspace rather than being locked out over a cosmetic sample.
+ */
+export async function maybeSeedDemoForm(
+  db: Db,
+  accountId: string,
+  enabled: boolean,
+  log: Logger,
+): Promise<void> {
+  if (!enabled) return;
+  try {
+    const form = await seedDemoFormForAccount(db, accountId);
+    if (form) log.log(`Seeded demo form ${form.id} for new account ${accountId}`);
+  } catch (err) {
+    log.warn(`Demo-form seed skipped for account ${accountId}: ${String(err)}`);
+  }
 }
 
 /** The port every host-auth backend implements. */
@@ -88,10 +117,14 @@ function legacyDevCodeFromEmail(email: string): string {
  */
 export class LocalAuthProvider implements AuthProvider {
   readonly name = 'local';
+  private readonly log = new Logger('LocalAuthProvider');
 
   constructor(
     private readonly db: Db,
-    private readonly env: Pick<ServerEnv, 'NODE_ENV' | 'DEV_LOGIN_EMAIL' | 'AUTH_LOCAL_STRICT'>,
+    private readonly env: Pick<
+      ServerEnv,
+      'NODE_ENV' | 'DEV_LOGIN_EMAIL' | 'AUTH_LOCAL_STRICT' | 'SEED_DEMO_FORM'
+    >,
   ) {}
 
   async resolveHost(req: ReqLike): Promise<ResolvedHost> {
@@ -161,6 +194,11 @@ export class LocalAuthProvider implements AuthProvider {
       sql`INSERT INTO member (id, account_id, email, display_name, handle, role, created_at)
           VALUES (${memberId}, ${account.id}, ${email}, ${email}, ${handle}, ${role}, ${Date.now()})`,
     );
+    // A fresh account (its first member is the owner) gets the polished demo form
+    // so the dashboard is never empty. Idempotent + best-effort (never blocks login).
+    if (role === 'owner') {
+      await maybeSeedDemoForm(this.db, account.id, this.env.SEED_DEMO_FORM, this.log);
+    }
     return { accountId: account.id, memberId };
   }
 }

@@ -89,6 +89,14 @@ export const serverEnvSchema = z.object({
   ENTITLEMENTS_API_URL: z.string().url().optional(),
   ENTITLEMENTS_API_KEY: z.string().optional(),
 
+  // Onboarding: auto-seed a polished DEMO form into every brand-new account
+  // (JIT on first login) so a new user's admin is never empty and immediately
+  // shows a well-designed example. Idempotent — only ever runs when the account
+  // has zero forms, so a repeat login never duplicates it and the user can
+  // delete it like any normal form. Default ON; a fork can set it to false to
+  // ship empty workspaces.
+  SEED_DEMO_FORM: boolish.default('true'),
+
   // Auth — unset selects the local dev stub.
   AUTH_PROVIDER: z.enum(['local', 'workos']).default('local'),
 

@@ -6,6 +6,15 @@
 export * from './email.port';
 export * from './factory';
 export * from './submission-notifier';
+export {
+  normalizeLocale,
+  renderSubmissionReceived,
+  renderSubmissionConfirmed,
+  type NotificationLocale,
+  type ReceivedCopyVars,
+  type ConfirmedCopyVars,
+  type RenderedCopy,
+} from './templates';
 export { LogOnlyEmailProvider } from './adapters/log-only';
 export { NoopEmailProvider } from './adapters/noop';
 export { SmtpEmailProvider, type SmtpOptions } from './adapters/smtp';

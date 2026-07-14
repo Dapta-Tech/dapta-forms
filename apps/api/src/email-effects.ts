@@ -45,8 +45,9 @@ export class EmailEffects {
     try {
       // The account-side notice goes to the owner inbox; a fork with no member
       // email just carries no recipient and the notifier no-ops on empty `to`.
-      const owner = await this.db.get<{ email: string | null }>(
-        sql`SELECT email FROM member
+      // The owner's `locale` selects the EN/ES copy (absent = English default).
+      const owner = await this.db.get<{ email: string | null; locale: string | null }>(
+        sql`SELECT email, locale FROM member
             WHERE account_id = ${accountId} AND role = 'owner' AND status = 'active'
             ORDER BY created_at ASC LIMIT 1`,
       );
@@ -54,7 +55,12 @@ export class EmailEffects {
       // Snapshot the toggle: absent row = enabled (fork-friendly default).
       const settings = await getNotificationSettings(this.db, accountId);
       if (settings.get('submission_received')?.enabled === false) return;
-      const payload: SubmissionNotification = { ...n, accountId, to };
+      const payload: SubmissionNotification = {
+        ...n,
+        accountId,
+        to,
+        locale: n.locale ?? owner?.locale ?? null,
+      };
       await enqueueOutbox(this.db, {
         kind: 'email',
         action: 'submission_received',
