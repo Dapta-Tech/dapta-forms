@@ -1,6 +1,6 @@
 'use client';
 
-import type { HTMLAttributes, ReactNode } from 'react';
+import { useId, type HTMLAttributes, type ReactNode } from 'react';
 import {
   DndContext,
   closestCenter,
@@ -40,6 +40,14 @@ export function SortableList({
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
 
+  // dnd-kit derives its aria description / live-region element ids from the
+  // DndContext `id`. Left unset it falls back to a module-global counter that
+  // increments in a different order on the server than on the client, so the
+  // generated `DndDescribedBy-<n>` ids mismatch and React logs a hydration
+  // error. A stable, per-instance `useId()` makes those ids deterministic
+  // across SSR and client and removes the mismatch without touching drag.
+  const dndId = useId();
+
   function handleEnd(event: DragEndEvent) {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
@@ -49,7 +57,7 @@ export function SortableList({
   }
 
   return (
-    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleEnd}>
+    <DndContext id={dndId} sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleEnd}>
       <SortableContext items={ids} strategy={verticalListSortingStrategy}>
         <div className={className}>{ids.map((id, index) => children(id, index))}</div>
       </SortableContext>
