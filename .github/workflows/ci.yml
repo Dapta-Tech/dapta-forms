@@ -14,6 +14,26 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  commitlint:
+    name: Commit messages (Conventional Commits)
+    # Enforce Conventional Commits on every PR commit so history stays legible and
+    # Changesets/release automation can hook off the types. PR-only: it lints the
+    # commits the PR adds (base..head), never rewrites or fails existing history.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Lint PR commit messages
+        run: pnpm exec commitlint --from "${{ github.event.pull_request.base.sha }}" --to "${{ github.event.pull_request.head.sha }}" --verbose
+
   build-test:
     name: Lint · Typecheck · Test (SQLite) · Build
     runs-on: ubuntu-latest
