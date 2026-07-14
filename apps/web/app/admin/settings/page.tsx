@@ -4,6 +4,7 @@ import { getMessages } from '@quill/shared';
 import { adminApi, isAdminRole, type AccountMember, type AccountRole, type MemberStatus } from '@/lib/admin-api';
 import { getLocale } from '@/lib/locale';
 import { PageHeader } from '@/components/ui/page-header';
+import { InviteMember } from './invite-member';
 
 export const dynamic = 'force-dynamic';
 
@@ -59,8 +60,30 @@ export default async function SettingsPage() {
 
       {isAdminRole(me.role) ? (
         <section className="rounded-md border border-border bg-card p-6">
-          <h2 className="text-lg font-semibold tracking-tight">{s.membersHeading}</h2>
-          <p className="mt-0.5 text-sm text-muted-foreground">{s.membersSubtitle}</p>
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h2 className="text-lg font-semibold tracking-tight">{s.membersHeading}</h2>
+              <p className="mt-0.5 text-sm text-muted-foreground">{s.membersSubtitle}</p>
+            </div>
+            <InviteMember
+              labels={{
+                addMember: s.addMember,
+                inviteTitle: s.inviteTitle,
+                inviteSubtitle: s.inviteSubtitle,
+                inviteEmailLabel: s.inviteEmailLabel,
+                inviteEmailPlaceholder: s.inviteEmailPlaceholder,
+                inviteRoleLabel: s.inviteRoleLabel,
+                roleAdmin: s.roleAdmin,
+                roleMember: s.roleMember,
+                inviteSubmit: s.inviteSubmit,
+                inviteCancel: s.inviteCancel,
+                inviteSuccess: s.inviteSuccess,
+                inviteErrorTaken: s.inviteErrorTaken,
+                inviteErrorInvalid: s.inviteErrorInvalid,
+                inviteErrorFailed: s.inviteErrorFailed,
+              }}
+            />
+          </div>
           {members.length === 0 ? (
             <p className="mt-5 text-sm text-muted-foreground">{s.membersEmpty}</p>
           ) : (

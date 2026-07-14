@@ -136,6 +136,18 @@ export interface FormsMessages {
       statusDisabled: string;
       membersEmpty: string;
       you: string;
+      addMember: string;
+      inviteTitle: string;
+      inviteSubtitle: string;
+      inviteEmailLabel: string;
+      inviteEmailPlaceholder: string;
+      inviteRoleLabel: string;
+      inviteSubmit: string;
+      inviteCancel: string;
+      inviteSuccess: string;
+      inviteErrorTaken: string;
+      inviteErrorInvalid: string;
+      inviteErrorFailed: string;
     };
     login: {
       title: string;
@@ -544,6 +556,18 @@ export const en: FormsMessages = {
       statusDisabled: 'Disabled',
       membersEmpty: 'No members yet.',
       you: 'You',
+      addMember: 'Add member',
+      inviteTitle: 'Add a member',
+      inviteSubtitle: 'They join as invited and get full access the first time they sign in.',
+      inviteEmailLabel: 'Email',
+      inviteEmailPlaceholder: 'name@company.com',
+      inviteRoleLabel: 'Role',
+      inviteSubmit: 'Add member',
+      inviteCancel: 'Cancel',
+      inviteSuccess: 'Member added.',
+      inviteErrorTaken: 'A member with that email already exists.',
+      inviteErrorInvalid: 'Enter a valid email address.',
+      inviteErrorFailed: 'Could not add the member. Please try again.',
     },
     login: {
       title: 'Sign in',
@@ -948,6 +972,18 @@ export const es: FormsMessages = {
       statusDisabled: 'Desactivado',
       membersEmpty: 'Aún no hay miembros.',
       you: 'Tú',
+      addMember: 'Añadir miembro',
+      inviteTitle: 'Añadir un miembro',
+      inviteSubtitle: 'Se une como invitado y obtiene acceso completo la primera vez que inicia sesión.',
+      inviteEmailLabel: 'Correo',
+      inviteEmailPlaceholder: 'nombre@empresa.com',
+      inviteRoleLabel: 'Rol',
+      inviteSubmit: 'Añadir miembro',
+      inviteCancel: 'Cancelar',
+      inviteSuccess: 'Miembro añadido.',
+      inviteErrorTaken: 'Ya existe un miembro con ese correo.',
+      inviteErrorInvalid: 'Introduce un correo válido.',
+      inviteErrorFailed: 'No se pudo añadir el miembro. Inténtalo de nuevo.',
     },
     login: {
       title: 'Iniciar sesión',
