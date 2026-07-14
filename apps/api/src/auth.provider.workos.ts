@@ -18,15 +18,21 @@
  * `createAuthProvider` still fails loud without it. No vendor host/secret name
  * appears here — issuer/audience/secret all arrive via env.
  */
-import { UnauthorizedException } from '@nestjs/common';
+import { Logger, UnauthorizedException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import type { Db, AccountRole } from '@quill/db';
 import { deriveUniqueHandle, insertAccountWithShortCode, sql } from '@quill/db';
 import type { ServerEnv } from '@quill/config/env';
-import { header, type AuthProvider, type ResolvedHost, type ReqLike } from './auth.provider';
+import {
+  header,
+  maybeSeedDemoForm,
+  type AuthProvider,
+  type ResolvedHost,
+  type ReqLike,
+} from './auth.provider';
 import { verifyJwtHs256, JwtError, type JwtClaims } from './jwt';
 
-type WorkOsEnv = Pick<ServerEnv, 'JWT_SECRET' | 'JWT_ISSUER' | 'JWT_AUDIENCE'>;
+type WorkOsEnv = Pick<ServerEnv, 'JWT_SECRET' | 'JWT_ISSUER' | 'JWT_AUDIENCE' | 'SEED_DEMO_FORM'>;
 
 function unauthenticated(message: string): UnauthorizedException {
   return new UnauthorizedException({ error: 'UNAUTHENTICATED', message });
@@ -39,6 +45,7 @@ function unauthenticated(message: string): UnauthorizedException {
 
 export class WorkOsAuthProvider implements AuthProvider {
   readonly name = 'workos';
+  private readonly log = new Logger('WorkOsAuthProvider');
   private readonly secret: string;
 
   constructor(
@@ -149,6 +156,11 @@ export class WorkOsAuthProvider implements AuthProvider {
       sql`SELECT id FROM member WHERE account_id = ${accountId} AND external_id = ${sub} LIMIT 1`,
     );
     if (!row) throw unauthenticated('Could not resolve member.');
+    // A fresh account (its first member is the owner) gets the polished demo form
+    // so the dashboard is never empty. Idempotent + best-effort (never blocks login).
+    if (role === 'owner') {
+      await maybeSeedDemoForm(this.db, accountId, this.env.SEED_DEMO_FORM, this.log);
+    }
     return row.id;
   }
 }
