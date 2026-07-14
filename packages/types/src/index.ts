@@ -207,6 +207,68 @@ export const formDestinationSchema = z.discriminatedUnion('type', [
 ]);
 export type FormDestination = z.infer<typeof formDestinationSchema>;
 
+/**
+ * Sentinel returned in place of a stored webhook signing secret on every ADMIN
+ * READ (GET /v1/forms/:id and the create/update/duplicate/destinations
+ * responses) so the plaintext secret never leaves the server. It doubles as the
+ * "unchanged" marker on WRITE: when the integrations UI submits this value back
+ * (the operator left the field untouched), the server keeps the stored secret —
+ * see `mergeWebhookSecrets`. Distinctive so a real secret can never collide.
+ */
+export const WEBHOOK_SECRET_MASK = '__DAPTA_FORMS_SECRET_KEEP__';
+
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null && !Array.isArray(v);
+}
+
+/**
+ * Return a copy of a destinations array with every non-empty webhook signing
+ * secret replaced by `WEBHOOK_SECRET_MASK` (so a READ never exposes plaintext).
+ * Destinations with no secret are returned untouched. Defensive against loosely
+ * typed stored JSON — non-webhook / malformed entries pass through unchanged.
+ */
+export function maskDestinationSecrets(destinations: unknown): unknown {
+  if (!Array.isArray(destinations)) return destinations;
+  return destinations.map((d) => {
+    if (!isRecord(d) || d.type !== 'webhook' || !isRecord(d.settings)) return d;
+    const secret = d.settings.secret;
+    if (typeof secret === 'string' && secret.length > 0) {
+      return { ...d, settings: { ...d.settings, secret: WEBHOOK_SECRET_MASK } };
+    }
+    return d;
+  });
+}
+
+/** Return a copy of a form config with its destinations' webhook secrets masked. */
+export function maskConfigSecrets(config: unknown): unknown {
+  if (!isRecord(config) || !('destinations' in config)) return config;
+  return { ...config, destinations: maskDestinationSecrets(config.destinations) };
+}
+
+/**
+ * Merge an incoming destinations array against the currently-stored one: any
+ * webhook whose incoming secret is `WEBHOOK_SECRET_MASK` keeps the stored secret
+ * (the UI left the field untouched). A real string overwrites it; an empty
+ * string / null clears it. Incoming webhooks are matched to stored webhooks by
+ * position among webhook-type entries (the UI manages a single webhook).
+ */
+export function mergeWebhookSecrets(incoming: unknown[], existing: unknown): unknown[] {
+  const storedWebhooks = (Array.isArray(existing) ? existing : []).filter(
+    (d): d is Record<string, unknown> => isRecord(d) && d.type === 'webhook',
+  );
+  let wi = 0;
+  return incoming.map((d) => {
+    if (!isRecord(d) || d.type !== 'webhook') return d;
+    const prev = storedWebhooks[wi++];
+    const settings = isRecord(d.settings) ? d.settings : {};
+    if (settings.secret === WEBHOOK_SECRET_MASK) {
+      const prevSecret = isRecord(prev?.settings) ? prev!.settings.secret : undefined;
+      return { ...d, settings: { ...settings, secret: prevSecret ?? null } };
+    }
+    return d;
+  });
+}
+
 /** The versioned config blob. `version` gates future migrations of the shape. */
 export const formConfigSchema = z.object({
   version: z.literal(1),

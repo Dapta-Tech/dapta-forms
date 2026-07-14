@@ -48,6 +48,10 @@ export interface FormsMessages {
     };
   };
   admin: {
+    /** App shell chrome shared across every admin page (header/nav). */
+    chrome: {
+      signOut: string;
+    };
     login: {
       title: string;
       subtitle: string;
@@ -309,6 +313,7 @@ export interface FormsMessages {
       webhookUrlInvalid: string;
       webhookSecret: string;
       webhookSecretHelp: string;
+      webhookSecretSetPlaceholder: string;
       // HubSpot
       hubspotTitle: string;
       hubspotDesc: string;
@@ -371,6 +376,9 @@ export const en: FormsMessages = {
     },
   },
   admin: {
+    chrome: {
+      signOut: 'Sign out',
+    },
     login: {
       title: 'Sign in',
       subtitle:
@@ -628,6 +636,7 @@ export const en: FormsMessages = {
       webhookSecret: 'Signing secret (optional)',
       webhookSecretHelp:
         'When set, each request is signed with HMAC-SHA256 in the X-Quill-Signature header so you can verify it.',
+      webhookSecretSetPlaceholder: 'A secret is set — leave blank to keep it, or type a new one.',
       hubspotTitle: 'HubSpot',
       hubspotDesc: 'Upsert the respondent as a contact and attach a note on completed submissions.',
       hubspotDisabled:
@@ -690,6 +699,9 @@ export const es: FormsMessages = {
     },
   },
   admin: {
+    chrome: {
+      signOut: 'Cerrar sesión',
+    },
     login: {
       title: 'Iniciar sesión',
       subtitle:
@@ -947,6 +959,7 @@ export const es: FormsMessages = {
       webhookSecret: 'Secreto de firma (opcional)',
       webhookSecretHelp:
         'Si se define, cada solicitud se firma con HMAC-SHA256 en la cabecera X-Quill-Signature para que puedas verificarla.',
+      webhookSecretSetPlaceholder: 'Hay un secreto guardado — déjalo en blanco para conservarlo o escribe uno nuevo.',
       hubspotTitle: 'HubSpot',
       hubspotDesc: 'Crea o actualiza el contacto y adjunta una nota en las respuestas completadas.',
       hubspotDisabled:

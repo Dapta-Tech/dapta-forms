@@ -9,6 +9,7 @@ import {
   deleteSubmissionForAccount,
   getFormById,
   type DateRange,
+  type DeleteSubmissionResult,
   type SubmissionQuery,
 } from '@quill/db';
 import type {
@@ -122,8 +123,12 @@ export class AnalyticsService {
     return allSubmissionsForExport(this.db, formId, q);
   }
 
-  /** Delete a submission if it belongs to the account. Idempotent. */
-  deleteSubmission(accountId: string, submissionId: string): Promise<boolean> {
+  /**
+   * Delete a submission if it belongs to the account. Returns a discriminated
+   * result so the controller can 204 an idempotent same-account delete but 404 a
+   * cross-account id (which is never mutated).
+   */
+  deleteSubmission(accountId: string, submissionId: string): Promise<DeleteSubmissionResult> {
     return deleteSubmissionForAccount(this.db, accountId, submissionId);
   }
 }
