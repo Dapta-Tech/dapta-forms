@@ -281,7 +281,6 @@ export interface FormsMessages {
       colStatus: string;
       colScore: string;
       export: string;
-      exporting: string;
       delete: string;
       deleteConfirm: string;
       emptyTitle: string;
@@ -605,7 +604,6 @@ export const en: FormsMessages = {
       colStatus: 'Status',
       colScore: 'Score',
       export: 'Download CSV',
-      exporting: 'Preparing…',
       delete: 'Delete',
       deleteConfirm: 'Delete this submission? This cannot be undone.',
       emptyTitle: 'No submissions yet',
@@ -928,7 +926,6 @@ export const es: FormsMessages = {
       colStatus: 'Estado',
       colScore: 'Puntaje',
       export: 'Descargar CSV',
-      exporting: 'Preparando…',
       delete: 'Eliminar',
       deleteConfirm: '¿Eliminar esta respuesta? No se puede deshacer.',
       emptyTitle: 'Aún no hay respuestas',

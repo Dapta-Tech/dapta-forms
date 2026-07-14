@@ -20,6 +20,8 @@ interface Pair {
 }
 
 interface WebhookState {
+  /** Stable destination id (round-tripped so the server merges secrets by identity). */
+  id?: string;
   enabled: boolean;
   url: string;
   /** What the user has typed. Empty + `hasSecret` = "keep the stored secret". */
@@ -42,7 +44,7 @@ function initialWebhook(destinations: FormDestination[]): WebhookState {
     // The API masks a stored secret to WEBHOOK_SECRET_MASK on READ — surface it
     // as "set" (empty input, placeholder) rather than leaking the ciphertext.
     const hasSecret = w.settings.secret === WEBHOOK_SECRET_MASK;
-    return { enabled: w.enabled, url: w.settings.url ?? '', secret: '', hasSecret };
+    return { id: w.id, enabled: w.enabled, url: w.settings.url ?? '', secret: '', hasSecret };
   }
   return { enabled: false, url: '', secret: '', hasSecret: false };
 }
@@ -108,6 +110,7 @@ export function IntegrationsEditor({
       const secret = typed ? typed : webhook.hasSecret ? WEBHOOK_SECRET_MASK : null;
       out.push({
         type: 'webhook',
+        ...(webhook.id ? { id: webhook.id } : {}),
         enabled: webhook.enabled,
         settings: {
           url: webhook.url.trim(),

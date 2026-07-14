@@ -5,5 +5,4 @@
 export * from './form-logic';
 export * from './form-config';
 export * from './short-links';
-export * from './manage-token';
 export * from './pg-errors';

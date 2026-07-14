@@ -1,8 +1,8 @@
 /**
- * @quill/shared — framework-free utilities reused across apps: timezone/slot
- * rendering, handle validation, and i18n. Design tokens ship as ./tokens.css.
+ * @quill/shared — framework-free utilities reused across apps: handle
+ * validation, branding/accent, growth badge, and i18n. Design tokens ship as
+ * ./tokens.css.
  */
-export * from './time';
 export * from './handle';
 export * from './branding';
 export * from './growth';

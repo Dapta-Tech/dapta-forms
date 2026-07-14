@@ -5,6 +5,8 @@ import {
   type OnModuleDestroy,
   type OnModuleInit,
 } from '@nestjs/common';
+import { hostname } from 'node:os';
+import { randomUUID } from 'node:crypto';
 import {
   claimDueOutbox,
   markOutboxDone,
@@ -40,6 +42,8 @@ export class OutboxWorker implements OnModuleInit, OnModuleDestroy {
   private readonly log = new Logger('OutboxWorker');
   private timer: ReturnType<typeof setInterval> | null = null;
   private running = false;
+  /** Stable per-process id so a claim is attributable to this replica. */
+  private readonly workerId = `${hostname()}:${process.pid}:${randomUUID().slice(0, 8)}`;
   /** Injectable for tests; defaults to global fetch for webhook delivery. */
   fetchImpl: typeof fetch = fetch;
 
@@ -86,7 +90,7 @@ export class OutboxWorker implements OnModuleInit, OnModuleDestroy {
    * (attempted), regardless of success. Deterministic for tests via `now`.
    */
   async drainOnce(now = Date.now()): Promise<number> {
-    const rows = await claimDueOutbox(this.db, now);
+    const rows = await claimDueOutbox(this.db, now, { workerId: this.workerId });
     for (const row of rows) {
       await this.process(row, now);
     }

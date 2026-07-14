@@ -15,7 +15,6 @@ export const openapiSpec = {
   servers: [{ url: '/', description: 'This deployment' }],
   components: {
     securitySchemes: {
-      apiKey: { type: 'http', scheme: 'bearer', description: 'API key (Authorization: Bearer …).' },
       hostSession: {
         type: 'apiKey',
         in: 'header',

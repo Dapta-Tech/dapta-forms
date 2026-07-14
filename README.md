@@ -113,7 +113,8 @@ the tested truth.
 ## Configuration
 
 Everything has a safe default (see [`.env.example`](.env.example)). Copy it to
-`.env` to override. Key vars:
+`.env` to override — it is loaded at boot for both apps (root + app-local) and
+never overrides a variable already set in the real environment. Key vars:
 
 | Var | Default | Notes |
 |---|---|---|
@@ -121,6 +122,7 @@ Everything has a safe default (see [`.env.example`](.env.example)). Copy it to
 | `EMAIL_PROVIDER` | `log-only` | `noop` \| `smtp` \| `http` |
 | `EMAIL_HTTP_PROFILE` | `generic` | `transactional-v1` opts into the managed contract (see `.env.example`) |
 | `API_PORT` | `4000` | port the API listens on |
+| `PUBLIC_APP_URL` | _(empty)_ | deployment's public URL — trusted origin for OAuth redirects + CORS; set for any real deploy |
 | `NEXT_PUBLIC_API_URL` | `http://localhost:4000` | where the web app reaches the API |
 
 ## Scripts

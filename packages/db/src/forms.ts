@@ -375,13 +375,17 @@ export async function upsertSubmission(
   },
 ): Promise<SubmissionRow> {
   const now = input.now ?? Date.now();
-  const existing = await db.get<{ id: string; started_at: number; completed_at: number | null }>(
-    sql`SELECT id, started_at, completed_at FROM submission
-        WHERE form_id = ${input.formId} AND session_id = ${input.sessionId} LIMIT 1`,
-  );
   const completedAt = input.partial ? null : now;
   const partialAt = input.partial ? now : null;
-  if (existing) {
+
+  type ExistingRow = { id: string; started_at: number; completed_at: number | null };
+  const selectExisting = (): Promise<ExistingRow | null | undefined> =>
+    db.get<ExistingRow>(
+      sql`SELECT id, started_at, completed_at FROM submission
+          WHERE form_id = ${input.formId} AND session_id = ${input.sessionId} LIMIT 1`,
+    );
+
+  const applyUpdate = async (existing: ExistingRow): Promise<SubmissionRow> => {
     // Reorder guard: a fire-and-forget partial can land AFTER the complete
     // submit. Once a row is completed, only a complete submit may update it —
     // a late partial must NOT overwrite the finalized data/score.
@@ -396,14 +400,29 @@ export async function upsertSubmission(
           WHERE id = ${existing.id}`,
     );
     return (await getSubmissionById(db, existing.id))!;
-  }
+  };
+
+  const existing = await selectExisting();
+  if (existing) return applyUpdate(existing);
+
+  // First write for this session — INSERT. Two concurrent first writes (a
+  // fire-and-forget partial racing the complete submit, or a double-click) both
+  // SELECT null and both INSERT; the second hits the submission_form_session_uq
+  // unique index. Catch that and retry as an UPDATE so the loser resolves
+  // cleanly instead of surfacing a raw 500 (M2). A non-uniqueness error rethrows.
   const id = randomUUID();
-  await db.run(
-    sql`INSERT INTO submission (id, form_id, session_id, data, score, started_at, completed_at, partial_at)
-        VALUES (${id}, ${input.formId}, ${input.sessionId}, ${jsonParam(input.data)}, ${input.score},
-          ${now}, ${completedAt}, ${partialAt})`,
-  );
-  return (await getSubmissionById(db, id))!;
+  try {
+    await db.run(
+      sql`INSERT INTO submission (id, form_id, session_id, data, score, started_at, completed_at, partial_at)
+          VALUES (${id}, ${input.formId}, ${input.sessionId}, ${jsonParam(input.data)}, ${input.score},
+            ${now}, ${completedAt}, ${partialAt})`,
+    );
+    return (await getSubmissionById(db, id))!;
+  } catch (err) {
+    const raced = await selectExisting();
+    if (raced) return applyUpdate(raced);
+    throw err;
+  }
 }
 
 export async function getSubmissionById(db: Db, id: string): Promise<SubmissionRow | null> {
@@ -436,34 +455,3 @@ export async function recordFormEvent(
   );
 }
 
-// --- API keys (machine surface) ----------------------------------------------
-
-export interface MachinePrincipal {
-  accountId: string;
-  scopes: string[];
-  eventTypeIds: string[] | null;
-}
-
-/** Hash an API key the same way it was stored (SHA-256 hex). */
-async function hashApiKey(key: string): Promise<string> {
-  const { createHash } = await import('node:crypto');
-  return createHash('sha256').update(key).digest('hex');
-}
-
-/** Validate a presented API key; returns the machine principal or null. */
-export async function verifyApiKey(db: Db, key: string): Promise<MachinePrincipal | null> {
-  if (!key) return null;
-  const keyHash = await hashApiKey(key);
-  const row = await db.get<{ account_id: string; scopes: string | null; revoked_at_ms: number | null; expires_at_ms: number | null }>(
-    sql`SELECT account_id, scopes, revoked_at_ms, expires_at_ms FROM api_key WHERE key_hash = ${keyHash} LIMIT 1`,
-  );
-  if (!row) return null;
-  if (row.revoked_at_ms) return null;
-  if (row.expires_at_ms && Number(row.expires_at_ms) < Date.now()) return null;
-  await db.run(sql`UPDATE api_key SET last_used_at_ms = ${Date.now()} WHERE key_hash = ${keyHash}`);
-  return {
-    accountId: row.account_id,
-    scopes: parseJsonColumn<string[]>(row.scopes, []),
-    eventTypeIds: null,
-  };
-}

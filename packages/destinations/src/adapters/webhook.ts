@@ -4,6 +4,7 @@ import type {
   DestinationResult,
   SubmissionDestination,
 } from '../destination.port';
+import { assertPublicWebhookUrl, type DnsResolver } from '../ssrf-guard';
 
 /** The default header carrying the HMAC signature (overridable per destination). */
 export const DEFAULT_SIGNATURE_HEADER = 'X-Quill-Signature';
@@ -21,6 +22,13 @@ export interface WebhookDestinationOptions {
   signatureHeader?: string;
   /** Per-request timeout (ms). Defaults to 10s. A slow endpoint is retried by the outbox. */
   timeoutMs?: number;
+  /**
+   * Permit loopback destinations (localhost/127.0.0.1/::1). Set only in non-prod
+   * (a local webhook catcher). Default false: loopback is rejected as SSRF.
+   */
+  allowLocalhost?: boolean;
+  /** Injectable DNS resolver (tests). Defaults to Node DNS lookup. */
+  resolveDns?: DnsResolver;
 }
 
 /** The stable JSON envelope POSTed to a webhook destination. */
@@ -79,6 +87,14 @@ export class WebhookDestination implements SubmissionDestination {
   }
 
   async deliver(ctx: DestinationContext): Promise<DestinationResult> {
+    // SSRF guard (H1): resolve the host and reject private/loopback/link-local/
+    // metadata targets BEFORE any request is made. Throwing surfaces to the
+    // outbox as a (bounded-retry) failure — a blocked URL is never POSTed to.
+    await assertPublicWebhookUrl(this.opts.url, {
+      allowLocalhost: this.opts.allowLocalhost ?? false,
+      resolve: this.opts.resolveDns,
+    });
+
     const body = JSON.stringify(this.buildPayload(ctx));
     const timestamp = String(Math.floor(ctx.submittedAt / 1000));
     const headers: Record<string, string> = {
