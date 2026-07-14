@@ -1,20 +1,20 @@
 import { Skeleton } from '@/components/skeleton';
 
+/**
+ * Loading state for the public form — a skeleton that mirrors the cover screen
+ * region (logo, headline, sub, CTA), not a blocking spinner (R22). Centered and
+ * framed to match the rendered surface so there's no layout jump.
+ */
 export default function FormLoading() {
   return (
-    <main className="mx-auto max-w-3xl px-6 py-12">
-      <div className="mb-8 flex flex-col gap-2">
-        <Skeleton className="h-4 w-24" />
-        <Skeleton className="h-9 w-64" />
+    <main className="flex min-h-dvh flex-col items-center justify-center bg-background px-6 py-12">
+      <div className="flex w-full max-w-[460px] flex-col items-center gap-5 rounded-2xl border border-border bg-card p-11">
+        <Skeleton className="h-7 w-28 rounded-full" />
+        <Skeleton className="h-9 w-full" />
+        <Skeleton className="h-9 w-3/4" />
+        <Skeleton className="mt-1 h-4 w-56" />
         <Skeleton className="h-4 w-40" />
-      </div>
-      <div className="grid gap-8 md:grid-cols-[1fr_320px]">
-        <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
-          {Array.from({ length: 12 }).map((_, i) => (
-            <Skeleton key={i} className="h-9 w-full" />
-          ))}
-        </div>
-        <Skeleton className="h-48 w-full" />
+        <Skeleton className="mt-4 h-[54px] w-full rounded-lg" />
       </div>
     </main>
   );
