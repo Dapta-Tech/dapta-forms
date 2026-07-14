@@ -34,6 +34,26 @@ describe('SubmissionNotifier', () => {
     expect(m.text).toContain('Outcome: Qualified');
   });
 
+  it('renders the received notice in Spanish when locale=es', async () => {
+    const provider = new CaptureProvider();
+    const notifier = new SubmissionNotifier(provider);
+    await notifier.sendSubmissionReceived({
+      accountId: 'acc-1',
+      submissionId: 'sub-es',
+      formName: 'Calificador',
+      to: ['owner@example.com'],
+      respondentEmail: 'lead@acme.io',
+      score: 9,
+      locale: 'es-CO',
+    });
+    const m = provider.sent[0]!;
+    expect(m.subject).toBe('Nueva respuesta — Calificador');
+    expect(m.text).toContain('Puntuación: 9');
+    expect(m.text).toContain('De: lead@acme.io');
+    // Idempotency key is language-independent.
+    expect(m.idempotencyKey).toBe('submission:sub-es:received');
+  });
+
   it('confirms to the respondent when their email was captured', async () => {
     const provider = new CaptureProvider();
     const notifier = new SubmissionNotifier(provider);

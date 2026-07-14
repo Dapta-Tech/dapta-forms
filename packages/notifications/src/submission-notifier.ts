@@ -1,5 +1,11 @@
 import type { EmailProvider, EmailResult } from './email.port';
 import { escapeHtml } from './util';
+import {
+  normalizeLocale,
+  renderSubmissionConfirmed,
+  renderSubmissionReceived,
+  type NotificationLocale,
+} from './templates';
 
 /** Render plaintext lines to a safe HTML body — every line HTML-escaped (E8). */
 function htmlBody(lines: string[]): string {
@@ -20,30 +26,33 @@ export interface SubmissionNotification {
   outcomeLabel?: string | null;
   /** A public link back to the form (book-again style). */
   formLink?: string | null;
+  /**
+   * Language for the rendered copy. Accepts a bare `en`/`es` or any locale-ish
+   * value (e.g. `es-CO`, an Accept-Language fragment) — normalized to one of the
+   * two supported languages. Unset defaults to English (the bare-fork default).
+   */
+  locale?: NotificationLocale | string | null;
 }
 
 /**
  * Renders and sends submission emails through the EmailProvider port — plain
  * text + escaped HTML, no attachments. The app only ever calls these methods;
- * the transport is whatever adapter is wired (log-only by default).
+ * the transport is whatever adapter is wired (log-only by default). Copy is
+ * bilingual (EN/ES) via the templates module; the caller supplies `locale`.
  */
 export class SubmissionNotifier {
   constructor(private readonly email: EmailProvider) {}
 
   /** Internal notice to the account: a new submission landed. */
   sendSubmissionReceived(n: SubmissionNotification): Promise<EmailResult> {
-    const lines = [
-      `New submission for "${n.formName}".`,
-      n.respondentEmail ? `From: ${n.respondentEmail}` : '',
-      n.score != null ? `Score: ${n.score}` : '',
-      n.outcomeLabel ? `Outcome: ${n.outcomeLabel}` : '',
-    ];
+    const { subject, lines } = renderSubmissionReceived(normalizeLocale(n.locale), n);
+    const body = lines.filter(Boolean);
     return this.email.send({
       accountId: n.accountId,
       to: n.to,
-      subject: `New submission — ${n.formName}`,
-      text: lines.filter(Boolean).join('\n'),
-      html: htmlBody(lines),
+      subject,
+      text: body.join('\n'),
+      html: htmlBody(body),
       headers: { 'X-Submission-Id': n.submissionId },
       idempotencyKey: `submission:${n.submissionId}:received`,
     });
@@ -51,16 +60,14 @@ export class SubmissionNotifier {
 
   /** Confirmation to the respondent that their answers were recorded. */
   sendSubmissionConfirmed(n: SubmissionNotification): Promise<EmailResult> {
-    const lines = [
-      `Thanks — we received your responses to "${n.formName}".`,
-      n.formLink ? `View or edit: ${n.formLink}` : '',
-    ];
+    const { subject, lines } = renderSubmissionConfirmed(normalizeLocale(n.locale), n);
+    const body = lines.filter(Boolean);
     return this.email.send({
       accountId: n.accountId,
       to: n.respondentEmail ? [n.respondentEmail] : n.to,
-      subject: `We got your responses — ${n.formName}`,
-      text: lines.filter(Boolean).join('\n'),
-      html: htmlBody(lines),
+      subject,
+      text: body.join('\n'),
+      html: htmlBody(body),
       headers: { 'X-Submission-Id': n.submissionId },
       idempotencyKey: `submission:${n.submissionId}:confirmed`,
     });

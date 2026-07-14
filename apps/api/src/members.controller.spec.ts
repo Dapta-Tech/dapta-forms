@@ -50,6 +50,7 @@ beforeEach(async () => {
     NODE_ENV: 'test',
     DEV_LOGIN_EMAIL: undefined,
     AUTH_LOCAL_STRICT: undefined,
+    SEED_DEMO_FORM: false,
   });
   const auth = new AuthService(db, provider);
   const admin = new AdminService(db);
@@ -131,6 +132,7 @@ describe('invite → first-login adoption (WorkOS JIT model)', () => {
       JWT_SECRET: secret,
       JWT_ISSUER: undefined,
       JWT_AUDIENCE: undefined,
+      SEED_DEMO_FORM: false,
     });
     const nowSec = Math.floor(Date.now() / 1000);
     const token = signJwtHs256(
