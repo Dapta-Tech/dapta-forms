@@ -52,3 +52,4 @@ pnpm-debug.log*
 WORKOS-STATUS.md
 AUTH-WEB-CONTRACT.md
 *-STATUS.md
+.design-out/

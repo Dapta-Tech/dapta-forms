@@ -9,17 +9,20 @@ export async function createFormAction(formData: FormData): Promise<void> {
   const name = String(formData.get('name') ?? '').trim() || 'Untitled form';
   const created = await adminApi.createForm({ name });
   revalidatePath('/admin');
+  revalidatePath('/admin/forms');
   redirect(`/admin/forms/${created.id}/edit`);
 }
 
 export async function duplicateFormAction(id: string): Promise<void> {
   await adminApi.duplicateForm(id);
   revalidatePath('/admin');
+  revalidatePath('/admin/forms');
 }
 
 export async function deleteFormAction(id: string): Promise<void> {
   await adminApi.deleteForm(id);
   revalidatePath('/admin');
+  revalidatePath('/admin/forms');
 }
 
 /** Save the raw config JSON from the placeholder editor (Phase 1 replaces this). */
