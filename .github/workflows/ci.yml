@@ -78,8 +78,15 @@ jobs:
         with:
           fetch-depth: 0
       - name: Install scanners
+        # No `|| true`: a failed scanner install must fail the job, never let the
+        # gate pass on the grep layer alone (H4). The gate itself also FAILs if a
+        # scanner is missing at run time.
         run: |
-          curl -sSfL https://raw.githubusercontent.com/gitleaks/gitleaks/master/install.sh | sh -s -- -b /usr/local/bin || true
-          curl -sSfL https://raw.githubusercontent.com/trufflesecurity/trufflehog/main/scripts/install.sh | sh -s -- -b /usr/local/bin || true
+          curl -sSfL https://raw.githubusercontent.com/gitleaks/gitleaks/master/install.sh | sh -s -- -b /usr/local/bin
+          curl -sSfL https://raw.githubusercontent.com/trufflesecurity/trufflehog/main/scripts/install.sh | sh -s -- -b /usr/local/bin
+      - name: Verify scanners are installed
+        run: |
+          command -v gitleaks
+          command -v trufflehog
       - name: Run publish gate
         run: bash scripts/publish-gate.sh
