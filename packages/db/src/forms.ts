@@ -455,34 +455,3 @@ export async function recordFormEvent(
   );
 }
 
-// --- API keys (machine surface) ----------------------------------------------
-
-export interface MachinePrincipal {
-  accountId: string;
-  scopes: string[];
-  eventTypeIds: string[] | null;
-}
-
-/** Hash an API key the same way it was stored (SHA-256 hex). */
-async function hashApiKey(key: string): Promise<string> {
-  const { createHash } = await import('node:crypto');
-  return createHash('sha256').update(key).digest('hex');
-}
-
-/** Validate a presented API key; returns the machine principal or null. */
-export async function verifyApiKey(db: Db, key: string): Promise<MachinePrincipal | null> {
-  if (!key) return null;
-  const keyHash = await hashApiKey(key);
-  const row = await db.get<{ account_id: string; scopes: string | null; revoked_at_ms: number | null; expires_at_ms: number | null }>(
-    sql`SELECT account_id, scopes, revoked_at_ms, expires_at_ms FROM api_key WHERE key_hash = ${keyHash} LIMIT 1`,
-  );
-  if (!row) return null;
-  if (row.revoked_at_ms) return null;
-  if (row.expires_at_ms && Number(row.expires_at_ms) < Date.now()) return null;
-  await db.run(sql`UPDATE api_key SET last_used_at_ms = ${Date.now()} WHERE key_hash = ${keyHash}`);
-  return {
-    accountId: row.account_id,
-    scopes: parseJsonColumn<string[]>(row.scopes, []),
-    eventTypeIds: null,
-  };
-}

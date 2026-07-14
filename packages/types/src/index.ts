@@ -30,10 +30,6 @@ export type AccountRole = (typeof accountRole)[number];
 export const memberStatus = ['active', 'invited', 'disabled'] as const;
 export type MemberStatus = (typeof memberStatus)[number];
 
-/** API-key scopes for the machine surface. */
-export const apiScope = ['forms:read', 'submissions:read', 'submissions:write'] as const;
-export type ApiScope = (typeof apiScope)[number];
-
 // --- Form field kinds --------------------------------------------------------
 
 /** The step/field kinds a form may ask (mirrors @quill/engine FORM_FIELD_TYPES). */

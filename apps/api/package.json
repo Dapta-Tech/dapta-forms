@@ -23,7 +23,6 @@
     "@quill/destinations": "workspace:*",
     "@quill/engine": "workspace:*",
     "@quill/notifications": "workspace:*",
-    "@quill/shared": "workspace:*",
     "@quill/types": "workspace:*",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",

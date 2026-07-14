@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Framework-free shared utilities: timezone/slot rendering, handle validation, i18n, and design tokens.",
+  "description": "Framework-free shared utilities: handle validation, branding/accent, growth badge, i18n, and design tokens.",
   "license": "MIT",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

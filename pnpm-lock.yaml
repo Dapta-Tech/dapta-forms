@@ -50,9 +50,6 @@ importers:
       '@quill/notifications':
         specifier: workspace:*
         version: link:../../packages/notifications
-      '@quill/shared':
-        specifier: workspace:*
-        version: link:../../packages/shared
       '@quill/types':
         specifier: workspace:*
         version: link:../../packages/types
@@ -123,9 +120,6 @@ importers:
       tailwind-merge:
         specifier: ^2.6.0
         version: 2.6.1
-      zod:
-        specifier: ^3.24.1
-        version: 3.25.76
     devDependencies:
       '@quill/config':
         specifier: workspace:*
