@@ -194,7 +194,7 @@ export const webhookDestinationSchema = z.object({
       ),
     /** HMAC-SHA256 signing secret (optional). */
     secret: z.string().max(500).nullable().optional(),
-    /** Header the signature is sent in (defaults to `X-Quill-Signature`). */
+    /** Header the signature is sent in (defaults to `X-Forms-Signature`). */
     signatureHeader: z.string().max(128).nullable().optional(),
     /** Per-request timeout in ms (defaults to 10s). */
     timeoutMs: z.number().int().positive().max(60_000).optional(),

@@ -826,7 +826,7 @@ export const en: FormsMessages = {
       webhookUrlInvalid: 'Enter a valid https:// URL (plain http is allowed only for localhost).',
       webhookSecret: 'Signing secret (optional)',
       webhookSecretHelp:
-        'When set, each request is signed with HMAC-SHA256 in the X-Quill-Signature header so you can verify it.',
+        'When set, each request is signed with HMAC-SHA256 in the X-Forms-Signature header so you can verify it.',
       webhookSecretSetPlaceholder: 'A secret is set — leave blank to keep it, or type a new one.',
       hubspotTitle: 'HubSpot',
       hubspotDesc: 'Upsert the respondent as a contact and attach a note on completed submissions.',
@@ -1242,7 +1242,7 @@ export const es: FormsMessages = {
       webhookUrlInvalid: 'Introduce una URL https:// válida (http solo se permite para localhost).',
       webhookSecret: 'Secreto de firma (opcional)',
       webhookSecretHelp:
-        'Si se define, cada solicitud se firma con HMAC-SHA256 en la cabecera X-Quill-Signature para que puedas verificarla.',
+        'Si se define, cada solicitud se firma con HMAC-SHA256 en la cabecera X-Forms-Signature para que puedas verificarla.',
       webhookSecretSetPlaceholder: 'Hay un secreto guardado — déjalo en blanco para conservarlo o escribe uno nuevo.',
       hubspotTitle: 'HubSpot',
       hubspotDesc: 'Crea o actualiza el contacto y adjunta una nota en las respuestas completadas.',
