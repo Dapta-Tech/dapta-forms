@@ -7,10 +7,10 @@ import type {
 import { assertPublicWebhookUrl, type DnsResolver } from '../ssrf-guard';
 
 /** The default header carrying the HMAC signature (overridable per destination). */
-export const DEFAULT_SIGNATURE_HEADER = 'X-Quill-Signature';
+export const DEFAULT_SIGNATURE_HEADER = 'X-Forms-Signature';
 /** The default per-request timeout. */
 export const DEFAULT_WEBHOOK_TIMEOUT_MS = 10_000;
-/** The event name carried in the payload + the X-Quill-Event header. */
+/** The event name carried in the payload + the X-Forms-Event header. */
 export const WEBHOOK_EVENT = 'form.submission';
 
 export interface WebhookDestinationOptions {
@@ -18,7 +18,7 @@ export interface WebhookDestinationOptions {
   url: string;
   /** Optional HMAC-SHA256 signing secret. When set, every request is signed. */
   secret?: string;
-  /** Header the signature is sent in. Defaults to `X-Quill-Signature`. */
+  /** Header the signature is sent in. Defaults to `X-Forms-Signature`. */
   signatureHeader?: string;
   /** Per-request timeout (ms). Defaults to 10s. A slow endpoint is retried by the outbox. */
   timeoutMs?: number;
@@ -33,7 +33,7 @@ export interface WebhookDestinationOptions {
 
 /** The stable JSON envelope POSTed to a webhook destination. */
 export interface WebhookPayload {
-  /** The idempotency key (also sent as `X-Quill-Delivery`) — de-dup on the receiver. */
+  /** The idempotency key (also sent as `X-Forms-Delivery`) — de-dup on the receiver. */
   id: string;
   type: typeof WEBHOOK_EVENT;
   phase: 'partial' | 'complete';
@@ -99,9 +99,9 @@ export class WebhookDestination implements SubmissionDestination {
     const timestamp = String(Math.floor(ctx.submittedAt / 1000));
     const headers: Record<string, string> = {
       'content-type': 'application/json',
-      'x-quill-event': WEBHOOK_EVENT,
-      'x-quill-delivery': ctx.idempotencyKey,
-      'x-quill-timestamp': timestamp,
+      'x-forms-event': WEBHOOK_EVENT,
+      'x-forms-delivery': ctx.idempotencyKey,
+      'x-forms-timestamp': timestamp,
     };
     if (this.opts.secret) {
       const header = this.opts.signatureHeader || DEFAULT_SIGNATURE_HEADER;
