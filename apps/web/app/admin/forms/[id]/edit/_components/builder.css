@@ -1,0 +1,10 @@
+/* Builder-only chrome. The Typeform-style dashed focus underline on the inline
+   canvas title, and a caret color that reads on the dark canvas. Tokens only. */
+.canvas-title {
+  border-bottom: 2px dashed transparent;
+  caret-color: var(--primary);
+  transition: border-color 0.12s ease;
+}
+.canvas-title:focus {
+  border-bottom-color: var(--primary);
+}

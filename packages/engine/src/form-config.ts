@@ -68,6 +68,12 @@ export function createEmptyStep(
   if (type === 'dropdown' || type === 'multiple_choice') {
     base.options = [{ label: 'Option 1', value: 'option_1', points: 0 }];
   }
+  // A bare multiple_choice is single-select by default (radios) — matches every
+  // existing form. The builder's gallery overrides this to 'multiple' when the
+  // author explicitly picks "Multiple choice".
+  if (type === 'multiple_choice') {
+    base.selectionMode = 'single';
+  }
   if (type === 'slider') {
     base.min = 0;
     base.max = 100;
@@ -164,6 +170,20 @@ export function normalizeConfig(config: FormConfig): FormConfig {
     if (step.showWhen) next.showWhen = { ...step.showWhen, field: remap(step.showWhen.field) };
     if (step.hideWhen) next.hideWhen = { ...step.hideWhen, field: remap(step.hideWhen.field) };
     if (step.questionField) next.questionField = remap(step.questionField);
+    // Lock single-select behavior for choice steps that never declared a mode
+    // (back-compat: an existing multiple_choice stays radios, not checkboxes).
+    if (step.type === 'multiple_choice' && step.selectionMode == null) {
+      next.selectionMode = 'single';
+    }
+    // Rewrite goto targets through the rename map and drop dangling rules (a
+    // target that no longer resolves to a step, or that points at THIS step).
+    if (step.goto && step.goto.length > 0) {
+      const rules = step.goto
+        .map((r) => ({ ...r, target: r.target == null ? null : remap(r.target) }))
+        .filter((r) => r.target == null || (taken.has(r.target) && r.target !== next.key));
+      if (rules.length > 0) next.goto = rules;
+      else delete next.goto;
+    }
     return next;
   });
 

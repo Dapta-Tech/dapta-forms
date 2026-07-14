@@ -44,6 +44,21 @@ export interface StepCondition {
   values: string[];
 }
 
+/**
+ * A forward branching rule (additive; back-compat). When the answer to the
+ * OWNING step intersects `values`, the flow jumps: `target` is the step key to
+ * jump to, or `null` to skip straight to the end (finish the form). Rules run
+ * top-to-bottom and the first match wins. Only FORWARD jumps take effect (a
+ * missing/backward target is ignored) so the flow can never loop. Complements
+ * the declarative `showWhen`/`hideWhen` model — both are honored together.
+ */
+export interface GotoRule {
+  /** Answer values that trigger the jump (intersection with the answer tokens). */
+  values: string[];
+  /** Step key to jump to, or `null` to skip to the end. */
+  target: string | null;
+}
+
 /** Which phase a step belongs to — lead-capture fields never score. */
 export type FlowGroup = 'qualification' | 'lead_capture';
 
@@ -68,6 +83,20 @@ export interface FormStep {
   showWhen?: StepCondition | null;
   /** Skip-logic: hide when this condition holds (evaluated after showWhen). */
   hideWhen?: StepCondition | null;
+  /**
+   * Forward branching rules on THIS step's answer (additive). When a rule's
+   * `values` match, the flow jumps to `target` (a step key) or skips to the end
+   * (`target: null`). First match wins; only forward jumps apply (loop-safe).
+   * Resolved by `runtimeSteps` so client and server walk the same path.
+   */
+  goto?: GotoRule[];
+  /**
+   * Choice select mode (additive; `multiple_choice` only). `'multiple'` lets the
+   * respondent pick several (checkboxes); anything else — including absent, for
+   * back-compat with every existing form — is a single pick (radios). `dropdown`
+   * is unaffected (it is always single).
+   */
+  selectionMode?: 'single' | 'multiple';
   /** Flat points awarded just for answering (rare; most points come from options). */
   points?: number;
   flowGroup?: FlowGroup;
@@ -216,6 +245,62 @@ function findEmailKey(config: FormConfig): string | null {
 }
 
 /**
+ * True when a choice step collects MULTIPLE answers (checkboxes). Only a
+ * `multiple_choice` step with `selectionMode === 'multiple'` is multi-select;
+ * everything else (absent mode, `'single'`, `dropdown`) is a single pick. Shared
+ * by the renderer and the builder so both agree on radios-vs-checkboxes.
+ */
+export function isMultiSelect(step: FormStep): boolean {
+  return step.type === 'multiple_choice' && step.selectionMode === 'multiple';
+}
+
+/**
+ * The first goto rule on `step` whose values intersect the step's own answer,
+ * or `null` when none match. First match wins (rules run top to bottom).
+ */
+function resolveGoto(step: FormStep, answers: Answers): GotoRule | null {
+  if (!step.goto || step.goto.length === 0) return null;
+  const got = new Set(tokens(answers[step.key]));
+  for (const rule of step.goto) {
+    if (rule.values.some((v) => got.has(v))) return rule;
+  }
+  return null;
+}
+
+/**
+ * Walk an ordered, visible step list applying forward `goto` jumps: at each
+ * step, a matching rule jumps to its target (skipping the steps in between) or
+ * ends the flow (`target: null`). Only forward targets take effect — a missing
+ * or backward target is ignored (the walk continues linearly) — and a `seen`
+ * guard makes the walk provably terminate, so no configuration can loop. Steps
+ * jumped over are absent from the returned path (never shown, never scored).
+ */
+function applyGoto(steps: FormStep[], answers: Answers): FormStep[] {
+  const indexByKey = new Map(steps.map((s, i) => [s.key, i] as const));
+  const path: FormStep[] = [];
+  const seen = new Set<string>();
+  let i = 0;
+  while (i < steps.length) {
+    const step = steps[i];
+    if (!step || seen.has(step.key)) break;
+    seen.add(step.key);
+    path.push(step);
+    const rule = resolveGoto(step, answers);
+    if (rule) {
+      if (rule.target == null) break; // skip to end
+      const target = indexByKey.get(rule.target);
+      if (target != null && target > i) {
+        i = target; // forward jump — skip the steps in between
+        continue;
+      }
+      // Missing or backward target: ignore and continue linearly (loop-safe).
+    }
+    i += 1;
+  }
+  return path;
+}
+
+/**
  * True when the answer looks like a personal/free-mail address. Accepts an
  * answer value (or a raw string); non-strings and empties are never personal.
  */
@@ -330,7 +415,9 @@ function sliderPoints(step: FormStep, value: AnswerValue): number {
  */
 export function computeScore(config: FormConfig, answers: Answers): number {
   if (config.scoring && config.scoring.enabled === false) return 0;
-  const visible = new Set(visibleSteps(config, answers).map((s) => s.key));
+  // The runtime PATH (visibility + forward goto jumps) — a step jumped over by a
+  // branch is never shown and must never score.
+  const visible = new Set(runtimeSteps(config, answers).map((s) => s.key));
   let score = 0;
   for (const step of config.steps) {
     if (step.flowGroup === 'lead_capture') continue;
@@ -498,7 +585,8 @@ export function resolveStepDisplay(step: FormStep, answers: Answers): FormStep {
  */
 export function runtimeSteps(config: FormConfig, answers: Answers): FormStep[] {
   const ordered: FormConfig = { ...config, steps: orderSteps(config.steps) };
-  return visibleSteps(ordered, answers).map((s) => resolveStepDisplay(s, answers));
+  const visible = visibleSteps(ordered, answers).map((s) => resolveStepDisplay(s, answers));
+  return applyGoto(visible, answers);
 }
 
 /** The key of the step at `partialSubmitAfterStep` (1-based over `steps`), or null. */
