@@ -148,6 +148,16 @@ export interface FormsMessages {
       inviteErrorTaken: string;
       inviteErrorInvalid: string;
       inviteErrorFailed: string;
+      membersMenu: string;
+      makeAdmin: string;
+      makeMember: string;
+      removeMember: string;
+      removeConfirm: string;
+      roleChangeSuccess: string;
+      removeSuccess: string;
+      manageErrorLastOwner: string;
+      manageErrorForbidden: string;
+      manageErrorFailed: string;
     };
     login: {
       title: string;
@@ -568,6 +578,16 @@ export const en: FormsMessages = {
       inviteErrorTaken: 'A member with that email already exists.',
       inviteErrorInvalid: 'Enter a valid email address.',
       inviteErrorFailed: 'Could not add the member. Please try again.',
+      membersMenu: 'Member actions',
+      makeAdmin: 'Change to Admin',
+      makeMember: 'Change to Member',
+      removeMember: 'Remove member',
+      removeConfirm: 'Remove this member? They will lose access to this workspace.',
+      roleChangeSuccess: 'Role updated.',
+      removeSuccess: 'Member removed.',
+      manageErrorLastOwner: 'A workspace must keep at least one owner.',
+      manageErrorForbidden: 'You do not have permission to do that.',
+      manageErrorFailed: 'Something went wrong. Please try again.',
     },
     login: {
       title: 'Sign in',
@@ -984,6 +1004,16 @@ export const es: FormsMessages = {
       inviteErrorTaken: 'Ya existe un miembro con ese correo.',
       inviteErrorInvalid: 'Introduce un correo válido.',
       inviteErrorFailed: 'No se pudo añadir el miembro. Inténtalo de nuevo.',
+      membersMenu: 'Acciones de miembro',
+      makeAdmin: 'Cambiar a Administrador',
+      makeMember: 'Cambiar a Miembro',
+      removeMember: 'Quitar miembro',
+      removeConfirm: '¿Quitar a este miembro? Perderá el acceso a este espacio de trabajo.',
+      roleChangeSuccess: 'Rol actualizado.',
+      removeSuccess: 'Miembro eliminado.',
+      manageErrorLastOwner: 'Un espacio de trabajo debe conservar al menos un propietario.',
+      manageErrorForbidden: 'No tienes permiso para hacer eso.',
+      manageErrorFailed: 'Algo salió mal. Inténtalo de nuevo.',
     },
     login: {
       title: 'Iniciar sesión',

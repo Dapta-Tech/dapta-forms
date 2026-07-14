@@ -47,3 +47,63 @@ export async function inviteMemberAction(
     return { ok: false, code: 'FAILED' };
   }
 }
+
+/**
+ * Machine-readable outcome of a roster management op (change-role / remove) so the
+ * client localizes the message. `LAST_OWNER` = the guarded 409 (would leave the
+ * workspace ownerless); `FORBIDDEN` = the guarded 403 (non-admin, or an admin
+ * touching an owner); `FAILED` = anything else.
+ */
+export type ManageMemberState =
+  | { ok: true }
+  | { ok: false; code: 'LAST_OWNER' | 'FORBIDDEN' | 'FAILED' };
+
+/** Map an API failure to a stable, localizable code (never a raw server string). */
+function manageError(e: unknown): ManageMemberState {
+  if (e instanceof ApiError) {
+    if (e.code === 'LAST_OWNER') return { ok: false, code: 'LAST_OWNER' };
+    if (e.status === 403 || e.code === 'FORBIDDEN') return { ok: false, code: 'FORBIDDEN' };
+  }
+  return { ok: false, code: 'FAILED' };
+}
+
+/**
+ * Change a member's account role (Member ⇄ Admin). The API is the real gate:
+ * admin/owner only, an admin cannot touch an owner, no self-service, and the
+ * last active owner cannot be demoted (LAST_OWNER). This mirrored admin check is
+ * defence-in-depth. Success revalidates the roster so the new role renders.
+ */
+export async function updateMemberRoleAction(
+  id: string,
+  role: 'admin' | 'member',
+): Promise<ManageMemberState> {
+  if (role !== 'admin' && role !== 'member') return { ok: false, code: 'FAILED' };
+  const me = await adminApi.me();
+  if (!isAdminRole(me.role)) return { ok: false, code: 'FORBIDDEN' };
+  try {
+    await adminApi.updateMember(id, { role });
+    revalidatePath('/admin/settings');
+    return { ok: true };
+  } catch (e) {
+    return manageError(e);
+  }
+}
+
+/**
+ * Remove a member from the workspace. Admin/owner only; an admin cannot remove an
+ * owner; you cannot remove yourself; the last active owner cannot be removed
+ * (LAST_OWNER). Forms are account-owned, so removing a member never deletes
+ * forms or submissions — only the roster row. Success revalidates the roster.
+ */
+export async function removeMemberAction(id: string): Promise<ManageMemberState> {
+  const me = await adminApi.me();
+  if (!isAdminRole(me.role)) return { ok: false, code: 'FORBIDDEN' };
+  if (id === me.memberId) return { ok: false, code: 'FORBIDDEN' };
+  try {
+    await adminApi.removeMember(id);
+    revalidatePath('/admin/settings');
+    return { ok: true };
+  } catch (e) {
+    return manageError(e);
+  }
+}

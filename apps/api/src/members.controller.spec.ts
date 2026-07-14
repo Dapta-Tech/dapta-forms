@@ -17,6 +17,7 @@
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { ForbiddenException, ConflictException } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import {
   createDb,
   migrate,
@@ -109,6 +110,88 @@ describe('POST /v1/members (add a member)', () => {
       .catch((e) => e);
     expect(err).toBeInstanceOf(ConflictException);
     expect((err as ConflictException).getResponse()).toMatchObject({ error: 'EMAIL_TAKEN' });
+  });
+});
+
+/** Find a roster member's id by email (owner-scoped read). */
+async function memberIdByEmail(email: string): Promise<string> {
+  const roster = await controller.members(asOwner());
+  const found = roster.find((m) => m.email === email.toLowerCase());
+  if (!found) throw new Error(`member ${email} not in roster`);
+  return found.id;
+}
+
+describe('PATCH /v1/members/:id (change role)', () => {
+  it('an owner promotes a member to admin, then demotes back to member', async () => {
+    await controller.inviteMember(asOwner(), { email: 'm@acme.test', role: 'member' });
+    const id = await memberIdByEmail('m@acme.test');
+
+    const up = await controller.updateMember(asOwner(), id, { role: 'admin' });
+    expect(up.role).toBe('admin');
+    const down = await controller.updateMember(asOwner(), id, { role: 'member' });
+    expect(down.role).toBe('member');
+  });
+
+  it('refuses a plain member (admin/owner only) with 403', async () => {
+    await controller.inviteMember(asOwner(), { email: 'plain@acme.test', role: 'member' });
+    const target = await controller.inviteMember(asOwner(), { email: 'victim@acme.test' });
+    await expect(
+      controller.updateMember(asEmail('plain@acme.test'), target.id, { role: 'admin' }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('refuses an admin trying to manage an owner with 403 (only an owner can)', async () => {
+    await controller.inviteMember(asOwner(), { email: 'boss@acme.test', role: 'admin' });
+    const ownerId = await memberIdByEmail('alex@example.com');
+    await expect(
+      controller.updateMember(asEmail('boss@acme.test'), ownerId, { role: 'member' }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('refuses changing your own membership with 403', async () => {
+    const ownerId = await memberIdByEmail('alex@example.com');
+    await expect(
+      controller.updateMember(asOwner(), ownerId, { role: 'member' }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+});
+
+describe('DELETE /v1/members/:id (remove member)', () => {
+  it('an owner removes a member → gone from the roster', async () => {
+    await controller.inviteMember(asOwner(), { email: 'r@acme.test', role: 'member' });
+    const id = await memberIdByEmail('r@acme.test');
+
+    const res = await controller.removeMember(asOwner(), id);
+    expect(res).toEqual({ ok: true });
+    const roster = await controller.members(asOwner());
+    expect(roster.map((m) => m.email)).not.toContain('r@acme.test');
+  });
+
+  it('is idempotent for an unknown member (200 ok)', async () => {
+    expect(await controller.removeMember(asOwner(), randomUUID())).toEqual({ ok: true });
+  });
+
+  it('refuses a plain member (admin/owner only) with 403', async () => {
+    await controller.inviteMember(asOwner(), { email: 'plain@acme.test', role: 'member' });
+    const target = await controller.inviteMember(asOwner(), { email: 'victim@acme.test' });
+    await expect(
+      controller.removeMember(asEmail('plain@acme.test'), target.id),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('refuses an admin removing an owner with 403', async () => {
+    await controller.inviteMember(asOwner(), { email: 'boss@acme.test', role: 'admin' });
+    const ownerId = await memberIdByEmail('alex@example.com');
+    await expect(
+      controller.removeMember(asEmail('boss@acme.test'), ownerId),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('refuses removing yourself with 403', async () => {
+    const ownerId = await memberIdByEmail('alex@example.com');
+    await expect(controller.removeMember(asOwner(), ownerId)).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
   });
 });
 
