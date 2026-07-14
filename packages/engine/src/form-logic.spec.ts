@@ -10,6 +10,7 @@ import {
   interpolate,
   resolveStepDisplay,
   runtimeSteps,
+  isMultiSelect,
   partialSubmitKey,
   nameFields,
   isSafeHttpUrl,
@@ -288,5 +289,119 @@ describe('URL safety guards (XSS)', () => {
     expect(isSafeImageUrl('javascript:alert(1)')).toBe(false);
     expect(isSafeImageUrl('vbscript:msgbox(1)')).toBe(false);
     expect(isSafeImageUrl('data:text/html,<script>alert(1)</script>')).toBe(false);
+  });
+});
+
+describe('goto branching (forward jumps + skip-to-end)', () => {
+  const gcfg: FormConfig = {
+    version: 1,
+    steps: [
+      step({
+        key: 'budget',
+        type: 'dropdown',
+        flowGroup: 'qualification',
+        options: [
+          { label: 'Under $500', value: 'low', points: 0 },
+          { label: '$500–2k', value: 'mid', points: 3 },
+          { label: '$2,000+', value: 'high', points: 6 },
+        ],
+        goto: [
+          { values: ['low'], target: null }, // skip to end
+          { values: ['high'], target: 'urgency' }, // jump ahead
+        ],
+      }),
+      step({ key: 'team', type: 'text', flowGroup: 'qualification' }),
+      step({ key: 'urgency', type: 'slider', flowGroup: 'qualification', min: 0, max: 10 }),
+      step({ key: 'email', type: 'email', flowGroup: 'lead_capture' }),
+    ],
+  };
+
+  it('skip-to-end (target null) drops every following step', () => {
+    const path = runtimeSteps(gcfg, { budget: 'low' }).map((s) => s.key);
+    expect(path).toEqual(['budget']);
+  });
+
+  it('jump-to-Q skips the steps in between but keeps the target and the rest', () => {
+    const path = runtimeSteps(gcfg, { budget: 'high' }).map((s) => s.key);
+    expect(path).toEqual(['budget', 'urgency', 'email']);
+    expect(path).not.toContain('team');
+  });
+
+  it('no matching rule walks the full ordered path', () => {
+    const path = runtimeSteps(gcfg, { budget: 'mid' }).map((s) => s.key);
+    expect(path).toEqual(['budget', 'team', 'urgency', 'email']);
+  });
+
+  it('scoring ignores steps jumped over by a branch', () => {
+    // "high" jumps past `team`; only budget(6) + urgency count toward the score.
+    expect(computeScore(gcfg, { budget: 'high', team: 'stale', urgency: 8 })).toBe(6);
+  });
+
+  it('a backward/self target is ignored and can never loop', () => {
+    const loopy: FormConfig = {
+      version: 1,
+      steps: [
+        step({ key: 'a', type: 'text', flowGroup: 'qualification' }),
+        step({
+          key: 'b',
+          type: 'dropdown',
+          flowGroup: 'qualification',
+          options: [{ label: 'Back', value: 'back' }],
+          goto: [{ values: ['back'], target: 'a' }], // backward — must be ignored
+        }),
+        step({ key: 'c', type: 'text', flowGroup: 'qualification' }),
+      ],
+    };
+    const path = runtimeSteps(loopy, { b: 'back' }).map((s) => s.key);
+    expect(path).toEqual(['a', 'b', 'c']);
+  });
+
+  it('a missing target is ignored (flow continues linearly)', () => {
+    const cfg: FormConfig = {
+      version: 1,
+      steps: [
+        step({
+          key: 'q',
+          type: 'dropdown',
+          flowGroup: 'qualification',
+          options: [{ label: 'X', value: 'x' }],
+          goto: [{ values: ['x'], target: 'nope' }],
+        }),
+        step({ key: 'r', type: 'text', flowGroup: 'qualification' }),
+      ],
+    };
+    expect(runtimeSteps(cfg, { q: 'x' }).map((s) => s.key)).toEqual(['q', 'r']);
+  });
+});
+
+describe('isMultiSelect + multiple_choice scoring', () => {
+  const multi = step({
+    key: 'features',
+    type: 'multiple_choice',
+    selectionMode: 'multiple',
+    flowGroup: 'qualification',
+    options: [
+      { label: 'A', value: 'a', points: 2 },
+      { label: 'B', value: 'b', points: 3 },
+      { label: 'C', value: 'c', points: 5 },
+    ],
+  });
+
+  it('flags multiple_choice+multiple as multi-select, single/absent/dropdown as not', () => {
+    expect(isMultiSelect(multi)).toBe(true);
+    expect(isMultiSelect(step({ key: 'q', type: 'multiple_choice', selectionMode: 'single' }))).toBe(false);
+    expect(isMultiSelect(step({ key: 'q', type: 'multiple_choice' }))).toBe(false);
+    expect(isMultiSelect(step({ key: 'q', type: 'dropdown', selectionMode: 'multiple' }))).toBe(false);
+  });
+
+  it('sums option points across a multi-select answer array', () => {
+    const cfg: FormConfig = { version: 1, steps: [multi] };
+    expect(computeScore(cfg, { features: ['a', 'c'] })).toBe(7);
+    expect(computeScore(cfg, { features: ['a', 'b', 'c'] })).toBe(10);
+  });
+
+  it('validates a multi-select answer array against the allowed values', () => {
+    expect(validateAnswer(multi, ['a', 'b']).ok).toBe(true);
+    expect(validateAnswer(multi, ['a', 'zzz']).ok).toBe(false);
   });
 });
