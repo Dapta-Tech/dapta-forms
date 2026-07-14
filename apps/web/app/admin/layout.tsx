@@ -1,13 +1,17 @@
 import type { ReactNode } from 'react';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
+import { getMessages } from '@quill/shared';
 import { adminApi, ApiError } from '@/lib/admin-api';
+import { getLocale } from '@/lib/locale';
 import { ToastProvider } from '@/components/toast';
 
 // Customer-facing name (build-time inlined); the codename never surfaces in the UI.
 const productName = process.env.NEXT_PUBLIC_PRODUCT_NAME || 'Forms';
 
 export default async function AdminLayout({ children }: { children: ReactNode }) {
+  const chrome = getMessages(await getLocale()).admin.chrome;
+
   // The real auth gate: identity is whatever `/v1/me` resolves. A 401 → /login.
   let me: Awaited<ReturnType<typeof adminApi.me>>;
   try {
@@ -29,7 +33,7 @@ export default async function AdminLayout({ children }: { children: ReactNode })
           <div className="flex items-center gap-4 text-sm text-muted-foreground">
             <span>{me.displayName ?? me.email ?? me.handle}</span>
             <a href="/api/auth/logout" className="hover:text-foreground">
-              Sign out
+              {chrome.signOut}
             </a>
           </div>
         </header>

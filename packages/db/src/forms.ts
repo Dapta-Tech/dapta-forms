@@ -6,6 +6,7 @@
  * so the identical code runs on SQLite (clone-and-run) and Postgres (prod).
  */
 import { randomUUID } from 'node:crypto';
+import { mergeWebhookSecrets } from '@quill/types';
 import { sql, type Db } from './client';
 import { canonicalPublicCode } from './short-links';
 import type { CrudResult } from './crud';
@@ -221,7 +222,27 @@ export async function updateForm(
     if (clash) return { ok: false, reason: 'SLUG_TAKEN', message: 'That slug is already in use.' };
     sets.push(sql`slug = ${slug}`);
   }
-  if (patch.config !== undefined) sets.push(sql`config = ${jsonParam(patch.config)}`);
+  if (patch.config !== undefined) {
+    // Preserve masked webhook secrets: a full-config write that round-trips the
+    // READ-masked config (WEBHOOK_SECRET_MASK) must not clobber the stored
+    // secret with the sentinel. Real secrets pass through unchanged.
+    let nextConfig = patch.config;
+    if (
+      nextConfig &&
+      typeof nextConfig === 'object' &&
+      Array.isArray((nextConfig as Record<string, unknown>).destinations)
+    ) {
+      const cfg = nextConfig as Record<string, unknown>;
+      nextConfig = {
+        ...cfg,
+        destinations: mergeWebhookSecrets(
+          cfg.destinations as unknown[],
+          (existing.config as Record<string, unknown> | null)?.destinations,
+        ),
+      };
+    }
+    sets.push(sql`config = ${jsonParam(nextConfig)}`);
+  }
   if (sets.length > 0) {
     sets.push(sql`updated_at = ${Date.now()}`);
     await db.run(
@@ -250,7 +271,13 @@ export async function updateFormDestinations(
 ): Promise<CrudResult<FormRow>> {
   const existing = await getFormById(db, accountId, id);
   if (!existing) return { ok: false, reason: 'NOT_FOUND' };
-  const config = { ...(existing.config as Record<string, unknown>), destinations };
+  // Preserve masked webhook secrets: when the integrations UI leaves the secret
+  // field untouched it submits WEBHOOK_SECRET_MASK; keep the stored secret.
+  const merged = mergeWebhookSecrets(
+    destinations,
+    (existing.config as Record<string, unknown> | null)?.destinations,
+  );
+  const config = { ...(existing.config as Record<string, unknown>), destinations: merged };
   await db.run(
     sql`UPDATE form SET config = ${jsonParam(config)}, updated_at = ${Date.now()}
         WHERE account_id = ${accountId} AND id = ${id}`,

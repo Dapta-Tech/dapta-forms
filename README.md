@@ -128,6 +128,14 @@ Everything has a safe default (see [`.env.example`](.env.example)). Copy it to
 | `pnpm typecheck` / `pnpm lint` | type-check / lint the workspace |
 | `pnpm db:migrate` / `pnpm db:seed` / `pnpm db:reset` | database lifecycle |
 
+> **Always start with `pnpm dev`** (or `pnpm dev:pg`) — it runs `db:setup`
+> (migrate + seed) **before** launching the apps, so the schema always exists.
+> If you instead run an app directly against a **fresh** database — two
+> terminals, e.g. `pnpm db:migrate` then `pnpm --filter @quill/api dev` and
+> `pnpm --filter @quill/web dev` — **run `pnpm db:migrate` first**. The bare app
+> start does *not* migrate; booting the API against an unmigrated DB makes the
+> outbox worker fail on every poll with `no such table: outbox`.
+
 ## Deploy
 
 Quill is **deployment-agnostic** (Node runtime, no host-only APIs).

@@ -31,7 +31,12 @@ import {
   updateForm,
   type CrudResult,
 } from '@quill/db';
-import { formInputSchema, memberInviteSchema, memberPatchSchema } from '@quill/types';
+import {
+  formInputSchema,
+  maskConfigSecrets,
+  memberInviteSchema,
+  memberPatchSchema,
+} from '@quill/types';
 import { ZodError } from 'zod';
 import { AdminService } from './admin.service';
 import { SubmissionService } from './submission.service';
@@ -55,6 +60,16 @@ function unwrapCrud<T>(r: CrudResult<T>): T {
   if (r.ok) return r.value;
   if (r.reason === 'NOT_FOUND') throw new NotFoundException({ error: 'NOT_FOUND', message: 'Not found.' });
   throw new ConflictException({ error: r.reason, message: r.message ?? 'Conflict.' });
+}
+
+/**
+ * Mask webhook signing secrets in a form's config before it leaves the server to
+ * the admin client. Every form-returning endpoint runs this so the plaintext
+ * secret is never exposed in a READ; the integrations UI round-trips the sentinel
+ * and the write layer restores the stored secret (see mergeWebhookSecrets).
+ */
+function maskForm<T extends { config: unknown }>(form: T): T {
+  return { ...form, config: maskConfigSecrets(form.config) };
 }
 
 /** Host-authed CRUD for forms + submissions + members, and identity/vanity. */
@@ -102,7 +117,7 @@ export class AdminCrudController {
     const p = await this.auth.resolveHost(req);
     const f = await getFormById(this.db, p.accountId, id);
     if (!f) throw new NotFoundException({ error: 'NOT_FOUND', message: 'Not found.' });
-    return f;
+    return maskForm(f);
   }
 
   @Post('forms')
@@ -110,21 +125,21 @@ export class AdminCrudController {
   async createForm(@Req() req: ReqLike, @Body() body: unknown) {
     const p = await this.auth.resolveHost(req);
     const input = parse(formInputSchema, body);
-    return unwrapCrud(await createForm(this.db, p.accountId, input));
+    return maskForm(unwrapCrud(await createForm(this.db, p.accountId, input)));
   }
 
   @Put('forms/:id')
   async updateForm(@Req() req: ReqLike, @Param('id') id: string, @Body() body: unknown) {
     const p = await this.auth.resolveHost(req);
     const input = parse(formInputSchema.partial(), body);
-    return unwrapCrud(await updateForm(this.db, p.accountId, id, input));
+    return maskForm(unwrapCrud(await updateForm(this.db, p.accountId, id, input)));
   }
 
   @Post('forms/:id/duplicate')
   @HttpCode(201)
   async duplicateForm(@Req() req: ReqLike, @Param('id') id: string) {
     const p = await this.auth.resolveHost(req);
-    return unwrapCrud(await duplicateForm(this.db, p.accountId, id));
+    return maskForm(unwrapCrud(await duplicateForm(this.db, p.accountId, id)));
   }
 
   @Delete('forms/:id')

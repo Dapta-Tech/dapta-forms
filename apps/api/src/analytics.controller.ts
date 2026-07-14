@@ -114,11 +114,19 @@ export class AnalyticsController {
     res.end();
   }
 
-  /** Delete a submission (account-scoped, idempotent → always 204). */
+  /**
+   * Delete a submission (account-scoped). Same-account delete — including a
+   * repeat on an already-deleted row — is idempotent → 204. A cross-account id
+   * is never touched and returns 404 (mirrors GET; no data leak, no misleading
+   * 204 "success").
+   */
   @Delete('submissions/:id')
   @HttpCode(204)
   async deleteSubmission(@Req() req: ReqLike, @Param('id') id: string): Promise<void> {
     const p = await this.auth.resolveHost(req);
-    await this.analytics.deleteSubmission(p.accountId, id); // idempotent: absent/out-of-account → no-op
+    const result = await this.analytics.deleteSubmission(p.accountId, id);
+    if (result === 'forbidden')
+      throw new NotFoundException({ error: 'NOT_FOUND', message: 'Not found.' });
+    // 'deleted' | 'absent' → idempotent 204.
   }
 }

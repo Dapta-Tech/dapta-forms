@@ -179,6 +179,9 @@ importers:
       '@quill/engine':
         specifier: workspace:*
         version: link:../engine
+      '@quill/types':
+        specifier: workspace:*
+        version: link:../types
       better-sqlite3:
         specifier: ^11.7.0
         version: 11.10.0
