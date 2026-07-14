@@ -7,8 +7,13 @@
  *
  * Portable column choices: text UUID PKs (crypto.randomUUID()), instants as
  * INTEGER epoch-ms, booleans as INTEGER 0/1, config/answers as TEXT JSON.
+ *
+ * NOTE: the numbered SQL files in migrations/ are the SOLE source of applied DDL
+ * (see migrate.ts). These drizzle schema objects document the shape and are kept
+ * in parity with the migrations + schema.pg.ts, including UNIQUE constraints —
+ * so anything regenerated from them does not silently drop a uniqueness guard.
  */
-import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, integer, uniqueIndex } from 'drizzle-orm/sqlite-core';
 
 // --- Platform (identity / delivery) — kept from the shared platform ----------
 
@@ -16,8 +21,8 @@ export const account = sqliteTable('account', {
   id: text('id').primaryKey(),
   code: text('code').notNull().unique(),
   name: text('name').notNull(),
-  externalId: text('external_id'),
-  vanitySlug: text('vanity_slug'),
+  externalId: text('external_id').unique(),
+  vanitySlug: text('vanity_slug').unique(),
   daptaEntitlement: text('dapta_entitlement'),
   entitlementCheckedAt: integer('entitlement_checked_at'),
   createdAt: integer('created_at').notNull(),
@@ -30,19 +35,25 @@ export const accountAlias = sqliteTable('account_alias', {
   createdAt: integer('created_at').notNull(),
 });
 
-export const member = sqliteTable('member', {
-  id: text('id').primaryKey(),
-  accountId: text('account_id').notNull(),
-  externalId: text('external_id'),
-  handle: text('handle'),
-  displayName: text('display_name'),
-  email: text('email'),
-  role: text('role').notNull().default('member'),
-  status: text('status').notNull().default('active'),
-  avatarUrl: text('avatar_url'),
-  locale: text('locale'),
-  createdAt: integer('created_at').notNull(),
-});
+export const member = sqliteTable(
+  'member',
+  {
+    id: text('id').primaryKey(),
+    accountId: text('account_id').notNull(),
+    externalId: text('external_id'),
+    handle: text('handle'),
+    displayName: text('display_name'),
+    email: text('email'),
+    role: text('role').notNull().default('member'),
+    status: text('status').notNull().default('active'),
+    avatarUrl: text('avatar_url'),
+    locale: text('locale'),
+    createdAt: integer('created_at').notNull(),
+  },
+  (t) => ({
+    memberAccountExternalUq: uniqueIndex('member_account_external_uq').on(t.accountId, t.externalId),
+  }),
+);
 
 export const apiKey = sqliteTable('api_key', {
   id: text('id').primaryKey(),
@@ -74,6 +85,9 @@ export const outbox = sqliteTable('outbox', {
   lastError: text('last_error'),
   createdAt: integer('created_at').notNull(),
   updatedAt: integer('updated_at').notNull(),
+  // Worker claim/lease (H2): set atomically when a row is claimed for delivery.
+  claimedAt: integer('claimed_at'),
+  claimedBy: text('claimed_by'),
 });
 
 /** Per-account notification controls (toggles + template overrides). */
@@ -92,30 +106,43 @@ export const notificationSetting = sqliteTable('notification_setting', {
 // --- Forms domain ------------------------------------------------------------
 
 /** A form: one versioned JSON `config` blob drives the whole public flow. */
-export const form = sqliteTable('form', {
-  id: text('id').primaryKey(),
-  accountId: text('account_id').notNull(),
-  name: text('name').notNull(),
-  /** Unique per account (app-enforced + composite UNIQUE index). */
-  slug: text('slug').notNull(),
-  /** Versioned form config as TEXT JSON. */
-  config: text('config').notNull(),
-  createdAt: integer('created_at').notNull(),
-  updatedAt: integer('updated_at').notNull(),
-});
+export const form = sqliteTable(
+  'form',
+  {
+    id: text('id').primaryKey(),
+    accountId: text('account_id').notNull(),
+    name: text('name').notNull(),
+    /** Unique per account (app-enforced + composite UNIQUE index). */
+    slug: text('slug').notNull(),
+    /** Versioned form config as TEXT JSON. */
+    config: text('config').notNull(),
+    createdAt: integer('created_at').notNull(),
+    updatedAt: integer('updated_at').notNull(),
+  },
+  (t) => ({
+    formAccountSlugUq: uniqueIndex('form_account_slug_uq').on(t.accountId, t.slug),
+  }),
+);
 
 /** One persisted submission (partial or complete) per session. */
-export const submission = sqliteTable('submission', {
-  id: text('id').primaryKey(),
-  formId: text('form_id').notNull(),
-  sessionId: text('session_id').notNull(),
-  /** Answers as TEXT JSON. */
-  data: text('data').notNull(),
-  score: integer('score').notNull().default(0),
-  startedAt: integer('started_at').notNull(),
-  completedAt: integer('completed_at'),
-  partialAt: integer('partial_at'),
-});
+export const submission = sqliteTable(
+  'submission',
+  {
+    id: text('id').primaryKey(),
+    formId: text('form_id').notNull(),
+    sessionId: text('session_id').notNull(),
+    /** Answers as TEXT JSON. */
+    data: text('data').notNull(),
+    score: integer('score').notNull().default(0),
+    startedAt: integer('started_at').notNull(),
+    completedAt: integer('completed_at'),
+    partialAt: integer('partial_at'),
+  },
+  (t) => ({
+    // One persisted submission per (form, session) — the upsert relies on this.
+    submissionFormSessionUq: uniqueIndex('submission_form_session_uq').on(t.formId, t.sessionId),
+  }),
+);
 
 /** Funnel telemetry — one row per tracked step in the public flow. */
 export const formEvent = sqliteTable('form_event', {
