@@ -146,12 +146,16 @@ never overrides a variable already set in the real environment. Key vars:
 
 ## Deploy
 
-Quill is **deployment-agnostic** (Node runtime, no host-only APIs).
+Dapta Forms is **deployment-agnostic** (Node runtime, no host-only APIs).
 
 - **Docker / any Node host**: `apps/web/Dockerfile` (Next standalone) and
   `apps/api/Dockerfile` (Node runtime). Point `DATABASE_URL` at Postgres.
 - `docker-compose.prod.yml` is a production-shaped self-host smoke test
   (Postgres + one-shot migrate + api + web).
+
+**Full production guide → [`SELF-HOSTING.md`](SELF-HOSTING.md)** — building the two
+images, the complete environment reference, Postgres, reverse proxy + TLS, auth /
+email / destination options, upgrades & rollback, and troubleshooting.
 
 ## Contributing
 
