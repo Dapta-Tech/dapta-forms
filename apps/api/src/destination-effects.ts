@@ -4,6 +4,7 @@ import {
   createDestination,
   type DestinationContext,
   type DestinationSpec,
+  type DnsResolver,
 } from '@quill/destinations';
 import { formConfigSchema, formDestinationSchema, type FormDestination } from '@quill/types';
 import type { ServerEnv } from '@quill/config/env';
@@ -45,6 +46,8 @@ export class DestinationEffects {
   private readonly log = new Logger('DestinationEffects');
   /** Injectable for tests; defaults to global fetch for destination delivery. */
   fetchImpl: typeof fetch = fetch;
+  /** Injectable DNS resolver for tests (webhook SSRF guard); default = Node DNS. */
+  resolveDns?: DnsResolver;
 
   constructor(
     @Inject(DB) private readonly db: Db,
@@ -148,6 +151,10 @@ export class DestinationEffects {
           secret: destination.settings.secret ?? undefined,
           signatureHeader: destination.settings.signatureHeader ?? undefined,
           timeoutMs: destination.settings.timeoutMs,
+          // SSRF guard: permit loopback webhook targets only outside production
+          // (a local dev catcher). In prod, loopback/private hosts are rejected.
+          allowLocalhost: (this.env?.NODE_ENV ?? 'development') !== 'production',
+          resolveDns: this.resolveDns,
         },
       };
     }

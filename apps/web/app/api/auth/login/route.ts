@@ -9,8 +9,9 @@ const OAUTH_STATE_COOKIE = 'quill_oauth_state';
 /**
  * WorkOS login hand-off (AUTH-WEB-CONTRACT §3.1). The web holds NO WorkOS secret;
  * IAM builds the AuthKit login URL. We mint a random `state`, stash it in a
- * short-lived httpOnly cookie, and pass it along — the callback rejects any
- * response whose `state` doesn't match (login-CSRF / session-fixation guard).
+ * short-lived httpOnly cookie, and pass it to IAM — the callback requires that
+ * cookie to be present AND, when IAM echoes the `state` back, requires it to
+ * match the cookie (constant-time): a login-CSRF / session-fixation guard.
  * OSS / local builds have no IAM → bounce to /login (vendor-clean).
  */
 export async function GET(req: NextRequest): Promise<NextResponse> {

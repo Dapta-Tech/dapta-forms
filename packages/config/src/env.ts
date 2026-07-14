@@ -24,7 +24,25 @@ export const serverEnvSchema = z.object({
 
   // API
   API_PORT: z.coerce.number().int().positive().default(4000),
-  PUBLIC_APP_URL: z.string().url().default('http://localhost:3000'),
+  // Public base URL of the deployment (e.g. https://forms.example.com). This is
+  // the TRUSTED origin: the web builds OAuth `returnTo`/redirects from it (never
+  // from attacker-controllable Host / X-Forwarded-Host headers — see
+  // apps/web/lib/request-origin.ts) and the API uses it as the default CORS
+  // allowlist entry. Default EMPTY: a bare self-host/dev clone leaves it unset
+  // and falls back to request headers / localhost; a real deployment MUST set it.
+  PUBLIC_APP_URL: z
+    .string()
+    .refine((v) => v === '' || /^https?:\/\/[^\s/]+/.test(v), {
+      message: 'PUBLIC_APP_URL must be an http(s) URL (or empty to trust proxy headers in self-host dev).',
+    })
+    .default(''),
+  // Rate-limit client-IP derivation behind proxies. X-Forwarded-For is
+  // client-APPENDED and spoofable from the LEFT; behind exactly N trusted
+  // proxies (e.g. one ALB) the real client is the Nth entry FROM THE RIGHT.
+  // Unset -> 1 when PUBLIC_APP_URL is set (a fronting proxy is assumed), else 0
+  // (trust only the socket peer address; ignore XFF entirely — correct for a
+  // direct-exposed self-host). Set it explicitly to match your proxy depth.
+  TRUST_PROXY_HOPS: z.coerce.number().int().min(0).max(10).optional(),
 
   // Email / notifications
   EMAIL_PROVIDER: z.enum(['log-only', 'noop', 'smtp', 'http']).default('log-only'),

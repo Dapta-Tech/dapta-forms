@@ -12,7 +12,10 @@ async function bootstrap() {
   // (web:3000 → api) without opening the authed surface to every site. Embed the
   // public widget on other domains by adding them to CORS_ORIGINS.
   const configured = env.CORS_ORIGINS?.split(',').map((s) => s.trim()).filter(Boolean);
-  const origins = configured && configured.length > 0 ? configured : [env.PUBLIC_APP_URL];
+  // PUBLIC_APP_URL defaults to empty (self-host dev); fall back to the local web
+  // origin so clone-and-run stays open only to the app's own web app.
+  const publicOrigin = env.PUBLIC_APP_URL || 'http://localhost:3000';
+  const origins = configured && configured.length > 0 ? configured : [publicOrigin];
   app.enableCors({ origin: origins, credentials: true });
   console.log(`[api] CORS allowlist: ${origins.join(', ')}`);
   await app.listen(env.API_PORT);

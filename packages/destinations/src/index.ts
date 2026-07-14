@@ -6,6 +6,12 @@
  */
 export * from './destination.port';
 export * from './factory';
+export {
+  assertPublicWebhookUrl,
+  classifyIp,
+  defaultDnsResolver,
+  type DnsResolver,
+} from './ssrf-guard';
 export { LogOnlyDestination } from './adapters/log-only';
 export {
   WebhookDestination,
