@@ -16,6 +16,7 @@ import {
   runtimeSteps,
   validateAnswerCode,
   resolveOutcome,
+  computeScore,
   partialSubmitKey,
   nameFields,
   isMultiSelect,
@@ -23,6 +24,7 @@ import {
   type Answers,
   type AnswerValue,
   type FormStep,
+  type FormOutcome,
 } from '@quill/engine';
 import { onAccent, getMessages, t } from '@quill/shared';
 import type { FormConfig } from '@quill/types';
@@ -31,11 +33,13 @@ import { FormLogo } from '@/components/public/form-logo';
 import { FormProgress } from '@/components/public/form-progress';
 import { ClientLogosMarquee } from '@/components/public/client-logos-marquee';
 import { StepInput } from '@/components/public/step-input';
-import { submitFormAction, recordEventAction } from './actions';
+import { BookingScreen } from '@/components/public/booking-screen';
+import { RevealScreen } from '@/components/public/reveal-screen';
+import { warmBookingEmbed, type BookingScheduledDetails } from '@/lib/booking-embed';
+import { submitFormAction, recordEventAction, recordBookingAction } from './actions';
 import './public-form.css';
 
-type Phase = 'cover' | 'steps' | 'reveal' | 'submitting' | 'done';
-const REVEAL_MS = 2200;
+type Phase = 'cover' | 'steps' | 'reveal' | 'submitting' | 'booking' | 'done';
 
 function useSessionId(key: string): string {
   const [id] = useState(() => {
@@ -83,12 +87,14 @@ export function FormRenderer({
   const [animKey, setAnimKey] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<{ score: number; outcome: string | null } | null>(null);
+  const [booking, setBooking] = useState<{ outcome: FormOutcome; score: number } | null>(null);
 
   const utmRef = useRef<Record<string, string>>({});
   const viewTracked = useRef(false);
   const partialSent = useRef(false);
   const advancing = useRef(false);
   const submitAfterReveal = useRef(false);
+  const bookedRef = useRef(false); // one booking → one callback + one redirect
   const lastStepViewKey = useRef<string | null>(null);
   const engineConfig = config as unknown as Parameters<typeof runtimeSteps>[0];
 
@@ -162,7 +168,15 @@ export function FormRenderer({
       }
       track('submit');
       const score = res.score ?? 0;
-      const outcome = resolveOutcome(engineConfig, score);
+      const outcome = resolveOutcome(engineConfig, score, finalAnswers);
+      // An outcome with a booking config shows the inline scheduling screen
+      // INSTEAD of redirecting; the redirect happens after the visitor books.
+      if (outcome?.booking) {
+        setDone({ score, outcome: res.outcome ?? null }); // pre-arm the done screen for after booking
+        setBooking({ outcome, score });
+        setPhase('booking');
+        return;
+      }
       if (outcome?.redirectUrl) {
         // Runtime XSS guard: only navigate to http(s). A non-http(s) protocol
         // (javascript:/data:) is ignored + logged, falling through to the
@@ -177,6 +191,28 @@ export function FormRenderer({
       setPhase('done');
     },
     [accountCode, slug, sessionId, engineConfig, track],
+  );
+
+  // Report the booked meeting to the API (best-effort), THEN redirect/finish.
+  const handleBooked = useCallback(
+    async (details: BookingScheduledDetails) => {
+      if (bookedRef.current) return;
+      bookedRef.current = true;
+      const outcome = booking?.outcome ?? null;
+      await recordBookingAction(accountCode, slug, {
+        sessionId,
+        provider: details.provider,
+        ...(details.eventUri ? { eventUri: details.eventUri } : {}),
+        ...(details.inviteeUri ? { inviteeUri: details.inviteeUri } : {}),
+        ...(details.startTime ? { startTime: details.startTime } : {}),
+      });
+      if (outcome?.redirectUrl && isSafeHttpUrl(outcome.redirectUrl)) {
+        window.location.href = outcome.redirectUrl;
+        return;
+      }
+      setPhase('done'); // `done` state was set in finalize
+    },
+    [accountCode, slug, sessionId, booking],
   );
 
   const advance = useCallback(
@@ -298,25 +334,34 @@ export function FormRenderer({
   const answersRef = useRef(answers);
   answersRef.current = answers;
 
-  // Drive the reveal interstitial: after REVEAL_MS, continue or finalize.
+  // The reveal screen owns its own timer (honoring reveal.durationMs) and
+  // calls back exactly once when the bar fills: continue or finalize.
+  const onRevealComplete = useCallback(() => {
+    if (submitAfterReveal.current) {
+      submitAfterReveal.current = false;
+      void finalizeRef.current(answersRef.current);
+    } else {
+      setAnimKey((k) => k + 1);
+      setPhase('steps');
+    }
+  }, []);
+
+  // Pre-warm the booking embed while the interstitial plays: when the form
+  // opts in (reveal.prewarm) and the PENDING outcome (client-side score over
+  // the answers so far) hands off to a scheduler, warm its origins now so the
+  // embed after submit paints faster. warmBookingEmbed is idempotent + safe.
   useEffect(() => {
     if (phase !== 'reveal') return;
-    const timer = setTimeout(() => {
-      if (submitAfterReveal.current) {
-        submitAfterReveal.current = false;
-        void finalizeRef.current(answersRef.current);
-      } else {
-        setAnimKey((k) => k + 1);
-        setPhase('steps');
-      }
-    }, REVEAL_MS);
-    return () => clearTimeout(timer);
-  }, [phase]);
+    if (!config.reveal?.prewarm) return;
+    const a = answersRef.current;
+    const pending = resolveOutcome(engineConfig, computeScore(engineConfig, a), a);
+    if (pending?.booking) warmBookingEmbed(pending.booking.provider, pending.booking.url);
+  }, [phase, config.reveal?.prewarm, engineConfig]);
 
   // --- Screens --------------------------------------------------------------
 
   if (phase === 'done' && done) {
-    const outcome = resolveOutcome(engineConfig, done.score);
+    const outcome = resolveOutcome(engineConfig, done.score, answersRef.current);
     const cta = signupHref('confirmation', accountCode);
     return (
       <div className="pf pf--done" style={accentVars}>
@@ -341,14 +386,30 @@ export function FormRenderer({
     );
   }
 
+  if (phase === 'booking' && booking?.outcome.booking) {
+    return (
+      <div className="pf pf--booking-page" style={accentVars}>
+        {cover?.bannerText ? <div className="pf__banner">{cover.bannerText}</div> : null}
+        <BookingScreen
+          booking={booking.outcome.booking}
+          answers={answersRef.current}
+          sessionId={sessionId}
+          locale={locale}
+          onBooked={(details) => void handleBooked(details)}
+        />
+      </div>
+    );
+  }
+
   if (phase === 'reveal') {
-    const reveal = config.reveal ?? {};
     return (
       <div className="pf pf--reveal" style={accentVars} role="status" aria-live="polite">
         {cover?.bannerText ? <div className="pf__banner">{cover.bannerText}</div> : null}
-        <RevealBody
-          headline={reveal.headline ?? m.revealHeadline}
-          subtitle={reveal.subtitle ?? m.revealSubtitle}
+        <RevealScreen
+          reveal={config.reveal}
+          answers={answers}
+          messages={{ headline: m.revealHeadline, subtitle: m.revealSubtitle }}
+          onComplete={onRevealComplete}
         />
       </div>
     );
@@ -476,30 +537,6 @@ export function FormRenderer({
             </div>
           </div>
         </div>
-      </div>
-    </div>
-  );
-}
-
-/** Reveal interstitial body with an animated determinate bar (generic copy). */
-function RevealBody({ headline, subtitle }: { headline: string; subtitle: string }) {
-  const [pct, setPct] = useState(4);
-  useEffect(() => {
-    const startedAt = Date.now();
-    const id = setInterval(() => {
-      const p = Math.min(100, Math.round(((Date.now() - startedAt) / REVEAL_MS) * 100));
-      setPct(p);
-      if (p >= 100) clearInterval(id);
-    }, 60);
-    return () => clearInterval(id);
-  }, []);
-  return (
-    <div className="pf-reveal__inner">
-      <div className="pf-reveal__spinner" aria-hidden="true" />
-      <h1 className="pf-reveal__headline">{headline}</h1>
-      <p className="pf-reveal__subtitle">{subtitle}</p>
-      <div className="pf-reveal__track">
-        <div className="pf-reveal__fill" style={{ width: `${pct}%` }} />
       </div>
     </div>
   );

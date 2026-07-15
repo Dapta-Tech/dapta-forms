@@ -8,10 +8,10 @@ import type {
   FormCover,
   FormBranding,
   FormOutcome,
+  FormReveal,
 } from '@quill/engine';
 import { normalizeConfig } from '@quill/engine';
 import { saveFormAction } from '@/app/admin/actions';
-import { useToast } from '@/components/toast';
 import { cn } from '@/lib/cn';
 import { QuestionSpine } from './_components/question-spine';
 import { CanvasQuestion } from './_components/canvas-question';
@@ -21,6 +21,8 @@ import { LogicMap } from './_components/logic-map';
 import { ResultsView } from './_components/results-view';
 import { EmptyState } from './_components/empty-state';
 import { CoverPanel } from './_components/cover-panel';
+import { RevealPanel } from './_components/reveal-panel';
+import { PublishButton } from './publish-button';
 import { DevicePreviewModal } from './_components/device-preview-modal';
 import { stepFromGalleryItem, type GalleryItem } from './_components/question-types';
 import { TEMPLATES } from './_components/templates';
@@ -45,6 +47,7 @@ export function FormEditor({
   publicPath,
   locale,
   m,
+  initialHasDraft = false,
 }: {
   id: string;
   initialName: string;
@@ -52,9 +55,10 @@ export function FormEditor({
   publicPath: string;
   locale: string;
   m: EditorMessages;
+  /** Whether the form already had an unpublished draft when the page loaded. */
+  initialHasDraft?: boolean;
 }) {
   const bm = getBuilderMessages(locale);
-  const toast = useToast();
   const [name, setName] = useState(initialName);
   const [config, setConfig] = useState<FormConfig>(initialConfig);
   const [tab, setTab] = useState<Tab>('build');
@@ -64,14 +68,16 @@ export function FormEditor({
   const [previewOpen, setPreviewOpen] = useState(false);
   const [status, setStatus] = useState<SaveStatus>(initialConfig.steps.length ? 'saved' : 'draft');
   const [focusCanvas, setFocusCanvas] = useState(0);
+  const [saveCount, setSaveCount] = useState(0);
   const dirty = useRef(false);
 
-  // --- Autosave (debounced) -------------------------------------------------
+  // --- Autosave (debounced; each successful save stores an unpublished draft) ---
   const persist = useCallback(
     async (nextName: string, nextConfig: FormConfig) => {
       setStatus('saving');
       const res = await saveFormAction(id, { name: nextName, config: normalizeConfig(nextConfig) });
       setStatus(res.ok ? 'saved' : 'error');
+      if (res.ok) setSaveCount((n) => n + 1);
     },
     [id],
   );
@@ -149,11 +155,10 @@ export function FormEditor({
     mutate((c) => ({ ...c, branding: { ...c.branding, ...patch } }));
   const setScoring = (enabled: boolean) => mutate((c) => ({ ...c, scoring: { enabled } }));
   const setOutcomes = (outcomes: FormOutcome[]) => mutate((c) => ({ ...c, outcomes }));
-
-  async function publish() {
-    await persist(name, config);
-    toast.success(bm.shell.published);
-  }
+  const patchReveal = (patch: Partial<FormReveal>) =>
+    mutate((c) => ({ ...c, reveal: { ...c.reveal, ...patch } }));
+  const setPartialSubmitAfterStep = (afterStep: number | undefined) =>
+    mutate((c) => ({ ...c, partialSubmitAfterStep: afterStep }));
 
   const selectedStep = selected != null ? config.steps[selected] : undefined;
   const scoringEnabled = config.scoring?.enabled !== false;
@@ -228,13 +233,12 @@ export function FormEditor({
             <i aria-hidden className="pi pi-eye" style={{ fontSize: 13 }} />
             <span className="hidden sm:inline">{bm.shell.preview}</span>
           </button>
-          <button
-            type="button"
-            onClick={publish}
-            className="inline-flex h-9 items-center rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground transition-transform hover:brightness-105 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            {bm.shell.publish}
-          </button>
+          <PublishButton
+            formId={id}
+            initialHasDraft={initialHasDraft}
+            saveCount={saveCount}
+            locale={locale}
+          />
         </div>
       </header>
 
@@ -379,8 +383,14 @@ export function FormEditor({
             />
           </div>
         ) : (
-          <div className="h-full overflow-y-auto px-4 py-6 sm:px-8">
+          <div className="flex h-full flex-col gap-4 overflow-y-auto px-4 py-6 sm:px-8">
             <CoverPanel config={config} onCoverChange={patchCover} onBrandingChange={patchBranding} m={m} />
+            <RevealPanel
+              config={config}
+              onRevealChange={patchReveal}
+              onPartialSubmitChange={setPartialSubmitAfterStep}
+              m={m}
+            />
           </div>
         )}
       </div>
