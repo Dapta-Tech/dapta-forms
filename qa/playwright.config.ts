@@ -1,4 +1,9 @@
 import { defineConfig } from '@playwright/test';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
+
+// ESM-safe __dirname (repo root package.json sets "type": "module").
+const configDir = path.dirname(fileURLToPath(import.meta.url));
 
 /**
  * E2E QA harness. Targets the dedicated SQLite QA instance (web :3400, api :4400)
@@ -20,7 +25,7 @@ export default defineConfig({
   },
   webServer: {
     command: 'bash dev-sqlite.sh',
-    cwd: __dirname,
+    cwd: configDir,
     url: 'http://localhost:3400',
     reuseExistingServer: true,
     timeout: 240_000,

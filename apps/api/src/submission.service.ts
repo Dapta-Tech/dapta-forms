@@ -64,7 +64,10 @@ export class SubmissionService {
 
     const config = form.config as FormConfig;
     const score = computeScore(config, input.data);
-    const outcome = resolveOutcome(config, score);
+    // Pass the answers so answer-forced outcome overrides resolve identically
+    // to the client renderer (a score-only resolution would disagree with the
+    // redirect the visitor actually saw).
+    const outcome = resolveOutcome(config, score, input.data);
     const row = await upsertSubmission(this.db, {
       formId: form.id,
       sessionId: input.sessionId,

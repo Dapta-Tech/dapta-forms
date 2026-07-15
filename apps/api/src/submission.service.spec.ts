@@ -11,6 +11,8 @@ import {
   listOutbox,
   listSubmissions,
   upsertNotificationSetting,
+  getAccountByCode,
+  createForm,
   sql,
   type Db,
 } from '@quill/db';
@@ -114,6 +116,43 @@ describe('submit', () => {
     });
     await flushEffects();
     expect(await listOutbox(db, { kind: 'email' })).toHaveLength(0);
+  });
+
+  it('resolves the outcome WITH answers so answer-forced overrides match the client', async () => {
+    const account = await getAccountByCode(db, 'acme');
+    const created = await createForm(db, account!.id, {
+      name: 'Override form',
+      config: {
+        version: 1,
+        steps: [
+          {
+            key: 'leads',
+            type: 'slider',
+            question: 'Leads?',
+            min: 0,
+            max: 100,
+            flowGroup: 'qualification',
+            sliderScoring: [{ min: 0, max: 100, points: 10 }],
+          },
+        ],
+        scoring: { enabled: true },
+        outcomes: [
+          { id: 'p1', label: 'P1', minScore: 5 },
+          { id: 'p0', label: 'P0', minScore: -100, overrides: [{ field: 'leads', maxValue: 0 }] },
+        ],
+      },
+    });
+    if (!created.ok) throw new Error('createForm failed');
+
+    // leads=0 scores +10 (≥ p1's minScore) — only the override can pick p0.
+    const out = await svc.submit('acme', created.value.slug, {
+      sessionId: 'sess-override',
+      data: { leads: 0 },
+    });
+    expect('error' in out).toBe(false);
+    if ('error' in out) return;
+    expect(out.score).toBe(10);
+    expect(out.outcome).toBe('p0');
   });
 });
 

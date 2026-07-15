@@ -166,7 +166,17 @@ export function FormRenderer({
         setPhase('steps');
         return;
       }
-      track('submit');
+      // Await the `submit` funnel event (best-effort) BEFORE any outcome
+      // redirect: a fire-and-forget request here is aborted by the immediate
+      // window.location navigation, silently losing the submit event for every
+      // redirect outcome. Same persist-then-navigate pattern as handleBooked.
+      if (sessionId) {
+        await recordEventAction(accountCode, slug, {
+          sessionId,
+          type: 'submit',
+          stepIndex: null,
+        }).catch(() => {});
+      }
       const score = res.score ?? 0;
       const outcome = resolveOutcome(engineConfig, score, finalAnswers);
       // An outcome with a booking config shows the inline scheduling screen
@@ -190,7 +200,7 @@ export function FormRenderer({
       setDone({ score, outcome: res.outcome ?? null });
       setPhase('done');
     },
-    [accountCode, slug, sessionId, engineConfig, track],
+    [accountCode, slug, sessionId, engineConfig],
   );
 
   // Report the booked meeting to the API (best-effort), THEN redirect/finish.
