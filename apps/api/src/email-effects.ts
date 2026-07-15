@@ -73,6 +73,42 @@ export class EmailEffects {
   }
 
   /**
+   * Confirmation receipt to the RESPONDENT ("we received your answers"), through
+   * the same durable outbox as `submission_received` and gated by the same
+   * per-account notification_setting mechanism (`submission_confirmed`; an
+   * absent row = enabled, the fork-friendly default). No respondent email in
+   * the answers → nothing to address, so it no-ops. Locale: the public surface
+   * does not persist the respondent's language yet, so the caller's value is
+   * used as-is (unset normalizes to English in the notifier).
+   * Never rejects — the caller fire-and-forgets with `void`.
+   */
+  async enqueueSubmissionConfirmed(
+    accountId: string,
+    n: Omit<SubmissionNotification, 'accountId' | 'to'>,
+  ): Promise<void> {
+    try {
+      if (!n.respondentEmail) return;
+      // Snapshot the toggle: absent row = enabled (fork-friendly default).
+      const settings = await getNotificationSettings(this.db, accountId);
+      if (settings.get('submission_confirmed')?.enabled === false) return;
+      const payload: SubmissionNotification = {
+        ...n,
+        accountId,
+        to: [n.respondentEmail],
+        locale: n.locale ?? null,
+      };
+      await enqueueOutbox(this.db, {
+        kind: 'email',
+        action: 'submission_confirmed',
+        accountId,
+        payload: JSON.stringify(payload),
+      });
+    } catch (err) {
+      this.log.error(`failed to enqueue submission_confirmed: ${String(err)}`);
+    }
+  }
+
+  /**
    * The worker's executor for an `email` outbox row. Rebuilds the notification
    * from the payload and sends it; a THROWN transport error propagates so the
    * worker retries. A missing tenant on a transport that requires it is a

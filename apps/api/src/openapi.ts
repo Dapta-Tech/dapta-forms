@@ -63,7 +63,13 @@ export const openapiSpec = {
     },
     '/v1/forms/{id}': {
       get: { summary: 'Get a form (host)', security: [{ hostSession: [] }], responses: { '200': { description: 'Form' } } },
-      put: { summary: 'Update a form (host)', security: [{ hostSession: [] }], responses: { '200': { description: 'Updated' } } },
+      put: {
+        summary: 'Update a form (host)',
+        description:
+          'name/slug apply to the live form immediately; config is stored as an unpublished draft — publish it via POST /v1/forms/{id}/publish. The public renderer keeps serving the previously published config until then.',
+        security: [{ hostSession: [] }],
+        responses: { '200': { description: 'Updated (config changes staged as a draft)' } },
+      },
       delete: { summary: 'Delete a form (host)', security: [{ hostSession: [] }], responses: { '204': { description: 'Deleted' } } },
     },
     '/v1/forms/{id}/publish': {

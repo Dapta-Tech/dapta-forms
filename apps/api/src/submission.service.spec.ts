@@ -4,7 +4,16 @@
  * outbox email, and record a funnel event.
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { createDb, migrate, seed, listOutbox, listSubmissions, sql, type Db } from '@quill/db';
+import {
+  createDb,
+  migrate,
+  seed,
+  listOutbox,
+  listSubmissions,
+  upsertNotificationSetting,
+  sql,
+  type Db,
+} from '@quill/db';
 import { SubmissionNotifier, LogOnlyEmailProvider } from '@quill/notifications';
 import { SubmissionService } from './submission.service';
 import { EmailEffects } from './email-effects';
@@ -23,6 +32,13 @@ beforeEach(async () => {
 afterEach(async () => {
   await db.close();
 });
+
+/**
+ * The submit path fire-and-forgets its email enqueues (`void this.email…`);
+ * yield one macrotask so those promise chains settle before asserting outbox
+ * contents (the SQLite driver is synchronous — one turn drains everything).
+ */
+const flushEffects = () => new Promise<void>((resolve) => setImmediate(resolve));
 
 describe('public form', () => {
   it('serves the seeded form config', async () => {
@@ -55,18 +71,48 @@ describe('submit', () => {
     expect(rows[0]!.score).toBe(18);
     expect(rows[0]!.completedAt).not.toBeNull();
 
-    // Durable email: one submission_received outbox row was enqueued.
+    // Durable emails: the owner notice AND the respondent confirmation (the
+    // answers carried an email) were both enqueued as outbox rows.
     const outbox = await listOutbox(db, { kind: 'email' });
-    expect(outbox).toHaveLength(1);
-    expect(outbox[0]!.action).toBe('submission_received');
+    expect(outbox.map((r) => r.action).sort()).toEqual([
+      'submission_confirmed',
+      'submission_received',
+    ]);
+    const confirmed = outbox.find((r) => r.action === 'submission_confirmed')!;
+    const payload = JSON.parse(confirmed.payload!) as { to: string[]; respondentEmail: string };
+    expect(payload.to).toEqual(['lead@acme.io']); // addressed to the respondent
+    expect(payload.respondentEmail).toBe('lead@acme.io');
   });
 
-  it('a partial save does not enqueue the received email', async () => {
+  it('a completed submission WITHOUT an email enqueues only the owner notice', async () => {
+    await svc.submit('acme', 'lead-qualifier', {
+      sessionId: 'sess-noemail',
+      data: { role: 'founder', team_size: 20, company: 'Acme' },
+    });
+    await flushEffects();
+    const outbox = await listOutbox(db, { kind: 'email' });
+    expect(outbox.map((r) => r.action)).toEqual(['submission_received']);
+  });
+
+  it('the submission_confirmed notification toggle suppresses the receipt (owner notice unaffected)', async () => {
+    const account = await db.get<{ id: string }>(sql`SELECT id FROM account WHERE code = 'acme' LIMIT 1`);
+    await upsertNotificationSetting(db, account!.id, 'submission_confirmed', { enabled: false });
+    await svc.submit('acme', 'lead-qualifier', {
+      sessionId: 'sess-muted',
+      data: { role: 'founder', team_size: 20, email: 'lead@acme.io' },
+    });
+    await flushEffects();
+    const outbox = await listOutbox(db, { kind: 'email' });
+    expect(outbox.map((r) => r.action)).toEqual(['submission_received']);
+  });
+
+  it('a partial save does not enqueue any email', async () => {
     await svc.submit('acme', 'lead-qualifier', {
       sessionId: 'sess-2',
-      data: { role: 'individual' },
+      data: { role: 'individual', email: 'partial@acme.io' },
       partial: true,
     });
+    await flushEffects();
     expect(await listOutbox(db, { kind: 'email' })).toHaveLength(0);
   });
 });
@@ -81,7 +127,7 @@ describe('events', () => {
 });
 
 describe('booking callbacks', () => {
-  it('persists a booking_event tied to the session (no outbox enqueue)', async () => {
+  it('persists a booking_event tied to the session (no enqueue without BookingEffects wired)', async () => {
     const out = await svc.booking('acme', 'lead-qualifier', {
       sessionId: 'sess-4',
       provider: 'calendly',
@@ -96,7 +142,9 @@ describe('booking callbacks', () => {
     expect(row).toBeTruthy();
     expect(row!.provider).toBe('calendly');
     expect(Number(row!.start_time)).toBe(Date.parse('2026-08-01T15:00:00Z'));
-    // Persist-only in this phase: delivery is a later workstream — nothing enqueued.
+    // BookingEffects is optional and not wired here, so nothing is enqueued —
+    // the persisted booking_event stays the durable fact regardless. The
+    // enqueue + booking_sync delivery path is covered in booking-sync.spec.ts.
     expect(await listOutbox(db, {})).toHaveLength(0);
   });
 

@@ -28,6 +28,7 @@ import {
   listMembers,
   publishForm,
   removeMember,
+  saveDraftConfig,
   setMemberStatus,
   updateForm,
   type CrudResult,
@@ -135,11 +136,22 @@ export class AdminCrudController {
     return maskForm(unwrapCrud(await createForm(this.db, p.accountId, input)));
   }
 
+  /**
+   * Update a form. Draft→publish split: `name`/`slug` are METADATA and apply to
+   * the live row immediately (they never lived in the config, so there is
+   * nothing to stage); `config` is stored as an UNPUBLISHED draft via
+   * `saveDraftConfig` — the live config the public renderer serves is untouched
+   * until POST /v1/forms/:id/publish copies the draft over it.
+   */
   @Put('forms/:id')
   async updateForm(@Req() req: ReqLike, @Param('id') id: string, @Body() body: unknown) {
     const p = await this.auth.resolveHost(req);
-    const input = parse(formInputSchema.partial(), body);
-    return maskForm(unwrapCrud(await updateForm(this.db, p.accountId, id, input)));
+    const { config, ...meta } = parse(formInputSchema.partial(), body);
+    let updated = unwrapCrud(await updateForm(this.db, p.accountId, id, meta));
+    if (config !== undefined) {
+      updated = unwrapCrud(await saveDraftConfig(this.db, p.accountId, id, config));
+    }
+    return maskForm(updated);
   }
 
   @Post('forms/:id/duplicate')

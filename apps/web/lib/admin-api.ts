@@ -80,7 +80,12 @@ export interface FormDetail {
   accountId: string;
   name: string;
   slug: string;
+  /** The LIVE (published) config — what the public renderer serves. */
   config: FormConfig;
+  /** Unpublished working copy; null/absent when no draft is pending. */
+  draftConfig?: FormConfig | null;
+  /** Epoch-ms of the last publish; null = never published via the draft flow. */
+  publishedAt?: number | null;
   createdAt: number;
   updatedAt: number;
 }
@@ -156,6 +161,8 @@ export const adminApi = {
   updateForm: (id: string, b: { name?: string; slug?: string; config?: unknown }) =>
     req<FormDetail>('PUT', `/v1/forms/${id}`, b),
   duplicateForm: (id: string) => req<FormDetail>('POST', `/v1/forms/${id}/duplicate`),
+  /** Publish the pending draft config (no-op when no draft is pending). */
+  publishForm: (id: string) => req<FormDetail>('POST', `/v1/forms/${id}/publish`),
   deleteForm: (id: string) => req<void>('DELETE', `/v1/forms/${id}`),
 
   // Analytics + submissions (this track)

@@ -17,6 +17,7 @@ import {
 } from '@quill/types';
 import { EmailEffects } from './email-effects';
 import { DestinationEffects } from './destination-effects';
+import { BookingEffects } from './booking-effects';
 import { DB } from './tokens';
 
 export type ServiceError = { error: string; message: string; status: number };
@@ -34,6 +35,8 @@ export class SubmissionService {
     // Optional so existing direct constructions (tests) keep working; the module
     // always provides it in the running app.
     @Optional() @Inject(DestinationEffects) private readonly destinations?: DestinationEffects,
+    // Optional for the same reason: enqueues the durable booking → CRM sync.
+    @Optional() @Inject(BookingEffects) private readonly bookings?: BookingEffects,
   ) {}
 
   /** The published form for a public code + slug (the renderer's config). */
@@ -79,6 +82,16 @@ export class SubmissionService {
         score,
         outcomeLabel: outcome?.label ?? null,
       });
+      // Respondent confirmation receipt — only when the answers carried an
+      // email. Same durable outbox; gated per-account inside the effect
+      // (notification_setting `submission_confirmed`, absent row = enabled).
+      if (respondentEmail) {
+        void this.email.enqueueSubmissionConfirmed(form.accountId, {
+          submissionId: row.id,
+          formName: form.name,
+          respondentEmail,
+        });
+      }
     }
 
     // Fan out to every enabled destination (CRM/webhook) via the durable outbox.
@@ -120,14 +133,16 @@ export class SubmissionService {
   /**
    * Record a scheduling callback (HubSpot Meetings / Calendly) reported by the
    * public renderer after a meeting is booked, tied to the submission session.
-   * Persist-only for now — delivery to destinations (outbox enqueue) is a later,
-   * separate workstream.
+   * Persist-first: the booking_event row is the durable fact; the CRM sync is
+   * then ENQUEUED (outbox kind `booking_sync`) — the worker fetches Calendly
+   * details and updates the HubSpot contact with retry+backoff. Never inline
+   * HTTP here, and a failed enqueue never fails the callback.
    */
   async booking(accountCode: string, slug: string, raw: unknown): Promise<{ ok: true } | ServiceError> {
     const input = bookingCallbackSchema.parse(raw);
     const form = await getPublishedForm(this.db, accountCode, slug);
     if (!form) return { error: 'NOT_FOUND', message: 'Form not found.', status: 404 };
-    await insertBookingEvent(this.db, {
+    const row = await insertBookingEvent(this.db, {
       formId: form.id,
       sessionId: input.sessionId,
       provider: input.provider,
@@ -136,6 +151,17 @@ export class SubmissionService {
       startTime: input.startTime ? Date.parse(input.startTime) : null,
       // The validated callback body — never the raw request (bounded, typed).
       payload: input,
+    });
+    // Durable CRM sync (internally guarded — cannot reject into the callback).
+    await this.bookings?.enqueueBookingSync({
+      bookingEventId: row.id,
+      formId: form.id,
+      accountId: form.accountId,
+      sessionId: input.sessionId,
+      provider: input.provider,
+      eventUri: input.eventUri ?? null,
+      inviteeUri: input.inviteeUri ?? null,
+      startTime: row.startTime,
     });
     return { ok: true };
   }
