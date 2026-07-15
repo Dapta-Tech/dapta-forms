@@ -51,7 +51,14 @@ function translateStep(s: PilotStep, pilot: PilotConfig, index: number): Record<
   }
   if (s.type === 'name') {
     if (s.fields) step.fields = s.fields;
-    if (s.placeholders) step.placeholders = s.placeholders;
+    // Pilot placeholders are a positional array; Forms keys them by field name.
+    if (Array.isArray(s.placeholders) && Array.isArray(s.fields)) {
+      step.placeholders = Object.fromEntries(
+        s.fields.map((f: string, i: number) => [f, s.placeholders[i]]).filter(([, v]: any[]) => v != null),
+      );
+    } else if (s.placeholders && !Array.isArray(s.placeholders)) {
+      step.placeholders = s.placeholders;
+    }
   }
   if (s.questionField) {
     step.questionField = s.questionField;
