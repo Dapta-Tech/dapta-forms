@@ -58,3 +58,4 @@ AUTH-WEB-CONTRACT.md
 # e2e QA artifacts
 qa/playwright-report/
 qa/test-results/
+test-results/

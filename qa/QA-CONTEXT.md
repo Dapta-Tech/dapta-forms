@@ -2,16 +2,16 @@
 
 Repo: this monorepo, branch `feature/pilot-features`. All pilot-port features are merged.
 
-## Environment (already running — do NOT boot your own)
+## Environment (boot with `bash qa/dev-sqlite.sh` if not already running)
 - Web: http://localhost:3400 · API: http://localhost:4400 (SQLite `.data/qa.db`, seeded)
-- Auth is the `local` dev stub: admin pages and `/v1/*` admin API need NO credentials (first seeded account `acme` is the principal). Admin API base: `http://localhost:4400/v1`.
+- Auth is the `local` dev stub: admin pages and `/v1/*` admin API need NO credentials (the principal account may NOT be `acme` — resolve it from `GET /v1/me` instead of hardcoding). Admin API base: `http://localhost:4400/v1`.
 - Seeded demo form: `/acme/alex-rivera/lead-qualifier`. Imported pilot-style form: `/acme/me/pilot-lead-qualifier`.
-- Node: prefix commands with `export PATH="/opt/homebrew/opt/node@22/bin:$PATH"`.
+- Node >= 20 required (on machines whose default Node is too new for better-sqlite3, put a Node 20/22 bin first on PATH).
 - Run a spec: `cd <repo root> && npx playwright test -c qa/playwright.config.ts qa/e2e/<file> --reporter=list` (config has `reuseExistingServer: true`, so it uses the live :3400).
 
 ## Conventions for specs
 - **Create your own form** per spec via the admin API so specs stay independent:
-  `POST http://localhost:4400/v1/forms` with `{name, config}` (JSON). The response returns `{id, slug}`. Public URL: `/acme/me/<slug>`.
+  `POST http://localhost:4400/v1/forms` with `{name, config}` (JSON). The response returns `{id, slug}`. Public URL: `/<accountCode from GET /v1/me>/me/<slug>`.
   NOTE draft/publish semantics: `PUT /v1/forms/:id` stores config as a DRAFT. To make config live either include it in the initial POST (create writes live config) or `POST /v1/forms/:id/publish` after a PUT.
 - **Direct DB assertions** (outbox rows, booking_event, submissions): import better-sqlite3 from the repo root within the spec:
   ```ts

@@ -1,5 +1,5 @@
 /**
- * Import a pilot-shaped (dapta_bookings `PublicFormConfig`) JSON file as a
+ * Import a pilot-shaped (legacy pilot `PublicFormConfig`) JSON file as a
  * Dapta Forms form. Translates the legacy shape into formConfig v1:
  * steps (+variants/conditions/personal-email branch), scoring ranges → outcomes
  * (+booking embeds +answer overrides), cover, reveal, partial submit, and the

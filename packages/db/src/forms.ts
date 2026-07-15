@@ -308,17 +308,13 @@ export async function saveDraftConfig(
   if (!existing) return { ok: false, reason: 'NOT_FOUND' };
 
   let nextConfig = config;
-  if (
-    nextConfig &&
-    typeof nextConfig === 'object' &&
-    Array.isArray((nextConfig as Record<string, unknown>).destinations)
-  ) {
-    const cfg = nextConfig as Record<string, unknown>;
-    const stored = (existing.draftConfig ?? existing.config) as Record<string, unknown> | null;
-    nextConfig = {
-      ...cfg,
-      destinations: mergeWebhookSecrets(cfg.destinations as unknown[], stored?.destinations),
-    };
+  if (nextConfig && typeof nextConfig === 'object') {
+    const cfg = { ...(nextConfig as Record<string, unknown>) };
+    // Destinations are managed LIVE by the integrations screen and are never
+    // staged in a draft — otherwise a stale editor snapshot would silently
+    // revert integrations edits when the draft is published.
+    delete cfg.destinations;
+    nextConfig = cfg;
   }
   await db.run(
     sql`UPDATE form SET draft_config = ${jsonParam(nextConfig)}, updated_at = ${Date.now()}
@@ -342,10 +338,18 @@ export async function publishForm(
   const existing = await getFormById(db, accountId, id);
   if (!existing) return { ok: false, reason: 'NOT_FOUND' };
   if (existing.draftConfig == null) return { ok: true, value: existing }; // no draft — no-op
+  // Drafts never stage `destinations` (see saveDraftConfig) — integrations are
+  // edited live. Carry the live set over the draft on publish so publishing
+  // can never revert them; everything else comes from the draft.
+  const draft = existing.draftConfig as Record<string, unknown>;
+  const live = existing.config as Record<string, unknown> | null;
+  const next: Record<string, unknown> = { ...draft };
+  if (live && live.destinations !== undefined) next.destinations = live.destinations;
+  else delete next.destinations;
   const now = Date.now();
   await db.run(
     sql`UPDATE form
-        SET config = draft_config, draft_config = NULL,
+        SET config = ${jsonParam(next)}, draft_config = NULL,
             published_at = ${now}, updated_at = ${now}
         WHERE account_id = ${accountId} AND id = ${id} AND draft_config IS NOT NULL`,
   );

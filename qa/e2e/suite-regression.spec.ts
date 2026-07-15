@@ -252,7 +252,7 @@ const completedSessions: { label: string; sessionId: string }[] = [];
 
 test('pilot form renders its cover and starts', async ({ page }) => {
   await openCover(page);
-  await expect(page.getByText('Get 2,000 free credits when you book')).toBeVisible(); // banner
+  await expect(page.getByText('Book a call and get a free onboarding session')).toBeVisible(); // banner
   await expect(page.getByText('2-minute assessment')).toBeVisible(); // badge
   await startForm(page);
   // First step (problema — qualification phase comes first) + progress chrome.

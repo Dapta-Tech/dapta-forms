@@ -431,7 +431,13 @@ export const formTrackingSchema = z.object({
   /** PostHog project API key. */
   posthogKey: z.string().max(128).nullable().optional(),
   /** PostHog host override (self-hosted / EU cloud). */
-  posthogHost: z.string().max(256).nullable().optional(),
+  posthogHost: z
+    .string()
+    .max(256)
+    .url()
+    .refine(isSafeHttpUrl, 'must be an http(s) URL')
+    .nullable()
+    .optional(),
   /** HubSpot tracking code portal id. */
   hubspotTrackingId: z.string().max(32).nullable().optional(),
 });

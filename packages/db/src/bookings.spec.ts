@@ -64,6 +64,28 @@ describe('draft + publish', () => {
     expect(out.value.publishedAt).not.toBeNull();
   });
 
+  it('drafts never stage destinations; publish preserves the LIVE destinations', async () => {
+    // Integrations are edited live (PUT /destinations); the builder autosaves
+    // whole-config drafts. Publishing a stale draft must not revert them.
+    const liveDest = [{ type: 'webhook', enabled: true, url: 'https://example.com/hook' }];
+    await db.run(
+      sql`UPDATE form SET config = ${JSON.stringify({ ...LIVE_CONFIG, destinations: liveDest })}
+          WHERE id = ${formId}`,
+    );
+    const staleDest = [{ type: 'webhook', enabled: false, url: 'https://example.com/old' }];
+    await saveDraftConfig(db, accountId, formId, { ...DRAFT_CONFIG, destinations: staleDest });
+
+    const form = await getFormById(db, accountId, formId);
+    expect((form!.draftConfig as Record<string, unknown>).destinations).toBeUndefined();
+
+    const out = await publishForm(db, accountId, formId);
+    expect(out.ok).toBe(true);
+    if (!out.ok) return;
+    const published = out.value.config as Record<string, unknown>;
+    expect(published.steps).toEqual(DRAFT_CONFIG.steps); // draft content went live
+    expect(published.destinations).toEqual(liveDest); // live integrations preserved
+  });
+
   it('publishForm with NO pending draft is a no-op', async () => {
     const out = await publishForm(db, accountId, formId);
     expect(out.ok).toBe(true);

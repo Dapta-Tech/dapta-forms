@@ -102,7 +102,7 @@ test('enrichment fields configured via the UI save to the destination (free text
 
   await page.getByRole('button', { name: 'Add property', exact: true }).click();
   await f.staticKey.fill('lead_source');
-  await f.staticValue.fill('dapta_forms');
+  await f.staticValue.fill('qa_forms');
 
   await f.inferToggle.click();
   await expect(f.inferToggle).toHaveAttribute('aria-checked', 'true');
@@ -124,7 +124,7 @@ test('enrichment fields configured via the UI save to the destination (free text
 
   const hs = (await getHubspotDestination(request, id))!;
   expect(hs.enabled).toBe(true);
-  expect(hs.staticProperties).toEqual({ lead_source: 'dapta_forms' });
+  expect(hs.staticProperties).toEqual({ lead_source: 'qa_forms' });
   expect(hs.inferCompanyFromEmail).toBe(true);
   expect(hs.bookingSync).toEqual({
     stageProperty: 'lifecyclestage',
@@ -144,7 +144,7 @@ test('saved enrichment values re-hydrate the UI after a reload', async ({ page, 
       enabled: true,
       settings: { note: true },
       outcomeProperty: 'lead_bucket',
-      staticProperties: { lead_source: 'dapta_forms' },
+      staticProperties: { lead_source: 'qa_forms' },
       inferCompanyFromEmail: true,
       bookingSync: {
         stageProperty: 'lifecyclestage',
@@ -162,7 +162,7 @@ test('saved enrichment values re-hydrate the UI after a reload', async ({ page, 
     await expect(f.hubspotToggle).toHaveAttribute('aria-checked', 'true');
     await expect(f.outcome).toHaveValue('lead_bucket');
     await expect(f.staticKey).toHaveValue('lead_source');
-    await expect(f.staticValue).toHaveValue('dapta_forms');
+    await expect(f.staticValue).toHaveValue('qa_forms');
     await expect(f.inferToggle).toHaveAttribute('aria-checked', 'true');
     await expect(f.stageProperty).toHaveValue('lifecyclestage');
     await expect(f.stageValue).toHaveValue('salesqualifiedlead');
@@ -194,7 +194,7 @@ test('admin GET masks only the webhook secret — enrichment values come back ve
       fieldMappings: { email: 'email' },
       valueMaps: { pick: { a: 'Option A' } },
       outcomeProperty: 'lead_bucket',
-      staticProperties: { lead_source: 'dapta_forms' },
+      staticProperties: { lead_source: 'qa_forms' },
       inferCompanyFromEmail: true,
       bookingSync: { stageProperty: 'lifecyclestage', stageValue: 'salesqualifiedlead' },
     },
@@ -221,7 +221,7 @@ test('admin GET masks only the webhook secret — enrichment values come back ve
   expect(hs.fieldMappings).toEqual({ email: 'email' });
   expect(hs.valueMaps).toEqual({ pick: { a: 'Option A' } });
   expect(hs.outcomeProperty).toBe('lead_bucket');
-  expect(hs.staticProperties).toEqual({ lead_source: 'dapta_forms' });
+  expect(hs.staticProperties).toEqual({ lead_source: 'qa_forms' });
   expect(hs.inferCompanyFromEmail).toBe(true);
   expect(hs.bookingSync).toEqual({
     stageProperty: 'lifecyclestage',

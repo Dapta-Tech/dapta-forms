@@ -1,9 +1,9 @@
 {
-  "_comment": "Synthetic pilot-shaped (dapta_bookings PublicFormConfig) fixture. Exercises every feature the import script must translate: cover, flow groups, showWhen/hideWhen, question variants, slider scoring, personal-email branch, disqualification, partial submit, matching loader, P0-P3 scoring ranges, hubspot mapping, utm tracking. All URLs/ids are examples — no real customer data.",
+  "_comment": "Synthetic pilot-shaped (legacy pilot PublicFormConfig) fixture. Exercises every feature the import script must translate: cover, flow groups, showWhen/hideWhen, question variants, slider scoring, personal-email branch, disqualification, partial submit, matching loader, P0-P3 scoring ranges, hubspot mapping, utm tracking. All URLs/ids are examples — no real customer data.",
   "branding": { "primaryColor": "#CCFF00" },
   "cover": {
     "enabled": true,
-    "bannerText": "Get 2,000 free credits when you book",
+    "bannerText": "Book a call and get a free onboarding session",
     "badge": "2-minute assessment",
     "title": "Find the right plan for your team",
     "subheadline": "Answer a few questions and book a call with the right advisor.",
@@ -18,7 +18,7 @@
     "email": "email",
     "phone": "mobilephone",
     "industry": "industry",
-    "problema": "typeform_use_case",
+    "problema": "use_case",
     "inbound_leads": "inbound_leads"
   },
   "utmTracking": { "utm_source": "hs_analytics_source" },
@@ -132,7 +132,7 @@
       "id": "disqualified",
       "type": "message",
       "flowGroup": "lead_capture",
-      "question": "We can't help you just yet — but enjoy 2,000 free credits on us.",
+      "question": "We can't help you just yet — thanks for your time.",
       "field": "disqualified_msg",
       "skipCalendly": true,
       "showWhen": { "field": "problema", "values": ["ninguna"] }
