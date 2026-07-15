@@ -19,6 +19,22 @@ interface Pair {
   property: string;
 }
 
+/** One answer→CRM value translation row inside a value map. */
+interface ValueMapRow {
+  from: string;
+  to: string;
+}
+/** Value translations for one form step: raw answer -> HubSpot picklist value. */
+interface ValueMapGroup {
+  stepKey: string;
+  rows: ValueMapRow[];
+}
+/** One fixed property stamped on every completed submission. */
+interface StaticPropertyRow {
+  key: string;
+  value: string;
+}
+
 interface WebhookState {
   /** Stable destination id (round-tripped so the server merges secrets by identity). */
   id?: string;
@@ -36,6 +52,19 @@ interface HubspotState {
   scoreProperty: string;
   dateProperty: string;
   note: boolean;
+  valueMaps: ValueMapGroup[];
+  outcomeProperty: string;
+  staticProperties: StaticPropertyRow[];
+  inferCompanyFromEmail: boolean;
+  bookingSync: BookingSyncState;
+}
+
+/** Contact properties stamped when a respondent books a meeting (all optional). */
+interface BookingSyncState {
+  stageProperty: string;
+  stageValue: string;
+  dateProperty: string;
+  hoursProperty: string;
 }
 
 function initialWebhook(destinations: FormDestination[]): WebhookState {
@@ -59,9 +88,34 @@ function initialHubspot(destinations: FormDestination[]): HubspotState {
       scoreProperty: h.scoreProperty ?? '',
       dateProperty: h.dateProperty ?? '',
       note: h.settings?.note !== false,
+      valueMaps: Object.entries(h.valueMaps ?? {}).map(([stepKey, map]) => ({
+        stepKey,
+        rows: Object.entries(map).map(([from, to]) => ({ from, to })),
+      })),
+      outcomeProperty: h.outcomeProperty ?? '',
+      staticProperties: Object.entries(h.staticProperties ?? {}).map(([key, value]) => ({ key, value })),
+      inferCompanyFromEmail: h.inferCompanyFromEmail === true,
+      bookingSync: {
+        stageProperty: h.bookingSync?.stageProperty ?? '',
+        stageValue: h.bookingSync?.stageValue ?? '',
+        dateProperty: h.bookingSync?.dateProperty ?? '',
+        hoursProperty: h.bookingSync?.hoursProperty ?? '',
+      },
     };
   }
-  return { enabled: false, fieldMappings: [], utmMappings: {}, scoreProperty: '', dateProperty: '', note: true };
+  return {
+    enabled: false,
+    fieldMappings: [],
+    utmMappings: {},
+    scoreProperty: '',
+    dateProperty: '',
+    note: true,
+    valueMaps: [],
+    outcomeProperty: '',
+    staticProperties: [],
+    inferCompanyFromEmail: false,
+    bookingSync: { stageProperty: '', stageValue: '', dateProperty: '', hoursProperty: '' },
+  };
 }
 
 /**
@@ -126,14 +180,41 @@ export function IntegrationsEditor({
     for (const [k, v] of Object.entries(hs.utmMappings)) {
       if (v && v.trim()) utmMappings[k] = v.trim();
     }
+    const valueMaps: Record<string, Record<string, string>> = {};
+    for (const group of hs.valueMaps) {
+      const stepKey = group.stepKey.trim();
+      if (!stepKey) continue;
+      const rows: Record<string, string> = {};
+      for (const r of group.rows) {
+        if (r.from.trim() && r.to.trim()) rows[r.from.trim()] = r.to.trim();
+      }
+      if (Object.keys(rows).length > 0) valueMaps[stepKey] = rows;
+    }
+    const staticProperties: Record<string, string> = {};
+    for (const p of hs.staticProperties) {
+      if (p.key.trim() && p.value.trim()) staticProperties[p.key.trim()] = p.value.trim();
+    }
+    const bookingSync: Record<string, string> = {};
+    for (const k of ['stageProperty', 'stageValue', 'dateProperty', 'hoursProperty'] as const) {
+      if (hs.bookingSync[k].trim()) bookingSync[k] = hs.bookingSync[k].trim();
+    }
     const hasHubspotConfig =
       hs.enabled ||
       Object.keys(fieldMappings).length > 0 ||
       Object.keys(utmMappings).length > 0 ||
+      Object.keys(valueMaps).length > 0 ||
+      Object.keys(staticProperties).length > 0 ||
+      Object.keys(bookingSync).length > 0 ||
       hs.scoreProperty.trim() ||
-      hs.dateProperty.trim();
+      hs.dateProperty.trim() ||
+      hs.outcomeProperty.trim() ||
+      hs.inferCompanyFromEmail;
     if (hasHubspotConfig) {
+      // Round-trip any stored HubSpot fields this screen does not manage (e.g.
+      // booking-sync settings saved elsewhere) so a save here never clobbers them.
+      const stored = initialDestinations.find((d) => d.type === 'hubspot');
       out.push({
+        ...(stored && stored.type === 'hubspot' ? stored : {}),
         type: 'hubspot',
         enabled: hs.enabled,
         settings: { note: hs.note },
@@ -141,6 +222,13 @@ export function IntegrationsEditor({
         utmMappings,
         scoreProperty: hs.scoreProperty.trim() || null,
         dateProperty: hs.dateProperty.trim() || null,
+        valueMaps,
+        outcomeProperty: hs.outcomeProperty.trim() || null,
+        staticProperties,
+        inferCompanyFromEmail: hs.inferCompanyFromEmail,
+        // All fields blank = booking sync off; undefined overrides the stored
+        // spread above so clearing the fields actually removes the config.
+        bookingSync: Object.keys(bookingSync).length > 0 ? bookingSync : undefined,
       });
     }
     return out;
@@ -409,6 +497,113 @@ function HubspotCard({
         </div>
       </Field>
 
+      {/* Value maps: per-step answer -> CRM picklist value translations */}
+      <Field label={m.valueMaps} help={m.valueMapsHelp}>
+        <div className="flex flex-col gap-3">
+          {state.valueMaps.length === 0 ? (
+            <p className="text-xs text-muted-foreground">{m.emptyValueMaps}</p>
+          ) : (
+            state.valueMaps.map((group, gi) => (
+              <div key={gi} className="flex flex-col gap-2 rounded-md border border-border p-3">
+                <div className="flex items-center gap-2">
+                  <Input
+                    value={group.stepKey}
+                    aria-label={m.stepKey}
+                    placeholder={m.stepKey}
+                    className="flex-1"
+                    onChange={(e) => {
+                      const next = [...state.valueMaps];
+                      next[gi] = { ...group, stepKey: e.target.value };
+                      onChange({ ...state, valueMaps: next });
+                    }}
+                  />
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    aria-label={m.remove}
+                    onClick={() =>
+                      onChange({ ...state, valueMaps: state.valueMaps.filter((_, j) => j !== gi) })
+                    }
+                  >
+                    {m.remove}
+                  </Button>
+                </div>
+                {group.rows.map((row, ri) => (
+                  <div key={ri} className="flex items-center gap-2 pl-4">
+                    <Input
+                      value={row.from}
+                      aria-label={m.valueMapAnswer}
+                      placeholder={m.valueMapAnswer}
+                      className="flex-1"
+                      onChange={(e) => {
+                        const next = [...state.valueMaps];
+                        const rows = [...group.rows];
+                        rows[ri] = { ...row, from: e.target.value };
+                        next[gi] = { ...group, rows };
+                        onChange({ ...state, valueMaps: next });
+                      }}
+                    />
+                    <span aria-hidden className="text-muted-foreground">→</span>
+                    <Input
+                      value={row.to}
+                      aria-label={m.valueMapCrmValue}
+                      placeholder={m.valueMapCrmValue}
+                      className="flex-1"
+                      onChange={(e) => {
+                        const next = [...state.valueMaps];
+                        const rows = [...group.rows];
+                        rows[ri] = { ...row, to: e.target.value };
+                        next[gi] = { ...group, rows };
+                        onChange({ ...state, valueMaps: next });
+                      }}
+                    />
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      aria-label={m.remove}
+                      onClick={() => {
+                        const next = [...state.valueMaps];
+                        next[gi] = { ...group, rows: group.rows.filter((_, j) => j !== ri) };
+                        onChange({ ...state, valueMaps: next });
+                      }}
+                    >
+                      {m.remove}
+                    </Button>
+                  </div>
+                ))}
+                <div className="pl-4">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      const next = [...state.valueMaps];
+                      next[gi] = { ...group, rows: [...group.rows, { from: '', to: '' }] };
+                      onChange({ ...state, valueMaps: next });
+                    }}
+                  >
+                    {m.addValueMapRow}
+                  </Button>
+                </div>
+              </div>
+            ))
+          )}
+          <div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() =>
+                onChange({
+                  ...state,
+                  valueMaps: [...state.valueMaps, { stepKey: '', rows: [{ from: '', to: '' }] }],
+                })
+              }
+            >
+              {m.addValueMap}
+            </Button>
+          </div>
+        </div>
+      </Field>
+
       {/* UTM mappings */}
       <Field label={m.utmMappings} help={m.utmMappingsHelp}>
         <div className="flex flex-col gap-2">
@@ -455,6 +650,154 @@ function HubspotCard({
             onChange={(v) => onChange({ ...state, dateProperty: v })}
           />
         </Field>
+        <Field label={m.outcomeProperty} help={m.outcomePropertyHelp}>
+          <PropertyField
+            value={state.outcomeProperty}
+            ariaLabel={m.outcomeProperty}
+            properties={properties}
+            enabled={pickerEnabled}
+            allowNone
+            m={m}
+            onChange={(v) => onChange({ ...state, outcomeProperty: v })}
+          />
+        </Field>
+      </div>
+
+      {/* Static properties: fixed key -> value stamped on completed submissions */}
+      <Field label={m.staticProperties} help={m.staticPropertiesHelp}>
+        <div className="flex flex-col gap-2">
+          {state.staticProperties.length === 0 ? (
+            <p className="text-xs text-muted-foreground">{m.emptyStaticProperties}</p>
+          ) : (
+            state.staticProperties.map((row, i) => (
+              <div key={i} className="flex items-center gap-2">
+                <div className="flex-1">
+                  <PropertyField
+                    value={row.key}
+                    ariaLabel={m.property}
+                    properties={properties}
+                    enabled={pickerEnabled}
+                    m={m}
+                    onChange={(v) => {
+                      const next = [...state.staticProperties];
+                      next[i] = { ...row, key: v };
+                      onChange({ ...state, staticProperties: next });
+                    }}
+                  />
+                </div>
+                <span aria-hidden className="text-muted-foreground">→</span>
+                <Input
+                  value={row.value}
+                  aria-label={m.staticValue}
+                  placeholder={m.staticValue}
+                  className="flex-1"
+                  onChange={(e) => {
+                    const next = [...state.staticProperties];
+                    next[i] = { ...row, value: e.target.value };
+                    onChange({ ...state, staticProperties: next });
+                  }}
+                />
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  aria-label={m.remove}
+                  onClick={() =>
+                    onChange({
+                      ...state,
+                      staticProperties: state.staticProperties.filter((_, j) => j !== i),
+                    })
+                  }
+                >
+                  {m.remove}
+                </Button>
+              </div>
+            ))
+          )}
+          <div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() =>
+                onChange({
+                  ...state,
+                  staticProperties: [...state.staticProperties, { key: '', value: '' }],
+                })
+              }
+            >
+              {m.addStaticProperty}
+            </Button>
+          </div>
+        </div>
+      </Field>
+
+      {/* Booking sync: contact properties stamped when a meeting is booked */}
+      <Field label={m.bookingSync} help={m.bookingSyncHelp}>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label={m.bookingStageProperty}>
+            <PropertyField
+              value={state.bookingSync.stageProperty}
+              ariaLabel={m.bookingStageProperty}
+              properties={properties}
+              enabled={pickerEnabled}
+              allowNone
+              m={m}
+              onChange={(v) =>
+                onChange({ ...state, bookingSync: { ...state.bookingSync, stageProperty: v } })
+              }
+            />
+          </Field>
+          <Field label={m.bookingStageValue}>
+            <Input
+              value={state.bookingSync.stageValue}
+              aria-label={m.bookingStageValue}
+              placeholder={m.bookingStageValue}
+              onChange={(e) =>
+                onChange({
+                  ...state,
+                  bookingSync: { ...state.bookingSync, stageValue: e.target.value },
+                })
+              }
+            />
+          </Field>
+          <Field label={m.bookingDateProperty}>
+            <PropertyField
+              value={state.bookingSync.dateProperty}
+              ariaLabel={m.bookingDateProperty}
+              properties={properties}
+              enabled={pickerEnabled}
+              allowNone
+              m={m}
+              onChange={(v) =>
+                onChange({ ...state, bookingSync: { ...state.bookingSync, dateProperty: v } })
+              }
+            />
+          </Field>
+          <Field label={m.bookingHoursProperty}>
+            <PropertyField
+              value={state.bookingSync.hoursProperty}
+              ariaLabel={m.bookingHoursProperty}
+              properties={properties}
+              enabled={pickerEnabled}
+              allowNone
+              m={m}
+              onChange={(v) =>
+                onChange({ ...state, bookingSync: { ...state.bookingSync, hoursProperty: v } })
+              }
+            />
+          </Field>
+        </div>
+      </Field>
+
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <label className="text-sm font-medium">{m.inferCompany}</label>
+          <p className="text-xs text-muted-foreground">{m.inferCompanyHelp}</p>
+        </div>
+        <Switch
+          checked={state.inferCompanyFromEmail}
+          onCheckedChange={(inferCompanyFromEmail) => onChange({ ...state, inferCompanyFromEmail })}
+          aria-label={m.inferCompany}
+        />
       </div>
 
       <div className="flex items-center justify-between gap-4">

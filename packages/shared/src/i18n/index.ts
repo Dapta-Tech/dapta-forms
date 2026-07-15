@@ -35,6 +35,14 @@ export interface FormsMessages {
     dropdownEmpty: string;
     trustedBy: string;
     newTab: string;
+    /** Inline scheduling screen shown when an outcome has a booking config. */
+    booking: {
+      title: string;
+      loading: string;
+      loadError: string;
+      fallbackCta: string;
+      iframeTitle: string;
+    };
     errors: {
       required: string;
       email: string;
@@ -277,6 +285,10 @@ export interface FormsMessages {
         valuesHint: string;
         clear: string;
         noPriorFields: string;
+        hint: string;
+        hideNone: string;
+        personalEmailOnly: string;
+        personalEmailHint: string;
       };
       variants: {
         title: string;
@@ -290,6 +302,48 @@ export interface FormsMessages {
         fallback: string;
         remove: string;
         interpolationHint: string;
+        sliderLabel: string;
+      };
+      /** Per-question behavior toggles (terminal / reveal trigger). */
+      behavior: {
+        title: string;
+        terminal: string;
+        terminalHint: string;
+        reveal: string;
+        revealHint: string;
+      };
+      /** The `name` step's two collected fields + placeholders. */
+      nameStep: {
+        title: string;
+        hint: string;
+        first: string;
+        second: string;
+        fieldKey: string;
+        placeholder: string;
+      };
+      /** The reveal/processing interstitial settings (Design tab). */
+      reveal: {
+        title: string;
+        subtitle: string;
+        enabled: string;
+        stepHint: string;
+        headline: string;
+        headlinePlaceholder: string;
+        subtitleLabel: string;
+        subtitlePlaceholder: string;
+        template: string;
+        templateHint: string;
+        duration: string;
+        durationHint: string;
+        prewarm: string;
+        prewarmHint: string;
+      };
+      /** Partial-submission threshold ("save a partial after step N"). */
+      partial: {
+        title: string;
+        hint: string;
+        none: string;
+        afterStep: string; // {n}
       };
       cover: {
         title: string;
@@ -297,6 +351,7 @@ export interface FormsMessages {
         enabled: string;
         bannerText: string;
         eyebrow: string;
+        badge: string;
         headline: string;
         subheadline: string;
         ctaText: string;
@@ -304,6 +359,16 @@ export interface FormsMessages {
         branding: string;
         primaryColor: string;
         primaryColorHint: string;
+        logo: string;
+        logoHint: string;
+        logoInvalid: string;
+        clientLogos: string;
+        clientLogosHint: string;
+        clientLogoName: string;
+        clientLogoSrc: string;
+        addClientLogo: string;
+        removeClientLogo: string;
+        clientLogosEmpty: string;
       };
       outcomes: {
         title: string;
@@ -442,6 +507,38 @@ export interface FormsMessages {
       stepKey: string;
       property: string;
       emptyMappings: string;
+      // HubSpot pilot extras
+      valueMaps: string;
+      valueMapsHelp: string;
+      valueMapAnswer: string;
+      valueMapCrmValue: string;
+      addValueMap: string;
+      addValueMapRow: string;
+      emptyValueMaps: string;
+      outcomeProperty: string;
+      outcomePropertyHelp: string;
+      staticProperties: string;
+      staticPropertiesHelp: string;
+      staticValue: string;
+      addStaticProperty: string;
+      emptyStaticProperties: string;
+      inferCompany: string;
+      inferCompanyHelp: string;
+      bookingSync: string;
+      bookingSyncHelp: string;
+      bookingStageProperty: string;
+      bookingStageValue: string;
+      bookingDateProperty: string;
+      bookingHoursProperty: string;
+    };
+    /** Draft → publish controls in the form editor (publish button + badge). */
+    publish: {
+      publish: string;
+      publishing: string;
+      published: string;
+      publishError: string;
+      unpublishedChanges: string;
+      noChanges: string;
     };
   };
 }
@@ -471,6 +568,13 @@ export const en: FormsMessages = {
     dropdownEmpty: 'No results found',
     trustedBy: 'Trusted by',
     newTab: '(opens in a new tab)',
+    booking: {
+      title: 'Pick a time',
+      loading: 'Loading the calendar…',
+      loadError: 'The calendar could not load.',
+      fallbackCta: 'Open the scheduling page',
+      iframeTitle: 'Schedule a meeting',
+    },
     errors: {
       required: 'This field is required.',
       email: 'Enter a valid email address.',
@@ -707,6 +811,11 @@ export const en: FormsMessages = {
         valuesHint: 'Comma-separated values from that field’s options.',
         clear: 'Clear',
         noPriorFields: 'Add a step before this one to branch on its answer.',
+        hint: 'Show or hide this question based on an earlier answer.',
+        hideNone: 'Never hidden',
+        personalEmailOnly: 'Personal email only',
+        personalEmailHint:
+          'Show this question only when the respondent entered a personal (non-work) email.',
       },
       variants: {
         title: 'Dynamic question',
@@ -720,6 +829,45 @@ export const en: FormsMessages = {
         fallback: 'Fallback (any other answer)',
         remove: 'Remove variant',
         interpolationHint: 'Use [field] to insert an earlier answer into the question.',
+        sliderLabel: 'Slider unit label',
+      },
+      behavior: {
+        title: 'Behavior',
+        terminal: 'Ends the form',
+        terminalHint: 'Completing this question ends the form immediately (disqualification).',
+        reveal: 'Show reveal screen after',
+        revealHint: 'Plays the processing/reveal screen after this question. Set it up in Design.',
+      },
+      nameStep: {
+        title: 'Name fields',
+        hint: 'The two inputs this question collects on one screen.',
+        first: 'First field',
+        second: 'Second field',
+        fieldKey: 'Field key',
+        placeholder: 'Placeholder',
+      },
+      reveal: {
+        title: 'Reveal screen',
+        subtitle: 'A short processing interstitial shown before the result.',
+        enabled: 'Enable the reveal screen',
+        stepHint: 'Pick which question triggers it under Build → Behavior.',
+        headline: 'Headline',
+        headlinePlaceholder: 'Reviewing your answers…',
+        subtitleLabel: 'Subtitle',
+        subtitlePlaceholder: 'One moment while we match you with the best next step.',
+        template: 'Subtitle template',
+        templateHint:
+          'Overrides the subtitle. Use [field] to insert an answer — e.g. “Finding the best advisor for [industry]…”.',
+        duration: 'Duration (ms)',
+        durationHint: 'How long the reveal plays, 500–30000 ms. Default: 2200.',
+        prewarm: 'Pre-load the booking page',
+        prewarmHint: 'Warms the outcome’s booking embed while the reveal screen plays.',
+      },
+      partial: {
+        title: 'Partial submissions',
+        hint: 'Save a partial submission once a question is completed, even if the respondent never finishes.',
+        none: 'Off — only save completed submissions',
+        afterStep: 'After question {n}',
       },
       cover: {
         title: 'Cover screen',
@@ -727,6 +875,7 @@ export const en: FormsMessages = {
         enabled: 'Show a cover screen',
         bannerText: 'Banner text',
         eyebrow: 'Eyebrow',
+        badge: 'Badge',
         headline: 'Headline',
         subheadline: 'Subheadline',
         ctaText: 'Start button text',
@@ -734,6 +883,16 @@ export const en: FormsMessages = {
         branding: 'Branding',
         primaryColor: 'Primary color',
         primaryColorHint: 'Drives the accent on the public form. Auto-adjusted for contrast.',
+        logo: 'Logo URL',
+        logoHint: 'Shown at the top of the form. An https:// image URL.',
+        logoInvalid: 'This URL protocol is not allowed for images.',
+        clientLogos: 'Client logos',
+        clientLogosHint: 'A “trusted by” marquee on the cover. The name shows when no image is set.',
+        clientLogoName: 'Name',
+        clientLogoSrc: 'Image URL',
+        addClientLogo: 'Add logo',
+        removeClientLogo: 'Remove logo',
+        clientLogosEmpty: 'No client logos yet.',
       },
       outcomes: {
         title: 'Outcomes',
@@ -868,6 +1027,41 @@ export const en: FormsMessages = {
       stepKey: 'Form step key',
       property: 'HubSpot property',
       emptyMappings: 'No mappings yet.',
+      valueMaps: 'Value translations',
+      valueMapsHelp:
+        'Translate a form answer into the exact HubSpot picklist value before syncing (e.g. a use-case slug → “AI Calls”). Answers without a translation are sent unchanged.',
+      valueMapAnswer: 'Form answer value',
+      valueMapCrmValue: 'HubSpot value',
+      addValueMap: 'Add value translation',
+      addValueMapRow: 'Add value',
+      emptyValueMaps: 'No value translations yet.',
+      outcomeProperty: 'Outcome property',
+      outcomePropertyHelp:
+        'Contact property that receives the resolved outcome label (e.g. “Qualified”) on completed submissions.',
+      staticProperties: 'Static properties',
+      staticPropertiesHelp:
+        'Fixed values stamped on every completed submission (e.g. an opt-in flag). They never overwrite a mapped answer.',
+      staticValue: 'Value',
+      addStaticProperty: 'Add property',
+      emptyStaticProperties: 'No static properties yet.',
+      inferCompany: 'Infer company from email',
+      inferCompanyHelp:
+        'When the respondent uses a work email, fill the company and website properties from its domain — free-mail domains (gmail, outlook…) are skipped, and mapped values are never overwritten.',
+      bookingSync: 'Booking sync',
+      bookingSyncHelp:
+        'When a respondent books a meeting from an outcome page, stamp these contact properties with the booking facts. Leave a field blank to skip it.',
+      bookingStageProperty: 'Stage property',
+      bookingStageValue: 'Stage value',
+      bookingDateProperty: 'Booking date property',
+      bookingHoursProperty: 'Meeting time property',
+    },
+    publish: {
+      publish: 'Publish',
+      publishing: 'Publishing…',
+      published: 'Changes published — your form is live.',
+      publishError: 'Could not publish — please try again.',
+      unpublishedChanges: 'Unpublished changes',
+      noChanges: 'All changes are published',
     },
   },
 };
@@ -897,6 +1091,13 @@ export const es: FormsMessages = {
     dropdownEmpty: 'No se encontraron resultados',
     trustedBy: 'Confían en nosotros',
     newTab: '(se abre en una pestaña nueva)',
+    booking: {
+      title: 'Elige un horario',
+      loading: 'Cargando el calendario…',
+      loadError: 'No se pudo cargar el calendario.',
+      fallbackCta: 'Abrir la página de agendamiento',
+      iframeTitle: 'Agendar una reunión',
+    },
     errors: {
       required: 'Este campo es obligatorio.',
       email: 'Introduce un correo válido.',
@@ -1133,6 +1334,11 @@ export const es: FormsMessages = {
         valuesHint: 'Valores separados por comas de las opciones de ese campo.',
         clear: 'Limpiar',
         noPriorFields: 'Añade un paso antes de este para ramificar por su respuesta.',
+        hint: 'Muestra u oculta esta pregunta según una respuesta anterior.',
+        hideNone: 'Nunca se oculta',
+        personalEmailOnly: 'Solo correo personal',
+        personalEmailHint:
+          'Muestra esta pregunta solo cuando la persona ingresó un correo personal (no corporativo).',
       },
       variants: {
         title: 'Pregunta dinámica',
@@ -1146,6 +1352,45 @@ export const es: FormsMessages = {
         fallback: 'Alternativa (cualquier otra respuesta)',
         remove: 'Quitar variante',
         interpolationHint: 'Usa [campo] para insertar una respuesta anterior en la pregunta.',
+        sliderLabel: 'Etiqueta de unidad del deslizador',
+      },
+      behavior: {
+        title: 'Comportamiento',
+        terminal: 'Termina el formulario',
+        terminalHint: 'Completar esta pregunta termina el formulario de inmediato (descalificación).',
+        reveal: 'Mostrar pantalla de revelación después',
+        revealHint: 'Reproduce la pantalla de procesamiento/revelación tras esta pregunta. Configúrala en Diseño.',
+      },
+      nameStep: {
+        title: 'Campos del nombre',
+        hint: 'Los dos campos que esta pregunta recoge en una sola pantalla.',
+        first: 'Primer campo',
+        second: 'Segundo campo',
+        fieldKey: 'Clave del campo',
+        placeholder: 'Texto de ejemplo',
+      },
+      reveal: {
+        title: 'Pantalla de revelación',
+        subtitle: 'Un breve intermedio de procesamiento antes del resultado.',
+        enabled: 'Activar la pantalla de revelación',
+        stepHint: 'Elige qué pregunta la activa en Construir → Comportamiento.',
+        headline: 'Titular',
+        headlinePlaceholder: 'Revisando tus respuestas…',
+        subtitleLabel: 'Subtítulo',
+        subtitlePlaceholder: 'Un momento mientras encontramos el mejor siguiente paso para ti.',
+        template: 'Plantilla del subtítulo',
+        templateHint:
+          'Reemplaza el subtítulo. Usa [campo] para insertar una respuesta — p. ej. «Buscando el mejor asesor para [industria]…».',
+        duration: 'Duración (ms)',
+        durationHint: 'Cuánto dura la revelación, 500–30000 ms. Por defecto: 2200.',
+        prewarm: 'Precargar la página de reserva',
+        prewarmHint: 'Precarga el calendario de reserva del resultado mientras se muestra la revelación.',
+      },
+      partial: {
+        title: 'Envíos parciales',
+        hint: 'Guarda un envío parcial al completar una pregunta, aunque la persona no termine.',
+        none: 'Desactivado — solo guardar envíos completos',
+        afterStep: 'Tras la pregunta {n}',
       },
       cover: {
         title: 'Portada',
@@ -1153,6 +1398,7 @@ export const es: FormsMessages = {
         enabled: 'Mostrar una portada',
         bannerText: 'Texto del banner',
         eyebrow: 'Antetítulo',
+        badge: 'Insignia',
         headline: 'Titular',
         subheadline: 'Subtítulo',
         ctaText: 'Texto del botón de inicio',
@@ -1160,6 +1406,16 @@ export const es: FormsMessages = {
         branding: 'Marca',
         primaryColor: 'Color primario',
         primaryColorHint: 'Define el acento del formulario público. Se ajusta para contraste.',
+        logo: 'URL del logo',
+        logoHint: 'Se muestra en la parte superior del formulario. Una URL de imagen https://.',
+        logoInvalid: 'Este protocolo de URL no está permitido para imágenes.',
+        clientLogos: 'Logos de clientes',
+        clientLogosHint: 'Una marquesina de «confían en nosotros» en la portada. El nombre se muestra si no hay imagen.',
+        clientLogoName: 'Nombre',
+        clientLogoSrc: 'URL de la imagen',
+        addClientLogo: 'Añadir logo',
+        removeClientLogo: 'Quitar logo',
+        clientLogosEmpty: 'Aún no hay logos de clientes.',
       },
       outcomes: {
         title: 'Resultados',
@@ -1294,6 +1550,41 @@ export const es: FormsMessages = {
       stepKey: 'Clave del paso',
       property: 'Propiedad de HubSpot',
       emptyMappings: 'Aún no hay mapeos.',
+      valueMaps: 'Traducción de valores',
+      valueMapsHelp:
+        'Traduce una respuesta del formulario al valor exacto de la lista de HubSpot antes de sincronizar (p. ej. un caso de uso → “AI Calls”). Las respuestas sin traducción se envían sin cambios.',
+      valueMapAnswer: 'Valor de la respuesta',
+      valueMapCrmValue: 'Valor en HubSpot',
+      addValueMap: 'Añadir traducción de valores',
+      addValueMapRow: 'Añadir valor',
+      emptyValueMaps: 'Aún no hay traducciones de valores.',
+      outcomeProperty: 'Propiedad de resultado',
+      outcomePropertyHelp:
+        'Propiedad del contacto que recibe la etiqueta del resultado (p. ej. “Calificado”) en las respuestas completadas.',
+      staticProperties: 'Propiedades estáticas',
+      staticPropertiesHelp:
+        'Valores fijos que se estampan en cada respuesta completada (p. ej. una marca de opt-in). Nunca sobrescriben una respuesta mapeada.',
+      staticValue: 'Valor',
+      addStaticProperty: 'Añadir propiedad',
+      emptyStaticProperties: 'Aún no hay propiedades estáticas.',
+      inferCompany: 'Inferir la empresa desde el email',
+      inferCompanyHelp:
+        'Cuando la persona usa un email de trabajo, rellena las propiedades de empresa y sitio web a partir de su dominio — los dominios gratuitos (gmail, outlook…) se omiten y los valores mapeados nunca se sobrescriben.',
+      bookingSync: 'Sincronización de reservas',
+      bookingSyncHelp:
+        'Cuando la persona reserva una reunión desde una página de resultado, estampa estas propiedades del contacto con los datos de la reserva. Deja un campo en blanco para omitirlo.',
+      bookingStageProperty: 'Propiedad de etapa',
+      bookingStageValue: 'Valor de etapa',
+      bookingDateProperty: 'Propiedad de fecha de reserva',
+      bookingHoursProperty: 'Propiedad de hora de la reunión',
+    },
+    publish: {
+      publish: 'Publicar',
+      publishing: 'Publicando…',
+      published: 'Cambios publicados: tu formulario está en línea.',
+      publishError: 'No se pudo publicar. Inténtalo de nuevo.',
+      unpublishedChanges: 'Cambios sin publicar',
+      noChanges: 'Todos los cambios están publicados',
     },
   },
 };

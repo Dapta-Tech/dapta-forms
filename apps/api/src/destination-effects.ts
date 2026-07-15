@@ -168,6 +168,10 @@ export class DestinationEffects {
         scoreProperty: destination.scoreProperty ?? undefined,
         dateProperty: destination.dateProperty ?? undefined,
         note: destination.settings?.note,
+        valueMaps: destination.valueMaps,
+        outcomeProperty: destination.outcomeProperty ?? undefined,
+        staticProperties: destination.staticProperties,
+        inferCompanyFromEmail: destination.inferCompanyFromEmail,
       },
     };
   }
