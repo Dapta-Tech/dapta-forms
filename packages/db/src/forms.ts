@@ -115,6 +115,10 @@ export interface FormRow {
   name: string;
   slug: string;
   config: unknown;
+  /** Unpublished working copy of the config; null when no draft is pending. */
+  draftConfig: unknown | null;
+  /** Epoch-ms of the last publish; null = never published via the draft flow. */
+  publishedAt: number | null;
   createdAt: number;
   updatedAt: number;
 }
@@ -134,6 +138,8 @@ function mapForm(r: Record<string, unknown>): FormRow {
     name: String(r.name),
     slug: String(r.slug),
     config: parseJsonColumn(r.config, { version: 1, steps: [] }),
+    draftConfig: r.draft_config == null ? null : parseJsonColumn(r.draft_config, null),
+    publishedAt: r.published_at == null ? null : Number(r.published_at),
     createdAt: Number(r.created_at),
     updatedAt: Number(r.updated_at),
   };
@@ -285,6 +291,67 @@ export async function updateFormDestinations(
   return { ok: true, value: (await getFormById(db, accountId, id))! };
 }
 
+/**
+ * Store an UNPUBLISHED working copy of a form's config (`draft_config`). The
+ * live `config` — what the public renderer serves — is untouched; `publishForm`
+ * later copies the draft over it. Masked webhook secrets round-tripped by the
+ * admin UI are restored from the stored draft (falling back to the live config),
+ * mirroring `updateForm`.
+ */
+export async function saveDraftConfig(
+  db: Db,
+  accountId: string,
+  id: string,
+  config: unknown,
+): Promise<CrudResult<FormRow>> {
+  const existing = await getFormById(db, accountId, id);
+  if (!existing) return { ok: false, reason: 'NOT_FOUND' };
+
+  let nextConfig = config;
+  if (
+    nextConfig &&
+    typeof nextConfig === 'object' &&
+    Array.isArray((nextConfig as Record<string, unknown>).destinations)
+  ) {
+    const cfg = nextConfig as Record<string, unknown>;
+    const stored = (existing.draftConfig ?? existing.config) as Record<string, unknown> | null;
+    nextConfig = {
+      ...cfg,
+      destinations: mergeWebhookSecrets(cfg.destinations as unknown[], stored?.destinations),
+    };
+  }
+  await db.run(
+    sql`UPDATE form SET draft_config = ${jsonParam(nextConfig)}, updated_at = ${Date.now()}
+        WHERE account_id = ${accountId} AND id = ${id}`,
+  );
+  return { ok: true, value: (await getFormById(db, accountId, id))! };
+}
+
+/**
+ * Publish a form's pending draft: copy `draft_config` into the live `config`,
+ * stamp `published_at`, and clear the draft — one atomic UPDATE guarded by
+ * `draft_config IS NOT NULL`, identical on both dialects. A form with NO
+ * pending draft is a no-op (the current row is returned unchanged) so publish
+ * is idempotent.
+ */
+export async function publishForm(
+  db: Db,
+  accountId: string,
+  id: string,
+): Promise<CrudResult<FormRow>> {
+  const existing = await getFormById(db, accountId, id);
+  if (!existing) return { ok: false, reason: 'NOT_FOUND' };
+  if (existing.draftConfig == null) return { ok: true, value: existing }; // no draft — no-op
+  const now = Date.now();
+  await db.run(
+    sql`UPDATE form
+        SET config = draft_config, draft_config = NULL,
+            published_at = ${now}, updated_at = ${now}
+        WHERE account_id = ${accountId} AND id = ${id} AND draft_config IS NOT NULL`,
+  );
+  return { ok: true, value: (await getFormById(db, accountId, id))! };
+}
+
 export async function duplicateForm(
   db: Db,
   accountId: string,
@@ -300,12 +367,15 @@ export async function duplicateForm(
 }
 
 export async function deleteForm(db: Db, accountId: string, id: string): Promise<void> {
-  // Cascade the form's submissions + events, then the form.
+  // Cascade the form's submissions + events + booking events, then the form.
   await db.run(
     sql`DELETE FROM submission WHERE form_id IN (SELECT id FROM form WHERE account_id = ${accountId} AND id = ${id})`,
   );
   await db.run(
     sql`DELETE FROM form_event WHERE form_id IN (SELECT id FROM form WHERE account_id = ${accountId} AND id = ${id})`,
+  );
+  await db.run(
+    sql`DELETE FROM booking_event WHERE form_id IN (SELECT id FROM form WHERE account_id = ${accountId} AND id = ${id})`,
   );
   await db.run(sql`DELETE FROM form WHERE account_id = ${accountId} AND id = ${id}`);
 }

@@ -13,7 +13,7 @@
  * in parity with the migrations + schema.pg.ts, including UNIQUE constraints —
  * so anything regenerated from them does not silently drop a uniqueness guard.
  */
-import { sqliteTable, text, integer, uniqueIndex } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, integer, index, uniqueIndex } from 'drizzle-orm/sqlite-core';
 
 // --- Platform (identity / delivery) — kept from the shared platform ----------
 
@@ -116,6 +116,10 @@ export const form = sqliteTable(
     slug: text('slug').notNull(),
     /** Versioned form config as TEXT JSON. */
     config: text('config').notNull(),
+    /** Unpublished working copy (TEXT JSON); NULL when no draft is pending. */
+    draftConfig: text('draft_config'),
+    /** Epoch-ms of the last publish; NULL = never published via the draft flow. */
+    publishedAt: integer('published_at'),
     createdAt: integer('created_at').notNull(),
     updatedAt: integer('updated_at').notNull(),
   },
@@ -154,6 +158,26 @@ export const formEvent = sqliteTable('form_event', {
   createdAt: integer('created_at').notNull(),
 });
 
+/** One scheduling callback (HubSpot Meetings / Calendly) per booked meeting. */
+export const bookingEvent = sqliteTable(
+  'booking_event',
+  {
+    id: text('id').primaryKey(),
+    formId: text('form_id').notNull(),
+    sessionId: text('session_id').notNull(),
+    provider: text('provider').notNull(),
+    eventUri: text('event_uri'),
+    inviteeUri: text('invitee_uri'),
+    startTime: integer('start_time'),
+    /** Raw callback payload as TEXT JSON. */
+    payload: text('payload'),
+    createdAt: integer('created_at').notNull(),
+  },
+  (t) => ({
+    bookingEventFormSessionIdx: index('booking_event_form_session_idx').on(t.formId, t.sessionId),
+  }),
+);
+
 export const sqliteSchema = {
   account,
   accountAlias,
@@ -164,4 +188,5 @@ export const sqliteSchema = {
   form,
   submission,
   formEvent,
+  bookingEvent,
 };

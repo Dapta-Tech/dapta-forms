@@ -26,6 +26,7 @@ import {
   inviteMember,
   listForms,
   listMembers,
+  publishForm,
   removeMember,
   setMemberStatus,
   updateForm,
@@ -66,10 +67,16 @@ function unwrapCrud<T>(r: CrudResult<T>): T {
  * Mask webhook signing secrets in a form's config before it leaves the server to
  * the admin client. Every form-returning endpoint runs this so the plaintext
  * secret is never exposed in a READ; the integrations UI round-trips the sentinel
- * and the write layer restores the stored secret (see mergeWebhookSecrets).
+ * and the write layer restores the stored secret (see mergeWebhookSecrets). The
+ * unpublished draft config gets the same treatment — a draft can carry webhook
+ * destinations too.
  */
-function maskForm<T extends { config: unknown }>(form: T): T {
-  return { ...form, config: maskConfigSecrets(form.config) };
+function maskForm<T extends { config: unknown; draftConfig?: unknown }>(form: T): T {
+  return {
+    ...form,
+    config: maskConfigSecrets(form.config),
+    ...(form.draftConfig != null ? { draftConfig: maskConfigSecrets(form.draftConfig) } : {}),
+  };
 }
 
 /** Host-authed CRUD for forms + submissions + members, and identity/vanity. */
@@ -140,6 +147,17 @@ export class AdminCrudController {
   async duplicateForm(@Req() req: ReqLike, @Param('id') id: string) {
     const p = await this.auth.resolveHost(req);
     return maskForm(unwrapCrud(await duplicateForm(this.db, p.accountId, id)));
+  }
+
+  /**
+   * Publish a form's pending draft (draft_config → config, stamp published_at,
+   * clear the draft; a no-op when no draft is pending). Same role gate as
+   * PUT /v1/forms/:id — any resolved host member, scoped to their account.
+   */
+  @Post('forms/:id/publish')
+  async publishForm(@Req() req: ReqLike, @Param('id') id: string) {
+    const p = await this.auth.resolveHost(req);
+    return maskForm(unwrapCrud(await publishForm(this.db, p.accountId, id)));
   }
 
   @Delete('forms/:id')

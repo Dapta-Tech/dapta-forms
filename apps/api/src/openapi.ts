@@ -51,6 +51,12 @@ export const openapiSpec = {
         responses: { '202': { description: 'Accepted' } },
       },
     },
+    '/v1/public/forms/{accountCode}/{slug}/booking': {
+      post: {
+        summary: 'Record a scheduling callback (meeting booked)',
+        responses: { '202': { description: 'Accepted' }, '400': { description: 'Invalid' } },
+      },
+    },
     '/v1/forms': {
       get: { summary: 'List forms (host)', security: [{ hostSession: [] }], responses: { '200': { description: 'Forms' } } },
       post: { summary: 'Create a form (host)', security: [{ hostSession: [] }], responses: { '201': { description: 'Created' } } },
@@ -59,6 +65,13 @@ export const openapiSpec = {
       get: { summary: 'Get a form (host)', security: [{ hostSession: [] }], responses: { '200': { description: 'Form' } } },
       put: { summary: 'Update a form (host)', security: [{ hostSession: [] }], responses: { '200': { description: 'Updated' } } },
       delete: { summary: 'Delete a form (host)', security: [{ hostSession: [] }], responses: { '204': { description: 'Deleted' } } },
+    },
+    '/v1/forms/{id}/publish': {
+      post: {
+        summary: 'Publish a pending draft config (host)',
+        security: [{ hostSession: [] }],
+        responses: { '200': { description: 'Published (no-op without a draft)' } },
+      },
     },
   },
 } as const;

@@ -2,13 +2,19 @@ import { Inject, Injectable, Optional } from '@nestjs/common';
 import type { Db } from '@quill/db';
 import {
   getPublishedForm,
+  insertBookingEvent,
   upsertSubmission,
   recordFormEvent,
   listSubmissions,
   type SubmissionRow,
 } from '@quill/db';
 import { computeScore, resolveOutcome, type FormConfig } from '@quill/engine';
-import { submissionSchema, formEventSchema, type PublicForm } from '@quill/types';
+import {
+  submissionSchema,
+  formEventSchema,
+  bookingCallbackSchema,
+  type PublicForm,
+} from '@quill/types';
 import { EmailEffects } from './email-effects';
 import { DestinationEffects } from './destination-effects';
 import { DB } from './tokens';
@@ -107,6 +113,29 @@ export class SubmissionService {
       sessionId: input.sessionId,
       type: input.type,
       stepIndex: input.stepIndex ?? null,
+    });
+    return { ok: true };
+  }
+
+  /**
+   * Record a scheduling callback (HubSpot Meetings / Calendly) reported by the
+   * public renderer after a meeting is booked, tied to the submission session.
+   * Persist-only for now — delivery to destinations (outbox enqueue) is a later,
+   * separate workstream.
+   */
+  async booking(accountCode: string, slug: string, raw: unknown): Promise<{ ok: true } | ServiceError> {
+    const input = bookingCallbackSchema.parse(raw);
+    const form = await getPublishedForm(this.db, accountCode, slug);
+    if (!form) return { error: 'NOT_FOUND', message: 'Form not found.', status: 404 };
+    await insertBookingEvent(this.db, {
+      formId: form.id,
+      sessionId: input.sessionId,
+      provider: input.provider,
+      eventUri: input.eventUri ?? null,
+      inviteeUri: input.inviteeUri ?? null,
+      startTime: input.startTime ? Date.parse(input.startTime) : null,
+      // The validated callback body — never the raw request (bounded, typed).
+      payload: input,
     });
     return { ok: true };
   }

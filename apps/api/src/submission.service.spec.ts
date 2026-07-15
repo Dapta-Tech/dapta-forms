@@ -79,3 +79,35 @@ describe('events', () => {
     expect(Number(row?.n)).toBe(1);
   });
 });
+
+describe('booking callbacks', () => {
+  it('persists a booking_event tied to the session (no outbox enqueue)', async () => {
+    const out = await svc.booking('acme', 'lead-qualifier', {
+      sessionId: 'sess-4',
+      provider: 'calendly',
+      eventUri: 'https://api.calendly.com/scheduled_events/abc',
+      startTime: '2026-08-01T15:00:00Z',
+    });
+    expect('error' in out).toBe(false);
+
+    const row = await db.get<Record<string, unknown>>(
+      sql`SELECT * FROM booking_event WHERE session_id = 'sess-4' LIMIT 1`,
+    );
+    expect(row).toBeTruthy();
+    expect(row!.provider).toBe('calendly');
+    expect(Number(row!.start_time)).toBe(Date.parse('2026-08-01T15:00:00Z'));
+    // Persist-only in this phase: delivery is a later workstream — nothing enqueued.
+    expect(await listOutbox(db, {})).toHaveLength(0);
+  });
+
+  it('404s an unknown form', async () => {
+    const out = await svc.booking('acme', 'nope', { sessionId: 's', provider: 'calendly' });
+    expect('error' in out && out.error === 'NOT_FOUND').toBe(true);
+  });
+
+  it('rejects an invalid payload (zod)', async () => {
+    await expect(
+      svc.booking('acme', 'lead-qualifier', { sessionId: '', provider: 'zoom' }),
+    ).rejects.toThrow();
+  });
+});

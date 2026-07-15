@@ -138,12 +138,41 @@ export interface FormStep {
   triggersReveal?: boolean;
 }
 
+/**
+ * An answer-forced outcome rule (additive; back-compat). When the answer to
+ * `field` matches, the owning outcome wins REGARDLESS of score — e.g. a slider
+ * answer <= 0 forces the disqualify outcome. All SPECIFIED clauses must hold
+ * (values intersection, numeric bounds); a non-numeric answer fails a numeric
+ * clause. Evaluated by `resolveOutcome` before score bucketing.
+ */
+export interface OutcomeOverrideRule {
+  /** The step key whose answer this rule inspects. */
+  field: string;
+  /** Match when the (string/array) answer intersects these values. */
+  values?: string[];
+  /** Match when the numeric answer is <= this bound. */
+  maxValue?: number;
+  /** Match when the numeric answer is >= this bound. */
+  minValue?: number;
+}
+
+/** Scheduling handoff for an outcome (additive; mirrors the config schema). */
+export interface OutcomeBooking {
+  provider: 'hubspot_meetings' | 'calendly';
+  url: string;
+  prefill?: boolean;
+}
+
 export interface FormOutcome {
   id: string;
   label: string;
   /** Inclusive lower score bound for this bucket (highest matching wins). */
   minScore?: number;
   redirectUrl?: string | null;
+  /** Scheduling handoff (HubSpot Meetings / Calendly) shown for this outcome. */
+  booking?: OutcomeBooking | null;
+  /** Answer-forced rules: any match makes this outcome win over score bucketing. */
+  overrides?: OutcomeOverrideRule[];
 }
 
 /** A client logo chip on the cover marquee (image `src`, or the `name` as text). */
@@ -181,6 +210,12 @@ export interface FormReveal {
   enabled?: boolean;
   headline?: string | null;
   subtitle?: string | null;
+  /** How long the processing interstitial plays before the result (ms). */
+  durationMs?: number;
+  /** Outcome subtitle template; `[key]` tokens interpolate from the answers. */
+  subtitleTemplate?: string | null;
+  /** Pre-warm the booking embed while the interstitial plays. */
+  prewarm?: boolean;
 }
 
 export interface FormConfig {
@@ -431,9 +466,60 @@ export function computeScore(config: FormConfig, answers: Answers): number {
   return score;
 }
 
-/** The outcome bucket for a score: the highest `minScore` the score clears. */
-export function resolveOutcome(config: FormConfig, score: number): FormOutcome | null {
-  const buckets = (config.outcomes ?? [])
+/**
+ * Does one override rule match the answers? The answer for `rule.field` must
+ * EXIST (a missing/empty answer never matches) and every SPECIFIED clause must
+ * hold: `values` intersects the string/array answer; `maxValue`/`minValue`
+ * bound the numeric answer. A non-numeric answer fails a numeric clause; a rule
+ * with no clauses (malformed) never matches.
+ */
+function overrideRuleMatches(rule: OutcomeOverrideRule, answers: Answers): boolean {
+  const value = answers[rule.field];
+  const missing = value == null || value === '' || (Array.isArray(value) && value.length === 0);
+  if (missing) return false;
+
+  let hasClause = false;
+  if (rule.values !== undefined) {
+    hasClause = true;
+    const got = new Set(tokens(value));
+    if (!rule.values.some((v) => got.has(v))) return false;
+  }
+  if (rule.maxValue !== undefined || rule.minValue !== undefined) {
+    hasClause = true;
+    // Only a number or a numeric string is numeric — booleans/arrays/objects
+    // (which Number() would happily coerce) fail the clause.
+    const n =
+      typeof value === 'number'
+        ? value
+        : typeof value === 'string' && value.trim() !== ''
+          ? Number(value)
+          : NaN;
+    if (Number.isNaN(n)) return false;
+    if (rule.maxValue !== undefined && n > rule.maxValue) return false;
+    if (rule.minValue !== undefined && n < rule.minValue) return false;
+  }
+  return hasClause;
+}
+
+/**
+ * The outcome for a score: the highest `minScore` bucket the score clears.
+ * When `answers` are supplied (additive; back-compat), answer-forced `overrides`
+ * are evaluated FIRST — outcomes are scanned in declared order and the first
+ * outcome with any matching override rule wins regardless of score (e.g. a
+ * slider answer <= 0 forces the disqualify outcome over a higher-scoring bucket).
+ */
+export function resolveOutcome(
+  config: FormConfig,
+  score: number,
+  answers?: Answers,
+): FormOutcome | null {
+  const outcomes = config.outcomes ?? [];
+  if (answers) {
+    for (const outcome of outcomes) {
+      if (outcome.overrides?.some((rule) => overrideRuleMatches(rule, answers))) return outcome;
+    }
+  }
+  const buckets = outcomes
     .filter((o) => (o.minScore ?? 0) <= score)
     .sort((a, b) => (b.minScore ?? 0) - (a.minScore ?? 0));
   return buckets[0] ?? null;

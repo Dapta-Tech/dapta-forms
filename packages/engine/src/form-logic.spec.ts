@@ -136,6 +136,108 @@ describe('resolveOutcome', () => {
     expect(resolveOutcome(config, 15)?.id).toBe('high');
     expect(resolveOutcome(config, 3)?.id).toBe('low');
   });
+
+  // Answer-forced overrides (additive `answers` param) --------------------
+
+  // NOTE: the override outcome is declared LAST so plain score bucketing (two
+  // outcomes tied at minScore 0 → first declared wins) never picks it — only a
+  // matching override rule can. Overrides win regardless of declared position.
+  const overrideConfig: FormConfig = {
+    version: 1,
+    steps: [],
+    outcomes: [
+      { id: 'low', label: 'Low', minScore: 0 },
+      { id: 'high', label: 'High', minScore: 10 },
+      {
+        id: 'p0',
+        label: 'Disqualified',
+        minScore: 0,
+        overrides: [{ field: 'budget', maxValue: 0 }],
+      },
+    ],
+  };
+
+  it('an override forces its outcome over a higher-scoring bucket', () => {
+    // Score 15 would bucket to `high`, but budget <= 0 forces `p0`.
+    expect(resolveOutcome(overrideConfig, 15, { budget: 0 })?.id).toBe('p0');
+  });
+
+  it('without answers (back-compat) and without a match, bucketing is unchanged', () => {
+    expect(resolveOutcome(overrideConfig, 15)?.id).toBe('high'); // legacy 2-arg call
+    expect(resolveOutcome(overrideConfig, 15, { budget: 50 })?.id).toBe('high');
+    expect(resolveOutcome(overrideConfig, 3, { budget: 50 })?.id).toBe('low');
+  });
+
+  it('a missing/empty answer never matches an override', () => {
+    expect(resolveOutcome(overrideConfig, 15, {})?.id).toBe('high');
+    expect(resolveOutcome(overrideConfig, 15, { budget: null })?.id).toBe('high');
+    expect(resolveOutcome(overrideConfig, 15, { budget: '' })?.id).toBe('high');
+  });
+
+  it('numeric clauses: maxValue/minValue bound the numeric answer', () => {
+    const cfg: FormConfig = {
+      version: 1,
+      steps: [],
+      outcomes: [
+        { id: 'rest', label: 'Rest', minScore: 0 },
+        { id: 'mid', label: 'Mid', overrides: [{ field: 'n', minValue: 5, maxValue: 10 }] },
+      ],
+    };
+    expect(resolveOutcome(cfg, 0, { n: 5 })?.id).toBe('mid'); // inclusive lower bound
+    expect(resolveOutcome(cfg, 0, { n: '7' })?.id).toBe('mid'); // numeric string works
+    expect(resolveOutcome(cfg, 0, { n: 10 })?.id).toBe('mid'); // inclusive upper bound
+    expect(resolveOutcome(cfg, 0, { n: 11 })?.id).toBe('rest'); // above max
+    expect(resolveOutcome(cfg, 0, { n: 4 })?.id).toBe('rest'); // below min
+  });
+
+  it('a non-numeric answer fails numeric clauses', () => {
+    expect(resolveOutcome(overrideConfig, 15, { budget: 'none' })?.id).toBe('high');
+    expect(resolveOutcome(overrideConfig, 15, { budget: ['a'] })?.id).toBe('high');
+  });
+
+  it('values clause: matches on string/array answer intersection', () => {
+    const cfg: FormConfig = {
+      version: 1,
+      steps: [],
+      outcomes: [
+        { id: 'rest', label: 'Rest', minScore: 0 },
+        { id: 'p0', label: 'DQ', overrides: [{ field: 'role', values: ['student'] }] },
+      ],
+    };
+    expect(resolveOutcome(cfg, 20, { role: 'student' })?.id).toBe('p0');
+    expect(resolveOutcome(cfg, 20, { role: ['founder', 'student'] })?.id).toBe('p0');
+    expect(resolveOutcome(cfg, 20, { role: 'founder' })?.id).toBe('rest');
+  });
+
+  it('ALL specified clauses must hold on one rule', () => {
+    const cfg: FormConfig = {
+      version: 1,
+      steps: [],
+      outcomes: [
+        { id: 'rest', label: 'Rest', minScore: 0 },
+        {
+          id: 'p0',
+          label: 'DQ',
+          overrides: [{ field: 'n', values: ['0'], maxValue: 0 }],
+        },
+      ],
+    };
+    expect(resolveOutcome(cfg, 20, { n: 0 })?.id).toBe('p0'); // '0' intersects AND 0 <= 0
+    expect(resolveOutcome(cfg, 20, { n: '-1' })?.id).toBe('rest'); // numeric ok, values miss
+  });
+
+  it('outcomes are scanned in declared order — the first matching override wins', () => {
+    const cfg: FormConfig = {
+      version: 1,
+      steps: [],
+      outcomes: [
+        { id: 'first', label: 'First', minScore: 0, overrides: [{ field: 'n', maxValue: 0 }] },
+        { id: 'second', label: 'Second', minScore: 0, overrides: [{ field: 'n', maxValue: 5 }] },
+      ],
+    };
+    expect(resolveOutcome(cfg, 99, { n: 0 })?.id).toBe('first'); // both match; first declared wins
+    expect(resolveOutcome(cfg, 99, { n: 3 })?.id).toBe('second'); // only the second matches
+  });
 });
 
 describe('isPersonalEmail', () => {
