@@ -4,6 +4,8 @@ import { getPublicForm } from '@/lib/api';
 import { publicLocale } from '@/lib/locale';
 import { getMessages, t } from '@quill/shared';
 import { MadeWithBadge } from '@/components/made-with-badge';
+import { resolveTracking } from '@/components/tracking/resolve-tracking';
+import { TrackingScripts } from '@/components/tracking/tracking-scripts';
 import { FormRenderer } from './form-renderer';
 
 /**
@@ -46,8 +48,14 @@ export default async function PublicFormPage({
   const form = await getPublicForm(accountCode, slug);
   if (!form) notFound();
 
+  // Third-party tags for the PUBLIC page only (admin renders none): per-form
+  // config.tracking over NEXT_PUBLIC_* env defaults; nothing configured
+  // renders nothing (zero third-party requests).
+  const tracking = resolveTracking(form.config.tracking);
+
   return (
     <>
+      <TrackingScripts tracking={tracking} />
       <FormRenderer
         accountCode={accountCode}
         slug={slug}
