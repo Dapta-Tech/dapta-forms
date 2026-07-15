@@ -4,10 +4,12 @@ import type { FormStep } from '@quill/engine';
 import { defaultFlowGroup } from '@quill/engine';
 import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
-import { Field, NumberField, SelectField, InlineField } from './fields';
+import { Field, NumberField, SelectField, InlineField, TextField } from './fields';
 import { OptionsEditor } from './options-editor';
 import { SliderScoringEditor } from './slider-scoring-editor';
 import { LogicRules } from './logic-rules';
+import { LogicConditions } from './logic-conditions';
+import { QuestionVariants } from './question-variants';
 import { GALLERY, GALLERY_GROUPS, hasOptions, isContactType, type GalleryItem } from './question-types';
 import type { EditorMessages } from './messages';
 import type { BuilderMessages } from './builder-messages';
@@ -160,6 +162,17 @@ export function QuestionSettings({
         </section>
       ) : null}
 
+      {/* Name step: the two collected fields + their placeholders */}
+      {step.type === 'name' ? (
+        <section className="flex flex-col gap-3 border-t border-border pt-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            {em.nameStep.title}
+          </p>
+          <p className="text-xs text-muted-foreground">{em.nameStep.hint}</p>
+          <NameFieldsEditor step={step} onUpdate={onUpdate} m={em.nameStep} />
+        </section>
+      ) : null}
+
       {/* Logic — forward rules (choice/dropdown only) */}
       {hasOptions(step.type) ? (
         <section className="flex flex-col gap-3 border-t border-border pt-4">
@@ -175,6 +188,54 @@ export function QuestionSettings({
           <LogicRules step={step} index={index} steps={steps} onUpdate={onUpdate} m={bm} />
         </section>
       ) : null}
+
+      {/* Visibility — declarative show/hide conditions + personal-email branch */}
+      <section className="flex flex-col gap-3 border-t border-border pt-4">
+        <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          <i aria-hidden className="pi pi-eye text-secondary" style={{ fontSize: 11 }} />
+          {em.logic.title}
+        </p>
+        <LogicConditions step={step} index={index} steps={steps} onUpdate={onUpdate} m={em.logic} />
+        {step.type !== 'email' ? (
+          <InlineField label={em.logic.personalEmailOnly} hint={em.logic.personalEmailHint}>
+            <Switch
+              checked={!!step.showForPersonalEmailOnly}
+              onCheckedChange={(v) => onUpdate({ showForPersonalEmailOnly: v || undefined })}
+              aria-label={em.logic.personalEmailOnly}
+            />
+          </InlineField>
+        ) : null}
+      </section>
+
+      {/* Dynamic question — vary the text by an earlier answer */}
+      <section className="flex flex-col gap-3 border-t border-border pt-4">
+        <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          <i aria-hidden className="pi pi-sync text-secondary" style={{ fontSize: 11 }} />
+          {em.variants.title}
+        </p>
+        <QuestionVariants step={step} index={index} steps={steps} onUpdate={onUpdate} m={em.variants} />
+      </section>
+
+      {/* Behavior — terminal (disqualify) + reveal trigger */}
+      <section className="flex flex-col gap-1 border-t border-border pt-4">
+        <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          {em.behavior.title}
+        </p>
+        <InlineField label={em.behavior.terminal} hint={em.behavior.terminalHint}>
+          <Switch
+            checked={!!step.terminal}
+            onCheckedChange={(v) => onUpdate({ terminal: v || undefined })}
+            aria-label={em.behavior.terminal}
+          />
+        </InlineField>
+        <InlineField label={em.behavior.reveal} hint={em.behavior.revealHint}>
+          <Switch
+            checked={!!step.triggersReveal}
+            onCheckedChange={(v) => onUpdate({ triggersReveal: v || undefined })}
+            aria-label={em.behavior.reveal}
+          />
+        </InlineField>
+      </section>
 
       {/* Scoring / contact hint */}
       <section className="border-t border-border pt-4">
@@ -202,6 +263,78 @@ export function QuestionSettings({
           </>
         )}
       </section>
+    </div>
+  );
+}
+
+/**
+ * The `name` step's two sub-fields: each row edits the answer field key
+ * (sanitized live so a saved key is always schema-valid) and its placeholder.
+ * Placeholders follow a renamed key so no configured copy is orphaned.
+ */
+function NameFieldsEditor({
+  step,
+  onUpdate,
+  m,
+}: {
+  step: FormStep;
+  onUpdate: (patch: Partial<FormStep>) => void;
+  m: EditorMessages['nameStep'];
+}) {
+  const defaults = ['firstname', 'lastname'];
+  const fields = [step.fields?.[0] ?? defaults[0]!, step.fields?.[1] ?? defaults[1]!];
+  const placeholders = step.placeholders ?? {};
+
+  function setFieldKey(i: number, raw: string) {
+    // Lighter than `slugify` (no trailing-underscore trim) so multi-word typing
+    // isn't eaten mid-keystroke; empty falls back to the default key.
+    const key = raw.toLowerCase().replace(/[^a-z0-9_]+/g, '_').slice(0, 64) || defaults[i]!;
+    const old = fields[i]!;
+    const next = [...fields];
+    next[i] = key;
+    const patch: Partial<FormStep> = {
+      fields: next[0] === defaults[0] && next[1] === defaults[1] ? undefined : next,
+    };
+    if (old !== key && placeholders[old] != null) {
+      const moved = { ...placeholders, [key]: placeholders[old]! };
+      delete moved[old];
+      patch.placeholders = Object.keys(moved).length ? moved : undefined;
+    }
+    onUpdate(patch);
+  }
+
+  function setPlaceholder(field: string, text: string) {
+    const next = { ...placeholders };
+    if (text) next[field] = text;
+    else delete next[field];
+    onUpdate({ placeholders: Object.keys(next).length ? next : undefined });
+  }
+
+  return (
+    <div className="flex flex-col gap-2.5">
+      {fields.map((field, i) => (
+        <div key={i} className="flex flex-col gap-2 rounded-lg border border-border bg-background p-2.5">
+          <span className="text-[11px] font-medium text-muted-foreground">
+            {i === 0 ? m.first : m.second}
+          </span>
+          <label className="flex flex-col gap-1">
+            <span className="text-[11px] font-medium text-muted-foreground">{m.fieldKey}</span>
+            <TextField
+              value={field}
+              onChange={(e) => setFieldKey(i, e.target.value)}
+              className="h-8 py-1 font-mono text-xs"
+            />
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-[11px] font-medium text-muted-foreground">{m.placeholder}</span>
+            <TextField
+              value={placeholders[field] ?? ''}
+              onChange={(e) => setPlaceholder(field, e.target.value)}
+              className="h-8 py-1 text-xs"
+            />
+          </label>
+        </div>
+      ))}
     </div>
   );
 }
