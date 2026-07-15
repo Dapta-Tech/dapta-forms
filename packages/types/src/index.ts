@@ -302,6 +302,26 @@ export const hubspotDestinationSchema = z.object({
   staticProperties: z.record(z.string().min(1).max(200), z.string().max(500)).optional(),
   /** Derive the company name from the respondent's email domain. */
   inferCompanyFromEmail: z.boolean().optional(),
+  /**
+   * Booking sync — which contact properties receive the booking facts when a
+   * visitor books a meeting through an outcome's scheduling handoff (the
+   * `booking_sync` outbox flow). All optional; absent = booking sync is a
+   * no-op for this destination.
+   *  - `stageProperty` is set to `stageValue` verbatim (e.g. a sales-stage
+   *    enum internal value) — the "demo booked" stage stamp.
+   *  - `dateProperty` receives the meeting-start CALENDAR DAY as UTC-midnight
+   *    epoch-ms (HubSpot `date`-type properties require midnight UTC).
+   *  - `hoursProperty` receives the exact meeting start as epoch-ms (a
+   *    HubSpot `datetime`-type property).
+   */
+  bookingSync: z
+    .object({
+      stageProperty: z.string().max(200).optional(),
+      stageValue: z.string().max(200).optional(),
+      dateProperty: z.string().max(200).optional(),
+      hoursProperty: z.string().max(200).optional(),
+    })
+    .optional(),
 });
 export type HubspotDestination = z.infer<typeof hubspotDestinationSchema>;
 
