@@ -79,6 +79,13 @@ export const serverEnvSchema = z.object({
   // (a webhook-only fork needs nothing here). Never sent to the browser.
   HUBSPOT_PRIVATE_APP_TOKEN: z.string().optional(),
 
+  // Booking sync (Calendly enrichment). Server-only personal access token the
+  // `booking_sync` outbox handler uses to fetch the scheduled event + invitee
+  // after a visitor books through an outcome's scheduling handoff. Unset =
+  // the handler degrades gracefully (no Calendly enrichment; it logs and works
+  // from whatever the callback carried). Never sent to the browser.
+  CALENDLY_API_TOKEN: z.string().optional(),
+
   // Premium features (vanity slug + future perks). Forms is ALWAYS free —
   // `locked` gates premium on the customer's Dapta AI subscription via the
   // entitlement service below; `open` (default) unlocks everything, so a bare
