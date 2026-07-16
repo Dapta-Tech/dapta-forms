@@ -79,7 +79,7 @@ describe('account_integration repo', () => {
     expect(row!.encryptedToken).not.toContain('fake-testtoken-abc-9999');
     expect(decryptToken(row!.encryptedToken, KEY)).toBe('fake-testtoken-abc-9999');
     // describe never leaks the token
-    expect(JSON.stringify(describeIntegration(row!))).not.toContain('tok-na1');
+    expect(JSON.stringify(describeIntegration(row!))).not.toContain('fake-testtoken');
   });
 
   it('re-connect updates the same (account, provider) row', async () => {
