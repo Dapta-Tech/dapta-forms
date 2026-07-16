@@ -52,14 +52,20 @@ export class EmailEffects {
             ORDER BY created_at ASC LIMIT 1`,
       );
       const to = n.to ?? (owner?.email ? [owner.email] : []);
-      // Snapshot the toggle: absent row = enabled (fork-friendly default).
+      // Snapshot the toggle AND the custom copy: absent row = enabled with the
+      // stock template (fork-friendly default). Snapshotting the subject/body
+      // here means the worker renders the copy the owner had configured at the
+      // moment of the submission, mirroring how the toggle is snapshotted.
       const settings = await getNotificationSettings(this.db, accountId);
-      if (settings.get('submission_received')?.enabled === false) return;
+      const setting = settings.get('submission_received');
+      if (setting?.enabled === false) return;
       const payload: SubmissionNotification = {
         ...n,
         accountId,
         to,
         locale: n.locale ?? owner?.locale ?? null,
+        subjectTemplate: setting?.subject ?? null,
+        bodyTemplate: setting?.body ?? null,
       };
       await enqueueOutbox(this.db, {
         kind: 'email',
@@ -88,14 +94,18 @@ export class EmailEffects {
   ): Promise<void> {
     try {
       if (!n.respondentEmail) return;
-      // Snapshot the toggle: absent row = enabled (fork-friendly default).
+      // Snapshot the toggle AND the custom copy: absent row = enabled with the
+      // stock template (fork-friendly default).
       const settings = await getNotificationSettings(this.db, accountId);
-      if (settings.get('submission_confirmed')?.enabled === false) return;
+      const setting = settings.get('submission_confirmed');
+      if (setting?.enabled === false) return;
       const payload: SubmissionNotification = {
         ...n,
         accountId,
         to: [n.respondentEmail],
         locale: n.locale ?? null,
+        subjectTemplate: setting?.subject ?? null,
+        bodyTemplate: setting?.body ?? null,
       };
       await enqueueOutbox(this.db, {
         kind: 'email',

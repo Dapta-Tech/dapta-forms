@@ -79,6 +79,59 @@ export const openapiSpec = {
         responses: { '200': { description: 'Published (no-op without a draft)' } },
       },
     },
+    '/v1/notifications': {
+      get: {
+        summary: "List the account's submission-email settings (host, admin/owner)",
+        description:
+          'The two submission emails (owner notice + respondent confirmation): each carries its enabled toggle, any custom subject/body override (null = shipped default), the shipped default copy for both locales, and the available {{tokens}}.',
+        security: [{ hostSession: [] }],
+        responses: {
+          '200': { description: '{ settings[] }' },
+          '403': { description: 'Requires an admin or owner' },
+        },
+      },
+    },
+    '/v1/notifications/{emailKey}': {
+      put: {
+        summary: 'Toggle or override one submission email (host, admin/owner)',
+        description:
+          'Body { enabled?, subject?, body? }. subject/body are plain text with {{token}} markers; passing null resets that field to the shipped default. emailKey ∈ (submission_received, submission_confirmed).',
+        parameters: [
+          {
+            name: 'emailKey',
+            in: 'path',
+            required: true,
+            schema: { type: 'string', enum: ['submission_received', 'submission_confirmed'] },
+          },
+        ],
+        security: [{ hostSession: [] }],
+        responses: {
+          '200': { description: 'Updated setting (with defaults + tokens)' },
+          '400': { description: 'Unknown email key or invalid body' },
+          '403': { description: 'Requires an admin or owner' },
+        },
+      },
+    },
+    '/v1/notifications/{emailKey}/reset': {
+      post: {
+        summary: "Reset one submission email's subject+body to default (host, admin/owner)",
+        description: 'Clears the custom subject/body (keeps the enabled toggle unchanged).',
+        parameters: [
+          {
+            name: 'emailKey',
+            in: 'path',
+            required: true,
+            schema: { type: 'string', enum: ['submission_received', 'submission_confirmed'] },
+          },
+        ],
+        security: [{ hostSession: [] }],
+        responses: {
+          '200': { description: 'Reset setting (with defaults + tokens)' },
+          '400': { description: 'Unknown email key' },
+          '403': { description: 'Requires an admin or owner' },
+        },
+      },
+    },
     '/v1/integrations': {
       get: {
         summary: "List this account's integration connections + encryption availability (host)",

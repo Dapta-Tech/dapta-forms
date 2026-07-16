@@ -15,29 +15,41 @@ import {
   Query,
   Req,
 } from '@nestjs/common';
-import type { Db } from '@quill/db';
+import type { Db, NotificationSetting } from '@quill/db';
 import {
   changeMemberRole,
   createForm,
+  defaultNotificationSetting,
   deleteForm,
   duplicateForm,
   getAccountMember,
   getFormById,
+  getNotificationSettings,
   inviteMember,
   listForms,
   listMembers,
   publishForm,
   removeMember,
+  resetNotificationTemplate,
   saveDraftConfig,
   setMemberStatus,
   updateForm,
+  upsertNotificationSetting,
   type CrudResult,
 } from '@quill/db';
+import {
+  defaultSubmissionTemplate,
+  isSubmissionEmailKey,
+  NOTIFICATION_TOKENS,
+  SUBMISSION_EMAIL_KEYS,
+  type SubmissionEmailKey,
+} from '@quill/notifications';
 import {
   formInputSchema,
   maskConfigSecrets,
   memberInviteSchema,
   memberPatchSchema,
+  notificationSettingPatchSchema,
 } from '@quill/types';
 import { ZodError } from 'zod';
 import { AdminService } from './admin.service';
@@ -252,5 +264,77 @@ export class AdminCrudController {
     assertCanManageTarget(p, target);
     unwrapCrud(await removeMember(this.db, p.accountId, id));
     return { ok: true };
+  }
+
+  // --- Notification emails (Settings → Notifications; admin/owner-only) ---
+  //
+  // The two submission emails the platform sends, each with a per-account toggle
+  // plus an optional custom subject/body (plain text with {{token}} markers). A
+  // stored subject/body of null means "shipped default" — the send path falls
+  // back to the code template. Every route resolves the principal and scopes to
+  // its account (never cross-account), and is admin/owner-gated like /v1/members.
+
+  /** The two settings (stored overrides + the shipped default copy the UI shows). */
+  @Get('notifications')
+  async notifications(@Req() req: ReqLike) {
+    const p = await this.auth.resolveHost(req);
+    assertAdmin(p);
+    const stored = await getNotificationSettings(this.db, p.accountId);
+    return {
+      settings: SUBMISSION_EMAIL_KEYS.map((key) =>
+        this.notificationView(key, stored.get(key) ?? defaultNotificationSetting(key)),
+      ),
+    };
+  }
+
+  /** Toggle / override one email's copy. `null` subject|body resets that field. */
+  @Put('notifications/:emailKey')
+  async updateNotification(
+    @Req() req: ReqLike,
+    @Param('emailKey') emailKey: string,
+    @Body() body: unknown,
+  ) {
+    const p = await this.auth.resolveHost(req);
+    assertAdmin(p);
+    const key = this.parseEmailKey(emailKey);
+    const patch = parse(notificationSettingPatchSchema, body);
+    const updated = await upsertNotificationSetting(this.db, p.accountId, key, patch);
+    return this.notificationView(key, updated);
+  }
+
+  /** Reset one email's subject+body to the shipped default (keeps the toggle). */
+  @Post('notifications/:emailKey/reset')
+  async resetNotification(@Req() req: ReqLike, @Param('emailKey') emailKey: string) {
+    const p = await this.auth.resolveHost(req);
+    assertAdmin(p);
+    const key = this.parseEmailKey(emailKey);
+    const updated = await resetNotificationTemplate(this.db, p.accountId, key);
+    return this.notificationView(key, updated);
+  }
+
+  /** 400 unless the path key is one of the two customizable emails. */
+  private parseEmailKey(value: string): SubmissionEmailKey {
+    if (isSubmissionEmailKey(value)) return value;
+    throw new BadRequestException({ error: 'BAD_REQUEST', message: 'Unknown notification email key.' });
+  }
+
+  /**
+   * Merge a stored setting with the shipped defaults + token catalog into the
+   * shape the Settings UI renders. Both EN/ES defaults are returned (the API is
+   * locale-agnostic; the web app picks the one matching its locale).
+   */
+  private notificationView(emailKey: SubmissionEmailKey, s: NotificationSetting) {
+    return {
+      emailKey,
+      enabled: s.enabled,
+      subject: s.subject,
+      body: s.body,
+      updatedAt: s.updatedAt,
+      tokens: [...NOTIFICATION_TOKENS],
+      defaults: {
+        en: defaultSubmissionTemplate(emailKey, 'en'),
+        es: defaultSubmissionTemplate(emailKey, 'es'),
+      },
+    };
   }
 }

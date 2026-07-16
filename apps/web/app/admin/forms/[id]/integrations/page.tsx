@@ -4,7 +4,7 @@ import { adminApi, ApiError, type HubSpotPropertiesResponse } from '@/lib/admin-
 import { getMessages } from '@quill/shared';
 import { getLocale } from '@/lib/locale';
 import type { FormDestination } from '@quill/types';
-import { IntegrationsEditor } from './integrations-editor';
+import { IntegrationsEditor, type QuestionMeta } from './integrations-editor';
 
 export const dynamic = 'force-dynamic';
 
@@ -30,7 +30,25 @@ export default async function IntegrationsPage({ params }: { params: Promise<{ i
     hubspot = { enabled: false, reason: m.loadError };
   }
 
+  // Account-level connection gates the mapping UI (Typeform model). A lookup
+  // failure degrades to "not connected" — the editor still shows the mapping
+  // when the property picker resolved via the server env fallback.
+  let hubspotConnected = false;
+  try {
+    const integrations = await adminApi.listIntegrations();
+    hubspotConnected = integrations.providers.some((p) => p.provider === 'hubspot' && p.connected);
+  } catch {
+    hubspotConnected = false;
+  }
+
   const destinations = (form.config.destinations ?? []) as FormDestination[];
+  // "Map questions" rows come from the latest authored steps (draft preferred so
+  // a builder can pre-map questions before publishing). `message` steps collect
+  // no answer, so they are excluded.
+  const cfg = form.draftConfig ?? form.config;
+  const questions: QuestionMeta[] = (cfg.steps ?? [])
+    .filter((s) => s.type !== 'message')
+    .map((s) => ({ key: s.key, label: s.question?.trim() || s.key, type: s.type }));
 
   return (
     <div className="mx-auto max-w-[900px] px-8 py-10">
@@ -47,6 +65,8 @@ export default async function IntegrationsPage({ params }: { params: Promise<{ i
         id={id}
         initialDestinations={destinations}
         hubspot={hubspot}
+        hubspotConnected={hubspotConnected}
+        questions={questions}
         messages={m}
         locale={locale}
       />

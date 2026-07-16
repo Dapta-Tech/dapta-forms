@@ -688,6 +688,24 @@ export const memberPatchSchema = z
   });
 export type MemberPatch = z.infer<typeof memberPatchSchema>;
 
+// --- Notification settings (Settings → Notifications) ------------------------
+
+/**
+ * The write body for a notification email's per-account settings: toggle it on/
+ * off and/or override the subject/body. `subject`/`body` are PLAIN TEXT with
+ * `{{token}}` markers; passing `null` resets that field to the shipped default,
+ * `undefined` (absent) leaves it untouched. The `emailKey` itself is a path
+ * param the API validates against the notifications catalog (kept out of this
+ * contract so the package boundary stays one-directional). Every field is
+ * optional — an empty patch is a harmless no-op.
+ */
+export const notificationSettingPatchSchema = z.object({
+  enabled: z.boolean().optional(),
+  subject: z.string().max(300).nullable().optional(),
+  body: z.string().max(8000).nullable().optional(),
+});
+export type NotificationSettingPatchInput = z.infer<typeof notificationSettingPatchSchema>;
+
 export const meResponseSchema = z.object({
   accountId: z.string(),
   accountCode: z.string(),

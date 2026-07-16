@@ -147,7 +147,61 @@ export type HubSpotPropertiesResponse =
   | { enabled: false; reason: string }
   | { enabled: true; cached: boolean; properties: HubSpotProperty[] };
 
+/** Account-level integration providers (paste-token connections). */
+export type IntegrationProvider = 'hubspot' | 'calendly';
+
+/**
+ * One account-level connection's token-free status (GET /v1/integrations). The
+ * token is never returned — only a display label and the last 4 chars.
+ */
+export interface IntegrationStatus {
+  provider: IntegrationProvider;
+  connected: boolean;
+  last4: string | null;
+  label: string | null;
+  connectedAt: number;
+}
+
+/** GET /v1/integrations — this account's connections + server encryption availability. */
+export interface IntegrationsResponse {
+  encryptionAvailable: boolean;
+  providers: IntegrationStatus[];
+}
+
 export type { FormDestination };
+
+// --- Notifications (submission emails) ---------------------------------------
+
+export type NotificationEmailKey = 'submission_received' | 'submission_confirmed';
+
+/** The shipped default copy (token-bearing) for one locale. */
+export interface NotificationDefault {
+  subject: string;
+  body: string;
+}
+
+/** One editable submission email: stored override + shipped defaults + token catalog. */
+export interface NotificationSettingView {
+  emailKey: NotificationEmailKey;
+  enabled: boolean;
+  /** Custom override; null = using the shipped default template. */
+  subject: string | null;
+  body: string | null;
+  updatedAt: number | null;
+  tokens: string[];
+  defaults: { en: NotificationDefault; es: NotificationDefault };
+}
+
+export interface NotificationsResponse {
+  settings: NotificationSettingView[];
+}
+
+/** Patch a notification email: null subject/body resets that field to default. */
+export interface NotificationPatch {
+  enabled?: boolean;
+  subject?: string | null;
+  body?: string | null;
+}
 
 export const adminApi = {
   me: () => req<Me>('GET', '/v1/me'),
@@ -179,6 +233,16 @@ export const adminApi = {
   updateFormDestinations: (id: string, destinations: FormDestination[]) =>
     req<FormDetail>('PUT', `/v1/forms/${id}/destinations`, { destinations }),
 
+  // Account-level integration connections (paste-token model; admin/owner writes)
+  /** This account's connections (token-free) + whether server encryption is available. */
+  listIntegrations: () => req<IntegrationsResponse>('GET', '/v1/integrations'),
+  /** Validate + encrypt-store a pasted provider token; returns the token-free status. */
+  connectIntegration: (provider: IntegrationProvider, token: string) =>
+    req<IntegrationStatus>('POST', `/v1/integrations/${provider}/connect`, { token }),
+  /** Disconnect a provider for this account (idempotent → 204). */
+  disconnectIntegration: (provider: IntegrationProvider) =>
+    req<void>('DELETE', `/v1/integrations/${provider}`),
+
   // Members (workspace roster — admin/owner only)
   listMembers: () => req<AccountMember[]>('GET', '/v1/members'),
   inviteMember: (b: { email: string; role?: 'admin' | 'member' }) =>
@@ -186,4 +250,11 @@ export const adminApi = {
   updateMember: (id: string, b: { role?: AccountRole; status?: MemberStatus }) =>
     req<AccountMember>('PATCH', `/v1/members/${id}`, b),
   removeMember: (id: string) => req<{ ok: boolean }>('DELETE', `/v1/members/${id}`),
+
+  // Notifications (submission emails — admin/owner only)
+  getNotifications: () => req<NotificationsResponse>('GET', '/v1/notifications'),
+  updateNotification: (emailKey: NotificationEmailKey, patch: NotificationPatch) =>
+    req<NotificationSettingView>('PUT', `/v1/notifications/${emailKey}`, patch),
+  resetNotification: (emailKey: NotificationEmailKey) =>
+    req<NotificationSettingView>('POST', `/v1/notifications/${emailKey}/reset`),
 };

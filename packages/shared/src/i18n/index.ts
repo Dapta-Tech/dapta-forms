@@ -185,6 +185,38 @@ export interface FormsMessages {
       manageErrorForbidden: string;
       manageErrorFailed: string;
     };
+    /** Settings → Notifications: edit the two submission emails the platform sends. */
+    notifications: {
+      heading: string;
+      subtitle: string;
+      receivedTitle: string;
+      receivedSubtitle: string;
+      confirmedTitle: string;
+      confirmedSubtitle: string;
+      enabledLabel: string;
+      enabledHint: string;
+      subjectLabel: string;
+      bodyLabel: string;
+      tokensLabel: string;
+      tokensHint: string;
+      previewLabel: string;
+      previewSubject: string;
+      usingDefault: string;
+      customized: string;
+      save: string;
+      saving: string;
+      reset: string;
+      resetConfirm: string;
+      saveSuccess: string;
+      saveError: string;
+      resetSuccess: string;
+      /** Human labels for each {{token}}, shown in the variable chips. */
+      tokenFormName: string;
+      tokenRespondentEmail: string;
+      tokenScore: string;
+      tokenOutcomeLabel: string;
+      tokenFormLink: string;
+    };
     login: {
       title: string;
       subtitle: string;
@@ -548,6 +580,59 @@ export interface FormsMessages {
       bookingStageValue: string;
       bookingDateProperty: string;
       bookingHoursProperty: string;
+      // Account-connection gating + Typeform-style mapping (per-form)
+      connectPromptTitle: string;
+      connectPromptBody: string;
+      connectPromptCta: string;
+      connectedBadge: string;
+      propertiesUnavailable: string;
+      mapQuestions: string;
+      mapQuestionsHelp: string;
+      yourQuestion: string;
+      noQuestions: string;
+      autoMap: string;
+      autoMapFilled: string;
+      autoMapNone: string;
+      mapElements: string;
+      mapElementsHelp: string;
+      customMappings: string;
+      customMappingsHelp: string;
+      webhookEvents: string;
+      webhookEventsHelp: string;
+      eventPartial: string;
+      eventComplete: string;
+    };
+    /** Account-level provider connections (paste-token) surfaced on /admin/integrations. */
+    connections: {
+      title: string;
+      subtitle: string;
+      hubspotName: string;
+      hubspotDesc: string;
+      calendlyName: string;
+      calendlyDesc: string;
+      connected: string;
+      notConnected: string;
+      connect: string;
+      connecting: string;
+      disconnect: string;
+      disconnecting: string;
+      cancel: string;
+      tokenLabel: string;
+      tokenPlaceholder: string;
+      tokenHelp: string;
+      connectedAs: string;
+      endingIn: string;
+      connectedOn: string;
+      connectSuccess: string;
+      connectError: string;
+      tokenRequired: string;
+      disconnectSuccess: string;
+      disconnectError: string;
+      disconnectConfirm: string;
+      encryptionOff: string;
+      encryptionOffBody: string;
+      loadError: string;
+      perFormNote: string;
     };
     /** Draft → publish controls in the form editor (publish button + badge). */
     publish: {
@@ -721,6 +806,36 @@ export const en: FormsMessages = {
       manageErrorLastOwner: 'A workspace must keep at least one owner.',
       manageErrorForbidden: 'You do not have permission to do that.',
       manageErrorFailed: 'Something went wrong. Please try again.',
+    },
+    notifications: {
+      heading: 'Notifications',
+      subtitle: 'Edit the emails sent when a form is submitted.',
+      receivedTitle: 'New submission notice',
+      receivedSubtitle: 'Sent to you when someone submits a form.',
+      confirmedTitle: 'Respondent confirmation',
+      confirmedSubtitle: 'Sent to the respondent to confirm you received their answers.',
+      enabledLabel: 'Send this email',
+      enabledHint: 'Turn off to stop sending this email entirely.',
+      subjectLabel: 'Subject',
+      bodyLabel: 'Body',
+      tokensLabel: 'Available variables',
+      tokensHint: 'Click a variable to insert it. Each is replaced with the real value when the email is sent.',
+      previewLabel: 'Preview',
+      previewSubject: 'Subject',
+      usingDefault: 'Using default',
+      customized: 'Customized',
+      save: 'Save changes',
+      saving: 'Saving…',
+      reset: 'Reset to default',
+      resetConfirm: 'Reset this email’s subject and body to the default copy?',
+      saveSuccess: 'Notification email saved.',
+      saveError: 'Could not save. Please try again.',
+      resetSuccess: 'Reset to the default copy.',
+      tokenFormName: 'Form name',
+      tokenRespondentEmail: 'Respondent email',
+      tokenScore: 'Score',
+      tokenOutcomeLabel: 'Outcome',
+      tokenFormLink: 'Form link',
     },
     login: {
       title: 'Sign in',
@@ -1083,6 +1198,63 @@ export const en: FormsMessages = {
       bookingStageValue: 'Stage value',
       bookingDateProperty: 'Booking date property',
       bookingHoursProperty: 'Meeting time property',
+      connectPromptTitle: 'Connect HubSpot to map this form',
+      connectPromptBody:
+        'HubSpot isn’t connected for your account yet. Connect it once, then come back to map each question to a contact property.',
+      connectPromptCta: 'Go to Connections',
+      connectedBadge: 'HubSpot connected',
+      propertiesUnavailable:
+        'HubSpot properties are temporarily unavailable — you can still type a property name.',
+      mapQuestions: 'Map questions',
+      mapQuestionsHelp: 'Send each answer to a HubSpot contact property. One question should map to “email”.',
+      yourQuestion: 'Your question',
+      noQuestions: 'This form has no questions to map yet. Add steps in the editor first.',
+      autoMap: 'Auto-map',
+      autoMapFilled: 'Auto-mapped {n} question(s). Review and save.',
+      autoMapNone: 'No new matches to suggest.',
+      mapElements: 'Map form elements',
+      mapElementsHelp:
+        'Send captured metadata — UTMs, lead score, outcome, and submitted date — to HubSpot properties.',
+      customMappings: 'Custom field mappings',
+      customMappingsHelp:
+        'Advanced: map an answer key that isn’t listed above (e.g. a hidden field) to a property.',
+      webhookEvents: 'Trigger on',
+      webhookEventsHelp: 'Choose which submissions are sent to this webhook. Both are sent by default.',
+      eventPartial: 'Partial submissions',
+      eventComplete: 'Complete submissions',
+    },
+    connections: {
+      title: 'Connections',
+      subtitle:
+        'Connect your account to HubSpot and Calendly once. Then map fields for each form from its integrations tab.',
+      hubspotName: 'HubSpot',
+      hubspotDesc: 'Sync respondents to HubSpot contacts and map questions to contact properties.',
+      calendlyName: 'Calendly',
+      calendlyDesc: 'Let respondents book meetings from your form outcomes.',
+      connected: 'Connected',
+      notConnected: 'Not connected',
+      connect: 'Connect',
+      connecting: 'Connecting…',
+      disconnect: 'Disconnect',
+      disconnecting: 'Disconnecting…',
+      cancel: 'Cancel',
+      tokenLabel: 'Paste your {provider} token',
+      tokenPlaceholder: 'Paste token…',
+      tokenHelp: 'The token is validated, encrypted, and stored server-side. It is never shown again.',
+      connectedAs: 'Connected as {label}',
+      endingIn: 'ending in {last4}',
+      connectedOn: 'Connected {date}',
+      connectSuccess: '{provider} connected.',
+      connectError: 'Could not connect. Check the token and try again.',
+      tokenRequired: 'Paste a token first.',
+      disconnectSuccess: '{provider} disconnected.',
+      disconnectError: 'Could not disconnect. Please try again.',
+      disconnectConfirm: 'Disconnect {provider} for this account?',
+      encryptionOff: 'Connecting is unavailable',
+      encryptionOffBody:
+        'The server needs a FORMS_ENCRYPTION_KEY to store credentials securely. Set it and restart the API to enable connections.',
+      loadError: 'Could not load your connections.',
+      perFormNote: 'Field mapping is configured per form, from each form’s integrations tab.',
     },
     publish: {
       publish: 'Publish',
@@ -1255,6 +1427,36 @@ export const es: FormsMessages = {
       manageErrorLastOwner: 'Un espacio de trabajo debe conservar al menos un propietario.',
       manageErrorForbidden: 'No tienes permiso para hacer eso.',
       manageErrorFailed: 'Algo salió mal. Inténtalo de nuevo.',
+    },
+    notifications: {
+      heading: 'Notificaciones',
+      subtitle: 'Edita los correos que se envían cuando se responde un formulario.',
+      receivedTitle: 'Aviso de nueva respuesta',
+      receivedSubtitle: 'Se te envía cuando alguien responde un formulario.',
+      confirmedTitle: 'Confirmación al encuestado',
+      confirmedSubtitle: 'Se envía al encuestado para confirmar que recibiste sus respuestas.',
+      enabledLabel: 'Enviar este correo',
+      enabledHint: 'Desactívalo para dejar de enviar este correo por completo.',
+      subjectLabel: 'Asunto',
+      bodyLabel: 'Cuerpo',
+      tokensLabel: 'Variables disponibles',
+      tokensHint: 'Haz clic en una variable para insertarla. Cada una se reemplaza por su valor real al enviar el correo.',
+      previewLabel: 'Vista previa',
+      previewSubject: 'Asunto',
+      usingDefault: 'Usando el predeterminado',
+      customized: 'Personalizado',
+      save: 'Guardar cambios',
+      saving: 'Guardando…',
+      reset: 'Restablecer',
+      resetConfirm: '¿Restablecer el asunto y el cuerpo de este correo a la versión predeterminada?',
+      saveSuccess: 'Correo de notificación guardado.',
+      saveError: 'No se pudo guardar. Inténtalo de nuevo.',
+      resetSuccess: 'Se restableció a la versión predeterminada.',
+      tokenFormName: 'Nombre del formulario',
+      tokenRespondentEmail: 'Correo del encuestado',
+      tokenScore: 'Puntuación',
+      tokenOutcomeLabel: 'Resultado',
+      tokenFormLink: 'Enlace del formulario',
     },
     login: {
       title: 'Iniciar sesión',
@@ -1617,6 +1819,63 @@ export const es: FormsMessages = {
       bookingStageValue: 'Valor de etapa',
       bookingDateProperty: 'Propiedad de fecha de reserva',
       bookingHoursProperty: 'Propiedad de hora de la reunión',
+      connectPromptTitle: 'Conecta HubSpot para asignar este formulario',
+      connectPromptBody:
+        'HubSpot aún no está conectado en tu cuenta. Conéctalo una vez y luego vuelve para asignar cada pregunta a una propiedad de contacto.',
+      connectPromptCta: 'Ir a Conexiones',
+      connectedBadge: 'HubSpot conectado',
+      propertiesUnavailable:
+        'Las propiedades de HubSpot no están disponibles temporalmente; aún puedes escribir el nombre de una propiedad.',
+      mapQuestions: 'Asignar preguntas',
+      mapQuestionsHelp: 'Envía cada respuesta a una propiedad de contacto de HubSpot. Una pregunta debería asignarse a “email”.',
+      yourQuestion: 'Tu pregunta',
+      noQuestions: 'Este formulario aún no tiene preguntas para asignar. Añade pasos en el editor primero.',
+      autoMap: 'Auto-asignar',
+      autoMapFilled: 'Se asignaron automáticamente {n} pregunta(s). Revísalas y guarda.',
+      autoMapNone: 'No hay nuevas coincidencias que sugerir.',
+      mapElements: 'Asignar elementos del formulario',
+      mapElementsHelp:
+        'Envía los metadatos capturados —UTMs, puntuación, resultado y fecha de envío— a propiedades de HubSpot.',
+      customMappings: 'Asignaciones personalizadas',
+      customMappingsHelp:
+        'Avanzado: asigna una clave de respuesta que no aparezca arriba (p. ej. un campo oculto) a una propiedad.',
+      webhookEvents: 'Disparar en',
+      webhookEventsHelp: 'Elige qué respuestas se envían a este webhook. Por defecto se envían ambas.',
+      eventPartial: 'Respuestas parciales',
+      eventComplete: 'Respuestas completas',
+    },
+    connections: {
+      title: 'Conexiones',
+      subtitle:
+        'Conecta tu cuenta a HubSpot y Calendly una vez. Luego asigna los campos de cada formulario desde su pestaña de integraciones.',
+      hubspotName: 'HubSpot',
+      hubspotDesc: 'Sincroniza respuestas con contactos de HubSpot y asigna preguntas a propiedades de contacto.',
+      calendlyName: 'Calendly',
+      calendlyDesc: 'Permite reservar reuniones desde los resultados de tu formulario.',
+      connected: 'Conectado',
+      notConnected: 'Sin conectar',
+      connect: 'Conectar',
+      connecting: 'Conectando…',
+      disconnect: 'Desconectar',
+      disconnecting: 'Desconectando…',
+      cancel: 'Cancelar',
+      tokenLabel: 'Pega tu token de {provider}',
+      tokenPlaceholder: 'Pega el token…',
+      tokenHelp: 'El token se valida, se cifra y se guarda en el servidor. No se vuelve a mostrar.',
+      connectedAs: 'Conectado como {label}',
+      endingIn: 'termina en {last4}',
+      connectedOn: 'Conectado el {date}',
+      connectSuccess: '{provider} conectado.',
+      connectError: 'No se pudo conectar. Revisa el token e inténtalo de nuevo.',
+      tokenRequired: 'Pega un token primero.',
+      disconnectSuccess: '{provider} desconectado.',
+      disconnectError: 'No se pudo desconectar. Inténtalo de nuevo.',
+      disconnectConfirm: '¿Desconectar {provider} de esta cuenta?',
+      encryptionOff: 'La conexión no está disponible',
+      encryptionOffBody:
+        'El servidor necesita una FORMS_ENCRYPTION_KEY para guardar credenciales de forma segura. Configúrala y reinicia la API para habilitar las conexiones.',
+      loadError: 'No se pudieron cargar tus conexiones.',
+      perFormNote: 'La asignación de campos se configura por formulario, desde la pestaña de integraciones de cada uno.',
     },
     publish: {
       publish: 'Publicar',
