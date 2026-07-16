@@ -1,14 +1,16 @@
 import { test, expect } from '@playwright/test';
 import { mkdirSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { resolve, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 /**
  * Screenshot capture for the V2 feedback presentation. Not a functional test —
  * it drives each changed surface and saves a PNG to qa/shots/. Run:
- *   npx playwright test -c qa/playwright.config.ts qa/shots.spec.ts --reporter=list
+ *   npx playwright test -c qa/playwright.config.ts qa/e2e/shots.spec.ts --reporter=list
  */
 
-const SHOTS = resolve(__dirname, 'shots');
+const here = dirname(fileURLToPath(import.meta.url));
+const SHOTS = resolve(here, '..', 'shots');
 mkdirSync(SHOTS, { recursive: true });
 const API = 'http://localhost:4400';
 const shot = (name: string) => resolve(SHOTS, `${name}.png`);
@@ -66,7 +68,7 @@ test('N1 · phone country picker', async ({ page, request }) => {
     outcomes: [{ id: 'done', label: 'Thanks', minScore: 0 }],
   });
   await page.goto(`/${accountCode}/me/${slug}`);
-  await expect(page.locator('.pf-phone, .pf__question')).toBeVisible();
+  await expect(page.locator('.pf-phone').first()).toBeVisible();
   // open the country picker
   const trigger = page.locator('.pf-phone__country, [aria-haspopup="listbox"]').first();
   if (await trigger.isVisible().catch(() => false)) {
@@ -109,10 +111,21 @@ test('N3 · per-form HubSpot mapping', async ({ page, request }) => {
       { key: 'phone', type: 'phone', question: 'Phone?' },
     ],
     outcomes: [{ id: 'done', label: 'Done', minScore: 0 }],
+    // Pre-enable HubSpot with a couple of mappings so the Typeform-style
+    // mapping UI renders expanded on load (deterministic, no toggle race).
+    destinations: [
+      {
+        type: 'hubspot',
+        enabled: true,
+        fieldMappings: { email: 'email', firstname: 'firstname' },
+      },
+    ],
   });
   await page.goto(`/admin/forms/${id}/integrations`);
   await page.waitForLoadState('networkidle');
-  await page.waitForTimeout(600);
+  await page.waitForTimeout(800);
+  await page.getByText(/Map questions/i).first().scrollIntoViewIfNeeded().catch(() => {});
+  await page.waitForTimeout(400);
   await page.screenshot({ path: shot('n3-mapping'), fullPage: true });
 });
 

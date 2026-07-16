@@ -59,3 +59,4 @@ AUTH-WEB-CONTRACT.md
 qa/playwright-report/
 qa/test-results/
 test-results/
+qa/shots/
