@@ -1,9 +1,8 @@
 'use client';
 
 import type { FormConfig, FormReveal } from '@quill/engine';
-import { t } from '@quill/shared';
 import { Switch } from '@/components/ui/switch';
-import { Field, TextField, TextArea, NumberField, InlineField, PanelSection, SelectField } from './fields';
+import { Field, TextField, TextArea, NumberField, InlineField, PanelSection } from './fields';
 import type { EditorMessages } from './messages';
 
 const DEFAULT_REVEAL_MS = 2200;
@@ -11,20 +10,23 @@ const MIN_REVEAL_MS = 500;
 const MAX_REVEAL_MS = 30_000;
 
 /**
- * Design-tab panel for the reveal/processing interstitial (`config.reveal`) and
- * the partial-submission threshold (`config.partialSubmitAfterStep`). WHICH
- * question plays the reveal is a per-question Behavior toggle (`triggersReveal`)
- * in the Build tab; this panel owns the shared copy, duration, and prewarm.
+ * Design-tab panel for the reveal/processing interstitial (`config.reveal`).
+ * WHICH question plays the reveal is a per-question Behavior toggle
+ * (`triggersReveal`) in the Build tab; this panel owns the shared copy,
+ * duration, and prewarm. The partial-submission threshold moved to the Build
+ * tab's question spine (the draggable "Partial submit point" marker) — a short
+ * note (`partialNote`) points editors there.
  */
 export function RevealPanel({
   config,
   onRevealChange,
-  onPartialSubmitChange,
+  partialNote,
   m,
 }: {
   config: FormConfig;
   onRevealChange: (patch: Partial<FormReveal>) => void;
-  onPartialSubmitChange: (afterStep: number | undefined) => void;
+  /** One-line pointer to the question-spine marker (builder catalog string). */
+  partialNote: string;
   m: EditorMessages;
 }) {
   const reveal = config.reveal ?? {};
@@ -99,18 +101,11 @@ export function RevealPanel({
       </PanelSection>
 
       <PanelSection title={m.partial.title} subtitle={m.partial.hint}>
-        <SelectField
-          aria-label={m.partial.title}
-          value={config.partialSubmitAfterStep ?? ''}
-          onChange={(e) => onPartialSubmitChange(e.target.value === '' ? undefined : Number(e.target.value))}
-        >
-          <option value="">{m.partial.none}</option>
-          {config.steps.map((s, i) => (
-            <option key={s.key} value={i + 1}>
-              {t(m.partial.afterStep, { n: i + 1 })} · {s.question?.trim() || s.key}
-            </option>
-          ))}
-        </SelectField>
+        {/* The threshold itself is authored in the Build tab's question spine
+            (draggable "Partial submit point" marker); only this pointer stays. */}
+        <p data-testid="partial-point-design-note" className="text-sm text-muted-foreground">
+          {partialNote}
+        </p>
       </PanelSection>
     </div>
   );
