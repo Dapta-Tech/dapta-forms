@@ -99,11 +99,12 @@ import {
     BookingEffects,
     BookingSyncEffects,
     // Server-side HubSpot property lookup for the mapping UI (5-min cache, clear
-    // disabled state without a token). Factory so `fetch` isn't DI-reflected.
+    // disabled state without a token). Resolves the per-account token (else the
+    // env fallback), so it needs the DB. Factory so `fetch` isn't DI-reflected.
     {
       provide: HubspotPropertiesService,
-      useFactory: (env: ServerEnv) => new HubspotPropertiesService(env),
-      inject: [ENV],
+      useFactory: (env: ServerEnv, db: Db) => new HubspotPropertiesService(env, db),
+      inject: [ENV, DB],
     },
     // Drains the durable outbox (submission emails + destinations) with
     // retry+backoff — no silent loss on a provider outage (B1/B7/DM1).

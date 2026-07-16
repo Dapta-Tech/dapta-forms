@@ -1,5 +1,11 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
-import { deletePendingOutbox, enqueueOutbox, type Db, type OutboxKind } from '@quill/db';
+import {
+  deletePendingOutbox,
+  enqueueOutbox,
+  resolveProviderToken,
+  type Db,
+  type OutboxKind,
+} from '@quill/db';
 import {
   createDestination,
   type DestinationContext,
@@ -125,7 +131,9 @@ export class DestinationEffects {
    */
   async deliver(action: string, payloadJson: string): Promise<void> {
     const { destination, ctx } = JSON.parse(payloadJson) as DestinationOutboxPayload;
-    const spec = this.toSpec(destination);
+    // ctx.accountId is the form's account — resolve that account's HubSpot token
+    // (else the env fallback) at delivery time.
+    const spec = await this.toSpec(destination, ctx.accountId);
     const dest = createDestination(spec, this.fetchImpl);
     const result = await dest.deliver(ctx);
     if (!result.delivered) {
@@ -142,7 +150,7 @@ export class DestinationEffects {
   }
 
   /** Resolve a stored destination config into a delivery spec (inject secrets). */
-  private toSpec(destination: FormDestination): DestinationSpec {
+  private async toSpec(destination: FormDestination, accountId: string): Promise<DestinationSpec> {
     if (destination.type === 'webhook') {
       return {
         type: 'webhook',
@@ -158,11 +166,20 @@ export class DestinationEffects {
         },
       };
     }
+    // Per-account HubSpot token (connected → decrypted), else the env fallback.
+    // Null resolves to '' so the factory degrades to a harmless log-only no-op.
+    const token = await resolveProviderToken(
+      this.db,
+      accountId,
+      'hubspot',
+      this.env?.FORMS_ENCRYPTION_KEY,
+      this.env?.HUBSPOT_PRIVATE_APP_TOKEN,
+    );
     return {
       type: 'hubspot',
       hubspot: {
         // Server-side secret, injected at delivery time — never persisted.
-        token: this.env?.HUBSPOT_PRIVATE_APP_TOKEN ?? '',
+        token: token ?? '',
         fieldMappings: destination.fieldMappings ?? {},
         utmMappings: destination.utmMappings ?? {},
         scoreProperty: destination.scoreProperty ?? undefined,

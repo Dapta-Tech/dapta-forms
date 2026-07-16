@@ -79,5 +79,56 @@ export const openapiSpec = {
         responses: { '200': { description: 'Published (no-op without a draft)' } },
       },
     },
+    '/v1/integrations': {
+      get: {
+        summary: "List this account's integration connections + encryption availability (host)",
+        description:
+          'Token-free: each connection reports provider, last4, and a display label only. `encryptionAvailable` reflects whether the server encryption key is configured (connect requires it).',
+        security: [{ hostSession: [] }],
+        responses: { '200': { description: '{ encryptionAvailable, providers[] }' } },
+      },
+    },
+    '/v1/integrations/{provider}/connect': {
+      post: {
+        summary: 'Connect a provider by pasted token (host, admin/owner)',
+        description:
+          'The token is validated against the provider (HubSpot / Calendly) before being stored encrypted at rest, then a display label is derived from the response. Returns the token-free status. The token is never echoed back.',
+        parameters: [
+          {
+            name: 'provider',
+            in: 'path',
+            required: true,
+            schema: { type: 'string', enum: ['hubspot', 'calendly'] },
+          },
+        ],
+        security: [{ hostSession: [] }],
+        responses: {
+          '200': { description: 'Connected (token-free status)' },
+          '400': {
+            description:
+              'Unknown provider, missing token, server encryption key not configured, or the token was rejected by the provider',
+          },
+          '403': { description: 'Requires an admin or owner' },
+        },
+      },
+    },
+    '/v1/integrations/{provider}': {
+      delete: {
+        summary: 'Disconnect a provider for this account (host, admin/owner)',
+        parameters: [
+          {
+            name: 'provider',
+            in: 'path',
+            required: true,
+            schema: { type: 'string', enum: ['hubspot', 'calendly'] },
+          },
+        ],
+        security: [{ hostSession: [] }],
+        responses: {
+          '204': { description: 'Disconnected (idempotent)' },
+          '403': { description: 'Requires an admin or owner' },
+        },
+      },
+    },
   },
 } as const;

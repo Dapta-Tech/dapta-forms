@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
-import { getFormById, parseJsonColumn, sql, type Db } from '@quill/db';
+import { getFormById, parseJsonColumn, resolveProviderToken, sql, type Db } from '@quill/db';
 import {
   formConfigSchema,
   formDestinationSchema,
@@ -78,7 +78,14 @@ export class BookingSyncEffects {
     let startMs = payload.startTime;
     let inviteeEmail: string | null = null;
     if (payload.provider === 'calendly' && (payload.eventUri || payload.inviteeUri)) {
-      const token = this.env?.CALENDLY_API_TOKEN?.trim();
+      // Per-account Calendly token (connected → decrypted), else the env fallback.
+      const token = await resolveProviderToken(
+        this.db,
+        payload.accountId,
+        'calendly',
+        this.env?.FORMS_ENCRYPTION_KEY,
+        this.env?.CALENDLY_API_TOKEN,
+      );
       if (!token) {
         // Graceful degradation: no token = no enrichment, never a hard failure.
         this.log.warn(
@@ -123,7 +130,14 @@ export class BookingSyncEffects {
     }
 
     // --- Upsert the contact ----------------------------------------------------
-    const hubspotToken = this.env?.HUBSPOT_PRIVATE_APP_TOKEN?.trim();
+    // Per-account HubSpot token (connected → decrypted), else the env fallback.
+    const hubspotToken = await resolveProviderToken(
+      this.db,
+      payload.accountId,
+      'hubspot',
+      this.env?.FORMS_ENCRYPTION_KEY,
+      this.env?.HUBSPOT_PRIVATE_APP_TOKEN,
+    );
     if (!hubspotToken) {
       // Log-only degradation: property KEYS only — never values (no PII).
       this.log.log(
