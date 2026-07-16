@@ -290,8 +290,11 @@ test('editing the owner subject previews live, persists across reload, and reset
   await expect(reloaded.getByText(CUSTOMIZED)).toBeVisible();
 
   // (5) Reset — subject returns to the shipped default (API shows subject null).
-  page.once('dialog', (d) => void d.accept()); // confirm() guard on Reset
+  // The guard is the branded confirm dialog now (no native confirm()).
   await reloaded.getByRole('button', { name: RESET }).click();
+  await expect(page.getByTestId('confirm-dialog')).toBeVisible();
+  await page.getByTestId('confirm-dialog-confirm').click();
+  await expect(page.getByTestId('confirm-dialog')).toBeHidden();
   await expect(reloaded.locator('input')).toHaveValue(defaultSubject, { timeout: 10_000 });
   await expect(reloaded.getByText(USING_DEFAULT)).toBeVisible();
 

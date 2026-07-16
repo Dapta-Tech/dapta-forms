@@ -1,10 +1,11 @@
 'use client';
 
 import { useMemo, useRef, useState, useTransition } from 'react';
-import type { Locale } from '@quill/shared';
+import { getMessages, type Locale } from '@quill/shared';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
+import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useToast } from '@/components/toast';
 import type { NotificationSettingView } from '@/lib/admin-api';
 import { interpolate, NOTIFICATION_SAMPLE as SAMPLE } from '@/lib/notification-preview';
@@ -90,6 +91,7 @@ function NotificationEmailCard({
 }) {
   const toast = useToast();
   const [pending, startTransition] = useTransition();
+  const { confirm: confirmDialog, dialog } = useConfirmDialog();
   const subjectRef = useRef<HTMLInputElement>(null);
   const bodyRef = useRef<HTMLTextAreaElement>(null);
   const activeField = useRef<'subject' | 'body'>('body');
@@ -166,8 +168,14 @@ function NotificationEmailCard({
     });
   }
 
-  function onReset() {
-    if (!window.confirm(labels.resetConfirm)) return;
+  async function onReset() {
+    const ok = await confirmDialog({
+      title: getMessages(locale).dialog.resetEmailTitle,
+      message: labels.resetConfirm,
+      confirmLabel: labels.reset,
+      destructive: true,
+    });
+    if (!ok) return;
     startTransition(async () => {
       const res = await resetNotificationAction(setting.emailKey);
       if (res.ok) {
@@ -279,6 +287,7 @@ function NotificationEmailCard({
           {pending ? labels.saving : labels.save}
         </Button>
       </div>
+      {dialog}
     </div>
   );
 }

@@ -1,10 +1,11 @@
 'use client';
 
 import { useState, useTransition } from 'react';
-import type { FormsMessages, Locale } from '@quill/shared';
+import { getMessages, type FormsMessages, type Locale } from '@quill/shared';
 import type { IntegrationProvider, IntegrationStatus } from '@/lib/admin-api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useToast } from '@/components/toast';
 import { connectIntegrationAction, disconnectIntegrationAction } from './actions';
 
@@ -96,6 +97,7 @@ function ProviderCard({
 }) {
   const { success, error } = useToast();
   const [pending, start] = useTransition();
+  const { confirm: confirmDialog, dialog } = useConfirmDialog();
   const [showConnect, setShowConnect] = useState(false);
   const [token, setToken] = useState('');
   const connected = !!status;
@@ -119,8 +121,15 @@ function ProviderCard({
     });
   }
 
-  function disconnect() {
-    if (!window.confirm(fill(m.disconnectConfirm, { provider: meta.name }))) return;
+  async function disconnect() {
+    const ok = await confirmDialog({
+      title: fill(getMessages(locale).dialog.disconnectIntegrationTitle, { provider: meta.name }),
+      message: fill(m.disconnectConfirm, { provider: meta.name }),
+      confirmLabel: m.disconnect,
+      cancelLabel: m.cancel,
+      destructive: true,
+    });
+    if (!ok) return;
     start(async () => {
       const res = await disconnectIntegrationAction(meta.id);
       if (res.ok) {
@@ -178,6 +187,7 @@ function ProviderCard({
           </Button>
         )}
       </div>
+      {dialog}
     </section>
   );
 }

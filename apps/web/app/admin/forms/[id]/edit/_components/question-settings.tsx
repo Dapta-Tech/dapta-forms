@@ -2,8 +2,11 @@
 
 import type { FormStep } from '@quill/engine';
 import { defaultFlowGroup } from '@quill/engine';
+import { getMessages } from '@quill/shared';
+import { clientLocale } from '@/lib/client-locale';
 import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
+import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Field, NumberField, SelectField, InlineField, TextField } from './fields';
 import { OptionsEditor } from './options-editor';
 import { SliderScoringEditor } from './slider-scoring-editor';
@@ -50,6 +53,7 @@ export function QuestionSettings({
   em: EditorMessages;
 }) {
   const contact = isContactType(step.type);
+  const { confirm: confirmDialog, dialog } = useConfirmDialog();
 
   function changeType(itemId: string) {
     const item = ALL_ITEMS.find((it) => it.id === itemId);
@@ -80,7 +84,14 @@ export function QuestionSettings({
           size="icon"
           aria-label={bm.settings.delete}
           onClick={() => {
-            if (confirm(bm.settings.deleteConfirm)) onDelete();
+            void confirmDialog({
+              title: getMessages(clientLocale()).dialog.deleteQuestionTitle,
+              message: bm.settings.deleteConfirm,
+              confirmLabel: bm.settings.delete,
+              destructive: true,
+            }).then((ok) => {
+              if (ok) onDelete();
+            });
           }}
           className="text-muted-foreground hover:text-destructive"
         >
@@ -169,7 +180,12 @@ export function QuestionSettings({
             {em.nameStep.title}
           </p>
           <p className="text-xs text-muted-foreground">{em.nameStep.hint}</p>
-          <NameFieldsEditor step={step} onUpdate={onUpdate} m={em.nameStep} />
+          <NameFieldsEditor
+            step={step}
+            onUpdate={onUpdate}
+            m={em.nameStep}
+            placeholderDefaults={[bm.canvas.nameFirstPlaceholder, bm.canvas.nameLastPlaceholder]}
+          />
         </section>
       ) : null}
 
@@ -263,6 +279,7 @@ export function QuestionSettings({
           </>
         )}
       </section>
+      {dialog}
     </div>
   );
 }
@@ -276,10 +293,14 @@ function NameFieldsEditor({
   step,
   onUpdate,
   m,
+  placeholderDefaults,
 }: {
   step: FormStep;
   onUpdate: (patch: Partial<FormStep>) => void;
   m: EditorMessages['nameStep'];
+  /** Localized defaults ("First name"/"Last name") shown as the input
+   *  placeholders — what ships when the builder leaves the field empty. */
+  placeholderDefaults: [string, string];
 }) {
   const defaults = ['firstname', 'lastname'];
   const fields = [step.fields?.[0] ?? defaults[0]!, step.fields?.[1] ?? defaults[1]!];
@@ -330,6 +351,8 @@ function NameFieldsEditor({
             <TextField
               value={placeholders[field] ?? ''}
               onChange={(e) => setPlaceholder(field, e.target.value)}
+              placeholder={placeholderDefaults[i]}
+              data-testid={`name-placeholder-${i}`}
               className="h-8 py-1 text-xs"
             />
           </label>
