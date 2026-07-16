@@ -135,9 +135,14 @@ test.describe('builder gaps: newly-exposed engine features via the builder UI', 
     await openEditor(page, form.id);
     // Select the "details" step in the left spine.
     await page.getByRole('button', { name: /A few details/ }).click();
-    // Visibility section → "Show when" source field = pick. Picking a choice
-    // field seeds the condition with its FIRST option value ("a").
-    await page.getByLabel(/^Show when/).selectOption('pick');
+    // Visibility section → "Show when" source field = pick. The field picker is
+    // the branded combobox (components/ui/select.tsx): a trigger button opening
+    // a listbox of the prior questions. Picking a choice field seeds the
+    // condition with its FIRST option value ("a").
+    const showWhenField = page.getByRole('button', { name: 'Show when — Field', exact: true });
+    await showWhenField.click();
+    await page.getByRole('option', { name: 'Pick one', exact: true }).click();
+    await expect(showWhenField).toContainText('Pick one');
     const chip = page
       .getByRole('group', { name: 'Matches any of' })
       .getByRole('button', { name: 'Alpha', exact: true });

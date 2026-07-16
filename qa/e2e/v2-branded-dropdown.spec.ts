@@ -14,8 +14,10 @@ import { test, expect, type Page, type Locator, type APIRequestContext } from '@
  * live builder:
  *   1. Build tab → the "Question type" control (SelectField with no aria-label,
  *      targeted by its Field label) — open, list options, pick a different type.
- *   2. Design tab → "Partial submissions" (SelectField with an aria-label, so a
- *      clean role/name selector) — open, options list the runtime steps.
+ *   2. Design tab → the "Partial submissions" section: since V3 (W6) the
+ *      threshold is authored via the spine's draggable partial-point marker
+ *      (v3-partial-point.spec.ts covers it); the Design tab keeps a pointer
+ *      note — and still renders no native <select>.
  *   3. Accessibility — the trigger is keyboard-openable (Enter) and
  *      keyboard-selectable (ArrowDown + Enter), and Escape restores focus.
  *
@@ -165,35 +167,29 @@ test.describe('N2 — branded admin dropdowns (custom combobox, not native <sele
     );
   });
 
-  test('Design tab: "Partial submissions" is the branded Select and its options list the steps', async ({
+  test('Design tab: the partial threshold moved to the spine — pointer note, still no native <select>', async ({
     page,
     request,
   }, testInfo) => {
+    // V3 (W6) replaced the Design tab's "Partial submissions" SelectField with
+    // the draggable partial-point MARKER in the Build tab's question spine
+    // (covered by v3-partial-point.spec.ts). The Design tab keeps the section
+    // as a pointer: a note telling the author where the control now lives.
     const form = await createForm(request, uniqueName('partial', testInfo.workerIndex));
     await openEditor(page, form.id);
     await page.getByRole('button', { name: 'Design', exact: true }).click();
 
-    // This SelectField passes an aria-label, so both trigger and listbox carry
-    // the accessible name "Partial submissions".
-    const partialTrigger = page.getByRole('button', { name: 'Partial submissions' });
-    await expect(partialTrigger).toBeVisible();
-    await expect(partialTrigger).toHaveAttribute('aria-haspopup', 'listbox');
-    // Still branded here too — no native <select> on the Design surface.
+    // The section survives with its pointer note…
+    await expect(page.getByText('Partial submissions', { exact: true })).toBeVisible();
+    await expect(page.getByTestId('partial-point-design-note')).toBeVisible();
+    await expect(page.getByTestId('partial-point-design-note')).not.toBeEmpty();
+
+    // …the old dropdown is gone (no trigger, no listbox with that name)…
+    await expect(page.getByRole('button', { name: 'Partial submissions' })).toHaveCount(0);
+
+    // …and the Design surface still renders zero OS-native <select>s (the N2
+    // theme this spec exists for).
     await expect(page.locator('select')).toHaveCount(0);
-
-    const partialListbox = page.getByRole('listbox', { name: 'Partial submissions' });
-    await openByClick(partialTrigger, partialListbox);
-
-    // The list is the "off" sentinel plus one entry per runtime step (3 steps).
-    await expect(partialListbox.getByRole('option', { name: /^Off/ })).toBeVisible();
-    await expect(partialListbox.getByRole('option', { name: /After question 1/ })).toBeVisible();
-    await expect(partialListbox.getByRole('option', { name: /After question 2/ })).toBeVisible();
-    await expect(partialListbox.getByRole('option', { name: /After question 3/ })).toBeVisible();
-
-    // Picking a step updates the trigger (onChange wired through the branded Select).
-    await partialListbox.getByRole('option', { name: /After question 2/ }).click();
-    await expect(partialListbox).toHaveCount(0);
-    await expect(partialTrigger).toContainText('After question 2');
   });
 
   test('Accessibility: the Question-type trigger is keyboard-openable and keyboard-selectable', async ({

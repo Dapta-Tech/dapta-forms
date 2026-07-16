@@ -61,9 +61,13 @@ async function getForm(request: APIRequestContext, id: string) {
   };
 }
 
-/** The WYSIWYG canvas title textarea for the currently selected question. */
+/** The WYSIWYG canvas title textarea for the currently selected question.
+ *  Since the @ token picker landed it carries role="combobox" (TokenTextarea),
+ *  so it is NOT a role=textbox anymore — target the stable testid (same as
+ *  v3-at-picker.spec.ts). fill()/toHaveValue() still work: it stays a real
+ *  <textarea>. */
 function canvasTitle(page: Page) {
-  return page.getByRole('textbox', { name: /type your question/i });
+  return page.getByTestId('canvas-title-input');
 }
 
 /** Edit the first question's text in the builder and wait for the autosave
