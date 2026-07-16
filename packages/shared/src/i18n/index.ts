@@ -67,6 +67,12 @@ export interface FormsMessages {
       /** Inline hint when the typed number is shorter than the country issues. */
       invalid: string;
     };
+    /** The `name` step's two inputs — localized defaults rendered when the
+     *  builder leaves a placeholder empty (also the editor preview fallback). */
+    name: {
+      firstPlaceholder: string;
+      lastPlaceholder: string;
+    };
   };
   admin: {
     /** Branded combobox (`components/ui/select`) that replaces native selects. */
@@ -250,6 +256,8 @@ export interface FormsMessages {
       copy: string;
       copied: string;
       open: string;
+      connect: string;
+      openForm: string;
     };
     /** The form editor (builder). */
     editor: {
@@ -453,6 +461,30 @@ export interface FormsMessages {
         desktop: string;
         close: string;
       };
+      /** The editor's Connect tab (per-form integrations, tracking, emails). */
+      connect: {
+        tab: string;
+        integrationsTitle: string;
+        integrationsSubtitle: string;
+        integrationsLoadError: string;
+        retry: string;
+        trackingTitle: string;
+        trackingSubtitle: string;
+        gtmLabel: string;
+        gtmHelp: string;
+        metaLabel: string;
+        metaHelp: string;
+        posthogKeyLabel: string;
+        posthogKeyHelp: string;
+        posthogHostLabel: string;
+        posthogHostHelp: string;
+        posthogHostInvalid: string;
+        hubspotLabel: string;
+        hubspotHelp: string;
+        utmNote: string;
+        emailsTitle: string;
+        emailsComingSoon: string;
+      };
     };
     /** Cross-page tabs shown on a form's analytics/submissions surfaces. */
     nav: {
@@ -644,6 +676,19 @@ export interface FormsMessages {
       noChanges: string;
     };
   };
+  /** Branded confirm dialog that replaces native browser confirm() prompts. */
+  dialog: {
+    /** Generic action labels (component defaults for every confirm dialog). */
+    confirm: string;
+    cancel: string;
+    /** Per-surface dialog titles (the body reuses each surface's *Confirm copy). */
+    deleteFormTitle: string;
+    deleteQuestionTitle: string;
+    deleteSubmissionTitle: string;
+    removeMemberTitle: string;
+    resetEmailTitle: string;
+    disconnectIntegrationTitle: string; // {provider}
+  };
 }
 
 export const en: FormsMessages = {
@@ -695,6 +740,10 @@ export const en: FormsMessages = {
       search: 'Search country or code',
       noResults: 'No countries found',
       invalid: 'Enter a valid phone number.',
+    },
+    name: {
+      firstPlaceholder: 'First name',
+      lastPlaceholder: 'Last name',
     },
   },
   admin: {
@@ -871,6 +920,8 @@ export const en: FormsMessages = {
       copy: 'Copy link',
       copied: 'Copied',
       open: 'Open',
+      connect: 'Connect',
+      openForm: 'Open form',
     },
     editor: {
       back: 'Back to forms',
@@ -1071,6 +1122,32 @@ export const en: FormsMessages = {
         desktop: 'Desktop',
         close: 'Close',
       },
+      connect: {
+        tab: 'Connect',
+        integrationsTitle: 'Integrations',
+        integrationsSubtitle:
+          'Send each submission to your CRM or a webhook. Delivery is durable and retried.',
+        integrationsLoadError: 'Could not load integrations.',
+        retry: 'Retry',
+        trackingTitle: 'Tracking & pixels',
+        trackingSubtitle:
+          'Measure visits and conversions on this form’s public page. Each tag loads only when its ID is set.',
+        gtmLabel: 'Google Tag Manager ID',
+        gtmHelp: 'Loads your GTM container on the form page so your tags fire.',
+        metaLabel: 'Meta Pixel ID',
+        metaHelp: 'Fires a PageView on your Meta pixel to measure campaigns.',
+        posthogKeyLabel: 'PostHog project key',
+        posthogKeyHelp: 'Captures a pageview in PostHog for product analytics.',
+        posthogHostLabel: 'PostHog host (optional)',
+        posthogHostHelp: 'Defaults to PostHog US cloud; set your EU or self-hosted ingestion URL.',
+        posthogHostInvalid: 'Enter a full http(s) URL, e.g. https://eu.i.posthog.com.',
+        hubspotLabel: 'HubSpot tracking ID',
+        hubspotHelp: 'Loads the HubSpot tracking code for your portal on the form page.',
+        utmNote:
+          'UTM parameters are captured automatically and can be mapped to HubSpot properties in Integrations.',
+        emailsTitle: 'Emails',
+        emailsComingSoon: 'Email templates for this form — coming in this update.',
+      },
     },
     nav: {
       edit: 'Edit',
@@ -1265,6 +1342,16 @@ export const en: FormsMessages = {
       noChanges: 'All changes are published',
     },
   },
+  dialog: {
+    confirm: 'Confirm',
+    cancel: 'Cancel',
+    deleteFormTitle: 'Delete form',
+    deleteQuestionTitle: 'Delete question',
+    deleteSubmissionTitle: 'Delete submission',
+    removeMemberTitle: 'Remove member',
+    resetEmailTitle: 'Reset email template',
+    disconnectIntegrationTitle: 'Disconnect {provider}',
+  },
 };
 
 export const es: FormsMessages = {
@@ -1316,6 +1403,10 @@ export const es: FormsMessages = {
       search: 'Busca país o código',
       noResults: 'No se encontraron países',
       invalid: 'Introduce un número de teléfono válido.',
+    },
+    name: {
+      firstPlaceholder: 'Nombre',
+      lastPlaceholder: 'Apellidos',
     },
   },
   admin: {
@@ -1492,6 +1583,8 @@ export const es: FormsMessages = {
       copy: 'Copiar enlace',
       copied: 'Copiado',
       open: 'Abrir',
+      connect: 'Conectar',
+      openForm: 'Abrir formulario',
     },
     editor: {
       back: 'Volver a formularios',
@@ -1692,6 +1785,33 @@ export const es: FormsMessages = {
         desktop: 'Escritorio',
         close: 'Cerrar',
       },
+      connect: {
+        tab: 'Conectar',
+        integrationsTitle: 'Integraciones',
+        integrationsSubtitle:
+          'Envía cada respuesta a tu CRM o a un webhook. La entrega es duradera y con reintentos.',
+        integrationsLoadError: 'No se pudieron cargar las integraciones.',
+        retry: 'Reintentar',
+        trackingTitle: 'Seguimiento y píxeles',
+        trackingSubtitle:
+          'Mide visitas y conversiones en la página pública de este formulario. Cada etiqueta se carga solo cuando su ID está configurado.',
+        gtmLabel: 'ID de Google Tag Manager',
+        gtmHelp: 'Carga tu contenedor de GTM en la página del formulario para que se disparen tus etiquetas.',
+        metaLabel: 'ID del píxel de Meta',
+        metaHelp: 'Dispara un PageView en tu píxel de Meta para medir campañas.',
+        posthogKeyLabel: 'Clave del proyecto de PostHog',
+        posthogKeyHelp: 'Captura una pageview en PostHog para analítica de producto.',
+        posthogHostLabel: 'Host de PostHog (opcional)',
+        posthogHostHelp:
+          'Por defecto usa la nube de PostHog en EE. UU.; configura tu URL de ingesta de la UE o autoalojada.',
+        posthogHostInvalid: 'Introduce una URL http(s) completa, p. ej. https://eu.i.posthog.com.',
+        hubspotLabel: 'ID de seguimiento de HubSpot',
+        hubspotHelp: 'Carga el código de seguimiento de HubSpot de tu portal en la página del formulario.',
+        utmNote:
+          'Los parámetros UTM se capturan automáticamente y puedes mapearlos a propiedades de HubSpot en Integraciones.',
+        emailsTitle: 'Correos',
+        emailsComingSoon: 'Plantillas de correo para este formulario — disponibles en esta actualización.',
+      },
     },
     nav: {
       edit: 'Editar',
@@ -1885,6 +2005,16 @@ export const es: FormsMessages = {
       unpublishedChanges: 'Cambios sin publicar',
       noChanges: 'Todos los cambios están publicados',
     },
+  },
+  dialog: {
+    confirm: 'Confirmar',
+    cancel: 'Cancelar',
+    deleteFormTitle: 'Eliminar formulario',
+    deleteQuestionTitle: 'Eliminar pregunta',
+    deleteSubmissionTitle: 'Eliminar respuesta',
+    removeMemberTitle: 'Quitar miembro',
+    resetEmailTitle: 'Restablecer plantilla de correo',
+    disconnectIntegrationTitle: 'Desconectar {provider}',
   },
 };
 
