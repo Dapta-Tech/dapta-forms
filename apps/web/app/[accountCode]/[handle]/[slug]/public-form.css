@@ -63,6 +63,20 @@
   flex-shrink: 0;
 }
 
+/* ── Main area — everything below the banner ── */
+/* The banner is a full-width strip pinned to the viewport top (first child of
+   `.pf`, sticky for scrollable forms); `.pf__main` owns ALL the remaining
+   height. Every phase renders its content inside it, and desktop's per-phase
+   vertical centering targets THIS wrapper (see the min-width media block below)
+   — centering the content group therefore can never pull the banner down with
+   it. */
+.pf__main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
 /* ── Top bar (back · logo · spacer) + progress ── */
 .pf__topbar {
   background: var(--card);
@@ -1009,8 +1023,11 @@
     margin-top: 36px;
   }
 
-  /* Steps: join topbar + body into a single centered card. */
-  .pf:not(.pf--cover):not(.pf--reveal):not(.pf--done) {
+  /* Steps: join topbar + body into a single centered card. Centering + the
+     card's page padding live on .pf__main — the area BELOW the pinned banner —
+     never on .pf itself, which would drag the banner down with the group (and
+     the padding would inset the banner off the viewport edges). */
+  .pf:not(.pf--cover):not(.pf--reveal):not(.pf--done) .pf__main {
     justify-content: center;
     padding: 40px 24px;
   }
@@ -1038,8 +1055,9 @@
     background: var(--background);
   }
 
-  /* Cover: logo + hero card + CTA as one vertically-centered group. */
-  .pf--cover {
+  /* Cover: logo + hero card + CTA as one vertically-centered group (inside
+     the main area, below the pinned banner). */
+  .pf--cover .pf__main {
     justify-content: center;
   }
   .pf--cover .pf__cover-header {
@@ -1061,9 +1079,9 @@
     padding-bottom: 32px;
   }
 
-  /* Centered outcome/interstitial cards. */
-  .pf--reveal,
-  .pf--done {
+  /* Centered outcome/interstitial cards (inside the main area). */
+  .pf--reveal .pf__main,
+  .pf--done .pf__main {
     justify-content: center;
   }
 }

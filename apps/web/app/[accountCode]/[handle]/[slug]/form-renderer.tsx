@@ -64,6 +64,30 @@ function captureUtm(): Record<string, string> {
   return utm;
 }
 
+/**
+ * Per-phase page shell. The promo banner (`cover.bannerText`) renders ONCE here
+ * as the first child of `.pf`, so it is a full-width strip pinned to the top of
+ * the viewport in EVERY phase; everything else lives in `.pf__main`, which owns
+ * the remaining height. Desktop's per-phase vertical centering is applied to
+ * `.pf__main` (public-form.css), so centering the content group can never drag
+ * the banner toward the middle of the page.
+ */
+function PhaseShell({
+  bannerText,
+  children,
+  ...rootProps
+}: {
+  bannerText?: string | null;
+  children: React.ReactNode;
+} & React.HTMLAttributes<HTMLDivElement>) {
+  return (
+    <div {...rootProps}>
+      {bannerText ? <div className="pf__banner">{bannerText}</div> : null}
+      <div className="pf__main">{children}</div>
+    </div>
+  );
+}
+
 export function FormRenderer({
   accountCode,
   slug,
@@ -374,8 +398,7 @@ export function FormRenderer({
     const outcome = resolveOutcome(engineConfig, done.score, answersRef.current);
     const cta = signupHref('confirmation', accountCode);
     return (
-      <div className="pf pf--done" style={accentVars}>
-        {cover?.bannerText ? <div className="pf__banner">{cover.bannerText}</div> : null}
+      <PhaseShell className="pf pf--done" style={accentVars} bannerText={cover?.bannerText}>
         <div className="pf-done__inner pf-animate">
           <div className="pf-done__check" aria-hidden="true">
             ✓
@@ -392,14 +415,13 @@ export function FormRenderer({
             </>
           ) : null}
         </div>
-      </div>
+      </PhaseShell>
     );
   }
 
   if (phase === 'booking' && booking?.outcome.booking) {
     return (
-      <div className="pf pf--booking-page" style={accentVars}>
-        {cover?.bannerText ? <div className="pf__banner">{cover.bannerText}</div> : null}
+      <PhaseShell className="pf pf--booking-page" style={accentVars} bannerText={cover?.bannerText}>
         <BookingScreen
           booking={booking.outcome.booking}
           answers={answersRef.current}
@@ -407,33 +429,43 @@ export function FormRenderer({
           locale={locale}
           onBooked={(details) => void handleBooked(details)}
         />
-      </div>
+      </PhaseShell>
     );
   }
 
   if (phase === 'reveal') {
     return (
-      <div className="pf pf--reveal" style={accentVars} role="status" aria-live="polite">
-        {cover?.bannerText ? <div className="pf__banner">{cover.bannerText}</div> : null}
+      <PhaseShell
+        className="pf pf--reveal"
+        style={accentVars}
+        role="status"
+        aria-live="polite"
+        bannerText={cover?.bannerText}
+      >
         <RevealScreen
           reveal={config.reveal}
           answers={answers}
           messages={{ headline: m.revealHeadline, subtitle: m.revealSubtitle }}
           onComplete={onRevealComplete}
         />
-      </div>
+      </PhaseShell>
     );
   }
 
   if (phase === 'submitting') {
     return (
-      <div className="pf pf--reveal" style={accentVars} role="status" aria-live="polite">
-        {cover?.bannerText ? <div className="pf__banner">{cover.bannerText}</div> : null}
+      <PhaseShell
+        className="pf pf--reveal"
+        style={accentVars}
+        role="status"
+        aria-live="polite"
+        bannerText={cover?.bannerText}
+      >
         <div className="pf-reveal__inner">
           <div className="pf-reveal__spinner" aria-hidden="true" />
           <p className="pf-reveal__subtitle">{m.submitting}</p>
         </div>
-      </div>
+      </PhaseShell>
     );
   }
 
@@ -441,13 +473,13 @@ export function FormRenderer({
     const logo = cover.logo ?? config.branding?.logo ?? null;
     const logos = cover.clientLogos ?? config.branding?.clientLogos ?? [];
     return (
-      <div
+      <PhaseShell
         className="pf pf--cover"
         style={accentVars}
         onKeyDown={(e) => e.key === 'Enter' && start()}
         tabIndex={-1}
+        bannerText={cover.bannerText}
       >
-        {cover.bannerText ? <div className="pf__banner">{cover.bannerText}</div> : null}
         <header className="pf__cover-header">
           <FormLogo src={logo} name={name} />
         </header>
@@ -467,17 +499,17 @@ export function FormRenderer({
             {cover.ctaText ?? m.start}
           </button>
         </div>
-      </div>
+      </PhaseShell>
     );
   }
 
   if (!step) {
     return (
-      <div className="pf" style={accentVars}>
+      <PhaseShell className="pf" style={accentVars}>
         <div className="pf__body">
           <p className="pf__helper">{m.noSteps}</p>
         </div>
-      </div>
+      </PhaseShell>
     );
   }
 
@@ -488,8 +520,7 @@ export function FormRenderer({
   const logo = cover?.logo ?? config.branding?.logo ?? null;
 
   return (
-    <div className="pf" style={accentVars} onKeyDown={onKeyDown}>
-      {cover?.bannerText ? <div className="pf__banner">{cover.bannerText}</div> : null}
+    <PhaseShell className="pf" style={accentVars} onKeyDown={onKeyDown} bannerText={cover?.bannerText}>
       <header className="pf__topbar">
         <div className="pf__topbar-inner">
           {index > 0 || cover ? (
@@ -549,6 +580,6 @@ export function FormRenderer({
           </div>
         </div>
       </div>
-    </div>
+    </PhaseShell>
   );
 }
