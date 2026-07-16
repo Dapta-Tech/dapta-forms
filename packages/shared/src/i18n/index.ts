@@ -222,6 +222,8 @@ export interface FormsMessages {
       tokenScore: string;
       tokenOutcomeLabel: string;
       tokenFormLink: string;
+      /** Muted pointer: forms can override these from their Connect tab. */
+      formOverrideNote: string;
     };
     login: {
       title: string;
@@ -361,6 +363,13 @@ export interface FormsMessages {
         remove: string;
         interpolationHint: string;
         sliderLabel: string;
+        /** The `@` recall-information picker inside variant textareas. */
+        tokenPickerLabel: string;
+        tokenPickerEmpty: string;
+        tokenPickerNoMatch: string;
+        /** `{token}` is replaced with the bracketed token, e.g. `[firstname]`. */
+        tokenWarnLater: string;
+        tokenWarnUnknown: string;
       };
       /** Per-question behavior toggles (terminal / reveal trigger). */
       behavior: {
@@ -483,7 +492,19 @@ export interface FormsMessages {
         hubspotHelp: string;
         utmNote: string;
         emailsTitle: string;
-        emailsComingSoon: string;
+        emailsSubtitle: string;
+        emailsLoadError: string;
+        /** Collapsed-state badge: this email follows the account template. */
+        emailsUsingAccount: string;
+        /** Badge when a per-form override is stored. */
+        emailsCustomBadge: string;
+        /** Expands the per-form editor. */
+        emailsCustomize: string;
+        /** Removes the per-form override (falls back to the account template). */
+        emailsUseAccount: string;
+        emailsUseAccountConfirm: string;
+        /** Footer pointer: the account-wide template lives in Settings. */
+        emailsGlobalNote: string;
       };
     };
     /** Cross-page tabs shown on a form's analytics/submissions surfaces. */
@@ -592,6 +613,7 @@ export interface FormsMessages {
       // HubSpot pilot extras
       valueMaps: string;
       valueMapsHelp: string;
+      valueMapsExample: string;
       valueMapAnswer: string;
       valueMapCrmValue: string;
       addValueMap: string;
@@ -629,6 +651,12 @@ export interface FormsMessages {
       mapElementsHelp: string;
       customMappings: string;
       customMappingsHelp: string;
+      // Key pickers (custom mapping rows + value-map groups)
+      keyGroupQuestions: string;
+      keyGroupSystem: string;
+      keyCustomOption: string;
+      keyCustomBack: string;
+      selectKeyPlaceholder: string;
       webhookEvents: string;
       webhookEventsHelp: string;
       eventPartial: string;
@@ -885,6 +913,7 @@ export const en: FormsMessages = {
       tokenScore: 'Score',
       tokenOutcomeLabel: 'Outcome',
       tokenFormLink: 'Form link',
+      formOverrideNote: 'Each form can override these emails from its Connect tab in the editor.',
     },
     login: {
       title: 'Sign in',
@@ -1023,8 +1052,13 @@ export const en: FormsMessages = {
         variantQuestion: 'Ask instead',
         fallback: 'Fallback (any other answer)',
         remove: 'Remove variant',
-        interpolationHint: 'Use [field] to insert an earlier answer into the question.',
+        interpolationHint: 'Type @ (or [field]) to insert an earlier answer into the question.',
         sliderLabel: 'Slider unit label',
+        tokenPickerLabel: 'Insert a previous answer',
+        tokenPickerEmpty: 'No earlier answers yet — this is the first question.',
+        tokenPickerNoMatch: 'No matching fields.',
+        tokenWarnLater: '“{token}” is asked after this step — it will be empty here.',
+        tokenWarnUnknown: '“{token}” doesn’t exist in this form.',
       },
       behavior: {
         title: 'Behavior',
@@ -1146,7 +1180,16 @@ export const en: FormsMessages = {
         utmNote:
           'UTM parameters are captured automatically and can be mapped to HubSpot properties in Integrations.',
         emailsTitle: 'Emails',
-        emailsComingSoon: 'Email templates for this form — coming in this update.',
+        emailsSubtitle:
+          'The submission emails this form sends. Each can follow the account template or use its own copy.',
+        emailsLoadError: 'Could not load email settings.',
+        emailsUsingAccount: 'Using the account template',
+        emailsCustomBadge: 'Custom for this form',
+        emailsCustomize: 'Customize for this form',
+        emailsUseAccount: 'Use account template',
+        emailsUseAccountConfirm:
+          'Remove this form’s custom copy and go back to the account template?',
+        emailsGlobalNote: 'The account-wide templates live in Settings → Notifications.',
       },
     },
     nav: {
@@ -1248,11 +1291,12 @@ export const en: FormsMessages = {
       stepKey: 'Form step key',
       property: 'HubSpot property',
       emptyMappings: 'No mappings yet.',
-      valueMaps: 'Value translations',
+      valueMaps: 'Value maps — translate form answers to CRM values',
       valueMapsHelp:
-        'Translate a form answer into the exact HubSpot picklist value before syncing (e.g. a use-case slug → “AI Calls”). Answers without a translation are sent unchanged.',
-      valueMapAnswer: 'Form answer value',
-      valueMapCrmValue: 'HubSpot value',
+        'Rewrite specific answers into the exact values your HubSpot picklists expect. Answers without a translation are sent unchanged.',
+      valueMapsExample: 'E.g. when the answer is “Sales”, HubSpot receives “sales”.',
+      valueMapAnswer: 'Answer in the form',
+      valueMapCrmValue: 'Value in HubSpot',
       addValueMap: 'Add value translation',
       addValueMapRow: 'Add value',
       emptyValueMaps: 'No value translations yet.',
@@ -1294,7 +1338,12 @@ export const en: FormsMessages = {
         'Send captured metadata — UTMs, lead score, outcome, and submitted date — to HubSpot properties.',
       customMappings: 'Custom field mappings',
       customMappingsHelp:
-        'Advanced: map an answer key that isn’t listed above (e.g. a hidden field) to a property.',
+        'Send an extra piece of form data to a HubSpot property — useful for hidden fields or UTMs.',
+      keyGroupQuestions: 'Form questions',
+      keyGroupSystem: 'System fields',
+      keyCustomOption: 'Custom key…',
+      keyCustomBack: 'Back to list',
+      selectKeyPlaceholder: 'Select a field…',
       webhookEvents: 'Trigger on',
       webhookEventsHelp: 'Choose which submissions are sent to this webhook. Both are sent by default.',
       eventPartial: 'Partial submissions',
@@ -1548,6 +1597,8 @@ export const es: FormsMessages = {
       tokenScore: 'Puntuación',
       tokenOutcomeLabel: 'Resultado',
       tokenFormLink: 'Enlace del formulario',
+      formOverrideNote:
+        'Cada formulario puede personalizar estos correos desde su pestaña Conectar en el editor.',
     },
     login: {
       title: 'Iniciar sesión',
@@ -1686,8 +1737,13 @@ export const es: FormsMessages = {
         variantQuestion: 'Preguntar en su lugar',
         fallback: 'Alternativa (cualquier otra respuesta)',
         remove: 'Quitar variante',
-        interpolationHint: 'Usa [campo] para insertar una respuesta anterior en la pregunta.',
+        interpolationHint: 'Escribe @ (o [campo]) para insertar una respuesta anterior en la pregunta.',
         sliderLabel: 'Etiqueta de unidad del deslizador',
+        tokenPickerLabel: 'Insertar una respuesta anterior',
+        tokenPickerEmpty: 'Aún no hay respuestas anteriores — esta es la primera pregunta.',
+        tokenPickerNoMatch: 'Ningún campo coincide.',
+        tokenWarnLater: '«{token}» se pregunta después de este paso — quedará vacío.',
+        tokenWarnUnknown: '«{token}» no existe en este formulario.',
       },
       behavior: {
         title: 'Comportamiento',
@@ -1810,7 +1866,16 @@ export const es: FormsMessages = {
         utmNote:
           'Los parámetros UTM se capturan automáticamente y puedes mapearlos a propiedades de HubSpot en Integraciones.',
         emailsTitle: 'Correos',
-        emailsComingSoon: 'Plantillas de correo para este formulario — disponibles en esta actualización.',
+        emailsSubtitle:
+          'Los correos que envía este formulario. Cada uno puede seguir el template de la cuenta o usar su propia versión.',
+        emailsLoadError: 'No se pudieron cargar los ajustes de correo.',
+        emailsUsingAccount: 'Usando el template de la cuenta',
+        emailsCustomBadge: 'Personalizado para este form',
+        emailsCustomize: 'Personalizar para este form',
+        emailsUseAccount: 'Usar template de la cuenta',
+        emailsUseAccountConfirm:
+          '¿Quitar la versión personalizada de este formulario y volver al template de la cuenta?',
+        emailsGlobalNote: 'El template global de la cuenta vive en Configuración → Notificaciones.',
       },
     },
     nav: {
@@ -1912,10 +1977,11 @@ export const es: FormsMessages = {
       stepKey: 'Clave del paso',
       property: 'Propiedad de HubSpot',
       emptyMappings: 'Aún no hay mapeos.',
-      valueMaps: 'Traducción de valores',
+      valueMaps: 'Mapas de valores — traduce respuestas del formulario a valores del CRM',
       valueMapsHelp:
-        'Traduce una respuesta del formulario al valor exacto de la lista de HubSpot antes de sincronizar (p. ej. un caso de uso → “AI Calls”). Las respuestas sin traducción se envían sin cambios.',
-      valueMapAnswer: 'Valor de la respuesta',
+        'Convierte respuestas concretas en los valores exactos que esperan tus listas de HubSpot. Las respuestas sin traducción se envían sin cambios.',
+      valueMapsExample: 'Ej.: cuando la respuesta es “Ventas”, HubSpot recibe “sales”.',
+      valueMapAnswer: 'Respuesta en el form',
       valueMapCrmValue: 'Valor en HubSpot',
       addValueMap: 'Añadir traducción de valores',
       addValueMapRow: 'Añadir valor',
@@ -1958,7 +2024,12 @@ export const es: FormsMessages = {
         'Envía los metadatos capturados —UTMs, puntuación, resultado y fecha de envío— a propiedades de HubSpot.',
       customMappings: 'Asignaciones personalizadas',
       customMappingsHelp:
-        'Avanzado: asigna una clave de respuesta que no aparezca arriba (p. ej. un campo oculto) a una propiedad.',
+        'Envía un dato adicional del form a una propiedad de HubSpot — útil para campos ocultos o UTMs.',
+      keyGroupQuestions: 'Preguntas del formulario',
+      keyGroupSystem: 'Campos del sistema',
+      keyCustomOption: 'Clave personalizada…',
+      keyCustomBack: 'Volver a la lista',
+      selectKeyPlaceholder: 'Selecciona un campo…',
       webhookEvents: 'Disparar en',
       webhookEventsHelp: 'Elige qué respuestas se envían a este webhook. Por defecto se envían ambas.',
       eventPartial: 'Respuestas parciales',

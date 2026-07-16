@@ -25,6 +25,15 @@ const LocaleContext = createContext<Locale>('en');
 
 const UTM_KEYS = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content'] as const;
 
+/** Sentinel option values for the key pickers — never valid step keys. */
+const CUSTOM_KEY_OPTION = '__custom_key__';
+const KEY_GROUP_QUESTIONS = '__group_questions__';
+const KEY_GROUP_SYSTEM = '__group_system__';
+
+/** Question types whose answers come from a fixed option list — the typical
+ *  "translate this answer" case, so they lead the value-map key picker. */
+const CHOICE_TYPES = new Set(['multiple_choice', 'dropdown']);
+
 /** Replace `{key}` tokens in a catalog string. */
 const fill = (template: string, vars: Record<string, string>): string =>
   template.replace(/\{(\w+)\}/g, (_, k: string) => vars[k] ?? `{${k}}`);
@@ -376,6 +385,100 @@ function PropertyField({
   );
 }
 
+/**
+ * Step-key picker for "Custom field mappings" rows and "Value maps" groups: a
+ * branded searchable Select over the form's own question keys (grouped, with
+ * the UTM system fields where relevant) plus a "Custom key…" escape hatch that
+ * swaps the row to the legacy free-text input for hidden/advanced keys — with
+ * a "Back to list" way back. A stored key that matches no listed option opens
+ * in custom mode so existing configs render (and keep saving) unchanged.
+ *
+ * Group headers are disabled options (the shared Select has no group concept),
+ * so they render muted and are skipped by keyboard nav + click.
+ */
+function KeySelect({
+  value,
+  onChange,
+  questionOptions,
+  systemKeys,
+  m,
+  testId,
+  customTestId,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  /** Pickable question entries — already filtered/ordered by the caller. */
+  questionOptions: QuestionMeta[];
+  /** Auto-captured submission-data keys (UTMs). Empty = omit the group. */
+  systemKeys: readonly string[];
+  m: Msgs;
+  testId: string;
+  customTestId: string;
+}) {
+  const locale = useContext(LocaleContext);
+  const selectable = (v: string): boolean =>
+    systemKeys.includes(v) || questionOptions.some((q) => q.key === v);
+  // Stored keys that match neither group (hidden/legacy) open in custom mode.
+  const [customMode, setCustomMode] = useState(() => value !== '' && !selectable(value));
+
+  if (customMode) {
+    return (
+      <div className="flex flex-1 items-center gap-2">
+        <Input
+          data-testid={customTestId}
+          value={value}
+          aria-label={m.stepKey}
+          placeholder={m.stepKey}
+          className="flex-1"
+          onChange={(e) => onChange(e.target.value)}
+        />
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => {
+            // A key the list can't show would silently look unselected — clear it.
+            if (value !== '' && !selectable(value)) onChange('');
+            setCustomMode(false);
+          }}
+        >
+          {m.keyCustomBack}
+        </Button>
+      </div>
+    );
+  }
+
+  const options: SelectOption[] = [];
+  if (questionOptions.length > 0) {
+    options.push({ value: KEY_GROUP_QUESTIONS, label: m.keyGroupQuestions, disabled: true });
+    options.push(...questionOptions.map((q) => ({ value: q.key, label: `${q.label} (${q.key})` })));
+  }
+  if (systemKeys.length > 0) {
+    options.push({ value: KEY_GROUP_SYSTEM, label: m.keyGroupSystem, disabled: true });
+    options.push(...systemKeys.map((k) => ({ value: k, label: k })));
+  }
+  options.push({ value: CUSTOM_KEY_OPTION, label: m.keyCustomOption });
+
+  return (
+    <div data-testid={testId} className="min-w-0 flex-1">
+      <Select
+        ariaLabel={m.stepKey}
+        value={value}
+        placeholder={m.selectKeyPlaceholder}
+        options={options}
+        searchable
+        locale={locale}
+        onChange={(v) => {
+          if (v === CUSTOM_KEY_OPTION) {
+            setCustomMode(true);
+            return;
+          }
+          onChange(v);
+        }}
+      />
+    </div>
+  );
+}
+
 function Card({
   title,
   desc,
@@ -447,11 +550,15 @@ function Section({
 function Field({
   label,
   help,
+  intro,
   action,
   children,
 }: {
   label: string;
   help?: string;
+  /** Helper copy rendered directly UNDER the label (before the rows), for
+   *  sections that need explaining before the controls make sense. */
+  intro?: React.ReactNode;
   action?: React.ReactNode;
   children: React.ReactNode;
 }) {
@@ -461,6 +568,9 @@ function Field({
         <label className="text-sm font-medium">{label}</label>
         {action ?? null}
       </div>
+      {intro ? (
+        <div className="flex flex-col gap-0.5 text-xs text-muted-foreground">{intro}</div>
+      ) : null}
       {children}
       {help ? <p className="text-xs text-muted-foreground">{help}</p> : null}
     </div>
@@ -606,6 +716,20 @@ function HubspotCard({
     .map((pair, index) => ({ pair, index }))
     .filter(({ pair }) => !questionKeys.has(pair.key));
 
+  // Keys already used by ANY mapping row (main section or custom). Questions
+  // already mapped drop out of a custom row's picker (no double-mapping); a
+  // row's own key is always kept so its selection stays visible.
+  const usedKeys = new Set(state.fieldMappings.map((p) => p.key));
+  const unmappedQuestions = questions.filter((q) => !usedKeys.has(q.key));
+
+  // Value maps translate answers, so choice-type questions (fixed option
+  // lists) lead the picker; free-text questions follow. Plain computation —
+  // this sits below the connect-prompt early return, where hooks can't go.
+  const valueMapQuestions = [
+    ...questions.filter((q) => CHOICE_TYPES.has(q.type)),
+    ...questions.filter((q) => !CHOICE_TYPES.has(q.type)),
+  ];
+
   function autoMap() {
     const byLower = propertyLookup(properties);
     const alreadyMapped = new Set(
@@ -688,21 +812,23 @@ function HubspotCard({
       </Section>
 
       {/* Custom field mappings — keys not tied to a listed question */}
-      <Field label={m.customMappings} help={m.customMappingsHelp}>
+      <Field label={m.customMappings} intro={m.customMappingsHelp}>
         <div className="flex flex-col gap-2">
           {customRows.length === 0 ? (
             <p className="text-xs text-muted-foreground">{m.emptyMappings}</p>
           ) : (
             customRows.map(({ pair, index }) => (
               <div key={index} className="flex items-center gap-2">
-                <Input
+                <KeySelect
                   value={pair.key}
-                  aria-label={m.stepKey}
-                  placeholder={m.stepKey}
-                  className="flex-1"
-                  onChange={(e) => {
+                  questionOptions={unmappedQuestions}
+                  systemKeys={UTM_KEYS.filter((k) => k === pair.key || !usedKeys.has(k))}
+                  m={m}
+                  testId="mapping-key-select"
+                  customTestId="mapping-key-custom"
+                  onChange={(v) => {
                     const next = [...state.fieldMappings];
-                    next[index] = { ...pair, key: e.target.value };
+                    next[index] = { ...pair, key: v };
                     onChange({ ...state, fieldMappings: next });
                   }}
                 />
@@ -754,7 +880,15 @@ function HubspotCard({
       </Field>
 
       {/* Value maps: per-step answer -> CRM picklist value translations */}
-      <Field label={m.valueMaps} help={m.valueMapsHelp}>
+      <Field
+        label={m.valueMaps}
+        intro={
+          <>
+            <p>{m.valueMapsHelp}</p>
+            <p>{m.valueMapsExample}</p>
+          </>
+        }
+      >
         <div className="flex flex-col gap-3">
           {state.valueMaps.length === 0 ? (
             <p className="text-xs text-muted-foreground">{m.emptyValueMaps}</p>
@@ -762,14 +896,16 @@ function HubspotCard({
             state.valueMaps.map((group, gi) => (
               <div key={gi} className="flex flex-col gap-2 rounded-md border border-border p-3">
                 <div className="flex items-center gap-2">
-                  <Input
+                  <KeySelect
                     value={group.stepKey}
-                    aria-label={m.stepKey}
-                    placeholder={m.stepKey}
-                    className="flex-1"
-                    onChange={(e) => {
+                    questionOptions={valueMapQuestions}
+                    systemKeys={[]}
+                    m={m}
+                    testId="valuemap-key-select"
+                    customTestId="valuemap-key-custom"
+                    onChange={(v) => {
                       const next = [...state.valueMaps];
-                      next[gi] = { ...group, stepKey: e.target.value };
+                      next[gi] = { ...group, stepKey: v };
                       onChange({ ...state, valueMaps: next });
                     }}
                   />

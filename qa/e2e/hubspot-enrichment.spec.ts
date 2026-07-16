@@ -237,9 +237,11 @@ test('valueMaps set via the API render as mapping rows in the UI', async ({ page
 
   await page.goto(`/admin/forms/${id}/integrations`);
 
-  // No fieldMappings rows exist, so the only 'Form step key' input on screen
-  // is the value-map group's step key.
-  await expect(page.getByLabel('Form step key', { exact: true })).toHaveValue('pick');
-  await expect(page.getByLabel('Form answer value', { exact: true })).toHaveValue('a');
-  await expect(page.getByLabel('HubSpot value', { exact: true })).toHaveValue('Option A');
+  // The value-map step key is a branded Select now; 'pick' is one of this
+  // form's questions, so the group renders in select mode with its label.
+  await expect(page.getByTestId('valuemap-key-select').locator('button')).toContainText(
+    'Pick one (pick)',
+  );
+  await expect(page.getByLabel('Answer in the form', { exact: true })).toHaveValue('a');
+  await expect(page.getByLabel('Value in HubSpot', { exact: true })).toHaveValue('Option A');
 });
