@@ -381,6 +381,10 @@ export async function deleteForm(db: Db, accountId: string, id: string): Promise
   await db.run(
     sql`DELETE FROM booking_event WHERE form_id IN (SELECT id FROM form WHERE account_id = ${accountId} AND id = ${id})`,
   );
+  // Per-form notification template overrides (account-level rows have form_id NULL).
+  await db.run(
+    sql`DELETE FROM notification_setting WHERE account_id = ${accountId} AND form_id = ${id}`,
+  );
   await db.run(sql`DELETE FROM form WHERE account_id = ${accountId} AND id = ${id}`);
 }
 

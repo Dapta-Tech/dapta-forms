@@ -17,7 +17,7 @@
  *   6. settings are account-scoped — one account's override never leaks to another.
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { BadRequestException, ForbiddenException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { createDb, migrate, seed, getNotificationSettings, type Db } from '@quill/db';
 import { AdminCrudController } from './admin-crud.controller';
 import { AdminService } from './admin.service';
@@ -157,6 +157,102 @@ describe('admin gating', () => {
     await expect(
       controller.resetNotification(asEmail('plain@acme.test'), 'submission_received'),
     ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+});
+
+describe('per-form overrides (/v1/forms/:id/notifications)', () => {
+  /** A minimal form in the caller's account; returns its id. */
+  async function createTestForm(req: ReqLike, name: string): Promise<string> {
+    const form = (await controller.createForm(req, {
+      name,
+      config: { version: 1, steps: [{ key: 'email', type: 'email', question: 'Email?' }] },
+    })) as { id: string };
+    return form.id;
+  }
+
+  it('GET returns, per email, the account baseline + override existence/values', async () => {
+    const formId = await createTestForm(asOwner(), 'Overrides A');
+    await controller.updateNotification(asOwner(), 'submission_confirmed', {
+      subject: 'ACCT {{formName}}',
+    });
+
+    // No override yet: account baseline visible, override null.
+    let res = await controller.formNotifications(asOwner(), formId);
+    expect(res.settings.map((s) => s.emailKey)).toEqual([
+      'submission_received',
+      'submission_confirmed',
+    ]);
+    const confirmedBefore = res.settings.find((s) => s.emailKey === 'submission_confirmed')!;
+    expect(confirmedBefore.account).toEqual({ enabled: true, subject: 'ACCT {{formName}}', body: null });
+    expect(confirmedBefore.override).toBeNull();
+    expect(confirmedBefore.defaults.en.subject).toBe('We got your responses — {{formName}}');
+    expect(confirmedBefore.tokens).toContain('formName');
+
+    // PUT pins a form-level copy; GET now reports the override.
+    const updated = await controller.updateFormNotification(asOwner(), formId, 'submission_confirmed', {
+      enabled: true,
+      subject: 'FORM {{formName}}',
+      body: 'FORM body',
+    });
+    expect(updated.override).toMatchObject({
+      enabled: true,
+      subject: 'FORM {{formName}}',
+      body: 'FORM body',
+    });
+    expect(updated.account.subject).toBe('ACCT {{formName}}'); // baseline untouched
+
+    res = await controller.formNotifications(asOwner(), formId);
+    expect(res.settings.find((s) => s.emailKey === 'submission_confirmed')!.override?.subject).toBe(
+      'FORM {{formName}}',
+    );
+    // The ACCOUNT-level surface never shows the form row.
+    const accountView = await controller.notifications(asOwner());
+    expect(accountView.settings.find((s) => s.emailKey === 'submission_confirmed')!.subject).toBe(
+      'ACCT {{formName}}',
+    );
+  });
+
+  it('reset deletes the override (toggle included) and other forms stay isolated', async () => {
+    const formA = await createTestForm(asOwner(), 'Overrides B1');
+    const formB = await createTestForm(asOwner(), 'Overrides B2');
+    await controller.updateFormNotification(asOwner(), formA, 'submission_confirmed', {
+      enabled: false,
+      subject: 'A only',
+    });
+
+    // Form isolation: B has no override.
+    const b = await controller.formNotifications(asOwner(), formB);
+    expect(b.settings.find((s) => s.emailKey === 'submission_confirmed')!.override).toBeNull();
+
+    const reset = await controller.resetFormNotification(asOwner(), formA, 'submission_confirmed');
+    expect(reset.override).toBeNull();
+    const a = await controller.formNotifications(asOwner(), formA);
+    expect(a.settings.find((s) => s.emailKey === 'submission_confirmed')!.override).toBeNull();
+  });
+
+  it("404s a form outside the caller's account, 403s a plain member, 400s a bad key", async () => {
+    const foreignFormId = await createTestForm(asEmail('owner@other.test'), 'Foreign');
+
+    await expect(controller.formNotifications(asOwner(), foreignFormId)).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+    await expect(
+      controller.updateFormNotification(asOwner(), foreignFormId, 'submission_confirmed', {
+        subject: 'x',
+      }),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    await expect(
+      controller.resetFormNotification(asOwner(), foreignFormId, 'submission_confirmed'),
+    ).rejects.toBeInstanceOf(NotFoundException);
+
+    const ownFormId = await createTestForm(asOwner(), 'Gates');
+    await controller.inviteMember(asOwner(), { email: 'plain2@acme.test', role: 'member' });
+    await expect(
+      controller.formNotifications(asEmail('plain2@acme.test'), ownFormId),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(
+      controller.updateFormNotification(asOwner(), ownFormId, 'nope', { subject: 'x' }),
+    ).rejects.toBeInstanceOf(BadRequestException);
   });
 });
 

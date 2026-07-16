@@ -21,6 +21,7 @@ import {
   createForm,
   defaultNotificationSetting,
   deleteForm,
+  deleteNotificationSetting,
   duplicateForm,
   getAccountMember,
   getFormById,
@@ -310,6 +311,91 @@ export class AdminCrudController {
     const key = this.parseEmailKey(emailKey);
     const updated = await resetNotificationTemplate(this.db, p.accountId, key);
     return this.notificationView(key, updated);
+  }
+
+  // --- Per-form notification overrides (editor → Connect → Emails) --------
+  //
+  // A form may pin its own copy of either submission email, overriding the
+  // account-level template (Typeform's per-form Follow-ups model). Send-time
+  // precedence is form → account → stock, per field; a form row's `enabled`
+  // wins outright when the row exists. Same admin/owner gate as the account
+  // routes, PLUS the form must belong to the principal's account (the standard
+  // forms-route scoping: getFormById(accountId, id) or 404).
+
+  /** Both emails: the account-level baseline + this form's override (if any). */
+  @Get('forms/:id/notifications')
+  async formNotifications(@Req() req: ReqLike, @Param('id') id: string) {
+    const p = await this.auth.resolveHost(req);
+    assertAdmin(p);
+    await this.assertOwnForm(p.accountId, id);
+    return { settings: await this.formNotificationViews(p.accountId, id) };
+  }
+
+  /** Create/update this form's override for one email (subject/body/enabled). */
+  @Put('forms/:id/notifications/:emailKey')
+  async updateFormNotification(
+    @Req() req: ReqLike,
+    @Param('id') id: string,
+    @Param('emailKey') emailKey: string,
+    @Body() body: unknown,
+  ) {
+    const p = await this.auth.resolveHost(req);
+    assertAdmin(p);
+    await this.assertOwnForm(p.accountId, id);
+    const key = this.parseEmailKey(emailKey);
+    const patch = parse(notificationSettingPatchSchema, body);
+    await upsertNotificationSetting(this.db, p.accountId, key, patch, Date.now(), id);
+    return (await this.formNotificationViews(p.accountId, id)).find((v) => v.emailKey === key)!;
+  }
+
+  /** Remove this form's override — the form fully inherits the account setting. */
+  @Post('forms/:id/notifications/:emailKey/reset')
+  async resetFormNotification(
+    @Req() req: ReqLike,
+    @Param('id') id: string,
+    @Param('emailKey') emailKey: string,
+  ) {
+    const p = await this.auth.resolveHost(req);
+    assertAdmin(p);
+    await this.assertOwnForm(p.accountId, id);
+    const key = this.parseEmailKey(emailKey);
+    await deleteNotificationSetting(this.db, p.accountId, key, id);
+    return (await this.formNotificationViews(p.accountId, id)).find((v) => v.emailKey === key)!;
+  }
+
+  /** 404 unless the form exists in the principal's account (standard scoping). */
+  private async assertOwnForm(accountId: string, formId: string): Promise<void> {
+    const f = await getFormById(this.db, accountId, formId);
+    if (!f) throw new NotFoundException({ error: 'NOT_FOUND', message: 'Not found.' });
+  }
+
+  /**
+   * The per-form view for both emails: the effective ACCOUNT-level template
+   * (stored override or nulls = stock), whether a form override exists, and the
+   * override values — plus the same defaults + token catalog the account view
+   * carries, so the Connect-tab editor renders with one payload.
+   */
+  private async formNotificationViews(accountId: string, formId: string) {
+    const account = await getNotificationSettings(this.db, accountId);
+    const overrides = await getNotificationSettings(this.db, accountId, formId);
+    return SUBMISSION_EMAIL_KEYS.map((emailKey) => {
+      const a = account.get(emailKey) ?? defaultNotificationSetting(emailKey);
+      const o = overrides.get(emailKey);
+      return {
+        emailKey,
+        /** The account layer this form inherits when it has no override. */
+        account: { enabled: a.enabled, subject: a.subject, body: a.body },
+        /** The form's pinned copy; null = using the account template. */
+        override: o
+          ? { enabled: o.enabled, subject: o.subject, body: o.body, updatedAt: o.updatedAt }
+          : null,
+        tokens: [...NOTIFICATION_TOKENS],
+        defaults: {
+          en: defaultSubmissionTemplate(emailKey, 'en'),
+          es: defaultSubmissionTemplate(emailKey, 'es'),
+        },
+      };
+    });
   }
 
   /** 400 unless the path key is one of the two customizable emails. */

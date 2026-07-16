@@ -78,22 +78,32 @@ export class SubmissionService {
 
     if (!input.partial) {
       const respondentEmail = pickEmail(input.data);
-      void this.email.enqueueSubmissionReceived(form.accountId, {
-        submissionId: row.id,
-        formName: form.name,
-        respondentEmail,
-        score,
-        outcomeLabel: outcome?.label ?? null,
-      });
-      // Respondent confirmation receipt — only when the answers carried an
-      // email. Same durable outbox; gated per-account inside the effect
-      // (notification_setting `submission_confirmed`, absent row = enabled).
-      if (respondentEmail) {
-        void this.email.enqueueSubmissionConfirmed(form.accountId, {
+      // form.id lets the effect apply any per-form template override
+      // (precedence form → account → stock, resolved inside the effect).
+      void this.email.enqueueSubmissionReceived(
+        form.accountId,
+        {
           submissionId: row.id,
           formName: form.name,
           respondentEmail,
-        });
+          score,
+          outcomeLabel: outcome?.label ?? null,
+        },
+        form.id,
+      );
+      // Respondent confirmation receipt — only when the answers carried an
+      // email. Same durable outbox; gated inside the effect (notification_setting
+      // `submission_confirmed`, form row → account row → default-on).
+      if (respondentEmail) {
+        void this.email.enqueueSubmissionConfirmed(
+          form.accountId,
+          {
+            submissionId: row.id,
+            formName: form.name,
+            respondentEmail,
+          },
+          form.id,
+        );
       }
     }
 

@@ -13,6 +13,7 @@
  * in parity with the migrations + schema.pg.ts, including UNIQUE constraints —
  * so anything regenerated from them does not silently drop a uniqueness guard.
  */
+import { sql } from 'drizzle-orm';
 import { sqliteTable, text, integer, index, uniqueIndex } from 'drizzle-orm/sqlite-core';
 
 // --- Platform (identity / delivery) — kept from the shared platform ----------
@@ -90,18 +91,33 @@ export const outbox = sqliteTable('outbox', {
   claimedBy: text('claimed_by'),
 });
 
-/** Per-account notification controls (toggles + template overrides). */
-export const notificationSetting = sqliteTable('notification_setting', {
-  id: text('id').primaryKey(),
-  accountId: text('account_id').notNull(),
-  emailKey: text('email_key').notNull(),
-  enabled: integer('enabled').notNull().default(1),
-  subject: text('subject'),
-  body: text('body'),
-  reminderLeadMinutes: text('reminder_lead_minutes'),
-  createdAt: integer('created_at').notNull(),
-  updatedAt: integer('updated_at').notNull(),
-});
+/** Per-account (and per-form override) notification controls. */
+export const notificationSetting = sqliteTable(
+  'notification_setting',
+  {
+    id: text('id').primaryKey(),
+    accountId: text('account_id').notNull(),
+    emailKey: text('email_key').notNull(),
+    /** NULL = the account-level row; a form id = a per-form override row. */
+    formId: text('form_id'),
+    enabled: integer('enabled').notNull().default(1),
+    subject: text('subject'),
+    body: text('body'),
+    reminderLeadMinutes: text('reminder_lead_minutes'),
+    createdAt: integer('created_at').notNull(),
+    updatedAt: integer('updated_at').notNull(),
+  },
+  (t) => ({
+    // Scope-split uniqueness (0001 + 0005): one account row and one per-form row
+    // per (account, email_key) — partial indexes so the scopes never collide.
+    notificationSettingAccountKeyUq: uniqueIndex('notification_setting_account_key_uq')
+      .on(t.accountId, t.emailKey)
+      .where(sql`${t.formId} IS NULL`),
+    notificationSettingAccountFormKeyUq: uniqueIndex('notification_setting_account_form_key_uq')
+      .on(t.accountId, t.formId, t.emailKey)
+      .where(sql`${t.formId} IS NOT NULL`),
+  }),
+);
 
 // --- Forms domain ------------------------------------------------------------
 

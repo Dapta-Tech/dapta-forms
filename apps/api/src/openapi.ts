@@ -132,6 +132,62 @@ export const openapiSpec = {
         },
       },
     },
+    '/v1/forms/{id}/notifications': {
+      get: {
+        summary: "List a form's submission-email settings (host, admin/owner)",
+        description:
+          'Per email: the effective account-level template this form inherits, whether a per-form override exists, and the override values (Typeform-style per-form Follow-ups). Send-time precedence is form → account → stock, per field. The form must belong to the caller’s account.',
+        security: [{ hostSession: [] }],
+        responses: {
+          '200': { description: '{ settings[] } — each { emailKey, account, override|null, defaults, tokens }' },
+          '403': { description: 'Requires an admin or owner' },
+          '404': { description: 'Form not found in this account' },
+        },
+      },
+    },
+    '/v1/forms/{id}/notifications/{emailKey}': {
+      put: {
+        summary: 'Create/update a form’s override for one submission email (host, admin/owner)',
+        description:
+          'Body { enabled?, subject?, body? } — same contract as the account-level PUT, stored against this form. While an override exists its enabled toggle wins; a null subject/body inherits that field from the account template.',
+        parameters: [
+          {
+            name: 'emailKey',
+            in: 'path',
+            required: true,
+            schema: { type: 'string', enum: ['submission_received', 'submission_confirmed'] },
+          },
+        ],
+        security: [{ hostSession: [] }],
+        responses: {
+          '200': { description: 'Updated per-form setting (account baseline + override)' },
+          '400': { description: 'Unknown email key or invalid body' },
+          '403': { description: 'Requires an admin or owner' },
+          '404': { description: 'Form not found in this account' },
+        },
+      },
+    },
+    '/v1/forms/{id}/notifications/{emailKey}/reset': {
+      post: {
+        summary: 'Remove a form’s override — inherit the account template again (host, admin/owner)',
+        description: 'Deletes the per-form row entirely (copy AND toggle revert to the account setting).',
+        parameters: [
+          {
+            name: 'emailKey',
+            in: 'path',
+            required: true,
+            schema: { type: 'string', enum: ['submission_received', 'submission_confirmed'] },
+          },
+        ],
+        security: [{ hostSession: [] }],
+        responses: {
+          '200': { description: 'Setting with override = null' },
+          '400': { description: 'Unknown email key' },
+          '403': { description: 'Requires an admin or owner' },
+          '404': { description: 'Form not found in this account' },
+        },
+      },
+    },
     '/v1/integrations': {
       get: {
         summary: "List this account's integration connections + encryption availability (host)",

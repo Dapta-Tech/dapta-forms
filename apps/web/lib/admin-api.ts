@@ -203,6 +203,31 @@ export interface NotificationPatch {
   body?: string | null;
 }
 
+/** One email's stored values at one layer (account baseline or form override). */
+export interface NotificationLayer {
+  enabled: boolean;
+  subject: string | null;
+  body: string | null;
+}
+
+/**
+ * One submission email as seen from ONE form (GET /v1/forms/:id/notifications):
+ * the account-level baseline it inherits, plus the per-form override when one
+ * is stored (null = following the account template). Send-time precedence is
+ * form → account → stock, per field.
+ */
+export interface FormNotificationView {
+  emailKey: NotificationEmailKey;
+  account: NotificationLayer;
+  override: (NotificationLayer & { updatedAt: number | null }) | null;
+  tokens: string[];
+  defaults: { en: NotificationDefault; es: NotificationDefault };
+}
+
+export interface FormNotificationsResponse {
+  settings: FormNotificationView[];
+}
+
 export const adminApi = {
   me: () => req<Me>('GET', '/v1/me'),
   vanityStatus: () =>
@@ -257,4 +282,15 @@ export const adminApi = {
     req<NotificationSettingView>('PUT', `/v1/notifications/${emailKey}`, patch),
   resetNotification: (emailKey: NotificationEmailKey) =>
     req<NotificationSettingView>('POST', `/v1/notifications/${emailKey}/reset`),
+
+  // Per-form notification overrides (editor → Connect → Emails; admin/owner only)
+  /** Both emails as seen from one form: account baseline + override (if any). */
+  getFormNotifications: (id: string) =>
+    req<FormNotificationsResponse>('GET', `/v1/forms/${id}/notifications`),
+  /** Create/update this form's override for one email. */
+  updateFormNotification: (id: string, emailKey: NotificationEmailKey, patch: NotificationPatch) =>
+    req<FormNotificationView>('PUT', `/v1/forms/${id}/notifications/${emailKey}`, patch),
+  /** Remove this form's override — the form inherits the account template again. */
+  resetFormNotification: (id: string, emailKey: NotificationEmailKey) =>
+    req<FormNotificationView>('POST', `/v1/forms/${id}/notifications/${emailKey}/reset`),
 };

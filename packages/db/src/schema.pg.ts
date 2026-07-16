@@ -4,6 +4,7 @@
  * names so the repository stays dialect-agnostic. Postgres uses `jsonb` for the
  * config/answers blobs and `bigint` epoch-ms instants; production runs here.
  */
+import { sql } from 'drizzle-orm';
 import { pgTable, text, bigint, integer, jsonb, index, uniqueIndex } from 'drizzle-orm/pg-core';
 
 // --- Platform (identity / delivery) — kept from the shared platform ----------
@@ -79,17 +80,32 @@ export const outbox = pgTable('outbox', {
   claimedBy: text('claimed_by'),
 });
 
-export const notificationSetting = pgTable('notification_setting', {
-  id: text('id').primaryKey(),
-  accountId: text('account_id').notNull(),
-  emailKey: text('email_key').notNull(),
-  enabled: integer('enabled').notNull().default(1),
-  subject: text('subject'),
-  body: text('body'),
-  reminderLeadMinutes: text('reminder_lead_minutes'),
-  createdAt: bigint('created_at', { mode: 'number' }).notNull(),
-  updatedAt: bigint('updated_at', { mode: 'number' }).notNull(),
-});
+export const notificationSetting = pgTable(
+  'notification_setting',
+  {
+    id: text('id').primaryKey(),
+    accountId: text('account_id').notNull(),
+    emailKey: text('email_key').notNull(),
+    /** NULL = the account-level row; a form id = a per-form override row. */
+    formId: text('form_id'),
+    enabled: integer('enabled').notNull().default(1),
+    subject: text('subject'),
+    body: text('body'),
+    reminderLeadMinutes: text('reminder_lead_minutes'),
+    createdAt: bigint('created_at', { mode: 'number' }).notNull(),
+    updatedAt: bigint('updated_at', { mode: 'number' }).notNull(),
+  },
+  (t) => ({
+    // Scope-split uniqueness (0001 + 0005): one account row and one per-form row
+    // per (account, email_key) — partial indexes so the scopes never collide.
+    notificationSettingAccountKeyUq: uniqueIndex('notification_setting_account_key_uq')
+      .on(t.accountId, t.emailKey)
+      .where(sql`${t.formId} IS NULL`),
+    notificationSettingAccountFormKeyUq: uniqueIndex('notification_setting_account_form_key_uq')
+      .on(t.accountId, t.formId, t.emailKey)
+      .where(sql`${t.formId} IS NOT NULL`),
+  }),
+);
 
 // --- Forms domain ------------------------------------------------------------
 

@@ -66,6 +66,7 @@ describe('submit', () => {
     if ('error' in out) return;
     expect(out.score).toBe(18);
     expect(out.outcome).toBe('qualified');
+    await flushEffects();
 
     const form = await db.get<{ id: string }>(sql`SELECT id FROM form WHERE slug = 'lead-qualifier' LIMIT 1`);
     const rows = await listSubmissions(db, form!.id);
@@ -106,6 +107,32 @@ describe('submit', () => {
     await flushEffects();
     const outbox = await listOutbox(db, { kind: 'email' });
     expect(outbox.map((r) => r.action)).toEqual(['submission_received']);
+  });
+
+  it('threads the form id into the effects: a PER-FORM template override is snapshotted', async () => {
+    const account = await db.get<{ id: string }>(sql`SELECT id FROM account WHERE code = 'acme' LIMIT 1`);
+    const form = await db.get<{ id: string }>(sql`SELECT id FROM form WHERE slug = 'lead-qualifier' LIMIT 1`);
+    // Account-level copy + a form-level pin — the form's copy must win.
+    await upsertNotificationSetting(db, account!.id, 'submission_confirmed', { subject: 'ACCT {{formName}}' });
+    await upsertNotificationSetting(
+      db,
+      account!.id,
+      'submission_confirmed',
+      { subject: 'FORM {{formName}}' },
+      Date.now(),
+      form!.id,
+    );
+
+    await svc.submit('acme', 'lead-qualifier', {
+      sessionId: 'sess-form-override',
+      data: { role: 'founder', team_size: 20, email: 'lead@acme.io' },
+    });
+    await flushEffects();
+
+    const outbox = await listOutbox(db, { kind: 'email' });
+    const confirmed = outbox.find((r) => r.action === 'submission_confirmed')!;
+    const payload = JSON.parse(confirmed.payload!) as { subjectTemplate: string | null };
+    expect(payload.subjectTemplate).toBe('FORM {{formName}}');
   });
 
   it('a partial save does not enqueue any email', async () => {

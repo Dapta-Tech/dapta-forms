@@ -15,7 +15,8 @@ import type { EditorMessages } from './messages';
  * The editor's Connect tab (Typeform parity): per-form Integrations (webhook +
  * HubSpot mapping, the existing IntegrationsEditor embedded as-is), Tracking &
  * Pixels (writes `config.tracking` through the editor's autosave/publish flow),
- * and an Emails slot (stub — replaced by the email-templates workstream).
+ * and Emails (per-form template overrides — form → account → stock precedence,
+ * persisted via /v1/forms/:id/notifications, independent of the form config).
  *
  * Data/persistence split (why the two saves can't clobber each other):
  * - Tracking edits mutate the editor's config state → debounced autosave →
@@ -64,7 +65,7 @@ export function ConnectPanel({
     <div data-testid="connect-panel" className="mx-auto flex w-full max-w-[900px] flex-col gap-4">
       <IntegrationsSection formId={formId} questions={questions} mc={mc} im={im} locale={loc} />
       <TrackingSection config={config} onTrackingChange={onTrackingChange} mc={mc} />
-      <ConnectEmailsSection m={mc} />
+      <ConnectEmailsSection formId={formId} m={mc} locale={locale} />
     </div>
   );
 }

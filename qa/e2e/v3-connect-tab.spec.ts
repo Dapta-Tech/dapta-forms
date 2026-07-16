@@ -105,8 +105,9 @@ test('?tab=connect deep-links to the Connect panel (not Build) and loads Integra
     await expect(page.getByTestId(tid)).toBeVisible();
   }
 
-  // Emails stub slot renders.
-  await expect(page.getByTestId('connect-emails-stub')).toBeVisible();
+  // Emails section renders (the stub was replaced by the per-form template
+  // overrides — deep coverage lives in v3-form-emails.spec.ts).
+  await expect(page.getByTestId('connect-emails')).toBeVisible();
 });
 
 test('switching tabs shallow-syncs the ?tab query (connect on, removed on build)', async ({
