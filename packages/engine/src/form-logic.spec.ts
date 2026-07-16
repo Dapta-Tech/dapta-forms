@@ -282,9 +282,42 @@ describe('personal-email branch (showForPersonalEmailOnly)', () => {
 });
 
 describe('interpolate + resolveStepDisplay', () => {
-  it('substitutes [key] tokens, removing unknown/empty tokens', () => {
+  it('substitutes [key] tokens, cleaning up orphaned punctuation for empty ones', () => {
     expect(interpolate('Hi [firstname]!', { firstname: 'Ada' })).toBe('Hi Ada!');
-    expect(interpolate('Hi [firstname]!', {})).toBe('Hi !');
+    // Empty token drops the space in front of it — never render "Hi !".
+    expect(interpolate('Hi [firstname]!', {})).toBe('Hi!');
+  });
+
+  it('drops a leading empty token with its connector and re-capitalizes', () => {
+    expect(interpolate('[firstname], what problem are you solving?', {})).toBe(
+      'What problem are you solving?',
+    );
+    expect(interpolate('[firstname] how are you', {})).toBe('How are you');
+  });
+
+  it('collapses an orphaned mid-sentence token without double-spacing', () => {
+    expect(interpolate('Hi [firstname], welcome', {})).toBe('Hi, welcome');
+  });
+
+  it('leaves the all-resolved path unchanged (resolved leading token keeps case + comma)', () => {
+    expect(interpolate('[firstname], what problem are you solving?', { firstname: 'Ana' })).toBe(
+      'Ana, what problem are you solving?',
+    );
+  });
+
+  it('handles multiple tokens with mixed resolved/unresolved answers', () => {
+    // firstname empty (dropped with its preceding space); tools resolved.
+    expect(interpolate('Hi [firstname], we see you use [tools]', { tools: 'CRM' })).toBe(
+      'Hi, we see you use CRM',
+    );
+    // leading empty firstname dropped + re-capitalized; lastname resolved.
+    expect(interpolate('[firstname] [lastname], hello', { lastname: 'Lee' })).toBe('Lee, hello');
+  });
+
+  it('returns a template with no tokens unchanged', () => {
+    expect(interpolate('Just plain copy, nothing to fill.', { firstname: 'Ada' })).toBe(
+      'Just plain copy, nothing to fill.',
+    );
   });
   it('picks the dynamic question variant and slider unit label', () => {
     const s = step({

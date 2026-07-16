@@ -180,7 +180,8 @@ describe('interpolate', () => {
       'Hi Ada, budget 500?',
     );
     expect(interpolate('Picked [tools]', { tools: ['a', 'b'] })).toBe('Picked a, b');
-    expect(interpolate('Hi [missing]', {})).toBe('Hi ');
+    // Empty/missing token is swept up with its orphaned trailing space (no "Hi ").
+    expect(interpolate('Hi [missing]', {})).toBe('Hi');
   });
 });
 

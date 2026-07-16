@@ -42,6 +42,8 @@ export interface FormsMessages {
       loadError: string;
       fallbackCta: string;
       iframeTitle: string;
+      /** Subtle prompt before the always-present escape-hatch scheduling link. */
+      troublePrefix: string;
     };
     errors: {
       required: string;
@@ -574,6 +576,7 @@ export const en: FormsMessages = {
       loadError: 'The calendar could not load.',
       fallbackCta: 'Open the scheduling page',
       iframeTitle: 'Schedule a meeting',
+      troublePrefix: 'Having trouble?',
     },
     errors: {
       required: 'This field is required.',
@@ -1097,6 +1100,7 @@ export const es: FormsMessages = {
       loadError: 'No se pudo cargar el calendario.',
       fallbackCta: 'Abrir la página de agendamiento',
       iframeTitle: 'Agendar una reunión',
+      troublePrefix: '¿Tienes problemas?',
     },
     errors: {
       required: 'Este campo es obligatorio.',

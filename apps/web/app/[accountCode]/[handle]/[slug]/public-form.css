@@ -42,12 +42,20 @@
 }
 
 /* ── Sticky promo banner ── */
+/* A tasteful accent STRIP, not a full-bleed accent fill: a soft wash of the brand
+   accent over the form ground reads well with any brand color — including neon
+   (#CCFF00) — where a solid fill would glare. Because the ground is now a light
+   tint, `--pf-primary-contrast` (which assumes a SOLID accent fill) would be
+   illegible here, so text uses the form foreground and the accent shows only as
+   the tint + hairline bottom border. Mixes against `--background` (the `.pf`
+   ground), so it stays correct in both the dark and light themes. */
 .pf__banner {
   position: sticky;
   top: 0;
   z-index: 30;
-  background: var(--pf-primary);
-  color: var(--pf-primary-contrast);
+  background: color-mix(in srgb, var(--pf-primary) 12%, var(--background));
+  color: var(--foreground);
+  border-bottom: 1px solid color-mix(in srgb, var(--pf-primary) 45%, transparent);
   font-size: 14px;
   font-weight: 600;
   text-align: center;
@@ -940,3 +948,10 @@
 .pf-booking { flex: 1; display: flex; flex-direction: column; padding: 24px 16px; }
 .pf-booking__header { text-align: center; margin-bottom: 8px; }
 .pf-booking__widget { flex: 1; }
+.pf-booking__trouble {
+  text-align: center;
+  font-size: 13px;
+  color: var(--muted-foreground);
+  margin-top: 12px;
+}
+.pf-booking__trouble a { color: inherit; text-decoration: underline; }

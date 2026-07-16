@@ -618,13 +618,65 @@ export function orderSteps(steps: FormStep[]): FormStep[] {
   return [...qualification, ...leadCapture];
 }
 
-/** Replace `[key]` tokens in copy with the corresponding answer (empty → left as-is). */
+/** Resolve one `[field]` token to its substitution text (arrays join with `, `). */
+function resolveToken(value: AnswerValue): string {
+  if (value == null) return '';
+  return Array.isArray(value) ? value.join(', ') : String(value);
+}
+
+/**
+ * Replace `[key]` tokens in copy with the corresponding answer. A token whose
+ * answer is missing/empty resolves to nothing AND its orphaned connector is
+ * swept up so no dangling punctuation or whitespace is left behind:
+ *  - a **leading** empty token takes its trailing `,`/`:`/`;`/`-` + spaces with
+ *    it and the sentence is re-capitalized — `"[firstname], what problem…"` with
+ *    no firstname reads `"What problem…"`, `"[firstname] how are you"` → `"How
+ *    are you"`;
+ *  - an **embedded/trailing** empty token takes the space in front of it —
+ *    `"Hi [firstname]!"` → `"Hi!"`, `"Hi [firstname], welcome"` → `"Hi, welcome"`;
+ *  - duplicate spaces a removal creates are collapsed and the ends trimmed.
+ *
+ * Copy with **no empty tokens** is substituted verbatim — byte-for-byte identical
+ * to a plain replace — so the all-resolved path (including a resolved token's own
+ * spacing) is unchanged. Pure and deterministic; every regex is linear (no
+ * catastrophic backtracking).
+ */
 export function interpolate(template: string, answers: Answers): string {
-  return template.replace(/\[([a-zA-Z0-9_]+)\]/g, (_m, field: string) => {
-    const value: AnswerValue = answers[field];
-    if (value == null) return '';
-    return Array.isArray(value) ? value.join(', ') : String(value);
+  // Private-use sentinel marks where an empty token stood, so the cleanup pass can
+  // find the orphaned connector without disturbing any resolved text around it.
+  const EMPTY = '\uE000';
+  let hadEmpty = false;
+  const substituted = template.replace(/\[([a-zA-Z0-9_]+)\]/g, (_m, field: string) => {
+    const resolved = resolveToken(answers[field]);
+    if (resolved === '') {
+      hadEmpty = true;
+      return EMPTY;
+    }
+    return resolved;
   });
+  // Fast path: nothing empty → behave exactly like the original plain replace.
+  if (!hadEmpty) return substituted;
+
+  // The copy opened with a token that resolved empty: its first surviving word was
+  // mid-sentence a moment ago, so it should be re-capitalized after the cleanup.
+  const lead = template.match(/^\s*\[([a-zA-Z0-9_]+)\]/);
+  const leadingEmpty = lead != null && resolveToken(answers[lead[1]]) === '';
+
+  const cleaned = substituted
+    // Embedded/trailing empty token: swallow the space(s) in front of it too
+    // ("Hi []!" → "Hi!", "Hi [], welcome" → "Hi, welcome").
+    .replace(/[ \t]+\uE000/g, '')
+    // Leading/flush empty token: swallow it plus an orphaned connector + spaces
+    // ("[], what" → "what", "[] how" → "how").
+    .replace(/\uE000[ \t]*(?:[,:;-][ \t]*)?/g, '')
+    // Any sentinel that survived both passes (defensive) → gone.
+    .split(EMPTY)
+    .join('')
+    // Collapse the double space a removal may have created, then trim the ends.
+    .replace(/[ \t]{2,}/g, ' ')
+    .trim();
+
+  return leadingEmpty ? cleaned.replace(/\p{L}/u, (c) => c.toUpperCase()) : cleaned;
 }
 
 /** The lookup token a `questionField` answer resolves to for variant selection. */
