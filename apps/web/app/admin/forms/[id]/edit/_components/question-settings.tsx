@@ -13,6 +13,7 @@ import { SliderScoringEditor } from './slider-scoring-editor';
 import { LogicRules } from './logic-rules';
 import { LogicConditions } from './logic-conditions';
 import { QuestionVariants } from './question-variants';
+import { QuestionHubspotSection } from './question-hubspot';
 import { GALLERY, GALLERY_GROUPS, hasOptions, isContactType, type GalleryItem } from './question-types';
 import type { EditorMessages } from './messages';
 import type { BuilderMessages } from './builder-messages';
@@ -41,6 +42,9 @@ export function QuestionSettings({
   onScoringChange,
   bm,
   em,
+  formId,
+  locale,
+  onOpenConnect,
 }: {
   step: FormStep;
   index: number;
@@ -51,6 +55,10 @@ export function QuestionSettings({
   onScoringChange: (enabled: boolean) => void;
   bm: BuilderMessages;
   em: EditorMessages;
+  formId: string;
+  locale: string;
+  /** Switch the editor to the Connect tab (HubSpot destination setup). */
+  onOpenConnect: () => void;
 }) {
   const contact = isContactType(step.type);
   const { confirm: confirmDialog, dialog } = useConfirmDialog();
@@ -279,6 +287,18 @@ export function QuestionSettings({
           </>
         )}
       </section>
+
+      {/* HubSpot — map this answer to a contact property (message steps
+          collect no answer, so there is nothing to map). */}
+      {step.type !== 'message' ? (
+        <QuestionHubspotSection
+          formId={formId}
+          stepKey={step.key}
+          locale={locale}
+          onOpenConnect={onOpenConnect}
+          m={bm.hubspot}
+        />
+      ) : null}
       {dialog}
     </div>
   );

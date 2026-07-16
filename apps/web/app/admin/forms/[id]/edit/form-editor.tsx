@@ -18,6 +18,7 @@ import { cn } from '@/lib/cn';
 import { QuestionSpine } from './_components/question-spine';
 import { CanvasQuestion } from './_components/canvas-question';
 import { QuestionSettings } from './_components/question-settings';
+import { invalidateQuestionHubspotCache } from './_components/question-hubspot';
 import { TypeGallery } from './_components/type-gallery';
 import { LogicMap } from './_components/logic-map';
 import { ResultsView } from './_components/results-view';
@@ -74,13 +75,19 @@ export function FormEditor({
   // Deep-linkable tabs: `?tab=connect` selects the tab on load…
   const [tab, setTabState] = useState<Tab>(() => parseTab(searchParams.get('tab')));
   // …and switching syncs the URL shallowly (no navigation, no RSC refetch).
-  const setTab = useCallback((next: Tab) => {
-    setTabState(next);
-    const url = new URL(window.location.href);
-    if (next === 'build') url.searchParams.delete('tab');
-    else url.searchParams.set('tab', next);
-    window.history.replaceState(null, '', url);
-  }, []);
+  const setTab = useCallback(
+    (next: Tab) => {
+      // Mappings can change inside Connect — drop the Build settings panel's
+      // cached HubSpot data so it refetches fresh on the next Build activation.
+      if (next === 'connect') invalidateQuestionHubspotCache(id);
+      setTabState(next);
+      const url = new URL(window.location.href);
+      if (next === 'build') url.searchParams.delete('tab');
+      else url.searchParams.set('tab', next);
+      window.history.replaceState(null, '', url);
+    },
+    [id],
+  );
   const [selected, setSelected] = useState<number | null>(initialConfig.steps.length ? 0 : null);
   const [device, setDevice] = useState<'desktop' | 'mobile'>('desktop');
   const [galleryOpen, setGalleryOpen] = useState(false);
@@ -134,7 +141,19 @@ export function FormEditor({
     setFocusCanvas((n) => n + 1);
   }
   function deleteStep(index: number) {
-    mutate((c) => ({ ...c, steps: c.steps.filter((_, i) => i !== index) }));
+    mutate((c) => {
+      const steps = c.steps.filter((_, i) => i !== index);
+      // Partial-submit threshold (1-based, anchored to the step it fires AFTER):
+      // deleting a step ABOVE the anchor shifts it up one; deleting the anchor
+      // ITSELF re-attaches to the previous step (or clears when the anchor was
+      // the first step); steps BELOW the anchor never move it.
+      let partial = c.partialSubmitAfterStep;
+      if (partial != null && partial >= 1 && partial <= c.steps.length) {
+        if (index < partial - 1) partial = partial - 1;
+        else if (index === partial - 1) partial = partial > 1 ? partial - 1 : undefined;
+      }
+      return { ...c, steps, partialSubmitAfterStep: partial };
+    });
     setSelected((sel) => {
       const nextLen = config.steps.length - 1;
       if (sel == null || nextLen === 0) return null;
@@ -148,7 +167,15 @@ export function FormEditor({
       const [moved] = steps.splice(from, 1);
       if (!moved) return c;
       steps.splice(to, 0, moved);
-      return { ...c, steps };
+      // Keep the partial-submit threshold attached to the step it fires AFTER:
+      // resolve that step's key in the OLD order, then point at its NEW index.
+      let partial = c.partialSubmitAfterStep;
+      if (partial != null && partial >= 1 && partial <= c.steps.length) {
+        const anchorKey = c.steps[partial - 1]?.key;
+        const anchored = steps.findIndex((s) => s.key === anchorKey);
+        if (anchored >= 0) partial = anchored + 1;
+      }
+      return { ...c, steps, partialSubmitAfterStep: partial };
     });
     setSelected((sel) => {
       if (sel == null) return null;
@@ -304,6 +331,8 @@ export function FormEditor({
                   onSelect={setSelected}
                   onReorder={reorderSteps}
                   onAdd={() => setGalleryOpen(true)}
+                  partialAfterStep={config.partialSubmitAfterStep}
+                  onPartialChange={setPartialSubmitAfterStep}
                   m={bm}
                 />
               </aside>
@@ -389,6 +418,9 @@ export function FormEditor({
                     onScoringChange={setScoring}
                     bm={bm}
                     em={m}
+                    formId={id}
+                    locale={locale}
+                    onOpenConnect={() => setTab('connect')}
                   />
                 ) : null}
               </aside>
@@ -428,7 +460,7 @@ export function FormEditor({
             <RevealPanel
               config={config}
               onRevealChange={patchReveal}
-              onPartialSubmitChange={setPartialSubmitAfterStep}
+              partialNote={bm.partial.designNote}
               m={m}
             />
           </div>
