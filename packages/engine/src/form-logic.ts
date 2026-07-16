@@ -673,14 +673,19 @@ function resolveToken(value: AnswerValue): string {
 
 /**
  * Replace `[key]` tokens in copy with the corresponding answer. A token whose
- * answer is missing/empty resolves to nothing AND its orphaned connector is
- * swept up so no dangling punctuation or whitespace is left behind:
+ * answer is missing/empty resolves to nothing AND the connector that joined it to
+ * the rest of the sentence is swept up with it, so no dangling *joining* punctuation
+ * or whitespace is left behind (a connector that only *follows* the token belongs to
+ * the next clause and is kept):
  *  - a **leading** empty token takes its trailing `,`/`:`/`;`/`-` + spaces with
  *    it and the sentence is re-capitalized — `"[firstname], what problem…"` with
  *    no firstname reads `"What problem…"`, `"[firstname] how are you"` → `"How
  *    are you"`;
- *  - an **embedded/trailing** empty token takes the space in front of it —
- *    `"Hi [firstname]!"` → `"Hi!"`, `"Hi [firstname], welcome"` → `"Hi, welcome"`;
+ *  - an **embedded/trailing** empty token takes the space *and* an orphaned
+ *    connector *in front of* it — `"Hi [firstname]!"` → `"Hi!"`,
+ *    `"What is your role, [firstname]?"` → `"What is your role?"`; a connector
+ *    *after* the token belongs to the following clause and is kept —
+ *    `"Hi [firstname], welcome"` → `"Hi, welcome"`;
  *  - duplicate spaces a removal creates are collapsed and the ends trimmed.
  *
  * Copy with **no empty tokens** is substituted verbatim — byte-for-byte identical
@@ -709,14 +714,19 @@ export function interpolate(template: string, answers: Answers): string {
   const lead = template.match(/^\s*\[([a-zA-Z0-9_]+)\]/);
   const leadingEmpty = lead != null && resolveToken(answers[lead[1]]) === '';
 
-  const cleaned = substituted
-    // Embedded/trailing empty token: swallow the space(s) in front of it too
-    // ("Hi []!" → "Hi!", "Hi [], welcome" → "Hi, welcome").
-    .replace(/[ \t]+\uE000/g, '')
-    // Leading/flush empty token: swallow it plus an orphaned connector + spaces
-    // ("[], what" → "what", "[] how" → "how").
-    .replace(/\uE000[ \t]*(?:[,:;-][ \t]*)?/g, '')
-    // Any sentinel that survived both passes (defensive) → gone.
+  let cleaned = substituted;
+  if (leadingEmpty) {
+    // Leading/flush empty token: also drop an orphaned trailing connector +
+    // spaces ('[x], what' becomes 'what', '[x] how' becomes 'how').
+    cleaned = cleaned.replace(/^[ \t]*\uE000[ \t]*(?:[,:;-][ \t]*)?/, '');
+  }
+  cleaned = cleaned
+    // Embedded/trailing empty token: drop the space(s) in front of it, plus an
+    // orphaned connector that joined it to the preceding clause ('role, [x]?'
+    // becomes 'role?'). A connector AFTER the token belongs to the following
+    // clause and is kept ('Hi [x], welcome' becomes 'Hi, welcome').
+    .replace(/[ \t]*(?:[,:;-][ \t]*)?\uE000/g, '')
+    // Any sentinel that survived the pass (defensive) is removed.
     .split(EMPTY)
     .join('')
     // Collapse the double space a removal may have created, then trim the ends.

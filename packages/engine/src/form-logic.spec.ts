@@ -319,6 +319,18 @@ describe('interpolate + resolveStepDisplay', () => {
     expect(interpolate('Hi [firstname], welcome', {})).toBe('Hi, welcome');
   });
 
+  it('sweeps a connector *before* an embedded or trailing empty token', () => {
+    // Name-last shape: the comma that joined the token to the clause leaves with it.
+    expect(interpolate('What is your role, [firstname]?', {})).toBe('What is your role?');
+    // Trailing empty token after a colon: the colon + space are swept, no "Priority:".
+    expect(interpolate('Priority: [firstname]', {})).toBe('Priority');
+    // A connector *before* the token is swept; one *after* it belongs to the next
+    // clause and is kept.
+    expect(interpolate('Nice, [firstname]; welcome', {})).toBe('Nice; welcome');
+    // The dash branch of the connector class is swept before a trailing token too.
+    expect(interpolate('Deadline - [firstname]', {})).toBe('Deadline');
+  });
+
   it('leaves the all-resolved path unchanged (resolved leading token keeps case + comma)', () => {
     expect(interpolate('[firstname], what problem are you solving?', { firstname: 'Ana' })).toBe(
       'Ana, what problem are you solving?',
