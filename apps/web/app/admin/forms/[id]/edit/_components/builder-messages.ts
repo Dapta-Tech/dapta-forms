@@ -56,6 +56,10 @@ export interface BuilderMessages {
     /** "{n} pts" */
     pts: string;
     messagePlaceholder: string;
+    /** Name-step preview defaults — MUST mirror the shared catalog's
+     *  `renderer.name.*` so the canvas shows exactly what publishes. */
+    nameFirstPlaceholder: string;
+    nameLastPlaceholder: string;
   };
   settings: {
     title: string;
@@ -204,6 +208,8 @@ const en: BuilderMessages = {
     submit: 'Submit',
     pts: '{n} pts',
     messagePlaceholder: 'Write your message…',
+    nameFirstPlaceholder: 'First name',
+    nameLastPlaceholder: 'Last name',
   },
   settings: {
     title: 'Question settings',
@@ -363,6 +369,8 @@ const es: BuilderMessages = {
     submit: 'Enviar',
     pts: '{n} pts',
     messagePlaceholder: 'Escribe tu mensaje…',
+    nameFirstPlaceholder: 'Nombre',
+    nameLastPlaceholder: 'Apellidos',
   },
   settings: {
     title: 'Ajustes de la pregunta',

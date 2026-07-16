@@ -3,6 +3,7 @@
 import { useEffect, useRef } from 'react';
 import type { Answers, AnswerValue, FormStep } from '@quill/engine';
 import { nameFields, isMultiSelect } from '@quill/engine';
+import { getMessages } from '@quill/shared';
 import { SearchableDropdown } from './searchable-dropdown';
 import { PhoneInput } from './phone-input';
 
@@ -42,6 +43,13 @@ export function StepInput({
   switch (step.type) {
     case 'name': {
       const [firstField, secondField] = nameFields(step);
+      // Positional fallback: a configured placeholder wins; an empty/unset one
+      // falls back to the localized default so published inputs never render
+      // placeholder-less. aria-labels reuse the same resolved copy (never the
+      // raw field key).
+      const nm = getMessages(locale).renderer.name;
+      const firstLabel = (firstField && step.placeholders?.[firstField]) || nm.firstPlaceholder;
+      const secondLabel = (secondField && step.placeholders?.[secondField]) || nm.lastPlaceholder;
       return (
         <div className="pf-name-fields">
           {firstField && (
@@ -50,8 +58,8 @@ export function StepInput({
               className="pf-input"
               value={String(answers[firstField] ?? '')}
               onChange={(e) => onFieldChange(firstField, e.target.value)}
-              placeholder={step.placeholders?.[firstField] ?? ''}
-              aria-label={step.placeholders?.[firstField] ?? firstField}
+              placeholder={firstLabel}
+              aria-label={firstLabel}
               autoFocus
             />
           )}
@@ -61,8 +69,8 @@ export function StepInput({
               className="pf-input"
               value={String(answers[secondField] ?? '')}
               onChange={(e) => onFieldChange(secondField, e.target.value)}
-              placeholder={step.placeholders?.[secondField] ?? ''}
-              aria-label={step.placeholders?.[secondField] ?? secondField}
+              placeholder={secondLabel}
+              aria-label={secondLabel}
             />
           )}
         </div>
