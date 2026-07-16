@@ -9,6 +9,7 @@ import { iconForStep, hasOptions } from './question-types';
 import { maxStepPoints } from './scoring-util';
 import type { BuilderMessages } from './builder-messages';
 import { tb } from './builder-messages';
+import { TokenTextarea, tokenOptionsBefore, allTokenKeys } from './token-textarea';
 
 /** A textarea that grows to fit its content (used for inline title/description). */
 function AutoTextarea({
@@ -120,12 +121,21 @@ export function CanvasQuestion({
           {tb(m.canvas.questionN, { n: index + 1 })}
         </p>
 
-        {/* Inline editable title */}
-        <AutoTextarea
+        {/* Inline editable title — with the @ recall-information picker (the
+            engine interpolates `[key]` tokens in `question` from EARLIER
+            answers; the description/helper renders raw, so only the title gets
+            the picker). */}
+        <TokenTextarea
           value={step.question ?? ''}
           onChange={(v) => onUpdate({ question: v })}
           placeholder={m.canvas.titlePlaceholder}
           ariaLabel={m.canvas.titlePlaceholder}
+          autoGrow
+          tokens={tokenOptionsBefore(config.steps, index)}
+          allKeys={allTokenKeys(config.steps)}
+          m={m.tokens}
+          hint={m.tokens.hint}
+          testId="canvas-title-input"
           className="canvas-title text-2xl font-semibold tracking-tight text-foreground sm:text-[28px]"
         />
 

@@ -3,11 +3,18 @@
 import type { FormStep } from '@quill/engine';
 import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
-import { Field, SelectField, TextField, TextArea, InlineField } from './fields';
+import { Field, SelectField, TextField, InlineField } from './fields';
 import { hasOptions } from './question-types';
 import type { EditorMessages } from './messages';
+import { TokenTextarea, tokenOptionsBefore, allTokenKeys } from './token-textarea';
 
 const FALLBACK = '*';
+
+/** fields.tsx `controlBase` + the panel's compact sizing, for TokenTextarea. */
+const VARIANT_TEXTAREA_CLASS =
+  'rounded-md border border-input bg-background px-3 py-1.5 text-xs transition-colors ' +
+  'placeholder:text-muted-foreground hover:border-muted-foreground ' +
+  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring resize-y';
 
 /**
  * Dynamic question editor: vary this question's text by the answer to an
@@ -36,6 +43,19 @@ export function QuestionVariants({
   const variants = step.questionVariants ?? {};
   const rows = Object.keys(variants).filter((k) => k !== FALLBACK);
   const isSlider = step.type === 'slider';
+
+  // The @ picker in every variant textarea: insertable tokens are the fields
+  // captured BEFORE this step (all the engine's `interpolate` resolves here);
+  // allKeys classifies a referenced later-step vs. unknown token for warnings.
+  const tokens = tokenOptionsBefore(steps, index);
+  const allKeys = allTokenKeys(steps);
+  const tokenMessages = {
+    pickerLabel: m.tokenPickerLabel,
+    pickerEmpty: m.tokenPickerEmpty,
+    pickerNoMatch: m.tokenPickerNoMatch,
+    warnLater: m.tokenWarnLater,
+    warnUnknown: m.tokenWarnUnknown,
+  };
 
   function toggle(on: boolean) {
     if (!on) {
@@ -156,15 +176,20 @@ export function QuestionVariants({
                   className="h-8 py-1 text-xs"
                 />
               )}
-              <label className="flex flex-col gap-1">
+              <div className="flex flex-col gap-1">
                 <span className="text-[11px] font-medium text-muted-foreground">{m.variantQuestion}</span>
-                <TextArea
+                <TokenTextarea
                   value={variants[key] ?? ''}
                   rows={2}
-                  onChange={(e) => setVariant(key, e.target.value)}
-                  className="py-1.5 text-xs"
+                  onChange={(v) => setVariant(key, v)}
+                  placeholder=""
+                  ariaLabel={m.variantQuestion}
+                  tokens={tokens}
+                  allKeys={allKeys}
+                  m={tokenMessages}
+                  className={VARIANT_TEXTAREA_CLASS}
                 />
-              </label>
+              </div>
               {isSlider ? (
                 <label className="flex flex-col gap-1">
                   <span className="text-[11px] font-medium text-muted-foreground">{m.sliderLabel}</span>
@@ -179,15 +204,19 @@ export function QuestionVariants({
           ))}
 
           <Field label={m.fallback}>
-            <TextArea
+            <TokenTextarea
               value={variants[FALLBACK] ?? ''}
               rows={2}
-              onChange={(e) => {
-                const text = e.target.value;
+              onChange={(text) => {
                 if (text) setVariant(FALLBACK, text);
                 else removeVariant(FALLBACK);
               }}
-              className="py-1.5 text-xs"
+              placeholder=""
+              ariaLabel={m.fallback}
+              tokens={tokens}
+              allKeys={allKeys}
+              m={tokenMessages}
+              className={VARIANT_TEXTAREA_CLASS}
             />
           </Field>
 
