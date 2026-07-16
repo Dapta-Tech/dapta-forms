@@ -68,3 +68,14 @@ Repo: this monorepo, branch `feature/pilot-features`. All pilot-port features ar
 }
 ```
 Steps with `triggersReveal: true` show the reveal after completing that step. `partialSubmitAfterStep` is 1-based over the runtime steps.
+
+## V2 additions (feedback round — read for V2 specs)
+- **Encryption + HubSpot connected**: the QA env now has `FORMS_ENCRYPTION_KEY` set (so `GET /v1/integrations` → `encryptionAvailable:true`) AND HubSpot is already connected at the account level (real token). `GET /v1/integrations` lists provider `hubspot` connected. The property picker returns the real 856 properties.
+- **Integration connect API**: `GET /v1/integrations` (status, token-free), `POST /v1/integrations/:provider/connect {token}`, `DELETE /v1/integrations/:provider`. Never assert on a raw token.
+- **Notifications API**: `GET /v1/notifications`, `PUT /v1/notifications/:emailKey {enabled?,subject?,body?}` (emailKey ∈ submission_received|submission_confirmed), `POST /v1/notifications/:emailKey/reset`.
+- **New admin UIs**: `/admin/integrations` = account connections (cards per provider, connect/disconnect). Per-form mapping at `/admin/forms/:id/integrations` (Typeform-style, only usable when connected; branded searchable property `Select`; "Auto-map" button toasts a count). `/admin/settings` has a Notifications section (per-email enable toggle, subject input, body textarea, {{token}} chips, live preview, reset).
+- **Editor header** (`/admin/forms/:id/edit`): new buttons `data-testid="editor-copy-link"` and `data-testid="editor-open-form"` between Preview and Publish.
+- **Branded dropdowns**: admin `<select>`s are now a custom combobox (`components/ui/select.tsx`) — the trigger is a `<button aria-haspopup="listbox">`; the panel is `role="listbox"` with `role="option"`s. NOT a native `<select>`. The public `dropdown` step is still the pf-* SearchableDropdown.
+- **Phone step**: public phone renders `apps/web/components/public/phone-input.tsx` — a `.pf-phone` combobox (country flag+dial trigger opens a searchable `.pf-phone__panel` listbox of countries) + a digits input. Value stored E.164 (`+<dial><digits>`). Default country from locale (en→US, es→MX).
+- **Interpolation fix**: a question like `"[firstname], what problem…"` with no firstname answered renders `"What problem…"` (no leading comma). The pilot form's Q2 exercises this (qualification shows before the name step).
+- **Webhook events**: webhook destination has optional `events:('partial'|'complete')[]` (absent=both). UI: Partial/Complete checkboxes in the webhook card, ≥1 must stay checked.
