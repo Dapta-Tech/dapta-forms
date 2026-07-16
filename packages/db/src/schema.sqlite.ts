@@ -178,6 +178,27 @@ export const bookingEvent = sqliteTable(
   }),
 );
 
+export const accountIntegration = sqliteTable(
+  'account_integration',
+  {
+    id: text('id').primaryKey(),
+    accountId: text('account_id').notNull(),
+    provider: text('provider').notNull(),
+    encryptedToken: text('encrypted_token').notNull(),
+    /** Display-only, non-secret hints as TEXT JSON (last4, connected label). */
+    meta: text('meta'),
+    connectedAt: integer('connected_at').notNull(),
+    updatedAt: integer('updated_at').notNull(),
+  },
+  (t) => ({
+    accountIntegrationAccountProviderUq: uniqueIndex('account_integration_account_provider_uq').on(
+      t.accountId,
+      t.provider,
+    ),
+    accountIntegrationAccountIdx: index('account_integration_account_idx').on(t.accountId),
+  }),
+);
+
 export const sqliteSchema = {
   account,
   accountAlias,
@@ -189,4 +210,5 @@ export const sqliteSchema = {
   submission,
   formEvent,
   bookingEvent,
+  accountIntegration,
 };

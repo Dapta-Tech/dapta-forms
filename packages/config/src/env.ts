@@ -79,6 +79,19 @@ export const serverEnvSchema = z.object({
   // (a webhook-only fork needs nothing here). Never sent to the browser.
   HUBSPOT_PRIVATE_APP_TOKEN: z.string().optional(),
 
+  // Symmetric key (base64-encoded 32 bytes) for encrypting account-level
+  // integration tokens at rest (the paste-token model — see account_integration).
+  // Generate with: openssl rand -base64 32. Unset = the per-account connect UI
+  // is disabled and the app falls back to the single-tenant env tokens above
+  // (fine for an OSS/self-host fork with one HubSpot account). Server-only,
+  // never sent to the browser.
+  FORMS_ENCRYPTION_KEY: z
+    .string()
+    .refine((v) => v === '' || Buffer.from(v, 'base64').length === 32, {
+      message: 'FORMS_ENCRYPTION_KEY must be a base64-encoded 32-byte key (openssl rand -base64 32).',
+    })
+    .optional(),
+
   // Booking sync (Calendly enrichment). Server-only personal access token the
   // `booking_sync` outbox handler uses to fetch the scheduled event + invitee
   // after a visitor books through an outcome's scheduling handoff. Unset =

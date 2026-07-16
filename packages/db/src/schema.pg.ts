@@ -158,6 +158,26 @@ export const bookingEvent = pgTable(
   }),
 );
 
+export const accountIntegration = pgTable(
+  'account_integration',
+  {
+    id: text('id').primaryKey(),
+    accountId: text('account_id').notNull(),
+    provider: text('provider').notNull(),
+    encryptedToken: text('encrypted_token').notNull(),
+    meta: jsonb('meta'),
+    connectedAt: bigint('connected_at', { mode: 'number' }).notNull(),
+    updatedAt: bigint('updated_at', { mode: 'number' }).notNull(),
+  },
+  (t) => ({
+    accountIntegrationAccountProviderUq: uniqueIndex('account_integration_account_provider_uq').on(
+      t.accountId,
+      t.provider,
+    ),
+    accountIntegrationAccountIdx: index('account_integration_account_idx').on(t.accountId),
+  }),
+);
+
 export const pgSchema = {
   account,
   accountAlias,
@@ -169,4 +189,5 @@ export const pgSchema = {
   submission,
   formEvent,
   bookingEvent,
+  accountIntegration,
 };
