@@ -252,6 +252,13 @@ export const webhookDestinationSchema = z.object({
    */
   id: z.string().max(64).optional(),
   enabled: z.boolean().default(false),
+  /**
+   * Which submission phases fire this webhook (additive; default = both).
+   * `partial` = a partial submission past the lead-capture threshold;
+   * `complete` = a finished submission. Absent/empty is treated as BOTH for
+   * back-compat with configs saved before per-event triggers existed.
+   */
+  events: z.array(z.enum(['partial', 'complete'])).optional(),
   settings: z.object({
     // https-only, with ONE exception: plain http for localhost/127.0.0.1 (local
     // dev catcher). Mirrors the admin UI validation — keep the two in sync.
@@ -273,6 +280,24 @@ export const webhookDestinationSchema = z.object({
   }),
 });
 export type WebhookDestination = z.infer<typeof webhookDestinationSchema>;
+
+/** Submission phases a destination can subscribe to. */
+export const destinationEvents = ['partial', 'complete'] as const;
+export type DestinationEvent = (typeof destinationEvents)[number];
+
+/**
+ * Resolve whether a destination should fire for a given phase. Absent/empty
+ * `events` = both phases (back-compat). Only webhook destinations carry an
+ * `events` filter today; others always fire (their adapters gate internally).
+ */
+export function destinationFiresForPhase(
+  destination: { type: string; events?: DestinationEvent[] | undefined },
+  phase: DestinationEvent,
+): boolean {
+  const events = destination.events;
+  if (!events || events.length === 0) return true;
+  return events.includes(phase);
+}
 
 /**
  * HubSpot destination — upsert the respondent as a contact and (on complete)
