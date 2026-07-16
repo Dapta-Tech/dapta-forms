@@ -5,7 +5,8 @@ import { fileURLToPath } from 'node:url';
 
 /**
  * Cross-feature regression net over the IMPORTED pilot-style form
- * (`/acme/me/pilot-lead-qualifier`, created by qa/import-pilot-form.ts):
+ * (`/<accountCode>/me/pilot-lead-qualifier`, created by qa/import-pilot-form.ts;
+ * accountCode resolved from GET /v1/me):
  *
  *   1. cover renders + start works
  *   2. qualified walk → question variants → reveal interstitial → booking screen
@@ -19,9 +20,21 @@ import { fileURLToPath } from 'node:url';
  * spec is idempotent against the shared imported form.
  */
 
-const FORM_PATH = '/acme/me/pilot-lead-qualifier';
-const SESSION_KEY = 'quill-form-acme-pilot-lead-qualifier';
+// The imported pilot form belongs to the local principal's account — resolve
+// its code from GET /v1/me (per QA conventions the principal may NOT be
+// `acme`; on some QA instances the import ran under a generated code).
+const PILOT_SLUG = 'pilot-lead-qualifier';
+let FORM_PATH = ''; // `/<accountCode>/me/pilot-lead-qualifier`, set in beforeAll
+let SESSION_KEY = ''; // `quill-form-<accountCode>-pilot-lead-qualifier`
 const RUN_ID = Date.now(); // marks this run's answers for debuggability
+
+test.beforeAll(async ({ request }) => {
+  const res = await request.get('http://localhost:4400/v1/me');
+  expect(res.ok(), `GET /v1/me failed: ${res.status()}`).toBeTruthy();
+  const { accountCode } = (await res.json()) as { accountCode: string };
+  FORM_PATH = `/${accountCode}/me/${PILOT_SLUG}`;
+  SESSION_KEY = `quill-form-${accountCode}-${PILOT_SLUG}`;
+});
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '..', '..');
@@ -154,10 +167,11 @@ async function submitFinalStep(page: Page, buttonName: 'Submit' | 'Next'): Promi
 }
 
 /**
- * NOTE ordering: the engine's `orderSteps` runs QUALIFICATION steps first and
- * `lead_capture` steps last (two-phase order). So the imported pilot form walks
- * problema → slider → industry → uso_ia → name → email → (website) →
- * (disqualified) → phone, NOT the pilot's original config order.
+ * NOTE ordering: the runtime walks the AUTHORED `config.steps` order verbatim
+ * (WYSIWYG — the P0 two-phase reorder was removed; `flowGroup` only affects
+ * scoring). The imported pilot form authors the name step FIRST, so it walks
+ * name → problema → slider → industry → uso_ia → email → (website) →
+ * (disqualified) → phone — the pilot's original config order.
  */
 async function answerName(page: Page): Promise<void> {
   await expect(page.getByRole('heading', { name: /what.s your name/i })).toBeVisible();
@@ -167,8 +181,9 @@ async function answerName(page: Page): Promise<void> {
 }
 
 async function chooseProblem(page: Page, optionLabel: string): Promise<void> {
-  // First runtime step. Its "[firstname], …" template interpolates to empty
-  // here because the name step is lead_capture (ordered later).
+  // Second runtime step (the name step is authored — and therefore rendered —
+  // first). Its "[firstname], …" template interpolates the just-captured name;
+  // the substring match tolerates the interpolated prefix.
   await expect(
     page.getByRole('heading', { name: /what problem are you solving/i }),
   ).toBeVisible({ timeout: 10_000 });
@@ -188,8 +203,8 @@ async function expectRevealPlays(page: Page): Promise<void> {
 }
 
 /**
- * Qualified walk (runtime two-phase order): problema "Cold leads follow-up" →
- * slider (default 100) → industry Banking → uso_ia production → name → email →
+ * Qualified walk (authored order): name → problema "Cold leads follow-up" →
+ * slider (default 100) → industry Banking → uso_ia production → email →
  * reveal → phone. Leaves the page right after submitting the phone (last) step.
  */
 async function walkQualified(page: Page, email: string): Promise<string> {
@@ -197,6 +212,7 @@ async function walkQualified(page: Page, email: string): Promise<string> {
   const sessionId = await getSessionId(page);
   await startForm(page);
 
+  await answerName(page);
   await chooseProblem(page, 'Cold leads follow-up');
 
   // Slider shows the problema-specific question VARIANT and seeds its default (100).
@@ -214,7 +230,6 @@ async function walkQualified(page: Page, email: string): Promise<string> {
   await expect(page.getByRole('heading', { name: /are you using ai today/i })).toBeVisible();
   await page.getByRole('radio', { name: 'Yes, in production' }).click();
 
-  await answerName(page);
   await answerEmail(page, email);
   await expectRevealPlays(page);
 
@@ -255,10 +270,9 @@ test('pilot form renders its cover and starts', async ({ page }) => {
   await expect(page.getByText('Book a call and get a free onboarding session')).toBeVisible(); // banner
   await expect(page.getByText('2-minute assessment')).toBeVisible(); // badge
   await startForm(page);
-  // First step (problema — qualification phase comes first) + progress chrome.
-  await expect(
-    page.getByRole('heading', { name: /what problem are you solving/i }),
-  ).toBeVisible();
+  // First step (name — the pilot authors it first, and authored order is
+  // authoritative) + progress chrome.
+  await expect(page.getByRole('heading', { name: /what.s your name/i })).toBeVisible();
   await expect(page.locator('.pf__topbar')).toBeVisible();
 });
 
@@ -289,6 +303,7 @@ test('disqualified lead: terminal message, ends without booking', async ({ page 
   const sessionId = await getSessionId(page);
   await startForm(page);
 
+  await answerName(page);
   await chooseProblem(page, 'None of these');
 
   // Slider + industry are skipped for "ninguna" — uso_ia is the next question.
@@ -296,7 +311,6 @@ test('disqualified lead: terminal message, ends without booking', async ({ page 
   await expect(page.getByRole('heading', { name: /leads.*per month/i })).toHaveCount(0);
   await page.getByRole('radio', { name: 'Not yet' }).click();
 
-  await answerName(page);
   await answerEmail(page, 'qa-dq@acmecorp.com');
   await expectRevealPlays(page);
 
@@ -321,6 +335,7 @@ test('personal email inserts the website step before phone', async ({ page }) =>
   await openCover(page);
   await startForm(page);
 
+  await answerName(page);
   await chooseProblem(page, 'Cold leads follow-up');
 
   await expect(
@@ -332,7 +347,6 @@ test('personal email inserts the website step before phone', async ({ page }) =>
   await page.locator('.pf-dropdown__option', { hasText: 'Software' }).click();
   await page.getByRole('radio', { name: 'Experimenting' }).click();
 
-  await answerName(page);
   await answerEmail(page, 'test@gmail.com');
   await expectRevealPlays(page);
 

@@ -654,17 +654,6 @@ export function nameFields(step: FormStep): string[] {
   return [step.key];
 }
 
-/**
- * Two-phase order: qualification steps first, then lead-capture — a stable
- * partition that preserves each step's relative order within its phase. Steps
- * with no `flowGroup` are treated as qualification.
- */
-export function orderSteps(steps: FormStep[]): FormStep[] {
-  const qualification = steps.filter((s) => s.flowGroup !== 'lead_capture');
-  const leadCapture = steps.filter((s) => s.flowGroup === 'lead_capture');
-  return [...qualification, ...leadCapture];
-}
-
 /** Resolve one `[field]` token to its substitution text (arrays join with `, `). */
 function resolveToken(value: AnswerValue): string {
   if (value == null) return '';
@@ -774,13 +763,14 @@ export function resolveStepDisplay(step: FormStep, answers: Answers): FormStep {
 
 /**
  * The ordered, visible, display-resolved steps the renderer walks — the single
- * source of truth for the public flow. Composes `orderSteps` (two-phase) +
+ * source of truth for the public flow. The AUTHORED `config.steps` order is
+ * authoritative (WYSIWYG: the public form walks the exact order the editor
+ * shows — `flowGroup` only affects scoring, never sequencing). Composes
  * `visibleSteps` (skip-logic + personal-email branch) + `resolveStepDisplay`
- * (dynamic variants + interpolation).
+ * (dynamic variants + interpolation) + `applyGoto` (forward jumps).
  */
 export function runtimeSteps(config: FormConfig, answers: Answers): FormStep[] {
-  const ordered: FormConfig = { ...config, steps: orderSteps(config.steps) };
-  const visible = visibleSteps(ordered, answers).map((s) => resolveStepDisplay(s, answers));
+  const visible = visibleSteps(config, answers).map((s) => resolveStepDisplay(s, answers));
   return applyGoto(visible, answers);
 }
 

@@ -11,20 +11,20 @@ import { test, expect, type APIRequestContext, type Page } from '@playwright/tes
  * resolveStepDisplay → resolveQuestion → interpolate), so these are black-box
  * assertions on the visible `.pf__question` text.
  *
- * A `name` step (flowGroup `lead_capture`) always renders AFTER `qualification`
- * steps (engine `orderSteps` is two-phase), so a qualification question that
- * references `[firstname]` is shown BEFORE any name is captured — the exact
- * moment the graceful-sweep must fire.
+ * Steps render in the AUTHORED `config.steps` order (WYSIWYG — the engine's
+ * two-phase `flowGroup` reorder was removed; `flowGroup` only affects scoring).
+ * Each test authors the question that references `[firstname]` BEFORE or AFTER
+ * the name step to control whether the token is empty when it renders.
  *
- * 1. Leading empty token — "[firstname], what problem are you solving?" with no
- *    firstname renders "What problem are you solving?": no leading comma, first
- *    letter re-capitalized.
+ * 1. Leading empty token — "[firstname], what problem are you solving?" authored
+ *    before the name step renders "What problem are you solving?": no leading
+ *    comma, first letter re-capitalized.
  * 2. Control, embedded/trailing empty token — "Hi [firstname]" with no firstname
  *    renders exactly "Hi": the space in front of the token is swept, no trailing
  *    artifact.
- * 3. Answered token — with the name step ordered first (flowGroup `qualification`)
- *    and the reference in a later `lead_capture` step, "[firstname], welcome"
- *    interpolates the real name → "Alex, welcome" (comma kept, verbatim).
+ * 3. Answered token — with the name step authored first and the reference in a
+ *    later step, "[firstname], welcome" interpolates the real name →
+ *    "Alex, welcome" (comma kept, verbatim).
  *
  * Each test creates its own live form via the admin API (:4400) with a unique
  * name (per-run counter + worker index; Date.now is banned). `uniqueFormSlug`
@@ -39,7 +39,7 @@ let formSeq = 0;
 
 type Cfg = Record<string, unknown>;
 
-/** A qualification (shown-first) single-select choice with the given question. */
+/** A qualification single-select choice with the given question. */
 function qualChoice(key: string, question: string): Cfg {
   return {
     key,
@@ -186,8 +186,8 @@ test('answered token: name captured first → "[firstname], welcome" interpolate
   request,
 }) => {
   await blockExternal(page);
-  // Name step ordered FIRST (flowGroup qualification); the reference lives in a
-  // later lead_capture step, so firstname is answered by the time it renders.
+  // Name step AUTHORED first (authored order is authoritative); the reference
+  // lives in a later step, so firstname is answered by the time it renders.
   const path = await createForm(request, 'answered', [
     nameStep('qualification', "What's your name?"),
     { ...qualChoice('welcome', '[firstname], welcome'), flowGroup: 'lead_capture' },

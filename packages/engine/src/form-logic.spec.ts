@@ -7,7 +7,6 @@ import {
   computeScore,
   resolveOutcome,
   isPersonalEmail,
-  orderSteps,
   interpolate,
   resolveStepDisplay,
   runtimeSteps,
@@ -270,15 +269,42 @@ describe('isPersonalEmail', () => {
   });
 });
 
-describe('orderSteps', () => {
-  it('puts qualification before lead_capture, preserving order within a phase', () => {
-    const steps: FormStep[] = [
-      step({ key: 'email', type: 'email', flowGroup: 'lead_capture' }),
-      step({ key: 'q1', type: 'text', flowGroup: 'qualification' }),
-      step({ key: 'phone', type: 'phone', flowGroup: 'lead_capture' }),
-      step({ key: 'q2', type: 'text' }), // no group → qualification
-    ];
-    expect(orderSteps(steps).map((s) => s.key)).toEqual(['q1', 'q2', 'email', 'phone']);
+describe('authored step order is authoritative (WYSIWYG)', () => {
+  it('never reorders by flowGroup — lead_capture steps render exactly where authored', () => {
+    const cfg: FormConfig = {
+      version: 1,
+      steps: [
+        step({ key: 'email', type: 'email', flowGroup: 'lead_capture' }),
+        step({ key: 'q1', type: 'text', flowGroup: 'qualification' }),
+        step({ key: 'phone', type: 'phone', flowGroup: 'lead_capture' }),
+        step({ key: 'q2', type: 'text' }), // no group
+      ],
+    };
+    expect(runtimeSteps(cfg, {}).map((s) => s.key)).toEqual(['email', 'q1', 'phone', 'q2']);
+  });
+
+  it('regression: a form authored [name, text, select] walks [name, text, select]', () => {
+    // The exact P0 shape: a name step authored FIRST (auto-tagged lead_capture by
+    // the editor) must be the FIRST public question, not pushed to the end.
+    const cfg: FormConfig = {
+      version: 1,
+      steps: [
+        step({
+          key: 'name',
+          type: 'name',
+          flowGroup: 'lead_capture',
+          fields: ['firstname', 'lastname'],
+        }),
+        step({ key: 'details', type: 'text', flowGroup: 'qualification' }),
+        step({
+          key: 'industry',
+          type: 'multiple_choice',
+          flowGroup: 'qualification',
+          options: [{ label: 'SaaS', value: 'saas' }],
+        }),
+      ],
+    };
+    expect(runtimeSteps(cfg, {}).map((s) => s.key)).toEqual(['name', 'details', 'industry']);
   });
 });
 
@@ -367,7 +393,7 @@ describe('interpolate + resolveStepDisplay', () => {
 });
 
 describe('runtimeSteps', () => {
-  it('orders two-phase, applies skip-logic, and resolves display', () => {
+  it('walks the authored order, applies skip-logic, and resolves display', () => {
     const cfg: FormConfig = {
       version: 1,
       steps: [
@@ -389,8 +415,10 @@ describe('runtimeSteps', () => {
       ],
     };
     const walked = runtimeSteps(cfg, { problem: 'leads' });
-    expect(walked.map((s) => s.key)).toEqual(['problem', 'detail', 'email']);
-    expect(walked[1].question).toBe('Tell us more about leads.');
+    // Authored order is preserved verbatim — the lead_capture email step stays
+    // first because that is where the author put it.
+    expect(walked.map((s) => s.key)).toEqual(['email', 'problem', 'detail']);
+    expect(walked[2].question).toBe('Tell us more about leads.');
   });
 });
 

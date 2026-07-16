@@ -32,8 +32,11 @@ test('F1 · interpolation — no dangling comma', async ({ page, request }) => {
     version: 1,
     cover: { enabled: true, headline: 'Quick question', ctaText: 'Start' },
     steps: [
-      { key: 'firstname', type: 'name', question: "What's your name?", fields: ['firstname', 'lastname'], flowGroup: 'lead_capture' },
+      // The interpolated question is AUTHORED first (authored order is now the
+      // runtime order), so it renders before any name is captured — the empty
+      // [firstname] token must sweep its comma.
       { key: 'problem', type: 'multiple_choice', question: '[firstname], what problem are you solving?', flowGroup: 'qualification', options: [{ label: 'Leads', value: 'leads' }, { label: 'Support', value: 'support' }] },
+      { key: 'firstname', type: 'name', question: "What's your name?", fields: ['firstname', 'lastname'], flowGroup: 'lead_capture' },
     ],
     scoring: { enabled: false },
     outcomes: [{ id: 'done', label: 'Thanks', minScore: 0 }],
