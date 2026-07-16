@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import type {
   FormConfig,
   FormStep,
@@ -11,6 +12,7 @@ import type {
   FormReveal,
 } from '@quill/engine';
 import { normalizeConfig } from '@quill/engine';
+import type { FormTracking } from '@quill/types';
 import { saveFormAction } from '@/app/admin/actions';
 import { cn } from '@/lib/cn';
 import { QuestionSpine } from './_components/question-spine';
@@ -22,6 +24,7 @@ import { ResultsView } from './_components/results-view';
 import { EmptyState } from './_components/empty-state';
 import { CoverPanel } from './_components/cover-panel';
 import { RevealPanel } from './_components/reveal-panel';
+import { ConnectPanel } from './_components/connect-panel';
 import { PublishButton } from './publish-button';
 import { LinkActions } from './link-actions';
 import { DevicePreviewModal } from './_components/device-preview-modal';
@@ -31,9 +34,14 @@ import { getBuilderMessages, tb, type TemplateId } from './_components/builder-m
 import type { EditorMessages } from './_components/messages';
 import './_components/builder.css';
 
-type Tab = 'build' | 'logic' | 'results' | 'design';
+type Tab = 'build' | 'logic' | 'connect' | 'results' | 'design';
 type SaveStatus = 'saved' | 'saving' | 'draft' | 'error';
 const AUTOSAVE_MS = 900;
+
+const TAB_IDS: readonly Tab[] = ['build', 'logic', 'connect', 'results', 'design'];
+/** Unknown/absent `?tab` → build (the default view). */
+const parseTab = (value: string | null): Tab =>
+  TAB_IDS.includes(value as Tab) ? (value as Tab) : 'build';
 
 /**
  * The redesigned builder shell: Build (spine · WYSIWYG canvas · settings),
@@ -60,9 +68,19 @@ export function FormEditor({
   initialHasDraft?: boolean;
 }) {
   const bm = getBuilderMessages(locale);
+  const searchParams = useSearchParams();
   const [name, setName] = useState(initialName);
   const [config, setConfig] = useState<FormConfig>(initialConfig);
-  const [tab, setTab] = useState<Tab>('build');
+  // Deep-linkable tabs: `?tab=connect` selects the tab on load…
+  const [tab, setTabState] = useState<Tab>(() => parseTab(searchParams.get('tab')));
+  // …and switching syncs the URL shallowly (no navigation, no RSC refetch).
+  const setTab = useCallback((next: Tab) => {
+    setTabState(next);
+    const url = new URL(window.location.href);
+    if (next === 'build') url.searchParams.delete('tab');
+    else url.searchParams.set('tab', next);
+    window.history.replaceState(null, '', url);
+  }, []);
   const [selected, setSelected] = useState<number | null>(initialConfig.steps.length ? 0 : null);
   const [device, setDevice] = useState<'desktop' | 'mobile'>('desktop');
   const [galleryOpen, setGalleryOpen] = useState(false);
@@ -160,6 +178,10 @@ export function FormEditor({
     mutate((c) => ({ ...c, reveal: { ...c.reveal, ...patch } }));
   const setPartialSubmitAfterStep = (afterStep: number | undefined) =>
     mutate((c) => ({ ...c, partialSubmitAfterStep: afterStep }));
+  // `tracking` is additive config the engine type omits; the autosave/publish
+  // flow round-trips it (normalizeConfig passes unknown top-level keys through).
+  const setTracking = (tracking: FormTracking | undefined) =>
+    mutate((c) => ({ ...c, tracking }) as FormConfig);
 
   const selectedStep = selected != null ? config.steps[selected] : undefined;
   const scoringEnabled = config.scoring?.enabled !== false;
@@ -168,6 +190,7 @@ export function FormEditor({
   const tabs: { id: Tab; label: string; icon: string }[] = [
     { id: 'build', label: bm.shell.tabBuild, icon: 'pi-th-large' },
     { id: 'logic', label: bm.shell.tabLogic, icon: 'pi-sitemap' },
+    { id: 'connect', label: m.connect.tab, icon: 'pi-link' },
     { id: 'results', label: bm.shell.tabResults, icon: 'pi-chart-line' },
     { id: 'design', label: bm.shell.tabDesign, icon: 'pi-palette' },
   ];
@@ -213,6 +236,7 @@ export function FormEditor({
               <button
                 key={t.id}
                 type="button"
+                data-testid={`editor-tab-${t.id}`}
                 onClick={() => setTab(t.id)}
                 aria-current={tab === t.id}
                 className={cn(
@@ -253,6 +277,7 @@ export function FormEditor({
           <button
             key={t.id}
             type="button"
+            data-testid={`editor-tab-${t.id}-mobile`}
             onClick={() => setTab(t.id)}
             aria-current={tab === t.id}
             className={cn(
@@ -377,6 +402,16 @@ export function FormEditor({
           <div className="h-full overflow-y-auto px-4 py-6 sm:px-8">
             <p className="mb-4 text-sm text-muted-foreground">{bm.map.title}</p>
             <LogicMap config={config} m={bm} />
+          </div>
+        ) : tab === 'connect' ? (
+          <div className="h-full overflow-y-auto px-4 py-6 sm:px-8">
+            <ConnectPanel
+              formId={id}
+              config={config}
+              onTrackingChange={setTracking}
+              m={m}
+              locale={locale}
+            />
           </div>
         ) : tab === 'results' ? (
           <div className="h-full overflow-y-auto">
