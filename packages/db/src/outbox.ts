@@ -191,10 +191,18 @@ export async function claimDueOutbox(
     db.dialect === 'postgres'
       ? sql`SELECT id FROM outbox WHERE ${claimable} ORDER BY next_attempt_at ASC LIMIT ${limit} FOR UPDATE SKIP LOCKED`
       : sql`SELECT id FROM outbox WHERE ${claimable} ORDER BY next_attempt_at ASC LIMIT ${limit}`;
+  // Postgres must materialize the subquery via ARRAY(...): with a bare
+  // IN (SELECT ... LIMIT n FOR UPDATE SKIP LOCKED) the planner may re-scan the
+  // subquery per outer row and claim MORE than `limit` rows (plan-dependent),
+  // defeating the two-worker split.
   const rows = await db.all<Record<string, unknown>>(
-    sql`UPDATE outbox SET claimed_at = ${now}, claimed_by = ${workerId}
-        WHERE id IN (${selectDue})
-        RETURNING *`,
+    db.dialect === 'postgres'
+      ? sql`UPDATE outbox SET claimed_at = ${now}, claimed_by = ${workerId}
+            WHERE id = ANY (ARRAY(${selectDue}))
+            RETURNING *`
+      : sql`UPDATE outbox SET claimed_at = ${now}, claimed_by = ${workerId}
+            WHERE id IN (${selectDue})
+            RETURNING *`,
   );
   return rows.map(mapRow);
 }

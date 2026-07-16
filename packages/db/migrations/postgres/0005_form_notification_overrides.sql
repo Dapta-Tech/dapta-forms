@@ -12,7 +12,7 @@
 -- be rebuilt as a partial index in the same script — otherwise the first form
 -- row would collide with the account row for the same email_key. No data is
 -- touched; the account-scope guard is continuous within this one migration.
-ALTER TABLE notification_setting ADD COLUMN form_id TEXT;
+ALTER TABLE notification_setting ADD COLUMN IF NOT EXISTS form_id TEXT;
 
 DROP INDEX IF EXISTS notification_setting_account_key_uq;
 CREATE UNIQUE INDEX IF NOT EXISTS notification_setting_account_key_uq

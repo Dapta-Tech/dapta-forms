@@ -116,6 +116,9 @@ export const notificationSetting = sqliteTable(
     notificationSettingAccountFormKeyUq: uniqueIndex('notification_setting_account_form_key_uq')
       .on(t.accountId, t.formId, t.emailKey)
       .where(sql`${t.formId} IS NOT NULL`),
+    notificationSettingFormIdx: index('notification_setting_form_idx')
+      .on(t.formId)
+      .where(sql`${t.formId} IS NOT NULL`),
   }),
 );
 
