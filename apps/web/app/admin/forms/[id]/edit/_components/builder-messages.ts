@@ -32,6 +32,9 @@ export interface BuilderMessages {
     desktop: string;
     mobile: string;
     settings: string;
+    copyLink: string;
+    copied: string;
+    openForm: string;
   };
   badges: {
     contact: string;
@@ -181,6 +184,9 @@ const en: BuilderMessages = {
     desktop: 'Desktop',
     mobile: 'Mobile',
     settings: 'Settings',
+    copyLink: 'Copy link',
+    copied: 'Copied',
+    openForm: 'Open form',
   },
   badges: {
     contact: 'Contact',
@@ -337,6 +343,9 @@ const es: BuilderMessages = {
     desktop: 'Escritorio',
     mobile: 'Móvil',
     settings: 'Ajustes',
+    copyLink: 'Copiar enlace',
+    copied: 'Copiado',
+    openForm: 'Abrir formulario',
   },
   badges: {
     contact: 'Contacto',

@@ -23,6 +23,7 @@ import { EmptyState } from './_components/empty-state';
 import { CoverPanel } from './_components/cover-panel';
 import { RevealPanel } from './_components/reveal-panel';
 import { PublishButton } from './publish-button';
+import { LinkActions } from './link-actions';
 import { DevicePreviewModal } from './_components/device-preview-modal';
 import { stepFromGalleryItem, type GalleryItem } from './_components/question-types';
 import { TEMPLATES } from './_components/templates';
@@ -233,6 +234,10 @@ export function FormEditor({
             <i aria-hidden className="pi pi-eye" style={{ fontSize: 13 }} />
             <span className="hidden sm:inline">{bm.shell.preview}</span>
           </button>
+          <LinkActions
+            publicPath={publicPath}
+            labels={{ copyLink: bm.shell.copyLink, copied: bm.shell.copied, openForm: bm.shell.openForm }}
+          />
           <PublishButton
             formId={id}
             initialHasDraft={initialHasDraft}
