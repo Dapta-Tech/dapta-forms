@@ -12,7 +12,12 @@ import {
   type DestinationSpec,
   type DnsResolver,
 } from '@quill/destinations';
-import { formConfigSchema, formDestinationSchema, type FormDestination } from '@quill/types';
+import {
+  destinationFiresForPhase,
+  formConfigSchema,
+  formDestinationSchema,
+  type FormDestination,
+} from '@quill/types';
 import type { ServerEnv } from '@quill/config/env';
 import { DB, ENV } from './tokens';
 
@@ -70,7 +75,14 @@ export class DestinationEffects {
       const destinations = extractDestinations(input.config);
       const enabled = destinations
         .map((destination, index) => ({ destination, index }))
-        .filter(({ destination }) => destination.enabled !== false);
+        .filter(({ destination }) => destination.enabled !== false)
+        // Per-event trigger filter: a destination with an `events` list only fires
+        // for the phases it names (webhook `events:['complete']` skips partials, and
+        // vice versa). Absent/empty `events` fires on BOTH phases (back-compat), and
+        // destinations without the field (e.g. HubSpot) always pass — the helper
+        // returns true. Mapping happens BEFORE this filter so the idempotency key
+        // keeps each destination's ORIGINAL config-array index.
+        .filter(({ destination }) => destinationFiresForPhase(destination, input.phase));
 
       // A re-submit of the same session+phase replaces every not-yet-sent
       // delivery: cancel pending rows ONCE per kind BEFORE the enqueue loop.
