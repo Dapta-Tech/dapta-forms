@@ -4,6 +4,7 @@ import { useEffect, useRef } from 'react';
 import type { Answers, AnswerValue, FormStep } from '@quill/engine';
 import { nameFields, isMultiSelect } from '@quill/engine';
 import { SearchableDropdown } from './searchable-dropdown';
+import { PhoneInput } from './phone-input';
 
 interface StepInputProps {
   step: FormStep;
@@ -15,6 +16,8 @@ interface StepInputProps {
   onSelect: (value: string) => void;
   dropdownPlaceholder: string;
   dropdownEmpty: string;
+  /** Active locale — drives the phone picker's default country + copy. */
+  locale?: string;
 }
 
 /** The current multi-select answer as a string[] (defensive against scalars). */
@@ -34,6 +37,7 @@ export function StepInput({
   onSelect,
   dropdownPlaceholder,
   dropdownEmpty,
+  locale = 'en',
 }: StepInputProps) {
   switch (step.type) {
     case 'name': {
@@ -65,13 +69,23 @@ export function StepInput({
       );
     }
 
+    case 'phone':
+      // Country-code selector + digits input; the answer is a single E.164
+      // string ('+525512345678'), preserving the string onChange contract.
+      return (
+        <PhoneInput
+          value={String(value ?? '')}
+          onChange={onChange}
+          locale={locale}
+          ariaLabel={step.question ?? step.key}
+        />
+      );
+
     case 'text':
     case 'email':
-    case 'phone':
       return (
         <input
-          type={step.type === 'email' ? 'email' : step.type === 'phone' ? 'tel' : 'text'}
-          inputMode={step.type === 'phone' ? 'tel' : undefined}
+          type={step.type === 'email' ? 'email' : 'text'}
           className="pf-input"
           value={String(value ?? '')}
           onChange={(e) => onChange(e.target.value)}

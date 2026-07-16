@@ -56,8 +56,24 @@ export interface FormsMessages {
       option: string;
       submit: string;
     };
+    /** The phone step's country-code picker (searchable dial-code selector). */
+    phonePicker: {
+      /** aria-label for the country-select trigger + listbox. */
+      countryLabel: string;
+      /** Placeholder + aria-label for the country search box. */
+      search: string;
+      /** Empty-state row when the search matches no country. */
+      noResults: string;
+      /** Inline hint when the typed number is shorter than the country issues. */
+      invalid: string;
+    };
   };
   admin: {
+    /** Branded combobox (`components/ui/select`) that replaces native selects. */
+    select: {
+      search: string;
+      noResults: string;
+    };
     /** App shell chrome shared across every admin page (sidebar/header/footer). */
     chrome: {
       signOut: string;
@@ -589,8 +605,18 @@ export const en: FormsMessages = {
       option: 'Choose one of the available options.',
       submit: 'Could not submit — please try again.',
     },
+    phonePicker: {
+      countryLabel: 'Select country code',
+      search: 'Search country or code',
+      noResults: 'No countries found',
+      invalid: 'Enter a valid phone number.',
+    },
   },
   admin: {
+    select: {
+      search: 'Search…',
+      noResults: 'No results',
+    },
     chrome: {
       signOut: 'Sign out',
       viewPublic: 'View public page',
@@ -1113,8 +1139,18 @@ export const es: FormsMessages = {
       option: 'Elige una de las opciones disponibles.',
       submit: 'No se pudo enviar. Inténtalo de nuevo.',
     },
+    phonePicker: {
+      countryLabel: 'Selecciona el código de país',
+      search: 'Busca país o código',
+      noResults: 'No se encontraron países',
+      invalid: 'Introduce un número de teléfono válido.',
+    },
   },
   admin: {
+    select: {
+      search: 'Buscar…',
+      noResults: 'Sin resultados',
+    },
     chrome: {
       signOut: 'Cerrar sesión',
       viewPublic: 'Ver página pública',

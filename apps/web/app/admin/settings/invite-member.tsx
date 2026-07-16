@@ -3,6 +3,7 @@
 import { useActionState, useEffect, useRef, useState } from 'react';
 import { Modal } from '@/components/modal';
 import { Button } from '@/components/ui/button';
+import { Select } from '@/components/ui/select';
 import { useToast } from '@/components/toast';
 import { inviteMemberAction, type InviteMemberState } from './actions';
 
@@ -32,6 +33,9 @@ export interface InviteMemberLabels {
  */
 export function InviteMember({ labels }: { labels: InviteMemberLabels }) {
   const [open, setOpen] = useState(false);
+  // The branded Select is not a native form control, so mirror its value into a
+  // hidden input that carries `role` in the posted FormData (see the form below).
+  const [role, setRole] = useState<'member' | 'admin'>('member');
   const [state, action, pending] = useActionState<InviteMemberState, FormData>(
     inviteMemberAction,
     null,
@@ -51,6 +55,7 @@ export function InviteMember({ labels }: { labels: InviteMemberLabels }) {
     if (state.ok) {
       setOpen(false);
       formRef.current?.reset();
+      setRole('member');
       toast.success(labels.inviteSuccess);
     }
   }, [state, toast, labels.inviteSuccess]);
@@ -92,14 +97,16 @@ export function InviteMember({ labels }: { labels: InviteMemberLabels }) {
           </label>
           <label className="flex flex-col gap-1.5 text-sm">
             <span className="font-medium">{labels.inviteRoleLabel}</span>
-            <select
-              name="role"
-              defaultValue="member"
-              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              <option value="member">{labels.roleMember}</option>
-              <option value="admin">{labels.roleAdmin}</option>
-            </select>
+            <Select
+              ariaLabel={labels.inviteRoleLabel}
+              value={role}
+              onChange={(v) => setRole(v as 'member' | 'admin')}
+              options={[
+                { value: 'member', label: labels.roleMember },
+                { value: 'admin', label: labels.roleAdmin },
+              ]}
+            />
+            <input type="hidden" name="role" value={role} />
           </label>
           {errorMessage ? (
             <p role="alert" className="text-sm text-destructive">

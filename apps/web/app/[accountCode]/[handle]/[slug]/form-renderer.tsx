@@ -531,6 +531,7 @@ export function FormRenderer({
                 onSelect={select}
                 dropdownPlaceholder={m.dropdownPlaceholder}
                 dropdownEmpty={m.dropdownEmpty}
+                locale={locale}
               />
 
               {error ? (

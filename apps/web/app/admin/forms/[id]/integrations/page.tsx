@@ -48,6 +48,7 @@ export default async function IntegrationsPage({ params }: { params: Promise<{ i
         initialDestinations={destinations}
         hubspot={hubspot}
         messages={m}
+        locale={locale}
       />
     </div>
   );

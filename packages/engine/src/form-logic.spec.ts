@@ -3,6 +3,7 @@ import {
   visibleSteps,
   validateAnswer,
   validateAnswerCode,
+  phoneSubscriberDigits,
   computeScore,
   resolveOutcome,
   isPersonalEmail,
@@ -105,6 +106,25 @@ describe('validateAnswer', () => {
     const s = step({ key: 'p', type: 'phone', phoneMinDigits: 7, required: true });
     expect(validateAnswer(s, '12').ok).toBe(false);
     expect(validateAnswer(s, '+57 300 123 4567').ok).toBe(true);
+  });
+
+  it('counts phone SUBSCRIBER digits, excluding the E.164 dial code', () => {
+    const s = step({ key: 'p', type: 'phone', phoneMinDigits: 7, required: true });
+    // '+52' + 6 subscriber digits = 6 < 7 → invalid even though the raw string
+    // holds 8 digits. The dial code must not pad the length.
+    expect(validateAnswer(s, '+52551234').ok).toBe(false);
+    // '+52' + 10 subscriber digits (a real MX mobile) → valid.
+    expect(validateAnswer(s, '+525512345678').ok).toBe(true);
+    // '+1' + 10 subscriber digits (US) → valid.
+    expect(validateAnswer(s, '+15106005675').ok).toBe(true);
+  });
+
+  it('extracts subscriber digits, excluding the E.164 dial code', () => {
+    expect(phoneSubscriberDigits('+525512345678')).toBe('5512345678'); // strip +52
+    expect(phoneSubscriberDigits('+15106005675')).toBe('5106005675'); // strip +1
+    expect(phoneSubscriberDigits('+57 300 123 4567')).toBe('3001234567'); // ignores spaces
+    expect(phoneSubscriberDigits('5551234')).toBe('5551234'); // no '+' → all digits
+    expect(phoneSubscriberDigits('')).toBe('');
   });
 
   it('rejects an out-of-range slider and unknown option', () => {
@@ -373,6 +393,9 @@ describe('validateAnswerCode', () => {
       validateAnswerCode(step({ key: 'e', type: 'email', corporateEmailOnly: true }), 'a@gmail.com').code,
     ).toBe('work_email');
     expect(validateAnswerCode(step({ key: 'p', type: 'phone', phoneMinDigits: 8 }), '12').code).toBe('phone');
+    // E.164 value: the '+52' dial code is excluded, so 6 subscriber digits < 8.
+    expect(validateAnswerCode(step({ key: 'p', type: 'phone', phoneMinDigits: 8 }), '+52551234').code).toBe('phone');
+    expect(validateAnswerCode(step({ key: 'p', type: 'phone', phoneMinDigits: 8 }), '+525512345678').ok).toBe(true);
     expect(validateAnswerCode(step({ key: 's', type: 'slider', min: 0, max: 5 }), 9).code).toBe('too_high');
   });
   it('checks both name sub-fields', () => {

@@ -1,16 +1,21 @@
 'use client';
 
-import { useMemo, useState, useTransition } from 'react';
-import type { FormsMessages } from '@quill/shared';
+import { createContext, useContext, useMemo, useState, useTransition } from 'react';
+import type { FormsMessages, Locale } from '@quill/shared';
 import { WEBHOOK_SECRET_MASK, type FormDestination } from '@quill/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Select, type SelectOption } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/components/toast';
 import type { HubSpotPropertiesResponse } from '@/lib/admin-api';
 import { saveIntegrationsAction } from './actions';
 
 type Msgs = FormsMessages['admin']['integrations'];
+
+/** Admin locale for the branded property picker's search box — a tiny context so
+ *  `locale` need not thread through every PropertyField (kept minimal on purpose). */
+const LocaleContext = createContext<Locale>('en');
 
 const UTM_KEYS = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content'] as const;
 
@@ -139,11 +144,13 @@ export function IntegrationsEditor({
   initialDestinations,
   hubspot: hubspotProps,
   messages: m,
+  locale,
 }: {
   id: string;
   initialDestinations: FormDestination[];
   hubspot: HubSpotPropertiesResponse;
   messages: Msgs;
+  locale: Locale;
 }) {
   const { success, error } = useToast();
   const [pending, start] = useTransition();
@@ -258,7 +265,9 @@ export function IntegrationsEditor({
         clearUrlError={() => setWebhookError(null)}
         m={m}
       />
-      <HubspotCard state={hs} onChange={setHs} properties={properties} hubspotMeta={hubspotProps} m={m} />
+      <LocaleContext.Provider value={locale}>
+        <HubspotCard state={hs} onChange={setHs} properties={properties} hubspotMeta={hubspotProps} m={m} />
+      </LocaleContext.Provider>
 
       <div className="sticky bottom-0 flex items-center gap-3 border-t border-border bg-background/95 py-4 backdrop-blur">
         <Button onClick={save} disabled={pending}>
@@ -269,7 +278,8 @@ export function IntegrationsEditor({
   );
 }
 
-/** A property picker: a <select> of live properties, or a free-text fallback. */
+/** A property picker: a searchable branded Select of live properties, or a
+ *  free-text fallback when the HubSpot picker is unconfigured/unavailable. */
 function PropertyField({
   value,
   onChange,
@@ -287,6 +297,7 @@ function PropertyField({
   m: Msgs;
   ariaLabel: string;
 }) {
+  const locale = useContext(LocaleContext);
   if (!enabled) {
     return (
       <Input
@@ -297,20 +308,21 @@ function PropertyField({
       />
     );
   }
+  // Property lists are long, so the branded picker is searchable. The leading
+  // empty option preserves the native "(no property)" / "Select…" prompt row.
+  const options: SelectOption[] = [
+    { value: '', label: allowNone ? m.noProperty : m.selectProperty },
+    ...properties.map((p) => ({ value: p.name, label: `${p.label} (${p.name})` })),
+  ];
   return (
-    <select
-      aria-label={ariaLabel}
+    <Select
+      ariaLabel={ariaLabel}
       value={value}
-      onChange={(e) => onChange(e.target.value)}
-      className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-    >
-      <option value="">{allowNone ? m.noProperty : m.selectProperty}</option>
-      {properties.map((p) => (
-        <option key={p.name} value={p.name}>
-          {p.label} ({p.name})
-        </option>
-      ))}
-    </select>
+      onChange={onChange}
+      options={options}
+      searchable
+      locale={locale}
+    />
   );
 }
 

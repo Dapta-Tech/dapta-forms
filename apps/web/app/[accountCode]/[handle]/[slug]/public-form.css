@@ -458,6 +458,144 @@
   text-align: center;
 }
 
+/* ── Phone field (country-code picker + digits) ── */
+.pf-phone {
+  position: relative;
+}
+.pf-phone__row {
+  display: flex;
+  gap: var(--pf-gap);
+}
+/* The country trigger mirrors .pf-input's box so the two controls read as one
+   field: same border, radius, background, and height. */
+.pf-phone__country {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  padding: 0 14px;
+  font-family: inherit;
+  font-size: 16px;
+  color: var(--foreground);
+  background: var(--background);
+  border: 1px solid var(--input);
+  border-radius: var(--pf-radius-sm);
+  cursor: pointer;
+  transition: border-color 0.12s var(--pf-ease), box-shadow 0.12s var(--pf-ease);
+}
+.pf-phone__country:hover {
+  border-color: var(--muted-foreground);
+}
+.pf-phone__flag {
+  font-size: 18px;
+  line-height: 1;
+}
+.pf-phone__dial {
+  color: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
+}
+.pf-phone__chevron {
+  color: var(--muted-foreground);
+  font-size: 12px;
+  line-height: 1;
+  transition: transform 0.12s var(--pf-ease);
+}
+.pf-phone__chevron--open {
+  transform: rotate(180deg);
+}
+/* The digits input is a .pf-input; it just flexes to fill the row. */
+.pf-phone__number {
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 0;
+}
+.pf-phone__number--invalid,
+.pf-phone__number--invalid:hover {
+  border-color: var(--destructive);
+}
+.pf-phone__number--invalid:focus {
+  border-color: var(--destructive);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--destructive) 26%, transparent);
+}
+.pf-phone__hint {
+  text-align: center;
+  font-size: 13px;
+  color: var(--destructive);
+  margin: 10px 0 0;
+}
+/* Popover panel: a search box above a scrollable, focus-navigable country list.
+   Matches the .pf-dropdown popover look. */
+.pf-phone__panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--popover);
+  border: 1px solid var(--border);
+  border-radius: var(--pf-radius-sm);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+}
+.pf-phone__search {
+  padding: 11px 12px;
+  font-size: 15px;
+  font-family: inherit;
+  color: var(--popover-foreground);
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  outline: none;
+}
+.pf-phone__search::placeholder {
+  color: var(--muted-foreground);
+}
+.pf-phone__list {
+  margin: 0;
+  padding: 6px;
+  list-style: none;
+  max-height: 244px;
+  overflow-y: auto;
+}
+.pf-phone__option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  font-size: 15px;
+  font-family: inherit;
+  text-align: left;
+  color: var(--popover-foreground);
+  background: none;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+.pf-phone__option:hover,
+.pf-phone__option:focus-visible {
+  background: var(--muted);
+}
+.pf-phone__option--selected {
+  background: color-mix(in srgb, var(--pf-primary) 18%, var(--popover));
+  font-weight: 600;
+}
+.pf-phone__name {
+  flex: 1;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.pf-phone__option-dial {
+  margin-left: auto;
+  color: var(--muted-foreground);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
 /* ── Slider ── */
 .pf-slider {
   padding: 8px 4px 4px;
