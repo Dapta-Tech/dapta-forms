@@ -1,6 +1,7 @@
 import type { EmailProvider, EmailResult } from './email.port';
 import { escapeHtml } from './util';
 import {
+  applyCopyOverride,
   normalizeLocale,
   renderSubmissionConfirmed,
   renderSubmissionReceived,
@@ -32,6 +33,15 @@ export interface SubmissionNotification {
    * two supported languages. Unset defaults to English (the bare-fork default).
    */
   locale?: NotificationLocale | string | null;
+  /**
+   * The account's custom subject/body override (from `notification_setting`),
+   * snapshotted at enqueue time. Each is independent: a non-null value replaces
+   * the stock copy (with `{{token}}` interpolation), null/absent keeps the stock
+   * template. The body is plain text — the notifier escapes it on the HTML path
+   * exactly like the stock lines, so a custom template stays XSS-safe (E8).
+   */
+  subjectTemplate?: string | null;
+  bodyTemplate?: string | null;
 }
 
 /**
@@ -45,7 +55,12 @@ export class SubmissionNotifier {
 
   /** Internal notice to the account: a new submission landed. */
   sendSubmissionReceived(n: SubmissionNotification): Promise<EmailResult> {
-    const { subject, lines } = renderSubmissionReceived(normalizeLocale(n.locale), n);
+    const base = renderSubmissionReceived(normalizeLocale(n.locale), n);
+    const { subject, lines } = applyCopyOverride(
+      base,
+      { subject: n.subjectTemplate, body: n.bodyTemplate },
+      n,
+    );
     const body = lines.filter(Boolean);
     return this.email.send({
       accountId: n.accountId,
@@ -60,7 +75,12 @@ export class SubmissionNotifier {
 
   /** Confirmation to the respondent that their answers were recorded. */
   sendSubmissionConfirmed(n: SubmissionNotification): Promise<EmailResult> {
-    const { subject, lines } = renderSubmissionConfirmed(normalizeLocale(n.locale), n);
+    const base = renderSubmissionConfirmed(normalizeLocale(n.locale), n);
+    const { subject, lines } = applyCopyOverride(
+      base,
+      { subject: n.subjectTemplate, body: n.bodyTemplate },
+      n,
+    );
     const body = lines.filter(Boolean);
     return this.email.send({
       accountId: n.accountId,

@@ -2,25 +2,32 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import type {
   FormConfig,
   FormStep,
   FormCover,
   FormBranding,
   FormOutcome,
+  FormReveal,
 } from '@quill/engine';
 import { normalizeConfig } from '@quill/engine';
+import type { FormTracking } from '@quill/types';
 import { saveFormAction } from '@/app/admin/actions';
-import { useToast } from '@/components/toast';
 import { cn } from '@/lib/cn';
 import { QuestionSpine } from './_components/question-spine';
 import { CanvasQuestion } from './_components/canvas-question';
 import { QuestionSettings } from './_components/question-settings';
+import { invalidateQuestionHubspotCache } from './_components/question-hubspot';
 import { TypeGallery } from './_components/type-gallery';
 import { LogicMap } from './_components/logic-map';
 import { ResultsView } from './_components/results-view';
 import { EmptyState } from './_components/empty-state';
 import { CoverPanel } from './_components/cover-panel';
+import { RevealPanel } from './_components/reveal-panel';
+import { ConnectPanel } from './_components/connect-panel';
+import { PublishButton } from './publish-button';
+import { LinkActions } from './link-actions';
 import { DevicePreviewModal } from './_components/device-preview-modal';
 import { stepFromGalleryItem, type GalleryItem } from './_components/question-types';
 import { TEMPLATES } from './_components/templates';
@@ -28,9 +35,14 @@ import { getBuilderMessages, tb, type TemplateId } from './_components/builder-m
 import type { EditorMessages } from './_components/messages';
 import './_components/builder.css';
 
-type Tab = 'build' | 'logic' | 'results' | 'design';
+type Tab = 'build' | 'logic' | 'connect' | 'results' | 'design';
 type SaveStatus = 'saved' | 'saving' | 'draft' | 'error';
 const AUTOSAVE_MS = 900;
+
+const TAB_IDS: readonly Tab[] = ['build', 'logic', 'connect', 'results', 'design'];
+/** Unknown/absent `?tab` → build (the default view). */
+const parseTab = (value: string | null): Tab =>
+  TAB_IDS.includes(value as Tab) ? (value as Tab) : 'build';
 
 /**
  * The redesigned builder shell: Build (spine · WYSIWYG canvas · settings),
@@ -45,6 +57,7 @@ export function FormEditor({
   publicPath,
   locale,
   m,
+  initialHasDraft = false,
 }: {
   id: string;
   initialName: string;
@@ -52,26 +65,45 @@ export function FormEditor({
   publicPath: string;
   locale: string;
   m: EditorMessages;
+  /** Whether the form already had an unpublished draft when the page loaded. */
+  initialHasDraft?: boolean;
 }) {
   const bm = getBuilderMessages(locale);
-  const toast = useToast();
+  const searchParams = useSearchParams();
   const [name, setName] = useState(initialName);
   const [config, setConfig] = useState<FormConfig>(initialConfig);
-  const [tab, setTab] = useState<Tab>('build');
+  // Deep-linkable tabs: `?tab=connect` selects the tab on load…
+  const [tab, setTabState] = useState<Tab>(() => parseTab(searchParams.get('tab')));
+  // …and switching syncs the URL shallowly (no navigation, no RSC refetch).
+  const setTab = useCallback(
+    (next: Tab) => {
+      // Mappings can change inside Connect — drop the Build settings panel's
+      // cached HubSpot data so it refetches fresh on the next Build activation.
+      if (next === 'connect') invalidateQuestionHubspotCache(id);
+      setTabState(next);
+      const url = new URL(window.location.href);
+      if (next === 'build') url.searchParams.delete('tab');
+      else url.searchParams.set('tab', next);
+      window.history.replaceState(null, '', url);
+    },
+    [id],
+  );
   const [selected, setSelected] = useState<number | null>(initialConfig.steps.length ? 0 : null);
   const [device, setDevice] = useState<'desktop' | 'mobile'>('desktop');
   const [galleryOpen, setGalleryOpen] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [status, setStatus] = useState<SaveStatus>(initialConfig.steps.length ? 'saved' : 'draft');
   const [focusCanvas, setFocusCanvas] = useState(0);
+  const [saveCount, setSaveCount] = useState(0);
   const dirty = useRef(false);
 
-  // --- Autosave (debounced) -------------------------------------------------
+  // --- Autosave (debounced; each successful save stores an unpublished draft) ---
   const persist = useCallback(
     async (nextName: string, nextConfig: FormConfig) => {
       setStatus('saving');
       const res = await saveFormAction(id, { name: nextName, config: normalizeConfig(nextConfig) });
       setStatus(res.ok ? 'saved' : 'error');
+      if (res.ok) setSaveCount((n) => n + 1);
     },
     [id],
   );
@@ -109,7 +141,19 @@ export function FormEditor({
     setFocusCanvas((n) => n + 1);
   }
   function deleteStep(index: number) {
-    mutate((c) => ({ ...c, steps: c.steps.filter((_, i) => i !== index) }));
+    mutate((c) => {
+      const steps = c.steps.filter((_, i) => i !== index);
+      // Partial-submit threshold (1-based, anchored to the step it fires AFTER):
+      // deleting a step ABOVE the anchor shifts it up one; deleting the anchor
+      // ITSELF re-attaches to the previous step (or clears when the anchor was
+      // the first step); steps BELOW the anchor never move it.
+      let partial = c.partialSubmitAfterStep;
+      if (partial != null && partial >= 1 && partial <= c.steps.length) {
+        if (index < partial - 1) partial = partial - 1;
+        else if (index === partial - 1) partial = partial > 1 ? partial - 1 : undefined;
+      }
+      return { ...c, steps, partialSubmitAfterStep: partial };
+    });
     setSelected((sel) => {
       const nextLen = config.steps.length - 1;
       if (sel == null || nextLen === 0) return null;
@@ -123,7 +167,15 @@ export function FormEditor({
       const [moved] = steps.splice(from, 1);
       if (!moved) return c;
       steps.splice(to, 0, moved);
-      return { ...c, steps };
+      // Keep the partial-submit threshold attached to the step it fires AFTER:
+      // resolve that step's key in the OLD order, then point at its NEW index.
+      let partial = c.partialSubmitAfterStep;
+      if (partial != null && partial >= 1 && partial <= c.steps.length) {
+        const anchorKey = c.steps[partial - 1]?.key;
+        const anchored = steps.findIndex((s) => s.key === anchorKey);
+        if (anchored >= 0) partial = anchored + 1;
+      }
+      return { ...c, steps, partialSubmitAfterStep: partial };
     });
     setSelected((sel) => {
       if (sel == null) return null;
@@ -149,11 +201,14 @@ export function FormEditor({
     mutate((c) => ({ ...c, branding: { ...c.branding, ...patch } }));
   const setScoring = (enabled: boolean) => mutate((c) => ({ ...c, scoring: { enabled } }));
   const setOutcomes = (outcomes: FormOutcome[]) => mutate((c) => ({ ...c, outcomes }));
-
-  async function publish() {
-    await persist(name, config);
-    toast.success(bm.shell.published);
-  }
+  const patchReveal = (patch: Partial<FormReveal>) =>
+    mutate((c) => ({ ...c, reveal: { ...c.reveal, ...patch } }));
+  const setPartialSubmitAfterStep = (afterStep: number | undefined) =>
+    mutate((c) => ({ ...c, partialSubmitAfterStep: afterStep }));
+  // `tracking` is additive config the engine type omits; the autosave/publish
+  // flow round-trips it (normalizeConfig passes unknown top-level keys through).
+  const setTracking = (tracking: FormTracking | undefined) =>
+    mutate((c) => ({ ...c, tracking }) as FormConfig);
 
   const selectedStep = selected != null ? config.steps[selected] : undefined;
   const scoringEnabled = config.scoring?.enabled !== false;
@@ -162,6 +217,7 @@ export function FormEditor({
   const tabs: { id: Tab; label: string; icon: string }[] = [
     { id: 'build', label: bm.shell.tabBuild, icon: 'pi-th-large' },
     { id: 'logic', label: bm.shell.tabLogic, icon: 'pi-sitemap' },
+    { id: 'connect', label: m.connect.tab, icon: 'pi-link' },
     { id: 'results', label: bm.shell.tabResults, icon: 'pi-chart-line' },
     { id: 'design', label: bm.shell.tabDesign, icon: 'pi-palette' },
   ];
@@ -207,6 +263,7 @@ export function FormEditor({
               <button
                 key={t.id}
                 type="button"
+                data-testid={`editor-tab-${t.id}`}
                 onClick={() => setTab(t.id)}
                 aria-current={tab === t.id}
                 className={cn(
@@ -228,13 +285,16 @@ export function FormEditor({
             <i aria-hidden className="pi pi-eye" style={{ fontSize: 13 }} />
             <span className="hidden sm:inline">{bm.shell.preview}</span>
           </button>
-          <button
-            type="button"
-            onClick={publish}
-            className="inline-flex h-9 items-center rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground transition-transform hover:brightness-105 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            {bm.shell.publish}
-          </button>
+          <LinkActions
+            publicPath={publicPath}
+            labels={{ copyLink: bm.shell.copyLink, copied: bm.shell.copied, openForm: bm.shell.openForm }}
+          />
+          <PublishButton
+            formId={id}
+            initialHasDraft={initialHasDraft}
+            saveCount={saveCount}
+            locale={locale}
+          />
         </div>
       </header>
 
@@ -244,6 +304,7 @@ export function FormEditor({
           <button
             key={t.id}
             type="button"
+            data-testid={`editor-tab-${t.id}-mobile`}
             onClick={() => setTab(t.id)}
             aria-current={tab === t.id}
             className={cn(
@@ -270,6 +331,8 @@ export function FormEditor({
                   onSelect={setSelected}
                   onReorder={reorderSteps}
                   onAdd={() => setGalleryOpen(true)}
+                  partialAfterStep={config.partialSubmitAfterStep}
+                  onPartialChange={setPartialSubmitAfterStep}
                   m={bm}
                 />
               </aside>
@@ -355,6 +418,9 @@ export function FormEditor({
                     onScoringChange={setScoring}
                     bm={bm}
                     em={m}
+                    formId={id}
+                    locale={locale}
+                    onOpenConnect={() => setTab('connect')}
                   />
                 ) : null}
               </aside>
@@ -369,6 +435,16 @@ export function FormEditor({
             <p className="mb-4 text-sm text-muted-foreground">{bm.map.title}</p>
             <LogicMap config={config} m={bm} />
           </div>
+        ) : tab === 'connect' ? (
+          <div className="h-full overflow-y-auto px-4 py-6 sm:px-8">
+            <ConnectPanel
+              formId={id}
+              config={config}
+              onTrackingChange={setTracking}
+              m={m}
+              locale={locale}
+            />
+          </div>
         ) : tab === 'results' ? (
           <div className="h-full overflow-y-auto">
             <ResultsView
@@ -379,8 +455,14 @@ export function FormEditor({
             />
           </div>
         ) : (
-          <div className="h-full overflow-y-auto px-4 py-6 sm:px-8">
+          <div className="flex h-full flex-col gap-4 overflow-y-auto px-4 py-6 sm:px-8">
             <CoverPanel config={config} onCoverChange={patchCover} onBrandingChange={patchBranding} m={m} />
+            <RevealPanel
+              config={config}
+              onRevealChange={patchReveal}
+              partialNote={bm.partial.designNote}
+              m={m}
+            />
           </div>
         )}
       </div>

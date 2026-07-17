@@ -42,17 +42,39 @@
 }
 
 /* ── Sticky promo banner ── */
+/* A tasteful accent STRIP, not a full-bleed accent fill: a soft wash of the brand
+   accent over the form ground reads well with any brand color — including neon
+   (#CCFF00) — where a solid fill would glare. Because the ground is now a light
+   tint, `--pf-primary-contrast` (which assumes a SOLID accent fill) would be
+   illegible here, so text uses the form foreground and the accent shows only as
+   the tint + hairline bottom border. Mixes against `--background` (the `.pf`
+   ground), so it stays correct in both the dark and light themes. */
 .pf__banner {
   position: sticky;
   top: 0;
   z-index: 30;
-  background: var(--pf-primary);
-  color: var(--pf-primary-contrast);
+  background: color-mix(in srgb, var(--pf-primary) 12%, var(--background));
+  color: var(--foreground);
+  border-bottom: 1px solid color-mix(in srgb, var(--pf-primary) 45%, transparent);
   font-size: 14px;
   font-weight: 600;
   text-align: center;
   padding: 12px 20px;
   flex-shrink: 0;
+}
+
+/* ── Main area — everything below the banner ── */
+/* The banner is a full-width strip pinned to the viewport top (first child of
+   `.pf`, sticky for scrollable forms); `.pf__main` owns ALL the remaining
+   height. Every phase renders its content inside it, and desktop's per-phase
+   vertical centering targets THIS wrapper (see the min-width media block below)
+   — centering the content group therefore can never pull the banner down with
+   it. */
+.pf__main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 
 /* ── Top bar (back · logo · spacer) + progress ── */
@@ -448,6 +470,144 @@
   font-size: 14px;
   color: var(--muted-foreground);
   text-align: center;
+}
+
+/* ── Phone field (country-code picker + digits) ── */
+.pf-phone {
+  position: relative;
+}
+.pf-phone__row {
+  display: flex;
+  gap: var(--pf-gap);
+}
+/* The country trigger mirrors .pf-input's box so the two controls read as one
+   field: same border, radius, background, and height. */
+.pf-phone__country {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  padding: 0 14px;
+  font-family: inherit;
+  font-size: 16px;
+  color: var(--foreground);
+  background: var(--background);
+  border: 1px solid var(--input);
+  border-radius: var(--pf-radius-sm);
+  cursor: pointer;
+  transition: border-color 0.12s var(--pf-ease), box-shadow 0.12s var(--pf-ease);
+}
+.pf-phone__country:hover {
+  border-color: var(--muted-foreground);
+}
+.pf-phone__flag {
+  font-size: 18px;
+  line-height: 1;
+}
+.pf-phone__dial {
+  color: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
+}
+.pf-phone__chevron {
+  color: var(--muted-foreground);
+  font-size: 12px;
+  line-height: 1;
+  transition: transform 0.12s var(--pf-ease);
+}
+.pf-phone__chevron--open {
+  transform: rotate(180deg);
+}
+/* The digits input is a .pf-input; it just flexes to fill the row. */
+.pf-phone__number {
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 0;
+}
+.pf-phone__number--invalid,
+.pf-phone__number--invalid:hover {
+  border-color: var(--destructive);
+}
+.pf-phone__number--invalid:focus {
+  border-color: var(--destructive);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--destructive) 26%, transparent);
+}
+.pf-phone__hint {
+  text-align: center;
+  font-size: 13px;
+  color: var(--destructive);
+  margin: 10px 0 0;
+}
+/* Popover panel: a search box above a scrollable, focus-navigable country list.
+   Matches the .pf-dropdown popover look. */
+.pf-phone__panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--popover);
+  border: 1px solid var(--border);
+  border-radius: var(--pf-radius-sm);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+}
+.pf-phone__search {
+  padding: 11px 12px;
+  font-size: 15px;
+  font-family: inherit;
+  color: var(--popover-foreground);
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  outline: none;
+}
+.pf-phone__search::placeholder {
+  color: var(--muted-foreground);
+}
+.pf-phone__list {
+  margin: 0;
+  padding: 6px;
+  list-style: none;
+  max-height: 244px;
+  overflow-y: auto;
+}
+.pf-phone__option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  font-size: 15px;
+  font-family: inherit;
+  text-align: left;
+  color: var(--popover-foreground);
+  background: none;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+.pf-phone__option:hover,
+.pf-phone__option:focus-visible {
+  background: var(--muted);
+}
+.pf-phone__option--selected {
+  background: color-mix(in srgb, var(--pf-primary) 18%, var(--popover));
+  font-weight: 600;
+}
+.pf-phone__name {
+  flex: 1;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.pf-phone__option-dial {
+  margin-left: auto;
+  color: var(--muted-foreground);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
 }
 
 /* ── Slider ── */
@@ -863,8 +1023,11 @@
     margin-top: 36px;
   }
 
-  /* Steps: join topbar + body into a single centered card. */
-  .pf:not(.pf--cover):not(.pf--reveal):not(.pf--done) {
+  /* Steps: join topbar + body into a single centered card. Centering + the
+     card's page padding live on .pf__main — the area BELOW the pinned banner —
+     never on .pf itself, which would drag the banner down with the group (and
+     the padding would inset the banner off the viewport edges). */
+  .pf:not(.pf--cover):not(.pf--reveal):not(.pf--done) .pf__main {
     justify-content: center;
     padding: 40px 24px;
   }
@@ -892,8 +1055,9 @@
     background: var(--background);
   }
 
-  /* Cover: logo + hero card + CTA as one vertically-centered group. */
-  .pf--cover {
+  /* Cover: logo + hero card + CTA as one vertically-centered group (inside
+     the main area, below the pinned banner). */
+  .pf--cover .pf__main {
     justify-content: center;
   }
   .pf--cover .pf__cover-header {
@@ -915,9 +1079,9 @@
     padding-bottom: 32px;
   }
 
-  /* Centered outcome/interstitial cards. */
-  .pf--reveal,
-  .pf--done {
+  /* Centered outcome/interstitial cards (inside the main area). */
+  .pf--reveal .pf__main,
+  .pf--done .pf__main {
     justify-content: center;
   }
 }
@@ -934,3 +1098,16 @@
     margin-top: 24px;
   }
 }
+
+/* Booking screen (post-submit inline scheduler) */
+.pf--booking-page { min-height: 100dvh; display: flex; flex-direction: column; }
+.pf-booking { flex: 1; display: flex; flex-direction: column; padding: 24px 16px; }
+.pf-booking__header { text-align: center; margin-bottom: 8px; }
+.pf-booking__widget { flex: 1; }
+.pf-booking__trouble {
+  text-align: center;
+  font-size: 13px;
+  color: var(--muted-foreground);
+  margin-top: 12px;
+}
+.pf-booking__trouble a { color: inherit; text-decoration: underline; }

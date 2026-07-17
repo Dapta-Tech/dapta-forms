@@ -1,15 +1,17 @@
 'use client';
 
-import Link from 'next/link';
 import { useEffect, useRef, useState, useTransition } from 'react';
+import { getMessages } from '@quill/shared';
 import { duplicateFormAction, deleteFormAction } from '@/app/admin/actions';
+import { clientLocale } from '@/lib/client-locale';
+import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 
 /**
- * Per-row actions for a form, as a single kebab menu (WAI-ARIA menu-button) —
- * replaces the cramped inline run of links that wrapped on narrow cards. Holds
- * the cross-links (Edit / Analytics / Submissions / Integrations) plus the
- * builder actions (Duplicate / Delete). Escape / outside-click dismiss; focus
- * the first item on open. Tokens only; R22 press feedback.
+ * Overflow menu for a form row (WAI-ARIA menu-button). The cross-links
+ * (Edit / Submissions / Analytics / Connect) are first-class buttons on the
+ * row itself now — this kebab holds only the destructive/rare builder actions
+ * (Duplicate / Delete). Escape / outside-click dismiss; focus the first item
+ * on open. Tokens only; R22 press feedback.
  */
 export function FormRowActions({
   id,
@@ -18,10 +20,6 @@ export function FormRowActions({
   id: string;
   labels: {
     menu: string;
-    edit: string;
-    analytics: string;
-    submissions: string;
-    integrations: string;
     duplicate: string;
     delete: string;
     deleteConfirm: string;
@@ -29,6 +27,7 @@ export function FormRowActions({
 }) {
   const [open, setOpen] = useState(false);
   const [pending, start] = useTransition();
+  const { confirm: confirmDialog, dialog } = useConfirmDialog();
   const wrapRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -57,12 +56,13 @@ export function FormRowActions({
     <div ref={wrapRef} className="relative">
       <button
         type="button"
+        data-testid="form-row-menu"
         aria-haspopup="menu"
         aria-expanded={open}
         aria-label={labels.menu}
         title={labels.menu}
         onClick={() => setOpen((o) => !o)}
-        className="flex h-11 w-11 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground active:scale-[0.98]"
+        className="flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground active:scale-[0.98]"
       >
         <i aria-hidden className="pi pi-ellipsis-v" style={{ fontSize: 16 }} />
       </button>
@@ -74,25 +74,6 @@ export function FormRowActions({
           aria-label={labels.menu}
           className="absolute right-0 z-50 mt-2 w-52 rounded-md border border-border bg-popover p-1.5 text-popover-foreground shadow-lg"
         >
-          <Link role="menuitem" tabIndex={-1} href={`/admin/forms/${id}/edit`} onClick={() => setOpen(false)} className={itemClass}>
-            <i aria-hidden className="pi pi-pencil text-muted-foreground" style={{ fontSize: 13 }} />
-            {labels.edit}
-          </Link>
-          <Link role="menuitem" tabIndex={-1} href={`/admin/forms/${id}/analytics`} onClick={() => setOpen(false)} className={itemClass}>
-            <i aria-hidden className="pi pi-chart-bar text-muted-foreground" style={{ fontSize: 13 }} />
-            {labels.analytics}
-          </Link>
-          <Link role="menuitem" tabIndex={-1} href={`/admin/forms/${id}/submissions`} onClick={() => setOpen(false)} className={itemClass}>
-            <i aria-hidden className="pi pi-inbox text-muted-foreground" style={{ fontSize: 13 }} />
-            {labels.submissions}
-          </Link>
-          <Link role="menuitem" tabIndex={-1} href={`/admin/forms/${id}/integrations`} onClick={() => setOpen(false)} className={itemClass}>
-            <i aria-hidden className="pi pi-link text-muted-foreground" style={{ fontSize: 13 }} />
-            {labels.integrations}
-          </Link>
-
-          <div className="my-1 border-t border-border" role="separator" />
-
           <button
             type="button"
             role="menuitem"
@@ -113,10 +94,15 @@ export function FormRowActions({
             tabIndex={-1}
             disabled={pending}
             onClick={() => {
-              if (confirm(labels.deleteConfirm)) {
-                setOpen(false);
-                start(() => void deleteFormAction(id));
-              }
+              setOpen(false);
+              void confirmDialog({
+                title: getMessages(clientLocale()).dialog.deleteFormTitle,
+                message: labels.deleteConfirm,
+                confirmLabel: labels.delete,
+                destructive: true,
+              }).then((ok) => {
+                if (ok) start(() => void deleteFormAction(id));
+              });
             }}
             className="flex w-full items-center gap-2.5 rounded-sm px-2 py-2 text-left text-sm text-destructive transition-colors hover:bg-destructive/10 focus-visible:bg-destructive/10 focus-visible:outline-none disabled:opacity-50"
           >
@@ -125,6 +111,7 @@ export function FormRowActions({
           </button>
         </div>
       ) : null}
+      {dialog}
     </div>
   );
 }

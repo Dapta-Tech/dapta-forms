@@ -15,27 +15,42 @@ import {
   Query,
   Req,
 } from '@nestjs/common';
-import type { Db } from '@quill/db';
+import type { Db, NotificationSetting } from '@quill/db';
 import {
   changeMemberRole,
   createForm,
+  defaultNotificationSetting,
   deleteForm,
+  deleteNotificationSetting,
   duplicateForm,
   getAccountMember,
   getFormById,
+  getNotificationSettings,
   inviteMember,
   listForms,
   listMembers,
+  publishForm,
   removeMember,
+  resetNotificationTemplate,
+  saveDraftConfig,
   setMemberStatus,
   updateForm,
+  upsertNotificationSetting,
   type CrudResult,
 } from '@quill/db';
+import {
+  defaultSubmissionTemplate,
+  isSubmissionEmailKey,
+  NOTIFICATION_TOKENS,
+  SUBMISSION_EMAIL_KEYS,
+  type SubmissionEmailKey,
+} from '@quill/notifications';
 import {
   formInputSchema,
   maskConfigSecrets,
   memberInviteSchema,
   memberPatchSchema,
+  notificationSettingPatchSchema,
 } from '@quill/types';
 import { ZodError } from 'zod';
 import { AdminService } from './admin.service';
@@ -66,10 +81,16 @@ function unwrapCrud<T>(r: CrudResult<T>): T {
  * Mask webhook signing secrets in a form's config before it leaves the server to
  * the admin client. Every form-returning endpoint runs this so the plaintext
  * secret is never exposed in a READ; the integrations UI round-trips the sentinel
- * and the write layer restores the stored secret (see mergeWebhookSecrets).
+ * and the write layer restores the stored secret (see mergeWebhookSecrets). The
+ * unpublished draft config gets the same treatment — a draft can carry webhook
+ * destinations too.
  */
-function maskForm<T extends { config: unknown }>(form: T): T {
-  return { ...form, config: maskConfigSecrets(form.config) };
+function maskForm<T extends { config: unknown; draftConfig?: unknown }>(form: T): T {
+  return {
+    ...form,
+    config: maskConfigSecrets(form.config),
+    ...(form.draftConfig != null ? { draftConfig: maskConfigSecrets(form.draftConfig) } : {}),
+  };
 }
 
 /** Host-authed CRUD for forms + submissions + members, and identity/vanity. */
@@ -128,11 +149,22 @@ export class AdminCrudController {
     return maskForm(unwrapCrud(await createForm(this.db, p.accountId, input)));
   }
 
+  /**
+   * Update a form. Draft→publish split: `name`/`slug` are METADATA and apply to
+   * the live row immediately (they never lived in the config, so there is
+   * nothing to stage); `config` is stored as an UNPUBLISHED draft via
+   * `saveDraftConfig` — the live config the public renderer serves is untouched
+   * until POST /v1/forms/:id/publish copies the draft over it.
+   */
   @Put('forms/:id')
   async updateForm(@Req() req: ReqLike, @Param('id') id: string, @Body() body: unknown) {
     const p = await this.auth.resolveHost(req);
-    const input = parse(formInputSchema.partial(), body);
-    return maskForm(unwrapCrud(await updateForm(this.db, p.accountId, id, input)));
+    const { config, ...meta } = parse(formInputSchema.partial(), body);
+    let updated = unwrapCrud(await updateForm(this.db, p.accountId, id, meta));
+    if (config !== undefined) {
+      updated = unwrapCrud(await saveDraftConfig(this.db, p.accountId, id, config));
+    }
+    return maskForm(updated);
   }
 
   @Post('forms/:id/duplicate')
@@ -140,6 +172,17 @@ export class AdminCrudController {
   async duplicateForm(@Req() req: ReqLike, @Param('id') id: string) {
     const p = await this.auth.resolveHost(req);
     return maskForm(unwrapCrud(await duplicateForm(this.db, p.accountId, id)));
+  }
+
+  /**
+   * Publish a form's pending draft (draft_config → config, stamp published_at,
+   * clear the draft; a no-op when no draft is pending). Same role gate as
+   * PUT /v1/forms/:id — any resolved host member, scoped to their account.
+   */
+  @Post('forms/:id/publish')
+  async publishForm(@Req() req: ReqLike, @Param('id') id: string) {
+    const p = await this.auth.resolveHost(req);
+    return maskForm(unwrapCrud(await publishForm(this.db, p.accountId, id)));
   }
 
   @Delete('forms/:id')
@@ -222,5 +265,162 @@ export class AdminCrudController {
     assertCanManageTarget(p, target);
     unwrapCrud(await removeMember(this.db, p.accountId, id));
     return { ok: true };
+  }
+
+  // --- Notification emails (Settings → Notifications; admin/owner-only) ---
+  //
+  // The two submission emails the platform sends, each with a per-account toggle
+  // plus an optional custom subject/body (plain text with {{token}} markers). A
+  // stored subject/body of null means "shipped default" — the send path falls
+  // back to the code template. Every route resolves the principal and scopes to
+  // its account (never cross-account), and is admin/owner-gated like /v1/members.
+
+  /** The two settings (stored overrides + the shipped default copy the UI shows). */
+  @Get('notifications')
+  async notifications(@Req() req: ReqLike) {
+    const p = await this.auth.resolveHost(req);
+    assertAdmin(p);
+    const stored = await getNotificationSettings(this.db, p.accountId);
+    return {
+      settings: SUBMISSION_EMAIL_KEYS.map((key) =>
+        this.notificationView(key, stored.get(key) ?? defaultNotificationSetting(key)),
+      ),
+    };
+  }
+
+  /** Toggle / override one email's copy. `null` subject|body resets that field. */
+  @Put('notifications/:emailKey')
+  async updateNotification(
+    @Req() req: ReqLike,
+    @Param('emailKey') emailKey: string,
+    @Body() body: unknown,
+  ) {
+    const p = await this.auth.resolveHost(req);
+    assertAdmin(p);
+    const key = this.parseEmailKey(emailKey);
+    const patch = parse(notificationSettingPatchSchema, body);
+    const updated = await upsertNotificationSetting(this.db, p.accountId, key, patch);
+    return this.notificationView(key, updated);
+  }
+
+  /** Reset one email's subject+body to the shipped default (keeps the toggle). */
+  @Post('notifications/:emailKey/reset')
+  async resetNotification(@Req() req: ReqLike, @Param('emailKey') emailKey: string) {
+    const p = await this.auth.resolveHost(req);
+    assertAdmin(p);
+    const key = this.parseEmailKey(emailKey);
+    const updated = await resetNotificationTemplate(this.db, p.accountId, key);
+    return this.notificationView(key, updated);
+  }
+
+  // --- Per-form notification overrides (editor → Connect → Emails) --------
+  //
+  // A form may pin its own copy of either submission email, overriding the
+  // account-level template (Typeform's per-form Follow-ups model). Send-time
+  // precedence is form → account → stock, per field; a form row's `enabled`
+  // wins outright when the row exists. Same admin/owner gate as the account
+  // routes, PLUS the form must belong to the principal's account (the standard
+  // forms-route scoping: getFormById(accountId, id) or 404).
+
+  /** Both emails: the account-level baseline + this form's override (if any). */
+  @Get('forms/:id/notifications')
+  async formNotifications(@Req() req: ReqLike, @Param('id') id: string) {
+    const p = await this.auth.resolveHost(req);
+    assertAdmin(p);
+    await this.assertOwnForm(p.accountId, id);
+    return { settings: await this.formNotificationViews(p.accountId, id) };
+  }
+
+  /** Create/update this form's override for one email (subject/body/enabled). */
+  @Put('forms/:id/notifications/:emailKey')
+  async updateFormNotification(
+    @Req() req: ReqLike,
+    @Param('id') id: string,
+    @Param('emailKey') emailKey: string,
+    @Body() body: unknown,
+  ) {
+    const p = await this.auth.resolveHost(req);
+    assertAdmin(p);
+    await this.assertOwnForm(p.accountId, id);
+    const key = this.parseEmailKey(emailKey);
+    const patch = parse(notificationSettingPatchSchema, body);
+    await upsertNotificationSetting(this.db, p.accountId, key, patch, Date.now(), id);
+    return (await this.formNotificationViews(p.accountId, id)).find((v) => v.emailKey === key)!;
+  }
+
+  /** Remove this form's override — the form fully inherits the account setting. */
+  @Post('forms/:id/notifications/:emailKey/reset')
+  async resetFormNotification(
+    @Req() req: ReqLike,
+    @Param('id') id: string,
+    @Param('emailKey') emailKey: string,
+  ) {
+    const p = await this.auth.resolveHost(req);
+    assertAdmin(p);
+    await this.assertOwnForm(p.accountId, id);
+    const key = this.parseEmailKey(emailKey);
+    await deleteNotificationSetting(this.db, p.accountId, key, id);
+    return (await this.formNotificationViews(p.accountId, id)).find((v) => v.emailKey === key)!;
+  }
+
+  /** 404 unless the form exists in the principal's account (standard scoping). */
+  private async assertOwnForm(accountId: string, formId: string): Promise<void> {
+    const f = await getFormById(this.db, accountId, formId);
+    if (!f) throw new NotFoundException({ error: 'NOT_FOUND', message: 'Not found.' });
+  }
+
+  /**
+   * The per-form view for both emails: the effective ACCOUNT-level template
+   * (stored override or nulls = stock), whether a form override exists, and the
+   * override values — plus the same defaults + token catalog the account view
+   * carries, so the Connect-tab editor renders with one payload.
+   */
+  private async formNotificationViews(accountId: string, formId: string) {
+    const account = await getNotificationSettings(this.db, accountId);
+    const overrides = await getNotificationSettings(this.db, accountId, formId);
+    return SUBMISSION_EMAIL_KEYS.map((emailKey) => {
+      const a = account.get(emailKey) ?? defaultNotificationSetting(emailKey);
+      const o = overrides.get(emailKey);
+      return {
+        emailKey,
+        /** The account layer this form inherits when it has no override. */
+        account: { enabled: a.enabled, subject: a.subject, body: a.body },
+        /** The form's pinned copy; null = using the account template. */
+        override: o
+          ? { enabled: o.enabled, subject: o.subject, body: o.body, updatedAt: o.updatedAt }
+          : null,
+        tokens: [...NOTIFICATION_TOKENS],
+        defaults: {
+          en: defaultSubmissionTemplate(emailKey, 'en'),
+          es: defaultSubmissionTemplate(emailKey, 'es'),
+        },
+      };
+    });
+  }
+
+  /** 400 unless the path key is one of the two customizable emails. */
+  private parseEmailKey(value: string): SubmissionEmailKey {
+    if (isSubmissionEmailKey(value)) return value;
+    throw new BadRequestException({ error: 'BAD_REQUEST', message: 'Unknown notification email key.' });
+  }
+
+  /**
+   * Merge a stored setting with the shipped defaults + token catalog into the
+   * shape the Settings UI renders. Both EN/ES defaults are returned (the API is
+   * locale-agnostic; the web app picks the one matching its locale).
+   */
+  private notificationView(emailKey: SubmissionEmailKey, s: NotificationSetting) {
+    return {
+      emailKey,
+      enabled: s.enabled,
+      subject: s.subject,
+      body: s.body,
+      updatedAt: s.updatedAt,
+      tokens: [...NOTIFICATION_TOKENS],
+      defaults: {
+        en: defaultSubmissionTemplate(emailKey, 'en'),
+        es: defaultSubmissionTemplate(emailKey, 'es'),
+      },
+    };
   }
 }

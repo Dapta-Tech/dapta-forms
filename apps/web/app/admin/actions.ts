@@ -25,7 +25,12 @@ export async function deleteFormAction(id: string): Promise<void> {
   revalidatePath('/admin/forms');
 }
 
-/** Save the raw config JSON from the placeholder editor (Phase 1 replaces this). */
+/**
+ * Editor autosave. Draft→publish split: `config` is stored as an UNPUBLISHED
+ * draft (the live form the public page serves is untouched); `name` applies
+ * immediately (metadata is not part of the draft flow). Publishing the draft is
+ * a separate, explicit `publishFormAction`.
+ */
 export async function saveFormAction(
   id: string,
   patch: { name?: string; config?: unknown },
@@ -37,5 +42,21 @@ export async function saveFormAction(
     return { ok: true };
   } catch (e) {
     return { ok: false, message: e instanceof Error ? e.message : 'Failed to save.' };
+  }
+}
+
+/**
+ * Make the pending draft live: POST /v1/forms/:id/publish copies draft_config
+ * over the live config, stamps published_at, and clears the draft (a no-op when
+ * nothing is pending).
+ */
+export async function publishFormAction(id: string): Promise<{ ok: boolean; message?: string }> {
+  try {
+    await adminApi.publishForm(id);
+    revalidatePath(`/admin/forms/${id}/edit`);
+    revalidatePath('/admin');
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, message: e instanceof Error ? e.message : 'Failed to publish.' };
   }
 }

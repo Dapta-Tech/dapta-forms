@@ -1,12 +1,23 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
-import { deletePendingOutbox, enqueueOutbox, type Db, type OutboxKind } from '@quill/db';
+import {
+  deletePendingOutbox,
+  enqueueOutbox,
+  resolveProviderToken,
+  type Db,
+  type OutboxKind,
+} from '@quill/db';
 import {
   createDestination,
   type DestinationContext,
   type DestinationSpec,
   type DnsResolver,
 } from '@quill/destinations';
-import { formConfigSchema, formDestinationSchema, type FormDestination } from '@quill/types';
+import {
+  destinationFiresForPhase,
+  formConfigSchema,
+  formDestinationSchema,
+  type FormDestination,
+} from '@quill/types';
 import type { ServerEnv } from '@quill/config/env';
 import { DB, ENV } from './tokens';
 
@@ -64,7 +75,14 @@ export class DestinationEffects {
       const destinations = extractDestinations(input.config);
       const enabled = destinations
         .map((destination, index) => ({ destination, index }))
-        .filter(({ destination }) => destination.enabled !== false);
+        .filter(({ destination }) => destination.enabled !== false)
+        // Per-event trigger filter: a destination with an `events` list only fires
+        // for the phases it names (webhook `events:['complete']` skips partials, and
+        // vice versa). Absent/empty `events` fires on BOTH phases (back-compat), and
+        // destinations without the field (e.g. HubSpot) always pass — the helper
+        // returns true. Mapping happens BEFORE this filter so the idempotency key
+        // keeps each destination's ORIGINAL config-array index.
+        .filter(({ destination }) => destinationFiresForPhase(destination, input.phase));
 
       // A re-submit of the same session+phase replaces every not-yet-sent
       // delivery: cancel pending rows ONCE per kind BEFORE the enqueue loop.
@@ -125,7 +143,9 @@ export class DestinationEffects {
    */
   async deliver(action: string, payloadJson: string): Promise<void> {
     const { destination, ctx } = JSON.parse(payloadJson) as DestinationOutboxPayload;
-    const spec = this.toSpec(destination);
+    // ctx.accountId is the form's account — resolve that account's HubSpot token
+    // (else the env fallback) at delivery time.
+    const spec = await this.toSpec(destination, ctx.accountId);
     const dest = createDestination(spec, this.fetchImpl);
     const result = await dest.deliver(ctx);
     if (!result.delivered) {
@@ -142,7 +162,7 @@ export class DestinationEffects {
   }
 
   /** Resolve a stored destination config into a delivery spec (inject secrets). */
-  private toSpec(destination: FormDestination): DestinationSpec {
+  private async toSpec(destination: FormDestination, accountId: string): Promise<DestinationSpec> {
     if (destination.type === 'webhook') {
       return {
         type: 'webhook',
@@ -158,16 +178,29 @@ export class DestinationEffects {
         },
       };
     }
+    // Per-account HubSpot token (connected → decrypted), else the env fallback.
+    // Null resolves to '' so the factory degrades to a harmless log-only no-op.
+    const token = await resolveProviderToken(
+      this.db,
+      accountId,
+      'hubspot',
+      this.env?.FORMS_ENCRYPTION_KEY,
+      this.env?.HUBSPOT_PRIVATE_APP_TOKEN,
+    );
     return {
       type: 'hubspot',
       hubspot: {
         // Server-side secret, injected at delivery time — never persisted.
-        token: this.env?.HUBSPOT_PRIVATE_APP_TOKEN ?? '',
+        token: token ?? '',
         fieldMappings: destination.fieldMappings ?? {},
         utmMappings: destination.utmMappings ?? {},
         scoreProperty: destination.scoreProperty ?? undefined,
         dateProperty: destination.dateProperty ?? undefined,
         note: destination.settings?.note,
+        valueMaps: destination.valueMaps,
+        outcomeProperty: destination.outcomeProperty ?? undefined,
+        staticProperties: destination.staticProperties,
+        inferCompanyFromEmail: destination.inferCompanyFromEmail,
       },
     };
   }

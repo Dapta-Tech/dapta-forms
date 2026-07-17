@@ -3,10 +3,10 @@ import {
   visibleSteps,
   validateAnswer,
   validateAnswerCode,
+  phoneSubscriberDigits,
   computeScore,
   resolveOutcome,
   isPersonalEmail,
-  orderSteps,
   interpolate,
   resolveStepDisplay,
   runtimeSteps,
@@ -107,6 +107,25 @@ describe('validateAnswer', () => {
     expect(validateAnswer(s, '+57 300 123 4567').ok).toBe(true);
   });
 
+  it('counts phone SUBSCRIBER digits, excluding the E.164 dial code', () => {
+    const s = step({ key: 'p', type: 'phone', phoneMinDigits: 7, required: true });
+    // '+52' + 6 subscriber digits = 6 < 7 → invalid even though the raw string
+    // holds 8 digits. The dial code must not pad the length.
+    expect(validateAnswer(s, '+52551234').ok).toBe(false);
+    // '+52' + 10 subscriber digits (a real MX mobile) → valid.
+    expect(validateAnswer(s, '+525512345678').ok).toBe(true);
+    // '+1' + 10 subscriber digits (US) → valid.
+    expect(validateAnswer(s, '+15106005675').ok).toBe(true);
+  });
+
+  it('extracts subscriber digits, excluding the E.164 dial code', () => {
+    expect(phoneSubscriberDigits('+525512345678')).toBe('5512345678'); // strip +52
+    expect(phoneSubscriberDigits('+15106005675')).toBe('5106005675'); // strip +1
+    expect(phoneSubscriberDigits('+57 300 123 4567')).toBe('3001234567'); // ignores spaces
+    expect(phoneSubscriberDigits('5551234')).toBe('5551234'); // no '+' → all digits
+    expect(phoneSubscriberDigits('')).toBe('');
+  });
+
   it('rejects an out-of-range slider and unknown option', () => {
     expect(validateAnswer(step({ key: 's', type: 'slider', min: 0, max: 10 }), 99).ok).toBe(false);
     const choice = step({ key: 'c', type: 'dropdown', options: [{ label: 'A', value: 'a' }] });
@@ -136,6 +155,108 @@ describe('resolveOutcome', () => {
     expect(resolveOutcome(config, 15)?.id).toBe('high');
     expect(resolveOutcome(config, 3)?.id).toBe('low');
   });
+
+  // Answer-forced overrides (additive `answers` param) --------------------
+
+  // NOTE: the override outcome is declared LAST so plain score bucketing (two
+  // outcomes tied at minScore 0 → first declared wins) never picks it — only a
+  // matching override rule can. Overrides win regardless of declared position.
+  const overrideConfig: FormConfig = {
+    version: 1,
+    steps: [],
+    outcomes: [
+      { id: 'low', label: 'Low', minScore: 0 },
+      { id: 'high', label: 'High', minScore: 10 },
+      {
+        id: 'p0',
+        label: 'Disqualified',
+        minScore: 0,
+        overrides: [{ field: 'budget', maxValue: 0 }],
+      },
+    ],
+  };
+
+  it('an override forces its outcome over a higher-scoring bucket', () => {
+    // Score 15 would bucket to `high`, but budget <= 0 forces `p0`.
+    expect(resolveOutcome(overrideConfig, 15, { budget: 0 })?.id).toBe('p0');
+  });
+
+  it('without answers (back-compat) and without a match, bucketing is unchanged', () => {
+    expect(resolveOutcome(overrideConfig, 15)?.id).toBe('high'); // legacy 2-arg call
+    expect(resolveOutcome(overrideConfig, 15, { budget: 50 })?.id).toBe('high');
+    expect(resolveOutcome(overrideConfig, 3, { budget: 50 })?.id).toBe('low');
+  });
+
+  it('a missing/empty answer never matches an override', () => {
+    expect(resolveOutcome(overrideConfig, 15, {})?.id).toBe('high');
+    expect(resolveOutcome(overrideConfig, 15, { budget: null })?.id).toBe('high');
+    expect(resolveOutcome(overrideConfig, 15, { budget: '' })?.id).toBe('high');
+  });
+
+  it('numeric clauses: maxValue/minValue bound the numeric answer', () => {
+    const cfg: FormConfig = {
+      version: 1,
+      steps: [],
+      outcomes: [
+        { id: 'rest', label: 'Rest', minScore: 0 },
+        { id: 'mid', label: 'Mid', overrides: [{ field: 'n', minValue: 5, maxValue: 10 }] },
+      ],
+    };
+    expect(resolveOutcome(cfg, 0, { n: 5 })?.id).toBe('mid'); // inclusive lower bound
+    expect(resolveOutcome(cfg, 0, { n: '7' })?.id).toBe('mid'); // numeric string works
+    expect(resolveOutcome(cfg, 0, { n: 10 })?.id).toBe('mid'); // inclusive upper bound
+    expect(resolveOutcome(cfg, 0, { n: 11 })?.id).toBe('rest'); // above max
+    expect(resolveOutcome(cfg, 0, { n: 4 })?.id).toBe('rest'); // below min
+  });
+
+  it('a non-numeric answer fails numeric clauses', () => {
+    expect(resolveOutcome(overrideConfig, 15, { budget: 'none' })?.id).toBe('high');
+    expect(resolveOutcome(overrideConfig, 15, { budget: ['a'] })?.id).toBe('high');
+  });
+
+  it('values clause: matches on string/array answer intersection', () => {
+    const cfg: FormConfig = {
+      version: 1,
+      steps: [],
+      outcomes: [
+        { id: 'rest', label: 'Rest', minScore: 0 },
+        { id: 'p0', label: 'DQ', overrides: [{ field: 'role', values: ['student'] }] },
+      ],
+    };
+    expect(resolveOutcome(cfg, 20, { role: 'student' })?.id).toBe('p0');
+    expect(resolveOutcome(cfg, 20, { role: ['founder', 'student'] })?.id).toBe('p0');
+    expect(resolveOutcome(cfg, 20, { role: 'founder' })?.id).toBe('rest');
+  });
+
+  it('ALL specified clauses must hold on one rule', () => {
+    const cfg: FormConfig = {
+      version: 1,
+      steps: [],
+      outcomes: [
+        { id: 'rest', label: 'Rest', minScore: 0 },
+        {
+          id: 'p0',
+          label: 'DQ',
+          overrides: [{ field: 'n', values: ['0'], maxValue: 0 }],
+        },
+      ],
+    };
+    expect(resolveOutcome(cfg, 20, { n: 0 })?.id).toBe('p0'); // '0' intersects AND 0 <= 0
+    expect(resolveOutcome(cfg, 20, { n: '-1' })?.id).toBe('rest'); // numeric ok, values miss
+  });
+
+  it('outcomes are scanned in declared order — the first matching override wins', () => {
+    const cfg: FormConfig = {
+      version: 1,
+      steps: [],
+      outcomes: [
+        { id: 'first', label: 'First', minScore: 0, overrides: [{ field: 'n', maxValue: 0 }] },
+        { id: 'second', label: 'Second', minScore: 0, overrides: [{ field: 'n', maxValue: 5 }] },
+      ],
+    };
+    expect(resolveOutcome(cfg, 99, { n: 0 })?.id).toBe('first'); // both match; first declared wins
+    expect(resolveOutcome(cfg, 99, { n: 3 })?.id).toBe('second'); // only the second matches
+  });
 });
 
 describe('isPersonalEmail', () => {
@@ -148,15 +269,42 @@ describe('isPersonalEmail', () => {
   });
 });
 
-describe('orderSteps', () => {
-  it('puts qualification before lead_capture, preserving order within a phase', () => {
-    const steps: FormStep[] = [
-      step({ key: 'email', type: 'email', flowGroup: 'lead_capture' }),
-      step({ key: 'q1', type: 'text', flowGroup: 'qualification' }),
-      step({ key: 'phone', type: 'phone', flowGroup: 'lead_capture' }),
-      step({ key: 'q2', type: 'text' }), // no group → qualification
-    ];
-    expect(orderSteps(steps).map((s) => s.key)).toEqual(['q1', 'q2', 'email', 'phone']);
+describe('authored step order is authoritative (WYSIWYG)', () => {
+  it('never reorders by flowGroup — lead_capture steps render exactly where authored', () => {
+    const cfg: FormConfig = {
+      version: 1,
+      steps: [
+        step({ key: 'email', type: 'email', flowGroup: 'lead_capture' }),
+        step({ key: 'q1', type: 'text', flowGroup: 'qualification' }),
+        step({ key: 'phone', type: 'phone', flowGroup: 'lead_capture' }),
+        step({ key: 'q2', type: 'text' }), // no group
+      ],
+    };
+    expect(runtimeSteps(cfg, {}).map((s) => s.key)).toEqual(['email', 'q1', 'phone', 'q2']);
+  });
+
+  it('regression: a form authored [name, text, select] walks [name, text, select]', () => {
+    // The exact P0 shape: a name step authored FIRST (auto-tagged lead_capture by
+    // the editor) must be the FIRST public question, not pushed to the end.
+    const cfg: FormConfig = {
+      version: 1,
+      steps: [
+        step({
+          key: 'name',
+          type: 'name',
+          flowGroup: 'lead_capture',
+          fields: ['firstname', 'lastname'],
+        }),
+        step({ key: 'details', type: 'text', flowGroup: 'qualification' }),
+        step({
+          key: 'industry',
+          type: 'multiple_choice',
+          flowGroup: 'qualification',
+          options: [{ label: 'SaaS', value: 'saas' }],
+        }),
+      ],
+    };
+    expect(runtimeSteps(cfg, {}).map((s) => s.key)).toEqual(['name', 'details', 'industry']);
   });
 });
 
@@ -180,9 +328,54 @@ describe('personal-email branch (showForPersonalEmailOnly)', () => {
 });
 
 describe('interpolate + resolveStepDisplay', () => {
-  it('substitutes [key] tokens, removing unknown/empty tokens', () => {
+  it('substitutes [key] tokens, cleaning up orphaned punctuation for empty ones', () => {
     expect(interpolate('Hi [firstname]!', { firstname: 'Ada' })).toBe('Hi Ada!');
-    expect(interpolate('Hi [firstname]!', {})).toBe('Hi !');
+    // Empty token drops the space in front of it — never render "Hi !".
+    expect(interpolate('Hi [firstname]!', {})).toBe('Hi!');
+  });
+
+  it('drops a leading empty token with its connector and re-capitalizes', () => {
+    expect(interpolate('[firstname], what problem are you solving?', {})).toBe(
+      'What problem are you solving?',
+    );
+    expect(interpolate('[firstname] how are you', {})).toBe('How are you');
+  });
+
+  it('collapses an orphaned mid-sentence token without double-spacing', () => {
+    expect(interpolate('Hi [firstname], welcome', {})).toBe('Hi, welcome');
+  });
+
+  it('sweeps a connector *before* an embedded or trailing empty token', () => {
+    // Name-last shape: the comma that joined the token to the clause leaves with it.
+    expect(interpolate('What is your role, [firstname]?', {})).toBe('What is your role?');
+    // Trailing empty token after a colon: the colon + space are swept, no "Priority:".
+    expect(interpolate('Priority: [firstname]', {})).toBe('Priority');
+    // A connector *before* the token is swept; one *after* it belongs to the next
+    // clause and is kept.
+    expect(interpolate('Nice, [firstname]; welcome', {})).toBe('Nice; welcome');
+    // The dash branch of the connector class is swept before a trailing token too.
+    expect(interpolate('Deadline - [firstname]', {})).toBe('Deadline');
+  });
+
+  it('leaves the all-resolved path unchanged (resolved leading token keeps case + comma)', () => {
+    expect(interpolate('[firstname], what problem are you solving?', { firstname: 'Ana' })).toBe(
+      'Ana, what problem are you solving?',
+    );
+  });
+
+  it('handles multiple tokens with mixed resolved/unresolved answers', () => {
+    // firstname empty (dropped with its preceding space); tools resolved.
+    expect(interpolate('Hi [firstname], we see you use [tools]', { tools: 'CRM' })).toBe(
+      'Hi, we see you use CRM',
+    );
+    // leading empty firstname dropped + re-capitalized; lastname resolved.
+    expect(interpolate('[firstname] [lastname], hello', { lastname: 'Lee' })).toBe('Lee, hello');
+  });
+
+  it('returns a template with no tokens unchanged', () => {
+    expect(interpolate('Just plain copy, nothing to fill.', { firstname: 'Ada' })).toBe(
+      'Just plain copy, nothing to fill.',
+    );
   });
   it('picks the dynamic question variant and slider unit label', () => {
     const s = step({
@@ -200,7 +393,7 @@ describe('interpolate + resolveStepDisplay', () => {
 });
 
 describe('runtimeSteps', () => {
-  it('orders two-phase, applies skip-logic, and resolves display', () => {
+  it('walks the authored order, applies skip-logic, and resolves display', () => {
     const cfg: FormConfig = {
       version: 1,
       steps: [
@@ -222,8 +415,10 @@ describe('runtimeSteps', () => {
       ],
     };
     const walked = runtimeSteps(cfg, { problem: 'leads' });
-    expect(walked.map((s) => s.key)).toEqual(['problem', 'detail', 'email']);
-    expect(walked[1].question).toBe('Tell us more about leads.');
+    // Authored order is preserved verbatim — the lead_capture email step stays
+    // first because that is where the author put it.
+    expect(walked.map((s) => s.key)).toEqual(['email', 'problem', 'detail']);
+    expect(walked[2].question).toBe('Tell us more about leads.');
   });
 });
 
@@ -238,6 +433,9 @@ describe('validateAnswerCode', () => {
       validateAnswerCode(step({ key: 'e', type: 'email', corporateEmailOnly: true }), 'a@gmail.com').code,
     ).toBe('work_email');
     expect(validateAnswerCode(step({ key: 'p', type: 'phone', phoneMinDigits: 8 }), '12').code).toBe('phone');
+    // E.164 value: the '+52' dial code is excluded, so 6 subscriber digits < 8.
+    expect(validateAnswerCode(step({ key: 'p', type: 'phone', phoneMinDigits: 8 }), '+52551234').code).toBe('phone');
+    expect(validateAnswerCode(step({ key: 'p', type: 'phone', phoneMinDigits: 8 }), '+525512345678').ok).toBe(true);
     expect(validateAnswerCode(step({ key: 's', type: 'slider', min: 0, max: 5 }), 9).code).toBe('too_high');
   });
   it('checks both name sub-fields', () => {

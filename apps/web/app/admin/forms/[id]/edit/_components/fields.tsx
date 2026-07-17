@@ -1,7 +1,8 @@
 'use client';
 
-import type { ReactNode } from 'react';
+import { Children, isValidElement, type ReactNode } from 'react';
 import { cn } from '@/lib/cn';
+import { Select, type SelectOption } from '@/components/ui/select';
 
 /**
  * Small form-anatomy primitives shared by every editor panel so spacing,
@@ -60,12 +61,64 @@ export function NumberField(props: React.InputHTMLAttributes<HTMLInputElement>) 
   return <input type="number" {...rest} className={cn(controlBase, className)} />;
 }
 
-export function SelectField(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
-  const { className, children, ...rest } = props;
+/** Flatten an `<option>`'s children (strings, numbers, `{expr}` fragments) into
+ *  the plain text the branded Select shows as that option's label. */
+function optionText(node: ReactNode): string {
+  if (node == null || node === false || node === true) return '';
+  if (typeof node === 'string' || typeof node === 'number') return String(node);
+  if (Array.isArray(node)) return node.map(optionText).join('');
+  if (isValidElement(node)) return optionText((node.props as { children?: ReactNode }).children);
+  return '';
+}
+
+/** Read `<option>` children into the branded Select's options array, coercing
+ *  values to strings so numeric option values match the native `<select>`. */
+function optionsFromChildren(children: ReactNode): SelectOption[] {
+  const out: SelectOption[] = [];
+  Children.forEach(children, (child) => {
+    if (!isValidElement(child) || child.type !== 'option') return;
+    const p = child.props as { value?: string | number; disabled?: boolean; children?: ReactNode };
+    out.push({
+      value: p.value == null ? '' : String(p.value),
+      label: optionText(p.children).trim(),
+      disabled: p.disabled,
+    });
+  });
+  return out;
+}
+
+/**
+ * The shared builder select. Keeps the native `<select>` call shape used across
+ * the editor (`<option>` children + an `onChange(e)` reading `e.target.value`)
+ * but renders the branded {@link Select} combobox underneath — so every builder
+ * dropdown (question type, logic conditions/rules, reveal panel, variants) is
+ * on-theme in both light and dark. Options come from the `<option>` children;
+ * the change event is synthesized so existing call sites stay untouched.
+ */
+export function SelectField({
+  className,
+  children,
+  value,
+  onChange,
+  disabled,
+  id,
+  'aria-label': ariaLabel,
+}: React.SelectHTMLAttributes<HTMLSelectElement>) {
   return (
-    <select {...rest} className={cn(controlBase, 'cursor-pointer', className)}>
-      {children}
-    </select>
+    <Select
+      id={id}
+      ariaLabel={ariaLabel}
+      className={cn('cursor-pointer', className)}
+      disabled={disabled}
+      value={value == null ? '' : String(value)}
+      options={optionsFromChildren(children)}
+      onChange={(v) =>
+        onChange?.({
+          target: { value: v },
+          currentTarget: { value: v },
+        } as unknown as React.ChangeEvent<HTMLSelectElement>)
+      }
+    />
   );
 }
 

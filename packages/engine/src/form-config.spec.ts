@@ -145,6 +145,23 @@ describe('normalizeConfig', () => {
     expect(out.outcomes?.map((o) => o.minScore)).toEqual([0, 20]);
   });
 
+  it('preserves additive top-level fields (reveal, partial submit, unknown extras)', () => {
+    const config = {
+      version: 1,
+      steps: [step({ key: 'role', type: 'dropdown', options: [{ label: 'A', value: 'a' }] })],
+      reveal: { enabled: true, headline: 'Hold on…', durationMs: 3000, prewarm: true },
+      partialSubmitAfterStep: 2,
+      // Additive fields the engine doesn't model (tracking/destinations) must
+      // survive a normalize→save round-trip untouched.
+      tracking: { gtmId: 'GTM-XYZ' },
+    } as FormConfig;
+    const out = normalizeConfig(config) as FormConfig & Record<string, unknown>;
+    expect(out.reveal).toEqual({ enabled: true, headline: 'Hold on…', durationMs: 3000, prewarm: true });
+    expect(out.partialSubmitAfterStep).toBe(2);
+    expect(out.tracking).toEqual({ gtmId: 'GTM-XYZ' });
+    expect(normalizeConfig(out)).toEqual(out);
+  });
+
   it('respects an explicit scoring flag and is idempotent', () => {
     const config: FormConfig = {
       version: 1,
@@ -163,7 +180,8 @@ describe('interpolate', () => {
       'Hi Ada, budget 500?',
     );
     expect(interpolate('Picked [tools]', { tools: ['a', 'b'] })).toBe('Picked a, b');
-    expect(interpolate('Hi [missing]', {})).toBe('Hi ');
+    // Empty/missing token is swept up with its orphaned trailing space (no "Hi ").
+    expect(interpolate('Hi [missing]', {})).toBe('Hi');
   });
 });
 

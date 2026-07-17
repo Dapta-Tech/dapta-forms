@@ -1,22 +1,62 @@
 'use client';
 
-import { useMemo, useState, useTransition } from 'react';
-import type { FormsMessages } from '@quill/shared';
-import { WEBHOOK_SECRET_MASK, type FormDestination } from '@quill/types';
-import { Button } from '@/components/ui/button';
+import { createContext, useContext, useMemo, useState, useTransition } from 'react';
+import Link from 'next/link';
+import type { FormsMessages, Locale } from '@quill/shared';
+import { WEBHOOK_SECRET_MASK, type DestinationEvent, type FormDestination } from '@quill/types';
+import { Button, buttonVariants } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
+import { Select, type SelectOption } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/components/toast';
+import { cn } from '@/lib/cn';
 import type { HubSpotPropertiesResponse } from '@/lib/admin-api';
+import { propertyLookup, suggestProperty, type QuestionMeta } from './auto-map';
 import { saveIntegrationsAction } from './actions';
 
 type Msgs = FormsMessages['admin']['integrations'];
 
+export type { QuestionMeta } from './auto-map';
+
+/** Admin locale for the branded property picker's search box — a tiny context so
+ *  `locale` need not thread through every PropertyField (kept minimal on purpose). */
+const LocaleContext = createContext<Locale>('en');
+
 const UTM_KEYS = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content'] as const;
+
+/** Sentinel option values for the key pickers — never valid step keys. */
+const CUSTOM_KEY_OPTION = '__custom_key__';
+const KEY_GROUP_QUESTIONS = '__group_questions__';
+const KEY_GROUP_SYSTEM = '__group_system__';
+
+/** Question types whose answers come from a fixed option list — the typical
+ *  "translate this answer" case, so they lead the value-map key picker. */
+const CHOICE_TYPES = new Set(['multiple_choice', 'dropdown']);
+
+/** Replace `{key}` tokens in a catalog string. */
+const fill = (template: string, vars: Record<string, string>): string =>
+  template.replace(/\{(\w+)\}/g, (_, k: string) => vars[k] ?? `{${k}}`);
 
 interface Pair {
   key: string;
   property: string;
+}
+
+/** One answer→CRM value translation row inside a value map. */
+interface ValueMapRow {
+  from: string;
+  to: string;
+}
+/** Value translations for one form step: raw answer -> HubSpot picklist value. */
+interface ValueMapGroup {
+  stepKey: string;
+  rows: ValueMapRow[];
+}
+/** One fixed property stamped on every completed submission. */
+interface StaticPropertyRow {
+  key: string;
+  value: string;
 }
 
 interface WebhookState {
@@ -28,6 +68,9 @@ interface WebhookState {
   secret: string;
   /** A signing secret is already stored server-side (returned masked on READ). */
   hasSecret: boolean;
+  /** Per-event triggers (both true = default; absent/empty on the wire = both). */
+  firePartial: boolean;
+  fireComplete: boolean;
 }
 interface HubspotState {
   enabled: boolean;
@@ -36,6 +79,19 @@ interface HubspotState {
   scoreProperty: string;
   dateProperty: string;
   note: boolean;
+  valueMaps: ValueMapGroup[];
+  outcomeProperty: string;
+  staticProperties: StaticPropertyRow[];
+  inferCompanyFromEmail: boolean;
+  bookingSync: BookingSyncState;
+}
+
+/** Contact properties stamped when a respondent books a meeting (all optional). */
+interface BookingSyncState {
+  stageProperty: string;
+  stageValue: string;
+  dateProperty: string;
+  hoursProperty: string;
 }
 
 function initialWebhook(destinations: FormDestination[]): WebhookState {
@@ -44,9 +100,20 @@ function initialWebhook(destinations: FormDestination[]): WebhookState {
     // The API masks a stored secret to WEBHOOK_SECRET_MASK on READ — surface it
     // as "set" (empty input, placeholder) rather than leaking the ciphertext.
     const hasSecret = w.settings.secret === WEBHOOK_SECRET_MASK;
-    return { id: w.id, enabled: w.enabled, url: w.settings.url ?? '', secret: '', hasSecret };
+    // Absent/empty events = both phases (schema back-compat) → both boxes checked.
+    const ev = w.events;
+    const both = !ev || ev.length === 0;
+    return {
+      id: w.id,
+      enabled: w.enabled,
+      url: w.settings.url ?? '',
+      secret: '',
+      hasSecret,
+      firePartial: both || ev!.includes('partial'),
+      fireComplete: both || ev!.includes('complete'),
+    };
   }
-  return { enabled: false, url: '', secret: '', hasSecret: false };
+  return { enabled: false, url: '', secret: '', hasSecret: false, firePartial: true, fireComplete: true };
 }
 
 function initialHubspot(destinations: FormDestination[]): HubspotState {
@@ -59,9 +126,34 @@ function initialHubspot(destinations: FormDestination[]): HubspotState {
       scoreProperty: h.scoreProperty ?? '',
       dateProperty: h.dateProperty ?? '',
       note: h.settings?.note !== false,
+      valueMaps: Object.entries(h.valueMaps ?? {}).map(([stepKey, map]) => ({
+        stepKey,
+        rows: Object.entries(map).map(([from, to]) => ({ from, to })),
+      })),
+      outcomeProperty: h.outcomeProperty ?? '',
+      staticProperties: Object.entries(h.staticProperties ?? {}).map(([key, value]) => ({ key, value })),
+      inferCompanyFromEmail: h.inferCompanyFromEmail === true,
+      bookingSync: {
+        stageProperty: h.bookingSync?.stageProperty ?? '',
+        stageValue: h.bookingSync?.stageValue ?? '',
+        dateProperty: h.bookingSync?.dateProperty ?? '',
+        hoursProperty: h.bookingSync?.hoursProperty ?? '',
+      },
     };
   }
-  return { enabled: false, fieldMappings: [], utmMappings: {}, scoreProperty: '', dateProperty: '', note: true };
+  return {
+    enabled: false,
+    fieldMappings: [],
+    utmMappings: {},
+    scoreProperty: '',
+    dateProperty: '',
+    note: true,
+    valueMaps: [],
+    outcomeProperty: '',
+    staticProperties: [],
+    inferCompanyFromEmail: false,
+    bookingSync: { stageProperty: '', stageValue: '', dateProperty: '', hoursProperty: '' },
+  };
 }
 
 /**
@@ -84,12 +176,20 @@ export function IntegrationsEditor({
   id,
   initialDestinations,
   hubspot: hubspotProps,
+  hubspotConnected,
+  questions,
   messages: m,
+  locale,
 }: {
   id: string;
   initialDestinations: FormDestination[];
   hubspot: HubSpotPropertiesResponse;
+  /** Account-level HubSpot connection status (gates the mapping UI). */
+  hubspotConnected: boolean;
+  /** The form's mappable questions (from its steps). */
+  questions: QuestionMeta[];
   messages: Msgs;
+  locale: Locale;
 }) {
   const { success, error } = useToast();
   const [pending, start] = useTransition();
@@ -98,6 +198,11 @@ export function IntegrationsEditor({
   const [webhookError, setWebhookError] = useState<string | null>(null);
 
   const properties = hubspotProps.enabled ? hubspotProps.properties : [];
+  const pickerEnabled = hubspotProps.enabled;
+  // Show the mapping when HubSpot is usable for this account: an explicit
+  // account connection, OR the property picker resolved via the server env
+  // fallback (self-host). Otherwise prompt the user to connect first.
+  const showMapping = hubspotConnected || pickerEnabled;
 
   function buildDestinations(): FormDestination[] | { error: string } {
     const out: FormDestination[] = [];
@@ -108,10 +213,16 @@ export function IntegrationsEditor({
       // set, or stays cleared/null when none exists.
       const typed = webhook.secret.trim();
       const secret = typed ? typed : webhook.hasSecret ? WEBHOOK_SECRET_MASK : null;
+      // Per-event triggers: both selected = omit `events` (schema default = both,
+      // back-compat). Exactly one selected = persist it. The UI keeps ≥1 checked.
+      const events: DestinationEvent[] = [];
+      if (webhook.firePartial) events.push('partial');
+      if (webhook.fireComplete) events.push('complete');
       out.push({
         type: 'webhook',
         ...(webhook.id ? { id: webhook.id } : {}),
         enabled: webhook.enabled,
+        ...(events.length === 1 ? { events } : {}),
         settings: {
           url: webhook.url.trim(),
           secret,
@@ -126,14 +237,41 @@ export function IntegrationsEditor({
     for (const [k, v] of Object.entries(hs.utmMappings)) {
       if (v && v.trim()) utmMappings[k] = v.trim();
     }
+    const valueMaps: Record<string, Record<string, string>> = {};
+    for (const group of hs.valueMaps) {
+      const stepKey = group.stepKey.trim();
+      if (!stepKey) continue;
+      const rows: Record<string, string> = {};
+      for (const r of group.rows) {
+        if (r.from.trim() && r.to.trim()) rows[r.from.trim()] = r.to.trim();
+      }
+      if (Object.keys(rows).length > 0) valueMaps[stepKey] = rows;
+    }
+    const staticProperties: Record<string, string> = {};
+    for (const p of hs.staticProperties) {
+      if (p.key.trim() && p.value.trim()) staticProperties[p.key.trim()] = p.value.trim();
+    }
+    const bookingSync: Record<string, string> = {};
+    for (const k of ['stageProperty', 'stageValue', 'dateProperty', 'hoursProperty'] as const) {
+      if (hs.bookingSync[k].trim()) bookingSync[k] = hs.bookingSync[k].trim();
+    }
     const hasHubspotConfig =
       hs.enabled ||
       Object.keys(fieldMappings).length > 0 ||
       Object.keys(utmMappings).length > 0 ||
+      Object.keys(valueMaps).length > 0 ||
+      Object.keys(staticProperties).length > 0 ||
+      Object.keys(bookingSync).length > 0 ||
       hs.scoreProperty.trim() ||
-      hs.dateProperty.trim();
+      hs.dateProperty.trim() ||
+      hs.outcomeProperty.trim() ||
+      hs.inferCompanyFromEmail;
     if (hasHubspotConfig) {
+      // Round-trip any stored HubSpot fields this screen does not manage (e.g.
+      // booking-sync settings saved elsewhere) so a save here never clobbers them.
+      const stored = initialDestinations.find((d) => d.type === 'hubspot');
       out.push({
+        ...(stored && stored.type === 'hubspot' ? stored : {}),
         type: 'hubspot',
         enabled: hs.enabled,
         settings: { note: hs.note },
@@ -141,6 +279,13 @@ export function IntegrationsEditor({
         utmMappings,
         scoreProperty: hs.scoreProperty.trim() || null,
         dateProperty: hs.dateProperty.trim() || null,
+        valueMaps,
+        outcomeProperty: hs.outcomeProperty.trim() || null,
+        staticProperties,
+        inferCompanyFromEmail: hs.inferCompanyFromEmail,
+        // All fields blank = booking sync off; undefined overrides the stored
+        // spread above so clearing the fields actually removes the config.
+        bookingSync: Object.keys(bookingSync).length > 0 ? bookingSync : undefined,
       });
     }
     return out;
@@ -170,7 +315,18 @@ export function IntegrationsEditor({
         clearUrlError={() => setWebhookError(null)}
         m={m}
       />
-      <HubspotCard state={hs} onChange={setHs} properties={properties} hubspotMeta={hubspotProps} m={m} />
+      <LocaleContext.Provider value={locale}>
+        <HubspotCard
+          state={hs}
+          onChange={setHs}
+          properties={properties}
+          pickerEnabled={pickerEnabled}
+          accountConnected={hubspotConnected}
+          showMapping={showMapping}
+          questions={questions}
+          m={m}
+        />
+      </LocaleContext.Provider>
 
       <div className="sticky bottom-0 flex items-center gap-3 border-t border-border bg-background/95 py-4 backdrop-blur">
         <Button onClick={save} disabled={pending}>
@@ -181,7 +337,8 @@ export function IntegrationsEditor({
   );
 }
 
-/** A property picker: a <select> of live properties, or a free-text fallback. */
+/** A property picker: a searchable branded Select of live properties, or a
+ *  free-text fallback when the HubSpot picker is unconfigured/unavailable. */
 function PropertyField({
   value,
   onChange,
@@ -199,6 +356,7 @@ function PropertyField({
   m: Msgs;
   ariaLabel: string;
 }) {
+  const locale = useContext(LocaleContext);
   if (!enabled) {
     return (
       <Input
@@ -209,20 +367,115 @@ function PropertyField({
       />
     );
   }
+  // Property lists are long, so the branded picker is searchable. The leading
+  // empty option preserves the native "(no property)" / "Select…" prompt row.
+  const options: SelectOption[] = [
+    { value: '', label: allowNone ? m.noProperty : m.selectProperty },
+    ...properties.map((p) => ({ value: p.name, label: `${p.label} (${p.name})` })),
+  ];
   return (
-    <select
-      aria-label={ariaLabel}
+    <Select
+      ariaLabel={ariaLabel}
       value={value}
-      onChange={(e) => onChange(e.target.value)}
-      className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-    >
-      <option value="">{allowNone ? m.noProperty : m.selectProperty}</option>
-      {properties.map((p) => (
-        <option key={p.name} value={p.name}>
-          {p.label} ({p.name})
-        </option>
-      ))}
-    </select>
+      onChange={onChange}
+      options={options}
+      searchable
+      locale={locale}
+    />
+  );
+}
+
+/**
+ * Step-key picker for "Custom field mappings" rows and "Value maps" groups: a
+ * branded searchable Select over the form's own question keys (grouped, with
+ * the UTM system fields where relevant) plus a "Custom key…" escape hatch that
+ * swaps the row to the legacy free-text input for hidden/advanced keys — with
+ * a "Back to list" way back. A stored key that matches no listed option opens
+ * in custom mode so existing configs render (and keep saving) unchanged.
+ *
+ * Group headers are disabled options (the shared Select has no group concept),
+ * so they render muted and are skipped by keyboard nav + click.
+ */
+function KeySelect({
+  value,
+  onChange,
+  questionOptions,
+  systemKeys,
+  m,
+  testId,
+  customTestId,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  /** Pickable question entries — already filtered/ordered by the caller. */
+  questionOptions: QuestionMeta[];
+  /** Auto-captured submission-data keys (UTMs). Empty = omit the group. */
+  systemKeys: readonly string[];
+  m: Msgs;
+  testId: string;
+  customTestId: string;
+}) {
+  const locale = useContext(LocaleContext);
+  const selectable = (v: string): boolean =>
+    systemKeys.includes(v) || questionOptions.some((q) => q.key === v);
+  // Stored keys that match neither group (hidden/legacy) open in custom mode.
+  const [customMode, setCustomMode] = useState(() => value !== '' && !selectable(value));
+
+  if (customMode) {
+    return (
+      <div className="flex flex-1 items-center gap-2">
+        <Input
+          data-testid={customTestId}
+          value={value}
+          aria-label={m.stepKey}
+          placeholder={m.stepKey}
+          className="flex-1"
+          onChange={(e) => onChange(e.target.value)}
+        />
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => {
+            // A key the list can't show would silently look unselected — clear it.
+            if (value !== '' && !selectable(value)) onChange('');
+            setCustomMode(false);
+          }}
+        >
+          {m.keyCustomBack}
+        </Button>
+      </div>
+    );
+  }
+
+  const options: SelectOption[] = [];
+  if (questionOptions.length > 0) {
+    options.push({ value: KEY_GROUP_QUESTIONS, label: m.keyGroupQuestions, disabled: true });
+    options.push(...questionOptions.map((q) => ({ value: q.key, label: `${q.label} (${q.key})` })));
+  }
+  if (systemKeys.length > 0) {
+    options.push({ value: KEY_GROUP_SYSTEM, label: m.keyGroupSystem, disabled: true });
+    options.push(...systemKeys.map((k) => ({ value: k, label: k })));
+  }
+  options.push({ value: CUSTOM_KEY_OPTION, label: m.keyCustomOption });
+
+  return (
+    <div data-testid={testId} className="min-w-0 flex-1">
+      <Select
+        ariaLabel={m.stepKey}
+        value={value}
+        placeholder={m.selectKeyPlaceholder}
+        options={options}
+        searchable
+        locale={locale}
+        onChange={(v) => {
+          if (v === CUSTOM_KEY_OPTION) {
+            setCustomMode(true);
+            return;
+          }
+          onChange(v);
+        }}
+      />
+    </div>
   );
 }
 
@@ -232,6 +485,7 @@ function Card({
   enabled,
   onToggle,
   m,
+  badge,
   children,
 }: {
   title: string;
@@ -239,13 +493,22 @@ function Card({
   enabled: boolean;
   onToggle: (v: boolean) => void;
   m: Msgs;
+  badge?: string;
   children: React.ReactNode;
 }) {
   return (
     <section className="rounded-lg border border-border bg-card p-5">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h2 className="text-lg font-semibold">{title}</h2>
+          <div className="flex items-center gap-2">
+            <h2 className="text-lg font-semibold">{title}</h2>
+            {badge ? (
+              <span className="inline-flex items-center gap-1 rounded-full border border-primary/40 bg-primary/10 px-2 py-0.5 text-xs font-medium text-foreground">
+                <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-primary" />
+                {badge}
+              </span>
+            ) : null}
+          </div>
           <p className="mt-0.5 text-sm text-muted-foreground">{desc}</p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
@@ -258,10 +521,56 @@ function Card({
   );
 }
 
-function Field({ label, help, children }: { label: string; help?: string; children: React.ReactNode }) {
+/** A grouped panel (Typeform-style) with a header, optional help, and an action slot. */
+function Section({
+  title,
+  help,
+  action,
+  children,
+}: {
+  title: string;
+  help?: string;
+  action?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex flex-col gap-3 rounded-md border border-border p-4">
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <h3 className="text-sm font-semibold">{title}</h3>
+          {help ? <p className="mt-0.5 text-xs text-muted-foreground">{help}</p> : null}
+        </div>
+        {action ?? null}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function Field({
+  label,
+  help,
+  intro,
+  action,
+  children,
+}: {
+  label: string;
+  help?: string;
+  /** Helper copy rendered directly UNDER the label (before the rows), for
+   *  sections that need explaining before the controls make sense. */
+  intro?: React.ReactNode;
+  action?: React.ReactNode;
+  children: React.ReactNode;
+}) {
   return (
     <div className="flex flex-col gap-1.5">
-      <label className="text-sm font-medium">{label}</label>
+      <div className="flex items-center justify-between gap-2">
+        <label className="text-sm font-medium">{label}</label>
+        {action ?? null}
+      </div>
+      {intro ? (
+        <div className="flex flex-col gap-0.5 text-xs text-muted-foreground">{intro}</div>
+      ) : null}
       {children}
       {help ? <p className="text-xs text-muted-foreground">{help}</p> : null}
     </div>
@@ -281,6 +590,15 @@ function WebhookCard({
   clearUrlError: () => void;
   m: Msgs;
 }) {
+  // Keep at least one phase checked — a webhook with neither would never fire
+  // (that is what the enable switch is for), and empty `events` means BOTH.
+  function toggleEvent(which: 'partial' | 'complete', checked: boolean) {
+    const nextPartial = which === 'partial' ? checked : state.firePartial;
+    const nextComplete = which === 'complete' ? checked : state.fireComplete;
+    if (!nextPartial && !nextComplete) return;
+    onChange({ ...state, firePartial: nextPartial, fireComplete: nextComplete });
+  }
+
   return (
     <Card
       title={m.webhookTitle}
@@ -311,6 +629,26 @@ function WebhookCard({
           onChange={(e) => onChange({ ...state, secret: e.target.value })}
         />
       </Field>
+      <Field label={m.webhookEvents} help={m.webhookEventsHelp}>
+        <div className="flex flex-col gap-2 sm:flex-row sm:gap-6">
+          <label className="flex cursor-pointer items-center gap-2 text-sm">
+            <Checkbox
+              checked={state.firePartial}
+              onChange={(e) => toggleEvent('partial', e.target.checked)}
+              aria-label={m.eventPartial}
+            />
+            {m.eventPartial}
+          </label>
+          <label className="flex cursor-pointer items-center gap-2 text-sm">
+            <Checkbox
+              checked={state.fireComplete}
+              onChange={(e) => toggleEvent('complete', e.target.checked)}
+              aria-label={m.eventComplete}
+            />
+            {m.eventComplete}
+          </label>
+        </div>
+      </Field>
     </Card>
   );
 }
@@ -319,17 +657,101 @@ function HubspotCard({
   state,
   onChange,
   properties,
-  hubspotMeta,
+  pickerEnabled,
+  accountConnected,
+  showMapping,
+  questions,
   m,
 }: {
   state: HubspotState;
   onChange: (s: HubspotState) => void;
   properties: { name: string; label: string }[];
-  hubspotMeta: HubSpotPropertiesResponse;
+  pickerEnabled: boolean;
+  accountConnected: boolean;
+  showMapping: boolean;
+  questions: QuestionMeta[];
   m: Msgs;
 }) {
-  const pickerEnabled = hubspotMeta.enabled;
+  const { success, toast } = useToast();
   const utmValues = useMemo(() => state.utmMappings, [state.utmMappings]);
+  const questionKeys = useMemo(() => new Set(questions.map((q) => q.key)), [questions]);
+
+  // Not usable at all → prompt the user to connect HubSpot for their account.
+  if (!showMapping) {
+    return (
+      <section className="rounded-lg border border-border bg-card p-5">
+        <h2 className="text-lg font-semibold">{m.hubspotTitle}</h2>
+        <p className="mt-0.5 text-sm text-muted-foreground">{m.hubspotDesc}</p>
+        <div className="mt-4 rounded-md border border-dashed border-border bg-muted/40 p-4">
+          <p className="text-sm font-medium text-foreground">{m.connectPromptTitle}</p>
+          <p className="mt-1 text-sm text-muted-foreground">{m.connectPromptBody}</p>
+          <Link
+            href="/admin/integrations"
+            className={cn(buttonVariants({ variant: 'default', size: 'sm' }), 'mt-3')}
+          >
+            {m.connectPromptCta}
+            <i aria-hidden className="pi pi-arrow-right" style={{ fontSize: 12 }} />
+          </Link>
+        </div>
+      </section>
+    );
+  }
+
+  /** The property currently mapped for a question key (via the pairs array). */
+  const questionProp = (key: string): string =>
+    state.fieldMappings.find((p) => p.key === key)?.property ?? '';
+
+  /** Upsert/clear the mapping for a question key (empty value removes the row). */
+  const setQuestionProp = (key: string, value: string) => {
+    // Drop any existing row for this key, then re-add when non-empty. Question
+    // rows render from `questions`, so fieldMappings order is irrelevant here.
+    const next = state.fieldMappings.filter((p) => p.key !== key);
+    if (value.trim() !== '') next.push({ key, property: value });
+    onChange({ ...state, fieldMappings: next });
+  };
+
+  // Custom rows = mappings whose key is not one of the form's questions (hidden
+  // fields / legacy keys). Tracked with their real index for stable editing.
+  const customRows = state.fieldMappings
+    .map((pair, index) => ({ pair, index }))
+    .filter(({ pair }) => !questionKeys.has(pair.key));
+
+  // Keys already used by ANY mapping row (main section or custom). Questions
+  // already mapped drop out of a custom row's picker (no double-mapping); a
+  // row's own key is always kept so its selection stays visible.
+  const usedKeys = new Set(state.fieldMappings.map((p) => p.key));
+  const unmappedQuestions = questions.filter((q) => !usedKeys.has(q.key));
+
+  // Value maps translate answers, so choice-type questions (fixed option
+  // lists) lead the picker; free-text questions follow. Plain computation —
+  // this sits below the connect-prompt early return, where hooks can't go.
+  const valueMapQuestions = [
+    ...questions.filter((q) => CHOICE_TYPES.has(q.type)),
+    ...questions.filter((q) => !CHOICE_TYPES.has(q.type)),
+  ];
+
+  function autoMap() {
+    const byLower = propertyLookup(properties);
+    const alreadyMapped = new Set(
+      state.fieldMappings.filter((p) => p.property.trim()).map((p) => p.key),
+    );
+    const additions: Pair[] = [];
+    for (const q of questions) {
+      if (alreadyMapped.has(q.key)) continue; // never overwrite an existing mapping
+      const suggestion = suggestProperty(q, byLower);
+      if (suggestion) additions.push({ key: q.key, property: suggestion });
+    }
+    if (additions.length === 0) {
+      toast(m.autoMapNone);
+      return;
+    }
+    // Replace any empty placeholder rows for these keys, then append suggestions.
+    const filledKeys = new Set(additions.map((a) => a.key));
+    const next = state.fieldMappings.filter((p) => !filledKeys.has(p.key));
+    next.push(...additions);
+    onChange({ ...state, fieldMappings: next });
+    success(fill(m.autoMapFilled, { n: String(additions.length) }));
+  }
 
   return (
     <Card
@@ -338,33 +760,81 @@ function HubspotCard({
       enabled={state.enabled}
       onToggle={(enabled) => onChange({ ...state, enabled })}
       m={m}
+      badge={accountConnected ? m.connectedBadge : undefined}
     >
       {!pickerEnabled ? (
         <div className="rounded-md border border-dashed border-border bg-muted/40 p-3 text-xs text-muted-foreground">
-          {hubspotMeta.enabled ? m.hubspotLoading : hubspotMeta.reason || m.hubspotDisabled}
+          {m.propertiesUnavailable}
         </div>
       ) : null}
 
-      {/* Field mappings */}
-      <Field label={m.fieldMappings} help={m.fieldMappingsHelp}>
+      {/* Map questions — each form question → a HubSpot contact property */}
+      <Section
+        title={m.mapQuestions}
+        help={m.mapQuestionsHelp}
+        action={
+          <Button variant="outline" size="sm" onClick={autoMap} disabled={questions.length === 0}>
+            <i aria-hidden className="pi pi-bolt" style={{ fontSize: 12 }} />
+            {m.autoMap}
+          </Button>
+        }
+      >
+        {questions.length === 0 ? (
+          <p className="text-xs text-muted-foreground">{m.noQuestions}</p>
+        ) : (
+          <div className="flex flex-col gap-2">
+            <div className="hidden grid-cols-[1fr_1fr] gap-3 px-1 sm:grid">
+              <span className="text-xs font-medium text-muted-foreground">{m.yourQuestion}</span>
+              <span className="text-xs font-medium text-muted-foreground">{m.property}</span>
+            </div>
+            {questions.map((q) => (
+              <div
+                key={q.key}
+                className="grid grid-cols-1 items-center gap-2 sm:grid-cols-[1fr_1fr] sm:gap-3"
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-sm">{q.label}</p>
+                  <code className="text-xs text-muted-foreground">{q.key}</code>
+                </div>
+                <PropertyField
+                  value={questionProp(q.key)}
+                  ariaLabel={`${q.label} → ${m.property}`}
+                  properties={properties}
+                  enabled={pickerEnabled}
+                  allowNone
+                  m={m}
+                  onChange={(v) => setQuestionProp(q.key, v)}
+                />
+              </div>
+            ))}
+          </div>
+        )}
+      </Section>
+
+      {/* Custom field mappings — keys not tied to a listed question */}
+      <Field label={m.customMappings} intro={m.customMappingsHelp}>
         <div className="flex flex-col gap-2">
-          {state.fieldMappings.length === 0 ? (
+          {customRows.length === 0 ? (
             <p className="text-xs text-muted-foreground">{m.emptyMappings}</p>
           ) : (
-            state.fieldMappings.map((pair, i) => (
-              <div key={i} className="flex items-center gap-2">
-                <Input
+            customRows.map(({ pair, index }) => (
+              <div key={index} className="flex items-center gap-2">
+                <KeySelect
                   value={pair.key}
-                  aria-label={m.stepKey}
-                  placeholder={m.stepKey}
-                  className="flex-1"
-                  onChange={(e) => {
+                  questionOptions={unmappedQuestions}
+                  systemKeys={UTM_KEYS.filter((k) => k === pair.key || !usedKeys.has(k))}
+                  m={m}
+                  testId="mapping-key-select"
+                  customTestId="mapping-key-custom"
+                  onChange={(v) => {
                     const next = [...state.fieldMappings];
-                    next[i] = { ...pair, key: e.target.value };
+                    next[index] = { ...pair, key: v };
                     onChange({ ...state, fieldMappings: next });
                   }}
                 />
-                <span aria-hidden className="text-muted-foreground">→</span>
+                <span aria-hidden className="text-muted-foreground">
+                  →
+                </span>
                 <div className="flex-1">
                   <PropertyField
                     value={pair.property}
@@ -374,7 +844,7 @@ function HubspotCard({
                     m={m}
                     onChange={(v) => {
                       const next = [...state.fieldMappings];
-                      next[i] = { ...pair, property: v };
+                      next[index] = { ...pair, property: v };
                       onChange({ ...state, fieldMappings: next });
                     }}
                   />
@@ -386,7 +856,7 @@ function HubspotCard({
                   onClick={() =>
                     onChange({
                       ...state,
-                      fieldMappings: state.fieldMappings.filter((_, j) => j !== i),
+                      fieldMappings: state.fieldMappings.filter((_, j) => j !== index),
                     })
                   }
                 >
@@ -409,52 +879,325 @@ function HubspotCard({
         </div>
       </Field>
 
-      {/* UTM mappings */}
-      <Field label={m.utmMappings} help={m.utmMappingsHelp}>
-        <div className="flex flex-col gap-2">
-          {UTM_KEYS.map((k) => (
-            <div key={k} className="flex items-center gap-2">
-              <code className="w-32 shrink-0 text-xs text-muted-foreground">{k}</code>
-              <span aria-hidden className="text-muted-foreground">→</span>
-              <div className="flex-1">
-                <PropertyField
-                  value={utmValues[k] ?? ''}
-                  ariaLabel={`${k} ${m.property}`}
-                  properties={properties}
-                  enabled={pickerEnabled}
-                  allowNone
-                  m={m}
-                  onChange={(v) => onChange({ ...state, utmMappings: { ...state.utmMappings, [k]: v } })}
-                />
+      {/* Value maps: per-step answer -> CRM picklist value translations */}
+      <Field
+        label={m.valueMaps}
+        intro={
+          <>
+            <p>{m.valueMapsHelp}</p>
+            <p>{m.valueMapsExample}</p>
+          </>
+        }
+      >
+        <div className="flex flex-col gap-3">
+          {state.valueMaps.length === 0 ? (
+            <p className="text-xs text-muted-foreground">{m.emptyValueMaps}</p>
+          ) : (
+            state.valueMaps.map((group, gi) => (
+              <div key={gi} className="flex flex-col gap-2 rounded-md border border-border p-3">
+                <div className="flex items-center gap-2">
+                  <KeySelect
+                    value={group.stepKey}
+                    questionOptions={valueMapQuestions}
+                    systemKeys={[]}
+                    m={m}
+                    testId="valuemap-key-select"
+                    customTestId="valuemap-key-custom"
+                    onChange={(v) => {
+                      const next = [...state.valueMaps];
+                      next[gi] = { ...group, stepKey: v };
+                      onChange({ ...state, valueMaps: next });
+                    }}
+                  />
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    aria-label={m.remove}
+                    onClick={() =>
+                      onChange({ ...state, valueMaps: state.valueMaps.filter((_, j) => j !== gi) })
+                    }
+                  >
+                    {m.remove}
+                  </Button>
+                </div>
+                {group.rows.map((row, ri) => (
+                  <div key={ri} className="flex items-center gap-2 pl-4">
+                    <Input
+                      value={row.from}
+                      aria-label={m.valueMapAnswer}
+                      placeholder={m.valueMapAnswer}
+                      className="flex-1"
+                      onChange={(e) => {
+                        const next = [...state.valueMaps];
+                        const rows = [...group.rows];
+                        rows[ri] = { ...row, from: e.target.value };
+                        next[gi] = { ...group, rows };
+                        onChange({ ...state, valueMaps: next });
+                      }}
+                    />
+                    <span aria-hidden className="text-muted-foreground">
+                      →
+                    </span>
+                    <Input
+                      value={row.to}
+                      aria-label={m.valueMapCrmValue}
+                      placeholder={m.valueMapCrmValue}
+                      className="flex-1"
+                      onChange={(e) => {
+                        const next = [...state.valueMaps];
+                        const rows = [...group.rows];
+                        rows[ri] = { ...row, to: e.target.value };
+                        next[gi] = { ...group, rows };
+                        onChange({ ...state, valueMaps: next });
+                      }}
+                    />
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      aria-label={m.remove}
+                      onClick={() => {
+                        const next = [...state.valueMaps];
+                        next[gi] = { ...group, rows: group.rows.filter((_, j) => j !== ri) };
+                        onChange({ ...state, valueMaps: next });
+                      }}
+                    >
+                      {m.remove}
+                    </Button>
+                  </div>
+                ))}
+                <div className="pl-4">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      const next = [...state.valueMaps];
+                      next[gi] = { ...group, rows: [...group.rows, { from: '', to: '' }] };
+                      onChange({ ...state, valueMaps: next });
+                    }}
+                  >
+                    {m.addValueMapRow}
+                  </Button>
+                </div>
               </div>
-            </div>
-          ))}
+            ))
+          )}
+          <div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() =>
+                onChange({
+                  ...state,
+                  valueMaps: [...state.valueMaps, { stepKey: '', rows: [{ from: '', to: '' }] }],
+                })
+              }
+            >
+              {m.addValueMap}
+            </Button>
+          </div>
         </div>
       </Field>
 
-      <div className="grid gap-4 sm:grid-cols-2">
-        <Field label={m.scoreProperty}>
-          <PropertyField
-            value={state.scoreProperty}
-            ariaLabel={m.scoreProperty}
-            properties={properties}
-            enabled={pickerEnabled}
-            allowNone
-            m={m}
-            onChange={(v) => onChange({ ...state, scoreProperty: v })}
-          />
+      {/* Map form elements — captured metadata → HubSpot properties */}
+      <Section title={m.mapElements} help={m.mapElementsHelp}>
+        <Field label={m.utmMappings} help={m.utmMappingsHelp}>
+          <div className="flex flex-col gap-2">
+            {UTM_KEYS.map((k) => (
+              <div key={k} className="flex items-center gap-2">
+                <code className="w-32 shrink-0 text-xs text-muted-foreground">{k}</code>
+                <span aria-hidden className="text-muted-foreground">
+                  →
+                </span>
+                <div className="flex-1">
+                  <PropertyField
+                    value={utmValues[k] ?? ''}
+                    ariaLabel={`${k} ${m.property}`}
+                    properties={properties}
+                    enabled={pickerEnabled}
+                    allowNone
+                    m={m}
+                    onChange={(v) => onChange({ ...state, utmMappings: { ...state.utmMappings, [k]: v } })}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
         </Field>
-        <Field label={m.dateProperty}>
-          <PropertyField
-            value={state.dateProperty}
-            ariaLabel={m.dateProperty}
-            properties={properties}
-            enabled={pickerEnabled}
-            allowNone
-            m={m}
-            onChange={(v) => onChange({ ...state, dateProperty: v })}
-          />
-        </Field>
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label={m.scoreProperty}>
+            <PropertyField
+              value={state.scoreProperty}
+              ariaLabel={m.scoreProperty}
+              properties={properties}
+              enabled={pickerEnabled}
+              allowNone
+              m={m}
+              onChange={(v) => onChange({ ...state, scoreProperty: v })}
+            />
+          </Field>
+          <Field label={m.dateProperty}>
+            <PropertyField
+              value={state.dateProperty}
+              ariaLabel={m.dateProperty}
+              properties={properties}
+              enabled={pickerEnabled}
+              allowNone
+              m={m}
+              onChange={(v) => onChange({ ...state, dateProperty: v })}
+            />
+          </Field>
+          <Field label={m.outcomeProperty} help={m.outcomePropertyHelp}>
+            <PropertyField
+              value={state.outcomeProperty}
+              ariaLabel={m.outcomeProperty}
+              properties={properties}
+              enabled={pickerEnabled}
+              allowNone
+              m={m}
+              onChange={(v) => onChange({ ...state, outcomeProperty: v })}
+            />
+          </Field>
+        </div>
+      </Section>
+
+      {/* Static properties: fixed key -> value stamped on completed submissions */}
+      <Field label={m.staticProperties} help={m.staticPropertiesHelp}>
+        <div className="flex flex-col gap-2">
+          {state.staticProperties.length === 0 ? (
+            <p className="text-xs text-muted-foreground">{m.emptyStaticProperties}</p>
+          ) : (
+            state.staticProperties.map((row, i) => (
+              <div key={i} className="flex items-center gap-2">
+                <div className="flex-1">
+                  <PropertyField
+                    value={row.key}
+                    ariaLabel={m.property}
+                    properties={properties}
+                    enabled={pickerEnabled}
+                    m={m}
+                    onChange={(v) => {
+                      const next = [...state.staticProperties];
+                      next[i] = { ...row, key: v };
+                      onChange({ ...state, staticProperties: next });
+                    }}
+                  />
+                </div>
+                <span aria-hidden className="text-muted-foreground">
+                  →
+                </span>
+                <Input
+                  value={row.value}
+                  aria-label={m.staticValue}
+                  placeholder={m.staticValue}
+                  className="flex-1"
+                  onChange={(e) => {
+                    const next = [...state.staticProperties];
+                    next[i] = { ...row, value: e.target.value };
+                    onChange({ ...state, staticProperties: next });
+                  }}
+                />
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  aria-label={m.remove}
+                  onClick={() =>
+                    onChange({
+                      ...state,
+                      staticProperties: state.staticProperties.filter((_, j) => j !== i),
+                    })
+                  }
+                >
+                  {m.remove}
+                </Button>
+              </div>
+            ))
+          )}
+          <div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() =>
+                onChange({
+                  ...state,
+                  staticProperties: [...state.staticProperties, { key: '', value: '' }],
+                })
+              }
+            >
+              {m.addStaticProperty}
+            </Button>
+          </div>
+        </div>
+      </Field>
+
+      {/* Booking sync: contact properties stamped when a meeting is booked */}
+      <Field label={m.bookingSync} help={m.bookingSyncHelp}>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label={m.bookingStageProperty}>
+            <PropertyField
+              value={state.bookingSync.stageProperty}
+              ariaLabel={m.bookingStageProperty}
+              properties={properties}
+              enabled={pickerEnabled}
+              allowNone
+              m={m}
+              onChange={(v) =>
+                onChange({ ...state, bookingSync: { ...state.bookingSync, stageProperty: v } })
+              }
+            />
+          </Field>
+          <Field label={m.bookingStageValue}>
+            <Input
+              value={state.bookingSync.stageValue}
+              aria-label={m.bookingStageValue}
+              placeholder={m.bookingStageValue}
+              onChange={(e) =>
+                onChange({
+                  ...state,
+                  bookingSync: { ...state.bookingSync, stageValue: e.target.value },
+                })
+              }
+            />
+          </Field>
+          <Field label={m.bookingDateProperty}>
+            <PropertyField
+              value={state.bookingSync.dateProperty}
+              ariaLabel={m.bookingDateProperty}
+              properties={properties}
+              enabled={pickerEnabled}
+              allowNone
+              m={m}
+              onChange={(v) =>
+                onChange({ ...state, bookingSync: { ...state.bookingSync, dateProperty: v } })
+              }
+            />
+          </Field>
+          <Field label={m.bookingHoursProperty}>
+            <PropertyField
+              value={state.bookingSync.hoursProperty}
+              ariaLabel={m.bookingHoursProperty}
+              properties={properties}
+              enabled={pickerEnabled}
+              allowNone
+              m={m}
+              onChange={(v) =>
+                onChange({ ...state, bookingSync: { ...state.bookingSync, hoursProperty: v } })
+              }
+            />
+          </Field>
+        </div>
+      </Field>
+
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <label className="text-sm font-medium">{m.inferCompany}</label>
+          <p className="text-xs text-muted-foreground">{m.inferCompanyHelp}</p>
+        </div>
+        <Switch
+          checked={state.inferCompanyFromEmail}
+          onCheckedChange={(inferCompanyFromEmail) => onChange({ ...state, inferCompanyFromEmail })}
+          aria-label={m.inferCompany}
+        />
       </div>
 
       <div className="flex items-center justify-between gap-4">

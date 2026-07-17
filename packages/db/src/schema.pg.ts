@@ -4,7 +4,8 @@
  * names so the repository stays dialect-agnostic. Postgres uses `jsonb` for the
  * config/answers blobs and `bigint` epoch-ms instants; production runs here.
  */
-import { pgTable, text, bigint, integer, jsonb, uniqueIndex } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
+import { pgTable, text, bigint, integer, jsonb, index, uniqueIndex } from 'drizzle-orm/pg-core';
 
 // --- Platform (identity / delivery) — kept from the shared platform ----------
 
@@ -79,17 +80,35 @@ export const outbox = pgTable('outbox', {
   claimedBy: text('claimed_by'),
 });
 
-export const notificationSetting = pgTable('notification_setting', {
-  id: text('id').primaryKey(),
-  accountId: text('account_id').notNull(),
-  emailKey: text('email_key').notNull(),
-  enabled: integer('enabled').notNull().default(1),
-  subject: text('subject'),
-  body: text('body'),
-  reminderLeadMinutes: text('reminder_lead_minutes'),
-  createdAt: bigint('created_at', { mode: 'number' }).notNull(),
-  updatedAt: bigint('updated_at', { mode: 'number' }).notNull(),
-});
+export const notificationSetting = pgTable(
+  'notification_setting',
+  {
+    id: text('id').primaryKey(),
+    accountId: text('account_id').notNull(),
+    emailKey: text('email_key').notNull(),
+    /** NULL = the account-level row; a form id = a per-form override row. */
+    formId: text('form_id'),
+    enabled: integer('enabled').notNull().default(1),
+    subject: text('subject'),
+    body: text('body'),
+    reminderLeadMinutes: text('reminder_lead_minutes'),
+    createdAt: bigint('created_at', { mode: 'number' }).notNull(),
+    updatedAt: bigint('updated_at', { mode: 'number' }).notNull(),
+  },
+  (t) => ({
+    // Scope-split uniqueness (0001 + 0005): one account row and one per-form row
+    // per (account, email_key) — partial indexes so the scopes never collide.
+    notificationSettingAccountKeyUq: uniqueIndex('notification_setting_account_key_uq')
+      .on(t.accountId, t.emailKey)
+      .where(sql`${t.formId} IS NULL`),
+    notificationSettingAccountFormKeyUq: uniqueIndex('notification_setting_account_form_key_uq')
+      .on(t.accountId, t.formId, t.emailKey)
+      .where(sql`${t.formId} IS NOT NULL`),
+    notificationSettingFormIdx: index('notification_setting_form_idx')
+      .on(t.formId)
+      .where(sql`${t.formId} IS NOT NULL`),
+  }),
+);
 
 // --- Forms domain ------------------------------------------------------------
 
@@ -101,6 +120,10 @@ export const form = pgTable(
     name: text('name').notNull(),
     slug: text('slug').notNull(),
     config: jsonb('config').notNull(),
+    /** Unpublished working copy of the config; NULL when no draft is pending. */
+    draftConfig: jsonb('draft_config'),
+    /** Epoch-ms of the last publish; NULL = never published via the draft flow. */
+    publishedAt: bigint('published_at', { mode: 'number' }),
     createdAt: bigint('created_at', { mode: 'number' }).notNull(),
     updatedAt: bigint('updated_at', { mode: 'number' }).notNull(),
   },
@@ -136,6 +159,44 @@ export const formEvent = pgTable('form_event', {
   createdAt: bigint('created_at', { mode: 'number' }).notNull(),
 });
 
+export const bookingEvent = pgTable(
+  'booking_event',
+  {
+    id: text('id').primaryKey(),
+    formId: text('form_id').notNull(),
+    sessionId: text('session_id').notNull(),
+    provider: text('provider').notNull(),
+    eventUri: text('event_uri'),
+    inviteeUri: text('invitee_uri'),
+    startTime: bigint('start_time', { mode: 'number' }),
+    payload: jsonb('payload'),
+    createdAt: bigint('created_at', { mode: 'number' }).notNull(),
+  },
+  (t) => ({
+    bookingEventFormSessionIdx: index('booking_event_form_session_idx').on(t.formId, t.sessionId),
+  }),
+);
+
+export const accountIntegration = pgTable(
+  'account_integration',
+  {
+    id: text('id').primaryKey(),
+    accountId: text('account_id').notNull(),
+    provider: text('provider').notNull(),
+    encryptedToken: text('encrypted_token').notNull(),
+    meta: jsonb('meta'),
+    connectedAt: bigint('connected_at', { mode: 'number' }).notNull(),
+    updatedAt: bigint('updated_at', { mode: 'number' }).notNull(),
+  },
+  (t) => ({
+    accountIntegrationAccountProviderUq: uniqueIndex('account_integration_account_provider_uq').on(
+      t.accountId,
+      t.provider,
+    ),
+    accountIntegrationAccountIdx: index('account_integration_account_idx').on(t.accountId),
+  }),
+);
+
 export const pgSchema = {
   account,
   accountAlias,
@@ -146,4 +207,6 @@ export const pgSchema = {
   form,
   submission,
   formEvent,
+  bookingEvent,
+  accountIntegration,
 };
