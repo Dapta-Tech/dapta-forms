@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Forms Builder — Add a question</title>
+<link rel="stylesheet" href="base.css">
+</head>
+<body>
+<div class="app">
+  <div class="topbar">
+    <span class="back"><svg class="i sm" viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg> Forms</span>
+    <span class="formname">Dapti &mdash; Book a demo</span>
+    <span class="saved-chip"><span class="dot"></span> Saved</span>
+    <div class="spacer"></div>
+    <div class="tabs">
+      <span class="tab active"><svg class="i sm" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg> Build</span>
+      <span class="tab"><svg class="i sm" viewBox="0 0 24 24"><path d="M6 3v12a3 3 0 0 0 3 3h9"/><circle cx="18" cy="18" r="3"/></svg> Logic</span>
+      <span class="tab"><svg class="i sm" viewBox="0 0 24 24"><path d="M3 3v18h18M8 13l3-3 3 3 4-5"/></svg> Results</span>
+      <span class="tab"><svg class="i sm" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg> Design</span>
+    </div>
+    <div class="desk-actions" style="display:flex;gap:10px">
+      <span class="btn btn-ghost"><svg class="i sm" viewBox="0 0 24 24"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="2.5"/></svg> Preview</span>
+      <span class="btn btn-primary">Publish</span>
+    </div>
+  </div>
+
+  <div class="build">
+    <aside class="pane pane-spine">
+      <div class="pane-head"><h2>Questions</h2><span class="count">6</span></div>
+      <div class="pane-body">
+        <div class="qcard"><span class="grip">⣿</span><span class="num">1</span><span class="ico"><svg class="i sm" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg></span><span class="meta"><span class="t">Work email</span><span class="s"><span class="badge-contact">Contact</span></span></span></div>
+        <div class="qcard"><span class="grip">⣿</span><span class="num">2</span><span class="ico"><svg class="i sm" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 20a8 8 0 0 1 16 0"/></svg></span><span class="meta"><span class="t">How big is your team?</span><span class="s">Single choice</span></span></div>
+        <div class="qcard"><span class="grip">⣿</span><span class="num">3</span><span class="ico"><svg class="i sm" viewBox="0 0 24 24"><rect x="3" y="4" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><path d="M14 6h7M14 17h7"/></svg></span><span class="meta"><span class="t">What&rsquo;s your main goal?</span><span class="s">Multiple choice</span></span></div>
+        <div class="qcard"><span class="grip">⣿</span><span class="num">4</span><span class="ico"><svg class="i sm" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></span><span class="meta"><span class="t">Monthly budget</span><span class="s"><span class="badge-logic"><svg class="i sm" viewBox="0 0 24 24" style="width:10px;height:10px"><path d="M6 3v12a3 3 0 0 0 3 3h9"/><circle cx="18" cy="18" r="2.5"/></svg> Logic</span></span></span></div>
+        <div class="qcard"><span class="grip">⣿</span><span class="num">5</span><span class="ico"><svg class="i sm" viewBox="0 0 24 24"><path d="M4 12h16"/><circle cx="15" cy="12" r="3"/></svg></span><span class="meta"><span class="t">How soon do you need this?</span><span class="s">Scale</span></span></div>
+        <div class="qcard"><span class="grip">⣿</span><span class="num">6</span><span class="ico"><svg class="i sm" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg></span><span class="meta"><span class="t">Anything else?</span><span class="s">Long text</span></span></div>
+        <button class="add-q" style="border-color:var(--primary);color:var(--primary)"><svg class="i sm" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg> Add question</button>
+      </div>
+    </aside>
+    <main class="pane pane-canvas">
+      <div class="canvas-bar"><span>6 questions</span><span class="seg"><span class="on">Desktop</span><span>Mobile</span></span></div>
+      <div class="canvas-scroll"><div class="device" style="opacity:.5"><div class="progress"><i></i></div><div class="q-title">Anything else?</div><div class="q-desc">Tell us what you&rsquo;re hoping to solve.</div></div></div>
+    </main>
+    <aside class="pane pane-settings"><div class="pane-head"><h2>Question settings</h2></div></aside>
+  </div>
+
+  <!-- Type gallery overlay -->
+  <div class="overlay">
+    <div class="gallery">
+      <div class="gh"><h2>Add a question</h2><span class="x"><svg class="i sm" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></span></div>
+      <div class="search"><svg class="i sm" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg> Search question types</div>
+      <div class="gbody">
+        <div class="gsec">
+          <div class="lbl">Contact</div>
+          <div class="grid">
+            <div class="tt"><span class="tti"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 20a8 8 0 0 1 16 0"/></svg></span><span class="ttm"><span class="n">Name</span><span class="d">Full name field</span></span></div>
+            <div class="tt hot"><span class="tti"><svg class="i" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg></span><span class="ttm"><span class="n">Email</span><span class="d">Validated email</span></span></div>
+            <div class="tt"><span class="tti"><svg class="i" viewBox="0 0 24 24"><path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2z"/></svg></span><span class="ttm"><span class="n">Phone</span><span class="d">Number with country</span></span></div>
+          </div>
+        </div>
+        <div class="gsec">
+          <div class="lbl">Choice</div>
+          <div class="grid">
+            <div class="tt"><span class="tti"><svg class="i" viewBox="0 0 24 24"><circle cx="7" cy="7" r="3"/><circle cx="7" cy="17" r="3"/><path d="M13 7h7M13 17h7"/></svg></span><span class="ttm"><span class="n">Single choice</span><span class="d">Pick one</span></span></div>
+            <div class="tt"><span class="tti"><svg class="i" viewBox="0 0 24 24"><rect x="3" y="4" width="7" height="7" rx="1.5"/><path d="M4.5 7.5L6 9l2-2.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><path d="M14 6h7M14 17h7"/></svg></span><span class="ttm"><span class="n">Multiple choice</span><span class="d">Pick several</span></span></div>
+            <div class="tt"><span class="tti"><svg class="i" viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M8 11l3 3 3-3"/></svg></span><span class="ttm"><span class="n">Dropdown</span><span class="d">Compact list</span></span></div>
+          </div>
+        </div>
+        <div class="gsec">
+          <div class="lbl">Text</div>
+          <div class="grid">
+            <div class="tt"><span class="tti"><svg class="i" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h9"/></svg></span><span class="ttm"><span class="n">Short text</span><span class="d">One line</span></span></div>
+            <div class="tt"><span class="tti"><svg class="i" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M6 9h12M6 12h12M6 15h7"/></svg></span><span class="ttm"><span class="n">Long text</span><span class="d">Paragraph</span></span></div>
+            <div class="tt"><span class="tti"><svg class="i" viewBox="0 0 24 24"><path d="M4 12h16"/><circle cx="15" cy="12" r="3"/></svg></span><span class="ttm"><span class="n">Slider</span><span class="d">Rating scale</span></span></div>
+          </div>
+        </div>
+        <div class="gsec">
+          <div class="lbl">Content</div>
+          <div class="grid">
+            <div class="tt"><span class="tti"><svg class="i" viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4z"/></svg></span><span class="ttm"><span class="n">Message</span><span class="d">Text, no input</span></span></div>
+          </div>
+        </div>
+      </div>
+      <div class="gf"><svg class="i sm" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 16v-4M12 8h.01"/></svg> Picking a type drops the question in and focuses the canvas to edit it.</div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

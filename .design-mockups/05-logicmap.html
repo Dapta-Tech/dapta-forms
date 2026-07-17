@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Forms Builder — Logic map</title>
+<link rel="stylesheet" href="base.css">
+</head>
+<body>
+<div class="app">
+  <div class="topbar">
+    <span class="back"><svg class="i sm" viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg> Forms</span>
+    <span class="formname">Dapti &mdash; Book a demo</span>
+    <span class="saved-chip"><span class="dot"></span> Saved</span>
+    <div class="spacer"></div>
+    <div class="tabs">
+      <span class="tab"><svg class="i sm" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg> Build</span>
+      <span class="tab active"><svg class="i sm" viewBox="0 0 24 24"><path d="M6 3v12a3 3 0 0 0 3 3h9"/><circle cx="18" cy="18" r="3"/></svg> Logic</span>
+      <span class="tab"><svg class="i sm" viewBox="0 0 24 24"><path d="M3 3v18h18M8 13l3-3 3 3 4-5"/></svg> Results</span>
+      <span class="tab"><svg class="i sm" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg> Design</span>
+    </div>
+    <div class="desk-actions" style="display:flex;gap:10px">
+      <span class="btn btn-ghost"><svg class="i sm" viewBox="0 0 24 24"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="2.5"/></svg> Preview</span>
+      <span class="btn btn-primary">Publish</span>
+    </div>
+  </div>
+
+  <div class="canvas-bar" style="border-bottom:1px solid var(--border)">
+    <span>Logic map &middot; how answers route through the form</span>
+    <span style="display:flex;gap:16px;align-items:center;font-size:11px">
+      <span style="display:inline-flex;align-items:center;gap:6px"><span style="width:12px;height:12px;border-radius:4px;border:1px solid var(--secondary);background:var(--secondary-soft)"></span> Branch</span>
+      <span style="display:inline-flex;align-items:center;gap:6px"><span style="width:12px;height:12px;border-radius:4px;border:1px solid var(--primary)"></span> End / result</span>
+    </span>
+  </div>
+
+  <div class="map-wrap">
+    <div class="map" style="width:760px;height:748px">
+      <svg class="wires" viewBox="0 0 760 748" preserveAspectRatio="none">
+        <defs>
+          <marker id="ah" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0 0l6 3-6 3z" fill="#5a5a5c"/></marker>
+          <marker id="ahp" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0 0l6 3-6 3z" fill="#9059fc"/></marker>
+        </defs>
+        <!-- straight spine -->
+        <path d="M370 74 L370 92" stroke="#5a5a5c" stroke-width="2" fill="none" marker-end="url(#ah)"/>
+        <path d="M370 168 L370 182" stroke="#5a5a5c" stroke-width="2" fill="none" marker-end="url(#ah)"/>
+        <path d="M370 258 L370 272" stroke="#5a5a5c" stroke-width="2" fill="none" marker-end="url(#ah)"/>
+        <path d="M370 348 L370 362" stroke="#5a5a5c" stroke-width="2" fill="none" marker-end="url(#ah)"/>
+        <!-- branch right (purple): Q4 -> Not a fit -->
+        <path d="M465 400 C 520 400, 520 396, 545 396" stroke="#9059fc" stroke-width="2" fill="none" marker-end="url(#ahp)"/>
+        <!-- default down: Q4 -> Q5 -->
+        <path d="M370 452 L370 474" stroke="#5a5a5c" stroke-width="2" fill="none" marker-end="url(#ah)"/>
+        <path d="M370 550 L370 564" stroke="#5a5a5c" stroke-width="2" fill="none" marker-end="url(#ah)"/>
+        <path d="M370 640 L370 654" stroke="#5a5a5c" stroke-width="2" fill="none" marker-end="url(#ah)"/>
+      </svg>
+
+      <div class="node start" style="left:305px;top:20px"><div class="ns" style="margin:0;color:var(--foreground);font-weight:600;font-size:12px">Start</div></div>
+
+      <div class="node" style="left:275px;top:92px">
+        <div class="nh"><span class="nn">1</span><span class="ni"><svg class="i sm" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg></span><span class="nt">Work email</span></div>
+      </div>
+      <div class="node" style="left:275px;top:182px">
+        <div class="nh"><span class="nn">2</span><span class="ni"><svg class="i sm" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 20a8 8 0 0 1 16 0"/></svg></span><span class="nt">How big is your team?</span></div>
+      </div>
+      <div class="node" style="left:275px;top:272px">
+        <div class="nh"><span class="nn">3</span><span class="ni"><svg class="i sm" viewBox="0 0 24 24"><rect x="3" y="4" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><path d="M14 6h7M14 17h7"/></svg></span><span class="nt">Main goal</span></div>
+      </div>
+
+      <div class="node branch" style="left:275px;top:362px">
+        <div class="nh"><span class="nn">4</span><span class="ni"><svg class="i sm" viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M8 11l3 3 3-3"/></svg></span><span class="nt">Monthly budget</span></div>
+        <div class="ns" style="color:var(--secondary)">2 branches</div>
+      </div>
+
+      <div class="node result" style="left:545px;top:368px">
+        <div class="nh"><span class="ni"><svg class="i sm" viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4z"/></svg></span><span class="nt">Thank you</span></div>
+        <div class="ns">Not a fit &middot; end</div>
+      </div>
+
+      <div class="node" style="left:275px;top:474px">
+        <div class="nh"><span class="nn">5</span><span class="ni"><svg class="i sm" viewBox="0 0 24 24"><path d="M4 12h16"/><circle cx="15" cy="12" r="3"/></svg></span><span class="nt">How soon?</span></div>
+      </div>
+      <div class="node" style="left:275px;top:564px">
+        <div class="nh"><span class="nn">6</span><span class="ni"><svg class="i sm" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg></span><span class="nt">Anything else?</span></div>
+      </div>
+      <div class="node result" style="left:275px;top:654px">
+        <div class="nh"><span class="ni"><svg class="i sm" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M8 2v4M16 2v4M3 10h18"/></svg></span><span class="nt">Book a call</span></div>
+        <div class="ns">Redirect &rarr; calendars.dapta.ai</div>
+      </div>
+
+      <div class="edge-label br" style="left:470px;top:360px">If Under $500 &rarr; skip to end</div>
+      <div class="edge-label" style="left:300px;top:456px">Otherwise</div>
+    </div>
+  </div>
+
+  <a class="fab"><svg class="i sm" viewBox="0 0 24 24" style="color:var(--primary-foreground)"><path d="M21 21l-6-6M3 3l6 6M3 3v5M3 3h5M21 21v-5M21 21h-5"/></svg> Fit</a>
+
+  <nav class="mobile-tabbar">
+    <a><svg class="i" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg> Build</a>
+    <a class="on"><svg class="i" viewBox="0 0 24 24"><path d="M6 3v12a3 3 0 0 0 3 3h9"/><circle cx="18" cy="18" r="3"/></svg> Logic</a>
+    <a><svg class="i" viewBox="0 0 24 24"><path d="M3 3v18h18M8 13l3-3 3 3 4-5"/></svg> Results</a>
+    <a><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3"/></svg> Design</a>
+  </nav>
+</div>
+</body>
+</html>

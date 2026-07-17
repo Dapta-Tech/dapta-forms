@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Forms Builder — Scoring &amp; results</title>
+<link rel="stylesheet" href="base.css">
+</head>
+<body>
+<div class="app">
+  <div class="topbar">
+    <span class="back"><svg class="i sm" viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg> Forms</span>
+    <span class="formname">Dapti &mdash; Book a demo</span>
+    <span class="saved-chip"><span class="dot"></span> Saved</span>
+    <div class="spacer"></div>
+    <div class="tabs">
+      <span class="tab"><svg class="i sm" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg> Build</span>
+      <span class="tab"><svg class="i sm" viewBox="0 0 24 24"><path d="M6 3v12a3 3 0 0 0 3 3h9"/><circle cx="18" cy="18" r="3"/></svg> Logic</span>
+      <span class="tab active"><svg class="i sm" viewBox="0 0 24 24"><path d="M3 3v18h18M8 13l3-3 3 3 4-5"/></svg> Results</span>
+      <span class="tab"><svg class="i sm" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg> Design</span>
+    </div>
+    <div class="desk-actions" style="display:flex;gap:10px">
+      <span class="btn btn-ghost"><svg class="i sm" viewBox="0 0 24 24"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="2.5"/></svg> Preview</span>
+      <span class="btn btn-primary">Publish</span>
+    </div>
+  </div>
+
+  <div class="results">
+    <div class="results-inner">
+      <!-- LEFT: points per question -->
+      <section class="panel">
+        <div class="row-between">
+          <div>
+            <h2><svg class="i" viewBox="0 0 24 24" style="color:var(--primary)"><path d="M12 2l2.9 6.3L22 9l-5 4.8 1.2 7L12 17.5 5.8 20.8 7 13.8 2 9l7.1-.7z"/></svg> Points</h2>
+            <p class="psub" style="margin-bottom:0">Each answer adds to a score. Highest possible: <b style="color:var(--foreground)">18</b>.</p>
+          </div>
+          <span class="switch on" style="flex:0 0 40px"><i></i></span>
+        </div>
+        <div style="margin-top:18px">
+          <div class="score-q">
+            <div class="qq"><svg class="i sm" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 20a8 8 0 0 1 16 0"/></svg> How big is your team?</div>
+            <div class="chip-opt"><span>Just me</span><span class="pill zero">0</span></div>
+            <div class="chip-opt"><span>2&ndash;10 people</span><span class="pill">+2</span></div>
+            <div class="chip-opt"><span>11&ndash;50 people</span><span class="pill">+4</span></div>
+            <div class="chip-opt"><span>50+ people</span><span class="pill">+6</span></div>
+          </div>
+          <div class="score-q">
+            <div class="qq"><svg class="i sm" viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M8 11l3 3 3-3"/></svg> Monthly budget</div>
+            <div class="chip-opt"><span>Under $500</span><span class="pill zero">0</span></div>
+            <div class="chip-opt"><span>$500&ndash;$2,000</span><span class="pill">+3</span></div>
+            <div class="chip-opt"><span>$2,000+</span><span class="pill">+6</span></div>
+          </div>
+          <div class="score-q">
+            <div class="qq"><svg class="i sm" viewBox="0 0 24 24"><path d="M4 12h16"/><circle cx="15" cy="12" r="3"/></svg> How soon do you need this?</div>
+            <div class="scale">
+              <div class="scale-bar"><span class="seg-r r1">0&ndash;3 mo</span><span class="seg-r r2">1&ndash;3 mo</span><span class="seg-r r3">This month &middot; +6</span></div>
+              <div class="scale-ticks"><span>0 pts</span><span>+3 pts</span><span>+6 pts</span></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- RIGHT: ranges -> results -->
+      <section class="panel">
+        <h2><svg class="i" viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg> What happens at the end</h2>
+        <p class="psub">Map score ranges to an outcome. The first matching range wins.</p>
+
+        <div style="margin:4px 0 20px">
+          <div class="scale-bar" style="height:38px"><span class="seg-r r1">Cold</span><span class="seg-r r2">Warm</span><span class="seg-r r3">Hot</span></div>
+          <div class="scale-ticks"><span>0</span><span>5</span><span>10</span><span>18</span></div>
+        </div>
+
+        <div class="outcome">
+          <span class="rng">0&ndash;4</span>
+          <div class="om">
+            <div class="on">Not a fit</div>
+            <div class="oa"><span class="tag-act"><svg class="i sm" viewBox="0 0 24 24" style="width:11px;height:11px"><path d="M4 5h16v11H9l-5 4z"/></svg> Thank-you message</span> &ldquo;Thanks &mdash; we&rsquo;ll be in touch.&rdquo;</div>
+          </div>
+        </div>
+        <div class="outcome">
+          <span class="rng">5&ndash;9</span>
+          <div class="om">
+            <div class="on">Nurture</div>
+            <div class="oa"><span class="tag-act redir"><svg class="i sm" viewBox="0 0 24 24" style="width:11px;height:11px"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><path d="M15 3h6v6M10 14L21 3"/></svg> Redirect</span> &rarr; /resources/guide</div>
+          </div>
+        </div>
+        <div class="outcome hi">
+          <span class="rng">10+</span>
+          <div class="om">
+            <div class="on">Book a call &middot; hot lead</div>
+            <div class="oa"><span class="tag-act redir"><svg class="i sm" viewBox="0 0 24 24" style="width:11px;height:11px"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><path d="M15 3h6v6M10 14L21 3"/></svg> Redirect</span> &rarr; calendars.dapta.ai/felipe</div>
+          </div>
+        </div>
+        <button class="add-q" style="height:40px;margin-top:14px"><svg class="i sm" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg> Add a range</button>
+      </section>
+    </div>
+  </div>
+
+  <nav class="mobile-tabbar">
+    <a><svg class="i" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg> Build</a>
+    <a><svg class="i" viewBox="0 0 24 24"><path d="M6 3v12a3 3 0 0 0 3 3h9"/><circle cx="18" cy="18" r="3"/></svg> Logic</a>
+    <a class="on"><svg class="i" viewBox="0 0 24 24"><path d="M3 3v18h18M8 13l3-3 3 3 4-5"/></svg> Results</a>
+    <a><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3"/></svg> Design</a>
+  </nav>
+</div>
+</body>
+</html>

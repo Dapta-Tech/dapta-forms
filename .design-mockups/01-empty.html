@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Forms Builder — Empty state</title>
+<link rel="stylesheet" href="base.css">
+</head>
+<body>
+<div class="app">
+  <div class="topbar">
+    <span class="back"><svg class="i sm" viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg> Forms</span>
+    <span class="formname">Untitled form</span>
+    <span class="saved-chip"><span class="dot"></span> Draft</span>
+    <div class="spacer"></div>
+    <div class="tabs">
+      <span class="tab active"><svg class="i sm" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg> Build</span>
+      <span class="tab"><svg class="i sm" viewBox="0 0 24 24"><path d="M6 3v12a3 3 0 0 0 3 3h9M18 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM6 6a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/></svg> Logic</span>
+      <span class="tab"><svg class="i sm" viewBox="0 0 24 24"><path d="M3 3v18h18M8 13l3-3 3 3 4-5"/></svg> Results</span>
+      <span class="tab"><svg class="i sm" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg> Design</span>
+    </div>
+    <div class="desk-actions" style="display:flex;gap:10px">
+      <span class="btn btn-ghost"><svg class="i sm" viewBox="0 0 24 24"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="2.5"/></svg> Preview</span>
+      <span class="btn btn-primary">Publish</span>
+    </div>
+  </div>
+
+  <div class="empty">
+    <div class="empty-inner">
+      <h1>Let&rsquo;s build your form</h1>
+      <p class="sub">Start from a template and edit every question live &mdash; or begin with a blank canvas.</p>
+
+      <div class="tpl-grid">
+        <div class="tpl feature">
+          <div class="ti"><svg class="i lg" viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 14l3-4 3 3 4-6"/><circle cx="17" cy="7" r="1.4" fill="currentColor" stroke="none"/></svg></div>
+          <h3>Lead qualifier</h3>
+          <p>Score prospects and route hot leads to a booking link.</p>
+          <div class="foot"><span class="k">6 questions</span> &middot; scoring &middot; logic</div>
+        </div>
+        <div class="tpl">
+          <div class="ti"><svg class="i lg" viewBox="0 0 24 24"><path d="M4 4h16v16H4z"/><path d="M4 9h16M9 4v5"/></svg></div>
+          <h3>Contact form</h3>
+          <p>Name, email and a message &mdash; sent to your inbox or CRM.</p>
+          <div class="foot"><span class="k">3 questions</span> &middot; no scoring</div>
+        </div>
+        <div class="tpl">
+          <div class="ti"><svg class="i lg" viewBox="0 0 24 24"><path d="M12 17.75l-6.16 3.24 1.18-6.88L2 9.24l6.9-1L12 2l3.1 6.24 6.9 1-5.02 4.87 1.18 6.88z"/></svg></div>
+          <h3>Feedback survey</h3>
+          <p>Rating scale plus open comments to gauge satisfaction.</p>
+          <div class="foot"><span class="k">4 questions</span> &middot; scale</div>
+        </div>
+        <div class="tpl">
+          <div class="ti"><svg class="i lg" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M8 2v4M16 2v4M3 10h18"/></svg></div>
+          <h3>RSVP</h3>
+          <p>Collect attendance, headcount and dietary notes for an event.</p>
+          <div class="foot"><span class="k">4 questions</span> &middot; logic</div>
+        </div>
+      </div>
+
+      <div class="scratch"><svg class="i sm" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg> or start from scratch &mdash; add your first question</div>
+    </div>
+  </div>
+
+  <nav class="mobile-tabbar">
+    <a class="on"><svg class="i" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg> Build</a>
+    <a><svg class="i" viewBox="0 0 24 24"><path d="M6 3v12a3 3 0 0 0 3 3h9"/><circle cx="18" cy="18" r="3"/><circle cx="6" cy="3" r="0"/></svg> Logic</a>
+    <a><svg class="i" viewBox="0 0 24 24"><path d="M3 3v18h18M8 13l3-3 3 3 4-5"/></svg> Results</a>
+    <a><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3"/></svg> Design</a>
+  </nav>
+</div>
+</body>
+</html>

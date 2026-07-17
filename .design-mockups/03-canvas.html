@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Forms Builder — Editing on the canvas</title>
+<link rel="stylesheet" href="base.css">
+</head>
+<body>
+<div class="app">
+  <div class="topbar">
+    <span class="back"><svg class="i sm" viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg> Forms</span>
+    <span class="formname">Dapti &mdash; Book a demo</span>
+    <span class="saved-chip"><span class="dot"></span> Saved</span>
+    <div class="spacer"></div>
+    <div class="tabs">
+      <span class="tab active"><svg class="i sm" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg> Build</span>
+      <span class="tab"><svg class="i sm" viewBox="0 0 24 24"><path d="M6 3v12a3 3 0 0 0 3 3h9"/><circle cx="18" cy="18" r="3"/></svg> Logic</span>
+      <span class="tab"><svg class="i sm" viewBox="0 0 24 24"><path d="M3 3v18h18M8 13l3-3 3 3 4-5"/></svg> Results</span>
+      <span class="tab"><svg class="i sm" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg> Design</span>
+    </div>
+    <div class="desk-actions" style="display:flex;gap:10px">
+      <span class="btn btn-ghost"><svg class="i sm" viewBox="0 0 24 24"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="2.5"/></svg> Preview</span>
+      <span class="btn btn-primary">Publish</span>
+    </div>
+  </div>
+
+  <div class="build">
+    <!-- LEFT: flow spine -->
+    <aside class="pane pane-spine">
+      <div class="pane-head"><h2>Questions</h2><span class="count">6</span></div>
+      <div class="pane-body">
+        <div class="qcard">
+          <span class="grip">⣿</span><span class="num">1</span>
+          <span class="ico"><svg class="i sm" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg></span>
+          <span class="meta"><span class="t">Work email</span><span class="s"><span class="badge-contact">Contact</span></span></span>
+        </div>
+        <div class="qcard sel">
+          <span class="grip">⣿</span><span class="num">2</span>
+          <span class="ico"><svg class="i sm" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 20a8 8 0 0 1 16 0"/></svg></span>
+          <span class="meta"><span class="t">How big is your team?</span><span class="s">Single choice</span></span>
+        </div>
+        <div class="qcard">
+          <span class="grip">⣿</span><span class="num">3</span>
+          <span class="ico"><svg class="i sm" viewBox="0 0 24 24"><rect x="3" y="4" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><path d="M14 6h7M14 17h7"/></svg></span>
+          <span class="meta"><span class="t">What&rsquo;s your main goal?</span><span class="s">Multiple choice</span></span>
+        </div>
+        <div class="qcard">
+          <span class="grip">⣿</span><span class="num">4</span>
+          <span class="ico"><svg class="i sm" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></span>
+          <span class="meta"><span class="t">Monthly budget</span><span class="s"><span class="badge-logic"><svg class="i sm" viewBox="0 0 24 24" style="width:10px;height:10px"><path d="M6 3v12a3 3 0 0 0 3 3h9"/><circle cx="18" cy="18" r="2.5"/></svg> Logic</span></span></span>
+        </div>
+        <div class="qcard">
+          <span class="grip">⣿</span><span class="num">5</span>
+          <span class="ico"><svg class="i sm" viewBox="0 0 24 24"><path d="M4 12h16"/><circle cx="15" cy="12" r="3"/></svg></span>
+          <span class="meta"><span class="t">How soon do you need this?</span><span class="s">Scale</span></span>
+        </div>
+        <div class="qcard">
+          <span class="grip">⣿</span><span class="num">6</span>
+          <span class="ico"><svg class="i sm" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg></span>
+          <span class="meta"><span class="t">Anything else?</span><span class="s">Long text</span></span>
+        </div>
+        <button class="add-q"><svg class="i sm" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg> Add question</button>
+      </div>
+    </aside>
+
+    <!-- CENTER: WYSIWYG canvas -->
+    <main class="pane pane-canvas">
+      <div class="canvas-bar">
+        <span>Question 2 of 6 &middot; editing live</span>
+        <span class="seg"><span class="on">Desktop</span><span>Mobile</span></span>
+      </div>
+      <div class="canvas-scroll">
+        <div class="device">
+          <div class="progress"><i></i></div>
+          <div class="q-eyebrow"><svg class="i sm" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 20a8 8 0 0 1 16 0"/></svg> Question 2</div>
+          <div class="q-title editing">How big is your team?<span class="caret">&#124;</span></div>
+          <div class="q-desc">This helps us tailor the demo to your setup.</div>
+          <div class="choices">
+            <div class="choice"><span class="kbd">A</span> Just me <span class="pts">0 pts</span></div>
+            <div class="choice on"><span class="kbd">B</span> 2&ndash;10 people <span class="pts">2 pts</span></div>
+            <div class="choice"><span class="kbd">C</span> 11&ndash;50 people <span class="pts">4 pts</span></div>
+            <div class="choice"><span class="kbd">D</span> 50+ people <span class="pts">6 pts</span></div>
+            <div class="choice addopt"><span class="kbd">+</span> Add option</div>
+          </div>
+          <div class="q-foot"><span class="q-next">Next <svg class="i sm" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span></div>
+        </div>
+      </div>
+    </main>
+
+    <!-- RIGHT: settings -->
+    <aside class="pane pane-settings">
+      <div class="pane-head"><h2>Question settings</h2></div>
+      <div class="pane-body" style="padding:0">
+        <div class="set-group">
+          <div class="field">
+            <label>Question type</label>
+            <div class="control type"><span style="display:flex;align-items:center;gap:8px"><svg class="i sm" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 20a8 8 0 0 1 16 0"/></svg> Single choice</span><svg class="i sm" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></div>
+          </div>
+          <div class="row-between" style="margin-top:4px">
+            <span style="font-size:13px">Required</span>
+            <span class="switch on"><i></i></span>
+          </div>
+        </div>
+
+        <div class="set-group">
+          <div class="set-label">Options</div>
+          <div class="opt-row"><span class="drag">⣿</span><span class="txt">Just me</span><span class="pt"><svg class="i sm" viewBox="0 0 24 24" style="width:11px;height:11px"><path d="M12 2l2.9 6.3L22 9l-5 4.8 1.2 7L12 17.5 5.8 20.8 7 13.8 2 9l7.1-.7z"/></svg> 0</span></div>
+          <div class="opt-row"><span class="drag">⣿</span><span class="txt">2&ndash;10 people</span><span class="pt">2</span></div>
+          <div class="opt-row"><span class="drag">⣿</span><span class="txt">11&ndash;50 people</span><span class="pt">4</span></div>
+          <div class="opt-row"><span class="drag">⣿</span><span class="txt">50+ people</span><span class="pt">6</span></div>
+          <button class="mini-add" style="margin-top:4px"><svg class="i sm" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg> Add option</button>
+        </div>
+
+        <div class="set-group">
+          <div class="disclose"><span class="ttl"><svg class="i sm" viewBox="0 0 24 24"><path d="M6 3v12a3 3 0 0 0 3 3h9"/><circle cx="18" cy="18" r="2.5"/><circle cx="6" cy="3" r="0"/></svg> Logic</span><span class="mini-add"><svg class="i sm" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg> Add rule</span></div>
+          <div class="hint">No rules yet &mdash; everyone sees this question.</div>
+        </div>
+
+        <div class="set-group">
+          <div class="disclose"><span class="ttl"><svg class="i sm" viewBox="0 0 24 24"><path d="M12 2l2.9 6.3L22 9l-5 4.8 1.2 7L12 17.5 5.8 20.8 7 13.8 2 9l7.1-.7z"/></svg> Scoring</span><span class="switch on"><i></i></span></div>
+          <div class="hint">Points from the selected option add to the total score. Set ranges in <b style="color:var(--foreground)">Results</b>.</div>
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <!-- mobile -->
+  <div class="mstrip only-mobile">
+    <span class="mc"><span class="num">1</span> Email</span>
+    <span class="mc on"><span class="num">2</span> Team size</span>
+    <span class="mc"><span class="num">3</span> Goal</span>
+    <span class="mc"><span class="num">4</span> Budget</span>
+    <span class="mc"><span class="num">5</span> Urgency</span>
+    <span class="mc"><span class="num">6</span> Notes</span>
+  </div>
+  <a class="fab"><svg class="i sm" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1l2-1.6-2-3.4-2.4 1a7 7 0 0 0-1.7-1L16.5 2h-4l-.3 2.6a7 7 0 0 0-1.7 1l-2.4-1-2 3.4 2 1.6a7 7 0 0 0 0 2l-2 1.6 2 3.4 2.4-1a7 7 0 0 0 1.7 1l.3 2.6h4l.3-2.6a7 7 0 0 0 1.7-1l2.4 1 2-3.4-2-1.6c.06-.33.1-.66.1-1z"/></svg> Settings</a>
+
+  <nav class="mobile-tabbar">
+    <a class="on"><svg class="i" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg> Build</a>
+    <a><svg class="i" viewBox="0 0 24 24"><path d="M6 3v12a3 3 0 0 0 3 3h9"/><circle cx="18" cy="18" r="3"/></svg> Logic</a>
+    <a><svg class="i" viewBox="0 0 24 24"><path d="M3 3v18h18M8 13l3-3 3 3 4-5"/></svg> Results</a>
+    <a><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3"/></svg> Design</a>
+  </nav>
+</div>
+</body>
+</html>
