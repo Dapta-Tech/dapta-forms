@@ -196,11 +196,25 @@ export function normalizeConfig(config: FormConfig): FormConfig {
     })
     .sort((a, b) => (a.minScore ?? 0) - (b.minScore ?? 0));
 
+  // Preserve every additive top-level field the builder doesn't normalize
+  // (reveal, partialSubmitAfterStep, tracking, destinations, …) — normalizing
+  // must never drop config it doesn't understand (schema v1 is additive-only).
+  const {
+    version: _version,
+    steps: _steps,
+    cover,
+    branding,
+    outcomes: _outcomes,
+    scoring: _scoring,
+    ...passthrough
+  } = config as FormConfig & Record<string, unknown>;
+
   const next: FormConfig = {
+    ...passthrough,
     version: 1,
     steps: normalized,
-    ...(config.cover != null ? { cover: config.cover } : {}),
-    ...(config.branding != null ? { branding: config.branding } : {}),
+    ...(cover != null ? { cover } : {}),
+    ...(branding != null ? { branding } : {}),
     ...(outcomes.length ? { outcomes } : {}),
   };
 

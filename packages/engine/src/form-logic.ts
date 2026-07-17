@@ -138,12 +138,41 @@ export interface FormStep {
   triggersReveal?: boolean;
 }
 
+/**
+ * An answer-forced outcome rule (additive; back-compat). When the answer to
+ * `field` matches, the owning outcome wins REGARDLESS of score — e.g. a slider
+ * answer <= 0 forces the disqualify outcome. All SPECIFIED clauses must hold
+ * (values intersection, numeric bounds); a non-numeric answer fails a numeric
+ * clause. Evaluated by `resolveOutcome` before score bucketing.
+ */
+export interface OutcomeOverrideRule {
+  /** The step key whose answer this rule inspects. */
+  field: string;
+  /** Match when the (string/array) answer intersects these values. */
+  values?: string[];
+  /** Match when the numeric answer is <= this bound. */
+  maxValue?: number;
+  /** Match when the numeric answer is >= this bound. */
+  minValue?: number;
+}
+
+/** Scheduling handoff for an outcome (additive; mirrors the config schema). */
+export interface OutcomeBooking {
+  provider: 'hubspot_meetings' | 'calendly';
+  url: string;
+  prefill?: boolean;
+}
+
 export interface FormOutcome {
   id: string;
   label: string;
   /** Inclusive lower score bound for this bucket (highest matching wins). */
   minScore?: number;
   redirectUrl?: string | null;
+  /** Scheduling handoff (HubSpot Meetings / Calendly) shown for this outcome. */
+  booking?: OutcomeBooking | null;
+  /** Answer-forced rules: any match makes this outcome win over score bucketing. */
+  overrides?: OutcomeOverrideRule[];
 }
 
 /** A client logo chip on the cover marquee (image `src`, or the `name` as text). */
@@ -181,6 +210,12 @@ export interface FormReveal {
   enabled?: boolean;
   headline?: string | null;
   subtitle?: string | null;
+  /** How long the processing interstitial plays before the result (ms). */
+  durationMs?: number;
+  /** Outcome subtitle template; `[key]` tokens interpolate from the answers. */
+  subtitleTemplate?: string | null;
+  /** Pre-warm the booking embed while the interstitial plays. */
+  prewarm?: boolean;
 }
 
 export interface FormConfig {
@@ -341,6 +376,51 @@ const FREE_EMAIL_BASES = new Set([
   'protonmail',
 ]);
 
+/**
+ * ITU E.164 country calling codes (without '+') — the SAME dial set as
+ * `@quill/shared`'s country list. Embedded here rather than imported so the
+ * engine stays a dependency-free pure leaf. E.164 codes are prefix-free, so the
+ * longest leading match on a '+<code><number>' value is the exact dial code. A
+ * code missing from this set only makes the subscriber count more LENIENT (it
+ * can never over-strip), so validation never wrongly rejects a real number.
+ */
+const E164_DIAL_CODES: ReadonlySet<string> = new Set([
+  '1', '7', '20', '27', '30', '31', '32', '33', '34', '36', '39', '40',
+  '41', '43', '44', '45', '46', '47', '48', '49', '51', '52', '53', '54',
+  '55', '56', '57', '58', '60', '61', '62', '63', '64', '65', '66', '81',
+  '82', '84', '86', '90', '91', '92', '93', '94', '95', '98', '211', '212',
+  '213', '216', '218', '220', '221', '222', '223', '224', '225', '226', '227', '228',
+  '229', '230', '231', '232', '233', '234', '235', '236', '237', '238', '239', '240',
+  '241', '242', '243', '244', '245', '248', '249', '250', '251', '252', '253', '254',
+  '255', '256', '257', '258', '260', '261', '262', '263', '264', '265', '266', '267',
+  '268', '269', '291', '297', '298', '299', '350', '351', '352', '353', '354', '355',
+  '356', '357', '358', '359', '370', '371', '372', '373', '374', '375', '376', '377',
+  '378', '380', '381', '382', '385', '386', '387', '389', '420', '421', '423', '500',
+  '501', '502', '503', '504', '505', '506', '507', '508', '509', '590', '591', '592',
+  '593', '594', '595', '596', '597', '598', '599', '670', '673', '674', '675', '676',
+  '677', '678', '679', '680', '681', '682', '683', '685', '686', '687', '688', '689',
+  '690', '691', '692', '850', '852', '853', '855', '856', '880', '886', '960', '961',
+  '962', '963', '964', '965', '966', '967', '968', '970', '971', '972', '973', '974',
+  '975', '976', '977', '992', '993', '994', '995', '996', '998',
+]);
+
+/**
+ * The SUBSCRIBER digits of a phone answer — the national number with the dial
+ * code excluded. For an E.164 value ('+<dial><number>', the shape the public
+ * phone field stores) the leading dial code is stripped; any other value (a bare
+ * number or a legacy free-text phone) contributes all of its digits. This is
+ * what `phoneMinDigits` counts, so a country prefix never pads the length.
+ */
+export function phoneSubscriberDigits(value: string): string {
+  const digits = value.replace(/\D/g, '');
+  if (!value.trimStart().startsWith('+')) return digits;
+  // Longest leading dial code (1–3 digits); prefix-free ⇒ the match is exact.
+  for (let len = Math.min(3, digits.length); len >= 1; len -= 1) {
+    if (E164_DIAL_CODES.has(digits.slice(0, len))) return digits.slice(len);
+  }
+  return digits;
+}
+
 /** Validate one answer against its step. Pure; used on both client and server. */
 export function validateAnswer(step: FormStep, value: AnswerValue): ValidationResult {
   // Info steps never carry input.
@@ -366,7 +446,9 @@ export function validateAnswer(step: FormStep, value: AnswerValue): ValidationRe
       return { ok: true };
     }
     case 'phone': {
-      const digits = String(value).replace(/\D/g, '');
+      // Count SUBSCRIBER digits (dial code excluded) so a country prefix on an
+      // E.164 value ('+525512345678') never pads the length past the minimum.
+      const digits = phoneSubscriberDigits(String(value));
       const min = step.phoneMinDigits ?? 7;
       if (digits.length < min) return { ok: false, error: 'Enter a valid phone number.' };
       return { ok: true };
@@ -431,9 +513,60 @@ export function computeScore(config: FormConfig, answers: Answers): number {
   return score;
 }
 
-/** The outcome bucket for a score: the highest `minScore` the score clears. */
-export function resolveOutcome(config: FormConfig, score: number): FormOutcome | null {
-  const buckets = (config.outcomes ?? [])
+/**
+ * Does one override rule match the answers? The answer for `rule.field` must
+ * EXIST (a missing/empty answer never matches) and every SPECIFIED clause must
+ * hold: `values` intersects the string/array answer; `maxValue`/`minValue`
+ * bound the numeric answer. A non-numeric answer fails a numeric clause; a rule
+ * with no clauses (malformed) never matches.
+ */
+function overrideRuleMatches(rule: OutcomeOverrideRule, answers: Answers): boolean {
+  const value = answers[rule.field];
+  const missing = value == null || value === '' || (Array.isArray(value) && value.length === 0);
+  if (missing) return false;
+
+  let hasClause = false;
+  if (rule.values !== undefined) {
+    hasClause = true;
+    const got = new Set(tokens(value));
+    if (!rule.values.some((v) => got.has(v))) return false;
+  }
+  if (rule.maxValue !== undefined || rule.minValue !== undefined) {
+    hasClause = true;
+    // Only a number or a numeric string is numeric — booleans/arrays/objects
+    // (which Number() would happily coerce) fail the clause.
+    const n =
+      typeof value === 'number'
+        ? value
+        : typeof value === 'string' && value.trim() !== ''
+          ? Number(value)
+          : NaN;
+    if (Number.isNaN(n)) return false;
+    if (rule.maxValue !== undefined && n > rule.maxValue) return false;
+    if (rule.minValue !== undefined && n < rule.minValue) return false;
+  }
+  return hasClause;
+}
+
+/**
+ * The outcome for a score: the highest `minScore` bucket the score clears.
+ * When `answers` are supplied (additive; back-compat), answer-forced `overrides`
+ * are evaluated FIRST — outcomes are scanned in declared order and the first
+ * outcome with any matching override rule wins regardless of score (e.g. a
+ * slider answer <= 0 forces the disqualify outcome over a higher-scoring bucket).
+ */
+export function resolveOutcome(
+  config: FormConfig,
+  score: number,
+  answers?: Answers,
+): FormOutcome | null {
+  const outcomes = config.outcomes ?? [];
+  if (answers) {
+    for (const outcome of outcomes) {
+      if (outcome.overrides?.some((rule) => overrideRuleMatches(rule, answers))) return outcome;
+    }
+  }
+  const buckets = outcomes
     .filter((o) => (o.minScore ?? 0) <= score)
     .sort((a, b) => (b.minScore ?? 0) - (a.minScore ?? 0));
   return buckets[0] ?? null;
@@ -493,7 +626,7 @@ export function validateAnswerCode(
       return { ok: true };
     }
     case 'phone': {
-      const digits = String(value).replace(/\D/g, '');
+      const digits = phoneSubscriberDigits(String(value));
       if (digits.length < (step.phoneMinDigits ?? 7)) return { ok: false, code: 'phone' };
       return { ok: true };
     }
@@ -521,24 +654,75 @@ export function nameFields(step: FormStep): string[] {
   return [step.key];
 }
 
-/**
- * Two-phase order: qualification steps first, then lead-capture — a stable
- * partition that preserves each step's relative order within its phase. Steps
- * with no `flowGroup` are treated as qualification.
- */
-export function orderSteps(steps: FormStep[]): FormStep[] {
-  const qualification = steps.filter((s) => s.flowGroup !== 'lead_capture');
-  const leadCapture = steps.filter((s) => s.flowGroup === 'lead_capture');
-  return [...qualification, ...leadCapture];
+/** Resolve one `[field]` token to its substitution text (arrays join with `, `). */
+function resolveToken(value: AnswerValue): string {
+  if (value == null) return '';
+  return Array.isArray(value) ? value.join(', ') : String(value);
 }
 
-/** Replace `[key]` tokens in copy with the corresponding answer (empty → left as-is). */
+/**
+ * Replace `[key]` tokens in copy with the corresponding answer. A token whose
+ * answer is missing/empty resolves to nothing AND the connector that joined it to
+ * the rest of the sentence is swept up with it, so no dangling *joining* punctuation
+ * or whitespace is left behind (a connector that only *follows* the token belongs to
+ * the next clause and is kept):
+ *  - a **leading** empty token takes its trailing `,`/`:`/`;`/`-` + spaces with
+ *    it and the sentence is re-capitalized — `"[firstname], what problem…"` with
+ *    no firstname reads `"What problem…"`, `"[firstname] how are you"` → `"How
+ *    are you"`;
+ *  - an **embedded/trailing** empty token takes the space *and* an orphaned
+ *    connector *in front of* it — `"Hi [firstname]!"` → `"Hi!"`,
+ *    `"What is your role, [firstname]?"` → `"What is your role?"`; a connector
+ *    *after* the token belongs to the following clause and is kept —
+ *    `"Hi [firstname], welcome"` → `"Hi, welcome"`;
+ *  - duplicate spaces a removal creates are collapsed and the ends trimmed.
+ *
+ * Copy with **no empty tokens** is substituted verbatim — byte-for-byte identical
+ * to a plain replace — so the all-resolved path (including a resolved token's own
+ * spacing) is unchanged. Pure and deterministic; every regex is linear (no
+ * catastrophic backtracking).
+ */
 export function interpolate(template: string, answers: Answers): string {
-  return template.replace(/\[([a-zA-Z0-9_]+)\]/g, (_m, field: string) => {
-    const value: AnswerValue = answers[field];
-    if (value == null) return '';
-    return Array.isArray(value) ? value.join(', ') : String(value);
+  // Private-use sentinel marks where an empty token stood, so the cleanup pass can
+  // find the orphaned connector without disturbing any resolved text around it.
+  const EMPTY = '\uE000';
+  let hadEmpty = false;
+  const substituted = template.replace(/\[([a-zA-Z0-9_]+)\]/g, (_m, field: string) => {
+    const resolved = resolveToken(answers[field]);
+    if (resolved === '') {
+      hadEmpty = true;
+      return EMPTY;
+    }
+    return resolved;
   });
+  // Fast path: nothing empty → behave exactly like the original plain replace.
+  if (!hadEmpty) return substituted;
+
+  // The copy opened with a token that resolved empty: its first surviving word was
+  // mid-sentence a moment ago, so it should be re-capitalized after the cleanup.
+  const lead = template.match(/^\s*\[([a-zA-Z0-9_]+)\]/);
+  const leadingEmpty = lead != null && resolveToken(answers[lead[1]]) === '';
+
+  let cleaned = substituted;
+  if (leadingEmpty) {
+    // Leading/flush empty token: also drop an orphaned trailing connector +
+    // spaces ('[x], what' becomes 'what', '[x] how' becomes 'how').
+    cleaned = cleaned.replace(/^[ \t]*\uE000[ \t]*(?:[,:;-][ \t]*)?/, '');
+  }
+  cleaned = cleaned
+    // Embedded/trailing empty token: drop the space(s) in front of it, plus an
+    // orphaned connector that joined it to the preceding clause ('role, [x]?'
+    // becomes 'role?'). A connector AFTER the token belongs to the following
+    // clause and is kept ('Hi [x], welcome' becomes 'Hi, welcome').
+    .replace(/[ \t]*(?:[,:;-][ \t]*)?\uE000/g, '')
+    // Any sentinel that survived the pass (defensive) is removed.
+    .split(EMPTY)
+    .join('')
+    // Collapse the double space a removal may have created, then trim the ends.
+    .replace(/[ \t]{2,}/g, ' ')
+    .trim();
+
+  return leadingEmpty ? cleaned.replace(/\p{L}/u, (c) => c.toUpperCase()) : cleaned;
 }
 
 /** The lookup token a `questionField` answer resolves to for variant selection. */
@@ -579,13 +763,14 @@ export function resolveStepDisplay(step: FormStep, answers: Answers): FormStep {
 
 /**
  * The ordered, visible, display-resolved steps the renderer walks — the single
- * source of truth for the public flow. Composes `orderSteps` (two-phase) +
+ * source of truth for the public flow. The AUTHORED `config.steps` order is
+ * authoritative (WYSIWYG: the public form walks the exact order the editor
+ * shows — `flowGroup` only affects scoring, never sequencing). Composes
  * `visibleSteps` (skip-logic + personal-email branch) + `resolveStepDisplay`
- * (dynamic variants + interpolation).
+ * (dynamic variants + interpolation) + `applyGoto` (forward jumps).
  */
 export function runtimeSteps(config: FormConfig, answers: Answers): FormStep[] {
-  const ordered: FormConfig = { ...config, steps: orderSteps(config.steps) };
-  const visible = visibleSteps(ordered, answers).map((s) => resolveStepDisplay(s, answers));
+  const visible = visibleSteps(config, answers).map((s) => resolveStepDisplay(s, answers));
   return applyGoto(visible, answers);
 }
 

@@ -28,6 +28,21 @@ outbox`.
 at it via `NEXT_PUBLIC_API_URL`. The web dev port comes from the `apps/web` dev
 script — run it elsewhere with `pnpm --filter @quill/web exec next dev -p <port>`.
 
+**Second instance alongside the default (parallel convention):** to run a second
+copy while `pnpm dev` holds :3000/:4000, use **web :3400 / api :4400** and give it
+its **own DB via an absolute `DATABASE_URL`** so the two instances never share
+`.data/dev.db`. Point the second web at the second api:
+
+```bash
+# API on 4400, its own SQLite file (absolute path avoids cwd/collision surprises)
+API_PORT=4400 DATABASE_URL="file:/abs/path/forms-b.db" pnpm --filter @quill/api dev
+# Web on 3400, talking to the 4400 API
+NEXT_PUBLIC_API_URL=http://localhost:4400 pnpm --filter @quill/web exec next dev -p 3400
+```
+
+Migrate the second DB first (`DATABASE_URL="file:/abs/path/forms-b.db" pnpm db:migrate`)
+or the outbox worker fails on boot.
+
 ## Log in to the dashboard
 
 With `AUTH_PROVIDER=local` (the default), you are logged in as the seeded demo

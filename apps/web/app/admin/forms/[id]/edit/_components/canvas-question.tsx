@@ -2,12 +2,14 @@
 
 import { useEffect, useLayoutEffect, useRef } from 'react';
 import type { FormConfig, FormStep, FormOption } from '@quill/engine';
+import { nameFields } from '@quill/engine';
 import { clampAccent, onAccent, DEFAULT_ACCENT } from '@quill/shared';
 import { cn } from '@/lib/cn';
 import { iconForStep, hasOptions } from './question-types';
 import { maxStepPoints } from './scoring-util';
 import type { BuilderMessages } from './builder-messages';
 import { tb } from './builder-messages';
+import { TokenTextarea, tokenOptionsBefore, allTokenKeys } from './token-textarea';
 
 /** A textarea that grows to fit its content (used for inline title/description). */
 function AutoTextarea({
@@ -119,12 +121,21 @@ export function CanvasQuestion({
           {tb(m.canvas.questionN, { n: index + 1 })}
         </p>
 
-        {/* Inline editable title */}
-        <AutoTextarea
+        {/* Inline editable title — with the @ recall-information picker (the
+            engine interpolates `[key]` tokens in `question` from EARLIER
+            answers; the description/helper renders raw, so only the title gets
+            the picker). */}
+        <TokenTextarea
           value={step.question ?? ''}
           onChange={(v) => onUpdate({ question: v })}
           placeholder={m.canvas.titlePlaceholder}
           ariaLabel={m.canvas.titlePlaceholder}
+          autoGrow
+          tokens={tokenOptionsBefore(config.steps, index)}
+          allKeys={allTokenKeys(config.steps)}
+          m={m.tokens}
+          hint={m.tokens.hint}
+          testId="canvas-title-input"
           className="canvas-title text-2xl font-semibold tracking-tight text-foreground sm:text-[28px]"
         />
 
@@ -198,14 +209,7 @@ export function CanvasQuestion({
               {step.placeholder || m.canvas.messagePlaceholder}
             </div>
           ) : step.type === 'name' ? (
-            <div className="grid grid-cols-2 gap-3">
-              <div className="rounded-xl border border-border bg-background px-4 py-3 text-[15px] text-muted-foreground/60">
-                First name
-              </div>
-              <div className="rounded-xl border border-border bg-background px-4 py-3 text-[15px] text-muted-foreground/60">
-                Last name
-              </div>
-            </div>
+            <NamePreview step={step} m={m} />
           ) : (
             <div className="rounded-xl border border-border bg-background px-4 py-3 text-[15px] text-muted-foreground/60">
               {step.placeholder ||
@@ -228,6 +232,42 @@ export function CanvasQuestion({
           </div>
         ) : null}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Live name-step preview: the same `nameFields(step)` order and
+ * `step.placeholders` fallbacks as the public renderer (configured placeholder,
+ * else the localized default) — so typing a placeholder in the settings panel
+ * updates the canvas immediately, exactly as it will publish.
+ */
+function NamePreview({ step, m }: { step: FormStep; m: BuilderMessages }) {
+  const [firstField, secondField] = nameFields(step);
+  const firstLabel = (firstField && step.placeholders?.[firstField]) || m.canvas.nameFirstPlaceholder;
+  const secondLabel = (secondField && step.placeholders?.[secondField]) || m.canvas.nameLastPlaceholder;
+  const boxClass =
+    'w-full rounded-xl border border-border bg-background px-4 py-3 text-[15px] text-foreground outline-none placeholder:text-muted-foreground/60';
+  return (
+    <div className="grid grid-cols-2 gap-3">
+      {firstField ? (
+        <input
+          disabled
+          placeholder={firstLabel}
+          aria-label={firstLabel}
+          data-testid="canvas-name-first"
+          className={boxClass}
+        />
+      ) : null}
+      {secondField ? (
+        <input
+          disabled
+          placeholder={secondLabel}
+          aria-label={secondLabel}
+          data-testid="canvas-name-second"
+          className={boxClass}
+        />
+      ) : null}
     </div>
   );
 }

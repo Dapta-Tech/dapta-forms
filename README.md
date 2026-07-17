@@ -58,6 +58,22 @@ subset for convenience and **never limits the schema**.
 > On Windows, run the `pnpm` scripts from **git-bash or WSL** — they use POSIX
 > shell syntax (`${PG_PORT:-5432}`) that `cmd.exe`/PowerShell don't expand.
 
+## What's new (July 2026)
+
+The latest UX round reworked the builder and integration surfaces — a
+**Connect** tab in the editor (integrations, webhooks, tracking pixels,
+per-form email templates), an `@` picker to recall previous answers into
+question text, a draggable partial-submit point in the question list,
+first-class actions on the forms list, branded dialogs, and a WYSIWYG fix so
+the public form always renders questions in the authored order. The full
+changelog with screenshots lives in
+[`docs/feedback-v3/`](docs/feedback-v3/README.md).
+
+| | |
+|---|---|
+| ![Connect tab](docs/feedback-v3/v3-connect-tab.png) | ![Token picker](docs/feedback-v3/v3-at-picker.png) |
+| ![Partial submit point](docs/feedback-v3/v3-partial-point.png) | ![Forms list](docs/feedback-v3/v3-forms-list.png) |
+
 ## What you get
 
 - A **public form page** (`/[accountCode]/[handle]/[slug]`) that server-renders
@@ -146,12 +162,16 @@ never overrides a variable already set in the real environment. Key vars:
 
 ## Deploy
 
-Quill is **deployment-agnostic** (Node runtime, no host-only APIs).
+Dapta Forms is **deployment-agnostic** (Node runtime, no host-only APIs).
 
 - **Docker / any Node host**: `apps/web/Dockerfile` (Next standalone) and
   `apps/api/Dockerfile` (Node runtime). Point `DATABASE_URL` at Postgres.
 - `docker-compose.prod.yml` is a production-shaped self-host smoke test
   (Postgres + one-shot migrate + api + web).
+
+**Full production guide → [`SELF-HOSTING.md`](SELF-HOSTING.md)** — building the two
+images, the complete environment reference, Postgres, reverse proxy + TLS, auth /
+email / destination options, upgrades & rollback, and troubleshooting.
 
 ## Contributing
 

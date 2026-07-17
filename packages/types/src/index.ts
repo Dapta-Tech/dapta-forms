@@ -153,7 +153,56 @@ export const formRevealSchema = z.object({
   enabled: z.boolean().optional(),
   headline: z.string().max(300).nullable().optional(),
   subtitle: z.string().max(500).nullable().optional(),
+  // --- Reveal extensions (all optional; back-compat) -------------------------
+  /** How long the processing interstitial plays before the result (ms). */
+  durationMs: z.number().int().min(500).max(30_000).optional(),
+  /** Outcome subtitle template; `[key]` tokens interpolate from the answers. */
+  subtitleTemplate: z.string().max(200).nullable().optional(),
+  /** Pre-warm the booking embed while the interstitial plays. */
+  prewarm: z.boolean().optional(),
 });
+
+// --- Outcome extensions (booking + answer-forced overrides) ------------------
+
+/** Scheduling providers an outcome can hand off to after the form completes. */
+export const bookingProvider = ['hubspot_meetings', 'calendly'] as const;
+export type BookingProvider = (typeof bookingProvider)[number];
+
+/**
+ * Scheduling handoff for an outcome: the renderer embeds/links the provider's
+ * booking page after this outcome resolves. Same http(s)-only guard as
+ * `redirectUrl` — the URL flows into navigation/an embed (XSS defense-in-depth).
+ */
+export const outcomeBookingSchema = z.object({
+  provider: z.enum(bookingProvider),
+  url: z
+    .string()
+    .url()
+    .refine(isSafeHttpUrl, { message: 'booking url must use http(s).' }),
+  /** Prefill the booking form from collected answers (name/email). */
+  prefill: z.boolean().optional(),
+});
+export type OutcomeBooking = z.infer<typeof outcomeBookingSchema>;
+
+/**
+ * An answer-forced outcome rule: when the answer to `field` matches, this
+ * outcome wins REGARDLESS of score (e.g. a slider answer <= 0 forces the P0
+ * outcome). All specified clauses must hold; at least one clause is required.
+ */
+export const outcomeOverrideSchema = z
+  .object({
+    field: z.string().min(1).max(64),
+    /** Match when the (string/array) answer intersects these values. */
+    values: z.array(z.string().max(200)).optional(),
+    /** Match when the numeric answer is <= this bound. */
+    maxValue: z.number().optional(),
+    /** Match when the numeric answer is >= this bound. */
+    minValue: z.number().optional(),
+  })
+  .refine((r) => r.values !== undefined || r.maxValue !== undefined || r.minValue !== undefined, {
+    message: 'An override rule needs values, maxValue, or minValue.',
+  });
+export type OutcomeOverride = z.infer<typeof outcomeOverrideSchema>;
 
 export const formOutcomeSchema = z.object({
   id: z.string().min(1).max(64),
@@ -168,6 +217,14 @@ export const formOutcomeSchema = z.object({
     .refine(isSafeHttpUrl, { message: 'redirectUrl must use http(s).' })
     .nullable()
     .optional(),
+  // --- Outcome extensions (all optional; back-compat) ------------------------
+  /** Scheduling handoff (HubSpot Meetings / Calendly) shown for this outcome. */
+  booking: outcomeBookingSchema.nullable().optional(),
+  /**
+   * Answer-forced rules: when ANY rule matches the answers, this outcome wins
+   * over score bucketing (outcomes are scanned in declared order).
+   */
+  overrides: z.array(outcomeOverrideSchema).optional(),
 });
 
 // --- Submission destinations (pluggable CRM / webhook sync) ------------------
@@ -195,6 +252,13 @@ export const webhookDestinationSchema = z.object({
    */
   id: z.string().max(64).optional(),
   enabled: z.boolean().default(false),
+  /**
+   * Which submission phases fire this webhook (additive; default = both).
+   * `partial` = a partial submission past the lead-capture threshold;
+   * `complete` = a finished submission. Absent/empty is treated as BOTH for
+   * back-compat with configs saved before per-event triggers existed.
+   */
+  events: z.array(z.enum(['partial', 'complete'])).optional(),
   settings: z.object({
     // https-only, with ONE exception: plain http for localhost/127.0.0.1 (local
     // dev catcher). Mirrors the admin UI validation — keep the two in sync.
@@ -217,6 +281,24 @@ export const webhookDestinationSchema = z.object({
 });
 export type WebhookDestination = z.infer<typeof webhookDestinationSchema>;
 
+/** Submission phases a destination can subscribe to. */
+export const destinationEvents = ['partial', 'complete'] as const;
+export type DestinationEvent = (typeof destinationEvents)[number];
+
+/**
+ * Resolve whether a destination should fire for a given phase. Absent/empty
+ * `events` = both phases (back-compat). Only webhook destinations carry an
+ * `events` filter today; others always fire (their adapters gate internally).
+ */
+export function destinationFiresForPhase(
+  destination: { type: string; events?: DestinationEvent[] | undefined },
+  phase: DestinationEvent,
+): boolean {
+  const events = destination.events;
+  if (!events || events.length === 0) return true;
+  return events.includes(phase);
+}
+
 /**
  * HubSpot destination — upsert the respondent as a contact and (on complete)
  * attach a Note. The private-app token is a server-side env secret
@@ -234,6 +316,37 @@ export const hubspotDestinationSchema = z.object({
   scoreProperty: z.string().max(200).nullable().optional(),
   /** Contact date property to receive the submitted date. */
   dateProperty: z.string().max(200).nullable().optional(),
+  // --- HubSpot extensions (all optional; back-compat) ------------------------
+  /** stepKey -> (answer value -> property value): translate answers on the way out. */
+  valueMaps: z
+    .record(z.string().min(1).max(200), z.record(z.string().max(200), z.string().max(200)))
+    .optional(),
+  /** Contact property to receive the resolved outcome id/label. */
+  outcomeProperty: z.string().max(200).nullable().optional(),
+  /** Fixed property values stamped on every synced contact. */
+  staticProperties: z.record(z.string().min(1).max(200), z.string().max(500)).optional(),
+  /** Derive the company name from the respondent's email domain. */
+  inferCompanyFromEmail: z.boolean().optional(),
+  /**
+   * Booking sync — which contact properties receive the booking facts when a
+   * visitor books a meeting through an outcome's scheduling handoff (the
+   * `booking_sync` outbox flow). All optional; absent = booking sync is a
+   * no-op for this destination.
+   *  - `stageProperty` is set to `stageValue` verbatim (e.g. a sales-stage
+   *    enum internal value) — the "demo booked" stage stamp.
+   *  - `dateProperty` receives the meeting-start CALENDAR DAY as UTC-midnight
+   *    epoch-ms (HubSpot `date`-type properties require midnight UTC).
+   *  - `hoursProperty` receives the exact meeting start as epoch-ms (a
+   *    HubSpot `datetime`-type property).
+   */
+  bookingSync: z
+    .object({
+      stageProperty: z.string().max(200).optional(),
+      stageValue: z.string().max(200).optional(),
+      dateProperty: z.string().max(200).optional(),
+      hoursProperty: z.string().max(200).optional(),
+    })
+    .optional(),
 });
 export type HubspotDestination = z.infer<typeof hubspotDestinationSchema>;
 
@@ -328,6 +441,33 @@ export function mergeWebhookSecrets(incoming: unknown[], existing: unknown): unk
   });
 }
 
+// --- Analytics / marketing tag ids (rendered by the public page) -------------
+
+/**
+ * Third-party tracking ids for the public form page. All optional, loosely
+ * validated strings (each vendor has its own id format; the renderer only ever
+ * interpolates them into vendor snippets, never executes them as markup).
+ */
+export const formTrackingSchema = z.object({
+  /** Google Tag Manager container id (e.g. GTM-XXXXXXX). */
+  gtmId: z.string().max(32).nullable().optional(),
+  /** Meta (Facebook) Pixel id. */
+  metaPixelId: z.string().max(32).nullable().optional(),
+  /** PostHog project API key. */
+  posthogKey: z.string().max(128).nullable().optional(),
+  /** PostHog host override (self-hosted / EU cloud). */
+  posthogHost: z
+    .string()
+    .max(256)
+    .url()
+    .refine(isSafeHttpUrl, 'must be an http(s) URL')
+    .nullable()
+    .optional(),
+  /** HubSpot tracking code portal id. */
+  hubspotTrackingId: z.string().max(32).nullable().optional(),
+});
+export type FormTracking = z.infer<typeof formTrackingSchema>;
+
 /** The versioned config blob. `version` gates future migrations of the shape. */
 export const formConfigSchema = z.object({
   version: z.literal(1),
@@ -342,6 +482,8 @@ export const formConfigSchema = z.object({
    */
   destinations: z.array(formDestinationSchema).optional(),
   reveal: formRevealSchema.nullable().optional(),
+  /** Third-party tracking ids (ADDITIVE — absent on every legacy config). */
+  tracking: formTrackingSchema.nullable().optional(),
   partialSubmitAfterStep: z.number().int().positive().optional(),
 });
 export type FormConfig = z.infer<typeof formConfigSchema>;
@@ -365,6 +507,10 @@ export const formViewSchema = z.object({
   name: z.string(),
   slug: z.string(),
   config: formConfigSchema,
+  /** Unpublished working copy (ADDITIVE; null when no draft is pending). */
+  draftConfig: formConfigSchema.nullable().optional(),
+  /** Epoch-ms of the last publish (ADDITIVE; null when never published). */
+  publishedAt: z.number().nullable().optional(),
   createdAt: z.number(),
   updatedAt: z.number(),
 });
@@ -438,6 +584,27 @@ export const formEventSchema = z.object({
   stepIndex: z.number().int().min(0).nullable().optional(),
 });
 export type FormEventInput = z.infer<typeof formEventSchema>;
+
+// --- Booking callbacks (scheduling handoff on the public surface) ------------
+
+/**
+ * The public booking callback: the renderer reports a meeting booked through an
+ * outcome's scheduling embed (HubSpot Meetings / Calendly) so it can be tied to
+ * the session's submission. Persisted as a `booking_event` row; delivery to
+ * destinations is a later, outbox-driven concern.
+ */
+export const bookingCallbackSchema = z.object({
+  /** Per-session id (sessionStorage) tying the booking to its submission. */
+  sessionId: z.string().min(1).max(200),
+  provider: z.enum(bookingProvider),
+  /** Provider URI of the scheduled event (Calendly event / HubSpot meeting). */
+  eventUri: z.string().url().max(2048).optional(),
+  /** Provider URI of the invitee record. */
+  inviteeUri: z.string().url().max(2048).optional(),
+  /** Scheduled start as an ISO 8601 datetime. */
+  startTime: z.string().datetime({ offset: true }).optional(),
+});
+export type BookingCallbackInput = z.infer<typeof bookingCallbackSchema>;
 
 // --- Analytics (funnel + per-step drop-off) ----------------------------------
 // ADDITIVE: new exports only. These describe the admin analytics dashboard
@@ -520,6 +687,24 @@ export const memberPatchSchema = z
     message: 'Provide a role or status to change.',
   });
 export type MemberPatch = z.infer<typeof memberPatchSchema>;
+
+// --- Notification settings (Settings → Notifications) ------------------------
+
+/**
+ * The write body for a notification email's per-account settings: toggle it on/
+ * off and/or override the subject/body. `subject`/`body` are PLAIN TEXT with
+ * `{{token}}` markers; passing `null` resets that field to the shipped default,
+ * `undefined` (absent) leaves it untouched. The `emailKey` itself is a path
+ * param the API validates against the notifications catalog (kept out of this
+ * contract so the package boundary stays one-directional). Every field is
+ * optional — an empty patch is a harmless no-op.
+ */
+export const notificationSettingPatchSchema = z.object({
+  enabled: z.boolean().optional(),
+  subject: z.string().max(300).nullable().optional(),
+  body: z.string().max(8000).nullable().optional(),
+});
+export type NotificationSettingPatchInput = z.infer<typeof notificationSettingPatchSchema>;
 
 export const meResponseSchema = z.object({
   accountId: z.string(),

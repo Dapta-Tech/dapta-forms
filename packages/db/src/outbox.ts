@@ -32,11 +32,13 @@ import type { Db } from './client';
 
 /**
  * `email` = submission lifecycle emails; `webhook`/`hubspot` = pluggable
- * submission destinations (drained by the same worker + retry machinery). Adding
- * a destination kind here is all the queue needs — the delivery logic lives in
- * the API's DestinationEffects.
+ * submission destinations (drained by the same worker + retry machinery);
+ * `booking_sync` = CRM sync of a scheduling callback (booking_event → HubSpot
+ * contact update, enriched via Calendly). Adding a kind here is all the queue
+ * needs — the delivery logic lives in the API (DestinationEffects /
+ * BookingSyncEffects).
  */
-export type OutboxKind = 'webhook' | 'email' | 'hubspot';
+export type OutboxKind = 'webhook' | 'email' | 'hubspot' | 'booking_sync';
 /**
  * `skipped` = deliberately not performed (e.g. an email row whose tenant
  * context is unrecoverable on a transport that requires it) — recorded ONCE
@@ -189,10 +191,18 @@ export async function claimDueOutbox(
     db.dialect === 'postgres'
       ? sql`SELECT id FROM outbox WHERE ${claimable} ORDER BY next_attempt_at ASC LIMIT ${limit} FOR UPDATE SKIP LOCKED`
       : sql`SELECT id FROM outbox WHERE ${claimable} ORDER BY next_attempt_at ASC LIMIT ${limit}`;
+  // Postgres must materialize the subquery via ARRAY(...): with a bare
+  // IN (SELECT ... LIMIT n FOR UPDATE SKIP LOCKED) the planner may re-scan the
+  // subquery per outer row and claim MORE than `limit` rows (plan-dependent),
+  // defeating the two-worker split.
   const rows = await db.all<Record<string, unknown>>(
-    sql`UPDATE outbox SET claimed_at = ${now}, claimed_by = ${workerId}
-        WHERE id IN (${selectDue})
-        RETURNING *`,
+    db.dialect === 'postgres'
+      ? sql`UPDATE outbox SET claimed_at = ${now}, claimed_by = ${workerId}
+            WHERE id = ANY (ARRAY(${selectDue}))
+            RETURNING *`
+      : sql`UPDATE outbox SET claimed_at = ${now}, claimed_by = ${workerId}
+            WHERE id IN (${selectDue})
+            RETURNING *`,
   );
   return rows.map(mapRow);
 }

@@ -32,6 +32,9 @@ export interface BuilderMessages {
     desktop: string;
     mobile: string;
     settings: string;
+    copyLink: string;
+    copied: string;
+    openForm: string;
   };
   badges: {
     contact: string;
@@ -40,6 +43,31 @@ export interface BuilderMessages {
     rules: string;
     /** "1 rule" */
     ruleOne: string;
+  };
+  /** The partial-submit-point marker in the question spine (Typeform parity). */
+  partial: {
+    /** Marker-row label ("Partial submit point"). */
+    label: string;
+    /** Dashed "+ Partial submit point" affordance at the spine bottom. */
+    add: string;
+    /** aria-label of the marker's remove (×) button. */
+    remove: string;
+    /** aria-label of the marker's drag grip. */
+    move: string;
+    /** aria-label of the info toggle on the marker row. */
+    info: string;
+    /** Popover: what reaching this point captures. */
+    tipCapture: string;
+    /** Popover: how a partial is stored/upgraded. */
+    tipStored: string;
+    /** Popover: privacy nudge about collecting unfinished answers. */
+    tipNotify: string;
+    /** Popover: where partials appear in the admin. */
+    tipWhere: string;
+    /** Popover extra line when the marker sits after the LAST question. */
+    tipAfterLast: string;
+    /** One-line pointer left in the Design tab (the select moved to the spine). */
+    designNote: string;
   };
   canvas: {
     /** "Question {n}" */
@@ -53,6 +81,10 @@ export interface BuilderMessages {
     /** "{n} pts" */
     pts: string;
     messagePlaceholder: string;
+    /** Name-step preview defaults — MUST mirror the shared catalog's
+     *  `renderer.name.*` so the canvas shows exactly what publishes. */
+    nameFirstPlaceholder: string;
+    nameLastPlaceholder: string;
   };
   settings: {
     title: string;
@@ -69,6 +101,35 @@ export interface BuilderMessages {
     delete: string;
     deleteConfirm: string;
     empty: string;
+  };
+  /** The `@` recall-information picker + `[token]` authoring warnings. */
+  tokens: {
+    hint: string;
+    pickerLabel: string;
+    pickerEmpty: string;
+    pickerNoMatch: string;
+    /** `{token}` is replaced with the bracketed token, e.g. `[firstname]`. */
+    warnLater: string;
+    warnUnknown: string;
+  };
+  /** Per-question HubSpot "Map to" section in the settings panel. */
+  hubspot: {
+    title: string;
+    mapTo: string;
+    mapToHint: string;
+    /** The unmap option in the property picker. */
+    none: string;
+    saving: string;
+    saved: string;
+    saveError: string;
+    loadError: string;
+    retry: string;
+    /** Connected account, but no enabled HubSpot destination on this form. */
+    notEnabled: string;
+    configureInConnect: string;
+    /** No account-level HubSpot connection at all. */
+    notConnected: string;
+    goToConnections: string;
   };
   rules: {
     ifAnswerIs: string;
@@ -181,12 +242,30 @@ const en: BuilderMessages = {
     desktop: 'Desktop',
     mobile: 'Mobile',
     settings: 'Settings',
+    copyLink: 'Copy link',
+    copied: 'Copied',
+    openForm: 'Open form',
   },
   badges: {
     contact: 'Contact',
     logic: 'Logic',
     rules: '{n} rules',
     ruleOne: '1 rule',
+  },
+  partial: {
+    label: 'Partial submit point',
+    add: 'Partial submit point',
+    remove: 'Remove partial submit point',
+    move: 'Move partial submit point',
+    info: 'About the partial submit point',
+    tipCapture:
+      'Captures respondents’ answers once they reach this point, even if they never finish the form.',
+    tipStored:
+      'Each partial is stored as a submission and upgraded in place if the respondent completes the form.',
+    tipNotify: 'Consider letting respondents know their answers may be collected before they submit.',
+    tipWhere: 'View them in Submissions with the “Partial” filter.',
+    tipAfterLast: 'After the last question it never fires — the final submit already captures everything.',
+    designNote: 'Configured in the question list on the Build tab — look for the “Partial submit point” card.',
   },
   canvas: {
     questionN: 'Question {n}',
@@ -198,6 +277,8 @@ const en: BuilderMessages = {
     submit: 'Submit',
     pts: '{n} pts',
     messagePlaceholder: 'Write your message…',
+    nameFirstPlaceholder: 'First name',
+    nameLastPlaceholder: 'Last name',
   },
   settings: {
     title: 'Question settings',
@@ -214,6 +295,29 @@ const en: BuilderMessages = {
     delete: 'Delete question',
     deleteConfirm: 'Delete this question?',
     empty: 'Select a question to edit it.',
+  },
+  tokens: {
+    hint: 'Type @ to insert a previous answer',
+    pickerLabel: 'Insert a previous answer',
+    pickerEmpty: 'No earlier answers yet — this is the first question.',
+    pickerNoMatch: 'No matching fields.',
+    warnLater: '“{token}” is asked after this step — it will be empty here.',
+    warnUnknown: '“{token}” doesn’t exist in this form.',
+  },
+  hubspot: {
+    title: 'HubSpot',
+    mapTo: 'Map to',
+    mapToHint: 'This answer updates the selected HubSpot contact property.',
+    none: 'None',
+    saving: 'Saving…',
+    saved: 'Saved',
+    saveError: 'Couldn’t save the mapping. Your change was reverted.',
+    loadError: 'Couldn’t load the HubSpot mapping.',
+    retry: 'Retry',
+    notEnabled: 'HubSpot isn’t enabled on this form.',
+    configureInConnect: 'Set up in Connect',
+    notConnected: 'Connect HubSpot to map answers to contact properties.',
+    goToConnections: 'Go to Connections',
   },
   rules: {
     ifAnswerIs: 'If answer is',
@@ -337,12 +441,31 @@ const es: BuilderMessages = {
     desktop: 'Escritorio',
     mobile: 'Móvil',
     settings: 'Ajustes',
+    copyLink: 'Copiar enlace',
+    copied: 'Copiado',
+    openForm: 'Abrir formulario',
   },
   badges: {
     contact: 'Contacto',
     logic: 'Lógica',
     rules: '{n} reglas',
     ruleOne: '1 regla',
+  },
+  partial: {
+    label: 'Punto de envío parcial',
+    add: 'Punto de envío parcial',
+    remove: 'Quitar el punto de envío parcial',
+    move: 'Mover el punto de envío parcial',
+    info: 'Acerca del punto de envío parcial',
+    tipCapture:
+      'Captura las respuestas cuando la persona llega a este punto, aunque nunca termine el formulario.',
+    tipStored:
+      'Cada parcial se guarda como un envío y se actualiza en su lugar si la persona completa el formulario.',
+    tipNotify: 'Considera avisar a tus respondientes de que sus respuestas pueden recopilarse antes de enviar.',
+    tipWhere: 'Míralos en Envíos con el filtro «Parciales».',
+    tipAfterLast: 'Después de la última pregunta nunca se activa — el envío final ya lo captura todo.',
+    designNote:
+      'Se configura en la lista de preguntas, en la pestaña Construir — busca la tarjeta «Punto de envío parcial».',
   },
   canvas: {
     questionN: 'Pregunta {n}',
@@ -354,6 +477,8 @@ const es: BuilderMessages = {
     submit: 'Enviar',
     pts: '{n} pts',
     messagePlaceholder: 'Escribe tu mensaje…',
+    nameFirstPlaceholder: 'Nombre',
+    nameLastPlaceholder: 'Apellidos',
   },
   settings: {
     title: 'Ajustes de la pregunta',
@@ -370,6 +495,29 @@ const es: BuilderMessages = {
     delete: 'Eliminar pregunta',
     deleteConfirm: '¿Eliminar esta pregunta?',
     empty: 'Selecciona una pregunta para editarla.',
+  },
+  tokens: {
+    hint: 'Escribe @ para insertar una respuesta anterior',
+    pickerLabel: 'Insertar una respuesta anterior',
+    pickerEmpty: 'Aún no hay respuestas anteriores — esta es la primera pregunta.',
+    pickerNoMatch: 'Ningún campo coincide.',
+    warnLater: '«{token}» se pregunta después de este paso — quedará vacío.',
+    warnUnknown: '«{token}» no existe en este formulario.',
+  },
+  hubspot: {
+    title: 'HubSpot',
+    mapTo: 'Asignar a',
+    mapToHint: 'Esta respuesta actualiza la propiedad seleccionada del contacto en HubSpot.',
+    none: 'Ninguna',
+    saving: 'Guardando…',
+    saved: 'Guardado',
+    saveError: 'No se pudo guardar la asignación. Se revirtió el cambio.',
+    loadError: 'No se pudo cargar la asignación de HubSpot.',
+    retry: 'Reintentar',
+    notEnabled: 'HubSpot no está habilitado en este formulario.',
+    configureInConnect: 'Configurar en Conectar',
+    notConnected: 'Conecta HubSpot para asignar respuestas a propiedades del contacto.',
+    goToConnections: 'Ir a Conexiones',
   },
   rules: {
     ifAnswerIs: 'Si la respuesta es',

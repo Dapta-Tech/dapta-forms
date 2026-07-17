@@ -1,0 +1,149 @@
+{
+  "_comment": "Synthetic pilot-shaped (legacy pilot PublicFormConfig) fixture. Exercises every feature the import script must translate: cover, flow groups, showWhen/hideWhen, question variants, slider scoring, personal-email branch, disqualification, partial submit, matching loader, P0-P3 scoring ranges, hubspot mapping, utm tracking. All URLs/ids are examples — no real customer data.",
+  "branding": { "primaryColor": "#CCFF00" },
+  "cover": {
+    "enabled": true,
+    "bannerText": "Book a call and get a free onboarding session",
+    "badge": "2-minute assessment",
+    "title": "Find the right plan for your team",
+    "subheadline": "Answer a few questions and book a call with the right advisor.",
+    "ctaText": "Start now"
+  },
+  "partialSubmitAfterStep": 7,
+  "matchingAfterStep": 6,
+  "hubspotEnabled": true,
+  "hubspotMapping": {
+    "firstname": "firstname",
+    "lastname": "lastname",
+    "email": "email",
+    "phone": "mobilephone",
+    "industry": "industry",
+    "problema": "use_case",
+    "inbound_leads": "inbound_leads"
+  },
+  "utmTracking": { "utm_source": "hs_analytics_source" },
+  "scoring": {
+    "ranges": [
+      { "label": "P1", "min": 5, "max": 20, "url": "https://example.com/typ-p1", "calendlyUrl": "https://meetings.hubspot.com/example/p1-round-robin" },
+      { "label": "P2", "min": 3, "max": 4, "url": "https://example.com/typ-p2", "calendlyUrl": "https://meetings.hubspot.com/example/p2-round-robin" },
+      { "label": "P3", "min": 0, "max": 2, "url": "https://example.com/typ-p3", "calendlyUrl": "https://calendly.com/d/example/15-min" },
+      { "label": "P0", "min": -20, "max": -1, "url": "https://example.com/typ-p0" }
+    ]
+  },
+  "steps": [
+    {
+      "id": "name",
+      "type": "name",
+      "flowGroup": "lead_capture",
+      "question": "What's your name?",
+      "field": "name",
+      "fields": ["firstname", "lastname"],
+      "placeholders": ["First name", "Last name"],
+      "required": true
+    },
+    {
+      "id": "problema",
+      "type": "multiple_choice",
+      "flowGroup": "qualification",
+      "question": "[firstname], what problem are you solving?",
+      "field": "problema",
+      "required": true,
+      "options": [
+        { "label": "Cold leads follow-up", "value": "leads_frios", "points": 2 },
+        { "label": "WhatsApp sales", "value": "whatsapp", "points": 2 },
+        { "label": "Customer support", "value": "soporte", "points": 1 },
+        { "label": "None of these", "value": "ninguna", "points": -5 }
+      ]
+    },
+    {
+      "id": "leads_mes",
+      "type": "slider",
+      "flowGroup": "qualification",
+      "question": "How many leads per month?",
+      "field": "inbound_leads",
+      "required": true,
+      "min": 0,
+      "max": 1500,
+      "step": 10,
+      "default": 100,
+      "questionField": "problema",
+      "questionVariants": {
+        "leads_frios": "How many cold leads do you get per month?",
+        "whatsapp": "How many WhatsApp conversations per month?",
+        "*": "How many leads per month?"
+      },
+      "sliderScoring": [
+        { "min": 0, "max": 99, "points": -2 },
+        { "min": 100, "max": 149, "points": -1 },
+        { "min": 150, "max": 299, "points": 1 },
+        { "min": 300, "max": 999, "points": 2 },
+        { "min": 1000, "max": 1500, "points": 3 }
+      ],
+      "showWhen": { "field": "problema", "values": ["leads_frios", "whatsapp", "soporte"] }
+    },
+    {
+      "id": "industry",
+      "type": "dropdown",
+      "flowGroup": "qualification",
+      "question": "What industry are you in?",
+      "field": "industry",
+      "required": true,
+      "hideWhen": { "field": "problema", "values": ["ninguna"] },
+      "options": [
+        { "label": "Banking", "value": "banking", "points": 2 },
+        { "label": "Software", "value": "software", "points": 2 },
+        { "label": "Retail", "value": "retail", "points": 1 },
+        { "label": "Accounting", "value": "accounting", "points": -2 },
+        { "label": "Other industry", "value": "other", "points": 0 }
+      ]
+    },
+    {
+      "id": "uso_ia",
+      "type": "multiple_choice",
+      "flowGroup": "qualification",
+      "question": "Are you using AI today?",
+      "field": "uso_ia",
+      "required": true,
+      "options": [
+        { "label": "Yes, in production", "value": "production", "points": 1 },
+        { "label": "Experimenting", "value": "experimenting", "points": 1 },
+        { "label": "Not yet", "value": "no", "points": 0 }
+      ]
+    },
+    {
+      "id": "email",
+      "type": "email",
+      "flowGroup": "lead_capture",
+      "question": "What's your work email?",
+      "field": "email",
+      "required": true,
+      "validation": { "corporateEmailOnly": false, "showWebsiteForPersonalEmail": true }
+    },
+    {
+      "id": "website",
+      "type": "text",
+      "flowGroup": "lead_capture",
+      "question": "What's your company website?",
+      "field": "website",
+      "required": true,
+      "_comment": "pilot inserts this step only for personal-email respondents"
+    },
+    {
+      "id": "disqualified",
+      "type": "message",
+      "flowGroup": "lead_capture",
+      "question": "We can't help you just yet — thanks for your time.",
+      "field": "disqualified_msg",
+      "skipCalendly": true,
+      "showWhen": { "field": "problema", "values": ["ninguna"] }
+    },
+    {
+      "id": "phone",
+      "type": "phone",
+      "flowGroup": "lead_capture",
+      "question": "What's your phone number?",
+      "field": "phone",
+      "required": true
+    }
+  ]
+}

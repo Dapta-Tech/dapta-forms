@@ -80,7 +80,12 @@ export interface FormDetail {
   accountId: string;
   name: string;
   slug: string;
+  /** The LIVE (published) config — what the public renderer serves. */
   config: FormConfig;
+  /** Unpublished working copy; null/absent when no draft is pending. */
+  draftConfig?: FormConfig | null;
+  /** Epoch-ms of the last publish; null = never published via the draft flow. */
+  publishedAt?: number | null;
   createdAt: number;
   updatedAt: number;
 }
@@ -142,7 +147,86 @@ export type HubSpotPropertiesResponse =
   | { enabled: false; reason: string }
   | { enabled: true; cached: boolean; properties: HubSpotProperty[] };
 
+/** Account-level integration providers (paste-token connections). */
+export type IntegrationProvider = 'hubspot' | 'calendly';
+
+/**
+ * One account-level connection's token-free status (GET /v1/integrations). The
+ * token is never returned — only a display label and the last 4 chars.
+ */
+export interface IntegrationStatus {
+  provider: IntegrationProvider;
+  connected: boolean;
+  last4: string | null;
+  label: string | null;
+  connectedAt: number;
+}
+
+/** GET /v1/integrations — this account's connections + server encryption availability. */
+export interface IntegrationsResponse {
+  encryptionAvailable: boolean;
+  providers: IntegrationStatus[];
+}
+
 export type { FormDestination };
+
+// --- Notifications (submission emails) ---------------------------------------
+
+export type NotificationEmailKey = 'submission_received' | 'submission_confirmed';
+
+/** The shipped default copy (token-bearing) for one locale. */
+export interface NotificationDefault {
+  subject: string;
+  body: string;
+}
+
+/** One editable submission email: stored override + shipped defaults + token catalog. */
+export interface NotificationSettingView {
+  emailKey: NotificationEmailKey;
+  enabled: boolean;
+  /** Custom override; null = using the shipped default template. */
+  subject: string | null;
+  body: string | null;
+  updatedAt: number | null;
+  tokens: string[];
+  defaults: { en: NotificationDefault; es: NotificationDefault };
+}
+
+export interface NotificationsResponse {
+  settings: NotificationSettingView[];
+}
+
+/** Patch a notification email: null subject/body resets that field to default. */
+export interface NotificationPatch {
+  enabled?: boolean;
+  subject?: string | null;
+  body?: string | null;
+}
+
+/** One email's stored values at one layer (account baseline or form override). */
+export interface NotificationLayer {
+  enabled: boolean;
+  subject: string | null;
+  body: string | null;
+}
+
+/**
+ * One submission email as seen from ONE form (GET /v1/forms/:id/notifications):
+ * the account-level baseline it inherits, plus the per-form override when one
+ * is stored (null = following the account template). Send-time precedence is
+ * form → account → stock, per field.
+ */
+export interface FormNotificationView {
+  emailKey: NotificationEmailKey;
+  account: NotificationLayer;
+  override: (NotificationLayer & { updatedAt: number | null }) | null;
+  tokens: string[];
+  defaults: { en: NotificationDefault; es: NotificationDefault };
+}
+
+export interface FormNotificationsResponse {
+  settings: FormNotificationView[];
+}
 
 export const adminApi = {
   me: () => req<Me>('GET', '/v1/me'),
@@ -156,6 +240,8 @@ export const adminApi = {
   updateForm: (id: string, b: { name?: string; slug?: string; config?: unknown }) =>
     req<FormDetail>('PUT', `/v1/forms/${id}`, b),
   duplicateForm: (id: string) => req<FormDetail>('POST', `/v1/forms/${id}/duplicate`),
+  /** Publish the pending draft config (no-op when no draft is pending). */
+  publishForm: (id: string) => req<FormDetail>('POST', `/v1/forms/${id}/publish`),
   deleteForm: (id: string) => req<void>('DELETE', `/v1/forms/${id}`),
 
   // Analytics + submissions (this track)
@@ -172,6 +258,16 @@ export const adminApi = {
   updateFormDestinations: (id: string, destinations: FormDestination[]) =>
     req<FormDetail>('PUT', `/v1/forms/${id}/destinations`, { destinations }),
 
+  // Account-level integration connections (paste-token model; admin/owner writes)
+  /** This account's connections (token-free) + whether server encryption is available. */
+  listIntegrations: () => req<IntegrationsResponse>('GET', '/v1/integrations'),
+  /** Validate + encrypt-store a pasted provider token; returns the token-free status. */
+  connectIntegration: (provider: IntegrationProvider, token: string) =>
+    req<IntegrationStatus>('POST', `/v1/integrations/${provider}/connect`, { token }),
+  /** Disconnect a provider for this account (idempotent → 204). */
+  disconnectIntegration: (provider: IntegrationProvider) =>
+    req<void>('DELETE', `/v1/integrations/${provider}`),
+
   // Members (workspace roster — admin/owner only)
   listMembers: () => req<AccountMember[]>('GET', '/v1/members'),
   inviteMember: (b: { email: string; role?: 'admin' | 'member' }) =>
@@ -179,4 +275,22 @@ export const adminApi = {
   updateMember: (id: string, b: { role?: AccountRole; status?: MemberStatus }) =>
     req<AccountMember>('PATCH', `/v1/members/${id}`, b),
   removeMember: (id: string) => req<{ ok: boolean }>('DELETE', `/v1/members/${id}`),
+
+  // Notifications (submission emails — admin/owner only)
+  getNotifications: () => req<NotificationsResponse>('GET', '/v1/notifications'),
+  updateNotification: (emailKey: NotificationEmailKey, patch: NotificationPatch) =>
+    req<NotificationSettingView>('PUT', `/v1/notifications/${emailKey}`, patch),
+  resetNotification: (emailKey: NotificationEmailKey) =>
+    req<NotificationSettingView>('POST', `/v1/notifications/${emailKey}/reset`),
+
+  // Per-form notification overrides (editor → Connect → Emails; admin/owner only)
+  /** Both emails as seen from one form: account baseline + override (if any). */
+  getFormNotifications: (id: string) =>
+    req<FormNotificationsResponse>('GET', `/v1/forms/${id}/notifications`),
+  /** Create/update this form's override for one email. */
+  updateFormNotification: (id: string, emailKey: NotificationEmailKey, patch: NotificationPatch) =>
+    req<FormNotificationView>('PUT', `/v1/forms/${id}/notifications/${emailKey}`, patch),
+  /** Remove this form's override — the form inherits the account template again. */
+  resetFormNotification: (id: string, emailKey: NotificationEmailKey) =>
+    req<FormNotificationView>('POST', `/v1/forms/${id}/notifications/${emailKey}/reset`),
 };

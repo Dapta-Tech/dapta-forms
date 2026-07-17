@@ -1,56 +1,41 @@
-import Link from 'next/link';
+import { unstable_rethrow } from 'next/navigation';
 import { getMessages } from '@quill/shared';
-import { adminApi } from '@/lib/admin-api';
+import { adminApi, type IntegrationsResponse } from '@/lib/admin-api';
 import { getLocale } from '@/lib/locale';
 import { PageHeader } from '@/components/ui/page-header';
+import { ConnectionsPanel } from './connections-panel';
 
 export const dynamic = 'force-dynamic';
 
-export default async function IntegrationsPicker() {
+/**
+ * Account-level Connections (Typeform's "General" tab): connect HubSpot and
+ * Calendly once per account, then map fields per form. Reworked from the old
+ * form-picker — per-form CRM/webhook mapping is reached from each form's own
+ * integrations tab (the forms list → row menu → Integrations).
+ */
+export default async function ConnectionsPage() {
   const locale = await getLocale();
-  const p = getMessages(locale).admin.picker;
-  const forms = await adminApi.listForms();
+  const c = getMessages(locale).admin.connections;
+
+  let data: IntegrationsResponse = { encryptionAvailable: false, providers: [] };
+  let loadError = false;
+  try {
+    data = await adminApi.listIntegrations();
+  } catch (e) {
+    unstable_rethrow(e); // let a 401→redirect (or notFound) escape the catch
+    loadError = true;
+  }
 
   return (
     <div className="mx-auto max-w-[1520px] px-6 py-10 sm:px-8">
-      <PageHeader title={p.integrationsTitle} subtitle={p.integrationsSubtitle} />
-      {forms.length === 0 ? (
-        <EmptyState title={p.emptyTitle} body={p.emptyBody} />
-      ) : (
-        <ul className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          {forms.map((f) => (
-            <li key={f.id}>
-              <Link
-                href={`/admin/forms/${f.id}/integrations`}
-                className="flex items-center justify-between gap-4 rounded-md border border-border bg-card p-5 transition-transform hover:border-primary active:scale-[0.99]"
-              >
-                <div className="flex min-w-0 items-center gap-3">
-                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-muted text-foreground" aria-hidden>
-                    <i className="pi pi-link" style={{ fontSize: 14 }} />
-                  </span>
-                  <span className="min-w-0 truncate font-semibold tracking-tight">{f.name}</span>
-                </div>
-                <span className="flex shrink-0 items-center gap-1 text-sm text-primary">
-                  {p.configure}
-                  <i aria-hidden className="pi pi-arrow-right" style={{ fontSize: 12 }} />
-                </span>
-              </Link>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
-}
-
-function EmptyState({ title, body }: { title: string; body: string }) {
-  return (
-    <div className="flex flex-col items-center gap-2 rounded-md border border-dashed border-border bg-card/40 p-12 text-center">
-      <div className="mb-1 flex h-12 w-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
-        <i aria-hidden className="pi pi-link" style={{ fontSize: 20 }} />
-      </div>
-      <p className="font-medium text-foreground">{title}</p>
-      <p className="max-w-md text-sm text-muted-foreground">{body}</p>
+      <PageHeader title={c.title} subtitle={c.subtitle} />
+      <ConnectionsPanel
+        initialProviders={data.providers}
+        encryptionAvailable={data.encryptionAvailable}
+        loadError={loadError}
+        messages={c}
+        locale={locale}
+      />
     </div>
   );
 }

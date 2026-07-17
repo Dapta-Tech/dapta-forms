@@ -1,5 +1,15 @@
 import { describe, it, expect } from 'vitest';
-import { normalizeLocale, renderSubmissionReceived, renderSubmissionConfirmed } from './templates';
+import {
+  applyCopyOverride,
+  defaultSubmissionTemplate,
+  interpolateTokens,
+  isSubmissionEmailKey,
+  normalizeLocale,
+  notificationTokenValues,
+  renderSubmissionConfirmed,
+  renderSubmissionReceived,
+  SUBMISSION_EMAIL_KEYS,
+} from './templates';
 
 describe('normalizeLocale', () => {
   it('maps Spanish-ish values to es and everything else to en', () => {
@@ -61,5 +71,102 @@ describe('renderSubmissionConfirmed', () => {
     const es = renderSubmissionConfirmed('es', { formName: 'Encuesta', formLink: 'https://forms.example.com/x' });
     expect(es.subject).toBe('Recibimos tus respuestas — Encuesta');
     expect(es.lines.join('\n')).toContain('Ver o editar: https://forms.example.com/x');
+  });
+});
+
+describe('interpolateTokens', () => {
+  const values = { formName: 'Lead Qualifier', respondentEmail: 'lead@acme.io', score: '15' };
+
+  it('substitutes known {{tokens}} and tolerates inner whitespace', () => {
+    expect(interpolateTokens('Hi {{formName}} / {{ score }}', values)).toBe('Hi Lead Qualifier / 15');
+  });
+
+  it('leaves an unknown token literal (a visible typo, not a silent blank)', () => {
+    expect(interpolateTokens('X {{nope}} Y', values)).toBe('X {{nope}} Y');
+  });
+
+  it('is single-pass: a value that contains a token marker is NOT re-expanded', () => {
+    expect(interpolateTokens('{{formName}}', { formName: '{{score}}', score: '99' })).toBe('{{score}}');
+  });
+});
+
+describe('notificationTokenValues', () => {
+  it('maps absent optionals to empty strings and stringifies score', () => {
+    expect(notificationTokenValues({ formName: 'F', score: 0 })).toEqual({
+      formName: 'F',
+      respondentEmail: '',
+      score: '0',
+      outcomeLabel: '',
+      formLink: '',
+    });
+  });
+});
+
+describe('applyCopyOverride', () => {
+  const base = renderSubmissionReceived('en', { formName: 'Survey' });
+  const vars = { formName: 'Survey', respondentEmail: 'lead@acme.io', score: 7, outcomeLabel: 'Hot' };
+
+  it('keeps the stock copy when no override is set (null/undefined)', () => {
+    expect(applyCopyOverride(base, { subject: null, body: null }, vars)).toEqual(base);
+    expect(applyCopyOverride(base, {}, vars)).toEqual(base);
+  });
+
+  it('overrides subject + body independently, interpolating tokens', () => {
+    const out = applyCopyOverride(
+      base,
+      { subject: 'Lead from {{formName}}', body: 'Score {{score}}\nfor {{respondentEmail}}' },
+      vars,
+    );
+    expect(out.subject).toBe('Lead from Survey');
+    expect(out.lines).toEqual(['Score 7', 'for lead@acme.io']);
+  });
+
+  it('collapses newlines in a custom subject (header stays single-line)', () => {
+    const out = applyCopyOverride(base, { subject: 'A {{formName}}\r\nB' }, vars);
+    expect(out.subject).toBe('A Survey B');
+  });
+
+  it('overriding only the body leaves the stock subject intact', () => {
+    const out = applyCopyOverride(base, { body: 'just body {{formName}}' }, vars);
+    expect(out.subject).toBe(base.subject);
+    expect(out.lines).toEqual(['just body Survey']);
+  });
+});
+
+describe('defaultSubmissionTemplate (stays in sync with the code templates)', () => {
+  const full = {
+    formName: 'Lead Qualifier',
+    respondentEmail: 'lead@acme.io',
+    score: 15,
+    outcomeLabel: 'Qualified',
+    formLink: 'https://forms.example.com/x',
+  };
+
+  it('SUBMISSION_EMAIL_KEYS are exactly the two customizable emails', () => {
+    expect([...SUBMISSION_EMAIL_KEYS]).toEqual(['submission_received', 'submission_confirmed']);
+    expect(isSubmissionEmailKey('submission_received')).toBe(true);
+    expect(isSubmissionEmailKey('reminder')).toBe(false);
+  });
+
+  it('reproduces the stock received copy when interpolated with full vars (EN + ES)', () => {
+    for (const locale of ['en', 'es'] as const) {
+      const def = defaultSubmissionTemplate('submission_received', locale);
+      const stock = renderSubmissionReceived(locale, full);
+      expect(interpolateTokens(def.subject, notificationTokenValues(full))).toBe(stock.subject);
+      expect(interpolateTokens(def.body, notificationTokenValues(full)).split('\n')).toEqual(
+        stock.lines.filter(Boolean),
+      );
+    }
+  });
+
+  it('reproduces the stock confirmed copy when interpolated with full vars (EN + ES)', () => {
+    for (const locale of ['en', 'es'] as const) {
+      const def = defaultSubmissionTemplate('submission_confirmed', locale);
+      const stock = renderSubmissionConfirmed(locale, full);
+      expect(interpolateTokens(def.subject, notificationTokenValues(full))).toBe(stock.subject);
+      expect(interpolateTokens(def.body, notificationTokenValues(full)).split('\n')).toEqual(
+        stock.lines.filter(Boolean),
+      );
+    }
   });
 });

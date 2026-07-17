@@ -6,16 +6,22 @@ import { getLocale } from '@/lib/locale';
 import { PageHeader } from '@/components/ui/page-header';
 import { InviteMember } from './invite-member';
 import { MemberRowActions } from './member-row-actions';
+import { NotificationSettings } from './notification-settings';
 
 export const dynamic = 'force-dynamic';
 
 export default async function SettingsPage() {
   const locale = await getLocale();
   const s = getMessages(locale).admin.settings;
+  const n = getMessages(locale).admin.notifications;
   const me = await adminApi.me();
   const members: AccountMember[] = isAdminRole(me.role)
     ? await adminApi.listMembers().catch(() => [])
     : [];
+  // The two submission emails (owner notice + respondent confirmation), admin-only.
+  const notifications = isAdminRole(me.role)
+    ? await adminApi.getNotifications().catch(() => null)
+    : null;
 
   const roleLabel: Record<AccountRole, string> = {
     owner: s.roleOwner,
@@ -148,6 +154,10 @@ export default async function SettingsPage() {
             </ul>
           )}
         </section>
+      ) : null}
+
+      {isAdminRole(me.role) && notifications ? (
+        <NotificationSettings settings={notifications.settings} locale={locale} labels={n} />
       ) : null}
     </div>
   );

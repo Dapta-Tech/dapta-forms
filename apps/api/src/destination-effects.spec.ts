@@ -20,7 +20,7 @@ import { SubmissionNotifier, LogOnlyEmailProvider } from '@quill/notifications';
 import { signWebhookBody } from '@quill/destinations';
 import { SubmissionService } from './submission.service';
 import { EmailEffects } from './email-effects';
-import { DestinationEffects } from './destination-effects';
+import { DestinationEffects, type SubmissionDeliveryInput } from './destination-effects';
 import { OutboxWorker } from './outbox.worker';
 
 let db: Db;
@@ -204,6 +204,111 @@ describe('destination enqueue on submission', () => {
     const payload = JSON.parse(got.body);
     expect(payload.submission.id).toBe((out as { id: string }).id);
     expect(payload.submission.score).toBe(18);
+  });
+});
+
+describe('per-event trigger filter (enqueue-time)', () => {
+  // The per-event decision lives in `enqueueSubmissionDeliveries`, so we drive it
+  // directly for a given phase (mirrors the UTM test above) and assert which
+  // outbox rows land. Distinct submissionIds keep each phase's rows isolated.
+  function deliveryInput(
+    phase: 'partial' | 'complete',
+    submissionId: string,
+    destinationsConfig: unknown[],
+  ): SubmissionDeliveryInput {
+    return {
+      formId: 'form-1',
+      formName: 'F',
+      accountId: 'acc-1',
+      submissionId,
+      sessionId: `sess-${submissionId}`,
+      score: 0,
+      outcomeLabel: null,
+      phase,
+      submittedAt: Date.now(),
+      data: { email: 'lead@acme.io' },
+      config: { version: 1, steps: [], destinations: destinationsConfig },
+    };
+  }
+
+  it("events:['complete'] enqueues on complete but NOT on partial", async () => {
+    const dest = {
+      type: 'webhook',
+      enabled: true,
+      events: ['complete'],
+      settings: { url: 'https://acme.io/hook' },
+    };
+
+    await destinations.enqueueSubmissionDeliveries(deliveryInput('partial', 'sub-c-partial', [dest]));
+    expect(await listOutbox(db, { kind: 'webhook', subjectUid: 'sub-c-partial' })).toHaveLength(0);
+
+    await destinations.enqueueSubmissionDeliveries(deliveryInput('complete', 'sub-c-complete', [dest]));
+    const rows = await listOutbox(db, { kind: 'webhook', subjectUid: 'sub-c-complete' });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.action).toBe('complete');
+  });
+
+  it("events:['partial'] enqueues on partial but NOT on complete", async () => {
+    const dest = {
+      type: 'webhook',
+      enabled: true,
+      events: ['partial'],
+      settings: { url: 'https://acme.io/hook' },
+    };
+
+    await destinations.enqueueSubmissionDeliveries(deliveryInput('complete', 'sub-p-complete', [dest]));
+    expect(await listOutbox(db, { kind: 'webhook', subjectUid: 'sub-p-complete' })).toHaveLength(0);
+
+    await destinations.enqueueSubmissionDeliveries(deliveryInput('partial', 'sub-p-partial', [dest]));
+    const rows = await listOutbox(db, { kind: 'webhook', subjectUid: 'sub-p-partial' });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.action).toBe('partial');
+  });
+
+  it('no events field enqueues on BOTH phases (back-compat)', async () => {
+    const dest = { type: 'webhook', enabled: true, settings: { url: 'https://acme.io/hook' } };
+
+    await destinations.enqueueSubmissionDeliveries(deliveryInput('partial', 'sub-both-partial', [dest]));
+    expect(await listOutbox(db, { kind: 'webhook', subjectUid: 'sub-both-partial' })).toHaveLength(1);
+
+    await destinations.enqueueSubmissionDeliveries(deliveryInput('complete', 'sub-both-complete', [dest]));
+    expect(await listOutbox(db, { kind: 'webhook', subjectUid: 'sub-both-complete' })).toHaveLength(1);
+  });
+
+  it('an EMPTY events array enqueues on BOTH phases (empty = unfiltered)', async () => {
+    const dest = {
+      type: 'webhook',
+      enabled: true,
+      events: [],
+      settings: { url: 'https://acme.io/hook' },
+    };
+
+    await destinations.enqueueSubmissionDeliveries(deliveryInput('partial', 'sub-empty-partial', [dest]));
+    expect(await listOutbox(db, { kind: 'webhook', subjectUid: 'sub-empty-partial' })).toHaveLength(1);
+
+    await destinations.enqueueSubmissionDeliveries(deliveryInput('complete', 'sub-empty-complete', [dest]));
+    expect(await listOutbox(db, { kind: 'webhook', subjectUid: 'sub-empty-complete' })).toHaveLength(1);
+  });
+
+  it('a HubSpot destination (no events filter) is unaffected — enqueues on both phases', async () => {
+    const dest = { type: 'hubspot', enabled: true };
+
+    await destinations.enqueueSubmissionDeliveries(deliveryInput('partial', 'sub-hs-partial', [dest]));
+    expect(await listOutbox(db, { kind: 'hubspot', subjectUid: 'sub-hs-partial' })).toHaveLength(1);
+
+    await destinations.enqueueSubmissionDeliveries(deliveryInput('complete', 'sub-hs-complete', [dest]));
+    expect(await listOutbox(db, { kind: 'hubspot', subjectUid: 'sub-hs-complete' })).toHaveLength(1);
+  });
+
+  it('filters per-destination within one submission: a complete-only webhook is skipped on partial while HubSpot still fires', async () => {
+    const config = [
+      { type: 'webhook', enabled: true, events: ['complete'], settings: { url: 'https://acme.io/hook' } },
+      { type: 'hubspot', enabled: true },
+    ];
+
+    await destinations.enqueueSubmissionDeliveries(deliveryInput('partial', 'sub-mix', config));
+    expect(await listOutbox(db, { kind: 'webhook', subjectUid: 'sub-mix' })).toHaveLength(0);
+    expect(await listOutbox(db, { kind: 'hubspot', subjectUid: 'sub-mix' })).toHaveLength(1);
   });
 });
 
