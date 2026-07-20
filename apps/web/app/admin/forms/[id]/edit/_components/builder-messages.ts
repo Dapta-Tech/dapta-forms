@@ -97,6 +97,8 @@ export interface BuilderMessages {
     noRules: string;
     scoring: string;
     scoringHint: string;
+    /** Shown near the toggle when scoring is on but no points are assigned yet. */
+    scoringZeroHint: string;
     contactHint: string;
     delete: string;
     deleteConfirm: string;
@@ -176,6 +178,14 @@ export interface BuilderMessages {
     /** "If {value} → {target}" */
     jumpEdge: string;
     empty: string;
+    /** Caption under the Start node. */
+    startHint: string;
+    /** Caption on the default ("no rule matched") path so the flow is traceable. */
+    otherwiseHint: string;
+    /** Pill on a question that only shows when a show/hide condition holds. */
+    conditional: string;
+    /** Small kicker above a scored outcome node. */
+    outcomeKicker: string;
   };
   results: {
     pointsTitle: string;
@@ -200,7 +210,14 @@ export interface BuilderMessages {
   empty: {
     title: string;
     subtitle: string;
+    /** Legacy inline "or start from scratch" affordance (kept for compatibility). */
     scratch: string;
+    /** Title of the blank-canvas option presented first. */
+    scratchTitle: string;
+    /** One-line description under the blank-canvas option. */
+    scratchDesc: string;
+    /** Section-divider label above the template cards. */
+    templatesLabel: string;
     templates: Record<TemplateId, { name: string; desc: string; meta: string }>;
   };
 }
@@ -290,7 +307,9 @@ const en: BuilderMessages = {
     addRule: 'Add rule',
     noRules: 'No rules — everyone sees this question.',
     scoring: 'Scoring',
-    scoringHint: 'Points from the selected option add to the total score. Set ranges in Results.',
+    scoringHint:
+      'Scoring applies to the whole form, not just this question. Points from the selected option add to the total; set ranges in Results.',
+    scoringZeroHint: 'Assign points to your answers to enable ranges.',
     contactHint: 'Contact field — doesn’t affect the score.',
     delete: 'Delete question',
     deleteConfirm: 'Delete this question?',
@@ -370,6 +389,10 @@ const en: BuilderMessages = {
     skipEdge: 'If {value} → skip to end',
     jumpEdge: 'If {value} → {target}',
     empty: 'Add questions to see how answers route through your form.',
+    startHint: 'Respondents start here',
+    otherwiseHint: 'if no rule matches, continue in order',
+    conditional: 'Conditional',
+    outcomeKicker: 'Ending',
   },
   results: {
     pointsTitle: 'Points',
@@ -391,8 +414,11 @@ const en: BuilderMessages = {
   },
   empty: {
     title: 'Let’s build your form',
-    subtitle: 'Start from a template and edit every question live — or begin with a blank canvas.',
+    subtitle: 'Begin with a blank canvas, or pick a ready-made template to edit live.',
     scratch: 'or start from scratch — add your first question',
+    scratchTitle: 'Start from scratch',
+    scratchDesc: 'Begin with a blank canvas and add your own questions.',
+    templatesLabel: 'Or choose a template',
     templates: {
       lead: {
         name: 'Lead qualifier',
@@ -490,7 +516,9 @@ const es: BuilderMessages = {
     addRule: 'Añadir regla',
     noRules: 'Sin reglas — todos ven esta pregunta.',
     scoring: 'Puntaje',
-    scoringHint: 'Los puntos de la opción elegida suman al total. Define los rangos en Resultados.',
+    scoringHint:
+      'El puntaje se aplica a todo el formulario, no solo a esta pregunta. Los puntos de la opción elegida suman al total; define los rangos en Resultados.',
+    scoringZeroHint: 'Asigna puntos a tus respuestas para habilitar los rangos.',
     contactHint: 'Campo de contacto — no afecta el puntaje.',
     delete: 'Eliminar pregunta',
     deleteConfirm: '¿Eliminar esta pregunta?',
@@ -570,6 +598,10 @@ const es: BuilderMessages = {
     skipEdge: 'Si {value} → ir al final',
     jumpEdge: 'Si {value} → {target}',
     empty: 'Añade preguntas para ver cómo las respuestas recorren tu formulario.',
+    startHint: 'Aquí empiezan las personas',
+    otherwiseHint: 'si ninguna regla coincide, continúa en orden',
+    conditional: 'Condicional',
+    outcomeKicker: 'Final',
   },
   results: {
     pointsTitle: 'Puntos',
@@ -591,8 +623,11 @@ const es: BuilderMessages = {
   },
   empty: {
     title: 'Construyamos tu formulario',
-    subtitle: 'Empieza desde una plantilla y edita cada pregunta en vivo — o comienza con un lienzo en blanco.',
+    subtitle: 'Comienza con un lienzo en blanco, o elige una plantilla lista para editar en vivo.',
     scratch: 'o empieza desde cero — añade tu primera pregunta',
+    scratchTitle: 'Empezar desde cero',
+    scratchDesc: 'Comienza con un lienzo en blanco y añade tus propias preguntas.',
+    templatesLabel: 'O elige una plantilla',
     templates: {
       lead: {
         name: 'Calificador de leads',

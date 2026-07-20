@@ -10,6 +10,7 @@ import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Field, NumberField, SelectField, InlineField, TextField } from './fields';
 import { OptionsEditor } from './options-editor';
 import { SliderScoringEditor } from './slider-scoring-editor';
+import { maxScoreForSteps } from './scoring-util';
 import { LogicRules } from './logic-rules';
 import { LogicConditions } from './logic-conditions';
 import { QuestionVariants } from './question-variants';
@@ -61,6 +62,9 @@ export function QuestionSettings({
   onOpenConnect: () => void;
 }) {
   const contact = isContactType(step.type);
+  // Form-wide "highest possible" total (same math as Results). Drives the
+  // "assign points" nudge when scoring is on but nothing scores yet.
+  const scoringMax = maxScoreForSteps(steps);
   const { confirm: confirmDialog, dialog } = useConfirmDialog();
 
   function changeType(itemId: string) {
@@ -220,7 +224,9 @@ export function QuestionSettings({
           {em.logic.title}
         </p>
         <LogicConditions step={step} index={index} steps={steps} onUpdate={onUpdate} m={em.logic} />
-        {step.type !== 'email' ? (
+        {/* Personal-email branch needs an earlier email answer — impossible on
+            the first question, so hide it there. */}
+        {step.type !== 'email' && index > 0 ? (
           <InlineField label={em.logic.personalEmailOnly} hint={em.logic.personalEmailHint}>
             <Switch
               checked={!!step.showForPersonalEmailOnly}
@@ -275,7 +281,18 @@ export function QuestionSettings({
               />
             </InlineField>
             <p className="mt-1 text-xs text-muted-foreground">{bm.settings.scoringHint}</p>
-            {step.type === 'slider' && scoringEnabled ? (
+            {scoringEnabled && scoringMax === 0 ? (
+              <p
+                data-testid="scoring-zero-hint"
+                className="mt-1.5 flex items-start gap-1.5 text-xs text-muted-foreground"
+              >
+                <i aria-hidden className="pi pi-info-circle mt-0.5 text-secondary" style={{ fontSize: 11 }} />
+                {bm.settings.scoringZeroHint}
+              </p>
+            ) : null}
+            {/* Slider ranges show for every slider (parity with the always-on
+                option Points column) so scoring isn't mysteriously hidden. */}
+            {step.type === 'slider' ? (
               <div className="mt-3">
                 <SliderScoringEditor
                   ranges={step.sliderScoring ?? []}
@@ -378,6 +395,9 @@ function NameFieldsEditor({
           </label>
         </div>
       ))}
+      <p className="text-[10px] leading-relaxed text-muted-foreground" data-testid="name-fieldkey-hint">
+        {m.fieldKeyHint}
+      </p>
     </div>
   );
 }
