@@ -38,10 +38,38 @@ export interface SliderScoringRange {
   points: number;
 }
 
-/** A visibility condition: the answer to `field` must (not) be one of `values`. */
+/**
+ * Comparison operators a visibility condition can use, picked by the referenced
+ * field's TYPE (see {@link operatorsForFieldType}). `in` is the legacy
+ * "matches any of" set-membership test (choice/text sources); the numeric ops
+ * (`eq`/`gt`/`lt`/`between`) compare the answer parsed as a number.
+ */
+export const CONDITION_OPS = ['in', 'eq', 'gt', 'lt', 'between'] as const;
+export type ConditionOp = (typeof CONDITION_OPS)[number];
+
+/**
+ * A visibility condition on the answer to `field`. ADDITIVE + back-compat: with
+ * NO `op` (every config authored before operators existed) it is an `in` test —
+ * the answer's tokens must intersect `values`. `op` selects the comparison and
+ * which operand it reads:
+ *  - `in`            → `values` (choice "matches any of"; the default).
+ *  - `eq`/`gt`/`lt`  → `value` (the answer parsed as a number, compared to it).
+ *  - `between`       → `[min, max]` inclusive (numeric).
+ * Operands the active op doesn't use are ignored, so an older `{field, values}`
+ * still means exactly what it always did.
+ */
 export interface StepCondition {
   field: string;
-  values: string[];
+  /** `in` operands ("matches any of"). Optional so a numeric op can omit it. */
+  values?: string[];
+  /** Operator (absent = `in`, the legacy behavior). */
+  op?: ConditionOp;
+  /** Operand for `eq` / `gt` / `lt` (the answer is parsed as a number). */
+  value?: number;
+  /** Lower bound for `between` (inclusive). */
+  min?: number;
+  /** Upper bound for `between` (inclusive). */
+  max?: number;
 }
 
 /**
@@ -251,10 +279,50 @@ function tokens(value: AnswerValue): string[] {
   return [String(value)];
 }
 
-/** Does the current answer to `cond.field` intersect `cond.values`? */
+/**
+ * Parse an answer to a finite number, or `null` when it isn't numeric. Only a
+ * number or a non-blank numeric string qualifies — booleans/arrays/objects
+ * (which `Number()` would coerce) do not. Shared by the numeric condition ops.
+ */
+function numericAnswer(value: AnswerValue): number | null {
+  const n =
+    typeof value === 'number'
+      ? value
+      : typeof value === 'string' && value.trim() !== ''
+        ? Number(value)
+        : NaN;
+  return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * Does the current answer to `cond.field` satisfy the condition? The operator
+ * (`cond.op`, default `in` for back-compat) selects the comparison:
+ *  - `in`   — the answer's tokens intersect `values` (the legacy choice match).
+ *  - `eq`/`gt`/`lt` — the answer, parsed as a number, compares to `value`.
+ *  - `between` — the numeric answer lies within `[min, max]` inclusive.
+ * A numeric op whose operand is missing, or whose answer isn't numeric, never
+ * holds (the step stays in its default visibility).
+ */
 function conditionHolds(cond: StepCondition, answers: Answers): boolean {
-  const got = new Set(tokens(answers[cond.field]));
-  return cond.values.some((v) => got.has(v));
+  const op = cond.op ?? 'in';
+  if (op === 'in') {
+    const got = new Set(tokens(answers[cond.field]));
+    return (cond.values ?? []).some((v) => got.has(v));
+  }
+  const n = numericAnswer(answers[cond.field]);
+  if (n == null) return false;
+  switch (op) {
+    case 'eq':
+      return cond.value != null && n === cond.value;
+    case 'gt':
+      return cond.value != null && n > cond.value;
+    case 'lt':
+      return cond.value != null && n < cond.value;
+    case 'between':
+      return cond.min != null && cond.max != null && n >= cond.min && n <= cond.max;
+    default:
+      return false;
+  }
 }
 
 /**
@@ -277,6 +345,91 @@ export function visibleSteps(config: FormConfig, answers: Answers): FormStep[] {
 /** The first `email`-typed step's key (the branch pivot for personal-email logic). */
 function findEmailKey(config: FormConfig): string | null {
   return config.steps.find((s) => s.type === 'email')?.key ?? null;
+}
+
+/**
+ * The visibility operators offered for a referenced field's TYPE — the builder
+ * shows exactly these in the operator dropdown, and they are the only ops the
+ * engine is asked to evaluate for that source. Numeric fields (`slider`) get the
+ * comparison set; every other type keeps the legacy "matches any of" (`in`).
+ * Shared so the editor and the engine can never drift on which op is valid where.
+ */
+export function operatorsForFieldType(type: FormFieldType): ConditionOp[] {
+  return type === 'slider' ? ['eq', 'gt', 'lt', 'between'] : ['in'];
+}
+
+/**
+ * A numeric condition's satisfying set as an interval with inclusivity flags
+ * (`±Infinity` for the open ends of `gt`/`lt`), or `null` when the condition is
+ * not a well-formed numeric op. Used only by the contradiction guard.
+ */
+interface NumInterval {
+  lo: number;
+  loInc: boolean;
+  hi: number;
+  hiInc: boolean;
+}
+
+function numInterval(cond: StepCondition): NumInterval | null {
+  switch (cond.op) {
+    case 'eq':
+      return cond.value == null ? null : { lo: cond.value, loInc: true, hi: cond.value, hiInc: true };
+    case 'gt':
+      return cond.value == null ? null : { lo: cond.value, loInc: false, hi: Infinity, hiInc: false };
+    case 'lt':
+      return cond.value == null ? null : { lo: -Infinity, loInc: false, hi: cond.value, hiInc: false };
+    case 'between':
+      return cond.min == null || cond.max == null
+        ? null
+        : { lo: cond.min, loInc: true, hi: cond.max, hiInc: true };
+    default:
+      return null;
+  }
+}
+
+/** Is numeric interval `a` fully contained in `b` (a ⊆ b)? */
+function intervalSubset(a: NumInterval, b: NumInterval): boolean {
+  // b's bounds must be no stricter than a's on each side (equal bound ⇒ b must be
+  // inclusive whenever a is, i.e. a-inclusive can't stick out past b-exclusive).
+  const lowerOk = b.lo < a.lo || (b.lo === a.lo && (b.loInc || !a.loInc));
+  const upperOk = b.hi > a.hi || (b.hi === a.hi && (b.hiInc || !a.hiInc));
+  return lowerOk && upperOk;
+}
+
+/** Is the choice condition `a`'s value-set a non-empty subset of `b`'s? */
+function choiceSubset(a: StepCondition, b: StepCondition): boolean {
+  const av = a.values ?? [];
+  if (av.length === 0) return false;
+  const bv = new Set(b.values ?? []);
+  return av.every((v) => bv.has(v));
+}
+
+/**
+ * True when a step's `showWhen` and `hideWhen` are mutually contradictory — the
+ * step could NEVER be visible because every answer that satisfies `showWhen`
+ * also satisfies `hideWhen` (hide always wins in {@link visibleSteps}). Detects
+ * the trivial, SAME-FIELD cases the builder guards against:
+ *  - both `in` and show's values are a subset of hide's (identical or fully
+ *    overlapping choice sets, e.g. show ⊇ requires `a`, hide swallows `a`);
+ *  - both numeric and show's interval is contained in hide's (e.g. show `eq 5`
+ *    with hide `eq 5`, or show `between [50,80]` inside hide `between [40,100]`).
+ * Conservative by design: returns `false` for anything it cannot PROVE empties
+ * the visible set (different fields, mixed choice/numeric ops, partial overlaps),
+ * so it never blocks a legitimate rule. Pure — no I/O, safe for client + server.
+ */
+export function conditionsContradict(
+  showWhen: StepCondition | null | undefined,
+  hideWhen: StepCondition | null | undefined,
+): boolean {
+  if (!showWhen || !hideWhen) return false;
+  if (showWhen.field !== hideWhen.field) return false;
+  const showOp = showWhen.op ?? 'in';
+  const hideOp = hideWhen.op ?? 'in';
+  if (showOp === 'in' && hideOp === 'in') return choiceSubset(showWhen, hideWhen);
+  const s = numInterval(showWhen);
+  const h = numInterval(hideWhen);
+  if (s && h) return intervalSubset(s, h);
+  return false;
 }
 
 /**

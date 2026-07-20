@@ -15,8 +15,12 @@ import {
   nameFields,
   isSafeHttpUrl,
   isSafeImageUrl,
+  operatorsForFieldType,
+  conditionsContradict,
   type FormConfig,
   type FormStep,
+  type StepCondition,
+  type Answers,
 } from './form-logic';
 
 const step = (partial: Partial<FormStep> & Pick<FormStep, 'key' | 'type'>): FormStep => partial;
@@ -79,6 +83,162 @@ describe('visibleSteps', () => {
     };
     expect(visibleSteps(cfg, { skip: 'yes' })).toHaveLength(0);
     expect(visibleSteps(cfg, { skip: 'no' })).toHaveLength(1);
+  });
+});
+
+describe('operatorsForFieldType (V4-07 — operators by field type)', () => {
+  it('offers the numeric comparison set for slider', () => {
+    expect(operatorsForFieldType('slider')).toEqual(['eq', 'gt', 'lt', 'between']);
+  });
+
+  it('keeps "matches any of" (in) for choice / text / email', () => {
+    for (const t of ['multiple_choice', 'dropdown', 'text', 'email', 'name', 'phone'] as const) {
+      expect(operatorsForFieldType(t)).toEqual(['in']);
+    }
+  });
+});
+
+describe('conditionHolds operators (V4-07 — via visibleSteps)', () => {
+  /** A slider `n` followed by a text step gated by `cond` (show or hide). */
+  const gated = (cond: StepCondition, which: 'showWhen' | 'hideWhen' = 'showWhen'): FormConfig => ({
+    version: 1,
+    steps: [
+      step({ key: 'n', type: 'slider', min: 0, max: 100 }),
+      step(which === 'showWhen' ? { key: 'g', type: 'text', showWhen: cond } : { key: 'g', type: 'text', hideWhen: cond }),
+    ],
+  });
+  const showsG = (cfg: FormConfig, answers: Answers): boolean =>
+    visibleSteps(cfg, answers).some((s) => s.key === 'g');
+
+  it('eq: visible only on an exact numeric match (numeric strings parse)', () => {
+    const cfg = gated({ field: 'n', op: 'eq', value: 5 });
+    expect(showsG(cfg, { n: 5 })).toBe(true);
+    expect(showsG(cfg, { n: 6 })).toBe(false);
+    expect(showsG(cfg, { n: '5' })).toBe(true);
+  });
+
+  it('gt / lt compare the numeric answer', () => {
+    expect(showsG(gated({ field: 'n', op: 'gt', value: 50 }), { n: 60 })).toBe(true);
+    expect(showsG(gated({ field: 'n', op: 'gt', value: 50 }), { n: 40 })).toBe(false);
+    expect(showsG(gated({ field: 'n', op: 'gt', value: 50 }), { n: 50 })).toBe(false); // strict
+    expect(showsG(gated({ field: 'n', op: 'lt', value: 50 }), { n: 40 })).toBe(true);
+    expect(showsG(gated({ field: 'n', op: 'lt', value: 50 }), { n: 60 })).toBe(false);
+  });
+
+  it('between is inclusive on both bounds', () => {
+    const cfg = gated({ field: 'n', op: 'between', min: 10, max: 20 });
+    expect(showsG(cfg, { n: 10 })).toBe(true);
+    expect(showsG(cfg, { n: 20 })).toBe(true);
+    expect(showsG(cfg, { n: 15 })).toBe(true);
+    expect(showsG(cfg, { n: 9 })).toBe(false);
+    expect(showsG(cfg, { n: 21 })).toBe(false);
+  });
+
+  it('a numeric op never holds for a non-numeric answer or a missing operand', () => {
+    expect(showsG(gated({ field: 'n', op: 'gt', value: 50 }), { n: 'abc' })).toBe(false);
+    expect(showsG(gated({ field: 'n', op: 'gt', value: 50 }), {})).toBe(false);
+    expect(showsG(gated({ field: 'n', op: 'eq' }), { n: 5 })).toBe(false); // no operand
+    expect(showsG(gated({ field: 'n', op: 'between', min: 10 }), { n: 15 })).toBe(false); // half range
+  });
+
+  it('hideWhen honors numeric ops (hide when gt 50)', () => {
+    const cfg = gated({ field: 'n', op: 'gt', value: 50 }, 'hideWhen');
+    expect(showsG(cfg, { n: 60 })).toBe(false); // hidden
+    expect(showsG(cfg, { n: 40 })).toBe(true); // shown
+  });
+
+  it('back-compat: a condition with NO op behaves exactly as `in`', () => {
+    const cfg: FormConfig = {
+      version: 1,
+      steps: [
+        step({
+          key: 'c',
+          type: 'multiple_choice',
+          options: [
+            { label: 'A', value: 'a' },
+            { label: 'B', value: 'b' },
+          ],
+        }),
+        step({ key: 'g', type: 'text', showWhen: { field: 'c', values: ['a'] } }),
+      ],
+    };
+    expect(visibleSteps(cfg, { c: 'a' }).some((s) => s.key === 'g')).toBe(true);
+    expect(visibleSteps(cfg, { c: 'b' }).some((s) => s.key === 'g')).toBe(false);
+  });
+});
+
+describe('conditionsContradict (V4-08 — trivial contradiction guard)', () => {
+  it('is false when a side is absent or the fields differ', () => {
+    expect(conditionsContradict(null, null)).toBe(false);
+    expect(conditionsContradict({ field: 'a', values: ['x'] }, null)).toBe(false);
+    expect(conditionsContradict({ field: 'a', values: ['x'] }, { field: 'b', values: ['x'] })).toBe(
+      false,
+    );
+  });
+
+  it('flags identical / subset choice sets on the same field', () => {
+    expect(conditionsContradict({ field: 'a', values: ['x'] }, { field: 'a', values: ['x'] })).toBe(
+      true,
+    );
+    // show ⊆ hide
+    expect(
+      conditionsContradict({ field: 'a', values: ['x'] }, { field: 'a', values: ['x', 'y'] }),
+    ).toBe(true);
+    // show ⊄ hide
+    expect(
+      conditionsContradict({ field: 'a', values: ['x', 'y'] }, { field: 'a', values: ['x'] }),
+    ).toBe(false);
+    // empty show never contradicts
+    expect(conditionsContradict({ field: 'a', values: [] }, { field: 'a', values: [] })).toBe(false);
+  });
+
+  it('flags overlapping numeric ranges (show interval ⊆ hide interval)', () => {
+    expect(
+      conditionsContradict({ field: 'n', op: 'eq', value: 5 }, { field: 'n', op: 'eq', value: 5 }),
+    ).toBe(true);
+    expect(
+      conditionsContradict({ field: 'n', op: 'eq', value: 5 }, { field: 'n', op: 'eq', value: 6 }),
+    ).toBe(false);
+    expect(
+      conditionsContradict(
+        { field: 'n', op: 'between', min: 50, max: 80 },
+        { field: 'n', op: 'between', min: 40, max: 100 },
+      ),
+    ).toBe(true);
+    expect(
+      conditionsContradict(
+        { field: 'n', op: 'between', min: 40, max: 100 },
+        { field: 'n', op: 'between', min: 50, max: 80 },
+      ),
+    ).toBe(false);
+    // x>50 ⊆ x>40 ; x>40 ⊄ x>50
+    expect(
+      conditionsContradict({ field: 'n', op: 'gt', value: 50 }, { field: 'n', op: 'gt', value: 40 }),
+    ).toBe(true);
+    expect(
+      conditionsContradict({ field: 'n', op: 'gt', value: 40 }, { field: 'n', op: 'gt', value: 50 }),
+    ).toBe(false);
+    // x<5 ⊆ x<10
+    expect(
+      conditionsContradict({ field: 'n', op: 'lt', value: 5 }, { field: 'n', op: 'lt', value: 10 }),
+    ).toBe(true);
+    // 60 ∈ [50,80]
+    expect(
+      conditionsContradict(
+        { field: 'n', op: 'eq', value: 60 },
+        { field: 'n', op: 'between', min: 50, max: 80 },
+      ),
+    ).toBe(true);
+  });
+
+  it('is conservative: mixed choice/numeric ops or missing operands never flag', () => {
+    expect(
+      conditionsContradict({ field: 'n', values: ['5'] }, { field: 'n', op: 'eq', value: 5 }),
+    ).toBe(false);
+    // show has no operand → not a well-formed interval
+    expect(conditionsContradict({ field: 'n', op: 'eq' }, { field: 'n', op: 'eq', value: 5 })).toBe(
+      false,
+    );
   });
 });
 

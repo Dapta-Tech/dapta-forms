@@ -5,7 +5,7 @@
  * from the same schema (never trust the client; validate on both sides).
  */
 import { z } from 'zod';
-import { FORM_FIELD_TYPES, isSafeHttpUrl, isSafeImageUrl } from '@quill/engine';
+import { CONDITION_OPS, FORM_FIELD_TYPES, isSafeHttpUrl, isSafeImageUrl } from '@quill/engine';
 
 /** A URL rendered into `<img src>` — reject script protocols (XSS defense-in-depth). */
 const safeImageUrl = z
@@ -45,9 +45,32 @@ const optionSchema = z.object({
   icon: z.string().max(64).nullable().optional(),
 });
 
+/**
+ * Visibility-condition operators (mirrors the engine's `CONDITION_OPS`). Absent
+ * on a stored condition = `in`, so every pre-operator config still parses.
+ */
+export const conditionOp = z.enum(CONDITION_OPS);
+export type ConditionOp = z.infer<typeof conditionOp>;
+
+/**
+ * A show/hide condition. ADDITIVE, back-compat: `op`/`value`/`min`/`max` are all
+ * optional and a bare `{field, values}` keeps its original `in` ("matches any
+ * of") meaning. `values` is optional (numeric ops eq/gt/lt/between omit it); the
+ * engine's `conditionHolds` treats an absent `values` as an empty match. Kept
+ * optional (not `.default([])`) so the inferred type matches the engine's
+ * `StepCondition.values?: string[]` — otherwise FormConfig fails to assign.
+ */
 const conditionSchema = z.object({
   field: z.string().min(1),
-  values: z.array(z.string()),
+  values: z.array(z.string()).optional(),
+  /** Comparison operator; absent = `in`. Numeric ops apply to slider/number fields. */
+  op: conditionOp.optional(),
+  /** Operand for `eq` / `gt` / `lt`. */
+  value: z.number().optional(),
+  /** Lower bound for `between` (inclusive). */
+  min: z.number().optional(),
+  /** Upper bound for `between` (inclusive). */
+  max: z.number().optional(),
 });
 
 /**
