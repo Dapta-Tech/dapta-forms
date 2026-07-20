@@ -206,7 +206,11 @@ export type OutcomeOverride = z.infer<typeof outcomeOverrideSchema>;
 
 export const formOutcomeSchema = z.object({
   id: z.string().min(1).max(64),
-  label: z.string().min(1).max(200),
+  // Empty label is allowed: the builder creates a range before the user names it,
+  // and the renderer/ScoreBar fall back to `#<n>`. Relaxing min(1) is a superset
+  // (every previously-valid config still parses) and keeps autosave from 400-ing
+  // the moment "Add a range" is clicked.
+  label: z.string().max(200),
   minScore: z.number().int().optional(),
   // http(s) only: the renderer navigates here (`window.location`), so a
   // `javascript:`/`data:` URL — which `.url()` alone would accept — is a stored
