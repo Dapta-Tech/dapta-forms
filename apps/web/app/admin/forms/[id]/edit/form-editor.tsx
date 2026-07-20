@@ -13,7 +13,9 @@ import type {
 } from '@quill/engine';
 import { normalizeConfig } from '@quill/engine';
 import type { FormTracking } from '@quill/types';
+import { formConfigSchema } from '@quill/types';
 import { saveFormAction } from '@/app/admin/actions';
+import { useToast } from '@/components/toast';
 import { cn } from '@/lib/cn';
 import { QuestionSpine } from './_components/question-spine';
 import { CanvasQuestion } from './_components/canvas-question';
@@ -38,6 +40,10 @@ import './_components/builder.css';
 type Tab = 'build' | 'logic' | 'connect' | 'results' | 'design';
 type SaveStatus = 'saved' | 'saving' | 'draft' | 'error';
 const AUTOSAVE_MS = 900;
+/** One backoff retry after a failed/transient save so a blip self-heals. */
+const RETRY_MS = 1500;
+/** Same admin API base the server-side admin-api client uses (client-exposed). */
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 
 const TAB_IDS: readonly Tab[] = ['build', 'logic', 'connect', 'results', 'design'];
 /** Unknown/absent `?tab` → build (the default view). */
@@ -95,24 +101,116 @@ export function FormEditor({
   const [status, setStatus] = useState<SaveStatus>(initialConfig.steps.length ? 'saved' : 'draft');
   const [focusCanvas, setFocusCanvas] = useState(0);
   const [saveCount, setSaveCount] = useState(0);
+  // The server's reason for the last failed save — shown in the status tooltip.
+  const [lastError, setLastError] = useState<string | null>(null);
   const dirty = useRef(false);
+  const retry = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Freshest name/config for the leave handlers + retry (no stale closures).
+  const latest = useRef({ name, config });
+  const toast = useToast();
+  const toastRef = useRef(toast);
+  toastRef.current = toast;
 
   // --- Autosave (debounced; each successful save stores an unpublished draft) ---
+  // Bulletproofing: (1) surface WHY a save failed, (2) client-side pre-validate
+  // so a doomed PUT never fires, (4) auto-retry a transient failure once — and
+  // keep `dirty` true until a save actually SUCCEEDS so nothing is silently lost.
   const persist = useCallback(
-    async (nextName: string, nextConfig: FormConfig) => {
+    async (nextName: string, nextConfig: FormConfig, opts?: { isRetry?: boolean }): Promise<boolean> => {
+      const normalized = normalizeConfig(nextConfig);
+      const parsed = formConfigSchema.safeParse(normalized);
+      if (!parsed.success) {
+        const issue = parsed.error.issues[0];
+        const field = issue?.path.join('.') || 'config';
+        const reason = `${field}: ${issue?.message ?? 'invalid value'}`;
+        setStatus('error');
+        setLastError(reason);
+        console.error('[forms] autosave blocked — config failed validation:', reason, parsed.error.issues);
+        toastRef.current.error(tb(m.saveInvalid, { reason }));
+        return false; // dirty stays true; the next edit re-attempts
+      }
       setStatus('saving');
-      const res = await saveFormAction(id, { name: nextName, config: normalizeConfig(nextConfig) });
-      setStatus(res.ok ? 'saved' : 'error');
-      if (res.ok) setSaveCount((n) => n + 1);
+      const res = await saveFormAction(id, { name: nextName, config: normalized });
+      if (res.ok) {
+        dirty.current = false;
+        setStatus('saved');
+        setLastError(null);
+        setSaveCount((n) => n + 1);
+        return true;
+      }
+      const reason = res.message ?? 'unknown error';
+      console.error('[forms] autosave failed:', reason);
+      setStatus('error');
+      setLastError(reason);
+      if (!opts?.isRetry) {
+        toastRef.current.error(tb(m.saveErrorReason, { reason }));
+        if (retry.current) clearTimeout(retry.current);
+        retry.current = setTimeout(() => {
+          void persist(latest.current.name, latest.current.config, { isRetry: true });
+        }, RETRY_MS);
+      }
+      return false; // dirty stays true until a save actually succeeds
     },
-    [id],
+    [id, m],
   );
+
+  useEffect(() => {
+    latest.current = { name, config };
+  }, [name, config]);
 
   useEffect(() => {
     if (!dirty.current) return;
     const t = setTimeout(() => void persist(name, config), AUTOSAVE_MS);
     return () => clearTimeout(t);
   }, [name, config, persist]);
+
+  // (3) Flush a pending (debounced) save on leave so a change still sitting in
+  // the debounce window is never dropped. `beacon` = a keepalive PUT that
+  // survives a hard tab close/reload; the SPA-nav + tab-hidden paths use the
+  // cookie-authed server action (the component is still able to fire it).
+  const flush = useCallback(
+    (beacon: boolean) => {
+      if (!dirty.current) return;
+      const { name: n, config: c } = latest.current;
+      const normalized = normalizeConfig(c);
+      if (!formConfigSchema.safeParse(normalized).success) return; // never flush invalid config
+      if (beacon) {
+        try {
+          void fetch(`${API_BASE}/v1/forms/${id}`, {
+            method: 'PUT',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ name: n, config: normalized }),
+            keepalive: true,
+            credentials: 'include',
+          });
+        } catch {
+          /* best-effort on the unload path — nothing to recover to */
+        }
+      } else {
+        void persist(n, c);
+      }
+    },
+    [id, persist],
+  );
+  const flushRef = useRef(flush);
+  useEffect(() => {
+    flushRef.current = flush;
+  }, [flush]);
+
+  useEffect(() => {
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') flushRef.current(false);
+    };
+    const onBeforeUnload = () => flushRef.current(true);
+    document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('beforeunload', onBeforeUnload);
+      if (retry.current) clearTimeout(retry.current);
+      flushRef.current(false); // SPA nav / unmount → reliable server-action flush
+    };
+  }, []); // subscribe once; the cleanup flushes exactly once on real unmount
 
   function mutate(updater: (c: FormConfig) => FormConfig) {
     dirty.current = true;
@@ -188,7 +286,9 @@ export function FormEditor({
   function applyTemplate(tid: TemplateId) {
     const cfg = TEMPLATES[tid];
     dirty.current = true;
-    setName(bm.empty.templates[tid].name);
+    // Preserve a name the user already typed; only fall back to the template's
+    // name when the field is still blank (V4-11 — templates swap config, not name).
+    setName((n) => (n.trim() ? n : bm.empty.templates[tid].name));
     setConfig(cfg);
     setSelected(0);
     setTab('build');
@@ -251,7 +351,16 @@ export function FormEditor({
           aria-label={bm.shell.formNamePlaceholder}
           className="min-w-0 max-w-[38ch] flex-1 rounded-md border border-transparent bg-transparent px-1.5 py-1 text-base font-semibold tracking-tight hover:border-border focus-visible:border-input focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:flex-none sm:text-lg"
         />
-        <span className="hidden items-center gap-1.5 text-xs text-muted-foreground sm:inline-flex">
+        <span
+          className={cn(
+            'hidden items-center gap-1.5 text-xs text-muted-foreground sm:inline-flex',
+            status === 'error' && lastError ? 'cursor-help' : '',
+          )}
+          data-testid="editor-save-status"
+          data-status={status}
+          // Native tooltip: hover the "Not saved" indicator to read WHY it failed.
+          title={status === 'error' && lastError ? tb(m.saveErrorReason, { reason: lastError }) : undefined}
+        >
           <span className={cn('h-1.5 w-1.5 rounded-full', statusDot)} />
           {statusLabel}
         </span>
@@ -452,6 +561,7 @@ export function FormEditor({
               onScoringChange={setScoring}
               onOutcomesChange={setOutcomes}
               m={bm}
+              rm={m.resultsHelp}
             />
           </div>
         ) : (
