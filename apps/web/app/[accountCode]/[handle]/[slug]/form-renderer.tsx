@@ -18,6 +18,8 @@ import {
   resolveOutcome,
   computeScore,
   partialSubmitKey,
+  revealAfterKey,
+  interpolate,
   nameFields,
   isMultiSelect,
   isSafeHttpUrl,
@@ -129,6 +131,10 @@ export function FormRenderer({
   );
   const step = steps[index];
   const thresholdKey = useMemo(() => partialSubmitKey(engineConfig), [engineConfig]);
+  // WHERE the reveal plays (revealAfterStep → triggersReveal → default-last);
+  // null when the reveal is disabled. Position is authoritative, so a form no
+  // longer replays a reveal mid-form just because a step carries triggersReveal.
+  const revealKey = useMemo(() => revealAfterKey(engineConfig), [engineConfig]);
 
   // Accent branding (only override the local default when a color is configured).
   const primary = config.branding?.primaryColor ?? null;
@@ -277,9 +283,12 @@ export function FormRenderer({
           return;
         }
 
-        // Optional processing/reveal interstitial after this step.
-        const reveal = config.reveal && config.reveal.enabled !== false;
-        if (reveal && completed.triggersReveal) {
+        // Optional processing/reveal interstitial after this step. Position is
+        // resolved by the engine (revealAfterKey): the marker's revealAfterStep
+        // wins, else a legacy triggersReveal step, else the last step. When the
+        // reveal step is the last VISIBLE step it becomes the pre-result
+        // interstitial (submitAfterReveal); otherwise it plays then continues.
+        if (revealKey && completed.key === revealKey) {
           submitAfterReveal.current = isLast;
           if (!isLast) setIndex(completedIdx + 1);
           setPhase('reveal');
@@ -298,7 +307,7 @@ export function FormRenderer({
         advancing.current = false;
       }
     },
-    [engineConfig, index, thresholdKey, accountCode, slug, sessionId, config.reveal, finalize, track],
+    [engineConfig, index, thresholdKey, revealKey, accountCode, slug, sessionId, finalize, track],
   );
 
   function submitCurrent() {
@@ -404,7 +413,11 @@ export function FormRenderer({
             ✓
           </div>
           <h1 className="pf-done__title">{outcome?.label ?? m.thankYouTitle}</h1>
-          <p className="pf-done__body">{t(m.thankYouBody, { name })}</p>
+          <p className="pf-done__body">
+            {outcome?.message
+              ? interpolate(outcome.message, answersRef.current)
+              : t(m.thankYouBody, { name })}
+          </p>
           {cta ? (
             <>
               <p className="pf-done__cta-question">{m.ctaQuestion}</p>

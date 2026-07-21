@@ -69,6 +69,25 @@ export interface BuilderMessages {
     /** One-line pointer left in the Design tab (the select moved to the spine). */
     designNote: string;
   };
+  /** The reveal-screen marker in the question spine (V4-04 — mirrors `partial`). */
+  revealPoint: {
+    /** Marker-row label ("Reveal screen"). */
+    label: string;
+    /** aria-label of the marker's remove (×) button. */
+    remove: string;
+    /** aria-label of the marker's drag grip. */
+    move: string;
+    /** aria-label of the info toggle on the marker row. */
+    info: string;
+    /** Popover: what the reveal marker does. */
+    tipPlays: string;
+    /** Popover line when the marker sits after the LAST question. */
+    tipEnd: string;
+    /** Popover line when the marker sits mid-form. */
+    tipMid: string;
+    /** Popover: where the reveal copy/duration is edited. */
+    tipEdit: string;
+  };
   canvas: {
     /** "Question {n}" */
     questionN: string;
@@ -284,6 +303,16 @@ const en: BuilderMessages = {
     tipAfterLast: 'After the last question it never fires — the final submit already captures everything.',
     designNote: 'Configured in the question list on the Build tab — look for the “Partial submit point” card.',
   },
+  revealPoint: {
+    label: 'Reveal screen',
+    remove: 'Remove reveal screen',
+    move: 'Move reveal screen',
+    info: 'About the reveal screen',
+    tipPlays: 'Plays a short processing screen for respondents at this point in the form.',
+    tipEnd: 'At the end it plays right before the result — never mid-form.',
+    tipMid: 'Here it plays after this question, then the form continues.',
+    tipEdit: 'Edit its headline, subtitle and duration in Design.',
+  },
   canvas: {
     questionN: 'Question {n}',
     titlePlaceholder: 'Type your question…',
@@ -492,6 +521,16 @@ const es: BuilderMessages = {
     tipAfterLast: 'Después de la última pregunta nunca se activa — el envío final ya lo captura todo.',
     designNote:
       'Se configura en la lista de preguntas, en la pestaña Construir — busca la tarjeta «Punto de envío parcial».',
+  },
+  revealPoint: {
+    label: 'Pantalla de revelación',
+    remove: 'Quitar la pantalla de revelación',
+    move: 'Mover la pantalla de revelación',
+    info: 'Acerca de la pantalla de revelación',
+    tipPlays: 'Muestra una breve pantalla de procesamiento en este punto del formulario.',
+    tipEnd: 'Al final se muestra justo antes del resultado — nunca a mitad del formulario.',
+    tipMid: 'Aquí se muestra después de esta pregunta y luego el formulario continúa.',
+    tipEdit: 'Edita su titular, subtítulo y duración en Diseño.',
   },
   canvas: {
     questionN: 'Pregunta {n}',

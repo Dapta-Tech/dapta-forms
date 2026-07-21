@@ -271,11 +271,14 @@ export interface FormsMessages {
       /** V4 autosave hardening: surface WHY a save failed + client pre-validation. */
       saveErrorReason: string;
       saveInvalid: string;
-      /** Results tab clarity (V4-16 outcome heading + redirect field). */
+      /** Results tab clarity (V4-16 outcome heading + message + redirect field). */
       resultsHelp: {
         outcomeHeadingHelp: string;
         redirectLabel: string;
         redirectHelp: string;
+        /** Label for the per-outcome thank-you body textarea. */
+        messageLabel: string;
+        messageHelp: string;
       };
       previewBtn: string;
       formNamePlaceholder: string;
@@ -395,13 +398,15 @@ export interface FormsMessages {
         tokenWarnLater: string;
         tokenWarnUnknown: string;
       };
-      /** Per-question behavior toggles (terminal / reveal trigger). */
+      /** Per-question behavior toggles (terminal / reveal position). */
       behavior: {
         title: string;
         terminal: string;
         terminalHint: string;
         reveal: string;
         revealHint: string;
+        /** "Edit reveal screen" button → jumps to the Design tab (V4-12). */
+        editReveal: string;
       };
       /** The `name` step's two collected fields + placeholders. */
       nameStep: {
@@ -992,6 +997,9 @@ export const en: FormsMessages = {
         redirectLabel: 'Redirect URL (optional)',
         redirectHelp:
           'Leave empty to show the thank-you screen. If set, respondents are sent here instead.',
+        messageLabel: 'Message shown for this outcome',
+        messageHelp:
+          'The thank-you body respondents see for this range. Use [field] to insert an answer. Leave empty to use the default message.',
       },
       previewBtn: 'Preview',
       formNamePlaceholder: 'Form name',
@@ -1112,7 +1120,9 @@ export const en: FormsMessages = {
         terminal: 'Ends the form',
         terminalHint: 'Completing this question ends the form immediately (disqualification).',
         reveal: 'Show reveal screen after',
-        revealHint: 'Plays the processing/reveal screen after this question. Set it up in Design.',
+        revealHint:
+          'Plays the reveal screen after this question. Otherwise it defaults to the end — drag the marker in the question list to move it.',
+        editReveal: 'Edit reveal screen',
       },
       nameStep: {
         title: 'Name fields',
@@ -1127,7 +1137,8 @@ export const en: FormsMessages = {
         title: 'Reveal screen',
         subtitle: 'A short processing interstitial shown before the result.',
         enabled: 'Enable the reveal screen',
-        stepHint: 'Pick which question triggers it under Build → Behavior.',
+        stepHint:
+          'Plays at the end by default. Drag the “Reveal screen” marker in the Build tab’s question list to move it.',
         headline: 'Headline',
         headlinePlaceholder: 'Reviewing your answers…',
         subtitleLabel: 'Subtitle',
@@ -1699,6 +1710,9 @@ export const es: FormsMessages = {
         redirectLabel: 'URL de redirección (opcional)',
         redirectHelp:
           'Déjalo vacío para mostrar la pantalla de agradecimiento. Si lo defines, se redirige ahí a los respondientes.',
+        messageLabel: 'Mensaje mostrado para este resultado',
+        messageHelp:
+          'El cuerpo de agradecimiento que ven los respondientes en este rango. Usa [campo] para insertar una respuesta. Déjalo vacío para usar el mensaje por defecto.',
       },
       previewBtn: 'Vista previa',
       formNamePlaceholder: 'Nombre del formulario',
@@ -1819,7 +1833,9 @@ export const es: FormsMessages = {
         terminal: 'Termina el formulario',
         terminalHint: 'Completar esta pregunta termina el formulario de inmediato (descalificación).',
         reveal: 'Mostrar pantalla de revelación después',
-        revealHint: 'Reproduce la pantalla de procesamiento/revelación tras esta pregunta. Configúrala en Diseño.',
+        revealHint:
+          'Reproduce la pantalla de revelación tras esta pregunta. Si no, se muestra al final por defecto — arrastra el marcador en la lista de preguntas para moverla.',
+        editReveal: 'Editar pantalla de revelación',
       },
       nameStep: {
         title: 'Campos del nombre',
@@ -1834,7 +1850,8 @@ export const es: FormsMessages = {
         title: 'Pantalla de revelación',
         subtitle: 'Un breve intermedio de procesamiento antes del resultado.',
         enabled: 'Activar la pantalla de revelación',
-        stepHint: 'Elige qué pregunta la activa en Construir → Comportamiento.',
+        stepHint:
+          'Se muestra al final por defecto. Arrastra el marcador «Pantalla de revelación» en la lista de preguntas de la pestaña Construir para moverla.',
         headline: 'Titular',
         headlinePlaceholder: 'Revisando tus respuestas…',
         subtitleLabel: 'Subtítulo',

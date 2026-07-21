@@ -245,6 +245,12 @@ export const formOutcomeSchema = z.object({
     .nullable()
     .optional(),
   // --- Outcome extensions (all optional; back-compat) ------------------------
+  /**
+   * Per-outcome thank-you body (V4-16). Rendered as the done-screen body when
+   * set (falling back to the shared thank-you body); `label` stays the heading.
+   * Plain text with `[field]` tokens interpolated by the renderer.
+   */
+  message: z.string().max(2000).nullable().optional(),
   /** Scheduling handoff (HubSpot Meetings / Calendly) shown for this outcome. */
   booking: outcomeBookingSchema.nullable().optional(),
   /**
@@ -512,6 +518,13 @@ export const formConfigSchema = z.object({
   /** Third-party tracking ids (ADDITIVE — absent on every legacy config). */
   tracking: formTrackingSchema.nullable().optional(),
   partialSubmitAfterStep: z.number().int().positive().optional(),
+  /**
+   * WHERE the reveal interstitial plays (1-based over `steps`; ADDITIVE —
+   * mirrors partialSubmitAfterStep). Absent = the engine falls back to the
+   * legacy `triggersReveal`, then defaults to after the last step. See
+   * `revealAfterKey` in @quill/engine.
+   */
+  revealAfterStep: z.number().int().positive().optional(),
 });
 export type FormConfig = z.infer<typeof formConfigSchema>;
 

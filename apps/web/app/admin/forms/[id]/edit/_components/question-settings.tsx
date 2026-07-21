@@ -46,6 +46,9 @@ export function QuestionSettings({
   formId,
   locale,
   onOpenConnect,
+  onOpenDesign,
+  revealAfterStep,
+  onRevealAfterStepChange,
 }: {
   step: FormStep;
   index: number;
@@ -60,6 +63,12 @@ export function QuestionSettings({
   locale: string;
   /** Switch the editor to the Connect tab (HubSpot destination setup). */
   onOpenConnect: () => void;
+  /** Switch the editor to the Design tab (reveal-screen copy/duration — V4-12). */
+  onOpenDesign: () => void;
+  /** Current 1-based `config.revealAfterStep` (the reveal marker's position). */
+  revealAfterStep?: number;
+  /** Pin the reveal after THIS step (1-based) or clear it (`undefined`) — V4-04. */
+  onRevealAfterStepChange: (afterStep: number | undefined) => void;
 }) {
   const contact = isContactType(step.type);
   // Form-wide "highest possible" total (same math as Results). Drives the
@@ -246,7 +255,7 @@ export function QuestionSettings({
         <QuestionVariants step={step} index={index} steps={steps} onUpdate={onUpdate} m={em.variants} />
       </section>
 
-      {/* Behavior — terminal (disqualify) + reveal trigger */}
+      {/* Behavior — terminal (disqualify) + reveal position (V4-04/V4-12) */}
       <section className="flex flex-col gap-1 border-t border-border pt-4">
         <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           {em.behavior.title}
@@ -258,13 +267,26 @@ export function QuestionSettings({
             aria-label={em.behavior.terminal}
           />
         </InlineField>
+        {/* The reveal POSITION lives in config.revealAfterStep (the draggable
+            spine marker is the primary control); this toggle is a convenience to
+            pin the reveal after THIS question. Clearing reverts to the default
+            (after the last question). */}
         <InlineField label={em.behavior.reveal} hint={em.behavior.revealHint}>
           <Switch
-            checked={!!step.triggersReveal}
-            onCheckedChange={(v) => onUpdate({ triggersReveal: v || undefined })}
+            checked={revealAfterStep === index + 1}
+            onCheckedChange={(v) => onRevealAfterStepChange(v ? index + 1 : undefined)}
             aria-label={em.behavior.reveal}
           />
         </InlineField>
+        <button
+          type="button"
+          data-testid="behavior-edit-reveal"
+          onClick={onOpenDesign}
+          className="mt-1 inline-flex w-fit items-center gap-1.5 rounded-md text-xs font-medium text-secondary transition-colors hover:text-secondary/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <i aria-hidden className="pi pi-pencil" style={{ fontSize: 11 }} />
+          {em.behavior.editReveal}
+        </button>
       </section>
 
       {/* Scoring / contact hint */}

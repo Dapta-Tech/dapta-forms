@@ -197,6 +197,13 @@ export interface FormOutcome {
   /** Inclusive lower score bound for this bucket (highest matching wins). */
   minScore?: number;
   redirectUrl?: string | null;
+  /**
+   * The body copy shown on the thank-you screen for this outcome (additive;
+   * back-compat). When set it replaces the shared thank-you body; `[key]` tokens
+   * interpolate from the answers. `label` stays the heading. Absent = the shared
+   * thank-you body is used, so every existing outcome renders exactly as before.
+   */
+  message?: string | null;
   /** Scheduling handoff (HubSpot Meetings / Calendly) shown for this outcome. */
   booking?: OutcomeBooking | null;
   /** Answer-forced rules: any match makes this outcome win over score bucketing. */
@@ -260,6 +267,13 @@ export interface FormConfig {
    * no partial save.
    */
   partialSubmitAfterStep?: number;
+  /**
+   * WHERE the reveal interstitial plays: the reveal fires after the step at this
+   * 1-based position in `steps` (additive; back-compat). Absent = fall back to
+   * the legacy per-step `triggersReveal`, then default to AFTER THE LAST step, so
+   * an enabled reveal never plays mid-form by accident. See {@link revealAfterKey}.
+   */
+  revealAfterStep?: number;
 }
 
 export type AnswerValue =
@@ -932,6 +946,32 @@ export function partialSubmitKey(config: FormConfig): string | null {
   const n = config.partialSubmitAfterStep;
   if (n == null || n < 1) return null;
   return config.steps[n - 1]?.key ?? null;
+}
+
+/**
+ * The key of the step AFTER which the reveal interstitial plays, or `null` when
+ * the reveal is disabled/absent or the form has no steps. Position resolves in
+ * priority order (additive + back-compat), so the renderer and the builder agree
+ * on where the reveal fires:
+ *  1. `revealAfterStep` (1-based over `steps`) when set + in range — the
+ *     authoritative draggable-marker position.
+ *  2. else the first step flagged `triggersReveal` — the legacy per-step boolean
+ *     (configs published before the marker existed still play in place).
+ *  3. else the LAST step — the safe default so an ENABLED reveal plays right
+ *     before the result (thank-you / outcome), never mid-form by accident.
+ * The renderer decides "play then continue" vs "play then finalize" from whether
+ * the resolved step is the last VISIBLE step at runtime.
+ */
+export function revealAfterKey(config: FormConfig): string | null {
+  const reveal = config.reveal;
+  if (!reveal || reveal.enabled === false) return null;
+  const { steps } = config;
+  if (steps.length === 0) return null;
+  const n = config.revealAfterStep;
+  if (n != null && n >= 1 && n <= steps.length) return steps[n - 1]?.key ?? null;
+  const triggered = steps.find((s) => s.triggersReveal);
+  if (triggered) return triggered.key;
+  return steps[steps.length - 1]?.key ?? null;
 }
 
 // ---------------------------------------------------------------------------

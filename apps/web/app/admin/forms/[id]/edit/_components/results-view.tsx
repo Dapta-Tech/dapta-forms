@@ -6,7 +6,7 @@ import { createEmptyOutcome } from '@quill/engine';
 import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/cn';
-import { TextField, NumberField } from './fields';
+import { TextField, NumberField, TextArea } from './fields';
 import { iconForStep } from './question-types';
 import { maxScore, scoringSteps } from './scoring-util';
 import type { BuilderMessages } from './builder-messages';
@@ -144,9 +144,27 @@ export function ResultsView({
                     <i aria-hidden className="pi pi-trash" style={{ fontSize: 13 }} />
                   </Button>
                 </div>
-                {/* The label above IS the message respondents see on the thank-you
+                {/* The label above IS the heading respondents see on the thank-you
                     screen when their score lands in this range. */}
                 <p className="mt-1.5 pl-[64px] text-[11px] text-muted-foreground">{rm.outcomeHeadingHelp}</p>
+                {/* Per-outcome thank-you BODY (V4-16): the editable "page" shown
+                    for this range; empty falls back to the shared thank-you body.
+                    Interpolation of [field] tokens happens in the renderer. */}
+                <div className="mt-2.5 flex flex-col gap-1 pl-[64px]">
+                  <label htmlFor={`outcome-message-${o.id}`} className="text-xs font-medium text-foreground">
+                    {rm.messageLabel}
+                  </label>
+                  <TextArea
+                    id={`outcome-message-${o.id}`}
+                    value={o.message ?? ''}
+                    rows={2}
+                    placeholder={m.results.messagePlaceholder}
+                    onChange={(e) => update(index, { message: e.target.value || null })}
+                    data-testid="outcome-message"
+                    className="text-xs"
+                  />
+                  <p className="text-[11px] text-muted-foreground">{rm.messageHelp}</p>
+                </div>
                 {/* Redirect is a clearly-separate, optional URL — normalized to
                     https:// on blur so a schemeless entry never 400s the save. */}
                 <div className="mt-2.5 flex flex-col gap-1 pl-[64px]">

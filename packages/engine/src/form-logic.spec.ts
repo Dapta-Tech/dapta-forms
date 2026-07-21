@@ -12,6 +12,7 @@ import {
   runtimeSteps,
   isMultiSelect,
   partialSubmitKey,
+  revealAfterKey,
   nameFields,
   isSafeHttpUrl,
   isSafeImageUrl,
@@ -610,6 +611,50 @@ describe('partialSubmitKey', () => {
   it('resolves the 1-based threshold step key or null', () => {
     expect(partialSubmitKey({ ...config, partialSubmitAfterStep: 4 })).toBe('email');
     expect(partialSubmitKey(config)).toBeNull();
+  });
+});
+
+describe('revealAfterKey (V4-04 — reveal position resolution)', () => {
+  const threeSteps: FormStep[] = [
+    step({ key: 'q1', type: 'text' }),
+    step({ key: 'q2', type: 'text' }),
+    step({ key: 'q3', type: 'text' }),
+  ];
+  const base: FormConfig = { version: 1, steps: threeSteps, reveal: { enabled: true } };
+
+  it('returns null when the reveal is absent or disabled', () => {
+    expect(revealAfterKey({ version: 1, steps: threeSteps })).toBeNull();
+    expect(revealAfterKey({ version: 1, steps: threeSteps, reveal: { enabled: false } })).toBeNull();
+    // Enabled but no steps → nothing to fire after.
+    expect(revealAfterKey({ version: 1, steps: [], reveal: { enabled: true } })).toBeNull();
+  });
+
+  it('defaults an enabled reveal to AFTER THE LAST step (never mid-form)', () => {
+    expect(revealAfterKey(base)).toBe('q3');
+    // `enabled` absent (but reveal present) is treated as on, mirroring the renderer gate.
+    expect(revealAfterKey({ version: 1, steps: threeSteps, reveal: {} })).toBe('q3');
+  });
+
+  it('honors revealAfterStep (1-based) when set + in range', () => {
+    expect(revealAfterKey({ ...base, revealAfterStep: 1 })).toBe('q1');
+    expect(revealAfterKey({ ...base, revealAfterStep: 2 })).toBe('q2');
+    expect(revealAfterKey({ ...base, revealAfterStep: 3 })).toBe('q3');
+  });
+
+  it('falls back to triggersReveal, then default-last, when revealAfterStep is unset/out-of-range', () => {
+    const withTrigger: FormConfig = {
+      version: 1,
+      reveal: { enabled: true },
+      steps: [threeSteps[0]!, { ...threeSteps[1]!, triggersReveal: true }, threeSteps[2]!],
+    };
+    // Back-compat: the legacy per-step boolean still places the reveal in place.
+    expect(revealAfterKey(withTrigger)).toBe('q2');
+    // revealAfterStep wins over triggersReveal when both are present.
+    expect(revealAfterKey({ ...withTrigger, revealAfterStep: 1 })).toBe('q1');
+    // Out-of-range revealAfterStep is ignored → falls back to triggersReveal.
+    expect(revealAfterKey({ ...withTrigger, revealAfterStep: 99 })).toBe('q2');
+    // Out-of-range with no trigger → default-last.
+    expect(revealAfterKey({ ...base, revealAfterStep: 0 })).toBe('q3');
   });
 });
 

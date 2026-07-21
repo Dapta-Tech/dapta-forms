@@ -51,6 +51,41 @@ const parseTab = (value: string | null): Tab =>
   TAB_IDS.includes(value as Tab) ? (value as Tab) : 'build';
 
 /**
+ * Re-anchor a 1-based flow marker position (partialSubmitAfterStep /
+ * revealAfterStep) after a step is DELETED, keeping it attached to the step it
+ * sits AFTER: a delete ABOVE the anchor shifts it up one; deleting the anchor
+ * itself re-attaches to the previous step (clearing when it was the first);
+ * deletes BELOW never move it. Absent/out-of-range positions pass through.
+ */
+function reanchorAfterDelete(
+  pos: number | undefined,
+  deletedIndex: number,
+  prevLen: number,
+): number | undefined {
+  if (pos == null || pos < 1 || pos > prevLen) return pos;
+  if (deletedIndex < pos - 1) return pos - 1;
+  if (deletedIndex === pos - 1) return pos > 1 ? pos - 1 : undefined;
+  return pos;
+}
+
+/**
+ * Re-anchor a 1-based flow marker position after a REORDER: resolve the step it
+ * was anchored after in the OLD order, then point at that step's NEW index so
+ * the marker follows its anchor question. Absent/out-of-range positions pass
+ * through unchanged.
+ */
+function reanchorAfterReorder(
+  pos: number | undefined,
+  oldSteps: FormStep[],
+  newSteps: FormStep[],
+): number | undefined {
+  if (pos == null || pos < 1 || pos > oldSteps.length) return pos;
+  const anchorKey = oldSteps[pos - 1]?.key;
+  const anchored = newSteps.findIndex((s) => s.key === anchorKey);
+  return anchored >= 0 ? anchored + 1 : pos;
+}
+
+/**
  * The redesigned builder shell: Build (spine · WYSIWYG canvas · settings),
  * Logic (editable map), Results (scoring + ranges), Design (cover + branding),
  * with debounced autosave and a Publish primary action. The guided empty state
@@ -241,16 +276,14 @@ export function FormEditor({
   function deleteStep(index: number) {
     mutate((c) => {
       const steps = c.steps.filter((_, i) => i !== index);
-      // Partial-submit threshold (1-based, anchored to the step it fires AFTER):
-      // deleting a step ABOVE the anchor shifts it up one; deleting the anchor
-      // ITSELF re-attaches to the previous step (or clears when the anchor was
-      // the first step); steps BELOW the anchor never move it.
-      let partial = c.partialSubmitAfterStep;
-      if (partial != null && partial >= 1 && partial <= c.steps.length) {
-        if (index < partial - 1) partial = partial - 1;
-        else if (index === partial - 1) partial = partial > 1 ? partial - 1 : undefined;
-      }
-      return { ...c, steps, partialSubmitAfterStep: partial };
+      // Keep both 1-based flow markers (partial-submit + reveal) anchored to the
+      // step they fire AFTER when a step is deleted.
+      return {
+        ...c,
+        steps,
+        partialSubmitAfterStep: reanchorAfterDelete(c.partialSubmitAfterStep, index, c.steps.length),
+        revealAfterStep: reanchorAfterDelete(c.revealAfterStep, index, c.steps.length),
+      };
     });
     setSelected((sel) => {
       const nextLen = config.steps.length - 1;
@@ -265,15 +298,13 @@ export function FormEditor({
       const [moved] = steps.splice(from, 1);
       if (!moved) return c;
       steps.splice(to, 0, moved);
-      // Keep the partial-submit threshold attached to the step it fires AFTER:
-      // resolve that step's key in the OLD order, then point at its NEW index.
-      let partial = c.partialSubmitAfterStep;
-      if (partial != null && partial >= 1 && partial <= c.steps.length) {
-        const anchorKey = c.steps[partial - 1]?.key;
-        const anchored = steps.findIndex((s) => s.key === anchorKey);
-        if (anchored >= 0) partial = anchored + 1;
-      }
-      return { ...c, steps, partialSubmitAfterStep: partial };
+      // Keep both 1-based flow markers attached to the step they fire AFTER.
+      return {
+        ...c,
+        steps,
+        partialSubmitAfterStep: reanchorAfterReorder(c.partialSubmitAfterStep, c.steps, steps),
+        revealAfterStep: reanchorAfterReorder(c.revealAfterStep, c.steps, steps),
+      };
     });
     setSelected((sel) => {
       if (sel == null) return null;
@@ -305,6 +336,14 @@ export function FormEditor({
     mutate((c) => ({ ...c, reveal: { ...c.reveal, ...patch } }));
   const setPartialSubmitAfterStep = (afterStep: number | undefined) =>
     mutate((c) => ({ ...c, partialSubmitAfterStep: afterStep }));
+  // WHERE the reveal plays (V4-04). Setting a value pins the reveal after that
+  // 1-based step; `undefined` reverts to the engine default (after the last
+  // step). Removing the marker turns the reveal OFF (Design owns enablement) and
+  // clears the position so a later re-enable defaults back to the end.
+  const setRevealAfterStep = (afterStep: number | undefined) =>
+    mutate((c) => ({ ...c, revealAfterStep: afterStep }));
+  const removeReveal = () =>
+    mutate((c) => ({ ...c, reveal: { ...c.reveal, enabled: false }, revealAfterStep: undefined }));
   // `tracking` is additive config the engine type omits; the autosave/publish
   // flow round-trips it (normalizeConfig passes unknown top-level keys through).
   const setTracking = (tracking: FormTracking | undefined) =>
@@ -312,6 +351,9 @@ export function FormEditor({
 
   const selectedStep = selected != null ? config.steps[selected] : undefined;
   const scoringEnabled = config.scoring?.enabled !== false;
+  // Mirrors the renderer/engine gate: the reveal marker shows when reveal exists
+  // AND is not explicitly disabled.
+  const revealEnabled = config.reveal != null && config.reveal.enabled !== false;
   const hasQuestions = config.steps.length > 0;
 
   const tabs: { id: Tab; label: string; icon: string }[] = [
@@ -442,6 +484,10 @@ export function FormEditor({
                   onAdd={() => setGalleryOpen(true)}
                   partialAfterStep={config.partialSubmitAfterStep}
                   onPartialChange={setPartialSubmitAfterStep}
+                  revealEnabled={revealEnabled}
+                  revealAfterStep={config.revealAfterStep}
+                  onRevealMove={setRevealAfterStep}
+                  onRevealRemove={removeReveal}
                   m={bm}
                 />
               </aside>
@@ -530,6 +576,9 @@ export function FormEditor({
                     formId={id}
                     locale={locale}
                     onOpenConnect={() => setTab('connect')}
+                    onOpenDesign={() => setTab('design')}
+                    revealAfterStep={config.revealAfterStep}
+                    onRevealAfterStepChange={setRevealAfterStep}
                   />
                 ) : null}
               </aside>
