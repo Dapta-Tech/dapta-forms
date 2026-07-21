@@ -322,6 +322,10 @@ export interface FormsMessages {
         corporateEmailOnly: string;
         corporateEmailHint: string;
         phoneMinDigits: string;
+        /** Phone step: label for the per-form default-country picker (V4-14). */
+        phoneDefaultCountry: string;
+        /** The "auto (locale-based)" option in the default-country picker. */
+        phoneDefaultCountryAuto: string;
         sliderMin: string;
         sliderMax: string;
         sliderStep: string;
@@ -398,7 +402,7 @@ export interface FormsMessages {
         tokenWarnLater: string;
         tokenWarnUnknown: string;
       };
-      /** Per-question behavior toggles (terminal / reveal position). */
+      /** Per-question behavior toggles (terminal / reveal position / hidden). */
       behavior: {
         title: string;
         terminal: string;
@@ -407,6 +411,9 @@ export interface FormsMessages {
         revealHint: string;
         /** "Edit reveal screen" button → jumps to the Design tab (V4-12). */
         editReveal: string;
+        /** Hidden-question toggle — filled via a URL parameter (V4-13). */
+        hidden: string;
+        hiddenHint: string;
       };
       /** The `name` step's two collected fields + placeholders. */
       nameStep: {
@@ -1043,6 +1050,8 @@ export const en: FormsMessages = {
         corporateEmailOnly: 'Require work email',
         corporateEmailHint: 'Blocks Gmail, Hotmail, Yahoo and other personal domains.',
         phoneMinDigits: 'Minimum digits',
+        phoneDefaultCountry: 'Default country',
+        phoneDefaultCountryAuto: 'Automatic (based on visitor language)',
         sliderMin: 'Min',
         sliderMax: 'Max',
         sliderStep: 'Step',
@@ -1123,6 +1132,8 @@ export const en: FormsMessages = {
         revealHint:
           'Plays the reveal screen after this question. Otherwise it defaults to the end — drag the marker in the question list to move it.',
         editReveal: 'Edit reveal screen',
+        hidden: 'Hidden question',
+        hiddenHint: 'Not shown to respondents — its answer is filled from a matching URL parameter (?key=value).',
       },
       nameStep: {
         title: 'Name fields',
@@ -1756,6 +1767,8 @@ export const es: FormsMessages = {
         corporateEmailOnly: 'Exigir correo corporativo',
         corporateEmailHint: 'Bloquea Gmail, Hotmail, Yahoo y otros dominios personales.',
         phoneMinDigits: 'Dígitos mínimos',
+        phoneDefaultCountry: 'País predeterminado',
+        phoneDefaultCountryAuto: 'Automático (según el idioma del visitante)',
         sliderMin: 'Mín',
         sliderMax: 'Máx',
         sliderStep: 'Paso',
@@ -1836,6 +1849,8 @@ export const es: FormsMessages = {
         revealHint:
           'Reproduce la pantalla de revelación tras esta pregunta. Si no, se muestra al final por defecto — arrastra el marcador en la lista de preguntas para moverla.',
         editReveal: 'Editar pantalla de revelación',
+        hidden: 'Pregunta oculta',
+        hiddenHint: 'No se muestra a los respondientes — su respuesta se rellena desde un parámetro de URL coincidente (?clave=valor).',
       },
       nameStep: {
         title: 'Campos del nombre',

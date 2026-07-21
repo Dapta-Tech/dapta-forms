@@ -66,6 +66,41 @@ function captureUtm(): Record<string, string> {
   return utm;
 }
 
+/** A query value can never be longer than this once seeded (defense-in-depth). */
+const PREFILL_MAX_LEN = 512;
+
+/**
+ * URL-parameter prefill (V4-13): read the query string and seed the answer for
+ * each param whose key matches a DECLARED field — a step's own key, or a `name`
+ * step's subfields (`nameFields`). Security-scoped by design:
+ *  - only keys that correspond to a declared step field are ever read (an
+ *    arbitrary `?anything=` is ignored — never trust the URL to name new fields);
+ *  - `utm_*` is captured separately (`captureUtm`) and skipped here;
+ *  - values are treated as PLAIN answer strings, capped in length, never eval'd
+ *    or interpreted as markup — and the engine re-validates every answer on
+ *    submit, so a bad value can only be rejected, never trusted.
+ * A prefilled HIDDEN step carries its answer into the submission though it is
+ * never shown; a prefilled VISIBLE step simply renders pre-filled.
+ */
+function capturePrefill(steps: FormStep[]): Answers {
+  if (typeof window === 'undefined') return {};
+  const declared = new Set<string>();
+  for (const step of steps) {
+    if (step.type === 'message') continue; // message steps capture no answer
+    for (const key of nameFields(step)) declared.add(key);
+  }
+  if (declared.size === 0) return {};
+  const params = new URLSearchParams(window.location.search);
+  const seed: Answers = {};
+  for (const [key, value] of params.entries()) {
+    if (key.toLowerCase().startsWith('utm_')) continue;
+    if (!declared.has(key)) continue;
+    if (typeof value !== 'string' || value === '') continue;
+    seed[key] = value.slice(0, PREFILL_MAX_LEN);
+  }
+  return seed;
+}
+
 /**
  * Per-phase page shell. The promo banner (`cover.bannerText`) renders ONCE here
  * as the first child of `.pf`, so it is a full-width strip pinned to the top of
@@ -152,9 +187,13 @@ export function FormRenderer({
     [accountCode, slug, sessionId],
   );
 
-  // Capture UTM once, and fire a single `view` per session per load.
+  // Capture UTM + declared-field URL prefill once on mount (client-only, so a
+  // seeded visible step never causes an SSR/hydration mismatch). Hidden steps
+  // ride their seeded answer into the submission; visible steps render filled.
   useEffect(() => {
     utmRef.current = captureUtm();
+    const seed = capturePrefill(engineConfig.steps);
+    if (Object.keys(seed).length > 0) setAnswers((a) => ({ ...seed, ...a }));
   }, []);
   useEffect(() => {
     if (!sessionId || viewTracked.current) return;

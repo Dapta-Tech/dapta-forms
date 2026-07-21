@@ -85,6 +85,19 @@ describe('visibleSteps', () => {
     expect(visibleSteps(cfg, { skip: 'yes' })).toHaveLength(0);
     expect(visibleSteps(cfg, { skip: 'no' })).toHaveLength(1);
   });
+
+  it('skips a hidden step (never walked, never scored — its answer only rides along)', () => {
+    const cfg: FormConfig = {
+      version: 1,
+      steps: [
+        step({ key: 'plan', type: 'text' }),
+        step({ key: 'source', type: 'text', hidden: true }),
+      ],
+    };
+    // The hidden step is absent from the walk even though it has an answer.
+    expect(visibleSteps(cfg, { source: 'ads' }).map((s) => s.key)).toEqual(['plan']);
+    expect(runtimeSteps(cfg, { source: 'ads' }).map((s) => s.key)).toEqual(['plan']);
+  });
 });
 
 describe('operatorsForFieldType (V4-07 — operators by field type)', () => {
@@ -550,6 +563,20 @@ describe('interpolate + resolveStepDisplay', () => {
     const resolved = resolveStepDisplay(s, { problem: 'leads', firstname: 'Sam' });
     expect(resolved.question).toBe('How many leads, Sam?');
     expect(resolved.sliderUnitLabel).toBe('leads / mo');
+  });
+
+  it('interpolates [key] tokens in the helper/description with the same sweep', () => {
+    const s = step({ key: 'x', type: 'text', question: 'Q', helper: 'Details for [firstname]' });
+    // Resolved: the token substitutes verbatim.
+    expect(resolveStepDisplay(s, { firstname: 'Sam' }).helper).toBe('Details for Sam');
+    // Trailing empty token sweeps the connector in front of it (no "Details for ").
+    expect(resolveStepDisplay(s, {}).helper).toBe('Details for');
+    // Embedded empty token keeps a following connector, drops the preceding space.
+    const s2 = step({ key: 'y', type: 'text', helper: 'Hi [firstname], read on' });
+    expect(resolveStepDisplay(s2, {}).helper).toBe('Hi, read on');
+    // A null/undefined helper is left untouched (not coerced to a string).
+    expect(resolveStepDisplay(step({ key: 'z', type: 'text' }), {}).helper).toBeUndefined();
+    expect(resolveStepDisplay(step({ key: 'z', type: 'text', helper: null }), {}).helper).toBeNull();
   });
 });
 

@@ -12,12 +12,13 @@ import { test, expect, type APIRequestContext, type Page } from '@playwright/tes
  * real reported case: a Q2 email titled `Usa tu correo del trabajo
  * [presupuesto]` where `presupuesto` is a LATER multiple_choice (Q4).
  *
- * V4-15 (picker on the description): the engine's `resolveStepDisplay` only
- * interpolates the `question` (+ slider label) — the description/`helper` is
- * rendered RAW by the public renderer (form-renderer.tsx: `{step.helper}`), so
- * a `[token]` in the description would publish literally. The picker is
- * therefore deliberately NOT wired on the description; this spec locks that in
- * (typing `@` there opens no picker).
+ * V4-15 (picker on the description): the engine's `resolveStepDisplay` now
+ * interpolates `[key]` tokens in the `helper`/description too (with the same
+ * orphaned-punctuation sweep as the title), and the public renderer paints the
+ * resolved helper — so the `@`/`[` recall picker IS wired on the description,
+ * exactly like the title. This spec locks that in (typing `@` there opens the
+ * picker and inserts a token). The runtime interpolation itself is covered by
+ * the engine unit tests + v4-fields2.spec.ts.
  *
  * Forms are created via the admin API with unique `v4tok-` names.
  */
@@ -116,17 +117,17 @@ test('V4-06: a token captured by a LATER step warns `later`, not `unknown`; a to
   await expect(page.getByTestId('token-warning')).toHaveCount(0);
 });
 
-test('V4-15: the description textarea has NO token picker (the engine never interpolates the description)', async ({
+test('V4-15: the description textarea HAS the token picker (the engine now interpolates the description)', async ({
   page,
   request,
 }) => {
-  const id = await createForm(request, uniqueName('no-desc-picker'));
+  const id = await createForm(request, uniqueName('desc-picker'));
   await openEditor(page, id);
 
   await selectStep(page, Q_EMAIL);
   await expect(title(page)).toHaveValue(Q_EMAIL);
 
-  // Typing `@` in the title DOES open the picker (control: the picker works).
+  // Typing `@` in the title opens the picker (control: the picker works).
   await title(page).click();
   await page.keyboard.press('End');
   await title(page).pressSequentially('@');
@@ -134,10 +135,20 @@ test('V4-15: the description textarea has NO token picker (the engine never inte
   await page.keyboard.press('Escape');
   await expect(page.getByTestId('token-picker')).toHaveCount(0);
 
-  // Typing `@` in the description does NOT — the description publishes raw, so
-  // a picker there would be misleading.
-  const description = page.getByLabel('Add a description (optional)');
+  // Typing `@` in the description ALSO opens the picker now — the engine
+  // interpolates `[key]` tokens in the description, so the recall affordance is
+  // wired there too. Tokens = fields captured BEFORE Q2: the Q1 name subfields.
+  const description = page.getByTestId('canvas-description-input');
   await description.click();
   await description.pressSequentially('@');
+  await expect(page.getByTestId('token-picker')).toBeVisible();
+  const options = page.getByTestId('token-option');
+  await expect(options).toHaveCount(2);
+  await expect(options.nth(0)).toHaveAttribute('data-key', 'firstname');
+  await expect(options.nth(1)).toHaveAttribute('data-key', 'lastname');
+
+  // Enter inserts the engine token into the description value.
+  await page.keyboard.press('Enter');
+  await expect(description).toHaveValue('[firstname]');
   await expect(page.getByTestId('token-picker')).toHaveCount(0);
 });

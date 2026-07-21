@@ -164,6 +164,19 @@ export interface FormStep {
   terminal?: boolean;
   /** Show the processing/reveal interstitial after this step completes. */
   triggersReveal?: boolean;
+  /**
+   * Hidden step (additive; back-compat). A hidden step is NEVER rendered as a
+   * visible question — {@link visibleSteps} skips it, so it is neither walked nor
+   * scored — but its answer can still be SEEDED (e.g. from a matching URL
+   * parameter in the public renderer) and carried along into the submission.
+   */
+  hidden?: boolean;
+  /**
+   * `phone` step: the ISO 3166-1 alpha-2 country the public phone picker starts
+   * on (e.g. "CO"). Absent = the locale-based default (en→US, es→MX). Purely a
+   * display default — the stored answer is still a full E.164 string.
+   */
+  phoneDefaultCountry?: string | null;
 }
 
 /**
@@ -341,11 +354,16 @@ function conditionHolds(cond: StepCondition, answers: Answers): boolean {
 
 /**
  * The steps to show given the answers so far, in config order. A step appears
- * when its `showWhen` holds (or is absent) AND its `hideWhen` does not hold —
- * and, for a personal-email-only branch step, only when the email is personal.
+ * when it is not `hidden`, its `showWhen` holds (or is absent) AND its `hideWhen`
+ * does not hold — and, for a personal-email-only branch step, only when the
+ * email is personal.
  */
 export function visibleSteps(config: FormConfig, answers: Answers): FormStep[] {
   return config.steps.filter((step) => {
+    // A hidden step is never rendered as a question — it is skipped in the walk
+    // (and therefore never scored). Its answer can still be seeded (e.g. from a
+    // URL parameter) and rides along into the submission via the answers map.
+    if (step.hidden) return false;
     if (step.showWhen && !conditionHolds(step.showWhen, answers)) return false;
     if (step.hideWhen && conditionHolds(step.hideWhen, answers)) return false;
     if (step.showForPersonalEmailOnly) {
@@ -914,18 +932,20 @@ export function resolveQuestion(step: FormStep, answers: Answers): string {
 
 /**
  * Resolve a step for display against the answers: pick the dynamic question
- * variant (via `resolveQuestion`), interpolate `[key]` tokens in the question,
+ * variant (via `resolveQuestion`), interpolate `[key]` tokens in the question
+ * AND the `helper`/description (both with the same orphaned-punctuation sweep),
  * and resolve the slider unit label variant. Returns a shallow copy — never
- * mutates the config.
+ * mutates the config. A null/undefined helper is left untouched.
  */
 export function resolveStepDisplay(step: FormStep, answers: Answers): FormStep {
   const question = resolveQuestion(step, answers);
+  const helper = typeof step.helper === 'string' ? interpolate(step.helper, answers) : step.helper;
   let sliderUnitLabel = step.sliderUnitLabel ?? null;
   if (step.questionField && step.sliderLabelVariants) {
     const key = variantKey(answers[step.questionField]);
     if (step.sliderLabelVariants[key]) sliderUnitLabel = step.sliderLabelVariants[key];
   }
-  return { ...step, question, sliderUnitLabel };
+  return { ...step, question, helper, sliderUnitLabel };
 }
 
 /**

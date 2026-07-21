@@ -1,11 +1,13 @@
 'use client';
 
+import { useMemo } from 'react';
 import type { FormStep } from '@quill/engine';
 import { defaultFlowGroup } from '@quill/engine';
-import { getMessages } from '@quill/shared';
+import { COUNTRIES, countryName, getMessages } from '@quill/shared';
 import { clientLocale } from '@/lib/client-locale';
 import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
+import { Select, type SelectOption } from '@/components/ui/select';
 import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Field, NumberField, SelectField, InlineField, TextField } from './fields';
 import { OptionsEditor } from './options-editor';
@@ -75,6 +77,18 @@ export function QuestionSettings({
   // "assign points" nudge when scoring is on but nothing scores yet.
   const scoringMax = maxScoreForSteps(steps);
   const { confirm: confirmDialog, dialog } = useConfirmDialog();
+
+  // Country options for the phone step's default-country picker: an "automatic"
+  // (locale-based) row first, then every country sorted by localized name.
+  const countryOptions = useMemo<SelectOption[]>(
+    () => [
+      { value: '', label: em.props.phoneDefaultCountryAuto },
+      ...[...COUNTRIES]
+        .sort((a, b) => countryName(a.code, locale).localeCompare(countryName(b.code, locale), locale))
+        .map((c) => ({ value: c.code, label: `${c.flag} ${countryName(c.code, locale)} (${c.dial})` })),
+    ],
+    [locale, em.props.phoneDefaultCountryAuto],
+  );
 
   function changeType(itemId: string) {
     const item = ALL_ITEMS.find((it) => it.id === itemId);
@@ -183,12 +197,22 @@ export function QuestionSettings({
       ) : null}
 
       {step.type === 'phone' ? (
-        <section className="border-t border-border pt-4">
+        <section className="flex flex-col gap-3 border-t border-border pt-4">
           <Field label={em.props.phoneMinDigits}>
             <NumberField
               value={step.phoneMinDigits ?? 7}
               min={1}
               onChange={(e) => onUpdate({ phoneMinDigits: Number(e.target.value) || undefined })}
+            />
+          </Field>
+          <Field label={em.props.phoneDefaultCountry}>
+            <Select
+              ariaLabel={em.props.phoneDefaultCountry}
+              value={step.phoneDefaultCountry ?? ''}
+              options={countryOptions}
+              searchable
+              locale={locale}
+              onChange={(v) => onUpdate({ phoneDefaultCountry: v || undefined })}
             />
           </Field>
         </section>
@@ -267,6 +291,18 @@ export function QuestionSettings({
             aria-label={em.behavior.terminal}
           />
         </InlineField>
+        {/* Hidden question — never shown; its answer is seeded from a matching
+            URL parameter and carried into the submission. Meaningless for a
+            message step (it collects no answer), so hide it there. */}
+        {step.type !== 'message' ? (
+          <InlineField label={em.behavior.hidden} hint={em.behavior.hiddenHint}>
+            <Switch
+              checked={!!step.hidden}
+              onCheckedChange={(v) => onUpdate({ hidden: v || undefined })}
+              aria-label={em.behavior.hidden}
+            />
+          </InlineField>
+        ) : null}
         {/* The reveal POSITION lives in config.revealAfterStep (the draggable
             spine marker is the primary control); this toggle is a convenience to
             pin the reveal after THIS question. Clearing reverts to the default

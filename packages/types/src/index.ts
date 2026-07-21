@@ -132,6 +132,18 @@ export const formStepSchema = z.object({
   showForPersonalEmailOnly: z.boolean().optional(),
   terminal: z.boolean().optional(),
   triggersReveal: z.boolean().optional(),
+  /**
+   * Hidden step (ADDITIVE): never rendered as a visible question — the engine's
+   * `visibleSteps` skips it — but its answer can be supplied via a matching URL
+   * parameter and carried into the submission. Not shown for `message` steps.
+   */
+  hidden: z.boolean().optional(),
+  /**
+   * `phone` step: ISO 3166-1 alpha-2 the public country picker defaults to
+   * (e.g. "CO"). ADDITIVE — absent = the locale-based default. Two-char cap so a
+   * bad value can only fall back, never break the lookup.
+   */
+  phoneDefaultCountry: z.string().max(2).nullable().optional(),
 });
 export type FormStepInput = z.infer<typeof formStepSchema>;
 
