@@ -1,18 +1,30 @@
 'use client';
 
 import { useState } from 'react';
-import type { FormStep, StepCondition } from '@quill/engine';
+import {
+  conditionsContradict,
+  operatorsForFieldType,
+  type ConditionOp,
+  type FormStep,
+  type StepCondition,
+} from '@quill/engine';
 import { cn } from '@/lib/cn';
 import { SelectField, TextField } from './fields';
 import { hasOptions } from './question-types';
 import type { EditorMessages } from './messages';
 
+type LogicMessages = EditorMessages['logic'];
+
 /**
  * Declarative visibility editor for a question's `showWhen` / `hideWhen`
- * conditions ({field, values[]}): pick an EARLIER question's field, then the
- * answer values that trigger the rule. Choice/dropdown sources offer their
- * options as toggle chips; free-text sources fall back to a comma-separated
- * values input. Honored by the engine's `visibleSteps` on client and server.
+ * conditions: pick an EARLIER question's field, then how its answer is compared.
+ * The operators offered follow the referenced field's TYPE (engine
+ * `operatorsForFieldType`): choice/dropdown/text sources keep "matches any of"
+ * (`in`) — option chips or a comma-separated values input; number/slider sources
+ * get a comparison dropdown (equal / greater / less / between) with numeric
+ * operand inputs. A contradiction guard (V4-08) warns when the show + hide rules
+ * on a step cancel out so it could never appear. Honored by the engine's
+ * `visibleSteps` on client and server.
  */
 export function LogicConditions({
   step,
@@ -25,7 +37,7 @@ export function LogicConditions({
   index: number;
   steps: FormStep[];
   onUpdate: (patch: Partial<FormStep>) => void;
-  m: EditorMessages['logic'];
+  m: LogicMessages;
 }) {
   const prior = steps.slice(0, index);
 
@@ -33,10 +45,16 @@ export function LogicConditions({
     return <p className="text-xs text-muted-foreground">{m.noPriorFields}</p>;
   }
 
+  // V4-08 guard: show + hide targeting the same field with an overlapping
+  // condition can never be visible (hide wins). Pure engine helper; we warn
+  // prominently and keep the offending rules visible so either can be fixed.
+  const contradiction = conditionsContradict(step.showWhen, step.hideWhen);
+
   return (
     <div className="flex flex-col gap-2.5">
       <p className="text-xs text-muted-foreground">{m.hint}</p>
       <ConditionEditor
+        testid="logic-show"
         label={m.showWhen}
         noneLabel={m.none}
         cond={step.showWhen ?? null}
@@ -45,6 +63,7 @@ export function LogicConditions({
         m={m}
       />
       <ConditionEditor
+        testid="logic-hide"
         label={m.hideWhen}
         noneLabel={m.hideNone}
         cond={step.hideWhen ?? null}
@@ -52,12 +71,38 @@ export function LogicConditions({
         onChange={(hideWhen) => onUpdate({ hideWhen: hideWhen ?? undefined })}
         m={m}
       />
+      {contradiction ? (
+        <p
+          role="alert"
+          data-testid="logic-contradiction"
+          className="rounded-md border border-destructive/50 bg-destructive/10 px-2.5 py-2 text-xs font-medium text-destructive"
+        >
+          {m.contradiction}
+        </p>
+      ) : null}
     </div>
   );
 }
 
-/** One condition row: field select (none = rule off) + value picker. */
+/** The localized label for one operator (the numeric ops + `in` fallback). */
+function opLabel(op: ConditionOp, m: LogicMessages): string {
+  switch (op) {
+    case 'eq':
+      return m.opEq;
+    case 'gt':
+      return m.opGt;
+    case 'lt':
+      return m.opLt;
+    case 'between':
+      return m.opBetween;
+    default:
+      return m.values; // 'in' — "matches any of"
+  }
+}
+
+/** One condition row: field select (none = rule off) + operator/value picker. */
 function ConditionEditor({
+  testid,
   label,
   noneLabel,
   cond,
@@ -65,15 +110,21 @@ function ConditionEditor({
   onChange,
   m,
 }: {
+  testid: string;
   label: string;
   noneLabel: string;
   cond: StepCondition | null;
   prior: FormStep[];
   onChange: (next: StepCondition | null) => void;
-  m: EditorMessages['logic'];
+  m: LogicMessages;
 }) {
   const NONE = '';
   const source = cond ? prior.find((s) => s.key === cond.field) : undefined;
+  const ops: ConditionOp[] = source ? operatorsForFieldType(source.type) : ['in'];
+  // Numeric sources (slider) expose the comparison operators; everything else
+  // keeps the single `in` ("matches any of") behavior with no operator UI.
+  const numeric = ops[0] !== 'in';
+  const op: ConditionOp = cond?.op ?? ops[0] ?? 'in';
   const sourceOptions = source && hasOptions(source.type) ? (source.options ?? []) : null;
 
   function pickField(key: string) {
@@ -83,17 +134,25 @@ function ConditionEditor({
     }
     const next = prior.find((s) => s.key === key);
     if (!next) return;
-    // Keep the values when re-picking the same field; otherwise seed a sensible
-    // default (the first option) so the rule matches something immediately.
+    // Keep the operands when re-picking the same field.
     if (cond && cond.field === key) return;
+    const nextOps = operatorsForFieldType(next.type);
+    if (nextOps[0] !== 'in') {
+      // Numeric source: seed the first comparison op (operand typed next).
+      onChange({ field: key, values: [], op: nextOps[0] });
+      return;
+    }
+    // Choice source: seed the first option so the rule matches something
+    // immediately. Free-text sources start with an empty list.
     const first = hasOptions(next.type) ? next.options?.[0]?.value : undefined;
     onChange({ field: key, values: first ? [first] : [] });
   }
 
   function toggleValue(value: string) {
     if (!cond) return;
-    const has = cond.values.includes(value);
-    onChange({ ...cond, values: has ? cond.values.filter((v) => v !== value) : [...cond.values, value] });
+    const values = cond.values ?? [];
+    const has = values.includes(value);
+    onChange({ ...cond, values: has ? values.filter((v) => v !== value) : [...values, value] });
   }
 
   return (
@@ -125,10 +184,56 @@ function ConditionEditor({
       </SelectField>
 
       {cond ? (
-        sourceOptions ? (
+        numeric ? (
+          <div className="flex flex-col gap-2">
+            <div data-testid={`${testid}-op`}>
+              <SelectField
+                aria-label={`${label} — ${m.operator}`}
+                value={op}
+                onChange={(e) => onChange({ ...cond, op: e.target.value as ConditionOp })}
+                className="h-8 py-1 text-xs"
+              >
+                {ops.map((o) => (
+                  <option key={o} value={o}>
+                    {opLabel(o, m)}
+                  </option>
+                ))}
+              </SelectField>
+            </div>
+            {op === 'between' ? (
+              <div className="flex items-end gap-2">
+                <NumberOperand
+                  key={`${cond.field}-min`}
+                  initial={cond.min}
+                  label={m.betweenMin}
+                  ariaLabel={`${label} — ${m.betweenMin}`}
+                  testid={`${testid}-min`}
+                  onCommit={(n) => onChange({ ...cond, min: n })}
+                />
+                <NumberOperand
+                  key={`${cond.field}-max`}
+                  initial={cond.max}
+                  label={m.betweenMax}
+                  ariaLabel={`${label} — ${m.betweenMax}`}
+                  testid={`${testid}-max`}
+                  onCommit={(n) => onChange({ ...cond, max: n })}
+                />
+              </div>
+            ) : (
+              <NumberOperand
+                key={`${cond.field}-value`}
+                initial={cond.value}
+                label={m.value}
+                ariaLabel={`${label} — ${m.value}`}
+                testid={`${testid}-value`}
+                onCommit={(n) => onChange({ ...cond, value: n })}
+              />
+            )}
+          </div>
+        ) : sourceOptions ? (
           <div className="flex flex-wrap gap-1.5" role="group" aria-label={m.values}>
             {sourceOptions.map((o) => {
-              const selected = cond.values.includes(o.value);
+              const selected = (cond.values ?? []).includes(o.value);
               return (
                 <button
                   key={o.value}
@@ -150,7 +255,7 @@ function ConditionEditor({
         ) : (
           <FreeValuesInput
             key={cond.field}
-            initial={cond.values}
+            initial={cond.values ?? []}
             label={m.values}
             hint={m.valuesHint}
             onCommit={(values) => onChange({ ...cond, values })}
@@ -158,6 +263,52 @@ function ConditionEditor({
         )
       ) : null}
     </div>
+  );
+}
+
+const numberControl =
+  'h-8 w-full rounded-md border border-input bg-background px-3 py-1 text-xs transition-colors ' +
+  'placeholder:text-muted-foreground hover:border-muted-foreground ' +
+  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
+
+/**
+ * A numeric operand input (eq/gt/lt value, or one side of a `between`) with
+ * LOCAL text state — the visible text stays exactly as typed while a parsed,
+ * finite number (or `undefined` for empty/partial input) commits upward. Keyed
+ * by the source field so switching fields reseeds it.
+ */
+function NumberOperand({
+  initial,
+  label,
+  ariaLabel,
+  testid,
+  onCommit,
+}: {
+  initial: number | undefined;
+  label: string;
+  ariaLabel: string;
+  testid: string;
+  onCommit: (n: number | undefined) => void;
+}) {
+  const [text, setText] = useState(initial == null ? '' : String(initial));
+  return (
+    <label className="flex flex-1 flex-col gap-1">
+      <span className="text-[11px] font-medium text-muted-foreground">{label}</span>
+      <input
+        type="number"
+        inputMode="decimal"
+        aria-label={ariaLabel}
+        data-testid={testid}
+        value={text}
+        onChange={(e) => {
+          const raw = e.target.value;
+          setText(raw);
+          const n = raw.trim() === '' ? undefined : Number(raw);
+          onCommit(n != null && Number.isFinite(n) ? n : undefined);
+        }}
+        className={numberControl}
+      />
+    </label>
   );
 }
 

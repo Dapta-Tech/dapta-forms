@@ -66,7 +66,14 @@ export function QuestionVariants({
     }
     const first = prior.find((s) => hasOptions(s.type)) ?? prior[0];
     if (!first) return;
-    onUpdate({ questionField: first.key, questionVariants: step.questionVariants ?? {} });
+    // Seed ONE empty variant row on enable so the pattern is visible (V4-09),
+    // but preserve any rows the author already authored (non-destructive
+    // re-enable) — only seed when there are none yet (ignoring the `*` fallback).
+    const existing = step.questionVariants ?? {};
+    const hasRows = Object.keys(existing).some((k) => k !== FALLBACK);
+    const firstOption = hasOptions(first.type) ? first.options?.[0]?.value : undefined;
+    const nextVariants = hasRows ? existing : { ...existing, [firstOption ?? 'value_1']: '' };
+    onUpdate({ questionField: first.key, questionVariants: nextVariants });
   }
 
   function setVariant(key: string, text: string) {
@@ -108,6 +115,10 @@ export function QuestionVariants({
   }
 
   function addVariant() {
+    // Don't stack empty rows: if a blank variant is already open, keep filling
+    // that one. This also absorbs the row seeded on enable, so clicking "Add
+    // variant" right after enabling reuses it instead of adding a second.
+    if (rows.some((k) => !(variants[k] ?? '').trim())) return;
     const taken = new Set(rows);
     const free = sourceOptions?.find((o) => !taken.has(o.value))?.value;
     const key = free ?? `value_${rows.length + 1}`;
@@ -224,6 +235,13 @@ export function QuestionVariants({
             <i aria-hidden className="pi pi-plus" style={{ fontSize: 11 }} /> {m.add}
           </Button>
 
+          <p
+            className="flex items-start gap-1.5 text-[11px] leading-relaxed text-muted-foreground"
+            data-testid="variants-scope-note"
+          >
+            <i aria-hidden className="pi pi-info-circle mt-0.5" style={{ fontSize: 10 }} />
+            {m.scopeNote}
+          </p>
           <p className="flex items-start gap-1.5 text-[11px] leading-relaxed text-muted-foreground">
             <i aria-hidden className="pi pi-info-circle mt-0.5" style={{ fontSize: 10 }} />
             {m.interpolationHint}

@@ -121,10 +121,10 @@ export function CanvasQuestion({
           {tb(m.canvas.questionN, { n: index + 1 })}
         </p>
 
-        {/* Inline editable title — with the @ recall-information picker (the
-            engine interpolates `[key]` tokens in `question` from EARLIER
-            answers; the description/helper renders raw, so only the title gets
-            the picker). */}
+        {/* Inline editable title — with the @ recall-information picker. The
+            engine interpolates `[key]` tokens in BOTH `question` and the
+            description/`helper` from EARLIER answers (resolveStepDisplay), so
+            both fields get the picker. */}
         <TokenTextarea
           value={step.question ?? ''}
           onChange={(v) => onUpdate({ question: v })}
@@ -139,14 +139,23 @@ export function CanvasQuestion({
           className="canvas-title text-2xl font-semibold tracking-tight text-foreground sm:text-[28px]"
         />
 
-        {/* Inline editable description */}
-        <AutoTextarea
-          value={step.helper ?? ''}
-          onChange={(v) => onUpdate({ helper: v || null })}
-          placeholder={m.canvas.descriptionPlaceholder}
-          ariaLabel={m.canvas.descriptionPlaceholder}
-          className="mt-1.5 text-[15px] leading-relaxed text-muted-foreground"
-        />
+        {/* Inline editable description — same @ picker as the title (tokens =
+            fields captured before this step). No hint here so the single
+            discoverability chip stays under the title. */}
+        <div className="mt-1.5">
+          <TokenTextarea
+            value={step.helper ?? ''}
+            onChange={(v) => onUpdate({ helper: v || null })}
+            placeholder={m.canvas.descriptionPlaceholder}
+            ariaLabel={m.canvas.descriptionPlaceholder}
+            autoGrow
+            tokens={tokenOptionsBefore(config.steps, index)}
+            allKeys={allTokenKeys(config.steps)}
+            m={m.tokens}
+            testId="canvas-description-input"
+            className="text-[15px] leading-relaxed text-muted-foreground"
+          />
+        </div>
 
         {/* Body: the real rendered input */}
         <div className="mt-6">

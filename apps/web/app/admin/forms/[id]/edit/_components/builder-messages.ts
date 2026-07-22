@@ -69,6 +69,25 @@ export interface BuilderMessages {
     /** One-line pointer left in the Design tab (the select moved to the spine). */
     designNote: string;
   };
+  /** The reveal-screen marker in the question spine (V4-04 — mirrors `partial`). */
+  revealPoint: {
+    /** Marker-row label ("Reveal screen"). */
+    label: string;
+    /** aria-label of the marker's remove (×) button. */
+    remove: string;
+    /** aria-label of the marker's drag grip. */
+    move: string;
+    /** aria-label of the info toggle on the marker row. */
+    info: string;
+    /** Popover: what the reveal marker does. */
+    tipPlays: string;
+    /** Popover line when the marker sits after the LAST question. */
+    tipEnd: string;
+    /** Popover line when the marker sits mid-form. */
+    tipMid: string;
+    /** Popover: where the reveal copy/duration is edited. */
+    tipEdit: string;
+  };
   canvas: {
     /** "Question {n}" */
     questionN: string;
@@ -97,6 +116,8 @@ export interface BuilderMessages {
     noRules: string;
     scoring: string;
     scoringHint: string;
+    /** Shown near the toggle when scoring is on but no points are assigned yet. */
+    scoringZeroHint: string;
     contactHint: string;
     delete: string;
     deleteConfirm: string;
@@ -176,6 +197,14 @@ export interface BuilderMessages {
     /** "If {value} → {target}" */
     jumpEdge: string;
     empty: string;
+    /** Caption under the Start node. */
+    startHint: string;
+    /** Caption on the default ("no rule matched") path so the flow is traceable. */
+    otherwiseHint: string;
+    /** Pill on a question that only shows when a show/hide condition holds. */
+    conditional: string;
+    /** Small kicker above a scored outcome node. */
+    outcomeKicker: string;
   };
   results: {
     pointsTitle: string;
@@ -200,7 +229,14 @@ export interface BuilderMessages {
   empty: {
     title: string;
     subtitle: string;
+    /** Legacy inline "or start from scratch" affordance (kept for compatibility). */
     scratch: string;
+    /** Title of the blank-canvas option presented first. */
+    scratchTitle: string;
+    /** One-line description under the blank-canvas option. */
+    scratchDesc: string;
+    /** Section-divider label above the template cards. */
+    templatesLabel: string;
     templates: Record<TemplateId, { name: string; desc: string; meta: string }>;
   };
 }
@@ -267,6 +303,16 @@ const en: BuilderMessages = {
     tipAfterLast: 'After the last question it never fires — the final submit already captures everything.',
     designNote: 'Configured in the question list on the Build tab — look for the “Partial submit point” card.',
   },
+  revealPoint: {
+    label: 'Reveal screen',
+    remove: 'Remove reveal screen',
+    move: 'Move reveal screen',
+    info: 'About the reveal screen',
+    tipPlays: 'Plays a short processing screen for respondents at this point in the form.',
+    tipEnd: 'At the end it plays right before the result — never mid-form.',
+    tipMid: 'Here it plays after this question, then the form continues.',
+    tipEdit: 'Edit its headline, subtitle and duration in Design.',
+  },
   canvas: {
     questionN: 'Question {n}',
     titlePlaceholder: 'Type your question…',
@@ -290,7 +336,9 @@ const en: BuilderMessages = {
     addRule: 'Add rule',
     noRules: 'No rules — everyone sees this question.',
     scoring: 'Scoring',
-    scoringHint: 'Points from the selected option add to the total score. Set ranges in Results.',
+    scoringHint:
+      'Scoring applies to the whole form, not just this question. Points from the selected option add to the total; set ranges in Results.',
+    scoringZeroHint: 'Assign points to your answers to enable ranges.',
     contactHint: 'Contact field — doesn’t affect the score.',
     delete: 'Delete question',
     deleteConfirm: 'Delete this question?',
@@ -370,6 +418,10 @@ const en: BuilderMessages = {
     skipEdge: 'If {value} → skip to end',
     jumpEdge: 'If {value} → {target}',
     empty: 'Add questions to see how answers route through your form.',
+    startHint: 'Respondents start here',
+    otherwiseHint: 'if no rule matches, continue in order',
+    conditional: 'Conditional',
+    outcomeKicker: 'Ending',
   },
   results: {
     pointsTitle: 'Points',
@@ -391,8 +443,11 @@ const en: BuilderMessages = {
   },
   empty: {
     title: 'Let’s build your form',
-    subtitle: 'Start from a template and edit every question live — or begin with a blank canvas.',
+    subtitle: 'Begin with a blank canvas, or pick a ready-made template to edit live.',
     scratch: 'or start from scratch — add your first question',
+    scratchTitle: 'Start from scratch',
+    scratchDesc: 'Begin with a blank canvas and add your own questions.',
+    templatesLabel: 'Or choose a template',
     templates: {
       lead: {
         name: 'Lead qualifier',
@@ -467,6 +522,16 @@ const es: BuilderMessages = {
     designNote:
       'Se configura en la lista de preguntas, en la pestaña Construir — busca la tarjeta «Punto de envío parcial».',
   },
+  revealPoint: {
+    label: 'Pantalla de revelación',
+    remove: 'Quitar la pantalla de revelación',
+    move: 'Mover la pantalla de revelación',
+    info: 'Acerca de la pantalla de revelación',
+    tipPlays: 'Muestra una breve pantalla de procesamiento en este punto del formulario.',
+    tipEnd: 'Al final se muestra justo antes del resultado — nunca a mitad del formulario.',
+    tipMid: 'Aquí se muestra después de esta pregunta y luego el formulario continúa.',
+    tipEdit: 'Edita su titular, subtítulo y duración en Diseño.',
+  },
   canvas: {
     questionN: 'Pregunta {n}',
     titlePlaceholder: 'Escribe tu pregunta…',
@@ -490,7 +555,9 @@ const es: BuilderMessages = {
     addRule: 'Añadir regla',
     noRules: 'Sin reglas — todos ven esta pregunta.',
     scoring: 'Puntaje',
-    scoringHint: 'Los puntos de la opción elegida suman al total. Define los rangos en Resultados.',
+    scoringHint:
+      'El puntaje se aplica a todo el formulario, no solo a esta pregunta. Los puntos de la opción elegida suman al total; define los rangos en Resultados.',
+    scoringZeroHint: 'Asigna puntos a tus respuestas para habilitar los rangos.',
     contactHint: 'Campo de contacto — no afecta el puntaje.',
     delete: 'Eliminar pregunta',
     deleteConfirm: '¿Eliminar esta pregunta?',
@@ -570,6 +637,10 @@ const es: BuilderMessages = {
     skipEdge: 'Si {value} → ir al final',
     jumpEdge: 'Si {value} → {target}',
     empty: 'Añade preguntas para ver cómo las respuestas recorren tu formulario.',
+    startHint: 'Aquí empiezan las personas',
+    otherwiseHint: 'si ninguna regla coincide, continúa en orden',
+    conditional: 'Condicional',
+    outcomeKicker: 'Final',
   },
   results: {
     pointsTitle: 'Puntos',
@@ -591,8 +662,11 @@ const es: BuilderMessages = {
   },
   empty: {
     title: 'Construyamos tu formulario',
-    subtitle: 'Empieza desde una plantilla y edita cada pregunta en vivo — o comienza con un lienzo en blanco.',
+    subtitle: 'Comienza con un lienzo en blanco, o elige una plantilla lista para editar en vivo.',
     scratch: 'o empieza desde cero — añade tu primera pregunta',
+    scratchTitle: 'Empezar desde cero',
+    scratchDesc: 'Comienza con un lienzo en blanco y añade tus propias preguntas.',
+    templatesLabel: 'O elige una plantilla',
     templates: {
       lead: {
         name: 'Calificador de leads',

@@ -12,11 +12,16 @@ import {
   runtimeSteps,
   isMultiSelect,
   partialSubmitKey,
+  revealAfterKey,
   nameFields,
   isSafeHttpUrl,
   isSafeImageUrl,
+  operatorsForFieldType,
+  conditionsContradict,
   type FormConfig,
   type FormStep,
+  type StepCondition,
+  type Answers,
 } from './form-logic';
 
 const step = (partial: Partial<FormStep> & Pick<FormStep, 'key' | 'type'>): FormStep => partial;
@@ -79,6 +84,175 @@ describe('visibleSteps', () => {
     };
     expect(visibleSteps(cfg, { skip: 'yes' })).toHaveLength(0);
     expect(visibleSteps(cfg, { skip: 'no' })).toHaveLength(1);
+  });
+
+  it('skips a hidden step (never walked, never scored — its answer only rides along)', () => {
+    const cfg: FormConfig = {
+      version: 1,
+      steps: [
+        step({ key: 'plan', type: 'text' }),
+        step({ key: 'source', type: 'text', hidden: true }),
+      ],
+    };
+    // The hidden step is absent from the walk even though it has an answer.
+    expect(visibleSteps(cfg, { source: 'ads' }).map((s) => s.key)).toEqual(['plan']);
+    expect(runtimeSteps(cfg, { source: 'ads' }).map((s) => s.key)).toEqual(['plan']);
+  });
+});
+
+describe('operatorsForFieldType (V4-07 — operators by field type)', () => {
+  it('offers the numeric comparison set for slider', () => {
+    expect(operatorsForFieldType('slider')).toEqual(['eq', 'gt', 'lt', 'between']);
+  });
+
+  it('keeps "matches any of" (in) for choice / text / email', () => {
+    for (const t of ['multiple_choice', 'dropdown', 'text', 'email', 'name', 'phone'] as const) {
+      expect(operatorsForFieldType(t)).toEqual(['in']);
+    }
+  });
+});
+
+describe('conditionHolds operators (V4-07 — via visibleSteps)', () => {
+  /** A slider `n` followed by a text step gated by `cond` (show or hide). */
+  const gated = (cond: StepCondition, which: 'showWhen' | 'hideWhen' = 'showWhen'): FormConfig => ({
+    version: 1,
+    steps: [
+      step({ key: 'n', type: 'slider', min: 0, max: 100 }),
+      step(which === 'showWhen' ? { key: 'g', type: 'text', showWhen: cond } : { key: 'g', type: 'text', hideWhen: cond }),
+    ],
+  });
+  const showsG = (cfg: FormConfig, answers: Answers): boolean =>
+    visibleSteps(cfg, answers).some((s) => s.key === 'g');
+
+  it('eq: visible only on an exact numeric match (numeric strings parse)', () => {
+    const cfg = gated({ field: 'n', op: 'eq', value: 5 });
+    expect(showsG(cfg, { n: 5 })).toBe(true);
+    expect(showsG(cfg, { n: 6 })).toBe(false);
+    expect(showsG(cfg, { n: '5' })).toBe(true);
+  });
+
+  it('gt / lt compare the numeric answer', () => {
+    expect(showsG(gated({ field: 'n', op: 'gt', value: 50 }), { n: 60 })).toBe(true);
+    expect(showsG(gated({ field: 'n', op: 'gt', value: 50 }), { n: 40 })).toBe(false);
+    expect(showsG(gated({ field: 'n', op: 'gt', value: 50 }), { n: 50 })).toBe(false); // strict
+    expect(showsG(gated({ field: 'n', op: 'lt', value: 50 }), { n: 40 })).toBe(true);
+    expect(showsG(gated({ field: 'n', op: 'lt', value: 50 }), { n: 60 })).toBe(false);
+  });
+
+  it('between is inclusive on both bounds', () => {
+    const cfg = gated({ field: 'n', op: 'between', min: 10, max: 20 });
+    expect(showsG(cfg, { n: 10 })).toBe(true);
+    expect(showsG(cfg, { n: 20 })).toBe(true);
+    expect(showsG(cfg, { n: 15 })).toBe(true);
+    expect(showsG(cfg, { n: 9 })).toBe(false);
+    expect(showsG(cfg, { n: 21 })).toBe(false);
+  });
+
+  it('a numeric op never holds for a non-numeric answer or a missing operand', () => {
+    expect(showsG(gated({ field: 'n', op: 'gt', value: 50 }), { n: 'abc' })).toBe(false);
+    expect(showsG(gated({ field: 'n', op: 'gt', value: 50 }), {})).toBe(false);
+    expect(showsG(gated({ field: 'n', op: 'eq' }), { n: 5 })).toBe(false); // no operand
+    expect(showsG(gated({ field: 'n', op: 'between', min: 10 }), { n: 15 })).toBe(false); // half range
+  });
+
+  it('hideWhen honors numeric ops (hide when gt 50)', () => {
+    const cfg = gated({ field: 'n', op: 'gt', value: 50 }, 'hideWhen');
+    expect(showsG(cfg, { n: 60 })).toBe(false); // hidden
+    expect(showsG(cfg, { n: 40 })).toBe(true); // shown
+  });
+
+  it('back-compat: a condition with NO op behaves exactly as `in`', () => {
+    const cfg: FormConfig = {
+      version: 1,
+      steps: [
+        step({
+          key: 'c',
+          type: 'multiple_choice',
+          options: [
+            { label: 'A', value: 'a' },
+            { label: 'B', value: 'b' },
+          ],
+        }),
+        step({ key: 'g', type: 'text', showWhen: { field: 'c', values: ['a'] } }),
+      ],
+    };
+    expect(visibleSteps(cfg, { c: 'a' }).some((s) => s.key === 'g')).toBe(true);
+    expect(visibleSteps(cfg, { c: 'b' }).some((s) => s.key === 'g')).toBe(false);
+  });
+});
+
+describe('conditionsContradict (V4-08 — trivial contradiction guard)', () => {
+  it('is false when a side is absent or the fields differ', () => {
+    expect(conditionsContradict(null, null)).toBe(false);
+    expect(conditionsContradict({ field: 'a', values: ['x'] }, null)).toBe(false);
+    expect(conditionsContradict({ field: 'a', values: ['x'] }, { field: 'b', values: ['x'] })).toBe(
+      false,
+    );
+  });
+
+  it('flags identical / subset choice sets on the same field', () => {
+    expect(conditionsContradict({ field: 'a', values: ['x'] }, { field: 'a', values: ['x'] })).toBe(
+      true,
+    );
+    // show ⊆ hide
+    expect(
+      conditionsContradict({ field: 'a', values: ['x'] }, { field: 'a', values: ['x', 'y'] }),
+    ).toBe(true);
+    // show ⊄ hide
+    expect(
+      conditionsContradict({ field: 'a', values: ['x', 'y'] }, { field: 'a', values: ['x'] }),
+    ).toBe(false);
+    // empty show never contradicts
+    expect(conditionsContradict({ field: 'a', values: [] }, { field: 'a', values: [] })).toBe(false);
+  });
+
+  it('flags overlapping numeric ranges (show interval ⊆ hide interval)', () => {
+    expect(
+      conditionsContradict({ field: 'n', op: 'eq', value: 5 }, { field: 'n', op: 'eq', value: 5 }),
+    ).toBe(true);
+    expect(
+      conditionsContradict({ field: 'n', op: 'eq', value: 5 }, { field: 'n', op: 'eq', value: 6 }),
+    ).toBe(false);
+    expect(
+      conditionsContradict(
+        { field: 'n', op: 'between', min: 50, max: 80 },
+        { field: 'n', op: 'between', min: 40, max: 100 },
+      ),
+    ).toBe(true);
+    expect(
+      conditionsContradict(
+        { field: 'n', op: 'between', min: 40, max: 100 },
+        { field: 'n', op: 'between', min: 50, max: 80 },
+      ),
+    ).toBe(false);
+    // x>50 ⊆ x>40 ; x>40 ⊄ x>50
+    expect(
+      conditionsContradict({ field: 'n', op: 'gt', value: 50 }, { field: 'n', op: 'gt', value: 40 }),
+    ).toBe(true);
+    expect(
+      conditionsContradict({ field: 'n', op: 'gt', value: 40 }, { field: 'n', op: 'gt', value: 50 }),
+    ).toBe(false);
+    // x<5 ⊆ x<10
+    expect(
+      conditionsContradict({ field: 'n', op: 'lt', value: 5 }, { field: 'n', op: 'lt', value: 10 }),
+    ).toBe(true);
+    // 60 ∈ [50,80]
+    expect(
+      conditionsContradict(
+        { field: 'n', op: 'eq', value: 60 },
+        { field: 'n', op: 'between', min: 50, max: 80 },
+      ),
+    ).toBe(true);
+  });
+
+  it('is conservative: mixed choice/numeric ops or missing operands never flag', () => {
+    expect(
+      conditionsContradict({ field: 'n', values: ['5'] }, { field: 'n', op: 'eq', value: 5 }),
+    ).toBe(false);
+    // show has no operand → not a well-formed interval
+    expect(conditionsContradict({ field: 'n', op: 'eq' }, { field: 'n', op: 'eq', value: 5 })).toBe(
+      false,
+    );
   });
 });
 
@@ -390,6 +564,20 @@ describe('interpolate + resolveStepDisplay', () => {
     expect(resolved.question).toBe('How many leads, Sam?');
     expect(resolved.sliderUnitLabel).toBe('leads / mo');
   });
+
+  it('interpolates [key] tokens in the helper/description with the same sweep', () => {
+    const s = step({ key: 'x', type: 'text', question: 'Q', helper: 'Details for [firstname]' });
+    // Resolved: the token substitutes verbatim.
+    expect(resolveStepDisplay(s, { firstname: 'Sam' }).helper).toBe('Details for Sam');
+    // Trailing empty token sweeps the connector in front of it (no "Details for ").
+    expect(resolveStepDisplay(s, {}).helper).toBe('Details for');
+    // Embedded empty token keeps a following connector, drops the preceding space.
+    const s2 = step({ key: 'y', type: 'text', helper: 'Hi [firstname], read on' });
+    expect(resolveStepDisplay(s2, {}).helper).toBe('Hi, read on');
+    // A null/undefined helper is left untouched (not coerced to a string).
+    expect(resolveStepDisplay(step({ key: 'z', type: 'text' }), {}).helper).toBeUndefined();
+    expect(resolveStepDisplay(step({ key: 'z', type: 'text', helper: null }), {}).helper).toBeNull();
+  });
 });
 
 describe('runtimeSteps', () => {
@@ -450,6 +638,50 @@ describe('partialSubmitKey', () => {
   it('resolves the 1-based threshold step key or null', () => {
     expect(partialSubmitKey({ ...config, partialSubmitAfterStep: 4 })).toBe('email');
     expect(partialSubmitKey(config)).toBeNull();
+  });
+});
+
+describe('revealAfterKey (V4-04 — reveal position resolution)', () => {
+  const threeSteps: FormStep[] = [
+    step({ key: 'q1', type: 'text' }),
+    step({ key: 'q2', type: 'text' }),
+    step({ key: 'q3', type: 'text' }),
+  ];
+  const base: FormConfig = { version: 1, steps: threeSteps, reveal: { enabled: true } };
+
+  it('returns null when the reveal is absent or disabled', () => {
+    expect(revealAfterKey({ version: 1, steps: threeSteps })).toBeNull();
+    expect(revealAfterKey({ version: 1, steps: threeSteps, reveal: { enabled: false } })).toBeNull();
+    // Enabled but no steps → nothing to fire after.
+    expect(revealAfterKey({ version: 1, steps: [], reveal: { enabled: true } })).toBeNull();
+  });
+
+  it('defaults an enabled reveal to AFTER THE LAST step (never mid-form)', () => {
+    expect(revealAfterKey(base)).toBe('q3');
+    // `enabled` absent (but reveal present) is treated as on, mirroring the renderer gate.
+    expect(revealAfterKey({ version: 1, steps: threeSteps, reveal: {} })).toBe('q3');
+  });
+
+  it('honors revealAfterStep (1-based) when set + in range', () => {
+    expect(revealAfterKey({ ...base, revealAfterStep: 1 })).toBe('q1');
+    expect(revealAfterKey({ ...base, revealAfterStep: 2 })).toBe('q2');
+    expect(revealAfterKey({ ...base, revealAfterStep: 3 })).toBe('q3');
+  });
+
+  it('falls back to triggersReveal, then default-last, when revealAfterStep is unset/out-of-range', () => {
+    const withTrigger: FormConfig = {
+      version: 1,
+      reveal: { enabled: true },
+      steps: [threeSteps[0]!, { ...threeSteps[1]!, triggersReveal: true }, threeSteps[2]!],
+    };
+    // Back-compat: the legacy per-step boolean still places the reveal in place.
+    expect(revealAfterKey(withTrigger)).toBe('q2');
+    // revealAfterStep wins over triggersReveal when both are present.
+    expect(revealAfterKey({ ...withTrigger, revealAfterStep: 1 })).toBe('q1');
+    // Out-of-range revealAfterStep is ignored → falls back to triggersReveal.
+    expect(revealAfterKey({ ...withTrigger, revealAfterStep: 99 })).toBe('q2');
+    // Out-of-range with no trigger → default-last.
+    expect(revealAfterKey({ ...base, revealAfterStep: 0 })).toBe('q3');
   });
 });
 

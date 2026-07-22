@@ -1,15 +1,18 @@
 'use client';
 
+import { useMemo } from 'react';
 import type { FormStep } from '@quill/engine';
 import { defaultFlowGroup } from '@quill/engine';
-import { getMessages } from '@quill/shared';
+import { COUNTRIES, countryName, getMessages } from '@quill/shared';
 import { clientLocale } from '@/lib/client-locale';
 import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
+import { Select, type SelectOption } from '@/components/ui/select';
 import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Field, NumberField, SelectField, InlineField, TextField } from './fields';
 import { OptionsEditor } from './options-editor';
 import { SliderScoringEditor } from './slider-scoring-editor';
+import { maxScoreForSteps } from './scoring-util';
 import { LogicRules } from './logic-rules';
 import { LogicConditions } from './logic-conditions';
 import { QuestionVariants } from './question-variants';
@@ -45,6 +48,9 @@ export function QuestionSettings({
   formId,
   locale,
   onOpenConnect,
+  onOpenDesign,
+  revealAfterStep,
+  onRevealAfterStepChange,
 }: {
   step: FormStep;
   index: number;
@@ -59,9 +65,30 @@ export function QuestionSettings({
   locale: string;
   /** Switch the editor to the Connect tab (HubSpot destination setup). */
   onOpenConnect: () => void;
+  /** Switch the editor to the Design tab (reveal-screen copy/duration — V4-12). */
+  onOpenDesign: () => void;
+  /** Current 1-based `config.revealAfterStep` (the reveal marker's position). */
+  revealAfterStep?: number;
+  /** Pin the reveal after THIS step (1-based) or clear it (`undefined`) — V4-04. */
+  onRevealAfterStepChange: (afterStep: number | undefined) => void;
 }) {
   const contact = isContactType(step.type);
+  // Form-wide "highest possible" total (same math as Results). Drives the
+  // "assign points" nudge when scoring is on but nothing scores yet.
+  const scoringMax = maxScoreForSteps(steps);
   const { confirm: confirmDialog, dialog } = useConfirmDialog();
+
+  // Country options for the phone step's default-country picker: an "automatic"
+  // (locale-based) row first, then every country sorted by localized name.
+  const countryOptions = useMemo<SelectOption[]>(
+    () => [
+      { value: '', label: em.props.phoneDefaultCountryAuto },
+      ...[...COUNTRIES]
+        .sort((a, b) => countryName(a.code, locale).localeCompare(countryName(b.code, locale), locale))
+        .map((c) => ({ value: c.code, label: `${c.flag} ${countryName(c.code, locale)} (${c.dial})` })),
+    ],
+    [locale, em.props.phoneDefaultCountryAuto],
+  );
 
   function changeType(itemId: string) {
     const item = ALL_ITEMS.find((it) => it.id === itemId);
@@ -170,12 +197,22 @@ export function QuestionSettings({
       ) : null}
 
       {step.type === 'phone' ? (
-        <section className="border-t border-border pt-4">
+        <section className="flex flex-col gap-3 border-t border-border pt-4">
           <Field label={em.props.phoneMinDigits}>
             <NumberField
               value={step.phoneMinDigits ?? 7}
               min={1}
               onChange={(e) => onUpdate({ phoneMinDigits: Number(e.target.value) || undefined })}
+            />
+          </Field>
+          <Field label={em.props.phoneDefaultCountry}>
+            <Select
+              ariaLabel={em.props.phoneDefaultCountry}
+              value={step.phoneDefaultCountry ?? ''}
+              options={countryOptions}
+              searchable
+              locale={locale}
+              onChange={(v) => onUpdate({ phoneDefaultCountry: v || undefined })}
             />
           </Field>
         </section>
@@ -220,7 +257,9 @@ export function QuestionSettings({
           {em.logic.title}
         </p>
         <LogicConditions step={step} index={index} steps={steps} onUpdate={onUpdate} m={em.logic} />
-        {step.type !== 'email' ? (
+        {/* Personal-email branch needs an earlier email answer — impossible on
+            the first question, so hide it there. */}
+        {step.type !== 'email' && index > 0 ? (
           <InlineField label={em.logic.personalEmailOnly} hint={em.logic.personalEmailHint}>
             <Switch
               checked={!!step.showForPersonalEmailOnly}
@@ -240,7 +279,7 @@ export function QuestionSettings({
         <QuestionVariants step={step} index={index} steps={steps} onUpdate={onUpdate} m={em.variants} />
       </section>
 
-      {/* Behavior — terminal (disqualify) + reveal trigger */}
+      {/* Behavior — terminal (disqualify) + reveal position (V4-04/V4-12) */}
       <section className="flex flex-col gap-1 border-t border-border pt-4">
         <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           {em.behavior.title}
@@ -252,13 +291,38 @@ export function QuestionSettings({
             aria-label={em.behavior.terminal}
           />
         </InlineField>
+        {/* Hidden question — never shown; its answer is seeded from a matching
+            URL parameter and carried into the submission. Meaningless for a
+            message step (it collects no answer), so hide it there. */}
+        {step.type !== 'message' ? (
+          <InlineField label={em.behavior.hidden} hint={em.behavior.hiddenHint}>
+            <Switch
+              checked={!!step.hidden}
+              onCheckedChange={(v) => onUpdate({ hidden: v || undefined })}
+              aria-label={em.behavior.hidden}
+            />
+          </InlineField>
+        ) : null}
+        {/* The reveal POSITION lives in config.revealAfterStep (the draggable
+            spine marker is the primary control); this toggle is a convenience to
+            pin the reveal after THIS question. Clearing reverts to the default
+            (after the last question). */}
         <InlineField label={em.behavior.reveal} hint={em.behavior.revealHint}>
           <Switch
-            checked={!!step.triggersReveal}
-            onCheckedChange={(v) => onUpdate({ triggersReveal: v || undefined })}
+            checked={revealAfterStep === index + 1}
+            onCheckedChange={(v) => onRevealAfterStepChange(v ? index + 1 : undefined)}
             aria-label={em.behavior.reveal}
           />
         </InlineField>
+        <button
+          type="button"
+          data-testid="behavior-edit-reveal"
+          onClick={onOpenDesign}
+          className="mt-1 inline-flex w-fit items-center gap-1.5 rounded-md text-xs font-medium text-secondary transition-colors hover:text-secondary/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <i aria-hidden className="pi pi-pencil" style={{ fontSize: 11 }} />
+          {em.behavior.editReveal}
+        </button>
       </section>
 
       {/* Scoring / contact hint */}
@@ -275,7 +339,18 @@ export function QuestionSettings({
               />
             </InlineField>
             <p className="mt-1 text-xs text-muted-foreground">{bm.settings.scoringHint}</p>
-            {step.type === 'slider' && scoringEnabled ? (
+            {scoringEnabled && scoringMax === 0 ? (
+              <p
+                data-testid="scoring-zero-hint"
+                className="mt-1.5 flex items-start gap-1.5 text-xs text-muted-foreground"
+              >
+                <i aria-hidden className="pi pi-info-circle mt-0.5 text-secondary" style={{ fontSize: 11 }} />
+                {bm.settings.scoringZeroHint}
+              </p>
+            ) : null}
+            {/* Slider ranges show for every slider (parity with the always-on
+                option Points column) so scoring isn't mysteriously hidden. */}
+            {step.type === 'slider' ? (
               <div className="mt-3">
                 <SliderScoringEditor
                   ranges={step.sliderScoring ?? []}
@@ -378,6 +453,9 @@ function NameFieldsEditor({
           </label>
         </div>
       ))}
+      <p className="text-[10px] leading-relaxed text-muted-foreground" data-testid="name-fieldkey-hint">
+        {m.fieldKeyHint}
+      </p>
     </div>
   );
 }
