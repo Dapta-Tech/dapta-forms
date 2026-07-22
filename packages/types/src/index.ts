@@ -5,7 +5,7 @@
  * from the same schema (never trust the client; validate on both sides).
  */
 import { z } from 'zod';
-import { FORM_FIELD_TYPES, isSafeHttpUrl, isSafeImageUrl } from '@quill/engine';
+import { CONDITION_OPS, FORM_FIELD_TYPES, isSafeHttpUrl, isSafeImageUrl } from '@quill/engine';
 
 /** A URL rendered into `<img src>` — reject script protocols (XSS defense-in-depth). */
 const safeImageUrl = z
@@ -45,9 +45,32 @@ const optionSchema = z.object({
   icon: z.string().max(64).nullable().optional(),
 });
 
+/**
+ * Visibility-condition operators (mirrors the engine's `CONDITION_OPS`). Absent
+ * on a stored condition = `in`, so every pre-operator config still parses.
+ */
+export const conditionOp = z.enum(CONDITION_OPS);
+export type ConditionOp = z.infer<typeof conditionOp>;
+
+/**
+ * A show/hide condition. ADDITIVE, back-compat: `op`/`value`/`min`/`max` are all
+ * optional and a bare `{field, values}` keeps its original `in` ("matches any
+ * of") meaning. `values` is optional (numeric ops eq/gt/lt/between omit it); the
+ * engine's `conditionHolds` treats an absent `values` as an empty match. Kept
+ * optional (not `.default([])`) so the inferred type matches the engine's
+ * `StepCondition.values?: string[]` — otherwise FormConfig fails to assign.
+ */
 const conditionSchema = z.object({
   field: z.string().min(1),
-  values: z.array(z.string()),
+  values: z.array(z.string()).optional(),
+  /** Comparison operator; absent = `in`. Numeric ops apply to slider/number fields. */
+  op: conditionOp.optional(),
+  /** Operand for `eq` / `gt` / `lt`. */
+  value: z.number().optional(),
+  /** Lower bound for `between` (inclusive). */
+  min: z.number().optional(),
+  /** Upper bound for `between` (inclusive). */
+  max: z.number().optional(),
 });
 
 /**
@@ -109,6 +132,18 @@ export const formStepSchema = z.object({
   showForPersonalEmailOnly: z.boolean().optional(),
   terminal: z.boolean().optional(),
   triggersReveal: z.boolean().optional(),
+  /**
+   * Hidden step (ADDITIVE): never rendered as a visible question — the engine's
+   * `visibleSteps` skips it — but its answer can be supplied via a matching URL
+   * parameter and carried into the submission. Not shown for `message` steps.
+   */
+  hidden: z.boolean().optional(),
+  /**
+   * `phone` step: ISO 3166-1 alpha-2 the public country picker defaults to
+   * (e.g. "CO"). ADDITIVE — absent = the locale-based default. Two-char cap so a
+   * bad value can only fall back, never break the lookup.
+   */
+  phoneDefaultCountry: z.string().max(2).nullable().optional(),
 });
 export type FormStepInput = z.infer<typeof formStepSchema>;
 
@@ -206,7 +241,11 @@ export type OutcomeOverride = z.infer<typeof outcomeOverrideSchema>;
 
 export const formOutcomeSchema = z.object({
   id: z.string().min(1).max(64),
-  label: z.string().min(1).max(200),
+  // Empty label is allowed: the builder creates a range before the user names it,
+  // and the renderer/ScoreBar fall back to `#<n>`. Relaxing min(1) is a superset
+  // (every previously-valid config still parses) and keeps autosave from 400-ing
+  // the moment "Add a range" is clicked.
+  label: z.string().max(200),
   minScore: z.number().int().optional(),
   // http(s) only: the renderer navigates here (`window.location`), so a
   // `javascript:`/`data:` URL — which `.url()` alone would accept — is a stored
@@ -218,6 +257,12 @@ export const formOutcomeSchema = z.object({
     .nullable()
     .optional(),
   // --- Outcome extensions (all optional; back-compat) ------------------------
+  /**
+   * Per-outcome thank-you body (V4-16). Rendered as the done-screen body when
+   * set (falling back to the shared thank-you body); `label` stays the heading.
+   * Plain text with `[field]` tokens interpolated by the renderer.
+   */
+  message: z.string().max(2000).nullable().optional(),
   /** Scheduling handoff (HubSpot Meetings / Calendly) shown for this outcome. */
   booking: outcomeBookingSchema.nullable().optional(),
   /**
@@ -485,6 +530,13 @@ export const formConfigSchema = z.object({
   /** Third-party tracking ids (ADDITIVE — absent on every legacy config). */
   tracking: formTrackingSchema.nullable().optional(),
   partialSubmitAfterStep: z.number().int().positive().optional(),
+  /**
+   * WHERE the reveal interstitial plays (1-based over `steps`; ADDITIVE —
+   * mirrors partialSubmitAfterStep). Absent = the engine falls back to the
+   * legacy `triggersReveal`, then defaults to after the last step. See
+   * `revealAfterKey` in @quill/engine.
+   */
+  revealAfterStep: z.number().int().positive().optional(),
 });
 export type FormConfig = z.infer<typeof formConfigSchema>;
 

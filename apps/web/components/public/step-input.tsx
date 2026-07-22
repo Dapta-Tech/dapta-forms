@@ -86,6 +86,7 @@ export function StepInput({
           onChange={onChange}
           locale={locale}
           ariaLabel={step.question ?? step.key}
+          defaultCountry={step.phoneDefaultCountry ?? undefined}
         />
       );
 

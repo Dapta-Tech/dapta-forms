@@ -20,6 +20,7 @@ export function SliderScoringEditor({
   }
   return (
     <div className="flex flex-col gap-2">
+      <p className="text-[11px] leading-relaxed text-muted-foreground">{m.hint}</p>
       {ranges.length === 0 ? (
         <p className="text-xs text-muted-foreground">{m.empty}</p>
       ) : (

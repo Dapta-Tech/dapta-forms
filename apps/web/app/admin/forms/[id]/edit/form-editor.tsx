@@ -13,7 +13,9 @@ import type {
 } from '@quill/engine';
 import { normalizeConfig } from '@quill/engine';
 import type { FormTracking } from '@quill/types';
+import { formConfigSchema } from '@quill/types';
 import { saveFormAction } from '@/app/admin/actions';
+import { useToast } from '@/components/toast';
 import { cn } from '@/lib/cn';
 import { QuestionSpine } from './_components/question-spine';
 import { CanvasQuestion } from './_components/canvas-question';
@@ -38,11 +40,50 @@ import './_components/builder.css';
 type Tab = 'build' | 'logic' | 'connect' | 'results' | 'design';
 type SaveStatus = 'saved' | 'saving' | 'draft' | 'error';
 const AUTOSAVE_MS = 900;
+/** One backoff retry after a failed/transient save so a blip self-heals. */
+const RETRY_MS = 1500;
+/** Same admin API base the server-side admin-api client uses (client-exposed). */
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 
 const TAB_IDS: readonly Tab[] = ['build', 'logic', 'connect', 'results', 'design'];
 /** Unknown/absent `?tab` → build (the default view). */
 const parseTab = (value: string | null): Tab =>
   TAB_IDS.includes(value as Tab) ? (value as Tab) : 'build';
+
+/**
+ * Re-anchor a 1-based flow marker position (partialSubmitAfterStep /
+ * revealAfterStep) after a step is DELETED, keeping it attached to the step it
+ * sits AFTER: a delete ABOVE the anchor shifts it up one; deleting the anchor
+ * itself re-attaches to the previous step (clearing when it was the first);
+ * deletes BELOW never move it. Absent/out-of-range positions pass through.
+ */
+function reanchorAfterDelete(
+  pos: number | undefined,
+  deletedIndex: number,
+  prevLen: number,
+): number | undefined {
+  if (pos == null || pos < 1 || pos > prevLen) return pos;
+  if (deletedIndex < pos - 1) return pos - 1;
+  if (deletedIndex === pos - 1) return pos > 1 ? pos - 1 : undefined;
+  return pos;
+}
+
+/**
+ * Re-anchor a 1-based flow marker position after a REORDER: resolve the step it
+ * was anchored after in the OLD order, then point at that step's NEW index so
+ * the marker follows its anchor question. Absent/out-of-range positions pass
+ * through unchanged.
+ */
+function reanchorAfterReorder(
+  pos: number | undefined,
+  oldSteps: FormStep[],
+  newSteps: FormStep[],
+): number | undefined {
+  if (pos == null || pos < 1 || pos > oldSteps.length) return pos;
+  const anchorKey = oldSteps[pos - 1]?.key;
+  const anchored = newSteps.findIndex((s) => s.key === anchorKey);
+  return anchored >= 0 ? anchored + 1 : pos;
+}
 
 /**
  * The redesigned builder shell: Build (spine · WYSIWYG canvas · settings),
@@ -95,24 +136,116 @@ export function FormEditor({
   const [status, setStatus] = useState<SaveStatus>(initialConfig.steps.length ? 'saved' : 'draft');
   const [focusCanvas, setFocusCanvas] = useState(0);
   const [saveCount, setSaveCount] = useState(0);
+  // The server's reason for the last failed save — shown in the status tooltip.
+  const [lastError, setLastError] = useState<string | null>(null);
   const dirty = useRef(false);
+  const retry = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Freshest name/config for the leave handlers + retry (no stale closures).
+  const latest = useRef({ name, config });
+  const toast = useToast();
+  const toastRef = useRef(toast);
+  toastRef.current = toast;
 
   // --- Autosave (debounced; each successful save stores an unpublished draft) ---
+  // Bulletproofing: (1) surface WHY a save failed, (2) client-side pre-validate
+  // so a doomed PUT never fires, (4) auto-retry a transient failure once — and
+  // keep `dirty` true until a save actually SUCCEEDS so nothing is silently lost.
   const persist = useCallback(
-    async (nextName: string, nextConfig: FormConfig) => {
+    async (nextName: string, nextConfig: FormConfig, opts?: { isRetry?: boolean }): Promise<boolean> => {
+      const normalized = normalizeConfig(nextConfig);
+      const parsed = formConfigSchema.safeParse(normalized);
+      if (!parsed.success) {
+        const issue = parsed.error.issues[0];
+        const field = issue?.path.join('.') || 'config';
+        const reason = `${field}: ${issue?.message ?? 'invalid value'}`;
+        setStatus('error');
+        setLastError(reason);
+        console.error('[forms] autosave blocked — config failed validation:', reason, parsed.error.issues);
+        toastRef.current.error(tb(m.saveInvalid, { reason }));
+        return false; // dirty stays true; the next edit re-attempts
+      }
       setStatus('saving');
-      const res = await saveFormAction(id, { name: nextName, config: normalizeConfig(nextConfig) });
-      setStatus(res.ok ? 'saved' : 'error');
-      if (res.ok) setSaveCount((n) => n + 1);
+      const res = await saveFormAction(id, { name: nextName, config: normalized });
+      if (res.ok) {
+        dirty.current = false;
+        setStatus('saved');
+        setLastError(null);
+        setSaveCount((n) => n + 1);
+        return true;
+      }
+      const reason = res.message ?? 'unknown error';
+      console.error('[forms] autosave failed:', reason);
+      setStatus('error');
+      setLastError(reason);
+      if (!opts?.isRetry) {
+        toastRef.current.error(tb(m.saveErrorReason, { reason }));
+        if (retry.current) clearTimeout(retry.current);
+        retry.current = setTimeout(() => {
+          void persist(latest.current.name, latest.current.config, { isRetry: true });
+        }, RETRY_MS);
+      }
+      return false; // dirty stays true until a save actually succeeds
     },
-    [id],
+    [id, m],
   );
+
+  useEffect(() => {
+    latest.current = { name, config };
+  }, [name, config]);
 
   useEffect(() => {
     if (!dirty.current) return;
     const t = setTimeout(() => void persist(name, config), AUTOSAVE_MS);
     return () => clearTimeout(t);
   }, [name, config, persist]);
+
+  // (3) Flush a pending (debounced) save on leave so a change still sitting in
+  // the debounce window is never dropped. `beacon` = a keepalive PUT that
+  // survives a hard tab close/reload; the SPA-nav + tab-hidden paths use the
+  // cookie-authed server action (the component is still able to fire it).
+  const flush = useCallback(
+    (beacon: boolean) => {
+      if (!dirty.current) return;
+      const { name: n, config: c } = latest.current;
+      const normalized = normalizeConfig(c);
+      if (!formConfigSchema.safeParse(normalized).success) return; // never flush invalid config
+      if (beacon) {
+        try {
+          void fetch(`${API_BASE}/v1/forms/${id}`, {
+            method: 'PUT',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ name: n, config: normalized }),
+            keepalive: true,
+            credentials: 'include',
+          });
+        } catch {
+          /* best-effort on the unload path — nothing to recover to */
+        }
+      } else {
+        void persist(n, c);
+      }
+    },
+    [id, persist],
+  );
+  const flushRef = useRef(flush);
+  useEffect(() => {
+    flushRef.current = flush;
+  }, [flush]);
+
+  useEffect(() => {
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') flushRef.current(false);
+    };
+    const onBeforeUnload = () => flushRef.current(true);
+    document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('beforeunload', onBeforeUnload);
+      if (retry.current) clearTimeout(retry.current);
+      flushRef.current(false); // SPA nav / unmount → reliable server-action flush
+    };
+  }, []); // subscribe once; the cleanup flushes exactly once on real unmount
 
   function mutate(updater: (c: FormConfig) => FormConfig) {
     dirty.current = true;
@@ -143,16 +276,14 @@ export function FormEditor({
   function deleteStep(index: number) {
     mutate((c) => {
       const steps = c.steps.filter((_, i) => i !== index);
-      // Partial-submit threshold (1-based, anchored to the step it fires AFTER):
-      // deleting a step ABOVE the anchor shifts it up one; deleting the anchor
-      // ITSELF re-attaches to the previous step (or clears when the anchor was
-      // the first step); steps BELOW the anchor never move it.
-      let partial = c.partialSubmitAfterStep;
-      if (partial != null && partial >= 1 && partial <= c.steps.length) {
-        if (index < partial - 1) partial = partial - 1;
-        else if (index === partial - 1) partial = partial > 1 ? partial - 1 : undefined;
-      }
-      return { ...c, steps, partialSubmitAfterStep: partial };
+      // Keep both 1-based flow markers (partial-submit + reveal) anchored to the
+      // step they fire AFTER when a step is deleted.
+      return {
+        ...c,
+        steps,
+        partialSubmitAfterStep: reanchorAfterDelete(c.partialSubmitAfterStep, index, c.steps.length),
+        revealAfterStep: reanchorAfterDelete(c.revealAfterStep, index, c.steps.length),
+      };
     });
     setSelected((sel) => {
       const nextLen = config.steps.length - 1;
@@ -167,15 +298,13 @@ export function FormEditor({
       const [moved] = steps.splice(from, 1);
       if (!moved) return c;
       steps.splice(to, 0, moved);
-      // Keep the partial-submit threshold attached to the step it fires AFTER:
-      // resolve that step's key in the OLD order, then point at its NEW index.
-      let partial = c.partialSubmitAfterStep;
-      if (partial != null && partial >= 1 && partial <= c.steps.length) {
-        const anchorKey = c.steps[partial - 1]?.key;
-        const anchored = steps.findIndex((s) => s.key === anchorKey);
-        if (anchored >= 0) partial = anchored + 1;
-      }
-      return { ...c, steps, partialSubmitAfterStep: partial };
+      // Keep both 1-based flow markers attached to the step they fire AFTER.
+      return {
+        ...c,
+        steps,
+        partialSubmitAfterStep: reanchorAfterReorder(c.partialSubmitAfterStep, c.steps, steps),
+        revealAfterStep: reanchorAfterReorder(c.revealAfterStep, c.steps, steps),
+      };
     });
     setSelected((sel) => {
       if (sel == null) return null;
@@ -188,7 +317,9 @@ export function FormEditor({
   function applyTemplate(tid: TemplateId) {
     const cfg = TEMPLATES[tid];
     dirty.current = true;
-    setName(bm.empty.templates[tid].name);
+    // Preserve a name the user already typed; only fall back to the template's
+    // name when the field is still blank (V4-11 — templates swap config, not name).
+    setName((n) => (n.trim() ? n : bm.empty.templates[tid].name));
     setConfig(cfg);
     setSelected(0);
     setTab('build');
@@ -205,6 +336,14 @@ export function FormEditor({
     mutate((c) => ({ ...c, reveal: { ...c.reveal, ...patch } }));
   const setPartialSubmitAfterStep = (afterStep: number | undefined) =>
     mutate((c) => ({ ...c, partialSubmitAfterStep: afterStep }));
+  // WHERE the reveal plays (V4-04). Setting a value pins the reveal after that
+  // 1-based step; `undefined` reverts to the engine default (after the last
+  // step). Removing the marker turns the reveal OFF (Design owns enablement) and
+  // clears the position so a later re-enable defaults back to the end.
+  const setRevealAfterStep = (afterStep: number | undefined) =>
+    mutate((c) => ({ ...c, revealAfterStep: afterStep }));
+  const removeReveal = () =>
+    mutate((c) => ({ ...c, reveal: { ...c.reveal, enabled: false }, revealAfterStep: undefined }));
   // `tracking` is additive config the engine type omits; the autosave/publish
   // flow round-trips it (normalizeConfig passes unknown top-level keys through).
   const setTracking = (tracking: FormTracking | undefined) =>
@@ -212,6 +351,9 @@ export function FormEditor({
 
   const selectedStep = selected != null ? config.steps[selected] : undefined;
   const scoringEnabled = config.scoring?.enabled !== false;
+  // Mirrors the renderer/engine gate: the reveal marker shows when reveal exists
+  // AND is not explicitly disabled.
+  const revealEnabled = config.reveal != null && config.reveal.enabled !== false;
   const hasQuestions = config.steps.length > 0;
 
   const tabs: { id: Tab; label: string; icon: string }[] = [
@@ -251,7 +393,16 @@ export function FormEditor({
           aria-label={bm.shell.formNamePlaceholder}
           className="min-w-0 max-w-[38ch] flex-1 rounded-md border border-transparent bg-transparent px-1.5 py-1 text-base font-semibold tracking-tight hover:border-border focus-visible:border-input focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:flex-none sm:text-lg"
         />
-        <span className="hidden items-center gap-1.5 text-xs text-muted-foreground sm:inline-flex">
+        <span
+          className={cn(
+            'hidden items-center gap-1.5 text-xs text-muted-foreground sm:inline-flex',
+            status === 'error' && lastError ? 'cursor-help' : '',
+          )}
+          data-testid="editor-save-status"
+          data-status={status}
+          // Native tooltip: hover the "Not saved" indicator to read WHY it failed.
+          title={status === 'error' && lastError ? tb(m.saveErrorReason, { reason: lastError }) : undefined}
+        >
           <span className={cn('h-1.5 w-1.5 rounded-full', statusDot)} />
           {statusLabel}
         </span>
@@ -333,6 +484,10 @@ export function FormEditor({
                   onAdd={() => setGalleryOpen(true)}
                   partialAfterStep={config.partialSubmitAfterStep}
                   onPartialChange={setPartialSubmitAfterStep}
+                  revealEnabled={revealEnabled}
+                  revealAfterStep={config.revealAfterStep}
+                  onRevealMove={setRevealAfterStep}
+                  onRevealRemove={removeReveal}
                   m={bm}
                 />
               </aside>
@@ -421,6 +576,9 @@ export function FormEditor({
                     formId={id}
                     locale={locale}
                     onOpenConnect={() => setTab('connect')}
+                    onOpenDesign={() => setTab('design')}
+                    revealAfterStep={config.revealAfterStep}
+                    onRevealAfterStepChange={setRevealAfterStep}
                   />
                 ) : null}
               </aside>
@@ -452,6 +610,7 @@ export function FormEditor({
               onScoringChange={setScoring}
               onOutcomesChange={setOutcomes}
               m={bm}
+              rm={m.resultsHelp}
             />
           </div>
         ) : (

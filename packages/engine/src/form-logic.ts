@@ -38,10 +38,38 @@ export interface SliderScoringRange {
   points: number;
 }
 
-/** A visibility condition: the answer to `field` must (not) be one of `values`. */
+/**
+ * Comparison operators a visibility condition can use, picked by the referenced
+ * field's TYPE (see {@link operatorsForFieldType}). `in` is the legacy
+ * "matches any of" set-membership test (choice/text sources); the numeric ops
+ * (`eq`/`gt`/`lt`/`between`) compare the answer parsed as a number.
+ */
+export const CONDITION_OPS = ['in', 'eq', 'gt', 'lt', 'between'] as const;
+export type ConditionOp = (typeof CONDITION_OPS)[number];
+
+/**
+ * A visibility condition on the answer to `field`. ADDITIVE + back-compat: with
+ * NO `op` (every config authored before operators existed) it is an `in` test —
+ * the answer's tokens must intersect `values`. `op` selects the comparison and
+ * which operand it reads:
+ *  - `in`            → `values` (choice "matches any of"; the default).
+ *  - `eq`/`gt`/`lt`  → `value` (the answer parsed as a number, compared to it).
+ *  - `between`       → `[min, max]` inclusive (numeric).
+ * Operands the active op doesn't use are ignored, so an older `{field, values}`
+ * still means exactly what it always did.
+ */
 export interface StepCondition {
   field: string;
-  values: string[];
+  /** `in` operands ("matches any of"). Optional so a numeric op can omit it. */
+  values?: string[];
+  /** Operator (absent = `in`, the legacy behavior). */
+  op?: ConditionOp;
+  /** Operand for `eq` / `gt` / `lt` (the answer is parsed as a number). */
+  value?: number;
+  /** Lower bound for `between` (inclusive). */
+  min?: number;
+  /** Upper bound for `between` (inclusive). */
+  max?: number;
 }
 
 /**
@@ -136,6 +164,19 @@ export interface FormStep {
   terminal?: boolean;
   /** Show the processing/reveal interstitial after this step completes. */
   triggersReveal?: boolean;
+  /**
+   * Hidden step (additive; back-compat). A hidden step is NEVER rendered as a
+   * visible question — {@link visibleSteps} skips it, so it is neither walked nor
+   * scored — but its answer can still be SEEDED (e.g. from a matching URL
+   * parameter in the public renderer) and carried along into the submission.
+   */
+  hidden?: boolean;
+  /**
+   * `phone` step: the ISO 3166-1 alpha-2 country the public phone picker starts
+   * on (e.g. "CO"). Absent = the locale-based default (en→US, es→MX). Purely a
+   * display default — the stored answer is still a full E.164 string.
+   */
+  phoneDefaultCountry?: string | null;
 }
 
 /**
@@ -169,6 +210,13 @@ export interface FormOutcome {
   /** Inclusive lower score bound for this bucket (highest matching wins). */
   minScore?: number;
   redirectUrl?: string | null;
+  /**
+   * The body copy shown on the thank-you screen for this outcome (additive;
+   * back-compat). When set it replaces the shared thank-you body; `[key]` tokens
+   * interpolate from the answers. `label` stays the heading. Absent = the shared
+   * thank-you body is used, so every existing outcome renders exactly as before.
+   */
+  message?: string | null;
   /** Scheduling handoff (HubSpot Meetings / Calendly) shown for this outcome. */
   booking?: OutcomeBooking | null;
   /** Answer-forced rules: any match makes this outcome win over score bucketing. */
@@ -232,6 +280,13 @@ export interface FormConfig {
    * no partial save.
    */
   partialSubmitAfterStep?: number;
+  /**
+   * WHERE the reveal interstitial plays: the reveal fires after the step at this
+   * 1-based position in `steps` (additive; back-compat). Absent = fall back to
+   * the legacy per-step `triggersReveal`, then default to AFTER THE LAST step, so
+   * an enabled reveal never plays mid-form by accident. See {@link revealAfterKey}.
+   */
+  revealAfterStep?: number;
 }
 
 export type AnswerValue =
@@ -251,19 +306,64 @@ function tokens(value: AnswerValue): string[] {
   return [String(value)];
 }
 
-/** Does the current answer to `cond.field` intersect `cond.values`? */
+/**
+ * Parse an answer to a finite number, or `null` when it isn't numeric. Only a
+ * number or a non-blank numeric string qualifies — booleans/arrays/objects
+ * (which `Number()` would coerce) do not. Shared by the numeric condition ops.
+ */
+function numericAnswer(value: AnswerValue): number | null {
+  const n =
+    typeof value === 'number'
+      ? value
+      : typeof value === 'string' && value.trim() !== ''
+        ? Number(value)
+        : NaN;
+  return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * Does the current answer to `cond.field` satisfy the condition? The operator
+ * (`cond.op`, default `in` for back-compat) selects the comparison:
+ *  - `in`   — the answer's tokens intersect `values` (the legacy choice match).
+ *  - `eq`/`gt`/`lt` — the answer, parsed as a number, compares to `value`.
+ *  - `between` — the numeric answer lies within `[min, max]` inclusive.
+ * A numeric op whose operand is missing, or whose answer isn't numeric, never
+ * holds (the step stays in its default visibility).
+ */
 function conditionHolds(cond: StepCondition, answers: Answers): boolean {
-  const got = new Set(tokens(answers[cond.field]));
-  return cond.values.some((v) => got.has(v));
+  const op = cond.op ?? 'in';
+  if (op === 'in') {
+    const got = new Set(tokens(answers[cond.field]));
+    return (cond.values ?? []).some((v) => got.has(v));
+  }
+  const n = numericAnswer(answers[cond.field]);
+  if (n == null) return false;
+  switch (op) {
+    case 'eq':
+      return cond.value != null && n === cond.value;
+    case 'gt':
+      return cond.value != null && n > cond.value;
+    case 'lt':
+      return cond.value != null && n < cond.value;
+    case 'between':
+      return cond.min != null && cond.max != null && n >= cond.min && n <= cond.max;
+    default:
+      return false;
+  }
 }
 
 /**
  * The steps to show given the answers so far, in config order. A step appears
- * when its `showWhen` holds (or is absent) AND its `hideWhen` does not hold —
- * and, for a personal-email-only branch step, only when the email is personal.
+ * when it is not `hidden`, its `showWhen` holds (or is absent) AND its `hideWhen`
+ * does not hold — and, for a personal-email-only branch step, only when the
+ * email is personal.
  */
 export function visibleSteps(config: FormConfig, answers: Answers): FormStep[] {
   return config.steps.filter((step) => {
+    // A hidden step is never rendered as a question — it is skipped in the walk
+    // (and therefore never scored). Its answer can still be seeded (e.g. from a
+    // URL parameter) and rides along into the submission via the answers map.
+    if (step.hidden) return false;
     if (step.showWhen && !conditionHolds(step.showWhen, answers)) return false;
     if (step.hideWhen && conditionHolds(step.hideWhen, answers)) return false;
     if (step.showForPersonalEmailOnly) {
@@ -277,6 +377,91 @@ export function visibleSteps(config: FormConfig, answers: Answers): FormStep[] {
 /** The first `email`-typed step's key (the branch pivot for personal-email logic). */
 function findEmailKey(config: FormConfig): string | null {
   return config.steps.find((s) => s.type === 'email')?.key ?? null;
+}
+
+/**
+ * The visibility operators offered for a referenced field's TYPE — the builder
+ * shows exactly these in the operator dropdown, and they are the only ops the
+ * engine is asked to evaluate for that source. Numeric fields (`slider`) get the
+ * comparison set; every other type keeps the legacy "matches any of" (`in`).
+ * Shared so the editor and the engine can never drift on which op is valid where.
+ */
+export function operatorsForFieldType(type: FormFieldType): ConditionOp[] {
+  return type === 'slider' ? ['eq', 'gt', 'lt', 'between'] : ['in'];
+}
+
+/**
+ * A numeric condition's satisfying set as an interval with inclusivity flags
+ * (`±Infinity` for the open ends of `gt`/`lt`), or `null` when the condition is
+ * not a well-formed numeric op. Used only by the contradiction guard.
+ */
+interface NumInterval {
+  lo: number;
+  loInc: boolean;
+  hi: number;
+  hiInc: boolean;
+}
+
+function numInterval(cond: StepCondition): NumInterval | null {
+  switch (cond.op) {
+    case 'eq':
+      return cond.value == null ? null : { lo: cond.value, loInc: true, hi: cond.value, hiInc: true };
+    case 'gt':
+      return cond.value == null ? null : { lo: cond.value, loInc: false, hi: Infinity, hiInc: false };
+    case 'lt':
+      return cond.value == null ? null : { lo: -Infinity, loInc: false, hi: cond.value, hiInc: false };
+    case 'between':
+      return cond.min == null || cond.max == null
+        ? null
+        : { lo: cond.min, loInc: true, hi: cond.max, hiInc: true };
+    default:
+      return null;
+  }
+}
+
+/** Is numeric interval `a` fully contained in `b` (a ⊆ b)? */
+function intervalSubset(a: NumInterval, b: NumInterval): boolean {
+  // b's bounds must be no stricter than a's on each side (equal bound ⇒ b must be
+  // inclusive whenever a is, i.e. a-inclusive can't stick out past b-exclusive).
+  const lowerOk = b.lo < a.lo || (b.lo === a.lo && (b.loInc || !a.loInc));
+  const upperOk = b.hi > a.hi || (b.hi === a.hi && (b.hiInc || !a.hiInc));
+  return lowerOk && upperOk;
+}
+
+/** Is the choice condition `a`'s value-set a non-empty subset of `b`'s? */
+function choiceSubset(a: StepCondition, b: StepCondition): boolean {
+  const av = a.values ?? [];
+  if (av.length === 0) return false;
+  const bv = new Set(b.values ?? []);
+  return av.every((v) => bv.has(v));
+}
+
+/**
+ * True when a step's `showWhen` and `hideWhen` are mutually contradictory — the
+ * step could NEVER be visible because every answer that satisfies `showWhen`
+ * also satisfies `hideWhen` (hide always wins in {@link visibleSteps}). Detects
+ * the trivial, SAME-FIELD cases the builder guards against:
+ *  - both `in` and show's values are a subset of hide's (identical or fully
+ *    overlapping choice sets, e.g. show ⊇ requires `a`, hide swallows `a`);
+ *  - both numeric and show's interval is contained in hide's (e.g. show `eq 5`
+ *    with hide `eq 5`, or show `between [50,80]` inside hide `between [40,100]`).
+ * Conservative by design: returns `false` for anything it cannot PROVE empties
+ * the visible set (different fields, mixed choice/numeric ops, partial overlaps),
+ * so it never blocks a legitimate rule. Pure — no I/O, safe for client + server.
+ */
+export function conditionsContradict(
+  showWhen: StepCondition | null | undefined,
+  hideWhen: StepCondition | null | undefined,
+): boolean {
+  if (!showWhen || !hideWhen) return false;
+  if (showWhen.field !== hideWhen.field) return false;
+  const showOp = showWhen.op ?? 'in';
+  const hideOp = hideWhen.op ?? 'in';
+  if (showOp === 'in' && hideOp === 'in') return choiceSubset(showWhen, hideWhen);
+  const s = numInterval(showWhen);
+  const h = numInterval(hideWhen);
+  if (s && h) return intervalSubset(s, h);
+  return false;
 }
 
 /**
@@ -747,18 +932,20 @@ export function resolveQuestion(step: FormStep, answers: Answers): string {
 
 /**
  * Resolve a step for display against the answers: pick the dynamic question
- * variant (via `resolveQuestion`), interpolate `[key]` tokens in the question,
+ * variant (via `resolveQuestion`), interpolate `[key]` tokens in the question
+ * AND the `helper`/description (both with the same orphaned-punctuation sweep),
  * and resolve the slider unit label variant. Returns a shallow copy — never
- * mutates the config.
+ * mutates the config. A null/undefined helper is left untouched.
  */
 export function resolveStepDisplay(step: FormStep, answers: Answers): FormStep {
   const question = resolveQuestion(step, answers);
+  const helper = typeof step.helper === 'string' ? interpolate(step.helper, answers) : step.helper;
   let sliderUnitLabel = step.sliderUnitLabel ?? null;
   if (step.questionField && step.sliderLabelVariants) {
     const key = variantKey(answers[step.questionField]);
     if (step.sliderLabelVariants[key]) sliderUnitLabel = step.sliderLabelVariants[key];
   }
-  return { ...step, question, sliderUnitLabel };
+  return { ...step, question, helper, sliderUnitLabel };
 }
 
 /**
@@ -779,6 +966,32 @@ export function partialSubmitKey(config: FormConfig): string | null {
   const n = config.partialSubmitAfterStep;
   if (n == null || n < 1) return null;
   return config.steps[n - 1]?.key ?? null;
+}
+
+/**
+ * The key of the step AFTER which the reveal interstitial plays, or `null` when
+ * the reveal is disabled/absent or the form has no steps. Position resolves in
+ * priority order (additive + back-compat), so the renderer and the builder agree
+ * on where the reveal fires:
+ *  1. `revealAfterStep` (1-based over `steps`) when set + in range — the
+ *     authoritative draggable-marker position.
+ *  2. else the first step flagged `triggersReveal` — the legacy per-step boolean
+ *     (configs published before the marker existed still play in place).
+ *  3. else the LAST step — the safe default so an ENABLED reveal plays right
+ *     before the result (thank-you / outcome), never mid-form by accident.
+ * The renderer decides "play then continue" vs "play then finalize" from whether
+ * the resolved step is the last VISIBLE step at runtime.
+ */
+export function revealAfterKey(config: FormConfig): string | null {
+  const reveal = config.reveal;
+  if (!reveal || reveal.enabled === false) return null;
+  const { steps } = config;
+  if (steps.length === 0) return null;
+  const n = config.revealAfterStep;
+  if (n != null && n >= 1 && n <= steps.length) return steps[n - 1]?.key ?? null;
+  const triggered = steps.find((s) => s.triggersReveal);
+  if (triggered) return triggered.key;
+  return steps[steps.length - 1]?.key ?? null;
 }
 
 // ---------------------------------------------------------------------------

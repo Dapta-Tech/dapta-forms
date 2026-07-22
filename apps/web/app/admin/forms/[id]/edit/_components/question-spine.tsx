@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, type HTMLAttributes, type ReactNode } from 'react';
 import type { FormStep } from '@quill/engine';
 import { cn } from '@/lib/cn';
 import { SortableList, SortableRow } from './sortable';
@@ -10,10 +10,13 @@ import type { BuilderMessages } from './builder-messages';
 import { tb } from './builder-messages';
 
 /**
- * Sortable id for the partial-submit-point marker. Never a real step key (step
- * keys are slugified question text), so it can share the dnd id space safely.
+ * Sortable ids for the flow markers. Never real step keys (step keys are
+ * slugified question text), so they share the dnd id space safely.
  */
 const PARTIAL_ID = '__partial_submit_point__';
+const REVEAL_ID = '__reveal_point__';
+
+const isMarker = (id: string): boolean => id === PARTIAL_ID || id === REVEAL_ID;
 
 /**
  * The left flow spine — numbered question cards (drag to reorder), a type icon,
@@ -22,10 +25,14 @@ const PARTIAL_ID = '__partial_submit_point__';
  * card gets a lime left rail. One dashed "+ Add question" at the bottom opens
  * the type gallery.
  *
- * When `partialAfterStep` is set (1..steps.length) a dashed, unnumbered
- * "Partial submit point" marker renders after that step, INSIDE the same
- * dnd-kit list (special id), so it drags exactly like a question. Drops are
- * translated back into domain updates in `handleReorder`.
+ * Two dashed, unnumbered markers can render INSIDE the same dnd-kit list (each
+ * with a special id) so they drag exactly like a question:
+ *  - the "Partial submit point" marker (`partialAfterStep`, 1..steps.length);
+ *  - the "Reveal screen" marker (V4-04): shown whenever the reveal is enabled in
+ *    Design, defaulting to AFTER THE LAST question (mirroring the engine's
+ *    `revealAfterKey` — revealAfterStep, else a legacy triggersReveal step, else
+ *    the end). Dragging it writes an explicit `revealAfterStep`.
+ * Drops are translated back into domain updates in `handleReorder`.
  */
 export function QuestionSpine({
   steps,
@@ -35,6 +42,10 @@ export function QuestionSpine({
   onAdd,
   partialAfterStep,
   onPartialChange,
+  revealEnabled,
+  revealAfterStep,
+  onRevealMove,
+  onRevealRemove,
   m,
 }: {
   steps: FormStep[];
@@ -46,45 +57,66 @@ export function QuestionSpine({
   partialAfterStep?: number;
   /** Set (1-based), move, or clear (`undefined`) the partial-submit threshold. */
   onPartialChange: (afterStep: number | undefined) => void;
+  /** Whether the reveal screen is enabled in Design (drives the reveal marker). */
+  revealEnabled: boolean;
+  /** 1-based explicit `config.revealAfterStep` (absent = default to the end). */
+  revealAfterStep?: number;
+  /** Move the reveal marker → set an explicit 1-based `revealAfterStep`. */
+  onRevealMove: (afterStep: number) => void;
+  /** Remove the reveal marker → turn the reveal off (Design owns enablement). */
+  onRevealRemove: () => void;
   m: BuilderMessages;
 }) {
-  const [infoOpen, setInfoOpen] = useState(false);
-
-  // Merged sortable ids: step keys with the marker spliced in at its 1-based
-  // position. An out-of-range threshold renders no marker (and the add
-  // affordance below offers to re-place it).
-  const markerIdx =
+  // Effective 1-based marker slots (null = not shown). The partial marker only
+  // shows for an in-range threshold; the reveal marker shows whenever the reveal
+  // is enabled, defaulting to the end (revealAfterKey's default) so an enabled
+  // reveal is always visible and draggable.
+  const partialIdx =
     partialAfterStep != null && partialAfterStep >= 1 && partialAfterStep <= steps.length
       ? partialAfterStep
       : null;
-  const ids = steps.map((s) => s.key);
-  if (markerIdx != null) ids.splice(markerIdx, 0, PARTIAL_ID);
+  const revealIdx =
+    revealEnabled && steps.length > 0
+      ? revealAfterStep != null && revealAfterStep >= 1 && revealAfterStep <= steps.length
+        ? revealAfterStep
+        : defaultRevealPos(steps)
+      : null;
+
+  // Merged sortable ids: step keys with the markers spliced in after their
+  // anchor step (partial before reveal when they share a slot).
+  const ids: string[] = [];
+  steps.forEach((s, i) => {
+    ids.push(s.key);
+    const pos = i + 1;
+    if (partialIdx === pos) ids.push(PARTIAL_ID);
+    if (revealIdx === pos) ids.push(REVEAL_ID);
+  });
 
   /**
    * Translate a merged-list drop back into a domain update:
-   * - the MARKER moved → the new threshold is however many questions ended up
-   *   above it, clamped to ≥ 1 (a partial point above every question is
+   * - a MARKER moved → its new position is however many QUESTIONS ended up above
+   *   it (markers don't count), clamped to ≥ 1 (a marker above every question is
    *   invalid — the minimum is "after question 1");
-   * - a QUESTION moved → a plain step reorder. The editor's `reorderSteps`
-   *   re-anchors the threshold to the step it was after, so the marker follows
-   *   its anchor question.
+   * - a QUESTION moved → a plain step reorder. The editor re-anchors both
+   *   thresholds to the step they sit after, so a marker follows its anchor.
    */
   function handleReorder(from: number, to: number) {
-    if (markerIdx == null) {
-      onReorder(from, to);
-      return;
-    }
     const next = [...ids];
     const [moved] = next.splice(from, 1);
     if (!moved) return;
     next.splice(to, 0, moved);
     if (moved === PARTIAL_ID) {
-      const threshold = Math.max(1, next.indexOf(PARTIAL_ID));
+      const threshold = Math.max(1, questionsAbove(next, PARTIAL_ID));
       if (threshold !== partialAfterStep) onPartialChange(threshold);
       return;
     }
-    const fromStep = ids.filter((x) => x !== PARTIAL_ID).indexOf(moved);
-    const toStep = next.filter((x) => x !== PARTIAL_ID).indexOf(moved);
+    if (moved === REVEAL_ID) {
+      const pos = Math.max(1, questionsAbove(next, REVEAL_ID));
+      if (pos !== revealAfterStep) onRevealMove(pos);
+      return;
+    }
+    const fromStep = questionIndex(ids, moved);
+    const toStep = questionIndex(next, moved);
     if (fromStep >= 0 && toStep >= 0 && fromStep !== toStep) onReorder(fromStep, toStep);
   }
 
@@ -98,69 +130,64 @@ export function QuestionSpine({
       <SortableList ids={ids} onReorder={handleReorder} className="flex flex-col gap-2">
         {(id, index) => {
           if (id === PARTIAL_ID) {
-            const atEnd = markerIdx === steps.length;
+            const atEnd = partialIdx === steps.length;
             return (
               <SortableRow key={id} id={id}>
                 {({ handleProps }) => (
-                  <div
-                    data-testid="partial-point-row"
-                    className="rounded-xl border border-dashed border-secondary/70 bg-secondary/[0.06] py-2 pl-2 pr-2.5"
-                  >
-                    <div className="flex items-center gap-1.5">
-                      <button
-                        type="button"
-                        data-testid="partial-point-handle"
-                        aria-label={m.partial.move}
-                        className="shrink-0 cursor-grab touch-none rounded p-1 text-secondary/70 hover:text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:cursor-grabbing"
-                        {...handleProps}
-                      >
-                        <i aria-hidden className="pi pi-bars" style={{ fontSize: 12 }} />
-                      </button>
-                      <i aria-hidden className="pi pi-send shrink-0 text-secondary" style={{ fontSize: 12 }} />
-                      <span className="min-w-0 flex-1 text-[11px] font-semibold leading-tight text-secondary">
-                        {m.partial.label}
-                      </span>
-                      <button
-                        type="button"
-                        data-testid="partial-point-info"
-                        aria-label={m.partial.info}
-                        aria-expanded={infoOpen}
-                        onClick={() => setInfoOpen((v) => !v)}
-                        className="shrink-0 rounded p-1 text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                      >
-                        <i aria-hidden className="pi pi-info-circle" style={{ fontSize: 12 }} />
-                      </button>
-                      <button
-                        type="button"
-                        data-testid="partial-point-remove"
-                        aria-label={m.partial.remove}
-                        onClick={() => {
-                          setInfoOpen(false);
-                          onPartialChange(undefined);
-                        }}
-                        className="shrink-0 rounded p-1 text-muted-foreground hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                      >
-                        <i aria-hidden className="pi pi-times" style={{ fontSize: 12 }} />
-                      </button>
-                    </div>
-                    {infoOpen ? (
-                      <div className="mt-2 flex flex-col gap-1.5 rounded-lg bg-card/80 p-2 text-[11px] leading-snug text-muted-foreground">
+                  <SpineMarker
+                    testidPrefix="partial-point"
+                    icon="pi-send"
+                    label={m.partial.label}
+                    moveLabel={m.partial.move}
+                    infoLabel={m.partial.info}
+                    removeLabel={m.partial.remove}
+                    onRemove={() => onPartialChange(undefined)}
+                    handleProps={handleProps}
+                    tips={
+                      <>
                         <p>{m.partial.tipCapture}</p>
                         <p>{m.partial.tipStored}</p>
                         <p>{m.partial.tipNotify}</p>
                         {atEnd ? <p>{m.partial.tipAfterLast}</p> : null}
                         <p className="font-medium text-foreground">{m.partial.tipWhere}</p>
-                      </div>
-                    ) : null}
-                  </div>
+                      </>
+                    }
+                  />
                 )}
               </SortableRow>
             );
           }
 
-          // Question rows sit in the MERGED list — indices past the marker are
-          // shifted one slot; translate back to the step index.
-          const stepIndex = markerIdx != null && index > markerIdx ? index - 1 : index;
+          if (id === REVEAL_ID) {
+            const atEnd = revealIdx === steps.length;
+            return (
+              <SortableRow key={id} id={id}>
+                {({ handleProps }) => (
+                  <SpineMarker
+                    testidPrefix="reveal-point"
+                    icon="pi-sparkles"
+                    label={m.revealPoint.label}
+                    moveLabel={m.revealPoint.move}
+                    infoLabel={m.revealPoint.info}
+                    removeLabel={m.revealPoint.remove}
+                    onRemove={onRevealRemove}
+                    handleProps={handleProps}
+                    tips={
+                      <>
+                        <p>{m.revealPoint.tipPlays}</p>
+                        <p>{atEnd ? m.revealPoint.tipEnd : m.revealPoint.tipMid}</p>
+                        <p className="font-medium text-foreground">{m.revealPoint.tipEdit}</p>
+                      </>
+                    }
+                  />
+                )}
+              </SortableRow>
+            );
+          }
+
+          // Question rows sit in the MERGED list — translate the merged position
+          // back to the step index (count the questions above it).
+          const stepIndex = questionsBeforePosition(ids, index);
           const step = steps[stepIndex];
           if (!step) return null;
           const active = stepIndex === selectedIndex;
@@ -242,9 +269,9 @@ export function QuestionSpine({
         {m.shell.addQuestion}
       </button>
 
-      {markerIdx == null && steps.length > 0 ? (
-        // No visible marker (unset OR out-of-range) → offer to place one after
-        // the selected question (fallback: after question 1).
+      {partialIdx == null && steps.length > 0 ? (
+        // No visible partial marker (unset OR out-of-range) → offer to place one
+        // after the selected question (fallback: after question 1).
         <button
           type="button"
           data-testid="partial-point-add"
@@ -254,6 +281,118 @@ export function QuestionSpine({
           <i aria-hidden className="pi pi-plus" style={{ fontSize: 11 }} />
           {m.partial.add}
         </button>
+      ) : null}
+    </div>
+  );
+}
+
+/** The reveal marker's default slot: a legacy `triggersReveal` step, else the end. */
+function defaultRevealPos(steps: FormStep[]): number {
+  const ti = steps.findIndex((s) => s.triggersReveal);
+  return ti >= 0 ? ti + 1 : steps.length;
+}
+
+/** How many QUESTIONS (non-markers) sit above `markerId` in a merged id list. */
+function questionsAbove(list: string[], markerId: string): number {
+  const idx = list.indexOf(markerId);
+  if (idx < 0) return 0;
+  let count = 0;
+  for (let i = 0; i < idx; i += 1) if (!isMarker(list[i]!)) count += 1;
+  return count;
+}
+
+/** How many QUESTIONS (non-markers) sit strictly before merged index `pos`. */
+function questionsBeforePosition(list: string[], pos: number): number {
+  let count = 0;
+  for (let i = 0; i < pos; i += 1) if (!isMarker(list[i]!)) count += 1;
+  return count;
+}
+
+/** The 0-based step index of `key` among the QUESTIONS (ignoring markers). */
+function questionIndex(list: string[], key: string): number {
+  let count = 0;
+  for (const id of list) {
+    if (isMarker(id)) continue;
+    if (id === key) return count;
+    count += 1;
+  }
+  return -1;
+}
+
+/**
+ * A dashed, draggable flow marker row (partial-submit / reveal). Renders a drag
+ * grip, a type icon, the label, an info toggle with a popover, and a remove (×).
+ * Testids are derived from `testidPrefix` (`{prefix}-row|-handle|-info|-remove`)
+ * so each marker keeps a stable, distinct handle for the editor e2e specs.
+ */
+function SpineMarker({
+  testidPrefix,
+  icon,
+  label,
+  moveLabel,
+  infoLabel,
+  removeLabel,
+  tips,
+  onRemove,
+  handleProps,
+}: {
+  testidPrefix: string;
+  icon: string;
+  label: string;
+  moveLabel: string;
+  infoLabel: string;
+  removeLabel: string;
+  tips: ReactNode;
+  onRemove: () => void;
+  handleProps: HTMLAttributes<HTMLElement>;
+}) {
+  const [infoOpen, setInfoOpen] = useState(false);
+  return (
+    <div
+      data-testid={`${testidPrefix}-row`}
+      className="rounded-xl border border-dashed border-secondary/70 bg-secondary/[0.06] py-2 pl-2 pr-2.5"
+    >
+      <div className="flex items-center gap-1.5">
+        <button
+          type="button"
+          data-testid={`${testidPrefix}-handle`}
+          aria-label={moveLabel}
+          className="shrink-0 cursor-grab touch-none rounded p-1 text-secondary/70 hover:text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:cursor-grabbing"
+          {...handleProps}
+        >
+          <i aria-hidden className="pi pi-bars" style={{ fontSize: 12 }} />
+        </button>
+        <i aria-hidden className={cn('pi shrink-0 text-secondary', icon)} style={{ fontSize: 12 }} />
+        <span className="min-w-0 flex-1 text-[11px] font-semibold leading-tight text-secondary">
+          {label}
+        </span>
+        <button
+          type="button"
+          data-testid={`${testidPrefix}-info`}
+          aria-label={infoLabel}
+          aria-expanded={infoOpen}
+          onClick={() => setInfoOpen((v) => !v)}
+          className="shrink-0 rounded p-1 text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <i aria-hidden className="pi pi-info-circle" style={{ fontSize: 12 }} />
+        </button>
+        <button
+          type="button"
+          data-testid={`${testidPrefix}-remove`}
+          aria-label={removeLabel}
+          onClick={() => {
+            setInfoOpen(false);
+            onRemove();
+          }}
+          className="shrink-0 rounded p-1 text-muted-foreground hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <i aria-hidden className="pi pi-times" style={{ fontSize: 12 }} />
+        </button>
+      </div>
+      {infoOpen ? (
+        <div className="mt-2 flex flex-col gap-1.5 rounded-lg bg-card/80 p-2 text-[11px] leading-snug text-muted-foreground">
+          {tips}
+        </div>
       ) : null}
     </div>
   );

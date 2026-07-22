@@ -268,6 +268,18 @@ export interface FormsMessages {
       saving: string;
       saved: string;
       saveError: string;
+      /** V4 autosave hardening: surface WHY a save failed + client pre-validation. */
+      saveErrorReason: string;
+      saveInvalid: string;
+      /** Results tab clarity (V4-16 outcome heading + message + redirect field). */
+      resultsHelp: {
+        outcomeHeadingHelp: string;
+        redirectLabel: string;
+        redirectHelp: string;
+        /** Label for the per-outcome thank-you body textarea. */
+        messageLabel: string;
+        messageHelp: string;
+      };
       previewBtn: string;
       formNamePlaceholder: string;
       tabs: { build: string; cover: string; outcomes: string; flow: string };
@@ -310,6 +322,10 @@ export interface FormsMessages {
         corporateEmailOnly: string;
         corporateEmailHint: string;
         phoneMinDigits: string;
+        /** Phone step: label for the per-form default-country picker (V4-14). */
+        phoneDefaultCountry: string;
+        /** The "auto (locale-based)" option in the default-country picker. */
+        phoneDefaultCountryAuto: string;
         sliderMin: string;
         sliderMax: string;
         sliderStep: string;
@@ -321,6 +337,8 @@ export interface FormsMessages {
         label: string;
         value: string;
         points: string;
+        /** One-line explainer under the options list tying points to scoring. */
+        pointsHint: string;
         icon: string;
         remove: string;
         empty: string;
@@ -349,6 +367,17 @@ export interface FormsMessages {
         hideNone: string;
         personalEmailOnly: string;
         personalEmailHint: string;
+        /** V4 — operator dropdown (numeric fields) + operand labels. */
+        operator: string;
+        opEq: string;
+        opGt: string;
+        opLt: string;
+        opBetween: string;
+        value: string;
+        betweenMin: string;
+        betweenMax: string;
+        /** V4 — contradiction guard warning (show + hide cancel out). */
+        contradiction: string;
       };
       variants: {
         title: string;
@@ -362,6 +391,8 @@ export interface FormsMessages {
         fallback: string;
         remove: string;
         interpolationHint: string;
+        /** Clarifies that a variant only swaps the title; branching is Logic. */
+        scopeNote: string;
         sliderLabel: string;
         /** The `@` recall-information picker inside variant textareas. */
         tokenPickerLabel: string;
@@ -371,13 +402,18 @@ export interface FormsMessages {
         tokenWarnLater: string;
         tokenWarnUnknown: string;
       };
-      /** Per-question behavior toggles (terminal / reveal trigger). */
+      /** Per-question behavior toggles (terminal / reveal position / hidden). */
       behavior: {
         title: string;
         terminal: string;
         terminalHint: string;
         reveal: string;
         revealHint: string;
+        /** "Edit reveal screen" button → jumps to the Design tab (V4-12). */
+        editReveal: string;
+        /** Hidden-question toggle — filled via a URL parameter (V4-13). */
+        hidden: string;
+        hiddenHint: string;
       };
       /** The `name` step's two collected fields + placeholders. */
       nameStep: {
@@ -386,6 +422,8 @@ export interface FormsMessages {
         first: string;
         second: string;
         fieldKey: string;
+        /** Explains the field key doubles as a URL parameter for prefill. */
+        fieldKeyHint: string;
         placeholder: string;
       };
       /** The reveal/processing interstitial settings (Design tab). */
@@ -958,6 +996,18 @@ export const en: FormsMessages = {
       saving: 'Saving…',
       saved: 'Saved.',
       saveError: 'Could not save — please try again.',
+      saveErrorReason: 'Couldn’t save: {reason}',
+      saveInvalid: 'Can’t save yet — {reason}',
+      resultsHelp: {
+        outcomeHeadingHelp:
+          'Shown to respondents as the heading on the thank-you screen when their score lands in this range.',
+        redirectLabel: 'Redirect URL (optional)',
+        redirectHelp:
+          'Leave empty to show the thank-you screen. If set, respondents are sent here instead.',
+        messageLabel: 'Message shown for this outcome',
+        messageHelp:
+          'The thank-you body respondents see for this range. Use [field] to insert an answer. Leave empty to use the default message.',
+      },
       previewBtn: 'Preview',
       formNamePlaceholder: 'Form name',
       tabs: { build: 'Build', cover: 'Cover', outcomes: 'Outcomes', flow: 'Flow' },
@@ -1000,6 +1050,8 @@ export const en: FormsMessages = {
         corporateEmailOnly: 'Require work email',
         corporateEmailHint: 'Blocks Gmail, Hotmail, Yahoo and other personal domains.',
         phoneMinDigits: 'Minimum digits',
+        phoneDefaultCountry: 'Default country',
+        phoneDefaultCountryAuto: 'Automatic (based on visitor language)',
         sliderMin: 'Min',
         sliderMax: 'Max',
         sliderStep: 'Step',
@@ -1011,6 +1063,7 @@ export const en: FormsMessages = {
         label: 'Label',
         value: 'Value',
         points: 'Points',
+        pointsHint: 'Added to the score when this option is picked. Use a negative number to subtract.',
         icon: 'Icon',
         remove: 'Remove option',
         empty: 'No options yet.',
@@ -1040,6 +1093,16 @@ export const en: FormsMessages = {
         personalEmailOnly: 'Personal email only',
         personalEmailHint:
           'Show this question only when the respondent entered a personal (non-work) email.',
+        operator: 'Condition',
+        opEq: 'Equal to',
+        opGt: 'Greater than',
+        opLt: 'Less than',
+        opBetween: 'Between',
+        value: 'Value',
+        betweenMin: 'Min',
+        betweenMax: 'Max',
+        contradiction:
+          'These show and hide rules cancel out — this question could never appear. Adjust one of them.',
       },
       variants: {
         title: 'Dynamic question',
@@ -1053,6 +1116,7 @@ export const en: FormsMessages = {
         fallback: 'Fallback (any other answer)',
         remove: 'Remove variant',
         interpolationHint: 'Type @ (or [field]) to insert an earlier answer into the question.',
+        scopeNote: 'This only changes the question’s title — not its options. To send people to a different question, use Logic.',
         sliderLabel: 'Slider unit label',
         tokenPickerLabel: 'Insert a previous answer',
         tokenPickerEmpty: 'No earlier answers yet — this is the first question.',
@@ -1065,7 +1129,11 @@ export const en: FormsMessages = {
         terminal: 'Ends the form',
         terminalHint: 'Completing this question ends the form immediately (disqualification).',
         reveal: 'Show reveal screen after',
-        revealHint: 'Plays the processing/reveal screen after this question. Set it up in Design.',
+        revealHint:
+          'Plays the reveal screen after this question. Otherwise it defaults to the end — drag the marker in the question list to move it.',
+        editReveal: 'Edit reveal screen',
+        hidden: 'Hidden question',
+        hiddenHint: 'Not shown to respondents — its answer is filled from a matching URL parameter (?key=value).',
       },
       nameStep: {
         title: 'Name fields',
@@ -1073,13 +1141,15 @@ export const en: FormsMessages = {
         first: 'First field',
         second: 'Second field',
         fieldKey: 'Field key',
+        fieldKeyHint: 'Used as a URL parameter to prefill this field.',
         placeholder: 'Placeholder',
       },
       reveal: {
         title: 'Reveal screen',
         subtitle: 'A short processing interstitial shown before the result.',
         enabled: 'Enable the reveal screen',
-        stepHint: 'Pick which question triggers it under Build → Behavior.',
+        stepHint:
+          'Plays at the end by default. Drag the “Reveal screen” marker in the Build tab’s question list to move it.',
         headline: 'Headline',
         headlinePlaceholder: 'Reviewing your answers…',
         subtitleLabel: 'Subtitle',
@@ -1643,6 +1713,18 @@ export const es: FormsMessages = {
       saving: 'Guardando…',
       saved: 'Guardado.',
       saveError: 'No se pudo guardar — inténtalo de nuevo.',
+      saveErrorReason: 'No se pudo guardar: {reason}',
+      saveInvalid: 'Aún no se puede guardar — {reason}',
+      resultsHelp: {
+        outcomeHeadingHelp:
+          'Se muestra a los respondientes como el encabezado de la pantalla de agradecimiento cuando su puntaje cae en este rango.',
+        redirectLabel: 'URL de redirección (opcional)',
+        redirectHelp:
+          'Déjalo vacío para mostrar la pantalla de agradecimiento. Si lo defines, se redirige ahí a los respondientes.',
+        messageLabel: 'Mensaje mostrado para este resultado',
+        messageHelp:
+          'El cuerpo de agradecimiento que ven los respondientes en este rango. Usa [campo] para insertar una respuesta. Déjalo vacío para usar el mensaje por defecto.',
+      },
       previewBtn: 'Vista previa',
       formNamePlaceholder: 'Nombre del formulario',
       tabs: { build: 'Construir', cover: 'Portada', outcomes: 'Resultados', flow: 'Flujo' },
@@ -1685,6 +1767,8 @@ export const es: FormsMessages = {
         corporateEmailOnly: 'Exigir correo corporativo',
         corporateEmailHint: 'Bloquea Gmail, Hotmail, Yahoo y otros dominios personales.',
         phoneMinDigits: 'Dígitos mínimos',
+        phoneDefaultCountry: 'País predeterminado',
+        phoneDefaultCountryAuto: 'Automático (según el idioma del visitante)',
         sliderMin: 'Mín',
         sliderMax: 'Máx',
         sliderStep: 'Paso',
@@ -1696,6 +1780,7 @@ export const es: FormsMessages = {
         label: 'Etiqueta',
         value: 'Valor',
         points: 'Puntos',
+        pointsHint: 'Se suma al puntaje cuando se elige esta opción. Usa un número negativo para restar.',
         icon: 'Ícono',
         remove: 'Quitar opción',
         empty: 'Aún no hay opciones.',
@@ -1725,6 +1810,16 @@ export const es: FormsMessages = {
         personalEmailOnly: 'Solo correo personal',
         personalEmailHint:
           'Muestra esta pregunta solo cuando la persona ingresó un correo personal (no corporativo).',
+        operator: 'Condición',
+        opEq: 'Igual a',
+        opGt: 'Mayor que',
+        opLt: 'Menor que',
+        opBetween: 'Entre',
+        value: 'Valor',
+        betweenMin: 'Mín',
+        betweenMax: 'Máx',
+        contradiction:
+          'Estas reglas de mostrar y ocultar se anulan — esta pregunta nunca aparecería. Ajusta una de ellas.',
       },
       variants: {
         title: 'Pregunta dinámica',
@@ -1738,6 +1833,7 @@ export const es: FormsMessages = {
         fallback: 'Alternativa (cualquier otra respuesta)',
         remove: 'Quitar variante',
         interpolationHint: 'Escribe @ (o [campo]) para insertar una respuesta anterior en la pregunta.',
+        scopeNote: 'Esto solo cambia el título de la pregunta — no sus opciones. Para enviar a otra pregunta, usa Lógica.',
         sliderLabel: 'Etiqueta de unidad del deslizador',
         tokenPickerLabel: 'Insertar una respuesta anterior',
         tokenPickerEmpty: 'Aún no hay respuestas anteriores — esta es la primera pregunta.',
@@ -1750,7 +1846,11 @@ export const es: FormsMessages = {
         terminal: 'Termina el formulario',
         terminalHint: 'Completar esta pregunta termina el formulario de inmediato (descalificación).',
         reveal: 'Mostrar pantalla de revelación después',
-        revealHint: 'Reproduce la pantalla de procesamiento/revelación tras esta pregunta. Configúrala en Diseño.',
+        revealHint:
+          'Reproduce la pantalla de revelación tras esta pregunta. Si no, se muestra al final por defecto — arrastra el marcador en la lista de preguntas para moverla.',
+        editReveal: 'Editar pantalla de revelación',
+        hidden: 'Pregunta oculta',
+        hiddenHint: 'No se muestra a los respondientes — su respuesta se rellena desde un parámetro de URL coincidente (?clave=valor).',
       },
       nameStep: {
         title: 'Campos del nombre',
@@ -1758,13 +1858,15 @@ export const es: FormsMessages = {
         first: 'Primer campo',
         second: 'Segundo campo',
         fieldKey: 'Clave del campo',
+        fieldKeyHint: 'Se usa como parámetro de URL para prellenar este campo.',
         placeholder: 'Texto de ejemplo',
       },
       reveal: {
         title: 'Pantalla de revelación',
         subtitle: 'Un breve intermedio de procesamiento antes del resultado.',
         enabled: 'Activar la pantalla de revelación',
-        stepHint: 'Elige qué pregunta la activa en Construir → Comportamiento.',
+        stepHint:
+          'Se muestra al final por defecto. Arrastra el marcador «Pantalla de revelación» en la lista de preguntas de la pestaña Construir para moverla.',
         headline: 'Titular',
         headlinePlaceholder: 'Revisando tus respuestas…',
         subtitleLabel: 'Subtítulo',

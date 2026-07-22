@@ -1,6 +1,6 @@
 'use client';
 
-import { Children, isValidElement, type ReactNode } from 'react';
+import { Children, isValidElement, useEffect, useRef, useState, type ReactNode } from 'react';
 import { cn } from '@/lib/cn';
 import { Select, type SelectOption } from '@/components/ui/select';
 
@@ -56,9 +56,73 @@ export function TextArea(props: React.TextareaHTMLAttributes<HTMLTextAreaElement
   return <textarea {...rest} rows={rows} className={cn(controlBase, 'resize-y', className)} />;
 }
 
-export function NumberField(props: React.InputHTMLAttributes<HTMLInputElement>) {
-  const { className, ...rest } = props;
-  return <input type="number" {...rest} className={cn(controlBase, className)} />;
+/** The display string for a numeric prop; nullish/empty → empty (never a
+ *  forced "0" that would pin a leading zero when the author starts typing). */
+function numberToDisplay(value: React.InputHTMLAttributes<HTMLInputElement>['value']): string {
+  if (value == null || value === '') return '';
+  return String(value);
+}
+
+/** Drop a leading-zero run for display: "01"→"1", "-007"→"-7". Leaves "0",
+ *  "0.5", "-", "" and any non-leading-zero string untouched. */
+function stripLeadingZeros(s: string): string {
+  const m = /^(-?)0+(\d.*)$/.exec(s);
+  return m ? `${m[1]}${m[2]}` : s;
+}
+
+/**
+ * A number input that owns its display string. `<input type="number">` won't
+ * rewrite "01"→"1" on its own (both coerce to 1), so a field seeded at 0 keeps
+ * a stale "0" in front of whatever the author types next. We mirror the
+ * controlled numeric prop into local text, strip the leading-zero run as you
+ * type, and — while focused — leave in-progress tokens ("", "-", "1.") alone so
+ * typing (including a negative) is never yanked back to the prop's value.
+ *
+ * The onChange CONTRACT is unchanged: the raw change event is forwarded, so
+ * every call site's `Number(e.target.value) || 0` still reads the same value.
+ * Clearing shows empty (not "0"); the display settles to the committed value on
+ * blur and re-syncs when the prop changes externally (e.g. switching questions).
+ */
+export function NumberField({
+  className,
+  value,
+  onChange,
+  onFocus,
+  onBlur,
+  ...rest
+}: React.InputHTMLAttributes<HTMLInputElement>) {
+  const [display, setDisplay] = useState<string>(() => numberToDisplay(value));
+  const focused = useRef(false);
+
+  useEffect(() => {
+    // Mirror the controlled prop when the user isn't actively editing — this is
+    // how an external change (question switch, upstream reset/clamp) reaches the
+    // field. While focused we never overwrite the in-progress string.
+    if (focused.current) return;
+    setDisplay(numberToDisplay(value));
+  }, [value]);
+
+  return (
+    <input
+      {...rest}
+      type="number"
+      value={display}
+      onFocus={(e) => {
+        focused.current = true;
+        onFocus?.(e);
+      }}
+      onChange={(e) => {
+        setDisplay(stripLeadingZeros(e.target.value));
+        onChange?.(e);
+      }}
+      onBlur={(e) => {
+        focused.current = false;
+        setDisplay(numberToDisplay(value));
+        onBlur?.(e);
+      }}
+      className={cn(controlBase, className)}
+    />
+  );
 }
 
 /** Flatten an `<option>`'s children (strings, numbers, `{expr}` fragments) into

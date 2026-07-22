@@ -24,9 +24,16 @@ export function maxStepPoints(step: FormStep): number {
   return Math.max(0, step.points ?? 0);
 }
 
+/** The highest total score reachable across a list of steps (option/slider
+ *  points summed). Shared by {@link maxScore} and the builder's per-question
+ *  scoring hint, which receives the steps array but not the whole config. */
+export function maxScoreForSteps(steps: FormStep[]): number {
+  return steps.reduce((sum, s) => sum + maxStepPoints(s), 0);
+}
+
 /** The highest total score a respondent could reach across all scoring steps. */
 export function maxScore(config: FormConfig): number {
-  return config.steps.reduce((sum, s) => sum + maxStepPoints(s), 0);
+  return maxScoreForSteps(config.steps);
 }
 
 /** Steps that actually contribute points (for the Results points panel). */

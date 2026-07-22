@@ -37,6 +37,20 @@ function defaultCountryForLocale(locale: string): Country {
   return US;
 }
 
+/**
+ * The country the picker starts on: the form's configured `defaultCountry`
+ * (ISO alpha-2, e.g. "CO") when it resolves to a known country, else the
+ * locale-based default. A bad/unknown code can only fall back, never break.
+ */
+function initialCountry(defaultCountry: string | null | undefined, locale: string): Country {
+  if (defaultCountry) {
+    const code = defaultCountry.trim().toUpperCase();
+    const found = COUNTRIES.find((c) => c.code === code);
+    if (found) return found;
+  }
+  return defaultCountryForLocale(locale);
+}
+
 /** The country a value implies. Shared dials (+1 is US/CA/…) are ambiguous:
  *  keep the already-picked country when it fits, else fall back to US. */
 function deriveCountry(value: string, picked: Country): Country {
@@ -51,6 +65,7 @@ export function PhoneInput({
   onChange,
   locale = 'en',
   ariaLabel,
+  defaultCountry,
 }: {
   /** Full number including the dial code ('+525512345678'), or ''. */
   value: string;
@@ -59,12 +74,14 @@ export function PhoneInput({
   locale?: string;
   /** aria-label for the digits input (the step question). */
   ariaLabel?: string;
+  /** Per-form default country (ISO alpha-2, e.g. "CO"); falls back to locale. */
+  defaultCountry?: string | null;
 }) {
   const m = getMessages(locale).renderer.phonePicker;
   const listId = useId();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
-  const [picked, setPicked] = useState<Country>(() => defaultCountryForLocale(locale));
+  const [picked, setPicked] = useState<Country>(() => initialCountry(defaultCountry, locale));
 
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);

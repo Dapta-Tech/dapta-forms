@@ -81,9 +81,11 @@ export function OptionsEditor({
                         onChange={(e) => update(index, { value: e.target.value })}
                       />
                     </label>
-                    <label className="flex w-16 shrink-0 flex-col gap-1">
+                    <label className="flex w-20 shrink-0 flex-col gap-1">
                       <span className="text-[11px] font-medium text-muted-foreground">{m.points}</span>
                       <NumberField
+                        aria-label={m.points}
+                        data-testid={`option-points-${index}`}
                         value={o.points ?? 0}
                         onChange={(e) => update(index, { points: Number(e.target.value) || 0 })}
                       />
@@ -104,6 +106,9 @@ export function OptionsEditor({
           }}
         </SortableList>
       )}
+      <p className="text-[11px] leading-relaxed text-muted-foreground" data-testid="option-points-hint">
+        {m.pointsHint}
+      </p>
       <div>
         <Button variant="outline" size="sm" onClick={add}>
           <i aria-hidden className="pi pi-plus" style={{ fontSize: 11 }} /> {m.add}
