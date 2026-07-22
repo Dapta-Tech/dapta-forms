@@ -1218,3 +1218,42 @@ describe('resolveEnding (V5-B1 — outcome → form → built-in)', () => {
     expect(resolveEnding(cfg, resolved).headline).toBe('Thanks!');
   });
 });
+
+describe('conditionsNarrow — bounds it must NOT claim (QA V5)', () => {
+  it('stays silent when the clipped bound is the value the hide rule removes', () => {
+    // show 200..500 + hide eq 200: the window really is "above 200", which no
+    // inclusive integer bound can state — reporting 200 names a hidden value.
+    expect(
+      conditionsNarrow(
+        { field: 'n', op: 'between', min: 200, max: 500 },
+        { field: 'n', op: 'eq', value: 200 },
+      ),
+    ).toBeNull();
+  });
+
+  it('stays silent when the surviving window equals the show rule', () => {
+    // hide `lt 0` removes nothing from show 0..100 — warning here would flag a
+    // rule that is behaving correctly.
+    expect(
+      conditionsNarrow(
+        { field: 'n', op: 'between', min: 0, max: 100 },
+        { field: 'n', op: 'lt', value: 0 },
+      ),
+    ).toBeNull();
+  });
+
+  it('still reports the genuinely clipped cases', () => {
+    expect(
+      conditionsNarrow(
+        { field: 'n', op: 'between', min: 200, max: 500 },
+        { field: 'n', op: 'gt', value: 201 },
+      ),
+    ).toEqual({ lo: 200, hi: 201 });
+    expect(
+      conditionsNarrow(
+        { field: 'n', op: 'between', min: 0, max: 100 },
+        { field: 'n', op: 'lt', value: 50 },
+      ),
+    ).toEqual({ lo: 50, hi: 100 });
+  });
+});

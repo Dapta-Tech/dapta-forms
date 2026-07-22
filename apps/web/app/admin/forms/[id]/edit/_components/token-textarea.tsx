@@ -111,6 +111,17 @@ function referencedTokens(text: string): TokenRef[] {
   let m: RegExpExecArray | null;
   while ((m = re.exec(text)) != null) {
     const bracket = m[1];
+    if (bracket == null) {
+      // An `@` with a word character before it is an EMAIL ADDRESS, not a
+      // recall trigger: "email us at hello@acme.com" was raising a red
+      // "@acme doesn't exist in this form". The picker only ever opens on an
+      // `@` that starts a word, so this matches how a token is actually typed.
+      const prev = m.index > 0 ? text.charAt(m.index - 1) : '';
+      if (prev && /[a-zA-Z0-9_.]/.test(prev)) continue;
+      // A trailing domain dot ("@acme.com") is the same story from the other side.
+      const after = text.charAt(m.index + m[0].length);
+      if (after === '.') continue;
+    }
     out.push({
       key: (bracket ?? m[2]) as string,
       start: m.index,

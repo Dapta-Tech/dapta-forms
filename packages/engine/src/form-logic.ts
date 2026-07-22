@@ -550,9 +550,19 @@ export function conditionsNarrow(
   const clipsLow = h.lo <= s.lo;
   const clipsHigh = h.hi >= s.hi;
   if (!clipsLow && !clipsHigh) return null;
+  // The new bound is the hide interval's far edge — but only reportable when
+  // that edge is EXCLUSIVE, i.e. the value itself survives. `hide lt 50` leaves
+  // 50 visible, so "from 50" is true; `hide eq 200` hides 200 itself, so the
+  // window starts just above it, which no integer bound can state. Naming 200
+  // there would print a bound the rule specifically removes.
+  if (clipsLow && h.hiInc) return null;
+  if (clipsHigh && h.loInc) return null;
   const lo = clipsLow ? h.hi : s.lo;
   const hi = clipsHigh ? h.lo : s.hi;
   if (!Number.isFinite(lo) || !Number.isFinite(hi) || lo > hi) return null;
+  // Nothing was actually removed — saying "only appears for X–Y" when X–Y IS
+  // the show rule reads as a warning about a rule that is doing nothing wrong.
+  if (lo === s.lo && hi === s.hi) return null;
   return { lo, hi };
 }
 
