@@ -803,6 +803,13 @@ export function sanitizeStepKey(raw: string): string {
 export function renameStepKey(config: FormConfig, oldKey: string, newKey: string): FormConfig {
   if (!newKey || oldKey === newKey) return config;
   if (config.steps.some((s) => s.key === newKey)) return config;
+  // `name` steps store answers under their SUBFIELD keys (firstname/lastname),
+  // not their own key — so those are taken too. Renaming onto one would make two
+  // steps write the same answer slot and the name answer would be overwritten.
+  for (const s of config.steps) {
+    if (s.key === oldKey) continue;
+    if (s.type === 'name' && nameFields(s).includes(newKey)) return config;
+  }
   const target = config.steps.find((s) => s.key === oldKey);
   if (!target) return config;
 
@@ -849,7 +856,24 @@ export function renameStepKey(config: FormConfig, oldKey: string, newKey: string
       }
     : config.reveal;
 
-  return { ...config, steps, ...(outcomes ? { outcomes } : {}), ...(reveal ? { reveal } : {}) };
+  // The form-level ending copy interpolates tokens too, so it has to move with
+  // the key — otherwise a rename silently blanks the answer on the thank-you
+  // screen of every live form that recalls it.
+  const ending = config.ending
+    ? {
+        ...config.ending,
+        headline: retokenNullable(config.ending.headline),
+        body: retokenNullable(config.ending.body),
+      }
+    : config.ending;
+
+  return {
+    ...config,
+    steps,
+    ...(outcomes ? { outcomes } : {}),
+    ...(reveal ? { reveal } : {}),
+    ...(ending ? { ending } : {}),
+  };
 }
 
 /**
@@ -887,10 +911,12 @@ export function clampSliderValue(step: FormStep, value: number): number {
  * are often edited after the ranges.
  */
 export function sliderRangeUnreachable(step: FormStep, range: SliderScoringRange): boolean {
+  // An INVERTED range is unreachable on its own terms: `sliderPoints` matches
+  // `n >= min && n <= max`, which is the empty set when min > max — no slider
+  // value can satisfy it whatever the bounds are.
+  if (range.min > range.max) return true;
   const { min, max } = sliderBounds(step);
-  const lo = Math.min(range.min, range.max);
-  const hi = Math.max(range.min, range.max);
-  return hi < min || lo > max;
+  return range.max < min || range.min > max;
 }
 
 /** Points for a slider answer via its scoring ranges. */

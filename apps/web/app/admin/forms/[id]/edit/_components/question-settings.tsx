@@ -211,16 +211,32 @@ export function QuestionSettings({
           <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{em.types.slider}</p>
           <div className="grid grid-cols-2 gap-2.5">
             <Field label={em.props.sliderMin}>
-              <NumberField value={step.min ?? 0} onChange={(e) => onUpdate({ min: Number(e.target.value) || 0 })} />
+              <NumberField
+                aria-label={em.props.sliderMin}
+                value={step.min ?? 0}
+                onChange={(e) => onUpdate({ min: Number(e.target.value) || 0 })}
+              />
             </Field>
             <Field label={em.props.sliderMax}>
-              <NumberField value={step.max ?? 100} onChange={(e) => onUpdate({ max: Number(e.target.value) || 0 })} />
+              <NumberField
+                aria-label={em.props.sliderMax}
+                value={step.max ?? 100}
+                onChange={(e) => onUpdate({ max: Number(e.target.value) || 0 })}
+              />
             </Field>
             <Field label={em.props.sliderStep}>
-              <NumberField value={step.step ?? 1} onChange={(e) => onUpdate({ step: Number(e.target.value) || 1 })} />
+              <NumberField
+                aria-label={em.props.sliderStep}
+                value={step.step ?? 1}
+                onChange={(e) => onUpdate({ step: Number(e.target.value) || 1 })}
+              />
             </Field>
             <Field label={em.props.sliderDefault}>
-              <NumberField value={step.default ?? 0} onChange={(e) => onUpdate({ default: Number(e.target.value) || 0 })} />
+              <NumberField
+                aria-label={em.props.sliderDefault}
+                value={step.default ?? 0}
+                onChange={(e) => onUpdate({ default: Number(e.target.value) || 0 })}
+              />
             </Field>
           </div>
           {/* Bounds are advisory, not enforced on keystroke: clamping mid-typing

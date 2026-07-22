@@ -32,7 +32,14 @@ export function HelpTip({
   /** Which way the bubble opens; flip to `bottom` near the top of a panel. */
   side?: 'top' | 'bottom';
 }) {
-  const [open, setOpen] = useState(false);
+  // Two independent reasons to be open, because they behave differently:
+  // `hovered` follows the pointer/focus and closes itself, while `pinned` is a
+  // deliberate click that STAYS open. Folding both into one boolean meant the
+  // click (or Enter/Space, which fires click) toggled off the state that focus
+  // had just turned on — so the keyboard could never open the tip at all.
+  const [hovered, setHovered] = useState(false);
+  const [pinned, setPinned] = useState(false);
+  const open = hovered || pinned;
   const id = useId();
   const wrapRef = useRef<HTMLSpanElement>(null);
 
@@ -41,10 +48,13 @@ export function HelpTip({
   useEffect(() => {
     if (!open) return;
     function onDocDown(e: MouseEvent) {
-      if (!wrapRef.current?.contains(e.target as Node)) setOpen(false);
+      if (!wrapRef.current?.contains(e.target as Node)) setPinned(false);
     }
     function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') setOpen(false);
+      if (e.key === 'Escape') {
+        setPinned(false);
+        setHovered(false);
+      }
     }
     document.addEventListener('mousedown', onDocDown);
     document.addEventListener('keydown', onKey);
@@ -62,11 +72,11 @@ export function HelpTip({
         aria-expanded={open}
         aria-describedby={open ? id : undefined}
         data-testid="help-tip-trigger"
-        onClick={() => setOpen((v) => !v)}
-        onMouseEnter={() => setOpen(true)}
-        onMouseLeave={() => setOpen(false)}
-        onFocus={() => setOpen(true)}
-        onBlur={() => setOpen(false)}
+        onClick={() => setPinned((v) => !v)}
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+        onFocus={() => setHovered(true)}
+        onBlur={() => setHovered(false)}
         className="inline-flex h-3.5 w-3.5 items-center justify-center rounded-full text-muted-foreground/70 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         <i aria-hidden className="pi pi-info-circle" style={{ fontSize: 11 }} />

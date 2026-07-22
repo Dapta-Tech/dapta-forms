@@ -1257,3 +1257,39 @@ describe('conditionsNarrow — bounds it must NOT claim (QA V5)', () => {
     ).toEqual({ lo: 50, hi: 100 });
   });
 });
+
+describe('QA V5 follow-ups', () => {
+  it('an inverted slider scoring range is unreachable whatever the bounds', () => {
+    const s = step({ key: 'n', type: 'slider', min: 0, max: 100 });
+    // sliderPoints matches `n >= min && n <= max` — empty when min > max.
+    expect(sliderRangeUnreachable(s, { min: 80, max: 20, points: 5 })).toBe(true);
+    expect(sliderRangeUnreachable(s, { min: 20, max: 80, points: 5 })).toBe(false);
+    expect(computeScore(
+      { version: 1, steps: [{ ...s, sliderScoring: [{ min: 80, max: 20, points: 5 }] }] },
+      { n: 50 },
+    )).toBe(0);
+  });
+
+  it('renameStepKey moves the form-level ending tokens too', () => {
+    const cfg: FormConfig = {
+      version: 1,
+      steps: [step({ key: 'company', type: 'text' })],
+      ending: { headline: 'Thanks, [company]', body: 'We will call [company] soon.' },
+    };
+    const out = renameStepKey(cfg, 'company', 'org');
+    expect(out.ending?.headline).toBe('Thanks, [org]');
+    expect(out.ending?.body).toBe('We will call [org] soon.');
+  });
+
+  it('refuses a rename onto a name step’s subfield key', () => {
+    const cfg: FormConfig = {
+      version: 1,
+      steps: [step({ key: 'who', type: 'name' }), step({ key: 'other', type: 'text' })],
+    };
+    // `firstname` is a real answer slot the name step writes — taking it would
+    // make two steps collide on one answer.
+    expect(renameStepKey(cfg, 'other', 'firstname')).toBe(cfg);
+    expect(renameStepKey(cfg, 'other', 'lastname')).toBe(cfg);
+    expect(renameStepKey(cfg, 'other', 'company').steps[1]!.key).toBe('company');
+  });
+});
