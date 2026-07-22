@@ -23,7 +23,6 @@ import {
   GALLERY_GROUPS,
   hasOptions,
   isContactType,
-  isScorableType,
   type GalleryItem,
 } from './question-types';
 import type { EditorMessages } from './messages';
@@ -90,6 +89,9 @@ export function QuestionSettings({
   // "assign points" nudge when scoring is on but nothing scores yet.
   const scoringMax = maxScoreForSteps(steps);
   const { confirm: confirmDialog, dialog } = useConfirmDialog();
+  // Does THIS question contribute points right now? Both switches must be on
+  // (V5-B2), and it drives whether the point inputs are worth rendering at all.
+  const stepScores = scoringEnabled && step.scoringEnabled !== false;
 
   // Slider bounds sanity (V5-A2). `sliderBounds` normalizes an inverted pair, so
   // compare against the RAW values to tell "max below min" from a valid range.
@@ -176,13 +178,31 @@ export function QuestionSettings({
         </InlineField>
       ) : null}
 
-      {/* Type-specific: options + points */}
+      {/* Type-specific: options, then the scoring switch that controls whether
+          the Points column even applies (V5-B6). The switch used to sit in its
+          own section at the very BOTTOM of the panel, far below the Points
+          column it governs — so the column was visible with no nearby
+          explanation of what turns it on. Options → their scoring, together. */}
       {hasOptions(step.type) ? (
         <section className="flex flex-col gap-3 border-t border-border pt-4">
           <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             {bm.settings.options}
           </p>
-          <OptionsEditor options={step.options ?? []} onChange={(options) => onUpdate({ options })} m={em.options} />
+          <OptionsEditor
+            options={step.options ?? []}
+            onChange={(options) => onUpdate({ options })}
+            showPoints={stepScores}
+            m={em.options}
+          />
+          <div className="border-t border-border/60 pt-3">
+            <StepScoringToggle
+              step={step}
+              formScoringEnabled={scoringEnabled}
+              scoringMax={scoringMax}
+              onUpdate={onUpdate}
+              bm={bm}
+            />
+          </div>
         </section>
       ) : null}
 
@@ -381,44 +401,24 @@ export function QuestionSettings({
         </button>
       </section>
 
-      {/* Scoring / contact hint. Only types with somewhere to PUT points get the
-          section (V5-A11) — a scoring toggle on a free-text step offered no way
-          to award any, so it read as broken rather than not applicable. */}
-      {contact || isScorableType(step.type) ? (
+      {/* Contact hint, and the SLIDER's scoring (its ranges live here, not in the
+          Options section above, because a slider has no options). Choice types
+          render their scoring switch inside Options — see V5-B6 above. Free-text
+          types render nothing: there is nowhere to put points (V5-A11). */}
+      {contact || step.type === 'slider' ? (
         <section className="border-t border-border pt-4">
           {contact ? (
             <p className="text-xs text-muted-foreground">{bm.settings.contactHint}</p>
           ) : (
             <>
-              {/* THIS question's scoring (V5-B2). The switch here used to be the
-                  FORM-level one wearing a per-question label, so turning it off
-                  on one question turned it off on all of them. The form-level
-                  switch now lives only in Results; this one scopes to the step
-                  and is inert while the form-level switch is off. */}
-              <InlineField label={bm.settings.scoring}>
-                <Switch
-                  checked={scoringEnabled && step.scoringEnabled !== false}
-                  disabled={!scoringEnabled}
-                  onCheckedChange={(v) => onUpdate({ scoringEnabled: v ? undefined : false })}
-                  aria-label={bm.settings.scoring}
-                  data-testid="step-scoring-toggle"
-                />
-              </InlineField>
-              <p className="mt-1 text-xs text-muted-foreground">
-                {scoringEnabled ? bm.settings.scoringHint : bm.settings.scoringFormOff}
-              </p>
-              {scoringEnabled && step.scoringEnabled !== false && scoringMax === 0 ? (
-                <p
-                  data-testid="scoring-zero-hint"
-                  className="mt-1.5 flex items-start gap-1.5 text-xs text-muted-foreground"
-                >
-                  <i aria-hidden className="pi pi-info-circle mt-0.5 text-secondary" style={{ fontSize: 11 }} />
-                  {bm.settings.scoringZeroHint}
-                </p>
-              ) : null}
-              {/* Slider ranges show for every slider (parity with the always-on
-                  option Points column) so scoring isn't mysteriously hidden. */}
-              {step.type === 'slider' ? (
+              <StepScoringToggle
+                step={step}
+                formScoringEnabled={scoringEnabled}
+                scoringMax={scoringMax}
+                onUpdate={onUpdate}
+                bm={bm}
+              />
+              {stepScores ? (
                 <div className="mt-3">
                   <SliderScoringEditor
                     step={step}
@@ -446,6 +446,53 @@ export function QuestionSettings({
       ) : null}
       {dialog}
     </div>
+  );
+}
+
+/**
+ * This question's scoring switch (V5-B2), rendered next to whatever it governs —
+ * the option Points column for a choice step, the range table for a slider.
+ *
+ * It edits `step.scoringEnabled`, the SAME flag the Results list toggles, and is
+ * disabled (explaining why) while the form-level switch is off, since nothing
+ * scores then regardless.
+ */
+function StepScoringToggle({
+  step,
+  formScoringEnabled,
+  scoringMax,
+  onUpdate,
+  bm,
+}: {
+  step: FormStep;
+  formScoringEnabled: boolean;
+  /** Form-wide highest possible total — drives the "assign points yet?" nudge. */
+  scoringMax: number;
+  onUpdate: (patch: Partial<FormStep>) => void;
+  bm: BuilderMessages;
+}) {
+  const on = formScoringEnabled && step.scoringEnabled !== false;
+  return (
+    <>
+      <InlineField label={bm.settings.scoring}>
+        <Switch
+          checked={on}
+          disabled={!formScoringEnabled}
+          onCheckedChange={(v) => onUpdate({ scoringEnabled: v ? undefined : false })}
+          aria-label={bm.settings.scoring}
+          data-testid="step-scoring-toggle"
+        />
+      </InlineField>
+      <p className="mt-1 text-xs text-muted-foreground">
+        {formScoringEnabled ? bm.settings.scoringHint : bm.settings.scoringFormOff}
+      </p>
+      {on && scoringMax === 0 ? (
+        <p data-testid="scoring-zero-hint" className="mt-1.5 flex items-start gap-1.5 text-xs text-muted-foreground">
+          <i aria-hidden className="pi pi-info-circle mt-0.5 text-secondary" style={{ fontSize: 11 }} />
+          {bm.settings.scoringZeroHint}
+        </p>
+      ) : null}
+    </>
   );
 }
 

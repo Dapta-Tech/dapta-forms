@@ -499,7 +499,12 @@ export function FormEditor({
       <div className="min-h-0 flex-1 overflow-hidden">
         {tab === 'build' ? (
           hasQuestions ? (
-            <div className="grid h-full grid-cols-1 lg:grid-cols-[260px_minmax(0,1fr)_360px]">
+            // The settings panel widens with the viewport (V5-B6): it packs the
+            // densest controls in the builder — an option row is drag handle +
+            // label + value + points + delete — and at a fixed 360px those
+            // fields were cramped on displays with room to spare. It only grows
+            // past 360 at xl, so a 13" laptop keeps the canvas width it had.
+            <div className="grid h-full grid-cols-1 lg:grid-cols-[260px_minmax(0,1fr)_360px] xl:grid-cols-[280px_minmax(0,1fr)_420px] 2xl:grid-cols-[300px_minmax(0,1fr)_460px]">
               {/* Left spine */}
               <aside className="hidden min-h-0 overflow-y-auto lg:block">
                 <QuestionSpine

@@ -1133,7 +1133,7 @@ function HubspotCard({
         </Field>
 
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label={m.scoreProperty}>
+          <Field label={m.scoreProperty} help={m.scorePropertyHelp}>
             <PropertyField
               value={state.scoreProperty}
               ariaLabel={m.scoreProperty}
@@ -1144,7 +1144,7 @@ function HubspotCard({
               onChange={(v) => onChange({ ...state, scoreProperty: v })}
             />
           </Field>
-          <Field label={m.dateProperty}>
+          <Field label={m.dateProperty} help={m.datePropertyHelp}>
             <PropertyField
               value={state.dateProperty}
               ariaLabel={m.dateProperty}

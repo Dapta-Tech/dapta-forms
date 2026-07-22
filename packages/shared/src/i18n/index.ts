@@ -278,6 +278,10 @@ export interface FormsMessages {
         outcomeHeadingHelp: string;
         /** V5-A1 — why the ranges are inert while scoring is off. */
         outcomesInert: string;
+        /** V5-B5 — the heading field's tooltip (it IS the thank-you headline). */
+        outcomeHeadingHelp2: string;
+        /** V5-B5 — spells out that a redirect replaces the screen entirely. */
+        redirectHelp2: string;
         redirectLabel: string;
         redirectHelp: string;
         /** Label for the per-outcome thank-you body textarea. */
@@ -718,6 +722,10 @@ export interface FormsMessages {
       emptyValueMaps: string;
       outcomeProperty: string;
       outcomePropertyHelp: string;
+      /** V5-B5 — what the score property receives. */
+      scorePropertyHelp: string;
+      /** V5-B5 — HubSpot date properties are midnight-UTC, so the time is lost. */
+      datePropertyHelp: string;
       staticProperties: string;
       staticPropertiesHelp: string;
       staticValue: string;
@@ -1061,6 +1069,10 @@ export const en: FormsMessages = {
       resultsHelp: {
         outcomeHeadingHelp:
           'Shown to respondents as the heading on the thank-you screen when their score lands in this range.',
+        outcomeHeadingHelp2:
+          'This is the big line on the thank-you screen for this range — not an internal name for it. Write it as something a respondent should read.',
+        redirectHelp2:
+          'If you set this, the thank-you screen above is never shown for this range — the respondent goes straight to the URL. Leave it empty to show the screen.',
         outcomesInert:
           'Scoring is off, so no range can be reached — everyone sees the form’s own thank-you screen. Your ranges are kept; turn scoring on to use them again.',
         redirectLabel: 'Redirect URL (optional)',
@@ -1474,9 +1486,13 @@ export const en: FormsMessages = {
       addValueMap: 'Add value translation',
       addValueMapRow: 'Add value',
       emptyValueMaps: 'No value translations yet.',
+      scorePropertyHelp:
+        'Receives the total score as a number, on completed submissions only.',
+      datePropertyHelp:
+        'Receives the submission date. HubSpot date properties store midnight UTC, so the time of day is not kept — a webhook gets the full timestamp instead.',
       outcomeProperty: 'Outcome property',
       outcomePropertyHelp:
-        'Contact property that receives the resolved outcome label (e.g. “Qualified”) on completed submissions.',
+        'Receives the HEADING you wrote on the matching score range in Results — the same text the respondent sees. Only on completed submissions, and only when a range matches; with scoring off nothing is sent.',
       staticProperties: 'Static properties',
       staticPropertiesHelp:
         'Fixed values stamped on every completed submission (e.g. an opt-in flag). They never overwrite a mapped answer.',
@@ -1823,6 +1839,10 @@ export const es: FormsMessages = {
       resultsHelp: {
         outcomeHeadingHelp:
           'Se muestra a los respondientes como el encabezado de la pantalla de agradecimiento cuando su puntaje cae en este rango.',
+        outcomeHeadingHelp2:
+          'Es la línea grande de la pantalla de agradecimiento para este rango — no un nombre interno. Escríbela como algo que el respondiente deba leer.',
+        redirectHelp2:
+          'Si la defines, la pantalla de agradecimiento de arriba nunca se muestra para este rango — el respondiente va directo a la URL. Déjala vacía para mostrar la pantalla.',
         outcomesInert:
           'El puntaje está apagado, así que ningún rango puede alcanzarse — todos ven la pantalla de agradecimiento del formulario. Tus rangos se conservan; enciende el puntaje para volver a usarlos.',
         redirectLabel: 'URL de redirección (opcional)',
@@ -2237,9 +2257,13 @@ export const es: FormsMessages = {
       addValueMap: 'Añadir traducción de valores',
       addValueMapRow: 'Añadir valor',
       emptyValueMaps: 'Aún no hay traducciones de valores.',
+      scorePropertyHelp:
+        'Recibe el puntaje total como número, solo en respuestas completadas.',
+      datePropertyHelp:
+        'Recibe la fecha de envío. Las propiedades de fecha de HubSpot guardan medianoche UTC, así que se pierde la hora — un webhook recibe la marca de tiempo completa.',
       outcomeProperty: 'Propiedad de resultado',
       outcomePropertyHelp:
-        'Propiedad del contacto que recibe la etiqueta del resultado (p. ej. “Calificado”) en las respuestas completadas.',
+        'Recibe el ENCABEZADO que escribiste en el rango de puntaje que coincida, en Resultados — el mismo texto que ve el respondiente. Solo en respuestas completadas y solo si algún rango coincide; con el puntaje apagado no se envía nada.',
       staticProperties: 'Propiedades estáticas',
       staticPropertiesHelp:
         'Valores fijos que se estampan en cada respuesta completada (p. ej. una marca de opt-in). Nunca sobrescriben una respuesta mapeada.',

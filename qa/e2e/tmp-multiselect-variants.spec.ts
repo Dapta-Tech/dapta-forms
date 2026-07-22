@@ -257,6 +257,28 @@ test.describe('A7 multi-select dynamic-question variants', () => {
     await page.screenshot({ path: 'qa/shots/tmp-msv-collide-ui.png', fullPage: true });
   });
 
+  test('how does the builder RENDER two rows that describe the same set?', async ({ page, request }) => {
+    const { id } = await createForm(request, 'collide-render', [
+      toolsStep(),
+      focusStep({ 'crm,ads': 'ROW A', 'ads,crm': 'ROW B', '*': 'FALLBACK' }),
+    ]);
+    await openEditor(page, id);
+    await selectStep(page, 2);
+    const opts = page.getByTestId('variant-multi-option');
+    await expect(opts).toHaveCount(6);
+    const dump: string[] = [];
+    for (let i = 0; i < 6; i += 1) {
+      dump.push(`${await opts.nth(i).innerText()}=${await opts.nth(i).getAttribute('aria-pressed')}`);
+    }
+    console.log('COLLIDE-RENDER rows:', JSON.stringify(dump));
+    const sectionText = await page
+      .locator('[data-testid="variants-scope-note"]')
+      .locator('xpath=../..')
+      .innerText();
+    console.log('COLLIDE-RENDER section text:', JSON.stringify(sectionText));
+    await page.screenshot({ path: 'qa/shots/tmp-msv-collide-render.png', fullPage: true });
+  });
+
   test('add a second row and try to narrow it to a single value the pair row uses', async ({
     page,
     request,

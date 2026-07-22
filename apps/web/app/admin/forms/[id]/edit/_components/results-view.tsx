@@ -6,6 +6,7 @@ import { createEmptyOutcome } from '@quill/engine';
 import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/cn';
+import { HelpTip } from '@/components/ui/help-tip';
 import { TextField, NumberField, TextArea } from './fields';
 import { iconForStep } from './question-types';
 import { maxScore, scoringSteps } from './scoring-util';
@@ -154,13 +155,16 @@ export function ResultsView({
                   >
                     {range}
                   </span>
-                  <TextField
-                    value={o.label}
-                    placeholder={m.results.rangeLabelPlaceholder}
-                    onChange={(e) => update(index, { label: e.target.value })}
-                    className="flex-1 font-medium"
-                    data-testid="outcome-label"
-                  />
+                  <span className="relative flex flex-1 items-center gap-1.5">
+                    <TextField
+                      value={o.label}
+                      placeholder={m.results.rangeLabelPlaceholder}
+                      onChange={(e) => update(index, { label: e.target.value })}
+                      className="flex-1 font-medium"
+                      data-testid="outcome-label"
+                    />
+                    <HelpTip text={rm.outcomeHeadingHelp2} label={rm.messageLabel} />
+                  </span>
                   <div className="w-20 shrink-0">
                     <NumberField
                       aria-label={m.results.rangeLabel}
@@ -203,9 +207,12 @@ export function ResultsView({
                 {/* Redirect is a clearly-separate, optional URL — normalized to
                     https:// on blur so a schemeless entry never 400s the save. */}
                 <div className="mt-2.5 flex flex-col gap-1 pl-[64px]">
-                  <label htmlFor={`outcome-redirect-${o.id}`} className="text-xs font-medium text-foreground">
-                    {rm.redirectLabel}
-                  </label>
+                  <span className="flex items-center gap-1.5">
+                    <label htmlFor={`outcome-redirect-${o.id}`} className="text-xs font-medium text-foreground">
+                      {rm.redirectLabel}
+                    </label>
+                    <HelpTip text={rm.redirectHelp2} label={rm.redirectLabel} />
+                  </span>
                   <RedirectField
                     id={`outcome-redirect-${o.id}`}
                     value={o.redirectUrl ?? null}
