@@ -118,6 +118,8 @@ export interface BuilderMessages {
     noRules: string;
     scoring: string;
     scoringHint: string;
+    /** V5-B2 — the per-question switch is inert while the form-level one is off. */
+    scoringFormOff: string;
     /** Shown near the toggle when scoring is on but no points are assigned yet. */
     scoringZeroHint: string;
     contactHint: string;
@@ -342,7 +344,8 @@ const en: BuilderMessages = {
     noRules: 'No rules — everyone sees this question.',
     scoring: 'Scoring',
     scoringHint:
-      'Scoring applies to the whole form, not just this question. Points from the selected option add to the total; set ranges in Results.',
+      'Counts this question toward the score. Points from the selected option add to the total; set ranges in Results.',
+    scoringFormOff: 'Scoring is off for the whole form — turn it on in Results to score individual questions.',
     scoringZeroHint: 'Assign points to your answers to enable ranges.',
     contactHint: 'Contact field — doesn’t affect the score.',
     delete: 'Delete question',
@@ -563,7 +566,8 @@ const es: BuilderMessages = {
     noRules: 'Sin reglas — todos ven esta pregunta.',
     scoring: 'Puntaje',
     scoringHint:
-      'El puntaje se aplica a todo el formulario, no solo a esta pregunta. Los puntos de la opción elegida suman al total; define los rangos en Resultados.',
+      'Cuenta esta pregunta para el puntaje. Los puntos de la opción elegida suman al total; define los rangos en Resultados.',
+    scoringFormOff: 'El puntaje está apagado para todo el formulario — enciéndelo en Resultados para puntuar preguntas individuales.',
     scoringZeroHint: 'Asigna puntos a tus respuestas para habilitar los rangos.',
     contactHint: 'Campo de contacto — no afecta el puntaje.',
     delete: 'Eliminar pregunta',

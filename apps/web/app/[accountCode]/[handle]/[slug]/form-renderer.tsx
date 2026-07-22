@@ -16,6 +16,7 @@ import {
   runtimeSteps,
   validateAnswerCode,
   resolveOutcome,
+  resolveEnding,
   computeScore,
   partialSubmitKey,
   revealAfterKey,
@@ -151,6 +152,7 @@ export function FormRenderer({
   const [booking, setBooking] = useState<{ outcome: FormOutcome; score: number } | null>(null);
 
   const utmRef = useRef<Record<string, string>>({});
+  const redirected = useRef(false); // a deferred redirect fires exactly once
   const viewTracked = useRef(false);
   const partialSent = useRef(false);
   const advancing = useRef(false);
@@ -158,6 +160,25 @@ export function FormRenderer({
   const bookedRef = useRef(false); // one booking → one callback + one redirect
   const lastStepViewKey = useRef<string | null>(null);
   const engineConfig = config as unknown as Parameters<typeof runtimeSteps>[0];
+
+  // Deferred redirect (V5-B1): "show the thank-you for N ms, then leave". The
+  // screen is already rendered by the time this runs, so the respondent reads
+  // the message and the navigation happens under them. Guarded by a ref so a
+  // re-render cannot schedule a second one, and the timer is cleared on unmount
+  // so leaving early never yanks the page out from under a later screen.
+  useEffect(() => {
+    if (phase !== 'done' || !done || redirected.current) return;
+    const outcome = resolveOutcome(engineConfig, done.score, answers);
+    const ending = resolveEnding(engineConfig, outcome);
+    if (!ending.redirectUrl || ending.redirectDelayMs <= 0) return;
+    if (!isSafeHttpUrl(ending.redirectUrl)) return;
+    const url = ending.redirectUrl;
+    const timer = setTimeout(() => {
+      redirected.current = true;
+      window.location.href = url;
+    }, ending.redirectDelayMs);
+    return () => clearTimeout(timer);
+  }, [phase, done, engineConfig, answers]);
 
   // The engine decides the ordered, visible, display-resolved steps.
   const steps = useMemo<FormStep[]>(
@@ -256,12 +277,23 @@ export function FormRenderer({
         setPhase('booking');
         return;
       }
-      if (outcome?.redirectUrl) {
+      // V5-B1: the destination is the outcome's, else the form-level ending's,
+      // so a form can redirect everyone (or redirect with scoring off) without
+      // repeating the URL on every range.
+      const ending = resolveEnding(engineConfig, outcome);
+      if (ending.redirectUrl) {
         // Runtime XSS guard: only navigate to http(s). A non-http(s) protocol
         // (javascript:/data:) is ignored + logged, falling through to the
         // thank-you screen (the schema also rejects it on save — belt-and-braces).
-        if (isSafeHttpUrl(outcome.redirectUrl)) {
-          window.location.href = outcome.redirectUrl;
+        if (isSafeHttpUrl(ending.redirectUrl)) {
+          // A delay shows the thank-you screen first, then leaves. Zero (the
+          // default, and every pre-V5 config) redirects immediately as before.
+          if (ending.redirectDelayMs > 0) {
+            setDone({ score, outcome: res.outcome ?? null });
+            setPhase('done');
+            return;
+          }
+          window.location.href = ending.redirectUrl;
           return;
         }
         console.warn('[forms] ignored non-http(s) redirectUrl');
@@ -444,6 +476,8 @@ export function FormRenderer({
 
   if (phase === 'done' && done) {
     const outcome = resolveOutcome(engineConfig, done.score, answersRef.current);
+    // V5-B1: outcome copy → form-level ending copy → the built-in localized copy.
+    const ending = resolveEnding(engineConfig, outcome);
     const cta = signupHref('confirmation', accountCode);
     return (
       <PhaseShell className="pf pf--done" style={accentVars} bannerText={cover?.bannerText}>
@@ -451,11 +485,9 @@ export function FormRenderer({
           <div className="pf-done__check" aria-hidden="true">
             ✓
           </div>
-          <h1 className="pf-done__title">{outcome?.label ?? m.thankYouTitle}</h1>
+          <h1 className="pf-done__title">{ending.headline ?? m.thankYouTitle}</h1>
           <p className="pf-done__body">
-            {outcome?.message
-              ? interpolate(outcome.message, answersRef.current)
-              : t(m.thankYouBody, { name })}
+            {ending.body ? interpolate(ending.body, answersRef.current) : t(m.thankYouBody, { name })}
           </p>
           {cta ? (
             <>

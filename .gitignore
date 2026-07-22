@@ -60,3 +60,4 @@ qa/playwright-report/
 qa/test-results/
 test-results/
 qa/shots/
+.next-qa/

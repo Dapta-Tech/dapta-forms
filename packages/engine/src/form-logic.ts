@@ -172,6 +172,18 @@ export interface FormStep {
    */
   hidden?: boolean;
   /**
+   * Per-question scoring switch (additive; back-compat — V5-B2). `false` makes
+   * THIS step contribute nothing to the score while the rest of the form keeps
+   * scoring normally; absent/`true` scores as it always has, so every existing
+   * config is unchanged. Gated by the form-level `config.scoring.enabled`: with
+   * scoring off nothing scores regardless of this flag.
+   *
+   * Exists because the builder only ever had the FORM-level switch, rendered
+   * inside each question's panel — so turning "Scoring" off on one question
+   * silently turned it off on all of them.
+   */
+  scoringEnabled?: boolean;
+  /**
    * `phone` step: the ISO 3166-1 alpha-2 country the public phone picker starts
    * on (e.g. "CO"). Absent = the locale-based default (en→US, es→MX). Purely a
    * display default — the stored answer is still a full E.164 string.
@@ -221,6 +233,11 @@ export interface FormOutcome {
   booking?: OutcomeBooking | null;
   /** Answer-forced rules: any match makes this outcome win over score bucketing. */
   overrides?: OutcomeOverrideRule[];
+  /**
+   * Hold the thank-you screen this long before this outcome's redirect fires
+   * (additive — V5-B1). Absent = inherit `config.ending.redirectDelayMs`.
+   */
+  redirectDelayMs?: number;
 }
 
 /** A client logo chip on the cover marquee (image `src`, or the `name` as text). */
@@ -266,6 +283,31 @@ export interface FormReveal {
   prewarm?: boolean;
 }
 
+/**
+ * What happens when the form finishes, at the FORM level (additive — V5-B1).
+ *
+ * Until now there was no such thing: the generic thank-you copy was hardcoded
+ * i18n with no way to edit it, and a redirect could only be set per outcome —
+ * so sending everyone to one URL meant typing it into every range, and a form
+ * with scoring off could not redirect at all.
+ *
+ * Every field is optional and every field is a DEFAULT: an outcome that sets the
+ * same field overrides it. See {@link resolveEnding} for the resolution order.
+ */
+export interface FormEnding {
+  /** Thank-you heading. Absent = the built-in localized title. */
+  headline?: string | null;
+  /** Thank-you body; `[key]` tokens interpolate. Absent = the built-in copy. */
+  body?: string | null;
+  /** Send respondents here instead of showing the thank-you screen. */
+  redirectUrl?: string | null;
+  /**
+   * Show the thank-you screen for this long BEFORE redirecting. Only meaningful
+   * alongside a redirect URL; 0/absent redirects immediately.
+   */
+  redirectDelayMs?: number;
+}
+
 export interface FormConfig {
   version: 1;
   branding?: FormBranding | null;
@@ -273,6 +315,8 @@ export interface FormConfig {
   steps: FormStep[];
   scoring?: { enabled?: boolean } | null;
   outcomes?: FormOutcome[];
+  /** Form-level ending, overridable per outcome (V5-B1). */
+  ending?: FormEnding | null;
   reveal?: FormReveal | null;
   /**
    * Persist a partial submission once the step at this 1-based position in
@@ -863,6 +907,7 @@ export function computeScore(config: FormConfig, answers: Answers): number {
   let score = 0;
   for (const step of config.steps) {
     if (step.flowGroup === 'lead_capture') continue;
+    if (step.scoringEnabled === false) continue; // per-question opt-out (V5-B2)
     if (!visible.has(step.key)) continue;
     const value = answers[step.key];
     if (value == null || value === '') continue;
@@ -938,6 +983,55 @@ export function resolveOutcome(
     .filter((o) => (o.minScore ?? 0) <= score)
     .sort((a, b) => (b.minScore ?? 0) - (a.minScore ?? 0));
   return buckets[0] ?? null;
+}
+
+/** What the renderer should actually do when the form finishes (V5-B1). */
+export interface ResolvedEnding {
+  /** Heading, or `null` to use the renderer's built-in localized title. */
+  headline: string | null;
+  /** Body copy (still un-interpolated), or `null` for the built-in copy. */
+  body: string | null;
+  /** Where to send the respondent, or `null` to show the thank-you screen. */
+  redirectUrl: string | null;
+  /** How long to show the thank-you screen first. 0 = redirect immediately. */
+  redirectDelayMs: number;
+}
+
+/**
+ * The ending for a resolved outcome: per-outcome value, else the form-level
+ * default, else nothing (the renderer's built-in copy) — V5-B1.
+ *
+ * One inheritance rule covers every ending shape the builder needs, with no
+ * mode selector to choose between them:
+ *  - a different thank-you per outcome → fill the outcome's fields;
+ *  - one thank-you for everyone → fill only the form's;
+ *  - redirect everyone → a form-level `redirectUrl`;
+ *  - thank-you, then redirect → a form-level URL plus a delay;
+ *  - any of the above overridden for one bucket → set it on that outcome.
+ *
+ * A field is "set" only when it is a non-empty string, so clearing an outcome's
+ * box falls back to the form default rather than blanking the screen. The
+ * outcome's `label` doubles as its heading (it always has) — inheriting the
+ * form headline only when the label is empty.
+ */
+export function resolveEnding(config: FormConfig, outcome: FormOutcome | null): ResolvedEnding {
+  const e = config.ending ?? null;
+  const pick = (a: string | null | undefined, b: string | null | undefined): string | null => {
+    const first = typeof a === 'string' ? a.trim() : '';
+    if (first) return a as string;
+    const second = typeof b === 'string' ? b.trim() : '';
+    return second ? (b as string) : null;
+  };
+  const redirectUrl = pick(outcome?.redirectUrl, e?.redirectUrl);
+  // A delay without a destination is meaningless — report 0 so the renderer
+  // never holds the screen waiting for a redirect that is not coming.
+  const delaySource = outcome?.redirectDelayMs ?? e?.redirectDelayMs ?? 0;
+  return {
+    headline: pick(outcome?.label, e?.headline),
+    body: pick(outcome?.message, e?.body),
+    redirectUrl,
+    redirectDelayMs: redirectUrl && Number.isFinite(delaySource) ? Math.max(0, delaySource) : 0,
+  };
 }
 
 // ---------------------------------------------------------------------------

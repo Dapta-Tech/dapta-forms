@@ -54,7 +54,6 @@ export function QuestionSettings({
   scoringEnabled,
   onUpdate,
   onDelete,
-  onScoringChange,
   bm,
   em,
   formId,
@@ -71,7 +70,6 @@ export function QuestionSettings({
   scoringEnabled: boolean;
   onUpdate: (patch: Partial<FormStep>) => void;
   onDelete: () => void;
-  onScoringChange: (enabled: boolean) => void;
   bm: BuilderMessages;
   em: EditorMessages;
   formId: string;
@@ -392,15 +390,24 @@ export function QuestionSettings({
             <p className="text-xs text-muted-foreground">{bm.settings.contactHint}</p>
           ) : (
             <>
+              {/* THIS question's scoring (V5-B2). The switch here used to be the
+                  FORM-level one wearing a per-question label, so turning it off
+                  on one question turned it off on all of them. The form-level
+                  switch now lives only in Results; this one scopes to the step
+                  and is inert while the form-level switch is off. */}
               <InlineField label={bm.settings.scoring}>
                 <Switch
-                  checked={scoringEnabled}
-                  onCheckedChange={onScoringChange}
+                  checked={scoringEnabled && step.scoringEnabled !== false}
+                  disabled={!scoringEnabled}
+                  onCheckedChange={(v) => onUpdate({ scoringEnabled: v ? undefined : false })}
                   aria-label={bm.settings.scoring}
+                  data-testid="step-scoring-toggle"
                 />
               </InlineField>
-              <p className="mt-1 text-xs text-muted-foreground">{bm.settings.scoringHint}</p>
-              {scoringEnabled && scoringMax === 0 ? (
+              <p className="mt-1 text-xs text-muted-foreground">
+                {scoringEnabled ? bm.settings.scoringHint : bm.settings.scoringFormOff}
+              </p>
+              {scoringEnabled && step.scoringEnabled !== false && scoringMax === 0 ? (
                 <p
                   data-testid="scoring-zero-hint"
                   className="mt-1.5 flex items-start gap-1.5 text-xs text-muted-foreground"

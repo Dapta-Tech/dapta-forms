@@ -25,8 +25,10 @@ import {
   renameStepKey,
   sanitizeStepKey,
   resolveQuestion,
+  resolveEnding,
   type FormConfig,
   type FormStep,
+  type FormOutcome,
   type StepCondition,
   type Answers,
 } from './form-logic';
@@ -1083,5 +1085,136 @@ describe('sanitizeStepKey (V5-A10)', () => {
 
   it('caps the length at 64', () => {
     expect(sanitizeStepKey('x'.repeat(100))).toHaveLength(64);
+  });
+});
+
+describe('per-question scoring (V5-B2)', () => {
+  const cfg: FormConfig = {
+    version: 1,
+    steps: [
+      step({
+        key: 'a',
+        type: 'dropdown',
+        flowGroup: 'qualification',
+        options: [{ label: 'Yes', value: 'yes', points: 10 }],
+      }),
+      step({
+        key: 'b',
+        type: 'dropdown',
+        flowGroup: 'qualification',
+        options: [{ label: 'Yes', value: 'yes', points: 5 }],
+      }),
+    ],
+  };
+  const answers = { a: 'yes', b: 'yes' };
+
+  it('scores every question by default (absent flag = unchanged behavior)', () => {
+    expect(computeScore(cfg, answers)).toBe(15);
+  });
+
+  it('excludes only the opted-out question, leaving the rest scoring', () => {
+    // The whole point: turning one off must NOT turn the others off.
+    const oneOff: FormConfig = {
+      ...cfg,
+      steps: [{ ...cfg.steps[0]!, scoringEnabled: false }, cfg.steps[1]!],
+    };
+    expect(computeScore(oneOff, answers)).toBe(5);
+  });
+
+  it('an explicit true scores exactly like an absent flag', () => {
+    const explicit: FormConfig = {
+      ...cfg,
+      steps: cfg.steps.map((s) => ({ ...s, scoringEnabled: true })),
+    };
+    expect(computeScore(explicit, answers)).toBe(15);
+  });
+
+  it('the form-level switch still wins over any per-question flag', () => {
+    const formOff: FormConfig = {
+      ...cfg,
+      scoring: { enabled: false },
+      steps: cfg.steps.map((s) => ({ ...s, scoringEnabled: true })),
+    };
+    expect(computeScore(formOff, answers)).toBe(0);
+  });
+});
+
+describe('resolveEnding (V5-B1 — outcome → form → built-in)', () => {
+  const outcome = (over: Partial<FormOutcome> = {}): FormOutcome => ({ id: 'o', label: '', ...over });
+
+  it('a legacy config with no ending block resolves to nothing (built-in copy)', () => {
+    const out = resolveEnding({ version: 1, steps: [] }, null);
+    expect(out).toEqual({ headline: null, body: null, redirectUrl: null, redirectDelayMs: 0 });
+  });
+
+  it('the form-level ending applies to everyone when no outcome overrides it', () => {
+    const cfg: FormConfig = {
+      version: 1,
+      steps: [],
+      ending: { headline: 'All done', body: 'Thanks [firstname]' },
+    };
+    expect(resolveEnding(cfg, null).headline).toBe('All done');
+    // An outcome that overrides nothing inherits both fields.
+    expect(resolveEnding(cfg, outcome()).headline).toBe('All done');
+    expect(resolveEnding(cfg, outcome()).body).toBe('Thanks [firstname]');
+  });
+
+  it('an outcome overrides the form-level copy field by field', () => {
+    const cfg: FormConfig = { version: 1, steps: [], ending: { headline: 'Generic', body: 'Generic body' } };
+    const out = resolveEnding(cfg, outcome({ label: 'Hot lead' }));
+    expect(out.headline).toBe('Hot lead');
+    // Only the heading was overridden — the body still inherits.
+    expect(out.body).toBe('Generic body');
+  });
+
+  it('an EMPTY outcome field inherits rather than blanking the screen', () => {
+    const cfg: FormConfig = { version: 1, steps: [], ending: { headline: 'Generic', body: 'Generic body' } };
+    const out = resolveEnding(cfg, outcome({ label: '   ', message: '' }));
+    expect(out.headline).toBe('Generic');
+    expect(out.body).toBe('Generic body');
+  });
+
+  it('redirect: form-level sends everyone, an outcome can still divert', () => {
+    const cfg: FormConfig = { version: 1, steps: [], ending: { redirectUrl: 'https://example.com/all' } };
+    expect(resolveEnding(cfg, null).redirectUrl).toBe('https://example.com/all');
+    expect(resolveEnding(cfg, outcome({ redirectUrl: 'https://example.com/vip' })).redirectUrl).toBe(
+      'https://example.com/vip',
+    );
+  });
+
+  it('a delay only counts when there is somewhere to go', () => {
+    const noUrl: FormConfig = { version: 1, steps: [], ending: { redirectDelayMs: 3000 } };
+    expect(resolveEnding(noUrl, null).redirectDelayMs).toBe(0);
+    const withUrl: FormConfig = {
+      version: 1,
+      steps: [],
+      ending: { redirectUrl: 'https://example.com', redirectDelayMs: 3000 },
+    };
+    expect(resolveEnding(withUrl, null).redirectDelayMs).toBe(3000);
+    // An outcome may shorten or lengthen the hold for its own bucket.
+    expect(resolveEnding(withUrl, outcome({ redirectDelayMs: 500 })).redirectDelayMs).toBe(500);
+  });
+
+  it('clamps a negative or non-finite delay to an immediate redirect', () => {
+    const cfg: FormConfig = {
+      version: 1,
+      steps: [],
+      ending: { redirectUrl: 'https://example.com', redirectDelayMs: -1 },
+    };
+    expect(resolveEnding(cfg, null).redirectDelayMs).toBe(0);
+  });
+
+  it('with scoring off there is no outcome, so the form-level ending is what shows', () => {
+    // The V4 complaint end to end: scoring off must not let a range hijack the ending.
+    const cfg: FormConfig = {
+      version: 1,
+      steps: [],
+      scoring: { enabled: false },
+      ending: { headline: 'Thanks!' },
+      outcomes: [{ id: 'r1', label: 'Hot lead', minScore: 0, message: 'Range copy' }],
+    };
+    const resolved = resolveOutcome(cfg, 0);
+    expect(resolved).toBeNull();
+    expect(resolveEnding(cfg, resolved).headline).toBe('Thanks!');
   });
 });

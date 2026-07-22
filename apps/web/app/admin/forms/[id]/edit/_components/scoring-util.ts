@@ -9,6 +9,7 @@ import type { FormConfig, FormStep } from '@quill/engine';
 /** The most points a single step can contribute (single = best option; multiple = all positives). */
 export function maxStepPoints(step: FormStep): number {
   if (step.flowGroup === 'lead_capture') return 0;
+  if (step.scoringEnabled === false) return 0; // per-question opt-out (V5-B2)
   if (step.type === 'dropdown' || step.type === 'multiple_choice') {
     const pts = (step.options ?? []).map((o) => o.points ?? 0);
     if (pts.length === 0) return 0;

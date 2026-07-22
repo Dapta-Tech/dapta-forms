@@ -10,6 +10,7 @@ import type {
   FormBranding,
   FormOutcome,
   FormReveal,
+  FormEnding,
 } from '@quill/engine';
 import { normalizeConfig, renameStepKey as engineRenameStepKey } from '@quill/engine';
 import type { FormTracking } from '@quill/types';
@@ -28,6 +29,7 @@ import { ResultsView } from './_components/results-view';
 import { EmptyState } from './_components/empty-state';
 import { CoverPanel } from './_components/cover-panel';
 import { RevealPanel } from './_components/reveal-panel';
+import { EndingPanel } from './_components/ending-panel';
 import { ConnectPanel } from './_components/connect-panel';
 import { PublishButton } from './publish-button';
 import { LinkActions } from './link-actions';
@@ -355,6 +357,9 @@ export function FormEditor({
   const setOutcomes = (outcomes: FormOutcome[]) => mutate((c) => ({ ...c, outcomes }));
   const patchReveal = (patch: Partial<FormReveal>) =>
     mutate((c) => ({ ...c, reveal: { ...c.reveal, ...patch } }));
+  /** Form-level ending copy/redirect — the defaults score ranges override (V5-B1). */
+  const patchEnding = (patch: Partial<FormEnding>) =>
+    mutate((c) => ({ ...c, ending: { ...c.ending, ...patch } }));
   const setPartialSubmitAfterStep = (afterStep: number | undefined) =>
     mutate((c) => ({ ...c, partialSubmitAfterStep: afterStep }));
   // WHERE the reveal plays (V4-04). Setting a value pins the reveal after that
@@ -592,7 +597,6 @@ export function FormEditor({
                     scoringEnabled={scoringEnabled}
                     onUpdate={(patch) => patchStep(selected, patch)}
                     onDelete={() => deleteStep(selected)}
-                    onScoringChange={setScoring}
                     bm={bm}
                     em={m}
                     formId={id}
@@ -632,6 +636,7 @@ export function FormEditor({
               config={config}
               onScoringChange={setScoring}
               onOutcomesChange={setOutcomes}
+              onStepScoringChange={(index, on) => patchStep(index, { scoringEnabled: on ? undefined : false })}
               m={bm}
               rm={m.resultsHelp}
             />
@@ -643,6 +648,12 @@ export function FormEditor({
               config={config}
               onRevealChange={patchReveal}
               partialNote={bm.partial.designNote}
+              m={m}
+            />
+            <EndingPanel
+              config={config}
+              onEndingChange={patchEnding}
+              hasOutcomes={(config.outcomes?.length ?? 0) > 0 && scoringEnabled}
               m={m}
             />
           </div>

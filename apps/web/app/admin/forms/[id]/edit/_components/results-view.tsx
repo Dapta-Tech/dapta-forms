@@ -24,12 +24,15 @@ export function ResultsView({
   config,
   onScoringChange,
   onOutcomesChange,
+  onStepScoringChange,
   m,
   rm,
 }: {
   config: FormConfig;
   onScoringChange: (enabled: boolean) => void;
   onOutcomesChange: (next: FormOutcome[]) => void;
+  /** Toggle ONE question's contribution, by its index in `config.steps` — V5-B2. */
+  onStepScoringChange: (stepIndex: number, on: boolean) => void;
   m: BuilderMessages;
   /** Results-tab clarity strings from the shared catalog (admin.editor.resultsHelp). */
   rm: EditorMessages['resultsHelp'];
@@ -79,7 +82,13 @@ export function ResultsView({
         ) : (
           <div className="flex flex-col gap-3">
             {questions.map((q) => (
-              <PointsCard key={q.key} step={q} index={stepIndex.get(q) ?? 0} m={m} />
+              <PointsCard
+                key={q.key}
+                step={q}
+                index={stepIndex.get(q) ?? 0}
+                onScoringChange={(on) => onStepScoringChange(stepIndex.get(q) ?? 0, on)}
+                m={m}
+              />
             ))}
           </div>
         )}
@@ -314,9 +323,36 @@ function RedirectField({
 }
 
 /** One question's points, read-through from its options/slider ranges. */
-function PointsCard({ step, index, m }: { step: FormStep; index: number; m: BuilderMessages }) {
+/**
+ * One question's point table in Results, with its own scoring toggle (V5-B2).
+ *
+ * The toggle is the SAME `step.scoringEnabled` the question's settings panel
+ * edits, so the two views can never disagree. A question opted out stays listed
+ * (you need to see it to turn it back on) but is dimmed and its points struck
+ * from the total.
+ */
+function PointsCard({
+  step,
+  index,
+  onScoringChange,
+  m,
+}: {
+  step: FormStep;
+  index: number;
+  /** Toggle THIS question's contribution to the score. */
+  onScoringChange: (on: boolean) => void;
+  m: BuilderMessages;
+}) {
+  const on = step.scoringEnabled !== false;
   return (
-    <div className="rounded-xl border border-border bg-background p-3.5">
+    <div
+      data-testid="points-card"
+      data-scoring-off={!on || undefined}
+      className={cn(
+        'rounded-xl border border-border bg-background p-3.5 transition-opacity',
+        !on && 'opacity-50',
+      )}
+    >
       <p
         className="mb-2.5 flex items-center gap-2 text-sm font-semibold text-foreground"
         data-testid="points-question"
@@ -330,7 +366,15 @@ function PointsCard({ step, index, m }: { step: FormStep; index: number; m: Buil
           {index + 1}
         </span>
         <i aria-hidden className={`pi ${iconForStep(step)} text-muted-foreground`} style={{ fontSize: 12 }} />
-        <span className="min-w-0 truncate">{step.question?.trim() || tb(m.canvas.questionN, { n: index + 1 })}</span>
+        <span className="min-w-0 flex-1 truncate">
+          {step.question?.trim() || tb(m.canvas.questionN, { n: index + 1 })}
+        </span>
+        <Switch
+          checked={on}
+          onCheckedChange={onScoringChange}
+          aria-label={`${m.settings.scoring} — ${step.question?.trim() || tb(m.canvas.questionN, { n: index + 1 })}`}
+          data-testid="points-card-toggle"
+        />
       </p>
       {step.type === 'slider' ? (
         <div className="flex flex-wrap gap-2">

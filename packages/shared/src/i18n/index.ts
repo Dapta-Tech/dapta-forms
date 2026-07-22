@@ -430,6 +430,26 @@ export interface FormsMessages {
         /** V5-A5 — bare `@key` that never became a token; `{fixed}` is `[key]`. */
         tokenWarnRaw: string;
       };
+      /** V5-B1 — the form-level ending (Design tab): the defaults ranges override. */
+      ending: {
+        title: string;
+        subtitle: string;
+        headline: string;
+        headlineHint: string;
+        headlineHelp: string;
+        headlinePlaceholder: string;
+        body: string;
+        bodyHint: string;
+        bodyPlaceholder: string;
+        redirect: string;
+        redirectHint: string;
+        redirectPlaceholder: string;
+        delay: string;
+        delayHint: string;
+        delayHelp: string;
+        /** Shown when score ranges exist — they can override any field here. */
+        outcomesNote: string;
+      };
       /** Per-question behavior toggles (terminal / reveal position / hidden). */
       behavior: {
         title: string;
@@ -1049,6 +1069,27 @@ export const en: FormsMessages = {
         messageLabel: 'Message shown for this outcome',
         messageHelp:
           'The thank-you body respondents see for this range. Use [field] to insert an answer. Leave empty to use the default message.',
+      },
+      ending: {
+        title: 'When the form ends',
+        subtitle: 'What every respondent sees after they submit.',
+        headline: 'Heading',
+        headlineHint: 'Leave empty for the default “Thank you”.',
+        headlineHelp:
+          'The big line on the thank-you screen. A score range with its own heading replaces this one for people who land in that range.',
+        headlinePlaceholder: 'Thanks — we got it',
+        body: 'Message',
+        bodyHint: 'Use [field] to insert an answer. Leave empty for the default text.',
+        bodyPlaceholder: 'We’ll be in touch shortly.',
+        redirect: 'Redirect URL (optional)',
+        redirectHint: 'Leave empty to show the thank-you screen. If set, everyone is sent here.',
+        redirectPlaceholder: 'https://…',
+        delay: 'Show the thank-you first for (ms)',
+        delayHint: '0 redirects immediately.',
+        delayHelp:
+          'Hold the thank-you screen this long so the respondent can read it, then send them to the URL above. Only applies when a redirect is set.',
+        outcomesNote:
+          'These are the defaults. A score range in Results that fills the same field wins for the people who land in it; a range that leaves it empty uses what you set here.',
       },
       previewBtn: 'Preview',
       formNamePlaceholder: 'Form name',
@@ -1790,6 +1831,27 @@ export const es: FormsMessages = {
         messageLabel: 'Mensaje mostrado para este resultado',
         messageHelp:
           'El cuerpo de agradecimiento que ven los respondientes en este rango. Usa [campo] para insertar una respuesta. Déjalo vacío para usar el mensaje por defecto.',
+      },
+      ending: {
+        title: 'Cuando termina el formulario',
+        subtitle: 'Lo que ve cada respondiente después de enviar.',
+        headline: 'Encabezado',
+        headlineHint: 'Déjalo vacío para el «Gracias» por defecto.',
+        headlineHelp:
+          'La línea grande de la pantalla de agradecimiento. Un rango de puntaje con su propio encabezado reemplaza este para quienes caigan en ese rango.',
+        headlinePlaceholder: 'Gracias — lo recibimos',
+        body: 'Mensaje',
+        bodyHint: 'Usa [campo] para insertar una respuesta. Déjalo vacío para el texto por defecto.',
+        bodyPlaceholder: 'Te contactamos en breve.',
+        redirect: 'URL de redirección (opcional)',
+        redirectHint: 'Déjalo vacío para mostrar la pantalla de agradecimiento. Si lo defines, se redirige a todos ahí.',
+        redirectPlaceholder: 'https://…',
+        delay: 'Mostrar el agradecimiento antes durante (ms)',
+        delayHint: '0 redirige de inmediato.',
+        delayHelp:
+          'Mantiene la pantalla de agradecimiento este tiempo para que el respondiente la lea y luego lo envía a la URL de arriba. Solo aplica si hay redirección.',
+        outcomesNote:
+          'Estos son los valores por defecto. Un rango de puntaje en Resultados que llene el mismo campo gana para quienes caigan en él; un rango que lo deje vacío usa lo que definas aquí.',
       },
       previewBtn: 'Vista previa',
       formNamePlaceholder: 'Nombre del formulario',
