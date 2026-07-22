@@ -652,6 +652,8 @@ export interface FormsMessages {
       save: string;
       saving: string;
       saved: string;
+      /** V5-A4 — steady-state autosave status (the Save button is gone). */
+      autosaved: string;
       saveError: string;
       loadError: string;
       enabled: string;
@@ -1388,6 +1390,7 @@ export const en: FormsMessages = {
       save: 'Save integrations',
       saving: 'Saving…',
       saved: 'Integrations saved.',
+      autosaved: 'Changes saved automatically',
       saveError: 'Could not save integrations.',
       loadError: 'Could not load integrations.',
       enabled: 'Enabled',
@@ -2129,6 +2132,7 @@ export const es: FormsMessages = {
       save: 'Guardar integraciones',
       saving: 'Guardando…',
       saved: 'Integraciones guardadas.',
+      autosaved: 'Cambios guardados automáticamente',
       saveError: 'No se pudieron guardar las integraciones.',
       loadError: 'No se pudieron cargar las integraciones.',
       enabled: 'Activado',

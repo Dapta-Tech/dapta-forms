@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useMemo, useState, useTransition } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import type { FormsMessages, Locale } from '@quill/shared';
 import { WEBHOOK_SECRET_MASK, type DestinationEvent, type FormDestination } from '@quill/types';
@@ -16,6 +16,12 @@ import { propertyLookup, suggestProperty, type QuestionMeta } from './auto-map';
 import { saveIntegrationsAction } from './actions';
 
 type Msgs = FormsMessages['admin']['integrations'];
+
+type SaveStatus = 'saved' | 'saving' | 'error';
+/** Same debounce as the builder's autosave, so both tabs feel identical. */
+const AUTOSAVE_MS = 900;
+/** Same admin API base the server-side admin-api client uses (client-exposed). */
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 
 export type { QuestionMeta } from './auto-map';
 
@@ -191,8 +197,9 @@ export function IntegrationsEditor({
   messages: Msgs;
   locale: Locale;
 }) {
-  const { success, error } = useToast();
-  const [pending, start] = useTransition();
+  const { error } = useToast();
+  const errorRef = useRef(error);
+  errorRef.current = error;
   const [webhook, setWebhook] = useState<WebhookState>(() => initialWebhook(initialDestinations));
   const [hs, setHs] = useState<HubspotState>(() => initialHubspot(initialDestinations));
   const [webhookError, setWebhookError] = useState<string | null>(null);
@@ -291,26 +298,112 @@ export function IntegrationsEditor({
     return out;
   }
 
-  function save() {
-    setWebhookError(null);
-    const built = buildDestinations();
-    if ('error' in built) {
-      setWebhookError(built.error);
-      error(built.error);
-      return;
-    }
-    start(async () => {
+  // --- Autosave (V5-A4) ------------------------------------------------------
+  // Connect was the last tab still gated behind an explicit Save button, so an
+  // edit made here — flipping the connection on, re-pointing one property —
+  // looked identical to an edit made in Build but was silently discarded on
+  // leaving. Same contract as the builder now: debounce, flush on the way out,
+  // and a status line that says which state you are in.
+  const buildRef = useRef(buildDestinations);
+  buildRef.current = buildDestinations;
+  const dirty = useRef(false);
+  const [status, setStatus] = useState<SaveStatus>('saved');
+
+  const persist = useCallback(
+    async (built: FormDestination[]): Promise<boolean> => {
+      setStatus('saving');
       const res = await saveIntegrationsAction(id, built);
-      if (res.ok) success(m.saved);
-      else error(res.message ?? m.saveError);
-    });
-  }
+      if (res.ok) {
+        dirty.current = false;
+        setStatus('saved');
+        return true;
+      }
+      setStatus('error');
+      errorRef.current(res.message ?? m.saveError);
+      return false;
+    },
+    [id, m.saveError],
+  );
+
+  /**
+   * Every card edit funnels through these so an edit is marked dirty at the
+   * moment it happens. Wrapping the setters (rather than watching state in an
+   * effect) keeps the initial render from counting as an edit and autosaving
+   * a form nobody touched.
+   */
+  const editWebhook = useCallback((next: WebhookState) => {
+    dirty.current = true;
+    setStatus('saving');
+    setWebhook(next);
+  }, []);
+  const editHubspot = useCallback((next: HubspotState) => {
+    dirty.current = true;
+    setStatus('saving');
+    setHs(next);
+  }, []);
+
+  useEffect(() => {
+    if (!dirty.current) return;
+    const t = setTimeout(() => {
+      const built = buildRef.current();
+      if ('error' in built) {
+        // An invalid webhook URL must not be persisted, but it must not silently
+        // eat the rest of the edits either — surface it and stay dirty so the
+        // next keystroke retries.
+        setWebhookError(built.error);
+        setStatus('error');
+        return;
+      }
+      setWebhookError(null);
+      void persist(built);
+    }, AUTOSAVE_MS);
+    return () => clearTimeout(t);
+  }, [webhook, hs, persist]);
+
+  // Leaving with an edit still in the debounce window: flush it. A hard tab
+  // close cannot await a server action, so that path uses a `keepalive` PUT to
+  // the same endpoint the action wraps; SPA nav and tab-hide use the
+  // cookie-authed action while the component is still alive. Mirrors the
+  // builder's flush exactly, so both tabs lose work in the same (zero) cases.
+  useEffect(() => {
+    function flush(beacon: boolean) {
+      if (!dirty.current) return;
+      const built = buildRef.current();
+      if ('error' in built) return; // never persist an invalid config
+      if (beacon) {
+        try {
+          void fetch(`${API_BASE}/v1/forms/${id}/destinations`, {
+            method: 'PUT',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ destinations: built }),
+            keepalive: true,
+            credentials: 'include',
+          });
+        } catch {
+          /* best-effort on the unload path — nothing to recover to */
+        }
+      } else {
+        void saveIntegrationsAction(id, built);
+      }
+    }
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') flush(false);
+    };
+    const onBeforeUnload = () => flush(true);
+    document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('beforeunload', onBeforeUnload);
+      flush(false); // SPA nav / unmount → reliable server-action flush
+    };
+  }, [id]);
 
   return (
     <div className="flex flex-col gap-6">
       <WebhookCard
         state={webhook}
-        onChange={setWebhook}
+        onChange={editWebhook}
         urlError={webhookError}
         clearUrlError={() => setWebhookError(null)}
         m={m}
@@ -318,7 +411,7 @@ export function IntegrationsEditor({
       <LocaleContext.Provider value={locale}>
         <HubspotCard
           state={hs}
-          onChange={setHs}
+          onChange={editHubspot}
           properties={properties}
           pickerEnabled={pickerEnabled}
           accountConnected={hubspotConnected}
@@ -328,10 +421,25 @@ export function IntegrationsEditor({
         />
       </LocaleContext.Provider>
 
-      <div className="sticky bottom-0 flex items-center gap-3 border-t border-border bg-background/95 py-4 backdrop-blur">
-        <Button onClick={save} disabled={pending}>
-          {pending ? m.saving : m.save}
-        </Button>
+      {/* The Save button is gone (V5-A4) — everything here autosaves, so what
+          belongs in this bar is the state of that save, not an action. */}
+      <div
+        data-testid="integrations-save-status"
+        data-status={status}
+        aria-live="polite"
+        className="sticky bottom-0 flex items-center gap-2 border-t border-border bg-background/95 py-4 text-sm text-muted-foreground backdrop-blur"
+      >
+        <i
+          aria-hidden
+          className={cn(
+            'pi',
+            status === 'saved' ? 'pi-check text-primary' : status === 'error' ? 'pi-exclamation-triangle text-destructive' : 'pi-sync',
+          )}
+          style={{ fontSize: 12 }}
+        />
+        <span className={cn(status === 'error' && 'text-destructive')}>
+          {status === 'saved' ? m.autosaved : status === 'error' ? m.saveError : m.saving}
+        </span>
       </div>
     </div>
   );
