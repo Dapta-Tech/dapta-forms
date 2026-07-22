@@ -11,7 +11,7 @@ import type {
   FormOutcome,
   FormReveal,
 } from '@quill/engine';
-import { normalizeConfig } from '@quill/engine';
+import { normalizeConfig, renameStepKey as engineRenameStepKey } from '@quill/engine';
 import type { FormTracking } from '@quill/types';
 import { formConfigSchema } from '@quill/types';
 import { saveFormAction } from '@/app/admin/actions';
@@ -21,6 +21,7 @@ import { QuestionSpine } from './_components/question-spine';
 import { CanvasQuestion } from './_components/canvas-question';
 import { QuestionSettings } from './_components/question-settings';
 import { invalidateQuestionHubspotCache } from './_components/question-hubspot';
+import { renameQuestionMappingAction } from './_components/question-hubspot-actions';
 import { TypeGallery } from './_components/type-gallery';
 import { LogicMap } from './_components/logic-map';
 import { ResultsView } from './_components/results-view';
@@ -262,6 +263,26 @@ export function FormEditor({
   function patchStep(index: number, patch: Partial<FormStep>) {
     mutate((c) => ({ ...c, steps: c.steps.map((s, i) => (i === index ? { ...s, ...patch } : s)) }));
   }
+  /**
+   * Rename a step's answer key (V5-A10). The engine's `renameStepKey` moves every
+   * in-config pointer (conditions, goto targets, variant sources, override rules,
+   * `[key]` tokens). HubSpot field mappings are stored OUTSIDE this config and
+   * written through their own endpoint, so they are migrated separately — without
+   * that second call a rename would silently unmap the question from the CRM.
+   */
+  function renameStepKey(index: number, nextKey: string) {
+    const current = config.steps[index];
+    if (!current) return;
+    const oldKey = current.key;
+    mutate((c) => engineRenameStepKey(c, oldKey, nextKey));
+    void renameQuestionMappingAction(id, oldKey, nextKey).then((res) => {
+      if (!res.ok && res.code === 'error') {
+        // The config rename already applied and autosaved; only the CRM mapping
+        // is behind. Say so rather than implying the whole rename failed.
+        toastRef.current.error(m.behavior.fieldKeyMappingFailed);
+      }
+    });
+  }
   function addFromGallery(item: GalleryItem) {
     mutate((c) => {
       const step = stepFromGalleryItem(item, new Set(c.steps.map((s) => s.key)));
@@ -488,6 +509,7 @@ export function FormEditor({
                   revealAfterStep={config.revealAfterStep}
                   onRevealMove={setRevealAfterStep}
                   onRevealRemove={removeReveal}
+                  onOpenDesign={() => setTab('design')}
                   m={bm}
                 />
               </aside>
@@ -579,6 +601,7 @@ export function FormEditor({
                     onOpenDesign={() => setTab('design')}
                     revealAfterStep={config.revealAfterStep}
                     onRevealAfterStepChange={setRevealAfterStep}
+                    onRenameKey={(nextKey) => renameStepKey(selected, nextKey)}
                   />
                 ) : null}
               </aside>

@@ -85,8 +85,17 @@ export function ResultsView({
         )}
       </section>
 
-      {/* What happens at the end */}
-      <section className="flex flex-col gap-4 rounded-2xl border border-border bg-card p-5">
+      {/* What happens at the end. Outcomes ARE the score's routing table, so with
+          scoring off they route nothing — the engine now resolves to null and the
+          form's own ending shows (V5-A1). The panel goes inert rather than
+          hiding: the ranges are still there, and hiding them would read as data
+          loss. Kept editable-looking-but-disabled would be worse, so it is
+          visibly dimmed with the reason stated. */}
+      <section
+        data-testid="results-end"
+        data-scoring-off={!enabled || undefined}
+        className="flex flex-col gap-4 rounded-2xl border border-border bg-card p-5"
+      >
         <div>
           <h2 className="flex items-center gap-2 text-base font-semibold text-foreground">
             <i aria-hidden className="pi pi-check-square text-primary" style={{ fontSize: 15 }} />
@@ -95,6 +104,23 @@ export function ResultsView({
           <p className="mt-1 text-sm text-muted-foreground">{m.results.endHint}</p>
         </div>
 
+        {!enabled ? (
+          <p
+            data-testid="results-outcomes-inert"
+            className="flex items-start gap-2 rounded-xl border border-dashed border-border p-4 text-sm leading-relaxed text-muted-foreground"
+          >
+            <i aria-hidden className="pi pi-info-circle mt-0.5 shrink-0 text-secondary" style={{ fontSize: 13 }} />
+            {rm.outcomesInert}
+          </p>
+        ) : null}
+
+        <fieldset
+          disabled={!enabled}
+          className={cn(
+            'flex flex-col gap-4 border-0 p-0',
+            !enabled && 'pointer-events-none select-none opacity-40',
+          )}
+        >
         <ScoreBar outcomes={outcomes} top={top} m={m} />
 
         <div className="flex flex-col gap-3">
@@ -193,6 +219,7 @@ export function ResultsView({
             {m.results.addRange}
           </button>
         </div>
+        </fieldset>
       </section>
     </div>
   );

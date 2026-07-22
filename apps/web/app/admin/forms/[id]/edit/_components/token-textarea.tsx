@@ -50,6 +50,12 @@ export interface TokenTextareaMessages {
   /** `{token}` is replaced with the bracketed token, e.g. `[firstname]`. */
   warnLater: string;
   warnUnknown: string;
+  /**
+   * V5-A5 — a bare `@key` that names a real earlier field but was never turned
+   * into a token, so it renders literally. `{token}` is the `@key` as typed,
+   * `{fixed}` the `[key]` spelling that would work.
+   */
+  warnRaw: string;
 }
 
 /** The answer keys one step captures (message: none; name: its subfields). */
@@ -79,12 +85,38 @@ export function allTokenKeys(steps: FormStep[]): Set<string> {
   return set;
 }
 
-/** `[key]` references in a text — same token grammar as the engine. */
-function referencedTokens(text: string): string[] {
-  const out: string[] = [];
-  const re = /\[([a-zA-Z0-9_]+)\]/g;
+/** A field reference found in the text, with where it starts and how it's written. */
+interface TokenRef {
+  key: string;
+  /** Index of the `[` or `@` that opens it — used to skip the one being typed. */
+  start: number;
+  /** `bracket` resolves at runtime; `at` is raw text the engine never substitutes. */
+  form: 'bracket' | 'at';
+}
+
+/**
+ * Field references in a text: the engine's own `[key]` grammar, PLUS bare `@key`
+ * runs (V5-A5).
+ *
+ * Only `[key]` ever interpolates — `@` is the picker's trigger, and choosing an
+ * option rewrites it to `[key]`. But an author who types `@phone_1` straight
+ * through and moves on leaves plain text that silently renders as literal
+ * "@phone_1", and the warnings never fired because they only looked at brackets.
+ * Both spellings are scanned so the same mistake is reported either way; the
+ * caller distinguishes them so an unresolvable `@` can say so specifically.
+ */
+function referencedTokens(text: string): TokenRef[] {
+  const out: TokenRef[] = [];
+  const re = /\[([a-zA-Z0-9_]+)\]|@([a-zA-Z0-9_]+)/g;
   let m: RegExpExecArray | null;
-  while ((m = re.exec(text)) != null) out.push(m[1] as string);
+  while ((m = re.exec(text)) != null) {
+    const bracket = m[1];
+    out.push({
+      key: (bracket ?? m[2]) as string,
+      start: m.index,
+      form: bracket != null ? 'bracket' : 'at',
+    });
+  }
   return out;
 }
 
@@ -208,15 +240,27 @@ export function TokenTextarea({
     }
   }
 
-  // Authoring warnings: tokens referenced in the text that will NOT resolve
-  // here — captured at this step or later ("later"), or never ("unknown").
+  // Authoring warnings: references in the text that will NOT resolve here —
+  // captured at this step or later ('later'), never captured ('unknown'), or
+  // written as bare `@key` which the engine never substitutes at all ('raw').
   const seen = new Set<string>();
-  const warnings: { token: string; kind: 'later' | 'unknown' }[] = [];
-  for (const t of referencedTokens(value)) {
-    if (seen.has(t)) continue;
-    seen.add(t);
-    if (tokens.some((o) => o.key === t)) continue;
-    warnings.push({ token: t, kind: allKeys.has(t) ? 'later' : 'unknown' });
+  const warnings: { token: string; kind: 'later' | 'unknown' | 'raw'; form: 'bracket' | 'at' }[] = [];
+  for (const ref of referencedTokens(value)) {
+    // Skip the reference the open picker is mid-way through: warning about
+    // "@ph" while someone types "@phone" is noise, not help.
+    if (menu && ref.start === menu.start) continue;
+    const id = `${ref.form}:${ref.key}`;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    const resolvable = tokens.some((o) => o.key === ref.key);
+    if (ref.form === 'at') {
+      // A bare `@key` is literal text no matter what it names — even a valid,
+      // earlier field. Say THAT, rather than the later/unknown diagnosis.
+      warnings.push({ token: ref.key, kind: resolvable ? 'raw' : allKeys.has(ref.key) ? 'later' : 'unknown', form: 'at' });
+      continue;
+    }
+    if (resolvable) continue;
+    warnings.push({ token: ref.key, kind: allKeys.has(ref.key) ? 'later' : 'unknown', form: 'bracket' });
   }
 
   const open = menu != null;
@@ -299,13 +343,18 @@ export function TokenTextarea({
 
       {warnings.map((w) => (
         <p
-          key={w.token}
+          key={`${w.form}:${w.token}`}
           data-testid="token-warning"
           data-kind={w.kind}
+          data-form={w.form}
           className="mt-1 flex items-start gap-1.5 rounded-md bg-destructive/10 px-2 py-1 text-[11px] leading-relaxed text-destructive"
         >
           <i aria-hidden className="pi pi-exclamation-triangle mt-0.5 shrink-0" style={{ fontSize: 10 }} />
-          <span>{(w.kind === 'later' ? m.warnLater : m.warnUnknown).replace('{token}', `[${w.token}]`)}</span>
+          <span>
+            {(w.kind === 'raw' ? m.warnRaw : w.kind === 'later' ? m.warnLater : m.warnUnknown)
+              .replace('{token}', w.form === 'at' ? `@${w.token}` : `[${w.token}]`)
+              .replace('{fixed}', `[${w.token}]`)}
+          </span>
         </p>
       ))}
     </div>

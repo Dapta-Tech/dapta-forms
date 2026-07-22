@@ -465,6 +465,54 @@ export function conditionsContradict(
 }
 
 /**
+ * What a `hideWhen` rule leaves of a `showWhen` rule when the two overlap only
+ * PARTIALLY — the case {@link conditionsContradict} deliberately stays silent on
+ * because the step CAN still appear (V5-A6).
+ *
+ * `conditionsContradict` answers "is this impossible?"; this answers "is this
+ * what you meant?". Show `between 200..500` + hide `gt 201` is perfectly legal
+ * and leaves the step visible for 200..201 only — almost certainly not what the
+ * author intended, and invisible in a UI that shows the two rules in separate
+ * boxes. Returns the surviving window so the builder can name the actual numbers
+ * back to the author.
+ *
+ * Returns `null` when there is nothing to say: different fields, no overlap at
+ * all (the hide rule is inert), a FULL contradiction (that is the hard error, not
+ * this warning), or non-numeric operands. Choice rules are excluded — a partial
+ * choice overlap reads unambiguously off the value chips, so a warning there is
+ * noise. Pure — no I/O, safe for client + server.
+ */
+export function conditionsNarrow(
+  showWhen: StepCondition | null | undefined,
+  hideWhen: StepCondition | null | undefined,
+): { lo: number; hi: number } | null {
+  if (!showWhen || !hideWhen) return null;
+  if (showWhen.field !== hideWhen.field) return null;
+  if ((showWhen.op ?? 'in') === 'in' || (hideWhen.op ?? 'in') === 'in') return null;
+  const s = numInterval(showWhen);
+  const h = numInterval(hideWhen);
+  if (!s || !h) return null;
+  // A full contradiction is reported by conditionsContradict as an error.
+  if (intervalSubset(s, h)) return null;
+  // No overlap ⇒ the hide rule removes nothing from the show window.
+  const overlapLo = Math.max(s.lo, h.lo);
+  const overlapHi = Math.min(s.hi, h.hi);
+  if (overlapLo > overlapHi) return null;
+  // The surviving window: show's interval minus hide's. A hide rule that clips
+  // exactly one end leaves ONE interval, which is what we can name back to the
+  // author. A hide strictly INSIDE show (e.g. show 0..100, hide 40..60) punches a
+  // hole and leaves two — not expressible as a single window, so stay silent
+  // rather than report a range that wrongly reads as "nothing was removed".
+  const clipsLow = h.lo <= s.lo;
+  const clipsHigh = h.hi >= s.hi;
+  if (!clipsLow && !clipsHigh) return null;
+  const lo = clipsLow ? h.hi : s.lo;
+  const hi = clipsHigh ? h.lo : s.hi;
+  if (!Number.isFinite(lo) || !Number.isFinite(hi) || lo > hi) return null;
+  return { lo, hi };
+}
+
+/**
  * True when a choice step collects MULTIPLE answers (checkboxes). Only a
  * `multiple_choice` step with `selectionMode === 'multiple'` is multi-select;
  * everything else (absent mode, `'single'`, `dropdown`) is a single pick. Shared
@@ -664,6 +712,133 @@ function optionPoints(step: FormStep, value: AnswerValue): number {
   return tokens(value).reduce((sum, t) => sum + (byValue.get(t) ?? 0), 0);
 }
 
+/**
+ * Sanitize a typed field key to the grammar the engine's token syntax accepts
+ * (`[a-zA-Z0-9_]`), lowercased and length-capped. Empty input returns `''` so
+ * the caller can reject it rather than invent a key.
+ */
+export function sanitizeStepKey(raw: string): string {
+  return raw
+    .toLowerCase()
+    .replace(/[^a-z0-9_]+/g, '_')
+    .slice(0, 64);
+}
+
+/**
+ * Rename a step's `key` and every reference to it, in one pure pass (V5-A10).
+ *
+ * The key is the answer's field name: it names the column in the submission, the
+ * `?key=value` URL parameter that seeds a hidden step, and the `[key]` token
+ * other questions interpolate. Letting the builder edit it means every pointer
+ * has to move with it, or the form silently loses a branch:
+ *  - `showWhen.field` / `hideWhen.field` on any step
+ *  - `goto[].target` (forward jumps name a step key)
+ *  - `questionField` (dynamic-variant source)
+ *  - `outcomes[].overrides[].field`
+ *  - `[oldKey]` tokens in question/helper text, variant copy, reveal copy, and
+ *    outcome messages
+ *
+ * `name` steps are the exception: they store one answer per SUBFIELD
+ * (`nameFields`) and never under their own key, so renaming one moves the step
+ * pointers but leaves tokens alone — there were never any pointing at it.
+ *
+ * Returns the config unchanged when the rename is a no-op, the new key is empty,
+ * or it would collide with another step. Destination property maps live outside
+ * this config and are migrated by the caller.
+ */
+export function renameStepKey(config: FormConfig, oldKey: string, newKey: string): FormConfig {
+  if (!newKey || oldKey === newKey) return config;
+  if (config.steps.some((s) => s.key === newKey)) return config;
+  const target = config.steps.find((s) => s.key === oldKey);
+  if (!target) return config;
+
+  // Only a step that actually captures under `oldKey` can have tokens aimed at
+  // it — a `name` step's answers live under its subfield keys instead.
+  const retoken =
+    target.type === 'name'
+      ? (text: string) => text
+      : (text: string) => text.split(`[${oldKey}]`).join(`[${newKey}]`);
+  const retokenNullable = <T extends string | null | undefined>(text: T): T =>
+    typeof text === 'string' ? (retoken(text) as T) : text;
+  const retokenMap = (map: Record<string, string> | undefined): Record<string, string> | undefined =>
+    map == null ? undefined : Object.fromEntries(Object.entries(map).map(([k, v]) => [k, retoken(v)]));
+  const repoint = (field: string | null | undefined): string | null | undefined =>
+    field === oldKey ? newKey : field;
+
+  const steps = config.steps.map((s) => {
+    const next: FormStep = { ...s };
+    if (s.key === oldKey) next.key = newKey;
+    if (s.showWhen) next.showWhen = { ...s.showWhen, field: repoint(s.showWhen.field) as string };
+    if (s.hideWhen) next.hideWhen = { ...s.hideWhen, field: repoint(s.hideWhen.field) as string };
+    if (s.goto) next.goto = s.goto.map((r) => ({ ...r, target: repoint(r.target) ?? null }));
+    if (s.questionField != null) next.questionField = repoint(s.questionField);
+    next.question = retokenNullable(s.question);
+    next.helper = retokenNullable(s.helper);
+    if (s.questionVariants) next.questionVariants = retokenMap(s.questionVariants);
+    if (s.sliderLabelVariants) next.sliderLabelVariants = retokenMap(s.sliderLabelVariants);
+    return next;
+  });
+
+  const outcomes = config.outcomes?.map((o) => ({
+    ...o,
+    label: retoken(o.label),
+    message: retokenNullable(o.message),
+    overrides: o.overrides?.map((r) => ({ ...r, field: repoint(r.field) as string })),
+  }));
+
+  const reveal = config.reveal
+    ? {
+        ...config.reveal,
+        headline: retokenNullable(config.reveal.headline),
+        subtitle: retokenNullable(config.reveal.subtitle),
+        subtitleTemplate: retokenNullable(config.reveal.subtitleTemplate),
+      }
+    : config.reveal;
+
+  return { ...config, steps, ...(outcomes ? { outcomes } : {}), ...(reveal ? { reveal } : {}) };
+}
+
+/**
+ * A slider step's effective bounds, normalized so `min <= max` even when the
+ * stored config has them inverted (nothing stops an author typing max below min
+ * mid-edit). Defaults mirror `createEmptyStep`: 0..100.
+ */
+export function sliderBounds(step: FormStep): { min: number; max: number } {
+  const a = step.min ?? 0;
+  const b = step.max ?? 100;
+  return a <= b ? { min: a, max: b } : { min: b, max: a };
+}
+
+/**
+ * A slider value forced inside the step's bounds (V5-A2).
+ *
+ * The builder lets you type any number into Default, and the config schema has
+ * no cross-field rule tying it to min/max — so `min 0, max 5, default 878` saves
+ * happily and then renders a track filled to 17560%, blowing the value straight
+ * out of the card. Every surface that turns a slider value into geometry runs it
+ * through here, so a config that is already stored bad still renders sanely.
+ */
+export function clampSliderValue(step: FormStep, value: number): number {
+  const { min, max } = sliderBounds(step);
+  if (!Number.isFinite(value)) return min;
+  return Math.min(max, Math.max(min, value));
+}
+
+/**
+ * True when a scoring range can never be reached because it falls entirely
+ * outside the slider's own bounds (V5-A3) — e.g. a 0..2000 slider with a
+ * 5000..6000 range, which silently awards nothing. Partial overlap is fine (the
+ * reachable part still scores), so only a fully disjoint range is flagged.
+ * Advisory: the builder marks the row, it does not block saving, because min/max
+ * are often edited after the ranges.
+ */
+export function sliderRangeUnreachable(step: FormStep, range: SliderScoringRange): boolean {
+  const { min, max } = sliderBounds(step);
+  const lo = Math.min(range.min, range.max);
+  const hi = Math.max(range.min, range.max);
+  return hi < min || lo > max;
+}
+
 /** Points for a slider answer via its scoring ranges. */
 function sliderPoints(step: FormStep, value: AnswerValue): number {
   const n = Number(value);
@@ -739,12 +914,20 @@ function overrideRuleMatches(rule: OutcomeOverrideRule, answers: Answers): boole
  * are evaluated FIRST — outcomes are scanned in declared order and the first
  * outcome with any matching override rule wins regardless of score (e.g. a
  * slider answer <= 0 forces the disqualify outcome over a higher-scoring bucket).
+ *
+ * Scoring OFF short-circuits to `null` (V5-A1). Outcomes are the score's routing
+ * table: with scoring disabled every submission scores 0, so a `minScore: 0`
+ * bucket used to match everyone and silently replace the form's own thank-you
+ * screen. Disabling scoring now disables the whole outcome layer — buckets AND
+ * answer-forced overrides — and the ending falls back to the form-level copy.
+ * The stored buckets are untouched, so re-enabling scoring restores them.
  */
 export function resolveOutcome(
   config: FormConfig,
   score: number,
   answers?: Answers,
 ): FormOutcome | null {
+  if (config.scoring?.enabled === false) return null;
   const outcomes = config.outcomes ?? [];
   if (answers) {
     for (const outcome of outcomes) {
@@ -915,6 +1098,51 @@ function variantKey(raw: AnswerValue): string {
   return raw == null ? '' : Array.isArray(raw) ? raw.join(',') : String(raw);
 }
 
+/** A comma-separated variant key as a set of trimmed, non-empty values. */
+function variantKeySet(key: string): Set<string> {
+  return new Set(
+    key
+      .split(',')
+      .map((v) => v.trim())
+      .filter(Boolean),
+  );
+}
+
+/**
+ * The variant text for an answer, or `undefined` when no row matches (V5-A7).
+ *
+ * Multi-select answers are arrays, and {@link variantKey} joins them in the
+ * order the respondent ticked the boxes — so an exact string lookup makes a
+ * `"a,b"` row miss the answer `['b','a']`, and there was no way to author a
+ * multi-value row at all. Resolution is now, in order:
+ *  1. exact key match (unchanged — every existing config keeps its behavior);
+ *  2. for an array answer, the first row whose comma-separated values are the
+ *     SAME SET as the answer, order-insensitive.
+ * Single-value answers only ever take path 1, so nothing about single-choice,
+ * text, or slider sources changes.
+ */
+function resolveVariant(variants: Record<string, string>, raw: AnswerValue): string | undefined {
+  const exact = variants[variantKey(raw)];
+  if (exact != null) return exact;
+  if (!Array.isArray(raw)) return undefined;
+  const answer = variantKeySet(raw.join(','));
+  if (answer.size === 0) return undefined;
+  for (const [key, text] of Object.entries(variants)) {
+    if (key === '*') continue;
+    const set = variantKeySet(key);
+    if (set.size !== answer.size) continue;
+    let same = true;
+    for (const v of set) {
+      if (!answer.has(v)) {
+        same = false;
+        break;
+      }
+    }
+    if (same) return text;
+  }
+  return undefined;
+}
+
 /**
  * The question to show for a step given the answers so far: a `questionVariants`
  * match on `questionField` (falling back to `*` then the plain `question`), with
@@ -924,8 +1152,10 @@ function variantKey(raw: AnswerValue): string {
 export function resolveQuestion(step: FormStep, answers: Answers): string {
   let text = step.question ?? '';
   if (step.questionField && step.questionVariants) {
-    const key = variantKey(answers[step.questionField]);
-    text = step.questionVariants[key] ?? step.questionVariants['*'] ?? text;
+    text =
+      resolveVariant(step.questionVariants, answers[step.questionField]) ??
+      step.questionVariants['*'] ??
+      text;
   }
   return interpolate(text, answers);
 }
@@ -942,8 +1172,8 @@ export function resolveStepDisplay(step: FormStep, answers: Answers): FormStep {
   const helper = typeof step.helper === 'string' ? interpolate(step.helper, answers) : step.helper;
   let sliderUnitLabel = step.sliderUnitLabel ?? null;
   if (step.questionField && step.sliderLabelVariants) {
-    const key = variantKey(answers[step.questionField]);
-    if (step.sliderLabelVariants[key]) sliderUnitLabel = step.sliderLabelVariants[key];
+    const label = resolveVariant(step.sliderLabelVariants, answers[step.questionField]);
+    if (label) sliderUnitLabel = label;
   }
   return { ...step, question, helper, sliderUnitLabel };
 }

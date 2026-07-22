@@ -87,6 +87,8 @@ export interface BuilderMessages {
     tipMid: string;
     /** Popover: where the reveal copy/duration is edited. */
     tipEdit: string;
+    /** V5-A9 — label of the link that actually opens Design. */
+    edit: string;
   };
   canvas: {
     /** "Question {n}" */
@@ -132,6 +134,8 @@ export interface BuilderMessages {
     /** `{token}` is replaced with the bracketed token, e.g. `[firstname]`. */
     warnLater: string;
     warnUnknown: string;
+    /** V5-A5 — bare `@key` that never became a token; `{fixed}` is `[key]`. */
+    warnRaw: string;
   };
   /** Per-question HubSpot "Map to" section in the settings panel. */
   hubspot: {
@@ -312,6 +316,7 @@ const en: BuilderMessages = {
     tipEnd: 'At the end it plays right before the result — never mid-form.',
     tipMid: 'Here it plays after this question, then the form continues.',
     tipEdit: 'Edit its headline, subtitle and duration in Design.',
+    edit: 'Edit reveal screen',
   },
   canvas: {
     questionN: 'Question {n}',
@@ -345,12 +350,13 @@ const en: BuilderMessages = {
     empty: 'Select a question to edit it.',
   },
   tokens: {
-    hint: 'Type @ to insert a previous answer',
+    hint: 'Type @ or [field] to insert a previous answer',
     pickerLabel: 'Insert a previous answer',
     pickerEmpty: 'No earlier answers yet — this is the first question.',
     pickerNoMatch: 'No matching fields.',
     warnLater: '“{token}” is asked after this step — it will be empty here.',
     warnUnknown: '“{token}” doesn’t exist in this form.',
+    warnRaw: '“{token}” is plain text — pick it from the list or write {fixed} so the answer fills in.',
   },
   hubspot: {
     title: 'HubSpot',
@@ -531,6 +537,7 @@ const es: BuilderMessages = {
     tipEnd: 'Al final se muestra justo antes del resultado — nunca a mitad del formulario.',
     tipMid: 'Aquí se muestra después de esta pregunta y luego el formulario continúa.',
     tipEdit: 'Edita su titular, subtítulo y duración en Diseño.',
+    edit: 'Editar pantalla de revelación',
   },
   canvas: {
     questionN: 'Pregunta {n}',
@@ -564,12 +571,13 @@ const es: BuilderMessages = {
     empty: 'Selecciona una pregunta para editarla.',
   },
   tokens: {
-    hint: 'Escribe @ para insertar una respuesta anterior',
+    hint: 'Escribe @ o [campo] para insertar una respuesta anterior',
     pickerLabel: 'Insertar una respuesta anterior',
     pickerEmpty: 'Aún no hay respuestas anteriores — esta es la primera pregunta.',
     pickerNoMatch: 'Ningún campo coincide.',
     warnLater: '«{token}» se pregunta después de este paso — quedará vacío.',
     warnUnknown: '«{token}» no existe en este formulario.',
+    warnRaw: '«{token}» es texto plano — elígelo de la lista o escribe {fixed} para que se rellene la respuesta.',
   },
   hubspot: {
     title: 'HubSpot',

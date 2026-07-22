@@ -18,6 +18,13 @@ import {
   isSafeImageUrl,
   operatorsForFieldType,
   conditionsContradict,
+  conditionsNarrow,
+  sliderBounds,
+  clampSliderValue,
+  sliderRangeUnreachable,
+  renameStepKey,
+  sanitizeStepKey,
+  resolveQuestion,
   type FormConfig,
   type FormStep,
   type StepCondition,
@@ -833,5 +840,248 @@ describe('isMultiSelect + multiple_choice scoring', () => {
   it('validates a multi-select answer array against the allowed values', () => {
     expect(validateAnswer(multi, ['a', 'b']).ok).toBe(true);
     expect(validateAnswer(multi, ['a', 'zzz']).ok).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// V5 round A — regressions found in the 2026-07-22 verification pass.
+// ---------------------------------------------------------------------------
+
+describe('resolveOutcome with scoring disabled (V5-A1)', () => {
+  // The exact shape that broke: scoring off, one `minScore: 0` bucket. Every
+  // submission scores 0, so the bucket matched everyone and its thank-you copy
+  // replaced the form's own ending.
+  const scoringOff: FormConfig = {
+    version: 1,
+    steps: [],
+    scoring: { enabled: false },
+    outcomes: [{ id: 'r1', label: 'Hot lead', minScore: 0, message: 'Range one copy' }],
+  };
+
+  it('resolves to null so the form-level ending is used', () => {
+    expect(resolveOutcome(scoringOff, 0)).toBeNull();
+    expect(resolveOutcome(scoringOff, 0, { anything: 'x' })).toBeNull();
+  });
+
+  it('suppresses answer-forced overrides too', () => {
+    const withOverride: FormConfig = {
+      ...scoringOff,
+      outcomes: [{ id: 'dq', label: 'Disqualified', minScore: 0, overrides: [{ field: 'budget', maxValue: 0 }] }],
+    };
+    expect(resolveOutcome(withOverride, 0, { budget: 0 })).toBeNull();
+  });
+
+  it('leaves the buckets intact — re-enabling scoring restores them', () => {
+    const on: FormConfig = { ...scoringOff, scoring: { enabled: true } };
+    expect(resolveOutcome(on, 0)?.id).toBe('r1');
+  });
+
+  it('an absent or empty scoring block still resolves (only explicit false disables)', () => {
+    const { scoring: _omitted, ...noScoring } = scoringOff;
+    expect(resolveOutcome(noScoring as FormConfig, 0)?.id).toBe('r1');
+    expect(resolveOutcome({ ...scoringOff, scoring: {} }, 0)?.id).toBe('r1');
+  });
+});
+
+describe('conditionsNarrow (V5-A6 — partial overlap advisory)', () => {
+  it('reports the surviving window for the reported case', () => {
+    // show 200..500 + hide > 201 leaves only 200..201 visible.
+    expect(
+      conditionsNarrow(
+        { field: 'n', op: 'between', min: 200, max: 500 },
+        { field: 'n', op: 'gt', value: 201 },
+      ),
+    ).toEqual({ lo: 200, hi: 201 });
+  });
+
+  it('reports a clipped lower end', () => {
+    expect(
+      conditionsNarrow(
+        { field: 'n', op: 'between', min: 0, max: 100 },
+        { field: 'n', op: 'lt', value: 50 },
+      ),
+    ).toEqual({ lo: 50, hi: 100 });
+  });
+
+  it('is silent when the hide rule removes nothing', () => {
+    expect(
+      conditionsNarrow({ field: 'n', op: 'gt', value: 10 }, { field: 'n', op: 'lt', value: 5 }),
+    ).toBeNull();
+  });
+
+  it('is silent on a full contradiction — that is the hard error, not this', () => {
+    const show: StepCondition = { field: 'n', op: 'between', min: 50, max: 80 };
+    const hide: StepCondition = { field: 'n', op: 'between', min: 40, max: 100 };
+    expect(conditionsContradict(show, hide)).toBe(true);
+    expect(conditionsNarrow(show, hide)).toBeNull();
+  });
+
+  it('is silent when the hide rule punches a hole in the middle (two windows)', () => {
+    // 0..100 minus 40..60 leaves 0..40 AND 60..100 — not one window, so no claim.
+    expect(
+      conditionsNarrow(
+        { field: 'n', op: 'between', min: 0, max: 100 },
+        { field: 'n', op: 'between', min: 40, max: 60 },
+      ),
+    ).toBeNull();
+  });
+
+  it('is silent for different fields, missing sides, and choice rules', () => {
+    expect(conditionsNarrow(null, { field: 'n', op: 'gt', value: 1 })).toBeNull();
+    expect(
+      conditionsNarrow({ field: 'a', op: 'gt', value: 1 }, { field: 'b', op: 'gt', value: 2 }),
+    ).toBeNull();
+    expect(
+      conditionsNarrow({ field: 'a', values: ['x', 'y'] }, { field: 'a', values: ['x'] }),
+    ).toBeNull();
+  });
+});
+
+describe('slider bounds guards (V5-A2 / V5-A3)', () => {
+  const s = step({ key: 'n', type: 'slider', min: 0, max: 5 });
+
+  it('normalizes inverted bounds', () => {
+    expect(sliderBounds(step({ key: 'n', type: 'slider', min: 90, max: 10 }))).toEqual({ min: 10, max: 90 });
+    expect(sliderBounds(step({ key: 'n', type: 'slider' }))).toEqual({ min: 0, max: 100 });
+  });
+
+  it('clamps a default that sits outside the bounds', () => {
+    // The reported case: min 0, max 5, default 878 rendered a 17560%-wide track.
+    expect(clampSliderValue(s, 878)).toBe(5);
+    expect(clampSliderValue(s, -20)).toBe(0);
+    expect(clampSliderValue(s, 3)).toBe(3);
+    expect(clampSliderValue(s, Number.NaN)).toBe(0);
+  });
+
+  it('flags a scoring range that lies entirely outside the slider', () => {
+    const wide = step({ key: 'n', type: 'slider', min: 0, max: 2000 });
+    // The reported case: a 0..2000 slider scoring 5000..6000 can never award.
+    expect(sliderRangeUnreachable(wide, { min: 5000, max: 6000, points: 10 })).toBe(true);
+    expect(sliderRangeUnreachable(wide, { min: 0, max: 500, points: 10 })).toBe(false);
+    // Partial overlap still scores for the reachable part — not flagged.
+    expect(sliderRangeUnreachable(wide, { min: 1500, max: 5000, points: 10 })).toBe(false);
+  });
+});
+
+describe('resolveQuestion with a multi-select source (V5-A7)', () => {
+  const multiStep = step({
+    key: 'q',
+    type: 'short_text',
+    question: 'Fallback question',
+    questionField: 'tools',
+    questionVariants: { 'a,b': 'You picked both', a: 'Just A', '*': 'Something else' },
+  });
+
+  it('matches a multi-value row regardless of tick order', () => {
+    expect(resolveQuestion(multiStep, { tools: ['a', 'b'] })).toBe('You picked both');
+    expect(resolveQuestion(multiStep, { tools: ['b', 'a'] })).toBe('You picked both');
+  });
+
+  it('still matches a single value exactly', () => {
+    expect(resolveQuestion(multiStep, { tools: ['a'] })).toBe('Just A');
+    expect(resolveQuestion(multiStep, { tools: 'a' })).toBe('Just A');
+  });
+
+  it('falls back when the set differs — a subset is not a match', () => {
+    expect(resolveQuestion(multiStep, { tools: ['a', 'c'] })).toBe('Something else');
+    expect(resolveQuestion(multiStep, { tools: ['a', 'b', 'c'] })).toBe('Something else');
+  });
+
+  it('never lets the `*` fallback win a set comparison', () => {
+    const onlyFallback = step({
+      key: 'q',
+      type: 'short_text',
+      question: 'Plain',
+      questionField: 'tools',
+      questionVariants: { '*': 'Fallback copy' },
+    });
+    expect(resolveQuestion(onlyFallback, { tools: ['x', 'y'] })).toBe('Fallback copy');
+  });
+});
+
+describe('renameStepKey (V5-A10 — editable field key)', () => {
+  const cfg: FormConfig = {
+    version: 1,
+    steps: [
+      step({ key: 'budget', type: 'slider', question: 'How much?', min: 0, max: 100 }),
+      step({
+        key: 'follow',
+        type: 'text',
+        question: 'You said [budget] — why?',
+        helper: 'Context for [budget]',
+        showWhen: { field: 'budget', op: 'gt', value: 10 },
+        questionField: 'budget',
+        questionVariants: { '50': 'Half of [budget]?' },
+      }),
+      step({ key: 'route', type: 'dropdown', goto: [{ values: ['x'], target: 'budget' }] }),
+    ],
+    outcomes: [
+      { id: 'o1', label: 'Hot', message: 'Budget was [budget]', overrides: [{ field: 'budget', maxValue: 0 }] },
+    ],
+    reveal: { enabled: true, subtitleTemplate: 'Scoring [budget]…' },
+  };
+
+  const renamed = renameStepKey(cfg, 'budget', 'annual_budget');
+
+  it('moves the key itself', () => {
+    expect(renamed.steps[0]!.key).toBe('annual_budget');
+  });
+
+  it('repoints conditions, goto targets, and variant sources', () => {
+    expect(renamed.steps[1]!.showWhen?.field).toBe('annual_budget');
+    expect(renamed.steps[1]!.questionField).toBe('annual_budget');
+    expect(renamed.steps[2]!.goto?.[0]!.target).toBe('annual_budget');
+  });
+
+  it('rewrites [key] tokens everywhere they can appear', () => {
+    expect(renamed.steps[1]!.question).toBe('You said [annual_budget] — why?');
+    expect(renamed.steps[1]!.helper).toBe('Context for [annual_budget]');
+    expect(renamed.steps[1]!.questionVariants?.['50']).toBe('Half of [annual_budget]?');
+    expect(renamed.outcomes?.[0]!.message).toBe('Budget was [annual_budget]');
+    expect(renamed.reveal?.subtitleTemplate).toBe('Scoring [annual_budget]…');
+  });
+
+  it('repoints outcome override rules', () => {
+    expect(renamed.outcomes?.[0]!.overrides?.[0]!.field).toBe('annual_budget');
+  });
+
+  it('the renamed form still resolves the same branch for the same answer', () => {
+    // The rename is behavior-preserving: same answer, same visible steps.
+    const before = visibleSteps(cfg, { budget: 50 }).map((s) => s.key);
+    const after = visibleSteps(renamed, { annual_budget: 50 }).map((s) => s.key);
+    expect(after).toEqual(before.map((k) => (k === 'budget' ? 'annual_budget' : k)));
+  });
+
+  it('refuses a no-op, an empty key, or a collision', () => {
+    expect(renameStepKey(cfg, 'budget', 'budget')).toBe(cfg);
+    expect(renameStepKey(cfg, 'budget', '')).toBe(cfg);
+    expect(renameStepKey(cfg, 'budget', 'follow')).toBe(cfg);
+    expect(renameStepKey(cfg, 'nope', 'whatever')).toBe(cfg);
+  });
+
+  it('leaves tokens alone for a name step — its answers live under its subfields', () => {
+    const withName: FormConfig = {
+      version: 1,
+      steps: [
+        step({ key: 'who', type: 'name' }),
+        step({ key: 'q', type: 'text', question: 'Hi [firstname], and [who]?' }),
+      ],
+    };
+    const out = renameStepKey(withName, 'who', 'contact');
+    expect(out.steps[0]!.key).toBe('contact');
+    // `[who]` never resolved to anything, so it is not ours to rewrite.
+    expect(out.steps[1]!.question).toBe('Hi [firstname], and [who]?');
+  });
+});
+
+describe('sanitizeStepKey (V5-A10)', () => {
+  it('lowercases and collapses anything outside the token grammar', () => {
+    expect(sanitizeStepKey('Annual Budget')).toBe('annual_budget');
+    expect(sanitizeStepKey('a-b.c')).toBe('a_b_c');
+    expect(sanitizeStepKey('')).toBe('');
+  });
+
+  it('caps the length at 64', () => {
+    expect(sanitizeStepKey('x'.repeat(100))).toHaveLength(64);
   });
 });

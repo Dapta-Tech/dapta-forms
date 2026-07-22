@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import {
   conditionsContradict,
+  conditionsNarrow,
   operatorsForFieldType,
   type ConditionOp,
   type FormStep,
@@ -49,6 +50,11 @@ export function LogicConditions({
   // condition can never be visible (hide wins). Pure engine helper; we warn
   // prominently and keep the offending rules visible so either can be fixed.
   const contradiction = conditionsContradict(step.showWhen, step.hideWhen);
+  // V5-A6: the softer case the hard guard stays silent on — the rules overlap
+  // only partially, so the question DOES appear, but in a much narrower window
+  // than reading the show rule alone suggests. The two rules sit in separate
+  // boxes, so nothing on screen made that visible. Advisory, never an error.
+  const narrow = contradiction ? null : conditionsNarrow(step.showWhen, step.hideWhen);
 
   return (
     <div className="flex flex-col gap-2.5">
@@ -78,6 +84,15 @@ export function LogicConditions({
           className="rounded-md border border-destructive/50 bg-destructive/10 px-2.5 py-2 text-xs font-medium text-destructive"
         >
           {m.contradiction}
+        </p>
+      ) : null}
+      {narrow ? (
+        <p
+          data-testid="logic-narrow"
+          className="flex items-start gap-1.5 rounded-md border border-secondary/40 bg-secondary/10 px-2.5 py-2 text-xs leading-relaxed text-foreground"
+        >
+          <i aria-hidden className="pi pi-info-circle mt-0.5 shrink-0 text-secondary" style={{ fontSize: 11 }} />
+          <span>{m.narrow.replace('{lo}', String(narrow.lo)).replace('{hi}', String(narrow.hi))}</span>
         </p>
       ) : null}
     </div>

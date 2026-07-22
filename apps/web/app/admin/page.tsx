@@ -34,6 +34,7 @@ export default async function AdminHome() {
     createTitle: messages.forms.createTitle,
     nameLabel: messages.forms.nameLabel,
     namePlaceholder: messages.forms.namePlaceholder,
+    nameRequired: messages.forms.nameRequired,
     cancel: messages.forms.cancel,
   };
 

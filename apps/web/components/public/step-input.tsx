@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from 'react';
 import type { Answers, AnswerValue, FormStep } from '@quill/engine';
-import { nameFields, isMultiSelect } from '@quill/engine';
+import { nameFields, isMultiSelect, sliderBounds, clampSliderValue } from '@quill/engine';
 import { getMessages } from '@quill/shared';
 import { SearchableDropdown } from './searchable-dropdown';
 import { PhoneInput } from './phone-input';
@@ -221,10 +221,11 @@ function SliderInput({
   value: AnswerValue;
   onChange: (value: AnswerValue) => void;
 }) {
-  const min = step.min ?? 0;
-  const max = step.max ?? 100;
+  const { min, max } = sliderBounds(step);
   const stepSize = step.step ?? 1;
-  const current = value != null && value !== '' ? Number(value) : (step.default ?? min);
+  // Clamped so a config with an out-of-bounds default can't drive the fill past
+  // 100% (or seed an unsubmittable answer) for real respondents — V5-A2.
+  const current = clampSliderValue(step, value != null && value !== '' ? Number(value) : (step.default ?? min));
   const ref = useRef<HTMLInputElement>(null);
   const pct = max > min ? ((current - min) / (max - min)) * 100 : 0;
 

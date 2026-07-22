@@ -1,14 +1,95 @@
 'use client';
 
-import type { FormStep } from '@quill/engine';
+import type { FormOption, FormStep } from '@quill/engine';
+import { isMultiSelect } from '@quill/engine';
 import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/cn';
 import { Field, SelectField, TextField, InlineField } from './fields';
 import { hasOptions } from './question-types';
 import type { EditorMessages } from './messages';
 import { TokenTextarea, tokenOptionsBefore, allTokenKeys } from './token-textarea';
 
 const FALLBACK = '*';
+
+/** The values a multi-value variant key encodes, in the order they were ticked. */
+function keyValues(key: string): string[] {
+  return key
+    .split(',')
+    .map((v) => v.trim())
+    .filter(Boolean);
+}
+
+/**
+ * The match picker for a MULTI-SELECT source (V5-A7): tick every option this
+ * variant answers to, and the row's key becomes their comma-joined set.
+ *
+ * The engine compares a multi-select answer against this key as a SET, so tick
+ * order does not matter and a row only fires when the respondent picked exactly
+ * those options. Options already claimed by another row are disabled, since two
+ * rows with the same key cannot both exist in the variants map.
+ */
+function MultiMatchPicker({
+  options,
+  value,
+  taken,
+  onChange,
+  m,
+}: {
+  options: FormOption[];
+  /** The current row key (comma-joined values). */
+  value: string;
+  /** Other rows' keys — used to block building a duplicate set. */
+  taken: string[];
+  onChange: (nextKey: string) => void;
+  m: EditorMessages['variants'];
+}) {
+  const picked = keyValues(value);
+  const takenSets = taken.map((k) => keyValues(k).slice().sort().join(','));
+
+  function toggle(optionValue: string) {
+    const next = picked.includes(optionValue)
+      ? picked.filter((v) => v !== optionValue)
+      : [...picked, optionValue];
+    const nextKey = next.join(',');
+    // An empty row would key on '' and match an unanswered field — refuse it,
+    // and refuse a set another row already owns.
+    if (!nextKey) return;
+    if (takenSets.includes(next.slice().sort().join(','))) return;
+    onChange(nextKey);
+  }
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <span className="text-[11px] font-medium text-muted-foreground">{m.matchValueMulti}</span>
+      <div className="flex flex-wrap gap-1.5" role="group" aria-label={m.matchValueMulti}>
+        {options.map((o) => {
+          const on = picked.includes(o.value);
+          return (
+            <button
+              key={o.value}
+              type="button"
+              aria-pressed={on}
+              data-testid="variant-multi-option"
+              onClick={() => toggle(o.value)}
+              className={cn(
+                'rounded-md border px-2 py-1 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                on
+                  ? 'border-primary bg-primary/10 font-medium text-foreground'
+                  : 'border-border text-muted-foreground hover:text-foreground',
+              )}
+            >
+              {o.label || o.value}
+            </button>
+          );
+        })}
+      </div>
+      {picked.length === 0 ? (
+        <span className="text-[11px] text-destructive">{m.matchValueMultiEmpty}</span>
+      ) : null}
+    </div>
+  );
+}
 
 /** fields.tsx `controlBase` + the panel's compact sizing, for TokenTextarea. */
 const VARIANT_TEXTAREA_CLASS =
@@ -40,6 +121,11 @@ export function QuestionVariants({
   const enabled = !!step.questionField;
   const source = prior.find((s) => s.key === step.questionField);
   const sourceOptions = source && hasOptions(source.type) ? (source.options ?? []) : null;
+  // A checkbox source answers with an ARRAY, and the variant key is the joined
+  // set — so a single-pick dropdown could never author a row that matches
+  // someone who ticked two boxes (V5-A7). Multi-select sources get a checkbox
+  // picker that builds the multi-value key instead.
+  const sourceMultiSelect = source != null && isMultiSelect(source);
   const variants = step.questionVariants ?? {};
   const rows = Object.keys(variants).filter((k) => k !== FALLBACK);
   const isSlider = step.type === 'slider';
@@ -55,6 +141,7 @@ export function QuestionVariants({
     pickerNoMatch: m.tokenPickerNoMatch,
     warnLater: m.tokenWarnLater,
     warnUnknown: m.tokenWarnUnknown,
+    warnRaw: m.tokenWarnRaw,
   };
 
   function toggle(on: boolean) {
@@ -163,7 +250,15 @@ export function QuestionVariants({
                   <i aria-hidden className="pi pi-times" style={{ fontSize: 11 }} />
                 </button>
               </div>
-              {sourceOptions ? (
+              {sourceOptions && sourceMultiSelect ? (
+                <MultiMatchPicker
+                  options={sourceOptions}
+                  value={key}
+                  taken={rows.filter((k) => k !== key)}
+                  onChange={(next) => renameVariant(key, next)}
+                  m={m}
+                />
+              ) : sourceOptions ? (
                 <SelectField
                   aria-label={m.matchValue}
                   value={key}

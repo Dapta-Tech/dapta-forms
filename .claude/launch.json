@@ -1,0 +1,14 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "dapta-forms",
+      "runtimeExecutable": "/bin/zsh",
+      "runtimeArgs": [
+        "-lc",
+        "cd '/Users/josuehernandez/Documents/Claude Code/dapta-sidecar-projects/dapta-forms' && export PATH=\"/opt/homebrew/opt/node@22/bin:$PATH\" && export DATABASE_URL='file:/Users/josuehernandez/Documents/Claude Code/dapta-sidecar-projects/dapta-forms/.data/dev.db' && exec pnpm dev"
+      ],
+      "port": 3000
+    }
+  ]
+}

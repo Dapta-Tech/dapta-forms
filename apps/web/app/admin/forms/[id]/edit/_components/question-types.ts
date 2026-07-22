@@ -77,6 +77,18 @@ export function hasOptions(type: FormFieldType): boolean {
 }
 
 /**
+ * Types whose answer can actually earn points, and therefore the only ones with
+ * a scoring control to show (V5-A11). Scoring needs a bounded answer space to
+ * attach points to: choice options carry a `points` column, a slider carries
+ * `sliderScoring` ranges. Free text has neither, so the panel used to render a
+ * scoring section on `text`/`textarea` steps with no way to set anything —
+ * a control that looked broken rather than inapplicable.
+ */
+export function isScorableType(type: FormFieldType): boolean {
+  return hasOptions(type) || type === 'slider';
+}
+
+/**
  * Build a fresh step from a gallery pick — reuses the engine's `createEmptyStep`
  * (unique key + per-type defaults) then applies the gallery's `selectionMode`.
  */

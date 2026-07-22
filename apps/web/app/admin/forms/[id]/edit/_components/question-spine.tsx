@@ -46,6 +46,7 @@ export function QuestionSpine({
   revealAfterStep,
   onRevealMove,
   onRevealRemove,
+  onOpenDesign,
   m,
 }: {
   steps: FormStep[];
@@ -65,6 +66,8 @@ export function QuestionSpine({
   onRevealMove: (afterStep: number) => void;
   /** Remove the reveal marker → turn the reveal off (Design owns enablement). */
   onRevealRemove: () => void;
+  /** Open the Design tab where the reveal copy/duration lives — V5-A9. */
+  onOpenDesign: () => void;
   m: BuilderMessages;
 }) {
   // Effective 1-based marker slots (null = not shown). The partial marker only
@@ -176,7 +179,20 @@ export function QuestionSpine({
                       <>
                         <p>{m.revealPoint.tipPlays}</p>
                         <p>{atEnd ? m.revealPoint.tipEnd : m.revealPoint.tipMid}</p>
-                        <p className="font-medium text-foreground">{m.revealPoint.tipEdit}</p>
+                        {/* V5-A9: this line used to be dead text telling you the
+                            reveal is edited "in Design" without taking you
+                            there — the only working link lived in the settings
+                            panel, which you reach by selecting a QUESTION, not
+                            the reveal marker. Now it is the link it read as. */}
+                        <button
+                          type="button"
+                          data-testid="reveal-point-edit"
+                          onClick={onOpenDesign}
+                          className="inline-flex w-fit items-center gap-1.5 rounded-md font-medium text-secondary transition-colors hover:text-secondary/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        >
+                          <i aria-hidden className="pi pi-pencil" style={{ fontSize: 11 }} />
+                          {m.revealPoint.edit}
+                        </button>
                       </>
                     }
                   />

@@ -1,8 +1,8 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { FormStep } from '@quill/engine';
-import { defaultFlowGroup } from '@quill/engine';
+import { defaultFlowGroup, sanitizeStepKey, sliderBounds } from '@quill/engine';
 import { COUNTRIES, countryName, getMessages } from '@quill/shared';
 import { clientLocale } from '@/lib/client-locale';
 import { Switch } from '@/components/ui/switch';
@@ -17,11 +17,23 @@ import { LogicRules } from './logic-rules';
 import { LogicConditions } from './logic-conditions';
 import { QuestionVariants } from './question-variants';
 import { QuestionHubspotSection } from './question-hubspot';
-import { GALLERY, GALLERY_GROUPS, hasOptions, isContactType, type GalleryItem } from './question-types';
+import { HelpTip } from '@/components/ui/help-tip';
+import {
+  GALLERY,
+  GALLERY_GROUPS,
+  hasOptions,
+  isContactType,
+  isScorableType,
+  type GalleryItem,
+} from './question-types';
 import type { EditorMessages } from './messages';
 import type { BuilderMessages } from './builder-messages';
 
 const ALL_ITEMS: GalleryItem[] = GALLERY_GROUPS.flatMap((g) => GALLERY[g]);
+
+/** Shared look for the inline slider-bounds warnings (V5-A2). */
+const sliderWarnClass =
+  'flex items-start gap-1.5 rounded-md bg-destructive/10 px-2 py-1 text-[11px] leading-relaxed text-destructive';
 
 /** Match a step to its gallery item id (so the type <select> reflects single vs multiple). */
 function currentItemId(step: FormStep): string {
@@ -51,6 +63,7 @@ export function QuestionSettings({
   onOpenDesign,
   revealAfterStep,
   onRevealAfterStepChange,
+  onRenameKey,
 }: {
   step: FormStep;
   index: number;
@@ -71,12 +84,23 @@ export function QuestionSettings({
   revealAfterStep?: number;
   /** Pin the reveal after THIS step (1-based) or clear it (`undefined`) — V4-04. */
   onRevealAfterStepChange: (afterStep: number | undefined) => void;
+  /** Rename this step's answer key, cascading every reference — V5-A10. */
+  onRenameKey: (nextKey: string) => void;
 }) {
   const contact = isContactType(step.type);
   // Form-wide "highest possible" total (same math as Results). Drives the
   // "assign points" nudge when scoring is on but nothing scores yet.
   const scoringMax = maxScoreForSteps(steps);
   const { confirm: confirmDialog, dialog } = useConfirmDialog();
+
+  // Slider bounds sanity (V5-A2). `sliderBounds` normalizes an inverted pair, so
+  // compare against the RAW values to tell "max below min" from a valid range.
+  const { min: sliderMin, max: sliderMax } = sliderBounds(step);
+  const sliderMaxBelowMin = step.type === 'slider' && (step.max ?? 100) < (step.min ?? 0);
+  const sliderDefaultOutOfRange =
+    step.type === 'slider' &&
+    step.default != null &&
+    (step.default < sliderMin || step.default > sliderMax);
 
   // Country options for the phone step's default-country picker: an "automatic"
   // (locale-based) row first, then every country sorted by localized name.
@@ -181,6 +205,23 @@ export function QuestionSettings({
               <NumberField value={step.default ?? 0} onChange={(e) => onUpdate({ default: Number(e.target.value) || 0 })} />
             </Field>
           </div>
+          {/* Bounds are advisory, not enforced on keystroke: clamping mid-typing
+              eats digits ("878" against a max of 5 would stick at 5). The value
+              is clamped where it becomes geometry instead — V5-A2. */}
+          {sliderMaxBelowMin ? (
+            <p role="alert" data-testid="slider-max-below-min" className={sliderWarnClass}>
+              <i aria-hidden className="pi pi-exclamation-triangle mt-0.5 shrink-0" style={{ fontSize: 10 }} />
+              {em.props.sliderMaxBelowMin}
+            </p>
+          ) : null}
+          {sliderDefaultOutOfRange ? (
+            <p role="alert" data-testid="slider-default-out-of-range" className={sliderWarnClass}>
+              <i aria-hidden className="pi pi-exclamation-triangle mt-0.5 shrink-0" style={{ fontSize: 10 }} />
+              {em.props.sliderDefaultOutOfRange
+                .replaceAll('{min}', String(sliderMin))
+                .replaceAll('{max}', String(sliderMax))}
+            </p>
+          ) : null}
         </section>
       ) : null}
 
@@ -198,7 +239,12 @@ export function QuestionSettings({
 
       {step.type === 'phone' ? (
         <section className="flex flex-col gap-3 border-t border-border pt-4">
-          <Field label={em.props.phoneMinDigits}>
+          <Field
+            label={em.props.phoneMinDigits}
+            labelAdornment={
+              <HelpTip text={em.props.phoneMinDigitsHelp} label={em.props.phoneMinDigits} side="bottom" />
+            }
+          >
             <NumberField
               value={step.phoneMinDigits ?? 7}
               min={1}
@@ -303,6 +349,18 @@ export function QuestionSettings({
             />
           </InlineField>
         ) : null}
+        {/* The answer's field key (V5-A10). The hidden-question hint above talks
+            about "a matching URL parameter" — this is the only place that says
+            WHICH one. `name` steps edit their two subfield keys in their own
+            section instead, and a `message` step captures nothing to key. */}
+        {step.type !== 'message' && step.type !== 'name' ? (
+          <FieldKeyEditor
+            stepKey={step.key}
+            taken={steps.filter((s) => s.key !== step.key).map((s) => s.key)}
+            onRename={onRenameKey}
+            m={em.behavior}
+          />
+        ) : null}
         {/* The reveal POSITION lives in config.revealAfterStep (the draggable
             spine marker is the primary control); this toggle is a convenience to
             pin the reveal after THIS question. Clearing reverts to the default
@@ -325,43 +383,48 @@ export function QuestionSettings({
         </button>
       </section>
 
-      {/* Scoring / contact hint */}
-      <section className="border-t border-border pt-4">
-        {contact ? (
-          <p className="text-xs text-muted-foreground">{bm.settings.contactHint}</p>
-        ) : (
-          <>
-            <InlineField label={bm.settings.scoring}>
-              <Switch
-                checked={scoringEnabled}
-                onCheckedChange={onScoringChange}
-                aria-label={bm.settings.scoring}
-              />
-            </InlineField>
-            <p className="mt-1 text-xs text-muted-foreground">{bm.settings.scoringHint}</p>
-            {scoringEnabled && scoringMax === 0 ? (
-              <p
-                data-testid="scoring-zero-hint"
-                className="mt-1.5 flex items-start gap-1.5 text-xs text-muted-foreground"
-              >
-                <i aria-hidden className="pi pi-info-circle mt-0.5 text-secondary" style={{ fontSize: 11 }} />
-                {bm.settings.scoringZeroHint}
-              </p>
-            ) : null}
-            {/* Slider ranges show for every slider (parity with the always-on
-                option Points column) so scoring isn't mysteriously hidden. */}
-            {step.type === 'slider' ? (
-              <div className="mt-3">
-                <SliderScoringEditor
-                  ranges={step.sliderScoring ?? []}
-                  onChange={(sliderScoring) => onUpdate({ sliderScoring })}
-                  m={em.sliderScoring}
+      {/* Scoring / contact hint. Only types with somewhere to PUT points get the
+          section (V5-A11) — a scoring toggle on a free-text step offered no way
+          to award any, so it read as broken rather than not applicable. */}
+      {contact || isScorableType(step.type) ? (
+        <section className="border-t border-border pt-4">
+          {contact ? (
+            <p className="text-xs text-muted-foreground">{bm.settings.contactHint}</p>
+          ) : (
+            <>
+              <InlineField label={bm.settings.scoring}>
+                <Switch
+                  checked={scoringEnabled}
+                  onCheckedChange={onScoringChange}
+                  aria-label={bm.settings.scoring}
                 />
-              </div>
-            ) : null}
-          </>
-        )}
-      </section>
+              </InlineField>
+              <p className="mt-1 text-xs text-muted-foreground">{bm.settings.scoringHint}</p>
+              {scoringEnabled && scoringMax === 0 ? (
+                <p
+                  data-testid="scoring-zero-hint"
+                  className="mt-1.5 flex items-start gap-1.5 text-xs text-muted-foreground"
+                >
+                  <i aria-hidden className="pi pi-info-circle mt-0.5 text-secondary" style={{ fontSize: 11 }} />
+                  {bm.settings.scoringZeroHint}
+                </p>
+              ) : null}
+              {/* Slider ranges show for every slider (parity with the always-on
+                  option Points column) so scoring isn't mysteriously hidden. */}
+              {step.type === 'slider' ? (
+                <div className="mt-3">
+                  <SliderScoringEditor
+                    step={step}
+                    ranges={step.sliderScoring ?? []}
+                    onChange={(sliderScoring) => onUpdate({ sliderScoring })}
+                    m={em.sliderScoring}
+                  />
+                </div>
+              ) : null}
+            </>
+          )}
+        </section>
+      ) : null}
 
       {/* HubSpot — map this answer to a contact property (message steps
           collect no answer, so there is nothing to map). */}
@@ -375,6 +438,73 @@ export function QuestionSettings({
         />
       ) : null}
       {dialog}
+    </div>
+  );
+}
+
+/**
+ * The step's answer field key, editable in place (V5-A10).
+ *
+ * Local text state so typing is never fought by the sanitizer, committing on
+ * blur or Enter — a rename rewrites pointers across the whole config, so doing
+ * it per keystroke would churn the form (and the autosave) on the way to a name.
+ * A key that collides with another question is refused with a message instead of
+ * being silently mangled into a unique variant.
+ */
+function FieldKeyEditor({
+  stepKey,
+  taken,
+  onRename,
+  m,
+}: {
+  stepKey: string;
+  taken: string[];
+  onRename: (nextKey: string) => void;
+  m: EditorMessages['behavior'];
+}) {
+  const [text, setText] = useState(stepKey);
+  // Follow an external change (switching questions, or an undo).
+  useEffect(() => setText(stepKey), [stepKey]);
+  const clean = sanitizeStepKey(text);
+  const collides = clean !== stepKey && taken.includes(clean);
+
+  function commit() {
+    if (!clean || collides || clean === stepKey) {
+      setText(stepKey); // nothing valid to apply — snap back to the live key
+      return;
+    }
+    onRename(clean);
+  }
+
+  return (
+    <div className="mt-2 flex flex-col gap-1">
+      <span className="text-[11px] font-medium text-muted-foreground">{m.fieldKey}</span>
+      <TextField
+        value={text}
+        data-testid="step-field-key"
+        aria-label={m.fieldKey}
+        aria-invalid={collides || undefined}
+        onChange={(e) => setText(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            e.currentTarget.blur();
+          } else if (e.key === 'Escape') {
+            setText(stepKey);
+          }
+        }}
+        className="h-8 py-1 font-mono text-xs"
+      />
+      {collides ? (
+        <p role="alert" data-testid="step-field-key-taken" className="text-[11px] text-destructive">
+          {m.fieldKeyTaken}
+        </p>
+      ) : (
+        <p className="text-[10px] leading-relaxed text-muted-foreground">
+          {m.fieldKeyHint} <span className="font-mono">{m.fieldKeyUrlExample.replace('{key}', stepKey)}</span>
+        </p>
+      )}
     </div>
   );
 }

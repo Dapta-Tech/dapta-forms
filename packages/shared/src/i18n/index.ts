@@ -246,6 +246,8 @@ export interface FormsMessages {
       createTitle: string;
       nameLabel: string;
       namePlaceholder: string;
+      /** V5 — inline blank-name error (replaces the browser's native bubble). */
+      nameRequired: string;
       cancel: string;
       emptyTitle: string;
       emptyBody: string;
@@ -274,6 +276,8 @@ export interface FormsMessages {
       /** Results tab clarity (V4-16 outcome heading + message + redirect field). */
       resultsHelp: {
         outcomeHeadingHelp: string;
+        /** V5-A1 — why the ranges are inert while scoring is off. */
+        outcomesInert: string;
         redirectLabel: string;
         redirectHelp: string;
         /** Label for the per-outcome thank-you body textarea. */
@@ -326,10 +330,16 @@ export interface FormsMessages {
         phoneDefaultCountry: string;
         /** The "auto (locale-based)" option in the default-country picker. */
         phoneDefaultCountryAuto: string;
+        /** Explains what the minimum-digit floor is for (V5-B5). */
+        phoneMinDigitsHelp: string;
         sliderMin: string;
         sliderMax: string;
         sliderStep: string;
         sliderDefault: string;
+        /** V5 — Default outside min/max; `{min}`/`{max}` are the bounds. */
+        sliderDefaultOutOfRange: string;
+        /** V5 — Max typed below Min. */
+        sliderMaxBelowMin: string;
       };
       options: {
         title: string;
@@ -342,6 +352,10 @@ export interface FormsMessages {
         icon: string;
         remove: string;
         empty: string;
+        /** V5 — what the `value` column is for, vs the visible label (B5). */
+        valueHelp: string;
+        /** V5 — what the visible label is. */
+        labelHelp: string;
       };
       sliderScoring: {
         title: string;
@@ -352,6 +366,8 @@ export interface FormsMessages {
         points: string;
         remove: string;
         empty: string;
+        /** V5 — range lies outside the slider bounds; `{min}`/`{max}` are them. */
+        unreachable: string;
       };
       logic: {
         title: string;
@@ -378,6 +394,12 @@ export interface FormsMessages {
         betweenMax: string;
         /** V4 — contradiction guard warning (show + hide cancel out). */
         contradiction: string;
+        /**
+         * V5 — the show + hide rules overlap only partially, so the question
+         * survives in a narrower window than the show rule reads. `{lo}`/`{hi}`
+         * are the surviving bounds.
+         */
+        narrow: string;
       };
       variants: {
         title: string;
@@ -387,6 +409,10 @@ export interface FormsMessages {
         add: string;
         matchValue: string;
         matchValuePlaceholder: string;
+        /** V5 — multi-select source: tick every option this row answers to (A7). */
+        matchValueMulti: string;
+        /** V5 — nothing ticked yet on a multi-select row. */
+        matchValueMultiEmpty: string;
         variantQuestion: string;
         fallback: string;
         remove: string;
@@ -401,6 +427,8 @@ export interface FormsMessages {
         /** `{token}` is replaced with the bracketed token, e.g. `[firstname]`. */
         tokenWarnLater: string;
         tokenWarnUnknown: string;
+        /** V5-A5 — bare `@key` that never became a token; `{fixed}` is `[key]`. */
+        tokenWarnRaw: string;
       };
       /** Per-question behavior toggles (terminal / reveal position / hidden). */
       behavior: {
@@ -414,6 +442,15 @@ export interface FormsMessages {
         /** Hidden-question toggle — filled via a URL parameter (V4-13). */
         hidden: string;
         hiddenHint: string;
+        /** V5 — the step's own answer key, editable in the panel (A10). */
+        fieldKey: string;
+        fieldKeyHint: string;
+        /** V5 — rename refused: another question already uses that key. */
+        fieldKeyTaken: string;
+        /** V5 — live `?key=value` example; `{key}` is the current field key. */
+        fieldKeyUrlExample: string;
+        /** V5 — the rename saved, but its CRM mapping could not be moved. */
+        fieldKeyMappingFailed: string;
       };
       /** The `name` step's two collected fields + placeholders. */
       nameStep: {
@@ -975,6 +1012,7 @@ export const en: FormsMessages = {
       createTitle: 'Create a new form',
       nameLabel: 'Form name',
       namePlaceholder: 'e.g. Lead qualification quiz',
+      nameRequired: 'Give your form a name.',
       cancel: 'Cancel',
       emptyTitle: 'No forms yet',
       emptyBody: 'Create your first form to start collecting responses.',
@@ -1001,6 +1039,8 @@ export const en: FormsMessages = {
       resultsHelp: {
         outcomeHeadingHelp:
           'Shown to respondents as the heading on the thank-you screen when their score lands in this range.',
+        outcomesInert:
+          'Scoring is off, so no range can be reached — everyone sees the form’s own thank-you screen. Your ranges are kept; turn scoring on to use them again.',
         redirectLabel: 'Redirect URL (optional)',
         redirectHelp:
           'Leave empty to show the thank-you screen. If set, respondents are sent here instead.',
@@ -1050,12 +1090,16 @@ export const en: FormsMessages = {
         corporateEmailOnly: 'Require work email',
         corporateEmailHint: 'Blocks Gmail, Hotmail, Yahoo and other personal domains.',
         phoneMinDigits: 'Minimum digits',
+        phoneMinDigitsHelp:
+          'The shortest number accepted, not counting the country code. Phone lengths vary by country, so this is the floor that catches an obviously incomplete number.',
         phoneDefaultCountry: 'Default country',
         phoneDefaultCountryAuto: 'Automatic (based on visitor language)',
         sliderMin: 'Min',
         sliderMax: 'Max',
         sliderStep: 'Step',
         sliderDefault: 'Default',
+        sliderDefaultOutOfRange: 'Default sits outside {min}–{max}. Respondents will see {min} instead.',
+        sliderMaxBelowMin: 'Max is below Min — the slider has nothing to move along.',
       },
       options: {
         title: 'Options',
@@ -1067,6 +1111,9 @@ export const en: FormsMessages = {
         icon: 'Icon',
         remove: 'Remove option',
         empty: 'No options yet.',
+        labelHelp: 'What respondents read on the option. Safe to reword at any time.',
+        valueHelp:
+          'What gets stored in the response and sent to HubSpot or a webhook. Keep it stable — changing it breaks past answers and any mapping that points at it.',
       },
       sliderScoring: {
         title: 'Slider scoring',
@@ -1077,6 +1124,7 @@ export const en: FormsMessages = {
         points: 'Points',
         remove: 'Remove range',
         empty: 'No scoring ranges — the slider does not score.',
+        unreachable: 'Outside the slider’s {min}–{max} range — this range can never award points.',
       },
       logic: {
         title: 'Conditional visibility',
@@ -1103,6 +1151,8 @@ export const en: FormsMessages = {
         betweenMax: 'Max',
         contradiction:
           'These show and hide rules cancel out — this question could never appear. Adjust one of them.',
+        narrow:
+          'The hide rule cuts into the show rule: this question only appears for {lo}–{hi}. If that is what you meant, ignore this.',
       },
       variants: {
         title: 'Dynamic question',
@@ -1112,6 +1162,8 @@ export const en: FormsMessages = {
         add: 'Add variant',
         matchValue: 'When answer is',
         matchValuePlaceholder: 'e.g. founder',
+        matchValueMulti: 'Tick every option this version answers to',
+        matchValueMultiEmpty: 'Pick at least one option — an empty row never matches.',
         variantQuestion: 'Ask instead',
         fallback: 'Fallback (any other answer)',
         remove: 'Remove variant',
@@ -1123,6 +1175,7 @@ export const en: FormsMessages = {
         tokenPickerNoMatch: 'No matching fields.',
         tokenWarnLater: '“{token}” is asked after this step — it will be empty here.',
         tokenWarnUnknown: '“{token}” doesn’t exist in this form.',
+        tokenWarnRaw: '“{token}” is plain text — pick it from the list or write {fixed} so the answer fills in.',
       },
       behavior: {
         title: 'Behavior',
@@ -1134,6 +1187,13 @@ export const en: FormsMessages = {
         editReveal: 'Edit reveal screen',
         hidden: 'Hidden question',
         hiddenHint: 'Not shown to respondents — its answer is filled from a matching URL parameter (?key=value).',
+        fieldKey: 'Field key',
+        fieldKeyHint:
+          'The name this answer is stored under — the URL parameter that prefills it, and what you type between brackets to recall it in a later question.',
+        fieldKeyTaken: 'Another question already uses that key.',
+        fieldKeyUrlExample: 'Prefill it with ?{key}=value',
+        fieldKeyMappingFailed:
+          'The field key was renamed, but its HubSpot mapping could not be moved. Re-pick the property in Connect.',
       },
       nameStep: {
         title: 'Name fields',
@@ -1692,6 +1752,7 @@ export const es: FormsMessages = {
       createTitle: 'Crear un formulario nuevo',
       nameLabel: 'Nombre del formulario',
       namePlaceholder: 'p. ej. Cuestionario de calificación de leads',
+      nameRequired: 'Ponle un nombre a tu formulario.',
       cancel: 'Cancelar',
       emptyTitle: 'Aún no hay formularios',
       emptyBody: 'Crea tu primer formulario para empezar a recibir respuestas.',
@@ -1718,6 +1779,8 @@ export const es: FormsMessages = {
       resultsHelp: {
         outcomeHeadingHelp:
           'Se muestra a los respondientes como el encabezado de la pantalla de agradecimiento cuando su puntaje cae en este rango.',
+        outcomesInert:
+          'El puntaje está apagado, así que ningún rango puede alcanzarse — todos ven la pantalla de agradecimiento del formulario. Tus rangos se conservan; enciende el puntaje para volver a usarlos.',
         redirectLabel: 'URL de redirección (opcional)',
         redirectHelp:
           'Déjalo vacío para mostrar la pantalla de agradecimiento. Si lo defines, se redirige ahí a los respondientes.',
@@ -1767,12 +1830,16 @@ export const es: FormsMessages = {
         corporateEmailOnly: 'Exigir correo corporativo',
         corporateEmailHint: 'Bloquea Gmail, Hotmail, Yahoo y otros dominios personales.',
         phoneMinDigits: 'Dígitos mínimos',
+        phoneMinDigitsHelp:
+          'El número más corto que se acepta, sin contar el código de país. La longitud varía según el país, así que este es el piso que atrapa un número claramente incompleto.',
         phoneDefaultCountry: 'País predeterminado',
         phoneDefaultCountryAuto: 'Automático (según el idioma del visitante)',
         sliderMin: 'Mín',
         sliderMax: 'Máx',
         sliderStep: 'Paso',
         sliderDefault: 'Predeterminado',
+        sliderDefaultOutOfRange: 'El predeterminado está fuera de {min}–{max}. Los respondientes verán {min}.',
+        sliderMaxBelowMin: 'El máximo es menor que el mínimo — el deslizador no tiene recorrido.',
       },
       options: {
         title: 'Opciones',
@@ -1781,6 +1848,9 @@ export const es: FormsMessages = {
         value: 'Valor',
         points: 'Puntos',
         pointsHint: 'Se suma al puntaje cuando se elige esta opción. Usa un número negativo para restar.',
+        labelHelp: 'Lo que leen los respondientes en la opción. Puedes reescribirlo cuando quieras.',
+        valueHelp:
+          'Lo que se guarda en la respuesta y se envía a HubSpot o al webhook. Mantenlo estable — cambiarlo rompe las respuestas anteriores y cualquier mapeo que lo use.',
         icon: 'Ícono',
         remove: 'Quitar opción',
         empty: 'Aún no hay opciones.',
@@ -1794,6 +1864,7 @@ export const es: FormsMessages = {
         points: 'Puntos',
         remove: 'Quitar rango',
         empty: 'Sin rangos de puntaje — el deslizador no suma.',
+        unreachable: 'Fuera del rango {min}–{max} del deslizador — este rango nunca puede dar puntos.',
       },
       logic: {
         title: 'Visibilidad condicional',
@@ -1820,6 +1891,8 @@ export const es: FormsMessages = {
         betweenMax: 'Máx',
         contradiction:
           'Estas reglas de mostrar y ocultar se anulan — esta pregunta nunca aparecería. Ajusta una de ellas.',
+        narrow:
+          'La regla de ocultar recorta la de mostrar: esta pregunta solo aparece entre {lo} y {hi}. Si es lo que buscabas, ignora este aviso.',
       },
       variants: {
         title: 'Pregunta dinámica',
@@ -1829,6 +1902,8 @@ export const es: FormsMessages = {
         add: 'Añadir variante',
         matchValue: 'Cuando la respuesta sea',
         matchValuePlaceholder: 'p. ej. fundador',
+        matchValueMulti: 'Marca todas las opciones a las que responde esta versión',
+        matchValueMultiEmpty: 'Elige al menos una opción — una fila vacía nunca coincide.',
         variantQuestion: 'Preguntar en su lugar',
         fallback: 'Alternativa (cualquier otra respuesta)',
         remove: 'Quitar variante',
@@ -1840,6 +1915,7 @@ export const es: FormsMessages = {
         tokenPickerNoMatch: 'Ningún campo coincide.',
         tokenWarnLater: '«{token}» se pregunta después de este paso — quedará vacío.',
         tokenWarnUnknown: '«{token}» no existe en este formulario.',
+        tokenWarnRaw: '«{token}» es texto plano — elígelo de la lista o escribe {fixed} para que se rellene la respuesta.',
       },
       behavior: {
         title: 'Comportamiento',
@@ -1851,6 +1927,13 @@ export const es: FormsMessages = {
         editReveal: 'Editar pantalla de revelación',
         hidden: 'Pregunta oculta',
         hiddenHint: 'No se muestra a los respondientes — su respuesta se rellena desde un parámetro de URL coincidente (?clave=valor).',
+        fieldKey: 'Clave del campo',
+        fieldKeyHint:
+          'El nombre con el que se guarda esta respuesta — el parámetro de URL que la rellena y lo que escribes entre corchetes para reutilizarla en una pregunta posterior.',
+        fieldKeyTaken: 'Otra pregunta ya usa esa clave.',
+        fieldKeyUrlExample: 'Rellénala con ?{key}=valor',
+        fieldKeyMappingFailed:
+          'Se renombró la clave del campo, pero no se pudo mover su mapeo de HubSpot. Vuelve a elegir la propiedad en Conectar.',
       },
       nameStep: {
         title: 'Campos del nombre',
