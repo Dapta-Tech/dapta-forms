@@ -1153,7 +1153,7 @@ export const en: FormsMessages = {
         sliderMax: 'Max',
         sliderStep: 'Step',
         sliderDefault: 'Default',
-        sliderDefaultOutOfRange: 'Default sits outside {min}–{max}. Respondents will see {min} instead.',
+        sliderDefaultOutOfRange: 'Default sits outside {min}–{max}. Respondents will see {shown} instead.',
         sliderMaxBelowMin: 'Max is below Min — the slider has nothing to move along.',
       },
       options: {
@@ -1923,7 +1923,7 @@ export const es: FormsMessages = {
         sliderMax: 'Máx',
         sliderStep: 'Paso',
         sliderDefault: 'Predeterminado',
-        sliderDefaultOutOfRange: 'El predeterminado está fuera de {min}–{max}. Los respondientes verán {min}.',
+        sliderDefaultOutOfRange: 'El predeterminado está fuera de {min}–{max}. Los respondientes verán {shown}.',
         sliderMaxBelowMin: 'El máximo es menor que el mínimo — el deslizador no tiene recorrido.',
       },
       options: {

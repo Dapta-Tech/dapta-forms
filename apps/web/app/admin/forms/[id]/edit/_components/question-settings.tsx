@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import type { FormStep } from '@quill/engine';
-import { defaultFlowGroup, sanitizeStepKey, sliderBounds } from '@quill/engine';
+import { clampSliderValue, defaultFlowGroup, sanitizeStepKey, sliderBounds } from '@quill/engine';
 import { COUNTRIES, countryName, getMessages } from '@quill/shared';
 import { clientLocale } from '@/lib/client-locale';
 import { Switch } from '@/components/ui/switch';
@@ -237,7 +237,8 @@ export function QuestionSettings({
               <i aria-hidden className="pi pi-exclamation-triangle mt-0.5 shrink-0" style={{ fontSize: 10 }} />
               {em.props.sliderDefaultOutOfRange
                 .replaceAll('{min}', String(sliderMin))
-                .replaceAll('{max}', String(sliderMax))}
+                .replaceAll('{max}', String(sliderMax))
+                .replaceAll('{shown}', String(clampSliderValue(step, step.default ?? sliderMin)))}
             </p>
           ) : null}
         </section>
