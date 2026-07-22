@@ -346,6 +346,51 @@ test.describe('A7 multi-select dynamic-question variants', () => {
     console.log('STALE public question after ticking CRM:', await questionText(page));
   });
 
+  test('a variant row left without "Ask instead" text', async ({ page, request }) => {
+    // Authored end-to-end in the BUILDER: enable the toggle, tick a second
+    // option, never type the replacement text (the row the editor seeds itself).
+    const { id, path } = await createForm(request, 'blank', [toolsStep(), focusStep()]);
+    await openEditor(page, id);
+    await selectStep(page, 2);
+    await page.getByRole('switch', { name: 'Vary the question by a field' }).click();
+    const opts = page.getByTestId('variant-multi-option');
+    await expect(opts).toHaveCount(3);
+    await opts.nth(1).click();
+    await expect(opts.nth(1)).toHaveAttribute('aria-pressed', 'true');
+
+    const sectionText = await page
+      .locator('[data-testid="variants-scope-note"]')
+      .locator('xpath=../..')
+      .innerText();
+    console.log('BLANK dynamic-question section text:', JSON.stringify(sectionText));
+
+    await expect
+      .poll(async () => JSON.stringify((await draftConfig(request, id))?.steps?.[1]?.questionVariants ?? {}), {
+        timeout: 25_000,
+      })
+      .toContain('crm,ads');
+    console.log(
+      'BLANK draft variants:',
+      JSON.stringify((await draftConfig(request, id))?.steps?.[1]?.questionVariants),
+    );
+
+    await publish(request, id);
+    await blockExternal(page);
+    await startForm(page, path);
+    await tickAndContinue(page, ['CRM', 'Ads']);
+    const q = page.locator('.pf__question');
+    await expect(q).toBeAttached();
+    console.log('BLANK public question text:', JSON.stringify((await q.textContent()) ?? ''));
+    console.log('BLANK public question visible?', await q.isVisible());
+    console.log('BLANK public question box:', JSON.stringify(await q.boundingBox()));
+    await page.screenshot({ path: 'qa/shots/tmp-msv-blank-question.png', fullPage: true });
+
+    // Control: a non-matching answer still shows the base question.
+    await startForm(page, path);
+    await tickAndContinue(page, ['Email']);
+    console.log('BLANK control (Email only):', JSON.stringify(await questionText(page)));
+  });
+
   test('builder accepts a comma inside an option VALUE (the ambiguity is authorable in the UI)', async ({
     page,
     request,

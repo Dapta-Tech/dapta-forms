@@ -209,6 +209,17 @@ export interface BuilderMessages {
     otherwiseHint: string;
     /** Pill on a question that only shows when a show/hide condition holds. */
     conditional: string;
+    /** V5-B4 — the show/hide rules spelled out on the map. */
+    condShowIf: string;
+    condHideIf: string;
+    condIn: string;
+    condEq: string;
+    condGt: string;
+    condLt: string;
+    condBetween: string;
+    condAnd: string;
+    condBlank: string;
+    condMissingField: string;
     /** Small kicker above a scored outcome node. */
     outcomeKicker: string;
   };
@@ -430,6 +441,16 @@ const en: BuilderMessages = {
     startHint: 'Respondents start here',
     otherwiseHint: 'if no rule matches, continue in order',
     conditional: 'Conditional',
+    condShowIf: 'Show if',
+    condHideIf: 'Hide if',
+    condIn: 'is any of',
+    condEq: 'equals',
+    condGt: 'is greater than',
+    condLt: 'is less than',
+    condBetween: 'is between',
+    condAnd: 'and',
+    condBlank: '(not set)',
+    condMissingField: 'question deleted',
     outcomeKicker: 'Ending',
   },
   results: {
@@ -652,6 +673,16 @@ const es: BuilderMessages = {
     startHint: 'Aquí empiezan las personas',
     otherwiseHint: 'si ninguna regla coincide, continúa en orden',
     conditional: 'Condicional',
+    condShowIf: 'Mostrar si',
+    condHideIf: 'Ocultar si',
+    condIn: 'es alguno de',
+    condEq: 'es igual a',
+    condGt: 'es mayor que',
+    condLt: 'es menor que',
+    condBetween: 'está entre',
+    condAnd: 'y',
+    condBlank: '(sin definir)',
+    condMissingField: 'pregunta eliminada',
     outcomeKicker: 'Final',
   },
   results: {
