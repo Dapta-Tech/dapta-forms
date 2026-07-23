@@ -93,6 +93,13 @@ test.describe('V6 — Scheduler question type', () => {
     await expect(prompt).toBeVisible({ timeout: 20_000 });
     // Scoped to the prompt — the admin sidebar also has an "Integrations" link.
     await expect(prompt.getByRole('link')).toHaveAttribute('href', '/admin/integrations');
+
+    // The autofill mapping is editable even before Calendly is connected — it
+    // maps the form's own questions, which have nothing to do with the token.
+    await expect(page.getByTestId('scheduler-map')).toBeVisible();
+    for (const field of ['name', 'email', 'phone']) {
+      await expect(page.getByTestId(`scheduler-map-${field}`)).toBeVisible();
+    }
   });
 
   test('the public form renders the booking embed under the scheduler question', async ({

@@ -125,6 +125,12 @@ export interface BuilderMessages {
     schedulerConnect: string;
     schedulerConnectCta: string;
     schedulerShowDetails: string;
+    schedulerMapTitle: string;
+    schedulerMapHint: string;
+    schedulerMapName: string;
+    schedulerMapEmail: string;
+    schedulerMapPhone: string;
+    schedulerMapAuto: string;
     title: string;
     questionType: string;
     required: string;
@@ -392,6 +398,12 @@ const en: BuilderMessages = {
     schedulerConnect: 'Connect Calendly in Integrations to pick an event type.',
     schedulerConnectCta: 'Go to Integrations',
     schedulerShowDetails: 'Show event details',
+    schedulerMapTitle: 'Autofill the booking form',
+    schedulerMapHint: 'Send answers from earlier questions into the fields Calendly asks for.',
+    schedulerMapName: 'Name',
+    schedulerMapEmail: 'Email',
+    schedulerMapPhone: 'Phone number',
+    schedulerMapAuto: 'Automatic',
     scoring: 'Scoring',
     scoringHint:
       'Counts this question toward the score. Points from the selected option add to the total; set ranges in Results.',
@@ -643,6 +655,12 @@ const es: BuilderMessages = {
     schedulerConnect: 'Conecta Calendly en Integraciones para elegir un tipo de evento.',
     schedulerConnectCta: 'Ir a Integraciones',
     schedulerShowDetails: 'Mostrar detalles del evento',
+    schedulerMapTitle: 'Autocompletar el formulario de agendamiento',
+    schedulerMapHint: 'Envía respuestas de preguntas anteriores a los campos que pide Calendly.',
+    schedulerMapName: 'Nombre',
+    schedulerMapEmail: 'Correo electrónico',
+    schedulerMapPhone: 'Número de teléfono',
+    schedulerMapAuto: 'Automático',
     scoring: 'Puntaje',
     scoringHint:
       'Cuenta esta pregunta para el puntaje. Los puntos de la opción elegida suman al total; define los rangos en Resultados.',

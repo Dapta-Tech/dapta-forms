@@ -1,6 +1,7 @@
 /** Unit tests for the pure booking-embed URL builders. */
 import { describe, expect, it } from 'vitest';
 import {
+  applySchedulerPrefillMap,
   buildBookingEmbedUrl,
   buildCalendlyEmbedUrl,
   buildCalendlyWidgetPrefill,
@@ -184,5 +185,51 @@ describe('buildBookingEmbedUrl', () => {
       'x.test',
     );
     expect(new URL(out).searchParams.has('email')).toBe(false);
+  });
+});
+
+describe('applySchedulerPrefillMap (V6 — scheduler field mapping)', () => {
+  const CUSTOM = { quien: 'Ada Lovelace', correo: 'ada@acme.io', celular: '+13105551234' };
+
+  it('feeds mapped questions into the conventional prefill keys', () => {
+    const out = applySchedulerPrefillMap(CUSTOM, {
+      name: 'quien',
+      email: 'correo',
+      phone: 'celular',
+    });
+    expect(out).toMatchObject({
+      firstname: 'Ada',
+      lastname: 'Lovelace',
+      email: 'ada@acme.io',
+      phone: '+13105551234',
+    });
+    // …so the existing widget builder picks them up unchanged.
+    expect(buildCalendlyWidgetPrefill(out)).toMatchObject({
+      name: 'Ada Lovelace',
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      email: 'ada@acme.io',
+    });
+  });
+
+  it('leaves the answers untouched with no mapping (conventional keys still work)', () => {
+    const answers = { firstname: 'Grace', email: 'grace@acme.io' };
+    expect(applySchedulerPrefillMap(answers, undefined)).toBe(answers);
+  });
+
+  it('ignores entries that are unmapped or point at an empty answer', () => {
+    const out = applySchedulerPrefillMap(
+      { firstname: 'Grace', correo: '', quien: '   ' },
+      { name: 'quien', email: 'correo', phone: null },
+    );
+    // Blank mapped answers never clobber what is already there.
+    expect(out.firstname).toBe('Grace');
+    expect(out.email).toBeUndefined();
+  });
+
+  it('splits a single full-name answer into first and last', () => {
+    const out = applySchedulerPrefillMap({ q: 'Ada Byron King' }, { name: 'q' });
+    expect(out.firstname).toBe('Ada');
+    expect(out.lastname).toBe('Byron King');
   });
 });

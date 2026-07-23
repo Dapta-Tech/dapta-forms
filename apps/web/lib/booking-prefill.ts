@@ -35,6 +35,38 @@ export function extractBookingContactFields(
   return { firstname, lastname, name, email, phone };
 }
 
+/**
+ * Overlay a scheduler step's field mapping onto the answers, so the existing
+ * prefill builders (which read the conventional firstname/lastname/email/phone
+ * keys) pick up values from whichever questions the author mapped.
+ *
+ * A form whose questions already use the conventional keys needs no mapping —
+ * an absent entry simply leaves that field to the normal extraction. A mapped
+ * `name` is split on the first space into first/last, which is what a single
+ * "full name" question yields.
+ */
+export function applySchedulerPrefillMap(
+  answers: Record<string, unknown>,
+  map: { name?: string | null; email?: string | null; phone?: string | null } | undefined,
+): Record<string, unknown> {
+  if (!map) return answers;
+  const out = { ...answers };
+  const read = (key: string | null | undefined): string =>
+    key ? String(answers[key] ?? '').trim() : '';
+
+  const email = read(map.email);
+  if (email) out.email = email;
+  const phone = read(map.phone);
+  if (phone) out.phone = phone;
+  const full = read(map.name);
+  if (full) {
+    const [first, ...rest] = full.split(/\s+/);
+    out.firstname = first ?? '';
+    out.lastname = rest.join(' ');
+  }
+  return out;
+}
+
 /** Set a query param only when the value is non-empty (overwrites, never appends). */
 function setParam(url: URL, key: string, value: string): void {
   if (value) url.searchParams.set(key, value);

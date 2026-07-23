@@ -302,6 +302,16 @@ export interface FormScheduler {
   hideEventDetails?: boolean;
   /** Prefill the booking form from collected answers (name/email/phone). */
   prefill?: boolean;
+  /**
+   * Which earlier question feeds each field the booking page asks for (step
+   * keys). Absent entries fall back to the conventional answer keys, so a form
+   * that already uses firstname/lastname/email/phone needs no mapping.
+   */
+  prefillMap?: {
+    name?: string | null;
+    email?: string | null;
+    phone?: string | null;
+  };
 }
 
 /** Optional processing/result-reveal interstitial (generic, templated copy). */

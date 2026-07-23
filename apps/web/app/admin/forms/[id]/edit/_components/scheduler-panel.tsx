@@ -28,10 +28,13 @@ type LoadState =
 export function SchedulerPanel({
   scheduler,
   onChange,
+  fields,
   bm,
 }: {
   scheduler: FormScheduler;
   onChange: (next: FormScheduler) => void;
+  /** Answer fields captured BEFORE this step — the only ones that can prefill. */
+  fields: { key: string; label: string }[];
   bm: BuilderMessages;
 }) {
   const s = bm.settings;
@@ -114,6 +117,40 @@ export function SchedulerPanel({
           onCheckedChange={(show) => onChange({ ...scheduler, hideEventDetails: !show })}
           aria-label={s.schedulerShowDetails}
         />
+      </div>
+
+      {/* Autofill: which earlier answer feeds each field the booking page asks
+          for. "Automatic" leaves it to the conventional keys (firstname /
+          lastname / email / phone), which is right for most forms. */}
+      <div className="flex flex-col gap-2 border-t border-border pt-3" data-testid="scheduler-map">
+        <p className="text-xs font-medium text-foreground">{s.schedulerMapTitle}</p>
+        <p className="text-[11px] text-muted-foreground">{s.schedulerMapHint}</p>
+        {(
+          [
+            ['name', s.schedulerMapName],
+            ['email', s.schedulerMapEmail],
+            ['phone', s.schedulerMapPhone],
+          ] as const
+        ).map(([field, label]) => (
+          <Field key={field} label={label}>
+            <div data-testid={`scheduler-map-${field}`}>
+              <Select
+                ariaLabel={label}
+                value={scheduler.prefillMap?.[field] ?? ''}
+                options={[
+                  { value: '', label: s.schedulerMapAuto },
+                  ...fields.map((f) => ({ value: f.key, label: f.label })),
+                ]}
+                onChange={(key) =>
+                  onChange({
+                    ...scheduler,
+                    prefillMap: { ...scheduler.prefillMap, [field]: key || null },
+                  })
+                }
+              />
+            </div>
+          </Field>
+        ))}
       </div>
     </section>
   );

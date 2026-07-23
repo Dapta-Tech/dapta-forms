@@ -39,6 +39,7 @@ import { StepInput } from '@/components/public/step-input';
 import { BookingScreen } from '@/components/public/booking-screen';
 import { RevealScreen } from '@/components/public/reveal-screen';
 import { warmBookingEmbed, type BookingScheduledDetails } from '@/lib/booking-embed';
+import { applySchedulerPrefillMap } from '@/lib/booking-prefill';
 import { submitFormAction, recordEventAction, recordBookingAction } from './actions';
 import './public-form.css';
 
@@ -718,7 +719,10 @@ export function FormRenderer({
                 {booking ? (
                   <BookingScreen
                     booking={booking}
-                    answers={answers}
+                    // Feed the embed the author's field mapping (name/email/phone
+                    // → question) overlaid on the answers; unmapped fields fall
+                    // back to the conventional keys.
+                    answers={applySchedulerPrefillMap(answers, step.scheduler?.prefillMap)}
                     sessionId={sessionId}
                     locale={locale}
                     hideHeader

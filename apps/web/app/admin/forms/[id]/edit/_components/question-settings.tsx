@@ -25,6 +25,7 @@ import { LogicConditions } from './logic-conditions';
 import { QuestionVariants } from './question-variants';
 import { QuestionHubspotSection } from './question-hubspot';
 import { SchedulerPanel } from './scheduler-panel';
+import { tokenOptionsBefore } from './token-textarea';
 import { HelpTip } from '@/components/ui/help-tip';
 import {
   GALLERY,
@@ -268,6 +269,11 @@ export function QuestionSettings({
         <SchedulerPanel
           scheduler={step.scheduler ?? { provider: 'calendly', prefill: true }}
           onChange={(sc) => onUpdate({ scheduler: sc })}
+          // Only answers captured BEFORE this step can prefill the booking form.
+          fields={tokenOptionsBefore(
+            steps,
+            steps.findIndex((s) => s.key === step.key),
+          )}
           bm={bm}
         />
       ) : null}

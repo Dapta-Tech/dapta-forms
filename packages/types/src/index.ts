@@ -131,6 +131,19 @@ export const formSchedulerSchema = z.object({
   hideEventDetails: z.boolean().optional(),
   /** Prefill the booking form from collected answers (name/email/phone). */
   prefill: z.boolean().optional(),
+  /**
+   * Which earlier question feeds each field the booking page asks for. Absent
+   * entries fall back to the conventional answer keys (firstname/lastname/
+   * email/phone), so a form using the standard keys needs no mapping at all.
+   * Values are step keys.
+   */
+  prefillMap: z
+    .object({
+      name: z.string().max(64).nullable().optional(),
+      email: z.string().max(64).nullable().optional(),
+      phone: z.string().max(64).nullable().optional(),
+    })
+    .optional(),
 });
 
 export const formStepSchema = z.object({
