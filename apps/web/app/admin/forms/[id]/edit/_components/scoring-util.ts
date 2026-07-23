@@ -38,7 +38,11 @@ export function maxStepPoints(step: FormStep): number {
       .map((r) => r.points);
     return pts.length ? Math.max(0, ...pts) : 0;
   }
-  return Math.max(0, step.points ?? 0);
+  // Only choice and slider steps score (the two with a points UI). Free-text /
+  // message / reveal contribute nothing, matching the engine's computeScore and
+  // scoringSteps — so "Highest possible" equals the sum of the listed questions
+  // and never includes an invisible, uneditable free-text total (V4-17).
+  return 0;
 }
 
 /** The highest total score reachable across a list of steps (option/slider

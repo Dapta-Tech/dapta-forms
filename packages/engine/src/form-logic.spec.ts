@@ -1356,6 +1356,31 @@ describe('QA V5 follow-ups', () => {
     )).toBe(0);
   });
 
+  it('a free-text answer never scores, even with a legacy flat step.points', () => {
+    // step.points has no builder UI and the Results breakdown never lists free
+    // text, so a text/textarea answer must not contribute — otherwise the score
+    // gains points shown and editable nowhere (V4-17). Choice/slider still score.
+    const cfg: FormConfig = {
+      version: 1,
+      steps: [
+        step({
+          key: 'size',
+          type: 'multiple_choice',
+          options: [
+            { label: 'SMB', value: 'smb', points: 3 },
+            { label: 'Enterprise', value: 'ent', points: 10 },
+          ],
+        }),
+        // Legacy injected flat points on free-text — must be ignored.
+        { ...step({ key: 'why', type: 'text' }), points: 7 },
+        { ...step({ key: 'notes', type: 'textarea' }), points: 4 },
+      ],
+    };
+    // Only the choice contributes; the 7 + 4 free-text points are ignored.
+    expect(computeScore(cfg, { size: 'ent', why: 'because', notes: 'long answer' })).toBe(10);
+    expect(computeScore(cfg, { size: 'smb', why: 'x', notes: 'y' })).toBe(3);
+  });
+
   it('renameStepKey moves the form-level ending tokens too', () => {
     const cfg: FormConfig = {
       version: 1,

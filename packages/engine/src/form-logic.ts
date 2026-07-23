@@ -1028,10 +1028,18 @@ function sliderPoints(step: FormStep, value: AnswerValue): number {
 }
 
 /**
- * The total score from the answers: option points + slider-range points + any
- * flat step points, over the QUALIFICATION steps only (lead-capture fields such
- * as name/email/phone never contribute). Hidden steps (failed skip-logic) are
+ * The total score from the answers: option points (choice) + slider-range points
+ * (slider), over the QUALIFICATION steps only (lead-capture fields such as
+ * name/email/phone never contribute). Hidden steps (failed skip-logic) are
  * excluded — a branch the respondent never saw can't score.
+ *
+ * Only choice and slider steps score — the two types with a builder UI to attach
+ * points to (option chips, slider ranges). A free-text step has neither, so it
+ * must not contribute: the legacy flat `step.points` used to add here for ANY
+ * type, silently scoring a `text`/`textarea` answer that the builder could not
+ * set and the Results breakdown never listed, so "Highest possible" did not add
+ * up (V4-17). No builder path writes `step.points`; it is ignored now, matching
+ * `maxStepPoints` and `scoringSteps`.
  */
 export function computeScore(config: FormConfig, answers: Answers): number {
   if (config.scoring && config.scoring.enabled === false) return 0;
@@ -1047,7 +1055,6 @@ export function computeScore(config: FormConfig, answers: Answers): number {
     if (value == null || value === '') continue;
     if (step.type === 'dropdown' || step.type === 'multiple_choice') score += optionPoints(step, value);
     else if (step.type === 'slider') score += sliderPoints(step, value);
-    if (step.points) score += step.points;
   }
   return score;
 }
