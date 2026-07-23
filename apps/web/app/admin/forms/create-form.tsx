@@ -50,11 +50,23 @@ export function CreateForm({
   const [open, setOpen] = useState(false);
   const [nameError, setNameError] = useState(false);
 
+  // Every open starts clean and every dismissal clears the error, so a Cancel
+  // (or ESC, or overlay click) can't leave a stale "name required" on the next,
+  // untouched dialog (V4-11). Cancel previously called only setOpen(false).
+  const openDialog = () => {
+    setNameError(false);
+    setOpen(true);
+  };
+  const closeDialog = () => {
+    setOpen(false);
+    setNameError(false);
+  };
+
   const trigger =
     variant === 'card' ? (
       <button
         type="button"
-        onClick={() => setOpen(true)}
+        onClick={openDialog}
         className="group flex flex-col gap-1 rounded-md border border-border bg-card p-5 text-left transition-transform hover:border-primary active:scale-[0.99]"
       >
         <span className="mb-1 flex h-9 w-9 items-center justify-center rounded-md bg-primary text-primary-foreground">
@@ -64,7 +76,7 @@ export function CreateForm({
         {cardDesc ? <span className="text-sm text-muted-foreground">{cardDesc}</span> : null}
       </button>
     ) : (
-      <Button variant={variant === 'outline' ? 'outline' : 'default'} onClick={() => setOpen(true)}>
+      <Button variant={variant === 'outline' ? 'outline' : 'default'} onClick={openDialog}>
         <i aria-hidden className="pi pi-plus" style={{ fontSize: 12 }} /> {labels.create}
       </Button>
     );
@@ -72,10 +84,7 @@ export function CreateForm({
   return (
     <>
       {trigger}
-      <Modal open={open} onClose={() => {
-          setOpen(false);
-          setNameError(false);
-        }} title={labels.createTitle} labelId="create-form-title">
+      <Modal open={open} onClose={closeDialog} title={labels.createTitle} labelId="create-form-title">
         {/* `noValidate` + an inline error instead of the browser's own bubble
             (V5-A8): the native popup is an OS-styled white/orange box that
             ignores the app's theme and dark mode entirely, so the one validation
@@ -119,7 +128,7 @@ export function CreateForm({
             ) : null}
           </label>
           <div className="flex items-center justify-end gap-2">
-            <Button type="button" variant="ghost" onClick={() => setOpen(false)}>
+            <Button type="button" variant="ghost" onClick={closeDialog}>
               {labels.cancel}
             </Button>
             <SubmitButton label={labels.create} />
