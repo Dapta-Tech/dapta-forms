@@ -49,7 +49,11 @@ function pct1(numerator: number, denominator: number): number {
  * here rather than printed. (Making the two sides describe one session cohort is
  * the real answer and a product decision — tracked in SPEC-METRICS.md.)
  */
-function completionPct(submissions: number, starts: number): number {
+function completionPct(submissions: number, starts: number): number | null {
+  // No starts in the window = no denominator. Printing 0% beside a non-zero
+  // Submissions count states a completion rate nobody can compute; null renders
+  // as an em dash instead.
+  if (starts <= 0) return null;
   return Math.min(100, pct1(submissions, starts));
 }
 

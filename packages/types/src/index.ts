@@ -480,8 +480,8 @@ export const trendPointSchema = z.object({
   starts: z.number().int(),
   /** Submissions completed that day. */
   submissions: z.number().int(),
-  /** submissions / starts for that day (1 decimal); 0 when starts=0. */
-  completionRate: z.number(),
+  /** submissions / starts for that day (1 decimal); null when starts=0. */
+  completionRate: z.number().nullable(),
   /** Median whole seconds open→complete that day; null when not derivable. */
   timeToComplete: z.number().int().nullable(),
 });
@@ -495,8 +495,12 @@ export const analyticsResponseSchema = z.object({
   starts: z.number().int(),
   /** Count of completed submissions (completedAt set). */
   submissions: z.number().int(),
-  /** submissions / starts as a percentage (1 decimal); 0 when starts=0. */
-  completionRate: z.number(),
+  /**
+   * submissions / starts as a percentage (1 decimal), capped at 100; null when
+   * there were no starts in the window (no denominator — a rate nobody can
+   * compute, which 0% would misstate next to a real Submissions count).
+   */
+  completionRate: z.number().nullable(),
   /**
    * MEDIAN whole seconds from form open (first `view`) to completion, or null
    * when no completed session in range had a derivable open time. Null is NOT

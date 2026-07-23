@@ -209,7 +209,7 @@ describe('P0 metric-definition fixes', () => {
     expect(a.starts).toBe(1);
     expect(a.submissions).toBe(2); // raw ratio would be 200%
     expect(a.completionRate).toBe(100);
-    expect(a.trends.every((p) => p.completionRate <= 100)).toBe(true);
+    expect(a.trends.every((p) => p.completionRate == null || p.completionRate <= 100)).toBe(true);
   });
 
   it('reports NO time to complete (null) rather than a fabricated 0s', async () => {
@@ -267,7 +267,8 @@ describe('P0 metric-definition fixes', () => {
       (seedDay - 1) * DAY,
       seedDay * DAY,
     ]);
-    expect(a.trends[0]).toMatchObject({ views: 0, starts: 0, submissions: 0, completionRate: 0 });
+    // A dead day has no starts, so its rate has no denominator — null, not 0%.
+    expect(a.trends[0]).toMatchObject({ views: 0, starts: 0, submissions: 0, completionRate: null });
     expect(a.trends[1]).toMatchObject({ views: 0, starts: 0, submissions: 0 });
     expect(a.trends[2]).toMatchObject({ views: 10, starts: 8, submissions: 3 });
   });

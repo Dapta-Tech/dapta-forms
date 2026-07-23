@@ -146,7 +146,11 @@ async function AnalyticsData({
     { label: m.metricViews, value: String(a.views) },
     { label: m.metricStarts, value: String(a.starts) },
     { label: m.metricSubmissions, value: String(a.submissions) },
-    { label: m.metricCompletionRate, value: `${a.completionRate}%` },
+    {
+      label: m.metricCompletionRate,
+      // null = no starts in range, so the rate has no denominator.
+      value: a.completionRate == null ? '—' : `${a.completionRate}%`,
+    },
     {
       label: m.metricTimeToComplete,
       // null = no completed session in range had a derivable open time. Showing
