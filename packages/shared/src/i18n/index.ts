@@ -690,6 +690,8 @@ export interface FormsMessages {
       saved: string;
       /** V5-A4 — steady-state autosave status (the Save button is gone). */
       autosaved: string;
+      /** V5-QA — saved, except one card that has a problem of its own. */
+      autosavedPartial: string;
       saveError: string;
       loadError: string;
       enabled: string;
@@ -1466,6 +1468,7 @@ export const en: FormsMessages = {
       saving: 'Saving…',
       saved: 'Integrations saved.',
       autosaved: 'Changes saved automatically',
+      autosavedPartial: 'Saved everything except the webhook —',
       saveError: 'Could not save integrations.',
       loadError: 'Could not load integrations.',
       enabled: 'Enabled',
@@ -2247,6 +2250,7 @@ export const es: FormsMessages = {
       saving: 'Guardando…',
       saved: 'Integraciones guardadas.',
       autosaved: 'Cambios guardados automáticamente',
+      autosavedPartial: 'Se guardó todo menos el webhook —',
       saveError: 'No se pudieron guardar las integraciones.',
       loadError: 'No se pudieron cargar las integraciones.',
       enabled: 'Activado',

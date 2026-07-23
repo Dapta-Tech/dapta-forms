@@ -17,7 +17,7 @@ import { saveIntegrationsAction } from './actions';
 
 type Msgs = FormsMessages['admin']['integrations'];
 
-type SaveStatus = 'saved' | 'saving' | 'error';
+type SaveStatus = 'saved' | 'saving' | 'error' | 'partial';
 /** Same debounce as the builder's autosave, so both tabs feel identical. */
 const AUTOSAVE_MS = 900;
 /** Same admin API base the server-side admin-api client uses (client-exposed). */
@@ -211,10 +211,36 @@ export function IntegrationsEditor({
   // fallback (self-host). Otherwise prompt the user to connect first.
   const showMapping = hubspotConnected || pickerEnabled;
 
-  function buildDestinations(): FormDestination[] | { error: string } {
+  /**
+   * The destinations to persist, plus a webhook problem to report if there is
+   * one (V5-QA).
+   *
+   * This used to return an error for the WHOLE tab as soon as the webhook URL
+   * was malformed, which meant a HubSpot mapping typed inches away was blocked
+   * and then silently discarded on leaving the page. The webhook's validity is
+   * now scoped to the webhook: everything else still saves, the bad URL stays in
+   * the field so nothing typed is lost, and the status line says which part did
+   * not go through. An enabled webhook with an EMPTY url is "not configured
+   * yet", not an error — it is the state you are in one keystroke after
+   * flipping the switch on.
+   */
+  function buildDestinations(): { destinations: FormDestination[]; webhookError: string | null } {
     const out: FormDestination[] = [];
-    if (webhook.enabled || webhook.url.trim()) {
-      if (!isHttpsOrLocalhostUrl(webhook.url.trim())) return { error: m.webhookUrlInvalid };
+    let webhookError: string | null = null;
+    const url = webhook.url.trim();
+    if (webhook.enabled && !url) {
+      // Switch on, nothing typed: carry the stored destination (if any) through
+      // untouched and wait for a URL rather than failing the save.
+      const stored = initialDestinations.find((d) => d.type === 'webhook');
+      if (stored) out.push(stored);
+    } else if (webhook.enabled || url) {
+      if (!isHttpsOrLocalhostUrl(url)) {
+        webhookError = m.webhookUrlInvalid;
+        // Keep whatever is already stored so the invalid draft never overwrites
+        // a working webhook, and fall through to save the HubSpot half.
+        const stored = initialDestinations.find((d) => d.type === 'webhook');
+        if (stored) out.push(stored);
+      } else {
       // Secret write semantics: a typed value overwrites; an empty field keeps
       // the stored secret (send the sentinel the server merges back) when one is
       // set, or stays cleared/null when none exists.
@@ -231,10 +257,11 @@ export function IntegrationsEditor({
         enabled: webhook.enabled,
         ...(events.length === 1 ? { events } : {}),
         settings: {
-          url: webhook.url.trim(),
+          url,
           secret,
         },
       });
+      }
     }
     const fieldMappings: Record<string, string> = {};
     for (const p of hs.fieldMappings) {
@@ -295,7 +322,7 @@ export function IntegrationsEditor({
         bookingSync: Object.keys(bookingSync).length > 0 ? bookingSync : undefined,
       });
     }
-    return out;
+    return { destinations: out, webhookError };
   }
 
   // --- Autosave (V5-A4) ------------------------------------------------------
@@ -308,19 +335,25 @@ export function IntegrationsEditor({
   buildRef.current = buildDestinations;
   const dirty = useRef(false);
   const [status, setStatus] = useState<SaveStatus>('saved');
+  /** What exactly was not saved — shown next to the status, never just a colour. */
+  const [statusDetail, setStatusDetail] = useState<string | null>(null);
 
   const persist = useCallback(
-    async (built: FormDestination[]): Promise<boolean> => {
+    async (built: FormDestination[], blocked: string | null = null): Promise<boolean> => {
       setStatus('saving');
       const res = await saveIntegrationsAction(id, built);
-      if (res.ok) {
-        dirty.current = false;
-        setStatus('saved');
-        return true;
+      if (!res.ok) {
+        setStatus('error');
+        setStatusDetail(res.message ?? m.saveError);
+        errorRef.current(res.message ?? m.saveError);
+        return false;
       }
-      setStatus('error');
-      errorRef.current(res.message ?? m.saveError);
-      return false;
+      dirty.current = false;
+      // Saved, but one card was left out — say WHICH, instead of a green check
+      // that implies the webhook edit went through too.
+      setStatus(blocked ? 'partial' : 'saved');
+      setStatusDetail(blocked);
+      return true;
     },
     [id, m.saveError],
   );
@@ -346,16 +379,10 @@ export function IntegrationsEditor({
     if (!dirty.current) return;
     const t = setTimeout(() => {
       const built = buildRef.current();
-      if ('error' in built) {
-        // An invalid webhook URL must not be persisted, but it must not silently
-        // eat the rest of the edits either — surface it and stay dirty so the
-        // next keystroke retries.
-        setWebhookError(built.error);
-        setStatus('error');
-        return;
-      }
-      setWebhookError(null);
-      void persist(built);
+      // A bad webhook URL is reported on its own card and blocks only itself —
+      // the rest of the tab still persists.
+      setWebhookError(built.webhookError);
+      void persist(built.destinations, built.webhookError);
     }, AUTOSAVE_MS);
     return () => clearTimeout(t);
   }, [webhook, hs, persist]);
@@ -369,13 +396,12 @@ export function IntegrationsEditor({
     function flush(beacon: boolean) {
       if (!dirty.current) return;
       const built = buildRef.current();
-      if ('error' in built) return; // never persist an invalid config
       if (beacon) {
         try {
           void fetch(`${API_BASE}/v1/forms/${id}/destinations`, {
             method: 'PUT',
             headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ destinations: built }),
+            body: JSON.stringify({ destinations: built.destinations }),
             keepalive: true,
             credentials: 'include',
           });
@@ -383,7 +409,7 @@ export function IntegrationsEditor({
           /* best-effort on the unload path — nothing to recover to */
         }
       } else {
-        void saveIntegrationsAction(id, built);
+        void saveIntegrationsAction(id, built.destinations);
       }
     }
     const onVisibility = () => {
@@ -433,12 +459,24 @@ export function IntegrationsEditor({
           aria-hidden
           className={cn(
             'pi',
-            status === 'saved' ? 'pi-check text-primary' : status === 'error' ? 'pi-exclamation-triangle text-destructive' : 'pi-sync',
+            status === 'saved'
+              ? 'pi-check text-primary'
+              : status === 'error'
+                ? 'pi-exclamation-triangle text-destructive'
+                : status === 'partial'
+                  ? 'pi-exclamation-circle text-secondary'
+                  : 'pi-sync',
           )}
           style={{ fontSize: 12 }}
         />
         <span className={cn(status === 'error' && 'text-destructive')}>
-          {status === 'saved' ? m.autosaved : status === 'error' ? m.saveError : m.saving}
+          {status === 'saved'
+            ? m.autosaved
+            : status === 'error'
+              ? (statusDetail ?? m.saveError)
+              : status === 'partial'
+                ? `${m.autosavedPartial} ${statusDetail ?? ''}`.trim()
+                : m.saving}
         </span>
       </div>
     </div>
@@ -721,12 +759,17 @@ function WebhookCard({
           value={state.url}
           placeholder={m.webhookUrlPlaceholder}
           aria-invalid={urlError ? true : undefined}
+          aria-describedby={urlError ? 'webhook-url-error' : undefined}
           onChange={(e) => {
             clearUrlError();
             onChange({ ...state, url: e.target.value });
           }}
         />
-        {urlError ? <p className="text-xs text-destructive">{urlError}</p> : null}
+        {urlError ? (
+          <p id="webhook-url-error" role="alert" className="text-xs text-destructive">
+            {urlError}
+          </p>
+        ) : null}
       </Field>
       <Field label={m.webhookSecret} help={m.webhookSecretHelp}>
         <Input
