@@ -602,6 +602,15 @@ export function conditionsNarrow(
   // there would print a bound the rule specifically removes.
   if (clipsLow && h.hiInc) return null;
   if (clipsHigh && h.loInc) return null;
+  // The UNclipped bound is inherited from the SHOW interval and printed as an
+  // inclusive "lo–hi". That is only truthful when the show bound is itself
+  // inclusive: an OPEN show interval (`gt`/`lt`) EXCLUDES its own edge, so naming
+  // it would print a value the rule removes (V4-08). `show gt 200` + `hide gt
+  // 500` survives 201..500 — reporting "200–500" names 200, which `gt 200`
+  // hides. Stay silent, symmetric to the hide-side guards above, rather than
+  // name a bound off by one.
+  if (clipsLow && !s.hiInc) return null;
+  if (clipsHigh && !s.loInc) return null;
   const lo = clipsLow ? h.hi : s.lo;
   const hi = clipsHigh ? h.lo : s.hi;
   if (!Number.isFinite(lo) || !Number.isFinite(hi) || lo > hi) return null;

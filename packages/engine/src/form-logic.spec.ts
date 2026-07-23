@@ -1260,6 +1260,88 @@ describe('conditionsNarrow — bounds it must NOT claim (QA V5)', () => {
       ),
     ).toEqual({ lo: 50, hi: 100 });
   });
+
+  it('stays silent when the SURVIVING bound is an open (gt/lt) show edge', () => {
+    // The mirror of the hide-side guard: an open show interval excludes its own
+    // edge, so the inherited bound must not be named inclusively (V4-08).
+    // show `gt 200` + hide `gt 500` survives 201..500 — reporting 200 names a
+    // value `gt 200` hides.
+    expect(
+      conditionsNarrow(
+        { field: 'n', op: 'gt', value: 200 },
+        { field: 'n', op: 'gt', value: 500 },
+      ),
+    ).toBeNull();
+    // show `lt 500` + hide `lt 200` survives 200..499 — reporting 500 names a
+    // value `lt 500` hides.
+    expect(
+      conditionsNarrow(
+        { field: 'n', op: 'lt', value: 500 },
+        { field: 'n', op: 'lt', value: 200 },
+      ),
+    ).toBeNull();
+  });
+
+  it('a between show whose clipped edge stays inclusive is still reported', () => {
+    // Guard must not over-suppress: a `between` show keeps inclusive edges, so
+    // clipping the far end with an open hide still yields a nameable window.
+    expect(
+      conditionsNarrow(
+        { field: 'n', op: 'between', min: 200, max: 500 },
+        { field: 'n', op: 'gt', value: 400 },
+      ),
+    ).toEqual({ lo: 200, hi: 400 });
+    expect(
+      conditionsNarrow(
+        { field: 'n', op: 'between', min: 200, max: 500 },
+        { field: 'n', op: 'lt', value: 300 },
+      ),
+    ).toEqual({ lo: 300, hi: 500 });
+  });
+
+  it('every advisory it emits names bounds the runtime actually shows (exhaustive sweep)', () => {
+    // The old guard only checked the hide side, so gt/gt and lt/lt pairs named a
+    // value the SHOW rule excluded. Sweep every operand pair over an integer grid
+    // and cross-check each emitted {lo,hi} against real visibility (visibleSteps):
+    // the named endpoints MUST be visible, and one step past each MUST NOT be —
+    // that is exactly what "only appears for lo–hi" claims.
+    const OPS = ['eq', 'gt', 'lt', 'between'] as const;
+    const GRID = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    const mk = (op: (typeof OPS)[number], a: number, b: number): StepCondition =>
+      op === 'between'
+        ? { field: 'n', op, min: a, max: b }
+        : { field: 'n', op, value: a };
+    const visibleAt = (show: StepCondition, hide: StepCondition, v: number): boolean => {
+      const cfg: FormConfig = {
+        version: 1,
+        steps: [step({ key: 'q', type: 'text', showWhen: show, hideWhen: hide })],
+      };
+      return visibleSteps(cfg, { n: v }).some((s) => s.key === 'q');
+    };
+    for (const sop of OPS) {
+      for (const hop of OPS) {
+        for (const sa of GRID) {
+          for (const sb of GRID) {
+            for (const ha of GRID) {
+              for (const hb of GRID) {
+                const show = mk(sop, sa, sb);
+                const hide = mk(hop, ha, hb);
+                const win = conditionsNarrow(show, hide);
+                if (!win) continue;
+                const label = `show ${sop}(${sa},${sb}) hide ${hop}(${ha},${hb}) → ${win.lo}..${win.hi}`;
+                // Named bounds are genuinely visible…
+                expect(visibleAt(show, hide, win.lo), `${label}: lo must be visible`).toBe(true);
+                expect(visibleAt(show, hide, win.hi), `${label}: hi must be visible`).toBe(true);
+                // …and the step immediately outside the window is not.
+                expect(visibleAt(show, hide, win.lo - 1), `${label}: lo-1 must be hidden`).toBe(false);
+                expect(visibleAt(show, hide, win.hi + 1), `${label}: hi+1 must be hidden`).toBe(false);
+              }
+            }
+          }
+        }
+      }
+    }
+  });
 });
 
 describe('QA V5 follow-ups', () => {
