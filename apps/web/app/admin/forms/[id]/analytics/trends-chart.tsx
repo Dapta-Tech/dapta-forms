@@ -46,6 +46,8 @@ function formatDuration(seconds: number, unit: string): string {
   }
   const h = Math.floor(seconds / 3600);
   const m = Math.round((seconds % 3600) / 60);
+  // Rounding the remainder can land on a full hour — "1h 60m" is not a duration.
+  if (m === 60) return `${h + 1}h`;
   return m === 0 ? `${h}h` : `${h}h ${m}m`;
 }
 
