@@ -5,6 +5,7 @@ import type { FormStep } from '@quill/engine';
 import {
   clampSliderValue,
   defaultFlowGroup,
+  nameFields,
   sanitizeStepKey,
   sliderBounds,
   sliderHasNoTravel,
@@ -459,7 +460,16 @@ export function QuestionSettings({
         {!isInputlessType(step.type) && step.type !== 'name' ? (
           <FieldKeyEditor
             stepKey={step.key}
-            taken={steps.filter((s) => s.key !== step.key).map((s) => s.key)}
+            // Every answer slot the engine's renameStepKey refuses to collide
+            // with: each other step's key, PLUS a name step's subfield keys
+            // (firstname/lastname), which are real answer slots even though the
+            // name step never stores under its own key. Without the subfields the
+            // UI thought "firstname" was free, called rename, the engine refused
+            // it as a no-op, and the field showed the rejected key with no error
+            // (V4-12/13).
+            taken={steps
+              .filter((s) => s.key !== step.key)
+              .flatMap((s) => (s.type === 'name' ? [s.key, ...nameFields(s)] : [s.key]))}
             onRename={onRenameKey}
             m={em.behavior}
           />
