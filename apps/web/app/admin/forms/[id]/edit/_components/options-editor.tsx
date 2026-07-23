@@ -92,7 +92,14 @@ export function OptionsEditor({
                       </span>
                       <TextField
                         value={o.value}
-                        onChange={(e) => update(index, { value: e.target.value })}
+                        onChange={(e) =>
+                          // Commas are the separator in a dynamic-question
+                          // variant key, so a value containing one is
+                          // indistinguishable from a two-option set — a row
+                          // authored for one option would also fire for a
+                          // completely different answer.
+                          update(index, { value: e.target.value.replace(/,/g, '') })
+                        }
                       />
                     </label>
                     {showPoints ? (

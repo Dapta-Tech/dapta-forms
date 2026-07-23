@@ -605,6 +605,8 @@ export interface FormsMessages {
         retry: string;
         trackingTitle: string;
         trackingSubtitle: string;
+        /** V5-QA — these ride the draft, unlike the integrations above them. */
+        trackingDraftNote: string;
         gtmLabel: string;
         gtmHelp: string;
         metaLabel: string;
@@ -1395,6 +1397,8 @@ export const en: FormsMessages = {
         trackingTitle: 'Tracking & pixels',
         trackingSubtitle:
           'Measure visits and conversions on this form’s public page. Each tag loads only when its ID is set.',
+        trackingDraftNote:
+          'Estos IDs se guardan con el resto de tu borrador — haz clic en Publicar para ponerlos en el formulario público. Las integraciones de arriba se guardan en vivo de inmediato.',
         gtmLabel: 'Google Tag Manager ID',
         gtmHelp: 'Loads your GTM container on the form page so your tags fire.',
         metaLabel: 'Meta Pixel ID',
@@ -2181,6 +2185,8 @@ export const es: FormsMessages = {
         trackingTitle: 'Seguimiento y píxeles',
         trackingSubtitle:
           'Mide visitas y conversiones en la página pública de este formulario. Cada etiqueta se carga solo cuando su ID está configurado.',
+        trackingDraftNote:
+          'Estos IDs se guardan con el resto de tu borrador — haz clic en Publicar para ponerlos en el formulario público. Las integraciones de arriba se guardan en vivo de inmediato.',
         gtmLabel: 'ID de Google Tag Manager',
         gtmHelp: 'Carga tu contenedor de GTM en la página del formulario para que se disparen tus etiquetas.',
         metaLabel: 'ID del píxel de Meta',

@@ -213,6 +213,17 @@ function TrackingSection({
 
   return (
     <PanelSection title={mc.trackingTitle} subtitle={mc.trackingSubtitle}>
+      {/* Two persistence models live on this one tab: the Integrations section
+          writes the LIVE config the moment you type, while these fields ride the
+          editor's DRAFT and only reach respondents on Publish. Nothing said so,
+          and a single "Changes saved automatically" line covered both — V5-QA. */}
+      <p
+        data-testid="tracking-draft-note"
+        className="mb-3 flex items-start gap-1.5 rounded-md border border-secondary/40 bg-secondary/10 px-2.5 py-2 text-xs leading-relaxed text-foreground"
+      >
+        <i aria-hidden className="pi pi-info-circle mt-0.5 shrink-0 text-secondary" style={{ fontSize: 11 }} />
+        {mc.trackingDraftNote}
+      </p>
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label={mc.gtmLabel} hint={mc.gtmHelp}>
           <TextField
