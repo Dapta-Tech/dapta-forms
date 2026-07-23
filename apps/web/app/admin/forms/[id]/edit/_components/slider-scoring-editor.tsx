@@ -1,7 +1,7 @@
 'use client';
 
 import type { FormStep, SliderScoringRange } from '@quill/engine';
-import { sliderBounds, sliderRangeUnreachable } from '@quill/engine';
+import { overlappingSliderRanges, sliderBounds, sliderRangeUnreachable } from '@quill/engine';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/cn';
 import { NumberField } from './fields';
@@ -28,6 +28,9 @@ export function SliderScoringEditor({
   m: EditorMessages['sliderScoring'];
 }) {
   const { min, max } = sliderBounds(step);
+  // Rows shadowed by an earlier one: sliderPoints returns on the FIRST match, so
+  // these award nothing for the shared values (V5-QA).
+  const overlapped = new Set(overlappingSliderRanges(step));
   function update(index: number, patch: Partial<SliderScoringRange>) {
     onChange(ranges.map((r, i) => (i === index ? { ...r, ...patch } : r)));
   }
@@ -39,12 +42,13 @@ export function SliderScoringEditor({
       ) : (
         ranges.map((r, index) => {
           const unreachable = sliderRangeUnreachable(step, r);
+          const shadowed = !unreachable && overlapped.has(index);
           return (
             <div key={index} className="flex flex-col gap-1.5">
               <div
                 className={cn(
                   'flex items-end gap-2 rounded-md border bg-background p-2',
-                  unreachable ? 'border-destructive/60' : 'border-border',
+                  unreachable ? 'border-destructive/60' : shadowed ? 'border-secondary/50' : 'border-border',
                 )}
               >
                 <label className="flex flex-1 flex-col gap-1">
@@ -69,6 +73,15 @@ export function SliderScoringEditor({
                   <i aria-hidden className="pi pi-trash" style={{ fontSize: 13 }} />
                 </Button>
               </div>
+              {shadowed ? (
+                <p
+                  data-testid="slider-range-overlapped"
+                  className="flex items-start gap-1.5 text-[11px] leading-relaxed text-muted-foreground"
+                >
+                  <i aria-hidden className="pi pi-info-circle mt-0.5 shrink-0 text-secondary" style={{ fontSize: 10 }} />
+                  {m.overlapped}
+                </p>
+              ) : null}
               {unreachable ? (
                 <p
                   role="alert"

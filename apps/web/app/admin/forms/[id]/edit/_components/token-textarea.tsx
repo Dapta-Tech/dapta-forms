@@ -212,7 +212,16 @@ export function TokenTextarea({
         if (/^[a-zA-Z0-9_]*$/.test(q)) return { ...prev, query: q };
       }
       const ch = caret > 0 ? text.charAt(caret - 1) : '';
-      if (ch === '@' || ch === '[') return { start: caret - 1, trigger: ch, query: '' };
+      // An `@` typed straight after a word character is an EMAIL ADDRESS being
+      // written, not a recall trigger. Opening the picker there meant Tab or
+      // Enter rewrote "bob@company.com" into "bob[company]" — silently
+      // destroying typed text with a keystroke people use to leave a field.
+      if (ch === '@') {
+        const before = caret >= 2 ? text.charAt(caret - 2) : '';
+        if (before && /[a-zA-Z0-9_.]/.test(before)) return null;
+        return { start: caret - 1, trigger: ch, query: '' };
+      }
+      if (ch === '[') return { start: caret - 1, trigger: ch, query: '' };
       return null;
     });
     setActive(0);
@@ -355,6 +364,7 @@ export function TokenTextarea({
       {warnings.map((w) => (
         <p
           key={`${w.form}:${w.token}`}
+          role="alert"
           data-testid="token-warning"
           data-kind={w.kind}
           data-form={w.form}

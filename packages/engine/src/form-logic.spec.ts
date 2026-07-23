@@ -19,6 +19,9 @@ import {
   operatorsForFieldType,
   conditionsContradict,
   conditionsNarrow,
+  conditionNeverHolds,
+  sliderHasNoTravel,
+  overlappingSliderRanges,
   sliderBounds,
   clampSliderValue,
   sliderRangeUnreachable,
@@ -1291,5 +1294,102 @@ describe('QA V5 follow-ups', () => {
     expect(renameStepKey(cfg, 'other', 'firstname')).toBe(cfg);
     expect(renameStepKey(cfg, 'other', 'lastname')).toBe(cfg);
     expect(renameStepKey(cfg, 'other', 'company').steps[1]!.key).toBe('company');
+  });
+});
+
+describe('QA V5 — rules that can never hold', () => {
+  it('flags a numeric op with no operand typed yet', () => {
+    expect(conditionNeverHolds({ field: 'n', op: 'gt' })).toBe('missing_operand');
+    expect(conditionNeverHolds({ field: 'n', op: 'between', min: 10 })).toBe('missing_operand');
+    expect(conditionNeverHolds({ field: 'n', op: 'gt', value: 5 })).toBeNull();
+  });
+
+  it('flags a between whose bounds cross', () => {
+    expect(conditionNeverHolds({ field: 'n', op: 'between', min: 500, max: 200 })).toBe('empty_interval');
+    expect(conditionNeverHolds({ field: 'n', op: 'between', min: 200, max: 500 })).toBeNull();
+  });
+
+  it('flags a choice rule with nothing selected, and passes a filled one', () => {
+    expect(conditionNeverHolds({ field: 'c', values: [] })).toBe('no_values');
+    expect(conditionNeverHolds({ field: 'c', values: ['a'] })).toBeNull();
+    expect(conditionNeverHolds(null)).toBeNull();
+  });
+
+  it('matches the runtime: a flagged SHOW rule really does hide the step forever', () => {
+    const cfg: FormConfig = {
+      version: 1,
+      steps: [
+        step({ key: 'n', type: 'slider', min: 0, max: 1000 }),
+        step({ key: 'why', type: 'text', showWhen: { field: 'n', op: 'gt' } }),
+      ],
+    };
+    for (const n of [0, 500, 1000]) {
+      expect(visibleSteps(cfg, { n }).some((s) => s.key === 'why')).toBe(false);
+    }
+  });
+});
+
+describe('QA V5 — slider range hygiene', () => {
+  it('flags a zero-travel slider', () => {
+    expect(sliderHasNoTravel(step({ key: 'n', type: 'slider', min: 5, max: 5 }))).toBe(true);
+    expect(sliderHasNoTravel(step({ key: 'n', type: 'slider', min: 0, max: 10 }))).toBe(false);
+  });
+
+  it('reports ranges overlapped by an earlier one — first listed wins at runtime', () => {
+    const s = step({
+      key: 'n',
+      type: 'slider',
+      min: 0,
+      max: 100,
+      sliderScoring: [
+        { min: 0, max: 60, points: 1 },
+        { min: 50, max: 100, points: 9 }, // overlaps 50..60
+        { min: 61, max: 70, points: 3 }, // also inside the first two's shadow? no — 61..70 ⊂ 50..100
+      ],
+    });
+    const overlapped = overlappingSliderRanges(s);
+    expect(overlapped).toContain(1);
+    // Runtime proof: 55 is in both row 0 and row 1, and row 0 wins.
+    expect(computeScore({ version: 1, steps: [s] }, { n: 55 })).toBe(1);
+  });
+
+  it('does not flag adjacent, non-overlapping ranges', () => {
+    const s = step({
+      key: 'n',
+      type: 'slider',
+      min: 0,
+      max: 100,
+      sliderScoring: [
+        { min: 0, max: 49, points: 0 },
+        { min: 50, max: 100, points: 5 },
+      ],
+    });
+    expect(overlappingSliderRanges(s)).toEqual([]);
+  });
+});
+
+describe('QA V5 — variant rows that are not finished', () => {
+  const base = step({
+    key: 'q',
+    type: 'text',
+    question: 'Base question',
+    questionField: 'tools',
+  });
+
+  it('an empty variant row falls back instead of publishing a blank question', () => {
+    const s = { ...base, questionVariants: { 'a,b': '', '*': 'Fallback copy' } };
+    expect(resolveQuestion(s, { tools: ['a', 'b'] })).toBe('Fallback copy');
+  });
+
+  it('an empty row with no fallback falls all the way back to the base question', () => {
+    const s = { ...base, questionVariants: { a: '   ' } };
+    expect(resolveQuestion(s, { tools: 'a' })).toBe('Base question');
+  });
+
+  it('two rows describing the same set resolve deterministically, not by tick order', () => {
+    const s = { ...base, questionVariants: { 'ads,crm': 'ROW A', 'crm,ads': 'ROW B' } };
+    const first = resolveQuestion(s, { tools: ['crm', 'ads'] });
+    const second = resolveQuestion(s, { tools: ['ads', 'crm'] });
+    expect(first).toBe(second);
   });
 });

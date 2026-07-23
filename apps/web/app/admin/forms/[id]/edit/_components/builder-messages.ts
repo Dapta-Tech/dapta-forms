@@ -370,7 +370,7 @@ const en: BuilderMessages = {
     pickerNoMatch: 'No matching fields.',
     warnLater: '“{token}” is asked after this step — it will be empty here.',
     warnUnknown: '“{token}” doesn’t exist in this form.',
-    warnRaw: '“{token}” is plain text — pick it from the list or write {fixed} so the answer fills in.',
+    warnRaw: '“{token}” stays as literal text — only {fixed} fills in an answer. Pick the field from the list to insert it.',
   },
   hubspot: {
     title: 'HubSpot',
@@ -602,7 +602,7 @@ const es: BuilderMessages = {
     pickerNoMatch: 'Ningún campo coincide.',
     warnLater: '«{token}» se pregunta después de este paso — quedará vacío.',
     warnUnknown: '«{token}» no existe en este formulario.',
-    warnRaw: '«{token}» es texto plano — elígelo de la lista o escribe {fixed} para que se rellene la respuesta.',
+    warnRaw: '«{token}» queda como texto literal — solo {fixed} rellena una respuesta. Elige el campo de la lista para insertarlo.',
   },
   hubspot: {
     title: 'HubSpot',

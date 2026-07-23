@@ -344,6 +344,10 @@ export interface FormsMessages {
         sliderDefaultOutOfRange: string;
         /** V5 — Max typed below Min. */
         sliderMaxBelowMin: string;
+        /** V5-QA — min === max: the handle cannot move. */
+        sliderNoTravel: string;
+        /** V5-QA — step <= 0 is invalid HTML; the browser silently uses 1. */
+        sliderStepInvalid: string;
       };
       options: {
         title: string;
@@ -372,6 +376,8 @@ export interface FormsMessages {
         empty: string;
         /** V5 — range lies outside the slider bounds; `{min}`/`{max}` are them. */
         unreachable: string;
+        /** V5-QA — an earlier range already claims these values (first wins). */
+        overlapped: string;
       };
       logic: {
         title: string;
@@ -404,6 +410,12 @@ export interface FormsMessages {
          * are the surviving bounds.
          */
         narrow: string;
+        /** V5-QA — a rule the engine can never satisfy, so the step never shows. */
+        neverShowMissing: string;
+        neverShowEmpty: string;
+        neverShowNoValues: string;
+        /** V5-QA — same rule on the HIDE side: harmless, but it does nothing. */
+        hideRuleInert: string;
       };
       variants: {
         title: string;
@@ -1155,6 +1167,8 @@ export const en: FormsMessages = {
         sliderDefault: 'Default',
         sliderDefaultOutOfRange: 'Default sits outside {min}–{max}. Respondents will see {shown} instead.',
         sliderMaxBelowMin: 'Max is below Min — the slider has nothing to move along.',
+        sliderNoTravel: 'Min and Max are the same, so the handle cannot move — respondents can only answer {min}.',
+        sliderStepInvalid: 'Step must be greater than 0. Browsers ignore anything else and move in steps of 1.',
       },
       options: {
         title: 'Options',
@@ -1180,6 +1194,7 @@ export const en: FormsMessages = {
         remove: 'Remove range',
         empty: 'No scoring ranges — the slider does not score.',
         unreachable: 'Outside the slider’s {min}–{max} range — this range can never award points.',
+        overlapped: 'Overlaps a range above it. When both match, the one listed first wins.',
       },
       logic: {
         title: 'Conditional visibility',
@@ -1208,6 +1223,13 @@ export const en: FormsMessages = {
           'These show and hide rules cancel out — this question could never appear. Adjust one of them.',
         narrow:
           'The hide rule cuts into the show rule: this question only appears for {lo}–{hi}. If that is what you meant, ignore this.',
+        neverShowMissing:
+          'This rule has no value yet, so it never matches — the question is hidden from everyone until you fill it in.',
+        neverShowEmpty:
+          'Min is above Max, so no answer can fall in this range — the question is hidden from everyone.',
+        neverShowNoValues:
+          'No options are selected, so this rule never matches — the question is hidden from everyone.',
+        hideRuleInert: 'This hide rule is incomplete, so it never applies. Finish it or clear it.',
       },
       variants: {
         title: 'Dynamic question',
@@ -1230,7 +1252,7 @@ export const en: FormsMessages = {
         tokenPickerNoMatch: 'No matching fields.',
         tokenWarnLater: '“{token}” is asked after this step — it will be empty here.',
         tokenWarnUnknown: '“{token}” doesn’t exist in this form.',
-        tokenWarnRaw: '“{token}” is plain text — pick it from the list or write {fixed} so the answer fills in.',
+        tokenWarnRaw: '“{token}” stays as literal text — only {fixed} fills in an answer. Pick the field from the list to insert it.',
       },
       behavior: {
         title: 'Behavior',
@@ -1925,6 +1947,8 @@ export const es: FormsMessages = {
         sliderDefault: 'Predeterminado',
         sliderDefaultOutOfRange: 'El predeterminado está fuera de {min}–{max}. Los respondientes verán {shown}.',
         sliderMaxBelowMin: 'El máximo es menor que el mínimo — el deslizador no tiene recorrido.',
+        sliderNoTravel: 'El mínimo y el máximo son iguales, así que el control no se puede mover — solo se puede responder {min}.',
+        sliderStepInvalid: 'El paso debe ser mayor que 0. Los navegadores ignoran cualquier otro valor y avanzan de 1 en 1.',
       },
       options: {
         title: 'Opciones',
@@ -1950,6 +1974,7 @@ export const es: FormsMessages = {
         remove: 'Quitar rango',
         empty: 'Sin rangos de puntaje — el deslizador no suma.',
         unreachable: 'Fuera del rango {min}–{max} del deslizador — este rango nunca puede dar puntos.',
+        overlapped: 'Se solapa con un rango de más arriba. Cuando ambos coinciden, gana el que está primero.',
       },
       logic: {
         title: 'Visibilidad condicional',
@@ -1978,6 +2003,13 @@ export const es: FormsMessages = {
           'Estas reglas de mostrar y ocultar se anulan — esta pregunta nunca aparecería. Ajusta una de ellas.',
         narrow:
           'La regla de ocultar recorta la de mostrar: esta pregunta solo aparece entre {lo} y {hi}. Si es lo que buscabas, ignora este aviso.',
+        neverShowMissing:
+          'Esta regla aún no tiene valor, así que nunca coincide — la pregunta queda oculta para todos hasta que lo completes.',
+        neverShowEmpty:
+          'El mínimo es mayor que el máximo, así que ninguna respuesta cae en ese rango — la pregunta queda oculta para todos.',
+        neverShowNoValues:
+          'No hay opciones seleccionadas, así que esta regla nunca coincide — la pregunta queda oculta para todos.',
+        hideRuleInert: 'Esta regla de ocultar está incompleta, así que nunca aplica. Complétala o bórrala.',
       },
       variants: {
         title: 'Pregunta dinámica',
@@ -2000,7 +2032,7 @@ export const es: FormsMessages = {
         tokenPickerNoMatch: 'Ningún campo coincide.',
         tokenWarnLater: '«{token}» se pregunta después de este paso — quedará vacío.',
         tokenWarnUnknown: '«{token}» no existe en este formulario.',
-        tokenWarnRaw: '«{token}» es texto plano — elígelo de la lista o escribe {fixed} para que se rellene la respuesta.',
+        tokenWarnRaw: '«{token}» queda como texto literal — solo {fixed} rellena una respuesta. Elige el campo de la lista para insertarlo.',
       },
       behavior: {
         title: 'Comportamiento',

@@ -509,6 +509,38 @@ export function conditionsContradict(
 }
 
 /**
+ * Why a visibility rule can never hold, or `null` when it is well formed
+ * (V5-QA). Both cases silently make the owning question unreachable for every
+ * respondent, and neither shows anything in the builder today:
+ *  - `missing_operand`: a numeric op with no value typed yet (`gt` with no
+ *    number, `between` with only one bound). `conditionHolds` returns false for
+ *    every answer, so the question never appears — an unfinished rule reads as a
+ *    configured one.
+ *  - `empty_interval`: `between` with min > max, which no value can satisfy.
+ *  - `no_values`: an `in` rule with nothing selected.
+ * A SHOW rule that can never hold hides the question; a HIDE rule that can never
+ * hold is merely inert, so callers report them differently.
+ */
+export type BrokenCondition = 'missing_operand' | 'empty_interval' | 'no_values';
+
+export function conditionNeverHolds(
+  cond: StepCondition | null | undefined,
+): BrokenCondition | null {
+  if (!cond) return null;
+  switch (cond.op) {
+    case 'eq':
+    case 'gt':
+    case 'lt':
+      return cond.value == null || !Number.isFinite(cond.value) ? 'missing_operand' : null;
+    case 'between':
+      if (cond.min == null || cond.max == null) return 'missing_operand';
+      return cond.min > cond.max ? 'empty_interval' : null;
+    default:
+      return (cond.values ?? []).length === 0 ? 'no_values' : null;
+  }
+}
+
+/**
  * What a `hideWhen` rule leaves of a `showWhen` rule when the two overlap only
  * PARTIALLY — the case {@link conditionsContradict} deliberately stays silent on
  * because the step CAN still appear (V5-A6).
@@ -881,6 +913,15 @@ export function renameStepKey(config: FormConfig, oldKey: string, newKey: string
  * stored config has them inverted (nothing stops an author typing max below min
  * mid-edit). Defaults mirror `createEmptyStep`: 0..100.
  */
+export function sliderHasNoTravel(step: FormStep): boolean {
+  // A zero-width slider ships `<input type=range min=5 max=5>`: the handle
+  // cannot move and the question can only ever answer one value. Nobody
+  // configures that on purpose, and the existing max<min warning stops one step
+  // short of it.
+  const { min, max } = sliderBounds(step);
+  return min === max;
+}
+
 export function sliderBounds(step: FormStep): { min: number; max: number } {
   const a = step.min ?? 0;
   const b = step.max ?? 100;
@@ -917,6 +958,31 @@ export function sliderRangeUnreachable(step: FormStep, range: SliderScoringRange
   if (range.min > range.max) return true;
   const { min, max } = sliderBounds(step);
   return range.max < min || range.min > max;
+}
+
+/**
+ * Indexes of scoring ranges that OVERLAP an earlier range (V5-QA). `sliderPoints`
+ * returns on the first match, so an overlapped row awards nothing for the shared
+ * values while the builder's "highest possible" still counts it — two screens
+ * disagreeing about the same number. Reported, not blocked: an overlap is legal
+ * and sometimes deliberate, it just has to be visible.
+ */
+export function overlappingSliderRanges(step: FormStep): number[] {
+  const ranges = step.sliderScoring ?? [];
+  const out: number[] = [];
+  for (let i = 1; i < ranges.length; i++) {
+    const r = ranges[i]!;
+    if (r.min > r.max) continue; // an inverted range is reported separately
+    for (let j = 0; j < i; j++) {
+      const prev = ranges[j]!;
+      if (prev.min > prev.max) continue;
+      if (r.min <= prev.max && prev.min <= r.max) {
+        out.push(i);
+        break;
+      }
+    }
+  }
+  return out;
 }
 
 /** Points for a slider answer via its scoring ranges. */
@@ -1252,12 +1318,24 @@ function variantKeySet(key: string): Set<string> {
  * text, or slider sources changes.
  */
 function resolveVariant(variants: Record<string, string>, raw: AnswerValue): string | undefined {
-  const exact = variants[variantKey(raw)];
-  if (exact != null) return exact;
-  if (!Array.isArray(raw)) return undefined;
+  // An EMPTY row is an unfinished draft, not an instruction to ask nothing: it
+  // used to publish a question with no text at all — a bare input and a Submit
+  // button. Treat it as "no row" so the `*` fallback (then the base question)
+  // takes over.
+  const usable = (text: string | undefined): string | undefined =>
+    typeof text === 'string' && text.trim() ? text : undefined;
+  // A non-array answer has exactly one spelling, so an exact lookup IS the set
+  // comparison. An array answer must go through the set scan alone: trying the
+  // exact key first would let the respondent's tick order pick between two rows
+  // that describe the same set ("crm,ads" vs "ads,crm"), which is the
+  // non-determinism this scan exists to remove.
+  if (!Array.isArray(raw)) return usable(variants[variantKey(raw)]);
   const answer = variantKeySet(raw.join(','));
   if (answer.size === 0) return undefined;
-  for (const [key, text] of Object.entries(variants)) {
+  // Sorted so two rows describing the SAME set resolve to the same winner no
+  // matter which the author typed first — otherwise the respondent's click
+  // ORDER decided which variant they saw.
+  for (const [key, text] of Object.entries(variants).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) {
     if (key === '*') continue;
     const set = variantKeySet(key);
     if (set.size !== answer.size) continue;
@@ -1268,7 +1346,7 @@ function resolveVariant(variants: Record<string, string>, raw: AnswerValue): str
         break;
       }
     }
-    if (same) return text;
+    if (same) return usable(text);
   }
   return undefined;
 }
@@ -1282,10 +1360,10 @@ function resolveVariant(variants: Record<string, string>, raw: AnswerValue): str
 export function resolveQuestion(step: FormStep, answers: Answers): string {
   let text = step.question ?? '';
   if (step.questionField && step.questionVariants) {
+    const fallback = step.questionVariants['*'];
     text =
       resolveVariant(step.questionVariants, answers[step.questionField]) ??
-      step.questionVariants['*'] ??
-      text;
+      (typeof fallback === 'string' && fallback.trim() ? fallback : text);
   }
   return interpolate(text, answers);
 }

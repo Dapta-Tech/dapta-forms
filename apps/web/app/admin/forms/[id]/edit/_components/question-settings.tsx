@@ -2,7 +2,13 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import type { FormStep } from '@quill/engine';
-import { clampSliderValue, defaultFlowGroup, sanitizeStepKey, sliderBounds } from '@quill/engine';
+import {
+  clampSliderValue,
+  defaultFlowGroup,
+  sanitizeStepKey,
+  sliderBounds,
+  sliderHasNoTravel,
+} from '@quill/engine';
 import { COUNTRIES, countryName, getMessages } from '@quill/shared';
 import { clientLocale } from '@/lib/client-locale';
 import { Switch } from '@/components/ui/switch';
@@ -97,6 +103,11 @@ export function QuestionSettings({
   // compare against the RAW values to tell "max below min" from a valid range.
   const { min: sliderMin, max: sliderMax } = sliderBounds(step);
   const sliderMaxBelowMin = step.type === 'slider' && (step.max ?? 100) < (step.min ?? 0);
+  // min === max is the boundary of the same mistake: a handle with nowhere to go.
+  const sliderNoTravel = step.type === 'slider' && !sliderMaxBelowMin && sliderHasNoTravel(step);
+  // A non-positive step is invalid HTML on <input type=range>; browsers fall
+  // back to 1, so the configured granularity is silently ignored.
+  const sliderStepInvalid = step.type === 'slider' && step.step != null && step.step <= 0;
   const sliderDefaultOutOfRange =
     step.type === 'slider' &&
     step.default != null &&
@@ -246,6 +257,18 @@ export function QuestionSettings({
             <p role="alert" data-testid="slider-max-below-min" className={sliderWarnClass}>
               <i aria-hidden className="pi pi-exclamation-triangle mt-0.5 shrink-0" style={{ fontSize: 10 }} />
               {em.props.sliderMaxBelowMin}
+            </p>
+          ) : null}
+          {sliderNoTravel ? (
+            <p role="alert" data-testid="slider-no-travel" className={sliderWarnClass}>
+              <i aria-hidden className="pi pi-exclamation-triangle mt-0.5 shrink-0" style={{ fontSize: 10 }} />
+              {em.props.sliderNoTravel.replaceAll('{min}', String(sliderMin))}
+            </p>
+          ) : null}
+          {sliderStepInvalid ? (
+            <p role="alert" data-testid="slider-step-invalid" className={sliderWarnClass}>
+              <i aria-hidden className="pi pi-exclamation-triangle mt-0.5 shrink-0" style={{ fontSize: 10 }} />
+              {em.props.sliderStepInvalid}
             </p>
           ) : null}
           {sliderDefaultOutOfRange ? (

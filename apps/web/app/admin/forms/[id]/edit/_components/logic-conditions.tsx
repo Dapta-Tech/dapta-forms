@@ -4,6 +4,7 @@ import { useState } from 'react';
 import {
   conditionsContradict,
   conditionsNarrow,
+  conditionNeverHolds,
   operatorsForFieldType,
   type ConditionOp,
   type FormStep,
@@ -55,6 +56,20 @@ export function LogicConditions({
   // than reading the show rule alone suggests. The two rules sit in separate
   // boxes, so nothing on screen made that visible. Advisory, never an error.
   const narrow = contradiction ? null : conditionsNarrow(step.showWhen, step.hideWhen);
+  // V5-QA: a rule the engine can never satisfy. On the SHOW side that hides the
+  // question from every respondent — the same outcome as a contradiction, and it
+  // was equally invisible; an unfinished operand read as a configured rule. On
+  // the HIDE side it is merely inert, so it gets a softer note.
+  const showBroken = conditionNeverHolds(step.showWhen);
+  const hideBroken = conditionNeverHolds(step.hideWhen);
+  const brokenCopy =
+    showBroken === 'missing_operand'
+      ? m.neverShowMissing
+      : showBroken === 'empty_interval'
+        ? m.neverShowEmpty
+        : showBroken === 'no_values'
+          ? m.neverShowNoValues
+          : null;
 
   return (
     <div className="flex flex-col gap-2.5">
@@ -84,6 +99,24 @@ export function LogicConditions({
           className="rounded-md border border-destructive/50 bg-destructive/10 px-2.5 py-2 text-xs font-medium text-destructive"
         >
           {m.contradiction}
+        </p>
+      ) : null}
+      {brokenCopy ? (
+        <p
+          role="alert"
+          data-testid="logic-never-shows"
+          className="rounded-md border border-destructive/50 bg-destructive/10 px-2.5 py-2 text-xs font-medium text-destructive"
+        >
+          {brokenCopy}
+        </p>
+      ) : null}
+      {hideBroken ? (
+        <p
+          data-testid="logic-hide-inert"
+          className="flex items-start gap-1.5 rounded-md border border-secondary/40 bg-secondary/10 px-2.5 py-2 text-xs leading-relaxed text-foreground"
+        >
+          <i aria-hidden className="pi pi-info-circle mt-0.5 shrink-0 text-secondary" style={{ fontSize: 11 }} />
+          <span>{m.hideRuleInert}</span>
         </p>
       ) : null}
       {narrow ? (
