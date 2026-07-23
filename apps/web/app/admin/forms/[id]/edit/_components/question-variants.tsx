@@ -47,17 +47,31 @@ function MultiMatchPicker({
   const picked = keyValues(value);
   const takenSets = taken.map((k) => keyValues(k).slice().sort().join(','));
 
-  function toggle(optionValue: string) {
+  /** Why this option cannot be toggled right now, or null when it can. */
+  function blockedReason(optionValue: string): 'last' | 'duplicate' | null {
     const next = picked.includes(optionValue)
       ? picked.filter((v) => v !== optionValue)
       : [...picked, optionValue];
-    const nextKey = next.join(',');
-    // An empty row would key on '' and match an unanswered field — refuse it,
-    // and refuse a set another row already owns.
-    if (!nextKey) return;
-    if (takenSets.includes(next.slice().sort().join(','))) return;
-    onChange(nextKey);
+    // Unticking the last option would key the row on '' and match an
+    // unanswered field.
+    if (next.length === 0) return 'last';
+    if (takenSets.includes(next.slice().sort().join(','))) return 'duplicate';
+    return null;
   }
+
+  function toggle(optionValue: string) {
+    if (blockedReason(optionValue)) return;
+    const next = picked.includes(optionValue)
+      ? picked.filter((v) => v !== optionValue)
+      : [...picked, optionValue];
+    onChange(next.join(','));
+  }
+
+  // Values the source question no longer offers. The stored key still contains
+  // them, so the row silently reads as matching a SMALLER set than it does —
+  // shown explicitly instead, the way the single-select editor keeps an
+  // orphaned key visible.
+  const orphaned = picked.filter((v) => !options.some((o) => o.value === v));
 
   return (
     <div className="flex flex-col gap-1.5">
@@ -65,18 +79,28 @@ function MultiMatchPicker({
       <div className="flex flex-wrap gap-1.5" role="group" aria-label={m.matchValueMulti}>
         {options.map((o) => {
           const on = picked.includes(o.value);
+          const blocked = blockedReason(o.value);
+          const why = blocked === 'duplicate' ? m.matchValueMultiDuplicate : m.matchValueMultiLast;
           return (
             <button
               key={o.value}
               type="button"
               aria-pressed={on}
+              // Announced as unavailable rather than looking identical to a
+              // working chip and doing nothing when clicked. `aria-disabled`
+              // (not `disabled`) keeps it reachable so the reason is readable.
+              aria-disabled={blocked ? true : undefined}
+              title={blocked ? why : undefined}
               data-testid="variant-multi-option"
+              data-blocked={blocked ?? undefined}
               onClick={() => toggle(o.value)}
               className={cn(
                 'rounded-md border px-2 py-1 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                on
-                  ? 'border-primary bg-primary/10 font-medium text-foreground'
-                  : 'border-border text-muted-foreground hover:text-foreground',
+                blocked
+                  ? 'cursor-not-allowed border-dashed border-border/60 text-muted-foreground/60'
+                  : on
+                    ? 'border-primary bg-primary/10 font-medium text-foreground'
+                    : 'border-border text-muted-foreground hover:text-foreground',
               )}
             >
               {o.label || o.value}
@@ -84,9 +108,12 @@ function MultiMatchPicker({
           );
         })}
       </div>
-      {picked.length === 0 ? (
-        <span className="text-[11px] text-destructive">{m.matchValueMultiEmpty}</span>
+      {orphaned.length ? (
+        <span role="alert" data-testid="variant-multi-orphaned" className="text-[11px] text-destructive">
+          {m.matchValueMultiOrphaned.replace('{values}', orphaned.join(', '))}
+        </span>
       ) : null}
+      <span className="text-[11px] text-muted-foreground">{m.matchValueMultiExact}</span>
     </div>
   );
 }

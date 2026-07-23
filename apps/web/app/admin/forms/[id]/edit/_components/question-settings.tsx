@@ -557,16 +557,36 @@ function FieldKeyEditor({
   m: EditorMessages['behavior'];
 }) {
   const [text, setText] = useState(stepKey);
+  /** Why the last attempt was refused — a silent revert looks like a bug. */
+  const [refused, setRefused] = useState<'taken' | 'empty' | null>(null);
   // Follow an external change (switching questions, or an undo).
-  useEffect(() => setText(stepKey), [stepKey]);
+  useEffect(() => {
+    setText(stepKey);
+    setRefused(null);
+  }, [stepKey]);
   const clean = sanitizeStepKey(text);
   const collides = clean !== stepKey && taken.includes(clean);
+  // Punctuation-only input sanitizes to "_" or "", neither of which is a key
+  // anyone meant to type — refuse it rather than committing a mystery.
+  const meaningless = !clean || /^_+$/.test(clean);
 
   function commit() {
-    if (!clean || collides || clean === stepKey) {
-      setText(stepKey); // nothing valid to apply — snap back to the live key
+    if (clean === stepKey) {
+      setText(stepKey);
+      setRefused(null);
       return;
     }
+    if (meaningless) {
+      setText(stepKey);
+      setRefused('empty');
+      return;
+    }
+    if (collides) {
+      setText(stepKey);
+      setRefused('taken');
+      return;
+    }
+    setRefused(null);
     onRename(clean);
   }
 
@@ -577,22 +597,29 @@ function FieldKeyEditor({
         value={text}
         data-testid="step-field-key"
         aria-label={m.fieldKey}
-        aria-invalid={collides || undefined}
-        onChange={(e) => setText(e.target.value)}
+        aria-invalid={collides || refused != null || undefined}
+        maxLength={64}
+        onChange={(e) => {
+          setText(e.target.value);
+          setRefused(null);
+        }}
         onBlur={commit}
         onKeyDown={(e) => {
           if (e.key === 'Enter') {
+            // Commit WITHOUT blurring: `blur()` dropped focus onto <body>, so a
+            // keyboard user lost their place and had to Tab back from the top.
             e.preventDefault();
-            e.currentTarget.blur();
+            commit();
           } else if (e.key === 'Escape') {
             setText(stepKey);
+            setRefused(null);
           }
         }}
         className="h-8 py-1 font-mono text-xs"
       />
-      {collides ? (
+      {collides || refused ? (
         <p role="alert" data-testid="step-field-key-taken" className="text-[11px] text-destructive">
-          {m.fieldKeyTaken}
+          {collides || refused === 'taken' ? m.fieldKeyTaken : m.fieldKeyInvalid}
         </p>
       ) : (
         <p className="text-[10px] leading-relaxed text-muted-foreground">

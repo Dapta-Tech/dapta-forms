@@ -429,6 +429,13 @@ export interface FormsMessages {
         matchValueMulti: string;
         /** V5 — nothing ticked yet on a multi-select row. */
         matchValueMultiEmpty: string;
+        /** V5-QA — why a chip refuses: it would empty the row / duplicate another. */
+        matchValueMultiLast: string;
+        matchValueMultiDuplicate: string;
+        /** V5-QA — the stored key names options the source no longer offers. */
+        matchValueMultiOrphaned: string;
+        /** V5-QA — matching is EXACT-set, which the UI never said. */
+        matchValueMultiExact: string;
         variantQuestion: string;
         fallback: string;
         remove: string;
@@ -483,6 +490,8 @@ export interface FormsMessages {
         fieldKeyHint: string;
         /** V5 — rename refused: another question already uses that key. */
         fieldKeyTaken: string;
+        /** V5-QA — input that sanitizes to nothing usable. */
+        fieldKeyInvalid: string;
         /** V5 — live `?key=value` example; `{key}` is the current field key. */
         fieldKeyUrlExample: string;
         /** V5 — the rename saved, but its CRM mapping could not be moved. */
@@ -1243,6 +1252,10 @@ export const en: FormsMessages = {
         matchValuePlaceholder: 'e.g. founder',
         matchValueMulti: 'Tick every option this version answers to',
         matchValueMultiEmpty: 'Pick at least one option — an empty row never matches.',
+        matchValueMultiLast: 'Keep at least one option — a row with none never matches.',
+        matchValueMultiDuplicate: 'Another version already answers to that exact combination.',
+        matchValueMultiOrphaned: 'This row still matches on {values}, which the question above no longer offers.',
+        matchValueMultiExact: 'Fires only when the respondent picks exactly these options — no more, no fewer.',
         variantQuestion: 'Ask instead',
         fallback: 'Fallback (any other answer)',
         remove: 'Remove variant',
@@ -1270,6 +1283,7 @@ export const en: FormsMessages = {
         fieldKeyHint:
           'The name this answer is stored under — the URL parameter that prefills it, and what you type between brackets to recall it in a later question.',
         fieldKeyTaken: 'Another question already uses that key.',
+        fieldKeyInvalid: 'A key needs at least one letter or number.',
         fieldKeyUrlExample: 'Prefill it with ?{key}=value',
         fieldKeyMappingFailed:
           'The field key was renamed, but its HubSpot mapping could not be moved. Re-pick the property in Connect.',
@@ -2024,6 +2038,10 @@ export const es: FormsMessages = {
         matchValuePlaceholder: 'p. ej. fundador',
         matchValueMulti: 'Marca todas las opciones a las que responde esta versión',
         matchValueMultiEmpty: 'Elige al menos una opción — una fila vacía nunca coincide.',
+        matchValueMultiLast: 'Deja al menos una opción — una fila sin ninguna nunca coincide.',
+        matchValueMultiDuplicate: 'Otra versión ya responde a esa combinación exacta.',
+        matchValueMultiOrphaned: 'Esta fila todavía coincide con {values}, que la pregunta de arriba ya no ofrece.',
+        matchValueMultiExact: 'Se activa solo si el respondiente elige exactamente estas opciones — ni más, ni menos.',
         variantQuestion: 'Preguntar en su lugar',
         fallback: 'Alternativa (cualquier otra respuesta)',
         remove: 'Quitar variante',
@@ -2051,6 +2069,7 @@ export const es: FormsMessages = {
         fieldKeyHint:
           'El nombre con el que se guarda esta respuesta — el parámetro de URL que la rellena y lo que escribes entre corchetes para reutilizarla en una pregunta posterior.',
         fieldKeyTaken: 'Otra pregunta ya usa esa clave.',
+        fieldKeyInvalid: 'La clave necesita al menos una letra o número.',
         fieldKeyUrlExample: 'Rellénala con ?{key}=valor',
         fieldKeyMappingFailed:
           'Se renombró la clave del campo, pero no se pudo mover su mapeo de HubSpot. Vuelve a elegir la propiedad en Conectar.',
