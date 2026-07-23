@@ -11,6 +11,7 @@ import {
   resolveStepDisplay,
   runtimeSteps,
   isMultiSelect,
+  isInputlessStep,
   partialSubmitKey,
   revealAfterKey,
   nameFields,
@@ -18,8 +19,20 @@ import {
   isSafeImageUrl,
   operatorsForFieldType,
   conditionsContradict,
+  conditionsNarrow,
+  conditionNeverHolds,
+  sliderHasNoTravel,
+  overlappingSliderRanges,
+  sliderBounds,
+  clampSliderValue,
+  sliderRangeUnreachable,
+  renameStepKey,
+  sanitizeStepKey,
+  resolveQuestion,
+  resolveEnding,
   type FormConfig,
   type FormStep,
+  type FormOutcome,
   type StepCondition,
   type Answers,
 } from './form-logic';
@@ -833,5 +846,712 @@ describe('isMultiSelect + multiple_choice scoring', () => {
   it('validates a multi-select answer array against the allowed values', () => {
     expect(validateAnswer(multi, ['a', 'b']).ok).toBe(true);
     expect(validateAnswer(multi, ['a', 'zzz']).ok).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// V5 round A — regressions found in the 2026-07-22 verification pass.
+// ---------------------------------------------------------------------------
+
+describe('resolveOutcome with scoring disabled (V5-A1)', () => {
+  // The exact shape that broke: scoring off, one `minScore: 0` bucket. Every
+  // submission scores 0, so the bucket matched everyone and its thank-you copy
+  // replaced the form's own ending.
+  const scoringOff: FormConfig = {
+    version: 1,
+    steps: [],
+    scoring: { enabled: false },
+    outcomes: [{ id: 'r1', label: 'Hot lead', minScore: 0, message: 'Range one copy' }],
+  };
+
+  it('resolves to null so the form-level ending is used', () => {
+    expect(resolveOutcome(scoringOff, 0)).toBeNull();
+    expect(resolveOutcome(scoringOff, 0, { anything: 'x' })).toBeNull();
+  });
+
+  it('suppresses answer-forced overrides too', () => {
+    const withOverride: FormConfig = {
+      ...scoringOff,
+      outcomes: [{ id: 'dq', label: 'Disqualified', minScore: 0, overrides: [{ field: 'budget', maxValue: 0 }] }],
+    };
+    expect(resolveOutcome(withOverride, 0, { budget: 0 })).toBeNull();
+  });
+
+  it('leaves the buckets intact — re-enabling scoring restores them', () => {
+    const on: FormConfig = { ...scoringOff, scoring: { enabled: true } };
+    expect(resolveOutcome(on, 0)?.id).toBe('r1');
+  });
+
+  it('an absent or empty scoring block still resolves (only explicit false disables)', () => {
+    const { scoring: _omitted, ...noScoring } = scoringOff;
+    expect(resolveOutcome(noScoring as FormConfig, 0)?.id).toBe('r1');
+    expect(resolveOutcome({ ...scoringOff, scoring: {} }, 0)?.id).toBe('r1');
+  });
+});
+
+describe('conditionsNarrow (V5-A6 — partial overlap advisory)', () => {
+  it('reports the surviving window for the reported case', () => {
+    // show 200..500 + hide > 201 leaves only 200..201 visible.
+    expect(
+      conditionsNarrow(
+        { field: 'n', op: 'between', min: 200, max: 500 },
+        { field: 'n', op: 'gt', value: 201 },
+      ),
+    ).toEqual({ lo: 200, hi: 201 });
+  });
+
+  it('reports a clipped lower end', () => {
+    expect(
+      conditionsNarrow(
+        { field: 'n', op: 'between', min: 0, max: 100 },
+        { field: 'n', op: 'lt', value: 50 },
+      ),
+    ).toEqual({ lo: 50, hi: 100 });
+  });
+
+  it('is silent when the hide rule removes nothing', () => {
+    expect(
+      conditionsNarrow({ field: 'n', op: 'gt', value: 10 }, { field: 'n', op: 'lt', value: 5 }),
+    ).toBeNull();
+  });
+
+  it('is silent on a full contradiction — that is the hard error, not this', () => {
+    const show: StepCondition = { field: 'n', op: 'between', min: 50, max: 80 };
+    const hide: StepCondition = { field: 'n', op: 'between', min: 40, max: 100 };
+    expect(conditionsContradict(show, hide)).toBe(true);
+    expect(conditionsNarrow(show, hide)).toBeNull();
+  });
+
+  it('is silent when the hide rule punches a hole in the middle (two windows)', () => {
+    // 0..100 minus 40..60 leaves 0..40 AND 60..100 — not one window, so no claim.
+    expect(
+      conditionsNarrow(
+        { field: 'n', op: 'between', min: 0, max: 100 },
+        { field: 'n', op: 'between', min: 40, max: 60 },
+      ),
+    ).toBeNull();
+  });
+
+  it('is silent for different fields, missing sides, and choice rules', () => {
+    expect(conditionsNarrow(null, { field: 'n', op: 'gt', value: 1 })).toBeNull();
+    expect(
+      conditionsNarrow({ field: 'a', op: 'gt', value: 1 }, { field: 'b', op: 'gt', value: 2 }),
+    ).toBeNull();
+    expect(
+      conditionsNarrow({ field: 'a', values: ['x', 'y'] }, { field: 'a', values: ['x'] }),
+    ).toBeNull();
+  });
+});
+
+describe('slider bounds guards (V5-A2 / V5-A3)', () => {
+  const s = step({ key: 'n', type: 'slider', min: 0, max: 5 });
+
+  it('normalizes inverted bounds', () => {
+    expect(sliderBounds(step({ key: 'n', type: 'slider', min: 90, max: 10 }))).toEqual({ min: 10, max: 90 });
+    expect(sliderBounds(step({ key: 'n', type: 'slider' }))).toEqual({ min: 0, max: 100 });
+  });
+
+  it('clamps a default that sits outside the bounds', () => {
+    // The reported case: min 0, max 5, default 878 rendered a 17560%-wide track.
+    expect(clampSliderValue(s, 878)).toBe(5);
+    expect(clampSliderValue(s, -20)).toBe(0);
+    expect(clampSliderValue(s, 3)).toBe(3);
+    expect(clampSliderValue(s, Number.NaN)).toBe(0);
+  });
+
+  it('flags a scoring range that lies entirely outside the slider', () => {
+    const wide = step({ key: 'n', type: 'slider', min: 0, max: 2000 });
+    // The reported case: a 0..2000 slider scoring 5000..6000 can never award.
+    expect(sliderRangeUnreachable(wide, { min: 5000, max: 6000, points: 10 })).toBe(true);
+    expect(sliderRangeUnreachable(wide, { min: 0, max: 500, points: 10 })).toBe(false);
+    // Partial overlap still scores for the reachable part — not flagged.
+    expect(sliderRangeUnreachable(wide, { min: 1500, max: 5000, points: 10 })).toBe(false);
+  });
+});
+
+describe('resolveQuestion with a multi-select source (V5-A7)', () => {
+  const multiStep = step({
+    key: 'q',
+    type: 'short_text',
+    question: 'Fallback question',
+    questionField: 'tools',
+    questionVariants: { 'a,b': 'You picked both', a: 'Just A', '*': 'Something else' },
+  });
+
+  it('matches a multi-value row regardless of tick order', () => {
+    expect(resolveQuestion(multiStep, { tools: ['a', 'b'] })).toBe('You picked both');
+    expect(resolveQuestion(multiStep, { tools: ['b', 'a'] })).toBe('You picked both');
+  });
+
+  it('still matches a single value exactly', () => {
+    expect(resolveQuestion(multiStep, { tools: ['a'] })).toBe('Just A');
+    expect(resolveQuestion(multiStep, { tools: 'a' })).toBe('Just A');
+  });
+
+  it('falls back when the set differs — a subset is not a match', () => {
+    expect(resolveQuestion(multiStep, { tools: ['a', 'c'] })).toBe('Something else');
+    expect(resolveQuestion(multiStep, { tools: ['a', 'b', 'c'] })).toBe('Something else');
+  });
+
+  it('never lets the `*` fallback win a set comparison', () => {
+    const onlyFallback = step({
+      key: 'q',
+      type: 'short_text',
+      question: 'Plain',
+      questionField: 'tools',
+      questionVariants: { '*': 'Fallback copy' },
+    });
+    expect(resolveQuestion(onlyFallback, { tools: ['x', 'y'] })).toBe('Fallback copy');
+  });
+});
+
+describe('renameStepKey (V5-A10 — editable field key)', () => {
+  const cfg: FormConfig = {
+    version: 1,
+    steps: [
+      step({ key: 'budget', type: 'slider', question: 'How much?', min: 0, max: 100 }),
+      step({
+        key: 'follow',
+        type: 'text',
+        question: 'You said [budget] — why?',
+        helper: 'Context for [budget]',
+        showWhen: { field: 'budget', op: 'gt', value: 10 },
+        questionField: 'budget',
+        questionVariants: { '50': 'Half of [budget]?' },
+      }),
+      step({ key: 'route', type: 'dropdown', goto: [{ values: ['x'], target: 'budget' }] }),
+    ],
+    outcomes: [
+      { id: 'o1', label: 'Hot', message: 'Budget was [budget]', overrides: [{ field: 'budget', maxValue: 0 }] },
+    ],
+    reveal: { enabled: true, subtitleTemplate: 'Scoring [budget]…' },
+  };
+
+  const renamed = renameStepKey(cfg, 'budget', 'annual_budget');
+
+  it('moves the key itself', () => {
+    expect(renamed.steps[0]!.key).toBe('annual_budget');
+  });
+
+  it('repoints conditions, goto targets, and variant sources', () => {
+    expect(renamed.steps[1]!.showWhen?.field).toBe('annual_budget');
+    expect(renamed.steps[1]!.questionField).toBe('annual_budget');
+    expect(renamed.steps[2]!.goto?.[0]!.target).toBe('annual_budget');
+  });
+
+  it('rewrites [key] tokens everywhere they can appear', () => {
+    expect(renamed.steps[1]!.question).toBe('You said [annual_budget] — why?');
+    expect(renamed.steps[1]!.helper).toBe('Context for [annual_budget]');
+    expect(renamed.steps[1]!.questionVariants?.['50']).toBe('Half of [annual_budget]?');
+    expect(renamed.outcomes?.[0]!.message).toBe('Budget was [annual_budget]');
+    expect(renamed.reveal?.subtitleTemplate).toBe('Scoring [annual_budget]…');
+  });
+
+  it('repoints outcome override rules', () => {
+    expect(renamed.outcomes?.[0]!.overrides?.[0]!.field).toBe('annual_budget');
+  });
+
+  it('the renamed form still resolves the same branch for the same answer', () => {
+    // The rename is behavior-preserving: same answer, same visible steps.
+    const before = visibleSteps(cfg, { budget: 50 }).map((s) => s.key);
+    const after = visibleSteps(renamed, { annual_budget: 50 }).map((s) => s.key);
+    expect(after).toEqual(before.map((k) => (k === 'budget' ? 'annual_budget' : k)));
+  });
+
+  it('refuses a no-op, an empty key, or a collision', () => {
+    expect(renameStepKey(cfg, 'budget', 'budget')).toBe(cfg);
+    expect(renameStepKey(cfg, 'budget', '')).toBe(cfg);
+    expect(renameStepKey(cfg, 'budget', 'follow')).toBe(cfg);
+    expect(renameStepKey(cfg, 'nope', 'whatever')).toBe(cfg);
+  });
+
+  it('leaves tokens alone for a name step — its answers live under its subfields', () => {
+    const withName: FormConfig = {
+      version: 1,
+      steps: [
+        step({ key: 'who', type: 'name' }),
+        step({ key: 'q', type: 'text', question: 'Hi [firstname], and [who]?' }),
+      ],
+    };
+    const out = renameStepKey(withName, 'who', 'contact');
+    expect(out.steps[0]!.key).toBe('contact');
+    // `[who]` never resolved to anything, so it is not ours to rewrite.
+    expect(out.steps[1]!.question).toBe('Hi [firstname], and [who]?');
+  });
+});
+
+describe('sanitizeStepKey (V5-A10)', () => {
+  it('lowercases and collapses anything outside the token grammar', () => {
+    expect(sanitizeStepKey('Annual Budget')).toBe('annual_budget');
+    expect(sanitizeStepKey('a-b.c')).toBe('a_b_c');
+    expect(sanitizeStepKey('')).toBe('');
+  });
+
+  it('caps the length at 64', () => {
+    expect(sanitizeStepKey('x'.repeat(100))).toHaveLength(64);
+  });
+});
+
+describe('per-question scoring (V5-B2)', () => {
+  const cfg: FormConfig = {
+    version: 1,
+    steps: [
+      step({
+        key: 'a',
+        type: 'dropdown',
+        flowGroup: 'qualification',
+        options: [{ label: 'Yes', value: 'yes', points: 10 }],
+      }),
+      step({
+        key: 'b',
+        type: 'dropdown',
+        flowGroup: 'qualification',
+        options: [{ label: 'Yes', value: 'yes', points: 5 }],
+      }),
+    ],
+  };
+  const answers = { a: 'yes', b: 'yes' };
+
+  it('scores every question by default (absent flag = unchanged behavior)', () => {
+    expect(computeScore(cfg, answers)).toBe(15);
+  });
+
+  it('excludes only the opted-out question, leaving the rest scoring', () => {
+    // The whole point: turning one off must NOT turn the others off.
+    const oneOff: FormConfig = {
+      ...cfg,
+      steps: [{ ...cfg.steps[0]!, scoringEnabled: false }, cfg.steps[1]!],
+    };
+    expect(computeScore(oneOff, answers)).toBe(5);
+  });
+
+  it('an explicit true scores exactly like an absent flag', () => {
+    const explicit: FormConfig = {
+      ...cfg,
+      steps: cfg.steps.map((s) => ({ ...s, scoringEnabled: true })),
+    };
+    expect(computeScore(explicit, answers)).toBe(15);
+  });
+
+  it('the form-level switch still wins over any per-question flag', () => {
+    const formOff: FormConfig = {
+      ...cfg,
+      scoring: { enabled: false },
+      steps: cfg.steps.map((s) => ({ ...s, scoringEnabled: true })),
+    };
+    expect(computeScore(formOff, answers)).toBe(0);
+  });
+});
+
+describe('resolveEnding (V5-B1 — outcome → form → built-in)', () => {
+  const outcome = (over: Partial<FormOutcome> = {}): FormOutcome => ({ id: 'o', label: '', ...over });
+
+  it('a legacy config with no ending block resolves to nothing (built-in copy)', () => {
+    const out = resolveEnding({ version: 1, steps: [] }, null);
+    expect(out).toEqual({ headline: null, body: null, redirectUrl: null, redirectDelayMs: 0 });
+  });
+
+  it('the form-level ending applies to everyone when no outcome overrides it', () => {
+    const cfg: FormConfig = {
+      version: 1,
+      steps: [],
+      ending: { headline: 'All done', body: 'Thanks [firstname]' },
+    };
+    expect(resolveEnding(cfg, null).headline).toBe('All done');
+    // An outcome that overrides nothing inherits both fields.
+    expect(resolveEnding(cfg, outcome()).headline).toBe('All done');
+    expect(resolveEnding(cfg, outcome()).body).toBe('Thanks [firstname]');
+  });
+
+  it('an outcome overrides the form-level copy field by field', () => {
+    const cfg: FormConfig = { version: 1, steps: [], ending: { headline: 'Generic', body: 'Generic body' } };
+    const out = resolveEnding(cfg, outcome({ label: 'Hot lead' }));
+    expect(out.headline).toBe('Hot lead');
+    // Only the heading was overridden — the body still inherits.
+    expect(out.body).toBe('Generic body');
+  });
+
+  it('an EMPTY outcome field inherits rather than blanking the screen', () => {
+    const cfg: FormConfig = { version: 1, steps: [], ending: { headline: 'Generic', body: 'Generic body' } };
+    const out = resolveEnding(cfg, outcome({ label: '   ', message: '' }));
+    expect(out.headline).toBe('Generic');
+    expect(out.body).toBe('Generic body');
+  });
+
+  it('redirect: form-level sends everyone, an outcome can still divert', () => {
+    const cfg: FormConfig = { version: 1, steps: [], ending: { redirectUrl: 'https://example.com/all' } };
+    expect(resolveEnding(cfg, null).redirectUrl).toBe('https://example.com/all');
+    expect(resolveEnding(cfg, outcome({ redirectUrl: 'https://example.com/vip' })).redirectUrl).toBe(
+      'https://example.com/vip',
+    );
+  });
+
+  it('a delay only counts when there is somewhere to go', () => {
+    const noUrl: FormConfig = { version: 1, steps: [], ending: { redirectDelayMs: 3000 } };
+    expect(resolveEnding(noUrl, null).redirectDelayMs).toBe(0);
+    const withUrl: FormConfig = {
+      version: 1,
+      steps: [],
+      ending: { redirectUrl: 'https://example.com', redirectDelayMs: 3000 },
+    };
+    expect(resolveEnding(withUrl, null).redirectDelayMs).toBe(3000);
+    // An outcome may shorten or lengthen the hold for its own bucket.
+    expect(resolveEnding(withUrl, outcome({ redirectDelayMs: 500 })).redirectDelayMs).toBe(500);
+  });
+
+  it('clamps a negative or non-finite delay to an immediate redirect', () => {
+    const cfg: FormConfig = {
+      version: 1,
+      steps: [],
+      ending: { redirectUrl: 'https://example.com', redirectDelayMs: -1 },
+    };
+    expect(resolveEnding(cfg, null).redirectDelayMs).toBe(0);
+  });
+
+  it('with scoring off there is no outcome, so the form-level ending is what shows', () => {
+    // The V4 complaint end to end: scoring off must not let a range hijack the ending.
+    const cfg: FormConfig = {
+      version: 1,
+      steps: [],
+      scoring: { enabled: false },
+      ending: { headline: 'Thanks!' },
+      outcomes: [{ id: 'r1', label: 'Hot lead', minScore: 0, message: 'Range copy' }],
+    };
+    const resolved = resolveOutcome(cfg, 0);
+    expect(resolved).toBeNull();
+    expect(resolveEnding(cfg, resolved).headline).toBe('Thanks!');
+  });
+});
+
+describe('conditionsNarrow — bounds it must NOT claim (QA V5)', () => {
+  it('stays silent when the clipped bound is the value the hide rule removes', () => {
+    // show 200..500 + hide eq 200: the window really is "above 200", which no
+    // inclusive integer bound can state — reporting 200 names a hidden value.
+    expect(
+      conditionsNarrow(
+        { field: 'n', op: 'between', min: 200, max: 500 },
+        { field: 'n', op: 'eq', value: 200 },
+      ),
+    ).toBeNull();
+  });
+
+  it('stays silent when the surviving window equals the show rule', () => {
+    // hide `lt 0` removes nothing from show 0..100 — warning here would flag a
+    // rule that is behaving correctly.
+    expect(
+      conditionsNarrow(
+        { field: 'n', op: 'between', min: 0, max: 100 },
+        { field: 'n', op: 'lt', value: 0 },
+      ),
+    ).toBeNull();
+  });
+
+  it('still reports the genuinely clipped cases', () => {
+    expect(
+      conditionsNarrow(
+        { field: 'n', op: 'between', min: 200, max: 500 },
+        { field: 'n', op: 'gt', value: 201 },
+      ),
+    ).toEqual({ lo: 200, hi: 201 });
+    expect(
+      conditionsNarrow(
+        { field: 'n', op: 'between', min: 0, max: 100 },
+        { field: 'n', op: 'lt', value: 50 },
+      ),
+    ).toEqual({ lo: 50, hi: 100 });
+  });
+
+  it('stays silent when the SURVIVING bound is an open (gt/lt) show edge', () => {
+    // The mirror of the hide-side guard: an open show interval excludes its own
+    // edge, so the inherited bound must not be named inclusively (V4-08).
+    // show `gt 200` + hide `gt 500` survives 201..500 — reporting 200 names a
+    // value `gt 200` hides.
+    expect(
+      conditionsNarrow(
+        { field: 'n', op: 'gt', value: 200 },
+        { field: 'n', op: 'gt', value: 500 },
+      ),
+    ).toBeNull();
+    // show `lt 500` + hide `lt 200` survives 200..499 — reporting 500 names a
+    // value `lt 500` hides.
+    expect(
+      conditionsNarrow(
+        { field: 'n', op: 'lt', value: 500 },
+        { field: 'n', op: 'lt', value: 200 },
+      ),
+    ).toBeNull();
+  });
+
+  it('a between show whose clipped edge stays inclusive is still reported', () => {
+    // Guard must not over-suppress: a `between` show keeps inclusive edges, so
+    // clipping the far end with an open hide still yields a nameable window.
+    expect(
+      conditionsNarrow(
+        { field: 'n', op: 'between', min: 200, max: 500 },
+        { field: 'n', op: 'gt', value: 400 },
+      ),
+    ).toEqual({ lo: 200, hi: 400 });
+    expect(
+      conditionsNarrow(
+        { field: 'n', op: 'between', min: 200, max: 500 },
+        { field: 'n', op: 'lt', value: 300 },
+      ),
+    ).toEqual({ lo: 300, hi: 500 });
+  });
+
+  it('every advisory it emits names bounds the runtime actually shows (exhaustive sweep)', () => {
+    // The old guard only checked the hide side, so gt/gt and lt/lt pairs named a
+    // value the SHOW rule excluded. Sweep every operand pair over an integer grid
+    // and cross-check each emitted {lo,hi} against real visibility (visibleSteps):
+    // the named endpoints MUST be visible, and one step past each MUST NOT be —
+    // that is exactly what "only appears for lo–hi" claims.
+    const OPS = ['eq', 'gt', 'lt', 'between'] as const;
+    const GRID = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    const mk = (op: (typeof OPS)[number], a: number, b: number): StepCondition =>
+      op === 'between'
+        ? { field: 'n', op, min: a, max: b }
+        : { field: 'n', op, value: a };
+    const visibleAt = (show: StepCondition, hide: StepCondition, v: number): boolean => {
+      const cfg: FormConfig = {
+        version: 1,
+        steps: [step({ key: 'q', type: 'text', showWhen: show, hideWhen: hide })],
+      };
+      return visibleSteps(cfg, { n: v }).some((s) => s.key === 'q');
+    };
+    for (const sop of OPS) {
+      for (const hop of OPS) {
+        for (const sa of GRID) {
+          for (const sb of GRID) {
+            for (const ha of GRID) {
+              for (const hb of GRID) {
+                const show = mk(sop, sa, sb);
+                const hide = mk(hop, ha, hb);
+                const win = conditionsNarrow(show, hide);
+                if (!win) continue;
+                const label = `show ${sop}(${sa},${sb}) hide ${hop}(${ha},${hb}) → ${win.lo}..${win.hi}`;
+                // Named bounds are genuinely visible…
+                expect(visibleAt(show, hide, win.lo), `${label}: lo must be visible`).toBe(true);
+                expect(visibleAt(show, hide, win.hi), `${label}: hi must be visible`).toBe(true);
+                // …and the step immediately outside the window is not.
+                expect(visibleAt(show, hide, win.lo - 1), `${label}: lo-1 must be hidden`).toBe(false);
+                expect(visibleAt(show, hide, win.hi + 1), `${label}: hi+1 must be hidden`).toBe(false);
+              }
+            }
+          }
+        }
+      }
+    }
+  });
+});
+
+describe('QA V5 follow-ups', () => {
+  it('an inverted slider scoring range is unreachable whatever the bounds', () => {
+    const s = step({ key: 'n', type: 'slider', min: 0, max: 100 });
+    // sliderPoints matches `n >= min && n <= max` — empty when min > max.
+    expect(sliderRangeUnreachable(s, { min: 80, max: 20, points: 5 })).toBe(true);
+    expect(sliderRangeUnreachable(s, { min: 20, max: 80, points: 5 })).toBe(false);
+    expect(computeScore(
+      { version: 1, steps: [{ ...s, sliderScoring: [{ min: 80, max: 20, points: 5 }] }] },
+      { n: 50 },
+    )).toBe(0);
+  });
+
+  it('a free-text answer never scores, even with a legacy flat step.points', () => {
+    // step.points has no builder UI and the Results breakdown never lists free
+    // text, so a text/textarea answer must not contribute — otherwise the score
+    // gains points shown and editable nowhere (V4-17). Choice/slider still score.
+    const cfg: FormConfig = {
+      version: 1,
+      steps: [
+        step({
+          key: 'size',
+          type: 'multiple_choice',
+          options: [
+            { label: 'SMB', value: 'smb', points: 3 },
+            { label: 'Enterprise', value: 'ent', points: 10 },
+          ],
+        }),
+        // Legacy injected flat points on free-text — must be ignored.
+        { ...step({ key: 'why', type: 'text' }), points: 7 },
+        { ...step({ key: 'notes', type: 'textarea' }), points: 4 },
+      ],
+    };
+    // Only the choice contributes; the 7 + 4 free-text points are ignored.
+    expect(computeScore(cfg, { size: 'ent', why: 'because', notes: 'long answer' })).toBe(10);
+    expect(computeScore(cfg, { size: 'smb', why: 'x', notes: 'y' })).toBe(3);
+  });
+
+  it('renameStepKey moves the form-level ending tokens too', () => {
+    const cfg: FormConfig = {
+      version: 1,
+      steps: [step({ key: 'company', type: 'text' })],
+      ending: { headline: 'Thanks, [company]', body: 'We will call [company] soon.' },
+    };
+    const out = renameStepKey(cfg, 'company', 'org');
+    expect(out.ending?.headline).toBe('Thanks, [org]');
+    expect(out.ending?.body).toBe('We will call [org] soon.');
+  });
+
+  it('refuses a rename onto a name step’s subfield key', () => {
+    const cfg: FormConfig = {
+      version: 1,
+      steps: [step({ key: 'who', type: 'name' }), step({ key: 'other', type: 'text' })],
+    };
+    // `firstname` is a real answer slot the name step writes — taking it would
+    // make two steps collide on one answer.
+    expect(renameStepKey(cfg, 'other', 'firstname')).toBe(cfg);
+    expect(renameStepKey(cfg, 'other', 'lastname')).toBe(cfg);
+    expect(renameStepKey(cfg, 'other', 'company').steps[1]!.key).toBe('company');
+  });
+});
+
+describe('QA V5 — rules that can never hold', () => {
+  it('flags a numeric op with no operand typed yet', () => {
+    expect(conditionNeverHolds({ field: 'n', op: 'gt' })).toBe('missing_operand');
+    expect(conditionNeverHolds({ field: 'n', op: 'between', min: 10 })).toBe('missing_operand');
+    expect(conditionNeverHolds({ field: 'n', op: 'gt', value: 5 })).toBeNull();
+  });
+
+  it('flags a between whose bounds cross', () => {
+    expect(conditionNeverHolds({ field: 'n', op: 'between', min: 500, max: 200 })).toBe('empty_interval');
+    expect(conditionNeverHolds({ field: 'n', op: 'between', min: 200, max: 500 })).toBeNull();
+  });
+
+  it('flags a choice rule with nothing selected, and passes a filled one', () => {
+    expect(conditionNeverHolds({ field: 'c', values: [] })).toBe('no_values');
+    expect(conditionNeverHolds({ field: 'c', values: ['a'] })).toBeNull();
+    expect(conditionNeverHolds(null)).toBeNull();
+  });
+
+  it('matches the runtime: a flagged SHOW rule really does hide the step forever', () => {
+    const cfg: FormConfig = {
+      version: 1,
+      steps: [
+        step({ key: 'n', type: 'slider', min: 0, max: 1000 }),
+        step({ key: 'why', type: 'text', showWhen: { field: 'n', op: 'gt' } }),
+      ],
+    };
+    for (const n of [0, 500, 1000]) {
+      expect(visibleSteps(cfg, { n }).some((s) => s.key === 'why')).toBe(false);
+    }
+  });
+});
+
+describe('QA V5 — slider range hygiene', () => {
+  it('flags a zero-travel slider', () => {
+    expect(sliderHasNoTravel(step({ key: 'n', type: 'slider', min: 5, max: 5 }))).toBe(true);
+    expect(sliderHasNoTravel(step({ key: 'n', type: 'slider', min: 0, max: 10 }))).toBe(false);
+  });
+
+  it('reports ranges overlapped by an earlier one — first listed wins at runtime', () => {
+    const s = step({
+      key: 'n',
+      type: 'slider',
+      min: 0,
+      max: 100,
+      sliderScoring: [
+        { min: 0, max: 60, points: 1 },
+        { min: 50, max: 100, points: 9 }, // overlaps 50..60
+        { min: 61, max: 70, points: 3 }, // also inside the first two's shadow? no — 61..70 ⊂ 50..100
+      ],
+    });
+    const overlapped = overlappingSliderRanges(s);
+    expect(overlapped).toContain(1);
+    // Runtime proof: 55 is in both row 0 and row 1, and row 0 wins.
+    expect(computeScore({ version: 1, steps: [s] }, { n: 55 })).toBe(1);
+  });
+
+  it('does not flag adjacent, non-overlapping ranges', () => {
+    const s = step({
+      key: 'n',
+      type: 'slider',
+      min: 0,
+      max: 100,
+      sliderScoring: [
+        { min: 0, max: 49, points: 0 },
+        { min: 50, max: 100, points: 5 },
+      ],
+    });
+    expect(overlappingSliderRanges(s)).toEqual([]);
+  });
+});
+
+describe('QA V5 — variant rows that are not finished', () => {
+  const base = step({
+    key: 'q',
+    type: 'text',
+    question: 'Base question',
+    questionField: 'tools',
+  });
+
+  it('an empty variant row falls back instead of publishing a blank question', () => {
+    const s = { ...base, questionVariants: { 'a,b': '', '*': 'Fallback copy' } };
+    expect(resolveQuestion(s, { tools: ['a', 'b'] })).toBe('Fallback copy');
+  });
+
+  it('an empty row with no fallback falls all the way back to the base question', () => {
+    const s = { ...base, questionVariants: { a: '   ' } };
+    expect(resolveQuestion(s, { tools: 'a' })).toBe('Base question');
+  });
+
+  it('two rows describing the same set resolve deterministically, not by tick order', () => {
+    const s = { ...base, questionVariants: { 'ads,crm': 'ROW A', 'crm,ads': 'ROW B' } };
+    const first = resolveQuestion(s, { tools: ['crm', 'ads'] });
+    const second = resolveQuestion(s, { tools: ['ads', 'crm'] });
+    expect(first).toBe(second);
+  });
+});
+
+describe('reveal as a step type (V5-B3)', () => {
+  const cfg: FormConfig = {
+    version: 1,
+    steps: [
+      step({ key: 'q1', type: 'text', question: 'First?' }),
+      step({ key: 'pause1', type: 'reveal', reveal: { enabled: true, headline: 'Matching…', durationMs: 900 } }),
+      step({ key: 'q2', type: 'text', question: 'Second?' }),
+      step({ key: 'pause2', type: 'reveal', reveal: { enabled: true, headline: 'Scoring…' } }),
+    ],
+  };
+
+  it('a form can hold SEVERAL reveals, each with its own copy', () => {
+    const reveals = cfg.steps.filter((s) => s.type === 'reveal');
+    expect(reveals).toHaveLength(2);
+    expect(reveals[0]!.reveal?.headline).toBe('Matching…');
+    expect(reveals[1]!.reveal?.headline).toBe('Scoring…');
+  });
+
+  it('reveal steps are walked in order like any other step', () => {
+    expect(visibleSteps(cfg, {}).map((s) => s.key)).toEqual(['q1', 'pause1', 'q2', 'pause2']);
+  });
+
+  it('collects no answer: never validated, never scored, never a recall token', () => {
+    const rev = cfg.steps[1]!;
+    expect(isInputlessStep(rev)).toBe(true);
+    expect(validateAnswer(rev, undefined).ok).toBe(true);
+    expect(validateAnswerCode(rev, undefined).ok).toBe(true);
+    expect(computeScore(cfg, {})).toBe(0);
+  });
+
+  it('honors skip-logic, so a reveal can be conditional', () => {
+    const conditional: FormConfig = {
+      version: 1,
+      steps: [
+        step({ key: 'plan', type: 'dropdown', options: [{ label: 'Pro', value: 'pro' }, { label: 'Free', value: 'free' }] }),
+        step({ key: 'pause', type: 'reveal', showWhen: { field: 'plan', values: ['pro'] } }),
+      ],
+    };
+    expect(visibleSteps(conditional, { plan: 'pro' }).map((s) => s.key)).toEqual(['plan', 'pause']);
+    expect(visibleSteps(conditional, { plan: 'free' }).map((s) => s.key)).toEqual(['plan']);
+  });
+
+  it('the LEGACY form-level reveal is untouched by any of this', () => {
+    // A pre-B3 config keeps resolving its single interstitial exactly as before.
+    const legacy: FormConfig = {
+      version: 1,
+      steps: [step({ key: 'a', type: 'text' }), step({ key: 'b', type: 'text' })],
+      reveal: { enabled: true, headline: 'Legacy' },
+      revealAfterStep: 1,
+    };
+    expect(revealAfterKey(legacy)).toBe('a');
   });
 });

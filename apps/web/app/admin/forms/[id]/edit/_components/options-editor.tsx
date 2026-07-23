@@ -3,6 +3,7 @@
 import type { FormOption } from '@quill/engine';
 import { slugify } from '@quill/engine';
 import { Button } from '@/components/ui/button';
+import { HelpTip } from '@/components/ui/help-tip';
 import { TextField, NumberField } from './fields';
 import { SortableList, SortableRow } from './sortable';
 import type { EditorMessages } from './messages';
@@ -16,10 +17,17 @@ import type { EditorMessages } from './messages';
 export function OptionsEditor({
   options,
   onChange,
+  showPoints = true,
   m,
 }: {
   options: FormOption[];
   onChange: (next: FormOption[]) => void;
+  /**
+   * Render the Points column (V5-B6). Hidden while this question is not scored,
+   * so the row shows the two fields that always matter instead of a column that
+   * does nothing — and each remaining field gets the width back.
+   */
+  showPoints?: boolean;
   m: EditorMessages['options'];
 }) {
   const ids = options.map((_, i) => `opt-${i}`);
@@ -64,7 +72,10 @@ export function OptionsEditor({
                       <i aria-hidden className="pi pi-bars" style={{ fontSize: 13 }} />
                     </button>
                     <label className="flex min-w-0 flex-[2] flex-col gap-1">
-                      <span className="text-[11px] font-medium text-muted-foreground">{m.label}</span>
+                      <span className="flex items-center gap-1 text-[11px] font-medium text-muted-foreground">
+                        {m.label}
+                        <HelpTip text={m.labelHelp} label={m.label} />
+                      </span>
                       <TextField
                         value={o.label}
                         onChange={(e) => {
@@ -75,21 +86,33 @@ export function OptionsEditor({
                       />
                     </label>
                     <label className="flex min-w-0 flex-1 flex-col gap-1">
-                      <span className="text-[11px] font-medium text-muted-foreground">{m.value}</span>
+                      <span className="flex items-center gap-1 text-[11px] font-medium text-muted-foreground">
+                        {m.value}
+                        <HelpTip text={m.valueHelp} label={m.value} />
+                      </span>
                       <TextField
                         value={o.value}
-                        onChange={(e) => update(index, { value: e.target.value })}
+                        onChange={(e) =>
+                          // Commas are the separator in a dynamic-question
+                          // variant key, so a value containing one is
+                          // indistinguishable from a two-option set — a row
+                          // authored for one option would also fire for a
+                          // completely different answer.
+                          update(index, { value: e.target.value.replace(/,/g, '') })
+                        }
                       />
                     </label>
-                    <label className="flex w-20 shrink-0 flex-col gap-1">
-                      <span className="text-[11px] font-medium text-muted-foreground">{m.points}</span>
-                      <NumberField
-                        aria-label={m.points}
-                        data-testid={`option-points-${index}`}
-                        value={o.points ?? 0}
-                        onChange={(e) => update(index, { points: Number(e.target.value) || 0 })}
-                      />
-                    </label>
+                    {showPoints ? (
+                      <label className="flex w-20 shrink-0 flex-col gap-1">
+                        <span className="text-[11px] font-medium text-muted-foreground">{m.points}</span>
+                        <NumberField
+                          aria-label={m.points}
+                          data-testid={`option-points-${index}`}
+                          value={o.points ?? 0}
+                          onChange={(e) => update(index, { points: Number(e.target.value) || 0 })}
+                        />
+                      </label>
+                    ) : null}
                     <Button
                       variant="ghost"
                       size="icon"
@@ -106,9 +129,11 @@ export function OptionsEditor({
           }}
         </SortableList>
       )}
-      <p className="text-[11px] leading-relaxed text-muted-foreground" data-testid="option-points-hint">
-        {m.pointsHint}
-      </p>
+      {showPoints ? (
+        <p className="text-[11px] leading-relaxed text-muted-foreground" data-testid="option-points-hint">
+          {m.pointsHint}
+        </p>
+      ) : null}
       <div>
         <Button variant="outline" size="sm" onClick={add}>
           <i aria-hidden className="pi pi-plus" style={{ fontSize: 11 }} /> {m.add}

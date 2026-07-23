@@ -37,6 +37,8 @@ export interface BuilderMessages {
     openForm: string;
   };
   badges: {
+    /** V5-QA — marks a step respondents never see. */
+    hidden: string;
     contact: string;
     logic: string;
     /** "{n} rules" */
@@ -87,6 +89,8 @@ export interface BuilderMessages {
     tipMid: string;
     /** Popover: where the reveal copy/duration is edited. */
     tipEdit: string;
+    /** V5-A9 — label of the link that actually opens Design. */
+    edit: string;
   };
   canvas: {
     /** "Question {n}" */
@@ -106,6 +110,12 @@ export interface BuilderMessages {
     nameLastPlaceholder: string;
   };
   settings: {
+    /** V5-B3 — a reveal STEP edits its own copy here, not in Design. */
+    revealSection: string;
+    revealHeadline: string;
+    revealSubtitle: string;
+    revealDuration: string;
+    revealHint: string;
     title: string;
     questionType: string;
     required: string;
@@ -116,6 +126,8 @@ export interface BuilderMessages {
     noRules: string;
     scoring: string;
     scoringHint: string;
+    /** V5-B2 — the per-question switch is inert while the form-level one is off. */
+    scoringFormOff: string;
     /** Shown near the toggle when scoring is on but no points are assigned yet. */
     scoringZeroHint: string;
     contactHint: string;
@@ -132,6 +144,8 @@ export interface BuilderMessages {
     /** `{token}` is replaced with the bracketed token, e.g. `[firstname]`. */
     warnLater: string;
     warnUnknown: string;
+    /** V5-A5 — bare `@key` that never became a token; `{fixed}` is `[key]`. */
+    warnRaw: string;
   };
   /** Per-question HubSpot "Map to" section in the settings panel. */
   hubspot: {
@@ -203,6 +217,19 @@ export interface BuilderMessages {
     otherwiseHint: string;
     /** Pill on a question that only shows when a show/hide condition holds. */
     conditional: string;
+    /** V5-B4 — the show/hide rules spelled out on the map. */
+    condShowIf: string;
+    condHideIf: string;
+    condIn: string;
+    condEq: string;
+    condGt: string;
+    condLt: string;
+    condBetween: string;
+    condAnd: string;
+    condBlank: string;
+    condMissingField: string;
+    /** V5-QA — this step's rules mean it can never be shown. */
+    neverAppears: string;
     /** Small kicker above a scored outcome node. */
     outcomeKicker: string;
   };
@@ -210,11 +237,15 @@ export interface BuilderMessages {
     pointsTitle: string;
     /** "Each answer adds to a score. Highest possible: {n}." */
     pointsHint: string;
+    /** V5-QA — the same line while scoring is off (no total to promise). */
+    pointsHintOff: string;
     endTitle: string;
     endHint: string;
     addRange: string;
     rangeLabel: string;
     rangeLabelPlaceholder: string;
+    /** V5-QA — a range another range starts at or below: nothing lands here. */
+    rangeUnreachable: string;
     thankYouMessage: string;
     redirect: string;
     redirectPlaceholder: string;
@@ -251,7 +282,8 @@ export type GalleryItemId =
   | 'short'
   | 'long'
   | 'slider'
-  | 'message';
+  | 'message'
+  | 'reveal';
 
 export type TemplateId = 'lead' | 'contact' | 'feedback' | 'rsvp';
 
@@ -283,6 +315,7 @@ const en: BuilderMessages = {
     openForm: 'Open form',
   },
   badges: {
+    hidden: 'Hidden',
     contact: 'Contact',
     logic: 'Logic',
     rules: '{n} rules',
@@ -312,6 +345,7 @@ const en: BuilderMessages = {
     tipEnd: 'At the end it plays right before the result — never mid-form.',
     tipMid: 'Here it plays after this question, then the form continues.',
     tipEdit: 'Edit its headline, subtitle and duration in Design.',
+    edit: 'Edit reveal screen',
   },
   canvas: {
     questionN: 'Question {n}',
@@ -335,9 +369,15 @@ const en: BuilderMessages = {
     logic: 'Logic',
     addRule: 'Add rule',
     noRules: 'No rules — everyone sees this question.',
+    revealSection: 'Reveal screen',
+    revealHeadline: 'Headline',
+    revealSubtitle: 'Subtitle',
+    revealDuration: 'Duration (ms)',
+    revealHint: 'Plays here, then the form continues on its own. Drag it in the list to move it.',
     scoring: 'Scoring',
     scoringHint:
-      'Scoring applies to the whole form, not just this question. Points from the selected option add to the total; set ranges in Results.',
+      'Counts this question toward the score. Points from the selected option add to the total; set ranges in Results.',
+    scoringFormOff: 'Scoring is off for the whole form — turn it on in Results to score individual questions.',
     scoringZeroHint: 'Assign points to your answers to enable ranges.',
     contactHint: 'Contact field — doesn’t affect the score.',
     delete: 'Delete question',
@@ -345,12 +385,13 @@ const en: BuilderMessages = {
     empty: 'Select a question to edit it.',
   },
   tokens: {
-    hint: 'Type @ to insert a previous answer',
+    hint: 'Type @ or [field] to insert a previous answer',
     pickerLabel: 'Insert a previous answer',
     pickerEmpty: 'No earlier answers yet — this is the first question.',
     pickerNoMatch: 'No matching fields.',
     warnLater: '“{token}” is asked after this step — it will be empty here.',
     warnUnknown: '“{token}” doesn’t exist in this form.',
+    warnRaw: '“{token}” stays as literal text — only {fixed} fills in an answer. Pick the field from the list to insert it.',
   },
   hubspot: {
     title: 'HubSpot',
@@ -402,6 +443,7 @@ const en: BuilderMessages = {
       long: { title: 'Long text', desc: 'Paragraph' },
       slider: { title: 'Slider', desc: 'Rating scale' },
       message: { title: 'Message', desc: 'Text, no input' },
+      reveal: { title: 'Reveal screen', desc: 'A short processing pause' },
     },
   },
   map: {
@@ -421,16 +463,29 @@ const en: BuilderMessages = {
     startHint: 'Respondents start here',
     otherwiseHint: 'if no rule matches, continue in order',
     conditional: 'Conditional',
+    condShowIf: 'Show if',
+    condHideIf: 'Hide if',
+    condIn: 'is any of',
+    condEq: 'equals',
+    condGt: 'is greater than',
+    condLt: 'is less than',
+    condBetween: 'is between',
+    condAnd: 'and',
+    condBlank: '(not set)',
+    condMissingField: 'question deleted',
+    neverAppears: 'These rules mean this question never appears.',
     outcomeKicker: 'Ending',
   },
   results: {
     pointsTitle: 'Points',
     pointsHint: 'Each answer adds to a score. Highest possible: {n}.',
+    pointsHintOff: 'Scoring is off — no answer adds to a score right now.',
     endTitle: 'What happens at the end',
     endHint: 'Map score ranges to an outcome. The first matching range wins.',
     addRange: 'Add a range',
     rangeLabel: 'Label',
-    rangeLabelPlaceholder: 'e.g. Hot lead',
+    rangeLabelPlaceholder: 'e.g. You’re a great fit',
+    rangeUnreachable: 'never',
     thankYouMessage: 'Thank-you message',
     redirect: 'Redirect',
     redirectPlaceholder: 'https://…',
@@ -501,6 +556,7 @@ const es: BuilderMessages = {
     openForm: 'Abrir formulario',
   },
   badges: {
+    hidden: 'Oculta',
     contact: 'Contacto',
     logic: 'Lógica',
     rules: '{n} reglas',
@@ -531,6 +587,7 @@ const es: BuilderMessages = {
     tipEnd: 'Al final se muestra justo antes del resultado — nunca a mitad del formulario.',
     tipMid: 'Aquí se muestra después de esta pregunta y luego el formulario continúa.',
     tipEdit: 'Edita su titular, subtítulo y duración en Diseño.',
+    edit: 'Editar pantalla de revelación',
   },
   canvas: {
     questionN: 'Pregunta {n}',
@@ -554,9 +611,15 @@ const es: BuilderMessages = {
     logic: 'Lógica',
     addRule: 'Añadir regla',
     noRules: 'Sin reglas — todos ven esta pregunta.',
+    revealSection: 'Pantalla de revelación',
+    revealHeadline: 'Titular',
+    revealSubtitle: 'Subtítulo',
+    revealDuration: 'Duración (ms)',
+    revealHint: 'Se muestra aquí y el formulario continúa solo. Arrástrala en la lista para moverla.',
     scoring: 'Puntaje',
     scoringHint:
-      'El puntaje se aplica a todo el formulario, no solo a esta pregunta. Los puntos de la opción elegida suman al total; define los rangos en Resultados.',
+      'Cuenta esta pregunta para el puntaje. Los puntos de la opción elegida suman al total; define los rangos en Resultados.',
+    scoringFormOff: 'El puntaje está apagado para todo el formulario — enciéndelo en Resultados para puntuar preguntas individuales.',
     scoringZeroHint: 'Asigna puntos a tus respuestas para habilitar los rangos.',
     contactHint: 'Campo de contacto — no afecta el puntaje.',
     delete: 'Eliminar pregunta',
@@ -564,12 +627,13 @@ const es: BuilderMessages = {
     empty: 'Selecciona una pregunta para editarla.',
   },
   tokens: {
-    hint: 'Escribe @ para insertar una respuesta anterior',
+    hint: 'Escribe @ o [campo] para insertar una respuesta anterior',
     pickerLabel: 'Insertar una respuesta anterior',
     pickerEmpty: 'Aún no hay respuestas anteriores — esta es la primera pregunta.',
     pickerNoMatch: 'Ningún campo coincide.',
     warnLater: '«{token}» se pregunta después de este paso — quedará vacío.',
     warnUnknown: '«{token}» no existe en este formulario.',
+    warnRaw: '«{token}» queda como texto literal — solo {fixed} rellena una respuesta. Elige el campo de la lista para insertarlo.',
   },
   hubspot: {
     title: 'HubSpot',
@@ -621,6 +685,7 @@ const es: BuilderMessages = {
       long: { title: 'Texto largo', desc: 'Párrafo' },
       slider: { title: 'Deslizador', desc: 'Escala de valoración' },
       message: { title: 'Mensaje', desc: 'Texto, sin campo' },
+      reveal: { title: 'Pantalla de revelación', desc: 'Una breve pausa de procesamiento' },
     },
   },
   map: {
@@ -640,16 +705,29 @@ const es: BuilderMessages = {
     startHint: 'Aquí empiezan las personas',
     otherwiseHint: 'si ninguna regla coincide, continúa en orden',
     conditional: 'Condicional',
+    condShowIf: 'Mostrar si',
+    condHideIf: 'Ocultar si',
+    condIn: 'es alguno de',
+    condEq: 'es igual a',
+    condGt: 'es mayor que',
+    condLt: 'es menor que',
+    condBetween: 'está entre',
+    condAnd: 'y',
+    condBlank: '(sin definir)',
+    condMissingField: 'pregunta eliminada',
+    neverAppears: 'Con estas reglas, esta pregunta nunca aparece.',
     outcomeKicker: 'Final',
   },
   results: {
     pointsTitle: 'Puntos',
     pointsHint: 'Cada respuesta suma al puntaje. Máximo posible: {n}.',
+    pointsHintOff: 'El puntaje está apagado — ninguna respuesta suma por ahora.',
     endTitle: 'Qué pasa al final',
     endHint: 'Asigna rangos de puntaje a un resultado. Gana el primer rango que coincida.',
     addRange: 'Añadir un rango',
     rangeLabel: 'Etiqueta',
-    rangeLabelPlaceholder: 'p. ej. Lead caliente',
+    rangeLabelPlaceholder: 'p. ej. Eres un buen fit',
+    rangeUnreachable: 'nunca',
     thankYouMessage: 'Mensaje de agradecimiento',
     redirect: 'Redirigir',
     redirectPlaceholder: 'https://…',

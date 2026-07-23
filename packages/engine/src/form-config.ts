@@ -61,7 +61,7 @@ export function createEmptyStep(
     key,
     type,
     question: '',
-    required: !(type === 'message'),
+    required: !(type === 'message' || type === 'reveal'),
     flowGroup: defaultFlowGroup(type),
   };
 
@@ -83,6 +83,12 @@ export function createEmptyStep(
   }
   if (type === 'message') {
     base.buttonText = 'Continue';
+  }
+  // A reveal step owns its copy and duration, so a form can hold several with
+  // different messages (V5-B3). Seeded enabled — an author who drops one in
+  // wants it to play.
+  if (type === 'reveal') {
+    base.reveal = { enabled: true, headline: '', subtitle: '', durationMs: 2200 };
   }
   return base;
 }

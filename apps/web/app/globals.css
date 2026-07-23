@@ -32,8 +32,17 @@
   --font-sans: var(--font-poppins), 'Poppins', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
 }
 
-* {
-  border-color: var(--border);
+/* Default every element's border-color to the token, the shadcn contract. This
+   MUST live in @layer base: an UNLAYERED `*` rule outranks Tailwind's layered
+   utilities, so `border-destructive` / `border-input` / `border-primary` would
+   never paint — the class lands on the element but the wildcard wins the cascade
+   (V4-11: the create-form error border was invisible app-wide). In @layer base
+   the utilities layer wins, so a color utility overrides this default while
+   bare-`border` elements still get the token. */
+@layer base {
+  * {
+    border-color: var(--border);
+  }
 }
 
 html,

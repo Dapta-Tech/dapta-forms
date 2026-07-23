@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useMemo, useState, useTransition } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import type { FormsMessages, Locale } from '@quill/shared';
 import { WEBHOOK_SECRET_MASK, type DestinationEvent, type FormDestination } from '@quill/types';
@@ -12,10 +12,17 @@ import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/components/toast';
 import { cn } from '@/lib/cn';
 import type { HubSpotPropertiesResponse } from '@/lib/admin-api';
+import { trackDestinationWrite } from '@/lib/connect-sync';
 import { propertyLookup, suggestProperty, type QuestionMeta } from './auto-map';
 import { saveIntegrationsAction } from './actions';
 
 type Msgs = FormsMessages['admin']['integrations'];
+
+type SaveStatus = 'saved' | 'saving' | 'error' | 'partial';
+/** Same debounce as the builder's autosave, so both tabs feel identical. */
+const AUTOSAVE_MS = 900;
+/** Same admin API base the server-side admin-api client uses (client-exposed). */
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 
 export type { QuestionMeta } from './auto-map';
 
@@ -191,11 +198,19 @@ export function IntegrationsEditor({
   messages: Msgs;
   locale: Locale;
 }) {
-  const { success, error } = useToast();
-  const [pending, start] = useTransition();
+  const { error } = useToast();
+  const errorRef = useRef(error);
+  errorRef.current = error;
   const [webhook, setWebhook] = useState<WebhookState>(() => initialWebhook(initialDestinations));
   const [hs, setHs] = useState<HubspotState>(() => initialHubspot(initialDestinations));
   const [webhookError, setWebhookError] = useState<string | null>(null);
+  // The destinations as the server last accepted them. Seeded from the freshly
+  // fetched mount props and advanced on every successful save, so the "protect
+  // the working webhook from a transient bad keystroke" fallback below never
+  // reverts to a stale page-load snapshot (V4-05). `initialDestinations` alone
+  // was a mount-time value the tab's refetch never refreshed — a second edit
+  // then restored it, and an actual submission was delivered to the old URL.
+  const savedDestinations = useRef<FormDestination[]>(initialDestinations);
 
   const properties = hubspotProps.enabled ? hubspotProps.properties : [];
   const pickerEnabled = hubspotProps.enabled;
@@ -204,10 +219,39 @@ export function IntegrationsEditor({
   // fallback (self-host). Otherwise prompt the user to connect first.
   const showMapping = hubspotConnected || pickerEnabled;
 
-  function buildDestinations(): FormDestination[] | { error: string } {
+  /**
+   * The destinations to persist, plus a webhook problem to report if there is
+   * one (V5-QA).
+   *
+   * This used to return an error for the WHOLE tab as soon as the webhook URL
+   * was malformed, which meant a HubSpot mapping typed inches away was blocked
+   * and then silently discarded on leaving the page. The webhook's validity is
+   * now scoped to the webhook: everything else still saves, the bad URL stays in
+   * the field so nothing typed is lost, and the status line says which part did
+   * not go through.
+   *
+   * The three webhook cases (V4-05):
+   *  - EMPTY url → persist NO webhook. Clearing the field removes the
+   *    destination; the old code carried the stored one forward, so a cleared
+   *    URL kept silently delivering to a ghost endpoint.
+   *  - malformed non-empty url → report it and carry the LAST SAVED webhook
+   *    (`savedDestinations`, refreshed on every write) so one bad keystroke does
+   *    not nuke a working destination — but never revert to something older than
+   *    the last successful save.
+   *  - valid url → persist it with the current enabled flag.
+   */
+  function buildDestinations(): { destinations: FormDestination[]; webhookError: string | null } {
     const out: FormDestination[] = [];
-    if (webhook.enabled || webhook.url.trim()) {
-      if (!isHttpsOrLocalhostUrl(webhook.url.trim())) return { error: m.webhookUrlInvalid };
+    let webhookError: string | null = null;
+    const url = webhook.url.trim();
+    if (url && !isHttpsOrLocalhostUrl(url)) {
+      // Malformed draft: the bad value must not change what is stored. Carry the
+      // last SUCCESSFULLY SAVED webhook (not the page-load snapshot) so a working
+      // destination survives, and fall through to save the HubSpot half.
+      webhookError = m.webhookUrlInvalid;
+      const saved = savedDestinations.current.find((d) => d.type === 'webhook');
+      if (saved) out.push(saved);
+    } else if (url) {
       // Secret write semantics: a typed value overwrites; an empty field keeps
       // the stored secret (send the sentinel the server merges back) when one is
       // set, or stays cleared/null when none exists.
@@ -224,11 +268,13 @@ export function IntegrationsEditor({
         enabled: webhook.enabled,
         ...(events.length === 1 ? { events } : {}),
         settings: {
-          url: webhook.url.trim(),
+          url,
           secret,
         },
       });
     }
+    // else: empty url (switch on or off) → no webhook persisted. An enabled
+    // webhook with no URL is incomplete, not stored; clearing the URL removes it.
     const fieldMappings: Record<string, string> = {};
     for (const p of hs.fieldMappings) {
       if (p.key.trim() && p.property.trim()) fieldMappings[p.key.trim()] = p.property.trim();
@@ -288,29 +334,125 @@ export function IntegrationsEditor({
         bookingSync: Object.keys(bookingSync).length > 0 ? bookingSync : undefined,
       });
     }
-    return out;
+    return { destinations: out, webhookError };
   }
 
-  function save() {
-    setWebhookError(null);
-    const built = buildDestinations();
-    if ('error' in built) {
-      setWebhookError(built.error);
-      error(built.error);
-      return;
+  // --- Autosave (V5-A4) ------------------------------------------------------
+  // Connect was the last tab still gated behind an explicit Save button, so an
+  // edit made here — flipping the connection on, re-pointing one property —
+  // looked identical to an edit made in Build but was silently discarded on
+  // leaving. Same contract as the builder now: debounce, flush on the way out,
+  // and a status line that says which state you are in.
+  const buildRef = useRef(buildDestinations);
+  buildRef.current = buildDestinations;
+  const dirty = useRef(false);
+  const [status, setStatus] = useState<SaveStatus>('saved');
+  /** What exactly was not saved — shown next to the status, never just a colour. */
+  const [statusDetail, setStatusDetail] = useState<string | null>(null);
+
+  const persist = useCallback(
+    async (built: FormDestination[], blocked: string | null = null): Promise<boolean> => {
+      setStatus('saving');
+      const write = saveIntegrationsAction(id, built);
+      // Register the write so a Connect-tab remount reads it back, not the state
+      // it is about to overwrite (V4-05 race).
+      trackDestinationWrite(id, write);
+      const res = await write;
+      if (!res.ok) {
+        setStatus('error');
+        setStatusDetail(res.message ?? m.saveError);
+        errorRef.current(res.message ?? m.saveError);
+        return false;
+      }
+      dirty.current = false;
+      // This array is now the server truth — the malformed-URL fallback carries
+      // it forward instead of the stale mount snapshot.
+      savedDestinations.current = built;
+      // Saved, but one card was left out — say WHICH, instead of a green check
+      // that implies the webhook edit went through too.
+      setStatus(blocked ? 'partial' : 'saved');
+      setStatusDetail(blocked);
+      return true;
+    },
+    [id, m.saveError],
+  );
+
+  /**
+   * Every card edit funnels through these so an edit is marked dirty at the
+   * moment it happens. Wrapping the setters (rather than watching state in an
+   * effect) keeps the initial render from counting as an edit and autosaving
+   * a form nobody touched.
+   */
+  const editWebhook = useCallback((next: WebhookState) => {
+    dirty.current = true;
+    setStatus('saving');
+    setWebhook(next);
+  }, []);
+  const editHubspot = useCallback((next: HubspotState) => {
+    dirty.current = true;
+    setStatus('saving');
+    setHs(next);
+  }, []);
+
+  useEffect(() => {
+    if (!dirty.current) return;
+    const t = setTimeout(() => {
+      const built = buildRef.current();
+      // A bad webhook URL is reported on its own card and blocks only itself —
+      // the rest of the tab still persists.
+      setWebhookError(built.webhookError);
+      void persist(built.destinations, built.webhookError);
+    }, AUTOSAVE_MS);
+    return () => clearTimeout(t);
+  }, [webhook, hs, persist]);
+
+  // Leaving with an edit still in the debounce window: flush it. A hard tab
+  // close cannot await a server action, so that path uses a `keepalive` PUT to
+  // the same endpoint the action wraps; SPA nav and tab-hide use the
+  // cookie-authed action while the component is still alive. Mirrors the
+  // builder's flush exactly, so both tabs lose work in the same (zero) cases.
+  useEffect(() => {
+    function flush(beacon: boolean) {
+      if (!dirty.current) return;
+      const built = buildRef.current();
+      if (beacon) {
+        try {
+          void fetch(`${API_BASE}/v1/forms/${id}/destinations`, {
+            method: 'PUT',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ destinations: built.destinations }),
+            keepalive: true,
+            credentials: 'include',
+          });
+        } catch {
+          /* best-effort on the unload path — nothing to recover to */
+        }
+      } else {
+        // SPA nav / unmount: fire-and-forget, but register it so the tab's next
+        // remount waits for this write before it re-reads (V4-05 race).
+        const write = saveIntegrationsAction(id, built.destinations);
+        trackDestinationWrite(id, write);
+        void write;
+      }
     }
-    start(async () => {
-      const res = await saveIntegrationsAction(id, built);
-      if (res.ok) success(m.saved);
-      else error(res.message ?? m.saveError);
-    });
-  }
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') flush(false);
+    };
+    const onBeforeUnload = () => flush(true);
+    document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('beforeunload', onBeforeUnload);
+      flush(false); // SPA nav / unmount → reliable server-action flush
+    };
+  }, [id]);
 
   return (
     <div className="flex flex-col gap-6">
       <WebhookCard
         state={webhook}
-        onChange={setWebhook}
+        onChange={editWebhook}
         urlError={webhookError}
         clearUrlError={() => setWebhookError(null)}
         m={m}
@@ -318,7 +460,7 @@ export function IntegrationsEditor({
       <LocaleContext.Provider value={locale}>
         <HubspotCard
           state={hs}
-          onChange={setHs}
+          onChange={editHubspot}
           properties={properties}
           pickerEnabled={pickerEnabled}
           accountConnected={hubspotConnected}
@@ -328,10 +470,37 @@ export function IntegrationsEditor({
         />
       </LocaleContext.Provider>
 
-      <div className="sticky bottom-0 flex items-center gap-3 border-t border-border bg-background/95 py-4 backdrop-blur">
-        <Button onClick={save} disabled={pending}>
-          {pending ? m.saving : m.save}
-        </Button>
+      {/* The Save button is gone (V5-A4) — everything here autosaves, so what
+          belongs in this bar is the state of that save, not an action. */}
+      <div
+        data-testid="integrations-save-status"
+        data-status={status}
+        aria-live="polite"
+        className="sticky bottom-0 flex items-center gap-2 border-t border-border bg-background/95 py-4 text-sm text-muted-foreground backdrop-blur"
+      >
+        <i
+          aria-hidden
+          className={cn(
+            'pi',
+            status === 'saved'
+              ? 'pi-check text-primary'
+              : status === 'error'
+                ? 'pi-exclamation-triangle text-destructive'
+                : status === 'partial'
+                  ? 'pi-exclamation-circle text-secondary'
+                  : 'pi-sync',
+          )}
+          style={{ fontSize: 12 }}
+        />
+        <span className={cn(status === 'error' && 'text-destructive')}>
+          {status === 'saved'
+            ? m.autosaved
+            : status === 'error'
+              ? (statusDetail ?? m.saveError)
+              : status === 'partial'
+                ? `${m.autosavedPartial} ${statusDetail ?? ''}`.trim()
+                : m.saving}
+        </span>
       </div>
     </div>
   );
@@ -613,12 +782,17 @@ function WebhookCard({
           value={state.url}
           placeholder={m.webhookUrlPlaceholder}
           aria-invalid={urlError ? true : undefined}
+          aria-describedby={urlError ? 'webhook-url-error' : undefined}
           onChange={(e) => {
             clearUrlError();
             onChange({ ...state, url: e.target.value });
           }}
         />
-        {urlError ? <p className="text-xs text-destructive">{urlError}</p> : null}
+        {urlError ? (
+          <p id="webhook-url-error" role="alert" className="text-xs text-destructive">
+            {urlError}
+          </p>
+        ) : null}
       </Field>
       <Field label={m.webhookSecret} help={m.webhookSecretHelp}>
         <Input
@@ -1025,7 +1199,7 @@ function HubspotCard({
         </Field>
 
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label={m.scoreProperty}>
+          <Field label={m.scoreProperty} help={m.scorePropertyHelp}>
             <PropertyField
               value={state.scoreProperty}
               ariaLabel={m.scoreProperty}
@@ -1036,7 +1210,7 @@ function HubspotCard({
               onChange={(v) => onChange({ ...state, scoreProperty: v })}
             />
           </Field>
-          <Field label={m.dateProperty}>
+          <Field label={m.dateProperty} help={m.datePropertyHelp}>
             <PropertyField
               value={state.dateProperty}
               ariaLabel={m.dateProperty}

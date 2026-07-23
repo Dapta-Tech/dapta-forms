@@ -15,6 +15,7 @@ export function Field({
   htmlFor,
   required,
   hint,
+  labelAdornment,
   children,
   className,
 }: {
@@ -22,19 +23,24 @@ export function Field({
   htmlFor?: string;
   required?: boolean;
   hint?: string;
+  /** Rendered next to the label — a `HelpTip` where a full hint line won't fit. */
+  labelAdornment?: ReactNode;
   children: ReactNode;
   className?: string;
 }) {
   return (
     <div className={cn('flex flex-col gap-1.5', className)}>
-      <label htmlFor={htmlFor} className="text-sm font-medium text-foreground">
-        {label}
-        {required ? (
-          <span aria-hidden className="ml-0.5 text-destructive">
-            *
-          </span>
-        ) : null}
-      </label>
+      <span className="flex items-center gap-1.5">
+        <label htmlFor={htmlFor} className="text-sm font-medium text-foreground">
+          {label}
+          {required ? (
+            <span aria-hidden className="ml-0.5 text-destructive">
+              *
+            </span>
+          ) : null}
+        </label>
+        {labelAdornment}
+      </span>
       {children}
       {hint ? <p className="text-xs text-muted-foreground">{hint}</p> : null}
     </div>

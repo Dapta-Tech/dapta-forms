@@ -2,7 +2,7 @@
 
 import { useEffect, useLayoutEffect, useRef } from 'react';
 import type { FormConfig, FormStep, FormOption } from '@quill/engine';
-import { nameFields } from '@quill/engine';
+import { nameFields, sliderBounds, clampSliderValue } from '@quill/engine';
 import { clampAccent, onAccent, DEFAULT_ACCENT } from '@quill/shared';
 import { cn } from '@/lib/cn';
 import { iconForStep, hasOptions } from './question-types';
@@ -282,9 +282,10 @@ function NamePreview({ step, m }: { step: FormStep; m: BuilderMessages }) {
 }
 
 function SliderPreview({ step, accent }: { step: FormStep; accent: string }) {
-  const min = step.min ?? 0;
-  const max = step.max ?? 100;
-  const value = step.default ?? min;
+  const { min, max } = sliderBounds(step);
+  // Clamped: a stored default outside the bounds would otherwise drive `pct`
+  // far past 100 and stretch the filled track clean out of the card (V5-A2).
+  const value = clampSliderValue(step, step.default ?? min);
   const pct = max > min ? ((value - min) / (max - min)) * 100 : 0;
   return (
     <div className="flex flex-col gap-3 py-2">

@@ -35,7 +35,10 @@ export const GALLERY: Record<GalleryGroup, GalleryItem[]> = {
     { id: 'long', type: 'textarea', icon: 'pi-align-left' },
     { id: 'slider', type: 'slider', icon: 'pi-sliders-h' },
   ],
-  content: [{ id: 'message', type: 'message', icon: 'pi-comment' }],
+  content: [
+    { id: 'message', type: 'message', icon: 'pi-comment' },
+    { id: 'reveal', type: 'reveal', icon: 'pi-sparkles' },
+  ],
 };
 
 export const GALLERY_GROUPS: GalleryGroup[] = ['contact', 'choice', 'text', 'content'];
@@ -61,6 +64,8 @@ export function iconForStep(step: Pick<FormStep, 'type' | 'selectionMode'>): str
       return 'pi-minus';
     case 'message':
       return 'pi-comment';
+    case 'reveal':
+      return 'pi-sparkles';
     default:
       return 'pi-stop';
   }
@@ -74,6 +79,23 @@ export function isContactType(type: FormFieldType): boolean {
 /** Choice-family steps that carry editable options + point chips. */
 export function hasOptions(type: FormFieldType): boolean {
   return type === 'dropdown' || type === 'multiple_choice';
+}
+
+/**
+ * Types whose answer can actually earn points, and therefore the only ones with
+ * a scoring control to show (V5-A11). Scoring needs a bounded answer space to
+ * attach points to: choice options carry a `points` column, a slider carries
+ * `sliderScoring` ranges. Free text has neither, so the panel used to render a
+ * scoring section on `text`/`textarea` steps with no way to set anything —
+ * a control that looked broken rather than inapplicable.
+ */
+export function isScorableType(type: FormFieldType): boolean {
+  return hasOptions(type) || type === 'slider';
+}
+
+/** Steps that collect no answer — no key, no validation, no scoring (V5-B3). */
+export function isInputlessType(type: FormFieldType): boolean {
+  return type === 'message' || type === 'reveal';
 }
 
 /**

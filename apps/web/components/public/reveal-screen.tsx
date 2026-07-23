@@ -24,9 +24,16 @@ export function resolveRevealCopy(
   messages: RevealScreenMessages,
 ): { headline: string; subtitle: string; durationMs: number } {
   const template = reveal?.subtitleTemplate;
+  // Every configured line interpolates. `subtitleTemplate` always did, but the
+  // headline and the plain subtitle did not — so "Matching [firstname]…" reached
+  // the respondent as literal text on the very screen meant to feel personal.
   return {
-    headline: reveal?.headline ?? messages.headline,
-    subtitle: template ? interpolate(template, answers) : (reveal?.subtitle ?? messages.subtitle),
+    headline: reveal?.headline ? interpolate(reveal.headline, answers) : messages.headline,
+    subtitle: template
+      ? interpolate(template, answers)
+      : reveal?.subtitle
+        ? interpolate(reveal.subtitle, answers)
+        : messages.subtitle,
     durationMs: reveal?.durationMs ?? DEFAULT_REVEAL_MS,
   };
 }

@@ -13,6 +13,10 @@ export NEXT_PUBLIC_API_URL="http://localhost:4400"
 export PUBLIC_APP_URL="http://localhost:3400"
 export EMAIL_PROVIDER="log-only"
 export AUTH_PROVIDER="local"
+# Next 16 permits one dev server per BUILD DIRECTORY, so without its own distDir
+# this instance refuses to start whenever the developer's :3000 is already up —
+# exactly the situation this script exists for. See apps/web/next.config.mjs.
+export NEXT_DIST_DIR=".next-qa"
 
 pnpm run build:packages
 pnpm run db:migrate

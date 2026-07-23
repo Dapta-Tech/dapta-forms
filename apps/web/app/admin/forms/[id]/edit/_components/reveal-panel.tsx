@@ -35,7 +35,7 @@ export function RevealPanel({
   const enabled = config.reveal != null && reveal.enabled !== false;
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-4" id="reveal-panel" tabIndex={-1} data-testid="reveal-panel">
       <PanelSection title={m.reveal.title} subtitle={m.reveal.subtitle}>
         <InlineField label={m.reveal.enabled} hint={m.reveal.stepHint}>
           <Switch

@@ -10,8 +10,9 @@ import type {
   FormBranding,
   FormOutcome,
   FormReveal,
+  FormEnding,
 } from '@quill/engine';
-import { normalizeConfig } from '@quill/engine';
+import { normalizeConfig, renameStepKey as engineRenameStepKey } from '@quill/engine';
 import type { FormTracking } from '@quill/types';
 import { formConfigSchema } from '@quill/types';
 import { saveFormAction } from '@/app/admin/actions';
@@ -21,12 +22,14 @@ import { QuestionSpine } from './_components/question-spine';
 import { CanvasQuestion } from './_components/canvas-question';
 import { QuestionSettings } from './_components/question-settings';
 import { invalidateQuestionHubspotCache } from './_components/question-hubspot';
+import { renameQuestionMappingAction } from './_components/question-hubspot-actions';
 import { TypeGallery } from './_components/type-gallery';
 import { LogicMap } from './_components/logic-map';
 import { ResultsView } from './_components/results-view';
 import { EmptyState } from './_components/empty-state';
 import { CoverPanel } from './_components/cover-panel';
 import { RevealPanel } from './_components/reveal-panel';
+import { EndingPanel } from './_components/ending-panel';
 import { ConnectPanel } from './_components/connect-panel';
 import { PublishButton } from './publish-button';
 import { LinkActions } from './link-actions';
@@ -116,6 +119,20 @@ export function FormEditor({
   // Deep-linkable tabs: `?tab=connect` selects the tab on load…
   const [tab, setTabState] = useState<Tab>(() => parseTab(searchParams.get('tab')));
   // …and switching syncs the URL shallowly (no navigation, no RSC refetch).
+  /**
+   * Move focus (and the scroll position) to a section after switching tabs, so a
+   * link that promises to take you somewhere actually delivers the keyboard
+   * there instead of dropping focus on <body> — V5-QA.
+   */
+  const focusAfterTab = useCallback((selector: string) => {
+    requestAnimationFrame(() => {
+      const el = document.querySelector<HTMLElement>(selector);
+      if (!el) return;
+      el.scrollIntoView({ block: 'start', behavior: 'smooth' });
+      el.focus({ preventScroll: true });
+    });
+  }, []);
+
   const setTab = useCallback(
     (next: Tab) => {
       // Mappings can change inside Connect — drop the Build settings panel's
@@ -260,7 +277,35 @@ export function FormEditor({
 
   // --- Step operations ------------------------------------------------------
   function patchStep(index: number, patch: Partial<FormStep>) {
-    mutate((c) => ({ ...c, steps: c.steps.map((s, i) => (i === index ? { ...s, ...patch } : s)) }));
+    mutate((c) => {
+      const steps = c.steps.map((s, i) => (i === index ? { ...s, ...patch } : s));
+      // Hiding a question that the reveal is pinned to kills the reveal for
+      // every respondent: `revealAfterKey` resolves to a step the renderer never
+      // completes, so the interstitial simply never plays and nothing says why.
+      // Release the marker back to its default (the end) instead — V5-QA.
+      const clearsReveal = patch.hidden === true && c.revealAfterStep === index + 1;
+      return { ...c, steps, ...(clearsReveal ? { revealAfterStep: undefined } : {}) };
+    });
+  }
+  /**
+   * Rename a step's answer key (V5-A10). The engine's `renameStepKey` moves every
+   * in-config pointer (conditions, goto targets, variant sources, override rules,
+   * `[key]` tokens). HubSpot field mappings are stored OUTSIDE this config and
+   * written through their own endpoint, so they are migrated separately — without
+   * that second call a rename would silently unmap the question from the CRM.
+   */
+  function renameStepKey(index: number, nextKey: string) {
+    const current = config.steps[index];
+    if (!current) return;
+    const oldKey = current.key;
+    mutate((c) => engineRenameStepKey(c, oldKey, nextKey));
+    void renameQuestionMappingAction(id, oldKey, nextKey).then((res) => {
+      if (!res.ok && res.code === 'error') {
+        // The config rename already applied and autosaved; only the CRM mapping
+        // is behind. Say so rather than implying the whole rename failed.
+        toastRef.current.error(m.behavior.fieldKeyMappingFailed);
+      }
+    });
   }
   function addFromGallery(item: GalleryItem) {
     mutate((c) => {
@@ -334,6 +379,9 @@ export function FormEditor({
   const setOutcomes = (outcomes: FormOutcome[]) => mutate((c) => ({ ...c, outcomes }));
   const patchReveal = (patch: Partial<FormReveal>) =>
     mutate((c) => ({ ...c, reveal: { ...c.reveal, ...patch } }));
+  /** Form-level ending copy/redirect — the defaults score ranges override (V5-B1). */
+  const patchEnding = (patch: Partial<FormEnding>) =>
+    mutate((c) => ({ ...c, ending: { ...c.ending, ...patch } }));
   const setPartialSubmitAfterStep = (afterStep: number | undefined) =>
     mutate((c) => ({ ...c, partialSubmitAfterStep: afterStep }));
   // WHERE the reveal plays (V4-04). Setting a value pins the reveal after that
@@ -473,7 +521,12 @@ export function FormEditor({
       <div className="min-h-0 flex-1 overflow-hidden">
         {tab === 'build' ? (
           hasQuestions ? (
-            <div className="grid h-full grid-cols-1 lg:grid-cols-[260px_minmax(0,1fr)_360px]">
+            // The settings panel widens with the viewport (V5-B6): it packs the
+            // densest controls in the builder — an option row is drag handle +
+            // label + value + points + delete — and at a fixed 360px those
+            // fields were cramped on displays with room to spare. It only grows
+            // past 360 at xl, so a 13" laptop keeps the canvas width it had.
+            <div className="grid h-full grid-cols-1 lg:grid-cols-[260px_minmax(0,1fr)_360px] xl:grid-cols-[280px_minmax(0,1fr)_420px] 2xl:grid-cols-[300px_minmax(0,1fr)_460px]">
               {/* Left spine */}
               <aside className="hidden min-h-0 overflow-y-auto lg:block">
                 <QuestionSpine
@@ -488,6 +541,10 @@ export function FormEditor({
                   revealAfterStep={config.revealAfterStep}
                   onRevealMove={setRevealAfterStep}
                   onRevealRemove={removeReveal}
+                  onOpenDesign={() => {
+                    setTab('design');
+                    focusAfterTab('#reveal-panel');
+                  }}
                   m={bm}
                 />
               </aside>
@@ -570,15 +627,18 @@ export function FormEditor({
                     scoringEnabled={scoringEnabled}
                     onUpdate={(patch) => patchStep(selected, patch)}
                     onDelete={() => deleteStep(selected)}
-                    onScoringChange={setScoring}
                     bm={bm}
                     em={m}
                     formId={id}
                     locale={locale}
                     onOpenConnect={() => setTab('connect')}
-                    onOpenDesign={() => setTab('design')}
+                    onOpenDesign={() => {
+                      setTab('design');
+                      focusAfterTab('#reveal-panel');
+                    }}
                     revealAfterStep={config.revealAfterStep}
                     onRevealAfterStepChange={setRevealAfterStep}
+                    onRenameKey={(nextKey) => renameStepKey(selected, nextKey)}
                   />
                 ) : null}
               </aside>
@@ -609,6 +669,7 @@ export function FormEditor({
               config={config}
               onScoringChange={setScoring}
               onOutcomesChange={setOutcomes}
+              onStepScoringChange={(index, on) => patchStep(index, { scoringEnabled: on ? undefined : false })}
               m={bm}
               rm={m.resultsHelp}
             />
@@ -620,6 +681,12 @@ export function FormEditor({
               config={config}
               onRevealChange={patchReveal}
               partialNote={bm.partial.designNote}
+              m={m}
+            />
+            <EndingPanel
+              config={config}
+              onEndingChange={patchEnding}
+              hasOutcomes={(config.outcomes?.length ?? 0) > 0 && scoringEnabled}
               m={m}
             />
           </div>

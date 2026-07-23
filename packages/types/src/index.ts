@@ -95,6 +95,19 @@ const clientLogoSchema = z.object({
   src: safeImageUrl.nullable().optional(),
 });
 
+export const formRevealSchema = z.object({
+  enabled: z.boolean().optional(),
+  headline: z.string().max(300).nullable().optional(),
+  subtitle: z.string().max(500).nullable().optional(),
+  // --- Reveal extensions (all optional; back-compat) -------------------------
+  /** How long the processing interstitial plays before the result (ms). */
+  durationMs: z.number().int().min(500).max(30_000).optional(),
+  /** Outcome subtitle template; `[key]` tokens interpolate from the answers. */
+  subtitleTemplate: z.string().max(200).nullable().optional(),
+  /** Pre-warm the booking embed while the interstitial plays. */
+  prewarm: z.boolean().optional(),
+});
+
 export const formStepSchema = z.object({
   key: z.string().min(1).max(64),
   type: z.enum(formFieldType),
@@ -144,6 +157,20 @@ export const formStepSchema = z.object({
    * bad value can only fall back, never break the lookup.
    */
   phoneDefaultCountry: z.string().max(2).nullable().optional(),
+  /**
+   * Per-question scoring switch (ADDITIVE — V5-B2). `false` excludes this step
+   * from `computeScore` while the rest of the form still scores; absent/`true`
+   * is the historical behavior, so every stored config keeps its score. The
+   * form-level `scoring.enabled` still wins: off means nothing scores.
+   */
+  scoringEnabled: z.boolean().optional(),
+  /**
+   * `reveal` step: its own headline / subtitle / duration (ADDITIVE — V5-B3).
+   * The legacy `config.reveal` + `config.revealAfterStep` pair still works and
+   * still describes the form's single interstitial; a `reveal` STEP is the way
+   * to have several, positioned by where it sits in `steps`.
+   */
+  reveal: formRevealSchema.nullable().optional(),
 });
 export type FormStepInput = z.infer<typeof formStepSchema>;
 
@@ -182,19 +209,6 @@ export const formBrandingSchema = z.object({
   primaryColor: cssColor.nullable().optional(),
   logo: safeImageUrl.nullable().optional(),
   clientLogos: z.array(clientLogoSchema).max(24).optional(),
-});
-
-export const formRevealSchema = z.object({
-  enabled: z.boolean().optional(),
-  headline: z.string().max(300).nullable().optional(),
-  subtitle: z.string().max(500).nullable().optional(),
-  // --- Reveal extensions (all optional; back-compat) -------------------------
-  /** How long the processing interstitial plays before the result (ms). */
-  durationMs: z.number().int().min(500).max(30_000).optional(),
-  /** Outcome subtitle template; `[key]` tokens interpolate from the answers. */
-  subtitleTemplate: z.string().max(200).nullable().optional(),
-  /** Pre-warm the booking embed while the interstitial plays. */
-  prewarm: z.boolean().optional(),
 });
 
 // --- Outcome extensions (booking + answer-forced overrides) ------------------
@@ -265,6 +279,11 @@ export const formOutcomeSchema = z.object({
   message: z.string().max(2000).nullable().optional(),
   /** Scheduling handoff (HubSpot Meetings / Calendly) shown for this outcome. */
   booking: outcomeBookingSchema.nullable().optional(),
+  /**
+   * Hold the thank-you screen this long before this outcome's redirect fires
+   * (ADDITIVE — V5-B1). Absent = inherit the form-level ending's delay.
+   */
+  redirectDelayMs: z.number().int().min(0).max(60_000).optional(),
   /**
    * Answer-forced rules: when ANY rule matches the answers, this outcome wins
    * over score bucketing (outcomes are scanned in declared order).
@@ -514,6 +533,24 @@ export const formTrackingSchema = z.object({
 export type FormTracking = z.infer<typeof formTrackingSchema>;
 
 /** The versioned config blob. `version` gates future migrations of the shape. */
+/**
+ * Form-level ending (V5-B1): the defaults an outcome may override. `redirectUrl`
+ * is http(s)-only for the same stored-XSS reason as the per-outcome one — the
+ * renderer navigates to it.
+ */
+export const formEndingSchema = z.object({
+  headline: z.string().max(200).nullable().optional(),
+  body: z.string().max(2000).nullable().optional(),
+  redirectUrl: z
+    .string()
+    .url()
+    .refine(isSafeHttpUrl, { message: 'redirectUrl must use http(s).' })
+    .nullable()
+    .optional(),
+  redirectDelayMs: z.number().int().min(0).max(60_000).optional(),
+});
+export type FormEndingInput = z.infer<typeof formEndingSchema>;
+
 export const formConfigSchema = z.object({
   version: z.literal(1),
   branding: formBrandingSchema.nullable().optional(),
@@ -521,6 +558,12 @@ export const formConfigSchema = z.object({
   steps: z.array(formStepSchema).default([]),
   scoring: z.object({ enabled: z.boolean().optional() }).nullable().optional(),
   outcomes: z.array(formOutcomeSchema).optional(),
+  /**
+   * Form-level ending, overridable per outcome (ADDITIVE — V5-B1). Absent on
+   * every legacy config, which then renders exactly as before: the built-in
+   * thank-you copy, and redirects only where an outcome sets one.
+   */
+  ending: formEndingSchema.nullable().optional(),
   /**
    * Pluggable submission destinations (CRM/webhook sync via the durable outbox).
    * ADDITIVE — absent on every legacy config; the renderer never receives it.

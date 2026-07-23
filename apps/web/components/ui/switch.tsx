@@ -12,12 +12,20 @@ export function Switch({
   onCheckedChange,
   disabled,
   'aria-label': ariaLabel,
+  'data-testid': testId,
   className,
 }: {
   checked: boolean;
   onCheckedChange: (next: boolean) => void;
   disabled?: boolean;
   'aria-label'?: string;
+  /**
+   * Forwarded to the rendered button. Declared explicitly because this component
+   * does NOT spread its rest props — a `data-testid` passed by a caller used to
+   * be dropped on the floor, so any test targeting a switch by testid silently
+   * matched nothing and the switch looked untestable.
+   */
+  'data-testid'?: string;
   className?: string;
 }) {
   return (
@@ -26,6 +34,7 @@ export function Switch({
       role="switch"
       aria-checked={checked}
       aria-label={ariaLabel}
+      data-testid={testId}
       disabled={disabled}
       onClick={() => onCheckedChange(!checked)}
       className={cn(
