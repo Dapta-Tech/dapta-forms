@@ -7,6 +7,7 @@ import {
   createEmptyOutcome,
   hasScoringSignal,
   normalizeConfig,
+  migrateRevealToStep,
 } from './form-config';
 // interpolate + resolveQuestion are unified in ./form-logic (shared by builder + runtime).
 import { interpolate, resolveQuestion } from './form-logic';
@@ -211,5 +212,89 @@ describe('createEmptyStep — scheduler (V6)', () => {
     expect(s.required).toBe(true); // a scheduler must be booked unless the author turns it off
     expect(s.scheduler).toEqual({ provider: 'calendly', prefill: true });
     expect(s.scheduler?.url == null).toBe(true); // no event type picked yet
+  });
+});
+
+describe('migrateRevealToStep', () => {
+  const base = (over: Partial<FormConfig> = {}): FormConfig => ({
+    version: 1,
+    steps: [
+      step({ key: 'email', type: 'email' }),
+      step({ key: 'budget', type: 'slider' }),
+      step({ key: 'role', type: 'dropdown' }),
+    ],
+    ...over,
+  });
+
+  it('leaves a config with no legacy reveal untouched — same object, so callers can identity-check', () => {
+    const config = base();
+    expect(migrateRevealToStep(config)).toBe(config);
+  });
+
+  it('folds the form-level copy into a reveal STEP at the position it played', () => {
+    const next = migrateRevealToStep(
+      base({
+        reveal: { enabled: true, headline: 'Matching you…', durationMs: 1800, prewarm: true },
+        revealAfterStep: 2, // after `budget`
+      }),
+    );
+    expect(next.steps.map((s) => s.type)).toEqual(['email', 'slider', 'reveal', 'dropdown']);
+    expect(next.steps[2]?.reveal).toEqual({
+      enabled: true,
+      headline: 'Matching you…',
+      subtitle: '',
+      durationMs: 1800,
+      prewarm: true,
+    });
+    // The legacy shape is gone, so nothing can author or play it twice.
+    expect('reveal' in next).toBe(false);
+    expect('revealAfterStep' in next).toBe(false);
+  });
+
+  it('defaults to the END when no position was pinned — where an enabled reveal already played', () => {
+    const next = migrateRevealToStep(base({ reveal: { enabled: true } }));
+    expect(next.steps.map((s) => s.type)).toEqual(['email', 'slider', 'dropdown', 'reveal']);
+  });
+
+  it('honors the legacy per-step triggersReveal position, and strips the flag', () => {
+    const config = base();
+    config.steps[0] = { ...config.steps[0]!, triggersReveal: true };
+    const next = migrateRevealToStep({ ...config, reveal: { enabled: true } });
+    expect(next.steps.map((s) => s.type)).toEqual(['email', 'reveal', 'slider', 'dropdown']);
+    expect(next.steps.some((s) => s.triggersReveal)).toBe(false);
+  });
+
+  it('collapses subtitleTemplate onto subtitle — it won at runtime and both interpolate', () => {
+    const next = migrateRevealToStep(
+      base({ reveal: { enabled: true, subtitle: 'plain', subtitleTemplate: 'Finding [role]…' } }),
+    );
+    expect(next.steps.at(-1)?.reveal?.subtitle).toBe('Finding [role]…');
+  });
+
+  it('adds NO step for a disabled reveal — it never played — but still drops the legacy fields', () => {
+    const next = migrateRevealToStep(base({ reveal: { enabled: false }, revealAfterStep: 1 }));
+    expect(next.steps.some((s) => s.type === 'reveal')).toBe(false);
+    expect('reveal' in next).toBe(false);
+    expect('revealAfterStep' in next).toBe(false);
+  });
+
+  it('is idempotent — a second pass is a no-op, so re-opening the builder never stacks reveals', () => {
+    const once = migrateRevealToStep(base({ reveal: { enabled: true } }));
+    const twice = migrateRevealToStep(once);
+    expect(twice).toBe(once);
+    expect(twice.steps.filter((s) => s.type === 'reveal')).toHaveLength(1);
+  });
+
+  it('gives the new step a key that cannot collide with an existing one', () => {
+    const config = base();
+    config.steps.push(step({ key: 'reveal_1', type: 'text' }));
+    const next = migrateRevealToStep({ ...config, reveal: { enabled: true } });
+    const keys = next.steps.map((s) => s.key);
+    expect(new Set(keys).size).toBe(keys.length);
+  });
+
+  it('never invents a reveal for a form with no steps', () => {
+    const next = migrateRevealToStep({ version: 1, steps: [], reveal: { enabled: true } });
+    expect(next.steps).toEqual([]);
   });
 });

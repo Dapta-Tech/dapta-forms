@@ -7,7 +7,7 @@
  */
 import type { FormFieldType, FormStep } from '@quill/engine';
 import { createEmptyStep } from '@quill/engine';
-import type { GalleryItemId } from './builder-messages';
+import type { BuilderMessages, GalleryItemId } from './builder-messages';
 
 export interface GalleryItem {
   id: GalleryItemId;
@@ -72,6 +72,23 @@ export function iconForStep(step: Pick<FormStep, 'type' | 'selectionMode'>): str
     default:
       return 'pi-stop';
   }
+}
+
+/**
+ * How a step names itself in a LIST (the spine, the mobile strip): its question
+ * text, else something the author can still recognize.
+ *
+ * A reveal asks nothing, so `question` is always blank on one — falling back to
+ * "Type your question…" labelled every reveal card as an unfinished question.
+ * Its headline is its identity; failing that, the type name.
+ */
+export function stepListLabel(step: FormStep, m: BuilderMessages): string {
+  const question = step.question?.trim();
+  if (question) return question;
+  if (step.type === 'reveal') {
+    return step.reveal?.headline?.trim() || m.gallery.items.reveal.title;
+  }
+  return m.canvas.titlePlaceholder;
 }
 
 /** Contact-type steps auto-detected for the spine badge + "doesn't score" hint. */

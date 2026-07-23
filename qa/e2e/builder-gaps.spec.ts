@@ -264,7 +264,7 @@ test.describe('builder gaps: newly-exposed engine features via the builder UI', 
     await expect(page.locator('img.pf-logos__img').first()).toHaveAttribute('src', logoUrl);
   });
 
-  test('Reveal: panel config + triggersReveal plays the interstitial then auto-advances', async ({
+  test('Reveal: the behavior toggle adds a card that plays the interstitial then auto-advances', async ({
     page,
     request,
   }) => {
@@ -274,19 +274,25 @@ test.describe('builder gaps: newly-exposed engine features via the builder UI', 
     });
 
     await openEditor(page, form.id);
-    // Build tab → pick step → Behavior → "Show reveal screen after".
+    // Build tab → pick step → Behavior → "Show reveal screen after". The switch
+    // INSERTS a reveal card after this question; there is no Design-tab reveal
+    // to enable separately, which is the whole point of the single model.
     await page.getByRole('button', { name: /Pick one/ }).click();
     const trigger = page.getByRole('switch', { name: 'Show reveal screen after' });
     await trigger.click();
     await expect(trigger).toHaveAttribute('aria-checked', 'true');
 
-    // Design tab → Reveal screen: enable, subtitle template, duration 1000ms.
-    await page.getByRole('button', { name: 'Design', exact: true }).click();
-    const enable = page.getByRole('switch', { name: 'Enable the reveal screen' });
-    await enable.click();
-    await expect(enable).toHaveAttribute('aria-checked', 'true');
-    await page.locator('label:text-is("Subtitle template") + input').fill('For [pick]');
-    await page.locator('label:text-is("Duration (ms)") + input').fill('1000');
+    // The new card is question 2, between the pick and the email step.
+    const spine = page.getByTestId('question-spine');
+    await expect(spine.getByText('Reveal screen', { exact: true })).toBeVisible();
+
+    // Select it and author its copy + duration on the card itself.
+    await spine.getByText('Reveal screen', { exact: true }).click();
+    await expect(page.getByTestId('canvas-reveal-preview')).toBeVisible();
+    await page.getByTestId('step-reveal-headline').fill('Matching you');
+    // Both reveal lines interpolate [field] tokens.
+    await page.getByTestId('step-reveal-subtitle').fill('For [pick]');
+    await page.getByTestId('step-reveal-duration').fill('1000');
 
     await saveAndPublish(page);
 

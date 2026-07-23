@@ -12,6 +12,9 @@ import { tb } from './builder-messages';
 import { TokenTextarea, tokenOptionsBefore, allTokenKeys } from './token-textarea';
 import { SchedulerEmbedPreview } from './scheduler-embed-preview';
 
+/** The reveal's play time when the card configures none (mirrors the renderer). */
+const DEFAULT_REVEAL_MS = 2200;
+
 /** A textarea that grows to fit its content (used for inline title/description). */
 function AutoTextarea({
   value,
@@ -102,6 +105,23 @@ export function CanvasQuestion({
   }
 
   const isLast = index + 1 >= total;
+
+  // A reveal is not a question — it asks nothing, has no title, no description
+  // and no Next button, and the respondent sees a spinner over the configured
+  // copy. Rendering it through the question chrome below produced a card with a
+  // "…" short-answer box and a Next button that never exist at runtime, so it
+  // gets its own WYSIWYG card.
+  if (step.type === 'reveal') {
+    return (
+      <RevealCanvas
+        step={step}
+        accent={accent}
+        device={device}
+        onUpdate={onUpdate}
+        m={m}
+      />
+    );
+  }
 
   return (
     <div className="flex justify-center">
@@ -246,6 +266,77 @@ export function CanvasQuestion({
             </button>
           </div>
         ) : null}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The reveal card, rendered as the respondent will see it: the accent spinner,
+ * the headline and subtitle, and the progress bar filling over the configured
+ * duration — looping, so the author can feel how long `durationMs` actually is.
+ *
+ * The copy is edited IN PLACE (same inline-textarea idiom as a question title),
+ * which is why this mirrors the public `.pf-reveal__*` markup by hand instead of
+ * mounting `<RevealScreen>`: that component owns its own timer and renders the
+ * copy as static text, so it could preview the screen or let you edit it, not
+ * both. Duration and pre-warm stay in the settings panel.
+ */
+function RevealCanvas({
+  step,
+  accent,
+  device,
+  onUpdate,
+  m,
+}: {
+  step: FormStep;
+  accent: string;
+  device: 'desktop' | 'mobile';
+  onUpdate: (patch: Partial<FormStep>) => void;
+  m: BuilderMessages;
+}) {
+  const durationMs = step.reveal?.durationMs ?? DEFAULT_REVEAL_MS;
+  return (
+    <div className="flex justify-center">
+      <div
+        data-testid="canvas-reveal-preview"
+        className={cn(
+          'flex w-full flex-col items-center rounded-2xl border border-border bg-card px-6 py-14 shadow-xl sm:px-8',
+          device === 'mobile' ? 'max-w-[380px]' : 'max-w-[640px]',
+        )}
+      >
+        <div
+          aria-hidden
+          data-testid="canvas-reveal-spinner"
+          className="qb-reveal__spinner mb-7 h-[52px] w-[52px] rounded-full border-4 border-muted"
+          style={{ borderTopColor: accent }}
+        />
+        <AutoTextarea
+          value={step.reveal?.headline ?? ''}
+          onChange={(v) => onUpdate({ reveal: { ...step.reveal, headline: v || null } })}
+          placeholder={m.canvas.revealHeadlinePlaceholder}
+          ariaLabel={m.canvas.revealHeadlinePlaceholder}
+          className="canvas-title max-w-[420px] text-center text-[26px] font-extrabold leading-tight tracking-tight text-foreground"
+        />
+        <div className="mt-2 w-full max-w-[420px]">
+          <AutoTextarea
+            value={step.reveal?.subtitle ?? ''}
+            onChange={(v) => onUpdate({ reveal: { ...step.reveal, subtitle: v || null } })}
+            placeholder={m.canvas.revealSubtitlePlaceholder}
+            ariaLabel={m.canvas.revealSubtitlePlaceholder}
+            rows={2}
+            className="text-center text-[15px] leading-relaxed text-muted-foreground"
+          />
+        </div>
+        <div className="mt-6 h-2 w-[260px] max-w-full overflow-hidden rounded-full bg-muted">
+          <div
+            className="qb-reveal__fill h-full rounded-full"
+            style={{ background: accent, animationDuration: `${durationMs}ms` }}
+          />
+        </div>
+        <p className="mt-5 text-xs text-muted-foreground">
+          {tb(m.canvas.revealPlays, { ms: durationMs })}
+        </p>
       </div>
     </div>
   );

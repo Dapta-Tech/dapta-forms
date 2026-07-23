@@ -221,9 +221,13 @@ export function FormRenderer({
   );
   const step = steps[index];
   const thresholdKey = useMemo(() => partialSubmitKey(engineConfig), [engineConfig]);
-  // WHERE the reveal plays (revealAfterStep → triggersReveal → default-last);
-  // null when the reveal is disabled. Position is authoritative, so a form no
-  // longer replays a reveal mid-form just because a step carries triggersReveal.
+  // BACK-COMPAT ONLY: where a LEGACY form-level reveal plays
+  // (revealAfterStep → triggersReveal → default-last), null when there is none.
+  // The builder no longer authors this shape — it folds an existing one into a
+  // real `reveal` step on open (`migrateRevealToStep`) — but a form PUBLISHED
+  // before that keeps its stored config until it is re-published, so the
+  // interstitial has to keep playing for it. Never remove without a config
+  // migration of every published form.
   const revealKey = useMemo(() => revealAfterKey(engineConfig), [engineConfig]);
 
   // Accent branding (only override the local default when a color is configured).

@@ -482,15 +482,13 @@ export interface FormsMessages {
         /** Shown when score ranges exist — they can override any field here. */
         outcomesNote: string;
       };
-      /** Per-question behavior toggles (terminal / reveal position / hidden). */
+      /** Per-question behavior toggles (terminal / reveal card / hidden). */
       behavior: {
         title: string;
         terminal: string;
         terminalHint: string;
         reveal: string;
         revealHint: string;
-        /** "Edit reveal screen" button → jumps to the Design tab (V4-12). */
-        editReveal: string;
         /** Hidden-question toggle — filled via a URL parameter (V4-13). */
         hidden: string;
         hiddenHint: string;
@@ -516,23 +514,6 @@ export interface FormsMessages {
         /** Explains the field key doubles as a URL parameter for prefill. */
         fieldKeyHint: string;
         placeholder: string;
-      };
-      /** The reveal/processing interstitial settings (Design tab). */
-      reveal: {
-        title: string;
-        subtitle: string;
-        enabled: string;
-        stepHint: string;
-        headline: string;
-        headlinePlaceholder: string;
-        subtitleLabel: string;
-        subtitlePlaceholder: string;
-        template: string;
-        templateHint: string;
-        duration: string;
-        durationHint: string;
-        prewarm: string;
-        prewarmHint: string;
       };
       /** Partial-submission threshold ("save a partial after step N"). */
       partial: {
@@ -1287,8 +1268,7 @@ export const en: FormsMessages = {
         terminalHint: 'Completing this question ends the form immediately (disqualification).',
         reveal: 'Show reveal screen after',
         revealHint:
-          'Plays the reveal screen after this question. Otherwise it defaults to the end — drag the marker in the question list to move it.',
-        editReveal: 'Edit reveal screen',
+          'Adds a reveal card right after this question. Turning it off removes that card. Edit its copy by selecting the card.',
         hidden: 'Hidden question',
         hiddenHint: 'Not shown to respondents — its answer is filled from a matching URL parameter (?key=value).',
         fieldKey: 'Field key',
@@ -1308,24 +1288,6 @@ export const en: FormsMessages = {
         fieldKey: 'Field key',
         fieldKeyHint: 'Used as a URL parameter to prefill this field.',
         placeholder: 'Placeholder',
-      },
-      reveal: {
-        title: 'Reveal screen',
-        subtitle: 'A short processing interstitial shown before the result.',
-        enabled: 'Enable the reveal screen',
-        stepHint:
-          'Plays at the end by default. Drag the “Reveal screen” marker in the Build tab’s question list to move it.',
-        headline: 'Headline',
-        headlinePlaceholder: 'Reviewing your answers…',
-        subtitleLabel: 'Subtitle',
-        subtitlePlaceholder: 'One moment while we match you with the best next step.',
-        template: 'Subtitle template',
-        templateHint:
-          'Overrides the subtitle. Use [field] to insert an answer — e.g. “Finding the best advisor for [industry]…”.',
-        duration: 'Duration (ms)',
-        durationHint: 'How long the reveal plays, 500–30000 ms. Default: 2200.',
-        prewarm: 'Pre-load the booking page',
-        prewarmHint: 'Warms the outcome’s booking embed while the reveal screen plays.',
       },
       partial: {
         title: 'Partial submissions',
@@ -2076,8 +2038,7 @@ export const es: FormsMessages = {
         terminalHint: 'Completar esta pregunta termina el formulario de inmediato (descalificación).',
         reveal: 'Mostrar pantalla de revelación después',
         revealHint:
-          'Reproduce la pantalla de revelación tras esta pregunta. Si no, se muestra al final por defecto — arrastra el marcador en la lista de preguntas para moverla.',
-        editReveal: 'Editar pantalla de revelación',
+          'Añade una tarjeta de revelación justo después de esta pregunta. Al apagarlo se elimina esa tarjeta. Edita su texto seleccionando la tarjeta.',
         hidden: 'Pregunta oculta',
         hiddenHint: 'No se muestra a los respondientes — su respuesta se rellena desde un parámetro de URL coincidente (?clave=valor).',
         fieldKey: 'Clave del campo',
@@ -2097,24 +2058,6 @@ export const es: FormsMessages = {
         fieldKey: 'Clave del campo',
         fieldKeyHint: 'Se usa como parámetro de URL para prellenar este campo.',
         placeholder: 'Texto de ejemplo',
-      },
-      reveal: {
-        title: 'Pantalla de revelación',
-        subtitle: 'Un breve intermedio de procesamiento antes del resultado.',
-        enabled: 'Activar la pantalla de revelación',
-        stepHint:
-          'Se muestra al final por defecto. Arrastra el marcador «Pantalla de revelación» en la lista de preguntas de la pestaña Construir para moverla.',
-        headline: 'Titular',
-        headlinePlaceholder: 'Revisando tus respuestas…',
-        subtitleLabel: 'Subtítulo',
-        subtitlePlaceholder: 'Un momento mientras encontramos el mejor siguiente paso para ti.',
-        template: 'Plantilla del subtítulo',
-        templateHint:
-          'Reemplaza el subtítulo. Usa [campo] para insertar una respuesta — p. ej. «Buscando el mejor asesor para [industria]…».',
-        duration: 'Duración (ms)',
-        durationHint: 'Cuánto dura la revelación, 500–30000 ms. Por defecto: 2200.',
-        prewarm: 'Precargar la página de reserva',
-        prewarmHint: 'Precarga el calendario de reserva del resultado mientras se muestra la revelación.',
       },
       partial: {
         title: 'Envíos parciales',
