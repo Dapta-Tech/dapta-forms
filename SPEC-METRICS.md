@@ -175,6 +175,45 @@ Criterio de aceptación P0: los 4 escenarios rotos del audit empírico ahora dan
 
 ---
 
+## 4b. Decisiones ABIERTAS que el QA adversarial destapó
+
+Estas tres NO se cambiaron en código: son decisiones de producto que revisan
+acuerdos ya tomados, o arreglos de un bug preexistente con costo de schema.
+
+### D1 — Semántica de ventana del embudo (revisa la decisión #6)
+La decisión #6 ("cada métrica por su propio timestamp") es correcta métrica por
+métrica, pero hace que numerador y denominador describan **poblaciones
+distintas**: una sesión que arranca antes de la ventana y termina dentro aporta
+una submission sin su start. QA renderizó **200% y 300%** de completion rate y
+embudos que **crecen hacia abajo** (0 vistas arriba, 1 abajo), alcanzables con el
+preset "Today" de fábrica porque cualquier sesión que cruce medianoche UTC se
+parte en dos ventanas.
+
+*Mitigación aplicada:* `completionPct` clampea a 100% — el número imposible ya no
+se imprime. *Pendiente de decisión:* contar el embudo por **cohorte de sesión**
+(todo se ventanea por el arranque de la sesión) haría el embudo internamente
+coherente a costa de que una submission de hoy cuente en el día que empezó.
+
+### D2 — Ancla de "Time to complete" (revisa la decisión #4)
+La decisión #4 fijó `open` = primer evento `view`. QA midió que eso
+**sobre-reporta 17x** cuando el respondiente revisita la pestaña, y **16.6x** en
+formularios con portada (cuenta el dwell en el cover). Alternativa coherente con
+la decisión #1: anclar en `step_view idx 0` — el mismo instante que define un
+Start — y medir "tiempo respondiendo" en vez de "tiempo desde que abrió".
+
+### D3 — Drop-off atribuye vistas a la pregunta equivocada (bug PREEXISTENTE)
+El renderer emite `step_view` con el índice sobre los pasos **visibles**
+(`runtimeSteps(config, answers)`), pero el servicio mapea `rowViews[i]` sobre
+`config.steps` (orden **autorado**). En un formulario con `showWhen`/`hideWhen`/
+`goto`, una pregunta que nadie vio aparece con vistas y abandono, y la real con
+cero. Es monótono y nunca negativo, así que **ninguna heurística de consistencia
+lo detecta**. No lo introdujo esta rama.
+
+*Arreglo correcto:* persistir la **clave** del paso en `form_event` (columna
+aditiva `step_key`) y unir por clave, no por índice. Toca renderer + schema +
+migración + servicio. Hasta entonces, el drop-off solo es fiable en formularios
+sin lógica condicional.
+
 ## 5. Riesgos / notas
 
 - **Perf de Time (correlated subquery por `open`):** aceptable al volumen lead-gen; un rollup diario (Fase 2) lo hace barato. Índice `form_event (form_id, session_id, type)` ayudaría si hiciera falta (aditivo).
