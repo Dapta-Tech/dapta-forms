@@ -274,6 +274,12 @@ export function QuestionSettings({
             steps,
             steps.findIndex((s) => s.key === step.key),
           )}
+          // Only steps AFTER this one are legal forward jump targets.
+          laterSteps={steps
+            .slice(steps.findIndex((s) => s.key === step.key) + 1)
+            .map((s) => ({ key: s.key, label: s.question?.trim() || s.key }))}
+          goto={step.goto}
+          onGotoChange={(g) => onUpdate({ goto: g })}
           bm={bm}
         />
       ) : null}
@@ -449,17 +455,23 @@ export function QuestionSettings({
         <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           {em.behavior.title}
         </p>
-        <InlineField label={em.behavior.terminal} hint={em.behavior.terminalHint}>
-          <Switch
-            checked={!!step.terminal}
-            onCheckedChange={(v) => onUpdate({ terminal: v || undefined })}
-            aria-label={em.behavior.terminal}
-          />
-        </InlineField>
+        {/* "Ends the form" means DISQUALIFICATION here, which is the opposite of
+            what finishing a scheduler means — booking is the success case. A
+            scheduler routes from its own "After booking" picker instead. */}
+        {step.type !== 'scheduler' ? (
+          <InlineField label={em.behavior.terminal} hint={em.behavior.terminalHint}>
+            <Switch
+              checked={!!step.terminal}
+              onCheckedChange={(v) => onUpdate({ terminal: v || undefined })}
+              aria-label={em.behavior.terminal}
+            />
+          </InlineField>
+        ) : null}
         {/* Hidden question — never shown; its answer is seeded from a matching
             URL parameter and carried into the submission. Meaningless for a
-            message step (it collects no answer), so hide it there. */}
-        {!isInputlessType(step.type) ? (
+            message step (it collects no answer) and for a scheduler (its answer
+            is a booking, which no URL parameter can make), so hide it there. */}
+        {!isInputlessType(step.type) && step.type !== 'scheduler' ? (
           <InlineField label={em.behavior.hidden} hint={em.behavior.hiddenHint}>
             <Switch
               checked={!!step.hidden}
@@ -472,7 +484,7 @@ export function QuestionSettings({
             about "a matching URL parameter" — this is the only place that says
             WHICH one. `name` steps edit their two subfield keys in their own
             section instead, and a `message` step captures nothing to key. */}
-        {!isInputlessType(step.type) && step.type !== 'name' ? (
+        {!isInputlessType(step.type) && step.type !== 'name' && step.type !== 'scheduler' ? (
           <FieldKeyEditor
             stepKey={step.key}
             // Every answer slot the engine's renameStepKey refuses to collide

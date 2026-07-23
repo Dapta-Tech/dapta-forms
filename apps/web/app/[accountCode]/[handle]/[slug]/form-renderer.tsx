@@ -39,7 +39,7 @@ import { StepInput } from '@/components/public/step-input';
 import { BookingScreen } from '@/components/public/booking-screen';
 import { RevealScreen } from '@/components/public/reveal-screen';
 import { warmBookingEmbed, type BookingScheduledDetails } from '@/lib/booking-embed';
-import { applySchedulerPrefillMap } from '@/lib/booking-prefill';
+import { resolveSchedulerPrefill } from '@/lib/booking-prefill';
 import { submitFormAction, recordEventAction, recordBookingAction } from './actions';
 import './public-form.css';
 
@@ -79,15 +79,22 @@ const PREFILL_MAX_LEN = 512;
  */
 function schedulerToBooking(
   scheduler: NonNullable<FormStep['scheduler']>,
+  customAnswers: Record<string, string> = {},
 ): OutcomeBooking | null {
   const url = scheduler.url?.trim();
   if (!url || !isSafeHttpUrl(url)) return null;
   const provider = scheduler.provider ?? 'calendly';
   let finalUrl = url;
-  if (scheduler.hideEventDetails && provider === 'calendly') {
+  if (provider === 'calendly') {
     try {
       const u = new URL(url);
-      u.searchParams.set('hide_event_type_details', '1');
+      if (scheduler.hideEventDetails) u.searchParams.set('hide_event_type_details', '1');
+      // The event type's custom questions are prefilled by their positional id,
+      // so they ride the URL as-is (the embed builder preserves existing query
+      // params). Built-in name/email travel through the overlaid answers.
+      for (const [field, value] of Object.entries(customAnswers)) {
+        if (value) u.searchParams.set(field, value);
+      }
       finalUrl = u.toString();
     } catch {
       /* keep the original url */
@@ -690,7 +697,12 @@ export function FormRenderer({
   // just the last-step / goto path. Rendered here (not a `phase`) for the same
   // reason as reveal — it lives in `steps`.
   if (step.type === 'scheduler') {
-    const booking = step.scheduler ? schedulerToBooking(step.scheduler) : null;
+    // Resolve the author's field mapping once: built-ins overlay the answers,
+    // the event type's custom questions ride their exact positional ids.
+    const schedPrefill = resolveSchedulerPrefill(answers, step.scheduler?.prefillMap);
+    const booking = step.scheduler
+      ? schedulerToBooking(step.scheduler, schedPrefill.customAnswers)
+      : null;
     const schedLogo = cover?.logo ?? config.branding?.logo ?? null;
     return (
       <PhaseShell className="pf" style={accentVars} bannerText={cover?.bannerText}>
@@ -719,10 +731,8 @@ export function FormRenderer({
                 {booking ? (
                   <BookingScreen
                     booking={booking}
-                    // Feed the embed the author's field mapping (name/email/phone
-                    // → question) overlaid on the answers; unmapped fields fall
-                    // back to the conventional keys.
-                    answers={applySchedulerPrefillMap(answers, step.scheduler?.prefillMap)}
+                    answers={schedPrefill.answers}
+                    extraCustomAnswers={schedPrefill.customAnswers}
                     sessionId={sessionId}
                     locale={locale}
                     hideHeader

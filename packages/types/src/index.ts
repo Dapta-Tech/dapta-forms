@@ -120,6 +120,8 @@ export const formSchedulerSchema = z.object({
   provider: z.enum(['calendly', 'hubspot_meetings']).optional(),
   /** The picked Calendly event type's stable URI (used by the builder's picker). */
   eventTypeUri: z.string().max(500).nullable().optional(),
+  /** Its display name, stored so the builder can label it without a lookup. */
+  eventTypeName: z.string().max(200).nullable().optional(),
   /** The public scheduling page embedded in the form (the event type's scheduling_url). */
   url: z
     .string()
@@ -132,18 +134,14 @@ export const formSchedulerSchema = z.object({
   /** Prefill the booking form from collected answers (name/email/phone). */
   prefill: z.boolean().optional(),
   /**
-   * Which earlier question feeds each field the booking page asks for. Absent
-   * entries fall back to the conventional answer keys (firstname/lastname/
-   * email/phone), so a form using the standard keys needs no mapping at all.
-   * Values are step keys.
+   * Which earlier question feeds each field the booking page asks for, keyed by
+   * Calendly's own prefill id: `name`, `email`, or `a1`/`a2`/… for the event
+   * type's custom questions (`phone` is still accepted from earlier configs and
+   * routes to the legacy a1 slot). Values are step keys; absent entries fall
+   * back to the conventional answer keys, so a form already using
+   * firstname/lastname/email needs no mapping at all.
    */
-  prefillMap: z
-    .object({
-      name: z.string().max(64).nullable().optional(),
-      email: z.string().max(64).nullable().optional(),
-      phone: z.string().max(64).nullable().optional(),
-    })
-    .optional(),
+  prefillMap: z.record(z.string().max(64), z.string().max(64).nullable()).optional(),
 });
 
 export const formStepSchema = z.object({

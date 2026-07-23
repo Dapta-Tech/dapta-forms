@@ -1585,4 +1585,56 @@ describe('scheduler step (V6)', () => {
     };
     expect(computeScore(cfg, { sched: '2026-01-01T10:00:00Z', pick: 'a' })).toBe(5);
   });
+
+  it('a catch-all goto routes after a booking, which has no fixed value to match', () => {
+    const cfg: FormConfig = {
+      version: 1,
+      steps: [
+        step({ key: 'sched', type: 'scheduler', required: true, goto: [{ values: ['*'], target: null }] }),
+        step({ key: 'later', type: 'text' }),
+      ],
+    };
+    // Not booked → nothing matches; the walk continues linearly.
+    expect(runtimeSteps(cfg, {}).map((s) => s.key)).toEqual(['sched', 'later']);
+    // Booked → the catch-all ends the flow, so the scheduler IS the last step
+    // and the renderer finalizes (booking → submit the form).
+    expect(runtimeSteps(cfg, { sched: '2026-09-01T15:00:00.000Z' }).map((s) => s.key)).toEqual([
+      'sched',
+    ]);
+  });
+
+  it('a catch-all goto can jump forward instead of ending the form', () => {
+    const cfg: FormConfig = {
+      version: 1,
+      steps: [
+        step({ key: 'sched', type: 'scheduler', goto: [{ values: ['*'], target: 'end' }] }),
+        step({ key: 'skipped', type: 'text' }),
+        step({ key: 'end', type: 'text' }),
+      ],
+    };
+    expect(runtimeSteps(cfg, { sched: '2026-09-01T15:00:00.000Z' }).map((s) => s.key)).toEqual([
+      'sched',
+      'end',
+    ]);
+  });
+
+  it('a normal value-matching goto is unaffected by the catch-all support', () => {
+    const cfg: FormConfig = {
+      version: 1,
+      steps: [
+        step({
+          key: 'pick',
+          type: 'multiple_choice',
+          options: [
+            { label: 'A', value: 'a', points: 0 },
+            { label: 'B', value: 'b', points: 0 },
+          ],
+          goto: [{ values: ['a'], target: null }],
+        }),
+        step({ key: 'later', type: 'text' }),
+      ],
+    };
+    expect(runtimeSteps(cfg, { pick: 'a' }).map((s) => s.key)).toEqual(['pick']);
+    expect(runtimeSteps(cfg, { pick: 'b' }).map((s) => s.key)).toEqual(['pick', 'later']);
+  });
 });

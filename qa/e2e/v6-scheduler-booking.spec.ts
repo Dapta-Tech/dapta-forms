@@ -66,7 +66,7 @@ async function accountCode(request: APIRequestContext): Promise<string> {
 /** A form whose scheduler sits either last or mid-form, with a prefill mapping. */
 async function createForm(
   request: APIRequestContext,
-  opts: { schedulerLast: boolean },
+  opts: { schedulerLast: boolean; submitOnBooking?: boolean },
 ): Promise<{ id: string; slug: string }> {
   seq += 1;
   const scheduler = {
@@ -74,12 +74,17 @@ async function createForm(
     type: 'scheduler',
     question: SCHED_Q,
     required: true,
+    // "After booking → submit the form": a catch-all rule, since a booking has
+    // no option value to branch on.
+    ...(opts.submitOnBooking ? { goto: [{ values: ['*'], target: null }] } : {}),
     scheduler: {
       provider: 'calendly',
       url: 'https://calendly.com/acme/intro',
       prefill: true,
       // Deliberately NON-conventional keys, so this only works via the mapping.
-      prefillMap: { name: 'quien', email: 'correo', phone: 'celular' },
+      // The phone rides `a2` — this event type's SECOND custom question — which
+      // is exactly what the old hardcoded `a1` guess got wrong.
+      prefillMap: { name: 'quien', email: 'correo', a2: 'celular' },
     },
   };
   const tail = { key: 'after', type: 'text', question: 'Anything else?' };
@@ -119,8 +124,20 @@ async function stubCalendly(page: Page): Promise<void> {
   });
 }
 
-/** Dispatch the exact message Calendly posts when an invitee books. */
+/**
+ * Dispatch the exact message Calendly posts when an invitee books.
+ *
+ * Waits for the embed to have initialised first: the message listener and the
+ * widget init are both mount effects, so firing before the widget exists means
+ * firing before anything is listening — the event would be dropped and the test
+ * would fail intermittently rather than deterministically.
+ */
 async function simulateBooking(page: Page): Promise<void> {
+  await page.waitForFunction(
+    () => (window as unknown as { __calendlyInit: unknown }).__calendlyInit !== null,
+    undefined,
+    { timeout: 20_000 },
+  );
   await page.evaluate(
     ([eventUri, inviteeUri, startTime]) => {
       window.dispatchEvent(
@@ -182,9 +199,10 @@ test.describe('V6 — booking a scheduler step (no Calendly token)', () => {
       lastName: 'Lovelace',
       email: 'ada@acme.io',
     });
-    expect((init!.prefill as { customAnswers?: Record<string, string> }).customAnswers?.a1).toBe(
-      '+13105551234',
-    );
+    // The phone landed on a2 — the id the mapping named — not the guessed a1.
+    const custom = (init!.prefill as { customAnswers?: Record<string, string> }).customAnswers ?? {};
+    expect(custom.a2).toBe('+13105551234');
+    expect(custom.a1).toBeUndefined();
 
     const sessionId = await sessionIdOf(page, code, slug);
     expect(sessionId).toBeTruthy();
@@ -274,5 +292,33 @@ test.describe('V6 — booking a scheduler step (no Calendly token)', () => {
       sessionId,
     );
     expect(sub?.completed_at ?? null, 'a mid-form booking must not complete the form').toBeNull();
+  });
+
+  test('"After booking → submit" ends a MID-form scheduler on the spot', async ({
+    page,
+    request,
+  }) => {
+    const code = await accountCode(request);
+    // Same mid-form shape as above (a question still follows it) — the only
+    // difference is the catch-all rule the After-booking picker writes.
+    const { slug } = await createForm(request, { schedulerLast: false, submitOnBooking: true });
+    await stubCalendly(page);
+    await reachScheduler(page, `/${code}/you/${slug}`);
+    const sessionId = await sessionIdOf(page, code, slug);
+
+    await simulateBooking(page);
+
+    // It does NOT walk on to "Anything else?" — it submits and shows the ending.
+    await expect(page.locator('.pf-done__title')).toBeVisible({ timeout: 20_000 });
+    await expect
+      .poll(
+        () =>
+          queryOne<{ completed_at: number | null }>(
+            'SELECT completed_at FROM submission WHERE session_id = ?',
+            sessionId,
+          )?.completed_at ?? null,
+        { timeout: 15_000, message: 'the catch-all rule must complete the submission' },
+      )
+      .not.toBeNull();
   });
 });

@@ -42,6 +42,18 @@ export type HubSpotPropertiesResponse =
   | { enabled: false; reason: string }
   | { enabled: true; cached: boolean; properties: HubSpotPropertyDto[] };
 
+/**
+ * One extra field an event type's booking form asks for, beyond the built-in
+ * name + email. `id` is the prefill parameter Calendly assigns by position
+ * (`a1`, `a2`, …) — which is why the position, not the order in the array, is
+ * what determines it.
+ */
+export interface CalendlyBookingFieldDto {
+  id: string;
+  label: string;
+  required: boolean;
+}
+
 /** A Calendly event type surfaced to the scheduler-step event-type picker. */
 export interface CalendlyEventTypeDto {
   /** Stable Calendly URI (what a scheduler step stores). */
@@ -51,6 +63,11 @@ export interface CalendlyEventTypeDto {
   schedulingUrl: string;
   active: boolean;
   durationMinutes: number;
+  /**
+   * The event type's own custom questions, so the builder maps the fields this
+   * booking form ACTUALLY asks for instead of assuming name/email/phone.
+   */
+  customQuestions: CalendlyBookingFieldDto[];
 }
 
 /** The event-type-picker response: disabled (no token) or the cached list. */
@@ -137,6 +154,12 @@ export class HubspotPropertiesService {
 interface CalendlyMeApiResponse {
   resource?: { uri?: string };
 }
+interface CalendlyCustomQuestionApi {
+  name?: string;
+  position?: number;
+  enabled?: boolean;
+  required?: boolean;
+}
 interface CalendlyEventTypesApiResponse {
   collection?: Array<{
     uri?: string;
@@ -144,7 +167,26 @@ interface CalendlyEventTypesApiResponse {
     scheduling_url?: string;
     active?: boolean;
     duration?: number;
+    custom_questions?: CalendlyCustomQuestionApi[];
   }>;
+}
+
+/**
+ * The extra fields an event type's booking form asks for. Calendly prefills a
+ * custom question by its POSITION (`a1` = position 0), so the id comes from
+ * `position` and falls back to the array index only when it is absent.
+ * Disabled questions are dropped — they are never rendered, so mapping one
+ * would silently do nothing.
+ */
+function toBookingFields(questions: CalendlyCustomQuestionApi[] | undefined): CalendlyBookingFieldDto[] {
+  if (!Array.isArray(questions)) return [];
+  return questions
+    .filter((q) => q && q.enabled !== false)
+    .map((q, i) => ({
+      id: `a${typeof q.position === 'number' ? q.position + 1 : i + 1}`,
+      label: q.name?.trim() || `Question ${i + 1}`,
+      required: q.required === true,
+    }));
 }
 
 /**
@@ -209,6 +251,7 @@ export class CalendlyEventTypesService {
         schedulingUrl: e.scheduling_url as string,
         active: e.active !== false,
         durationMinutes: typeof e.duration === 'number' ? e.duration : 0,
+        customQuestions: toBookingFields(e.custom_questions),
       }))
       .sort((a, b) => a.name.localeCompare(b.name));
     this.cache.set(accountId, { data: eventTypes, expires: now + CACHE_TTL_MS });

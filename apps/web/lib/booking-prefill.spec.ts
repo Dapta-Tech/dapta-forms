@@ -1,7 +1,7 @@
 /** Unit tests for the pure booking-embed URL builders. */
 import { describe, expect, it } from 'vitest';
 import {
-  applySchedulerPrefillMap,
+  resolveSchedulerPrefill,
   buildBookingEmbedUrl,
   buildCalendlyEmbedUrl,
   buildCalendlyWidgetPrefill,
@@ -188,23 +188,18 @@ describe('buildBookingEmbedUrl', () => {
   });
 });
 
-describe('applySchedulerPrefillMap (V6 — scheduler field mapping)', () => {
+describe('resolveSchedulerPrefill (V6 — scheduler field mapping)', () => {
   const CUSTOM = { quien: 'Ada Lovelace', correo: 'ada@acme.io', celular: '+13105551234' };
 
   it('feeds mapped questions into the conventional prefill keys', () => {
-    const out = applySchedulerPrefillMap(CUSTOM, {
-      name: 'quien',
-      email: 'correo',
-      phone: 'celular',
-    });
-    expect(out).toMatchObject({
+    const { answers } = resolveSchedulerPrefill(CUSTOM, { name: 'quien', email: 'correo' });
+    expect(answers).toMatchObject({
       firstname: 'Ada',
       lastname: 'Lovelace',
       email: 'ada@acme.io',
-      phone: '+13105551234',
     });
     // …so the existing widget builder picks them up unchanged.
-    expect(buildCalendlyWidgetPrefill(out)).toMatchObject({
+    expect(buildCalendlyWidgetPrefill(answers)).toMatchObject({
       name: 'Ada Lovelace',
       firstName: 'Ada',
       lastName: 'Lovelace',
@@ -212,24 +207,43 @@ describe('applySchedulerPrefillMap (V6 — scheduler field mapping)', () => {
     });
   });
 
+  it('sends a custom question as the EXACT positional id it was mapped to', () => {
+    // The phone question is this event type's SECOND custom question, so it is
+    // a2 — the old code always guessed a1, which silently filled nothing.
+    const { customAnswers, answers } = resolveSchedulerPrefill(CUSTOM, { a2: 'celular' });
+    expect(customAnswers).toEqual({ a2: '+13105551234' });
+    // A custom question never leaks into the conventional keys.
+    expect(answers.phone).toBeUndefined();
+  });
+
+  it('still honors a legacy `phone` mapping via the a1 slot', () => {
+    const { answers, customAnswers } = resolveSchedulerPrefill(CUSTOM, { phone: 'celular' });
+    expect(answers.phone).toBe('+13105551234');
+    expect(customAnswers).toEqual({});
+    expect(buildCalendlyWidgetPrefill(answers)?.customAnswers).toEqual({ a1: '+13105551234' });
+  });
+
   it('leaves the answers untouched with no mapping (conventional keys still work)', () => {
     const answers = { firstname: 'Grace', email: 'grace@acme.io' };
-    expect(applySchedulerPrefillMap(answers, undefined)).toBe(answers);
+    const out = resolveSchedulerPrefill(answers, undefined);
+    expect(out.answers).toBe(answers);
+    expect(out.customAnswers).toEqual({});
   });
 
   it('ignores entries that are unmapped or point at an empty answer', () => {
-    const out = applySchedulerPrefillMap(
-      { firstname: 'Grace', correo: '', quien: '   ' },
-      { name: 'quien', email: 'correo', phone: null },
+    const { answers, customAnswers } = resolveSchedulerPrefill(
+      { firstname: 'Grace', correo: '', quien: '   ', vacio: '' },
+      { name: 'quien', email: 'correo', a1: 'vacio' },
     );
     // Blank mapped answers never clobber what is already there.
-    expect(out.firstname).toBe('Grace');
-    expect(out.email).toBeUndefined();
+    expect(answers.firstname).toBe('Grace');
+    expect(answers.email).toBeUndefined();
+    expect(customAnswers).toEqual({});
   });
 
   it('splits a single full-name answer into first and last', () => {
-    const out = applySchedulerPrefillMap({ q: 'Ada Byron King' }, { name: 'q' });
-    expect(out.firstname).toBe('Ada');
-    expect(out.lastname).toBe('Byron King');
+    const { answers } = resolveSchedulerPrefill({ q: 'Ada Byron King' }, { name: 'q' });
+    expect(answers.firstname).toBe('Ada');
+    expect(answers.lastname).toBe('Byron King');
   });
 });

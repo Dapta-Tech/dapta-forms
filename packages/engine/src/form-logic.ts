@@ -296,6 +296,8 @@ export interface FormScheduler {
   provider?: 'calendly' | 'hubspot_meetings';
   /** The picked Calendly event type's stable URI (builder reference). */
   eventTypeUri?: string | null;
+  /** Its display name, stored so the builder can label it without a lookup. */
+  eventTypeName?: string | null;
   /** The public scheduling page embedded in the form (the event type's scheduling_url). */
   url?: string | null;
   /** Hide the event-type details panel in the embed ("Show event details? → No"). */
@@ -303,15 +305,12 @@ export interface FormScheduler {
   /** Prefill the booking form from collected answers (name/email/phone). */
   prefill?: boolean;
   /**
-   * Which earlier question feeds each field the booking page asks for (step
-   * keys). Absent entries fall back to the conventional answer keys, so a form
-   * that already uses firstname/lastname/email/phone needs no mapping.
+   * Which earlier question feeds each field the booking page asks for, keyed by
+   * Calendly's own prefill id (`name`, `email`, or `a1`/`a2`/… for the event
+   * type's custom questions; legacy configs may still say `phone`). Values are
+   * step keys; absent entries fall back to the conventional answer keys.
    */
-  prefillMap?: {
-    name?: string | null;
-    email?: string | null;
-    phone?: string | null;
-  };
+  prefillMap?: Record<string, string | null>;
 }
 
 /** Optional processing/result-reveal interstitial (generic, templated copy). */
@@ -669,7 +668,15 @@ function resolveGoto(step: FormStep, answers: Answers): GotoRule | null {
   if (!step.goto || step.goto.length === 0) return null;
   const got = new Set(tokens(answers[step.key]));
   for (const rule of step.goto) {
-    if (rule.values.some((v) => got.has(v))) return rule;
+    // `*` = "any answer at all" (V6). Choice steps branch on their option
+    // values, but a step whose answer is free-form — a scheduler stores the
+    // booked timestamp — has no fixed value to list, so routing after it needs
+    // a catch-all. Option values are slugified, so `*` can never collide with
+    // one. An unanswered step still matches nothing.
+    const matched = rule.values.includes('*')
+      ? got.size > 0
+      : rule.values.some((v) => got.has(v));
+    if (matched) return rule;
   }
   return null;
 }

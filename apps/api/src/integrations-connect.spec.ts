@@ -328,7 +328,21 @@ describe('Calendly event-type picker token resolution', () => {
   const ME = { resource: { uri: 'https://api.calendly.com/users/U1', email: 'rep@acme.io' } };
   const EVENT_TYPES = {
     collection: [
-      { uri: 'et/2', name: 'Demo 30m', scheduling_url: 'https://calendly.com/acme/demo', active: true, duration: 30 },
+      {
+        uri: 'et/2',
+        name: 'Demo 30m',
+        scheduling_url: 'https://calendly.com/acme/demo',
+        active: true,
+        duration: 30,
+        // Deliberately out of array order + one disabled, to prove the id comes
+        // from `position` (Calendly prefills a custom question as a<position+1>)
+        // and that a disabled question is never offered for mapping.
+        custom_questions: [
+          { name: 'Phone number', position: 1, enabled: true, required: true },
+          { name: 'What do you need?', position: 0, enabled: true, required: false },
+          { name: 'Retired question', position: 2, enabled: false },
+        ],
+      },
       { uri: 'et/1', name: 'Intro 15m', scheduling_url: 'https://calendly.com/acme/intro', active: true, duration: 15 },
       { uri: 'et/3', name: 'No page', active: true }, // dropped: no scheduling_url
     ],
@@ -364,6 +378,24 @@ describe('Calendly event-type picker token resolution', () => {
     expect(
       calls.some((c) => c.url.includes(`user=${encodeURIComponent(ME.resource.uri)}`)),
     ).toBe(true);
+  });
+
+  it('exposes each event type’s own custom questions by their POSITIONAL id', async () => {
+    const calls: RecordedCall[] = [];
+    build(makeEnv(), calendlyFetch(calls, ME, EVENT_TYPES));
+    await controller.connect(asOwner(), 'calendly', { token: 'cal-account-8888' });
+
+    const res = await controller.calendlyEventTypes(asOwner());
+    expect(res.enabled).toBe(true);
+    if (!res.enabled) return;
+    const demo = res.eventTypes.find((e) => e.name === 'Demo 30m')!;
+    // position 1 → a2, position 0 → a1; the disabled one is dropped entirely.
+    expect(demo.customQuestions).toEqual([
+      { id: 'a2', label: 'Phone number', required: true },
+      { id: 'a1', label: 'What do you need?', required: false },
+    ]);
+    // An event type with no custom questions simply has none (name + email only).
+    expect(res.eventTypes.find((e) => e.name === 'Intro 15m')!.customQuestions).toEqual([]);
   });
 
   it('reports disabled when no Calendly token exists', async () => {

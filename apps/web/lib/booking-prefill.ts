@@ -35,36 +35,55 @@ export function extractBookingContactFields(
   return { firstname, lastname, name, email, phone };
 }
 
+/** A scheduler's resolved prefill: overlaid answers + positional custom answers. */
+export interface SchedulerPrefill {
+  /** Answers with the mapped values written onto the conventional keys. */
+  answers: Record<string, unknown>;
+  /** Calendly's positional custom answers (`a1`, `a2`, …) to send explicitly. */
+  customAnswers: Record<string, string>;
+}
+
 /**
- * Overlay a scheduler step's field mapping onto the answers, so the existing
- * prefill builders (which read the conventional firstname/lastname/email/phone
- * keys) pick up values from whichever questions the author mapped.
+ * Resolve a scheduler step's field mapping against the answers.
  *
- * A form whose questions already use the conventional keys needs no mapping —
- * an absent entry simply leaves that field to the normal extraction. A mapped
- * `name` is split on the first space into first/last, which is what a single
- * "full name" question yields.
+ * Calendly's booking form has two built-in fields (name, email) and then the
+ * event type's own custom questions, which it prefills POSITIONALLY as `a1`,
+ * `a2`, … — so "phone" is only `a1` when the phone question happens to be the
+ * first one. Assuming that was why a mapped phone silently did nothing on any
+ * event type whose questions were ordered differently. The mapping is therefore
+ * keyed by Calendly's real ids: built-ins are overlaid onto the conventional
+ * answer keys (so every existing builder picks them up), and custom questions
+ * come back separately to be sent as the exact `aN` they belong to.
+ *
+ * `phone` is still honored from earlier configs and routes to the legacy a1
+ * slot. Unmapped fields fall back to the normal extraction.
  */
-export function applySchedulerPrefillMap(
+export function resolveSchedulerPrefill(
   answers: Record<string, unknown>,
-  map: { name?: string | null; email?: string | null; phone?: string | null } | undefined,
-): Record<string, unknown> {
-  if (!map) return answers;
+  map: Record<string, string | null | undefined> | undefined,
+): SchedulerPrefill {
+  if (!map) return { answers, customAnswers: {} };
   const out = { ...answers };
+  const customAnswers: Record<string, string> = {};
   const read = (key: string | null | undefined): string =>
     key ? String(answers[key] ?? '').trim() : '';
 
-  const email = read(map.email);
-  if (email) out.email = email;
-  const phone = read(map.phone);
-  if (phone) out.phone = phone;
-  const full = read(map.name);
-  if (full) {
-    const [first, ...rest] = full.split(/\s+/);
-    out.firstname = first ?? '';
-    out.lastname = rest.join(' ');
+  for (const [field, stepKey] of Object.entries(map)) {
+    const value = read(stepKey);
+    if (!value) continue; // a blank answer never clobbers what is already there
+    if (field === 'name') {
+      const [first, ...rest] = value.split(/\s+/);
+      out.firstname = first ?? '';
+      out.lastname = rest.join(' ');
+    } else if (field === 'email') {
+      out.email = value;
+    } else if (field === 'phone') {
+      out.phone = value; // legacy mapping → the a1 slot via the builders below
+    } else if (/^a\d+$/.test(field)) {
+      customAnswers[field] = value;
+    }
   }
-  return out;
+  return { answers: out, customAnswers };
 }
 
 /** Set a query param only when the value is non-empty (overwrites, never appends). */

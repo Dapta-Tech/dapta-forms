@@ -94,12 +94,24 @@ test.describe('V6 — Scheduler question type', () => {
     // Scoped to the prompt — the admin sidebar also has an "Integrations" link.
     await expect(prompt.getByRole('link')).toHaveAttribute('href', '/admin/integrations');
 
-    // The autofill mapping is editable even before Calendly is connected — it
-    // maps the form's own questions, which have nothing to do with the token.
+    // The autofill mapping is editable even before Calendly is connected. Only
+    // the two built-in booking fields show until an event type is picked — the
+    // rest of the rows come from THAT event type's own custom questions, so
+    // nothing is assumed (a "Phone number" row is only offered if it exists).
     await expect(page.getByTestId('scheduler-map')).toBeVisible();
-    for (const field of ['name', 'email', 'phone']) {
-      await expect(page.getByTestId(`scheduler-map-${field}`)).toBeVisible();
-    }
+    await expect(page.getByTestId('scheduler-map-name')).toBeVisible();
+    await expect(page.getByTestId('scheduler-map-email')).toBeVisible();
+    await expect(page.getByTestId('scheduler-map-phone')).toHaveCount(0);
+
+    // Routing after a booking lives here too (the "logic" for a scheduler).
+    await expect(page.getByTestId('scheduler-after')).toBeVisible();
+
+    // Behaviour that contradicts what a booking IS must not be offered:
+    // finishing a scheduler is the success case, not a disqualification; and a
+    // booking can neither be hidden nor seeded from a URL parameter.
+    await expect(page.getByText('Ends the form')).toHaveCount(0);
+    await expect(page.getByText('Hidden question')).toHaveCount(0);
+    await expect(page.getByTestId('step-field-key')).toHaveCount(0);
   });
 
   test('the public form renders the booking embed under the scheduler question', async ({

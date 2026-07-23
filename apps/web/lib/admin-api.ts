@@ -168,6 +168,16 @@ export interface IntegrationsResponse {
   providers: IntegrationStatus[];
 }
 
+/**
+ * One extra field an event type's booking form asks for beyond name + email.
+ * `id` is Calendly's positional prefill parameter (`a1`, `a2`, …).
+ */
+export interface CalendlyBookingField {
+  id: string;
+  label: string;
+  required: boolean;
+}
+
 /** A Calendly event type surfaced to the scheduler step's event-type picker. */
 export interface CalendlyEventType {
   uri: string;
@@ -175,6 +185,8 @@ export interface CalendlyEventType {
   schedulingUrl: string;
   active: boolean;
   durationMinutes: number;
+  /** The event type's own custom questions (what its booking form really asks). */
+  customQuestions: CalendlyBookingField[];
 }
 
 /** The event-type-picker response: disabled (no token) or the cached list. */

@@ -104,6 +104,9 @@ export interface BuilderMessages {
     /** "{n} pts" */
     pts: string;
     messagePlaceholder: string;
+    /** V6 — the scheduler's calendar preview on the canvas. */
+    schedulerUnset: string;
+    schedulerNote: string;
     /** Name-step preview defaults — MUST mirror the shared catalog's
      *  `renderer.name.*` so the canvas shows exactly what publishes. */
     nameFirstPlaceholder: string;
@@ -127,10 +130,15 @@ export interface BuilderMessages {
     schedulerShowDetails: string;
     schedulerMapTitle: string;
     schedulerMapHint: string;
+    schedulerMapPickFirst: string;
     schedulerMapName: string;
     schedulerMapEmail: string;
-    schedulerMapPhone: string;
     schedulerMapAuto: string;
+    /** V6 — where the form goes once the respondent books. */
+    schedulerAfter: string;
+    schedulerAfterHint: string;
+    schedulerAfterContinue: string;
+    schedulerAfterSubmit: string;
     title: string;
     questionType: string;
     required: string;
@@ -373,6 +381,8 @@ const en: BuilderMessages = {
     submit: 'Submit',
     pts: '{n} pts',
     messagePlaceholder: 'Write your message…',
+    schedulerUnset: 'No event type picked yet',
+    schedulerNote: 'Respondents pick a time here. Booking answers this question and moves the form on.',
     nameFirstPlaceholder: 'First name',
     nameLastPlaceholder: 'Last name',
   },
@@ -399,11 +409,15 @@ const en: BuilderMessages = {
     schedulerConnectCta: 'Go to Integrations',
     schedulerShowDetails: 'Show event details',
     schedulerMapTitle: 'Autofill the booking form',
-    schedulerMapHint: 'Send answers from earlier questions into the fields Calendly asks for.',
+    schedulerMapHint: 'Send answers from earlier questions into the fields this event asks for.',
+    schedulerMapPickFirst: 'Pick an event type to see the fields its booking form asks for.',
     schedulerMapName: 'Name',
     schedulerMapEmail: 'Email',
-    schedulerMapPhone: 'Phone number',
     schedulerMapAuto: 'Automatic',
+    schedulerAfter: 'After booking',
+    schedulerAfterHint: 'What happens once the respondent picks a time.',
+    schedulerAfterContinue: 'Continue to the next question',
+    schedulerAfterSubmit: 'Submit the form and show the ending',
     scoring: 'Scoring',
     scoringHint:
       'Counts this question toward the score. Points from the selected option add to the total; set ranges in Results.',
@@ -630,6 +644,8 @@ const es: BuilderMessages = {
     submit: 'Enviar',
     pts: '{n} pts',
     messagePlaceholder: 'Escribe tu mensaje…',
+    schedulerUnset: 'Aún no eliges un tipo de evento',
+    schedulerNote: 'Aquí eligen un horario. Agendar responde esta pregunta y avanza el formulario.',
     nameFirstPlaceholder: 'Nombre',
     nameLastPlaceholder: 'Apellidos',
   },
@@ -656,11 +672,16 @@ const es: BuilderMessages = {
     schedulerConnectCta: 'Ir a Integraciones',
     schedulerShowDetails: 'Mostrar detalles del evento',
     schedulerMapTitle: 'Autocompletar el formulario de agendamiento',
-    schedulerMapHint: 'Envía respuestas de preguntas anteriores a los campos que pide Calendly.',
+    schedulerMapHint: 'Envía respuestas de preguntas anteriores a los campos que pide este evento.',
+    schedulerMapPickFirst:
+      'Elige un tipo de evento para ver los campos que pide su formulario de agendamiento.',
     schedulerMapName: 'Nombre',
     schedulerMapEmail: 'Correo electrónico',
-    schedulerMapPhone: 'Número de teléfono',
     schedulerMapAuto: 'Automático',
+    schedulerAfter: 'Al agendar',
+    schedulerAfterHint: 'Qué pasa cuando la persona elige un horario.',
+    schedulerAfterContinue: 'Continuar a la siguiente pregunta',
+    schedulerAfterSubmit: 'Enviar el formulario y mostrar el final',
     scoring: 'Puntaje',
     scoringHint:
       'Cuenta esta pregunta para el puntaje. Los puntos de la opción elegida suman al total; define los rangos en Resultados.',

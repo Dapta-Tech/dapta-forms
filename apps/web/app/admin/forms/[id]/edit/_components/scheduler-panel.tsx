@@ -25,16 +25,26 @@ type LoadState =
  * Calendly happens once, account-wide, in Integrations — so when no token is
  * connected this prompts the author there instead of erroring (V6).
  */
+/** Sentinel for "end the form here" in the After-booking picker. */
+const AFTER_SUBMIT = '__submit__';
+
 export function SchedulerPanel({
   scheduler,
   onChange,
   fields,
+  laterSteps,
+  goto,
+  onGotoChange,
   bm,
 }: {
   scheduler: FormScheduler;
   onChange: (next: FormScheduler) => void;
   /** Answer fields captured BEFORE this step — the only ones that can prefill. */
   fields: { key: string; label: string }[];
+  /** Steps AFTER this one — the only legal forward jump targets. */
+  laterSteps: { key: string; label: string }[];
+  goto: FormStep['goto'];
+  onGotoChange: (next: FormStep['goto']) => void;
   bm: BuilderMessages;
 }) {
   const s = bm.settings;
@@ -64,6 +74,22 @@ export function SchedulerPanel({
 
   const options =
     state.status === 'ready' ? state.eventTypes.map((e) => ({ value: e.uri, label: e.name })) : [];
+
+  // The picked event type drives the autofill rows: Calendly always asks for a
+  // name and an email, then whatever custom questions THIS event type defines.
+  const selected =
+    state.status === 'ready'
+      ? state.eventTypes.find((e) => e.uri === scheduler.eventTypeUri)
+      : undefined;
+  // The catch-all rule this panel owns, mapped back onto the picker.
+  const catchAll = goto?.find((r) => r.values.includes('*'));
+  const afterValue = !catchAll ? '' : (catchAll.target ?? AFTER_SUBMIT);
+
+  const bookingFields: { id: string; label: string }[] = [
+    { id: 'name', label: s.schedulerMapName },
+    { id: 'email', label: s.schedulerMapEmail },
+    ...(selected?.customQuestions ?? []).map((q) => ({ id: q.id, label: q.label })),
+  ];
 
   return (
     <section className="flex flex-col gap-3 border-t border-border pt-4" data-testid="scheduler-panel">
@@ -102,6 +128,7 @@ export function SchedulerPanel({
                   ...scheduler,
                   provider: 'calendly',
                   eventTypeUri: uri,
+                  eventTypeName: et?.name ?? null,
                   url: et?.schedulingUrl ?? scheduler.url ?? null,
                 });
               }}
@@ -119,24 +146,44 @@ export function SchedulerPanel({
         />
       </div>
 
-      {/* Autofill: which earlier answer feeds each field the booking page asks
-          for. "Automatic" leaves it to the conventional keys (firstname /
-          lastname / email / phone), which is right for most forms. */}
+      {/* Where the form goes once they book. A scheduler's answer is a
+          timestamp, so there is no option value to branch on — this writes a
+          catch-all rule ("any booking") that either ends the form or jumps. */}
+      <div className="flex flex-col gap-1.5 border-t border-border pt-3">
+        <p className="text-xs font-medium text-foreground">{s.schedulerAfter}</p>
+        <p className="text-[11px] text-muted-foreground">{s.schedulerAfterHint}</p>
+        <div data-testid="scheduler-after">
+          <Select
+            ariaLabel={s.schedulerAfter}
+            value={afterValue}
+            options={[
+              { value: '', label: s.schedulerAfterContinue },
+              { value: AFTER_SUBMIT, label: s.schedulerAfterSubmit },
+              ...laterSteps.map((st) => ({ value: st.key, label: st.label })),
+            ]}
+            onChange={(v) => {
+              if (!v) return onGotoChange(undefined);
+              onGotoChange([{ values: ['*'], target: v === AFTER_SUBMIT ? null : v }]);
+            }}
+          />
+        </div>
+      </div>
+
+      {/* Autofill: which earlier answer feeds each field THIS event type's
+          booking page asks for. The two built-ins are always there; everything
+          after them comes from the event type's own custom questions, so a
+          phone field is filled by the id Calendly actually gave it. */}
       <div className="flex flex-col gap-2 border-t border-border pt-3" data-testid="scheduler-map">
         <p className="text-xs font-medium text-foreground">{s.schedulerMapTitle}</p>
-        <p className="text-[11px] text-muted-foreground">{s.schedulerMapHint}</p>
-        {(
-          [
-            ['name', s.schedulerMapName],
-            ['email', s.schedulerMapEmail],
-            ['phone', s.schedulerMapPhone],
-          ] as const
-        ).map(([field, label]) => (
-          <Field key={field} label={label}>
-            <div data-testid={`scheduler-map-${field}`}>
+        <p className="text-[11px] text-muted-foreground">
+          {selected ? s.schedulerMapHint : s.schedulerMapPickFirst}
+        </p>
+        {bookingFields.map((bf) => (
+          <Field key={bf.id} label={bf.label}>
+            <div data-testid={`scheduler-map-${bf.id}`}>
               <Select
-                ariaLabel={label}
-                value={scheduler.prefillMap?.[field] ?? ''}
+                ariaLabel={bf.label}
+                value={scheduler.prefillMap?.[bf.id] ?? ''}
                 options={[
                   { value: '', label: s.schedulerMapAuto },
                   ...fields.map((f) => ({ value: f.key, label: f.label })),
@@ -144,7 +191,7 @@ export function SchedulerPanel({
                 onChange={(key) =>
                   onChange({
                     ...scheduler,
-                    prefillMap: { ...scheduler.prefillMap, [field]: key || null },
+                    prefillMap: { ...scheduler.prefillMap, [bf.id]: key || null },
                   })
                 }
               />
