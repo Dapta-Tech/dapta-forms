@@ -41,6 +41,9 @@ export interface FormsMessages {
     dropdownEmpty: string;
     trustedBy: string;
     newTab: string;
+    /** Scheduler step (V6): copy for an unconfigured embed + the optional skip. */
+    schedulerUnconfigured: string;
+    schedulerSkip: string;
     /** Inline scheduling screen shown when an outcome has a booking config. */
     booking: {
       title: string;
@@ -879,6 +882,8 @@ export const en: FormsMessages = {
     dropdownEmpty: 'No results found',
     trustedBy: 'Trusted by',
     newTab: '(opens in a new tab)',
+    schedulerUnconfigured: 'This scheduler has not been set up yet.',
+    schedulerSkip: 'Skip for now',
     booking: {
       title: 'Pick a time',
       loading: 'Loading the calendar…',
@@ -1665,6 +1670,8 @@ export const es: FormsMessages = {
     dropdownEmpty: 'No se encontraron resultados',
     trustedBy: 'Confían en nosotros',
     newTab: '(se abre en una pestaña nueva)',
+    schedulerUnconfigured: 'Este agendador aún no está configurado.',
+    schedulerSkip: 'Omitir por ahora',
     booking: {
       title: 'Elige un horario',
       loading: 'Cargando el calendario…',

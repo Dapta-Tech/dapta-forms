@@ -116,6 +116,15 @@ export interface BuilderMessages {
     revealSubtitle: string;
     revealDuration: string;
     revealHint: string;
+    /** V6 — the scheduler STEP picks a Calendly event type here. */
+    schedulerSection: string;
+    schedulerHint: string;
+    schedulerEventType: string;
+    schedulerPickPlaceholder: string;
+    schedulerLoading: string;
+    schedulerConnect: string;
+    schedulerConnectCta: string;
+    schedulerShowDetails: string;
     title: string;
     questionType: string;
     required: string;
@@ -283,7 +292,8 @@ export type GalleryItemId =
   | 'long'
   | 'slider'
   | 'message'
-  | 'reveal';
+  | 'reveal'
+  | 'scheduler';
 
 export type TemplateId = 'lead' | 'contact' | 'feedback' | 'rsvp';
 
@@ -374,6 +384,14 @@ const en: BuilderMessages = {
     revealSubtitle: 'Subtitle',
     revealDuration: 'Duration (ms)',
     revealHint: 'Plays here, then the form continues on its own. Drag it in the list to move it.',
+    schedulerSection: 'Scheduler',
+    schedulerHint: 'Pick a Calendly event type. When someone books, it counts as their answer.',
+    schedulerEventType: 'Event type',
+    schedulerPickPlaceholder: 'Select an event type…',
+    schedulerLoading: 'Loading event types…',
+    schedulerConnect: 'Connect Calendly in Integrations to pick an event type.',
+    schedulerConnectCta: 'Go to Integrations',
+    schedulerShowDetails: 'Show event details',
     scoring: 'Scoring',
     scoringHint:
       'Counts this question toward the score. Points from the selected option add to the total; set ranges in Results.',
@@ -444,6 +462,7 @@ const en: BuilderMessages = {
       slider: { title: 'Slider', desc: 'Rating scale' },
       message: { title: 'Message', desc: 'Text, no input' },
       reveal: { title: 'Reveal screen', desc: 'A short processing pause' },
+      scheduler: { title: 'Scheduler', desc: 'Book a meeting on your calendar' },
     },
   },
   map: {
@@ -616,6 +635,14 @@ const es: BuilderMessages = {
     revealSubtitle: 'Subtítulo',
     revealDuration: 'Duración (ms)',
     revealHint: 'Se muestra aquí y el formulario continúa solo. Arrástrala en la lista para moverla.',
+    schedulerSection: 'Agendador',
+    schedulerHint: 'Elige un tipo de evento de Calendly. Cuando alguien agenda, cuenta como su respuesta.',
+    schedulerEventType: 'Tipo de evento',
+    schedulerPickPlaceholder: 'Selecciona un tipo de evento…',
+    schedulerLoading: 'Cargando tipos de evento…',
+    schedulerConnect: 'Conecta Calendly en Integraciones para elegir un tipo de evento.',
+    schedulerConnectCta: 'Ir a Integraciones',
+    schedulerShowDetails: 'Mostrar detalles del evento',
     scoring: 'Puntaje',
     scoringHint:
       'Cuenta esta pregunta para el puntaje. Los puntos de la opción elegida suman al total; define los rangos en Resultados.',
@@ -686,6 +713,7 @@ const es: BuilderMessages = {
       slider: { title: 'Deslizador', desc: 'Escala de valoración' },
       message: { title: 'Mensaje', desc: 'Texto, sin campo' },
       reveal: { title: 'Pantalla de revelación', desc: 'Una breve pausa de procesamiento' },
+      scheduler: { title: 'Agendador', desc: 'Agenda una reunión en tu calendario' },
     },
   },
   map: {

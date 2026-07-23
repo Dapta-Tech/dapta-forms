@@ -30,7 +30,7 @@ import {
   type FormOutcome,
 } from '@quill/engine';
 import { onAccent, getMessages } from '@quill/shared';
-import type { FormConfig } from '@quill/types';
+import type { FormConfig, OutcomeBooking } from '@quill/types';
 import { signupHref } from '@/lib/growth';
 import { FormLogo } from '@/components/public/form-logo';
 import { FormProgress } from '@/components/public/form-progress';
@@ -69,6 +69,31 @@ function captureUtm(): Record<string, string> {
 
 /** A query value can never be longer than this once seeded (defense-in-depth). */
 const PREFILL_MAX_LEN = 512;
+
+/**
+ * Map a `scheduler` step's config to the booking shape the shared BookingScreen
+ * embeds, or `null` when no event type has been picked yet (renders a fallback).
+ * "Show event details? → No" becomes Calendly's `hide_event_type_details=1`.
+ * The URL is re-guarded to http(s) — it flows into an embed (XSS defense).
+ */
+function schedulerToBooking(
+  scheduler: NonNullable<FormStep['scheduler']>,
+): OutcomeBooking | null {
+  const url = scheduler.url?.trim();
+  if (!url || !isSafeHttpUrl(url)) return null;
+  const provider = scheduler.provider ?? 'calendly';
+  let finalUrl = url;
+  if (scheduler.hideEventDetails && provider === 'calendly') {
+    try {
+      const u = new URL(url);
+      u.searchParams.set('hide_event_type_details', '1');
+      finalUrl = u.toString();
+    } catch {
+      /* keep the original url */
+    }
+  }
+  return { provider, url: finalUrl, prefill: scheduler.prefill !== false };
+}
 
 /**
  * URL-parameter prefill (V4-13): read the query string and seed the answer for
@@ -158,6 +183,7 @@ export function FormRenderer({
   const advancing = useRef(false);
   const submitAfterReveal = useRef(false);
   const bookedRef = useRef(false); // one booking → one callback + one redirect
+  const schedulerBooked = useRef<Set<string>>(new Set()); // one booking per scheduler step
   const lastStepViewKey = useRef<string | null>(null);
   const engineConfig = config as unknown as Parameters<typeof runtimeSteps>[0];
 
@@ -379,6 +405,31 @@ export function FormRenderer({
       }
     },
     [engineConfig, index, thresholdKey, revealKey, accountCode, slug, sessionId, finalize, track],
+  );
+
+  // A booking on a SCHEDULER step (V6): record the meeting (booking_event + the
+  // CRM booking_sync outbox, best-effort), make the booked slot this step's
+  // answer (satisfies a required scheduler + lands in the submission data), then
+  // advance exactly like any other step. If the scheduler is the last visible
+  // step — or a goto rule routes it to the ending — `advance` finalizes the
+  // submission as COMPLETE. That is how "booking → submit the form" works: via
+  // the same logic as every other step, not a special case.
+  const handleSchedulerBooked = useCallback(
+    async (schedStep: FormStep, details: BookingScheduledDetails) => {
+      if (schedulerBooked.current.has(schedStep.key)) return;
+      schedulerBooked.current.add(schedStep.key);
+      await recordBookingAction(accountCode, slug, {
+        sessionId,
+        provider: details.provider,
+        ...(details.eventUri ? { eventUri: details.eventUri } : {}),
+        ...(details.inviteeUri ? { inviteeUri: details.inviteeUri } : {}),
+        ...(details.startTime ? { startTime: details.startTime } : {}),
+      }).catch(() => {});
+      const next = { ...answersRef.current, [schedStep.key]: details.startTime ?? 'booked' };
+      setAnswers(next);
+      await advance(next, schedStep);
+    },
+    [accountCode, slug, sessionId, advance],
   );
 
   function submitCurrent() {
@@ -627,6 +678,70 @@ export function FormRenderer({
             void advance(answersRef.current, step);
           }}
         />
+      </PhaseShell>
+    );
+  }
+
+  // A SCHEDULER step (V6): a real question in the flow (back/progress/skip-logic
+  // apply) whose input is a booking. The shared BookingScreen embeds the
+  // provider widget; booking it answers the step and advances via `advance`, so a
+  // required scheduler blocks Continue until booked and "on booking → submit" is
+  // just the last-step / goto path. Rendered here (not a `phase`) for the same
+  // reason as reveal — it lives in `steps`.
+  if (step.type === 'scheduler') {
+    const booking = step.scheduler ? schedulerToBooking(step.scheduler) : null;
+    const schedLogo = cover?.logo ?? config.branding?.logo ?? null;
+    return (
+      <PhaseShell className="pf" style={accentVars} bannerText={cover?.bannerText}>
+        <header className="pf__topbar">
+          <div className="pf__topbar-inner">
+            {index > 0 || cover ? (
+              <button type="button" className="pf__back" onClick={back} aria-label={m.back}>
+                ←
+              </button>
+            ) : (
+              <span className="pf__back pf__back--placeholder" />
+            )}
+            <FormLogo src={schedLogo} name={name} />
+            <span className="pf__back pf__back--placeholder" />
+          </div>
+          <FormProgress total={steps.length} currentIndex={index} locale={locale} />
+        </header>
+        <div className="pf__body">
+          <div className="pf__inner">
+            <div className="pf__content pf-animate" key={animKey}>
+              <div className="pf__question-wrap">
+                <h2 className="pf__question">{step.question ?? step.key}</h2>
+                {step.helper ? <p className="pf__helper">{step.helper}</p> : null}
+              </div>
+              <div className="pf__fields">
+                {booking ? (
+                  <BookingScreen
+                    booking={booking}
+                    answers={answers}
+                    sessionId={sessionId}
+                    locale={locale}
+                    hideHeader
+                    onBooked={(details) => void handleSchedulerBooked(step, details)}
+                  />
+                ) : (
+                  <p className="pf__error" role="alert" data-testid="scheduler-unconfigured">
+                    {m.schedulerUnconfigured}
+                  </p>
+                )}
+                {!step.required ? (
+                  <button
+                    type="button"
+                    className="pf__btn pf__btn--inline"
+                    onClick={() => void advance(answers, step)}
+                  >
+                    {m.schedulerSkip}
+                  </button>
+                ) : null}
+              </div>
+            </div>
+          </div>
+        </div>
       </PhaseShell>
     );
   }

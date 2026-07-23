@@ -40,12 +40,15 @@ export function BookingScreen({
   sessionId,
   locale = 'en',
   onBooked,
+  hideHeader = false,
 }: {
   booking: OutcomeBooking;
   answers: Record<string, unknown>;
   sessionId: string;
   locale?: string;
   onBooked: (details: BookingScheduledDetails) => void;
+  /** Embedded as a form STEP (its own question is the title) — skip the header. */
+  hideHeader?: boolean;
 }) {
   const m = getMessages(locale).renderer.booking;
 
@@ -123,9 +126,11 @@ export function BookingScreen({
 
   return (
     <div className="pf-booking" data-testid="booking-screen">
-      <header className="pf-booking__header">
-        <h1 className="pf-booking__title">{m.title}</h1>
-      </header>
+      {hideHeader ? null : (
+        <header className="pf-booking__header">
+          <h1 className="pf-booking__title">{m.title}</h1>
+        </header>
+      )}
 
       <div className="pf-booking__widget">
         {booking.provider === 'hubspot_meetings' ? (

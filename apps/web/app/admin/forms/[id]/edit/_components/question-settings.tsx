@@ -24,6 +24,7 @@ import { LogicRules } from './logic-rules';
 import { LogicConditions } from './logic-conditions';
 import { QuestionVariants } from './question-variants';
 import { QuestionHubspotSection } from './question-hubspot';
+import { SchedulerPanel } from './scheduler-panel';
 import { HelpTip } from '@/components/ui/help-tip';
 import {
   GALLERY,
@@ -261,6 +262,14 @@ export function QuestionSettings({
             />
           </Field>
         </section>
+      ) : null}
+
+      {step.type === 'scheduler' ? (
+        <SchedulerPanel
+          scheduler={step.scheduler ?? { provider: 'calendly', prefill: true }}
+          onChange={(sc) => onUpdate({ scheduler: sc })}
+          bm={bm}
+        />
       ) : null}
 
       {step.type === 'slider' ? (

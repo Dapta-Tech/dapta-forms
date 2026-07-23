@@ -38,6 +38,7 @@ export const GALLERY: Record<GalleryGroup, GalleryItem[]> = {
   content: [
     { id: 'message', type: 'message', icon: 'pi-comment' },
     { id: 'reveal', type: 'reveal', icon: 'pi-sparkles' },
+    { id: 'scheduler', type: 'scheduler', icon: 'pi-calendar-plus' },
   ],
 };
 
@@ -66,6 +67,8 @@ export function iconForStep(step: Pick<FormStep, 'type' | 'selectionMode'>): str
       return 'pi-comment';
     case 'reveal':
       return 'pi-sparkles';
+    case 'scheduler':
+      return 'pi-calendar-plus';
     default:
       return 'pi-stop';
   }
