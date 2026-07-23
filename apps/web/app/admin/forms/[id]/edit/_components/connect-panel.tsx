@@ -5,6 +5,7 @@ import type { FormConfig } from '@quill/engine';
 import type { FormTracking } from '@quill/types';
 import { getMessages, type Locale } from '@quill/shared';
 import { Button } from '@/components/ui/button';
+import { awaitPendingDestinationWrite } from '@/lib/connect-sync';
 import { IntegrationsEditor, type QuestionMeta } from '../../integrations/integrations-editor';
 import { loadConnectIntegrationsAction, type ConnectIntegrationsData } from './connect-actions';
 import { ConnectEmailsSection } from './connect-emails-section';
@@ -95,10 +96,14 @@ function IntegrationsSection({
 
   // Fetch on tab activation (the panel mounts only while the Connect tab is
   // active, so re-entering the tab always shows the latest saved destinations).
+  // First wait for any write the previous mount flushed on its way out, so this
+  // read cannot overtake it and load a config that is about to be overwritten
+  // (V4-05 race).
   useEffect(() => {
     let cancelled = false;
     setState({ status: 'loading' });
-    loadConnectIntegrationsAction(formId, locale)
+    awaitPendingDestinationWrite(formId)
+      .then(() => loadConnectIntegrationsAction(formId, locale))
       .then((res) => {
         if (cancelled) return;
         setState(res.ok ? { status: 'ready', data: res.data } : { status: 'error', message: res.message });

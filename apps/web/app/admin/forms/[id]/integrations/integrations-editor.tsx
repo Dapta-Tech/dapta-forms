@@ -12,6 +12,7 @@ import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/components/toast';
 import { cn } from '@/lib/cn';
 import type { HubSpotPropertiesResponse } from '@/lib/admin-api';
+import { trackDestinationWrite } from '@/lib/connect-sync';
 import { propertyLookup, suggestProperty, type QuestionMeta } from './auto-map';
 import { saveIntegrationsAction } from './actions';
 
@@ -203,6 +204,13 @@ export function IntegrationsEditor({
   const [webhook, setWebhook] = useState<WebhookState>(() => initialWebhook(initialDestinations));
   const [hs, setHs] = useState<HubspotState>(() => initialHubspot(initialDestinations));
   const [webhookError, setWebhookError] = useState<string | null>(null);
+  // The destinations as the server last accepted them. Seeded from the freshly
+  // fetched mount props and advanced on every successful save, so the "protect
+  // the working webhook from a transient bad keystroke" fallback below never
+  // reverts to a stale page-load snapshot (V4-05). `initialDestinations` alone
+  // was a mount-time value the tab's refetch never refreshed — a second edit
+  // then restored it, and an actual submission was delivered to the old URL.
+  const savedDestinations = useRef<FormDestination[]>(initialDestinations);
 
   const properties = hubspotProps.enabled ? hubspotProps.properties : [];
   const pickerEnabled = hubspotProps.enabled;
@@ -220,27 +228,30 @@ export function IntegrationsEditor({
    * and then silently discarded on leaving the page. The webhook's validity is
    * now scoped to the webhook: everything else still saves, the bad URL stays in
    * the field so nothing typed is lost, and the status line says which part did
-   * not go through. An enabled webhook with an EMPTY url is "not configured
-   * yet", not an error — it is the state you are in one keystroke after
-   * flipping the switch on.
+   * not go through.
+   *
+   * The three webhook cases (V4-05):
+   *  - EMPTY url → persist NO webhook. Clearing the field removes the
+   *    destination; the old code carried the stored one forward, so a cleared
+   *    URL kept silently delivering to a ghost endpoint.
+   *  - malformed non-empty url → report it and carry the LAST SAVED webhook
+   *    (`savedDestinations`, refreshed on every write) so one bad keystroke does
+   *    not nuke a working destination — but never revert to something older than
+   *    the last successful save.
+   *  - valid url → persist it with the current enabled flag.
    */
   function buildDestinations(): { destinations: FormDestination[]; webhookError: string | null } {
     const out: FormDestination[] = [];
     let webhookError: string | null = null;
     const url = webhook.url.trim();
-    if (webhook.enabled && !url) {
-      // Switch on, nothing typed: carry the stored destination (if any) through
-      // untouched and wait for a URL rather than failing the save.
-      const stored = initialDestinations.find((d) => d.type === 'webhook');
-      if (stored) out.push(stored);
-    } else if (webhook.enabled || url) {
-      if (!isHttpsOrLocalhostUrl(url)) {
-        webhookError = m.webhookUrlInvalid;
-        // Keep whatever is already stored so the invalid draft never overwrites
-        // a working webhook, and fall through to save the HubSpot half.
-        const stored = initialDestinations.find((d) => d.type === 'webhook');
-        if (stored) out.push(stored);
-      } else {
+    if (url && !isHttpsOrLocalhostUrl(url)) {
+      // Malformed draft: the bad value must not change what is stored. Carry the
+      // last SUCCESSFULLY SAVED webhook (not the page-load snapshot) so a working
+      // destination survives, and fall through to save the HubSpot half.
+      webhookError = m.webhookUrlInvalid;
+      const saved = savedDestinations.current.find((d) => d.type === 'webhook');
+      if (saved) out.push(saved);
+    } else if (url) {
       // Secret write semantics: a typed value overwrites; an empty field keeps
       // the stored secret (send the sentinel the server merges back) when one is
       // set, or stays cleared/null when none exists.
@@ -261,8 +272,9 @@ export function IntegrationsEditor({
           secret,
         },
       });
-      }
     }
+    // else: empty url (switch on or off) → no webhook persisted. An enabled
+    // webhook with no URL is incomplete, not stored; clearing the URL removes it.
     const fieldMappings: Record<string, string> = {};
     for (const p of hs.fieldMappings) {
       if (p.key.trim() && p.property.trim()) fieldMappings[p.key.trim()] = p.property.trim();
@@ -341,7 +353,11 @@ export function IntegrationsEditor({
   const persist = useCallback(
     async (built: FormDestination[], blocked: string | null = null): Promise<boolean> => {
       setStatus('saving');
-      const res = await saveIntegrationsAction(id, built);
+      const write = saveIntegrationsAction(id, built);
+      // Register the write so a Connect-tab remount reads it back, not the state
+      // it is about to overwrite (V4-05 race).
+      trackDestinationWrite(id, write);
+      const res = await write;
       if (!res.ok) {
         setStatus('error');
         setStatusDetail(res.message ?? m.saveError);
@@ -349,6 +365,9 @@ export function IntegrationsEditor({
         return false;
       }
       dirty.current = false;
+      // This array is now the server truth — the malformed-URL fallback carries
+      // it forward instead of the stale mount snapshot.
+      savedDestinations.current = built;
       // Saved, but one card was left out — say WHICH, instead of a green check
       // that implies the webhook edit went through too.
       setStatus(blocked ? 'partial' : 'saved');
@@ -409,7 +428,11 @@ export function IntegrationsEditor({
           /* best-effort on the unload path — nothing to recover to */
         }
       } else {
-        void saveIntegrationsAction(id, built.destinations);
+        // SPA nav / unmount: fire-and-forget, but register it so the tab's next
+        // remount waits for this write before it re-reads (V4-05 race).
+        const write = saveIntegrationsAction(id, built.destinations);
+        trackDestinationWrite(id, write);
+        void write;
       }
     }
     const onVisibility = () => {
