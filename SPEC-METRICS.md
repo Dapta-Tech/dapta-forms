@@ -175,44 +175,56 @@ Criterio de aceptación P0: los 4 escenarios rotos del audit empírico ahora dan
 
 ---
 
-## 4b. Decisiones ABIERTAS que el QA adversarial destapó
+## 4b. Decisiones que el QA adversarial destapó
 
-Estas tres NO se cambiaron en código: son decisiones de producto que revisan
-acuerdos ya tomados, o arreglos de un bug preexistente con costo de schema.
+Tres hallazgos del QA adversarial. D1 y D3 quedaron **resueltos en código**
+(2026-07-23); D2 queda **diferido a propósito** (decisión explícita del
+usuario: el reloj real desde que abre hasta que envía, sin importar
+distracción, es el comportamiento correcto — no hace falta cambiarlo).
 
-### D1 — Semántica de ventana del embudo (revisa la decisión #6)
-La decisión #6 ("cada métrica por su propio timestamp") es correcta métrica por
-métrica, pero hace que numerador y denominador describan **poblaciones
-distintas**: una sesión que arranca antes de la ventana y termina dentro aporta
-una submission sin su start. QA renderizó **200% y 300%** de completion rate y
-embudos que **crecen hacia abajo** (0 vistas arriba, 1 abajo), alcanzables con el
-preset "Today" de fábrica porque cualquier sesión que cruce medianoche UTC se
-parte en dos ventanas.
+### D1 — Semántica de ventana del embudo (revisa la decisión #6) — RESUELTO
+La decisión #6 ("cada métrica por su propio timestamp") era correcta métrica
+por métrica, pero numerador y denominador describían **poblaciones distintas**:
+una sesión que arranca antes de la ventana y termina dentro aportaba una
+submission sin su start. QA renderizó **200% y 300%** de completion rate y
+embudos que **crecen hacia abajo**, alcanzables con el preset "Today" de
+fábrica porque cualquier sesión que cruce medianoche UTC se partía en dos
+ventanas.
 
-*Mitigación aplicada:* `completionPct` clampea a 100% — el número imposible ya no
-se imprime. *Pendiente de decisión:* contar el embudo por **cohorte de sesión**
-(todo se ventanea por el arranque de la sesión) haría el embudo internamente
-coherente a costa de que una submission de hoy cuente en el día que empezó.
+*Arreglo aplicado:* todas las métricas ahora ventanean por el **ancla de
+cohorte** de la sesión — su primer `form_event` (o `started_at` si no tiene
+ninguno) — así que una sesión pertenece a exactamente una ventana, en toda
+métrica, por construcción. Los buckets de Trends usan el mismo día ancla, así
+que una sesión que cruza medianoche UTC ya no se parte. El clamp a 100% se
+mantiene como defensa: una sesión completada cuyo beacon de start se perdió
+(caso legítimo, no de ventana) todavía puede empujar la razón cruda por
+encima de 100%. Ver `packages/db/src/analytics.ts` (`cohortSessionIds`,
+`submissionAnchor`) + tests en `analytics.service.spec.ts`.
 
-### D2 — Ancla de "Time to complete" (revisa la decisión #4)
+### D2 — Ancla de "Time to complete" (revisa la decisión #4) — DIFERIDO
 La decisión #4 fijó `open` = primer evento `view`. QA midió que eso
 **sobre-reporta 17x** cuando el respondiente revisita la pestaña, y **16.6x** en
-formularios con portada (cuenta el dwell en el cover). Alternativa coherente con
-la decisión #1: anclar en `step_view idx 0` — el mismo instante que define un
-Start — y medir "tiempo respondiendo" en vez de "tiempo desde que abrió".
+formularios con portada (cuenta el dwell en el cover). **Decisión del usuario
+(2026-07-23): no es prioridad — el reloj real desde que abre hasta que
+contesta es el número correcto, sin importar si se distrajo.** No se cambia.
+Si se revisita más adelante, la alternativa es anclar en `step_view idx 0`.
 
-### D3 — Drop-off atribuye vistas a la pregunta equivocada (bug PREEXISTENTE)
-El renderer emite `step_view` con el índice sobre los pasos **visibles**
-(`runtimeSteps(config, answers)`), pero el servicio mapea `rowViews[i]` sobre
+### D3 — Drop-off atribuye vistas a la pregunta equivocada (bug PREEXISTENTE) — RESUELTO
+El renderer emitía `step_view` con el índice sobre los pasos **visibles**
+(`runtimeSteps(config, answers)`), pero el servicio mapeaba `rowViews[i]` sobre
 `config.steps` (orden **autorado**). En un formulario con `showWhen`/`hideWhen`/
-`goto`, una pregunta que nadie vio aparece con vistas y abandono, y la real con
-cero. Es monótono y nunca negativo, así que **ninguna heurística de consistencia
-lo detecta**. No lo introdujo esta rama.
+`goto`, una pregunta que nadie vio aparecía con vistas y abandono, y la real
+con cero — monótono y nunca negativo, así que ninguna heurística de
+consistencia lo detectaba.
 
-*Arreglo correcto:* persistir la **clave** del paso en `form_event` (columna
-aditiva `step_key`) y unir por clave, no por índice. Toca renderer + schema +
-migración + servicio. Hasta entonces, el drop-off solo es fiable en formularios
-sin lógica condicional.
+*Arreglo aplicado:* migración aditiva `0004_form_event_step_key` (columna
+nullable `step_key` en `form_event`, ambos dialectos). El renderer ahora manda
+la **clave** del paso junto al índice en cada `track()`; el servicio agrupa
+el drop-off por clave (`stepViewCounts.byKey`) cuando existe, con fallback a
+la posición antigua (`byIndex`) solo para filas grabadas antes de esta
+migración (limitación documentada, no una regresión). Ver
+`packages/db/src/analytics.ts`, `apps/web/.../form-renderer.tsx`, tests
+`V5-D3` en `analytics.service.spec.ts`.
 
 ## 5. Riesgos / notas
 
