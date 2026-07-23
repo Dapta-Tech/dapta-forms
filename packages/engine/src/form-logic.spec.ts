@@ -1555,3 +1555,34 @@ describe('reveal as a step type (V5-B3)', () => {
     expect(revealAfterKey(legacy)).toBe('a');
   });
 });
+
+describe('scheduler step (V6)', () => {
+  it('a required scheduler blocks Continue until booked; a booked value passes', () => {
+    const s = step({ key: 'sched', type: 'scheduler', required: true });
+    // No booking yet → the standard required check fires (the answer is the booking).
+    expect(validateAnswerCode(s, undefined, {})).toEqual({ ok: false, code: 'required' });
+    // A booked value (the meeting start time) satisfies it.
+    expect(validateAnswerCode(s, '2026-01-01T10:00:00Z', {})).toEqual({ ok: true });
+  });
+
+  it('an optional scheduler can be skipped without booking', () => {
+    const s = step({ key: 'sched', type: 'scheduler', required: false });
+    expect(validateAnswerCode(s, undefined, {})).toEqual({ ok: true });
+  });
+
+  it('a scheduler answer never contributes to the score', () => {
+    const cfg: FormConfig = {
+      version: 1,
+      scoring: { enabled: true },
+      steps: [
+        step({ key: 'sched', type: 'scheduler', required: true }),
+        step({
+          key: 'pick',
+          type: 'multiple_choice',
+          options: [{ label: 'A', value: 'a', points: 5 }],
+        }),
+      ],
+    };
+    expect(computeScore(cfg, { sched: '2026-01-01T10:00:00Z', pick: 'a' })).toBe(5);
+  });
+});

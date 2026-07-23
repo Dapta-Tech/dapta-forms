@@ -25,6 +25,7 @@ export const FORM_FIELD_TYPES = [
   'textarea',
   'message',
   'reveal',
+  'scheduler',
 ] as const;
 export type FormFieldType = (typeof FORM_FIELD_TYPES)[number];
 
@@ -202,6 +203,12 @@ export interface FormStep {
    * interstitial for the whole form.
    */
   reveal?: FormReveal | null;
+  /**
+   * `scheduler` step: the embedded booking config (V6). A required scheduler is
+   * "answered" when the respondent books, so validation blocks Continue until a
+   * booking is made — see {@link FormScheduler}.
+   */
+  scheduler?: FormScheduler | null;
 }
 
 /**
@@ -281,6 +288,20 @@ export interface FormBranding {
   primaryColor?: string | null;
   logo?: string | null;
   clientLogos?: FormClientLogo[];
+}
+
+/** A `scheduler` step's embedded booking config (Calendly in v1). */
+export interface FormScheduler {
+  /** Scheduling provider. v1 ships Calendly; the embed also supports HubSpot Meetings. */
+  provider?: 'calendly' | 'hubspot_meetings';
+  /** The picked Calendly event type's stable URI (builder reference). */
+  eventTypeUri?: string | null;
+  /** The public scheduling page embedded in the form (the event type's scheduling_url). */
+  url?: string | null;
+  /** Hide the event-type details panel in the embed ("Show event details? → No"). */
+  hideEventDetails?: boolean;
+  /** Prefill the booking form from collected answers (name/email/phone). */
+  prefill?: boolean;
 }
 
 /** Optional processing/result-reveal interstitial (generic, templated copy). */

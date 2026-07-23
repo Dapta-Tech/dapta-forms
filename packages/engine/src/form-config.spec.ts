@@ -203,3 +203,13 @@ describe('resolveQuestion', () => {
     );
   });
 });
+
+describe('createEmptyStep — scheduler (V6)', () => {
+  it('seeds a Calendly scheduler that is required and prefilled, unconfigured until picked', () => {
+    const s = createEmptyStep('scheduler', new Set());
+    expect(s.type).toBe('scheduler');
+    expect(s.required).toBe(true); // a scheduler must be booked unless the author turns it off
+    expect(s.scheduler).toEqual({ provider: 'calendly', prefill: true });
+    expect(s.scheduler?.url == null).toBe(true); // no event type picked yet
+  });
+});

@@ -90,6 +90,12 @@ export function createEmptyStep(
   if (type === 'reveal') {
     base.reveal = { enabled: true, headline: '', subtitle: '', durationMs: 2200 };
   }
+  // A scheduler embeds a booking page; it starts unconfigured (no event type
+  // picked yet) but with prefill on, so once the author picks a Calendly event
+  // type the visitor's name/email flow into the widget automatically (V6).
+  if (type === 'scheduler') {
+    base.scheduler = { provider: 'calendly', prefill: true };
+  }
   return base;
 }
 
