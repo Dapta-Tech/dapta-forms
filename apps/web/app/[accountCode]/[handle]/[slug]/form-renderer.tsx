@@ -485,7 +485,12 @@ export function FormRenderer({
           <div className="pf-done__check" aria-hidden="true">
             ✓
           </div>
-          <h1 className="pf-done__title">{ending.headline ?? m.thankYouTitle}</h1>
+          {/* The heading interpolates too. It did not, so a `[firstname]` typed
+              into a range's heading reached the respondent as literal text —
+              while the body right beneath it resolved correctly. */}
+          <h1 className="pf-done__title">
+            {ending.headline ? interpolate(ending.headline, answersRef.current) : m.thankYouTitle}
+          </h1>
           <p className="pf-done__body">
             {ending.body ? interpolate(ending.body, answersRef.current) : m.thankYouBody}
           </p>

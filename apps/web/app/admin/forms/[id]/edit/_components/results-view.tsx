@@ -7,12 +7,19 @@ import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/cn';
 import { HelpTip } from '@/components/ui/help-tip';
-import { TextField, NumberField, TextArea } from './fields';
+import { TextField, NumberField } from './fields';
+import { TokenTextarea, tokenOptionsBefore, allTokenKeys } from './token-textarea';
 import { iconForStep } from './question-types';
 import { maxScore, scoringSteps } from './scoring-util';
 import type { BuilderMessages } from './builder-messages';
 import { tb } from './builder-messages';
 import type { EditorMessages } from './messages';
+
+/** fields.tsx `controlBase`, compact — the shell TokenTextarea renders into. */
+const OUTCOME_TEXTAREA_CLASS =
+  'rounded-md border border-input bg-background px-3 py-2 text-xs transition-colors ' +
+  'placeholder:text-muted-foreground hover:border-muted-foreground ' +
+  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring resize-y';
 
 /**
  * Unified Scoring & Results — one coherent story: LEFT the points each question
@@ -46,6 +53,19 @@ export function ResultsView({
   // scoring list. Reference identity holds (filter doesn't clone the steps).
   const stepIndex = new Map<FormStep, number>(config.steps.map((s, i) => [s, i]));
   const outcomes = [...(config.outcomes ?? [])].sort((a, b) => (a.minScore ?? 0) - (b.minScore ?? 0));
+  // The thank-you screen runs AFTER every step, so every captured field is
+  // available to recall there — pass the full list, not a prefix.
+  const endingTokens = tokenOptionsBefore(config.steps, config.steps.length);
+  const allKeys = allTokenKeys(config.steps);
+  const bmTokens = m.tokens;
+  const tokenMessages = {
+    pickerLabel: bmTokens.pickerLabel,
+    pickerEmpty: bmTokens.pickerEmpty,
+    pickerNoMatch: bmTokens.pickerNoMatch,
+    warnLater: bmTokens.warnLater,
+    warnUnknown: bmTokens.warnUnknown,
+    warnRaw: bmTokens.warnRaw,
+  };
 
   function update(index: number, patch: Partial<FormOutcome>) {
     onOutcomesChange(outcomes.map((o, i) => (i === index ? { ...o, ...patch } : o)));
@@ -217,17 +237,24 @@ export function ResultsView({
                     for this range; empty falls back to the shared thank-you body.
                     Interpolation of [field] tokens happens in the renderer. */}
                 <div className="mt-2.5 flex flex-col gap-1 pl-[64px]">
-                  <label htmlFor={`outcome-message-${o.id}`} className="text-xs font-medium text-foreground">
-                    {rm.messageLabel}
-                  </label>
-                  <TextArea
-                    id={`outcome-message-${o.id}`}
+                  <span className="text-xs font-medium text-foreground">{rm.messageLabel}</span>
+                  {/* The recall picker, same as everywhere else in the editor
+                      (V4-16). This was a plain textarea, so typing `@` here did
+                      nothing while it worked in every other copy field — his
+                      exact complaint. Every field is captured BEFORE the
+                      thank-you screen, so all of them are offered. */}
+                  <TokenTextarea
                     value={o.message ?? ''}
                     rows={2}
+                    onChange={(v) => update(index, { message: v || null })}
                     placeholder={m.results.messagePlaceholder}
-                    onChange={(e) => update(index, { message: e.target.value || null })}
-                    data-testid="outcome-message"
-                    className="text-xs"
+                    ariaLabel={rm.messageLabel}
+                    tokens={endingTokens}
+                    allKeys={allKeys}
+                    m={tokenMessages}
+                    hint={bmTokens.hint}
+                    testId="outcome-message"
+                    className={OUTCOME_TEXTAREA_CLASS}
                   />
                   <p className="text-[11px] text-muted-foreground">{rm.messageHelp}</p>
                 </div>
