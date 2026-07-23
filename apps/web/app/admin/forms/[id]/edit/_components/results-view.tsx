@@ -186,7 +186,17 @@ export function ResultsView({
                     <NumberField
                       aria-label={m.results.rangeLabel}
                       value={lower}
-                      onChange={(e) => update(index, { minScore: Number(e.target.value) || 0 })}
+                      step={1}
+                      onChange={(e) => {
+                        // The schema requires an integer. A float ("7.5") or an
+                        // exponent ("1e35") used to be committed, fail
+                        // validation, and take every LATER edit down with it —
+                        // the whole form stopped autosaving over one keystroke
+                        // in this box. Constrain it here instead.
+                        const n = Number(e.target.value);
+                        if (!Number.isFinite(n)) return update(index, { minScore: 0 });
+                        update(index, { minScore: Math.trunc(Math.max(-1_000_000, Math.min(1_000_000, n))) });
+                      }}
                       data-testid="outcome-minscore"
                     />
                   </div>

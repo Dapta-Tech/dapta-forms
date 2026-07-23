@@ -119,6 +119,20 @@ export function FormEditor({
   // Deep-linkable tabs: `?tab=connect` selects the tab on load…
   const [tab, setTabState] = useState<Tab>(() => parseTab(searchParams.get('tab')));
   // …and switching syncs the URL shallowly (no navigation, no RSC refetch).
+  /**
+   * Move focus (and the scroll position) to a section after switching tabs, so a
+   * link that promises to take you somewhere actually delivers the keyboard
+   * there instead of dropping focus on <body> — V5-QA.
+   */
+  const focusAfterTab = useCallback((selector: string) => {
+    requestAnimationFrame(() => {
+      const el = document.querySelector<HTMLElement>(selector);
+      if (!el) return;
+      el.scrollIntoView({ block: 'start', behavior: 'smooth' });
+      el.focus({ preventScroll: true });
+    });
+  }, []);
+
   const setTab = useCallback(
     (next: Tab) => {
       // Mappings can change inside Connect — drop the Build settings panel's
@@ -527,7 +541,10 @@ export function FormEditor({
                   revealAfterStep={config.revealAfterStep}
                   onRevealMove={setRevealAfterStep}
                   onRevealRemove={removeReveal}
-                  onOpenDesign={() => setTab('design')}
+                  onOpenDesign={() => {
+                    setTab('design');
+                    focusAfterTab('#reveal-panel');
+                  }}
                   m={bm}
                 />
               </aside>
@@ -615,7 +632,10 @@ export function FormEditor({
                     formId={id}
                     locale={locale}
                     onOpenConnect={() => setTab('connect')}
-                    onOpenDesign={() => setTab('design')}
+                    onOpenDesign={() => {
+                      setTab('design');
+                      focusAfterTab('#reveal-panel');
+                    }}
                     revealAfterStep={config.revealAfterStep}
                     onRevealAfterStepChange={setRevealAfterStep}
                     onRenameKey={(nextKey) => renameStepKey(selected, nextKey)}

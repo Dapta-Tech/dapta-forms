@@ -1287,7 +1287,7 @@ export const en: FormsMessages = {
         hiddenHint: 'Not shown to respondents — its answer is filled from a matching URL parameter (?key=value).',
         fieldKey: 'Field key',
         fieldKeyHint:
-          'The name this answer is stored under — the URL parameter that prefills it, and what you type between brackets to recall it in a later question.',
+          'The name this answer is stored under — the URL parameter that prefills it, and what you type between brackets to recall it in a later question. Letters, numbers and underscores, up to 64 characters.',
         fieldKeyTaken: 'Another question already uses that key.',
         fieldKeyInvalid: 'A key needs at least one letter or number.',
         fieldKeyUrlExample: 'Prefill it with ?{key}=value',
@@ -2073,7 +2073,7 @@ export const es: FormsMessages = {
         hiddenHint: 'No se muestra a los respondientes — su respuesta se rellena desde un parámetro de URL coincidente (?clave=valor).',
         fieldKey: 'Clave del campo',
         fieldKeyHint:
-          'El nombre con el que se guarda esta respuesta — el parámetro de URL que la rellena y lo que escribes entre corchetes para reutilizarla en una pregunta posterior.',
+          'El nombre con el que se guarda esta respuesta — el parámetro de URL que la rellena y lo que escribes entre corchetes para reutilizarla en una pregunta posterior. Letras, números y guiones bajos, hasta 64 caracteres.',
         fieldKeyTaken: 'Otra pregunta ya usa esa clave.',
         fieldKeyInvalid: 'La clave necesita al menos una letra o número.',
         fieldKeyUrlExample: 'Rellénala con ?{key}=valor',

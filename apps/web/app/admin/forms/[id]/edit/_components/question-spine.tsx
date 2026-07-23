@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, type HTMLAttributes, type ReactNode } from 'react';
+import { useEffect, useState, type HTMLAttributes, type ReactNode } from 'react';
 import type { FormStep } from '@quill/engine';
 import { cn } from '@/lib/cn';
 import { SortableList, SortableRow } from './sortable';
@@ -376,6 +376,17 @@ function SpineMarker({
   handleProps: HTMLAttributes<HTMLElement>;
 }) {
   const [infoOpen, setInfoOpen] = useState(false);
+
+  // Escape collapses the popover, matching HelpTip and the app's other
+  // overlays — it was the one disclosure the key did nothing on.
+  useEffect(() => {
+    if (!infoOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setInfoOpen(false);
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [infoOpen]);
   return (
     <div
       data-testid={`${testidPrefix}-row`}
