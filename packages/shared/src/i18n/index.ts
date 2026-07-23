@@ -1398,7 +1398,7 @@ export const en: FormsMessages = {
         trackingSubtitle:
           'Measure visits and conversions on this form’s public page. Each tag loads only when its ID is set.',
         trackingDraftNote:
-          'Estos IDs se guardan con el resto de tu borrador — haz clic en Publicar para ponerlos en el formulario público. Las integraciones de arriba se guardan en vivo de inmediato.',
+          'These IDs are staged with the rest of your draft — click Publish to put them on the live form. Integrations above save to the live form immediately.',
         gtmLabel: 'Google Tag Manager ID',
         gtmHelp: 'Loads your GTM container on the form page so your tags fire.',
         metaLabel: 'Meta Pixel ID',
