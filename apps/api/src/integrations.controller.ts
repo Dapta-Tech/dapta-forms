@@ -42,11 +42,28 @@ export type HubSpotPropertiesResponse =
   | { enabled: false; reason: string }
   | { enabled: true; cached: boolean; properties: HubSpotPropertyDto[] };
 
+/** A Calendly event type surfaced to the scheduler-step event-type picker. */
+export interface CalendlyEventTypeDto {
+  /** Stable Calendly URI (what a scheduler step stores). */
+  uri: string;
+  name: string;
+  /** The public booking page for this event type (embedded in the form). */
+  schedulingUrl: string;
+  active: boolean;
+  durationMinutes: number;
+}
+
+/** The event-type-picker response: disabled (no token) or the cached list. */
+export type CalendlyEventTypesResponse =
+  | { enabled: false; reason: string }
+  | { enabled: true; cached: boolean; eventTypes: CalendlyEventTypeDto[] };
+
 const PLACEHOLDER_TOKENS = new Set(['', 'your_private_app_token_here', 'your_token_here']);
 const CACHE_TTL_MS = 5 * 60 * 1000;
 const HUBSPOT_PROPERTIES_URL = 'https://api.hubapi.com/crm/v3/properties/contacts';
 /** Calendly identity probe: validates a pasted token + yields its display label. */
 const CALENDLY_ME_URL = 'https://api.calendly.com/users/me';
+const CALENDLY_EVENT_TYPES_URL = 'https://api.calendly.com/event_types';
 
 interface HubSpotPropertiesApiResponse {
   results?: Array<{ name: string; label?: string; type?: string }>;
@@ -117,6 +134,88 @@ export class HubspotPropertiesService {
   }
 }
 
+interface CalendlyMeApiResponse {
+  resource?: { uri?: string };
+}
+interface CalendlyEventTypesApiResponse {
+  collection?: Array<{
+    uri?: string;
+    name?: string;
+    scheduling_url?: string;
+    active?: boolean;
+    duration?: number;
+  }>;
+}
+
+/**
+ * Server-side Calendly event-type lookup for the scheduler step's picker. The
+ * token lives only here (never in the browser); results are cached 5 minutes.
+ * Without a token it reports a clear disabled state instead of erroring — a form
+ * with no scheduler needs no Calendly config. Mirrors {@link HubspotPropertiesService}.
+ */
+@Injectable()
+export class CalendlyEventTypesService {
+  // Per-ACCOUNT cache: event types are portal-specific to the connected token.
+  private readonly cache = new Map<string, { data: CalendlyEventTypeDto[]; expires: number }>();
+
+  constructor(
+    @Inject(ENV) private readonly env: ServerEnv,
+    @Inject(DB) private readonly db: Db,
+    private readonly fetchImpl: typeof fetch = fetch,
+  ) {}
+
+  /** The live Calendly token for an account: connected (decrypted) else env fallback. */
+  private async resolveToken(accountId: string): Promise<string | null> {
+    const token = await resolveProviderToken(
+      this.db,
+      accountId,
+      'calendly',
+      this.env.FORMS_ENCRYPTION_KEY,
+      this.env.CALENDLY_API_TOKEN,
+    );
+    if (!token || PLACEHOLDER_TOKENS.has(token.trim())) return null;
+    return token;
+  }
+
+  async listEventTypes(accountId: string, now = Date.now()): Promise<CalendlyEventTypesResponse> {
+    const token = await this.resolveToken(accountId);
+    if (!token) {
+      return {
+        enabled: false,
+        reason: 'No Calendly token — connect Calendly for this account or set the server token.',
+      };
+    }
+    const cached = this.cache.get(accountId);
+    if (cached && cached.expires > now) {
+      return { enabled: true, cached: true, eventTypes: cached.data };
+    }
+    const headers = { authorization: `Bearer ${token}`, 'content-type': 'application/json' };
+    // Calendly scopes event types by user, so resolve the token's own user first.
+    const meRes = await this.fetchImpl(CALENDLY_ME_URL, { headers });
+    if (!meRes.ok) return { enabled: false, reason: `Calendly rejected the request (HTTP ${meRes.status}).` };
+    const me = (await meRes.json().catch(() => ({}))) as CalendlyMeApiResponse;
+    const userUri = me.resource?.uri;
+    if (!userUri) return { enabled: false, reason: 'Calendly did not return a user for this token.' };
+
+    const url = `${CALENDLY_EVENT_TYPES_URL}?user=${encodeURIComponent(userUri)}&active=true&count=100`;
+    const res = await this.fetchImpl(url, { headers });
+    if (!res.ok) return { enabled: false, reason: `Calendly rejected the request (HTTP ${res.status}).` };
+    const body = (await res.json().catch(() => ({}))) as CalendlyEventTypesApiResponse;
+    const eventTypes = (body.collection ?? [])
+      .filter((e) => e.uri && e.scheduling_url)
+      .map((e) => ({
+        uri: e.uri as string,
+        name: e.name?.trim() || 'Untitled event',
+        schedulingUrl: e.scheduling_url as string,
+        active: e.active !== false,
+        durationMinutes: typeof e.duration === 'number' ? e.duration : 0,
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+    this.cache.set(accountId, { data: eventTypes, expires: now + CACHE_TTL_MS });
+    return { enabled: true, cached: false, eventTypes };
+  }
+}
+
 /** Connect-body contract: a non-empty pasted provider token. */
 const connectBodySchema = z.object({ token: z.string().min(1) });
 
@@ -146,6 +245,7 @@ export class IntegrationsController {
   constructor(
     @Inject(AuthService) private readonly auth: AuthService,
     @Inject(HubspotPropertiesService) private readonly hubspot: HubspotPropertiesService,
+    @Inject(CalendlyEventTypesService) private readonly calendly: CalendlyEventTypesService,
     @Inject(DB) private readonly db: Db,
     @Inject(ENV) private readonly env: ServerEnv,
   ) {}
@@ -224,6 +324,13 @@ export class IntegrationsController {
     // Any authenticated host may read the property list (it drives their mapping UI).
     const p = await this.auth.resolveHost(req);
     return this.hubspot.listProperties(p.accountId);
+  }
+
+  /** Calendly event-type picker for the scheduler step (per-account token, 5-min cache). */
+  @Get('calendly/event-types')
+  async calendlyEventTypes(@Req() req: ReqLike): Promise<CalendlyEventTypesResponse> {
+    const p = await this.auth.resolveHost(req);
+    return this.calendly.listEventTypes(p.accountId);
   }
 
   /**
