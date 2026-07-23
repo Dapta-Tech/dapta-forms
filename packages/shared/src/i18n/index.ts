@@ -570,7 +570,6 @@ export interface FormsMessages {
         scoringHint: string;
         add: string;
         label: string;
-        labelPlaceholder: string;
         minScore: string;
         redirectUrl: string;
         redirectPlaceholder: string;
@@ -1361,7 +1360,6 @@ export const en: FormsMessages = {
         scoringHint: 'When off, every submission scores 0 and no outcome is resolved.',
         add: 'Add outcome',
         label: 'Label',
-        labelPlaceholder: 'e.g. Hot lead',
         minScore: 'Minimum score',
         redirectUrl: 'Redirect URL',
         redirectPlaceholder: 'https://…',
@@ -2149,7 +2147,6 @@ export const es: FormsMessages = {
         scoringHint: 'Si está desactivado, todo suma 0 y no se resuelve ningún resultado.',
         add: 'Añadir resultado',
         label: 'Etiqueta',
-        labelPlaceholder: 'p. ej. Lead caliente',
         minScore: 'Puntaje mínimo',
         redirectUrl: 'URL de redirección',
         redirectPlaceholder: 'https://…',
