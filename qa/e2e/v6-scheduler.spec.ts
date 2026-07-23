@@ -114,6 +114,39 @@ test.describe('V6 — Scheduler question type', () => {
     await expect(page.getByTestId('step-field-key')).toHaveCount(0);
   });
 
+  test('the builder canvas embeds the REAL Calendly widget, not a mock', async ({
+    page,
+    request,
+  }) => {
+    const { id } = await createForm(request, {
+      provider: 'calendly',
+      url: CALENDLY_URL,
+      eventTypeName: 'Con Dapta 1 a 1',
+      prefill: true,
+    });
+    await openEditor(page, id);
+    await page.getByTestId('question-spine').getByRole('button', { name: new RegExp(SCHED_Q) }).click();
+
+    // The author sees the same calendar the respondent will: the container the
+    // widget mounts into, and Calendly's own script injected to render it.
+    // Asserting the script tag (not the remote iframe) keeps this independent of
+    // whether calendly.com answers from CI.
+    await expect(page.getByTestId('canvas-calendly-embed')).toBeVisible({ timeout: 20_000 });
+    await expect(
+      page.locator('script[src*="calendly.com/assets/external/widget.js"]'),
+    ).toBeAttached({ timeout: 20_000 });
+    await expect(page.getByTestId('canvas-scheduler-preview')).toContainText('Con Dapta 1 a 1');
+  });
+
+  test('the canvas shows a placeholder until an event type is picked', async ({ page, request }) => {
+    const { id } = await createForm(request, { provider: 'calendly', prefill: true }); // no url
+    await openEditor(page, id);
+    await page.getByTestId('question-spine').getByRole('button', { name: new RegExp(SCHED_Q) }).click();
+
+    await expect(page.getByTestId('canvas-scheduler-preview')).toBeVisible();
+    await expect(page.getByTestId('canvas-calendly-embed')).toHaveCount(0);
+  });
+
   test('the public form renders the booking embed under the scheduler question', async ({
     page,
     request,

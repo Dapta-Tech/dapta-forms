@@ -10,6 +10,7 @@ import { maxStepPoints } from './scoring-util';
 import type { BuilderMessages } from './builder-messages';
 import { tb } from './builder-messages';
 import { TokenTextarea, tokenOptionsBefore, allTokenKeys } from './token-textarea';
+import { SchedulerEmbedPreview } from './scheduler-embed-preview';
 
 /** A textarea that grows to fit its content (used for inline title/description). */
 function AutoTextarea({
@@ -220,7 +221,7 @@ export function CanvasQuestion({
           ) : step.type === 'name' ? (
             <NamePreview step={step} m={m} />
           ) : step.type === 'scheduler' ? (
-            <SchedulerPreview step={step} m={m} />
+            <SchedulerEmbedPreview step={step} m={m} />
           ) : (
             <div className="rounded-xl border border-border bg-background px-4 py-3 text-[15px] text-muted-foreground/60">
               {step.placeholder ||
@@ -256,62 +257,6 @@ export function CanvasQuestion({
  * else the localized default) — so typing a placeholder in the settings panel
  * updates the canvas immediately, exactly as it will publish.
  */
-/**
- * A scheduler shows a calendar to the respondent, so the canvas shows one too.
- * It used to fall through to the generic single-line input, which previewed a
- * text box the public form never renders. Static and non-interactive on purpose
- * — the real availability lives in Calendly; this only has to read as "a
- * calendar goes here", and name the event type once one is picked.
- */
-function SchedulerPreview({ step, m }: { step: FormStep; m: BuilderMessages }) {
-  const name = step.scheduler?.eventTypeName?.trim();
-  const slots = ['09:00', '10:30', '14:00'];
-  const highlighted = new Set([9, 13, 16, 20]);
-  return (
-    <div
-      data-testid="canvas-scheduler-preview"
-      className="rounded-xl border border-border bg-background p-4"
-    >
-      <div className="flex items-center gap-2 border-b border-border pb-3">
-        <i aria-hidden className="pi pi-calendar-plus text-muted-foreground" style={{ fontSize: 13 }} />
-        <span className={cn('text-sm font-medium', !name && 'text-muted-foreground')}>
-          {name || m.canvas.schedulerUnset}
-        </span>
-      </div>
-      <div className="mt-3 flex gap-4">
-        <div className="grid flex-1 grid-cols-7 gap-1" aria-hidden>
-          {Array.from({ length: 28 }, (_, i) => (
-            <span
-              key={i}
-              className={cn(
-                'h-5 rounded text-center text-[9px] leading-5',
-                highlighted.has(i)
-                  ? 'bg-primary/25 text-foreground'
-                  : 'bg-muted/40 text-muted-foreground/40',
-              )}
-            >
-              {i + 1}
-            </span>
-          ))}
-        </div>
-        <div className="flex w-20 shrink-0 flex-col gap-1.5" aria-hidden>
-          {slots.map((t) => (
-            <span
-              key={t}
-              className="rounded-md border border-border px-2 py-1 text-center text-[10px] text-muted-foreground"
-            >
-              {t}
-            </span>
-          ))}
-        </div>
-      </div>
-      <p className="mt-3 text-[11px] leading-relaxed text-muted-foreground">
-        {m.canvas.schedulerNote}
-      </p>
-    </div>
-  );
-}
-
 function NamePreview({ step, m }: { step: FormStep; m: BuilderMessages }) {
   const [firstField, secondField] = nameFields(step);
   const firstLabel = (firstField && step.placeholders?.[firstField]) || m.canvas.nameFirstPlaceholder;

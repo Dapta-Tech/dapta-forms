@@ -104,9 +104,11 @@ export interface BuilderMessages {
     /** "{n} pts" */
     pts: string;
     messagePlaceholder: string;
-    /** V6 — the scheduler's calendar preview on the canvas. */
+    /** V6 — the scheduler's live Calendly embed on the canvas. */
     schedulerUnset: string;
     schedulerNote: string;
+    schedulerLoading: string;
+    schedulerLoadError: string;
     /** Name-step preview defaults — MUST mirror the shared catalog's
      *  `renderer.name.*` so the canvas shows exactly what publishes. */
     nameFirstPlaceholder: string;
@@ -383,6 +385,8 @@ const en: BuilderMessages = {
     messagePlaceholder: 'Write your message…',
     schedulerUnset: 'No event type picked yet',
     schedulerNote: 'Respondents pick a time here. Booking answers this question and moves the form on.',
+    schedulerLoading: 'Loading the calendar…',
+    schedulerLoadError: 'The calendar could not load. Check the event type is still available.',
     nameFirstPlaceholder: 'First name',
     nameLastPlaceholder: 'Last name',
   },
@@ -646,6 +650,8 @@ const es: BuilderMessages = {
     messagePlaceholder: 'Escribe tu mensaje…',
     schedulerUnset: 'Aún no eliges un tipo de evento',
     schedulerNote: 'Aquí eligen un horario. Agendar responde esta pregunta y avanza el formulario.',
+    schedulerLoading: 'Cargando el calendario…',
+    schedulerLoadError: 'No se pudo cargar el calendario. Revisa que el tipo de evento siga disponible.',
     nameFirstPlaceholder: 'Nombre',
     nameLastPlaceholder: 'Apellidos',
   },
