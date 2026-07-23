@@ -52,12 +52,19 @@ export function AnalyticsFilter({
     push(next);
   };
 
+  // Today in UTC — the same reference the server resolves ranges against, so the
+  // picker cannot offer a "future" that is only future in the viewer's timezone.
+  const todayUtc = new Date().toISOString().slice(0, 10);
+
   const applyCustom = () => {
     if (!from && !to) return;
+    // A reversed range silently returned zeros behind the generic empty state,
+    // which reads as "no data" rather than "these bounds are backwards".
+    const [lo, hi] = from && to && from > to ? [to, from] : [from, to];
     const next = new URLSearchParams();
     next.set('preset', 'custom');
-    if (from) next.set('from', from);
-    if (to) next.set('to', to);
+    if (lo) next.set('from', lo);
+    if (hi) next.set('to', hi);
     push(next);
   };
 
@@ -101,7 +108,7 @@ export function AnalyticsFilter({
             <input
               type="date"
               value={from}
-              max={to || undefined}
+              max={to || todayUtc}
               onChange={(e) => setFrom(e.target.value)}
               className="h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground"
             />
@@ -112,6 +119,7 @@ export function AnalyticsFilter({
               type="date"
               value={to}
               min={from || undefined}
+              max={todayUtc}
               onChange={(e) => setTo(e.target.value)}
               className="h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground"
             />

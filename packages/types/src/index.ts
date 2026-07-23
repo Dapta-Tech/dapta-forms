@@ -482,8 +482,8 @@ export const trendPointSchema = z.object({
   submissions: z.number().int(),
   /** submissions / starts for that day (1 decimal); 0 when starts=0. */
   completionRate: z.number(),
-  /** Median whole seconds open→complete that day; 0 when none completed. */
-  timeToComplete: z.number().int(),
+  /** Median whole seconds open→complete that day; null when not derivable. */
+  timeToComplete: z.number().int().nullable(),
 });
 export type TrendPoint = z.infer<typeof trendPointSchema>;
 
@@ -497,8 +497,13 @@ export const analyticsResponseSchema = z.object({
   submissions: z.number().int(),
   /** submissions / starts as a percentage (1 decimal); 0 when starts=0. */
   completionRate: z.number(),
-  /** MEDIAN whole seconds from form open (first `view`) to completion. */
-  timeToComplete: z.number().int(),
+  /**
+   * MEDIAN whole seconds from form open (first `view`) to completion, or null
+   * when no completed session in range had a derivable open time. Null is NOT
+   * zero: reporting 0s for a submission whose open beacon was lost is exactly
+   * the fabricated fact this metric was rewritten to remove.
+   */
+  timeToComplete: z.number().int().nullable(),
   /** Partial-only submissions (partialAt set, completedAt null). */
   partialSubmits: z.number().int(),
   /** Cover row + one row per configured step. */

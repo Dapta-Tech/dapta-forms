@@ -33,12 +33,16 @@ function resolveRange(sp: SP): { from?: number; to?: number } {
       to: Number.isNaN(to) ? undefined : to,
     };
   }
+  const now = Date.now();
   if (sp.preset === 'today') {
-    const startOfDay = Math.floor(Date.now() / DAY_MS) * DAY_MS;
+    const startOfDay = Math.floor(now / DAY_MS) * DAY_MS;
     return { from: startOfDay, to: startOfDay + DAY_MS - 1 };
   }
   const days = sp.preset === 'week' ? 7 : sp.preset === 'month' ? 30 : sp.preset === 'year' ? 365 : null;
-  if (days) return { from: Date.now() - days * DAY_MS };
+  // Send BOTH bounds for a rolling window. With only `from`, the trend series
+  // ended at the last day that happened to have data, so a quiet stretch made
+  // the chart stop short of today and silently misrepresent the window.
+  if (days) return { from: now - days * DAY_MS, to: now };
   return {};
 }
 
@@ -86,12 +90,21 @@ export default async function AnalyticsPage({
   );
 }
 
-/** Format seconds as `Ns` or `Nm Ss`. */
+/**
+ * Format seconds as `Ns`, `Nm Ss` or `Nh Nm`. The hour tier matters: a session
+ * left open across days used to render as "4440m", which reads as noise rather
+ * than a duration.
+ */
 function formatDuration(seconds: number, unit: string): string {
   if (seconds < 60) return `${seconds}${unit}`;
-  const m = Math.floor(seconds / 60);
-  const s = seconds % 60;
-  return s === 0 ? `${m}m` : `${m}m ${s}${unit}`;
+  if (seconds < 3600) {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return s === 0 ? `${m}m` : `${m}m ${s}${unit}`;
+  }
+  const h = Math.floor(seconds / 3600);
+  const m = Math.round((seconds % 3600) / 60);
+  return m === 0 ? `${h}h` : `${h}h ${m}m`;
 }
 
 async function AnalyticsData({
@@ -115,10 +128,16 @@ async function AnalyticsData({
 
   const hasActivity = a.views + a.starts + a.submissions + a.partialSubmits > 0;
   if (!hasActivity) {
+    // A filtered range with no activity is NOT the same as a form nobody has
+    // ever opened — telling an owner with 500 responses "once people open your
+    // form…" because they picked last week is simply wrong.
+    const filtered = range.from != null || range.to != null;
     return (
       <div className="rounded-lg border border-dashed border-border bg-card/40 p-12 text-center">
-        <p className="text-lg font-medium">{m.emptyTitle}</p>
-        <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">{m.emptyBody}</p>
+        <p className="text-lg font-medium">{filtered ? m.emptyRangeTitle : m.emptyTitle}</p>
+        <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
+          {filtered ? m.emptyRangeBody : m.emptyBody}
+        </p>
       </div>
     );
   }
@@ -128,7 +147,12 @@ async function AnalyticsData({
     { label: m.metricStarts, value: String(a.starts) },
     { label: m.metricSubmissions, value: String(a.submissions) },
     { label: m.metricCompletionRate, value: `${a.completionRate}%` },
-    { label: m.metricAvgTime, value: formatDuration(a.timeToComplete, m.seconds) },
+    {
+      label: m.metricTimeToComplete,
+      // null = no completed session in range had a derivable open time. Showing
+      // "0s" there would state a duration nobody measured.
+      value: a.timeToComplete == null ? '—' : formatDuration(a.timeToComplete, m.seconds),
+    },
     { label: m.metricPartials, value: String(a.partialSubmits) },
   ];
 
@@ -159,7 +183,7 @@ async function AnalyticsData({
             starts: m.metricStarts,
             submissions: m.metricSubmissions,
             completionRate: m.metricCompletionRate,
-            timeToComplete: m.metricAvgTime,
+            timeToComplete: m.metricTimeToComplete,
           },
         }}
       />

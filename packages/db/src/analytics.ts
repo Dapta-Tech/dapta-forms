@@ -130,22 +130,39 @@ export async function completedSubmissions(
   formId: string,
   range?: DateRange,
 ): Promise<CompletedSubmission[]> {
-  const rows = await db.all<{ day: number | string; dur: number | string | null }>(
+  const rows = await db.all<{
+    day: number | string;
+    completed_at: number | string;
+    started_at: number | string;
+    open_at: number | string | null;
+  }>(
     // 86400000 is written as a SQL literal (not a bound param) so both engines
-    // do INTEGER division and bucket to a whole day.
+    // do INTEGER division and bucket to a whole day. The open timestamp comes
+    // back RAW (not COALESCEd in SQL) so the caller can tell "no open signal"
+    // apart from "opened and completed instantly" — see below.
     sql`SELECT (s.completed_at / 86400000) AS day,
-               (s.completed_at - COALESCE(
-                 (SELECT MIN(e.created_at) FROM form_event e
-                  WHERE e.form_id = s.form_id AND e.session_id = s.session_id AND e.type = 'view'),
-                 s.started_at)) AS dur
+               s.completed_at AS completed_at,
+               s.started_at AS started_at,
+               (SELECT MIN(e.created_at) FROM form_event e
+                WHERE e.form_id = s.form_id AND e.session_id = s.session_id AND e.type = 'view') AS open_at
         FROM submission s
         WHERE s.form_id = ${formId} AND s.completed_at IS NOT NULL ${andRange(sql`s.completed_at`, range)}`,
   );
   return rows.map((r) => {
-    const d = r.dur == null ? null : Number(r.dur);
+    const completedAt = Number(r.completed_at);
+    const startedAt = Number(r.started_at);
+    const openAt = r.open_at == null ? null : Number(r.open_at);
+    // Prefer the session's first `view`. If that beacon was lost, `started_at`
+    // is only a usable fallback when it is STRICTLY earlier than completion —
+    // when they are equal the submit itself was the first persisted write, so
+    // the open time is genuinely unknown. Reporting that as 0 would resurrect
+    // the exact bug this metric was rewritten to kill, so it stays null and is
+    // excluded from the median rather than dragging it to zero.
+    const anchor = openAt ?? (startedAt < completedAt ? startedAt : null);
+    const dur = anchor == null ? null : completedAt - anchor;
     return {
       day: Number(r.day),
-      durationMs: d != null && Number.isFinite(d) && d >= 0 ? d : null,
+      durationMs: dur != null && Number.isFinite(dur) && dur >= 0 ? dur : null,
     };
   });
 }

@@ -13,6 +13,11 @@ import type { TrendPoint } from '@quill/types';
  * The API sends every metric for every day, so switching the metric is instant
  * and never re-fetches. Days are gap-filled server-side, so a flat stretch here
  * genuinely means "no activity", not "no data point".
+ *
+ * A null value (only `timeToComplete` can be null — no completed session that
+ * day had a derivable open time) is a HOLE, not a zero: the line breaks rather
+ * than diving to the baseline, because a dip to zero would claim people finished
+ * instantly.
  */
 
 type MetricKey = 'views' | 'starts' | 'submissions' | 'completionRate' | 'timeToComplete';
@@ -31,12 +36,17 @@ const W = 720;
 const H = 220;
 const PAD = { left: 46, right: 12, top: 12, bottom: 26 };
 
-/** Format seconds as `Ns` or `Nm Ss` — mirrors the stat card's formatting. */
+/** Format seconds as `Ns`, `Nm Ss` or `Nh Nm` (mirrors the stat card). */
 function formatDuration(seconds: number, unit: string): string {
   if (seconds < 60) return `${seconds}${unit}`;
-  const m = Math.floor(seconds / 60);
-  const s = seconds % 60;
-  return s === 0 ? `${m}m` : `${m}m ${s}${unit}`;
+  if (seconds < 3600) {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return s === 0 ? `${m}m` : `${m}m ${s}${unit}`;
+  }
+  const h = Math.floor(seconds / 3600);
+  const m = Math.round((seconds % 3600) / 60);
+  return m === 0 ? `${h}h` : `${h}h ${m}m`;
 }
 
 function formatValue(metric: MetricKey, v: number, secondsUnit: string): string {
@@ -63,10 +73,13 @@ export function TrendsChart({
     [locale],
   );
 
-  const values = points.map((p) => p[metric]);
-  const max = values.length ? Math.max(...values) : 0;
-  // A flat all-zero series still needs a scale, or every point lands on NaN.
-  const yMax = max > 0 ? max : 1;
+  const values: (number | null)[] = points.map((p) => p[metric]);
+  const present = values.filter((v): v is number => v != null);
+  const max = present.length ? Math.max(...present) : 0;
+  const hasData = max > 0;
+  // Scale only. When everything is zero the axis must NOT advertise a maximum no
+  // data reaches, so the peak label is suppressed below rather than printed as 1.
+  const yMax = hasData ? max : 1;
 
   const innerW = W - PAD.left - PAD.right;
   const innerH = H - PAD.top - PAD.bottom;
@@ -76,14 +89,35 @@ export function TrendsChart({
     points.length <= 1 ? PAD.left + innerW / 2 : PAD.left + (i / (points.length - 1)) * innerW;
   const yAt = (v: number) => PAD.top + (1 - v / yMax) * innerH;
 
-  const line = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${xAt(i)} ${yAt(p[metric])}`).join(' ');
-  const area =
-    points.length > 0
-      ? `${line} L ${xAt(points.length - 1)} ${baseline} L ${xAt(0)} ${baseline} Z`
-      : '';
+  // Split into contiguous runs of non-null values so holes break the line.
+  const runs: number[][] = [];
+  let run: number[] = [];
+  values.forEach((v, i) => {
+    if (v == null) {
+      if (run.length) runs.push(run);
+      run = [];
+      return;
+    }
+    run.push(i);
+  });
+  if (run.length) runs.push(run);
+
+  const linePath = runs
+    .map((r) => r.map((i, k) => `${k === 0 ? 'M' : 'L'} ${xAt(i)} ${yAt(values[i]!)}`).join(' '))
+    .join(' ');
+  const areaPath = runs
+    .filter((r) => r.length > 1)
+    .map((r) => {
+      const seg = r.map((i, k) => `${k === 0 ? 'M' : 'L'} ${xAt(i)} ${yAt(values[i]!)}`).join(' ');
+      return `${seg} L ${xAt(r[r.length - 1]!)} ${baseline} L ${xAt(r[0]!)} ${baseline} Z`;
+    })
+    .join(' ');
+  // A run of one has no line to draw — mark it so the day is not invisible.
+  const isolated = runs.filter((r) => r.length === 1).map((r) => r[0]!);
 
   // First / middle / last ticks only — a label per day would collide.
-  const tickIdx = points.length <= 1 ? [0] : [0, Math.floor((points.length - 1) / 2), points.length - 1];
+  const tickIdx =
+    points.length <= 1 ? [0] : [0, Math.floor((points.length - 1) / 2), points.length - 1];
   const uniqueTicks = [...new Set(tickIdx)].filter((i) => i >= 0 && i < points.length);
 
   const metricOptions: MetricKey[] = [
@@ -130,43 +164,62 @@ export function TrendsChart({
             role="img"
             aria-label={`${labels.metrics[metric]} — ${labels.title}`}
             data-testid="trends-svg"
+            data-metric={metric}
           >
-            {/* Horizontal guides + y labels: 0 and the peak. */}
-            {[0, yMax].map((v) => (
-              <g key={v}>
+            {/* Baseline always; the peak guide only when data actually reaches it. */}
+            <line
+              x1={PAD.left}
+              x2={W - PAD.right}
+              y1={yAt(0)}
+              y2={yAt(0)}
+              stroke="var(--border)"
+              strokeWidth={1}
+            />
+            <text
+              x={PAD.left - 8}
+              y={yAt(0) + 4}
+              textAnchor="end"
+              fontSize={11}
+              fill="var(--muted-foreground)"
+            >
+              {formatValue(metric, 0, labels.seconds)}
+            </text>
+            {hasData ? (
+              <g>
                 <line
                   x1={PAD.left}
                   x2={W - PAD.right}
-                  y1={yAt(v)}
-                  y2={yAt(v)}
+                  y1={yAt(max)}
+                  y2={yAt(max)}
                   stroke="var(--border)"
                   strokeWidth={1}
                 />
                 <text
                   x={PAD.left - 8}
-                  y={yAt(v) + 4}
+                  y={yAt(max) + 4}
                   textAnchor="end"
                   fontSize={11}
                   fill="var(--muted-foreground)"
                 >
-                  {formatValue(metric, v, labels.seconds)}
+                  {formatValue(metric, max, labels.seconds)}
                 </text>
               </g>
-            ))}
-
-            <path d={area} fill="var(--primary)" fillOpacity={0.14} />
-            <path
-              d={line}
-              fill="none"
-              stroke="var(--primary)"
-              strokeWidth={2}
-              strokeLinejoin="round"
-              strokeLinecap="round"
-            />
-            {/* A single bucket has no line to draw — mark it so it is not blank. */}
-            {points.length === 1 ? (
-              <circle cx={xAt(0)} cy={yAt(values[0] ?? 0)} r={3.5} fill="var(--primary)" />
             ) : null}
+
+            {areaPath ? <path d={areaPath} fill="var(--primary)" fillOpacity={0.14} /> : null}
+            {linePath ? (
+              <path
+                d={linePath}
+                fill="none"
+                stroke="var(--primary)"
+                strokeWidth={2}
+                strokeLinejoin="round"
+                strokeLinecap="round"
+              />
+            ) : null}
+            {isolated.map((i) => (
+              <circle key={i} cx={xAt(i)} cy={yAt(values[i]!)} r={3.5} fill="var(--primary)" />
+            ))}
 
             {uniqueTicks.map((i) => (
               <text

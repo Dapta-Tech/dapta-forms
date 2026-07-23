@@ -355,7 +355,7 @@ export interface FormsMessages {
       metricStarts: string;
       metricSubmissions: string;
       metricCompletionRate: string;
-      metricAvgTime: string;
+      metricTimeToComplete: string;
       metricPartials: string;
       rangeToday: string;
       rangeWeek: string;
@@ -378,6 +378,8 @@ export interface FormsMessages {
       colDropoff: string;
       coverRow: string;
       landingRow: string;
+      emptyRangeTitle: string;
+      emptyRangeBody: string;
       emptyTitle: string;
       emptyBody: string;
       error: string;
@@ -790,7 +792,7 @@ export const en: FormsMessages = {
       metricStarts: 'Starts',
       metricSubmissions: 'Submissions',
       metricCompletionRate: 'Completion rate',
-      metricAvgTime: 'Time to complete',
+      metricTimeToComplete: 'Time to complete',
       metricPartials: 'Partial submits',
       rangeToday: 'Today',
       rangeWeek: 'Last week',
@@ -812,6 +814,8 @@ export const en: FormsMessages = {
       colDropoff: 'Drop-off',
       coverRow: 'Cover / landing',
       landingRow: 'Form views',
+      emptyRangeTitle: 'No activity in this range',
+      emptyRangeBody: 'This form has data, just not in the dates you picked. Try a wider range.',
       emptyTitle: 'No data yet',
       emptyBody: 'Once people open and fill out this form, the funnel and drop-off will appear here.',
       error: 'Couldn’t load analytics.',
@@ -1222,7 +1226,7 @@ export const es: FormsMessages = {
       metricStarts: 'Inicios',
       metricSubmissions: 'Respuestas',
       metricCompletionRate: 'Tasa de finalización',
-      metricAvgTime: 'Tiempo para completar',
+      metricTimeToComplete: 'Tiempo para completar',
       metricPartials: 'Envíos parciales',
       rangeToday: 'Hoy',
       rangeWeek: 'Última semana',
@@ -1244,6 +1248,8 @@ export const es: FormsMessages = {
       colDropoff: 'Abandono',
       coverRow: 'Portada / inicio',
       landingRow: 'Vistas del formulario',
+      emptyRangeTitle: 'Sin actividad en este rango',
+      emptyRangeBody: 'Este formulario sí tiene datos, pero no en las fechas que elegiste. Prueba un rango más amplio.',
       emptyTitle: 'Aún no hay datos',
       emptyBody: 'Cuando las personas abran y completen este formulario, verás aquí el embudo y el abandono.',
       error: 'No se pudieron cargar las analíticas.',

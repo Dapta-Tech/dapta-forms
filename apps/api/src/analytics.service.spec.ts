@@ -196,6 +196,45 @@ describe('P0 metric-definition fixes', () => {
     expect(a.timeToComplete).toBe(20); // median — NOT 110 (mean)
   });
 
+  it('clamps completion rate to 100% when a window holds completions without their starts', async () => {
+    // Sessions that start just before a window and complete inside it give the
+    // window more submissions than starts. QA rendered 200% and 300% this way,
+    // reachable from the stock Today preset (any session crossing UTC midnight).
+    const T = NOW + 3_000_000;
+    await ev('clamp-a', 'step_view', 0, T); // exactly ONE start inside the window
+    await insertSubmission({ session: 'clamp-a', data: {}, score: 0, startedAt: T - 5_000, completedAt: T });
+    await insertSubmission({ session: 'clamp-b', data: {}, score: 0, startedAt: T - 5_000, completedAt: T });
+
+    const a = (await svc.funnel(accountId, formId, { from: T - 1, to: T + 1 }))!;
+    expect(a.starts).toBe(1);
+    expect(a.submissions).toBe(2); // raw ratio would be 200%
+    expect(a.completionRate).toBe(100);
+    expect(a.trends.every((p) => p.completionRate <= 100)).toBe(true);
+  });
+
+  it('reports NO time to complete (null) rather than a fabricated 0s', async () => {
+    // The submit was the first persisted write AND the open beacon was lost, so
+    // started_at === completed_at. There is no measurable duration — reporting
+    // 0s would resurrect the exact bug this metric was rewritten to remove.
+    const T = NOW + 4_000_000;
+    await insertSubmission({ session: 'noopen', data: {}, score: 0, startedAt: T, completedAt: T });
+    const a = (await svc.funnel(accountId, formId, { from: T - 1, to: T + 1 }))!;
+    expect(a.submissions).toBe(1);
+    expect(a.timeToComplete).toBeNull();
+  });
+
+  it('still plots a gap-filled window when the range has no activity at all', async () => {
+    const DAY = 86_400_000;
+    const quietDay = Math.floor(NOW / DAY) - 20; // a stretch with nothing in it
+    const a = (await svc.funnel(accountId, formId, {
+      from: quietDay * DAY,
+      to: (quietDay + 2) * DAY,
+    }))!;
+    // "Nothing happened here" is a real answer — it should draw flat, not vanish.
+    expect(a.trends).toHaveLength(3);
+    expect(a.trends.every((p) => p.views === 0 && p.starts === 0 && p.submissions === 0)).toBe(true);
+  });
+
   it('builds a per-day Trends series carrying every metric for the bucket', async () => {
     const DAY = 86_400_000;
     const seedDay = Math.floor(NOW / DAY); // everything in beforeEach lands here
