@@ -260,6 +260,69 @@ test.describe('V6 — booking a scheduler step (no Calendly token)', () => {
     expect(JSON.parse(sub!.data).book).toBe(START_TIME);
   });
 
+  test('"Automatic" prefills from the contact QUESTIONS, with no mapping at all', async ({
+    page,
+    request,
+  }) => {
+    const code = await accountCode(request);
+    seq += 1;
+    // A form as the builder actually makes one: generated keys, none of them the
+    // conventional firstname/email the old extraction looked for, and NO
+    // prefillMap — everything left on "Automatic".
+    const res = await request.post(`${API}/v1/forms`, {
+      data: {
+        name: `v6auto-${RUN}-${seq}`,
+        config: {
+          version: 1,
+          steps: [
+            { key: 'name_1', type: 'name', question: 'Your name', fields: ['firstname', 'lastname'] },
+            { key: 'email_2', type: 'email', question: 'Work email', required: true },
+            {
+              key: 'book',
+              type: 'scheduler',
+              question: SCHED_Q,
+              required: true,
+              scheduler: { provider: 'calendly', url: 'https://calendly.com/acme/intro', prefill: true },
+            },
+          ],
+        },
+      },
+    });
+    const { slug } = (await res.json()) as { slug: string };
+
+    await stubCalendly(page);
+    await page.goto(`/${code}/you/${slug}`);
+    // Name step first (two subfield inputs), then the email.
+    const first = page.locator('.pf__fields input').first();
+    await expect(first).toBeVisible({ timeout: 20_000 });
+    await first.fill('Ada');
+    await page.locator('.pf__fields input').nth(1).fill('Lovelace');
+    await page.locator('.pf__btn--inline, .pf__btn').first().click();
+    const email = page.locator('.pf__fields input').first();
+    await expect(email).toBeVisible({ timeout: 20_000 });
+    await email.fill('ada@acme.io');
+    await page.locator('.pf__btn--inline, .pf__btn').first().click();
+    await expect(page.locator('.pf__question')).toHaveText(SCHED_Q, { timeout: 20_000 });
+
+    await page.waitForFunction(
+      () => (window as unknown as { __calendlyInit: unknown }).__calendlyInit !== null,
+      undefined,
+      { timeout: 20_000 },
+    );
+    const init = await page.evaluate(
+      () =>
+        (window as unknown as { __calendlyInit: { prefill: Record<string, unknown> } | null })
+          .__calendlyInit,
+    );
+    // The email came from the email QUESTION (`email_2`), not a literal `email` key.
+    expect(init!.prefill).toMatchObject({
+      name: 'Ada Lovelace',
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      email: 'ada@acme.io',
+    });
+  });
+
   test('booking a MID-form scheduler advances instead of submitting', async ({ page, request }) => {
     const code = await accountCode(request);
     const { slug } = await createForm(request, { schedulerLast: false });

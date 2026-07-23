@@ -8,6 +8,8 @@
  * query string.
  */
 import type { OutcomeBooking } from '@quill/types';
+import type { FormStep } from '@quill/engine';
+import { nameFields } from '@quill/engine';
 
 /** Contact fields distilled from the collected answers for embed prefill. */
 export interface BookingContactFields {
@@ -33,6 +35,50 @@ export function extractBookingContactFields(
   const phone = String(answers.phone ?? answers.mobilephone ?? '').trim();
   const name = [firstname, lastname].filter(Boolean).join(' ');
   return { firstname, lastname, name, email, phone };
+}
+
+/**
+ * Resolve the contact fields "Automatic" should use, by QUESTION TYPE.
+ *
+ * The conventional extraction reads the literal keys `email`/`phone`, which only
+ * exist on forms authored to use them — a question added in the builder gets a
+ * generated key like `email_1`, so Automatic silently filled nothing on every
+ * form built the normal way. (A `name` step was the exception: it stores under
+ * its subfields, which ARE the conventional keys, so names appeared to work.)
+ *
+ * Only answered steps count, so a contact question sitting AFTER the scheduler
+ * is naturally ignored — it has no answer yet. Explicit mappings are applied
+ * afterwards and win.
+ */
+function autoContactAnswers(
+  answers: Record<string, unknown>,
+  steps: FormStep[] | undefined,
+): Record<string, unknown> {
+  if (!steps?.length) return answers;
+  const out = { ...answers };
+  const answered = (key: string): string => String(answers[key] ?? '').trim();
+  const firstAnswered = (type: FormStep['type']): FormStep | undefined =>
+    steps.find((s) => s.type === type && answered(s.key) !== '');
+
+  if (!answered('email')) {
+    const step = firstAnswered('email');
+    if (step) out.email = answers[step.key];
+  }
+  if (!answered('phone') && !answered('mobilephone')) {
+    const step = firstAnswered('phone');
+    if (step) out.phone = answers[step.key];
+  }
+  if (!answered('firstname') && !answered('lastname')) {
+    // A name step keeps its answers under its own subfield keys, which are only
+    // firstname/lastname by default — an author may have renamed them.
+    const step = steps.find((s) => s.type === 'name' && nameFields(s).some((f) => answered(f)));
+    if (step) {
+      const [first, last] = nameFields(step);
+      if (first && answered(first)) out.firstname = answers[first];
+      if (last && answered(last)) out.lastname = answers[last];
+    }
+  }
+  return out;
 }
 
 /** A scheduler's resolved prefill: overlaid answers + positional custom answers. */
@@ -61,9 +107,13 @@ export interface SchedulerPrefill {
 export function resolveSchedulerPrefill(
   answers: Record<string, unknown>,
   map: Record<string, string | null | undefined> | undefined,
+  steps?: FormStep[],
 ): SchedulerPrefill {
-  if (!map) return { answers, customAnswers: {} };
-  const out = { ...answers };
+  // "Automatic" first — resolved by question type — then the explicit mappings
+  // on top, so a field the author mapped always wins over the inferred one.
+  const auto = autoContactAnswers(answers, steps);
+  if (!map) return { answers: auto, customAnswers: {} };
+  const out = { ...auto };
   const customAnswers: Record<string, string> = {};
   const read = (key: string | null | undefined): string =>
     key ? String(answers[key] ?? '').trim() : '';

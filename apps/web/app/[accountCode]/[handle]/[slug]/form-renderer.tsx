@@ -699,7 +699,13 @@ export function FormRenderer({
   if (step.type === 'scheduler') {
     // Resolve the author's field mapping once: built-ins overlay the answers,
     // the event type's custom questions ride their exact positional ids.
-    const schedPrefill = resolveSchedulerPrefill(answers, step.scheduler?.prefillMap);
+    // The steps are what makes "Automatic" work: it finds the answered email /
+    // phone / name QUESTION rather than hoping the form used those exact keys.
+    const schedPrefill = resolveSchedulerPrefill(
+      answers,
+      step.scheduler?.prefillMap,
+      config.steps as FormStep[],
+    );
     const booking = step.scheduler
       ? schedulerToBooking(step.scheduler, schedPrefill.customAnswers)
       : null;

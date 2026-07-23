@@ -247,3 +247,70 @@ describe('resolveSchedulerPrefill (V6 — scheduler field mapping)', () => {
     expect(answers.lastname).toBe('Byron King');
   });
 });
+
+describe('resolveSchedulerPrefill — "Automatic" resolves by question TYPE', () => {
+  // A form built in the builder: generated keys, none of them the conventional
+  // firstname/email/phone the old extraction looked for.
+  const STEPS = [
+    { key: 'name_1', type: 'name', fields: ['firstname', 'lastname'] },
+    { key: 'email_2', type: 'email' },
+    { key: 'phone_3', type: 'phone' },
+    { key: 'text_4', type: 'text' },
+  ] as unknown as Parameters<typeof resolveSchedulerPrefill>[2];
+
+  const ANSWERED = {
+    firstname: 'Ada',
+    lastname: 'Lovelace',
+    email_2: 'ada@acme.io',
+    phone_3: '+13105551234',
+    text_4: 'ignore me',
+  };
+
+  it('fills email and phone from the answered questions, not a literal key', () => {
+    const { answers } = resolveSchedulerPrefill(ANSWERED, undefined, STEPS);
+    expect(answers.email).toBe('ada@acme.io');
+    expect(answers.phone).toBe('+13105551234');
+    expect(buildCalendlyWidgetPrefill(answers)).toMatchObject({
+      name: 'Ada Lovelace',
+      email: 'ada@acme.io',
+    });
+  });
+
+  it('an explicit mapping still wins over the automatic one', () => {
+    const { answers } = resolveSchedulerPrefill(
+      { ...ANSWERED, otro: 'mapped@acme.io' },
+      { email: 'otro' },
+      STEPS,
+    );
+    expect(answers.email).toBe('mapped@acme.io');
+  });
+
+  it('ignores a contact question that has not been answered yet', () => {
+    // The email question sits after the scheduler, so it has no answer.
+    const { answers } = resolveSchedulerPrefill({ firstname: 'Ada' }, undefined, STEPS);
+    expect(answers.email).toBeUndefined();
+    expect(answers.phone).toBeUndefined();
+  });
+
+  it('honors a name step whose subfield keys were renamed', () => {
+    const steps = [
+      { key: 'quien', type: 'name', fields: ['nombre', 'apellido'] },
+    ] as unknown as Parameters<typeof resolveSchedulerPrefill>[2];
+    const { answers } = resolveSchedulerPrefill(
+      { nombre: 'Grace', apellido: 'Hopper' },
+      undefined,
+      steps,
+    );
+    expect(answers.firstname).toBe('Grace');
+    expect(answers.lastname).toBe('Hopper');
+  });
+
+  it('leaves a conventional key alone when it is already filled', () => {
+    const { answers } = resolveSchedulerPrefill(
+      { email: 'primary@acme.io', email_2: 'secondary@acme.io' },
+      undefined,
+      STEPS,
+    );
+    expect(answers.email).toBe('primary@acme.io');
+  });
+});
