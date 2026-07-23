@@ -111,7 +111,7 @@ async function AnalyticsData({
     { label: m.metricStarts, value: String(a.starts) },
     { label: m.metricSubmissions, value: String(a.submissions) },
     { label: m.metricCompletionRate, value: `${a.completionRate}%` },
-    { label: m.metricAvgTime, value: formatDuration(a.avgTimeToComplete, m.seconds) },
+    { label: m.metricAvgTime, value: formatDuration(a.timeToComplete, m.seconds) },
     { label: m.metricPartials, value: String(a.partialSubmits) },
   ];
 

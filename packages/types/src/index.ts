@@ -467,16 +467,16 @@ export type DropoffRow = z.infer<typeof dropoffRowSchema>;
 
 /** The funnel summary + drop-off table for a form over an optional date range. */
 export const analyticsResponseSchema = z.object({
-  /** Count of `view` events. */
+  /** Unique sessions that viewed the form (distinct session_id on `view`). */
   views: z.number().int(),
-  /** Count of `start` events. */
+  /** Unique sessions that reached the first question (`step_view` idx 0). */
   starts: z.number().int(),
   /** Count of completed submissions (completedAt set). */
   submissions: z.number().int(),
   /** submissions / starts as a percentage (1 decimal); 0 when starts=0. */
   completionRate: z.number(),
-  /** Average seconds from startedAt→completedAt over completed submissions. */
-  avgTimeToComplete: z.number().int(),
+  /** MEDIAN whole seconds from form open (first `view`) to completion. */
+  timeToComplete: z.number().int(),
   /** Partial-only submissions (partialAt set, completedAt null). */
   partialSubmits: z.number().int(),
   /** Cover row + one row per configured step. */

@@ -1,9 +1,12 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { Db } from '@quill/db';
 import {
-  eventTypeCounts,
+  uniqueViewCount,
+  startCount,
   stepViewCounts,
-  submissionAggregates,
+  completedCount,
+  partialCount,
+  completionDurations,
   querySubmissions,
   allSubmissionsForExport,
   deleteSubmissionForAccount,
@@ -28,6 +31,19 @@ function pct1(numerator: number, denominator: number): number {
 }
 
 /**
+ * Median of a numeric list (0 for empty). Even length → mean of the two middle
+ * values. Used for "time to complete": Typeform reports a median because a few
+ * long-abandon sessions would drag a mean far from the typical experience, and
+ * cross-dialect SQL cannot compute a percentile portably (see completionDurations).
+ */
+function median(nums: number[]): number {
+  if (nums.length === 0) return 0;
+  const sorted = [...nums].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0 ? (sorted[mid - 1]! + sorted[mid]!) / 2 : sorted[mid]!;
+}
+
+/**
  * The admin analytics + submissions read surface. Aggregates are computed from
  * `form_event` (funnel counts) + `submission` (completed/partial + timing) via
  * the portable DB queries, then the funnel + per-step drop-off table is
@@ -45,19 +61,18 @@ export class AnalyticsService {
     const config = form.config as FormConfig;
     const steps = config.steps ?? [];
 
-    const [counts, stepViews, agg] = await Promise.all([
-      eventTypeCounts(this.db, formId, range),
+    const [views, starts, stepViews, submissions, partialSubmits, durations] = await Promise.all([
+      uniqueViewCount(this.db, formId, range),
+      startCount(this.db, formId, range),
       stepViewCounts(this.db, formId, range),
-      submissionAggregates(this.db, formId, range),
+      completedCount(this.db, formId, range),
+      partialCount(this.db, formId, range),
+      completionDurations(this.db, formId, range),
     ]);
 
-    const views = counts.view ?? 0;
-    const starts = counts.start ?? 0;
-    const submissions = agg.completed;
-    const partialSubmits = agg.partial;
     const completionRate = pct1(submissions, starts);
-    const avgTimeToComplete =
-      agg.avgCompletionMs == null ? 0 : Math.round(agg.avgCompletionMs / 1000);
+    // Median open→complete, in whole seconds (durations are ms).
+    const timeToComplete = Math.round(median(durations) / 1000);
 
     // rowViews[0] = form views (the cover/landing); rowViews[i+1] = views of step i.
     const rowViews: number[] = [views];
@@ -100,7 +115,7 @@ export class AnalyticsService {
       starts,
       submissions,
       completionRate,
-      avgTimeToComplete,
+      timeToComplete,
       partialSubmits,
       dropoff,
       range: { from: range.from ?? null, to: range.to ?? null },

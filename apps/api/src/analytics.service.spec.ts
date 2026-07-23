@@ -97,7 +97,7 @@ describe('funnel aggregation', () => {
     expect(a.submissions).toBe(3); // completed
     expect(a.partialSubmits).toBe(2);
     expect(a.completionRate).toBe(37.5); // 3/8 = 37.5%
-    expect(a.avgTimeToComplete).toBe(60); // (30+60+90)/3 s
+    expect(a.timeToComplete).toBe(60); // median(30,60,90) s
   });
 
   it('computes the per-step drop-off table (cover + one row per step)', async () => {
@@ -134,6 +134,75 @@ describe('funnel aggregation', () => {
 
   it('returns null for a form the account does not own', async () => {
     expect(await svc.funnel('someone-else', formId, {})).toBeNull();
+  });
+});
+
+describe('P0 metric-definition fixes', () => {
+  /** Emit a single form_event for a specific session. */
+  const ev = (sessionId: string, type: string, stepIndex: number | null, at: number) =>
+    recordFormEvent(db, { formId, sessionId, type, stepIndex, now: at });
+
+  it('Starts come from step_view idx 0, so a cover-less session (no `start` event) counts', async () => {
+    // A cover-less form never emits the cover-CTA `start` event; the old code
+    // counted `start` and reported 0 starts. These 3 sessions reach Q1 with NO
+    // `start` event and MUST count.
+    for (const s of ['nocover-1', 'nocover-2', 'nocover-3']) await ev(s, 'step_view', 0, NOW);
+
+    const a = (await svc.funnel(accountId, formId, {}))!;
+    expect(a.starts).toBe(11); // 8 baseline + 3 cover-less (would stay 8 under old `start`-event count)
+    expect(a.completionRate).toBe(27.3); // 3 completed / 11 starts — non-zero, the P0 fix
+    // Prove the added sessions truly have no `start` event backing them.
+    const startEvents = await db.get<{ n: number | string }>(
+      sql`SELECT COUNT(*) AS n FROM form_event WHERE type = 'start' AND session_id = 'nocover-1'`,
+    );
+    expect(Number(startEvents!.n)).toBe(0);
+  });
+
+  it('Views are unique per session — a refresh in the same tab does not inflate', async () => {
+    // Same session mounts 3× (refresh): 3 `view` rows, 1 unique session.
+    for (let i = 0; i < 3; i++) await ev('refresher', 'view', null, NOW);
+    const a = (await svc.funnel(accountId, formId, {}))!;
+    expect(a.views).toBe(11); // 10 baseline uniques + 1 (NOT +3)
+  });
+
+  it('Time to complete is measured from form OPEN (first view), not the first persisted write', async () => {
+    // The "0s" bug shape: the only persisted write is the complete submit, so
+    // started_at == completed_at. But the session opened the form 40s earlier.
+    const T = NOW + 500_000;
+    await ev('tc1', 'view', null, T - 40_000);
+    await insertSubmission({ session: 'tc1', data: {}, score: 0, startedAt: T, completedAt: T });
+
+    const a = (await svc.funnel(accountId, formId, { from: T - 1, to: T + 1 }))!; // isolate tc1
+    expect(a.submissions).toBe(1);
+    expect(a.timeToComplete).toBe(40); // 40s from the view — NOT 0
+  });
+
+  it('Time to complete falls back to started_at when the open `view` event was lost', async () => {
+    const T = NOW + 700_000;
+    // No `view` event for this session → open falls back to started_at.
+    await insertSubmission({ session: 'tc2', data: {}, score: 0, startedAt: T - 25_000, completedAt: T });
+    const a = (await svc.funnel(accountId, formId, { from: T - 1, to: T + 1 }))!;
+    expect(a.timeToComplete).toBe(25);
+  });
+
+  it('Time to complete is the MEDIAN, not the mean (outlier-robust)', async () => {
+    // Durations 10s / 20s / 300s → median 20s, mean 110s. No view → open=started_at.
+    const U = NOW + 1_000_000;
+    await insertSubmission({ session: 'md-1', data: {}, score: 0, startedAt: U, completedAt: U + 10_000 });
+    await insertSubmission({ session: 'md-2', data: {}, score: 0, startedAt: U, completedAt: U + 20_000 });
+    await insertSubmission({ session: 'md-3', data: {}, score: 0, startedAt: U, completedAt: U + 300_000 });
+    const a = (await svc.funnel(accountId, formId, { from: U - 1, to: U + 400_000 }))!;
+    expect(a.submissions).toBe(3);
+    expect(a.timeToComplete).toBe(20); // median — NOT 110 (mean)
+  });
+
+  it('windows each metric by its OWN timestamp (submissions by completed_at)', async () => {
+    // A session that STARTED before the window but COMPLETED inside it must count
+    // as a submission (windowed by completed_at, not started_at).
+    const W = NOW + 2_000_000;
+    await insertSubmission({ session: 'w1', data: {}, score: 0, startedAt: W - 100_000, completedAt: W });
+    const inWindow = (await svc.funnel(accountId, formId, { from: W - 1, to: W + 1 }))!;
+    expect(inWindow.submissions).toBe(1); // counted by completed_at, though it started earlier
   });
 });
 

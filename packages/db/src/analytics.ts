@@ -31,30 +31,49 @@ function andRange(col: SQL, range?: DateRange): SQL {
 
 // --- Raw aggregates (the primitives the service composes) --------------------
 
-/** Count of funnel events by type within the range: `{ view: 12, start: 9, … }`. */
-export async function eventTypeCounts(
-  db: Db,
-  formId: string,
-  range?: DateRange,
-): Promise<Record<string, number>> {
-  const rows = await db.all<{ type: string; n: number | string }>(
-    sql`SELECT type, COUNT(*) AS n FROM form_event
-        WHERE form_id = ${formId} ${andRange(sql`created_at`, range)}
-        GROUP BY type`,
+/**
+ * Unique sessions that viewed the form — Typeform-style unique Views. A refresh
+ * in the same tab reuses the session id, so DISTINCT collapses it to one; the
+ * plain `COUNT(*)` this replaced double-counted every reload (each mount emits a
+ * fresh `view` row). Windowed by the event's own `created_at`.
+ */
+export async function uniqueViewCount(db: Db, formId: string, range?: DateRange): Promise<number> {
+  const row = await db.get<{ n: number | string | null }>(
+    sql`SELECT COUNT(DISTINCT session_id) AS n FROM form_event
+        WHERE form_id = ${formId} AND type = 'view' ${andRange(sql`created_at`, range)}`,
   );
-  const out: Record<string, number> = {};
-  for (const r of rows) out[String(r.type)] = Number(r.n);
-  return out;
+  return Number(row?.n ?? 0);
 }
 
-/** Count of `step_view` events per step index within the range. */
+/**
+ * "Starts" = unique sessions that reached the first question (`step_view` with
+ * `step_index = 0`). This is the signal that fires for EVERY form: the legacy
+ * `start` event is only emitted by the cover CTA, so a cover-less form never
+ * produced one and reported 0 starts (and 0% completion) despite real answers.
+ * `step_view` idx 0 is captured whether or not a cover exists. Windowed by
+ * `created_at`.
+ */
+export async function startCount(db: Db, formId: string, range?: DateRange): Promise<number> {
+  const row = await db.get<{ n: number | string | null }>(
+    sql`SELECT COUNT(DISTINCT session_id) AS n FROM form_event
+        WHERE form_id = ${formId} AND type = 'step_view' AND step_index = 0
+        ${andRange(sql`created_at`, range)}`,
+  );
+  return Number(row?.n ?? 0);
+}
+
+/**
+ * Unique sessions that viewed each step index — the drop-off funnel body.
+ * DISTINCT (not COUNT(*)) so a refresh does not inflate a step's row the same
+ * way it used to inflate Views.
+ */
 export async function stepViewCounts(
   db: Db,
   formId: string,
   range?: DateRange,
 ): Promise<Map<number, number>> {
   const rows = await db.all<{ step_index: number | string | null; n: number | string }>(
-    sql`SELECT step_index, COUNT(*) AS n FROM form_event
+    sql`SELECT step_index, COUNT(DISTINCT session_id) AS n FROM form_event
         WHERE form_id = ${formId} AND type = 'step_view' AND step_index IS NOT NULL
         ${andRange(sql`created_at`, range)}
         GROUP BY step_index`,
@@ -67,42 +86,57 @@ export async function stepViewCounts(
   return out;
 }
 
-export interface SubmissionAggregate {
-  /** Completed submissions (completed_at set). */
-  completed: number;
-  /** Partial-only submissions (partial_at set, completed_at null). */
-  partial: number;
-  /** Average ms from started_at→completed_at over completed rows (null if none). */
-  avgCompletionMs: number | null;
+/** Completed submissions in the range (windowed by `completed_at` — the moment
+ *  the submission actually landed, not when the session began). */
+export async function completedCount(db: Db, formId: string, range?: DateRange): Promise<number> {
+  const row = await db.get<{ n: number | string | null }>(
+    sql`SELECT COUNT(*) AS n FROM submission
+        WHERE form_id = ${formId} AND completed_at IS NOT NULL ${andRange(sql`completed_at`, range)}`,
+  );
+  return Number(row?.n ?? 0);
+}
+
+/** Partial-only submissions in the range (windowed by `partial_at`). */
+export async function partialCount(db: Db, formId: string, range?: DateRange): Promise<number> {
+  const row = await db.get<{ n: number | string | null }>(
+    sql`SELECT COUNT(*) AS n FROM submission
+        WHERE form_id = ${formId} AND completed_at IS NULL AND partial_at IS NOT NULL
+        ${andRange(sql`partial_at`, range)}`,
+  );
+  return Number(row?.n ?? 0);
 }
 
 /**
- * Submission counts + average completion time within the range (bounded by
- * `started_at`). SUM(CASE…) and AVG(CASE…) are portable; AVG ignores the NULLs
- * the CASE emits for non-completed rows, so it averages only completed sessions.
+ * Per completed submission (windowed by `completed_at`): the ms from form OPEN
+ * to completion. `open` is the session's first `view` event; if that event was
+ * lost (top-of-funnel events are fire-and-forget) it falls back to `started_at`.
+ *
+ * Returned as a raw list so the service takes the MEDIAN app-side: cross-dialect
+ * SQL has no portable percentile (no window fns, no `percentile_cont`), and the
+ * old `AVG(completed_at - started_at)` was doubly wrong — `started_at` is the
+ * first PERSISTED write (so with no partial it equals `completed_at` → 0s), and
+ * a mean skews on long-abandon outliers. Negative results (clock skew, or a view
+ * logged after completion) are dropped rather than clamped.
  */
-export async function submissionAggregates(
+export async function completionDurations(
   db: Db,
   formId: string,
   range?: DateRange,
-): Promise<SubmissionAggregate> {
-  const row = await db.get<{
-    completed: number | string | null;
-    partial: number | string | null;
-    avg_ms: number | string | null;
-  }>(
-    sql`SELECT
-          SUM(CASE WHEN completed_at IS NOT NULL THEN 1 ELSE 0 END) AS completed,
-          SUM(CASE WHEN completed_at IS NULL AND partial_at IS NOT NULL THEN 1 ELSE 0 END) AS partial,
-          AVG(CASE WHEN completed_at IS NOT NULL THEN (completed_at - started_at) ELSE NULL END) AS avg_ms
-        FROM submission
-        WHERE form_id = ${formId} ${andRange(sql`started_at`, range)}`,
+): Promise<number[]> {
+  const rows = await db.all<{ dur: number | string | null }>(
+    sql`SELECT (s.completed_at - COALESCE(
+                 (SELECT MIN(e.created_at) FROM form_event e
+                  WHERE e.form_id = s.form_id AND e.session_id = s.session_id AND e.type = 'view'),
+                 s.started_at)) AS dur
+        FROM submission s
+        WHERE s.form_id = ${formId} AND s.completed_at IS NOT NULL ${andRange(sql`s.completed_at`, range)}`,
   );
-  return {
-    completed: Number(row?.completed ?? 0),
-    partial: Number(row?.partial ?? 0),
-    avgCompletionMs: row?.avg_ms == null ? null : Number(row.avg_ms),
-  };
+  const out: number[] = [];
+  for (const r of rows) {
+    const d = r.dur == null ? null : Number(r.dur);
+    if (d != null && Number.isFinite(d) && d >= 0) out.push(d);
+  }
+  return out;
 }
 
 // --- Submissions table (paginated + filtered) --------------------------------
