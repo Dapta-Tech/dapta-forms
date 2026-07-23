@@ -3,6 +3,7 @@
 import type { FormConfig, FormOutcome, FormStep } from '@quill/engine';
 import { cn } from '@/lib/cn';
 import { iconForStep } from './question-types';
+import { conditionNeverHolds, conditionsContradict } from '@quill/engine';
 import { describeCondition, optionLabel } from './logic-util';
 import type { BuilderMessages, GalleryItemId } from './builder-messages';
 import { tb } from './builder-messages';
@@ -104,8 +105,16 @@ export function LogicMap({ config, m }: { config: FormConfig; m: BuilderMessages
                         {titleOf(step, i)}
                       </span>
                     </div>
-                    <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">
+                    <span className="mt-0.5 flex items-center gap-1.5 truncate text-[11px] text-muted-foreground">
                       {kindLabel(step, m)}
+                      {step.hidden ? (
+                        <span
+                          data-testid="logic-hidden-badge"
+                          className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground"
+                        >
+                          {m.badges.hidden}
+                        </span>
+                      ) : null}
                     </span>
                   </div>
                   {branches.length ? (
@@ -121,6 +130,20 @@ export function LogicMap({ config, m }: { config: FormConfig; m: BuilderMessages
                     flow. */}
                 {hasCond ? (
                   <div className="mt-2.5 flex flex-col gap-1.5 border-t border-border/60 pt-2.5">
+                    {/* The map already renders both rules — so when they cancel
+                        out, or an operand is still "(not set)", it can say the
+                        step never appears. This is the view an author opens to
+                        AUDIT branching; staying silent here sent them back to
+                        the Build panel to discover it (V5-QA). */}
+                    {conditionsContradict(step.showWhen, step.hideWhen) || conditionNeverHolds(step.showWhen) ? (
+                      <p
+                        data-testid="logic-never-appears"
+                        className="flex items-start gap-1.5 rounded-md bg-destructive/10 px-2 py-1 text-[11px] font-medium leading-relaxed text-destructive"
+                      >
+                        <i aria-hidden className="pi pi-exclamation-triangle mt-0.5 shrink-0" style={{ fontSize: 10 }} />
+                        {m.map.neverAppears}
+                      </p>
+                    ) : null}
                     {step.showWhen ? (
                       <ConditionLine kind="show" cond={step.showWhen} steps={steps} m={m} />
                     ) : null}

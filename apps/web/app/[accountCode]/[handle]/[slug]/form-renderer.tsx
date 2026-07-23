@@ -29,7 +29,7 @@ import {
   type FormStep,
   type FormOutcome,
 } from '@quill/engine';
-import { onAccent, getMessages, t } from '@quill/shared';
+import { onAccent, getMessages } from '@quill/shared';
 import type { FormConfig } from '@quill/types';
 import { signupHref } from '@/lib/growth';
 import { FormLogo } from '@/components/public/form-logo';
@@ -487,7 +487,7 @@ export function FormRenderer({
           </div>
           <h1 className="pf-done__title">{ending.headline ?? m.thankYouTitle}</h1>
           <p className="pf-done__body">
-            {ending.body ? interpolate(ending.body, answersRef.current) : t(m.thankYouBody, { name })}
+            {ending.body ? interpolate(ending.body, answersRef.current) : m.thankYouBody}
           </p>
           {cta ? (
             <>

@@ -67,7 +67,9 @@ export function ResultsView({
               <i aria-hidden className="pi pi-star text-primary" style={{ fontSize: 15 }} />
               {m.results.pointsTitle}
             </h2>
-            <p className="mt-1 text-sm text-muted-foreground">{tb(m.results.pointsHint, { n: top })}</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {enabled ? tb(m.results.pointsHint, { n: top }) : m.results.pointsHintOff}
+            </p>
           </div>
           <Switch checked={enabled} onCheckedChange={onScoringChange} aria-label={m.results.enableScoring} />
         </div>
@@ -137,20 +139,35 @@ export function ResultsView({
           {outcomes.map((o, index) => {
             const lower = o.minScore ?? 0;
             const upper = outcomes[index + 1]?.minScore;
-            const range = upper != null ? `${lower}–${upper - 1}` : `${lower}+`;
+            // Two ranges claiming the same threshold made this print an
+            // inverted bucket ("0–-1") as if it were legitimate. When the next
+            // range starts at or below this one, this range is unreachable —
+            // say so instead of drawing a nonsense span.
+            const shadowed = upper != null && upper <= lower;
+            const range = shadowed
+              ? m.results.rangeUnreachable
+              : upper != null
+                ? `${lower}–${upper - 1}`
+                : `${lower}+`;
             return (
               <div
                 key={o.id}
                 data-testid="outcome-row"
-                className="rounded-xl border border-border bg-background p-3.5"
+                data-unreachable={shadowed || undefined}
+                className={cn(
+                  'rounded-xl border bg-background p-3.5',
+                  shadowed ? 'border-destructive/50' : 'border-border',
+                )}
               >
                 <div className="flex items-center gap-3">
                   <span
                     className={cn(
                       'inline-flex min-w-[52px] shrink-0 items-center justify-center rounded-lg px-2 py-1.5 text-sm font-bold tabular-nums',
-                      index === outcomes.length - 1
-                        ? 'bg-primary text-primary-foreground'
-                        : 'bg-muted text-muted-foreground',
+                      shadowed
+                        ? 'bg-destructive/15 text-destructive'
+                        : index === outcomes.length - 1
+                          ? 'bg-primary text-primary-foreground'
+                          : 'bg-muted text-muted-foreground',
                     )}
                   >
                     {range}

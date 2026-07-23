@@ -37,6 +37,8 @@ export interface BuilderMessages {
     openForm: string;
   };
   badges: {
+    /** V5-QA — marks a step respondents never see. */
+    hidden: string;
     contact: string;
     logic: string;
     /** "{n} rules" */
@@ -220,6 +222,8 @@ export interface BuilderMessages {
     condAnd: string;
     condBlank: string;
     condMissingField: string;
+    /** V5-QA — this step's rules mean it can never be shown. */
+    neverAppears: string;
     /** Small kicker above a scored outcome node. */
     outcomeKicker: string;
   };
@@ -227,11 +231,15 @@ export interface BuilderMessages {
     pointsTitle: string;
     /** "Each answer adds to a score. Highest possible: {n}." */
     pointsHint: string;
+    /** V5-QA — the same line while scoring is off (no total to promise). */
+    pointsHintOff: string;
     endTitle: string;
     endHint: string;
     addRange: string;
     rangeLabel: string;
     rangeLabelPlaceholder: string;
+    /** V5-QA — a range another range starts at or below: nothing lands here. */
+    rangeUnreachable: string;
     thankYouMessage: string;
     redirect: string;
     redirectPlaceholder: string;
@@ -300,6 +308,7 @@ const en: BuilderMessages = {
     openForm: 'Open form',
   },
   badges: {
+    hidden: 'Hidden',
     contact: 'Contact',
     logic: 'Logic',
     rules: '{n} rules',
@@ -451,16 +460,19 @@ const en: BuilderMessages = {
     condAnd: 'and',
     condBlank: '(not set)',
     condMissingField: 'question deleted',
+    neverAppears: 'These rules mean this question never appears.',
     outcomeKicker: 'Ending',
   },
   results: {
     pointsTitle: 'Points',
     pointsHint: 'Each answer adds to a score. Highest possible: {n}.',
+    pointsHintOff: 'Scoring is off — no answer adds to a score right now.',
     endTitle: 'What happens at the end',
     endHint: 'Map score ranges to an outcome. The first matching range wins.',
     addRange: 'Add a range',
     rangeLabel: 'Label',
     rangeLabelPlaceholder: 'e.g. You’re a great fit',
+    rangeUnreachable: 'never',
     thankYouMessage: 'Thank-you message',
     redirect: 'Redirect',
     redirectPlaceholder: 'https://…',
@@ -531,6 +543,7 @@ const es: BuilderMessages = {
     openForm: 'Abrir formulario',
   },
   badges: {
+    hidden: 'Oculta',
     contact: 'Contacto',
     logic: 'Lógica',
     rules: '{n} reglas',
@@ -683,16 +696,19 @@ const es: BuilderMessages = {
     condAnd: 'y',
     condBlank: '(sin definir)',
     condMissingField: 'pregunta eliminada',
+    neverAppears: 'Con estas reglas, esta pregunta nunca aparece.',
     outcomeKicker: 'Final',
   },
   results: {
     pointsTitle: 'Puntos',
     pointsHint: 'Cada respuesta suma al puntaje. Máximo posible: {n}.',
+    pointsHintOff: 'El puntaje está apagado — ninguna respuesta suma por ahora.',
     endTitle: 'Qué pasa al final',
     endHint: 'Asigna rangos de puntaje a un resultado. Gana el primer rango que coincida.',
     addRange: 'Añadir un rango',
     rangeLabel: 'Etiqueta',
     rangeLabelPlaceholder: 'p. ej. Eres un buen fit',
+    rangeUnreachable: 'nunca',
     thankYouMessage: 'Mensaje de agradecimiento',
     redirect: 'Redirigir',
     redirectPlaceholder: 'https://…',

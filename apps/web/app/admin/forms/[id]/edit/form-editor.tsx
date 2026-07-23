@@ -263,7 +263,15 @@ export function FormEditor({
 
   // --- Step operations ------------------------------------------------------
   function patchStep(index: number, patch: Partial<FormStep>) {
-    mutate((c) => ({ ...c, steps: c.steps.map((s, i) => (i === index ? { ...s, ...patch } : s)) }));
+    mutate((c) => {
+      const steps = c.steps.map((s, i) => (i === index ? { ...s, ...patch } : s));
+      // Hiding a question that the reveal is pinned to kills the reveal for
+      // every respondent: `revealAfterKey` resolves to a step the renderer never
+      // completes, so the interstitial simply never plays and nothing says why.
+      // Release the marker back to its default (the end) instead — V5-QA.
+      const clearsReveal = patch.hidden === true && c.revealAfterStep === index + 1;
+      return { ...c, steps, ...(clearsReveal ? { revealAfterStep: undefined } : {}) };
+    });
   }
   /**
    * Rename a step's answer key (V5-A10). The engine's `renameStepKey` moves every

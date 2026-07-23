@@ -24,7 +24,13 @@ export interface FormsMessages {
     submit: string;
     submitting: string;
     thankYouTitle: string;
-    thankYouBody: string; // {name}
+    /**
+     * V5-QA: no longer takes the form name. The only name available here is the
+     * ADMIN one ("Q3 paid-ads lead gen v2"), which respondents were being shown
+     * verbatim — and V5-A1 made this the guaranteed ending for scoring-off forms.
+     * Authors who want a specific line set it in Design.
+     */
+    thankYouBody: string;
     ctaQuestion: string;
     ctaAction: string;
     progressLabel: string; // {current} {total}
@@ -861,7 +867,7 @@ export const en: FormsMessages = {
     submit: 'Submit',
     submitting: 'Submitting…',
     thankYouTitle: 'Thank you!',
-    thankYouBody: 'Your responses to “{name}” were recorded.',
+    thankYouBody: 'Your answers were recorded.',
     ctaQuestion: 'Want your own form?',
     ctaAction: 'Get Dapta Forms — free',
     progressLabel: 'Step {current} of {total}',
@@ -1097,7 +1103,7 @@ export const en: FormsMessages = {
         redirectHelp2:
           'If you set this, the thank-you screen above is never shown for this range — the respondent goes straight to the URL. Leave it empty to show the screen.',
         outcomesInert:
-          'Scoring is off, so no range can be reached — everyone sees the form’s own thank-you screen. Your ranges are kept; turn scoring on to use them again.',
+          'Scoring is off, so no range can be reached — everyone sees the form’s own thank-you screen. Anything set on a range is skipped too, including its redirect and its scheduling handoff. Your ranges are kept; turn scoring on to use them again.',
         redirectLabel: 'Redirect URL (optional)',
         redirectHelp:
           'Leave empty to show the thank-you screen. If set, respondents are sent here instead.',
@@ -1646,7 +1652,7 @@ export const es: FormsMessages = {
     submit: 'Enviar',
     submitting: 'Enviando…',
     thankYouTitle: '¡Gracias!',
-    thankYouBody: 'Tus respuestas a «{name}» quedaron registradas.',
+    thankYouBody: 'Tus respuestas quedaron registradas.',
     ctaQuestion: '¿Quieres tu propio formulario?',
     ctaAction: 'Consigue Dapta Forms — gratis',
     progressLabel: 'Paso {current} de {total}',
@@ -1883,7 +1889,7 @@ export const es: FormsMessages = {
         redirectHelp2:
           'Si la defines, la pantalla de agradecimiento de arriba nunca se muestra para este rango — el respondiente va directo a la URL. Déjala vacía para mostrar la pantalla.',
         outcomesInert:
-          'El puntaje está apagado, así que ningún rango puede alcanzarse — todos ven la pantalla de agradecimiento del formulario. Tus rangos se conservan; enciende el puntaje para volver a usarlos.',
+          'El puntaje está apagado, así que ningún rango puede alcanzarse — todos ven la pantalla de agradecimiento del formulario. También se omite todo lo configurado en un rango, incluida su redirección y su agenda. Tus rangos se conservan; enciende el puntaje para volver a usarlos.',
         redirectLabel: 'URL de redirección (opcional)',
         redirectHelp:
           'Déjalo vacío para mostrar la pantalla de agradecimiento. Si lo defines, se redirige ahí a los respondientes.',

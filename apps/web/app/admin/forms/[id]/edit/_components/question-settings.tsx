@@ -423,13 +423,18 @@ export function QuestionSettings({
             spine marker is the primary control); this toggle is a convenience to
             pin the reveal after THIS question. Clearing reverts to the default
             (after the last question). */}
-        <InlineField label={em.behavior.reveal} hint={em.behavior.revealHint}>
-          <Switch
-            checked={revealAfterStep === index + 1}
-            onCheckedChange={(v) => onRevealAfterStepChange(v ? index + 1 : undefined)}
-            aria-label={em.behavior.reveal}
-          />
-        </InlineField>
+        {/* A reveal pinned to a HIDDEN question never plays — the renderer only
+            fires it when the anchor step is completed, and a hidden step never
+            is. Offering the pair was offering a silent no-op (V5-QA). */}
+        {step.hidden ? null : (
+          <InlineField label={em.behavior.reveal} hint={em.behavior.revealHint}>
+            <Switch
+              checked={revealAfterStep === index + 1}
+              onCheckedChange={(v) => onRevealAfterStepChange(v ? index + 1 : undefined)}
+              aria-label={em.behavior.reveal}
+            />
+          </InlineField>
+        )}
         <button
           type="button"
           data-testid="behavior-edit-reveal"

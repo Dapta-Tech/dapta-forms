@@ -256,6 +256,19 @@ export function QuestionSpine({
                         {title || m.canvas.titlePlaceholder}
                       </span>
                       <span className="mt-0.5 flex items-center gap-1.5">
+                        {/* A hidden step looked identical to a normal one here,
+                            in the Logic map and in Results — the single missing
+                            marker behind several "why is this not working"
+                            traps (its points never score, a reveal pinned to it
+                            never plays, a partial point on it never fires). */}
+                        {step.hidden ? (
+                          <span
+                            data-testid="spine-hidden-badge"
+                            className="inline-flex shrink-0 items-center rounded-md bg-muted px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground"
+                          >
+                            {m.badges.hidden}
+                          </span>
+                        ) : null}
                         {rules > 0 ? (
                           <span className="inline-flex items-center gap-1 rounded-md bg-secondary/15 px-1.5 py-0.5 text-[10px] font-semibold text-secondary">
                             <i aria-hidden className="pi pi-sitemap" style={{ fontSize: 9 }} />
