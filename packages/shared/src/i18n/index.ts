@@ -357,20 +357,27 @@ export interface FormsMessages {
       metricCompletionRate: string;
       metricAvgTime: string;
       metricPartials: string;
-      rangeLast7: string;
-      rangeLast30: string;
-      rangeLast90: string;
+      rangeToday: string;
+      rangeWeek: string;
+      rangeMonth: string;
+      rangeYear: string;
       rangeAll: string;
       rangeCustom: string;
       rangeFrom: string;
       rangeTo: string;
       rangeApply: string;
+      /** Trends chart (per-day series, metric switchable). */
+      trendsTitle: string;
+      trendsSubtitle: string;
+      trendsMetricLabel: string;
+      trendsEmpty: string;
       dropoffTitle: string;
       dropoffSubtitle: string;
       colStep: string;
       colViews: string;
       colDropoff: string;
       coverRow: string;
+      landingRow: string;
       emptyTitle: string;
       emptyBody: string;
       error: string;
@@ -785,20 +792,26 @@ export const en: FormsMessages = {
       metricCompletionRate: 'Completion rate',
       metricAvgTime: 'Time to complete',
       metricPartials: 'Partial submits',
-      rangeLast7: 'Last 7 days',
-      rangeLast30: 'Last 30 days',
-      rangeLast90: 'Last 90 days',
+      rangeToday: 'Today',
+      rangeWeek: 'Last week',
+      rangeMonth: 'Last month',
+      rangeYear: 'Last year',
       rangeAll: 'All time',
       rangeCustom: 'Custom',
       rangeFrom: 'From',
       rangeTo: 'To',
       rangeApply: 'Apply',
+      trendsTitle: 'Trends',
+      trendsSubtitle: 'Daily movement over the selected range.',
+      trendsMetricLabel: 'Metric',
+      trendsEmpty: 'No activity in this range yet.',
       dropoffTitle: 'Question-by-question drop-off',
       dropoffSubtitle: 'How many people reach each step, and how many leave.',
       colStep: 'Step',
       colViews: 'Views',
       colDropoff: 'Drop-off',
       coverRow: 'Cover / landing',
+      landingRow: 'Form views',
       emptyTitle: 'No data yet',
       emptyBody: 'Once people open and fill out this form, the funnel and drop-off will appear here.',
       error: 'Couldn’t load analytics.',
@@ -1211,20 +1224,26 @@ export const es: FormsMessages = {
       metricCompletionRate: 'Tasa de finalización',
       metricAvgTime: 'Tiempo para completar',
       metricPartials: 'Envíos parciales',
-      rangeLast7: 'Últimos 7 días',
-      rangeLast30: 'Últimos 30 días',
-      rangeLast90: 'Últimos 90 días',
+      rangeToday: 'Hoy',
+      rangeWeek: 'Última semana',
+      rangeMonth: 'Último mes',
+      rangeYear: 'Último año',
       rangeAll: 'Todo el tiempo',
       rangeCustom: 'Personalizado',
       rangeFrom: 'Desde',
       rangeTo: 'Hasta',
       rangeApply: 'Aplicar',
+      trendsTitle: 'Tendencias',
+      trendsSubtitle: 'Movimiento diario en el rango seleccionado.',
+      trendsMetricLabel: 'Métrica',
+      trendsEmpty: 'Aún no hay actividad en este rango.',
       dropoffTitle: 'Abandono pregunta por pregunta',
       dropoffSubtitle: 'Cuántas personas llegan a cada paso y cuántas se van.',
       colStep: 'Paso',
       colViews: 'Vistas',
       colDropoff: 'Abandono',
       coverRow: 'Portada / inicio',
+      landingRow: 'Vistas del formulario',
       emptyTitle: 'Aún no hay datos',
       emptyBody: 'Cuando las personas abran y completen este formulario, verás aquí el embudo y el abandono.',
       error: 'No se pudieron cargar las analíticas.',

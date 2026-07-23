@@ -7,6 +7,7 @@ import { getLocale } from '@/lib/locale';
 import { FormTabs } from '@/components/ui/form-tabs';
 import { Skeleton } from '@/components/skeleton';
 import { AnalyticsFilter } from './analytics-filter';
+import { TrendsChart } from './trends-chart';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,7 +15,15 @@ const DAY_MS = 86_400_000;
 
 type SP = { preset?: string; from?: string; to?: string };
 
-/** Resolve the URL query into an epoch-ms range the API understands. */
+/**
+ * Resolve the URL query into an epoch-ms range the API understands.
+ *
+ * Day boundaries are UTC and resolved HERE, on the server, deliberately: an
+ * analytics number has to be the same for every teammate reading it, so it
+ * cannot depend on the viewer's local clock. (A per-account timezone is the
+ * follow-up; until then UTC is the one shared reference.) "Last week/month/year"
+ * are rolling 7/30/365-day windows, matching how the presets read in Typeform.
+ */
 function resolveRange(sp: SP): { from?: number; to?: number } {
   if (sp.preset === 'custom') {
     const from = sp.from ? Date.parse(`${sp.from}T00:00:00.000Z`) : NaN;
@@ -24,7 +33,11 @@ function resolveRange(sp: SP): { from?: number; to?: number } {
       to: Number.isNaN(to) ? undefined : to,
     };
   }
-  const days = sp.preset === '7' ? 7 : sp.preset === '30' ? 30 : sp.preset === '90' ? 90 : null;
+  if (sp.preset === 'today') {
+    const startOfDay = Math.floor(Date.now() / DAY_MS) * DAY_MS;
+    return { from: startOfDay, to: startOfDay + DAY_MS - 1 };
+  }
+  const days = sp.preset === 'week' ? 7 : sp.preset === 'month' ? 30 : sp.preset === 'year' ? 365 : null;
   if (days) return { from: Date.now() - days * DAY_MS };
   return {};
 }
@@ -38,7 +51,8 @@ export default async function AnalyticsPage({
 }) {
   const { id } = await params;
   const sp = await searchParams;
-  const m = getMessages(await getLocale()).admin;
+  const locale = await getLocale();
+  const m = getMessages(locale).admin;
   const range = resolveRange(sp);
   const rangeKey = `${sp.preset ?? 'all'}:${sp.from ?? ''}:${sp.to ?? ''}`;
 
@@ -52,9 +66,10 @@ export default async function AnalyticsPage({
         </div>
         <AnalyticsFilter
           labels={{
-            last7: m.analytics.rangeLast7,
-            last30: m.analytics.rangeLast30,
-            last90: m.analytics.rangeLast90,
+            today: m.analytics.rangeToday,
+            week: m.analytics.rangeWeek,
+            month: m.analytics.rangeMonth,
+            year: m.analytics.rangeYear,
             all: m.analytics.rangeAll,
             custom: m.analytics.rangeCustom,
             from: m.analytics.rangeFrom,
@@ -65,7 +80,7 @@ export default async function AnalyticsPage({
       </div>
 
       <Suspense key={rangeKey} fallback={<AnalyticsSkeleton />}>
-        <AnalyticsData id={id} range={range} m={m.analytics} />
+        <AnalyticsData id={id} range={range} m={m.analytics} locale={locale} />
       </Suspense>
     </div>
   );
@@ -83,10 +98,12 @@ async function AnalyticsData({
   id,
   range,
   m,
+  locale,
 }: {
   id: string;
   range: { from?: number; to?: number };
   m: FormsMessages['admin']['analytics'];
+  locale: string;
 }) {
   let a: AnalyticsResponse;
   try {
@@ -128,6 +145,25 @@ async function AnalyticsData({
         ))}
       </div>
 
+      <TrendsChart
+        points={a.trends}
+        locale={locale}
+        labels={{
+          title: m.trendsTitle,
+          subtitle: m.trendsSubtitle,
+          metricLabel: m.trendsMetricLabel,
+          empty: m.trendsEmpty,
+          seconds: m.seconds,
+          metrics: {
+            views: m.metricViews,
+            starts: m.metricStarts,
+            submissions: m.metricSubmissions,
+            completionRate: m.metricCompletionRate,
+            timeToComplete: m.metricAvgTime,
+          },
+        }}
+      />
+
       <section>
         <h2 className="text-lg font-semibold">{m.dropoffTitle}</h2>
         <p className="mb-3 text-sm text-muted-foreground">{m.dropoffSubtitle}</p>
@@ -144,7 +180,9 @@ async function AnalyticsData({
               {a.dropoff.map((row) => (
                 <tr key={row.stepIndex} className="border-b border-border last:border-b-0">
                   <td className="px-4 py-3">
-                    <span className="font-medium">{row.isCover ? m.coverRow : row.question}</span>
+                    <span className="font-medium">
+                      {row.isCover ? (row.question ? m.coverRow : m.landingRow) : row.question}
+                    </span>
                     {!row.isCover ? (
                       <span className="ml-2 text-xs text-muted-foreground">#{row.stepIndex + 1}</span>
                     ) : null}

@@ -3,21 +3,26 @@
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useState, useTransition } from 'react';
 
-type Preset = '7' | '30' | '90' | 'all' | 'custom';
+type Preset = 'all' | 'today' | 'week' | 'month' | 'year' | 'custom';
 
 /**
- * Date-range control for the analytics dashboard: presets (7/30/90 days + all)
- * plus a custom from/to. Writes the choice to the URL query so the server
- * component re-fetches; a Suspense boundary shows the skeleton while it does
- * (R22). Tokens-only; 44px hit targets (R28).
+ * Date-range control for the analytics dashboard. The preset set mirrors
+ * Typeform (All time / Today / Last week / Last month / Last year) plus the
+ * custom from/to this dashboard already had. "Last week/month/year" are ROLLING
+ * windows (7/30/365 days), not calendar periods — resolved server-side in
+ * page.tsx so every teammate sees the same numbers regardless of where they are.
+ * Writes the choice to the URL query so the server component re-fetches; a
+ * Suspense boundary shows the skeleton while it does (R22). Tokens-only; 44px
+ * hit targets (R28).
  */
 export function AnalyticsFilter({
   labels,
 }: {
   labels: {
-    last7: string;
-    last30: string;
-    last90: string;
+    today: string;
+    week: string;
+    month: string;
+    year: string;
     all: string;
     custom: string;
     from: string;
@@ -57,10 +62,11 @@ export function AnalyticsFilter({
   };
 
   const presets: { key: Preset; label: string }[] = [
-    { key: '7', label: labels.last7 },
-    { key: '30', label: labels.last30 },
-    { key: '90', label: labels.last90 },
     { key: 'all', label: labels.all },
+    { key: 'today', label: labels.today },
+    { key: 'week', label: labels.week },
+    { key: 'month', label: labels.month },
+    { key: 'year', label: labels.year },
     { key: 'custom', label: labels.custom },
   ];
 

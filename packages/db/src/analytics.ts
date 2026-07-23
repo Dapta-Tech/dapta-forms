@@ -86,16 +86,6 @@ export async function stepViewCounts(
   return out;
 }
 
-/** Completed submissions in the range (windowed by `completed_at` — the moment
- *  the submission actually landed, not when the session began). */
-export async function completedCount(db: Db, formId: string, range?: DateRange): Promise<number> {
-  const row = await db.get<{ n: number | string | null }>(
-    sql`SELECT COUNT(*) AS n FROM submission
-        WHERE form_id = ${formId} AND completed_at IS NOT NULL ${andRange(sql`completed_at`, range)}`,
-  );
-  return Number(row?.n ?? 0);
-}
-
 /** Partial-only submissions in the range (windowed by `partial_at`). */
 export async function partialCount(db: Db, formId: string, range?: DateRange): Promise<number> {
   const row = await db.get<{ n: number | string | null }>(
@@ -106,37 +96,89 @@ export async function partialCount(db: Db, formId: string, range?: DateRange): P
   return Number(row?.n ?? 0);
 }
 
+/** Epoch-ms per day — the portable bucket width for the trend series. */
+export const DAY_MS = 86_400_000;
+
+/** One completed submission in range, with what the trend + timing need. */
+export interface CompletedSubmission {
+  /** Epoch DAY it completed (`completed_at / 86400000`) — the trend bucket. */
+  day: number;
+  /** ms from form OPEN to completion; null when it could not be derived. */
+  durationMs: number | null;
+}
+
 /**
- * Per completed submission (windowed by `completed_at`): the ms from form OPEN
- * to completion. `open` is the session's first `view` event; if that event was
- * lost (top-of-funnel events are fire-and-forget) it falls back to `started_at`.
+ * Every completed submission in the range (windowed by `completed_at` — the
+ * moment it actually landed, not when the session began), carrying its
+ * completion day and its open→complete duration.
  *
- * Returned as a raw list so the service takes the MEDIAN app-side: cross-dialect
- * SQL has no portable percentile (no window fns, no `percentile_cont`), and the
- * old `AVG(completed_at - started_at)` was doubly wrong — `started_at` is the
- * first PERSISTED write (so with no partial it equals `completed_at` → 0s), and
- * a mean skews on long-abandon outliers. Negative results (clock skew, or a view
- * logged after completion) are dropped rather than clamped.
+ * `open` is the session's first `view` event; if that event was lost
+ * (top-of-funnel events are fire-and-forget) it falls back to `started_at`.
+ * One query feeds three things — the Submissions total, the MEDIAN time to
+ * complete, and the per-day trend — so the correlated open lookup runs once.
+ *
+ * The median is taken app-side: cross-dialect SQL has no portable percentile
+ * (no window fns, no `percentile_cont`). The old
+ * `AVG(completed_at - started_at)` was doubly wrong — `started_at` is the first
+ * PERSISTED write (with no partial it equals `completed_at` → 0s), and a mean
+ * skews on long-abandon outliers. Negative durations (clock skew, or a view
+ * logged after completion) surface as null rather than being clamped: the row
+ * still counts as a submission, it just does not pollute the median.
  */
-export async function completionDurations(
+export async function completedSubmissions(
   db: Db,
   formId: string,
   range?: DateRange,
-): Promise<number[]> {
-  const rows = await db.all<{ dur: number | string | null }>(
-    sql`SELECT (s.completed_at - COALESCE(
+): Promise<CompletedSubmission[]> {
+  const rows = await db.all<{ day: number | string; dur: number | string | null }>(
+    // 86400000 is written as a SQL literal (not a bound param) so both engines
+    // do INTEGER division and bucket to a whole day.
+    sql`SELECT (s.completed_at / 86400000) AS day,
+               (s.completed_at - COALESCE(
                  (SELECT MIN(e.created_at) FROM form_event e
                   WHERE e.form_id = s.form_id AND e.session_id = s.session_id AND e.type = 'view'),
                  s.started_at)) AS dur
         FROM submission s
         WHERE s.form_id = ${formId} AND s.completed_at IS NOT NULL ${andRange(sql`s.completed_at`, range)}`,
   );
-  const out: number[] = [];
-  for (const r of rows) {
+  return rows.map((r) => {
     const d = r.dur == null ? null : Number(r.dur);
-    if (d != null && Number.isFinite(d) && d >= 0) out.push(d);
-  }
-  return out;
+    return {
+      day: Number(r.day),
+      durationMs: d != null && Number.isFinite(d) && d >= 0 ? d : null,
+    };
+  });
+}
+
+/** Per-day unique sessions that viewed the form (trend series for Views). */
+export async function dailyViewSessions(
+  db: Db,
+  formId: string,
+  range?: DateRange,
+): Promise<{ day: number; n: number }[]> {
+  const rows = await db.all<{ day: number | string; n: number | string }>(
+    sql`SELECT (created_at / 86400000) AS day, COUNT(DISTINCT session_id) AS n
+        FROM form_event
+        WHERE form_id = ${formId} AND type = 'view' ${andRange(sql`created_at`, range)}
+        GROUP BY (created_at / 86400000)`,
+  );
+  return rows.map((r) => ({ day: Number(r.day), n: Number(r.n) }));
+}
+
+/** Per-day unique sessions that reached the first question (trend for Starts). */
+export async function dailyStartSessions(
+  db: Db,
+  formId: string,
+  range?: DateRange,
+): Promise<{ day: number; n: number }[]> {
+  const rows = await db.all<{ day: number | string; n: number | string }>(
+    sql`SELECT (created_at / 86400000) AS day, COUNT(DISTINCT session_id) AS n
+        FROM form_event
+        WHERE form_id = ${formId} AND type = 'step_view' AND step_index = 0
+        ${andRange(sql`created_at`, range)}
+        GROUP BY (created_at / 86400000)`,
+  );
+  return rows.map((r) => ({ day: Number(r.day), n: Number(r.n) }));
 }
 
 // --- Submissions table (paginated + filtered) --------------------------------

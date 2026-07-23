@@ -465,6 +465,28 @@ export const dropoffRowSchema = z.object({
 });
 export type DropoffRow = z.infer<typeof dropoffRowSchema>;
 
+/**
+ * One day of the Trends series — every metric for that bucket, so the chart can
+ * switch the plotted metric without another round trip. Buckets are whole UTC
+ * days; the range is gap-filled, so a day with no activity is present with zeros
+ * (a missing day would draw a misleading straight line across it).
+ */
+export const trendPointSchema = z.object({
+  /** Epoch ms at the START of the day bucket (UTC). */
+  t: z.number().int(),
+  /** Unique sessions that viewed the form that day. */
+  views: z.number().int(),
+  /** Unique sessions that reached the first question that day. */
+  starts: z.number().int(),
+  /** Submissions completed that day. */
+  submissions: z.number().int(),
+  /** submissions / starts for that day (1 decimal); 0 when starts=0. */
+  completionRate: z.number(),
+  /** Median whole seconds open→complete that day; 0 when none completed. */
+  timeToComplete: z.number().int(),
+});
+export type TrendPoint = z.infer<typeof trendPointSchema>;
+
 /** The funnel summary + drop-off table for a form over an optional date range. */
 export const analyticsResponseSchema = z.object({
   /** Unique sessions that viewed the form (distinct session_id on `view`). */
@@ -481,6 +503,8 @@ export const analyticsResponseSchema = z.object({
   partialSubmits: z.number().int(),
   /** Cover row + one row per configured step. */
   dropoff: z.array(dropoffRowSchema),
+  /** Gap-filled per-day series for the Trends chart (oldest → newest). */
+  trends: z.array(trendPointSchema),
   /** Echoes the resolved range (epoch ms) so the client can render it. */
   range: z.object({ from: z.number().nullable(), to: z.number().nullable() }),
 });

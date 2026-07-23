@@ -196,6 +196,60 @@ describe('P0 metric-definition fixes', () => {
     expect(a.timeToComplete).toBe(20); // median — NOT 110 (mean)
   });
 
+  it('builds a per-day Trends series carrying every metric for the bucket', async () => {
+    const DAY = 86_400_000;
+    const seedDay = Math.floor(NOW / DAY); // everything in beforeEach lands here
+    const a = (await svc.funnel(accountId, formId, {}))!;
+
+    expect(a.trends).toHaveLength(1); // no range → bounded by observed activity
+    expect(a.trends[0]).toEqual({
+      t: seedDay * DAY, // start of the UTC day bucket
+      views: 10,
+      starts: 8,
+      submissions: 3,
+      completionRate: 37.5,
+      timeToComplete: 60, // median(30,60,90)
+    });
+  });
+
+  it('gap-fills the Trends window so a dead day is a real zero, not a missing point', async () => {
+    const DAY = 86_400_000;
+    const seedDay = Math.floor(NOW / DAY);
+    // A 3-day window ending on the seeded day: the two earlier days had no
+    // activity at all and must still appear, zeroed.
+    const a = (await svc.funnel(accountId, formId, {
+      from: (seedDay - 2) * DAY,
+      to: NOW + 90_000,
+    }))!;
+
+    expect(a.trends).toHaveLength(3);
+    expect(a.trends.map((p) => p.t)).toEqual([
+      (seedDay - 2) * DAY,
+      (seedDay - 1) * DAY,
+      seedDay * DAY,
+    ]);
+    expect(a.trends[0]).toMatchObject({ views: 0, starts: 0, submissions: 0, completionRate: 0 });
+    expect(a.trends[1]).toMatchObject({ views: 0, starts: 0, submissions: 0 });
+    expect(a.trends[2]).toMatchObject({ views: 10, starts: 8, submissions: 3 });
+  });
+
+  it('splits Trends across day boundaries by completion day', async () => {
+    const DAY = 86_400_000;
+    const seedDay = Math.floor(NOW / DAY);
+    // A completion two days after the seeded activity → its own bucket.
+    const later = (seedDay + 2) * DAY + 3_600_000; // mid-day, 2 days on
+    await ev('nextday', 'view', null, later - 20_000);
+    await insertSubmission({ session: 'nextday', data: {}, score: 0, startedAt: later, completedAt: later });
+
+    const a = (await svc.funnel(accountId, formId, {}))!;
+    expect(a.trends).toHaveLength(3); // seedDay, +1 (gap-filled), +2
+    const last = a.trends[2]!;
+    expect(last.t).toBe((seedDay + 2) * DAY);
+    expect(last.submissions).toBe(1);
+    expect(last.timeToComplete).toBe(20); // 20s from its own view event
+    expect(a.trends[1]).toMatchObject({ submissions: 0, views: 0 }); // the dead middle day
+  });
+
   it('windows each metric by its OWN timestamp (submissions by completed_at)', async () => {
     // A session that STARTED before the window but COMPLETED inside it must count
     // as a submission (windowed by completed_at, not started_at).

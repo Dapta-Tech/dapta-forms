@@ -4,13 +4,16 @@ import {
   uniqueViewCount,
   startCount,
   stepViewCounts,
-  completedCount,
   partialCount,
-  completionDurations,
+  completedSubmissions,
+  dailyViewSessions,
+  dailyStartSessions,
+  DAY_MS,
   querySubmissions,
   allSubmissionsForExport,
   deleteSubmissionForAccount,
   getFormById,
+  type CompletedSubmission,
   type DateRange,
   type DeleteSubmissionResult,
   type SubmissionQuery,
@@ -21,6 +24,7 @@ import type {
   FormConfig,
   SubmissionAnswers,
   SubmissionsPage,
+  TrendPoint,
 } from '@quill/types';
 import { DB } from './tokens';
 
@@ -43,6 +47,64 @@ function median(nums: number[]): number {
   return sorted.length % 2 === 0 ? (sorted[mid - 1]! + sorted[mid]!) / 2 : sorted[mid]!;
 }
 
+/** Most daily points a trend series may carry (a year), so an all-time range
+ *  across years cannot balloon the payload. When capped, the most RECENT window
+ *  is kept — that is the part a dashboard actually plots. */
+const MAX_TREND_DAYS = 366;
+
+/**
+ * Assemble the per-day Trends series. Every metric is emitted for every day in
+ * the window so the chart can switch metric without a round trip, and the window
+ * is GAP-FILLED (a day with no activity is a real zero point) — otherwise the
+ * chart would draw a straight line across dead days and read as flat traffic
+ * rather than none. Day buckets are whole UTC days, matching the SQL bucketing.
+ */
+function buildTrends(input: {
+  range: DateRange;
+  dailyViews: { day: number; n: number }[];
+  dailyStarts: { day: number; n: number }[];
+  completed: CompletedSubmission[];
+}): TrendPoint[] {
+  const viewsByDay = new Map(input.dailyViews.map((d) => [d.day, d.n]));
+  const startsByDay = new Map(input.dailyStarts.map((d) => [d.day, d.n]));
+  const subsByDay = new Map<number, number>();
+  const dursByDay = new Map<number, number[]>();
+  for (const c of input.completed) {
+    subsByDay.set(c.day, (subsByDay.get(c.day) ?? 0) + 1);
+    if (c.durationMs != null) {
+      const list = dursByDay.get(c.day) ?? [];
+      list.push(c.durationMs);
+      dursByDay.set(c.day, list);
+    }
+  }
+
+  const observed = [...viewsByDay.keys(), ...startsByDay.keys(), ...subsByDay.keys()];
+  if (observed.length === 0) return [];
+
+  // Bound by the explicit range when one was given (so "last 30 days" plots 30
+  // points even where nothing happened), else by the observed activity span.
+  const fromDay = input.range.from != null ? Math.floor(input.range.from / DAY_MS) : Math.min(...observed);
+  const toDay = input.range.to != null ? Math.floor(input.range.to / DAY_MS) : Math.max(...observed);
+  if (toDay < fromDay) return [];
+
+  const span = Math.min(toDay - fromDay, MAX_TREND_DAYS - 1);
+  const out: TrendPoint[] = [];
+  for (let i = 0; i <= span; i++) {
+    const day = toDay - span + i; // keep the most recent window when capped
+    const starts = startsByDay.get(day) ?? 0;
+    const submissions = subsByDay.get(day) ?? 0;
+    out.push({
+      t: day * DAY_MS,
+      views: viewsByDay.get(day) ?? 0,
+      starts,
+      submissions,
+      completionRate: pct1(submissions, starts),
+      timeToComplete: Math.round(median(dursByDay.get(day) ?? []) / 1000),
+    });
+  }
+  return out;
+}
+
 /**
  * The admin analytics + submissions read surface. Aggregates are computed from
  * `form_event` (funnel counts) + `submission` (completed/partial + timing) via
@@ -61,18 +123,26 @@ export class AnalyticsService {
     const config = form.config as FormConfig;
     const steps = config.steps ?? [];
 
-    const [views, starts, stepViews, submissions, partialSubmits, durations] = await Promise.all([
-      uniqueViewCount(this.db, formId, range),
-      startCount(this.db, formId, range),
-      stepViewCounts(this.db, formId, range),
-      completedCount(this.db, formId, range),
-      partialCount(this.db, formId, range),
-      completionDurations(this.db, formId, range),
-    ]);
+    const [views, starts, stepViews, partialSubmits, completed, dailyViews, dailyStarts] =
+      await Promise.all([
+        uniqueViewCount(this.db, formId, range),
+        startCount(this.db, formId, range),
+        stepViewCounts(this.db, formId, range),
+        partialCount(this.db, formId, range),
+        completedSubmissions(this.db, formId, range),
+        dailyViewSessions(this.db, formId, range),
+        dailyStartSessions(this.db, formId, range),
+      ]);
 
+    // One completed-submission read feeds the total, the median and the trend.
+    const submissions = completed.length;
+    const durations = completed
+      .map((c) => c.durationMs)
+      .filter((d): d is number => d != null);
     const completionRate = pct1(submissions, starts);
     // Median open→complete, in whole seconds (durations are ms).
     const timeToComplete = Math.round(median(durations) / 1000);
+    const trends = buildTrends({ range, dailyViews, dailyStarts, completed });
 
     // rowViews[0] = form views (the cover/landing); rowViews[i+1] = views of step i.
     const rowViews: number[] = [views];
@@ -86,7 +156,14 @@ export class AnalyticsService {
     dropoff.push({
       stepIndex: -1,
       key: null,
-      question: config.cover?.headline?.trim() || config.cover?.eyebrow?.trim() || 'Cover',
+      // Empty when the form has NO cover: the row is then plain form views, and
+      // labelling it "Cover" described a screen that does not exist. The client
+      // picks the wording from whether this is set (mirrors the renderer's own
+      // "cover is active" rule).
+      question:
+        config.cover && config.cover.enabled !== false
+          ? config.cover.headline?.trim() || config.cover.eyebrow?.trim() || 'Cover'
+          : '',
       isCover: true,
       views: coverViews,
       dropoff: coverDrop,
@@ -118,6 +195,7 @@ export class AnalyticsService {
       timeToComplete,
       partialSubmits,
       dropoff,
+      trends,
       range: { from: range.from ?? null, to: range.to ?? null },
     };
   }
