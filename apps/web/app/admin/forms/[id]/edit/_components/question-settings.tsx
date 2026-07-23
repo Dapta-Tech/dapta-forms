@@ -29,6 +29,7 @@ import {
   GALLERY_GROUPS,
   hasOptions,
   isContactType,
+  isInputlessType,
   type GalleryItem,
 } from './question-types';
 import type { EditorMessages } from './messages';
@@ -179,7 +180,7 @@ export function QuestionSettings({
         </SelectField>
       </Field>
 
-      {step.type !== 'message' ? (
+      {!isInputlessType(step.type) ? (
         <InlineField label={bm.settings.required}>
           <Switch
             checked={step.required !== false}
@@ -214,6 +215,50 @@ export function QuestionSettings({
               bm={bm}
             />
           </div>
+        </section>
+      ) : null}
+
+      {step.type === 'reveal' ? (
+        <section className="flex flex-col gap-3 border-t border-border pt-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            {bm.settings.revealSection}
+          </p>
+          <p className="text-xs text-muted-foreground">{bm.settings.revealHint}</p>
+          <Field label={bm.settings.revealHeadline}>
+            <TextField
+              value={step.reveal?.headline ?? ''}
+              data-testid="step-reveal-headline"
+              onChange={(e) => onUpdate({ reveal: { ...step.reveal, headline: e.target.value || null } })}
+            />
+          </Field>
+          <Field label={bm.settings.revealSubtitle}>
+            <TextField
+              value={step.reveal?.subtitle ?? ''}
+              data-testid="step-reveal-subtitle"
+              onChange={(e) => onUpdate({ reveal: { ...step.reveal, subtitle: e.target.value || null } })}
+            />
+          </Field>
+          <Field label={bm.settings.revealDuration}>
+            <NumberField
+              aria-label={bm.settings.revealDuration}
+              value={step.reveal?.durationMs ?? 2200}
+              min={500}
+              max={30000}
+              step={100}
+              data-testid="step-reveal-duration"
+              onChange={(e) => {
+                // The schema bounds this at 500..30000; clamp so a stray
+                // keystroke cannot fail the whole form's autosave.
+                const n = Number(e.target.value);
+                onUpdate({
+                  reveal: {
+                    ...step.reveal,
+                    durationMs: Number.isFinite(n) ? Math.min(30_000, Math.max(500, Math.round(n))) : 2200,
+                  },
+                });
+              }}
+            />
+          </Field>
         </section>
       ) : null}
 
@@ -398,7 +443,7 @@ export function QuestionSettings({
         {/* Hidden question — never shown; its answer is seeded from a matching
             URL parameter and carried into the submission. Meaningless for a
             message step (it collects no answer), so hide it there. */}
-        {step.type !== 'message' ? (
+        {!isInputlessType(step.type) ? (
           <InlineField label={em.behavior.hidden} hint={em.behavior.hiddenHint}>
             <Switch
               checked={!!step.hidden}
@@ -411,7 +456,7 @@ export function QuestionSettings({
             about "a matching URL parameter" — this is the only place that says
             WHICH one. `name` steps edit their two subfield keys in their own
             section instead, and a `message` step captures nothing to key. */}
-        {step.type !== 'message' && step.type !== 'name' ? (
+        {!isInputlessType(step.type) && step.type !== 'name' ? (
           <FieldKeyEditor
             stepKey={step.key}
             taken={steps.filter((s) => s.key !== step.key).map((s) => s.key)}
@@ -480,7 +525,7 @@ export function QuestionSettings({
 
       {/* HubSpot — map this answer to a contact property (message steps
           collect no answer, so there is nothing to map). */}
-      {step.type !== 'message' ? (
+      {!isInputlessType(step.type) ? (
         <QuestionHubspotSection
           formId={formId}
           stepKey={step.key}

@@ -95,6 +95,19 @@ const clientLogoSchema = z.object({
   src: safeImageUrl.nullable().optional(),
 });
 
+export const formRevealSchema = z.object({
+  enabled: z.boolean().optional(),
+  headline: z.string().max(300).nullable().optional(),
+  subtitle: z.string().max(500).nullable().optional(),
+  // --- Reveal extensions (all optional; back-compat) -------------------------
+  /** How long the processing interstitial plays before the result (ms). */
+  durationMs: z.number().int().min(500).max(30_000).optional(),
+  /** Outcome subtitle template; `[key]` tokens interpolate from the answers. */
+  subtitleTemplate: z.string().max(200).nullable().optional(),
+  /** Pre-warm the booking embed while the interstitial plays. */
+  prewarm: z.boolean().optional(),
+});
+
 export const formStepSchema = z.object({
   key: z.string().min(1).max(64),
   type: z.enum(formFieldType),
@@ -151,6 +164,13 @@ export const formStepSchema = z.object({
    * form-level `scoring.enabled` still wins: off means nothing scores.
    */
   scoringEnabled: z.boolean().optional(),
+  /**
+   * `reveal` step: its own headline / subtitle / duration (ADDITIVE — V5-B3).
+   * The legacy `config.reveal` + `config.revealAfterStep` pair still works and
+   * still describes the form's single interstitial; a `reveal` STEP is the way
+   * to have several, positioned by where it sits in `steps`.
+   */
+  reveal: formRevealSchema.nullable().optional(),
 });
 export type FormStepInput = z.infer<typeof formStepSchema>;
 
@@ -189,19 +209,6 @@ export const formBrandingSchema = z.object({
   primaryColor: cssColor.nullable().optional(),
   logo: safeImageUrl.nullable().optional(),
   clientLogos: z.array(clientLogoSchema).max(24).optional(),
-});
-
-export const formRevealSchema = z.object({
-  enabled: z.boolean().optional(),
-  headline: z.string().max(300).nullable().optional(),
-  subtitle: z.string().max(500).nullable().optional(),
-  // --- Reveal extensions (all optional; back-compat) -------------------------
-  /** How long the processing interstitial plays before the result (ms). */
-  durationMs: z.number().int().min(500).max(30_000).optional(),
-  /** Outcome subtitle template; `[key]` tokens interpolate from the answers. */
-  subtitleTemplate: z.string().max(200).nullable().optional(),
-  /** Pre-warm the booking embed while the interstitial plays. */
-  prewarm: z.boolean().optional(),
 });
 
 // --- Outcome extensions (booking + answer-forced overrides) ------------------

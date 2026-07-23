@@ -2,7 +2,7 @@
 
 import { useId, useLayoutEffect, useRef, useState } from 'react';
 import type { FormStep } from '@quill/engine';
-import { nameFields } from '@quill/engine';
+import { isInputlessStep, nameFields } from '@quill/engine';
 import { cn } from '@/lib/cn';
 import { iconForStep } from './question-types';
 
@@ -60,7 +60,7 @@ export interface TokenTextareaMessages {
 
 /** The answer keys one step captures (message: none; name: its subfields). */
 export function stepTokenKeys(step: FormStep): string[] {
-  if (step.type === 'message') return [];
+  if (isInputlessStep(step)) return [];
   return nameFields(step);
 }
 

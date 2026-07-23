@@ -9,7 +9,11 @@
  * same flow and the same score (never trust the client; recompute on submit).
  */
 
-/** The 9 step kinds the pilot supports (`message` is an info step with no input). */
+/**
+ * The step kinds a form can contain. `message` is an info step with no input;
+ * `reveal` is a timed processing interstitial (V5-B3) — also inputless, but it
+ * advances itself after its duration instead of waiting for a click.
+ */
 export const FORM_FIELD_TYPES = [
   'text',
   'name',
@@ -20,6 +24,7 @@ export const FORM_FIELD_TYPES = [
   'slider',
   'textarea',
   'message',
+  'reveal',
 ] as const;
 export type FormFieldType = (typeof FORM_FIELD_TYPES)[number];
 
@@ -189,6 +194,14 @@ export interface FormStep {
    * display default — the stored answer is still a full E.164 string.
    */
   phoneDefaultCountry?: string | null;
+  /**
+   * `reveal` step: its own headline / subtitle / duration (V5-B3). Reusing the
+   * `FormReveal` shape means the renderer's existing RevealScreen takes it
+   * unchanged, and each reveal step is independently editable — the legacy
+   * `config.reveal` + `config.revealAfterStep` pair could only ever describe ONE
+   * interstitial for the whole form.
+   */
+  reveal?: FormReveal | null;
 }
 
 /**
@@ -740,10 +753,20 @@ export function phoneSubscriberDigits(value: string): string {
   return digits;
 }
 
+/**
+ * Steps that collect nothing — they are shown, then the flow moves on. `message`
+ * waits for a click; `reveal` (V5-B3) advances itself after its duration. Both
+ * are excluded from validation, scoring and the recall-token list, since there
+ * is no answer to validate, score, or interpolate.
+ */
+export function isInputlessStep(step: Pick<FormStep, 'type'>): boolean {
+  return step.type === 'message' || step.type === 'reveal';
+}
+
 /** Validate one answer against its step. Pure; used on both client and server. */
 export function validateAnswer(step: FormStep, value: AnswerValue): ValidationResult {
-  // Info steps never carry input.
-  if (step.type === 'message') return { ok: true };
+  // Info + reveal steps never carry input.
+  if (isInputlessStep(step)) return { ok: true };
 
   const empty =
     value == null ||
@@ -1165,7 +1188,7 @@ export function validateAnswerCode(
   value: AnswerValue,
   answers: Answers = {},
 ): ValidationCodeResult {
-  if (step.type === 'message') return { ok: true };
+  if (isInputlessStep(step)) return { ok: true };
 
   if (step.type === 'name') {
     const fields = nameFields(step);

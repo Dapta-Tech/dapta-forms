@@ -11,6 +11,7 @@ import {
   resolveStepDisplay,
   runtimeSteps,
   isMultiSelect,
+  isInputlessStep,
   partialSubmitKey,
   revealAfterKey,
   nameFields,
@@ -1391,5 +1392,59 @@ describe('QA V5 — variant rows that are not finished', () => {
     const first = resolveQuestion(s, { tools: ['crm', 'ads'] });
     const second = resolveQuestion(s, { tools: ['ads', 'crm'] });
     expect(first).toBe(second);
+  });
+});
+
+describe('reveal as a step type (V5-B3)', () => {
+  const cfg: FormConfig = {
+    version: 1,
+    steps: [
+      step({ key: 'q1', type: 'text', question: 'First?' }),
+      step({ key: 'pause1', type: 'reveal', reveal: { enabled: true, headline: 'Matching…', durationMs: 900 } }),
+      step({ key: 'q2', type: 'text', question: 'Second?' }),
+      step({ key: 'pause2', type: 'reveal', reveal: { enabled: true, headline: 'Scoring…' } }),
+    ],
+  };
+
+  it('a form can hold SEVERAL reveals, each with its own copy', () => {
+    const reveals = cfg.steps.filter((s) => s.type === 'reveal');
+    expect(reveals).toHaveLength(2);
+    expect(reveals[0]!.reveal?.headline).toBe('Matching…');
+    expect(reveals[1]!.reveal?.headline).toBe('Scoring…');
+  });
+
+  it('reveal steps are walked in order like any other step', () => {
+    expect(visibleSteps(cfg, {}).map((s) => s.key)).toEqual(['q1', 'pause1', 'q2', 'pause2']);
+  });
+
+  it('collects no answer: never validated, never scored, never a recall token', () => {
+    const rev = cfg.steps[1]!;
+    expect(isInputlessStep(rev)).toBe(true);
+    expect(validateAnswer(rev, undefined).ok).toBe(true);
+    expect(validateAnswerCode(rev, undefined).ok).toBe(true);
+    expect(computeScore(cfg, {})).toBe(0);
+  });
+
+  it('honors skip-logic, so a reveal can be conditional', () => {
+    const conditional: FormConfig = {
+      version: 1,
+      steps: [
+        step({ key: 'plan', type: 'dropdown', options: [{ label: 'Pro', value: 'pro' }, { label: 'Free', value: 'free' }] }),
+        step({ key: 'pause', type: 'reveal', showWhen: { field: 'plan', values: ['pro'] } }),
+      ],
+    };
+    expect(visibleSteps(conditional, { plan: 'pro' }).map((s) => s.key)).toEqual(['plan', 'pause']);
+    expect(visibleSteps(conditional, { plan: 'free' }).map((s) => s.key)).toEqual(['plan']);
+  });
+
+  it('the LEGACY form-level reveal is untouched by any of this', () => {
+    // A pre-B3 config keeps resolving its single interstitial exactly as before.
+    const legacy: FormConfig = {
+      version: 1,
+      steps: [step({ key: 'a', type: 'text' }), step({ key: 'b', type: 'text' })],
+      reveal: { enabled: true, headline: 'Legacy' },
+      revealAfterStep: 1,
+    };
+    expect(revealAfterKey(legacy)).toBe('a');
   });
 });

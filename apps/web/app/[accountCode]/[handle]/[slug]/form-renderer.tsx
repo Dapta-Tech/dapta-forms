@@ -597,6 +597,35 @@ export function FormRenderer({
     );
   }
 
+  // A REVEAL step (V5-B3) is an interstitial, not a question: it renders the
+  // same processing screen the legacy form-level reveal uses, owns its own timer
+  // and advances itself. Handled here rather than as a `phase` because it lives
+  // in `steps`, so Back, progress, and skip-logic all treat it like any other
+  // step — which is the whole point of making it a step type.
+  if (step.type === 'reveal') {
+    return (
+      <PhaseShell
+        className="pf pf--reveal"
+        style={accentVars}
+        role="status"
+        aria-live="polite"
+        bannerText={cover?.bannerText}
+      >
+        <RevealScreen
+          reveal={step.reveal ?? { enabled: true }}
+          answers={answers}
+          messages={{ headline: m.revealHeadline, subtitle: m.revealSubtitle }}
+          onComplete={() => {
+            // Completing an interstitial is completing a step: reuse `advance`
+            // so the partial-submit threshold, forward jumps and the finalize
+            // path all behave exactly as they do after a real question.
+            void advance(answersRef.current, step);
+          }}
+        />
+      </PhaseShell>
+    );
+  }
+
   // Single-select choices and dropdowns auto-advance; everything else — incl. a
   // multi-select choice (pick several, then Continue) — shows the button.
   const autoAdvances = step.type === 'dropdown' || (step.type === 'multiple_choice' && !isMultiSelect(step));

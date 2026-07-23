@@ -110,6 +110,12 @@ export interface BuilderMessages {
     nameLastPlaceholder: string;
   };
   settings: {
+    /** V5-B3 — a reveal STEP edits its own copy here, not in Design. */
+    revealSection: string;
+    revealHeadline: string;
+    revealSubtitle: string;
+    revealDuration: string;
+    revealHint: string;
     title: string;
     questionType: string;
     required: string;
@@ -276,7 +282,8 @@ export type GalleryItemId =
   | 'short'
   | 'long'
   | 'slider'
-  | 'message';
+  | 'message'
+  | 'reveal';
 
 export type TemplateId = 'lead' | 'contact' | 'feedback' | 'rsvp';
 
@@ -362,6 +369,11 @@ const en: BuilderMessages = {
     logic: 'Logic',
     addRule: 'Add rule',
     noRules: 'No rules — everyone sees this question.',
+    revealSection: 'Reveal screen',
+    revealHeadline: 'Headline',
+    revealSubtitle: 'Subtitle',
+    revealDuration: 'Duration (ms)',
+    revealHint: 'Plays here, then the form continues on its own. Drag it in the list to move it.',
     scoring: 'Scoring',
     scoringHint:
       'Counts this question toward the score. Points from the selected option add to the total; set ranges in Results.',
@@ -431,6 +443,7 @@ const en: BuilderMessages = {
       long: { title: 'Long text', desc: 'Paragraph' },
       slider: { title: 'Slider', desc: 'Rating scale' },
       message: { title: 'Message', desc: 'Text, no input' },
+      reveal: { title: 'Reveal screen', desc: 'A short processing pause' },
     },
   },
   map: {
@@ -598,6 +611,11 @@ const es: BuilderMessages = {
     logic: 'Lógica',
     addRule: 'Añadir regla',
     noRules: 'Sin reglas — todos ven esta pregunta.',
+    revealSection: 'Pantalla de revelación',
+    revealHeadline: 'Titular',
+    revealSubtitle: 'Subtítulo',
+    revealDuration: 'Duración (ms)',
+    revealHint: 'Se muestra aquí y el formulario continúa solo. Arrástrala en la lista para moverla.',
     scoring: 'Puntaje',
     scoringHint:
       'Cuenta esta pregunta para el puntaje. Los puntos de la opción elegida suman al total; define los rangos en Resultados.',
@@ -667,6 +685,7 @@ const es: BuilderMessages = {
       long: { title: 'Texto largo', desc: 'Párrafo' },
       slider: { title: 'Deslizador', desc: 'Escala de valoración' },
       message: { title: 'Mensaje', desc: 'Texto, sin campo' },
+      reveal: { title: 'Pantalla de revelación', desc: 'Una breve pausa de procesamiento' },
     },
   },
   map: {
