@@ -68,4 +68,19 @@ export class PublicController {
       badReq(err);
     }
   }
+
+  /** Record a scheduling callback (meeting booked via an outcome's embed). */
+  @Post('forms/:accountCode/:slug/booking')
+  @HttpCode(202)
+  async booking(
+    @Param('accountCode') accountCode: string,
+    @Param('slug') slug: string,
+    @Body() body: unknown,
+  ) {
+    try {
+      return unwrap(await this.svc.booking(accountCode, slug, body));
+    } catch (err) {
+      badReq(err);
+    }
+  }
 }

@@ -2,15 +2,22 @@ import { Inject, Injectable, Optional } from '@nestjs/common';
 import type { Db } from '@quill/db';
 import {
   getPublishedForm,
+  insertBookingEvent,
   upsertSubmission,
   recordFormEvent,
   listSubmissions,
   type SubmissionRow,
 } from '@quill/db';
 import { computeScore, resolveOutcome, type FormConfig } from '@quill/engine';
-import { submissionSchema, formEventSchema, type PublicForm } from '@quill/types';
+import {
+  submissionSchema,
+  formEventSchema,
+  bookingCallbackSchema,
+  type PublicForm,
+} from '@quill/types';
 import { EmailEffects } from './email-effects';
 import { DestinationEffects } from './destination-effects';
+import { BookingEffects } from './booking-effects';
 import { DB } from './tokens';
 
 export type ServiceError = { error: string; message: string; status: number };
@@ -28,6 +35,8 @@ export class SubmissionService {
     // Optional so existing direct constructions (tests) keep working; the module
     // always provides it in the running app.
     @Optional() @Inject(DestinationEffects) private readonly destinations?: DestinationEffects,
+    // Optional for the same reason: enqueues the durable booking → CRM sync.
+    @Optional() @Inject(BookingEffects) private readonly bookings?: BookingEffects,
   ) {}
 
   /** The published form for a public code + slug (the renderer's config). */
@@ -55,7 +64,10 @@ export class SubmissionService {
 
     const config = form.config as FormConfig;
     const score = computeScore(config, input.data);
-    const outcome = resolveOutcome(config, score);
+    // Pass the answers so answer-forced outcome overrides resolve identically
+    // to the client renderer (a score-only resolution would disagree with the
+    // redirect the visitor actually saw).
+    const outcome = resolveOutcome(config, score, input.data);
     const row = await upsertSubmission(this.db, {
       formId: form.id,
       sessionId: input.sessionId,
@@ -66,13 +78,33 @@ export class SubmissionService {
 
     if (!input.partial) {
       const respondentEmail = pickEmail(input.data);
-      void this.email.enqueueSubmissionReceived(form.accountId, {
-        submissionId: row.id,
-        formName: form.name,
-        respondentEmail,
-        score,
-        outcomeLabel: outcome?.label ?? null,
-      });
+      // form.id lets the effect apply any per-form template override
+      // (precedence form → account → stock, resolved inside the effect).
+      void this.email.enqueueSubmissionReceived(
+        form.accountId,
+        {
+          submissionId: row.id,
+          formName: form.name,
+          respondentEmail,
+          score,
+          outcomeLabel: outcome?.label ?? null,
+        },
+        form.id,
+      );
+      // Respondent confirmation receipt — only when the answers carried an
+      // email. Same durable outbox; gated inside the effect (notification_setting
+      // `submission_confirmed`, form row → account row → default-on).
+      if (respondentEmail) {
+        void this.email.enqueueSubmissionConfirmed(
+          form.accountId,
+          {
+            submissionId: row.id,
+            formName: form.name,
+            respondentEmail,
+          },
+          form.id,
+        );
+      }
     }
 
     // Fan out to every enabled destination (CRM/webhook) via the durable outbox.
@@ -108,6 +140,42 @@ export class SubmissionService {
       type: input.type,
       stepIndex: input.stepIndex ?? null,
       stepKey: input.stepKey ?? null,
+    });
+    return { ok: true };
+  }
+
+  /**
+   * Record a scheduling callback (HubSpot Meetings / Calendly) reported by the
+   * public renderer after a meeting is booked, tied to the submission session.
+   * Persist-first: the booking_event row is the durable fact; the CRM sync is
+   * then ENQUEUED (outbox kind `booking_sync`) — the worker fetches Calendly
+   * details and updates the HubSpot contact with retry+backoff. Never inline
+   * HTTP here, and a failed enqueue never fails the callback.
+   */
+  async booking(accountCode: string, slug: string, raw: unknown): Promise<{ ok: true } | ServiceError> {
+    const input = bookingCallbackSchema.parse(raw);
+    const form = await getPublishedForm(this.db, accountCode, slug);
+    if (!form) return { error: 'NOT_FOUND', message: 'Form not found.', status: 404 };
+    const row = await insertBookingEvent(this.db, {
+      formId: form.id,
+      sessionId: input.sessionId,
+      provider: input.provider,
+      eventUri: input.eventUri ?? null,
+      inviteeUri: input.inviteeUri ?? null,
+      startTime: input.startTime ? Date.parse(input.startTime) : null,
+      // The validated callback body — never the raw request (bounded, typed).
+      payload: input,
+    });
+    // Durable CRM sync (internally guarded — cannot reject into the callback).
+    await this.bookings?.enqueueBookingSync({
+      bookingEventId: row.id,
+      formId: form.id,
+      accountId: form.accountId,
+      sessionId: input.sessionId,
+      provider: input.provider,
+      eventUri: input.eventUri ?? null,
+      inviteeUri: input.inviteeUri ?? null,
+      startTime: row.startTime,
     });
     return { ok: true };
   }

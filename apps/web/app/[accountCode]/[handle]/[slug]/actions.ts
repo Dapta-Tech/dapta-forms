@@ -1,6 +1,8 @@
 'use server';
 
 import { postSubmission, postFormEvent } from '@/lib/api';
+import { postBookingCallback } from '@/lib/booking-embed';
+import type { BookingCallbackInput } from '@quill/types';
 
 /**
  * Submit a form — partial (past the lead-capture threshold) or complete. The
@@ -22,4 +24,13 @@ export async function recordEventAction(
   payload: { sessionId: string; type: string; stepIndex?: number | null; stepKey?: string | null },
 ): Promise<void> {
   await postFormEvent(accountCode, slug, payload);
+}
+
+/** Report a booked meeting to the API (best-effort; never blocks the redirect). */
+export async function recordBookingAction(
+  accountCode: string,
+  slug: string,
+  payload: BookingCallbackInput,
+): Promise<void> {
+  await postBookingCallback(accountCode, slug, payload);
 }

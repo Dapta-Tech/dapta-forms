@@ -16,26 +16,33 @@ import {
   runtimeSteps,
   validateAnswerCode,
   resolveOutcome,
+  resolveEnding,
+  computeScore,
   partialSubmitKey,
+  revealAfterKey,
+  interpolate,
   nameFields,
   isMultiSelect,
   isSafeHttpUrl,
   type Answers,
   type AnswerValue,
   type FormStep,
+  type FormOutcome,
 } from '@quill/engine';
-import { onAccent, getMessages, t } from '@quill/shared';
+import { onAccent, getMessages } from '@quill/shared';
 import type { FormConfig } from '@quill/types';
 import { signupHref } from '@/lib/growth';
 import { FormLogo } from '@/components/public/form-logo';
 import { FormProgress } from '@/components/public/form-progress';
 import { ClientLogosMarquee } from '@/components/public/client-logos-marquee';
 import { StepInput } from '@/components/public/step-input';
-import { submitFormAction, recordEventAction } from './actions';
+import { BookingScreen } from '@/components/public/booking-screen';
+import { RevealScreen } from '@/components/public/reveal-screen';
+import { warmBookingEmbed, type BookingScheduledDetails } from '@/lib/booking-embed';
+import { submitFormAction, recordEventAction, recordBookingAction } from './actions';
 import './public-form.css';
 
-type Phase = 'cover' | 'steps' | 'reveal' | 'submitting' | 'done';
-const REVEAL_MS = 2200;
+type Phase = 'cover' | 'steps' | 'reveal' | 'submitting' | 'booking' | 'done';
 
 function useSessionId(key: string): string {
   const [id] = useState(() => {
@@ -58,6 +65,65 @@ function captureUtm(): Record<string, string> {
     if (k.toLowerCase().startsWith('utm_') && v) utm[k] = v;
   }
   return utm;
+}
+
+/** A query value can never be longer than this once seeded (defense-in-depth). */
+const PREFILL_MAX_LEN = 512;
+
+/**
+ * URL-parameter prefill (V4-13): read the query string and seed the answer for
+ * each param whose key matches a DECLARED field — a step's own key, or a `name`
+ * step's subfields (`nameFields`). Security-scoped by design:
+ *  - only keys that correspond to a declared step field are ever read (an
+ *    arbitrary `?anything=` is ignored — never trust the URL to name new fields);
+ *  - `utm_*` is captured separately (`captureUtm`) and skipped here;
+ *  - values are treated as PLAIN answer strings, capped in length, never eval'd
+ *    or interpreted as markup — and the engine re-validates every answer on
+ *    submit, so a bad value can only be rejected, never trusted.
+ * A prefilled HIDDEN step carries its answer into the submission though it is
+ * never shown; a prefilled VISIBLE step simply renders pre-filled.
+ */
+function capturePrefill(steps: FormStep[]): Answers {
+  if (typeof window === 'undefined') return {};
+  const declared = new Set<string>();
+  for (const step of steps) {
+    if (step.type === 'message') continue; // message steps capture no answer
+    for (const key of nameFields(step)) declared.add(key);
+  }
+  if (declared.size === 0) return {};
+  const params = new URLSearchParams(window.location.search);
+  const seed: Answers = {};
+  for (const [key, value] of params.entries()) {
+    if (key.toLowerCase().startsWith('utm_')) continue;
+    if (!declared.has(key)) continue;
+    if (typeof value !== 'string' || value === '') continue;
+    seed[key] = value.slice(0, PREFILL_MAX_LEN);
+  }
+  return seed;
+}
+
+/**
+ * Per-phase page shell. The promo banner (`cover.bannerText`) renders ONCE here
+ * as the first child of `.pf`, so it is a full-width strip pinned to the top of
+ * the viewport in EVERY phase; everything else lives in `.pf__main`, which owns
+ * the remaining height. Desktop's per-phase vertical centering is applied to
+ * `.pf__main` (public-form.css), so centering the content group can never drag
+ * the banner toward the middle of the page.
+ */
+function PhaseShell({
+  bannerText,
+  children,
+  ...rootProps
+}: {
+  bannerText?: string | null;
+  children: React.ReactNode;
+} & React.HTMLAttributes<HTMLDivElement>) {
+  return (
+    <div {...rootProps}>
+      {bannerText ? <div className="pf__banner">{bannerText}</div> : null}
+      <div className="pf__main">{children}</div>
+    </div>
+  );
 }
 
 export function FormRenderer({
@@ -83,14 +149,36 @@ export function FormRenderer({
   const [animKey, setAnimKey] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<{ score: number; outcome: string | null } | null>(null);
+  const [booking, setBooking] = useState<{ outcome: FormOutcome; score: number } | null>(null);
 
   const utmRef = useRef<Record<string, string>>({});
+  const redirected = useRef(false); // a deferred redirect fires exactly once
   const viewTracked = useRef(false);
   const partialSent = useRef(false);
   const advancing = useRef(false);
   const submitAfterReveal = useRef(false);
+  const bookedRef = useRef(false); // one booking → one callback + one redirect
   const lastStepViewKey = useRef<string | null>(null);
   const engineConfig = config as unknown as Parameters<typeof runtimeSteps>[0];
+
+  // Deferred redirect (V5-B1): "show the thank-you for N ms, then leave". The
+  // screen is already rendered by the time this runs, so the respondent reads
+  // the message and the navigation happens under them. Guarded by a ref so a
+  // re-render cannot schedule a second one, and the timer is cleared on unmount
+  // so leaving early never yanks the page out from under a later screen.
+  useEffect(() => {
+    if (phase !== 'done' || !done || redirected.current) return;
+    const outcome = resolveOutcome(engineConfig, done.score, answers);
+    const ending = resolveEnding(engineConfig, outcome);
+    if (!ending.redirectUrl || ending.redirectDelayMs <= 0) return;
+    if (!isSafeHttpUrl(ending.redirectUrl)) return;
+    const url = ending.redirectUrl;
+    const timer = setTimeout(() => {
+      redirected.current = true;
+      window.location.href = url;
+    }, ending.redirectDelayMs);
+    return () => clearTimeout(timer);
+  }, [phase, done, engineConfig, answers]);
 
   // The engine decides the ordered, visible, display-resolved steps.
   const steps = useMemo<FormStep[]>(
@@ -99,6 +187,10 @@ export function FormRenderer({
   );
   const step = steps[index];
   const thresholdKey = useMemo(() => partialSubmitKey(engineConfig), [engineConfig]);
+  // WHERE the reveal plays (revealAfterStep → triggersReveal → default-last);
+  // null when the reveal is disabled. Position is authoritative, so a form no
+  // longer replays a reveal mid-form just because a step carries triggersReveal.
+  const revealKey = useMemo(() => revealAfterKey(engineConfig), [engineConfig]);
 
   // Accent branding (only override the local default when a color is configured).
   const primary = config.branding?.primaryColor ?? null;
@@ -127,9 +219,13 @@ export function FormRenderer({
     [accountCode, slug, sessionId],
   );
 
-  // Capture UTM once, and fire a single `view` per session per load.
+  // Capture UTM + declared-field URL prefill once on mount (client-only, so a
+  // seeded visible step never causes an SSR/hydration mismatch). Hidden steps
+  // ride their seeded answer into the submission; visible steps render filled.
   useEffect(() => {
     utmRef.current = captureUtm();
+    const seed = capturePrefill(engineConfig.steps);
+    if (Object.keys(seed).length > 0) setAnswers((a) => ({ ...seed, ...a }));
   }, []);
   useEffect(() => {
     if (!sessionId || viewTracked.current) return;
@@ -171,15 +267,44 @@ export function FormRenderer({
         setPhase('steps');
         return;
       }
-      track('submit');
+      // Await the `submit` funnel event (best-effort) BEFORE any outcome
+      // redirect: a fire-and-forget request here is aborted by the immediate
+      // window.location navigation, silently losing the submit event for every
+      // redirect outcome. Same persist-then-navigate pattern as handleBooked.
+      if (sessionId) {
+        await recordEventAction(accountCode, slug, {
+          sessionId,
+          type: 'submit',
+          stepIndex: null,
+        }).catch(() => {});
+      }
       const score = res.score ?? 0;
-      const outcome = resolveOutcome(engineConfig, score);
-      if (outcome?.redirectUrl) {
+      const outcome = resolveOutcome(engineConfig, score, finalAnswers);
+      // An outcome with a booking config shows the inline scheduling screen
+      // INSTEAD of redirecting; the redirect happens after the visitor books.
+      if (outcome?.booking) {
+        setDone({ score, outcome: res.outcome ?? null }); // pre-arm the done screen for after booking
+        setBooking({ outcome, score });
+        setPhase('booking');
+        return;
+      }
+      // V5-B1: the destination is the outcome's, else the form-level ending's,
+      // so a form can redirect everyone (or redirect with scoring off) without
+      // repeating the URL on every range.
+      const ending = resolveEnding(engineConfig, outcome);
+      if (ending.redirectUrl) {
         // Runtime XSS guard: only navigate to http(s). A non-http(s) protocol
         // (javascript:/data:) is ignored + logged, falling through to the
         // thank-you screen (the schema also rejects it on save — belt-and-braces).
-        if (isSafeHttpUrl(outcome.redirectUrl)) {
-          window.location.href = outcome.redirectUrl;
+        if (isSafeHttpUrl(ending.redirectUrl)) {
+          // A delay shows the thank-you screen first, then leaves. Zero (the
+          // default, and every pre-V5 config) redirects immediately as before.
+          if (ending.redirectDelayMs > 0) {
+            setDone({ score, outcome: res.outcome ?? null });
+            setPhase('done');
+            return;
+          }
+          window.location.href = ending.redirectUrl;
           return;
         }
         console.warn('[forms] ignored non-http(s) redirectUrl');
@@ -187,7 +312,29 @@ export function FormRenderer({
       setDone({ score, outcome: res.outcome ?? null });
       setPhase('done');
     },
-    [accountCode, slug, sessionId, engineConfig, track],
+    [accountCode, slug, sessionId, engineConfig],
+  );
+
+  // Report the booked meeting to the API (best-effort), THEN redirect/finish.
+  const handleBooked = useCallback(
+    async (details: BookingScheduledDetails) => {
+      if (bookedRef.current) return;
+      bookedRef.current = true;
+      const outcome = booking?.outcome ?? null;
+      await recordBookingAction(accountCode, slug, {
+        sessionId,
+        provider: details.provider,
+        ...(details.eventUri ? { eventUri: details.eventUri } : {}),
+        ...(details.inviteeUri ? { inviteeUri: details.inviteeUri } : {}),
+        ...(details.startTime ? { startTime: details.startTime } : {}),
+      });
+      if (outcome?.redirectUrl && isSafeHttpUrl(outcome.redirectUrl)) {
+        window.location.href = outcome.redirectUrl;
+        return;
+      }
+      setPhase('done'); // `done` state was set in finalize
+    },
+    [accountCode, slug, sessionId, booking],
   );
 
   const advance = useCallback(
@@ -218,9 +365,12 @@ export function FormRenderer({
           return;
         }
 
-        // Optional processing/reveal interstitial after this step.
-        const reveal = config.reveal && config.reveal.enabled !== false;
-        if (reveal && completed.triggersReveal) {
+        // Optional processing/reveal interstitial after this step. Position is
+        // resolved by the engine (revealAfterKey): the marker's revealAfterStep
+        // wins, else a legacy triggersReveal step, else the last step. When the
+        // reveal step is the last VISIBLE step it becomes the pre-result
+        // interstitial (submitAfterReveal); otherwise it plays then continues.
+        if (revealKey && completed.key === revealKey) {
           submitAfterReveal.current = isLast;
           if (!isLast) setIndex(completedIdx + 1);
           setPhase('reveal');
@@ -239,7 +389,7 @@ export function FormRenderer({
         advancing.current = false;
       }
     },
-    [engineConfig, index, thresholdKey, accountCode, slug, sessionId, config.reveal, finalize, track],
+    [engineConfig, index, thresholdKey, revealKey, accountCode, slug, sessionId, finalize, track],
   );
 
   function submitCurrent() {
@@ -309,35 +459,52 @@ export function FormRenderer({
   const answersRef = useRef(answers);
   answersRef.current = answers;
 
-  // Drive the reveal interstitial: after REVEAL_MS, continue or finalize.
+  // The reveal screen owns its own timer (honoring reveal.durationMs) and
+  // calls back exactly once when the bar fills: continue or finalize.
+  const onRevealComplete = useCallback(() => {
+    if (submitAfterReveal.current) {
+      submitAfterReveal.current = false;
+      void finalizeRef.current(answersRef.current);
+    } else {
+      setAnimKey((k) => k + 1);
+      setPhase('steps');
+    }
+  }, []);
+
+  // Pre-warm the booking embed while the interstitial plays: when the form
+  // opts in (reveal.prewarm) and the PENDING outcome (client-side score over
+  // the answers so far) hands off to a scheduler, warm its origins now so the
+  // embed after submit paints faster. warmBookingEmbed is idempotent + safe.
   useEffect(() => {
     if (phase !== 'reveal') return;
-    const timer = setTimeout(() => {
-      if (submitAfterReveal.current) {
-        submitAfterReveal.current = false;
-        void finalizeRef.current(answersRef.current);
-      } else {
-        setAnimKey((k) => k + 1);
-        setPhase('steps');
-      }
-    }, REVEAL_MS);
-    return () => clearTimeout(timer);
-  }, [phase]);
+    if (!config.reveal?.prewarm) return;
+    const a = answersRef.current;
+    const pending = resolveOutcome(engineConfig, computeScore(engineConfig, a), a);
+    if (pending?.booking) warmBookingEmbed(pending.booking.provider, pending.booking.url);
+  }, [phase, config.reveal?.prewarm, engineConfig]);
 
   // --- Screens --------------------------------------------------------------
 
   if (phase === 'done' && done) {
-    const outcome = resolveOutcome(engineConfig, done.score);
+    const outcome = resolveOutcome(engineConfig, done.score, answersRef.current);
+    // V5-B1: outcome copy → form-level ending copy → the built-in localized copy.
+    const ending = resolveEnding(engineConfig, outcome);
     const cta = signupHref('confirmation', accountCode);
     return (
-      <div className="pf pf--done" style={accentVars}>
-        {cover?.bannerText ? <div className="pf__banner">{cover.bannerText}</div> : null}
+      <PhaseShell className="pf pf--done" style={accentVars} bannerText={cover?.bannerText}>
         <div className="pf-done__inner pf-animate">
           <div className="pf-done__check" aria-hidden="true">
             ✓
           </div>
-          <h1 className="pf-done__title">{outcome?.label ?? m.thankYouTitle}</h1>
-          <p className="pf-done__body">{t(m.thankYouBody, { name })}</p>
+          {/* The heading interpolates too. It did not, so a `[firstname]` typed
+              into a range's heading reached the respondent as literal text —
+              while the body right beneath it resolved correctly. */}
+          <h1 className="pf-done__title">
+            {ending.headline ? interpolate(ending.headline, answersRef.current) : m.thankYouTitle}
+          </h1>
+          <p className="pf-done__body">
+            {ending.body ? interpolate(ending.body, answersRef.current) : m.thankYouBody}
+          </p>
           {cta ? (
             <>
               <p className="pf-done__cta-question">{m.ctaQuestion}</p>
@@ -348,32 +515,57 @@ export function FormRenderer({
             </>
           ) : null}
         </div>
-      </div>
+      </PhaseShell>
+    );
+  }
+
+  if (phase === 'booking' && booking?.outcome.booking) {
+    return (
+      <PhaseShell className="pf pf--booking-page" style={accentVars} bannerText={cover?.bannerText}>
+        <BookingScreen
+          booking={booking.outcome.booking}
+          answers={answersRef.current}
+          sessionId={sessionId}
+          locale={locale}
+          onBooked={(details) => void handleBooked(details)}
+        />
+      </PhaseShell>
     );
   }
 
   if (phase === 'reveal') {
-    const reveal = config.reveal ?? {};
     return (
-      <div className="pf pf--reveal" style={accentVars} role="status" aria-live="polite">
-        {cover?.bannerText ? <div className="pf__banner">{cover.bannerText}</div> : null}
-        <RevealBody
-          headline={reveal.headline ?? m.revealHeadline}
-          subtitle={reveal.subtitle ?? m.revealSubtitle}
+      <PhaseShell
+        className="pf pf--reveal"
+        style={accentVars}
+        role="status"
+        aria-live="polite"
+        bannerText={cover?.bannerText}
+      >
+        <RevealScreen
+          reveal={config.reveal}
+          answers={answers}
+          messages={{ headline: m.revealHeadline, subtitle: m.revealSubtitle }}
+          onComplete={onRevealComplete}
         />
-      </div>
+      </PhaseShell>
     );
   }
 
   if (phase === 'submitting') {
     return (
-      <div className="pf pf--reveal" style={accentVars} role="status" aria-live="polite">
-        {cover?.bannerText ? <div className="pf__banner">{cover.bannerText}</div> : null}
+      <PhaseShell
+        className="pf pf--reveal"
+        style={accentVars}
+        role="status"
+        aria-live="polite"
+        bannerText={cover?.bannerText}
+      >
         <div className="pf-reveal__inner">
           <div className="pf-reveal__spinner" aria-hidden="true" />
           <p className="pf-reveal__subtitle">{m.submitting}</p>
         </div>
-      </div>
+      </PhaseShell>
     );
   }
 
@@ -381,13 +573,13 @@ export function FormRenderer({
     const logo = cover.logo ?? config.branding?.logo ?? null;
     const logos = cover.clientLogos ?? config.branding?.clientLogos ?? [];
     return (
-      <div
+      <PhaseShell
         className="pf pf--cover"
         style={accentVars}
         onKeyDown={(e) => e.key === 'Enter' && start()}
         tabIndex={-1}
+        bannerText={cover.bannerText}
       >
-        {cover.bannerText ? <div className="pf__banner">{cover.bannerText}</div> : null}
         <header className="pf__cover-header">
           <FormLogo src={logo} name={name} />
         </header>
@@ -407,17 +599,46 @@ export function FormRenderer({
             {cover.ctaText ?? m.start}
           </button>
         </div>
-      </div>
+      </PhaseShell>
     );
   }
 
   if (!step) {
     return (
-      <div className="pf" style={accentVars}>
+      <PhaseShell className="pf" style={accentVars}>
         <div className="pf__body">
           <p className="pf__helper">{m.noSteps}</p>
         </div>
-      </div>
+      </PhaseShell>
+    );
+  }
+
+  // A REVEAL step (V5-B3) is an interstitial, not a question: it renders the
+  // same processing screen the legacy form-level reveal uses, owns its own timer
+  // and advances itself. Handled here rather than as a `phase` because it lives
+  // in `steps`, so Back, progress, and skip-logic all treat it like any other
+  // step — which is the whole point of making it a step type.
+  if (step.type === 'reveal') {
+    return (
+      <PhaseShell
+        className="pf pf--reveal"
+        style={accentVars}
+        role="status"
+        aria-live="polite"
+        bannerText={cover?.bannerText}
+      >
+        <RevealScreen
+          reveal={step.reveal ?? { enabled: true }}
+          answers={answers}
+          messages={{ headline: m.revealHeadline, subtitle: m.revealSubtitle }}
+          onComplete={() => {
+            // Completing an interstitial is completing a step: reuse `advance`
+            // so the partial-submit threshold, forward jumps and the finalize
+            // path all behave exactly as they do after a real question.
+            void advance(answersRef.current, step);
+          }}
+        />
+      </PhaseShell>
     );
   }
 
@@ -428,8 +649,7 @@ export function FormRenderer({
   const logo = cover?.logo ?? config.branding?.logo ?? null;
 
   return (
-    <div className="pf" style={accentVars} onKeyDown={onKeyDown}>
-      {cover?.bannerText ? <div className="pf__banner">{cover.bannerText}</div> : null}
+    <PhaseShell className="pf" style={accentVars} onKeyDown={onKeyDown} bannerText={cover?.bannerText}>
       <header className="pf__topbar">
         <div className="pf__topbar-inner">
           {index > 0 || cover ? (
@@ -471,6 +691,7 @@ export function FormRenderer({
                 onSelect={select}
                 dropdownPlaceholder={m.dropdownPlaceholder}
                 dropdownEmpty={m.dropdownEmpty}
+                locale={locale}
               />
 
               {error ? (
@@ -488,30 +709,6 @@ export function FormRenderer({
           </div>
         </div>
       </div>
-    </div>
-  );
-}
-
-/** Reveal interstitial body with an animated determinate bar (generic copy). */
-function RevealBody({ headline, subtitle }: { headline: string; subtitle: string }) {
-  const [pct, setPct] = useState(4);
-  useEffect(() => {
-    const startedAt = Date.now();
-    const id = setInterval(() => {
-      const p = Math.min(100, Math.round(((Date.now() - startedAt) / REVEAL_MS) * 100));
-      setPct(p);
-      if (p >= 100) clearInterval(id);
-    }, 60);
-    return () => clearInterval(id);
-  }, []);
-  return (
-    <div className="pf-reveal__inner">
-      <div className="pf-reveal__spinner" aria-hidden="true" />
-      <h1 className="pf-reveal__headline">{headline}</h1>
-      <p className="pf-reveal__subtitle">{subtitle}</p>
-      <div className="pf-reveal__track">
-        <div className="pf-reveal__fill" style={{ width: `${pct}%` }} />
-      </div>
-    </div>
+    </PhaseShell>
   );
 }

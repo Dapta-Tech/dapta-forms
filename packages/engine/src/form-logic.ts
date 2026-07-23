@@ -9,7 +9,11 @@
  * same flow and the same score (never trust the client; recompute on submit).
  */
 
-/** The 9 step kinds the pilot supports (`message` is an info step with no input). */
+/**
+ * The step kinds a form can contain. `message` is an info step with no input;
+ * `reveal` is a timed processing interstitial (V5-B3) — also inputless, but it
+ * advances itself after its duration instead of waiting for a click.
+ */
 export const FORM_FIELD_TYPES = [
   'text',
   'name',
@@ -20,6 +24,7 @@ export const FORM_FIELD_TYPES = [
   'slider',
   'textarea',
   'message',
+  'reveal',
 ] as const;
 export type FormFieldType = (typeof FORM_FIELD_TYPES)[number];
 
@@ -38,10 +43,38 @@ export interface SliderScoringRange {
   points: number;
 }
 
-/** A visibility condition: the answer to `field` must (not) be one of `values`. */
+/**
+ * Comparison operators a visibility condition can use, picked by the referenced
+ * field's TYPE (see {@link operatorsForFieldType}). `in` is the legacy
+ * "matches any of" set-membership test (choice/text sources); the numeric ops
+ * (`eq`/`gt`/`lt`/`between`) compare the answer parsed as a number.
+ */
+export const CONDITION_OPS = ['in', 'eq', 'gt', 'lt', 'between'] as const;
+export type ConditionOp = (typeof CONDITION_OPS)[number];
+
+/**
+ * A visibility condition on the answer to `field`. ADDITIVE + back-compat: with
+ * NO `op` (every config authored before operators existed) it is an `in` test —
+ * the answer's tokens must intersect `values`. `op` selects the comparison and
+ * which operand it reads:
+ *  - `in`            → `values` (choice "matches any of"; the default).
+ *  - `eq`/`gt`/`lt`  → `value` (the answer parsed as a number, compared to it).
+ *  - `between`       → `[min, max]` inclusive (numeric).
+ * Operands the active op doesn't use are ignored, so an older `{field, values}`
+ * still means exactly what it always did.
+ */
 export interface StepCondition {
   field: string;
-  values: string[];
+  /** `in` operands ("matches any of"). Optional so a numeric op can omit it. */
+  values?: string[];
+  /** Operator (absent = `in`, the legacy behavior). */
+  op?: ConditionOp;
+  /** Operand for `eq` / `gt` / `lt` (the answer is parsed as a number). */
+  value?: number;
+  /** Lower bound for `between` (inclusive). */
+  min?: number;
+  /** Upper bound for `between` (inclusive). */
+  max?: number;
 }
 
 /**
@@ -136,6 +169,64 @@ export interface FormStep {
   terminal?: boolean;
   /** Show the processing/reveal interstitial after this step completes. */
   triggersReveal?: boolean;
+  /**
+   * Hidden step (additive; back-compat). A hidden step is NEVER rendered as a
+   * visible question — {@link visibleSteps} skips it, so it is neither walked nor
+   * scored — but its answer can still be SEEDED (e.g. from a matching URL
+   * parameter in the public renderer) and carried along into the submission.
+   */
+  hidden?: boolean;
+  /**
+   * Per-question scoring switch (additive; back-compat — V5-B2). `false` makes
+   * THIS step contribute nothing to the score while the rest of the form keeps
+   * scoring normally; absent/`true` scores as it always has, so every existing
+   * config is unchanged. Gated by the form-level `config.scoring.enabled`: with
+   * scoring off nothing scores regardless of this flag.
+   *
+   * Exists because the builder only ever had the FORM-level switch, rendered
+   * inside each question's panel — so turning "Scoring" off on one question
+   * silently turned it off on all of them.
+   */
+  scoringEnabled?: boolean;
+  /**
+   * `phone` step: the ISO 3166-1 alpha-2 country the public phone picker starts
+   * on (e.g. "CO"). Absent = the locale-based default (en→US, es→MX). Purely a
+   * display default — the stored answer is still a full E.164 string.
+   */
+  phoneDefaultCountry?: string | null;
+  /**
+   * `reveal` step: its own headline / subtitle / duration (V5-B3). Reusing the
+   * `FormReveal` shape means the renderer's existing RevealScreen takes it
+   * unchanged, and each reveal step is independently editable — the legacy
+   * `config.reveal` + `config.revealAfterStep` pair could only ever describe ONE
+   * interstitial for the whole form.
+   */
+  reveal?: FormReveal | null;
+}
+
+/**
+ * An answer-forced outcome rule (additive; back-compat). When the answer to
+ * `field` matches, the owning outcome wins REGARDLESS of score — e.g. a slider
+ * answer <= 0 forces the disqualify outcome. All SPECIFIED clauses must hold
+ * (values intersection, numeric bounds); a non-numeric answer fails a numeric
+ * clause. Evaluated by `resolveOutcome` before score bucketing.
+ */
+export interface OutcomeOverrideRule {
+  /** The step key whose answer this rule inspects. */
+  field: string;
+  /** Match when the (string/array) answer intersects these values. */
+  values?: string[];
+  /** Match when the numeric answer is <= this bound. */
+  maxValue?: number;
+  /** Match when the numeric answer is >= this bound. */
+  minValue?: number;
+}
+
+/** Scheduling handoff for an outcome (additive; mirrors the config schema). */
+export interface OutcomeBooking {
+  provider: 'hubspot_meetings' | 'calendly';
+  url: string;
+  prefill?: boolean;
 }
 
 export interface FormOutcome {
@@ -144,6 +235,22 @@ export interface FormOutcome {
   /** Inclusive lower score bound for this bucket (highest matching wins). */
   minScore?: number;
   redirectUrl?: string | null;
+  /**
+   * The body copy shown on the thank-you screen for this outcome (additive;
+   * back-compat). When set it replaces the shared thank-you body; `[key]` tokens
+   * interpolate from the answers. `label` stays the heading. Absent = the shared
+   * thank-you body is used, so every existing outcome renders exactly as before.
+   */
+  message?: string | null;
+  /** Scheduling handoff (HubSpot Meetings / Calendly) shown for this outcome. */
+  booking?: OutcomeBooking | null;
+  /** Answer-forced rules: any match makes this outcome win over score bucketing. */
+  overrides?: OutcomeOverrideRule[];
+  /**
+   * Hold the thank-you screen this long before this outcome's redirect fires
+   * (additive — V5-B1). Absent = inherit `config.ending.redirectDelayMs`.
+   */
+  redirectDelayMs?: number;
 }
 
 /** A client logo chip on the cover marquee (image `src`, or the `name` as text). */
@@ -181,6 +288,37 @@ export interface FormReveal {
   enabled?: boolean;
   headline?: string | null;
   subtitle?: string | null;
+  /** How long the processing interstitial plays before the result (ms). */
+  durationMs?: number;
+  /** Outcome subtitle template; `[key]` tokens interpolate from the answers. */
+  subtitleTemplate?: string | null;
+  /** Pre-warm the booking embed while the interstitial plays. */
+  prewarm?: boolean;
+}
+
+/**
+ * What happens when the form finishes, at the FORM level (additive — V5-B1).
+ *
+ * Until now there was no such thing: the generic thank-you copy was hardcoded
+ * i18n with no way to edit it, and a redirect could only be set per outcome —
+ * so sending everyone to one URL meant typing it into every range, and a form
+ * with scoring off could not redirect at all.
+ *
+ * Every field is optional and every field is a DEFAULT: an outcome that sets the
+ * same field overrides it. See {@link resolveEnding} for the resolution order.
+ */
+export interface FormEnding {
+  /** Thank-you heading. Absent = the built-in localized title. */
+  headline?: string | null;
+  /** Thank-you body; `[key]` tokens interpolate. Absent = the built-in copy. */
+  body?: string | null;
+  /** Send respondents here instead of showing the thank-you screen. */
+  redirectUrl?: string | null;
+  /**
+   * Show the thank-you screen for this long BEFORE redirecting. Only meaningful
+   * alongside a redirect URL; 0/absent redirects immediately.
+   */
+  redirectDelayMs?: number;
 }
 
 export interface FormConfig {
@@ -190,6 +328,8 @@ export interface FormConfig {
   steps: FormStep[];
   scoring?: { enabled?: boolean } | null;
   outcomes?: FormOutcome[];
+  /** Form-level ending, overridable per outcome (V5-B1). */
+  ending?: FormEnding | null;
   reveal?: FormReveal | null;
   /**
    * Persist a partial submission once the step at this 1-based position in
@@ -197,6 +337,13 @@ export interface FormConfig {
    * no partial save.
    */
   partialSubmitAfterStep?: number;
+  /**
+   * WHERE the reveal interstitial plays: the reveal fires after the step at this
+   * 1-based position in `steps` (additive; back-compat). Absent = fall back to
+   * the legacy per-step `triggersReveal`, then default to AFTER THE LAST step, so
+   * an enabled reveal never plays mid-form by accident. See {@link revealAfterKey}.
+   */
+  revealAfterStep?: number;
 }
 
 export type AnswerValue =
@@ -216,19 +363,64 @@ function tokens(value: AnswerValue): string[] {
   return [String(value)];
 }
 
-/** Does the current answer to `cond.field` intersect `cond.values`? */
+/**
+ * Parse an answer to a finite number, or `null` when it isn't numeric. Only a
+ * number or a non-blank numeric string qualifies — booleans/arrays/objects
+ * (which `Number()` would coerce) do not. Shared by the numeric condition ops.
+ */
+function numericAnswer(value: AnswerValue): number | null {
+  const n =
+    typeof value === 'number'
+      ? value
+      : typeof value === 'string' && value.trim() !== ''
+        ? Number(value)
+        : NaN;
+  return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * Does the current answer to `cond.field` satisfy the condition? The operator
+ * (`cond.op`, default `in` for back-compat) selects the comparison:
+ *  - `in`   — the answer's tokens intersect `values` (the legacy choice match).
+ *  - `eq`/`gt`/`lt` — the answer, parsed as a number, compares to `value`.
+ *  - `between` — the numeric answer lies within `[min, max]` inclusive.
+ * A numeric op whose operand is missing, or whose answer isn't numeric, never
+ * holds (the step stays in its default visibility).
+ */
 function conditionHolds(cond: StepCondition, answers: Answers): boolean {
-  const got = new Set(tokens(answers[cond.field]));
-  return cond.values.some((v) => got.has(v));
+  const op = cond.op ?? 'in';
+  if (op === 'in') {
+    const got = new Set(tokens(answers[cond.field]));
+    return (cond.values ?? []).some((v) => got.has(v));
+  }
+  const n = numericAnswer(answers[cond.field]);
+  if (n == null) return false;
+  switch (op) {
+    case 'eq':
+      return cond.value != null && n === cond.value;
+    case 'gt':
+      return cond.value != null && n > cond.value;
+    case 'lt':
+      return cond.value != null && n < cond.value;
+    case 'between':
+      return cond.min != null && cond.max != null && n >= cond.min && n <= cond.max;
+    default:
+      return false;
+  }
 }
 
 /**
  * The steps to show given the answers so far, in config order. A step appears
- * when its `showWhen` holds (or is absent) AND its `hideWhen` does not hold —
- * and, for a personal-email-only branch step, only when the email is personal.
+ * when it is not `hidden`, its `showWhen` holds (or is absent) AND its `hideWhen`
+ * does not hold — and, for a personal-email-only branch step, only when the
+ * email is personal.
  */
 export function visibleSteps(config: FormConfig, answers: Answers): FormStep[] {
   return config.steps.filter((step) => {
+    // A hidden step is never rendered as a question — it is skipped in the walk
+    // (and therefore never scored). Its answer can still be seeded (e.g. from a
+    // URL parameter) and rides along into the submission via the answers map.
+    if (step.hidden) return false;
     if (step.showWhen && !conditionHolds(step.showWhen, answers)) return false;
     if (step.hideWhen && conditionHolds(step.hideWhen, answers)) return false;
     if (step.showForPersonalEmailOnly) {
@@ -242,6 +434,190 @@ export function visibleSteps(config: FormConfig, answers: Answers): FormStep[] {
 /** The first `email`-typed step's key (the branch pivot for personal-email logic). */
 function findEmailKey(config: FormConfig): string | null {
   return config.steps.find((s) => s.type === 'email')?.key ?? null;
+}
+
+/**
+ * The visibility operators offered for a referenced field's TYPE — the builder
+ * shows exactly these in the operator dropdown, and they are the only ops the
+ * engine is asked to evaluate for that source. Numeric fields (`slider`) get the
+ * comparison set; every other type keeps the legacy "matches any of" (`in`).
+ * Shared so the editor and the engine can never drift on which op is valid where.
+ */
+export function operatorsForFieldType(type: FormFieldType): ConditionOp[] {
+  return type === 'slider' ? ['eq', 'gt', 'lt', 'between'] : ['in'];
+}
+
+/**
+ * A numeric condition's satisfying set as an interval with inclusivity flags
+ * (`±Infinity` for the open ends of `gt`/`lt`), or `null` when the condition is
+ * not a well-formed numeric op. Used only by the contradiction guard.
+ */
+interface NumInterval {
+  lo: number;
+  loInc: boolean;
+  hi: number;
+  hiInc: boolean;
+}
+
+function numInterval(cond: StepCondition): NumInterval | null {
+  switch (cond.op) {
+    case 'eq':
+      return cond.value == null ? null : { lo: cond.value, loInc: true, hi: cond.value, hiInc: true };
+    case 'gt':
+      return cond.value == null ? null : { lo: cond.value, loInc: false, hi: Infinity, hiInc: false };
+    case 'lt':
+      return cond.value == null ? null : { lo: -Infinity, loInc: false, hi: cond.value, hiInc: false };
+    case 'between':
+      return cond.min == null || cond.max == null
+        ? null
+        : { lo: cond.min, loInc: true, hi: cond.max, hiInc: true };
+    default:
+      return null;
+  }
+}
+
+/** Is numeric interval `a` fully contained in `b` (a ⊆ b)? */
+function intervalSubset(a: NumInterval, b: NumInterval): boolean {
+  // b's bounds must be no stricter than a's on each side (equal bound ⇒ b must be
+  // inclusive whenever a is, i.e. a-inclusive can't stick out past b-exclusive).
+  const lowerOk = b.lo < a.lo || (b.lo === a.lo && (b.loInc || !a.loInc));
+  const upperOk = b.hi > a.hi || (b.hi === a.hi && (b.hiInc || !a.hiInc));
+  return lowerOk && upperOk;
+}
+
+/** Is the choice condition `a`'s value-set a non-empty subset of `b`'s? */
+function choiceSubset(a: StepCondition, b: StepCondition): boolean {
+  const av = a.values ?? [];
+  if (av.length === 0) return false;
+  const bv = new Set(b.values ?? []);
+  return av.every((v) => bv.has(v));
+}
+
+/**
+ * True when a step's `showWhen` and `hideWhen` are mutually contradictory — the
+ * step could NEVER be visible because every answer that satisfies `showWhen`
+ * also satisfies `hideWhen` (hide always wins in {@link visibleSteps}). Detects
+ * the trivial, SAME-FIELD cases the builder guards against:
+ *  - both `in` and show's values are a subset of hide's (identical or fully
+ *    overlapping choice sets, e.g. show ⊇ requires `a`, hide swallows `a`);
+ *  - both numeric and show's interval is contained in hide's (e.g. show `eq 5`
+ *    with hide `eq 5`, or show `between [50,80]` inside hide `between [40,100]`).
+ * Conservative by design: returns `false` for anything it cannot PROVE empties
+ * the visible set (different fields, mixed choice/numeric ops, partial overlaps),
+ * so it never blocks a legitimate rule. Pure — no I/O, safe for client + server.
+ */
+export function conditionsContradict(
+  showWhen: StepCondition | null | undefined,
+  hideWhen: StepCondition | null | undefined,
+): boolean {
+  if (!showWhen || !hideWhen) return false;
+  if (showWhen.field !== hideWhen.field) return false;
+  const showOp = showWhen.op ?? 'in';
+  const hideOp = hideWhen.op ?? 'in';
+  if (showOp === 'in' && hideOp === 'in') return choiceSubset(showWhen, hideWhen);
+  const s = numInterval(showWhen);
+  const h = numInterval(hideWhen);
+  if (s && h) return intervalSubset(s, h);
+  return false;
+}
+
+/**
+ * Why a visibility rule can never hold, or `null` when it is well formed
+ * (V5-QA). Both cases silently make the owning question unreachable for every
+ * respondent, and neither shows anything in the builder today:
+ *  - `missing_operand`: a numeric op with no value typed yet (`gt` with no
+ *    number, `between` with only one bound). `conditionHolds` returns false for
+ *    every answer, so the question never appears — an unfinished rule reads as a
+ *    configured one.
+ *  - `empty_interval`: `between` with min > max, which no value can satisfy.
+ *  - `no_values`: an `in` rule with nothing selected.
+ * A SHOW rule that can never hold hides the question; a HIDE rule that can never
+ * hold is merely inert, so callers report them differently.
+ */
+export type BrokenCondition = 'missing_operand' | 'empty_interval' | 'no_values';
+
+export function conditionNeverHolds(
+  cond: StepCondition | null | undefined,
+): BrokenCondition | null {
+  if (!cond) return null;
+  switch (cond.op) {
+    case 'eq':
+    case 'gt':
+    case 'lt':
+      return cond.value == null || !Number.isFinite(cond.value) ? 'missing_operand' : null;
+    case 'between':
+      if (cond.min == null || cond.max == null) return 'missing_operand';
+      return cond.min > cond.max ? 'empty_interval' : null;
+    default:
+      return (cond.values ?? []).length === 0 ? 'no_values' : null;
+  }
+}
+
+/**
+ * What a `hideWhen` rule leaves of a `showWhen` rule when the two overlap only
+ * PARTIALLY — the case {@link conditionsContradict} deliberately stays silent on
+ * because the step CAN still appear (V5-A6).
+ *
+ * `conditionsContradict` answers "is this impossible?"; this answers "is this
+ * what you meant?". Show `between 200..500` + hide `gt 201` is perfectly legal
+ * and leaves the step visible for 200..201 only — almost certainly not what the
+ * author intended, and invisible in a UI that shows the two rules in separate
+ * boxes. Returns the surviving window so the builder can name the actual numbers
+ * back to the author.
+ *
+ * Returns `null` when there is nothing to say: different fields, no overlap at
+ * all (the hide rule is inert), a FULL contradiction (that is the hard error, not
+ * this warning), or non-numeric operands. Choice rules are excluded — a partial
+ * choice overlap reads unambiguously off the value chips, so a warning there is
+ * noise. Pure — no I/O, safe for client + server.
+ */
+export function conditionsNarrow(
+  showWhen: StepCondition | null | undefined,
+  hideWhen: StepCondition | null | undefined,
+): { lo: number; hi: number } | null {
+  if (!showWhen || !hideWhen) return null;
+  if (showWhen.field !== hideWhen.field) return null;
+  if ((showWhen.op ?? 'in') === 'in' || (hideWhen.op ?? 'in') === 'in') return null;
+  const s = numInterval(showWhen);
+  const h = numInterval(hideWhen);
+  if (!s || !h) return null;
+  // A full contradiction is reported by conditionsContradict as an error.
+  if (intervalSubset(s, h)) return null;
+  // No overlap ⇒ the hide rule removes nothing from the show window.
+  const overlapLo = Math.max(s.lo, h.lo);
+  const overlapHi = Math.min(s.hi, h.hi);
+  if (overlapLo > overlapHi) return null;
+  // The surviving window: show's interval minus hide's. A hide rule that clips
+  // exactly one end leaves ONE interval, which is what we can name back to the
+  // author. A hide strictly INSIDE show (e.g. show 0..100, hide 40..60) punches a
+  // hole and leaves two — not expressible as a single window, so stay silent
+  // rather than report a range that wrongly reads as "nothing was removed".
+  const clipsLow = h.lo <= s.lo;
+  const clipsHigh = h.hi >= s.hi;
+  if (!clipsLow && !clipsHigh) return null;
+  // The new bound is the hide interval's far edge — but only reportable when
+  // that edge is EXCLUSIVE, i.e. the value itself survives. `hide lt 50` leaves
+  // 50 visible, so "from 50" is true; `hide eq 200` hides 200 itself, so the
+  // window starts just above it, which no integer bound can state. Naming 200
+  // there would print a bound the rule specifically removes.
+  if (clipsLow && h.hiInc) return null;
+  if (clipsHigh && h.loInc) return null;
+  // The UNclipped bound is inherited from the SHOW interval and printed as an
+  // inclusive "lo–hi". That is only truthful when the show bound is itself
+  // inclusive: an OPEN show interval (`gt`/`lt`) EXCLUDES its own edge, so naming
+  // it would print a value the rule removes (V4-08). `show gt 200` + `hide gt
+  // 500` survives 201..500 — reporting "200–500" names 200, which `gt 200`
+  // hides. Stay silent, symmetric to the hide-side guards above, rather than
+  // name a bound off by one.
+  if (clipsLow && !s.hiInc) return null;
+  if (clipsHigh && !s.loInc) return null;
+  const lo = clipsLow ? h.hi : s.lo;
+  const hi = clipsHigh ? h.lo : s.hi;
+  if (!Number.isFinite(lo) || !Number.isFinite(hi) || lo > hi) return null;
+  // Nothing was actually removed — saying "only appears for X–Y" when X–Y IS
+  // the show rule reads as a warning about a rule that is doing nothing wrong.
+  if (lo === s.lo && hi === s.hi) return null;
+  return { lo, hi };
 }
 
 /**
@@ -341,10 +717,65 @@ const FREE_EMAIL_BASES = new Set([
   'protonmail',
 ]);
 
+/**
+ * ITU E.164 country calling codes (without '+') — the SAME dial set as
+ * `@quill/shared`'s country list. Embedded here rather than imported so the
+ * engine stays a dependency-free pure leaf. E.164 codes are prefix-free, so the
+ * longest leading match on a '+<code><number>' value is the exact dial code. A
+ * code missing from this set only makes the subscriber count more LENIENT (it
+ * can never over-strip), so validation never wrongly rejects a real number.
+ */
+const E164_DIAL_CODES: ReadonlySet<string> = new Set([
+  '1', '7', '20', '27', '30', '31', '32', '33', '34', '36', '39', '40',
+  '41', '43', '44', '45', '46', '47', '48', '49', '51', '52', '53', '54',
+  '55', '56', '57', '58', '60', '61', '62', '63', '64', '65', '66', '81',
+  '82', '84', '86', '90', '91', '92', '93', '94', '95', '98', '211', '212',
+  '213', '216', '218', '220', '221', '222', '223', '224', '225', '226', '227', '228',
+  '229', '230', '231', '232', '233', '234', '235', '236', '237', '238', '239', '240',
+  '241', '242', '243', '244', '245', '248', '249', '250', '251', '252', '253', '254',
+  '255', '256', '257', '258', '260', '261', '262', '263', '264', '265', '266', '267',
+  '268', '269', '291', '297', '298', '299', '350', '351', '352', '353', '354', '355',
+  '356', '357', '358', '359', '370', '371', '372', '373', '374', '375', '376', '377',
+  '378', '380', '381', '382', '385', '386', '387', '389', '420', '421', '423', '500',
+  '501', '502', '503', '504', '505', '506', '507', '508', '509', '590', '591', '592',
+  '593', '594', '595', '596', '597', '598', '599', '670', '673', '674', '675', '676',
+  '677', '678', '679', '680', '681', '682', '683', '685', '686', '687', '688', '689',
+  '690', '691', '692', '850', '852', '853', '855', '856', '880', '886', '960', '961',
+  '962', '963', '964', '965', '966', '967', '968', '970', '971', '972', '973', '974',
+  '975', '976', '977', '992', '993', '994', '995', '996', '998',
+]);
+
+/**
+ * The SUBSCRIBER digits of a phone answer — the national number with the dial
+ * code excluded. For an E.164 value ('+<dial><number>', the shape the public
+ * phone field stores) the leading dial code is stripped; any other value (a bare
+ * number or a legacy free-text phone) contributes all of its digits. This is
+ * what `phoneMinDigits` counts, so a country prefix never pads the length.
+ */
+export function phoneSubscriberDigits(value: string): string {
+  const digits = value.replace(/\D/g, '');
+  if (!value.trimStart().startsWith('+')) return digits;
+  // Longest leading dial code (1–3 digits); prefix-free ⇒ the match is exact.
+  for (let len = Math.min(3, digits.length); len >= 1; len -= 1) {
+    if (E164_DIAL_CODES.has(digits.slice(0, len))) return digits.slice(len);
+  }
+  return digits;
+}
+
+/**
+ * Steps that collect nothing — they are shown, then the flow moves on. `message`
+ * waits for a click; `reveal` (V5-B3) advances itself after its duration. Both
+ * are excluded from validation, scoring and the recall-token list, since there
+ * is no answer to validate, score, or interpolate.
+ */
+export function isInputlessStep(step: Pick<FormStep, 'type'>): boolean {
+  return step.type === 'message' || step.type === 'reveal';
+}
+
 /** Validate one answer against its step. Pure; used on both client and server. */
 export function validateAnswer(step: FormStep, value: AnswerValue): ValidationResult {
-  // Info steps never carry input.
-  if (step.type === 'message') return { ok: true };
+  // Info + reveal steps never carry input.
+  if (isInputlessStep(step)) return { ok: true };
 
   const empty =
     value == null ||
@@ -366,7 +797,9 @@ export function validateAnswer(step: FormStep, value: AnswerValue): ValidationRe
       return { ok: true };
     }
     case 'phone': {
-      const digits = String(value).replace(/\D/g, '');
+      // Count SUBSCRIBER digits (dial code excluded) so a country prefix on an
+      // E.164 value ('+525512345678') never pads the length past the minimum.
+      const digits = phoneSubscriberDigits(String(value));
       const min = step.phoneMinDigits ?? 7;
       if (digits.length < min) return { ok: false, error: 'Enter a valid phone number.' };
       return { ok: true };
@@ -397,6 +830,193 @@ function optionPoints(step: FormStep, value: AnswerValue): number {
   return tokens(value).reduce((sum, t) => sum + (byValue.get(t) ?? 0), 0);
 }
 
+/**
+ * Sanitize a typed field key to the grammar the engine's token syntax accepts
+ * (`[a-zA-Z0-9_]`), lowercased and length-capped. Empty input returns `''` so
+ * the caller can reject it rather than invent a key.
+ */
+export function sanitizeStepKey(raw: string): string {
+  return raw
+    .toLowerCase()
+    .replace(/[^a-z0-9_]+/g, '_')
+    .slice(0, 64);
+}
+
+/**
+ * Rename a step's `key` and every reference to it, in one pure pass (V5-A10).
+ *
+ * The key is the answer's field name: it names the column in the submission, the
+ * `?key=value` URL parameter that seeds a hidden step, and the `[key]` token
+ * other questions interpolate. Letting the builder edit it means every pointer
+ * has to move with it, or the form silently loses a branch:
+ *  - `showWhen.field` / `hideWhen.field` on any step
+ *  - `goto[].target` (forward jumps name a step key)
+ *  - `questionField` (dynamic-variant source)
+ *  - `outcomes[].overrides[].field`
+ *  - `[oldKey]` tokens in question/helper text, variant copy, reveal copy, and
+ *    outcome messages
+ *
+ * `name` steps are the exception: they store one answer per SUBFIELD
+ * (`nameFields`) and never under their own key, so renaming one moves the step
+ * pointers but leaves tokens alone — there were never any pointing at it.
+ *
+ * Returns the config unchanged when the rename is a no-op, the new key is empty,
+ * or it would collide with another step. Destination property maps live outside
+ * this config and are migrated by the caller.
+ */
+export function renameStepKey(config: FormConfig, oldKey: string, newKey: string): FormConfig {
+  if (!newKey || oldKey === newKey) return config;
+  if (config.steps.some((s) => s.key === newKey)) return config;
+  // `name` steps store answers under their SUBFIELD keys (firstname/lastname),
+  // not their own key — so those are taken too. Renaming onto one would make two
+  // steps write the same answer slot and the name answer would be overwritten.
+  for (const s of config.steps) {
+    if (s.key === oldKey) continue;
+    if (s.type === 'name' && nameFields(s).includes(newKey)) return config;
+  }
+  const target = config.steps.find((s) => s.key === oldKey);
+  if (!target) return config;
+
+  // Only a step that actually captures under `oldKey` can have tokens aimed at
+  // it — a `name` step's answers live under its subfield keys instead.
+  const retoken =
+    target.type === 'name'
+      ? (text: string) => text
+      : (text: string) => text.split(`[${oldKey}]`).join(`[${newKey}]`);
+  const retokenNullable = <T extends string | null | undefined>(text: T): T =>
+    typeof text === 'string' ? (retoken(text) as T) : text;
+  const retokenMap = (map: Record<string, string> | undefined): Record<string, string> | undefined =>
+    map == null ? undefined : Object.fromEntries(Object.entries(map).map(([k, v]) => [k, retoken(v)]));
+  const repoint = (field: string | null | undefined): string | null | undefined =>
+    field === oldKey ? newKey : field;
+
+  const steps = config.steps.map((s) => {
+    const next: FormStep = { ...s };
+    if (s.key === oldKey) next.key = newKey;
+    if (s.showWhen) next.showWhen = { ...s.showWhen, field: repoint(s.showWhen.field) as string };
+    if (s.hideWhen) next.hideWhen = { ...s.hideWhen, field: repoint(s.hideWhen.field) as string };
+    if (s.goto) next.goto = s.goto.map((r) => ({ ...r, target: repoint(r.target) ?? null }));
+    if (s.questionField != null) next.questionField = repoint(s.questionField);
+    next.question = retokenNullable(s.question);
+    next.helper = retokenNullable(s.helper);
+    if (s.questionVariants) next.questionVariants = retokenMap(s.questionVariants);
+    if (s.sliderLabelVariants) next.sliderLabelVariants = retokenMap(s.sliderLabelVariants);
+    return next;
+  });
+
+  const outcomes = config.outcomes?.map((o) => ({
+    ...o,
+    label: retoken(o.label),
+    message: retokenNullable(o.message),
+    overrides: o.overrides?.map((r) => ({ ...r, field: repoint(r.field) as string })),
+  }));
+
+  const reveal = config.reveal
+    ? {
+        ...config.reveal,
+        headline: retokenNullable(config.reveal.headline),
+        subtitle: retokenNullable(config.reveal.subtitle),
+        subtitleTemplate: retokenNullable(config.reveal.subtitleTemplate),
+      }
+    : config.reveal;
+
+  // The form-level ending copy interpolates tokens too, so it has to move with
+  // the key — otherwise a rename silently blanks the answer on the thank-you
+  // screen of every live form that recalls it.
+  const ending = config.ending
+    ? {
+        ...config.ending,
+        headline: retokenNullable(config.ending.headline),
+        body: retokenNullable(config.ending.body),
+      }
+    : config.ending;
+
+  return {
+    ...config,
+    steps,
+    ...(outcomes ? { outcomes } : {}),
+    ...(reveal ? { reveal } : {}),
+    ...(ending ? { ending } : {}),
+  };
+}
+
+/**
+ * A slider step's effective bounds, normalized so `min <= max` even when the
+ * stored config has them inverted (nothing stops an author typing max below min
+ * mid-edit). Defaults mirror `createEmptyStep`: 0..100.
+ */
+export function sliderHasNoTravel(step: FormStep): boolean {
+  // A zero-width slider ships `<input type=range min=5 max=5>`: the handle
+  // cannot move and the question can only ever answer one value. Nobody
+  // configures that on purpose, and the existing max<min warning stops one step
+  // short of it.
+  const { min, max } = sliderBounds(step);
+  return min === max;
+}
+
+export function sliderBounds(step: FormStep): { min: number; max: number } {
+  const a = step.min ?? 0;
+  const b = step.max ?? 100;
+  return a <= b ? { min: a, max: b } : { min: b, max: a };
+}
+
+/**
+ * A slider value forced inside the step's bounds (V5-A2).
+ *
+ * The builder lets you type any number into Default, and the config schema has
+ * no cross-field rule tying it to min/max — so `min 0, max 5, default 878` saves
+ * happily and then renders a track filled to 17560%, blowing the value straight
+ * out of the card. Every surface that turns a slider value into geometry runs it
+ * through here, so a config that is already stored bad still renders sanely.
+ */
+export function clampSliderValue(step: FormStep, value: number): number {
+  const { min, max } = sliderBounds(step);
+  if (!Number.isFinite(value)) return min;
+  return Math.min(max, Math.max(min, value));
+}
+
+/**
+ * True when a scoring range can never be reached because it falls entirely
+ * outside the slider's own bounds (V5-A3) — e.g. a 0..2000 slider with a
+ * 5000..6000 range, which silently awards nothing. Partial overlap is fine (the
+ * reachable part still scores), so only a fully disjoint range is flagged.
+ * Advisory: the builder marks the row, it does not block saving, because min/max
+ * are often edited after the ranges.
+ */
+export function sliderRangeUnreachable(step: FormStep, range: SliderScoringRange): boolean {
+  // An INVERTED range is unreachable on its own terms: `sliderPoints` matches
+  // `n >= min && n <= max`, which is the empty set when min > max — no slider
+  // value can satisfy it whatever the bounds are.
+  if (range.min > range.max) return true;
+  const { min, max } = sliderBounds(step);
+  return range.max < min || range.min > max;
+}
+
+/**
+ * Indexes of scoring ranges that OVERLAP an earlier range (V5-QA). `sliderPoints`
+ * returns on the first match, so an overlapped row awards nothing for the shared
+ * values while the builder's "highest possible" still counts it — two screens
+ * disagreeing about the same number. Reported, not blocked: an overlap is legal
+ * and sometimes deliberate, it just has to be visible.
+ */
+export function overlappingSliderRanges(step: FormStep): number[] {
+  const ranges = step.sliderScoring ?? [];
+  const out: number[] = [];
+  for (let i = 1; i < ranges.length; i++) {
+    const r = ranges[i]!;
+    if (r.min > r.max) continue; // an inverted range is reported separately
+    for (let j = 0; j < i; j++) {
+      const prev = ranges[j]!;
+      if (prev.min > prev.max) continue;
+      if (r.min <= prev.max && prev.min <= r.max) {
+        out.push(i);
+        break;
+      }
+    }
+  }
+  return out;
+}
+
 /** Points for a slider answer via its scoring ranges. */
 function sliderPoints(step: FormStep, value: AnswerValue): number {
   const n = Number(value);
@@ -408,10 +1028,18 @@ function sliderPoints(step: FormStep, value: AnswerValue): number {
 }
 
 /**
- * The total score from the answers: option points + slider-range points + any
- * flat step points, over the QUALIFICATION steps only (lead-capture fields such
- * as name/email/phone never contribute). Hidden steps (failed skip-logic) are
+ * The total score from the answers: option points (choice) + slider-range points
+ * (slider), over the QUALIFICATION steps only (lead-capture fields such as
+ * name/email/phone never contribute). Hidden steps (failed skip-logic) are
  * excluded — a branch the respondent never saw can't score.
+ *
+ * Only choice and slider steps score — the two types with a builder UI to attach
+ * points to (option chips, slider ranges). A free-text step has neither, so it
+ * must not contribute: the legacy flat `step.points` used to add here for ANY
+ * type, silently scoring a `text`/`textarea` answer that the builder could not
+ * set and the Results breakdown never listed, so "Highest possible" did not add
+ * up (V4-17). No builder path writes `step.points`; it is ignored now, matching
+ * `maxStepPoints` and `scoringSteps`.
  */
 export function computeScore(config: FormConfig, answers: Answers): number {
   if (config.scoring && config.scoring.enabled === false) return 0;
@@ -421,22 +1049,130 @@ export function computeScore(config: FormConfig, answers: Answers): number {
   let score = 0;
   for (const step of config.steps) {
     if (step.flowGroup === 'lead_capture') continue;
+    if (step.scoringEnabled === false) continue; // per-question opt-out (V5-B2)
     if (!visible.has(step.key)) continue;
     const value = answers[step.key];
     if (value == null || value === '') continue;
     if (step.type === 'dropdown' || step.type === 'multiple_choice') score += optionPoints(step, value);
     else if (step.type === 'slider') score += sliderPoints(step, value);
-    if (step.points) score += step.points;
   }
   return score;
 }
 
-/** The outcome bucket for a score: the highest `minScore` the score clears. */
-export function resolveOutcome(config: FormConfig, score: number): FormOutcome | null {
-  const buckets = (config.outcomes ?? [])
+/**
+ * Does one override rule match the answers? The answer for `rule.field` must
+ * EXIST (a missing/empty answer never matches) and every SPECIFIED clause must
+ * hold: `values` intersects the string/array answer; `maxValue`/`minValue`
+ * bound the numeric answer. A non-numeric answer fails a numeric clause; a rule
+ * with no clauses (malformed) never matches.
+ */
+function overrideRuleMatches(rule: OutcomeOverrideRule, answers: Answers): boolean {
+  const value = answers[rule.field];
+  const missing = value == null || value === '' || (Array.isArray(value) && value.length === 0);
+  if (missing) return false;
+
+  let hasClause = false;
+  if (rule.values !== undefined) {
+    hasClause = true;
+    const got = new Set(tokens(value));
+    if (!rule.values.some((v) => got.has(v))) return false;
+  }
+  if (rule.maxValue !== undefined || rule.minValue !== undefined) {
+    hasClause = true;
+    // Only a number or a numeric string is numeric — booleans/arrays/objects
+    // (which Number() would happily coerce) fail the clause.
+    const n =
+      typeof value === 'number'
+        ? value
+        : typeof value === 'string' && value.trim() !== ''
+          ? Number(value)
+          : NaN;
+    if (Number.isNaN(n)) return false;
+    if (rule.maxValue !== undefined && n > rule.maxValue) return false;
+    if (rule.minValue !== undefined && n < rule.minValue) return false;
+  }
+  return hasClause;
+}
+
+/**
+ * The outcome for a score: the highest `minScore` bucket the score clears.
+ * When `answers` are supplied (additive; back-compat), answer-forced `overrides`
+ * are evaluated FIRST — outcomes are scanned in declared order and the first
+ * outcome with any matching override rule wins regardless of score (e.g. a
+ * slider answer <= 0 forces the disqualify outcome over a higher-scoring bucket).
+ *
+ * Scoring OFF short-circuits to `null` (V5-A1). Outcomes are the score's routing
+ * table: with scoring disabled every submission scores 0, so a `minScore: 0`
+ * bucket used to match everyone and silently replace the form's own thank-you
+ * screen. Disabling scoring now disables the whole outcome layer — buckets AND
+ * answer-forced overrides — and the ending falls back to the form-level copy.
+ * The stored buckets are untouched, so re-enabling scoring restores them.
+ */
+export function resolveOutcome(
+  config: FormConfig,
+  score: number,
+  answers?: Answers,
+): FormOutcome | null {
+  if (config.scoring?.enabled === false) return null;
+  const outcomes = config.outcomes ?? [];
+  if (answers) {
+    for (const outcome of outcomes) {
+      if (outcome.overrides?.some((rule) => overrideRuleMatches(rule, answers))) return outcome;
+    }
+  }
+  const buckets = outcomes
     .filter((o) => (o.minScore ?? 0) <= score)
     .sort((a, b) => (b.minScore ?? 0) - (a.minScore ?? 0));
   return buckets[0] ?? null;
+}
+
+/** What the renderer should actually do when the form finishes (V5-B1). */
+export interface ResolvedEnding {
+  /** Heading, or `null` to use the renderer's built-in localized title. */
+  headline: string | null;
+  /** Body copy (still un-interpolated), or `null` for the built-in copy. */
+  body: string | null;
+  /** Where to send the respondent, or `null` to show the thank-you screen. */
+  redirectUrl: string | null;
+  /** How long to show the thank-you screen first. 0 = redirect immediately. */
+  redirectDelayMs: number;
+}
+
+/**
+ * The ending for a resolved outcome: per-outcome value, else the form-level
+ * default, else nothing (the renderer's built-in copy) — V5-B1.
+ *
+ * One inheritance rule covers every ending shape the builder needs, with no
+ * mode selector to choose between them:
+ *  - a different thank-you per outcome → fill the outcome's fields;
+ *  - one thank-you for everyone → fill only the form's;
+ *  - redirect everyone → a form-level `redirectUrl`;
+ *  - thank-you, then redirect → a form-level URL plus a delay;
+ *  - any of the above overridden for one bucket → set it on that outcome.
+ *
+ * A field is "set" only when it is a non-empty string, so clearing an outcome's
+ * box falls back to the form default rather than blanking the screen. The
+ * outcome's `label` doubles as its heading (it always has) — inheriting the
+ * form headline only when the label is empty.
+ */
+export function resolveEnding(config: FormConfig, outcome: FormOutcome | null): ResolvedEnding {
+  const e = config.ending ?? null;
+  const pick = (a: string | null | undefined, b: string | null | undefined): string | null => {
+    const first = typeof a === 'string' ? a.trim() : '';
+    if (first) return a as string;
+    const second = typeof b === 'string' ? b.trim() : '';
+    return second ? (b as string) : null;
+  };
+  const redirectUrl = pick(outcome?.redirectUrl, e?.redirectUrl);
+  // A delay without a destination is meaningless — report 0 so the renderer
+  // never holds the screen waiting for a redirect that is not coming.
+  const delaySource = outcome?.redirectDelayMs ?? e?.redirectDelayMs ?? 0;
+  return {
+    headline: pick(outcome?.label, e?.headline),
+    body: pick(outcome?.message, e?.body),
+    redirectUrl,
+    redirectDelayMs: redirectUrl && Number.isFinite(delaySource) ? Math.max(0, delaySource) : 0,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -468,7 +1204,7 @@ export function validateAnswerCode(
   value: AnswerValue,
   answers: Answers = {},
 ): ValidationCodeResult {
-  if (step.type === 'message') return { ok: true };
+  if (isInputlessStep(step)) return { ok: true };
 
   if (step.type === 'name') {
     const fields = nameFields(step);
@@ -493,7 +1229,7 @@ export function validateAnswerCode(
       return { ok: true };
     }
     case 'phone': {
-      const digits = String(value).replace(/\D/g, '');
+      const digits = phoneSubscriberDigits(String(value));
       if (digits.length < (step.phoneMinDigits ?? 7)) return { ok: false, code: 'phone' };
       return { ok: true };
     }
@@ -521,29 +1257,137 @@ export function nameFields(step: FormStep): string[] {
   return [step.key];
 }
 
-/**
- * Two-phase order: qualification steps first, then lead-capture — a stable
- * partition that preserves each step's relative order within its phase. Steps
- * with no `flowGroup` are treated as qualification.
- */
-export function orderSteps(steps: FormStep[]): FormStep[] {
-  const qualification = steps.filter((s) => s.flowGroup !== 'lead_capture');
-  const leadCapture = steps.filter((s) => s.flowGroup === 'lead_capture');
-  return [...qualification, ...leadCapture];
+/** Resolve one `[field]` token to its substitution text (arrays join with `, `). */
+function resolveToken(value: AnswerValue): string {
+  if (value == null) return '';
+  return Array.isArray(value) ? value.join(', ') : String(value);
 }
 
-/** Replace `[key]` tokens in copy with the corresponding answer (empty → left as-is). */
+/**
+ * Replace `[key]` tokens in copy with the corresponding answer. A token whose
+ * answer is missing/empty resolves to nothing AND the connector that joined it to
+ * the rest of the sentence is swept up with it, so no dangling *joining* punctuation
+ * or whitespace is left behind (a connector that only *follows* the token belongs to
+ * the next clause and is kept):
+ *  - a **leading** empty token takes its trailing `,`/`:`/`;`/`-` + spaces with
+ *    it and the sentence is re-capitalized — `"[firstname], what problem…"` with
+ *    no firstname reads `"What problem…"`, `"[firstname] how are you"` → `"How
+ *    are you"`;
+ *  - an **embedded/trailing** empty token takes the space *and* an orphaned
+ *    connector *in front of* it — `"Hi [firstname]!"` → `"Hi!"`,
+ *    `"What is your role, [firstname]?"` → `"What is your role?"`; a connector
+ *    *after* the token belongs to the following clause and is kept —
+ *    `"Hi [firstname], welcome"` → `"Hi, welcome"`;
+ *  - duplicate spaces a removal creates are collapsed and the ends trimmed.
+ *
+ * Copy with **no empty tokens** is substituted verbatim — byte-for-byte identical
+ * to a plain replace — so the all-resolved path (including a resolved token's own
+ * spacing) is unchanged. Pure and deterministic; every regex is linear (no
+ * catastrophic backtracking).
+ */
 export function interpolate(template: string, answers: Answers): string {
-  return template.replace(/\[([a-zA-Z0-9_]+)\]/g, (_m, field: string) => {
-    const value: AnswerValue = answers[field];
-    if (value == null) return '';
-    return Array.isArray(value) ? value.join(', ') : String(value);
+  // Private-use sentinel marks where an empty token stood, so the cleanup pass can
+  // find the orphaned connector without disturbing any resolved text around it.
+  const EMPTY = '\uE000';
+  let hadEmpty = false;
+  const substituted = template.replace(/\[([a-zA-Z0-9_]+)\]/g, (_m, field: string) => {
+    const resolved = resolveToken(answers[field]);
+    if (resolved === '') {
+      hadEmpty = true;
+      return EMPTY;
+    }
+    return resolved;
   });
+  // Fast path: nothing empty → behave exactly like the original plain replace.
+  if (!hadEmpty) return substituted;
+
+  // The copy opened with a token that resolved empty: its first surviving word was
+  // mid-sentence a moment ago, so it should be re-capitalized after the cleanup.
+  const lead = template.match(/^\s*\[([a-zA-Z0-9_]+)\]/);
+  const leadingEmpty = lead != null && resolveToken(answers[lead[1]]) === '';
+
+  let cleaned = substituted;
+  if (leadingEmpty) {
+    // Leading/flush empty token: also drop an orphaned trailing connector +
+    // spaces ('[x], what' becomes 'what', '[x] how' becomes 'how').
+    cleaned = cleaned.replace(/^[ \t]*\uE000[ \t]*(?:[,:;-][ \t]*)?/, '');
+  }
+  cleaned = cleaned
+    // Embedded/trailing empty token: drop the space(s) in front of it, plus an
+    // orphaned connector that joined it to the preceding clause ('role, [x]?'
+    // becomes 'role?'). A connector AFTER the token belongs to the following
+    // clause and is kept ('Hi [x], welcome' becomes 'Hi, welcome').
+    .replace(/[ \t]*(?:[,:;-][ \t]*)?\uE000/g, '')
+    // Any sentinel that survived the pass (defensive) is removed.
+    .split(EMPTY)
+    .join('')
+    // Collapse the double space a removal may have created, then trim the ends.
+    .replace(/[ \t]{2,}/g, ' ')
+    .trim();
+
+  return leadingEmpty ? cleaned.replace(/\p{L}/u, (c) => c.toUpperCase()) : cleaned;
 }
 
 /** The lookup token a `questionField` answer resolves to for variant selection. */
 function variantKey(raw: AnswerValue): string {
   return raw == null ? '' : Array.isArray(raw) ? raw.join(',') : String(raw);
+}
+
+/** A comma-separated variant key as a set of trimmed, non-empty values. */
+function variantKeySet(key: string): Set<string> {
+  return new Set(
+    key
+      .split(',')
+      .map((v) => v.trim())
+      .filter(Boolean),
+  );
+}
+
+/**
+ * The variant text for an answer, or `undefined` when no row matches (V5-A7).
+ *
+ * Multi-select answers are arrays, and {@link variantKey} joins them in the
+ * order the respondent ticked the boxes — so an exact string lookup makes a
+ * `"a,b"` row miss the answer `['b','a']`, and there was no way to author a
+ * multi-value row at all. Resolution is now, in order:
+ *  1. exact key match (unchanged — every existing config keeps its behavior);
+ *  2. for an array answer, the first row whose comma-separated values are the
+ *     SAME SET as the answer, order-insensitive.
+ * Single-value answers only ever take path 1, so nothing about single-choice,
+ * text, or slider sources changes.
+ */
+function resolveVariant(variants: Record<string, string>, raw: AnswerValue): string | undefined {
+  // An EMPTY row is an unfinished draft, not an instruction to ask nothing: it
+  // used to publish a question with no text at all — a bare input and a Submit
+  // button. Treat it as "no row" so the `*` fallback (then the base question)
+  // takes over.
+  const usable = (text: string | undefined): string | undefined =>
+    typeof text === 'string' && text.trim() ? text : undefined;
+  // A non-array answer has exactly one spelling, so an exact lookup IS the set
+  // comparison. An array answer must go through the set scan alone: trying the
+  // exact key first would let the respondent's tick order pick between two rows
+  // that describe the same set ("crm,ads" vs "ads,crm"), which is the
+  // non-determinism this scan exists to remove.
+  if (!Array.isArray(raw)) return usable(variants[variantKey(raw)]);
+  const answer = variantKeySet(raw.join(','));
+  if (answer.size === 0) return undefined;
+  // Sorted so two rows describing the SAME set resolve to the same winner no
+  // matter which the author typed first — otherwise the respondent's click
+  // ORDER decided which variant they saw.
+  for (const [key, text] of Object.entries(variants).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) {
+    if (key === '*') continue;
+    const set = variantKeySet(key);
+    if (set.size !== answer.size) continue;
+    let same = true;
+    for (const v of set) {
+      if (!answer.has(v)) {
+        same = false;
+        break;
+      }
+    }
+    if (same) return usable(text);
+  }
+  return undefined;
 }
 
 /**
@@ -555,37 +1399,42 @@ function variantKey(raw: AnswerValue): string {
 export function resolveQuestion(step: FormStep, answers: Answers): string {
   let text = step.question ?? '';
   if (step.questionField && step.questionVariants) {
-    const key = variantKey(answers[step.questionField]);
-    text = step.questionVariants[key] ?? step.questionVariants['*'] ?? text;
+    const fallback = step.questionVariants['*'];
+    text =
+      resolveVariant(step.questionVariants, answers[step.questionField]) ??
+      (typeof fallback === 'string' && fallback.trim() ? fallback : text);
   }
   return interpolate(text, answers);
 }
 
 /**
  * Resolve a step for display against the answers: pick the dynamic question
- * variant (via `resolveQuestion`), interpolate `[key]` tokens in the question,
+ * variant (via `resolveQuestion`), interpolate `[key]` tokens in the question
+ * AND the `helper`/description (both with the same orphaned-punctuation sweep),
  * and resolve the slider unit label variant. Returns a shallow copy — never
- * mutates the config.
+ * mutates the config. A null/undefined helper is left untouched.
  */
 export function resolveStepDisplay(step: FormStep, answers: Answers): FormStep {
   const question = resolveQuestion(step, answers);
+  const helper = typeof step.helper === 'string' ? interpolate(step.helper, answers) : step.helper;
   let sliderUnitLabel = step.sliderUnitLabel ?? null;
   if (step.questionField && step.sliderLabelVariants) {
-    const key = variantKey(answers[step.questionField]);
-    if (step.sliderLabelVariants[key]) sliderUnitLabel = step.sliderLabelVariants[key];
+    const label = resolveVariant(step.sliderLabelVariants, answers[step.questionField]);
+    if (label) sliderUnitLabel = label;
   }
-  return { ...step, question, sliderUnitLabel };
+  return { ...step, question, helper, sliderUnitLabel };
 }
 
 /**
  * The ordered, visible, display-resolved steps the renderer walks — the single
- * source of truth for the public flow. Composes `orderSteps` (two-phase) +
+ * source of truth for the public flow. The AUTHORED `config.steps` order is
+ * authoritative (WYSIWYG: the public form walks the exact order the editor
+ * shows — `flowGroup` only affects scoring, never sequencing). Composes
  * `visibleSteps` (skip-logic + personal-email branch) + `resolveStepDisplay`
- * (dynamic variants + interpolation).
+ * (dynamic variants + interpolation) + `applyGoto` (forward jumps).
  */
 export function runtimeSteps(config: FormConfig, answers: Answers): FormStep[] {
-  const ordered: FormConfig = { ...config, steps: orderSteps(config.steps) };
-  const visible = visibleSteps(ordered, answers).map((s) => resolveStepDisplay(s, answers));
+  const visible = visibleSteps(config, answers).map((s) => resolveStepDisplay(s, answers));
   return applyGoto(visible, answers);
 }
 
@@ -594,6 +1443,32 @@ export function partialSubmitKey(config: FormConfig): string | null {
   const n = config.partialSubmitAfterStep;
   if (n == null || n < 1) return null;
   return config.steps[n - 1]?.key ?? null;
+}
+
+/**
+ * The key of the step AFTER which the reveal interstitial plays, or `null` when
+ * the reveal is disabled/absent or the form has no steps. Position resolves in
+ * priority order (additive + back-compat), so the renderer and the builder agree
+ * on where the reveal fires:
+ *  1. `revealAfterStep` (1-based over `steps`) when set + in range — the
+ *     authoritative draggable-marker position.
+ *  2. else the first step flagged `triggersReveal` — the legacy per-step boolean
+ *     (configs published before the marker existed still play in place).
+ *  3. else the LAST step — the safe default so an ENABLED reveal plays right
+ *     before the result (thank-you / outcome), never mid-form by accident.
+ * The renderer decides "play then continue" vs "play then finalize" from whether
+ * the resolved step is the last VISIBLE step at runtime.
+ */
+export function revealAfterKey(config: FormConfig): string | null {
+  const reveal = config.reveal;
+  if (!reveal || reveal.enabled === false) return null;
+  const { steps } = config;
+  if (steps.length === 0) return null;
+  const n = config.revealAfterStep;
+  if (n != null && n >= 1 && n <= steps.length) return steps[n - 1]?.key ?? null;
+  const triggered = steps.find((s) => s.triggersReveal);
+  if (triggered) return triggered.key;
+  return steps[steps.length - 1]?.key ?? null;
 }
 
 // ---------------------------------------------------------------------------

@@ -58,6 +58,31 @@ subset for convenience and **never limits the schema**.
 > On Windows, run the `pnpm` scripts from **git-bash or WSL** — they use POSIX
 > shell syntax (`${PG_PORT:-5432}`) that `cmd.exe`/PowerShell don't expand.
 
+## What's new
+
+**Jul 20 — builder bug-fix round** (from hands-on QA). Made editor autosave
+reliable across every tab and fixed the root blocker that kept the Results
+panel from saving; made scoring usable (per-option points with negatives,
+correct max, no leading-zero inputs); added conditional-visibility operators
+for numeric fields (equal/greater/less/between) with a contradiction guard;
+turned the reveal screen into a draggable marker that defaults to the end
+(no more mid-form reveal) with per-outcome messages; and added hidden fields
+with real `?param=value` URL prefill, a per-form phone default country, and
+`@` recall in descriptions. Full changelog:
+[`docs/feedback-v4/`](docs/feedback-v4/README.md).
+
+**Jul (earlier) — builder & integration UX.** A **Connect** tab in the editor
+(integrations, webhooks, tracking pixels, per-form email templates), an `@`
+picker to recall previous answers into question text, a draggable
+partial-submit point, first-class actions on the forms list, branded dialogs,
+and a WYSIWYG fix so the public form renders questions in the authored order.
+Changelog with screenshots: [`docs/feedback-v3/`](docs/feedback-v3/README.md).
+
+| | |
+|---|---|
+| ![Connect tab](docs/feedback-v3/v3-connect-tab.png) | ![Token picker](docs/feedback-v3/v3-at-picker.png) |
+| ![Partial submit point](docs/feedback-v3/v3-partial-point.png) | ![Forms list](docs/feedback-v3/v3-forms-list.png) |
+
 ## What you get
 
 - A **public form page** (`/[accountCode]/[handle]/[slug]`) that server-renders

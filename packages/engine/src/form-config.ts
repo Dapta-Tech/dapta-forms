@@ -61,7 +61,7 @@ export function createEmptyStep(
     key,
     type,
     question: '',
-    required: !(type === 'message'),
+    required: !(type === 'message' || type === 'reveal'),
     flowGroup: defaultFlowGroup(type),
   };
 
@@ -83,6 +83,12 @@ export function createEmptyStep(
   }
   if (type === 'message') {
     base.buttonText = 'Continue';
+  }
+  // A reveal step owns its copy and duration, so a form can hold several with
+  // different messages (V5-B3). Seeded enabled — an author who drops one in
+  // wants it to play.
+  if (type === 'reveal') {
+    base.reveal = { enabled: true, headline: '', subtitle: '', durationMs: 2200 };
   }
   return base;
 }
@@ -196,11 +202,25 @@ export function normalizeConfig(config: FormConfig): FormConfig {
     })
     .sort((a, b) => (a.minScore ?? 0) - (b.minScore ?? 0));
 
+  // Preserve every additive top-level field the builder doesn't normalize
+  // (reveal, partialSubmitAfterStep, tracking, destinations, …) — normalizing
+  // must never drop config it doesn't understand (schema v1 is additive-only).
+  const {
+    version: _version,
+    steps: _steps,
+    cover,
+    branding,
+    outcomes: _outcomes,
+    scoring: _scoring,
+    ...passthrough
+  } = config as FormConfig & Record<string, unknown>;
+
   const next: FormConfig = {
+    ...passthrough,
     version: 1,
     steps: normalized,
-    ...(config.cover != null ? { cover: config.cover } : {}),
-    ...(config.branding != null ? { branding: config.branding } : {}),
+    ...(cover != null ? { cover } : {}),
+    ...(branding != null ? { branding } : {}),
     ...(outcomes.length ? { outcomes } : {}),
   };
 

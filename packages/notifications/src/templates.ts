@@ -106,3 +106,132 @@ export function renderSubmissionConfirmed(
     ],
   };
 }
+
+// --- Account-editable overrides (Settings → Notifications) --------------------
+//
+// An account owner may replace the stock subject/body above with their own copy,
+// stored per (account, email_key) in `notification_setting`. The send path renders
+// the stock template first, then overlays any non-null custom subject/body — each
+// independently overridable. Custom copy is PLAIN TEXT with `{{token}}` markers;
+// the notifier keeps the exact same HTML-escaping boundary as the stock path
+// (every rendered line is escaped before it reaches an HTML body), so a custom
+// template can never introduce XSS (E8).
+
+/** The two submission emails an account can customize. */
+export const SUBMISSION_EMAIL_KEYS = ['submission_received', 'submission_confirmed'] as const;
+export type SubmissionEmailKey = (typeof SUBMISSION_EMAIL_KEYS)[number];
+
+/** Narrow an arbitrary string to a known email key (the API validates writes). */
+export function isSubmissionEmailKey(value: string): value is SubmissionEmailKey {
+  return (SUBMISSION_EMAIL_KEYS as readonly string[]).includes(value);
+}
+
+/**
+ * The interpolation tokens a custom subject/body may reference. The SAME set is
+ * offered for both emails — every value is carried on the notification, so the
+ * owner can compose freely (an absent optional value renders as an empty string).
+ */
+export const NOTIFICATION_TOKENS = [
+  'formName',
+  'respondentEmail',
+  'score',
+  'outcomeLabel',
+  'formLink',
+] as const;
+export type NotificationToken = (typeof NOTIFICATION_TOKENS)[number];
+
+/** Build the `{{token}} → string` map from the notification vars (null → ''). */
+export function notificationTokenValues(v: ReceivedCopyVars): Record<NotificationToken, string> {
+  return {
+    formName: v.formName ?? '',
+    respondentEmail: v.respondentEmail ?? '',
+    score: v.score != null ? String(v.score) : '',
+    outcomeLabel: v.outcomeLabel ?? '',
+    formLink: v.formLink ?? '',
+  };
+}
+
+/**
+ * Substitute `{{token}}` markers in ONE pass. Single-pass matters: a value that
+ * itself contains `{{...}}` is copied verbatim, never re-expanded (deterministic,
+ * and no way to smuggle another token through a value). An UNKNOWN token is left
+ * literal so the owner sees their typo rather than a silent blank. Whitespace
+ * inside the braces is tolerated (`{{ formName }}`).
+ */
+export function interpolateTokens(template: string, values: Record<string, string>): string {
+  return template.replace(/\{\{\s*([a-zA-Z][A-Za-z0-9_]*)\s*\}\}/g, (whole, name: string) => {
+    const value = values[name];
+    return value === undefined ? whole : value;
+  });
+}
+
+/**
+ * Overlay a custom subject/body onto an already-rendered stock copy. Each field
+ * is independent: a non-null override replaces it (interpolated), a null/absent
+ * override keeps the stock text. The subject collapses any newlines to spaces
+ * (a header is single-line — closes off subject header-injection). The returned
+ * lines are RAW (unescaped) exactly like the stock render, so the notifier's
+ * `htmlBody` remains the single escaping boundary.
+ */
+export function applyCopyOverride(
+  base: RenderedCopy,
+  override: { subject?: string | null; body?: string | null },
+  vars: ReceivedCopyVars,
+): RenderedCopy {
+  const values = notificationTokenValues(vars);
+  const subject =
+    override.subject != null
+      ? interpolateTokens(override.subject, values).replace(/[\r\n]+/g, ' ').trim()
+      : base.subject;
+  const lines =
+    override.body != null ? interpolateTokens(override.body, values).split('\n') : base.lines;
+  return { subject, lines };
+}
+
+/**
+ * The stock copy as an editable, token-bearing starting point — what Settings →
+ * Notifications shows as the default (and the shape "Reset to default" returns
+ * to). These MIRROR the code templates above; `templates.spec.ts` pins them in
+ * sync so the two never drift.
+ */
+export function defaultSubmissionTemplate(
+  key: SubmissionEmailKey,
+  locale: NotificationLocale,
+): { subject: string; body: string } {
+  if (key === 'submission_received') {
+    return locale === 'es'
+      ? {
+          subject: 'Nueva respuesta — {{formName}}',
+          body: [
+            'Recibiste una nueva respuesta en "{{formName}}".',
+            'De: {{respondentEmail}}',
+            'Puntuación: {{score}}',
+            'Resultado: {{outcomeLabel}}',
+            'Ver las respuestas: {{formLink}}',
+          ].join('\n'),
+        }
+      : {
+          subject: 'New submission — {{formName}}',
+          body: [
+            'You have a new submission on "{{formName}}".',
+            'From: {{respondentEmail}}',
+            'Score: {{score}}',
+            'Outcome: {{outcomeLabel}}',
+            'View submissions: {{formLink}}',
+          ].join('\n'),
+        };
+  }
+  return locale === 'es'
+    ? {
+        subject: 'Recibimos tus respuestas — {{formName}}',
+        body: ['Gracias — registramos tus respuestas de "{{formName}}".', 'Ver o editar: {{formLink}}'].join(
+          '\n',
+        ),
+      }
+    : {
+        subject: 'We got your responses — {{formName}}',
+        body: ["Thanks — we've recorded your responses to \"{{formName}}\".", 'View or edit: {{formLink}}'].join(
+          '\n',
+        ),
+      };
+}

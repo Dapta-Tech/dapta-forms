@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { HubspotDestination, toHubSpotDateMs, buildSubmissionNoteBody } from './hubspot';
+import {
+  HubspotDestination,
+  toHubSpotDateMs,
+  buildSubmissionNoteBody,
+  inferCompanyProperties,
+} from './hubspot';
 import type { DestinationContext } from '../destination.port';
 
 function ctx(over: Partial<DestinationContext> = {}): DestinationContext {
@@ -62,6 +67,118 @@ describe('HubspotDestination.buildProperties', () => {
     const dest2 = new HubspotDestination({ token: 't', fieldMappings: {} });
     expect(dest2.resolveEmail(ctx({ data: { email: 'x@y.io' } }))).toBe('x@y.io');
     expect(dest2.resolveEmail(ctx({ data: {} }))).toBeNull();
+  });
+
+  // --- Pilot extras: value maps ---------------------------------------------
+
+  it('translates a mapped answer through its value map (picklist label)', () => {
+    const dest = new HubspotDestination({
+      token: 't',
+      fieldMappings: { use_case: 'typeform_use_case' },
+      valueMaps: { use_case: { leads_frios: 'AI Calls', whatsapp: 'AI Text' } },
+    });
+    const props = dest.buildProperties(ctx({ data: { use_case: 'leads_frios' } }));
+    expect(props.typeform_use_case).toBe('AI Calls');
+  });
+
+  it('passes an unmapped raw value through unchanged', () => {
+    const dest = new HubspotDestination({
+      token: 't',
+      fieldMappings: { use_case: 'typeform_use_case', first: 'firstname' },
+      valueMaps: { use_case: { leads_frios: 'AI Calls' } },
+    });
+    const props = dest.buildProperties(ctx({ data: { use_case: 'something_else', first: 'Ada' } }));
+    expect(props.typeform_use_case).toBe('something_else'); // no entry -> passthrough
+    expect(props.firstname).toBe('Ada'); // step without a value map untouched
+  });
+
+  // --- Pilot extras: outcome property ---------------------------------------
+
+  it('writes the outcome label to outcomeProperty on complete only', () => {
+    const dest = new HubspotDestination({
+      token: 't',
+      fieldMappings: {},
+      outcomeProperty: 'qualification',
+    });
+    expect(dest.buildProperties(ctx()).qualification).toBe('Qualified');
+    expect(dest.buildProperties(ctx({ phase: 'partial' })).qualification).toBeUndefined();
+    expect(dest.buildProperties(ctx({ outcomeLabel: null })).qualification).toBeUndefined();
+  });
+
+  // --- Pilot extras: static properties --------------------------------------
+
+  it('merges staticProperties on complete without overwriting mapped values', () => {
+    const dest = new HubspotDestination({
+      token: 't',
+      fieldMappings: { company: 'company' },
+      staticProperties: { optin_form: 'true', company: 'StaticCo' },
+    });
+    const props = dest.buildProperties(ctx());
+    expect(props.optin_form).toBe('true'); // fills the hole
+    expect(props.company).toBe('Acme'); // mapped answer wins over static
+  });
+
+  it('omits staticProperties on a partial submission', () => {
+    const dest = new HubspotDestination({
+      token: 't',
+      fieldMappings: {},
+      staticProperties: { optin_form: 'true' },
+    });
+    expect(dest.buildProperties(ctx({ phase: 'partial' })).optin_form).toBeUndefined();
+  });
+
+  // --- Pilot extras: company/website inference ------------------------------
+
+  it('infers company + website from a corporate email domain', () => {
+    const dest = new HubspotDestination({
+      token: 't',
+      fieldMappings: { contact_email: 'email' },
+      inferCompanyFromEmail: true,
+    });
+    const props = dest.buildProperties(ctx({ data: { contact_email: 'lead@acme.io' } }));
+    expect(props.company).toBe('Acme');
+    expect(props.website).toBe('https://acme.io');
+  });
+
+  it('skips inference for a free-mail domain', () => {
+    const dest = new HubspotDestination({
+      token: 't',
+      fieldMappings: { contact_email: 'email' },
+      inferCompanyFromEmail: true,
+    });
+    const props = dest.buildProperties(ctx({ data: { contact_email: 'lead@gmail.com' } }));
+    expect(props.company).toBeUndefined();
+    expect(props.website).toBeUndefined();
+  });
+
+  it('never overwrites a company/website already set by mappings', () => {
+    const dest = new HubspotDestination({
+      token: 't',
+      fieldMappings: { contact_email: 'email', company: 'company' },
+      inferCompanyFromEmail: true,
+    });
+    const props = dest.buildProperties(
+      ctx({ data: { contact_email: 'lead@acme.io', company: 'Globex' } }),
+    );
+    expect(props.company).toBe('Globex'); // mapped answer wins
+    expect(props.website).toBe('https://acme.io'); // the hole is still filled
+  });
+});
+
+describe('inferCompanyProperties', () => {
+  it('derives capitalized company + https website from a corporate domain', () => {
+    expect(inferCompanyProperties('Lead@Acme.io')).toEqual({
+      company: 'Acme',
+      website: 'https://acme.io',
+    });
+  });
+
+  it('returns null for free-mail domains and malformed addresses', () => {
+    expect(inferCompanyProperties('a@gmail.com')).toBeNull();
+    expect(inferCompanyProperties('a@hotmail.co.uk')).toBeNull(); // free-mail base
+    expect(inferCompanyProperties('not-an-email')).toBeNull();
+    expect(inferCompanyProperties('a@nodot')).toBeNull();
+    expect(inferCompanyProperties(null)).toBeNull();
   });
 });
 

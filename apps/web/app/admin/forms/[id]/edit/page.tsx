@@ -26,7 +26,10 @@ export default async function EditFormPage({ params }: { params: Promise<{ id: s
     <FormEditor
       id={form.id}
       initialName={form.name}
-      initialConfig={form.config}
+      // Edit the pending DRAFT when one exists; autosave keeps writing the
+      // draft, and the explicit Publish action makes it live.
+      initialConfig={form.draftConfig ?? form.config}
+      initialHasDraft={form.draftConfig != null}
       publicPath={publicPath}
       locale={locale}
       m={m}

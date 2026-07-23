@@ -32,14 +32,65 @@ export interface BuilderMessages {
     desktop: string;
     mobile: string;
     settings: string;
+    copyLink: string;
+    copied: string;
+    openForm: string;
   };
   badges: {
+    /** V5-QA — marks a step respondents never see. */
+    hidden: string;
     contact: string;
     logic: string;
     /** "{n} rules" */
     rules: string;
     /** "1 rule" */
     ruleOne: string;
+  };
+  /** The partial-submit-point marker in the question spine (Typeform parity). */
+  partial: {
+    /** Marker-row label ("Partial submit point"). */
+    label: string;
+    /** Dashed "+ Partial submit point" affordance at the spine bottom. */
+    add: string;
+    /** aria-label of the marker's remove (×) button. */
+    remove: string;
+    /** aria-label of the marker's drag grip. */
+    move: string;
+    /** aria-label of the info toggle on the marker row. */
+    info: string;
+    /** Popover: what reaching this point captures. */
+    tipCapture: string;
+    /** Popover: how a partial is stored/upgraded. */
+    tipStored: string;
+    /** Popover: privacy nudge about collecting unfinished answers. */
+    tipNotify: string;
+    /** Popover: where partials appear in the admin. */
+    tipWhere: string;
+    /** Popover extra line when the marker sits after the LAST question. */
+    tipAfterLast: string;
+    /** One-line pointer left in the Design tab (the select moved to the spine). */
+    designNote: string;
+  };
+  /** The reveal-screen marker in the question spine (V4-04 — mirrors `partial`). */
+  revealPoint: {
+    /** Marker-row label ("Reveal screen"). */
+    label: string;
+    /** aria-label of the marker's remove (×) button. */
+    remove: string;
+    /** aria-label of the marker's drag grip. */
+    move: string;
+    /** aria-label of the info toggle on the marker row. */
+    info: string;
+    /** Popover: what the reveal marker does. */
+    tipPlays: string;
+    /** Popover line when the marker sits after the LAST question. */
+    tipEnd: string;
+    /** Popover line when the marker sits mid-form. */
+    tipMid: string;
+    /** Popover: where the reveal copy/duration is edited. */
+    tipEdit: string;
+    /** V5-A9 — label of the link that actually opens Design. */
+    edit: string;
   };
   canvas: {
     /** "Question {n}" */
@@ -53,8 +104,18 @@ export interface BuilderMessages {
     /** "{n} pts" */
     pts: string;
     messagePlaceholder: string;
+    /** Name-step preview defaults — MUST mirror the shared catalog's
+     *  `renderer.name.*` so the canvas shows exactly what publishes. */
+    nameFirstPlaceholder: string;
+    nameLastPlaceholder: string;
   };
   settings: {
+    /** V5-B3 — a reveal STEP edits its own copy here, not in Design. */
+    revealSection: string;
+    revealHeadline: string;
+    revealSubtitle: string;
+    revealDuration: string;
+    revealHint: string;
     title: string;
     questionType: string;
     required: string;
@@ -65,10 +126,45 @@ export interface BuilderMessages {
     noRules: string;
     scoring: string;
     scoringHint: string;
+    /** V5-B2 — the per-question switch is inert while the form-level one is off. */
+    scoringFormOff: string;
+    /** Shown near the toggle when scoring is on but no points are assigned yet. */
+    scoringZeroHint: string;
     contactHint: string;
     delete: string;
     deleteConfirm: string;
     empty: string;
+  };
+  /** The `@` recall-information picker + `[token]` authoring warnings. */
+  tokens: {
+    hint: string;
+    pickerLabel: string;
+    pickerEmpty: string;
+    pickerNoMatch: string;
+    /** `{token}` is replaced with the bracketed token, e.g. `[firstname]`. */
+    warnLater: string;
+    warnUnknown: string;
+    /** V5-A5 — bare `@key` that never became a token; `{fixed}` is `[key]`. */
+    warnRaw: string;
+  };
+  /** Per-question HubSpot "Map to" section in the settings panel. */
+  hubspot: {
+    title: string;
+    mapTo: string;
+    mapToHint: string;
+    /** The unmap option in the property picker. */
+    none: string;
+    saving: string;
+    saved: string;
+    saveError: string;
+    loadError: string;
+    retry: string;
+    /** Connected account, but no enabled HubSpot destination on this form. */
+    notEnabled: string;
+    configureInConnect: string;
+    /** No account-level HubSpot connection at all. */
+    notConnected: string;
+    goToConnections: string;
   };
   rules: {
     ifAnswerIs: string;
@@ -115,16 +211,41 @@ export interface BuilderMessages {
     /** "If {value} → {target}" */
     jumpEdge: string;
     empty: string;
+    /** Caption under the Start node. */
+    startHint: string;
+    /** Caption on the default ("no rule matched") path so the flow is traceable. */
+    otherwiseHint: string;
+    /** Pill on a question that only shows when a show/hide condition holds. */
+    conditional: string;
+    /** V5-B4 — the show/hide rules spelled out on the map. */
+    condShowIf: string;
+    condHideIf: string;
+    condIn: string;
+    condEq: string;
+    condGt: string;
+    condLt: string;
+    condBetween: string;
+    condAnd: string;
+    condBlank: string;
+    condMissingField: string;
+    /** V5-QA — this step's rules mean it can never be shown. */
+    neverAppears: string;
+    /** Small kicker above a scored outcome node. */
+    outcomeKicker: string;
   };
   results: {
     pointsTitle: string;
     /** "Each answer adds to a score. Highest possible: {n}." */
     pointsHint: string;
+    /** V5-QA — the same line while scoring is off (no total to promise). */
+    pointsHintOff: string;
     endTitle: string;
     endHint: string;
     addRange: string;
     rangeLabel: string;
     rangeLabelPlaceholder: string;
+    /** V5-QA — a range another range starts at or below: nothing lands here. */
+    rangeUnreachable: string;
     thankYouMessage: string;
     redirect: string;
     redirectPlaceholder: string;
@@ -139,7 +260,14 @@ export interface BuilderMessages {
   empty: {
     title: string;
     subtitle: string;
+    /** Legacy inline "or start from scratch" affordance (kept for compatibility). */
     scratch: string;
+    /** Title of the blank-canvas option presented first. */
+    scratchTitle: string;
+    /** One-line description under the blank-canvas option. */
+    scratchDesc: string;
+    /** Section-divider label above the template cards. */
+    templatesLabel: string;
     templates: Record<TemplateId, { name: string; desc: string; meta: string }>;
   };
 }
@@ -154,7 +282,8 @@ export type GalleryItemId =
   | 'short'
   | 'long'
   | 'slider'
-  | 'message';
+  | 'message'
+  | 'reveal';
 
 export type TemplateId = 'lead' | 'contact' | 'feedback' | 'rsvp';
 
@@ -181,12 +310,42 @@ const en: BuilderMessages = {
     desktop: 'Desktop',
     mobile: 'Mobile',
     settings: 'Settings',
+    copyLink: 'Copy link',
+    copied: 'Copied',
+    openForm: 'Open form',
   },
   badges: {
+    hidden: 'Hidden',
     contact: 'Contact',
     logic: 'Logic',
     rules: '{n} rules',
     ruleOne: '1 rule',
+  },
+  partial: {
+    label: 'Partial submit point',
+    add: 'Partial submit point',
+    remove: 'Remove partial submit point',
+    move: 'Move partial submit point',
+    info: 'About the partial submit point',
+    tipCapture:
+      'Captures respondents’ answers once they reach this point, even if they never finish the form.',
+    tipStored:
+      'Each partial is stored as a submission and upgraded in place if the respondent completes the form.',
+    tipNotify: 'Consider letting respondents know their answers may be collected before they submit.',
+    tipWhere: 'View them in Submissions with the “Partial” filter.',
+    tipAfterLast: 'After the last question it never fires — the final submit already captures everything.',
+    designNote: 'Configured in the question list on the Build tab — look for the “Partial submit point” card.',
+  },
+  revealPoint: {
+    label: 'Reveal screen',
+    remove: 'Remove reveal screen',
+    move: 'Move reveal screen',
+    info: 'About the reveal screen',
+    tipPlays: 'Plays a short processing screen for respondents at this point in the form.',
+    tipEnd: 'At the end it plays right before the result — never mid-form.',
+    tipMid: 'Here it plays after this question, then the form continues.',
+    tipEdit: 'Edit its headline, subtitle and duration in Design.',
+    edit: 'Edit reveal screen',
   },
   canvas: {
     questionN: 'Question {n}',
@@ -198,6 +357,8 @@ const en: BuilderMessages = {
     submit: 'Submit',
     pts: '{n} pts',
     messagePlaceholder: 'Write your message…',
+    nameFirstPlaceholder: 'First name',
+    nameLastPlaceholder: 'Last name',
   },
   settings: {
     title: 'Question settings',
@@ -208,12 +369,44 @@ const en: BuilderMessages = {
     logic: 'Logic',
     addRule: 'Add rule',
     noRules: 'No rules — everyone sees this question.',
+    revealSection: 'Reveal screen',
+    revealHeadline: 'Headline',
+    revealSubtitle: 'Subtitle',
+    revealDuration: 'Duration (ms)',
+    revealHint: 'Plays here, then the form continues on its own. Drag it in the list to move it.',
     scoring: 'Scoring',
-    scoringHint: 'Points from the selected option add to the total score. Set ranges in Results.',
+    scoringHint:
+      'Counts this question toward the score. Points from the selected option add to the total; set ranges in Results.',
+    scoringFormOff: 'Scoring is off for the whole form — turn it on in Results to score individual questions.',
+    scoringZeroHint: 'Assign points to your answers to enable ranges.',
     contactHint: 'Contact field — doesn’t affect the score.',
     delete: 'Delete question',
     deleteConfirm: 'Delete this question?',
     empty: 'Select a question to edit it.',
+  },
+  tokens: {
+    hint: 'Type @ or [field] to insert a previous answer',
+    pickerLabel: 'Insert a previous answer',
+    pickerEmpty: 'No earlier answers yet — this is the first question.',
+    pickerNoMatch: 'No matching fields.',
+    warnLater: '“{token}” is asked after this step — it will be empty here.',
+    warnUnknown: '“{token}” doesn’t exist in this form.',
+    warnRaw: '“{token}” stays as literal text — only {fixed} fills in an answer. Pick the field from the list to insert it.',
+  },
+  hubspot: {
+    title: 'HubSpot',
+    mapTo: 'Map to',
+    mapToHint: 'This answer updates the selected HubSpot contact property.',
+    none: 'None',
+    saving: 'Saving…',
+    saved: 'Saved',
+    saveError: 'Couldn’t save the mapping. Your change was reverted.',
+    loadError: 'Couldn’t load the HubSpot mapping.',
+    retry: 'Retry',
+    notEnabled: 'HubSpot isn’t enabled on this form.',
+    configureInConnect: 'Set up in Connect',
+    notConnected: 'Connect HubSpot to map answers to contact properties.',
+    goToConnections: 'Go to Connections',
   },
   rules: {
     ifAnswerIs: 'If answer is',
@@ -250,6 +443,7 @@ const en: BuilderMessages = {
       long: { title: 'Long text', desc: 'Paragraph' },
       slider: { title: 'Slider', desc: 'Rating scale' },
       message: { title: 'Message', desc: 'Text, no input' },
+      reveal: { title: 'Reveal screen', desc: 'A short processing pause' },
     },
   },
   map: {
@@ -266,15 +460,32 @@ const en: BuilderMessages = {
     skipEdge: 'If {value} → skip to end',
     jumpEdge: 'If {value} → {target}',
     empty: 'Add questions to see how answers route through your form.',
+    startHint: 'Respondents start here',
+    otherwiseHint: 'if no rule matches, continue in order',
+    conditional: 'Conditional',
+    condShowIf: 'Show if',
+    condHideIf: 'Hide if',
+    condIn: 'is any of',
+    condEq: 'equals',
+    condGt: 'is greater than',
+    condLt: 'is less than',
+    condBetween: 'is between',
+    condAnd: 'and',
+    condBlank: '(not set)',
+    condMissingField: 'question deleted',
+    neverAppears: 'These rules mean this question never appears.',
+    outcomeKicker: 'Ending',
   },
   results: {
     pointsTitle: 'Points',
     pointsHint: 'Each answer adds to a score. Highest possible: {n}.',
+    pointsHintOff: 'Scoring is off — no answer adds to a score right now.',
     endTitle: 'What happens at the end',
     endHint: 'Map score ranges to an outcome. The first matching range wins.',
     addRange: 'Add a range',
     rangeLabel: 'Label',
-    rangeLabelPlaceholder: 'e.g. Hot lead',
+    rangeLabelPlaceholder: 'e.g. You’re a great fit',
+    rangeUnreachable: 'never',
     thankYouMessage: 'Thank-you message',
     redirect: 'Redirect',
     redirectPlaceholder: 'https://…',
@@ -287,8 +498,11 @@ const en: BuilderMessages = {
   },
   empty: {
     title: 'Let’s build your form',
-    subtitle: 'Start from a template and edit every question live — or begin with a blank canvas.',
+    subtitle: 'Begin with a blank canvas, or pick a ready-made template to edit live.',
     scratch: 'or start from scratch — add your first question',
+    scratchTitle: 'Start from scratch',
+    scratchDesc: 'Begin with a blank canvas and add your own questions.',
+    templatesLabel: 'Or choose a template',
     templates: {
       lead: {
         name: 'Lead qualifier',
@@ -337,12 +551,43 @@ const es: BuilderMessages = {
     desktop: 'Escritorio',
     mobile: 'Móvil',
     settings: 'Ajustes',
+    copyLink: 'Copiar enlace',
+    copied: 'Copiado',
+    openForm: 'Abrir formulario',
   },
   badges: {
+    hidden: 'Oculta',
     contact: 'Contacto',
     logic: 'Lógica',
     rules: '{n} reglas',
     ruleOne: '1 regla',
+  },
+  partial: {
+    label: 'Punto de envío parcial',
+    add: 'Punto de envío parcial',
+    remove: 'Quitar el punto de envío parcial',
+    move: 'Mover el punto de envío parcial',
+    info: 'Acerca del punto de envío parcial',
+    tipCapture:
+      'Captura las respuestas cuando la persona llega a este punto, aunque nunca termine el formulario.',
+    tipStored:
+      'Cada parcial se guarda como un envío y se actualiza en su lugar si la persona completa el formulario.',
+    tipNotify: 'Considera avisar a tus respondientes de que sus respuestas pueden recopilarse antes de enviar.',
+    tipWhere: 'Míralos en Envíos con el filtro «Parciales».',
+    tipAfterLast: 'Después de la última pregunta nunca se activa — el envío final ya lo captura todo.',
+    designNote:
+      'Se configura en la lista de preguntas, en la pestaña Construir — busca la tarjeta «Punto de envío parcial».',
+  },
+  revealPoint: {
+    label: 'Pantalla de revelación',
+    remove: 'Quitar la pantalla de revelación',
+    move: 'Mover la pantalla de revelación',
+    info: 'Acerca de la pantalla de revelación',
+    tipPlays: 'Muestra una breve pantalla de procesamiento en este punto del formulario.',
+    tipEnd: 'Al final se muestra justo antes del resultado — nunca a mitad del formulario.',
+    tipMid: 'Aquí se muestra después de esta pregunta y luego el formulario continúa.',
+    tipEdit: 'Edita su titular, subtítulo y duración en Diseño.',
+    edit: 'Editar pantalla de revelación',
   },
   canvas: {
     questionN: 'Pregunta {n}',
@@ -354,6 +599,8 @@ const es: BuilderMessages = {
     submit: 'Enviar',
     pts: '{n} pts',
     messagePlaceholder: 'Escribe tu mensaje…',
+    nameFirstPlaceholder: 'Nombre',
+    nameLastPlaceholder: 'Apellidos',
   },
   settings: {
     title: 'Ajustes de la pregunta',
@@ -364,12 +611,44 @@ const es: BuilderMessages = {
     logic: 'Lógica',
     addRule: 'Añadir regla',
     noRules: 'Sin reglas — todos ven esta pregunta.',
+    revealSection: 'Pantalla de revelación',
+    revealHeadline: 'Titular',
+    revealSubtitle: 'Subtítulo',
+    revealDuration: 'Duración (ms)',
+    revealHint: 'Se muestra aquí y el formulario continúa solo. Arrástrala en la lista para moverla.',
     scoring: 'Puntaje',
-    scoringHint: 'Los puntos de la opción elegida suman al total. Define los rangos en Resultados.',
+    scoringHint:
+      'Cuenta esta pregunta para el puntaje. Los puntos de la opción elegida suman al total; define los rangos en Resultados.',
+    scoringFormOff: 'El puntaje está apagado para todo el formulario — enciéndelo en Resultados para puntuar preguntas individuales.',
+    scoringZeroHint: 'Asigna puntos a tus respuestas para habilitar los rangos.',
     contactHint: 'Campo de contacto — no afecta el puntaje.',
     delete: 'Eliminar pregunta',
     deleteConfirm: '¿Eliminar esta pregunta?',
     empty: 'Selecciona una pregunta para editarla.',
+  },
+  tokens: {
+    hint: 'Escribe @ o [campo] para insertar una respuesta anterior',
+    pickerLabel: 'Insertar una respuesta anterior',
+    pickerEmpty: 'Aún no hay respuestas anteriores — esta es la primera pregunta.',
+    pickerNoMatch: 'Ningún campo coincide.',
+    warnLater: '«{token}» se pregunta después de este paso — quedará vacío.',
+    warnUnknown: '«{token}» no existe en este formulario.',
+    warnRaw: '«{token}» queda como texto literal — solo {fixed} rellena una respuesta. Elige el campo de la lista para insertarlo.',
+  },
+  hubspot: {
+    title: 'HubSpot',
+    mapTo: 'Asignar a',
+    mapToHint: 'Esta respuesta actualiza la propiedad seleccionada del contacto en HubSpot.',
+    none: 'Ninguna',
+    saving: 'Guardando…',
+    saved: 'Guardado',
+    saveError: 'No se pudo guardar la asignación. Se revirtió el cambio.',
+    loadError: 'No se pudo cargar la asignación de HubSpot.',
+    retry: 'Reintentar',
+    notEnabled: 'HubSpot no está habilitado en este formulario.',
+    configureInConnect: 'Configurar en Conectar',
+    notConnected: 'Conecta HubSpot para asignar respuestas a propiedades del contacto.',
+    goToConnections: 'Ir a Conexiones',
   },
   rules: {
     ifAnswerIs: 'Si la respuesta es',
@@ -406,6 +685,7 @@ const es: BuilderMessages = {
       long: { title: 'Texto largo', desc: 'Párrafo' },
       slider: { title: 'Deslizador', desc: 'Escala de valoración' },
       message: { title: 'Mensaje', desc: 'Texto, sin campo' },
+      reveal: { title: 'Pantalla de revelación', desc: 'Una breve pausa de procesamiento' },
     },
   },
   map: {
@@ -422,15 +702,32 @@ const es: BuilderMessages = {
     skipEdge: 'Si {value} → ir al final',
     jumpEdge: 'Si {value} → {target}',
     empty: 'Añade preguntas para ver cómo las respuestas recorren tu formulario.',
+    startHint: 'Aquí empiezan las personas',
+    otherwiseHint: 'si ninguna regla coincide, continúa en orden',
+    conditional: 'Condicional',
+    condShowIf: 'Mostrar si',
+    condHideIf: 'Ocultar si',
+    condIn: 'es alguno de',
+    condEq: 'es igual a',
+    condGt: 'es mayor que',
+    condLt: 'es menor que',
+    condBetween: 'está entre',
+    condAnd: 'y',
+    condBlank: '(sin definir)',
+    condMissingField: 'pregunta eliminada',
+    neverAppears: 'Con estas reglas, esta pregunta nunca aparece.',
+    outcomeKicker: 'Final',
   },
   results: {
     pointsTitle: 'Puntos',
     pointsHint: 'Cada respuesta suma al puntaje. Máximo posible: {n}.',
+    pointsHintOff: 'El puntaje está apagado — ninguna respuesta suma por ahora.',
     endTitle: 'Qué pasa al final',
     endHint: 'Asigna rangos de puntaje a un resultado. Gana el primer rango que coincida.',
     addRange: 'Añadir un rango',
     rangeLabel: 'Etiqueta',
-    rangeLabelPlaceholder: 'p. ej. Lead caliente',
+    rangeLabelPlaceholder: 'p. ej. Eres un buen fit',
+    rangeUnreachable: 'nunca',
     thankYouMessage: 'Mensaje de agradecimiento',
     redirect: 'Redirigir',
     redirectPlaceholder: 'https://…',
@@ -443,8 +740,11 @@ const es: BuilderMessages = {
   },
   empty: {
     title: 'Construyamos tu formulario',
-    subtitle: 'Empieza desde una plantilla y edita cada pregunta en vivo — o comienza con un lienzo en blanco.',
+    subtitle: 'Comienza con un lienzo en blanco, o elige una plantilla lista para editar en vivo.',
     scratch: 'o empieza desde cero — añade tu primera pregunta',
+    scratchTitle: 'Empezar desde cero',
+    scratchDesc: 'Comienza con un lienzo en blanco y añade tus propias preguntas.',
+    templatesLabel: 'O elige una plantilla',
     templates: {
       lead: {
         name: 'Calificador de leads',

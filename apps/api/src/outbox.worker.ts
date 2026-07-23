@@ -2,6 +2,7 @@ import {
   Inject,
   Injectable,
   Logger,
+  Optional,
   type OnModuleDestroy,
   type OnModuleInit,
 } from '@nestjs/common';
@@ -19,6 +20,7 @@ import {
 import type { ServerEnv } from '@quill/config/env';
 import { EmailEffects, OutboxSkipError } from './email-effects';
 import { DestinationEffects } from './destination-effects';
+import { BookingSyncEffects } from './booking-sync';
 import { DB, ENV } from './tokens';
 
 /**
@@ -55,6 +57,8 @@ export class OutboxWorker implements OnModuleInit, OnModuleDestroy {
     // the class a value and gives Nest the token directly.
     @Inject(EmailEffects) private readonly email: EmailEffects,
     @Inject(DestinationEffects) private readonly destinations: DestinationEffects,
+    // Optional so existing direct constructions (tests) keep working.
+    @Optional() @Inject(BookingSyncEffects) private readonly bookingSync?: BookingSyncEffects,
   ) {}
 
   onModuleInit(): void {
@@ -135,6 +139,12 @@ export class OutboxWorker implements OnModuleInit, OnModuleDestroy {
     if (row.kind === 'webhook' || row.kind === 'hubspot') {
       if (row.payload == null) throw new Error(`${row.kind} outbox row missing payload`);
       await this.destinations.deliver(row.action, row.payload);
+      return;
+    }
+    if (row.kind === 'booking_sync') {
+      if (row.payload == null) throw new Error('booking_sync outbox row missing payload');
+      if (!this.bookingSync) throw new Error('booking_sync handler not wired');
+      await this.bookingSync.deliver(row.action, row.payload);
       return;
     }
     throw new Error(`unknown outbox kind: ${String(row.kind)}`);

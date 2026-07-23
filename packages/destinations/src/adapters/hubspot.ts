@@ -24,6 +24,29 @@ export interface HubspotDestinationOptions {
   dateProperty?: string;
   /** Create a Note engagement on a completed submission (default true). */
   note?: boolean;
+  /**
+   * stepKey -> (raw answer value -> CRM picklist value). Applied when mapping
+   * `fieldMappings`: a raw value with an entry is replaced by its mapped CRM
+   * value; an unmapped value passes through unchanged (pilot's
+   * `transformHubSpotValue` — e.g. use-case slug -> "AI Calls").
+   */
+  valueMaps?: Record<string, Record<string, string>>;
+  /** Contact property to receive the resolved outcome label (complete only). */
+  outcomeProperty?: string;
+  /**
+   * Fixed property values stamped on every COMPLETED submission (pilot's static
+   * optin/goal properties). Lowest precedence: a static property never
+   * overwrites a value already produced by field/UTM mappings or the
+   * score/date/outcome properties.
+   */
+  staticProperties?: Record<string, string>;
+  /**
+   * When true and the respondent's email is corporate (not a free-mail
+   * domain), fill the standard `company` (capitalized domain base) and
+   * `website` (https://domain) contact properties — ONLY when not already set
+   * by mappings/static properties (pilot's `enrichAnswersForSubmit`).
+   */
+  inferCompanyFromEmail?: boolean;
 }
 
 interface HubSpotUpsertResponse {
@@ -43,7 +66,10 @@ interface HubSpotErrorResponse {
  * score and submitted-date to configurable properties, and (on a completed
  * submission) attaches a Note engagement summarizing the submission. Port of the
  * pilot's HubSpot sync (`hubspotUpsert`/`hubspotSync`/`note`) generalized behind
- * the destination interface — no property names are baked in.
+ * the destination interface — no property names are baked in. Pilot extras are
+ * config-driven too: per-step value maps (answer -> picklist label), an
+ * outcome-label property, static properties, and company/website inference
+ * from a corporate email domain (see `buildProperties` for precedence).
  *
  * Reliability: a transport failure (network, non-2xx after invalid-property
  * stripping) THROWS so the durable outbox retries. A submission with no email to
@@ -65,16 +91,23 @@ export class HubspotDestination implements SubmissionDestination {
    * Build the contact properties exactly as sent to HubSpot (pure — exported
    * shape for tests). Empty/whitespace values are dropped; email is guaranteed
    * present in the returned object only when resolvable (caller checks).
+   *
+   * Precedence (highest first): field mappings (with value maps applied) →
+   * UTM mappings → date/score/outcome properties → static properties (fill
+   * holes only) → company/website inference (fill holes only).
    */
   buildProperties(ctx: DestinationContext): Record<string, string> {
     const props: Record<string, string> = {};
 
-    // Field mappings: stepKey -> contact property.
+    // Field mappings: stepKey -> contact property, with per-step value maps
+    // translating a raw answer to its CRM picklist value (unmapped raw values
+    // pass through unchanged).
     for (const [stepKey, property] of Object.entries(this.opts.fieldMappings)) {
       if (!property?.trim()) continue;
       const value = ctx.data[stepKey];
       if (value !== undefined && value !== null && String(value).trim() !== '') {
-        props[property.trim()] = String(value).trim();
+        const raw = String(value).trim();
+        props[property.trim()] = this.opts.valueMaps?.[stepKey]?.[raw] ?? raw;
       }
     }
 
@@ -95,6 +128,34 @@ export class HubspotDestination implements SubmissionDestination {
     // Score → configurable property (complete submissions only, mirroring the pilot).
     if (this.opts.scoreProperty?.trim() && ctx.phase === 'complete') {
       props[this.opts.scoreProperty.trim()] = String(ctx.score);
+    }
+
+    // Outcome label → configurable property (complete only; the label is the
+    // server-resolved outcome bucket — absent when the form scores to none).
+    if (this.opts.outcomeProperty?.trim() && ctx.phase === 'complete' && ctx.outcomeLabel) {
+      props[this.opts.outcomeProperty.trim()] = ctx.outcomeLabel;
+    }
+
+    // Static properties (complete only) — lowest-precedence config: stamp fixed
+    // values, but NEVER overwrite a property already produced above.
+    if (ctx.phase === 'complete') {
+      for (const [property, value] of Object.entries(this.opts.staticProperties ?? {})) {
+        const name = property.trim();
+        if (!name || name in props) continue;
+        if (value !== undefined && value !== null && String(value).trim() !== '') {
+          props[name] = String(value).trim();
+        }
+      }
+    }
+
+    // Company/website inference from a corporate email domain — fills the
+    // standard `company`/`website` properties only when nothing else set them.
+    if (this.opts.inferCompanyFromEmail) {
+      const inferred = inferCompanyProperties(this.resolveEmail(ctx));
+      if (inferred) {
+        if (!('company' in props)) props.company = inferred.company;
+        if (!('website' in props)) props.website = inferred.website;
+      }
     }
 
     return props;
@@ -269,6 +330,59 @@ export function extractRetryablePropertyNames(errorText: string): string[] {
   } catch {
     return [];
   }
+}
+
+/**
+ * Personal/free email domains skipped by company inference. Mirrors the
+ * engine's `isPersonalEmail` (`PERSONAL_EMAIL_DOMAINS` + `FREE_EMAIL_BASES` in
+ * `packages/engine/src/form-logic.ts`) — duplicated locally because this
+ * package intentionally depends only on @quill/types, never on the engine.
+ * Keep the two lists in sync.
+ */
+const PERSONAL_EMAIL_DOMAINS = new Set([
+  'gmail.com',
+  'hotmail.com',
+  'outlook.com',
+  'yahoo.com',
+  'icloud.com',
+  'live.com',
+  'aol.com',
+  'proton.me',
+  'protonmail.com',
+]);
+/** Domain "base" tokens (before the first dot) also treated as free-mail. */
+const FREE_EMAIL_BASES = new Set([
+  'gmail',
+  'hotmail',
+  'outlook',
+  'yahoo',
+  'icloud',
+  'live',
+  'aol',
+  'msn',
+  'proton',
+  'protonmail',
+]);
+
+/**
+ * Derive `company` (capitalized domain base) + `website` (https://domain) from
+ * a CORPORATE email. Returns null for a missing/malformed address or a
+ * personal/free-mail domain (inference from gmail.com would be noise). Port of
+ * the pilot's `enrichAnswersForSubmit` domain inference. Exported for testing.
+ */
+export function inferCompanyProperties(
+  email: string | null,
+): { company: string; website: string } | null {
+  if (!email) return null;
+  const domain = email.trim().toLowerCase().split('@')[1] ?? '';
+  if (!domain || !domain.includes('.')) return null;
+  const base = domain.split('.')[0] ?? '';
+  if (!base) return null;
+  if (PERSONAL_EMAIL_DOMAINS.has(domain) || FREE_EMAIL_BASES.has(base)) return null;
+  return {
+    company: base.charAt(0).toUpperCase() + base.slice(1),
+    website: `https://${domain}`,
+  };
 }
 
 /**

@@ -24,12 +24,14 @@
     "db:setup": "pnpm run db:migrate && pnpm run db:seed",
     "changeset": "changeset",
     "publish-gate": "bash scripts/publish-gate.sh",
-    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md,css}\""
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md,css}\"",
+    "qa": "playwright test -c qa/playwright.config.ts"
   },
   "devDependencies": {
     "@changesets/cli": "^2.27.10",
     "@commitlint/cli": "^19.8.1",
     "@commitlint/config-conventional": "^19.8.1",
+    "@playwright/test": "^1.61.1",
     "cross-env": "^7.0.3",
     "prettier": "^3.4.2",
     "turbo": "^2.3.3",

@@ -2,12 +2,14 @@
 
 import { useEffect, useLayoutEffect, useRef } from 'react';
 import type { FormConfig, FormStep, FormOption } from '@quill/engine';
+import { nameFields, sliderBounds, clampSliderValue } from '@quill/engine';
 import { clampAccent, onAccent, DEFAULT_ACCENT } from '@quill/shared';
 import { cn } from '@/lib/cn';
 import { iconForStep, hasOptions } from './question-types';
 import { maxStepPoints } from './scoring-util';
 import type { BuilderMessages } from './builder-messages';
 import { tb } from './builder-messages';
+import { TokenTextarea, tokenOptionsBefore, allTokenKeys } from './token-textarea';
 
 /** A textarea that grows to fit its content (used for inline title/description). */
 function AutoTextarea({
@@ -119,23 +121,41 @@ export function CanvasQuestion({
           {tb(m.canvas.questionN, { n: index + 1 })}
         </p>
 
-        {/* Inline editable title */}
-        <AutoTextarea
+        {/* Inline editable title — with the @ recall-information picker. The
+            engine interpolates `[key]` tokens in BOTH `question` and the
+            description/`helper` from EARLIER answers (resolveStepDisplay), so
+            both fields get the picker. */}
+        <TokenTextarea
           value={step.question ?? ''}
           onChange={(v) => onUpdate({ question: v })}
           placeholder={m.canvas.titlePlaceholder}
           ariaLabel={m.canvas.titlePlaceholder}
+          autoGrow
+          tokens={tokenOptionsBefore(config.steps, index)}
+          allKeys={allTokenKeys(config.steps)}
+          m={m.tokens}
+          hint={m.tokens.hint}
+          testId="canvas-title-input"
           className="canvas-title text-2xl font-semibold tracking-tight text-foreground sm:text-[28px]"
         />
 
-        {/* Inline editable description */}
-        <AutoTextarea
-          value={step.helper ?? ''}
-          onChange={(v) => onUpdate({ helper: v || null })}
-          placeholder={m.canvas.descriptionPlaceholder}
-          ariaLabel={m.canvas.descriptionPlaceholder}
-          className="mt-1.5 text-[15px] leading-relaxed text-muted-foreground"
-        />
+        {/* Inline editable description — same @ picker as the title (tokens =
+            fields captured before this step). No hint here so the single
+            discoverability chip stays under the title. */}
+        <div className="mt-1.5">
+          <TokenTextarea
+            value={step.helper ?? ''}
+            onChange={(v) => onUpdate({ helper: v || null })}
+            placeholder={m.canvas.descriptionPlaceholder}
+            ariaLabel={m.canvas.descriptionPlaceholder}
+            autoGrow
+            tokens={tokenOptionsBefore(config.steps, index)}
+            allKeys={allTokenKeys(config.steps)}
+            m={m.tokens}
+            testId="canvas-description-input"
+            className="text-[15px] leading-relaxed text-muted-foreground"
+          />
+        </div>
 
         {/* Body: the real rendered input */}
         <div className="mt-6">
@@ -198,14 +218,7 @@ export function CanvasQuestion({
               {step.placeholder || m.canvas.messagePlaceholder}
             </div>
           ) : step.type === 'name' ? (
-            <div className="grid grid-cols-2 gap-3">
-              <div className="rounded-xl border border-border bg-background px-4 py-3 text-[15px] text-muted-foreground/60">
-                First name
-              </div>
-              <div className="rounded-xl border border-border bg-background px-4 py-3 text-[15px] text-muted-foreground/60">
-                Last name
-              </div>
-            </div>
+            <NamePreview step={step} m={m} />
           ) : (
             <div className="rounded-xl border border-border bg-background px-4 py-3 text-[15px] text-muted-foreground/60">
               {step.placeholder ||
@@ -232,10 +245,47 @@ export function CanvasQuestion({
   );
 }
 
+/**
+ * Live name-step preview: the same `nameFields(step)` order and
+ * `step.placeholders` fallbacks as the public renderer (configured placeholder,
+ * else the localized default) — so typing a placeholder in the settings panel
+ * updates the canvas immediately, exactly as it will publish.
+ */
+function NamePreview({ step, m }: { step: FormStep; m: BuilderMessages }) {
+  const [firstField, secondField] = nameFields(step);
+  const firstLabel = (firstField && step.placeholders?.[firstField]) || m.canvas.nameFirstPlaceholder;
+  const secondLabel = (secondField && step.placeholders?.[secondField]) || m.canvas.nameLastPlaceholder;
+  const boxClass =
+    'w-full rounded-xl border border-border bg-background px-4 py-3 text-[15px] text-foreground outline-none placeholder:text-muted-foreground/60';
+  return (
+    <div className="grid grid-cols-2 gap-3">
+      {firstField ? (
+        <input
+          disabled
+          placeholder={firstLabel}
+          aria-label={firstLabel}
+          data-testid="canvas-name-first"
+          className={boxClass}
+        />
+      ) : null}
+      {secondField ? (
+        <input
+          disabled
+          placeholder={secondLabel}
+          aria-label={secondLabel}
+          data-testid="canvas-name-second"
+          className={boxClass}
+        />
+      ) : null}
+    </div>
+  );
+}
+
 function SliderPreview({ step, accent }: { step: FormStep; accent: string }) {
-  const min = step.min ?? 0;
-  const max = step.max ?? 100;
-  const value = step.default ?? min;
+  const { min, max } = sliderBounds(step);
+  // Clamped: a stored default outside the bounds would otherwise drive `pct`
+  // far past 100 and stretch the filled track clean out of the card (V5-A2).
+  const value = clampSliderValue(step, step.default ?? min);
   const pct = max > min ? ((value - min) / (max - min)) * 100 : 0;
   return (
     <div className="flex flex-col gap-3 py-2">

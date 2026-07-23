@@ -5,7 +5,7 @@
  * from the same schema (never trust the client; validate on both sides).
  */
 import { z } from 'zod';
-import { FORM_FIELD_TYPES, isSafeHttpUrl, isSafeImageUrl } from '@quill/engine';
+import { CONDITION_OPS, FORM_FIELD_TYPES, isSafeHttpUrl, isSafeImageUrl } from '@quill/engine';
 
 /** A URL rendered into `<img src>` — reject script protocols (XSS defense-in-depth). */
 const safeImageUrl = z
@@ -45,9 +45,32 @@ const optionSchema = z.object({
   icon: z.string().max(64).nullable().optional(),
 });
 
+/**
+ * Visibility-condition operators (mirrors the engine's `CONDITION_OPS`). Absent
+ * on a stored condition = `in`, so every pre-operator config still parses.
+ */
+export const conditionOp = z.enum(CONDITION_OPS);
+export type ConditionOp = z.infer<typeof conditionOp>;
+
+/**
+ * A show/hide condition. ADDITIVE, back-compat: `op`/`value`/`min`/`max` are all
+ * optional and a bare `{field, values}` keeps its original `in` ("matches any
+ * of") meaning. `values` is optional (numeric ops eq/gt/lt/between omit it); the
+ * engine's `conditionHolds` treats an absent `values` as an empty match. Kept
+ * optional (not `.default([])`) so the inferred type matches the engine's
+ * `StepCondition.values?: string[]` — otherwise FormConfig fails to assign.
+ */
 const conditionSchema = z.object({
   field: z.string().min(1),
-  values: z.array(z.string()),
+  values: z.array(z.string()).optional(),
+  /** Comparison operator; absent = `in`. Numeric ops apply to slider/number fields. */
+  op: conditionOp.optional(),
+  /** Operand for `eq` / `gt` / `lt`. */
+  value: z.number().optional(),
+  /** Lower bound for `between` (inclusive). */
+  min: z.number().optional(),
+  /** Upper bound for `between` (inclusive). */
+  max: z.number().optional(),
 });
 
 /**
@@ -70,6 +93,19 @@ const sliderScoringSchema = z.object({
 const clientLogoSchema = z.object({
   name: z.string().min(1).max(80),
   src: safeImageUrl.nullable().optional(),
+});
+
+export const formRevealSchema = z.object({
+  enabled: z.boolean().optional(),
+  headline: z.string().max(300).nullable().optional(),
+  subtitle: z.string().max(500).nullable().optional(),
+  // --- Reveal extensions (all optional; back-compat) -------------------------
+  /** How long the processing interstitial plays before the result (ms). */
+  durationMs: z.number().int().min(500).max(30_000).optional(),
+  /** Outcome subtitle template; `[key]` tokens interpolate from the answers. */
+  subtitleTemplate: z.string().max(200).nullable().optional(),
+  /** Pre-warm the booking embed while the interstitial plays. */
+  prewarm: z.boolean().optional(),
 });
 
 export const formStepSchema = z.object({
@@ -109,6 +145,32 @@ export const formStepSchema = z.object({
   showForPersonalEmailOnly: z.boolean().optional(),
   terminal: z.boolean().optional(),
   triggersReveal: z.boolean().optional(),
+  /**
+   * Hidden step (ADDITIVE): never rendered as a visible question — the engine's
+   * `visibleSteps` skips it — but its answer can be supplied via a matching URL
+   * parameter and carried into the submission. Not shown for `message` steps.
+   */
+  hidden: z.boolean().optional(),
+  /**
+   * `phone` step: ISO 3166-1 alpha-2 the public country picker defaults to
+   * (e.g. "CO"). ADDITIVE — absent = the locale-based default. Two-char cap so a
+   * bad value can only fall back, never break the lookup.
+   */
+  phoneDefaultCountry: z.string().max(2).nullable().optional(),
+  /**
+   * Per-question scoring switch (ADDITIVE — V5-B2). `false` excludes this step
+   * from `computeScore` while the rest of the form still scores; absent/`true`
+   * is the historical behavior, so every stored config keeps its score. The
+   * form-level `scoring.enabled` still wins: off means nothing scores.
+   */
+  scoringEnabled: z.boolean().optional(),
+  /**
+   * `reveal` step: its own headline / subtitle / duration (ADDITIVE — V5-B3).
+   * The legacy `config.reveal` + `config.revealAfterStep` pair still works and
+   * still describes the form's single interstitial; a `reveal` STEP is the way
+   * to have several, positioned by where it sits in `steps`.
+   */
+  reveal: formRevealSchema.nullable().optional(),
 });
 export type FormStepInput = z.infer<typeof formStepSchema>;
 
@@ -149,15 +211,55 @@ export const formBrandingSchema = z.object({
   clientLogos: z.array(clientLogoSchema).max(24).optional(),
 });
 
-export const formRevealSchema = z.object({
-  enabled: z.boolean().optional(),
-  headline: z.string().max(300).nullable().optional(),
-  subtitle: z.string().max(500).nullable().optional(),
+// --- Outcome extensions (booking + answer-forced overrides) ------------------
+
+/** Scheduling providers an outcome can hand off to after the form completes. */
+export const bookingProvider = ['hubspot_meetings', 'calendly'] as const;
+export type BookingProvider = (typeof bookingProvider)[number];
+
+/**
+ * Scheduling handoff for an outcome: the renderer embeds/links the provider's
+ * booking page after this outcome resolves. Same http(s)-only guard as
+ * `redirectUrl` — the URL flows into navigation/an embed (XSS defense-in-depth).
+ */
+export const outcomeBookingSchema = z.object({
+  provider: z.enum(bookingProvider),
+  url: z
+    .string()
+    .url()
+    .refine(isSafeHttpUrl, { message: 'booking url must use http(s).' }),
+  /** Prefill the booking form from collected answers (name/email). */
+  prefill: z.boolean().optional(),
 });
+export type OutcomeBooking = z.infer<typeof outcomeBookingSchema>;
+
+/**
+ * An answer-forced outcome rule: when the answer to `field` matches, this
+ * outcome wins REGARDLESS of score (e.g. a slider answer <= 0 forces the P0
+ * outcome). All specified clauses must hold; at least one clause is required.
+ */
+export const outcomeOverrideSchema = z
+  .object({
+    field: z.string().min(1).max(64),
+    /** Match when the (string/array) answer intersects these values. */
+    values: z.array(z.string().max(200)).optional(),
+    /** Match when the numeric answer is <= this bound. */
+    maxValue: z.number().optional(),
+    /** Match when the numeric answer is >= this bound. */
+    minValue: z.number().optional(),
+  })
+  .refine((r) => r.values !== undefined || r.maxValue !== undefined || r.minValue !== undefined, {
+    message: 'An override rule needs values, maxValue, or minValue.',
+  });
+export type OutcomeOverride = z.infer<typeof outcomeOverrideSchema>;
 
 export const formOutcomeSchema = z.object({
   id: z.string().min(1).max(64),
-  label: z.string().min(1).max(200),
+  // Empty label is allowed: the builder creates a range before the user names it,
+  // and the renderer/ScoreBar fall back to `#<n>`. Relaxing min(1) is a superset
+  // (every previously-valid config still parses) and keeps autosave from 400-ing
+  // the moment "Add a range" is clicked.
+  label: z.string().max(200),
   minScore: z.number().int().optional(),
   // http(s) only: the renderer navigates here (`window.location`), so a
   // `javascript:`/`data:` URL — which `.url()` alone would accept — is a stored
@@ -168,6 +270,25 @@ export const formOutcomeSchema = z.object({
     .refine(isSafeHttpUrl, { message: 'redirectUrl must use http(s).' })
     .nullable()
     .optional(),
+  // --- Outcome extensions (all optional; back-compat) ------------------------
+  /**
+   * Per-outcome thank-you body (V4-16). Rendered as the done-screen body when
+   * set (falling back to the shared thank-you body); `label` stays the heading.
+   * Plain text with `[field]` tokens interpolated by the renderer.
+   */
+  message: z.string().max(2000).nullable().optional(),
+  /** Scheduling handoff (HubSpot Meetings / Calendly) shown for this outcome. */
+  booking: outcomeBookingSchema.nullable().optional(),
+  /**
+   * Hold the thank-you screen this long before this outcome's redirect fires
+   * (ADDITIVE — V5-B1). Absent = inherit the form-level ending's delay.
+   */
+  redirectDelayMs: z.number().int().min(0).max(60_000).optional(),
+  /**
+   * Answer-forced rules: when ANY rule matches the answers, this outcome wins
+   * over score bucketing (outcomes are scanned in declared order).
+   */
+  overrides: z.array(outcomeOverrideSchema).optional(),
 });
 
 // --- Submission destinations (pluggable CRM / webhook sync) ------------------
@@ -195,6 +316,13 @@ export const webhookDestinationSchema = z.object({
    */
   id: z.string().max(64).optional(),
   enabled: z.boolean().default(false),
+  /**
+   * Which submission phases fire this webhook (additive; default = both).
+   * `partial` = a partial submission past the lead-capture threshold;
+   * `complete` = a finished submission. Absent/empty is treated as BOTH for
+   * back-compat with configs saved before per-event triggers existed.
+   */
+  events: z.array(z.enum(['partial', 'complete'])).optional(),
   settings: z.object({
     // https-only, with ONE exception: plain http for localhost/127.0.0.1 (local
     // dev catcher). Mirrors the admin UI validation — keep the two in sync.
@@ -217,6 +345,24 @@ export const webhookDestinationSchema = z.object({
 });
 export type WebhookDestination = z.infer<typeof webhookDestinationSchema>;
 
+/** Submission phases a destination can subscribe to. */
+export const destinationEvents = ['partial', 'complete'] as const;
+export type DestinationEvent = (typeof destinationEvents)[number];
+
+/**
+ * Resolve whether a destination should fire for a given phase. Absent/empty
+ * `events` = both phases (back-compat). Only webhook destinations carry an
+ * `events` filter today; others always fire (their adapters gate internally).
+ */
+export function destinationFiresForPhase(
+  destination: { type: string; events?: DestinationEvent[] | undefined },
+  phase: DestinationEvent,
+): boolean {
+  const events = destination.events;
+  if (!events || events.length === 0) return true;
+  return events.includes(phase);
+}
+
 /**
  * HubSpot destination — upsert the respondent as a contact and (on complete)
  * attach a Note. The private-app token is a server-side env secret
@@ -234,6 +380,37 @@ export const hubspotDestinationSchema = z.object({
   scoreProperty: z.string().max(200).nullable().optional(),
   /** Contact date property to receive the submitted date. */
   dateProperty: z.string().max(200).nullable().optional(),
+  // --- HubSpot extensions (all optional; back-compat) ------------------------
+  /** stepKey -> (answer value -> property value): translate answers on the way out. */
+  valueMaps: z
+    .record(z.string().min(1).max(200), z.record(z.string().max(200), z.string().max(200)))
+    .optional(),
+  /** Contact property to receive the resolved outcome id/label. */
+  outcomeProperty: z.string().max(200).nullable().optional(),
+  /** Fixed property values stamped on every synced contact. */
+  staticProperties: z.record(z.string().min(1).max(200), z.string().max(500)).optional(),
+  /** Derive the company name from the respondent's email domain. */
+  inferCompanyFromEmail: z.boolean().optional(),
+  /**
+   * Booking sync — which contact properties receive the booking facts when a
+   * visitor books a meeting through an outcome's scheduling handoff (the
+   * `booking_sync` outbox flow). All optional; absent = booking sync is a
+   * no-op for this destination.
+   *  - `stageProperty` is set to `stageValue` verbatim (e.g. a sales-stage
+   *    enum internal value) — the "demo booked" stage stamp.
+   *  - `dateProperty` receives the meeting-start CALENDAR DAY as UTC-midnight
+   *    epoch-ms (HubSpot `date`-type properties require midnight UTC).
+   *  - `hoursProperty` receives the exact meeting start as epoch-ms (a
+   *    HubSpot `datetime`-type property).
+   */
+  bookingSync: z
+    .object({
+      stageProperty: z.string().max(200).optional(),
+      stageValue: z.string().max(200).optional(),
+      dateProperty: z.string().max(200).optional(),
+      hoursProperty: z.string().max(200).optional(),
+    })
+    .optional(),
 });
 export type HubspotDestination = z.infer<typeof hubspotDestinationSchema>;
 
@@ -328,7 +505,52 @@ export function mergeWebhookSecrets(incoming: unknown[], existing: unknown): unk
   });
 }
 
+// --- Analytics / marketing tag ids (rendered by the public page) -------------
+
+/**
+ * Third-party tracking ids for the public form page. All optional, loosely
+ * validated strings (each vendor has its own id format; the renderer only ever
+ * interpolates them into vendor snippets, never executes them as markup).
+ */
+export const formTrackingSchema = z.object({
+  /** Google Tag Manager container id (e.g. GTM-XXXXXXX). */
+  gtmId: z.string().max(32).nullable().optional(),
+  /** Meta (Facebook) Pixel id. */
+  metaPixelId: z.string().max(32).nullable().optional(),
+  /** PostHog project API key. */
+  posthogKey: z.string().max(128).nullable().optional(),
+  /** PostHog host override (self-hosted / EU cloud). */
+  posthogHost: z
+    .string()
+    .max(256)
+    .url()
+    .refine(isSafeHttpUrl, 'must be an http(s) URL')
+    .nullable()
+    .optional(),
+  /** HubSpot tracking code portal id. */
+  hubspotTrackingId: z.string().max(32).nullable().optional(),
+});
+export type FormTracking = z.infer<typeof formTrackingSchema>;
+
 /** The versioned config blob. `version` gates future migrations of the shape. */
+/**
+ * Form-level ending (V5-B1): the defaults an outcome may override. `redirectUrl`
+ * is http(s)-only for the same stored-XSS reason as the per-outcome one — the
+ * renderer navigates to it.
+ */
+export const formEndingSchema = z.object({
+  headline: z.string().max(200).nullable().optional(),
+  body: z.string().max(2000).nullable().optional(),
+  redirectUrl: z
+    .string()
+    .url()
+    .refine(isSafeHttpUrl, { message: 'redirectUrl must use http(s).' })
+    .nullable()
+    .optional(),
+  redirectDelayMs: z.number().int().min(0).max(60_000).optional(),
+});
+export type FormEndingInput = z.infer<typeof formEndingSchema>;
+
 export const formConfigSchema = z.object({
   version: z.literal(1),
   branding: formBrandingSchema.nullable().optional(),
@@ -337,12 +559,27 @@ export const formConfigSchema = z.object({
   scoring: z.object({ enabled: z.boolean().optional() }).nullable().optional(),
   outcomes: z.array(formOutcomeSchema).optional(),
   /**
+   * Form-level ending, overridable per outcome (ADDITIVE — V5-B1). Absent on
+   * every legacy config, which then renders exactly as before: the built-in
+   * thank-you copy, and redirects only where an outcome sets one.
+   */
+  ending: formEndingSchema.nullable().optional(),
+  /**
    * Pluggable submission destinations (CRM/webhook sync via the durable outbox).
    * ADDITIVE — absent on every legacy config; the renderer never receives it.
    */
   destinations: z.array(formDestinationSchema).optional(),
   reveal: formRevealSchema.nullable().optional(),
+  /** Third-party tracking ids (ADDITIVE — absent on every legacy config). */
+  tracking: formTrackingSchema.nullable().optional(),
   partialSubmitAfterStep: z.number().int().positive().optional(),
+  /**
+   * WHERE the reveal interstitial plays (1-based over `steps`; ADDITIVE —
+   * mirrors partialSubmitAfterStep). Absent = the engine falls back to the
+   * legacy `triggersReveal`, then defaults to after the last step. See
+   * `revealAfterKey` in @quill/engine.
+   */
+  revealAfterStep: z.number().int().positive().optional(),
 });
 export type FormConfig = z.infer<typeof formConfigSchema>;
 
@@ -365,6 +602,10 @@ export const formViewSchema = z.object({
   name: z.string(),
   slug: z.string(),
   config: formConfigSchema,
+  /** Unpublished working copy (ADDITIVE; null when no draft is pending). */
+  draftConfig: formConfigSchema.nullable().optional(),
+  /** Epoch-ms of the last publish (ADDITIVE; null when never published). */
+  publishedAt: z.number().nullable().optional(),
   createdAt: z.number(),
   updatedAt: z.number(),
 });
@@ -445,6 +686,27 @@ export const formEventSchema = z.object({
   stepKey: z.string().min(1).max(64).nullable().optional(),
 });
 export type FormEventInput = z.infer<typeof formEventSchema>;
+
+// --- Booking callbacks (scheduling handoff on the public surface) ------------
+
+/**
+ * The public booking callback: the renderer reports a meeting booked through an
+ * outcome's scheduling embed (HubSpot Meetings / Calendly) so it can be tied to
+ * the session's submission. Persisted as a `booking_event` row; delivery to
+ * destinations is a later, outbox-driven concern.
+ */
+export const bookingCallbackSchema = z.object({
+  /** Per-session id (sessionStorage) tying the booking to its submission. */
+  sessionId: z.string().min(1).max(200),
+  provider: z.enum(bookingProvider),
+  /** Provider URI of the scheduled event (Calendly event / HubSpot meeting). */
+  eventUri: z.string().url().max(2048).optional(),
+  /** Provider URI of the invitee record. */
+  inviteeUri: z.string().url().max(2048).optional(),
+  /** Scheduled start as an ISO 8601 datetime. */
+  startTime: z.string().datetime({ offset: true }).optional(),
+});
+export type BookingCallbackInput = z.infer<typeof bookingCallbackSchema>;
 
 // --- Analytics (funnel + per-step drop-off) ----------------------------------
 // ADDITIVE: new exports only. These describe the admin analytics dashboard
@@ -560,6 +822,24 @@ export const memberPatchSchema = z
     message: 'Provide a role or status to change.',
   });
 export type MemberPatch = z.infer<typeof memberPatchSchema>;
+
+// --- Notification settings (Settings → Notifications) ------------------------
+
+/**
+ * The write body for a notification email's per-account settings: toggle it on/
+ * off and/or override the subject/body. `subject`/`body` are PLAIN TEXT with
+ * `{{token}}` markers; passing `null` resets that field to the shipped default,
+ * `undefined` (absent) leaves it untouched. The `emailKey` itself is a path
+ * param the API validates against the notifications catalog (kept out of this
+ * contract so the package boundary stays one-directional). Every field is
+ * optional — an empty patch is a harmless no-op.
+ */
+export const notificationSettingPatchSchema = z.object({
+  enabled: z.boolean().optional(),
+  subject: z.string().max(300).nullable().optional(),
+  body: z.string().max(8000).nullable().optional(),
+});
+export type NotificationSettingPatchInput = z.infer<typeof notificationSettingPatchSchema>;
 
 export const meResponseSchema = z.object({
   accountId: z.string(),

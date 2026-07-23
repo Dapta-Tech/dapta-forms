@@ -18,6 +18,14 @@ export class OutboxSkipError extends Error {}
 /** The submission emails the outbox can carry. */
 export type EmailKind = 'submission_received' | 'submission_confirmed';
 
+/** One email's effective toggle + copy after the form → account → stock merge. */
+interface ResolvedEmailSetting {
+  enabled: boolean;
+  /** NULL = stock template (nothing to snapshot). */
+  subject: string | null;
+  body: string | null;
+}
+
 /**
  * Durable submission emails (B1 / audit DM1). Every notification is ENQUEUED as
  * an `outbox` row (kind `email`) instead of fire-and-forget; the OutboxWorker
@@ -37,10 +45,35 @@ export class EmailEffects {
     @Inject(ENV) private readonly env?: ServerEnv,
   ) {}
 
+  /**
+   * Merge one email's settings across the three layers, PER FIELD:
+   *   subject/body — form override ?? account override ?? null (stock template)
+   *   enabled      — a form row EXISTS → its toggle wins; else the account row;
+   *                  else the fork-friendly default (on).
+   * Absent rows mean "inherit", so a form with no override behaves exactly as
+   * before this feature existed.
+   */
+  private async resolveSetting(
+    accountId: string,
+    formId: string | null | undefined,
+    emailKey: EmailKind,
+  ): Promise<ResolvedEmailSetting> {
+    const accountRow = (await getNotificationSettings(this.db, accountId)).get(emailKey);
+    const formRow = formId
+      ? (await getNotificationSettings(this.db, accountId, formId)).get(emailKey)
+      : undefined;
+    return {
+      enabled: formRow ? formRow.enabled : (accountRow?.enabled ?? true),
+      subject: formRow?.subject ?? accountRow?.subject ?? null,
+      body: formRow?.body ?? accountRow?.body ?? null,
+    };
+  }
+
   /** Never rejects — the caller fire-and-forgets with `void`. */
   async enqueueSubmissionReceived(
     accountId: string,
     n: Omit<SubmissionNotification, 'accountId' | 'to'> & { to?: string[] },
+    formId?: string | null,
   ): Promise<void> {
     try {
       // The account-side notice goes to the owner inbox; a fork with no member
@@ -52,14 +85,19 @@ export class EmailEffects {
             ORDER BY created_at ASC LIMIT 1`,
       );
       const to = n.to ?? (owner?.email ? [owner.email] : []);
-      // Snapshot the toggle: absent row = enabled (fork-friendly default).
-      const settings = await getNotificationSettings(this.db, accountId);
-      if (settings.get('submission_received')?.enabled === false) return;
+      // Snapshot the toggle AND the custom copy, already merged form → account →
+      // stock (absent rows = enabled with the stock template, the fork-friendly
+      // default). Snapshotting here means the worker renders the copy the owner
+      // had configured at the moment of the submission, toggle included.
+      const setting = await this.resolveSetting(accountId, formId, 'submission_received');
+      if (!setting.enabled) return;
       const payload: SubmissionNotification = {
         ...n,
         accountId,
         to,
         locale: n.locale ?? owner?.locale ?? null,
+        subjectTemplate: setting.subject,
+        bodyTemplate: setting.body,
       };
       await enqueueOutbox(this.db, {
         kind: 'email',
@@ -69,6 +107,45 @@ export class EmailEffects {
       });
     } catch (err) {
       this.log.error(`failed to enqueue submission_received: ${String(err)}`);
+    }
+  }
+
+  /**
+   * Confirmation receipt to the RESPONDENT ("we received your answers"), through
+   * the same durable outbox as `submission_received` and gated by the same
+   * notification_setting mechanism (`submission_confirmed`; absent rows =
+   * enabled, the fork-friendly default), merged form → account → stock. No
+   * respondent email in the answers → nothing to address, so it no-ops. Locale:
+   * the public surface does not persist the respondent's language yet, so the
+   * caller's value is used as-is (unset normalizes to English in the notifier).
+   * Never rejects — the caller fire-and-forgets with `void`.
+   */
+  async enqueueSubmissionConfirmed(
+    accountId: string,
+    n: Omit<SubmissionNotification, 'accountId' | 'to'>,
+    formId?: string | null,
+  ): Promise<void> {
+    try {
+      if (!n.respondentEmail) return;
+      // Snapshot the toggle AND the custom copy (merged form → account → stock).
+      const setting = await this.resolveSetting(accountId, formId, 'submission_confirmed');
+      if (!setting.enabled) return;
+      const payload: SubmissionNotification = {
+        ...n,
+        accountId,
+        to: [n.respondentEmail],
+        locale: n.locale ?? null,
+        subjectTemplate: setting.subject,
+        bodyTemplate: setting.body,
+      };
+      await enqueueOutbox(this.db, {
+        kind: 'email',
+        action: 'submission_confirmed',
+        accountId,
+        payload: JSON.stringify(payload),
+      });
+    } catch (err) {
+      this.log.error(`failed to enqueue submission_confirmed: ${String(err)}`);
     }
   }
 

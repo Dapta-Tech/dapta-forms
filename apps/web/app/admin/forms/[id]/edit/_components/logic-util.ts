@@ -28,3 +28,73 @@ export function jumpTargetsAfter(steps: FormStep[], index: number, fallback: str
 export function optionLabel(step: FormStep, value: string): string {
   return (step.options ?? []).find((o) => o.value === value)?.label ?? value;
 }
+
+/** The pieces of a condition, ready to render as "«Budget» is greater than 500". */
+export interface DescribedCondition {
+  /** The referenced question's title (or its raw key when it no longer exists). */
+  field: string;
+  /** The localized comparison ("is any of", "is greater than", "is between"). */
+  operator: string;
+  /** The operand(s), already resolved to option LABELS where applicable. */
+  operand: string;
+  /** True when the referenced field is missing — the rule can never hold. */
+  dangling: boolean;
+}
+
+/**
+ * Turn a `showWhen`/`hideWhen` condition into readable parts (V5-B4).
+ *
+ * The Logic view used to summarize any condition as the single word
+ * "Conditional", which tells you a rule exists and nothing about what it says —
+ * so the one view meant for understanding the flow was the one place you could
+ * not read it. Resolving the field to its QUESTION TITLE and the values to their
+ * OPTION LABELS matters: the stored config holds keys and raw values, which are
+ * not what the author typed or recognizes.
+ */
+export function describeCondition(
+  cond: { field: string; op?: string; values?: string[]; value?: number; min?: number; max?: number },
+  steps: FormStep[],
+  labels: {
+    fallbackQuestion: (index: number) => string;
+    opIn: string;
+    opEq: string;
+    opGt: string;
+    opLt: string;
+    opBetween: string;
+    /** Joins the two operands of `between`, e.g. "and". */
+    and: string;
+    /** Shown in place of an operand the author has not filled in yet. */
+    blank: string;
+  },
+): DescribedCondition {
+  const sourceIndex = steps.findIndex((s) => s.key === cond.field);
+  const source = sourceIndex >= 0 ? steps[sourceIndex] : undefined;
+  const field = source
+    ? source.question?.trim() || labels.fallbackQuestion(sourceIndex)
+    : cond.field;
+
+  const num = (n: number | undefined): string => (n == null ? labels.blank : String(n));
+  switch (cond.op) {
+    case 'eq':
+      return { field, operator: labels.opEq, operand: num(cond.value), dangling: !source };
+    case 'gt':
+      return { field, operator: labels.opGt, operand: num(cond.value), dangling: !source };
+    case 'lt':
+      return { field, operator: labels.opLt, operand: num(cond.value), dangling: !source };
+    case 'between':
+      return {
+        field,
+        operator: labels.opBetween,
+        operand: `${num(cond.min)} ${labels.and} ${num(cond.max)}`,
+        dangling: !source,
+      };
+    default: {
+      // `in` (or an absent op, which the engine treats as `in`).
+      const values = cond.values ?? [];
+      const operand = values.length
+        ? values.map((v) => (source ? optionLabel(source, v) : v)).join(', ')
+        : labels.blank;
+      return { field, operator: labels.opIn, operand, dangling: !source };
+    }
+  }
+}

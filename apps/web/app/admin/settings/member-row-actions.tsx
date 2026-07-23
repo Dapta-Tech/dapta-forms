@@ -1,7 +1,10 @@
 'use client';
 
 import { useEffect, useRef, useState, useTransition } from 'react';
+import { getMessages } from '@quill/shared';
 import { useToast } from '@/components/toast';
+import { clientLocale } from '@/lib/client-locale';
+import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import type { AccountRole } from '@/lib/admin-api';
 import {
   removeMemberAction,
@@ -26,7 +29,7 @@ export interface MemberRowActionsLabels {
  * Per-row management controls for a roster member — a single kebab menu
  * (WAI-ARIA menu-button) that mirrors the forms row-actions pattern. Holds the
  * role change (Member ⇄ Admin; an owner target, only reachable when the caller
- * is an owner, can be demoted to either) and Remove (native confirm). The API is
+ * is an owner, can be demoted to either) and Remove (branded confirm dialog). The API is
  * the real gate; the page only renders this when the caller may manage the row
  * (never for yourself, never an owner unless you are an owner). Escape /
  * outside-click dismiss; focus the first item on open. Tokens only; R22 press +
@@ -44,6 +47,7 @@ export function MemberRowActions({
   const [open, setOpen] = useState(false);
   const [pending, start] = useTransition();
   const toast = useToast();
+  const { confirm: confirmDialog, dialog } = useConfirmDialog();
   const wrapRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -86,9 +90,15 @@ export function MemberRowActions({
   };
 
   const remove = () => {
-    if (!confirm(labels.removeConfirm)) return;
     setOpen(false);
-    start(async () => handle(await removeMemberAction(memberId), labels.removeSuccess));
+    void confirmDialog({
+      title: getMessages(clientLocale()).dialog.removeMemberTitle,
+      message: labels.removeConfirm,
+      confirmLabel: labels.removeMember,
+      destructive: true,
+    }).then((ok) => {
+      if (ok) start(async () => handle(await removeMemberAction(memberId), labels.removeSuccess));
+    });
   };
 
   const itemClass =
@@ -158,6 +168,7 @@ export function MemberRowActions({
           </button>
         </div>
       ) : null}
+      {dialog}
     </div>
   );
 }

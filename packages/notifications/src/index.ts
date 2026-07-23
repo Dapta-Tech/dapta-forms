@@ -10,10 +10,19 @@ export {
   normalizeLocale,
   renderSubmissionReceived,
   renderSubmissionConfirmed,
+  SUBMISSION_EMAIL_KEYS,
+  isSubmissionEmailKey,
+  NOTIFICATION_TOKENS,
+  notificationTokenValues,
+  interpolateTokens,
+  applyCopyOverride,
+  defaultSubmissionTemplate,
   type NotificationLocale,
   type ReceivedCopyVars,
   type ConfirmedCopyVars,
   type RenderedCopy,
+  type SubmissionEmailKey,
+  type NotificationToken,
 } from './templates';
 export { LogOnlyEmailProvider } from './adapters/log-only';
 export { NoopEmailProvider } from './adapters/noop';
