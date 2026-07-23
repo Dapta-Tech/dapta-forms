@@ -127,9 +127,12 @@ test('V4-15: the description textarea HAS the token picker (the engine now inter
   await selectStep(page, Q_EMAIL);
   await expect(title(page)).toHaveValue(Q_EMAIL);
 
-  // Typing `@` in the title opens the picker (control: the picker works).
+  // Typing `@` in the title opens the picker (control: the picker works). Type
+  // it at the START — an `@` typed straight after a word character is treated as
+  // an email address and deliberately does NOT open the picker (V4-06), and this
+  // title ends in a letter.
   await title(page).click();
-  await page.keyboard.press('End');
+  await page.keyboard.press('Home');
   await title(page).pressSequentially('@');
   await expect(page.getByTestId('token-picker')).toBeVisible();
   await page.keyboard.press('Escape');
