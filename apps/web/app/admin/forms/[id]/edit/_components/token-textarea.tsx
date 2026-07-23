@@ -90,6 +90,8 @@ interface TokenRef {
   key: string;
   /** Index of the `[` or `@` that opens it — used to skip the one being typed. */
   start: number;
+  /** One past the last char (`]` or the end of the `@key` run) — for slicing. */
+  end: number;
   /** `bracket` resolves at runtime; `at` is raw text the engine never substitutes. */
   form: 'bracket' | 'at';
 }
@@ -125,10 +127,49 @@ function referencedTokens(text: string): TokenRef[] {
     out.push({
       key: (bracket ?? m[2]) as string,
       start: m.index,
+      end: m.index + m[0].length,
       form: bracket != null ? 'bracket' : 'at',
     });
   }
   return out;
+}
+
+/** A run of the text for the highlight backdrop: plain, or a token to style. */
+interface HighlightSegment {
+  text: string;
+  kind: 'plain' | 'valid' | 'invalid';
+}
+
+/**
+ * Split the text into styled runs for the backdrop mirror (V4-06). A `[key]`
+ * that resolves HERE (captured before this step) reads as `valid`; a `[key]`
+ * captured later / never, or any bare `@key` (literal text the engine never
+ * substitutes), reads as `invalid` — the same split the warning chips make, now
+ * shown inline so a valid token is visibly a token and a typo visibly is not.
+ * The reference the open picker is mid-typing stays plain so it doesn't flash
+ * red as it is spelled out.
+ */
+function highlightSegments(
+  value: string,
+  resolvesHere: (key: string) => boolean,
+  skipStart: number | null,
+): HighlightSegment[] {
+  const segs: HighlightSegment[] = [];
+  let cursor = 0;
+  for (const ref of referencedTokens(value)) {
+    if (ref.start < cursor) continue; // defensive: refs are ordered + non-overlapping
+    if (ref.start > cursor) segs.push({ text: value.slice(cursor, ref.start), kind: 'plain' });
+    const raw = value.slice(ref.start, ref.end);
+    if (skipStart != null && ref.start === skipStart) {
+      segs.push({ text: raw, kind: 'plain' });
+    } else {
+      const valid = ref.form === 'bracket' && resolvesHere(ref.key);
+      segs.push({ text: raw, kind: valid ? 'valid' : 'invalid' });
+    }
+    cursor = ref.end;
+  }
+  if (cursor < value.length) segs.push({ text: value.slice(cursor), kind: 'plain' });
+  return segs;
 }
 
 /** An open picker: where the trigger char sits and what was typed after it. */
@@ -171,10 +212,25 @@ export function TokenTextarea({
 }) {
   const ref = useRef<HTMLTextAreaElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
+  const highlightRef = useRef<HTMLDivElement>(null);
   const caretAfter = useRef<number | null>(null);
   const listId = useId();
   const [menu, setMenu] = useState<Menu | null>(null);
   const [active, setActive] = useState(0);
+
+  // Inline token highlighting (V4-06): a mirror layer behind a transparent
+  // textarea renders the same text with `[valid]` tokens tinted and unresolved
+  // ones flagged. Styling is background/colour only — never padding, weight, or
+  // size — so every glyph keeps the textarea's exact metrics and the caret never
+  // drifts. The reference under the open picker stays plain (not flashing).
+  const tokenKeys = new Set(tokens.map((t) => t.key));
+  const segments = highlightSegments(value, (k) => tokenKeys.has(k), menu?.start ?? null);
+  /** Keep the mirror aligned when the textarea scrolls (fixed-height fields). */
+  function syncScroll() {
+    const ta = ref.current;
+    const hl = highlightRef.current;
+    if (ta && hl) hl.style.transform = `translate(${-ta.scrollLeft}px, ${-ta.scrollTop}px)`;
+  }
 
   const query = menu?.query.toLowerCase() ?? '';
   const matches = menu
@@ -195,6 +251,7 @@ export function TokenTextarea({
       el.setSelectionRange(caretAfter.current, caretAfter.current);
       caretAfter.current = null;
     }
+    syncScroll(); // keep the highlight mirror aligned after a value/height change
   }, [value, autoGrow]);
 
   useLayoutEffect(() => {
@@ -287,6 +344,44 @@ export function TokenTextarea({
 
   return (
     <div className="relative">
+      {/* Highlight mirror — the same text under the (transparent) textarea, with
+          tokens tinted. `aria-hidden` + no pointer events: it is pure decoration,
+          the textarea remains the sole interactive/announced control. It carries
+          `className` too so its font, padding, and wrapping match the textarea
+          exactly; the inner div is what scrolls in sync. */}
+      <div
+        aria-hidden
+        data-testid={testId ? `${testId}-highlight` : undefined}
+        className={cn(
+          'pointer-events-none absolute inset-0 select-none overflow-hidden',
+          autoGrow && 'resize-none',
+          className,
+        )}
+      >
+        <div ref={highlightRef} className="whitespace-pre-wrap break-words">
+          {segments.map((s, i) =>
+            s.kind === 'plain' ? (
+              <span key={i}>{s.text}</span>
+            ) : (
+              <span
+                key={i}
+                data-testid="token-mark"
+                data-kind={s.kind}
+                style={{ boxDecorationBreak: 'clone', WebkitBoxDecorationBreak: 'clone' }}
+                className={cn(
+                  'rounded-[3px]',
+                  s.kind === 'valid' ? 'bg-primary/20 text-primary' : 'bg-destructive/15 text-destructive',
+                )}
+              >
+                {s.text}
+              </span>
+            ),
+          )}
+          {/* A trailing newline needs a spacer or the mirror is one line short of
+              the textarea's rendered height. */}
+          {value.endsWith('\n') ? ' ' : ''}
+        </div>
+      </div>
       <textarea
         ref={ref}
         rows={rows}
@@ -296,6 +391,7 @@ export function TokenTextarea({
           onChange(e.target.value);
           syncMenu(e.target.value, e.target.selectionStart ?? e.target.value.length);
         }}
+        onScroll={syncScroll}
         onKeyDown={handleKeyDown}
         onBlur={() => setMenu(null)}
         placeholder={placeholder}
@@ -305,8 +401,13 @@ export function TokenTextarea({
         aria-expanded={open}
         aria-controls={open ? listId : undefined}
         aria-activedescendant={open && matches[activeIdx] ? `${listId}-opt-${activeIdx}` : undefined}
+        // Text + background transparent so the mirror behind shows through, but a
+        // visible caret so typing still has a cursor. Inline styles beat any
+        // background/colour the caller's className sets (e.g. the outcome field's
+        // bg-background), which would otherwise hide the highlight layer.
+        style={{ backgroundColor: 'transparent', color: 'transparent', caretColor: 'var(--foreground)' }}
         className={cn(
-          'w-full bg-transparent outline-none placeholder:text-muted-foreground/50',
+          'relative w-full bg-transparent outline-none placeholder:text-muted-foreground/50',
           autoGrow && 'resize-none overflow-hidden',
           className,
         )}
