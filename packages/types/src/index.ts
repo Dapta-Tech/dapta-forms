@@ -436,6 +436,13 @@ export const formEventSchema = z.object({
   sessionId: z.string().min(1).max(200),
   type: z.enum(formEventType),
   stepIndex: z.number().int().min(0).nullable().optional(),
+  /**
+   * The step's authored key (stable identity), alongside `stepIndex` (position
+   * in THIS session's visible-step order, which shifts under show/hide/goto
+   * logic). The drop-off table needs the key to attribute a view to the actual
+   * question shown rather than to whichever config step sits at that position.
+   */
+  stepKey: z.string().min(1).max(64).nullable().optional(),
 });
 export type FormEventInput = z.infer<typeof formEventSchema>;
 

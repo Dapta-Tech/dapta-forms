@@ -178,9 +178,15 @@ export class AnalyticsService {
     const timeToComplete = medianSeconds(durations);
     const trends = buildTrends({ range, dailyViews, dailyStarts, completed });
 
-    // rowViews[0] = form views (the cover/landing); rowViews[i+1] = views of step i.
+    // rowViews[0] = form views (the cover/landing); rowViews[i+1] = views of
+    // step i. Looked up by the step's KEY first (V5-D3) — stable regardless of
+    // where show/hide/goto logic placed it in a given session's visible order —
+    // falling back to the old positional index only for events recorded before
+    // step_key existed.
     const rowViews: number[] = [views];
-    for (let i = 0; i < steps.length; i++) rowViews.push(stepViews.get(i) ?? 0);
+    for (let i = 0; i < steps.length; i++) {
+      rowViews.push(stepViews.byKey.get(steps[i]!.key) ?? stepViews.byIndex.get(i) ?? 0);
+    }
 
     const dropoff: DropoffRow[] = [];
 

@@ -19,7 +19,7 @@ export async function submitFormAction(
 export async function recordEventAction(
   accountCode: string,
   slug: string,
-  payload: { sessionId: string; type: string; stepIndex?: number | null },
+  payload: { sessionId: string; type: string; stepIndex?: number | null; stepKey?: string | null },
 ): Promise<void> {
   await postFormEvent(accountCode, slug, payload);
 }

@@ -107,6 +107,7 @@ export class SubmissionService {
       sessionId: input.sessionId,
       type: input.type,
       stepIndex: input.stepIndex ?? null,
+      stepKey: input.stepKey ?? null,
     });
     return { ok: true };
   }

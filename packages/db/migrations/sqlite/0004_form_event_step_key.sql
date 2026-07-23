@@ -1,0 +1,11 @@
+-- Drop-off attribution fix (V5-D3) — additive, nullable column.
+-- The renderer emits step_view/step_complete/partial_submit with `step_index`,
+-- the position in the SESSION's visible-step order — which shifts under
+-- show/hide/goto conditional logic, so it does not stably identify a config
+-- step. The analytics drop-off table mapped it positionally onto the form's
+-- AUTHORED step order, so a conditional form could attribute views/drop-off to
+-- the wrong question. `step_key` carries the step's stable authored identity
+-- alongside the index, so the drop-off table can group by it instead.
+-- Rows recorded before this column existed have step_key = NULL and fall back
+-- to the old positional attribution (documented limitation, not a regression).
+ALTER TABLE form_event ADD COLUMN step_key TEXT;

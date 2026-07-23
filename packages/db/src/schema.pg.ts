@@ -137,6 +137,11 @@ export const formEvent = pgTable(
     sessionId: text('session_id').notNull(),
     type: text('type').notNull(),
     stepIndex: integer('step_index'),
+    /** The step's authored key (nullable — absent on rows recorded before this
+     *  column existed). Lets the drop-off table attribute a view to the actual
+     *  question shown instead of to whichever config step sits at `stepIndex`'s
+     *  position, which shifts under show/hide/goto logic (V5-D3). */
+    stepKey: text('step_key'),
     createdAt: bigint('created_at', { mode: 'number' }).notNull(),
   },
   (t) => ({

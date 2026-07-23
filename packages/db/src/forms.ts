@@ -446,12 +446,19 @@ export async function listSubmissions(
 
 export async function recordFormEvent(
   db: Db,
-  input: { formId: string; sessionId: string; type: string; stepIndex?: number | null; now?: number },
+  input: {
+    formId: string;
+    sessionId: string;
+    type: string;
+    stepIndex?: number | null;
+    stepKey?: string | null;
+    now?: number;
+  },
 ): Promise<void> {
   await db.run(
-    sql`INSERT INTO form_event (id, form_id, session_id, type, step_index, created_at)
+    sql`INSERT INTO form_event (id, form_id, session_id, type, step_index, step_key, created_at)
         VALUES (${randomUUID()}, ${input.formId}, ${input.sessionId}, ${input.type},
-          ${input.stepIndex ?? null}, ${input.now ?? Date.now()})`,
+          ${input.stepIndex ?? null}, ${input.stepKey ?? null}, ${input.now ?? Date.now()})`,
   );
 }
 
