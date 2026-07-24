@@ -24,6 +24,8 @@ import { LogicRules } from './logic-rules';
 import { LogicConditions } from './logic-conditions';
 import { QuestionVariants } from './question-variants';
 import { QuestionHubspotSection } from './question-hubspot';
+import { SchedulerPanel } from './scheduler-panel';
+import { tokenOptionsBefore } from './token-textarea';
 import { HelpTip } from '@/components/ui/help-tip';
 import {
   GALLERY,
@@ -37,6 +39,11 @@ import type { EditorMessages } from './messages';
 import type { BuilderMessages } from './builder-messages';
 
 const ALL_ITEMS: GalleryItem[] = GALLERY_GROUPS.flatMap((g) => GALLERY[g]);
+
+/** The reveal card's play-time bounds — mirrors `formRevealSchema`. */
+const DEFAULT_REVEAL_MS = 2200;
+const MIN_REVEAL_MS = 500;
+const MAX_REVEAL_MS = 30_000;
 
 /** Shared look for the inline slider-bounds warnings (V5-A2). */
 const sliderWarnClass =
@@ -66,9 +73,8 @@ export function QuestionSettings({
   formId,
   locale,
   onOpenConnect,
-  onOpenDesign,
-  revealAfterStep,
-  onRevealAfterStepChange,
+  revealAfter,
+  onRevealAfterChange,
   onRenameKey,
 }: {
   step: FormStep;
@@ -83,12 +89,10 @@ export function QuestionSettings({
   locale: string;
   /** Switch the editor to the Connect tab (HubSpot destination setup). */
   onOpenConnect: () => void;
-  /** Switch the editor to the Design tab (reveal-screen copy/duration — V4-12). */
-  onOpenDesign: () => void;
-  /** Current 1-based `config.revealAfterStep` (the reveal marker's position). */
-  revealAfterStep?: number;
-  /** Pin the reveal after THIS step (1-based) or clear it (`undefined`) — V4-04. */
-  onRevealAfterStepChange: (afterStep: number | undefined) => void;
+  /** Whether the step right after this one is already a reveal card. */
+  revealAfter: boolean;
+  /** Insert (or remove) a reveal card immediately after this question. */
+  onRevealAfterChange: (on: boolean) => void;
   /** Rename this step's answer key, cascading every reference — V5-A10. */
   onRenameKey: (nextKey: string) => void;
 }) {
@@ -239,12 +243,12 @@ export function QuestionSettings({
               onChange={(e) => onUpdate({ reveal: { ...step.reveal, subtitle: e.target.value || null } })}
             />
           </Field>
-          <Field label={bm.settings.revealDuration}>
+          <Field label={bm.settings.revealDuration} hint={bm.settings.revealDurationHint}>
             <NumberField
               aria-label={bm.settings.revealDuration}
-              value={step.reveal?.durationMs ?? 2200}
-              min={500}
-              max={30000}
+              value={step.reveal?.durationMs ?? DEFAULT_REVEAL_MS}
+              min={MIN_REVEAL_MS}
+              max={MAX_REVEAL_MS}
               step={100}
               data-testid="step-reveal-duration"
               onChange={(e) => {
@@ -254,13 +258,45 @@ export function QuestionSettings({
                 onUpdate({
                   reveal: {
                     ...step.reveal,
-                    durationMs: Number.isFinite(n) ? Math.min(30_000, Math.max(500, Math.round(n))) : 2200,
+                    durationMs: Number.isFinite(n)
+                      ? Math.min(MAX_REVEAL_MS, Math.max(MIN_REVEAL_MS, Math.round(n)))
+                      : DEFAULT_REVEAL_MS,
                   },
                 });
               }}
             />
           </Field>
+          {/* Carried over from the Design panel this card replaced: warm the
+              outcome's booking embed while the interstitial plays. */}
+          <InlineField label={bm.settings.revealPrewarm} hint={bm.settings.revealPrewarmHint}>
+            <Switch
+              checked={!!step.reveal?.prewarm}
+              onCheckedChange={(v) =>
+                onUpdate({ reveal: { ...step.reveal, prewarm: v || undefined } })
+              }
+              aria-label={bm.settings.revealPrewarm}
+            />
+          </InlineField>
         </section>
+      ) : null}
+
+      {step.type === 'scheduler' ? (
+        <SchedulerPanel
+          scheduler={step.scheduler ?? { provider: 'calendly', prefill: true }}
+          onChange={(sc) => onUpdate({ scheduler: sc })}
+          // Only answers captured BEFORE this step can prefill the booking form.
+          fields={tokenOptionsBefore(
+            steps,
+            steps.findIndex((s) => s.key === step.key),
+          )}
+          // Only steps AFTER this one are legal forward jump targets.
+          laterSteps={steps
+            .slice(steps.findIndex((s) => s.key === step.key) + 1)
+            .map((s) => ({ key: s.key, label: s.question?.trim() || s.key }))}
+          goto={step.goto}
+          onGotoChange={(g) => onUpdate({ goto: g })}
+          bm={bm}
+        />
       ) : null}
 
       {step.type === 'slider' ? (
@@ -408,8 +444,10 @@ export function QuestionSettings({
         </p>
         <LogicConditions step={step} index={index} steps={steps} onUpdate={onUpdate} m={em.logic} />
         {/* Personal-email branch needs an earlier email answer — impossible on
-            the first question, so hide it there. */}
-        {step.type !== 'email' && index > 0 ? (
+            the first question, so hide it there. A reveal is skipped or played
+            by the plain conditions above; a second, narrower visibility rule on
+            an interstitial was a control that looked meaningful and wasn't. */}
+        {step.type !== 'email' && step.type !== 'reveal' && index > 0 ? (
           <InlineField label={em.logic.personalEmailOnly} hint={em.logic.personalEmailHint}>
             <Switch
               checked={!!step.showForPersonalEmailOnly}
@@ -420,31 +458,45 @@ export function QuestionSettings({
         ) : null}
       </section>
 
-      {/* Dynamic question — vary the text by an earlier answer */}
-      <section className="flex flex-col gap-3 border-t border-border pt-4">
-        <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          <i aria-hidden className="pi pi-sync text-secondary" style={{ fontSize: 11 }} />
-          {em.variants.title}
-        </p>
-        <QuestionVariants step={step} index={index} steps={steps} onUpdate={onUpdate} m={em.variants} />
-      </section>
+      {/* Dynamic question — vary the text by an earlier answer. Variants swap the
+          step's `question`, which a reveal never renders: it shows its own
+          headline and subtitle, and BOTH already interpolate `[key]` tokens. So
+          the section is dropped there rather than editing a field the respondent
+          will never see. */}
+      {step.type === 'reveal' ? null : (
+        <section className="flex flex-col gap-3 border-t border-border pt-4">
+          <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            <i aria-hidden className="pi pi-sync text-secondary" style={{ fontSize: 11 }} />
+            {em.variants.title}
+          </p>
+          <QuestionVariants step={step} index={index} steps={steps} onUpdate={onUpdate} m={em.variants} />
+        </section>
+      )}
 
       {/* Behavior — terminal (disqualify) + reveal position (V4-04/V4-12) */}
       <section className="flex flex-col gap-1 border-t border-border pt-4">
         <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           {em.behavior.title}
         </p>
-        <InlineField label={em.behavior.terminal} hint={em.behavior.terminalHint}>
-          <Switch
-            checked={!!step.terminal}
-            onCheckedChange={(v) => onUpdate({ terminal: v || undefined })}
-            aria-label={em.behavior.terminal}
-          />
-        </InlineField>
+        {/* "Ends the form" means DISQUALIFICATION here, which is the opposite of
+            what finishing a scheduler means — booking is the success case. A
+            scheduler routes from its own "After booking" picker instead. A
+            reveal is a pause on the way somewhere, never a verdict, so it is
+            excluded for the same reason. */}
+        {step.type !== 'scheduler' && step.type !== 'reveal' ? (
+          <InlineField label={em.behavior.terminal} hint={em.behavior.terminalHint}>
+            <Switch
+              checked={!!step.terminal}
+              onCheckedChange={(v) => onUpdate({ terminal: v || undefined })}
+              aria-label={em.behavior.terminal}
+            />
+          </InlineField>
+        ) : null}
         {/* Hidden question — never shown; its answer is seeded from a matching
             URL parameter and carried into the submission. Meaningless for a
-            message step (it collects no answer), so hide it there. */}
-        {!isInputlessType(step.type) ? (
+            message step (it collects no answer) and for a scheduler (its answer
+            is a booking, which no URL parameter can make), so hide it there. */}
+        {!isInputlessType(step.type) && step.type !== 'scheduler' ? (
           <InlineField label={em.behavior.hidden} hint={em.behavior.hiddenHint}>
             <Switch
               checked={!!step.hidden}
@@ -457,7 +509,7 @@ export function QuestionSettings({
             about "a matching URL parameter" — this is the only place that says
             WHICH one. `name` steps edit their two subfield keys in their own
             section instead, and a `message` step captures nothing to key. */}
-        {!isInputlessType(step.type) && step.type !== 'name' ? (
+        {!isInputlessType(step.type) && step.type !== 'name' && step.type !== 'scheduler' ? (
           <FieldKeyEditor
             stepKey={step.key}
             // Every answer slot the engine's renameStepKey refuses to collide
@@ -474,31 +526,22 @@ export function QuestionSettings({
             m={em.behavior}
           />
         ) : null}
-        {/* The reveal POSITION lives in config.revealAfterStep (the draggable
-            spine marker is the primary control); this toggle is a convenience to
-            pin the reveal after THIS question. Clearing reverts to the default
-            (after the last question). */}
-        {/* A reveal pinned to a HIDDEN question never plays — the renderer only
-            fires it when the anchor step is completed, and a hidden step never
-            is. Offering the pair was offering a silent no-op (V5-QA). */}
-        {step.hidden ? null : (
+        {/* Shortcut for "play a reveal right after this one": it INSERTS a real
+            reveal card after this question (and removing it deletes that card),
+            so the switch and the question list can never disagree. A reveal
+            after a HIDDEN question never plays — the respondent never completes
+            the step it follows — so the pair isn't offered (V5-QA). Nor after a
+            reveal: back-to-back interstitials are never what an author means. */}
+        {step.hidden || step.type === 'reveal' ? null : (
           <InlineField label={em.behavior.reveal} hint={em.behavior.revealHint}>
             <Switch
-              checked={revealAfterStep === index + 1}
-              onCheckedChange={(v) => onRevealAfterStepChange(v ? index + 1 : undefined)}
+              checked={revealAfter}
+              onCheckedChange={onRevealAfterChange}
+              data-testid="behavior-reveal-after"
               aria-label={em.behavior.reveal}
             />
           </InlineField>
         )}
-        <button
-          type="button"
-          data-testid="behavior-edit-reveal"
-          onClick={onOpenDesign}
-          className="mt-1 inline-flex w-fit items-center gap-1.5 rounded-md text-xs font-medium text-secondary transition-colors hover:text-secondary/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          <i aria-hidden className="pi pi-pencil" style={{ fontSize: 11 }} />
-          {em.behavior.editReveal}
-        </button>
       </section>
 
       {/* Contact hint, and the SLIDER's scoring (its ranges live here, not in the

@@ -40,12 +40,22 @@ export function BookingScreen({
   sessionId,
   locale = 'en',
   onBooked,
+  hideHeader = false,
+  extraCustomAnswers,
 }: {
   booking: OutcomeBooking;
   answers: Record<string, unknown>;
   sessionId: string;
   locale?: string;
   onBooked: (details: BookingScheduledDetails) => void;
+  /** Embedded as a form STEP (its own question is the title) — skip the header. */
+  hideHeader?: boolean;
+  /**
+   * Calendly positional custom answers (`a1`, `a2`, …) resolved from a scheduler
+   * step's field mapping. Merged into the widget prefill so a custom question is
+   * filled by the id it actually has, not a guessed one.
+   */
+  extraCustomAnswers?: Record<string, string>;
 }) {
   const m = getMessages(locale).renderer.booking;
 
@@ -57,7 +67,16 @@ export function BookingScreen({
     () => buildBookingEmbedUrl(booking, answers, sessionId, embedDomain),
     [booking, answers, sessionId, embedDomain],
   );
-  const calendlyPrefill = useMemo(() => buildCalendlyWidgetPrefill(answers), [answers]);
+  const calendlyPrefill = useMemo(() => {
+    const base = buildCalendlyWidgetPrefill(answers);
+    const extra = extraCustomAnswers ?? {};
+    if (Object.keys(extra).length === 0) return base;
+    // The mapped custom questions win over the conventional a1 guess.
+    return {
+      ...(base ?? {}),
+      customAnswers: { ...(base?.customAnswers ?? {}), ...extra },
+    };
+  }, [answers, extraCustomAnswers]);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const [calendlyState, setCalendlyState] = useState<EmbedState>('loading');
@@ -123,9 +142,11 @@ export function BookingScreen({
 
   return (
     <div className="pf-booking" data-testid="booking-screen">
-      <header className="pf-booking__header">
-        <h1 className="pf-booking__title">{m.title}</h1>
-      </header>
+      {hideHeader ? null : (
+        <header className="pf-booking__header">
+          <h1 className="pf-booking__title">{m.title}</h1>
+        </header>
+      )}
 
       <div className="pf-booking__widget">
         {booking.provider === 'hubspot_meetings' ? (

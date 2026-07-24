@@ -2,21 +2,25 @@ import { test, expect, type APIRequestContext, type Locator, type Page } from '@
 import { randomUUID } from 'node:crypto';
 
 /**
- * V4-04 / V4-16 — the reveal screen has a POSITION (config.revealAfterStep) that
- * is authoritative, visible, and draggable, defaulting to the END of the form so
- * an enabled reveal never plays mid-form by accident; and each outcome can carry
- * its own thank-you body (config.outcomes[].message).
+ * V4-04 / V4-16, re-based on the single reveal model.
  *
- * Three independent journeys prove it through the real HTTP surface (fresh form
- * per test via the admin API; slug prefixed `v4rev-`; accountCode resolved from
+ * A reveal is a STEP now — there is no form-level `config.reveal` to enable in
+ * Design and no draggable marker to position. What survives from V4-04 is the
+ * guarantee it was written for: a form whose reveal was authored the OLD way
+ * still plays it right before the result and never mid-form. So these specs pin
+ * the MIGRATION instead of the marker.
+ *
+ * Three independent journeys through the real HTTP surface (fresh form per test
+ * via the admin API; slug prefixed `v4rev-`; accountCode resolved from
  * GET /v1/me — never hardcoded; the DB is only written through the app):
  *
- *  (a) A reveal-enabled 3-question form shows the "Reveal screen" marker in the
- *      question spine defaulted to AFTER THE LAST question, and the public form
- *      plays NO reveal between questions — only after the final question, right
- *      before the result (the mid-form-reveal bug is gone).
- *  (b) Dragging the marker up one slot (dnd-kit keyboard path) autosaves an
- *      explicit revealAfterStep (asserted via GET /v1/forms/:id draftConfig).
+ *  (a) A legacy reveal-enabled 3-question form opens in the builder as a reveal
+ *      CARD at the END of the question list, and the public form plays NO reveal
+ *      between questions — only after the final one, right before the result.
+ *  (b) Opening the builder autosaves that fold-in: the draft gains a `reveal`
+ *      step carrying the legacy copy and LOSES `reveal`/`revealAfterStep`, so
+ *      the two ways to author one screen cannot coexist (asserted via
+ *      GET /v1/forms/:id draftConfig).
  *  (c) A per-outcome message typed in Results autosaves, and after publishing a
  *      submission that lands in that outcome shows the message (interpolated) as
  *      the done-screen body.
@@ -70,16 +74,45 @@ function revealConfig(): Record<string, unknown> {
   };
 }
 
-/** The pending draft's revealAfterStep (null = no draft yet, 'unset' = absent). */
-async function draftReveal(
+/** Shape of a pending draft, reduced to what the migration is judged on. */
+interface DraftShape {
+  /** Step types in order — a `reveal` among them is the migrated card. */
+  types: string[];
+  /** The reveal step's own copy (undefined when there is no reveal step). */
+  revealCopy?: {
+    enabled?: boolean;
+    headline?: string | null;
+    subtitle?: string | null;
+    durationMs?: number;
+  };
+  /** Whether the LEGACY form-level fields are still present. */
+  legacyReveal: boolean;
+  legacyPosition: boolean;
+}
+
+/** The pending draft reduced to `DraftShape` (null while no draft exists yet). */
+async function draftShape(
   request: APIRequestContext,
   formId: string,
-): Promise<number | 'no-draft' | 'unset'> {
+): Promise<DraftShape | null> {
   const res = await request.get(`${API}/v1/forms/${formId}`);
-  if (!res.ok()) return 'no-draft';
-  const body = (await res.json()) as { draftConfig?: { revealAfterStep?: number } | null };
-  if (body.draftConfig == null) return 'no-draft';
-  return body.draftConfig.revealAfterStep ?? 'unset';
+  if (!res.ok()) return null;
+  const body = (await res.json()) as {
+    draftConfig?: {
+      steps?: Array<{ type: string; reveal?: DraftShape['revealCopy'] }>;
+      reveal?: unknown;
+      revealAfterStep?: unknown;
+    } | null;
+  };
+  const draft = body.draftConfig;
+  if (draft == null) return null;
+  const steps = draft.steps ?? [];
+  return {
+    types: steps.map((s) => s.type),
+    revealCopy: steps.find((s) => s.type === 'reveal')?.reveal,
+    legacyReveal: draft.reveal != null,
+    legacyPosition: draft.revealAfterStep != null,
+  };
 }
 
 /** Vertical center of a locator — used to assert the marker's slot in the spine. */
@@ -119,7 +152,7 @@ async function fillAndContinue(page: Page, value: string): Promise<void> {
   await page.locator('.pf__btn--inline').first().click();
 }
 
-test('reveal marker defaults to the END; the public form plays no mid-form reveal', async ({
+test('a legacy reveal opens as a card at the END; the public form plays no mid-form reveal', async ({
   page,
   request,
 }) => {
@@ -127,17 +160,26 @@ test('reveal marker defaults to the END; the public form plays no mid-form revea
   const code = await accountCode(request);
   const form = await createForm(request, revealConfig());
 
-  // --- Editor: the reveal marker renders defaulted AFTER the last question ----
+  // --- Editor: the legacy reveal is now a CARD, last in the question list -----
   await page.goto(`/admin/forms/${form.id}/edit`);
   const spine = page.getByTestId('question-spine');
-  const marker = page.getByTestId('reveal-point-row');
-  await expect(marker).toBeVisible();
+  // It names itself by its headline (a reveal has no question text), and there
+  // is no separate marker row any more — one reveal, one card.
+  const card = spine.getByText('Reviewing your answers…', { exact: true });
+  await expect(card).toBeVisible();
+  await expect(page.getByTestId('reveal-point-row')).toHaveCount(0);
 
   const q1 = spine.getByText('First question', { exact: true });
   const q3 = spine.getByText('Third question', { exact: true });
-  // Defaulted to the end: the marker sits BELOW the last question card.
-  expect(await centerY(marker)).toBeGreaterThan(await centerY(q3));
-  expect(await centerY(marker)).toBeGreaterThan(await centerY(q1));
+  // Folded in at the end: the card sits BELOW the last question.
+  expect(await centerY(card)).toBeGreaterThan(await centerY(q3));
+  expect(await centerY(card)).toBeGreaterThan(await centerY(q1));
+
+  // Selecting it shows the real interstitial on the canvas — spinner and all —
+  // not a question card with an empty answer box.
+  await card.click();
+  await expect(page.getByTestId('canvas-reveal-preview')).toBeVisible();
+  await expect(page.getByTestId('canvas-reveal-spinner')).toBeVisible();
 
   // --- Public: no reveal between questions, only after the LAST one -----------
   await openCover(page, `/${code}/me/${form.slug}`);
@@ -157,43 +199,37 @@ test('reveal marker defaults to the END; the public form plays no mid-form revea
   await expect(page.locator('.pf-done__title')).toBeVisible({ timeout: 8_000 });
 });
 
-test('dragging the reveal marker up one slot autosaves an explicit revealAfterStep', async ({
+test('opening the builder folds the legacy reveal into a step and drops the legacy fields', async ({
   page,
   request,
 }) => {
   test.setTimeout(90_000);
-  const form = await createForm(request, revealConfig());
+  // Pinned mid-form (after question 2) so the fold-in has a real position to
+  // preserve — an "always appends at the end" bug would pass without this.
+  const form = await createForm(request, { ...revealConfig(), revealAfterStep: 2 });
 
   await page.goto(`/admin/forms/${form.id}/edit`);
-  const spine = page.getByTestId('question-spine');
-  const marker = page.getByTestId('reveal-point-row');
-  await expect(marker).toBeVisible();
-
-  const q2 = spine.getByText('Second question', { exact: true });
-  const q3 = spine.getByText('Third question', { exact: true });
-  // Starts at the end (below Q3).
-  expect(await centerY(marker)).toBeGreaterThan(await centerY(q3));
-
-  // Move the marker one slot UP via dnd-kit's keyboard path (deterministic).
-  const handle = page.getByTestId('reveal-point-handle');
-  await handle.focus();
-  await page.keyboard.press('Space'); // pick up
-  await page.waitForTimeout(300);
-  await page.keyboard.press('ArrowUp'); // over question 3
-  await page.waitForTimeout(300);
-  await page.keyboard.press('Space'); // drop → now after question 2
+  await expect(page.getByTestId('question-spine')).toBeVisible();
 
   await expect
-    .poll(() => draftReveal(request, form.id), {
-      message: 'moving the marker up one slot should autosave revealAfterStep: 2',
-      timeout: 15_000,
+    .poll(() => draftShape(request, form.id), {
+      message: 'opening the builder should autosave the migrated shape',
+      timeout: 20_000,
       intervals: [500, 1_000],
     })
-    .toBe(2);
-
-  // The marker now sits between Q2 and Q3.
-  expect(await centerY(marker)).toBeGreaterThan(await centerY(q2));
-  expect(await centerY(marker)).toBeLessThan(await centerY(q3));
+    .toEqual({
+      // The reveal landed exactly where it used to play, not at the end.
+      types: ['text', 'text', 'reveal', 'text'],
+      revealCopy: {
+        enabled: true,
+        headline: 'Reviewing your answers…',
+        subtitle: '',
+        durationMs: 1200,
+      },
+      // Both legacy fields are gone, so nothing can play the reveal twice.
+      legacyReveal: false,
+      legacyPosition: false,
+    });
 });
 
 test('a per-outcome message is editable, autosaves, and shows on the done screen', async ({

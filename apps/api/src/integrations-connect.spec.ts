@@ -26,7 +26,11 @@ import {
   type Db,
 } from '@quill/db';
 import type { ServerEnv } from '@quill/config/env';
-import { HubspotPropertiesService, IntegrationsController } from './integrations.controller';
+import {
+  CalendlyEventTypesService,
+  HubspotPropertiesService,
+  IntegrationsController,
+} from './integrations.controller';
 import { AuthService } from './auth.service';
 import { LocalAuthProvider, type ReqLike } from './auth.provider';
 
@@ -89,7 +93,8 @@ function build(env: ServerEnv, fetchImpl: typeof fetch): void {
   });
   const auth = new AuthService(db, provider);
   const hubspot = new HubspotPropertiesService(env, db, fetchImpl);
-  controller = new IntegrationsController(auth, hubspot, db, env);
+  const calendly = new CalendlyEventTypesService(env, db, fetchImpl);
+  controller = new IntegrationsController(auth, hubspot, calendly, db, env);
   controller.fetchImpl = fetchImpl;
 }
 
@@ -314,6 +319,88 @@ describe('HubSpot property picker token resolution', () => {
   it('reports disabled when neither an account nor an env token exists', async () => {
     build(makeEnv({ HUBSPOT_PRIVATE_APP_TOKEN: undefined }), noopFetch);
     const res = await controller.hubspotProperties(asOwner());
+    expect(res.enabled).toBe(false);
+  });
+});
+
+describe('Calendly event-type picker token resolution', () => {
+  const CALENDLY_EVENT_TYPES_BASE = 'https://api.calendly.com/event_types';
+  const ME = { resource: { uri: 'https://api.calendly.com/users/U1', email: 'rep@acme.io' } };
+  const EVENT_TYPES = {
+    collection: [
+      {
+        uri: 'et/2',
+        name: 'Demo 30m',
+        scheduling_url: 'https://calendly.com/acme/demo',
+        active: true,
+        duration: 30,
+        // Deliberately out of array order + one disabled, to prove the id comes
+        // from `position` (Calendly prefills a custom question as a<position+1>)
+        // and that a disabled question is never offered for mapping.
+        custom_questions: [
+          { name: 'Phone number', position: 1, enabled: true, required: true },
+          { name: 'What do you need?', position: 0, enabled: true, required: false },
+          { name: 'Retired question', position: 2, enabled: false },
+        ],
+      },
+      { uri: 'et/1', name: 'Intro 15m', scheduling_url: 'https://calendly.com/acme/intro', active: true, duration: 15 },
+      { uri: 'et/3', name: 'No page', active: true }, // dropped: no scheduling_url
+    ],
+  };
+
+  /** Answers /users/me exactly and /event_types by prefix (it carries a query). */
+  function calendlyFetch(calls: RecordedCall[], me: unknown, list: unknown): typeof fetch {
+    return (async (url: string, init?: RequestInit) => {
+      calls.push({ url, headers: (init?.headers ?? {}) as Record<string, string> });
+      if (url === CALENDLY_ME_URL) return jsonResponse(me);
+      if (url.startsWith(CALENDLY_EVENT_TYPES_BASE)) return jsonResponse(list);
+      return new Response('{}', { status: 404 });
+    }) as unknown as typeof fetch;
+  }
+
+  it('uses the CONNECTED account token, scopes to its user, and returns sorted event types', async () => {
+    const calls: RecordedCall[] = [];
+    build(makeEnv(), calendlyFetch(calls, ME, EVENT_TYPES));
+    await controller.connect(asOwner(), 'calendly', { token: 'cal-account-8888' });
+
+    const res = await controller.calendlyEventTypes(asOwner());
+    expect(res.enabled).toBe(true);
+    if (res.enabled) {
+      // Sorted by name; the entry with no scheduling_url is dropped.
+      expect(res.eventTypes.map((e) => e.name)).toEqual(['Demo 30m', 'Intro 15m']);
+      expect(res.eventTypes[0]).toMatchObject({
+        schedulingUrl: 'https://calendly.com/acme/demo',
+        durationMinutes: 30,
+      });
+    }
+    // Every call carried the ACCOUNT token, and the list was scoped to the user.
+    expect(calls.every((c) => c.headers.authorization === 'Bearer cal-account-8888')).toBe(true);
+    expect(
+      calls.some((c) => c.url.includes(`user=${encodeURIComponent(ME.resource.uri)}`)),
+    ).toBe(true);
+  });
+
+  it('exposes each event type’s own custom questions by their POSITIONAL id', async () => {
+    const calls: RecordedCall[] = [];
+    build(makeEnv(), calendlyFetch(calls, ME, EVENT_TYPES));
+    await controller.connect(asOwner(), 'calendly', { token: 'cal-account-8888' });
+
+    const res = await controller.calendlyEventTypes(asOwner());
+    expect(res.enabled).toBe(true);
+    if (!res.enabled) return;
+    const demo = res.eventTypes.find((e) => e.name === 'Demo 30m')!;
+    // position 1 → a2, position 0 → a1; the disabled one is dropped entirely.
+    expect(demo.customQuestions).toEqual([
+      { id: 'a2', label: 'Phone number', required: true },
+      { id: 'a1', label: 'What do you need?', required: false },
+    ]);
+    // An event type with no custom questions simply has none (name + email only).
+    expect(res.eventTypes.find((e) => e.name === 'Intro 15m')!.customQuestions).toEqual([]);
+  });
+
+  it('reports disabled when no Calendly token exists', async () => {
+    build(makeEnv({ CALENDLY_API_TOKEN: undefined }), noopFetch);
+    const res = await controller.calendlyEventTypes(asOwner());
     expect(res.enabled).toBe(false);
   });
 });

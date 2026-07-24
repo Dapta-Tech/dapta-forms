@@ -108,6 +108,42 @@ export const formRevealSchema = z.object({
   prewarm: z.boolean().optional(),
 });
 
+/**
+ * A `scheduler` step embeds a booking page (Calendly in v1; the embed also
+ * supports HubSpot Meetings) mid-form. The respondent picks a slot inline and,
+ * when they book, the step is answered — so a required scheduler blocks
+ * "Continue" until a booking is made, and logic can route "on booking → submit"
+ * exactly like any other step. All fields optional/additive (back-compat).
+ */
+export const formSchedulerSchema = z.object({
+  /** Scheduling provider. v1 ships Calendly; the embed also supports HubSpot Meetings. */
+  provider: z.enum(['calendly', 'hubspot_meetings']).optional(),
+  /** The picked Calendly event type's stable URI (used by the builder's picker). */
+  eventTypeUri: z.string().max(500).nullable().optional(),
+  /** Its display name, stored so the builder can label it without a lookup. */
+  eventTypeName: z.string().max(200).nullable().optional(),
+  /** The public scheduling page embedded in the form (the event type's scheduling_url). */
+  url: z
+    .string()
+    .url()
+    .refine(isSafeHttpUrl, { message: 'scheduler url must use http(s).' })
+    .nullable()
+    .optional(),
+  /** Hide the event-type details panel in the embed ("Show event details? → No"). */
+  hideEventDetails: z.boolean().optional(),
+  /** Prefill the booking form from collected answers (name/email/phone). */
+  prefill: z.boolean().optional(),
+  /**
+   * Which earlier question feeds each field the booking page asks for, keyed by
+   * Calendly's own prefill id: `name`, `email`, or `a1`/`a2`/… for the event
+   * type's custom questions (`phone` is still accepted from earlier configs and
+   * routes to the legacy a1 slot). Values are step keys; absent entries fall
+   * back to the conventional answer keys, so a form already using
+   * firstname/lastname/email needs no mapping at all.
+   */
+  prefillMap: z.record(z.string().max(64), z.string().max(64).nullable()).optional(),
+});
+
 export const formStepSchema = z.object({
   key: z.string().min(1).max(64),
   type: z.enum(formFieldType),
@@ -171,6 +207,11 @@ export const formStepSchema = z.object({
    * to have several, positioned by where it sits in `steps`.
    */
   reveal: formRevealSchema.nullable().optional(),
+  /**
+   * `scheduler` step: the embedded booking config (ADDITIVE — V6). Provider +
+   * event-type scheduling URL + prefill/display options. See formSchedulerSchema.
+   */
+  scheduler: formSchedulerSchema.nullable().optional(),
 });
 export type FormStepInput = z.infer<typeof formStepSchema>;
 

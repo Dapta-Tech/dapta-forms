@@ -13,6 +13,7 @@ import type {
   FormOption,
   FormOutcome,
 } from './form-logic';
+import { revealAfterKey } from './form-logic';
 
 /** Field kinds that capture the lead and therefore never score. */
 const LEAD_CAPTURE_TYPES: ReadonlySet<FormFieldType> = new Set<FormFieldType>([
@@ -90,7 +91,71 @@ export function createEmptyStep(
   if (type === 'reveal') {
     base.reveal = { enabled: true, headline: '', subtitle: '', durationMs: 2200 };
   }
+  // A scheduler embeds a booking page; it starts unconfigured (no event type
+  // picked yet) but with prefill on, so once the author picks a Calendly event
+  // type the visitor's name/email flow into the widget automatically (V6).
+  if (type === 'scheduler') {
+    base.scheduler = { provider: 'calendly', prefill: true };
+  }
   return base;
+}
+
+/** The interstitial's play time when nothing is configured (mirrors the renderer). */
+const DEFAULT_REVEAL_MS = 2200;
+
+/**
+ * Fold a legacy FORM-LEVEL reveal into a real `reveal` STEP.
+ *
+ * The reveal used to be a singleton on the config — `config.reveal` for the copy
+ * (authored in the Design tab) plus `config.revealAfterStep` (or a step's older
+ * `triggersReveal` flag) for the position. It is now an ordinary step type, so a
+ * form can carry several with their own copy. Keeping both shapes meant two
+ * places to author one thing, which is what this collapses: the legacy copy
+ * becomes a `reveal` step inserted exactly where {@link revealAfterKey} said it
+ * played, and every legacy field is dropped.
+ *
+ * A DISABLED legacy reveal contributes no step — it never played.
+ *
+ * Idempotent, and a no-op on configs that never had a form-level reveal. Only
+ * the builder calls this: a PUBLISHED config keeps its legacy shape (and the
+ * renderer keeps honoring it) until the form is re-saved.
+ */
+export function migrateRevealToStep(config: FormConfig): FormConfig {
+  const legacy = config.reveal;
+  const hasLegacy =
+    legacy != null ||
+    config.revealAfterStep != null ||
+    config.steps.some((s) => s.triggersReveal);
+  if (!hasLegacy) return config;
+
+  // `triggersReveal` only ever meant "the reveal plays after me" — the flagged
+  // step carries no reveal copy of its own, so it is dead weight the moment the
+  // position IS a step in the list.
+  let steps: FormStep[] = config.steps.map((s) => {
+    if (!s.triggersReveal) return s;
+    const { triggersReveal: _dropped, ...rest } = s;
+    return rest;
+  });
+
+  const anchorKey = revealAfterKey(config);
+  if (anchorKey != null) {
+    const anchor = steps.findIndex((s) => s.key === anchorKey);
+    const at = anchor >= 0 ? anchor + 1 : steps.length;
+    const step = createEmptyStep('reveal', new Set(steps.map((s) => s.key)));
+    step.reveal = {
+      enabled: true,
+      headline: legacy?.headline ?? '',
+      // `subtitleTemplate` won over `subtitle` at runtime and BOTH interpolate
+      // `[key]` tokens, so collapsing them onto one field renders identically.
+      subtitle: legacy?.subtitleTemplate || legacy?.subtitle || '',
+      durationMs: legacy?.durationMs ?? DEFAULT_REVEAL_MS,
+      ...(legacy?.prewarm ? { prewarm: true } : {}),
+    };
+    steps = [...steps.slice(0, at), step, ...steps.slice(at)];
+  }
+
+  const { reveal: _copy, revealAfterStep: _position, ...rest } = config;
+  return { ...rest, steps };
 }
 
 /** A blank outcome bucket with a unique id. */

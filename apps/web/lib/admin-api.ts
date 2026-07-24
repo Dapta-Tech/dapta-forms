@@ -168,6 +168,32 @@ export interface IntegrationsResponse {
   providers: IntegrationStatus[];
 }
 
+/**
+ * One extra field an event type's booking form asks for beyond name + email.
+ * `id` is Calendly's positional prefill parameter (`a1`, `a2`, …).
+ */
+export interface CalendlyBookingField {
+  id: string;
+  label: string;
+  required: boolean;
+}
+
+/** A Calendly event type surfaced to the scheduler step's event-type picker. */
+export interface CalendlyEventType {
+  uri: string;
+  name: string;
+  schedulingUrl: string;
+  active: boolean;
+  durationMinutes: number;
+  /** The event type's own custom questions (what its booking form really asks). */
+  customQuestions: CalendlyBookingField[];
+}
+
+/** The event-type-picker response: disabled (no token) or the cached list. */
+export type CalendlyEventTypesResponse =
+  | { enabled: false; reason: string }
+  | { enabled: true; cached: boolean; eventTypes: CalendlyEventType[] };
+
 export type { FormDestination };
 
 // --- Notifications (submission emails) ---------------------------------------
@@ -254,6 +280,9 @@ export const adminApi = {
   // Integrations
   hubspotProperties: () =>
     req<HubSpotPropertiesResponse>('GET', '/v1/integrations/hubspot/properties'),
+  /** Calendly event types for the scheduler step's picker (per-account token). */
+  calendlyEventTypes: () =>
+    req<CalendlyEventTypesResponse>('GET', '/v1/integrations/calendly/event-types'),
   /** Partial write: replaces ONLY the config's `destinations` key server-side. */
   updateFormDestinations: (id: string, destinations: FormDestination[]) =>
     req<FormDetail>('PUT', `/v1/forms/${id}/destinations`, { destinations }),

@@ -71,27 +71,6 @@ export interface BuilderMessages {
     /** One-line pointer left in the Design tab (the select moved to the spine). */
     designNote: string;
   };
-  /** The reveal-screen marker in the question spine (V4-04 — mirrors `partial`). */
-  revealPoint: {
-    /** Marker-row label ("Reveal screen"). */
-    label: string;
-    /** aria-label of the marker's remove (×) button. */
-    remove: string;
-    /** aria-label of the marker's drag grip. */
-    move: string;
-    /** aria-label of the info toggle on the marker row. */
-    info: string;
-    /** Popover: what the reveal marker does. */
-    tipPlays: string;
-    /** Popover line when the marker sits after the LAST question. */
-    tipEnd: string;
-    /** Popover line when the marker sits mid-form. */
-    tipMid: string;
-    /** Popover: where the reveal copy/duration is edited. */
-    tipEdit: string;
-    /** V5-A9 — label of the link that actually opens Design. */
-    edit: string;
-  };
   canvas: {
     /** "Question {n}" */
     questionN: string;
@@ -104,18 +83,50 @@ export interface BuilderMessages {
     /** "{n} pts" */
     pts: string;
     messagePlaceholder: string;
+    /** The reveal card's in-place copy editing + "plays for {ms} ms" caption. */
+    revealHeadlinePlaceholder: string;
+    revealSubtitlePlaceholder: string;
+    revealPlays: string;
+    /** V6 — the scheduler's live Calendly embed on the canvas. */
+    schedulerUnset: string;
+    schedulerNote: string;
+    schedulerLoading: string;
+    schedulerLoadError: string;
     /** Name-step preview defaults — MUST mirror the shared catalog's
      *  `renderer.name.*` so the canvas shows exactly what publishes. */
     nameFirstPlaceholder: string;
     nameLastPlaceholder: string;
   };
   settings: {
-    /** V5-B3 — a reveal STEP edits its own copy here, not in Design. */
+    /** A reveal STEP owns its copy here — there is no form-level reveal. */
     revealSection: string;
     revealHeadline: string;
     revealSubtitle: string;
     revealDuration: string;
+    revealDurationHint: string;
     revealHint: string;
+    revealPrewarm: string;
+    revealPrewarmHint: string;
+    /** V6 — the scheduler STEP picks a Calendly event type here. */
+    schedulerSection: string;
+    schedulerHint: string;
+    schedulerEventType: string;
+    schedulerPickPlaceholder: string;
+    schedulerLoading: string;
+    schedulerConnect: string;
+    schedulerConnectCta: string;
+    schedulerShowDetails: string;
+    schedulerMapTitle: string;
+    schedulerMapHint: string;
+    schedulerMapPickFirst: string;
+    schedulerMapName: string;
+    schedulerMapEmail: string;
+    schedulerMapAuto: string;
+    /** V6 — where the form goes once the respondent books. */
+    schedulerAfter: string;
+    schedulerAfterHint: string;
+    schedulerAfterContinue: string;
+    schedulerAfterSubmit: string;
     title: string;
     questionType: string;
     required: string;
@@ -283,7 +294,8 @@ export type GalleryItemId =
   | 'long'
   | 'slider'
   | 'message'
-  | 'reveal';
+  | 'reveal'
+  | 'scheduler';
 
 export type TemplateId = 'lead' | 'contact' | 'feedback' | 'rsvp';
 
@@ -336,17 +348,6 @@ const en: BuilderMessages = {
     tipAfterLast: 'After the last question it never fires — the final submit already captures everything.',
     designNote: 'Configured in the question list on the Build tab — look for the “Partial submit point” card.',
   },
-  revealPoint: {
-    label: 'Reveal screen',
-    remove: 'Remove reveal screen',
-    move: 'Move reveal screen',
-    info: 'About the reveal screen',
-    tipPlays: 'Plays a short processing screen for respondents at this point in the form.',
-    tipEnd: 'At the end it plays right before the result — never mid-form.',
-    tipMid: 'Here it plays after this question, then the form continues.',
-    tipEdit: 'Edit its headline, subtitle and duration in Design.',
-    edit: 'Edit reveal screen',
-  },
   canvas: {
     questionN: 'Question {n}',
     titlePlaceholder: 'Type your question…',
@@ -357,6 +358,13 @@ const en: BuilderMessages = {
     submit: 'Submit',
     pts: '{n} pts',
     messagePlaceholder: 'Write your message…',
+    revealHeadlinePlaceholder: 'Reviewing your answers…',
+    revealSubtitlePlaceholder: 'Add a line of reassurance (optional)',
+    revealPlays: 'Plays for {ms} ms, then the form continues on its own.',
+    schedulerUnset: 'No event type picked yet',
+    schedulerNote: 'Respondents pick a time here. Booking answers this question and moves the form on.',
+    schedulerLoading: 'Loading the calendar…',
+    schedulerLoadError: 'The calendar could not load. Check the event type is still available.',
     nameFirstPlaceholder: 'First name',
     nameLastPlaceholder: 'Last name',
   },
@@ -373,7 +381,29 @@ const en: BuilderMessages = {
     revealHeadline: 'Headline',
     revealSubtitle: 'Subtitle',
     revealDuration: 'Duration (ms)',
-    revealHint: 'Plays here, then the form continues on its own. Drag it in the list to move it.',
+    revealDurationHint: 'How long it plays, 500–30000 ms. Default: 2200.',
+    revealHint:
+      'Plays here, then the form continues on its own. Drag the card in the list to move it. Both lines accept [field] tokens.',
+    revealPrewarm: 'Pre-warm the booking embed',
+    revealPrewarmHint: 'Loads the outcome’s booking calendar while this screen plays.',
+    schedulerSection: 'Scheduler',
+    schedulerHint: 'Pick a Calendly event type. When someone books, it counts as their answer.',
+    schedulerEventType: 'Event type',
+    schedulerPickPlaceholder: 'Select an event type…',
+    schedulerLoading: 'Loading event types…',
+    schedulerConnect: 'Connect Calendly in Integrations to pick an event type.',
+    schedulerConnectCta: 'Go to Integrations',
+    schedulerShowDetails: 'Show event details',
+    schedulerMapTitle: 'Autofill the booking form',
+    schedulerMapHint: 'Send answers from earlier questions into the fields this event asks for.',
+    schedulerMapPickFirst: 'Pick an event type to see the fields its booking form asks for.',
+    schedulerMapName: 'Name',
+    schedulerMapEmail: 'Email',
+    schedulerMapAuto: 'Automatic',
+    schedulerAfter: 'After booking',
+    schedulerAfterHint: 'What happens once the respondent picks a time.',
+    schedulerAfterContinue: 'Continue to the next question',
+    schedulerAfterSubmit: 'Submit the form and show the ending',
     scoring: 'Scoring',
     scoringHint:
       'Counts this question toward the score. Points from the selected option add to the total; set ranges in Results.',
@@ -444,6 +474,7 @@ const en: BuilderMessages = {
       slider: { title: 'Slider', desc: 'Rating scale' },
       message: { title: 'Message', desc: 'Text, no input' },
       reveal: { title: 'Reveal screen', desc: 'A short processing pause' },
+      scheduler: { title: 'Scheduler', desc: 'Book a meeting on your calendar' },
     },
   },
   map: {
@@ -578,17 +609,6 @@ const es: BuilderMessages = {
     designNote:
       'Se configura en la lista de preguntas, en la pestaña Construir — busca la tarjeta «Punto de envío parcial».',
   },
-  revealPoint: {
-    label: 'Pantalla de revelación',
-    remove: 'Quitar la pantalla de revelación',
-    move: 'Mover la pantalla de revelación',
-    info: 'Acerca de la pantalla de revelación',
-    tipPlays: 'Muestra una breve pantalla de procesamiento en este punto del formulario.',
-    tipEnd: 'Al final se muestra justo antes del resultado — nunca a mitad del formulario.',
-    tipMid: 'Aquí se muestra después de esta pregunta y luego el formulario continúa.',
-    tipEdit: 'Edita su titular, subtítulo y duración en Diseño.',
-    edit: 'Editar pantalla de revelación',
-  },
   canvas: {
     questionN: 'Pregunta {n}',
     titlePlaceholder: 'Escribe tu pregunta…',
@@ -599,6 +619,13 @@ const es: BuilderMessages = {
     submit: 'Enviar',
     pts: '{n} pts',
     messagePlaceholder: 'Escribe tu mensaje…',
+    revealHeadlinePlaceholder: 'Revisando tus respuestas…',
+    revealSubtitlePlaceholder: 'Añade una línea que tranquilice (opcional)',
+    revealPlays: 'Se muestra {ms} ms y luego el formulario continúa solo.',
+    schedulerUnset: 'Aún no eliges un tipo de evento',
+    schedulerNote: 'Aquí eligen un horario. Agendar responde esta pregunta y avanza el formulario.',
+    schedulerLoading: 'Cargando el calendario…',
+    schedulerLoadError: 'No se pudo cargar el calendario. Revisa que el tipo de evento siga disponible.',
     nameFirstPlaceholder: 'Nombre',
     nameLastPlaceholder: 'Apellidos',
   },
@@ -615,7 +642,30 @@ const es: BuilderMessages = {
     revealHeadline: 'Titular',
     revealSubtitle: 'Subtítulo',
     revealDuration: 'Duración (ms)',
-    revealHint: 'Se muestra aquí y el formulario continúa solo. Arrástrala en la lista para moverla.',
+    revealDurationHint: 'Cuánto se muestra, 500–30000 ms. Por defecto: 2200.',
+    revealHint:
+      'Se muestra aquí y el formulario continúa solo. Arrastra la tarjeta en la lista para moverla. Ambas líneas aceptan tokens [campo].',
+    revealPrewarm: 'Precargar el calendario',
+    revealPrewarmHint: 'Carga el calendario de agendamiento del resultado mientras se muestra esta pantalla.',
+    schedulerSection: 'Agendador',
+    schedulerHint: 'Elige un tipo de evento de Calendly. Cuando alguien agenda, cuenta como su respuesta.',
+    schedulerEventType: 'Tipo de evento',
+    schedulerPickPlaceholder: 'Selecciona un tipo de evento…',
+    schedulerLoading: 'Cargando tipos de evento…',
+    schedulerConnect: 'Conecta Calendly en Integraciones para elegir un tipo de evento.',
+    schedulerConnectCta: 'Ir a Integraciones',
+    schedulerShowDetails: 'Mostrar detalles del evento',
+    schedulerMapTitle: 'Autocompletar el formulario de agendamiento',
+    schedulerMapHint: 'Envía respuestas de preguntas anteriores a los campos que pide este evento.',
+    schedulerMapPickFirst:
+      'Elige un tipo de evento para ver los campos que pide su formulario de agendamiento.',
+    schedulerMapName: 'Nombre',
+    schedulerMapEmail: 'Correo electrónico',
+    schedulerMapAuto: 'Automático',
+    schedulerAfter: 'Al agendar',
+    schedulerAfterHint: 'Qué pasa cuando la persona elige un horario.',
+    schedulerAfterContinue: 'Continuar a la siguiente pregunta',
+    schedulerAfterSubmit: 'Enviar el formulario y mostrar el final',
     scoring: 'Puntaje',
     scoringHint:
       'Cuenta esta pregunta para el puntaje. Los puntos de la opción elegida suman al total; define los rangos en Resultados.',
@@ -686,6 +736,7 @@ const es: BuilderMessages = {
       slider: { title: 'Deslizador', desc: 'Escala de valoración' },
       message: { title: 'Mensaje', desc: 'Texto, sin campo' },
       reveal: { title: 'Pantalla de revelación', desc: 'Una breve pausa de procesamiento' },
+      scheduler: { title: 'Agendador', desc: 'Agenda una reunión en tu calendario' },
     },
   },
   map: {
