@@ -6,12 +6,20 @@ import { createEmptyOutcome } from '@quill/engine';
 import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/cn';
-import { TextField, NumberField, TextArea } from './fields';
+import { HelpTip } from '@/components/ui/help-tip';
+import { TextField, NumberField } from './fields';
+import { TokenTextarea, tokenOptionsBefore, allTokenKeys } from './token-textarea';
 import { iconForStep } from './question-types';
 import { maxScore, scoringSteps } from './scoring-util';
 import type { BuilderMessages } from './builder-messages';
 import { tb } from './builder-messages';
 import type { EditorMessages } from './messages';
+
+/** fields.tsx `controlBase`, compact — the shell TokenTextarea renders into. */
+const OUTCOME_TEXTAREA_CLASS =
+  'rounded-md border border-input bg-background px-3 py-2 text-xs transition-colors ' +
+  'placeholder:text-muted-foreground hover:border-muted-foreground ' +
+  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring resize-y';
 
 /**
  * Unified Scoring & Results — one coherent story: LEFT the points each question
@@ -24,12 +32,15 @@ export function ResultsView({
   config,
   onScoringChange,
   onOutcomesChange,
+  onStepScoringChange,
   m,
   rm,
 }: {
   config: FormConfig;
   onScoringChange: (enabled: boolean) => void;
   onOutcomesChange: (next: FormOutcome[]) => void;
+  /** Toggle ONE question's contribution, by its index in `config.steps` — V5-B2. */
+  onStepScoringChange: (stepIndex: number, on: boolean) => void;
   m: BuilderMessages;
   /** Results-tab clarity strings from the shared catalog (admin.editor.resultsHelp). */
   rm: EditorMessages['resultsHelp'];
@@ -42,6 +53,19 @@ export function ResultsView({
   // scoring list. Reference identity holds (filter doesn't clone the steps).
   const stepIndex = new Map<FormStep, number>(config.steps.map((s, i) => [s, i]));
   const outcomes = [...(config.outcomes ?? [])].sort((a, b) => (a.minScore ?? 0) - (b.minScore ?? 0));
+  // The thank-you screen runs AFTER every step, so every captured field is
+  // available to recall there — pass the full list, not a prefix.
+  const endingTokens = tokenOptionsBefore(config.steps, config.steps.length);
+  const allKeys = allTokenKeys(config.steps);
+  const bmTokens = m.tokens;
+  const tokenMessages = {
+    pickerLabel: bmTokens.pickerLabel,
+    pickerEmpty: bmTokens.pickerEmpty,
+    pickerNoMatch: bmTokens.pickerNoMatch,
+    warnLater: bmTokens.warnLater,
+    warnUnknown: bmTokens.warnUnknown,
+    warnRaw: bmTokens.warnRaw,
+  };
 
   function update(index: number, patch: Partial<FormOutcome>) {
     onOutcomesChange(outcomes.map((o, i) => (i === index ? { ...o, ...patch } : o)));
@@ -63,7 +87,9 @@ export function ResultsView({
               <i aria-hidden className="pi pi-star text-primary" style={{ fontSize: 15 }} />
               {m.results.pointsTitle}
             </h2>
-            <p className="mt-1 text-sm text-muted-foreground">{tb(m.results.pointsHint, { n: top })}</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {enabled ? tb(m.results.pointsHint, { n: top }) : m.results.pointsHintOff}
+            </p>
           </div>
           <Switch checked={enabled} onCheckedChange={onScoringChange} aria-label={m.results.enableScoring} />
         </div>
@@ -79,14 +105,29 @@ export function ResultsView({
         ) : (
           <div className="flex flex-col gap-3">
             {questions.map((q) => (
-              <PointsCard key={q.key} step={q} index={stepIndex.get(q) ?? 0} m={m} />
+              <PointsCard
+                key={q.key}
+                step={q}
+                index={stepIndex.get(q) ?? 0}
+                onScoringChange={(on) => onStepScoringChange(stepIndex.get(q) ?? 0, on)}
+                m={m}
+              />
             ))}
           </div>
         )}
       </section>
 
-      {/* What happens at the end */}
-      <section className="flex flex-col gap-4 rounded-2xl border border-border bg-card p-5">
+      {/* What happens at the end. Outcomes ARE the score's routing table, so with
+          scoring off they route nothing — the engine now resolves to null and the
+          form's own ending shows (V5-A1). The panel goes inert rather than
+          hiding: the ranges are still there, and hiding them would read as data
+          loss. Kept editable-looking-but-disabled would be worse, so it is
+          visibly dimmed with the reason stated. */}
+      <section
+        data-testid="results-end"
+        data-scoring-off={!enabled || undefined}
+        className="flex flex-col gap-4 rounded-2xl border border-border bg-card p-5"
+      >
         <div>
           <h2 className="flex items-center gap-2 text-base font-semibold text-foreground">
             <i aria-hidden className="pi pi-check-square text-primary" style={{ fontSize: 15 }} />
@@ -95,42 +136,87 @@ export function ResultsView({
           <p className="mt-1 text-sm text-muted-foreground">{m.results.endHint}</p>
         </div>
 
+        {!enabled ? (
+          <p
+            data-testid="results-outcomes-inert"
+            className="flex items-start gap-2 rounded-xl border border-dashed border-border p-4 text-sm leading-relaxed text-muted-foreground"
+          >
+            <i aria-hidden className="pi pi-info-circle mt-0.5 shrink-0 text-secondary" style={{ fontSize: 13 }} />
+            {rm.outcomesInert}
+          </p>
+        ) : null}
+
+        <fieldset
+          disabled={!enabled}
+          className={cn(
+            'flex flex-col gap-4 border-0 p-0',
+            !enabled && 'pointer-events-none select-none opacity-40',
+          )}
+        >
         <ScoreBar outcomes={outcomes} top={top} m={m} />
 
         <div className="flex flex-col gap-3">
           {outcomes.map((o, index) => {
             const lower = o.minScore ?? 0;
             const upper = outcomes[index + 1]?.minScore;
-            const range = upper != null ? `${lower}–${upper - 1}` : `${lower}+`;
+            // Two ranges claiming the same threshold made this print an
+            // inverted bucket ("0–-1") as if it were legitimate. When the next
+            // range starts at or below this one, this range is unreachable —
+            // say so instead of drawing a nonsense span.
+            const shadowed = upper != null && upper <= lower;
+            const range = shadowed
+              ? m.results.rangeUnreachable
+              : upper != null
+                ? `${lower}–${upper - 1}`
+                : `${lower}+`;
             return (
               <div
                 key={o.id}
                 data-testid="outcome-row"
-                className="rounded-xl border border-border bg-background p-3.5"
+                data-unreachable={shadowed || undefined}
+                className={cn(
+                  'rounded-xl border bg-background p-3.5',
+                  shadowed ? 'border-destructive/50' : 'border-border',
+                )}
               >
                 <div className="flex items-center gap-3">
                   <span
                     className={cn(
                       'inline-flex min-w-[52px] shrink-0 items-center justify-center rounded-lg px-2 py-1.5 text-sm font-bold tabular-nums',
-                      index === outcomes.length - 1
-                        ? 'bg-primary text-primary-foreground'
-                        : 'bg-muted text-muted-foreground',
+                      shadowed
+                        ? 'bg-destructive/15 text-destructive'
+                        : index === outcomes.length - 1
+                          ? 'bg-primary text-primary-foreground'
+                          : 'bg-muted text-muted-foreground',
                     )}
                   >
                     {range}
                   </span>
-                  <TextField
-                    value={o.label}
-                    placeholder={m.results.rangeLabelPlaceholder}
-                    onChange={(e) => update(index, { label: e.target.value })}
-                    className="flex-1 font-medium"
-                    data-testid="outcome-label"
-                  />
+                  <span className="relative flex flex-1 items-center gap-1.5">
+                    <TextField
+                      value={o.label}
+                      placeholder={m.results.rangeLabelPlaceholder}
+                      onChange={(e) => update(index, { label: e.target.value })}
+                      className="flex-1 font-medium"
+                      data-testid="outcome-label"
+                    />
+                    <HelpTip text={rm.outcomeHeadingHelp2} label={rm.messageLabel} />
+                  </span>
                   <div className="w-20 shrink-0">
                     <NumberField
                       aria-label={m.results.rangeLabel}
                       value={lower}
-                      onChange={(e) => update(index, { minScore: Number(e.target.value) || 0 })}
+                      step={1}
+                      onChange={(e) => {
+                        // The schema requires an integer. A float ("7.5") or an
+                        // exponent ("1e35") used to be committed, fail
+                        // validation, and take every LATER edit down with it —
+                        // the whole form stopped autosaving over one keystroke
+                        // in this box. Constrain it here instead.
+                        const n = Number(e.target.value);
+                        if (!Number.isFinite(n)) return update(index, { minScore: 0 });
+                        update(index, { minScore: Math.trunc(Math.max(-1_000_000, Math.min(1_000_000, n))) });
+                      }}
                       data-testid="outcome-minscore"
                     />
                   </div>
@@ -151,26 +237,36 @@ export function ResultsView({
                     for this range; empty falls back to the shared thank-you body.
                     Interpolation of [field] tokens happens in the renderer. */}
                 <div className="mt-2.5 flex flex-col gap-1 pl-[64px]">
-                  <label htmlFor={`outcome-message-${o.id}`} className="text-xs font-medium text-foreground">
-                    {rm.messageLabel}
-                  </label>
-                  <TextArea
-                    id={`outcome-message-${o.id}`}
+                  <span className="text-xs font-medium text-foreground">{rm.messageLabel}</span>
+                  {/* The recall picker, same as everywhere else in the editor
+                      (V4-16). This was a plain textarea, so typing `@` here did
+                      nothing while it worked in every other copy field — his
+                      exact complaint. Every field is captured BEFORE the
+                      thank-you screen, so all of them are offered. */}
+                  <TokenTextarea
                     value={o.message ?? ''}
                     rows={2}
+                    onChange={(v) => update(index, { message: v || null })}
                     placeholder={m.results.messagePlaceholder}
-                    onChange={(e) => update(index, { message: e.target.value || null })}
-                    data-testid="outcome-message"
-                    className="text-xs"
+                    ariaLabel={rm.messageLabel}
+                    tokens={endingTokens}
+                    allKeys={allKeys}
+                    m={tokenMessages}
+                    hint={bmTokens.hint}
+                    testId="outcome-message"
+                    className={OUTCOME_TEXTAREA_CLASS}
                   />
                   <p className="text-[11px] text-muted-foreground">{rm.messageHelp}</p>
                 </div>
                 {/* Redirect is a clearly-separate, optional URL — normalized to
                     https:// on blur so a schemeless entry never 400s the save. */}
                 <div className="mt-2.5 flex flex-col gap-1 pl-[64px]">
-                  <label htmlFor={`outcome-redirect-${o.id}`} className="text-xs font-medium text-foreground">
-                    {rm.redirectLabel}
-                  </label>
+                  <span className="flex items-center gap-1.5">
+                    <label htmlFor={`outcome-redirect-${o.id}`} className="text-xs font-medium text-foreground">
+                      {rm.redirectLabel}
+                    </label>
+                    <HelpTip text={rm.redirectHelp2} label={rm.redirectLabel} />
+                  </span>
                   <RedirectField
                     id={`outcome-redirect-${o.id}`}
                     value={o.redirectUrl ?? null}
@@ -193,6 +289,7 @@ export function ResultsView({
             {m.results.addRange}
           </button>
         </div>
+        </fieldset>
       </section>
     </div>
   );
@@ -287,9 +384,36 @@ function RedirectField({
 }
 
 /** One question's points, read-through from its options/slider ranges. */
-function PointsCard({ step, index, m }: { step: FormStep; index: number; m: BuilderMessages }) {
+/**
+ * One question's point table in Results, with its own scoring toggle (V5-B2).
+ *
+ * The toggle is the SAME `step.scoringEnabled` the question's settings panel
+ * edits, so the two views can never disagree. A question opted out stays listed
+ * (you need to see it to turn it back on) but is dimmed and its points struck
+ * from the total.
+ */
+function PointsCard({
+  step,
+  index,
+  onScoringChange,
+  m,
+}: {
+  step: FormStep;
+  index: number;
+  /** Toggle THIS question's contribution to the score. */
+  onScoringChange: (on: boolean) => void;
+  m: BuilderMessages;
+}) {
+  const on = step.scoringEnabled !== false;
   return (
-    <div className="rounded-xl border border-border bg-background p-3.5">
+    <div
+      data-testid="points-card"
+      data-scoring-off={!on || undefined}
+      className={cn(
+        'rounded-xl border border-border bg-background p-3.5 transition-opacity',
+        !on && 'opacity-50',
+      )}
+    >
       <p
         className="mb-2.5 flex items-center gap-2 text-sm font-semibold text-foreground"
         data-testid="points-question"
@@ -303,7 +427,15 @@ function PointsCard({ step, index, m }: { step: FormStep; index: number; m: Buil
           {index + 1}
         </span>
         <i aria-hidden className={`pi ${iconForStep(step)} text-muted-foreground`} style={{ fontSize: 12 }} />
-        <span className="min-w-0 truncate">{step.question?.trim() || tb(m.canvas.questionN, { n: index + 1 })}</span>
+        <span className="min-w-0 flex-1 truncate">
+          {step.question?.trim() || tb(m.canvas.questionN, { n: index + 1 })}
+        </span>
+        <Switch
+          checked={on}
+          onCheckedChange={onScoringChange}
+          aria-label={`${m.settings.scoring} — ${step.question?.trim() || tb(m.canvas.questionN, { n: index + 1 })}`}
+          data-testid="points-card-toggle"
+        />
       </p>
       {step.type === 'slider' ? (
         <div className="flex flex-wrap gap-2">

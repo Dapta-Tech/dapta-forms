@@ -16,6 +16,7 @@ import {
   runtimeSteps,
   validateAnswerCode,
   resolveOutcome,
+  resolveEnding,
   computeScore,
   partialSubmitKey,
   revealAfterKey,
@@ -28,8 +29,8 @@ import {
   type FormStep,
   type FormOutcome,
 } from '@quill/engine';
-import { onAccent, getMessages, t } from '@quill/shared';
-import type { FormConfig } from '@quill/types';
+import { onAccent, getMessages } from '@quill/shared';
+import type { FormConfig, OutcomeBooking } from '@quill/types';
 import { signupHref } from '@/lib/growth';
 import { FormLogo } from '@/components/public/form-logo';
 import { FormProgress } from '@/components/public/form-progress';
@@ -38,6 +39,7 @@ import { StepInput } from '@/components/public/step-input';
 import { BookingScreen } from '@/components/public/booking-screen';
 import { RevealScreen } from '@/components/public/reveal-screen';
 import { warmBookingEmbed, type BookingScheduledDetails } from '@/lib/booking-embed';
+import { resolveSchedulerPrefill } from '@/lib/booking-prefill';
 import { submitFormAction, recordEventAction, recordBookingAction } from './actions';
 import './public-form.css';
 
@@ -68,6 +70,38 @@ function captureUtm(): Record<string, string> {
 
 /** A query value can never be longer than this once seeded (defense-in-depth). */
 const PREFILL_MAX_LEN = 512;
+
+/**
+ * Map a `scheduler` step's config to the booking shape the shared BookingScreen
+ * embeds, or `null` when no event type has been picked yet (renders a fallback).
+ * "Show event details? → No" becomes Calendly's `hide_event_type_details=1`.
+ * The URL is re-guarded to http(s) — it flows into an embed (XSS defense).
+ */
+function schedulerToBooking(
+  scheduler: NonNullable<FormStep['scheduler']>,
+  customAnswers: Record<string, string> = {},
+): OutcomeBooking | null {
+  const url = scheduler.url?.trim();
+  if (!url || !isSafeHttpUrl(url)) return null;
+  const provider = scheduler.provider ?? 'calendly';
+  let finalUrl = url;
+  if (provider === 'calendly') {
+    try {
+      const u = new URL(url);
+      if (scheduler.hideEventDetails) u.searchParams.set('hide_event_type_details', '1');
+      // The event type's custom questions are prefilled by their positional id,
+      // so they ride the URL as-is (the embed builder preserves existing query
+      // params). Built-in name/email travel through the overlaid answers.
+      for (const [field, value] of Object.entries(customAnswers)) {
+        if (value) u.searchParams.set(field, value);
+      }
+      finalUrl = u.toString();
+    } catch {
+      /* keep the original url */
+    }
+  }
+  return { provider, url: finalUrl, prefill: scheduler.prefill !== false };
+}
 
 /**
  * URL-parameter prefill (V4-13): read the query string and seed the answer for
@@ -151,13 +185,34 @@ export function FormRenderer({
   const [booking, setBooking] = useState<{ outcome: FormOutcome; score: number } | null>(null);
 
   const utmRef = useRef<Record<string, string>>({});
+  const redirected = useRef(false); // a deferred redirect fires exactly once
   const viewTracked = useRef(false);
   const partialSent = useRef(false);
   const advancing = useRef(false);
   const submitAfterReveal = useRef(false);
   const bookedRef = useRef(false); // one booking → one callback + one redirect
+  const schedulerBooked = useRef<Set<string>>(new Set()); // one booking per scheduler step
   const lastStepViewKey = useRef<string | null>(null);
   const engineConfig = config as unknown as Parameters<typeof runtimeSteps>[0];
+
+  // Deferred redirect (V5-B1): "show the thank-you for N ms, then leave". The
+  // screen is already rendered by the time this runs, so the respondent reads
+  // the message and the navigation happens under them. Guarded by a ref so a
+  // re-render cannot schedule a second one, and the timer is cleared on unmount
+  // so leaving early never yanks the page out from under a later screen.
+  useEffect(() => {
+    if (phase !== 'done' || !done || redirected.current) return;
+    const outcome = resolveOutcome(engineConfig, done.score, answers);
+    const ending = resolveEnding(engineConfig, outcome);
+    if (!ending.redirectUrl || ending.redirectDelayMs <= 0) return;
+    if (!isSafeHttpUrl(ending.redirectUrl)) return;
+    const url = ending.redirectUrl;
+    const timer = setTimeout(() => {
+      redirected.current = true;
+      window.location.href = url;
+    }, ending.redirectDelayMs);
+    return () => clearTimeout(timer);
+  }, [phase, done, engineConfig, answers]);
 
   // The engine decides the ordered, visible, display-resolved steps.
   const steps = useMemo<FormStep[]>(
@@ -166,9 +221,13 @@ export function FormRenderer({
   );
   const step = steps[index];
   const thresholdKey = useMemo(() => partialSubmitKey(engineConfig), [engineConfig]);
-  // WHERE the reveal plays (revealAfterStep → triggersReveal → default-last);
-  // null when the reveal is disabled. Position is authoritative, so a form no
-  // longer replays a reveal mid-form just because a step carries triggersReveal.
+  // BACK-COMPAT ONLY: where a LEGACY form-level reveal plays
+  // (revealAfterStep → triggersReveal → default-last), null when there is none.
+  // The builder no longer authors this shape — it folds an existing one into a
+  // real `reveal` step on open (`migrateRevealToStep`) — but a form PUBLISHED
+  // before that keeps its stored config until it is re-published, so the
+  // interstitial has to keep playing for it. Never remove without a config
+  // migration of every published form.
   const revealKey = useMemo(() => revealAfterKey(engineConfig), [engineConfig]);
 
   // Accent branding (only override the local default when a color is configured).
@@ -180,9 +239,20 @@ export function FormRenderer({
   const err = (code: string) => m.errors[code as keyof typeof m.errors] ?? m.errors.required;
 
   const track = useCallback(
-    (type: string, stepIndex?: number) => {
+    // `stepIndex` is the position in THIS session's runtimeSteps (visible-step)
+    // array — meaningful for "was this the first question" (Starts), but not
+    // stable across sessions once show/hide/goto logic branches differently.
+    // `stepKey` is the step's authored, stable identity, so the drop-off table
+    // can attribute a view to the actual question shown rather than to
+    // whichever config step happens to sit at that position (V5-D3).
+    (type: string, stepIndex?: number, stepKey?: string) => {
       if (!sessionId) return;
-      void recordEventAction(accountCode, slug, { sessionId, type, stepIndex: stepIndex ?? null });
+      void recordEventAction(accountCode, slug, {
+        sessionId,
+        type,
+        stepIndex: stepIndex ?? null,
+        stepKey: stepKey ?? null,
+      });
     },
     [accountCode, slug, sessionId],
   );
@@ -208,7 +278,7 @@ export function FormRenderer({
     const key = `${phase}:${index}`;
     if (lastStepViewKey.current === key) return;
     lastStepViewKey.current = key;
-    track('step_view', index);
+    track('step_view', index, step.key);
   }, [phase, index, step, track]);
 
   // Clamp the index if the visible-step set shrinks (a branch closed).
@@ -256,12 +326,23 @@ export function FormRenderer({
         setPhase('booking');
         return;
       }
-      if (outcome?.redirectUrl) {
+      // V5-B1: the destination is the outcome's, else the form-level ending's,
+      // so a form can redirect everyone (or redirect with scoring off) without
+      // repeating the URL on every range.
+      const ending = resolveEnding(engineConfig, outcome);
+      if (ending.redirectUrl) {
         // Runtime XSS guard: only navigate to http(s). A non-http(s) protocol
         // (javascript:/data:) is ignored + logged, falling through to the
         // thank-you screen (the schema also rejects it on save — belt-and-braces).
-        if (isSafeHttpUrl(outcome.redirectUrl)) {
-          window.location.href = outcome.redirectUrl;
+        if (isSafeHttpUrl(ending.redirectUrl)) {
+          // A delay shows the thank-you screen first, then leaves. Zero (the
+          // default, and every pre-V5 config) redirects immediately as before.
+          if (ending.redirectDelayMs > 0) {
+            setDone({ score, outcome: res.outcome ?? null });
+            setPhase('done');
+            return;
+          }
+          window.location.href = ending.redirectUrl;
           return;
         }
         console.warn('[forms] ignored non-http(s) redirectUrl');
@@ -303,12 +384,12 @@ export function FormRenderer({
         const completedIdx = nextSteps.findIndex((s) => s.key === completed.key);
         const isLast = completedIdx >= 0 ? completedIdx >= nextSteps.length - 1 : index >= nextSteps.length - 1;
 
-        track('step_complete', index);
+        track('step_complete', index, completed.key);
 
         // Partial submit once past the configured lead-capture threshold.
         if (thresholdKey && completed.key === thresholdKey && !partialSent.current) {
           partialSent.current = true;
-          track('partial_submit', index);
+          track('partial_submit', index, completed.key);
           void submitFormAction(accountCode, slug, {
             sessionId,
             data: withData(nextAnswers),
@@ -347,6 +428,31 @@ export function FormRenderer({
       }
     },
     [engineConfig, index, thresholdKey, revealKey, accountCode, slug, sessionId, finalize, track],
+  );
+
+  // A booking on a SCHEDULER step (V6): record the meeting (booking_event + the
+  // CRM booking_sync outbox, best-effort), make the booked slot this step's
+  // answer (satisfies a required scheduler + lands in the submission data), then
+  // advance exactly like any other step. If the scheduler is the last visible
+  // step — or a goto rule routes it to the ending — `advance` finalizes the
+  // submission as COMPLETE. That is how "booking → submit the form" works: via
+  // the same logic as every other step, not a special case.
+  const handleSchedulerBooked = useCallback(
+    async (schedStep: FormStep, details: BookingScheduledDetails) => {
+      if (schedulerBooked.current.has(schedStep.key)) return;
+      schedulerBooked.current.add(schedStep.key);
+      await recordBookingAction(accountCode, slug, {
+        sessionId,
+        provider: details.provider,
+        ...(details.eventUri ? { eventUri: details.eventUri } : {}),
+        ...(details.inviteeUri ? { inviteeUri: details.inviteeUri } : {}),
+        ...(details.startTime ? { startTime: details.startTime } : {}),
+      }).catch(() => {});
+      const next = { ...answersRef.current, [schedStep.key]: details.startTime ?? 'booked' };
+      setAnswers(next);
+      await advance(next, schedStep);
+    },
+    [accountCode, slug, sessionId, advance],
   );
 
   function submitCurrent() {
@@ -444,6 +550,8 @@ export function FormRenderer({
 
   if (phase === 'done' && done) {
     const outcome = resolveOutcome(engineConfig, done.score, answersRef.current);
+    // V5-B1: outcome copy → form-level ending copy → the built-in localized copy.
+    const ending = resolveEnding(engineConfig, outcome);
     const cta = signupHref('confirmation', accountCode);
     return (
       <PhaseShell className="pf pf--done" style={accentVars} bannerText={cover?.bannerText}>
@@ -451,11 +559,14 @@ export function FormRenderer({
           <div className="pf-done__check" aria-hidden="true">
             ✓
           </div>
-          <h1 className="pf-done__title">{outcome?.label ?? m.thankYouTitle}</h1>
+          {/* The heading interpolates too. It did not, so a `[firstname]` typed
+              into a range's heading reached the respondent as literal text —
+              while the body right beneath it resolved correctly. */}
+          <h1 className="pf-done__title">
+            {ending.headline ? interpolate(ending.headline, answersRef.current) : m.thankYouTitle}
+          </h1>
           <p className="pf-done__body">
-            {outcome?.message
-              ? interpolate(outcome.message, answersRef.current)
-              : t(m.thankYouBody, { name })}
+            {ending.body ? interpolate(ending.body, answersRef.current) : m.thankYouBody}
           </p>
           {cta ? (
             <>
@@ -560,6 +671,111 @@ export function FormRenderer({
       <PhaseShell className="pf" style={accentVars}>
         <div className="pf__body">
           <p className="pf__helper">{m.noSteps}</p>
+        </div>
+      </PhaseShell>
+    );
+  }
+
+  // A REVEAL step (V5-B3) is an interstitial, not a question: it renders the
+  // same processing screen the legacy form-level reveal uses, owns its own timer
+  // and advances itself. Handled here rather than as a `phase` because it lives
+  // in `steps`, so Back, progress, and skip-logic all treat it like any other
+  // step — which is the whole point of making it a step type.
+  if (step.type === 'reveal') {
+    return (
+      <PhaseShell
+        className="pf pf--reveal"
+        style={accentVars}
+        role="status"
+        aria-live="polite"
+        bannerText={cover?.bannerText}
+      >
+        <RevealScreen
+          reveal={step.reveal ?? { enabled: true }}
+          answers={answers}
+          messages={{ headline: m.revealHeadline, subtitle: m.revealSubtitle }}
+          onComplete={() => {
+            // Completing an interstitial is completing a step: reuse `advance`
+            // so the partial-submit threshold, forward jumps and the finalize
+            // path all behave exactly as they do after a real question.
+            void advance(answersRef.current, step);
+          }}
+        />
+      </PhaseShell>
+    );
+  }
+
+  // A SCHEDULER step (V6): a real question in the flow (back/progress/skip-logic
+  // apply) whose input is a booking. The shared BookingScreen embeds the
+  // provider widget; booking it answers the step and advances via `advance`, so a
+  // required scheduler blocks Continue until booked and "on booking → submit" is
+  // just the last-step / goto path. Rendered here (not a `phase`) for the same
+  // reason as reveal — it lives in `steps`.
+  if (step.type === 'scheduler') {
+    // Resolve the author's field mapping once: built-ins overlay the answers,
+    // the event type's custom questions ride their exact positional ids.
+    // The steps are what makes "Automatic" work: it finds the answered email /
+    // phone / name QUESTION rather than hoping the form used those exact keys.
+    const schedPrefill = resolveSchedulerPrefill(
+      answers,
+      step.scheduler?.prefillMap,
+      config.steps as FormStep[],
+    );
+    const booking = step.scheduler
+      ? schedulerToBooking(step.scheduler, schedPrefill.customAnswers)
+      : null;
+    const schedLogo = cover?.logo ?? config.branding?.logo ?? null;
+    return (
+      <PhaseShell className="pf" style={accentVars} bannerText={cover?.bannerText}>
+        <header className="pf__topbar">
+          <div className="pf__topbar-inner">
+            {index > 0 || cover ? (
+              <button type="button" className="pf__back" onClick={back} aria-label={m.back}>
+                ←
+              </button>
+            ) : (
+              <span className="pf__back pf__back--placeholder" />
+            )}
+            <FormLogo src={schedLogo} name={name} />
+            <span className="pf__back pf__back--placeholder" />
+          </div>
+          <FormProgress total={steps.length} currentIndex={index} locale={locale} />
+        </header>
+        <div className="pf__body">
+          <div className="pf__inner">
+            <div className="pf__content pf-animate" key={animKey}>
+              <div className="pf__question-wrap">
+                <h2 className="pf__question">{step.question ?? step.key}</h2>
+                {step.helper ? <p className="pf__helper">{step.helper}</p> : null}
+              </div>
+              <div className="pf__fields">
+                {booking ? (
+                  <BookingScreen
+                    booking={booking}
+                    answers={schedPrefill.answers}
+                    extraCustomAnswers={schedPrefill.customAnswers}
+                    sessionId={sessionId}
+                    locale={locale}
+                    hideHeader
+                    onBooked={(details) => void handleSchedulerBooked(step, details)}
+                  />
+                ) : (
+                  <p className="pf__error" role="alert" data-testid="scheduler-unconfigured">
+                    {m.schedulerUnconfigured}
+                  </p>
+                )}
+                {!step.required ? (
+                  <button
+                    type="button"
+                    className="pf__btn pf__btn--inline"
+                    onClick={() => void advance(answers, step)}
+                  >
+                    {m.schedulerSkip}
+                  </button>
+                ) : null}
+              </div>
+            </div>
+          </div>
         </div>
       </PhaseShell>
     );

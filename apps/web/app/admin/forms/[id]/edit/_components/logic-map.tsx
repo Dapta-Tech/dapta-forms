@@ -3,7 +3,8 @@
 import type { FormConfig, FormOutcome, FormStep } from '@quill/engine';
 import { cn } from '@/lib/cn';
 import { iconForStep } from './question-types';
-import { optionLabel } from './logic-util';
+import { conditionNeverHolds, conditionsContradict } from '@quill/engine';
+import { describeCondition, optionLabel } from './logic-util';
 import type { BuilderMessages, GalleryItemId } from './builder-messages';
 import { tb } from './builder-messages';
 
@@ -51,13 +52,14 @@ export function LogicMap({ config, m }: { config: FormConfig; m: BuilderMessages
       </div>
 
       <div className="mx-auto flex max-w-[520px] flex-col items-stretch pb-12">
-        {/* Start — a capsule, visually distinct from the rectangular question cards */}
+        {/* Start — a capsule, visually distinct from the rectangular question
+            cards. The play triangle in a filled circle is gone (V5-B4): on a
+            read-only map it read as a "run the form" button nobody could press.
+            A plain dot marks the entry point without promising an action. */}
         <div className="flex flex-col items-center" data-testid="logic-start">
-          <span className="inline-flex items-center gap-2 rounded-full border border-border bg-muted px-4 py-2 shadow-sm">
-            <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-primary text-primary-foreground">
-              <i aria-hidden className="pi pi-play" style={{ fontSize: 10 }} />
-            </span>
-            <span className="text-sm font-semibold text-foreground">{m.map.start}</span>
+          <span className="inline-flex items-center gap-2 rounded-full border border-primary/40 bg-primary/[0.08] px-4 py-2 shadow-sm">
+            <span aria-hidden className="inline-block h-2 w-2 shrink-0 rounded-full bg-primary" />
+            <span className="text-sm font-semibold uppercase tracking-wide text-primary">{m.map.start}</span>
           </span>
           <span className="mt-1.5 text-[11px] text-muted-foreground">{m.map.startHint}</span>
         </div>
@@ -103,18 +105,53 @@ export function LogicMap({ config, m }: { config: FormConfig; m: BuilderMessages
                         {titleOf(step, i)}
                       </span>
                     </div>
-                    <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">
+                    <span className="mt-0.5 flex items-center gap-1.5 truncate text-[11px] text-muted-foreground">
                       {kindLabel(step, m)}
+                      {step.hidden ? (
+                        <span
+                          data-testid="logic-hidden-badge"
+                          className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground"
+                        >
+                          {m.badges.hidden}
+                        </span>
+                      ) : null}
                     </span>
                   </div>
                   {branches.length ? (
                     <LogicPill>
                       {branches.length === 1 ? m.badges.ruleOne : tb(m.map.branches, { n: branches.length })}
                     </LogicPill>
-                  ) : hasCond ? (
-                    <LogicPill>{m.map.conditional}</LogicPill>
                   ) : null}
                 </div>
+
+                {/* The actual show/hide rules, spelled out (V5-B4). A bare
+                    "Conditional" pill told you a rule existed and nothing about
+                    what it said — on the one screen meant for understanding the
+                    flow. */}
+                {hasCond ? (
+                  <div className="mt-2.5 flex flex-col gap-1.5 border-t border-border/60 pt-2.5">
+                    {/* The map already renders both rules — so when they cancel
+                        out, or an operand is still "(not set)", it can say the
+                        step never appears. This is the view an author opens to
+                        AUDIT branching; staying silent here sent them back to
+                        the Build panel to discover it (V5-QA). */}
+                    {conditionsContradict(step.showWhen, step.hideWhen) || conditionNeverHolds(step.showWhen) ? (
+                      <p
+                        data-testid="logic-never-appears"
+                        className="flex items-start gap-1.5 rounded-md bg-destructive/10 px-2 py-1 text-[11px] font-medium leading-relaxed text-destructive"
+                      >
+                        <i aria-hidden className="pi pi-exclamation-triangle mt-0.5 shrink-0" style={{ fontSize: 10 }} />
+                        {m.map.neverAppears}
+                      </p>
+                    ) : null}
+                    {step.showWhen ? (
+                      <ConditionLine kind="show" cond={step.showWhen} steps={steps} m={m} />
+                    ) : null}
+                    {step.hideWhen ? (
+                      <ConditionLine kind="hide" cond={step.hideWhen} steps={steps} m={m} />
+                    ) : null}
+                  </div>
+                ) : null}
               </div>
 
               {/* Branch edges — indented, labelled, traceable */}
@@ -265,6 +302,63 @@ function OutcomeNode({ outcome, m }: { outcome: FormOutcome; m: BuilderMessages 
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * One show/hide rule as a readable sentence: `IF «Budget» is greater than 500`
+ * (V5-B4). Show rules read in the branch purple, hide rules in the destructive
+ * red, so the two are distinguishable at a glance instead of by reading the
+ * keyword. A rule pointing at a deleted question is called out — it can never
+ * hold, which silently hides the question forever.
+ */
+function ConditionLine({
+  kind,
+  cond,
+  steps,
+  m,
+}: {
+  kind: 'show' | 'hide';
+  cond: NonNullable<FormStep['showWhen']>;
+  steps: FormStep[];
+  m: BuilderMessages;
+}) {
+  const d = describeCondition(cond, steps, {
+    fallbackQuestion: (i) => tb(m.canvas.questionN, { n: i + 1 }),
+    opIn: m.map.condIn,
+    opEq: m.map.condEq,
+    opGt: m.map.condGt,
+    opLt: m.map.condLt,
+    opBetween: m.map.condBetween,
+    and: m.map.condAnd,
+    blank: m.map.condBlank,
+  });
+  const show = kind === 'show';
+  return (
+    <p
+      data-testid={`logic-cond-${kind}`}
+      className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 text-[11px] leading-relaxed"
+    >
+      <span
+        className={cn(
+          'shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide',
+          show ? 'bg-secondary/15 text-secondary' : 'bg-destructive/15 text-destructive',
+        )}
+      >
+        {show ? m.map.condShowIf : m.map.condHideIf}
+      </span>
+      <span className="font-semibold text-foreground">{d.field}</span>
+      <span className="text-muted-foreground">{d.operator}</span>
+      <span className="font-medium text-foreground">{d.operand}</span>
+      {d.dangling ? (
+        <span
+          data-testid="logic-cond-dangling"
+          className="rounded bg-destructive/15 px-1.5 py-0.5 text-[10px] font-semibold text-destructive"
+        >
+          {m.map.condMissingField}
+        </span>
+      ) : null}
+    </p>
   );
 }
 

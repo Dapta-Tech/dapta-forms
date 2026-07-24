@@ -30,6 +30,7 @@ export default async function FormsList() {
     createTitle: m.createTitle,
     nameLabel: m.nameLabel,
     namePlaceholder: m.namePlaceholder,
+    nameRequired: m.nameRequired,
     cancel: m.cancel,
   };
   const rowLabels = {

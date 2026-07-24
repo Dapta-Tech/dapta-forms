@@ -3,21 +3,26 @@
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useState, useTransition } from 'react';
 
-type Preset = '7' | '30' | '90' | 'all' | 'custom';
+type Preset = 'all' | 'today' | 'week' | 'month' | 'year' | 'custom';
 
 /**
- * Date-range control for the analytics dashboard: presets (7/30/90 days + all)
- * plus a custom from/to. Writes the choice to the URL query so the server
- * component re-fetches; a Suspense boundary shows the skeleton while it does
- * (R22). Tokens-only; 44px hit targets (R28).
+ * Date-range control for the analytics dashboard. The preset set mirrors
+ * Typeform (All time / Today / Last week / Last month / Last year) plus the
+ * custom from/to this dashboard already had. "Last week/month/year" are ROLLING
+ * windows (7/30/365 days), not calendar periods — resolved server-side in
+ * page.tsx so every teammate sees the same numbers regardless of where they are.
+ * Writes the choice to the URL query so the server component re-fetches; a
+ * Suspense boundary shows the skeleton while it does (R22). Tokens-only; 44px
+ * hit targets (R28).
  */
 export function AnalyticsFilter({
   labels,
 }: {
   labels: {
-    last7: string;
-    last30: string;
-    last90: string;
+    today: string;
+    week: string;
+    month: string;
+    year: string;
     all: string;
     custom: string;
     from: string;
@@ -47,20 +52,28 @@ export function AnalyticsFilter({
     push(next);
   };
 
+  // Today in UTC — the same reference the server resolves ranges against, so the
+  // picker cannot offer a "future" that is only future in the viewer's timezone.
+  const todayUtc = new Date().toISOString().slice(0, 10);
+
   const applyCustom = () => {
     if (!from && !to) return;
+    // A reversed range silently returned zeros behind the generic empty state,
+    // which reads as "no data" rather than "these bounds are backwards".
+    const [lo, hi] = from && to && from > to ? [to, from] : [from, to];
     const next = new URLSearchParams();
     next.set('preset', 'custom');
-    if (from) next.set('from', from);
-    if (to) next.set('to', to);
+    if (lo) next.set('from', lo);
+    if (hi) next.set('to', hi);
     push(next);
   };
 
   const presets: { key: Preset; label: string }[] = [
-    { key: '7', label: labels.last7 },
-    { key: '30', label: labels.last30 },
-    { key: '90', label: labels.last90 },
     { key: 'all', label: labels.all },
+    { key: 'today', label: labels.today },
+    { key: 'week', label: labels.week },
+    { key: 'month', label: labels.month },
+    { key: 'year', label: labels.year },
     { key: 'custom', label: labels.custom },
   ];
 
@@ -95,7 +108,7 @@ export function AnalyticsFilter({
             <input
               type="date"
               value={from}
-              max={to || undefined}
+              max={to || todayUtc}
               onChange={(e) => setFrom(e.target.value)}
               className="h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground"
             />
@@ -106,6 +119,7 @@ export function AnalyticsFilter({
               type="date"
               value={to}
               min={from || undefined}
+              max={todayUtc}
               onChange={(e) => setTo(e.target.value)}
               className="h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground"
             />

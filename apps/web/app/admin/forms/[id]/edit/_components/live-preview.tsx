@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import type { FormConfig, FormStep } from '@quill/engine';
-import { resolveQuestion } from '@quill/engine';
+import { resolveQuestion, sliderBounds, clampSliderValue } from '@quill/engine';
 import { clampAccent, onAccent, DEFAULT_ACCENT } from '@quill/shared';
 import type { EditorMessages } from './messages';
 
@@ -146,21 +146,27 @@ function StepPreview({
           })}
         </div>
       ) : step.type === 'slider' ? (
-        <div className="flex items-center gap-3">
-          <input
-            type="range"
-            min={step.min ?? 0}
-            max={step.max ?? 100}
-            step={step.step ?? 1}
-            value={Number(value || step.default || step.min || 0)}
-            onChange={(e) => setValue(Number(e.target.value))}
-            className="flex-1 accent-[var(--primary)]"
-            style={{ accentColor: accent }}
-          />
-          <span className="w-12 text-right font-mono text-sm">
-            {String(value || step.default || step.min || 0)}
-          </span>
-        </div>
+        (() => {
+          const { min, max } = sliderBounds(step);
+          // Clamped so an out-of-bounds default matches what a respondent sees
+          // (a range input pins to its bounds anyway — V5-A2).
+          const current = clampSliderValue(step, Number(value || step.default || min || 0));
+          return (
+            <div className="flex items-center gap-3">
+              <input
+                type="range"
+                min={min}
+                max={max}
+                step={step.step ?? 1}
+                value={current}
+                onChange={(e) => setValue(Number(e.target.value))}
+                className="flex-1 accent-[var(--primary)]"
+                style={{ accentColor: accent }}
+              />
+              <span className="w-12 text-right font-mono text-sm">{current}</span>
+            </div>
+          );
+        })()
       ) : step.type === 'textarea' ? (
         <textarea
           value={String(value)}

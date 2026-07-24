@@ -9,9 +9,14 @@ import type {
   FormCover,
   FormBranding,
   FormOutcome,
-  FormReveal,
+  FormEnding,
 } from '@quill/engine';
-import { normalizeConfig } from '@quill/engine';
+import {
+  normalizeConfig,
+  renameStepKey as engineRenameStepKey,
+  createEmptyStep,
+  migrateRevealToStep,
+} from '@quill/engine';
 import type { FormTracking } from '@quill/types';
 import { formConfigSchema } from '@quill/types';
 import { saveFormAction } from '@/app/admin/actions';
@@ -21,17 +26,19 @@ import { QuestionSpine } from './_components/question-spine';
 import { CanvasQuestion } from './_components/canvas-question';
 import { QuestionSettings } from './_components/question-settings';
 import { invalidateQuestionHubspotCache } from './_components/question-hubspot';
+import { renameQuestionMappingAction } from './_components/question-hubspot-actions';
 import { TypeGallery } from './_components/type-gallery';
 import { LogicMap } from './_components/logic-map';
 import { ResultsView } from './_components/results-view';
 import { EmptyState } from './_components/empty-state';
 import { CoverPanel } from './_components/cover-panel';
-import { RevealPanel } from './_components/reveal-panel';
+import { FlowPanel } from './_components/flow-panel';
+import { EndingPanel } from './_components/ending-panel';
 import { ConnectPanel } from './_components/connect-panel';
 import { PublishButton } from './publish-button';
 import { LinkActions } from './link-actions';
 import { DevicePreviewModal } from './_components/device-preview-modal';
-import { stepFromGalleryItem, type GalleryItem } from './_components/question-types';
+import { stepFromGalleryItem, stepListLabel, type GalleryItem } from './_components/question-types';
 import { TEMPLATES } from './_components/templates';
 import { getBuilderMessages, tb, type TemplateId } from './_components/builder-messages';
 import type { EditorMessages } from './_components/messages';
@@ -51,8 +58,8 @@ const parseTab = (value: string | null): Tab =>
   TAB_IDS.includes(value as Tab) ? (value as Tab) : 'build';
 
 /**
- * Re-anchor a 1-based flow marker position (partialSubmitAfterStep /
- * revealAfterStep) after a step is DELETED, keeping it attached to the step it
+ * Re-anchor a 1-based flow marker position (`partialSubmitAfterStep`) after a
+ * step is DELETED, keeping it attached to the step it
  * sits AFTER: a delete ABOVE the anchor shifts it up one; deleting the anchor
  * itself re-attaches to the previous step (clearing when it was the first);
  * deletes BELOW never move it. Absent/out-of-range positions pass through.
@@ -112,10 +119,15 @@ export function FormEditor({
   const bm = getBuilderMessages(locale);
   const searchParams = useSearchParams();
   const [name, setName] = useState(initialName);
-  const [config, setConfig] = useState<FormConfig>(initialConfig);
+  // The builder has ONE reveal model: a `reveal` step in the list. A form
+  // authored under the old form-level reveal (Design-tab copy + a draggable
+  // position marker) is folded into that shape the moment it opens, so the two
+  // ways to author one screen never coexist on screen.
+  const [config, setConfig] = useState<FormConfig>(() => migrateRevealToStep(initialConfig));
   // Deep-linkable tabs: `?tab=connect` selects the tab on load…
   const [tab, setTabState] = useState<Tab>(() => parseTab(searchParams.get('tab')));
   // …and switching syncs the URL shallowly (no navigation, no RSC refetch).
+
   const setTab = useCallback(
     (next: Tab) => {
       // Mappings can change inside Connect — drop the Build settings panel's
@@ -138,7 +150,10 @@ export function FormEditor({
   const [saveCount, setSaveCount] = useState(0);
   // The server's reason for the last failed save — shown in the status tooltip.
   const [lastError, setLastError] = useState<string | null>(null);
-  const dirty = useRef(false);
+  // `migrateRevealToStep` returns the SAME object when there was nothing legacy
+  // to fold in, so an identity check is an exact "did we migrate?" — start dirty
+  // in that case and the very first autosave persists the new shape.
+  const dirty = useRef(config !== initialConfig);
   const retry = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Freshest name/config for the leave handlers + retry (no stale closures).
   const latest = useRef({ name, config });
@@ -260,7 +275,30 @@ export function FormEditor({
 
   // --- Step operations ------------------------------------------------------
   function patchStep(index: number, patch: Partial<FormStep>) {
-    mutate((c) => ({ ...c, steps: c.steps.map((s, i) => (i === index ? { ...s, ...patch } : s)) }));
+    mutate((c) => ({
+      ...c,
+      steps: c.steps.map((s, i) => (i === index ? { ...s, ...patch } : s)),
+    }));
+  }
+  /**
+   * Rename a step's answer key (V5-A10). The engine's `renameStepKey` moves every
+   * in-config pointer (conditions, goto targets, variant sources, override rules,
+   * `[key]` tokens). HubSpot field mappings are stored OUTSIDE this config and
+   * written through their own endpoint, so they are migrated separately — without
+   * that second call a rename would silently unmap the question from the CRM.
+   */
+  function renameStepKey(index: number, nextKey: string) {
+    const current = config.steps[index];
+    if (!current) return;
+    const oldKey = current.key;
+    mutate((c) => engineRenameStepKey(c, oldKey, nextKey));
+    void renameQuestionMappingAction(id, oldKey, nextKey).then((res) => {
+      if (!res.ok && res.code === 'error') {
+        // The config rename already applied and autosaved; only the CRM mapping
+        // is behind. Say so rather than implying the whole rename failed.
+        toastRef.current.error(m.behavior.fieldKeyMappingFailed);
+      }
+    });
   }
   function addFromGallery(item: GalleryItem) {
     mutate((c) => {
@@ -276,13 +314,11 @@ export function FormEditor({
   function deleteStep(index: number) {
     mutate((c) => {
       const steps = c.steps.filter((_, i) => i !== index);
-      // Keep both 1-based flow markers (partial-submit + reveal) anchored to the
-      // step they fire AFTER when a step is deleted.
+      // Keep the partial-submit marker anchored to the step it fires AFTER.
       return {
         ...c,
         steps,
         partialSubmitAfterStep: reanchorAfterDelete(c.partialSubmitAfterStep, index, c.steps.length),
-        revealAfterStep: reanchorAfterDelete(c.revealAfterStep, index, c.steps.length),
       };
     });
     setSelected((sel) => {
@@ -298,12 +334,11 @@ export function FormEditor({
       const [moved] = steps.splice(from, 1);
       if (!moved) return c;
       steps.splice(to, 0, moved);
-      // Keep both 1-based flow markers attached to the step they fire AFTER.
+      // Keep the partial-submit marker attached to the step it fires AFTER.
       return {
         ...c,
         steps,
         partialSubmitAfterStep: reanchorAfterReorder(c.partialSubmitAfterStep, c.steps, steps),
-        revealAfterStep: reanchorAfterReorder(c.revealAfterStep, c.steps, steps),
       };
     });
     setSelected((sel) => {
@@ -332,18 +367,42 @@ export function FormEditor({
     mutate((c) => ({ ...c, branding: { ...c.branding, ...patch } }));
   const setScoring = (enabled: boolean) => mutate((c) => ({ ...c, scoring: { enabled } }));
   const setOutcomes = (outcomes: FormOutcome[]) => mutate((c) => ({ ...c, outcomes }));
-  const patchReveal = (patch: Partial<FormReveal>) =>
-    mutate((c) => ({ ...c, reveal: { ...c.reveal, ...patch } }));
+  /**
+   * The per-question "Show reveal screen after" switch. A reveal is a STEP now,
+   * so this inserts (or removes) a real reveal card immediately after `index`
+   * rather than moving a form-level marker — the switch and the question list
+   * describe the same thing, and the new card is editable like any other.
+   */
+  function setRevealAfter(index: number, on: boolean) {
+    mutate((c) => {
+      const next = c.steps[index + 1];
+      const isReveal = next?.type === 'reveal';
+      if (on === isReveal) return c;
+      const at = index + 1;
+      if (on) {
+        const step = createEmptyStep('reveal', new Set(c.steps.map((s) => s.key)));
+        return {
+          ...c,
+          steps: [...c.steps.slice(0, at), step, ...c.steps.slice(at)],
+          // A marker anchored BELOW the insertion point shifts down one.
+          partialSubmitAfterStep:
+            c.partialSubmitAfterStep != null && c.partialSubmitAfterStep > at
+              ? c.partialSubmitAfterStep + 1
+              : c.partialSubmitAfterStep,
+        };
+      }
+      return {
+        ...c,
+        steps: c.steps.filter((_, i) => i !== at),
+        partialSubmitAfterStep: reanchorAfterDelete(c.partialSubmitAfterStep, at, c.steps.length),
+      };
+    });
+  }
+  /** Form-level ending copy/redirect — the defaults score ranges override (V5-B1). */
+  const patchEnding = (patch: Partial<FormEnding>) =>
+    mutate((c) => ({ ...c, ending: { ...c.ending, ...patch } }));
   const setPartialSubmitAfterStep = (afterStep: number | undefined) =>
     mutate((c) => ({ ...c, partialSubmitAfterStep: afterStep }));
-  // WHERE the reveal plays (V4-04). Setting a value pins the reveal after that
-  // 1-based step; `undefined` reverts to the engine default (after the last
-  // step). Removing the marker turns the reveal OFF (Design owns enablement) and
-  // clears the position so a later re-enable defaults back to the end.
-  const setRevealAfterStep = (afterStep: number | undefined) =>
-    mutate((c) => ({ ...c, revealAfterStep: afterStep }));
-  const removeReveal = () =>
-    mutate((c) => ({ ...c, reveal: { ...c.reveal, enabled: false }, revealAfterStep: undefined }));
   // `tracking` is additive config the engine type omits; the autosave/publish
   // flow round-trips it (normalizeConfig passes unknown top-level keys through).
   const setTracking = (tracking: FormTracking | undefined) =>
@@ -351,9 +410,6 @@ export function FormEditor({
 
   const selectedStep = selected != null ? config.steps[selected] : undefined;
   const scoringEnabled = config.scoring?.enabled !== false;
-  // Mirrors the renderer/engine gate: the reveal marker shows when reveal exists
-  // AND is not explicitly disabled.
-  const revealEnabled = config.reveal != null && config.reveal.enabled !== false;
   const hasQuestions = config.steps.length > 0;
 
   const tabs: { id: Tab; label: string; icon: string }[] = [
@@ -473,7 +529,12 @@ export function FormEditor({
       <div className="min-h-0 flex-1 overflow-hidden">
         {tab === 'build' ? (
           hasQuestions ? (
-            <div className="grid h-full grid-cols-1 lg:grid-cols-[260px_minmax(0,1fr)_360px]">
+            // The settings panel widens with the viewport (V5-B6): it packs the
+            // densest controls in the builder — an option row is drag handle +
+            // label + value + points + delete — and at a fixed 360px those
+            // fields were cramped on displays with room to spare. It only grows
+            // past 360 at xl, so a 13" laptop keeps the canvas width it had.
+            <div className="grid h-full grid-cols-1 lg:grid-cols-[260px_minmax(0,1fr)_360px] xl:grid-cols-[280px_minmax(0,1fr)_420px] 2xl:grid-cols-[300px_minmax(0,1fr)_460px]">
               {/* Left spine */}
               <aside className="hidden min-h-0 overflow-y-auto lg:block">
                 <QuestionSpine
@@ -484,10 +545,6 @@ export function FormEditor({
                   onAdd={() => setGalleryOpen(true)}
                   partialAfterStep={config.partialSubmitAfterStep}
                   onPartialChange={setPartialSubmitAfterStep}
-                  revealEnabled={revealEnabled}
-                  revealAfterStep={config.revealAfterStep}
-                  onRevealMove={setRevealAfterStep}
-                  onRevealRemove={removeReveal}
                   m={bm}
                 />
               </aside>
@@ -546,7 +603,7 @@ export function FormEditor({
                       )}
                     >
                       <span className="font-bold tabular-nums">{i + 1}</span>
-                      <span className="max-w-[9ch] truncate">{s.question?.trim() || bm.canvas.titlePlaceholder}</span>
+                      <span className="max-w-[9ch] truncate">{stepListLabel(s, bm)}</span>
                     </button>
                   ))}
                   <button
@@ -570,15 +627,14 @@ export function FormEditor({
                     scoringEnabled={scoringEnabled}
                     onUpdate={(patch) => patchStep(selected, patch)}
                     onDelete={() => deleteStep(selected)}
-                    onScoringChange={setScoring}
                     bm={bm}
                     em={m}
                     formId={id}
                     locale={locale}
                     onOpenConnect={() => setTab('connect')}
-                    onOpenDesign={() => setTab('design')}
-                    revealAfterStep={config.revealAfterStep}
-                    onRevealAfterStepChange={setRevealAfterStep}
+                    revealAfter={config.steps[selected + 1]?.type === 'reveal'}
+                    onRevealAfterChange={(on) => setRevealAfter(selected, on)}
+                    onRenameKey={(nextKey) => renameStepKey(selected, nextKey)}
                   />
                 ) : null}
               </aside>
@@ -609,6 +665,7 @@ export function FormEditor({
               config={config}
               onScoringChange={setScoring}
               onOutcomesChange={setOutcomes}
+              onStepScoringChange={(index, on) => patchStep(index, { scoringEnabled: on ? undefined : false })}
               m={bm}
               rm={m.resultsHelp}
             />
@@ -616,10 +673,11 @@ export function FormEditor({
         ) : (
           <div className="flex h-full flex-col gap-4 overflow-y-auto px-4 py-6 sm:px-8">
             <CoverPanel config={config} onCoverChange={patchCover} onBrandingChange={patchBranding} m={m} />
-            <RevealPanel
+            <FlowPanel partialNote={bm.partial.designNote} m={m} />
+            <EndingPanel
               config={config}
-              onRevealChange={patchReveal}
-              partialNote={bm.partial.designNote}
+              onEndingChange={patchEnding}
+              hasOutcomes={(config.outcomes?.length ?? 0) > 0 && scoringEnabled}
               m={m}
             />
           </div>

@@ -21,7 +21,12 @@ export default async function AdminHome() {
   );
   const totalSubmissions = analytics.reduce((n, a) => n + (a?.submissions ?? 0), 0);
   const totalStarts = analytics.reduce((n, a) => n + (a?.starts ?? 0), 0);
-  const completionRate = totalStarts > 0 ? Math.round((totalSubmissions / totalStarts) * 1000) / 10 : 0;
+  // Clamped for the same reason the per-form rate is (analytics.service.ts):
+  // submissions and starts are windowed by different timestamps, so a session
+  // that starts before a window and completes inside it can push the raw ratio
+  // past 1. This surface computes its own rate, so it needs its own cap.
+  const completionRate =
+    totalStarts > 0 ? Math.min(100, Math.round((totalSubmissions / totalStarts) * 1000) / 10) : 0;
 
   // The dashboard's shareable link points at the most recently updated form.
   const latest = [...forms].sort((a, b) => b.updatedAt - a.updatedAt)[0];
@@ -34,6 +39,7 @@ export default async function AdminHome() {
     createTitle: messages.forms.createTitle,
     nameLabel: messages.forms.nameLabel,
     namePlaceholder: messages.forms.namePlaceholder,
+    nameRequired: messages.forms.nameRequired,
     cancel: messages.forms.cancel,
   };
 

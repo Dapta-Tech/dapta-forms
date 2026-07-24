@@ -1,22 +1,21 @@
 'use client';
 
-import { useState, type HTMLAttributes, type ReactNode } from 'react';
+import { useEffect, useState, type HTMLAttributes, type ReactNode } from 'react';
 import type { FormStep } from '@quill/engine';
 import { cn } from '@/lib/cn';
 import { SortableList, SortableRow } from './sortable';
-import { iconForStep, isContactType } from './question-types';
+import { iconForStep, isContactType, stepListLabel } from './question-types';
 import { ruleCount } from './logic-util';
 import type { BuilderMessages } from './builder-messages';
 import { tb } from './builder-messages';
 
 /**
- * Sortable ids for the flow markers. Never real step keys (step keys are
- * slugified question text), so they share the dnd id space safely.
+ * Sortable id for the partial-submit marker. Never a real step key (step keys
+ * are slugified question text), so it shares the dnd id space safely.
  */
 const PARTIAL_ID = '__partial_submit_point__';
-const REVEAL_ID = '__reveal_point__';
 
-const isMarker = (id: string): boolean => id === PARTIAL_ID || id === REVEAL_ID;
+const isMarker = (id: string): boolean => id === PARTIAL_ID;
 
 /**
  * The left flow spine — numbered question cards (drag to reorder), a type icon,
@@ -25,14 +24,15 @@ const isMarker = (id: string): boolean => id === PARTIAL_ID || id === REVEAL_ID;
  * card gets a lime left rail. One dashed "+ Add question" at the bottom opens
  * the type gallery.
  *
- * Two dashed, unnumbered markers can render INSIDE the same dnd-kit list (each
- * with a special id) so they drag exactly like a question:
- *  - the "Partial submit point" marker (`partialAfterStep`, 1..steps.length);
- *  - the "Reveal screen" marker (V4-04): shown whenever the reveal is enabled in
- *    Design, defaulting to AFTER THE LAST question (mirroring the engine's
- *    `revealAfterKey` — revealAfterStep, else a legacy triggersReveal step, else
- *    the end). Dragging it writes an explicit `revealAfterStep`.
- * Drops are translated back into domain updates in `handleReorder`.
+ * One dashed, unnumbered marker renders INSIDE the same dnd-kit list (under a
+ * special id) so it drags exactly like a question: the "Partial submit point"
+ * (`partialAfterStep`, 1..steps.length). Drops are translated back into domain
+ * updates in `handleReorder`.
+ *
+ * The reveal screen used to have a second marker here, because it was a
+ * form-level singleton with a position. It is a `reveal` STEP now — a numbered
+ * card like any other — so a form can hold several and each is dragged and
+ * edited as itself.
  */
 export function QuestionSpine({
   steps,
@@ -42,10 +42,6 @@ export function QuestionSpine({
   onAdd,
   partialAfterStep,
   onPartialChange,
-  revealEnabled,
-  revealAfterStep,
-  onRevealMove,
-  onRevealRemove,
   m,
 }: {
   steps: FormStep[];
@@ -57,48 +53,29 @@ export function QuestionSpine({
   partialAfterStep?: number;
   /** Set (1-based), move, or clear (`undefined`) the partial-submit threshold. */
   onPartialChange: (afterStep: number | undefined) => void;
-  /** Whether the reveal screen is enabled in Design (drives the reveal marker). */
-  revealEnabled: boolean;
-  /** 1-based explicit `config.revealAfterStep` (absent = default to the end). */
-  revealAfterStep?: number;
-  /** Move the reveal marker → set an explicit 1-based `revealAfterStep`. */
-  onRevealMove: (afterStep: number) => void;
-  /** Remove the reveal marker → turn the reveal off (Design owns enablement). */
-  onRevealRemove: () => void;
   m: BuilderMessages;
 }) {
-  // Effective 1-based marker slots (null = not shown). The partial marker only
-  // shows for an in-range threshold; the reveal marker shows whenever the reveal
-  // is enabled, defaulting to the end (revealAfterKey's default) so an enabled
-  // reveal is always visible and draggable.
+  // Effective 1-based marker slot (null = not shown) — only for an in-range
+  // threshold.
   const partialIdx =
     partialAfterStep != null && partialAfterStep >= 1 && partialAfterStep <= steps.length
       ? partialAfterStep
       : null;
-  const revealIdx =
-    revealEnabled && steps.length > 0
-      ? revealAfterStep != null && revealAfterStep >= 1 && revealAfterStep <= steps.length
-        ? revealAfterStep
-        : defaultRevealPos(steps)
-      : null;
 
-  // Merged sortable ids: step keys with the markers spliced in after their
-  // anchor step (partial before reveal when they share a slot).
+  // Merged sortable ids: step keys with the marker spliced in after its anchor.
   const ids: string[] = [];
   steps.forEach((s, i) => {
     ids.push(s.key);
-    const pos = i + 1;
-    if (partialIdx === pos) ids.push(PARTIAL_ID);
-    if (revealIdx === pos) ids.push(REVEAL_ID);
+    if (partialIdx === i + 1) ids.push(PARTIAL_ID);
   });
 
   /**
    * Translate a merged-list drop back into a domain update:
-   * - a MARKER moved → its new position is however many QUESTIONS ended up above
-   *   it (markers don't count), clamped to ≥ 1 (a marker above every question is
-   *   invalid — the minimum is "after question 1");
-   * - a QUESTION moved → a plain step reorder. The editor re-anchors both
-   *   thresholds to the step they sit after, so a marker follows its anchor.
+   * - the MARKER moved → its new position is however many QUESTIONS ended up
+   *   above it (the marker doesn't count), clamped to ≥ 1 (a marker above every
+   *   question is invalid — the minimum is "after question 1");
+   * - a QUESTION moved → a plain step reorder. The editor re-anchors the
+   *   threshold to the step it sits after, so the marker follows its anchor.
    */
   function handleReorder(from: number, to: number) {
     const next = [...ids];
@@ -108,11 +85,6 @@ export function QuestionSpine({
     if (moved === PARTIAL_ID) {
       const threshold = Math.max(1, questionsAbove(next, PARTIAL_ID));
       if (threshold !== partialAfterStep) onPartialChange(threshold);
-      return;
-    }
-    if (moved === REVEAL_ID) {
-      const pos = Math.max(1, questionsAbove(next, REVEAL_ID));
-      if (pos !== revealAfterStep) onRevealMove(pos);
       return;
     }
     const fromStep = questionIndex(ids, moved);
@@ -158,33 +130,6 @@ export function QuestionSpine({
             );
           }
 
-          if (id === REVEAL_ID) {
-            const atEnd = revealIdx === steps.length;
-            return (
-              <SortableRow key={id} id={id}>
-                {({ handleProps }) => (
-                  <SpineMarker
-                    testidPrefix="reveal-point"
-                    icon="pi-sparkles"
-                    label={m.revealPoint.label}
-                    moveLabel={m.revealPoint.move}
-                    infoLabel={m.revealPoint.info}
-                    removeLabel={m.revealPoint.remove}
-                    onRemove={onRevealRemove}
-                    handleProps={handleProps}
-                    tips={
-                      <>
-                        <p>{m.revealPoint.tipPlays}</p>
-                        <p>{atEnd ? m.revealPoint.tipEnd : m.revealPoint.tipMid}</p>
-                        <p className="font-medium text-foreground">{m.revealPoint.tipEdit}</p>
-                      </>
-                    }
-                  />
-                )}
-              </SortableRow>
-            );
-          }
-
           // Question rows sit in the MERGED list — translate the merged position
           // back to the step index (count the questions above it).
           const stepIndex = questionsBeforePosition(ids, index);
@@ -193,7 +138,7 @@ export function QuestionSpine({
           const active = stepIndex === selectedIndex;
           const rules = ruleCount(step);
           const contact = isContactType(step.type);
-          const title = step.question?.trim();
+          const title = stepListLabel(step, m);
           return (
             <SortableRow key={id} id={id}>
               {({ handleProps }) => (
@@ -237,9 +182,22 @@ export function QuestionSpine({
                     />
                     <span className="flex min-w-0 flex-1 flex-col">
                       <span className="truncate text-sm font-medium text-foreground">
-                        {title || m.canvas.titlePlaceholder}
+                        {title}
                       </span>
                       <span className="mt-0.5 flex items-center gap-1.5">
+                        {/* A hidden step looked identical to a normal one here,
+                            in the Logic map and in Results — the single missing
+                            marker behind several "why is this not working"
+                            traps (its points never score, a reveal pinned to it
+                            never plays, a partial point on it never fires). */}
+                        {step.hidden ? (
+                          <span
+                            data-testid="spine-hidden-badge"
+                            className="inline-flex shrink-0 items-center rounded-md bg-muted px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground"
+                          >
+                            {m.badges.hidden}
+                          </span>
+                        ) : null}
                         {rules > 0 ? (
                           <span className="inline-flex items-center gap-1 rounded-md bg-secondary/15 px-1.5 py-0.5 text-[10px] font-semibold text-secondary">
                             <i aria-hidden className="pi pi-sitemap" style={{ fontSize: 9 }} />
@@ -284,12 +242,6 @@ export function QuestionSpine({
       ) : null}
     </div>
   );
-}
-
-/** The reveal marker's default slot: a legacy `triggersReveal` step, else the end. */
-function defaultRevealPos(steps: FormStep[]): number {
-  const ti = steps.findIndex((s) => s.triggersReveal);
-  return ti >= 0 ? ti + 1 : steps.length;
 }
 
 /** How many QUESTIONS (non-markers) sit above `markerId` in a merged id list. */
@@ -347,6 +299,17 @@ function SpineMarker({
   handleProps: HTMLAttributes<HTMLElement>;
 }) {
   const [infoOpen, setInfoOpen] = useState(false);
+
+  // Escape collapses the popover, matching HelpTip and the app's other
+  // overlays — it was the one disclosure the key did nothing on.
+  useEffect(() => {
+    if (!infoOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setInfoOpen(false);
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [infoOpen]);
   return (
     <div
       data-testid={`${testidPrefix}-row`}

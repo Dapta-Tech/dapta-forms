@@ -95,6 +95,55 @@ const clientLogoSchema = z.object({
   src: safeImageUrl.nullable().optional(),
 });
 
+export const formRevealSchema = z.object({
+  enabled: z.boolean().optional(),
+  headline: z.string().max(300).nullable().optional(),
+  subtitle: z.string().max(500).nullable().optional(),
+  // --- Reveal extensions (all optional; back-compat) -------------------------
+  /** How long the processing interstitial plays before the result (ms). */
+  durationMs: z.number().int().min(500).max(30_000).optional(),
+  /** Outcome subtitle template; `[key]` tokens interpolate from the answers. */
+  subtitleTemplate: z.string().max(200).nullable().optional(),
+  /** Pre-warm the booking embed while the interstitial plays. */
+  prewarm: z.boolean().optional(),
+});
+
+/**
+ * A `scheduler` step embeds a booking page (Calendly in v1; the embed also
+ * supports HubSpot Meetings) mid-form. The respondent picks a slot inline and,
+ * when they book, the step is answered — so a required scheduler blocks
+ * "Continue" until a booking is made, and logic can route "on booking → submit"
+ * exactly like any other step. All fields optional/additive (back-compat).
+ */
+export const formSchedulerSchema = z.object({
+  /** Scheduling provider. v1 ships Calendly; the embed also supports HubSpot Meetings. */
+  provider: z.enum(['calendly', 'hubspot_meetings']).optional(),
+  /** The picked Calendly event type's stable URI (used by the builder's picker). */
+  eventTypeUri: z.string().max(500).nullable().optional(),
+  /** Its display name, stored so the builder can label it without a lookup. */
+  eventTypeName: z.string().max(200).nullable().optional(),
+  /** The public scheduling page embedded in the form (the event type's scheduling_url). */
+  url: z
+    .string()
+    .url()
+    .refine(isSafeHttpUrl, { message: 'scheduler url must use http(s).' })
+    .nullable()
+    .optional(),
+  /** Hide the event-type details panel in the embed ("Show event details? → No"). */
+  hideEventDetails: z.boolean().optional(),
+  /** Prefill the booking form from collected answers (name/email/phone). */
+  prefill: z.boolean().optional(),
+  /**
+   * Which earlier question feeds each field the booking page asks for, keyed by
+   * Calendly's own prefill id: `name`, `email`, or `a1`/`a2`/… for the event
+   * type's custom questions (`phone` is still accepted from earlier configs and
+   * routes to the legacy a1 slot). Values are step keys; absent entries fall
+   * back to the conventional answer keys, so a form already using
+   * firstname/lastname/email needs no mapping at all.
+   */
+  prefillMap: z.record(z.string().max(64), z.string().max(64).nullable()).optional(),
+});
+
 export const formStepSchema = z.object({
   key: z.string().min(1).max(64),
   type: z.enum(formFieldType),
@@ -144,6 +193,25 @@ export const formStepSchema = z.object({
    * bad value can only fall back, never break the lookup.
    */
   phoneDefaultCountry: z.string().max(2).nullable().optional(),
+  /**
+   * Per-question scoring switch (ADDITIVE — V5-B2). `false` excludes this step
+   * from `computeScore` while the rest of the form still scores; absent/`true`
+   * is the historical behavior, so every stored config keeps its score. The
+   * form-level `scoring.enabled` still wins: off means nothing scores.
+   */
+  scoringEnabled: z.boolean().optional(),
+  /**
+   * `reveal` step: its own headline / subtitle / duration (ADDITIVE — V5-B3).
+   * The legacy `config.reveal` + `config.revealAfterStep` pair still works and
+   * still describes the form's single interstitial; a `reveal` STEP is the way
+   * to have several, positioned by where it sits in `steps`.
+   */
+  reveal: formRevealSchema.nullable().optional(),
+  /**
+   * `scheduler` step: the embedded booking config (ADDITIVE — V6). Provider +
+   * event-type scheduling URL + prefill/display options. See formSchedulerSchema.
+   */
+  scheduler: formSchedulerSchema.nullable().optional(),
 });
 export type FormStepInput = z.infer<typeof formStepSchema>;
 
@@ -182,19 +250,6 @@ export const formBrandingSchema = z.object({
   primaryColor: cssColor.nullable().optional(),
   logo: safeImageUrl.nullable().optional(),
   clientLogos: z.array(clientLogoSchema).max(24).optional(),
-});
-
-export const formRevealSchema = z.object({
-  enabled: z.boolean().optional(),
-  headline: z.string().max(300).nullable().optional(),
-  subtitle: z.string().max(500).nullable().optional(),
-  // --- Reveal extensions (all optional; back-compat) -------------------------
-  /** How long the processing interstitial plays before the result (ms). */
-  durationMs: z.number().int().min(500).max(30_000).optional(),
-  /** Outcome subtitle template; `[key]` tokens interpolate from the answers. */
-  subtitleTemplate: z.string().max(200).nullable().optional(),
-  /** Pre-warm the booking embed while the interstitial plays. */
-  prewarm: z.boolean().optional(),
 });
 
 // --- Outcome extensions (booking + answer-forced overrides) ------------------
@@ -265,6 +320,11 @@ export const formOutcomeSchema = z.object({
   message: z.string().max(2000).nullable().optional(),
   /** Scheduling handoff (HubSpot Meetings / Calendly) shown for this outcome. */
   booking: outcomeBookingSchema.nullable().optional(),
+  /**
+   * Hold the thank-you screen this long before this outcome's redirect fires
+   * (ADDITIVE — V5-B1). Absent = inherit the form-level ending's delay.
+   */
+  redirectDelayMs: z.number().int().min(0).max(60_000).optional(),
   /**
    * Answer-forced rules: when ANY rule matches the answers, this outcome wins
    * over score bucketing (outcomes are scanned in declared order).
@@ -514,6 +574,24 @@ export const formTrackingSchema = z.object({
 export type FormTracking = z.infer<typeof formTrackingSchema>;
 
 /** The versioned config blob. `version` gates future migrations of the shape. */
+/**
+ * Form-level ending (V5-B1): the defaults an outcome may override. `redirectUrl`
+ * is http(s)-only for the same stored-XSS reason as the per-outcome one — the
+ * renderer navigates to it.
+ */
+export const formEndingSchema = z.object({
+  headline: z.string().max(200).nullable().optional(),
+  body: z.string().max(2000).nullable().optional(),
+  redirectUrl: z
+    .string()
+    .url()
+    .refine(isSafeHttpUrl, { message: 'redirectUrl must use http(s).' })
+    .nullable()
+    .optional(),
+  redirectDelayMs: z.number().int().min(0).max(60_000).optional(),
+});
+export type FormEndingInput = z.infer<typeof formEndingSchema>;
+
 export const formConfigSchema = z.object({
   version: z.literal(1),
   branding: formBrandingSchema.nullable().optional(),
@@ -521,6 +599,12 @@ export const formConfigSchema = z.object({
   steps: z.array(formStepSchema).default([]),
   scoring: z.object({ enabled: z.boolean().optional() }).nullable().optional(),
   outcomes: z.array(formOutcomeSchema).optional(),
+  /**
+   * Form-level ending, overridable per outcome (ADDITIVE — V5-B1). Absent on
+   * every legacy config, which then renders exactly as before: the built-in
+   * thank-you copy, and redirects only where an outcome sets one.
+   */
+  ending: formEndingSchema.nullable().optional(),
   /**
    * Pluggable submission destinations (CRM/webhook sync via the durable outbox).
    * ADDITIVE — absent on every legacy config; the renderer never receives it.
@@ -634,6 +718,13 @@ export const formEventSchema = z.object({
   sessionId: z.string().min(1).max(200),
   type: z.enum(formEventType),
   stepIndex: z.number().int().min(0).nullable().optional(),
+  /**
+   * The step's authored key (stable identity), alongside `stepIndex` (position
+   * in THIS session's visible-step order, which shifts under show/hide/goto
+   * logic). The drop-off table needs the key to attribute a view to the actual
+   * question shown rather than to whichever config step sits at that position.
+   */
+  stepKey: z.string().min(1).max(64).nullable().optional(),
 });
 export type FormEventInput = z.infer<typeof formEventSchema>;
 
@@ -684,22 +775,55 @@ export const dropoffRowSchema = z.object({
 });
 export type DropoffRow = z.infer<typeof dropoffRowSchema>;
 
+/**
+ * One day of the Trends series — every metric for that bucket, so the chart can
+ * switch the plotted metric without another round trip. Buckets are whole UTC
+ * days; the range is gap-filled, so a day with no activity is present with zeros
+ * (a missing day would draw a misleading straight line across it).
+ */
+export const trendPointSchema = z.object({
+  /** Epoch ms at the START of the day bucket (UTC). */
+  t: z.number().int(),
+  /** Unique sessions that viewed the form that day. */
+  views: z.number().int(),
+  /** Unique sessions that reached the first question that day. */
+  starts: z.number().int(),
+  /** Submissions completed that day. */
+  submissions: z.number().int(),
+  /** submissions / starts for that day (1 decimal); null when starts=0. */
+  completionRate: z.number().nullable(),
+  /** Median whole seconds open→complete that day; null when not derivable. */
+  timeToComplete: z.number().int().nullable(),
+});
+export type TrendPoint = z.infer<typeof trendPointSchema>;
+
 /** The funnel summary + drop-off table for a form over an optional date range. */
 export const analyticsResponseSchema = z.object({
-  /** Count of `view` events. */
+  /** Unique sessions that viewed the form (distinct session_id on `view`). */
   views: z.number().int(),
-  /** Count of `start` events. */
+  /** Unique sessions that reached the first question (`step_view` idx 0). */
   starts: z.number().int(),
   /** Count of completed submissions (completedAt set). */
   submissions: z.number().int(),
-  /** submissions / starts as a percentage (1 decimal); 0 when starts=0. */
-  completionRate: z.number(),
-  /** Average seconds from startedAt→completedAt over completed submissions. */
-  avgTimeToComplete: z.number().int(),
+  /**
+   * submissions / starts as a percentage (1 decimal), capped at 100; null when
+   * there were no starts in the window (no denominator — a rate nobody can
+   * compute, which 0% would misstate next to a real Submissions count).
+   */
+  completionRate: z.number().nullable(),
+  /**
+   * MEDIAN whole seconds from form open (first `view`) to completion, or null
+   * when no completed session in range had a derivable open time. Null is NOT
+   * zero: reporting 0s for a submission whose open beacon was lost is exactly
+   * the fabricated fact this metric was rewritten to remove.
+   */
+  timeToComplete: z.number().int().nullable(),
   /** Partial-only submissions (partialAt set, completedAt null). */
   partialSubmits: z.number().int(),
   /** Cover row + one row per configured step. */
   dropoff: z.array(dropoffRowSchema),
+  /** Gap-filled per-day series for the Trends chart (oldest → newest). */
+  trends: z.array(trendPointSchema),
   /** Echoes the resolved range (epoch ms) so the client can render it. */
   range: z.object({ from: z.number().nullable(), to: z.number().nullable() }),
 });

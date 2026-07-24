@@ -60,3 +60,8 @@ qa/playwright-report/
 qa/test-results/
 test-results/
 qa/shots/
+.next-qa/
+
+# Throwaway QA agent artifacts (screenshots + scratch specs)
+qa/tmp-shots/
+qa/e2e/tmp-*

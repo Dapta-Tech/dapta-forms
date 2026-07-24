@@ -1,6 +1,7 @@
 /** Unit tests for the pure booking-embed URL builders. */
 import { describe, expect, it } from 'vitest';
 import {
+  resolveSchedulerPrefill,
   buildBookingEmbedUrl,
   buildCalendlyEmbedUrl,
   buildCalendlyWidgetPrefill,
@@ -184,5 +185,132 @@ describe('buildBookingEmbedUrl', () => {
       'x.test',
     );
     expect(new URL(out).searchParams.has('email')).toBe(false);
+  });
+});
+
+describe('resolveSchedulerPrefill (V6 — scheduler field mapping)', () => {
+  const CUSTOM = { quien: 'Ada Lovelace', correo: 'ada@acme.io', celular: '+13105551234' };
+
+  it('feeds mapped questions into the conventional prefill keys', () => {
+    const { answers } = resolveSchedulerPrefill(CUSTOM, { name: 'quien', email: 'correo' });
+    expect(answers).toMatchObject({
+      firstname: 'Ada',
+      lastname: 'Lovelace',
+      email: 'ada@acme.io',
+    });
+    // …so the existing widget builder picks them up unchanged.
+    expect(buildCalendlyWidgetPrefill(answers)).toMatchObject({
+      name: 'Ada Lovelace',
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      email: 'ada@acme.io',
+    });
+  });
+
+  it('sends a custom question as the EXACT positional id it was mapped to', () => {
+    // The phone question is this event type's SECOND custom question, so it is
+    // a2 — the old code always guessed a1, which silently filled nothing.
+    const { customAnswers, answers } = resolveSchedulerPrefill(CUSTOM, { a2: 'celular' });
+    expect(customAnswers).toEqual({ a2: '+13105551234' });
+    // A custom question never leaks into the conventional keys.
+    expect(answers.phone).toBeUndefined();
+  });
+
+  it('still honors a legacy `phone` mapping via the a1 slot', () => {
+    const { answers, customAnswers } = resolveSchedulerPrefill(CUSTOM, { phone: 'celular' });
+    expect(answers.phone).toBe('+13105551234');
+    expect(customAnswers).toEqual({});
+    expect(buildCalendlyWidgetPrefill(answers)?.customAnswers).toEqual({ a1: '+13105551234' });
+  });
+
+  it('leaves the answers untouched with no mapping (conventional keys still work)', () => {
+    const answers = { firstname: 'Grace', email: 'grace@acme.io' };
+    const out = resolveSchedulerPrefill(answers, undefined);
+    expect(out.answers).toBe(answers);
+    expect(out.customAnswers).toEqual({});
+  });
+
+  it('ignores entries that are unmapped or point at an empty answer', () => {
+    const { answers, customAnswers } = resolveSchedulerPrefill(
+      { firstname: 'Grace', correo: '', quien: '   ', vacio: '' },
+      { name: 'quien', email: 'correo', a1: 'vacio' },
+    );
+    // Blank mapped answers never clobber what is already there.
+    expect(answers.firstname).toBe('Grace');
+    expect(answers.email).toBeUndefined();
+    expect(customAnswers).toEqual({});
+  });
+
+  it('splits a single full-name answer into first and last', () => {
+    const { answers } = resolveSchedulerPrefill({ q: 'Ada Byron King' }, { name: 'q' });
+    expect(answers.firstname).toBe('Ada');
+    expect(answers.lastname).toBe('Byron King');
+  });
+});
+
+describe('resolveSchedulerPrefill — "Automatic" resolves by question TYPE', () => {
+  // A form built in the builder: generated keys, none of them the conventional
+  // firstname/email/phone the old extraction looked for.
+  const STEPS = [
+    { key: 'name_1', type: 'name', fields: ['firstname', 'lastname'] },
+    { key: 'email_2', type: 'email' },
+    { key: 'phone_3', type: 'phone' },
+    { key: 'text_4', type: 'text' },
+  ] as unknown as Parameters<typeof resolveSchedulerPrefill>[2];
+
+  const ANSWERED = {
+    firstname: 'Ada',
+    lastname: 'Lovelace',
+    email_2: 'ada@acme.io',
+    phone_3: '+13105551234',
+    text_4: 'ignore me',
+  };
+
+  it('fills email and phone from the answered questions, not a literal key', () => {
+    const { answers } = resolveSchedulerPrefill(ANSWERED, undefined, STEPS);
+    expect(answers.email).toBe('ada@acme.io');
+    expect(answers.phone).toBe('+13105551234');
+    expect(buildCalendlyWidgetPrefill(answers)).toMatchObject({
+      name: 'Ada Lovelace',
+      email: 'ada@acme.io',
+    });
+  });
+
+  it('an explicit mapping still wins over the automatic one', () => {
+    const { answers } = resolveSchedulerPrefill(
+      { ...ANSWERED, otro: 'mapped@acme.io' },
+      { email: 'otro' },
+      STEPS,
+    );
+    expect(answers.email).toBe('mapped@acme.io');
+  });
+
+  it('ignores a contact question that has not been answered yet', () => {
+    // The email question sits after the scheduler, so it has no answer.
+    const { answers } = resolveSchedulerPrefill({ firstname: 'Ada' }, undefined, STEPS);
+    expect(answers.email).toBeUndefined();
+    expect(answers.phone).toBeUndefined();
+  });
+
+  it('honors a name step whose subfield keys were renamed', () => {
+    const steps = [
+      { key: 'quien', type: 'name', fields: ['nombre', 'apellido'] },
+    ] as unknown as Parameters<typeof resolveSchedulerPrefill>[2];
+    const { answers } = resolveSchedulerPrefill(
+      { nombre: 'Grace', apellido: 'Hopper' },
+      undefined,
+      steps,
+    );
+    expect(answers.firstname).toBe('Grace');
+    expect(answers.lastname).toBe('Hopper');
+  });
+
+  it('leaves a conventional key alone when it is already filled', () => {
+    const { answers } = resolveSchedulerPrefill(
+      { email: 'primary@acme.io', email_2: 'secondary@acme.io' },
+      undefined,
+      STEPS,
+    );
+    expect(answers.email).toBe('primary@acme.io');
   });
 });

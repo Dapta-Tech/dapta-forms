@@ -8,3 +8,36 @@
 .canvas-title:focus {
   border-bottom-color: var(--primary);
 }
+
+/* Reveal-card preview — the same spinner + filling bar the respondent sees
+   (`.pf-reveal__*` in the public stylesheet), looping so the author can judge
+   the configured duration. The public CSS is scoped to the form route, so the
+   two motions are declared here rather than imported. */
+@keyframes qb-reveal-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes qb-reveal-fill {
+  from {
+    width: 4%;
+  }
+  to {
+    width: 100%;
+  }
+}
+.qb-reveal__spinner {
+  animation: qb-reveal-spin 0.9s linear infinite;
+}
+.qb-reveal__fill {
+  animation: qb-reveal-fill linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .qb-reveal__spinner,
+  .qb-reveal__fill {
+    animation: none;
+  }
+  .qb-reveal__fill {
+    width: 60%;
+  }
+}

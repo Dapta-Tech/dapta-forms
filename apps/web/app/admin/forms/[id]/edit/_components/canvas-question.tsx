@@ -2,7 +2,7 @@
 
 import { useEffect, useLayoutEffect, useRef } from 'react';
 import type { FormConfig, FormStep, FormOption } from '@quill/engine';
-import { nameFields } from '@quill/engine';
+import { nameFields, sliderBounds, clampSliderValue } from '@quill/engine';
 import { clampAccent, onAccent, DEFAULT_ACCENT } from '@quill/shared';
 import { cn } from '@/lib/cn';
 import { iconForStep, hasOptions } from './question-types';
@@ -10,6 +10,10 @@ import { maxStepPoints } from './scoring-util';
 import type { BuilderMessages } from './builder-messages';
 import { tb } from './builder-messages';
 import { TokenTextarea, tokenOptionsBefore, allTokenKeys } from './token-textarea';
+import { SchedulerEmbedPreview } from './scheduler-embed-preview';
+
+/** The reveal's play time when the card configures none (mirrors the renderer). */
+const DEFAULT_REVEAL_MS = 2200;
 
 /** A textarea that grows to fit its content (used for inline title/description). */
 function AutoTextarea({
@@ -101,6 +105,23 @@ export function CanvasQuestion({
   }
 
   const isLast = index + 1 >= total;
+
+  // A reveal is not a question — it asks nothing, has no title, no description
+  // and no Next button, and the respondent sees a spinner over the configured
+  // copy. Rendering it through the question chrome below produced a card with a
+  // "…" short-answer box and a Next button that never exist at runtime, so it
+  // gets its own WYSIWYG card.
+  if (step.type === 'reveal') {
+    return (
+      <RevealCanvas
+        step={step}
+        accent={accent}
+        device={device}
+        onUpdate={onUpdate}
+        m={m}
+      />
+    );
+  }
 
   return (
     <div className="flex justify-center">
@@ -219,6 +240,8 @@ export function CanvasQuestion({
             </div>
           ) : step.type === 'name' ? (
             <NamePreview step={step} m={m} />
+          ) : step.type === 'scheduler' ? (
+            <SchedulerEmbedPreview step={step} m={m} />
           ) : (
             <div className="rounded-xl border border-border bg-background px-4 py-3 text-[15px] text-muted-foreground/60">
               {step.placeholder ||
@@ -227,8 +250,11 @@ export function CanvasQuestion({
           )}
         </div>
 
-        {/* Respondent's Next button (label editable for message/content) */}
-        {step.type !== 'dropdown' ? (
+        {/* Respondent's Next button (label editable for message/content). A
+            scheduler has none: booking IS the answer, so the public form
+            advances itself — showing a Submit here promised a button that never
+            renders. */}
+        {step.type !== 'dropdown' && step.type !== 'scheduler' ? (
           <div className="mt-7">
             <button
               type="button"
@@ -240,6 +266,77 @@ export function CanvasQuestion({
             </button>
           </div>
         ) : null}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The reveal card, rendered as the respondent will see it: the accent spinner,
+ * the headline and subtitle, and the progress bar filling over the configured
+ * duration — looping, so the author can feel how long `durationMs` actually is.
+ *
+ * The copy is edited IN PLACE (same inline-textarea idiom as a question title),
+ * which is why this mirrors the public `.pf-reveal__*` markup by hand instead of
+ * mounting `<RevealScreen>`: that component owns its own timer and renders the
+ * copy as static text, so it could preview the screen or let you edit it, not
+ * both. Duration and pre-warm stay in the settings panel.
+ */
+function RevealCanvas({
+  step,
+  accent,
+  device,
+  onUpdate,
+  m,
+}: {
+  step: FormStep;
+  accent: string;
+  device: 'desktop' | 'mobile';
+  onUpdate: (patch: Partial<FormStep>) => void;
+  m: BuilderMessages;
+}) {
+  const durationMs = step.reveal?.durationMs ?? DEFAULT_REVEAL_MS;
+  return (
+    <div className="flex justify-center">
+      <div
+        data-testid="canvas-reveal-preview"
+        className={cn(
+          'flex w-full flex-col items-center rounded-2xl border border-border bg-card px-6 py-14 shadow-xl sm:px-8',
+          device === 'mobile' ? 'max-w-[380px]' : 'max-w-[640px]',
+        )}
+      >
+        <div
+          aria-hidden
+          data-testid="canvas-reveal-spinner"
+          className="qb-reveal__spinner mb-7 h-[52px] w-[52px] rounded-full border-4 border-muted"
+          style={{ borderTopColor: accent }}
+        />
+        <AutoTextarea
+          value={step.reveal?.headline ?? ''}
+          onChange={(v) => onUpdate({ reveal: { ...step.reveal, headline: v || null } })}
+          placeholder={m.canvas.revealHeadlinePlaceholder}
+          ariaLabel={m.canvas.revealHeadlinePlaceholder}
+          className="canvas-title max-w-[420px] text-center text-[26px] font-extrabold leading-tight tracking-tight text-foreground"
+        />
+        <div className="mt-2 w-full max-w-[420px]">
+          <AutoTextarea
+            value={step.reveal?.subtitle ?? ''}
+            onChange={(v) => onUpdate({ reveal: { ...step.reveal, subtitle: v || null } })}
+            placeholder={m.canvas.revealSubtitlePlaceholder}
+            ariaLabel={m.canvas.revealSubtitlePlaceholder}
+            rows={2}
+            className="text-center text-[15px] leading-relaxed text-muted-foreground"
+          />
+        </div>
+        <div className="mt-6 h-2 w-[260px] max-w-full overflow-hidden rounded-full bg-muted">
+          <div
+            className="qb-reveal__fill h-full rounded-full"
+            style={{ background: accent, animationDuration: `${durationMs}ms` }}
+          />
+        </div>
+        <p className="mt-5 text-xs text-muted-foreground">
+          {tb(m.canvas.revealPlays, { ms: durationMs })}
+        </p>
       </div>
     </div>
   );
@@ -282,9 +379,10 @@ function NamePreview({ step, m }: { step: FormStep; m: BuilderMessages }) {
 }
 
 function SliderPreview({ step, accent }: { step: FormStep; accent: string }) {
-  const min = step.min ?? 0;
-  const max = step.max ?? 100;
-  const value = step.default ?? min;
+  const { min, max } = sliderBounds(step);
+  // Clamped: a stored default outside the bounds would otherwise drive `pct`
+  // far past 100 and stretch the filled track clean out of the card (V5-A2).
+  const value = clampSliderValue(step, step.default ?? min);
   const pct = max > min ? ((value - min) / (max - min)) * 100 : 0;
   return (
     <div className="flex flex-col gap-3 py-2">

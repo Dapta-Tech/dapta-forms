@@ -21,6 +21,7 @@ import { AdminCrudController } from './admin-crud.controller';
 import { AnalyticsController } from './analytics.controller';
 import { AnalyticsService } from './analytics.service';
 import {
+  CalendlyEventTypesService,
   FormDestinationsController,
   HubspotPropertiesService,
   IntegrationsController,
@@ -104,6 +105,14 @@ import {
     {
       provide: HubspotPropertiesService,
       useFactory: (env: ServerEnv, db: Db) => new HubspotPropertiesService(env, db),
+      inject: [ENV, DB],
+    },
+    // Server-side Calendly event-type lookup for the scheduler step's picker
+    // (5-min cache, disabled state without a token). Factory so `fetch` isn't
+    // DI-reflected — mirrors HubspotPropertiesService.
+    {
+      provide: CalendlyEventTypesService,
+      useFactory: (env: ServerEnv, db: Db) => new CalendlyEventTypesService(env, db),
       inject: [ENV, DB],
     },
     // Drains the durable outbox (submission emails + destinations) with

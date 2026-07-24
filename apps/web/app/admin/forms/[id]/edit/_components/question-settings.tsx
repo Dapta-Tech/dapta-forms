@@ -1,8 +1,15 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { FormStep } from '@quill/engine';
-import { defaultFlowGroup } from '@quill/engine';
+import {
+  clampSliderValue,
+  defaultFlowGroup,
+  nameFields,
+  sanitizeStepKey,
+  sliderBounds,
+  sliderHasNoTravel,
+} from '@quill/engine';
 import { COUNTRIES, countryName, getMessages } from '@quill/shared';
 import { clientLocale } from '@/lib/client-locale';
 import { Switch } from '@/components/ui/switch';
@@ -17,11 +24,30 @@ import { LogicRules } from './logic-rules';
 import { LogicConditions } from './logic-conditions';
 import { QuestionVariants } from './question-variants';
 import { QuestionHubspotSection } from './question-hubspot';
-import { GALLERY, GALLERY_GROUPS, hasOptions, isContactType, type GalleryItem } from './question-types';
+import { SchedulerPanel } from './scheduler-panel';
+import { tokenOptionsBefore } from './token-textarea';
+import { HelpTip } from '@/components/ui/help-tip';
+import {
+  GALLERY,
+  GALLERY_GROUPS,
+  hasOptions,
+  isContactType,
+  isInputlessType,
+  type GalleryItem,
+} from './question-types';
 import type { EditorMessages } from './messages';
 import type { BuilderMessages } from './builder-messages';
 
 const ALL_ITEMS: GalleryItem[] = GALLERY_GROUPS.flatMap((g) => GALLERY[g]);
+
+/** The reveal card's play-time bounds — mirrors `formRevealSchema`. */
+const DEFAULT_REVEAL_MS = 2200;
+const MIN_REVEAL_MS = 500;
+const MAX_REVEAL_MS = 30_000;
+
+/** Shared look for the inline slider-bounds warnings (V5-A2). */
+const sliderWarnClass =
+  'flex items-start gap-1.5 rounded-md bg-destructive/10 px-2 py-1 text-[11px] leading-relaxed text-destructive';
 
 /** Match a step to its gallery item id (so the type <select> reflects single vs multiple). */
 function currentItemId(step: FormStep): string {
@@ -42,15 +68,14 @@ export function QuestionSettings({
   scoringEnabled,
   onUpdate,
   onDelete,
-  onScoringChange,
   bm,
   em,
   formId,
   locale,
   onOpenConnect,
-  onOpenDesign,
-  revealAfterStep,
-  onRevealAfterStepChange,
+  revealAfter,
+  onRevealAfterChange,
+  onRenameKey,
 }: {
   step: FormStep;
   index: number;
@@ -58,25 +83,41 @@ export function QuestionSettings({
   scoringEnabled: boolean;
   onUpdate: (patch: Partial<FormStep>) => void;
   onDelete: () => void;
-  onScoringChange: (enabled: boolean) => void;
   bm: BuilderMessages;
   em: EditorMessages;
   formId: string;
   locale: string;
   /** Switch the editor to the Connect tab (HubSpot destination setup). */
   onOpenConnect: () => void;
-  /** Switch the editor to the Design tab (reveal-screen copy/duration — V4-12). */
-  onOpenDesign: () => void;
-  /** Current 1-based `config.revealAfterStep` (the reveal marker's position). */
-  revealAfterStep?: number;
-  /** Pin the reveal after THIS step (1-based) or clear it (`undefined`) — V4-04. */
-  onRevealAfterStepChange: (afterStep: number | undefined) => void;
+  /** Whether the step right after this one is already a reveal card. */
+  revealAfter: boolean;
+  /** Insert (or remove) a reveal card immediately after this question. */
+  onRevealAfterChange: (on: boolean) => void;
+  /** Rename this step's answer key, cascading every reference — V5-A10. */
+  onRenameKey: (nextKey: string) => void;
 }) {
   const contact = isContactType(step.type);
   // Form-wide "highest possible" total (same math as Results). Drives the
   // "assign points" nudge when scoring is on but nothing scores yet.
   const scoringMax = maxScoreForSteps(steps);
   const { confirm: confirmDialog, dialog } = useConfirmDialog();
+  // Does THIS question contribute points right now? Both switches must be on
+  // (V5-B2), and it drives whether the point inputs are worth rendering at all.
+  const stepScores = scoringEnabled && step.scoringEnabled !== false;
+
+  // Slider bounds sanity (V5-A2). `sliderBounds` normalizes an inverted pair, so
+  // compare against the RAW values to tell "max below min" from a valid range.
+  const { min: sliderMin, max: sliderMax } = sliderBounds(step);
+  const sliderMaxBelowMin = step.type === 'slider' && (step.max ?? 100) < (step.min ?? 0);
+  // min === max is the boundary of the same mistake: a handle with nowhere to go.
+  const sliderNoTravel = step.type === 'slider' && !sliderMaxBelowMin && sliderHasNoTravel(step);
+  // A non-positive step is invalid HTML on <input type=range>; browsers fall
+  // back to 1, so the configured granularity is silently ignored.
+  const sliderStepInvalid = step.type === 'slider' && step.step != null && step.step <= 0;
+  const sliderDefaultOutOfRange =
+    step.type === 'slider' &&
+    step.default != null &&
+    (step.default < sliderMin || step.default > sliderMax);
 
   // Country options for the phone step's default-country picker: an "automatic"
   // (locale-based) row first, then every country sorted by localized name.
@@ -144,7 +185,7 @@ export function QuestionSettings({
         </SelectField>
       </Field>
 
-      {step.type !== 'message' ? (
+      {!isInputlessType(step.type) ? (
         <InlineField label={bm.settings.required}>
           <Switch
             checked={step.required !== false}
@@ -154,14 +195,108 @@ export function QuestionSettings({
         </InlineField>
       ) : null}
 
-      {/* Type-specific: options + points */}
+      {/* Type-specific: options, then the scoring switch that controls whether
+          the Points column even applies (V5-B6). The switch used to sit in its
+          own section at the very BOTTOM of the panel, far below the Points
+          column it governs — so the column was visible with no nearby
+          explanation of what turns it on. Options → their scoring, together. */}
       {hasOptions(step.type) ? (
         <section className="flex flex-col gap-3 border-t border-border pt-4">
           <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             {bm.settings.options}
           </p>
-          <OptionsEditor options={step.options ?? []} onChange={(options) => onUpdate({ options })} m={em.options} />
+          <OptionsEditor
+            options={step.options ?? []}
+            onChange={(options) => onUpdate({ options })}
+            showPoints={stepScores}
+            m={em.options}
+          />
+          <div className="border-t border-border/60 pt-3">
+            <StepScoringToggle
+              step={step}
+              formScoringEnabled={scoringEnabled}
+              scoringMax={scoringMax}
+              onUpdate={onUpdate}
+              bm={bm}
+            />
+          </div>
         </section>
+      ) : null}
+
+      {step.type === 'reveal' ? (
+        <section className="flex flex-col gap-3 border-t border-border pt-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            {bm.settings.revealSection}
+          </p>
+          <p className="text-xs text-muted-foreground">{bm.settings.revealHint}</p>
+          <Field label={bm.settings.revealHeadline}>
+            <TextField
+              value={step.reveal?.headline ?? ''}
+              data-testid="step-reveal-headline"
+              onChange={(e) => onUpdate({ reveal: { ...step.reveal, headline: e.target.value || null } })}
+            />
+          </Field>
+          <Field label={bm.settings.revealSubtitle}>
+            <TextField
+              value={step.reveal?.subtitle ?? ''}
+              data-testid="step-reveal-subtitle"
+              onChange={(e) => onUpdate({ reveal: { ...step.reveal, subtitle: e.target.value || null } })}
+            />
+          </Field>
+          <Field label={bm.settings.revealDuration} hint={bm.settings.revealDurationHint}>
+            <NumberField
+              aria-label={bm.settings.revealDuration}
+              value={step.reveal?.durationMs ?? DEFAULT_REVEAL_MS}
+              min={MIN_REVEAL_MS}
+              max={MAX_REVEAL_MS}
+              step={100}
+              data-testid="step-reveal-duration"
+              onChange={(e) => {
+                // The schema bounds this at 500..30000; clamp so a stray
+                // keystroke cannot fail the whole form's autosave.
+                const n = Number(e.target.value);
+                onUpdate({
+                  reveal: {
+                    ...step.reveal,
+                    durationMs: Number.isFinite(n)
+                      ? Math.min(MAX_REVEAL_MS, Math.max(MIN_REVEAL_MS, Math.round(n)))
+                      : DEFAULT_REVEAL_MS,
+                  },
+                });
+              }}
+            />
+          </Field>
+          {/* Carried over from the Design panel this card replaced: warm the
+              outcome's booking embed while the interstitial plays. */}
+          <InlineField label={bm.settings.revealPrewarm} hint={bm.settings.revealPrewarmHint}>
+            <Switch
+              checked={!!step.reveal?.prewarm}
+              onCheckedChange={(v) =>
+                onUpdate({ reveal: { ...step.reveal, prewarm: v || undefined } })
+              }
+              aria-label={bm.settings.revealPrewarm}
+            />
+          </InlineField>
+        </section>
+      ) : null}
+
+      {step.type === 'scheduler' ? (
+        <SchedulerPanel
+          scheduler={step.scheduler ?? { provider: 'calendly', prefill: true }}
+          onChange={(sc) => onUpdate({ scheduler: sc })}
+          // Only answers captured BEFORE this step can prefill the booking form.
+          fields={tokenOptionsBefore(
+            steps,
+            steps.findIndex((s) => s.key === step.key),
+          )}
+          // Only steps AFTER this one are legal forward jump targets.
+          laterSteps={steps
+            .slice(steps.findIndex((s) => s.key === step.key) + 1)
+            .map((s) => ({ key: s.key, label: s.question?.trim() || s.key }))}
+          goto={step.goto}
+          onGotoChange={(g) => onUpdate({ goto: g })}
+          bm={bm}
+        />
       ) : null}
 
       {step.type === 'slider' ? (
@@ -169,18 +304,64 @@ export function QuestionSettings({
           <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{em.types.slider}</p>
           <div className="grid grid-cols-2 gap-2.5">
             <Field label={em.props.sliderMin}>
-              <NumberField value={step.min ?? 0} onChange={(e) => onUpdate({ min: Number(e.target.value) || 0 })} />
+              <NumberField
+                aria-label={em.props.sliderMin}
+                value={step.min ?? 0}
+                onChange={(e) => onUpdate({ min: Number(e.target.value) || 0 })}
+              />
             </Field>
             <Field label={em.props.sliderMax}>
-              <NumberField value={step.max ?? 100} onChange={(e) => onUpdate({ max: Number(e.target.value) || 0 })} />
+              <NumberField
+                aria-label={em.props.sliderMax}
+                value={step.max ?? 100}
+                onChange={(e) => onUpdate({ max: Number(e.target.value) || 0 })}
+              />
             </Field>
             <Field label={em.props.sliderStep}>
-              <NumberField value={step.step ?? 1} onChange={(e) => onUpdate({ step: Number(e.target.value) || 1 })} />
+              <NumberField
+                aria-label={em.props.sliderStep}
+                value={step.step ?? 1}
+                onChange={(e) => onUpdate({ step: Number(e.target.value) || 1 })}
+              />
             </Field>
             <Field label={em.props.sliderDefault}>
-              <NumberField value={step.default ?? 0} onChange={(e) => onUpdate({ default: Number(e.target.value) || 0 })} />
+              <NumberField
+                aria-label={em.props.sliderDefault}
+                value={step.default ?? 0}
+                onChange={(e) => onUpdate({ default: Number(e.target.value) || 0 })}
+              />
             </Field>
           </div>
+          {/* Bounds are advisory, not enforced on keystroke: clamping mid-typing
+              eats digits ("878" against a max of 5 would stick at 5). The value
+              is clamped where it becomes geometry instead — V5-A2. */}
+          {sliderMaxBelowMin ? (
+            <p role="alert" data-testid="slider-max-below-min" className={sliderWarnClass}>
+              <i aria-hidden className="pi pi-exclamation-triangle mt-0.5 shrink-0" style={{ fontSize: 10 }} />
+              {em.props.sliderMaxBelowMin}
+            </p>
+          ) : null}
+          {sliderNoTravel ? (
+            <p role="alert" data-testid="slider-no-travel" className={sliderWarnClass}>
+              <i aria-hidden className="pi pi-exclamation-triangle mt-0.5 shrink-0" style={{ fontSize: 10 }} />
+              {em.props.sliderNoTravel.replaceAll('{min}', String(sliderMin))}
+            </p>
+          ) : null}
+          {sliderStepInvalid ? (
+            <p role="alert" data-testid="slider-step-invalid" className={sliderWarnClass}>
+              <i aria-hidden className="pi pi-exclamation-triangle mt-0.5 shrink-0" style={{ fontSize: 10 }} />
+              {em.props.sliderStepInvalid}
+            </p>
+          ) : null}
+          {sliderDefaultOutOfRange ? (
+            <p role="alert" data-testid="slider-default-out-of-range" className={sliderWarnClass}>
+              <i aria-hidden className="pi pi-exclamation-triangle mt-0.5 shrink-0" style={{ fontSize: 10 }} />
+              {em.props.sliderDefaultOutOfRange
+                .replaceAll('{min}', String(sliderMin))
+                .replaceAll('{max}', String(sliderMax))
+                .replaceAll('{shown}', String(clampSliderValue(step, step.default ?? sliderMin)))}
+            </p>
+          ) : null}
         </section>
       ) : null}
 
@@ -198,7 +379,12 @@ export function QuestionSettings({
 
       {step.type === 'phone' ? (
         <section className="flex flex-col gap-3 border-t border-border pt-4">
-          <Field label={em.props.phoneMinDigits}>
+          <Field
+            label={em.props.phoneMinDigits}
+            labelAdornment={
+              <HelpTip text={em.props.phoneMinDigitsHelp} label={em.props.phoneMinDigits} side="bottom" />
+            }
+          >
             <NumberField
               value={step.phoneMinDigits ?? 7}
               min={1}
@@ -258,8 +444,10 @@ export function QuestionSettings({
         </p>
         <LogicConditions step={step} index={index} steps={steps} onUpdate={onUpdate} m={em.logic} />
         {/* Personal-email branch needs an earlier email answer — impossible on
-            the first question, so hide it there. */}
-        {step.type !== 'email' && index > 0 ? (
+            the first question, so hide it there. A reveal is skipped or played
+            by the plain conditions above; a second, narrower visibility rule on
+            an interstitial was a control that looked meaningful and wasn't. */}
+        {step.type !== 'email' && step.type !== 'reveal' && index > 0 ? (
           <InlineField label={em.logic.personalEmailOnly} hint={em.logic.personalEmailHint}>
             <Switch
               checked={!!step.showForPersonalEmailOnly}
@@ -270,31 +458,45 @@ export function QuestionSettings({
         ) : null}
       </section>
 
-      {/* Dynamic question — vary the text by an earlier answer */}
-      <section className="flex flex-col gap-3 border-t border-border pt-4">
-        <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          <i aria-hidden className="pi pi-sync text-secondary" style={{ fontSize: 11 }} />
-          {em.variants.title}
-        </p>
-        <QuestionVariants step={step} index={index} steps={steps} onUpdate={onUpdate} m={em.variants} />
-      </section>
+      {/* Dynamic question — vary the text by an earlier answer. Variants swap the
+          step's `question`, which a reveal never renders: it shows its own
+          headline and subtitle, and BOTH already interpolate `[key]` tokens. So
+          the section is dropped there rather than editing a field the respondent
+          will never see. */}
+      {step.type === 'reveal' ? null : (
+        <section className="flex flex-col gap-3 border-t border-border pt-4">
+          <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            <i aria-hidden className="pi pi-sync text-secondary" style={{ fontSize: 11 }} />
+            {em.variants.title}
+          </p>
+          <QuestionVariants step={step} index={index} steps={steps} onUpdate={onUpdate} m={em.variants} />
+        </section>
+      )}
 
       {/* Behavior — terminal (disqualify) + reveal position (V4-04/V4-12) */}
       <section className="flex flex-col gap-1 border-t border-border pt-4">
         <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           {em.behavior.title}
         </p>
-        <InlineField label={em.behavior.terminal} hint={em.behavior.terminalHint}>
-          <Switch
-            checked={!!step.terminal}
-            onCheckedChange={(v) => onUpdate({ terminal: v || undefined })}
-            aria-label={em.behavior.terminal}
-          />
-        </InlineField>
+        {/* "Ends the form" means DISQUALIFICATION here, which is the opposite of
+            what finishing a scheduler means — booking is the success case. A
+            scheduler routes from its own "After booking" picker instead. A
+            reveal is a pause on the way somewhere, never a verdict, so it is
+            excluded for the same reason. */}
+        {step.type !== 'scheduler' && step.type !== 'reveal' ? (
+          <InlineField label={em.behavior.terminal} hint={em.behavior.terminalHint}>
+            <Switch
+              checked={!!step.terminal}
+              onCheckedChange={(v) => onUpdate({ terminal: v || undefined })}
+              aria-label={em.behavior.terminal}
+            />
+          </InlineField>
+        ) : null}
         {/* Hidden question — never shown; its answer is seeded from a matching
             URL parameter and carried into the submission. Meaningless for a
-            message step (it collects no answer), so hide it there. */}
-        {step.type !== 'message' ? (
+            message step (it collects no answer) and for a scheduler (its answer
+            is a booking, which no URL parameter can make), so hide it there. */}
+        {!isInputlessType(step.type) && step.type !== 'scheduler' ? (
           <InlineField label={em.behavior.hidden} hint={em.behavior.hiddenHint}>
             <Switch
               checked={!!step.hidden}
@@ -303,69 +505,80 @@ export function QuestionSettings({
             />
           </InlineField>
         ) : null}
-        {/* The reveal POSITION lives in config.revealAfterStep (the draggable
-            spine marker is the primary control); this toggle is a convenience to
-            pin the reveal after THIS question. Clearing reverts to the default
-            (after the last question). */}
-        <InlineField label={em.behavior.reveal} hint={em.behavior.revealHint}>
-          <Switch
-            checked={revealAfterStep === index + 1}
-            onCheckedChange={(v) => onRevealAfterStepChange(v ? index + 1 : undefined)}
-            aria-label={em.behavior.reveal}
+        {/* The answer's field key (V5-A10). The hidden-question hint above talks
+            about "a matching URL parameter" — this is the only place that says
+            WHICH one. `name` steps edit their two subfield keys in their own
+            section instead, and a `message` step captures nothing to key. */}
+        {!isInputlessType(step.type) && step.type !== 'name' && step.type !== 'scheduler' ? (
+          <FieldKeyEditor
+            stepKey={step.key}
+            // Every answer slot the engine's renameStepKey refuses to collide
+            // with: each other step's key, PLUS a name step's subfield keys
+            // (firstname/lastname), which are real answer slots even though the
+            // name step never stores under its own key. Without the subfields the
+            // UI thought "firstname" was free, called rename, the engine refused
+            // it as a no-op, and the field showed the rejected key with no error
+            // (V4-12/13).
+            taken={steps
+              .filter((s) => s.key !== step.key)
+              .flatMap((s) => (s.type === 'name' ? [s.key, ...nameFields(s)] : [s.key]))}
+            onRename={onRenameKey}
+            m={em.behavior}
           />
-        </InlineField>
-        <button
-          type="button"
-          data-testid="behavior-edit-reveal"
-          onClick={onOpenDesign}
-          className="mt-1 inline-flex w-fit items-center gap-1.5 rounded-md text-xs font-medium text-secondary transition-colors hover:text-secondary/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          <i aria-hidden className="pi pi-pencil" style={{ fontSize: 11 }} />
-          {em.behavior.editReveal}
-        </button>
-      </section>
-
-      {/* Scoring / contact hint */}
-      <section className="border-t border-border pt-4">
-        {contact ? (
-          <p className="text-xs text-muted-foreground">{bm.settings.contactHint}</p>
-        ) : (
-          <>
-            <InlineField label={bm.settings.scoring}>
-              <Switch
-                checked={scoringEnabled}
-                onCheckedChange={onScoringChange}
-                aria-label={bm.settings.scoring}
-              />
-            </InlineField>
-            <p className="mt-1 text-xs text-muted-foreground">{bm.settings.scoringHint}</p>
-            {scoringEnabled && scoringMax === 0 ? (
-              <p
-                data-testid="scoring-zero-hint"
-                className="mt-1.5 flex items-start gap-1.5 text-xs text-muted-foreground"
-              >
-                <i aria-hidden className="pi pi-info-circle mt-0.5 text-secondary" style={{ fontSize: 11 }} />
-                {bm.settings.scoringZeroHint}
-              </p>
-            ) : null}
-            {/* Slider ranges show for every slider (parity with the always-on
-                option Points column) so scoring isn't mysteriously hidden. */}
-            {step.type === 'slider' ? (
-              <div className="mt-3">
-                <SliderScoringEditor
-                  ranges={step.sliderScoring ?? []}
-                  onChange={(sliderScoring) => onUpdate({ sliderScoring })}
-                  m={em.sliderScoring}
-                />
-              </div>
-            ) : null}
-          </>
+        ) : null}
+        {/* Shortcut for "play a reveal right after this one": it INSERTS a real
+            reveal card after this question (and removing it deletes that card),
+            so the switch and the question list can never disagree. A reveal
+            after a HIDDEN question never plays — the respondent never completes
+            the step it follows — so the pair isn't offered (V5-QA). Nor after a
+            reveal: back-to-back interstitials are never what an author means. */}
+        {step.hidden || step.type === 'reveal' ? null : (
+          <InlineField label={em.behavior.reveal} hint={em.behavior.revealHint}>
+            <Switch
+              checked={revealAfter}
+              onCheckedChange={onRevealAfterChange}
+              data-testid="behavior-reveal-after"
+              aria-label={em.behavior.reveal}
+            />
+          </InlineField>
         )}
       </section>
 
+      {/* Contact hint, and the SLIDER's scoring (its ranges live here, not in the
+          Options section above, because a slider has no options). Choice types
+          render their scoring switch inside Options — see V5-B6 above. Free-text
+          types render nothing: there is nowhere to put points (V5-A11). */}
+      {contact || step.type === 'slider' ? (
+        <section className="border-t border-border pt-4">
+          {contact ? (
+            <p className="text-xs text-muted-foreground">{bm.settings.contactHint}</p>
+          ) : (
+            <>
+              <StepScoringToggle
+                step={step}
+                formScoringEnabled={scoringEnabled}
+                scoringMax={scoringMax}
+                onUpdate={onUpdate}
+                bm={bm}
+              />
+              {stepScores ? (
+                <div className="mt-3">
+                  <SliderScoringEditor
+                    step={step}
+                    ranges={step.sliderScoring ?? []}
+                    onChange={(sliderScoring) => onUpdate({ sliderScoring })}
+                    m={em.sliderScoring}
+                  />
+                </div>
+              ) : null}
+            </>
+          )}
+        </section>
+      ) : null}
+
       {/* HubSpot — map this answer to a contact property (message steps
           collect no answer, so there is nothing to map). */}
-      {step.type !== 'message' ? (
+      {!isInputlessType(step.type) ? (
         <QuestionHubspotSection
           formId={formId}
           stepKey={step.key}
@@ -375,6 +588,147 @@ export function QuestionSettings({
         />
       ) : null}
       {dialog}
+    </div>
+  );
+}
+
+/**
+ * This question's scoring switch (V5-B2), rendered next to whatever it governs —
+ * the option Points column for a choice step, the range table for a slider.
+ *
+ * It edits `step.scoringEnabled`, the SAME flag the Results list toggles, and is
+ * disabled (explaining why) while the form-level switch is off, since nothing
+ * scores then regardless.
+ */
+function StepScoringToggle({
+  step,
+  formScoringEnabled,
+  scoringMax,
+  onUpdate,
+  bm,
+}: {
+  step: FormStep;
+  formScoringEnabled: boolean;
+  /** Form-wide highest possible total — drives the "assign points yet?" nudge. */
+  scoringMax: number;
+  onUpdate: (patch: Partial<FormStep>) => void;
+  bm: BuilderMessages;
+}) {
+  const on = formScoringEnabled && step.scoringEnabled !== false;
+  return (
+    <>
+      <InlineField label={bm.settings.scoring}>
+        <Switch
+          checked={on}
+          disabled={!formScoringEnabled}
+          onCheckedChange={(v) => onUpdate({ scoringEnabled: v ? undefined : false })}
+          aria-label={bm.settings.scoring}
+          data-testid="step-scoring-toggle"
+        />
+      </InlineField>
+      <p className="mt-1 text-xs text-muted-foreground">
+        {formScoringEnabled ? bm.settings.scoringHint : bm.settings.scoringFormOff}
+      </p>
+      {on && scoringMax === 0 ? (
+        <p data-testid="scoring-zero-hint" className="mt-1.5 flex items-start gap-1.5 text-xs text-muted-foreground">
+          <i aria-hidden className="pi pi-info-circle mt-0.5 text-secondary" style={{ fontSize: 11 }} />
+          {bm.settings.scoringZeroHint}
+        </p>
+      ) : null}
+    </>
+  );
+}
+
+/**
+ * The step's answer field key, editable in place (V5-A10).
+ *
+ * Local text state so typing is never fought by the sanitizer, committing on
+ * blur or Enter — a rename rewrites pointers across the whole config, so doing
+ * it per keystroke would churn the form (and the autosave) on the way to a name.
+ * A key that collides with another question is refused with a message instead of
+ * being silently mangled into a unique variant.
+ */
+function FieldKeyEditor({
+  stepKey,
+  taken,
+  onRename,
+  m,
+}: {
+  stepKey: string;
+  taken: string[];
+  onRename: (nextKey: string) => void;
+  m: EditorMessages['behavior'];
+}) {
+  const [text, setText] = useState(stepKey);
+  /** Why the last attempt was refused — a silent revert looks like a bug. */
+  const [refused, setRefused] = useState<'taken' | 'empty' | null>(null);
+  // Follow an external change (switching questions, or an undo).
+  useEffect(() => {
+    setText(stepKey);
+    setRefused(null);
+  }, [stepKey]);
+  const clean = sanitizeStepKey(text);
+  const collides = clean !== stepKey && taken.includes(clean);
+  // Punctuation-only input sanitizes to "_" or "", neither of which is a key
+  // anyone meant to type — refuse it rather than committing a mystery.
+  const meaningless = !clean || /^_+$/.test(clean);
+
+  function commit() {
+    if (clean === stepKey) {
+      setText(stepKey);
+      setRefused(null);
+      return;
+    }
+    if (meaningless) {
+      setText(stepKey);
+      setRefused('empty');
+      return;
+    }
+    if (collides) {
+      setText(stepKey);
+      setRefused('taken');
+      return;
+    }
+    setRefused(null);
+    onRename(clean);
+  }
+
+  return (
+    <div className="mt-2 flex flex-col gap-1">
+      <span className="text-[11px] font-medium text-muted-foreground">{m.fieldKey}</span>
+      <TextField
+        value={text}
+        data-testid="step-field-key"
+        aria-label={m.fieldKey}
+        aria-invalid={collides || refused != null || undefined}
+        maxLength={64}
+        onChange={(e) => {
+          setText(e.target.value);
+          setRefused(null);
+        }}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            // Commit WITHOUT blurring: `blur()` dropped focus onto <body>, so a
+            // keyboard user lost their place and had to Tab back from the top.
+            e.preventDefault();
+            commit();
+          } else if (e.key === 'Escape') {
+            setText(stepKey);
+            setRefused(null);
+          }
+        }}
+        className="h-8 py-1 font-mono text-xs"
+      />
+      {collides || refused ? (
+        <p role="alert" data-testid="step-field-key-taken" className="text-[11px] text-destructive">
+          {collides || refused === 'taken' ? m.fieldKeyTaken : m.fieldKeyInvalid}
+        </p>
+      ) : (
+        <p className="text-[10px] leading-relaxed text-muted-foreground">
+          {m.fieldKeyHint} <span className="font-mono">{m.fieldKeyUrlExample.replace('{key}', stepKey)}</span>
+        </p>
+      )}
     </div>
   );
 }
