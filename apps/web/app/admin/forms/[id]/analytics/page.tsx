@@ -7,6 +7,7 @@ import { getLocale } from '@/lib/locale';
 import { FormTabs } from '@/components/ui/form-tabs';
 import { Skeleton } from '@/components/skeleton';
 import { AnalyticsFilter } from './analytics-filter';
+import { TrendsChart } from './trends-chart';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,7 +15,15 @@ const DAY_MS = 86_400_000;
 
 type SP = { preset?: string; from?: string; to?: string };
 
-/** Resolve the URL query into an epoch-ms range the API understands. */
+/**
+ * Resolve the URL query into an epoch-ms range the API understands.
+ *
+ * Day boundaries are UTC and resolved HERE, on the server, deliberately: an
+ * analytics number has to be the same for every teammate reading it, so it
+ * cannot depend on the viewer's local clock. (A per-account timezone is the
+ * follow-up; until then UTC is the one shared reference.) "Last week/month/year"
+ * are rolling 7/30/365-day windows, matching how the presets read in Typeform.
+ */
 function resolveRange(sp: SP): { from?: number; to?: number } {
   if (sp.preset === 'custom') {
     const from = sp.from ? Date.parse(`${sp.from}T00:00:00.000Z`) : NaN;
@@ -24,8 +33,23 @@ function resolveRange(sp: SP): { from?: number; to?: number } {
       to: Number.isNaN(to) ? undefined : to,
     };
   }
-  const days = sp.preset === '7' ? 7 : sp.preset === '30' ? 30 : sp.preset === '90' ? 90 : null;
-  if (days) return { from: Date.now() - days * DAY_MS };
+  const now = Date.now();
+  if (sp.preset === 'today') {
+    const startOfDay = Math.floor(now / DAY_MS) * DAY_MS;
+    return { from: startOfDay, to: startOfDay + DAY_MS - 1 };
+  }
+  const days = sp.preset === 'week' ? 7 : sp.preset === 'month' ? 30 : sp.preset === 'year' ? 365 : null;
+  // Send BOTH bounds for a rolling window. With only `from`, the trend series
+  // ended at the last day that happened to have data, so a quiet stretch made
+  // the chart stop short of today and silently misrepresent the window.
+  //
+  // `from` snaps to a whole UTC day so the window is N COMPLETE days ending
+  // today. Cutting at `now - N days` (an intra-day instant) left the oldest
+  // bucket holding only part of its day while the chart drew it as a full one.
+  if (days) {
+    const startOfToday = Math.floor(now / DAY_MS) * DAY_MS;
+    return { from: startOfToday - (days - 1) * DAY_MS, to: now };
+  }
   return {};
 }
 
@@ -38,7 +62,8 @@ export default async function AnalyticsPage({
 }) {
   const { id } = await params;
   const sp = await searchParams;
-  const m = getMessages(await getLocale()).admin;
+  const locale = await getLocale();
+  const m = getMessages(locale).admin;
   const range = resolveRange(sp);
   const rangeKey = `${sp.preset ?? 'all'}:${sp.from ?? ''}:${sp.to ?? ''}`;
 
@@ -52,9 +77,10 @@ export default async function AnalyticsPage({
         </div>
         <AnalyticsFilter
           labels={{
-            last7: m.analytics.rangeLast7,
-            last30: m.analytics.rangeLast30,
-            last90: m.analytics.rangeLast90,
+            today: m.analytics.rangeToday,
+            week: m.analytics.rangeWeek,
+            month: m.analytics.rangeMonth,
+            year: m.analytics.rangeYear,
             all: m.analytics.rangeAll,
             custom: m.analytics.rangeCustom,
             from: m.analytics.rangeFrom,
@@ -65,28 +91,41 @@ export default async function AnalyticsPage({
       </div>
 
       <Suspense key={rangeKey} fallback={<AnalyticsSkeleton />}>
-        <AnalyticsData id={id} range={range} m={m.analytics} />
+        <AnalyticsData id={id} range={range} m={m.analytics} locale={locale} />
       </Suspense>
     </div>
   );
 }
 
-/** Format seconds as `Ns` or `Nm Ss`. */
+/**
+ * Format seconds as `Ns`, `Nm Ss` or `Nh Nm`. The hour tier matters: a session
+ * left open across days used to render as "4440m", which reads as noise rather
+ * than a duration.
+ */
 function formatDuration(seconds: number, unit: string): string {
   if (seconds < 60) return `${seconds}${unit}`;
-  const m = Math.floor(seconds / 60);
-  const s = seconds % 60;
-  return s === 0 ? `${m}m` : `${m}m ${s}${unit}`;
+  if (seconds < 3600) {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return s === 0 ? `${m}m` : `${m}m ${s}${unit}`;
+  }
+  const h = Math.floor(seconds / 3600);
+  const m = Math.round((seconds % 3600) / 60);
+  // Rounding the remainder can land on a full hour — "1h 60m" is not a duration.
+  if (m === 60) return `${h + 1}h`;
+  return m === 0 ? `${h}h` : `${h}h ${m}m`;
 }
 
 async function AnalyticsData({
   id,
   range,
   m,
+  locale,
 }: {
   id: string;
   range: { from?: number; to?: number };
   m: FormsMessages['admin']['analytics'];
+  locale: string;
 }) {
   let a: AnalyticsResponse;
   try {
@@ -98,10 +137,16 @@ async function AnalyticsData({
 
   const hasActivity = a.views + a.starts + a.submissions + a.partialSubmits > 0;
   if (!hasActivity) {
+    // A filtered range with no activity is NOT the same as a form nobody has
+    // ever opened — telling an owner with 500 responses "once people open your
+    // form…" because they picked last week is simply wrong.
+    const filtered = range.from != null || range.to != null;
     return (
       <div className="rounded-lg border border-dashed border-border bg-card/40 p-12 text-center">
-        <p className="text-lg font-medium">{m.emptyTitle}</p>
-        <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">{m.emptyBody}</p>
+        <p className="text-lg font-medium">{filtered ? m.emptyRangeTitle : m.emptyTitle}</p>
+        <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
+          {filtered ? m.emptyRangeBody : m.emptyBody}
+        </p>
       </div>
     );
   }
@@ -110,8 +155,17 @@ async function AnalyticsData({
     { label: m.metricViews, value: String(a.views) },
     { label: m.metricStarts, value: String(a.starts) },
     { label: m.metricSubmissions, value: String(a.submissions) },
-    { label: m.metricCompletionRate, value: `${a.completionRate}%` },
-    { label: m.metricAvgTime, value: formatDuration(a.avgTimeToComplete, m.seconds) },
+    {
+      label: m.metricCompletionRate,
+      // null = no starts in range, so the rate has no denominator.
+      value: a.completionRate == null ? '—' : `${a.completionRate}%`,
+    },
+    {
+      label: m.metricTimeToComplete,
+      // null = no completed session in range had a derivable open time. Showing
+      // "0s" there would state a duration nobody measured.
+      value: a.timeToComplete == null ? '—' : formatDuration(a.timeToComplete, m.seconds),
+    },
     { label: m.metricPartials, value: String(a.partialSubmits) },
   ];
 
@@ -127,6 +181,25 @@ async function AnalyticsData({
           </div>
         ))}
       </div>
+
+      <TrendsChart
+        points={a.trends}
+        locale={locale}
+        labels={{
+          title: m.trendsTitle,
+          subtitle: m.trendsSubtitle,
+          metricLabel: m.trendsMetricLabel,
+          empty: m.trendsEmpty,
+          seconds: m.seconds,
+          metrics: {
+            views: m.metricViews,
+            starts: m.metricStarts,
+            submissions: m.metricSubmissions,
+            completionRate: m.metricCompletionRate,
+            timeToComplete: m.metricTimeToComplete,
+          },
+        }}
+      />
 
       <section>
         <h2 className="text-lg font-semibold">{m.dropoffTitle}</h2>
@@ -144,7 +217,9 @@ async function AnalyticsData({
               {a.dropoff.map((row) => (
                 <tr key={row.stepIndex} className="border-b border-border last:border-b-0">
                   <td className="px-4 py-3">
-                    <span className="font-medium">{row.isCover ? m.coverRow : row.question}</span>
+                    <span className="font-medium">
+                      {row.isCover ? (row.question ? m.coverRow : m.landingRow) : row.question}
+                    </span>
                     {!row.isCover ? (
                       <span className="ml-2 text-xs text-muted-foreground">#{row.stepIndex + 1}</span>
                     ) : null}

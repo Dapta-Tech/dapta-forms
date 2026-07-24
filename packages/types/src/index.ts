@@ -718,6 +718,13 @@ export const formEventSchema = z.object({
   sessionId: z.string().min(1).max(200),
   type: z.enum(formEventType),
   stepIndex: z.number().int().min(0).nullable().optional(),
+  /**
+   * The step's authored key (stable identity), alongside `stepIndex` (position
+   * in THIS session's visible-step order, which shifts under show/hide/goto
+   * logic). The drop-off table needs the key to attribute a view to the actual
+   * question shown rather than to whichever config step sits at that position.
+   */
+  stepKey: z.string().min(1).max(64).nullable().optional(),
 });
 export type FormEventInput = z.infer<typeof formEventSchema>;
 
@@ -768,22 +775,55 @@ export const dropoffRowSchema = z.object({
 });
 export type DropoffRow = z.infer<typeof dropoffRowSchema>;
 
+/**
+ * One day of the Trends series — every metric for that bucket, so the chart can
+ * switch the plotted metric without another round trip. Buckets are whole UTC
+ * days; the range is gap-filled, so a day with no activity is present with zeros
+ * (a missing day would draw a misleading straight line across it).
+ */
+export const trendPointSchema = z.object({
+  /** Epoch ms at the START of the day bucket (UTC). */
+  t: z.number().int(),
+  /** Unique sessions that viewed the form that day. */
+  views: z.number().int(),
+  /** Unique sessions that reached the first question that day. */
+  starts: z.number().int(),
+  /** Submissions completed that day. */
+  submissions: z.number().int(),
+  /** submissions / starts for that day (1 decimal); null when starts=0. */
+  completionRate: z.number().nullable(),
+  /** Median whole seconds open→complete that day; null when not derivable. */
+  timeToComplete: z.number().int().nullable(),
+});
+export type TrendPoint = z.infer<typeof trendPointSchema>;
+
 /** The funnel summary + drop-off table for a form over an optional date range. */
 export const analyticsResponseSchema = z.object({
-  /** Count of `view` events. */
+  /** Unique sessions that viewed the form (distinct session_id on `view`). */
   views: z.number().int(),
-  /** Count of `start` events. */
+  /** Unique sessions that reached the first question (`step_view` idx 0). */
   starts: z.number().int(),
   /** Count of completed submissions (completedAt set). */
   submissions: z.number().int(),
-  /** submissions / starts as a percentage (1 decimal); 0 when starts=0. */
-  completionRate: z.number(),
-  /** Average seconds from startedAt→completedAt over completed submissions. */
-  avgTimeToComplete: z.number().int(),
+  /**
+   * submissions / starts as a percentage (1 decimal), capped at 100; null when
+   * there were no starts in the window (no denominator — a rate nobody can
+   * compute, which 0% would misstate next to a real Submissions count).
+   */
+  completionRate: z.number().nullable(),
+  /**
+   * MEDIAN whole seconds from form open (first `view`) to completion, or null
+   * when no completed session in range had a derivable open time. Null is NOT
+   * zero: reporting 0s for a submission whose open beacon was lost is exactly
+   * the fabricated fact this metric was rewritten to remove.
+   */
+  timeToComplete: z.number().int().nullable(),
   /** Partial-only submissions (partialAt set, completedAt null). */
   partialSubmits: z.number().int(),
   /** Cover row + one row per configured step. */
   dropoff: z.array(dropoffRowSchema),
+  /** Gap-filled per-day series for the Trends chart (oldest → newest). */
+  trends: z.array(trendPointSchema),
   /** Echoes the resolved range (epoch ms) so the client can render it. */
   range: z.object({ from: z.number().nullable(), to: z.number().nullable() }),
 });

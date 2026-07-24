@@ -29,80 +29,265 @@ function andRange(col: SQL, range?: DateRange): SQL {
   return parts.length ? sql.join(parts, sql` `) : sql``;
 }
 
-// --- Raw aggregates (the primitives the service composes) --------------------
-
-/** Count of funnel events by type within the range: `{ view: 12, start: 9, … }`. */
-export async function eventTypeCounts(
-  db: Db,
-  formId: string,
-  range?: DateRange,
-): Promise<Record<string, number>> {
-  const rows = await db.all<{ type: string; n: number | string }>(
-    sql`SELECT type, COUNT(*) AS n FROM form_event
-        WHERE form_id = ${formId} ${andRange(sql`created_at`, range)}
-        GROUP BY type`,
-  );
-  const out: Record<string, number> = {};
-  for (const r of rows) out[String(r.type)] = Number(r.n);
-  return out;
+/** The `HAVING` mirror of {@link andRange}, for a range applied to an aggregate
+ *  (e.g. `MIN(created_at)`) rather than a plain column. */
+function havingRange(col: SQL, range?: DateRange): SQL {
+  const parts: SQL[] = [];
+  if (range?.from != null) parts.push(sql`${col} >= ${range.from}`);
+  if (range?.to != null) parts.push(sql`${col} <= ${range.to}`);
+  return parts.length ? sql`HAVING ${sql.join(parts, sql` AND `)}` : sql``;
 }
 
-/** Count of `step_view` events per step index within the range. */
+/**
+ * The session ids whose COHORT ANCHOR — the session's earliest `form_event`
+ * row, of any type — falls within `range` (V5-D1).
+ *
+ * Every funnel metric used to window by ITS OWN timestamp (views by their
+ * `created_at`, starts by theirs, submissions by `completed_at`): correct in
+ * isolation, but it let a session contribute a completion to a window without
+ * its matching start, so `submissions / starts` could read over 100%, and a
+ * session straddling a UTC day split across two trend buckets. Anchoring every
+ * metric to when the session FIRST showed up makes them all describe the same
+ * population — a session belongs to exactly one window, in every metric, by
+ * construction.
+ */
+function cohortSessionIds(formId: string, range?: DateRange): SQL {
+  return sql`(
+    SELECT session_id FROM form_event
+    WHERE form_id = ${formId}
+    GROUP BY session_id
+    ${havingRange(sql`MIN(created_at)`, range)}
+  )`;
+}
+
+// --- Raw aggregates (the primitives the service composes) --------------------
+
+/**
+ * Unique sessions that viewed the form — Typeform-style unique Views. A refresh
+ * in the same tab reuses the session id, so DISTINCT collapses it to one; the
+ * plain `COUNT(*)` this replaced double-counted every reload (each mount emits a
+ * fresh `view` row). Windowed by the session's cohort anchor (V5-D1), not the
+ * `view` event's own timestamp — see {@link cohortSessionIds}.
+ */
+export async function uniqueViewCount(db: Db, formId: string, range?: DateRange): Promise<number> {
+  const row = await db.get<{ n: number | string | null }>(
+    sql`SELECT COUNT(DISTINCT session_id) AS n FROM form_event
+        WHERE form_id = ${formId} AND type = 'view'
+        AND session_id IN ${cohortSessionIds(formId, range)}`,
+  );
+  return Number(row?.n ?? 0);
+}
+
+/**
+ * "Starts" = unique sessions that reached the first question (`step_view` with
+ * `step_index = 0`). This is the signal that fires for EVERY form: the legacy
+ * `start` event is only emitted by the cover CTA, so a cover-less form never
+ * produced one and reported 0 starts (and 0% completion) despite real answers.
+ * `step_view` idx 0 is captured whether or not a cover exists. Windowed by the
+ * session's cohort anchor (V5-D1) — see {@link cohortSessionIds}.
+ */
+export async function startCount(db: Db, formId: string, range?: DateRange): Promise<number> {
+  const row = await db.get<{ n: number | string | null }>(
+    sql`SELECT COUNT(DISTINCT session_id) AS n FROM form_event
+        WHERE form_id = ${formId} AND type = 'step_view' AND step_index = 0
+        AND session_id IN ${cohortSessionIds(formId, range)}`,
+  );
+  return Number(row?.n ?? 0);
+}
+
+/**
+ * Unique sessions that viewed each step index — the drop-off funnel body.
+ * DISTINCT (not COUNT(*)) so a refresh does not inflate a step's row the same
+ * way it used to inflate Views.
+ */
+/**
+ * Unique-session step views, keyed BOTH ways (V5-D3):
+ *  - `byKey`: grouped by the step's authored `step_key` — stable regardless of
+ *    where the step sat in a given session's visible-step order. This is the
+ *    authoritative source once a form has step_key-tagged traffic.
+ *  - `byIndex`: the old positional grouping, from rows recorded BEFORE
+ *    step_key existed (step_key IS NULL). `step_index` is a session-relative
+ *    position under show/hide/goto logic, so mapping it onto the form's
+ *    authored step order can attribute a view to the wrong question — this is
+ *    kept only as a fallback for historical data, not a fix in itself.
+ */
+export interface StepViewCounts {
+  byKey: Map<string, number>;
+  byIndex: Map<number, number>;
+}
+
 export async function stepViewCounts(
   db: Db,
   formId: string,
   range?: DateRange,
-): Promise<Map<number, number>> {
-  const rows = await db.all<{ step_index: number | string | null; n: number | string }>(
-    sql`SELECT step_index, COUNT(*) AS n FROM form_event
-        WHERE form_id = ${formId} AND type = 'step_view' AND step_index IS NOT NULL
-        ${andRange(sql`created_at`, range)}
-        GROUP BY step_index`,
-  );
-  const out = new Map<number, number>();
-  for (const r of rows) {
+): Promise<StepViewCounts> {
+  const [keyRows, indexRows] = await Promise.all([
+    db.all<{ step_key: string; n: number | string }>(
+      sql`SELECT step_key, COUNT(DISTINCT session_id) AS n FROM form_event
+          WHERE form_id = ${formId} AND type = 'step_view' AND step_key IS NOT NULL
+          AND session_id IN ${cohortSessionIds(formId, range)}
+          GROUP BY step_key`,
+    ),
+    db.all<{ step_index: number | string | null; n: number | string }>(
+      sql`SELECT step_index, COUNT(DISTINCT session_id) AS n FROM form_event
+          WHERE form_id = ${formId} AND type = 'step_view' AND step_key IS NULL
+          AND step_index IS NOT NULL
+          AND session_id IN ${cohortSessionIds(formId, range)}
+          GROUP BY step_index`,
+    ),
+  ]);
+  const byKey = new Map<string, number>();
+  for (const r of keyRows) byKey.set(r.step_key, Number(r.n));
+  const byIndex = new Map<number, number>();
+  for (const r of indexRows) {
     if (r.step_index == null) continue;
-    out.set(Number(r.step_index), Number(r.n));
+    byIndex.set(Number(r.step_index), Number(r.n));
   }
-  return out;
-}
-
-export interface SubmissionAggregate {
-  /** Completed submissions (completed_at set). */
-  completed: number;
-  /** Partial-only submissions (partial_at set, completed_at null). */
-  partial: number;
-  /** Average ms from started_at→completed_at over completed rows (null if none). */
-  avgCompletionMs: number | null;
+  return { byKey, byIndex };
 }
 
 /**
- * Submission counts + average completion time within the range (bounded by
- * `started_at`). SUM(CASE…) and AVG(CASE…) are portable; AVG ignores the NULLs
- * the CASE emits for non-completed rows, so it averages only completed sessions.
+ * A submission's cohort anchor: the session's earliest `form_event` row, or —
+ * for the rare session with none at all (every top-of-funnel beacon lost) —
+ * its `started_at`. Shared by every submission-table query that windows by
+ * cohort (V5-D1) rather than by when the submission itself last changed.
  */
-export async function submissionAggregates(
+function submissionAnchor(): SQL {
+  return sql`COALESCE(
+    (SELECT MIN(fe.created_at) FROM form_event fe
+     WHERE fe.form_id = s.form_id AND fe.session_id = s.session_id),
+    s.started_at
+  )`;
+}
+
+/** Partial-only submissions in the range (windowed by the session's cohort
+ *  anchor, V5-D1 — not `partial_at`, so a partial counts with its start). */
+export async function partialCount(db: Db, formId: string, range?: DateRange): Promise<number> {
+  const row = await db.get<{ n: number | string | null }>(
+    sql`SELECT COUNT(*) AS n FROM submission s
+        WHERE s.form_id = ${formId} AND s.completed_at IS NULL AND s.partial_at IS NOT NULL
+        ${andRange(submissionAnchor(), range)}`,
+  );
+  return Number(row?.n ?? 0);
+}
+
+/** Epoch-ms per day — the portable bucket width for the trend series. */
+export const DAY_MS = 86_400_000;
+
+/** One completed submission in range, with what the trend + timing need. */
+export interface CompletedSubmission {
+  /** Epoch DAY it completed (`completed_at / 86400000`) — the trend bucket. */
+  day: number;
+  /** ms from form OPEN to completion; null when it could not be derived. */
+  durationMs: number | null;
+}
+
+/**
+ * Every completed submission in the range (windowed by the session's cohort
+ * anchor, V5-D1 — not `completed_at`, so a completion is never counted without
+ * its matching start), carrying the anchor's day (its trend bucket, so a
+ * session belongs to the SAME day in every metric) and its open→complete
+ * duration.
+ *
+ * `open` (for the duration only — unrelated to the cohort anchor above) is the
+ * session's first `view` event; if that event was lost (top-of-funnel events
+ * are fire-and-forget) it falls back to `started_at`. One query feeds three
+ * things — the Submissions total, the MEDIAN time to complete, and the per-day
+ * trend — so both correlated lookups run once.
+ *
+ * The median is taken app-side: cross-dialect SQL has no portable percentile
+ * (no window fns, no `percentile_cont`). The old
+ * `AVG(completed_at - started_at)` was doubly wrong — `started_at` is the first
+ * PERSISTED write (with no partial it equals `completed_at` → 0s), and a mean
+ * skews on long-abandon outliers. Negative durations (clock skew, or a view
+ * logged after completion) surface as null rather than being clamped: the row
+ * still counts as a submission, it just does not pollute the median.
+ */
+export async function completedSubmissions(
   db: Db,
   formId: string,
   range?: DateRange,
-): Promise<SubmissionAggregate> {
-  const row = await db.get<{
-    completed: number | string | null;
-    partial: number | string | null;
-    avg_ms: number | string | null;
+): Promise<CompletedSubmission[]> {
+  const rows = await db.all<{
+    day: number | string;
+    completed_at: number | string;
+    started_at: number | string;
+    open_at: number | string | null;
   }>(
-    sql`SELECT
-          SUM(CASE WHEN completed_at IS NOT NULL THEN 1 ELSE 0 END) AS completed,
-          SUM(CASE WHEN completed_at IS NULL AND partial_at IS NOT NULL THEN 1 ELSE 0 END) AS partial,
-          AVG(CASE WHEN completed_at IS NOT NULL THEN (completed_at - started_at) ELSE NULL END) AS avg_ms
-        FROM submission
-        WHERE form_id = ${formId} ${andRange(sql`started_at`, range)}`,
+    // 86400000 is written as a SQL literal (not a bound param) so both engines
+    // do INTEGER division and bucket to a whole day. The open timestamp comes
+    // back RAW (not COALESCEd in SQL) so the caller can tell "no open signal"
+    // apart from "opened and completed instantly" — see below.
+    sql`SELECT (${submissionAnchor()} / 86400000) AS day,
+               s.completed_at AS completed_at,
+               s.started_at AS started_at,
+               (SELECT MIN(e.created_at) FROM form_event e
+                WHERE e.form_id = s.form_id AND e.session_id = s.session_id AND e.type = 'view') AS open_at
+        FROM submission s
+        WHERE s.form_id = ${formId} AND s.completed_at IS NOT NULL ${andRange(submissionAnchor(), range)}`,
   );
-  return {
-    completed: Number(row?.completed ?? 0),
-    partial: Number(row?.partial ?? 0),
-    avgCompletionMs: row?.avg_ms == null ? null : Number(row.avg_ms),
-  };
+  return rows.map((r) => {
+    const completedAt = Number(r.completed_at);
+    const startedAt = Number(r.started_at);
+    const openAt = r.open_at == null ? null : Number(r.open_at);
+    // Prefer the session's first `view`. If that beacon was lost, `started_at`
+    // is only a usable fallback when it is STRICTLY earlier than completion —
+    // when they are equal the submit itself was the first persisted write, so
+    // the open time is genuinely unknown. Reporting that as 0 would resurrect
+    // the exact bug this metric was rewritten to kill, so it stays null and is
+    // excluded from the median rather than dragging it to zero.
+    const anchor = openAt ?? (startedAt < completedAt ? startedAt : null);
+    const dur = anchor == null ? null : completedAt - anchor;
+    return {
+      day: Number(r.day),
+      durationMs: dur != null && Number.isFinite(dur) && dur >= 0 ? dur : null,
+    };
+  });
+}
+
+/**
+ * The per-session cohort-anchor day, restricted to sessions that also have at
+ * least one row matching `eventFilter` — the shared shape behind both
+ * daily-trend primitives below. Bucketing by the ANCHOR's day (not the event's
+ * own day, V5-D1) means a session that straddles a UTC day boundary still
+ * lands in exactly one bucket, in every metric, instead of splitting its views
+ * into one day and its start into another.
+ */
+function dailySessionsQuery(formId: string, eventFilter: SQL, range?: DateRange): SQL {
+  return sql`SELECT (a.anchor / 86400000) AS day, COUNT(DISTINCT a.session_id) AS n
+      FROM (
+        SELECT session_id, MIN(created_at) AS anchor FROM form_event
+        WHERE form_id = ${formId} GROUP BY session_id
+      ) a
+      WHERE a.session_id IN (
+        SELECT session_id FROM form_event WHERE form_id = ${formId} AND ${eventFilter}
+      )
+      ${andRange(sql`a.anchor`, range)}
+      GROUP BY (a.anchor / 86400000)`;
+}
+
+/** Per-day unique sessions that viewed the form (trend series for Views). */
+export async function dailyViewSessions(
+  db: Db,
+  formId: string,
+  range?: DateRange,
+): Promise<{ day: number; n: number }[]> {
+  const rows = await db.all<{ day: number | string; n: number | string }>(
+    dailySessionsQuery(formId, sql`type = 'view'`, range),
+  );
+  return rows.map((r) => ({ day: Number(r.day), n: Number(r.n) }));
+}
+
+/** Per-day unique sessions that reached the first question (trend for Starts). */
+export async function dailyStartSessions(
+  db: Db,
+  formId: string,
+  range?: DateRange,
+): Promise<{ day: number; n: number }[]> {
+  const rows = await db.all<{ day: number | string; n: number | string }>(
+    dailySessionsQuery(formId, sql`type = 'step_view' AND step_index = 0`, range),
+  );
+  return rows.map((r) => ({ day: Number(r.day), n: Number(r.n) }));
 }
 
 // --- Submissions table (paginated + filtered) --------------------------------

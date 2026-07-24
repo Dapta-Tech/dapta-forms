@@ -63,7 +63,7 @@ export async function postSubmission(
 export async function postFormEvent(
   accountCode: string,
   slug: string,
-  body: { sessionId: string; type: string; stepIndex?: number | null },
+  body: { sessionId: string; type: string; stepIndex?: number | null; stepKey?: string | null },
 ): Promise<void> {
   await fetch(
     `${API_URL}/v1/public/forms/${encodeURIComponent(accountCode)}/${encodeURIComponent(slug)}/events`,

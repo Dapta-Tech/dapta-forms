@@ -11,6 +11,7 @@ import {
   migrate,
   seed,
   recordFormEvent,
+  createForm,
   jsonParam,
   querySubmissions,
   deleteSubmissionForAccount,
@@ -57,6 +58,7 @@ async function emit(type: string, count: number, stepIndex?: number, at?: number
 }
 
 const NOW = 1_800_000_000_000; // fixed instant so range math is deterministic
+const DAY = 86_400_000;
 
 beforeEach(async () => {
   db = await createDb('file::memory:');
@@ -97,7 +99,7 @@ describe('funnel aggregation', () => {
     expect(a.submissions).toBe(3); // completed
     expect(a.partialSubmits).toBe(2);
     expect(a.completionRate).toBe(37.5); // 3/8 = 37.5%
-    expect(a.avgTimeToComplete).toBe(60); // (30+60+90)/3 s
+    expect(a.timeToComplete).toBe(60); // median(30,60,90) s
   });
 
   it('computes the per-step drop-off table (cover + one row per step)', async () => {
@@ -134,6 +136,303 @@ describe('funnel aggregation', () => {
 
   it('returns null for a form the account does not own', async () => {
     expect(await svc.funnel('someone-else', formId, {})).toBeNull();
+  });
+});
+
+describe('P0 metric-definition fixes', () => {
+  /** Emit a single form_event for a specific session. */
+  const ev = (sessionId: string, type: string, stepIndex: number | null, at: number) =>
+    recordFormEvent(db, { formId, sessionId, type, stepIndex, now: at });
+
+  it('Starts come from step_view idx 0, so a cover-less session (no `start` event) counts', async () => {
+    // A cover-less form never emits the cover-CTA `start` event; the old code
+    // counted `start` and reported 0 starts. These 3 sessions reach Q1 with NO
+    // `start` event and MUST count.
+    for (const s of ['nocover-1', 'nocover-2', 'nocover-3']) await ev(s, 'step_view', 0, NOW);
+
+    const a = (await svc.funnel(accountId, formId, {}))!;
+    expect(a.starts).toBe(11); // 8 baseline + 3 cover-less (would stay 8 under old `start`-event count)
+    expect(a.completionRate).toBe(27.3); // 3 completed / 11 starts — non-zero, the P0 fix
+    // Prove the added sessions truly have no `start` event backing them.
+    const startEvents = await db.get<{ n: number | string }>(
+      sql`SELECT COUNT(*) AS n FROM form_event WHERE type = 'start' AND session_id = 'nocover-1'`,
+    );
+    expect(Number(startEvents!.n)).toBe(0);
+  });
+
+  it('Views are unique per session — a refresh in the same tab does not inflate', async () => {
+    // Same session mounts 3× (refresh): 3 `view` rows, 1 unique session.
+    for (let i = 0; i < 3; i++) await ev('refresher', 'view', null, NOW);
+    const a = (await svc.funnel(accountId, formId, {}))!;
+    expect(a.views).toBe(11); // 10 baseline uniques + 1 (NOT +3)
+  });
+
+  it('Time to complete is measured from form OPEN (first view), not the first persisted write', async () => {
+    // The "0s" bug shape: the only persisted write is the complete submit, so
+    // started_at == completed_at. But the session opened the form 40s earlier.
+    // The window has to cover that view — a session's cohort anchor (V5-D1) is
+    // its EARLIEST event, so a range excluding the view would exclude the
+    // session entirely, not just its duration.
+    const T = NOW + 500_000;
+    await ev('tc1', 'view', null, T - 40_000);
+    await insertSubmission({ session: 'tc1', data: {}, score: 0, startedAt: T, completedAt: T });
+
+    const a = (await svc.funnel(accountId, formId, { from: T - 41_000, to: T + 1 }))!; // isolate tc1
+    expect(a.submissions).toBe(1);
+    expect(a.timeToComplete).toBe(40); // 40s from the view — NOT 0
+  });
+
+  it('Time to complete falls back to started_at when the open `view` event was lost', async () => {
+    const T = NOW + 700_000;
+    // No `view` event for this session → its cohort anchor AND its open time
+    // both fall back to started_at, so the window must cover it too.
+    await insertSubmission({ session: 'tc2', data: {}, score: 0, startedAt: T - 25_000, completedAt: T });
+    const a = (await svc.funnel(accountId, formId, { from: T - 26_000, to: T + 1 }))!;
+    expect(a.timeToComplete).toBe(25);
+  });
+
+  it('Time to complete is the MEDIAN, not the mean (outlier-robust)', async () => {
+    // Durations 10s / 20s / 300s → median 20s, mean 110s. No view → open=started_at.
+    const U = NOW + 1_000_000;
+    await insertSubmission({ session: 'md-1', data: {}, score: 0, startedAt: U, completedAt: U + 10_000 });
+    await insertSubmission({ session: 'md-2', data: {}, score: 0, startedAt: U, completedAt: U + 20_000 });
+    await insertSubmission({ session: 'md-3', data: {}, score: 0, startedAt: U, completedAt: U + 300_000 });
+    const a = (await svc.funnel(accountId, formId, { from: U - 1, to: U + 400_000 }))!;
+    expect(a.submissions).toBe(3);
+    expect(a.timeToComplete).toBe(20); // median — NOT 110 (mean)
+  });
+
+  it('clamps completion rate to 100% when a completed session never recorded a start', async () => {
+    // V5-D1 makes starts/submissions describe the SAME cohort (by anchor), so
+    // a completion can no longer land in a window without its session's start
+    // — UNLESS that session's step_view idx0 beacon was simply lost (real,
+    // fire-and-forget events do get dropped). Two sessions both show up in the
+    // window (each has a 'view'), but only one ever recorded reaching Q1.
+    const T = NOW + 3_000_000;
+    await ev('clamp-a', 'view', null, T);
+    await ev('clamp-a', 'step_view', 0, T); // clamp-a's start beacon landed
+    await ev('clamp-b', 'view', null, T); // clamp-b's start beacon was lost
+    await insertSubmission({ session: 'clamp-a', data: {}, score: 0, startedAt: T - 5_000, completedAt: T });
+    await insertSubmission({ session: 'clamp-b', data: {}, score: 0, startedAt: T - 5_000, completedAt: T });
+
+    const a = (await svc.funnel(accountId, formId, { from: T - 1, to: T + 1 }))!;
+    expect(a.starts).toBe(1); // only clamp-a has a step_view idx0 row
+    expect(a.submissions).toBe(2); // both are in-cohort (both have a 'view') and both completed
+    expect(a.completionRate).toBe(100); // raw ratio would be 200%
+    expect(a.trends.every((p) => p.completionRate == null || p.completionRate <= 100)).toBe(true);
+  });
+
+  it('reports NO time to complete (null) rather than a fabricated 0s', async () => {
+    // The submit was the first persisted write AND the open beacon was lost, so
+    // started_at === completed_at. There is no measurable duration — reporting
+    // 0s would resurrect the exact bug this metric was rewritten to remove.
+    const T = NOW + 4_000_000;
+    await insertSubmission({ session: 'noopen', data: {}, score: 0, startedAt: T, completedAt: T });
+    const a = (await svc.funnel(accountId, formId, { from: T - 1, to: T + 1 }))!;
+    expect(a.submissions).toBe(1);
+    expect(a.timeToComplete).toBeNull();
+  });
+
+  it('still plots a gap-filled window when the range has no activity at all', async () => {
+    const DAY = 86_400_000;
+    const quietDay = Math.floor(NOW / DAY) - 20; // a stretch with nothing in it
+    const a = (await svc.funnel(accountId, formId, {
+      from: quietDay * DAY,
+      to: (quietDay + 2) * DAY,
+    }))!;
+    // "Nothing happened here" is a real answer — it should draw flat, not vanish.
+    expect(a.trends).toHaveLength(3);
+    expect(a.trends.every((p) => p.views === 0 && p.starts === 0 && p.submissions === 0)).toBe(true);
+  });
+
+  it('builds a per-day Trends series carrying every metric for the bucket', async () => {
+    const DAY = 86_400_000;
+    const seedDay = Math.floor(NOW / DAY); // everything in beforeEach lands here
+    const a = (await svc.funnel(accountId, formId, {}))!;
+
+    expect(a.trends).toHaveLength(1); // no range → bounded by observed activity
+    expect(a.trends[0]).toEqual({
+      t: seedDay * DAY, // start of the UTC day bucket
+      views: 10,
+      starts: 8,
+      submissions: 3,
+      completionRate: 37.5,
+      timeToComplete: 60, // median(30,60,90)
+    });
+  });
+
+  it('gap-fills the Trends window so a dead day is a real zero, not a missing point', async () => {
+    const DAY = 86_400_000;
+    const seedDay = Math.floor(NOW / DAY);
+    // A 3-day window ending on the seeded day: the two earlier days had no
+    // activity at all and must still appear, zeroed.
+    const a = (await svc.funnel(accountId, formId, {
+      from: (seedDay - 2) * DAY,
+      to: NOW + 90_000,
+    }))!;
+
+    expect(a.trends).toHaveLength(3);
+    expect(a.trends.map((p) => p.t)).toEqual([
+      (seedDay - 2) * DAY,
+      (seedDay - 1) * DAY,
+      seedDay * DAY,
+    ]);
+    // A dead day has no starts, so its rate has no denominator — null, not 0%.
+    expect(a.trends[0]).toMatchObject({ views: 0, starts: 0, submissions: 0, completionRate: null });
+    expect(a.trends[1]).toMatchObject({ views: 0, starts: 0, submissions: 0 });
+    expect(a.trends[2]).toMatchObject({ views: 10, starts: 8, submissions: 3 });
+  });
+
+  it('splits Trends across day boundaries by completion day', async () => {
+    const DAY = 86_400_000;
+    const seedDay = Math.floor(NOW / DAY);
+    // A completion two days after the seeded activity → its own bucket.
+    const later = (seedDay + 2) * DAY + 3_600_000; // mid-day, 2 days on
+    await ev('nextday', 'view', null, later - 20_000);
+    await insertSubmission({ session: 'nextday', data: {}, score: 0, startedAt: later, completedAt: later });
+
+    const a = (await svc.funnel(accountId, formId, {}))!;
+    expect(a.trends).toHaveLength(3); // seedDay, +1 (gap-filled), +2
+    const last = a.trends[2]!;
+    expect(last.t).toBe((seedDay + 2) * DAY);
+    expect(last.submissions).toBe(1);
+    expect(last.timeToComplete).toBe(20); // 20s from its own view event
+    expect(a.trends[1]).toMatchObject({ submissions: 0, views: 0 }); // the dead middle day
+  });
+
+  it('windows submissions by the session COHORT ANCHOR, not by completed_at (V5-D1)', async () => {
+    // The revised decision: a session belongs to the window it FIRST showed up
+    // in, not the window its submission happens to complete in. Before this,
+    // each metric windowed by its own timestamp — which let a session start
+    // before a range and complete inside it, contributing a submission with no
+    // matching start and pushing completionRate past 100%.
+    const W = NOW + 2_000_000;
+    await ev('w1', 'view', null, W - 100_000);
+    await insertSubmission({ session: 'w1', data: {}, score: 0, startedAt: W - 100_000, completedAt: W });
+
+    // The window containing the COMPLETION but not the session's first view:
+    // the submission must NOT count here anymore.
+    const completionWindow = (await svc.funnel(accountId, formId, { from: W - 1, to: W + 1 }))!;
+    expect(completionWindow.submissions).toBe(0);
+
+    // The window containing the session's ANCHOR (its first view) does count
+    // it, even though completion happened 100s later, outside this window.
+    const anchorWindow = (await svc.funnel(accountId, formId, { from: W - 100_001, to: W - 99_999 }))!;
+    expect(anchorWindow.submissions).toBe(1);
+  });
+
+  it('a session spanning UTC midnight lands in ONE trend day, in every metric (V5-D1)', async () => {
+    // Before the cohort-anchor fix, each metric bucketed by its OWN event's day
+    // — a session whose view fell just before midnight and whose start/submit
+    // fell just after could split across two trend points (views on day N,
+    // starts/submissions on day N+1), and the mismatch is exactly what let
+    // completion rate exceed 100% on the stock "Today" preset. Bucketing every
+    // metric by the session's cohort anchor (its earliest event) puts all of
+    // it in the SAME day.
+    const midnight = Math.floor((NOW + 20 * DAY) / DAY) * DAY;
+    await ev('midnight1', 'view', null, midnight - 5_000); // 5s before midnight
+    await ev('midnight1', 'step_view', 0, midnight + 5_000); // 5s after midnight
+    await insertSubmission({
+      session: 'midnight1',
+      data: {},
+      score: 0,
+      startedAt: midnight + 5_000,
+      completedAt: midnight + 10_000,
+    });
+
+    const a = (await svc.funnel(accountId, formId, { from: midnight - DAY, to: midnight + DAY }))!;
+    const active = a.trends.filter((p) => p.views > 0 || p.starts > 0 || p.submissions > 0);
+    expect(active).toHaveLength(1); // one day, not split across two
+    expect(active[0]).toMatchObject({
+      t: midnight - DAY, // the anchor's (pre-midnight) day, not the start/submit's day
+      views: 1,
+      starts: 1,
+      submissions: 1,
+    });
+  });
+});
+
+describe('V5-D3 — drop-off attributes a view to the step KEY, not its runtime position', () => {
+  /** A second form, independent of the shared beforeEach fixture: role ->
+   *  [company_size only if role='a'] -> email. A respondent who answers 'b'
+   *  never sees company_size, so 'email' renders at RUNTIME position 1 instead
+   *  of its AUTHORED position 2. */
+  async function makeConditionalForm(): Promise<string> {
+    const created = await createForm(db, accountId, {
+      name: `cond-${crypto.randomUUID().slice(0, 8)}`,
+      config: {
+        version: 1,
+        steps: [
+          {
+            key: 'role',
+            type: 'dropdown',
+            question: 'Role?',
+            options: [
+              { label: 'A', value: 'a', points: 0 },
+              { label: 'B', value: 'b', points: 0 },
+            ],
+          },
+          {
+            key: 'company_size',
+            type: 'text',
+            question: 'Company size?',
+            showWhen: { field: 'role', values: ['a'] },
+          },
+          { key: 'email', type: 'email', question: 'Email?' },
+        ],
+      },
+    });
+    if (!created.ok) throw new Error('form creation failed');
+    return created.value.id;
+  }
+
+  it('a step viewed at a shifted runtime index is attributed to its OWN key, not the config step at that position', async () => {
+    const condFormId = await makeConditionalForm();
+    // Respondent whose role='b' never sees company_size: their runtime step
+    // order is [role(0), email(1)] — 'email' sits at position 1, though it is
+    // authored at position 2. The renderer tags the event with the step's key.
+    await recordFormEvent(db, {
+      formId: condFormId,
+      sessionId: 'skip-company-size',
+      type: 'step_view',
+      stepIndex: 0,
+      stepKey: 'role',
+      now: NOW,
+    });
+    await recordFormEvent(db, {
+      formId: condFormId,
+      sessionId: 'skip-company-size',
+      type: 'step_view',
+      stepIndex: 1,
+      stepKey: 'email',
+      now: NOW,
+    });
+
+    const a = (await svc.funnel(accountId, condFormId, {}))!;
+    const companySizeRow = a.dropoff.find((r) => r.key === 'company_size');
+    const emailRow = a.dropoff.find((r) => r.key === 'email');
+    // The old positional mapping would have credited 'company_size' (config
+    // position 1) with this view, and left 'email' (position 2) at 0.
+    expect(companySizeRow?.views).toBe(0);
+    expect(emailRow?.views).toBe(1);
+  });
+
+  it('falls back to the old positional mapping for legacy rows with no step_key', async () => {
+    const condFormId = await makeConditionalForm();
+    // A row recorded before this column existed — step_key is NULL. It cannot
+    // be attributed correctly (that is the documented limitation, not this
+    // fix's job), but it must not crash and must still land SOMEWHERE.
+    await recordFormEvent(db, {
+      formId: condFormId,
+      sessionId: 'legacy-row',
+      type: 'step_view',
+      stepIndex: 0,
+      stepKey: null,
+      now: NOW,
+    });
+    const a = (await svc.funnel(accountId, condFormId, {}))!;
+    const roleRow = a.dropoff.find((r) => r.key === 'role'); // config position 0
+    expect(roleRow?.views).toBe(1);
   });
 });
 

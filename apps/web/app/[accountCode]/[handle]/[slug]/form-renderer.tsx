@@ -239,9 +239,20 @@ export function FormRenderer({
   const err = (code: string) => m.errors[code as keyof typeof m.errors] ?? m.errors.required;
 
   const track = useCallback(
-    (type: string, stepIndex?: number) => {
+    // `stepIndex` is the position in THIS session's runtimeSteps (visible-step)
+    // array — meaningful for "was this the first question" (Starts), but not
+    // stable across sessions once show/hide/goto logic branches differently.
+    // `stepKey` is the step's authored, stable identity, so the drop-off table
+    // can attribute a view to the actual question shown rather than to
+    // whichever config step happens to sit at that position (V5-D3).
+    (type: string, stepIndex?: number, stepKey?: string) => {
       if (!sessionId) return;
-      void recordEventAction(accountCode, slug, { sessionId, type, stepIndex: stepIndex ?? null });
+      void recordEventAction(accountCode, slug, {
+        sessionId,
+        type,
+        stepIndex: stepIndex ?? null,
+        stepKey: stepKey ?? null,
+      });
     },
     [accountCode, slug, sessionId],
   );
@@ -267,7 +278,7 @@ export function FormRenderer({
     const key = `${phase}:${index}`;
     if (lastStepViewKey.current === key) return;
     lastStepViewKey.current = key;
-    track('step_view', index);
+    track('step_view', index, step.key);
   }, [phase, index, step, track]);
 
   // Clamp the index if the visible-step set shrinks (a branch closed).
@@ -373,12 +384,12 @@ export function FormRenderer({
         const completedIdx = nextSteps.findIndex((s) => s.key === completed.key);
         const isLast = completedIdx >= 0 ? completedIdx >= nextSteps.length - 1 : index >= nextSteps.length - 1;
 
-        track('step_complete', index);
+        track('step_complete', index, completed.key);
 
         // Partial submit once past the configured lead-capture threshold.
         if (thresholdKey && completed.key === thresholdKey && !partialSent.current) {
           partialSent.current = true;
-          track('partial_submit', index);
+          track('partial_submit', index, completed.key);
           void submitFormAction(accountCode, slug, {
             sessionId,
             data: withData(nextAnswers),

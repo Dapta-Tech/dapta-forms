@@ -5,7 +5,7 @@
  * config/answers blobs and `bigint` epoch-ms instants; production runs here.
  */
 import { sql } from 'drizzle-orm';
-import { pgTable, text, bigint, integer, jsonb, index, uniqueIndex } from 'drizzle-orm/pg-core';
+import { pgTable, text, bigint, integer, jsonb, uniqueIndex, index } from 'drizzle-orm/pg-core';
 
 // --- Platform (identity / delivery) — kept from the shared platform ----------
 
@@ -147,17 +147,33 @@ export const submission = pgTable(
   (t) => ({
     // One persisted submission per (form, session) — the upsert relies on this.
     submissionFormSessionUq: uniqueIndex('submission_form_session_uq').on(t.formId, t.sessionId),
+    // Analytics windows completed submissions by completed_at.
+    submissionFormCompletedIdx: index('submission_form_completed_idx').on(t.formId, t.completedAt),
   }),
 );
 
-export const formEvent = pgTable('form_event', {
-  id: text('id').primaryKey(),
-  formId: text('form_id').notNull(),
-  sessionId: text('session_id').notNull(),
-  type: text('type').notNull(),
-  stepIndex: integer('step_index'),
-  createdAt: bigint('created_at', { mode: 'number' }).notNull(),
-});
+export const formEvent = pgTable(
+  'form_event',
+  {
+    id: text('id').primaryKey(),
+    formId: text('form_id').notNull(),
+    sessionId: text('session_id').notNull(),
+    type: text('type').notNull(),
+    stepIndex: integer('step_index'),
+    /** The step's authored key (nullable — absent on rows recorded before this
+     *  column existed). Lets the drop-off table attribute a view to the actual
+     *  question shown instead of to whichever config step sits at `stepIndex`'s
+     *  position, which shifts under show/hide/goto logic (V5-D3). */
+    stepKey: text('step_key'),
+    createdAt: bigint('created_at', { mode: 'number' }).notNull(),
+  },
+  (t) => ({
+    // Funnel aggregates scan a form's events over a date window.
+    formEventFormIdx: index('form_event_form_idx').on(t.formId, t.createdAt),
+    // Per-session lookups: unique-session counts + the first `view` (open time).
+    formEventSessionIdx: index('form_event_session_idx').on(t.formId, t.sessionId, t.type),
+  }),
+);
 
 export const bookingEvent = pgTable(
   'booking_event',
