@@ -1027,7 +1027,7 @@
      card's page padding live on .pf__main — the area BELOW the pinned banner —
      never on .pf itself, which would drag the banner down with the group (and
      the padding would inset the banner off the viewport edges). */
-  .pf:not(.pf--cover):not(.pf--reveal):not(.pf--done) .pf__main {
+  .pf:not(.pf--cover):not(.pf--reveal):not(.pf--done):not(.pf--vertical) .pf__main {
     justify-content: center;
     padding: 40px 24px;
   }
@@ -1111,3 +1111,139 @@
   margin-top: 12px;
 }
 .pf-booking__trouble a { color: inherit; text-decoration: underline; }
+
+/* ── Vertical layout (config.layout = 'vertical') ─────────────────────────────
+   One page, natural document flow. Deliberately NO viewport-height tricks
+   beyond the root min-height: this is the layout an embed (iframe auto-height)
+   will reuse, so content must size itself. Question typography reuses the
+   slides tokens but left-aligned — a stacked page reads as a document, not a
+   stage. All rules scoped under .pf--vertical / .pf-v__*. */
+
+/* The banner joins the progress bar in ONE sticky group (`.pf-v__sticky`);
+   its own stickiness is neutralized so the two never fight for the top edge. */
+.pf--vertical .pf__banner {
+  position: static;
+}
+.pf-v__sticky {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+}
+.pf-v__progressbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 20px;
+  background: color-mix(in srgb, var(--background) 92%, transparent);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--border);
+}
+.pf-v__progressbar .pf-progress {
+  max-width: 420px;
+  flex: 1;
+}
+.pf-v__progress-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted-foreground);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Natural top-aligned flow — the desktop media block's per-phase centering is
+   excluded for this layout (see the :not(.pf--vertical) in that selector). */
+.pf--vertical .pf__main {
+  justify-content: flex-start;
+}
+
+.pf-v__page {
+  width: 100%;
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 0 20px calc(56px + env(safe-area-inset-bottom));
+  box-sizing: border-box;
+}
+.pf-v__header {
+  display: flex;
+  justify-content: center;
+  padding: 22px 0 2px;
+}
+
+/* Cover-as-hero: same badge/title/subheadline/trust classes as the cover
+   screen, centered, with the logos marquee — but no Start gate. */
+.pf-v__hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 22px 0 26px;
+  border-bottom: 1px solid var(--border);
+}
+
+/* Question blocks: a quiet stacked list separated by hairlines. */
+.pf-v__question {
+  padding: 26px 0;
+  border-bottom: 1px solid var(--border);
+}
+.pf-v__question:last-of-type {
+  border-bottom: none;
+}
+.pf-v__question .pf__question-wrap {
+  max-width: none;
+  margin: 0;
+}
+.pf-v__question .pf__question {
+  text-align: left;
+  font-size: clamp(17px, 3vw, 21px);
+}
+.pf-v__question .pf__helper {
+  text-align: left;
+  margin-top: 6px;
+}
+.pf-v__question .pf__fields {
+  margin-top: 16px;
+}
+.pf-v__question .pf__error {
+  text-align: left;
+  margin-top: 10px;
+}
+.pf-v__required {
+  color: var(--pf-primary);
+  margin-left: 2px;
+}
+.pf-v__question--error .pf-input {
+  border-color: var(--destructive);
+}
+
+/* Lazy scheduler embed: hold the space quietly until it mounts. */
+.pf-v__embed-placeholder {
+  min-height: 480px;
+  border: 1px dashed var(--border);
+  border-radius: var(--pf-radius);
+  background: var(--muted);
+}
+
+/* Footer: the single Submit for the whole page. */
+.pf-v__footer {
+  padding-top: 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.pf-v__footer .pf__error {
+  margin-top: 0;
+}
+
+@media (min-width: 769px) {
+  .pf-v__page {
+    padding-bottom: 88px;
+  }
+  .pf-v__question {
+    padding: 30px 0;
+  }
+}
+@media (max-width: 480px) {
+  .pf-v__progressbar {
+    padding: 8px 14px;
+  }
+}

@@ -5,7 +5,13 @@
  * from the same schema (never trust the client; validate on both sides).
  */
 import { z } from 'zod';
-import { CONDITION_OPS, FORM_FIELD_TYPES, isSafeHttpUrl, isSafeImageUrl } from '@quill/engine';
+import {
+  CONDITION_OPS,
+  FORM_FIELD_TYPES,
+  FORM_LAYOUTS,
+  isSafeHttpUrl,
+  isSafeImageUrl,
+} from '@quill/engine';
 
 /** A URL rendered into `<img src>` — reject script protocols (XSS defense-in-depth). */
 const safeImageUrl = z
@@ -596,6 +602,11 @@ export const formConfigSchema = z.object({
   version: z.literal(1),
   branding: formBrandingSchema.nullable().optional(),
   cover: formCoverSchema.nullable().optional(),
+  /**
+   * Presentation layout for the public form (ADDITIVE — absent on every legacy
+   * config, which then renders as `'slides'`, exactly as it always has).
+   */
+  layout: z.enum(FORM_LAYOUTS).optional(),
   steps: z.array(formStepSchema).default([]),
   scoring: z.object({ enabled: z.boolean().optional() }).nullable().optional(),
   outcomes: z.array(formOutcomeSchema).optional(),

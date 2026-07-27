@@ -351,10 +351,23 @@ export interface FormEnding {
   redirectDelayMs?: number;
 }
 
+/**
+ * How the public form presents its steps (additive — absent = `'slides'`, so
+ * every form published before this field existed renders exactly as it did):
+ *  - `'slides'`   — one question per screen, walked step by step (the original).
+ *  - `'vertical'` — every visible question on one page, answered in any order
+ *    and submitted once. Skip-logic still applies live: `runtimeSteps` is
+ *    recomputed on every answer, so questions show/hide as the respondent types.
+ */
+export const FORM_LAYOUTS = ['slides', 'vertical'] as const;
+export type FormLayout = (typeof FORM_LAYOUTS)[number];
+
 export interface FormConfig {
   version: 1;
   branding?: FormBranding | null;
   cover?: FormCover | null;
+  /** Presentation layout for the public form. Absent = `'slides'` (back-compat). */
+  layout?: FormLayout;
   steps: FormStep[];
   scoring?: { enabled?: boolean } | null;
   outcomes?: FormOutcome[];
@@ -385,6 +398,15 @@ export type AnswerValue =
   | null
   | undefined;
 export type Answers = Record<string, AnswerValue>;
+
+/**
+ * The layout the public form renders with. Pure resolver shared by the
+ * renderer and the builder so both always agree — and the single place the
+ * `absent = 'slides'` back-compat default lives.
+ */
+export function resolveFormLayout(config: Pick<FormConfig, 'layout'> | null | undefined): FormLayout {
+  return config?.layout ?? 'slides';
+}
 
 /** Normalize an answer to the set of string tokens it represents (for matching). */
 function tokens(value: AnswerValue): string[] {

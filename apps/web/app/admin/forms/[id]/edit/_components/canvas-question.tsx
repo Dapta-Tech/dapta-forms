@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useLayoutEffect, useRef } from 'react';
-import type { FormConfig, FormStep, FormOption } from '@quill/engine';
+import type { FormConfig, FormStep, FormOption, FormLayout } from '@quill/engine';
 import { nameFields, sliderBounds, clampSliderValue } from '@quill/engine';
 import { clampAccent, onAccent, DEFAULT_ACCENT } from '@quill/shared';
 import { cn } from '@/lib/cn';
@@ -76,6 +76,7 @@ export function CanvasQuestion({
   index,
   total,
   device,
+  layout = 'slides',
   onUpdate,
   m,
 }: {
@@ -84,9 +85,16 @@ export function CanvasQuestion({
   index: number;
   total: number;
   device: 'desktop' | 'mobile';
+  /**
+   * The form's presentation layout. On 'vertical' the canvas drops the chrome
+   * that never exists on a one-page form — the per-step progress bar and the
+   * per-question Next button — so the builder shows what actually publishes.
+   */
+  layout?: FormLayout;
   onUpdate: (patch: Partial<FormStep>) => void;
   m: BuilderMessages;
 }) {
+  const vertical = layout === 'vertical';
   const accent = clampAccent(config.branding?.primaryColor || DEFAULT_ACCENT);
   const accentText = onAccent(accent);
   const progress = total > 0 ? Math.round(((index + 1) / total) * 100) : 0;
@@ -117,6 +125,7 @@ export function CanvasQuestion({
         step={step}
         accent={accent}
         device={device}
+        vertical={vertical}
         onUpdate={onUpdate}
         m={m}
       />
@@ -131,10 +140,13 @@ export function CanvasQuestion({
           device === 'mobile' ? 'max-w-[380px]' : 'max-w-[640px]',
         )}
       >
-        {/* Respondent progress bar */}
-        <div className="mb-6 h-1.5 w-full overflow-hidden rounded-full bg-muted">
-          <div className="h-full rounded-full transition-all" style={{ width: `${progress}%`, background: accent }} />
-        </div>
+        {/* Respondent progress bar — slides only; a one-page form has no
+            per-step position, its bar counts ANSWERED questions instead. */}
+        {!vertical ? (
+          <div className="mb-6 h-1.5 w-full overflow-hidden rounded-full bg-muted">
+            <div className="h-full rounded-full transition-all" style={{ width: `${progress}%`, background: accent }} />
+          </div>
+        ) : null}
 
         {/* Eyebrow */}
         <p className="mb-2 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
@@ -253,8 +265,13 @@ export function CanvasQuestion({
         {/* Respondent's Next button (label editable for message/content). A
             scheduler has none: booking IS the answer, so the public form
             advances itself — showing a Submit here promised a button that never
-            renders. */}
-        {step.type !== 'dropdown' && step.type !== 'scheduler' ? (
+            renders. A ONE-PAGE form has no per-question button at all (one
+            Submit at the end of the page), so the canvas says that instead. */}
+        {vertical ? (
+          <p className="mt-7 text-xs text-muted-foreground" data-testid="canvas-vertical-note">
+            <i aria-hidden className="pi pi-info-circle" style={{ fontSize: 11 }} /> {m.canvas.verticalNote}
+          </p>
+        ) : step.type !== 'dropdown' && step.type !== 'scheduler' ? (
           <div className="mt-7">
             <button
               type="button"
@@ -286,12 +303,15 @@ function RevealCanvas({
   step,
   accent,
   device,
+  vertical = false,
   onUpdate,
   m,
 }: {
   step: FormStep;
   accent: string;
   device: 'desktop' | 'mobile';
+  /** One-page form: the reveal plays after Submit, never mid-page — say so. */
+  vertical?: boolean;
   onUpdate: (patch: Partial<FormStep>) => void;
   m: BuilderMessages;
 }) {
@@ -337,6 +357,11 @@ function RevealCanvas({
         <p className="mt-5 text-xs text-muted-foreground">
           {tb(m.canvas.revealPlays, { ms: durationMs })}
         </p>
+        {vertical ? (
+          <p className="mt-1.5 text-xs text-muted-foreground" data-testid="canvas-reveal-vertical-note">
+            <i aria-hidden className="pi pi-info-circle" style={{ fontSize: 11 }} /> {m.canvas.revealVerticalNote}
+          </p>
+        ) : null}
       </div>
     </div>
   );

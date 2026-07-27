@@ -4,9 +4,11 @@ import { getPublicForm } from '@/lib/api';
 import { publicLocale } from '@/lib/locale';
 import { getMessages, t } from '@quill/shared';
 import { MadeWithBadge } from '@/components/made-with-badge';
+import { resolveFormLayout } from '@quill/engine';
 import { resolveTracking } from '@/components/tracking/resolve-tracking';
 import { TrackingScripts } from '@/components/tracking/tracking-scripts';
 import { FormRenderer } from './form-renderer';
+import { VerticalFormRenderer } from './vertical-form-renderer';
 
 /**
  * SEO/OG metadata for the public form — the form name as the title and a
@@ -53,10 +55,14 @@ export default async function PublicFormPage({
   // renders nothing (zero third-party requests).
   const tracking = resolveTracking(form.config.tracking);
 
+  // The config decides the presentation: slides (the original one-question-per-
+  // screen walk) or vertical (one page). Same engine, same submit contract.
+  const Renderer = resolveFormLayout(form.config) === 'vertical' ? VerticalFormRenderer : FormRenderer;
+
   return (
     <>
       <TrackingScripts tracking={tracking} />
-      <FormRenderer
+      <Renderer
         accountCode={accountCode}
         slug={slug}
         name={form.name}

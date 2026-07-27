@@ -10,12 +10,14 @@ import type {
   FormBranding,
   FormOutcome,
   FormEnding,
+  FormLayout,
 } from '@quill/engine';
 import {
   normalizeConfig,
   renameStepKey as engineRenameStepKey,
   createEmptyStep,
   migrateRevealToStep,
+  resolveFormLayout,
 } from '@quill/engine';
 import type { FormTracking } from '@quill/types';
 import { formConfigSchema } from '@quill/types';
@@ -407,10 +409,17 @@ export function FormEditor({
   // flow round-trips it (normalizeConfig passes unknown top-level keys through).
   const setTracking = (tracking: FormTracking | undefined) =>
     mutate((c) => ({ ...c, tracking }) as FormConfig);
+  // Layout is switchable at any time: the config is identical either way, the
+  // renderers just present it differently — nothing is lost by toggling.
+  // 'slides' is stored as ABSENT so a slides form keeps the exact config shape
+  // every pre-layout form has.
+  const setLayout = (next: FormLayout) =>
+    mutate((c) => ({ ...c, layout: next === 'slides' ? undefined : next }));
 
   const selectedStep = selected != null ? config.steps[selected] : undefined;
   const scoringEnabled = config.scoring?.enabled !== false;
   const hasQuestions = config.steps.length > 0;
+  const layout = resolveFormLayout(config);
 
   const tabs: { id: Tab; label: string; icon: string }[] = [
     { id: 'build', label: bm.shell.tabBuild, icon: 'pi-th-large' },
@@ -583,6 +592,7 @@ export function FormEditor({
                       index={selected}
                       total={config.steps.length}
                       device={device}
+                      layout={layout}
                       onUpdate={(patch) => patchStep(selected, patch)}
                       m={bm}
                     />
@@ -624,6 +634,7 @@ export function FormEditor({
                     step={selectedStep}
                     index={selected}
                     steps={config.steps}
+                    layout={layout}
                     scoringEnabled={scoringEnabled}
                     onUpdate={(patch) => patchStep(selected, patch)}
                     onDelete={() => deleteStep(selected)}
@@ -672,7 +683,45 @@ export function FormEditor({
           </div>
         ) : (
           <div className="flex h-full flex-col gap-4 overflow-y-auto px-4 py-6 sm:px-8">
-            <CoverPanel config={config} onCoverChange={patchCover} onBrandingChange={patchBranding} m={m} />
+            {/* Layout picker first: it changes what several controls below mean
+                (cover CTA, per-question reveals), so it reads before them. */}
+            <section className="rounded-lg border border-border bg-card p-4">
+              <p className="text-sm font-semibold text-foreground">{m.layout.title}</p>
+              <p className="mb-3 mt-0.5 text-xs text-muted-foreground">{m.layout.subtitle}</p>
+              <div className="grid max-w-[520px] grid-cols-2 gap-2" role="radiogroup" aria-label={m.layout.title}>
+                {(
+                  [
+                    { id: 'slides' as const, label: m.layout.slides, hint: m.layout.slidesHint },
+                    { id: 'vertical' as const, label: m.layout.vertical, hint: m.layout.verticalHint },
+                  ]
+                ).map((opt) => (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    role="radio"
+                    aria-checked={layout === opt.id}
+                    data-testid={`design-layout-${opt.id}`}
+                    onClick={() => setLayout(opt.id)}
+                    className={cn(
+                      'flex flex-col gap-1 rounded-md border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                      layout === opt.id
+                        ? 'border-primary bg-primary/10 text-foreground'
+                        : 'border-border text-muted-foreground hover:border-muted-foreground hover:text-foreground',
+                    )}
+                  >
+                    <span className="text-sm font-medium">{opt.label}</span>
+                    <span className="text-xs text-muted-foreground">{opt.hint}</span>
+                  </button>
+                ))}
+              </div>
+            </section>
+            <CoverPanel
+              config={config}
+              layout={layout}
+              onCoverChange={patchCover}
+              onBrandingChange={patchBranding}
+              m={m}
+            />
             <FlowPanel partialNote={bm.partial.designNote} m={m} />
             <EndingPanel
               config={config}

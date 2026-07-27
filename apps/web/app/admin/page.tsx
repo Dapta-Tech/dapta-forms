@@ -41,6 +41,11 @@ export default async function AdminHome() {
     namePlaceholder: messages.forms.namePlaceholder,
     nameRequired: messages.forms.nameRequired,
     cancel: messages.forms.cancel,
+    layoutLabel: messages.forms.layoutLabel,
+    layoutSlides: messages.forms.layoutSlides,
+    layoutSlidesDesc: messages.forms.layoutSlidesDesc,
+    layoutVertical: messages.forms.layoutVertical,
+    layoutVerticalDesc: messages.forms.layoutVerticalDesc,
   };
 
   return (

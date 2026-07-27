@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import type { FormConfig, FormStep } from '@quill/engine';
+import type { FormConfig, FormStep, FormLayout } from '@quill/engine';
 import { resolveQuestion, sliderBounds, clampSliderValue } from '@quill/engine';
 import { clampAccent, onAccent, DEFAULT_ACCENT } from '@quill/shared';
 import type { EditorMessages } from './messages';
@@ -10,14 +10,21 @@ import type { EditorMessages } from './messages';
  * A faithful, read-only preview of the cover or a single step, styled with the
  * form's branding accent so the editor reflects the public surface. Interactive
  * within the preview (you can tap options / drag the slider) but never submits.
+ *
+ * `layout` keeps the preview honest to the published form: on a VERTICAL form
+ * the cover has no Start gate — it renders as a page hero with the first
+ * questions stacked beneath it — so previewing the slides cover there would
+ * show a screen that never exists.
  */
 export function LivePreview({
   config,
   selected,
+  layout = 'slides',
   m,
 }: {
   config: FormConfig;
   selected: number | 'cover';
+  layout?: FormLayout;
   m: EditorMessages['preview'];
 }) {
   const accent = clampAccent(config.branding?.primaryColor || DEFAULT_ACCENT);
@@ -27,12 +34,82 @@ export function LivePreview({
   return (
     <div className="rounded-lg border border-border bg-background p-4">
       {selected === 'cover' ? (
-        <CoverPreview config={config} accent={accent} accentText={accentText} m={m} />
+        layout === 'vertical' ? (
+          <VerticalPagePreview config={config} accent={accent} accentText={accentText} m={m} />
+        ) : (
+          <CoverPreview config={config} accent={accent} accentText={accentText} m={m} />
+        )
       ) : step ? (
         <StepPreview step={step} accent={accent} accentText={accentText} m={m} index={selected} total={config.steps.length} />
       ) : (
         <p className="py-8 text-center text-sm text-muted-foreground">{m.empty}</p>
       )}
+    </div>
+  );
+}
+
+/** How many questions the vertical page preview sketches before eliding. */
+const VERTICAL_PREVIEW_STEPS = 3;
+
+/**
+ * The one-page shape at a glance: hero (banner → eyebrow → headline →
+ * subheadline → trust) with NO Start button, the first questions stacked as
+ * quiet stubs, and the single Submit. A sketch, not a simulation — the device
+ * preview modal shows the real page.
+ */
+function VerticalPagePreview({
+  config,
+  accent,
+  accentText,
+  m,
+}: {
+  config: FormConfig;
+  accent: string;
+  accentText: string;
+  m: EditorMessages['preview'];
+}) {
+  const cover = config.cover ?? {};
+  const questions = config.steps.filter((s) => s.type !== 'reveal' && !s.hidden);
+  const shown = questions.slice(0, VERTICAL_PREVIEW_STEPS);
+  const elided = questions.length - shown.length;
+  return (
+    <div className="flex flex-col gap-3 rounded-md border border-border bg-card p-6" data-testid="vertical-page-preview">
+      {cover.bannerText ? (
+        <div
+          className="w-full rounded-md px-3 py-1.5 text-center text-xs font-medium"
+          style={{ background: accent, color: accentText }}
+        >
+          {cover.bannerText}
+        </div>
+      ) : null}
+      <div className="flex flex-col items-center gap-2 border-b border-border pb-4 text-center">
+        {cover.eyebrow ? (
+          <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            {cover.eyebrow}
+          </span>
+        ) : null}
+        <h1 className="text-xl font-semibold tracking-tight">{cover.headline || m.coverTitle}</h1>
+        {cover.subheadline ? <p className="text-sm text-muted-foreground">{cover.subheadline}</p> : null}
+        {cover.trustBadge ? <p className="text-xs text-muted-foreground">{cover.trustBadge}</p> : null}
+      </div>
+      {shown.map((s) => (
+        <div key={s.key} className="flex flex-col gap-1.5 border-b border-border pb-3">
+          <p className="text-sm font-medium text-foreground">{resolveQuestion(s, {}) || s.key}</p>
+          <div className="h-8 rounded-md border border-border bg-background" aria-hidden />
+        </div>
+      ))}
+      {elided > 0 ? (
+        <p className="text-center text-xs text-muted-foreground" aria-hidden>
+          ⋯ +{elided}
+        </p>
+      ) : null}
+      <button
+        type="button"
+        className="mt-1 self-start rounded-md px-5 py-2.5 text-sm font-semibold"
+        style={{ background: accent, color: accentText }}
+      >
+        {m.verticalSubmit}
+      </button>
     </div>
   );
 }

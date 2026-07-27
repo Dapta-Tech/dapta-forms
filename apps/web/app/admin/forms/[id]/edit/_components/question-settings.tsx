@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import type { FormStep } from '@quill/engine';
+import type { FormStep, FormLayout } from '@quill/engine';
 import {
   clampSliderValue,
   defaultFlowGroup,
@@ -65,6 +65,7 @@ export function QuestionSettings({
   step,
   index,
   steps,
+  layout = 'slides',
   scoringEnabled,
   onUpdate,
   onDelete,
@@ -80,6 +81,8 @@ export function QuestionSettings({
   step: FormStep;
   index: number;
   steps: FormStep[];
+  /** The form's presentation layout — a reveal behaves differently on vertical. */
+  layout?: FormLayout;
   scoringEnabled: boolean;
   onUpdate: (patch: Partial<FormStep>) => void;
   onDelete: () => void;
@@ -533,7 +536,14 @@ export function QuestionSettings({
             the step it follows — so the pair isn't offered (V5-QA). Nor after a
             reveal: back-to-back interstitials are never what an author means. */}
         {step.hidden || step.type === 'reveal' ? null : (
-          <InlineField label={em.behavior.reveal} hint={em.behavior.revealHint}>
+          <InlineField
+            label={em.behavior.reveal}
+            // On a one-page form the reveal never plays mid-page — it shows
+            // once, after Submit. The switch still works (it inserts the card),
+            // but the hint must not promise an interstitial "after this
+            // question" that vertical will never render there.
+            hint={layout === 'vertical' ? em.behavior.revealVerticalHint : em.behavior.revealHint}
+          >
             <Switch
               checked={revealAfter}
               onCheckedChange={onRevealAfterChange}
