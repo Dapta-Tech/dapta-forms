@@ -266,10 +266,19 @@ export interface FormClientLogo {
   src?: string | null;
 }
 
+/** Where the cover's promo banner is allowed to render. */
+export const FORM_BANNER_SCOPES = ['form', 'cover'] as const;
+export type FormBannerScope = (typeof FORM_BANNER_SCOPES)[number];
+
 export interface FormCover {
   enabled?: boolean;
-  /** A sticky banner line (promo strip) shown above every screen throughout the flow. */
+  /** A sticky banner line (promo strip) shown above the form — see `bannerScope`. */
   bannerText?: string | null;
+  /**
+   * Where `bannerText` shows: `'form'` pins it above every screen (the legacy
+   * behaviour, and the default when absent), `'cover'` limits it to the cover.
+   */
+  bannerScope?: FormBannerScope;
   eyebrow?: string | null;
   /** Alias for eyebrow (pilot `badge`); eyebrow wins when both are set. */
   badge?: string | null;
@@ -281,6 +290,11 @@ export interface FormCover {
   logo?: string | null;
   /** Optional "trusted by" marquee shown on the cover. */
   clientLogos?: FormClientLogo[];
+  /**
+   * Whether the "trusted by" marquee renders. Absent means shown (the legacy
+   * behaviour), so the logos can be switched off without deleting them.
+   */
+  showClientLogos?: boolean;
 }
 
 /** Per-form branding — the accent color threads the banner/CTA/selected states. */
@@ -1507,6 +1521,31 @@ export function revealAfterKey(config: FormConfig): string | null {
   const triggered = steps.find((s) => s.triggersReveal);
   if (triggered) return triggered.key;
   return steps[steps.length - 1]?.key ?? null;
+}
+
+// ---------------------------------------------------------------------------
+// Cover presentation. Both helpers answer "should this chrome render on this
+// screen?" and both default to the pre-toggle behaviour, so a config saved
+// before the toggles existed renders exactly as it always did.
+// ---------------------------------------------------------------------------
+
+/**
+ * Whether the promo banner renders on a given screen. `bannerScope: 'cover'`
+ * confines it to the cover; anything else (including absent) keeps the legacy
+ * behaviour of pinning it above every screen in the flow.
+ */
+export function showBanner(cover: FormCover | null | undefined, isCover: boolean): boolean {
+  if (!cover?.bannerText) return false;
+  return isCover || cover.bannerScope !== 'cover';
+}
+
+/**
+ * Whether the "trusted by" marquee renders. Only an explicit `false` hides it,
+ * so the logos can be switched off without deleting them — and a config saved
+ * before the toggle existed still shows them.
+ */
+export function showClientLogos(cover: FormCover | null | undefined): boolean {
+  return cover?.showClientLogos !== false;
 }
 
 // ---------------------------------------------------------------------------

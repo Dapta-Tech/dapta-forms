@@ -192,6 +192,47 @@ export function SelectField({
   );
 }
 
+/**
+ * A two-or-more-way segmented picker, for settings where a bare on/off switch
+ * would hide what each state means (e.g. "banner on every screen" vs "cover
+ * only"). Renders as a radio group so arrow keys and screen readers work.
+ */
+export function SegmentedToggle<T extends string>({
+  value,
+  onChange,
+  options,
+  ariaLabel,
+}: {
+  value: T;
+  onChange: (value: T) => void;
+  options: { value: T; label: string }[];
+  ariaLabel: string;
+}) {
+  return (
+    <div
+      role="radiogroup"
+      aria-label={ariaLabel}
+      className="inline-flex items-center gap-0.5 rounded-lg border border-border bg-card p-0.5"
+    >
+      {options.map((o) => (
+        <button
+          key={o.value}
+          type="button"
+          role="radio"
+          aria-checked={value === o.value}
+          onClick={() => onChange(o.value)}
+          className={cn(
+            'whitespace-nowrap rounded-md px-3 py-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+            value === o.value ? 'bg-muted text-foreground' : 'text-muted-foreground hover:text-foreground',
+          )}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 /** A row that pairs a label with an inline control (e.g. a switch). */
 export function InlineField({
   label,

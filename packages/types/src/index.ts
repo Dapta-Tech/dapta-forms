@@ -5,7 +5,13 @@
  * from the same schema (never trust the client; validate on both sides).
  */
 import { z } from 'zod';
-import { CONDITION_OPS, FORM_FIELD_TYPES, isSafeHttpUrl, isSafeImageUrl } from '@quill/engine';
+import {
+  CONDITION_OPS,
+  FORM_BANNER_SCOPES,
+  FORM_FIELD_TYPES,
+  isSafeHttpUrl,
+  isSafeImageUrl,
+} from '@quill/engine';
 
 /** A URL rendered into `<img src>` — reject script protocols (XSS defense-in-depth). */
 const safeImageUrl = z
@@ -217,8 +223,13 @@ export type FormStepInput = z.infer<typeof formStepSchema>;
 
 export const formCoverSchema = z.object({
   enabled: z.boolean().optional(),
-  /** A sticky banner line shown above the form throughout the flow. */
+  /** A sticky banner line shown above the form — scoped by `bannerScope`. */
   bannerText: z.string().max(200).nullable().optional(),
+  /**
+   * Where `bannerText` renders (ADDITIVE): `'cover'` confines it to the cover
+   * screen; absent — every legacy config — keeps it above every screen.
+   */
+  bannerScope: z.enum(FORM_BANNER_SCOPES).optional(),
   eyebrow: z.string().max(200).nullable().optional(),
   badge: z.string().max(200).nullable().optional(),
   headline: z.string().max(300).nullable().optional(),
@@ -227,6 +238,11 @@ export const formCoverSchema = z.object({
   trustBadge: z.string().max(200).nullable().optional(),
   logo: safeImageUrl.nullable().optional(),
   clientLogos: z.array(clientLogoSchema).max(24).optional(),
+  /**
+   * Whether the "trusted by" marquee renders (ADDITIVE). Absent — every legacy
+   * config — means shown, so switching it off never deletes the logos.
+   */
+  showClientLogos: z.boolean().optional(),
 });
 
 /**

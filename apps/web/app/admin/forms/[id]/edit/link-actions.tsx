@@ -26,11 +26,14 @@ export function LinkActions({
     }
   };
 
+  // `shrink-0` + `whitespace-nowrap`: these live in a flex topbar that gets tight
+  // between the `lg` label breakpoint and a roomy viewport. Without both, the
+  // label wraps to a second line inside a fixed `h-9` box and the button breaks.
   const btn =
-    'inline-flex h-9 items-center gap-1.5 rounded-lg border border-border px-2.5 text-sm font-medium text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
+    'inline-flex h-9 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border border-border px-3 text-sm font-medium text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
 
   return (
-    <div className="flex items-center gap-1.5">
+    <div className="flex shrink-0 items-center gap-2">
       <button
         type="button"
         onClick={copy}
@@ -40,7 +43,7 @@ export function LinkActions({
         data-testid="editor-copy-link"
       >
         <i aria-hidden className={`pi ${copied ? 'pi-check' : 'pi-link'}`} style={{ fontSize: 13 }} />
-        <span className="hidden lg:inline">{copied ? labels.copied : labels.copyLink}</span>
+        <span className="hidden xl:inline">{copied ? labels.copied : labels.copyLink}</span>
       </button>
       <a
         href={publicPath}
@@ -52,7 +55,7 @@ export function LinkActions({
         data-testid="editor-open-form"
       >
         <i aria-hidden className="pi pi-external-link" style={{ fontSize: 13 }} />
-        <span className="hidden lg:inline">{labels.openForm}</span>
+        <span className="hidden xl:inline">{labels.openForm}</span>
       </a>
     </div>
   );

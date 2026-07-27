@@ -527,6 +527,9 @@ export interface FormsMessages {
         subtitle: string;
         enabled: string;
         bannerText: string;
+        bannerScope: string;
+        bannerScopeForm: string;
+        bannerScopeCover: string;
         eyebrow: string;
         badge: string;
         headline: string;
@@ -541,6 +544,7 @@ export interface FormsMessages {
         logoInvalid: string;
         clientLogos: string;
         clientLogosHint: string;
+        showClientLogos: string;
         clientLogoName: string;
         clientLogoSrc: string;
         addClientLogo: string;
@@ -1309,6 +1313,9 @@ export const en: FormsMessages = {
         subtitle: 'The intro screen shown before the first step.',
         enabled: 'Show a cover screen',
         bannerText: 'Banner text',
+        bannerScope: 'Show the banner on',
+        bannerScopeForm: 'Every screen',
+        bannerScopeCover: 'Cover only',
         eyebrow: 'Eyebrow',
         badge: 'Badge',
         headline: 'Headline',
@@ -1323,6 +1330,7 @@ export const en: FormsMessages = {
         logoInvalid: 'This URL protocol is not allowed for images.',
         clientLogos: 'Client logos',
         clientLogosHint: 'A “trusted by” marquee on the cover. The name shows when no image is set.',
+        showClientLogos: 'Show the marquee',
         clientLogoName: 'Name',
         clientLogoSrc: 'Image URL',
         addClientLogo: 'Add logo',
@@ -2087,6 +2095,9 @@ export const es: FormsMessages = {
         subtitle: 'La pantalla de introducción antes del primer paso.',
         enabled: 'Mostrar una portada',
         bannerText: 'Texto del banner',
+        bannerScope: 'Mostrar el banner en',
+        bannerScopeForm: 'Todas las pantallas',
+        bannerScopeCover: 'Solo la portada',
         eyebrow: 'Antetítulo',
         badge: 'Insignia',
         headline: 'Titular',
@@ -2101,6 +2112,7 @@ export const es: FormsMessages = {
         logoInvalid: 'Este protocolo de URL no está permitido para imágenes.',
         clientLogos: 'Logos de clientes',
         clientLogosHint: 'Una marquesina de «confían en nosotros» en la portada. El nombre se muestra si no hay imagen.',
+        showClientLogos: 'Mostrar la marquesina',
         clientLogoName: 'Nombre',
         clientLogoSrc: 'URL de la imagen',
         addClientLogo: 'Añadir logo',

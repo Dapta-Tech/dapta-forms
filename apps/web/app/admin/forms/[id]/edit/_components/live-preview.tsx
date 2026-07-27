@@ -1,8 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import type { FormConfig, FormStep } from '@quill/engine';
-import { resolveQuestion, sliderBounds, clampSliderValue } from '@quill/engine';
+import type { FormConfig, FormCover, FormStep } from '@quill/engine';
+import { resolveQuestion, sliderBounds, clampSliderValue, showBanner } from '@quill/engine';
 import { clampAccent, onAccent, DEFAULT_ACCENT } from '@quill/shared';
 import type { EditorMessages } from './messages';
 
@@ -29,7 +29,7 @@ export function LivePreview({
       {selected === 'cover' ? (
         <CoverPreview config={config} accent={accent} accentText={accentText} m={m} />
       ) : step ? (
-        <StepPreview step={step} accent={accent} accentText={accentText} m={m} index={selected} total={config.steps.length} />
+        <StepPreview step={step} cover={config.cover} accent={accent} accentText={accentText} m={m} index={selected} total={config.steps.length} />
       ) : (
         <p className="py-8 text-center text-sm text-muted-foreground">{m.empty}</p>
       )}
@@ -80,6 +80,7 @@ function CoverPreview({
 
 function StepPreview({
   step,
+  cover,
   accent,
   accentText,
   index,
@@ -87,6 +88,7 @@ function StepPreview({
   m,
 }: {
   step: FormStep;
+  cover?: FormCover | null;
   accent: string;
   accentText: string;
   index: number;
@@ -95,9 +97,20 @@ function StepPreview({
 }) {
   const [value, setValue] = useState<string | number>('');
   const question = resolveQuestion(step, {}) || step.key;
+  // Only when the banner is scoped to the whole form — this is what makes the
+  // cover/form scope toggle visible without leaving the editor.
+  const banner = showBanner(cover, false) ? cover?.bannerText : null;
 
   return (
     <div className="flex flex-col gap-4 rounded-md border border-border bg-card p-6">
+      {banner ? (
+        <div
+          className="-mt-1 w-full rounded-md px-3 py-1.5 text-center text-xs font-medium"
+          style={{ background: accent, color: accentText }}
+        >
+          {banner}
+        </div>
+      ) : null}
       <div className="flex items-center gap-1.5" aria-hidden>
         {Array.from({ length: Math.max(total, 1) }).map((_, i) => (
           <span

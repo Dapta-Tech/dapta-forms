@@ -56,11 +56,18 @@ export function PublishButton({
   }
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex shrink-0 items-center gap-2">
       {hasDraft && !publishing ? (
-        <span className="hidden items-center gap-1.5 rounded-full border border-border bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground sm:inline-flex">
-          <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-primary" />
-          {m.unpublishedChanges}
+        // The full label only fits once the topbar is wide (`2xl`); below that
+        // it collapses to the dot — still announced, via `sr-only`, and titled
+        // for sighted users. `whitespace-nowrap` keeps the label on one line
+        // rather than wrapping inside this fixed-height pill.
+        <span
+          title={m.unpublishedChanges}
+          className="hidden h-9 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-border bg-muted px-2.5 text-xs font-medium text-muted-foreground sm:inline-flex 2xl:px-3"
+        >
+          <span aria-hidden className="h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
+          <span className="sr-only 2xl:not-sr-only">{m.unpublishedChanges}</span>
         </span>
       ) : null}
       <button
@@ -69,7 +76,7 @@ export function PublishButton({
         disabled={!hasDraft || publishing}
         title={hasDraft ? undefined : m.noChanges}
         className={cn(
-          'inline-flex h-9 items-center rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground transition-transform hover:brightness-105 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+          'inline-flex h-9 shrink-0 items-center whitespace-nowrap rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground transition-transform hover:brightness-105 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
           (!hasDraft || publishing) && 'cursor-not-allowed opacity-50 hover:brightness-100 active:scale-100',
         )}
       >

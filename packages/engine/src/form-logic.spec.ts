@@ -17,6 +17,8 @@ import {
   nameFields,
   isSafeHttpUrl,
   isSafeImageUrl,
+  showBanner,
+  showClientLogos,
   operatorsForFieldType,
   conditionsContradict,
   conditionsNarrow,
@@ -732,6 +734,48 @@ describe('URL safety guards (XSS)', () => {
     expect(isSafeImageUrl('javascript:alert(1)')).toBe(false);
     expect(isSafeImageUrl('vbscript:msgbox(1)')).toBe(false);
     expect(isSafeImageUrl('data:text/html,<script>alert(1)</script>')).toBe(false);
+  });
+});
+
+describe('cover presentation toggles', () => {
+  it('showBanner needs banner text before anything else', () => {
+    expect(showBanner(undefined, true)).toBe(false);
+    expect(showBanner(null, true)).toBe(false);
+    expect(showBanner({}, true)).toBe(false);
+    expect(showBanner({ bannerText: '' }, true)).toBe(false);
+    expect(showBanner({ bannerScope: 'form' }, false)).toBe(false);
+  });
+
+  it("showBanner defaults to every screen — a config saved before the toggle can't lose its banner", () => {
+    const legacy = { bannerText: 'Limited spots' };
+    expect(showBanner(legacy, true)).toBe(true);
+    expect(showBanner(legacy, false)).toBe(true);
+  });
+
+  it("showBanner scoped to 'cover' hides it on every other screen", () => {
+    const scoped = { bannerText: 'Limited spots', bannerScope: 'cover' as const };
+    expect(showBanner(scoped, true)).toBe(true);
+    expect(showBanner(scoped, false)).toBe(false);
+  });
+
+  it("showBanner scoped to 'form' shows it everywhere", () => {
+    const scoped = { bannerText: 'Limited spots', bannerScope: 'form' as const };
+    expect(showBanner(scoped, true)).toBe(true);
+    expect(showBanner(scoped, false)).toBe(true);
+  });
+
+  it('showClientLogos hides the marquee only on an explicit false', () => {
+    expect(showClientLogos(undefined)).toBe(true);
+    expect(showClientLogos(null)).toBe(true);
+    expect(showClientLogos({})).toBe(true);
+    expect(showClientLogos({ showClientLogos: true })).toBe(true);
+    expect(showClientLogos({ showClientLogos: false })).toBe(false);
+  });
+
+  it('showClientLogos off keeps the logos in the config — it hides, never deletes', () => {
+    const cover = { clientLogos: [{ name: 'Acme' }], showClientLogos: false };
+    expect(showClientLogos(cover)).toBe(false);
+    expect(cover.clientLogos).toHaveLength(1);
   });
 });
 

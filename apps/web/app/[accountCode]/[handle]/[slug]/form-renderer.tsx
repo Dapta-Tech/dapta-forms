@@ -24,8 +24,11 @@ import {
   nameFields,
   isMultiSelect,
   isSafeHttpUrl,
+  showBanner,
+  showClientLogos,
   type Answers,
   type AnswerValue,
+  type FormCover,
   type FormStep,
   type FormOutcome,
 } from '@quill/engine';
@@ -138,22 +141,28 @@ function capturePrefill(steps: FormStep[]): Answers {
 /**
  * Per-phase page shell. The promo banner (`cover.bannerText`) renders ONCE here
  * as the first child of `.pf`, so it is a full-width strip pinned to the top of
- * the viewport in EVERY phase; everything else lives in `.pf__main`, which owns
- * the remaining height. Desktop's per-phase vertical centering is applied to
- * `.pf__main` (public-form.css), so centering the content group can never drag
- * the banner toward the middle of the page.
+ * the viewport; everything else lives in `.pf__main`, which owns the remaining
+ * height. Desktop's per-phase vertical centering is applied to `.pf__main`
+ * (public-form.css), so centering the content group can never drag the banner
+ * toward the middle of the page.
+ *
+ * WHICH phases show it is `cover.bannerScope` (see `showBanner`): every phase by
+ * default, or the cover alone — hence `isCover`, set only by the cover phase.
  */
 function PhaseShell({
-  bannerText,
+  cover,
+  isCover = false,
   children,
   ...rootProps
 }: {
-  bannerText?: string | null;
+  cover?: FormCover | null;
+  isCover?: boolean;
   children: React.ReactNode;
 } & React.HTMLAttributes<HTMLDivElement>) {
+  const banner = showBanner(cover, isCover) ? cover?.bannerText : null;
   return (
     <div {...rootProps}>
-      {bannerText ? <div className="pf__banner">{bannerText}</div> : null}
+      {banner ? <div className="pf__banner">{banner}</div> : null}
       <div className="pf__main">{children}</div>
     </div>
   );
@@ -554,7 +563,7 @@ export function FormRenderer({
     const ending = resolveEnding(engineConfig, outcome);
     const cta = signupHref('confirmation', accountCode);
     return (
-      <PhaseShell className="pf pf--done" style={accentVars} bannerText={cover?.bannerText}>
+      <PhaseShell className="pf pf--done" style={accentVars} cover={cover}>
         <div className="pf-done__inner pf-animate">
           <div className="pf-done__check" aria-hidden="true">
             ✓
@@ -584,7 +593,7 @@ export function FormRenderer({
 
   if (phase === 'booking' && booking?.outcome.booking) {
     return (
-      <PhaseShell className="pf pf--booking-page" style={accentVars} bannerText={cover?.bannerText}>
+      <PhaseShell className="pf pf--booking-page" style={accentVars} cover={cover}>
         <BookingScreen
           booking={booking.outcome.booking}
           answers={answersRef.current}
@@ -603,7 +612,7 @@ export function FormRenderer({
         style={accentVars}
         role="status"
         aria-live="polite"
-        bannerText={cover?.bannerText}
+        cover={cover}
       >
         <RevealScreen
           reveal={config.reveal}
@@ -622,7 +631,7 @@ export function FormRenderer({
         style={accentVars}
         role="status"
         aria-live="polite"
-        bannerText={cover?.bannerText}
+        cover={cover}
       >
         <div className="pf-reveal__inner">
           <div className="pf-reveal__spinner" aria-hidden="true" />
@@ -634,14 +643,15 @@ export function FormRenderer({
 
   if (phase === 'cover' && cover) {
     const logo = cover.logo ?? config.branding?.logo ?? null;
-    const logos = cover.clientLogos ?? config.branding?.clientLogos ?? [];
+    const logos = showClientLogos(cover) ? (cover.clientLogos ?? config.branding?.clientLogos ?? []) : [];
     return (
       <PhaseShell
         className="pf pf--cover"
         style={accentVars}
         onKeyDown={(e) => e.key === 'Enter' && start()}
         tabIndex={-1}
-        bannerText={cover.bannerText}
+        cover={cover}
+        isCover
       >
         <header className="pf__cover-header">
           <FormLogo src={logo} name={name} />
@@ -688,7 +698,7 @@ export function FormRenderer({
         style={accentVars}
         role="status"
         aria-live="polite"
-        bannerText={cover?.bannerText}
+        cover={cover}
       >
         <RevealScreen
           reveal={step.reveal ?? { enabled: true }}
@@ -726,7 +736,7 @@ export function FormRenderer({
       : null;
     const schedLogo = cover?.logo ?? config.branding?.logo ?? null;
     return (
-      <PhaseShell className="pf" style={accentVars} bannerText={cover?.bannerText}>
+      <PhaseShell className="pf" style={accentVars} cover={cover}>
         <header className="pf__topbar">
           <div className="pf__topbar-inner">
             {index > 0 || cover ? (
@@ -788,7 +798,7 @@ export function FormRenderer({
   const logo = cover?.logo ?? config.branding?.logo ?? null;
 
   return (
-    <PhaseShell className="pf" style={accentVars} onKeyDown={onKeyDown} bannerText={cover?.bannerText}>
+    <PhaseShell className="pf" style={accentVars} onKeyDown={onKeyDown} cover={cover}>
       <header className="pf__topbar">
         <div className="pf__topbar-inner">
           {index > 0 || cover ? (

@@ -5,7 +5,7 @@ import { isSafeImageUrl } from '@quill/engine';
 import { clampAccent, accentWasAdjusted, DEFAULT_ACCENT } from '@quill/shared';
 import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
-import { Field, TextField, TextArea, InlineField, PanelSection } from './fields';
+import { Field, TextField, TextArea, InlineField, PanelSection, SegmentedToggle } from './fields';
 import { LivePreview } from './live-preview';
 import type { EditorMessages } from './messages';
 
@@ -48,6 +48,19 @@ export function CoverPanel({
           <Field label={m.cover.bannerText}>
             <TextField value={cover.bannerText ?? ''} onChange={(e) => onCoverChange({ bannerText: e.target.value || null })} />
           </Field>
+          {cover.bannerText ? (
+            <InlineField label={m.cover.bannerScope}>
+              <SegmentedToggle
+                value={cover.bannerScope ?? 'form'}
+                onChange={(bannerScope) => onCoverChange({ bannerScope })}
+                options={[
+                  { value: 'form', label: m.cover.bannerScopeForm },
+                  { value: 'cover', label: m.cover.bannerScopeCover },
+                ]}
+                ariaLabel={m.cover.bannerScope}
+              />
+            </InlineField>
+          ) : null}
           <Field label={m.cover.eyebrow}>
             <TextField value={cover.eyebrow ?? ''} onChange={(e) => onCoverChange({ eyebrow: e.target.value || null })} />
           </Field>
@@ -112,6 +125,13 @@ export function CoverPanel({
         </PanelSection>
 
         <PanelSection title={m.cover.clientLogos} subtitle={m.cover.clientLogosHint}>
+          <InlineField label={m.cover.showClientLogos}>
+            <Switch
+              checked={cover.showClientLogos !== false}
+              onCheckedChange={(v) => onCoverChange({ showClientLogos: v })}
+              aria-label={m.cover.showClientLogos}
+            />
+          </InlineField>
           <ClientLogosEditor
             logos={cover.clientLogos ?? []}
             onChange={(clientLogos) => onCoverChange({ clientLogos: clientLogos.length ? clientLogos : undefined })}
