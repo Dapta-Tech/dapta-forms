@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { BuilderMessages } from './builder-messages';
+import { cn } from '@/lib/cn';
+import type { BuilderMessages, GalleryItemId } from './builder-messages';
 import { GALLERY, GALLERY_GROUPS, type GalleryGroup, type GalleryItem } from './question-types';
 
 /**
@@ -15,11 +16,18 @@ export function TypeGallery({
   onClose,
   onPick,
   m,
+  disabled,
 }: {
   open: boolean;
   onClose: () => void;
   onPick: (item: GalleryItem) => void;
   m: BuilderMessages;
+  /**
+   * Tiles that can't be picked right now, with the REASON shown in the tile
+   * (e.g. vertical layout already has its one reveal). A greyed tile that says
+   * why beats a vanished tile the author hunts for.
+   */
+  disabled?: Partial<Record<GalleryItemId, string>>;
 }) {
   const [query, setQuery] = useState('');
   const searchRef = useRef<HTMLInputElement>(null);
@@ -124,21 +132,34 @@ export function TypeGallery({
                   <div className="grid gap-2.5 sm:grid-cols-3">
                     {items.map((it) => {
                       const label = m.gallery.items[it.id];
+                      const reason = disabled?.[it.id];
                       return (
                         <button
                           key={it.id}
                           type="button"
+                          disabled={!!reason}
+                          title={reason}
+                          data-testid={`gallery-item-${it.id}`}
                           onClick={() => onPick(it)}
-                          className="group flex items-center gap-3 rounded-xl border border-border bg-background p-3 text-left transition-colors hover:border-primary/60 hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          className={cn(
+                            'group flex items-center gap-3 rounded-xl border border-border bg-background p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                            reason
+                              ? 'cursor-not-allowed opacity-55'
+                              : 'hover:border-primary/60 hover:bg-muted/50',
+                          )}
                         >
-                          <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground transition-colors group-hover:bg-primary/15 group-hover:text-foreground">
+                          <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground transition-colors group-enabled:group-hover:bg-primary/15 group-enabled:group-hover:text-foreground">
                             <i aria-hidden className={`pi ${it.icon}`} style={{ fontSize: 16 }} />
                           </span>
                           <span className="min-w-0">
                             <span className="block truncate text-sm font-semibold text-foreground">
                               {label.title}
                             </span>
-                            <span className="block truncate text-xs text-muted-foreground">{label.desc}</span>
+                            {/* The reason REPLACES the description while off:
+                                the tile explains itself instead of tempting. */}
+                            <span className="block text-xs text-muted-foreground">
+                              {reason ?? label.desc}
+                            </span>
                           </span>
                         </button>
                       );

@@ -535,15 +535,12 @@ export function QuestionSettings({
             after a HIDDEN question never plays — the respondent never completes
             the step it follows — so the pair isn't offered (V5-QA). Nor after a
             reveal: back-to-back interstitials are never what an author means. */}
-        {step.hidden || step.type === 'reveal' ? null : (
-          <InlineField
-            label={em.behavior.reveal}
-            // On a one-page form the reveal never plays mid-page — it shows
-            // once, after Submit. The switch still works (it inserts the card),
-            // but the hint must not promise an interstitial "after this
-            // question" that vertical will never render there.
-            hint={layout === 'vertical' ? em.behavior.revealVerticalHint : em.behavior.revealHint}
-          >
+        {/* On VERTICAL the switch is not offered at all: "after this question"
+            is a position, and the one-page reveal has none — it plays once,
+            after Submit. Its switch lives in Design, next to the layout picker
+            (impossible-combination rule: don't offer a control that lies). */}
+        {step.hidden || step.type === 'reveal' || layout === 'vertical' ? null : (
+          <InlineField label={em.behavior.reveal} hint={em.behavior.revealHint}>
             <Switch
               checked={revealAfter}
               onCheckedChange={onRevealAfterChange}

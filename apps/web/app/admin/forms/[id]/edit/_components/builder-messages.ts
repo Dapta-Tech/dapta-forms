@@ -206,6 +206,8 @@ export interface BuilderMessages {
     hint: string;
     close: string;
     noResults: string;
+    /** Vertical layout: why the reveal tile is off once the form has one. */
+    revealVerticalTaken: string;
     items: Record<GalleryItemId, { title: string; desc: string }>;
   };
   map: {
@@ -468,6 +470,7 @@ const en: BuilderMessages = {
     hint: 'Picking a type drops the question in and focuses the canvas to edit it.',
     close: 'Close',
     noResults: 'No matching types.',
+    revealVerticalTaken: 'Already added — a one-page form plays its reveal once, after Submit.',
     items: {
       name: { title: 'Name', desc: 'Full name field' },
       email: { title: 'Email', desc: 'Validated email' },
@@ -732,6 +735,7 @@ const es: BuilderMessages = {
     hint: 'Al elegir un tipo se añade la pregunta y se enfoca el lienzo para editarla.',
     close: 'Cerrar',
     noResults: 'No hay tipos que coincidan.',
+    revealVerticalTaken: 'Ya añadida — un formulario de una página muestra su revelación una vez, después de Enviar.',
     items: {
       name: { title: 'Nombre', desc: 'Campo de nombre completo' },
       email: { title: 'Correo', desc: 'Correo validado' },

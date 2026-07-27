@@ -499,8 +499,6 @@ export interface FormsMessages {
         terminalHint: string;
         reveal: string;
         revealHint: string;
-        /** Vertical layout: the reveal only plays after Submit, never mid-page. */
-        revealVerticalHint: string;
         /** Hidden-question toggle — filled via a URL parameter (V4-13). */
         hidden: string;
         hiddenHint: string;
@@ -544,6 +542,9 @@ export interface FormsMessages {
         verticalHint: string;
         /** Shown in the cover section when vertical: no Start gate, CTA unused. */
         coverCtaNote: string;
+        /** Vertical's ONE reveal (form-level): shown once, after Submit. */
+        endReveal: string;
+        endRevealHint: string;
       };
       cover: {
         title: string;
@@ -1310,8 +1311,6 @@ export const en: FormsMessages = {
         reveal: 'Show reveal screen after',
         revealHint:
           'Adds a reveal card right after this question. Turning it off removes that card. Edit its copy by selecting the card.',
-        revealVerticalHint:
-          'On a one-page form the reveal never plays mid-page — it shows once, after Submit, before the result.',
         hidden: 'Hidden question',
         hiddenHint: 'Not shown to respondents — its answer is filled from a matching URL parameter (?key=value).',
         fieldKey: 'Field key',
@@ -1348,6 +1347,9 @@ export const en: FormsMessages = {
           'Every question on a single page with one Submit. Logic still applies live — questions show and hide as answers change.',
         coverCtaNote:
           'On a one-page form the cover renders as a header above the questions — there is no Start button, so its text is not used.',
+        endReveal: 'Reveal screen before results',
+        endRevealHint:
+          'Plays once, after Submit and before the result. Edit its copy by selecting the card at the end of the question list.',
       },
       cover: {
         title: 'Cover screen',
@@ -2109,8 +2111,6 @@ export const es: FormsMessages = {
         reveal: 'Mostrar pantalla de revelación después',
         revealHint:
           'Añade una tarjeta de revelación justo después de esta pregunta. Al apagarlo se elimina esa tarjeta. Edita su texto seleccionando la tarjeta.',
-        revealVerticalHint:
-          'En un formulario de una página la revelación nunca se muestra a mitad de página — aparece una vez, después de Enviar y antes del resultado.',
         hidden: 'Pregunta oculta',
         hiddenHint: 'No se muestra a los respondientes — su respuesta se rellena desde un parámetro de URL coincidente (?clave=valor).',
         fieldKey: 'Clave del campo',
@@ -2147,6 +2147,9 @@ export const es: FormsMessages = {
           'Todas las preguntas en una sola página con un solo Enviar. La lógica sigue aplicando en vivo — las preguntas aparecen y se ocultan según las respuestas.',
         coverCtaNote:
           'En un formulario de una página la portada se muestra como encabezado sobre las preguntas — no hay botón de inicio, así que su texto no se usa.',
+        endReveal: 'Pantalla de revelación antes del resultado',
+        endRevealHint:
+          'Se muestra una vez, después de Enviar y antes del resultado. Edita su texto seleccionando la tarjeta al final de la lista de preguntas.',
       },
       cover: {
         title: 'Portada',
