@@ -16,8 +16,23 @@ export interface PublicBranding {
 /** DS primary lime — the default accent when a host hasn't chosen one. */
 export const DEFAULT_ACCENT = '#cbe84f';
 
+/**
+ * The token ground (`--background`) a form renders on when its author has not
+ * chosen one. Every contrast helper below defaults to this, which is why they
+ * used to be correct without taking a background at all — the public form was
+ * dark, always.
+ */
+export const DEFAULT_CANVAS = '#222222';
+
+/** The foreground that pairs with `DEFAULT_CANVAS`. */
+export const DEFAULT_CANVAS_FOREGROUND = '#eeeeee';
+
 const DARK_CANVAS_RGB: Rgb = { r: 0x22, g: 0x22, b: 0x22 };
 const MIN_ACCENT_CONTRAST = 3;
+/** WCAG AA for normal-size body text. */
+export const AA_CONTRAST = 4.5;
+/** WCAG AAA for normal-size body text. */
+export const AAA_CONTRAST = 7;
 
 interface Rgb {
   r: number;
@@ -70,13 +85,68 @@ function mix(rgb: Rgb, target: Rgb, amount: number): Rgb {
 const WHITE: Rgb = { r: 255, g: 255, b: 255 };
 const BLACK: Rgb = { r: 0, g: 0, b: 0 };
 
-/** Clamp a host-chosen accent to an AA-safe range (lighten toward white 0.12/step). */
-export function clampAccent(hex: string): string {
+/** True when a color is light enough that dark text belongs on top of it. */
+export function isLightColor(hex: string): boolean {
+  const rgb = parseHex(hex);
+  if (!rgb) return false;
+  return luminance(rgb) > 0.4;
+}
+
+/**
+ * Which of the two token grounds a chosen background is — the form's LOCKED
+ * theme. Choosing a background necessarily stops the form following the
+ * visitor's light/dark preference: a page cannot honour both an author's
+ * palette and an OS setting without one of them being wrong, and the author is
+ * the one who saw the result. Absent a background, the form keeps inheriting.
+ */
+export function resolveThemeMode(background: string | null | undefined): 'light' | 'dark' | null {
+  if (!background) return null;
+  return isLightColor(background) ? 'light' : 'dark';
+}
+
+/**
+ * The WCAG contrast ratio between two colors, rounded to one decimal. Exposed so
+ * the editor can show a live AA/AAA readout: once an author can pick any
+ * background and any text color, telling them when the pair is unreadable is
+ * part of the feature, not a nicety.
+ */
+export function contrastRatio(a: string, b: string): number {
+  const ca = parseHex(a);
+  const cb = parseHex(b);
+  if (!ca || !cb) return 0;
+  return Math.round(contrast(ca, cb) * 10) / 10;
+}
+
+/** `AAA` / `AA` / `fail` for normal body text at the given ratio. */
+export function contrastGrade(ratio: number): 'AAA' | 'AA' | 'fail' {
+  if (ratio >= AAA_CONTRAST) return 'AAA';
+  if (ratio >= AA_CONTRAST) return 'AA';
+  return 'fail';
+}
+
+/** The near-black or near-white text that reads on an arbitrary ground. */
+export function readableOn(background: string): string {
+  return isLightColor(background) ? '#1a1a1c' : '#fafafa';
+}
+
+/**
+ * Clamp a host-chosen accent until it separates from the ground it sits on.
+ *
+ * The nudge direction is derived from the GROUND, not fixed: on a dark canvas a
+ * too-dark accent is lightened toward white, on a light canvas a too-light
+ * accent is darkened toward black. Before per-form backgrounds existed this
+ * always mixed toward white, which was right only because the public form was
+ * always dark — on a white page that same code would have declared an
+ * unreadable pastel "safe".
+ */
+export function clampAccent(hex: string, background: string = DEFAULT_CANVAS): string {
   const rgb = parseHex(hex);
   if (!rgb) return DEFAULT_ACCENT;
+  const ground = parseHex(background) ?? DARK_CANVAS_RGB;
+  const target = luminance(ground) > 0.5 ? BLACK : WHITE;
   let current = rgb;
-  for (let i = 0; i < 20 && contrast(current, DARK_CANVAS_RGB) < MIN_ACCENT_CONTRAST; i++) {
-    current = mix(current, WHITE, 0.12);
+  for (let i = 0; i < 20 && contrast(current, ground) < MIN_ACCENT_CONTRAST; i++) {
+    current = mix(current, target, 0.12);
   }
   return toHex(current);
 }
@@ -87,17 +157,18 @@ export function onAccent(hex: string): string {
   return contrast(rgb, BLACK) >= contrast(rgb, WHITE) ? '#1a1a1c' : '#fafafa';
 }
 
-export function accentLabelContrast(hex: string): number {
-  const accent = parseHex(clampAccent(hex))!;
-  const label = parseHex(onAccent(clampAccent(hex)))!;
+export function accentLabelContrast(hex: string, background: string = DEFAULT_CANVAS): number {
+  const clamped = clampAccent(hex, background);
+  const accent = parseHex(clamped)!;
+  const label = parseHex(onAccent(clamped))!;
   return Math.round(contrast(accent, label) * 10) / 10;
 }
 
-/** True when the host's raw pick had to be nudged lighter to stay readable. */
-export function accentWasAdjusted(hex: string): boolean {
+/** True when the host's raw pick had to be nudged to stay readable on its ground. */
+export function accentWasAdjusted(hex: string, background: string = DEFAULT_CANVAS): boolean {
   const parsed = parseHex(hex);
   if (!parsed) return false;
-  return toHex(parsed).toLowerCase() !== clampAccent(hex).toLowerCase();
+  return toHex(parsed).toLowerCase() !== clampAccent(hex, background).toLowerCase();
 }
 
 export function accentVars(rawAccent: string): Record<string, string> {
@@ -113,4 +184,63 @@ export function accentVars(rawAccent: string): Record<string, string> {
 
 export function monogram(name: string): string {
   return (name.trim().charAt(0) || '?').toUpperCase();
+}
+
+// ---------------------------------------------------------------------------
+// Per-form theme
+// ---------------------------------------------------------------------------
+
+/** The colors an author can set. Everything else is derived from them. */
+export interface FormThemeColors {
+  background?: string | null;
+  foreground?: string | null;
+  primaryColor?: string | null;
+}
+
+/**
+ * The CSS custom properties a form's `.pf` root carries.
+ *
+ * The supporting tokens — card, muted, border, popover — are DERIVED from the
+ * author's own two colors by mixing the ground toward the text, rather than
+ * taken from a fixed light or dark palette. That is what makes an arbitrary
+ * background work: mixing toward the foreground lightens surfaces on a dark
+ * ground and darkens them on a light one, automatically, with no branch. A
+ * fixed palette would give a warm cream background pure-white cards.
+ *
+ * Returns an EMPTY object when the author set no colors, so a form that never
+ * touched the design tab inherits the shared tokens exactly as before —
+ * the difference between "inherits" and "locked" is the presence of keys here.
+ */
+export function formThemeVars(colors: FormThemeColors): Record<string, string> {
+  const vars: Record<string, string> = {};
+  const background = colors.background?.trim() || null;
+  const foreground = colors.foreground?.trim() || (background ? readableOn(background) : null);
+
+  if (background && foreground) {
+    const toward = (pct: number): string => `color-mix(in srgb, ${foreground} ${pct}%, ${background})`;
+    vars['--background'] = background;
+    vars['--foreground'] = foreground;
+    vars['--card'] = toward(4);
+    vars['--popover'] = toward(6);
+    vars['--muted'] = toward(8);
+    vars['--accent'] = toward(8);
+    vars['--accent-foreground'] = foreground;
+    vars['--card-foreground'] = foreground;
+    vars['--popover-foreground'] = foreground;
+    vars['--border'] = toward(16);
+    vars['--input'] = toward(16);
+    // Deliberately NOT color-mix: `--muted-foreground` is real body text, and
+    // it has to stay legible rather than merely tinted, so it keeps 55% of the
+    // foreground's own value against the ground.
+    vars['--muted-foreground'] = `color-mix(in srgb, ${foreground} 62%, ${background})`;
+  }
+
+  if (colors.primaryColor) {
+    const accent = clampAccent(colors.primaryColor, background ?? DEFAULT_CANVAS);
+    vars['--pf-primary'] = accent;
+    vars['--pf-primary-contrast'] = onAccent(accent);
+    vars['--ring'] = `color-mix(in srgb, ${accent} 45%, transparent)`;
+  }
+
+  return vars;
 }
