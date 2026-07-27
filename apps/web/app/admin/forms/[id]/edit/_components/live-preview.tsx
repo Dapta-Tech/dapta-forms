@@ -89,8 +89,10 @@ function CoverPreview({
 function PreviewOptionIcon({ option }: { option: FormOption }) {
   const icon = resolveOptionIcon(option, 'cards');
   if (icon.kind === 'image') {
+    // No plate: a logo brings its own shape, and a grey box behind it reads as
+    // a chip rather than the card's icon.
     return (
-      <span className="flex h-8 w-full max-w-[64px] items-center justify-center overflow-hidden rounded-md bg-muted px-1">
+      <span className="flex h-8 w-full max-w-[64px] items-center justify-center overflow-hidden">
         <img src={icon.src} alt="" className="max-h-full max-w-full object-contain" />
       </span>
     );

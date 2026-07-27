@@ -103,7 +103,14 @@ export function IconPicker({
         onClick={() => setOpen((v) => !v)}
         className="flex h-9 w-full items-center gap-2 rounded-md border border-input bg-background px-2 text-left text-sm transition-colors hover:border-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
-        <span className="flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-md bg-muted text-[13px] leading-none">
+        {/* The glyph keeps its muted disc (it needs a surface to sit on); a
+            logo does not — same reasoning as the card icon. */}
+        <span
+          className={cn(
+            'flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden text-[13px] leading-none',
+            showImagePreview ? '' : 'rounded-md bg-muted',
+          )}
+        >
           {showImagePreview ? (
             <img src={current} alt="" className="max-h-full max-w-full object-contain" />
           ) : (

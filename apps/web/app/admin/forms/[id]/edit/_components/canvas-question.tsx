@@ -207,7 +207,9 @@ export function CanvasQuestion({
                     className="group relative flex min-h-[104px] w-[calc((100%-1.25rem)/3)] min-w-[132px] max-w-[220px] flex-col items-center gap-2 rounded-xl border border-border bg-background px-2 py-4 transition-colors focus-within:border-primary/60 hover:border-muted-foreground/60"
                   >
                     {icon.kind === 'image' ? (
-                      <span className="flex h-[46px] w-full max-w-[88px] items-center justify-center overflow-hidden rounded-lg bg-muted px-2">
+                      // No plate behind a logo — it carries its own shape. The
+                      // band is only reserved so cards keep one baseline.
+                      <span className="flex h-[46px] w-full max-w-[96px] items-center justify-center overflow-hidden">
                         <img src={icon.src} alt="" className="max-h-full max-w-full object-contain" />
                       </span>
                     ) : (

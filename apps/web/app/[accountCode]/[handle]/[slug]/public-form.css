@@ -363,28 +363,8 @@
   font-size: 19px;
   line-height: 1;
 }
-/* An image: arbitrary aspect ratio, so give it a rectangle to letterbox into
-   rather than a circle that would crop a wordmark to its middle. */
-.pf-choice-list__img-wrap {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 52px;
-  height: 38px;
-  border-radius: 8px;
-  background: var(--muted);
-  flex-shrink: 0;
-  padding: 4px 6px;
-  overflow: hidden;
-}
-.pf-choice-list__img {
-  max-width: 100%;
-  max-height: 100%;
-  width: auto;
-  height: auto;
-  object-fit: contain;
-  display: block;
-}
+/* No image variant here on purpose: `resolveOptionIcon` confines logos to the
+   card layout, so a list row only ever draws the glyph circle above. */
 .pf-choice-list__text {
   flex: 1;
   line-height: 1.35;
@@ -444,19 +424,19 @@
   font-size: 23px;
   line-height: 1;
 }
-/* Card-grid image icon. Same reasoning as the list variant: a logo is not a
-   square glyph, so it gets a rectangle and letterboxes inside it. Wider than
-   it is tall, because wordmarks are the common case. */
+/* Card image icon. NO background, border or padding: a logo already carries its
+   own shape and fill — Facebook's blue disc, Instagram's gradient tile — so a
+   grey rounded box behind it reads as a chip stuck onto the card rather than as
+   the card's icon, and the padding pushes the mark off-centre.
+   The element still RESERVES the same 46px band as the glyph circle, so logos
+   of differing proportions stay on one baseline and the cards line up. */
 .pf-choice-icon__img-wrap {
   display: flex;
   align-items: center;
   justify-content: center;
   width: 100%;
-  max-width: 88px;
+  max-width: 96px;
   height: 46px;
-  border-radius: 8px;
-  background: var(--muted);
-  padding: 5px 8px;
   overflow: hidden;
 }
 .pf-choice-icon__img {
