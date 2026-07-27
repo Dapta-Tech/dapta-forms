@@ -31,7 +31,7 @@ import { TypeGallery } from './_components/type-gallery';
 import { LogicMap } from './_components/logic-map';
 import { ResultsView } from './_components/results-view';
 import { EmptyState } from './_components/empty-state';
-import { CoverPanel } from './_components/cover-panel';
+import { DesignPanel } from './_components/design-panel';
 import { FlowPanel } from './_components/flow-panel';
 import { EndingPanel } from './_components/ending-panel';
 import { ConnectPanel } from './_components/connect-panel';
@@ -682,8 +682,15 @@ export function FormEditor({
             />
           </div>
         ) : (
-          <div className="flex h-full flex-col gap-4 overflow-y-auto px-4 py-6 sm:px-8">
-            <CoverPanel config={config} onCoverChange={patchCover} onBrandingChange={patchBranding} m={m} />
+          <DesignPanel
+            config={config}
+            name={name}
+            publicPath={publicPath}
+            locale={locale}
+            onCoverChange={patchCover}
+            onBrandingChange={patchBranding}
+            m={m}
+          >
             <FlowPanel partialNote={bm.partial.designNote} m={m} />
             <EndingPanel
               config={config}
@@ -691,7 +698,7 @@ export function FormEditor({
               hasOutcomes={(config.outcomes?.length ?? 0) > 0 && scoringEnabled}
               m={m}
             />
-          </div>
+          </DesignPanel>
         )}
       </div>
 

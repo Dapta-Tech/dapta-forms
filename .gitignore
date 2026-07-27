@@ -60,7 +60,9 @@ qa/playwright-report/
 qa/test-results/
 test-results/
 qa/shots/
-.next-qa/
+# Any alternate Next build dir (NEXT_DIST_DIR) — one per worktree, so two
+# checkouts can run dev side by side without fighting over .next/.
+.next-*/
 
 # Throwaway QA agent artifacts (screenshots + scratch specs)
 qa/tmp-shots/
