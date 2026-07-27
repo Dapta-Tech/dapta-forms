@@ -28,7 +28,7 @@ import { Switch } from '@/components/ui/switch';
 import { InlineField } from './_components/fields';
 import { anchorRevealsLast } from './_components/logic-util';
 import { QuestionSpine } from './_components/question-spine';
-import { CanvasQuestion } from './_components/canvas-question';
+import { CanvasQuestion, CanvasPage } from './_components/canvas-question';
 import { QuestionSettings } from './_components/question-settings';
 import { invalidateQuestionHubspotCache } from './_components/question-hubspot';
 import { renameQuestionMappingAction } from './_components/question-hubspot-actions';
@@ -641,17 +641,31 @@ export function FormEditor({
                 </div>
                 <div className="flex-1 px-4 py-6 sm:px-8">
                   {selectedStep && selected != null ? (
-                    <CanvasQuestion
-                      key={`${selected}-${focusCanvas}`}
-                      config={config}
-                      step={selectedStep}
-                      index={selected}
-                      total={config.steps.length}
-                      device={device}
-                      layout={layout}
-                      onUpdate={(patch) => patchStep(selected, patch)}
-                      m={bm}
-                    />
+                    layout === 'vertical' ? (
+                      // The one-page canvas IS the page: every question stacked
+                      // and editable, one Submit — no remount on selection, so
+                      // switching questions scrolls instead of swapping cards.
+                      <CanvasPage
+                        config={config}
+                        selected={selected}
+                        device={device}
+                        focusSignal={focusCanvas}
+                        onSelect={setSelected}
+                        onUpdateStep={patchStep}
+                        m={bm}
+                      />
+                    ) : (
+                      <CanvasQuestion
+                        key={`${selected}-${focusCanvas}`}
+                        config={config}
+                        step={selectedStep}
+                        index={selected}
+                        total={config.steps.length}
+                        device={device}
+                        onUpdate={(patch) => patchStep(selected, patch)}
+                        m={bm}
+                      />
+                    )
                   ) : (
                     <p className="py-16 text-center text-sm text-muted-foreground">{bm.settings.empty}</p>
                   )}

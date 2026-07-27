@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useLayoutEffect, useRef } from 'react';
-import type { FormConfig, FormStep, FormOption, FormLayout } from '@quill/engine';
+import type { FormConfig, FormStep, FormOption } from '@quill/engine';
 import { nameFields, sliderBounds, clampSliderValue } from '@quill/engine';
 import { clampAccent, onAccent, DEFAULT_ACCENT } from '@quill/shared';
 import { cn } from '@/lib/cn';
@@ -76,7 +76,6 @@ export function CanvasQuestion({
   index,
   total,
   device,
-  layout = 'slides',
   onUpdate,
   m,
 }: {
@@ -85,33 +84,12 @@ export function CanvasQuestion({
   index: number;
   total: number;
   device: 'desktop' | 'mobile';
-  /**
-   * The form's presentation layout. On 'vertical' the canvas drops the chrome
-   * that never exists on a one-page form — the per-step progress bar and the
-   * per-question Next button — so the builder shows what actually publishes.
-   */
-  layout?: FormLayout;
   onUpdate: (patch: Partial<FormStep>) => void;
   m: BuilderMessages;
 }) {
-  const vertical = layout === 'vertical';
   const accent = clampAccent(config.branding?.primaryColor || DEFAULT_ACCENT);
   const accentText = onAccent(accent);
   const progress = total > 0 ? Math.round(((index + 1) / total) * 100) : 0;
-  const showsPoints =
-    (config.scoring?.enabled ?? false) !== false && step.flowGroup !== 'lead_capture' && maxStepPoints(step) >= 0;
-
-  function updateOption(i: number, patch: Partial<FormOption>) {
-    onUpdate({ options: (step.options ?? []).map((o, oi) => (oi === i ? { ...o, ...patch } : o)) });
-  }
-  function addOption() {
-    const n = (step.options ?? []).length + 1;
-    onUpdate({ options: [...(step.options ?? []), { label: `Option ${n}`, value: `option_${n}`, points: 0 }] });
-  }
-  function removeOption(i: number) {
-    onUpdate({ options: (step.options ?? []).filter((_, oi) => oi !== i) });
-  }
-
   const isLast = index + 1 >= total;
 
   // A reveal is not a question — it asks nothing, has no title, no description
@@ -125,7 +103,6 @@ export function CanvasQuestion({
         step={step}
         accent={accent}
         device={device}
-        vertical={vertical}
         onUpdate={onUpdate}
         m={m}
       />
@@ -140,138 +117,25 @@ export function CanvasQuestion({
           device === 'mobile' ? 'max-w-[380px]' : 'max-w-[640px]',
         )}
       >
-        {/* Respondent progress bar — slides only; a one-page form has no
-            per-step position, its bar counts ANSWERED questions instead. */}
-        {!vertical ? (
-          <div className="mb-6 h-1.5 w-full overflow-hidden rounded-full bg-muted">
-            <div className="h-full rounded-full transition-all" style={{ width: `${progress}%`, background: accent }} />
-          </div>
-        ) : null}
+        {/* Respondent progress bar */}
+        <div className="mb-6 h-1.5 w-full overflow-hidden rounded-full bg-muted">
+          <div className="h-full rounded-full transition-all" style={{ width: `${progress}%`, background: accent }} />
+        </div>
 
-        {/* Eyebrow */}
-        <p className="mb-2 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-          <i aria-hidden className={`pi ${iconForStep(step)}`} style={{ fontSize: 12 }} />
-          {tb(m.canvas.questionN, { n: index + 1 })}
-        </p>
-
-        {/* Inline editable title — with the @ recall-information picker. The
-            engine interpolates `[key]` tokens in BOTH `question` and the
-            description/`helper` from EARLIER answers (resolveStepDisplay), so
-            both fields get the picker. */}
-        <TokenTextarea
-          value={step.question ?? ''}
-          onChange={(v) => onUpdate({ question: v })}
-          placeholder={m.canvas.titlePlaceholder}
-          ariaLabel={m.canvas.titlePlaceholder}
-          autoGrow
-          tokens={tokenOptionsBefore(config.steps, index)}
-          allKeys={allTokenKeys(config.steps)}
-          m={m.tokens}
-          hint={m.tokens.hint}
-          testId="canvas-title-input"
-          className="canvas-title text-2xl font-semibold tracking-tight text-foreground sm:text-[28px]"
+        <QuestionEditableBody
+          config={config}
+          step={step}
+          index={index}
+          accent={accent}
+          onUpdate={onUpdate}
+          m={m}
         />
-
-        {/* Inline editable description — same @ picker as the title (tokens =
-            fields captured before this step). No hint here so the single
-            discoverability chip stays under the title. */}
-        <div className="mt-1.5">
-          <TokenTextarea
-            value={step.helper ?? ''}
-            onChange={(v) => onUpdate({ helper: v || null })}
-            placeholder={m.canvas.descriptionPlaceholder}
-            ariaLabel={m.canvas.descriptionPlaceholder}
-            autoGrow
-            tokens={tokenOptionsBefore(config.steps, index)}
-            allKeys={allTokenKeys(config.steps)}
-            m={m.tokens}
-            testId="canvas-description-input"
-            className="text-[15px] leading-relaxed text-muted-foreground"
-          />
-        </div>
-
-        {/* Body: the real rendered input */}
-        <div className="mt-6">
-          {hasOptions(step.type) ? (
-            <div className="flex flex-col gap-2.5">
-              {(step.options ?? []).map((opt, i) => (
-                <div
-                  key={i}
-                  className="group flex items-center gap-3 rounded-xl border border-border bg-background px-4 py-3.5 transition-colors focus-within:border-primary/60 hover:border-muted-foreground/60"
-                >
-                  <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-border text-[11px] font-semibold text-muted-foreground">
-                    {String.fromCharCode(65 + i)}
-                  </span>
-                  <input
-                    value={opt.label}
-                    onChange={(e) => updateOption(i, { label: e.target.value })}
-                    placeholder={`${m.canvas.optionPlaceholder} ${i + 1}`}
-                    aria-label={`${m.canvas.optionPlaceholder} ${i + 1}`}
-                    className="min-w-0 flex-1 bg-transparent text-[15px] font-medium text-foreground outline-none placeholder:text-muted-foreground/50"
-                  />
-                  {showsPoints ? (
-                    <span className="shrink-0 rounded-full bg-primary/15 px-2.5 py-1 text-xs font-semibold text-primary">
-                      {tb(m.canvas.pts, { n: opt.points ?? 0 })}
-                    </span>
-                  ) : null}
-                  <button
-                    type="button"
-                    aria-label={m.settings.delete}
-                    onClick={() => removeOption(i)}
-                    className="shrink-0 text-muted-foreground/0 transition-colors group-hover:text-muted-foreground hover:!text-destructive focus-visible:!text-muted-foreground focus-visible:outline-none"
-                  >
-                    <i aria-hidden className="pi pi-times" style={{ fontSize: 12 }} />
-                  </button>
-                </div>
-              ))}
-              <button
-                type="button"
-                onClick={addOption}
-                className="flex items-center gap-3 rounded-xl border border-dashed border-border px-4 py-3.5 text-left text-[15px] text-muted-foreground transition-colors hover:border-primary/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              >
-                <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-dashed border-border">
-                  <i aria-hidden className="pi pi-plus" style={{ fontSize: 11 }} />
-                </span>
-                {m.canvas.addOption}
-              </button>
-            </div>
-          ) : step.type === 'slider' ? (
-            <SliderPreview step={step} accent={accent} />
-          ) : step.type === 'message' ? (
-            <AutoTextarea
-              value={step.helper ?? ''}
-              onChange={(v) => onUpdate({ helper: v || null })}
-              placeholder={m.canvas.messagePlaceholder}
-              ariaLabel={m.canvas.messagePlaceholder}
-              rows={2}
-              className="text-[15px] leading-relaxed text-foreground"
-            />
-          ) : step.type === 'textarea' ? (
-            <div className="rounded-xl border border-border bg-background px-4 py-3 text-[15px] text-muted-foreground/60">
-              {step.placeholder || m.canvas.messagePlaceholder}
-            </div>
-          ) : step.type === 'name' ? (
-            <NamePreview step={step} m={m} />
-          ) : step.type === 'scheduler' ? (
-            <SchedulerEmbedPreview step={step} m={m} />
-          ) : (
-            <div className="rounded-xl border border-border bg-background px-4 py-3 text-[15px] text-muted-foreground/60">
-              {step.placeholder ||
-                (step.type === 'email' ? 'you@company.com' : step.type === 'phone' ? '+1 555 000 0000' : '…')}
-            </div>
-          )}
-        </div>
 
         {/* Respondent's Next button (label editable for message/content). A
             scheduler has none: booking IS the answer, so the public form
             advances itself — showing a Submit here promised a button that never
-            renders. A ONE-PAGE form has no per-question button at all (one
-            Submit at the end of the page), so the canvas says that instead. */}
-        {vertical ? (
-          <p className="mt-7 text-xs text-muted-foreground" data-testid="canvas-vertical-note">
-            <i aria-hidden className="pi pi-info-circle" style={{ fontSize: 11 }} /> {m.canvas.verticalNote}
-          </p>
-        ) : step.type !== 'dropdown' && step.type !== 'scheduler' ? (
+            renders. */}
+        {step.type !== 'dropdown' && step.type !== 'scheduler' ? (
           <div className="mt-7">
             <button
               type="button"
@@ -284,6 +148,311 @@ export function CanvasQuestion({
           </div>
         ) : null}
       </div>
+    </div>
+  );
+}
+
+/**
+ * The editable heart of a question — eyebrow, inline title/description with the
+ * @ token picker, and the type-specific body (options, slider, name fields…).
+ * Shared verbatim by the slides card (`CanvasQuestion`) and the one-page canvas
+ * (`CanvasPage`), so the two layouts can never drift on how editing works.
+ */
+function QuestionEditableBody({
+  config,
+  step,
+  index,
+  accent,
+  onUpdate,
+  m,
+}: {
+  config: FormConfig;
+  step: FormStep;
+  index: number;
+  accent: string;
+  onUpdate: (patch: Partial<FormStep>) => void;
+  m: BuilderMessages;
+}) {
+  const showsPoints =
+    (config.scoring?.enabled ?? false) !== false && step.flowGroup !== 'lead_capture' && maxStepPoints(step) >= 0;
+
+  function updateOption(i: number, patch: Partial<FormOption>) {
+    onUpdate({ options: (step.options ?? []).map((o, oi) => (oi === i ? { ...o, ...patch } : o)) });
+  }
+  function addOption() {
+    const n = (step.options ?? []).length + 1;
+    onUpdate({ options: [...(step.options ?? []), { label: `Option ${n}`, value: `option_${n}`, points: 0 }] });
+  }
+  function removeOption(i: number) {
+    onUpdate({ options: (step.options ?? []).filter((_, oi) => oi !== i) });
+  }
+
+  return (
+    <>
+      {/* Eyebrow */}
+      <p className="mb-2 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+        <i aria-hidden className={`pi ${iconForStep(step)}`} style={{ fontSize: 12 }} />
+        {tb(m.canvas.questionN, { n: index + 1 })}
+      </p>
+
+      {/* Inline editable title — with the @ recall-information picker. The
+          engine interpolates `[key]` tokens in BOTH `question` and the
+          description/`helper` from EARLIER answers (resolveStepDisplay), so
+          both fields get the picker. */}
+      <TokenTextarea
+        value={step.question ?? ''}
+        onChange={(v) => onUpdate({ question: v })}
+        placeholder={m.canvas.titlePlaceholder}
+        ariaLabel={m.canvas.titlePlaceholder}
+        autoGrow
+        tokens={tokenOptionsBefore(config.steps, index)}
+        allKeys={allTokenKeys(config.steps)}
+        m={m.tokens}
+        hint={m.tokens.hint}
+        testId="canvas-title-input"
+        className="canvas-title text-2xl font-semibold tracking-tight text-foreground sm:text-[28px]"
+      />
+
+      {/* Inline editable description — same @ picker as the title (tokens =
+          fields captured before this step). No hint here so the single
+          discoverability chip stays under the title. */}
+      <div className="mt-1.5">
+        <TokenTextarea
+          value={step.helper ?? ''}
+          onChange={(v) => onUpdate({ helper: v || null })}
+          placeholder={m.canvas.descriptionPlaceholder}
+          ariaLabel={m.canvas.descriptionPlaceholder}
+          autoGrow
+          tokens={tokenOptionsBefore(config.steps, index)}
+          allKeys={allTokenKeys(config.steps)}
+          m={m.tokens}
+          testId="canvas-description-input"
+          className="text-[15px] leading-relaxed text-muted-foreground"
+        />
+      </div>
+
+      {/* Body: the real rendered input */}
+      <div className="mt-6">
+        {hasOptions(step.type) ? (
+          <div className="flex flex-col gap-2.5">
+            {(step.options ?? []).map((opt, i) => (
+              <div
+                key={i}
+                className="group flex items-center gap-3 rounded-xl border border-border bg-background px-4 py-3.5 transition-colors focus-within:border-primary/60 hover:border-muted-foreground/60"
+              >
+                <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-border text-[11px] font-semibold text-muted-foreground">
+                  {String.fromCharCode(65 + i)}
+                </span>
+                <input
+                  value={opt.label}
+                  onChange={(e) => updateOption(i, { label: e.target.value })}
+                  placeholder={`${m.canvas.optionPlaceholder} ${i + 1}`}
+                  aria-label={`${m.canvas.optionPlaceholder} ${i + 1}`}
+                  className="min-w-0 flex-1 bg-transparent text-[15px] font-medium text-foreground outline-none placeholder:text-muted-foreground/50"
+                />
+                {showsPoints ? (
+                  <span className="shrink-0 rounded-full bg-primary/15 px-2.5 py-1 text-xs font-semibold text-primary">
+                    {tb(m.canvas.pts, { n: opt.points ?? 0 })}
+                  </span>
+                ) : null}
+                <button
+                  type="button"
+                  aria-label={m.settings.delete}
+                  onClick={() => removeOption(i)}
+                  className="shrink-0 text-muted-foreground/0 transition-colors group-hover:text-muted-foreground hover:!text-destructive focus-visible:!text-muted-foreground focus-visible:outline-none"
+                >
+                  <i aria-hidden className="pi pi-times" style={{ fontSize: 12 }} />
+                </button>
+              </div>
+            ))}
+            <button
+              type="button"
+              onClick={addOption}
+              className="flex items-center gap-3 rounded-xl border border-dashed border-border px-4 py-3.5 text-left text-[15px] text-muted-foreground transition-colors hover:border-primary/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-dashed border-border">
+                <i aria-hidden className="pi pi-plus" style={{ fontSize: 11 }} />
+              </span>
+              {m.canvas.addOption}
+            </button>
+          </div>
+        ) : step.type === 'slider' ? (
+          <SliderPreview step={step} accent={accent} />
+        ) : step.type === 'message' ? (
+          <AutoTextarea
+            value={step.helper ?? ''}
+            onChange={(v) => onUpdate({ helper: v || null })}
+            placeholder={m.canvas.messagePlaceholder}
+            ariaLabel={m.canvas.messagePlaceholder}
+            rows={2}
+            className="text-[15px] leading-relaxed text-foreground"
+          />
+        ) : step.type === 'textarea' ? (
+          <div className="rounded-xl border border-border bg-background px-4 py-3 text-[15px] text-muted-foreground/60">
+            {step.placeholder || m.canvas.messagePlaceholder}
+          </div>
+        ) : step.type === 'name' ? (
+          <NamePreview step={step} m={m} />
+        ) : step.type === 'scheduler' ? (
+          <SchedulerEmbedPreview step={step} m={m} />
+        ) : (
+          <div className="rounded-xl border border-border bg-background px-4 py-3 text-[15px] text-muted-foreground/60">
+            {step.placeholder ||
+              (step.type === 'email' ? 'you@company.com' : step.type === 'phone' ? '+1 555 000 0000' : '…')}
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
+/**
+ * The one-page WYSIWYG canvas (`layout = 'vertical'`): the WHOLE form as the
+ * respondent sees it — every question stacked on one page, each editable in
+ * place, one Submit at the end. No per-question card, progress bar or Next
+ * button, because the published page has none. Selecting a question (spine,
+ * mobile strip, or clicking a block) highlights it and scrolls it into view,
+ * so switching questions FEELS like moving down one page — which is exactly
+ * what it is.
+ */
+export function CanvasPage({
+  config,
+  selected,
+  device,
+  focusSignal = 0,
+  onSelect,
+  onUpdateStep,
+  m,
+}: {
+  config: FormConfig;
+  selected: number;
+  device: 'desktop' | 'mobile';
+  /** Increments when a question was just added — focus its title. */
+  focusSignal?: number;
+  onSelect: (index: number) => void;
+  onUpdateStep: (index: number, patch: Partial<FormStep>) => void;
+  m: BuilderMessages;
+}) {
+  const accent = clampAccent(config.branding?.primaryColor || DEFAULT_ACCENT);
+  const accentText = onAccent(accent);
+  const blockRefs = useRef<Map<string, HTMLElement>>(new Map());
+
+  // Selection navigates the page: scroll the picked block into view. Skipped
+  // for plain in-page clicks (the block is already on screen — jumping would
+  // yank the page under the author's cursor); a click's own scroll is a no-op
+  // because the browser only scrolls to something out of view.
+  const selectedKey = config.steps[selected]?.key;
+  useEffect(() => {
+    if (!selectedKey) return;
+    blockRefs.current.get(selectedKey)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }, [selectedKey]);
+
+  // A just-added question lands selected at the end — put the caret in its title.
+  useEffect(() => {
+    if (!focusSignal || !selectedKey) return;
+    const el = blockRefs.current.get(selectedKey)?.querySelector('textarea');
+    (el as HTMLTextAreaElement | null)?.focus();
+  }, [focusSignal]);
+
+  return (
+    <div className="flex justify-center">
+      <div
+        data-testid="canvas-page"
+        className={cn(
+          'w-full overflow-hidden rounded-2xl border border-border bg-card shadow-xl',
+          device === 'mobile' ? 'max-w-[400px]' : 'max-w-[720px]',
+        )}
+      >
+        <div className="flex flex-col divide-y divide-border">
+          {config.steps.map((step, i) => (
+            <section
+              key={step.key}
+              ref={(el) => {
+                if (el) blockRefs.current.set(step.key, el);
+                else blockRefs.current.delete(step.key);
+              }}
+              data-testid={`page-block-${i}`}
+              aria-current={i === selected || undefined}
+              // Focus/click anywhere in a block selects it, so the settings
+              // panel always describes the question under the caret.
+              onMouseDownCapture={() => onSelect(i)}
+              onFocusCapture={() => onSelect(i)}
+              className={cn(
+                'scroll-my-16 px-6 py-6 transition-colors sm:px-8',
+                i === selected ? 'bg-primary/5 ring-1 ring-inset ring-primary/40' : 'hover:bg-muted/40',
+              )}
+            >
+              {step.type === 'reveal' ? (
+                <RevealPageBlock step={step} onUpdate={(patch) => onUpdateStep(i, patch)} m={m} />
+              ) : (
+                <QuestionEditableBody
+                  config={config}
+                  step={step}
+                  index={i}
+                  accent={accent}
+                  onUpdate={(patch) => onUpdateStep(i, patch)}
+                  m={m}
+                />
+              )}
+            </section>
+          ))}
+
+          {/* The page's ONE Submit — static chrome, exactly like the real form. */}
+          <div className="px-6 py-6 sm:px-8">
+            <button
+              type="button"
+              className="w-full rounded-xl px-6 py-3.5 text-sm font-semibold"
+              style={{ background: accent, color: accentText }}
+            >
+              {m.canvas.submit}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The end reveal as a block ON the page canvas: compact, editable in place,
+ * clearly not a question. It sits last (the layout anchors it there) and the
+ * note says when it actually plays — after Submit, before the result.
+ */
+function RevealPageBlock({
+  step,
+  onUpdate,
+  m,
+}: {
+  step: FormStep;
+  onUpdate: (patch: Partial<FormStep>) => void;
+  m: BuilderMessages;
+}) {
+  return (
+    <div data-testid="page-reveal-block">
+      <p className="mb-2 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+        <i aria-hidden className="pi pi-sparkles" style={{ fontSize: 12 }} />
+        {m.gallery.items.reveal.title}
+      </p>
+      <AutoTextarea
+        value={step.reveal?.headline ?? ''}
+        onChange={(v) => onUpdate({ reveal: { ...step.reveal, headline: v || null } })}
+        placeholder={m.canvas.revealHeadlinePlaceholder}
+        ariaLabel={m.canvas.revealHeadlinePlaceholder}
+        className="canvas-title text-xl font-bold tracking-tight text-foreground"
+      />
+      <div className="mt-1">
+        <AutoTextarea
+          value={step.reveal?.subtitle ?? ''}
+          onChange={(v) => onUpdate({ reveal: { ...step.reveal, subtitle: v || null } })}
+          placeholder={m.canvas.revealSubtitlePlaceholder}
+          ariaLabel={m.canvas.revealSubtitlePlaceholder}
+          rows={1}
+          className="text-sm leading-relaxed text-muted-foreground"
+        />
+      </div>
+      <p className="mt-2 text-xs text-muted-foreground">
+        <i aria-hidden className="pi pi-info-circle" style={{ fontSize: 11 }} /> {m.canvas.revealVerticalNote}
+      </p>
     </div>
   );
 }
@@ -303,15 +472,12 @@ function RevealCanvas({
   step,
   accent,
   device,
-  vertical = false,
   onUpdate,
   m,
 }: {
   step: FormStep;
   accent: string;
   device: 'desktop' | 'mobile';
-  /** One-page form: the reveal plays after Submit, never mid-page — say so. */
-  vertical?: boolean;
   onUpdate: (patch: Partial<FormStep>) => void;
   m: BuilderMessages;
 }) {
@@ -357,11 +523,6 @@ function RevealCanvas({
         <p className="mt-5 text-xs text-muted-foreground">
           {tb(m.canvas.revealPlays, { ms: durationMs })}
         </p>
-        {vertical ? (
-          <p className="mt-1.5 text-xs text-muted-foreground" data-testid="canvas-reveal-vertical-note">
-            <i aria-hidden className="pi pi-info-circle" style={{ fontSize: 11 }} /> {m.canvas.revealVerticalNote}
-          </p>
-        ) : null}
       </div>
     </div>
   );

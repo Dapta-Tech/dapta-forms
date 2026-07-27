@@ -87,9 +87,7 @@ export interface BuilderMessages {
     revealHeadlinePlaceholder: string;
     revealSubtitlePlaceholder: string;
     revealPlays: string;
-    /** Vertical layout: the canvas note replacing the per-question Next button. */
-    verticalNote: string;
-    /** Vertical layout: where the reveal actually plays. */
+    /** Vertical layout: where the reveal actually plays (page-canvas block). */
     revealVerticalNote: string;
     /** V6 — the scheduler's live Calendly embed on the canvas. */
     schedulerUnset: string;
@@ -367,8 +365,7 @@ const en: BuilderMessages = {
     revealHeadlinePlaceholder: 'Reviewing your answers…',
     revealSubtitlePlaceholder: 'Add a line of reassurance (optional)',
     revealPlays: 'Plays for {ms} ms, then the form continues on its own.',
-    verticalNote: 'One-page form — respondents answer everything and press one Submit at the end.',
-    revealVerticalNote: 'One-page form — this plays once, after Submit, before the result.',
+    revealVerticalNote: 'Plays once, after Submit, before the result.',
     schedulerUnset: 'No event type picked yet',
     schedulerNote: 'Respondents pick a time here. Booking answers this question and moves the form on.',
     schedulerLoading: 'Loading the calendar…',
@@ -631,8 +628,7 @@ const es: BuilderMessages = {
     revealHeadlinePlaceholder: 'Revisando tus respuestas…',
     revealSubtitlePlaceholder: 'Añade una línea que tranquilice (opcional)',
     revealPlays: 'Se muestra {ms} ms y luego el formulario continúa solo.',
-    verticalNote: 'Formulario de una página — se responde todo y hay un solo Enviar al final.',
-    revealVerticalNote: 'Formulario de una página — se muestra una vez, después de Enviar y antes del resultado.',
+    revealVerticalNote: 'Se muestra una vez, después de Enviar y antes del resultado.',
     schedulerUnset: 'Aún no eliges un tipo de evento',
     schedulerNote: 'Aquí eligen un horario. Agendar responde esta pregunta y avanza el formulario.',
     schedulerLoading: 'Cargando el calendario…',
