@@ -9,7 +9,7 @@ import {
   resolveOptionLayout,
   resolveOptionIcon,
 } from '@quill/engine';
-import { clampAccent, onAccent, DEFAULT_ACCENT } from '@quill/shared';
+import { onAccent, DEFAULT_ACCENT } from '@quill/shared';
 import { cn } from '@/lib/cn';
 import { iconForStep, hasOptions } from './question-types';
 import { maxStepPoints } from './scoring-util';
@@ -93,7 +93,11 @@ export function CanvasQuestion({
   onUpdate: (patch: Partial<FormStep>) => void;
   m: BuilderMessages;
 }) {
-  const accent = clampAccent(config.branding?.primaryColor || DEFAULT_ACCENT);
+  // The author's exact color, matching the renderer and the live preview. This
+  // used to call `clampAccent` with no ground, so it corrected against the dark
+  // canvas — which meant the canvas, the preview and the published page could
+  // each show a different accent. Nothing corrects a chosen color any more.
+  const accent = config.branding?.primaryColor?.trim() || DEFAULT_ACCENT;
   const accentText = onAccent(accent);
   const progress = total > 0 ? Math.round(((index + 1) / total) * 100) : 0;
   const showsPoints =
