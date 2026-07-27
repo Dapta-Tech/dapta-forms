@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import type { AnswerValue, Answers, FormConfig, FormStep } from '@quill/engine';
+import type { AnswerValue, Answers, FormConfig, FormLayout, FormStep } from '@quill/engine';
 import { resolveQuestion, showBanner, showClientLogos } from '@quill/engine';
 import { getMessages } from '@quill/shared';
 import { formDesignProps } from '@/lib/form-design';
@@ -14,7 +14,7 @@ import '@/app/[accountCode]/[handle]/[slug]/public-form.css';
 
 /**
  * The live preview — the REAL public form markup, styled by the REAL public
- * stylesheet.
+ * stylesheet, in whichever layout the form publishes with.
  *
  * It used to be a hand-written approximation in admin Tailwind classes that
  * copied one accent variable across and ignored everything else. That is why
@@ -24,18 +24,23 @@ import '@/app/[accountCode]/[handle]/[slug]/public-form.css';
  * `ClientLogosMarquee`) and the stylesheet means a design axis added to the
  * renderer shows up here for free, and the two cannot disagree about anything.
  *
+ * `layout` keeps it honest about SHAPE too: a vertical form has no Start gate,
+ * so previewing the slides cover there would show a screen that never exists.
+ *
  * It is INERT: fields render and accept typing so the author can feel the form,
  * but nothing advances, submits, or reaches the server.
  */
 export function LivePreview({
   config,
   selected,
+  layout = 'slides',
   name = 'Form',
   locale = 'en',
   m,
 }: {
   config: FormConfig;
   selected: number | 'cover';
+  layout?: FormLayout;
   /** The form's name — the logo falls back to it, exactly as on the public page. */
   name?: string;
   locale?: string;
@@ -44,16 +49,18 @@ export function LivePreview({
   const design = formDesignProps(config.branding);
   const cover = config.cover ?? {};
   const step: FormStep | undefined = typeof selected === 'number' ? config.steps[selected] : undefined;
+  const vertical = layout === 'vertical';
   const isCover = selected === 'cover';
-  const banner = showBanner(cover, isCover) ? cover.bannerText : null;
+  // On one page the form IS the cover, so the banner always belongs to it.
+  const banner = vertical ? cover.bannerText : showBanner(cover, isCover) ? cover.bannerText : null;
 
   // A CSS animation only plays when the element mounts, so a motion setting is
   // invisible in a static preview — you pick "Fade" and nothing happens. Keying
-  // the step content on the transition remounts it the moment the setting
-  // changes, which replays the animation the respondent will actually see.
+  // the content on the transition remounts it the moment the setting changes,
+  // which replays the animation the respondent will actually see.
   const replayKey = `${design.design.transition}:${String(selected)}`;
 
-  if (!isCover && !step) {
+  if (!vertical && !isCover && !step) {
     return (
       <div className="flex h-full items-center justify-center bg-background">
         <p className="p-8 text-center text-sm text-muted-foreground">{m.empty}</p>
@@ -63,28 +70,135 @@ export function LivePreview({
 
   return (
     <div
-      className={`pf pf--embedded${isCover ? ' pf--cover' : ''}`}
+      className={`pf pf--embedded${vertical ? ' pf--vertical' : isCover ? ' pf--cover' : ''}`}
       {...design.attrs}
       style={design.style}
       data-testid="live-preview"
     >
       {design.fontFace ? <style>{design.fontFace}</style> : null}
-      {banner ? <div className="pf__banner">{banner}</div> : null}
-      <div className="pf__main">
-        {isCover ? (
-          <CoverBody config={config} name={name} locale={locale} />
-        ) : (
-          <StepBody
-            config={config}
-            step={step as FormStep}
-            index={selected as number}
-            name={name}
-            locale={locale}
-            replayKey={replayKey}
-          />
-        )}
-      </div>
+      {vertical ? (
+        <VerticalBody config={config} name={name} locale={locale} banner={banner} m={m} />
+      ) : (
+        <>
+          {banner ? <div className="pf__banner">{banner}</div> : null}
+          <div className="pf__main">
+            {isCover ? (
+              <CoverBody config={config} name={name} locale={locale} />
+            ) : (
+              <StepBody
+                config={config}
+                step={step as FormStep}
+                index={selected as number}
+                name={name}
+                locale={locale}
+                replayKey={replayKey}
+              />
+            )}
+          </div>
+        </>
+      )}
     </div>
+  );
+}
+
+/**
+ * The one-page form: the sticky banner + progress group, the hero, and every
+ * visible question stacked — the real `.pf-v__*` structure, not a sketch of it,
+ * so the design axes reach it the same way they reach the published page.
+ */
+function VerticalBody({
+  config,
+  name,
+  locale,
+  banner,
+  m,
+}: {
+  config: FormConfig;
+  name: string;
+  locale: string;
+  banner?: string | null;
+  m: EditorMessages['preview'];
+}) {
+  const r = getMessages(locale).renderer;
+  const [answers, setAnswers] = useState<Answers>({});
+  const cover = config.cover ?? {};
+  const logo = cover.logo ?? config.branding?.logo ?? null;
+  const logos = showClientLogos(cover) ? (cover.clientLogos ?? config.branding?.clientLogos ?? []) : [];
+  // A reveal is an interstitial the one-page layout plays after submit, not a
+  // block on the page — same filter the renderer applies.
+  const questions = config.steps.filter((s) => s.type !== 'reveal' && !s.hidden);
+
+  return (
+    <>
+      <div className="pf-v__sticky">
+        {banner ? <div className="pf__banner">{banner}</div> : null}
+        {questions.length > 0 ? (
+          <div className="pf-v__progressbar">
+            <div className="pf-progress">
+              <div className="pf-progress__track">
+                <div className="pf-progress__fill" style={{ width: '0%' }} />
+              </div>
+            </div>
+          </div>
+        ) : null}
+      </div>
+      <div className="pf__main">
+        <div className="pf-v__page">
+          <header className="pf-v__header">
+            <FormLogo src={logo} name={name} />
+          </header>
+          {cover.enabled !== false ? (
+            <section className="pf-v__hero">
+              {cover.eyebrow || cover.badge ? <p className="pf__badge">{cover.eyebrow ?? cover.badge}</p> : null}
+              <h1 className="pf__title">{cover.headline ?? name}</h1>
+              {cover.subheadline ? <p className="pf__subheadline">{cover.subheadline}</p> : null}
+              {cover.trustBadge ? <p className="pf__trust">{cover.trustBadge}</p> : null}
+              <ClientLogosMarquee logos={logos} label={r.trustedBy} />
+            </section>
+          ) : null}
+          {questions.length === 0 ? (
+            <p className="pf__helper">{m.empty}</p>
+          ) : (
+            questions.map((step) => (
+              <section key={step.key} className="pf-v__question">
+                <div className="pf__question-wrap">
+                  <h2 className="pf__question">
+                    {resolveQuestion(step, answers) || step.key}
+                    {step.required && step.type !== 'message' ? (
+                      <span aria-hidden className="pf-v__required">
+                        *
+                      </span>
+                    ) : null}
+                  </h2>
+                  {step.helper && step.type !== 'message' ? <p className="pf__helper">{step.helper}</p> : null}
+                </div>
+                <div className="pf__fields">
+                  <StepInput
+                    step={step}
+                    value={answers[step.key]}
+                    answers={answers}
+                    autoFocus={false}
+                    onChange={(v: AnswerValue) => setAnswers((a) => ({ ...a, [step.key]: v }))}
+                    onFieldChange={(field, v) => setAnswers((a) => ({ ...a, [field]: v }))}
+                    onSelect={(value) => setAnswers((a) => ({ ...a, [step.key]: value }))}
+                    dropdownPlaceholder={r.dropdownPlaceholder}
+                    dropdownEmpty={r.dropdownEmpty}
+                    locale={locale}
+                  />
+                </div>
+              </section>
+            ))
+          )}
+          {questions.length > 0 ? (
+            <div className="pf-v__footer">
+              <button type="button" className="pf__btn" tabIndex={-1} aria-hidden>
+                {r.submit}
+              </button>
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </>
   );
 }
 

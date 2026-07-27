@@ -10,20 +10,23 @@ import type {
   FormBranding,
   FormOutcome,
   FormEnding,
+  FormLayout,
 } from '@quill/engine';
 import {
   normalizeConfig,
   renameStepKey as engineRenameStepKey,
   createEmptyStep,
   migrateRevealToStep,
+  resolveFormLayout,
 } from '@quill/engine';
 import type { FormTracking } from '@quill/types';
 import { formConfigSchema } from '@quill/types';
 import { saveFormAction } from '@/app/admin/actions';
 import { useToast } from '@/components/toast';
 import { cn } from '@/lib/cn';
+import { anchorRevealsLast } from './_components/logic-util';
 import { QuestionSpine } from './_components/question-spine';
-import { CanvasQuestion } from './_components/canvas-question';
+import { CanvasQuestion, CanvasPage } from './_components/canvas-question';
 import { QuestionSettings } from './_components/question-settings';
 import { invalidateQuestionHubspotCache } from './_components/question-hubspot';
 import { renameQuestionMappingAction } from './_components/question-hubspot-actions';
@@ -123,7 +126,16 @@ export function FormEditor({
   // authored under the old form-level reveal (Design-tab copy + a draggable
   // position marker) is folded into that shape the moment it opens, so the two
   // ways to author one screen never coexist on screen.
-  const [config, setConfig] = useState<FormConfig>(() => migrateRevealToStep(initialConfig));
+  const [config, setConfig] = useState<FormConfig>(() => {
+    const migrated = migrateRevealToStep(initialConfig);
+    // Vertical: a reveal card mid-list promises an interstitial the one-page
+    // form never plays there — fold it to the end on open, same idiom as the
+    // reveal migration above (identity-preserving when nothing moves, so an
+    // already-anchored form does not start dirty).
+    if (resolveFormLayout(migrated) !== 'vertical') return migrated;
+    const anchored = anchorRevealsLast(migrated.steps);
+    return anchored === migrated.steps ? migrated : { ...migrated, steps: anchored };
+  });
   // Deep-linkable tabs: `?tab=connect` selects the tab on load…
   const [tab, setTabState] = useState<Tab>(() => parseTab(searchParams.get('tab')));
   // …and switching syncs the URL shallowly (no navigation, no RSC refetch).
@@ -303,9 +315,17 @@ export function FormEditor({
   function addFromGallery(item: GalleryItem) {
     mutate((c) => {
       const step = stepFromGalleryItem(item, new Set(c.steps.map((s) => s.key)));
-      const steps = [...c.steps, step];
-      setSelected(steps.length - 1);
-      return { ...c, steps };
+      // Vertical: reveals are anchored last, so a new QUESTION lands before
+      // them — appending blindly would file it after the end-reveal, i.e.
+      // "after the results screen", a position that does not exist.
+      const appended = [...c.steps, step];
+      const steps = resolveFormLayout(c) === 'vertical' ? anchorRevealsLast(appended) : appended;
+      setSelected(steps.findIndex((s) => s.key === step.key));
+      return {
+        ...c,
+        steps,
+        partialSubmitAfterStep: reanchorAfterReorder(c.partialSubmitAfterStep, appended, steps),
+      };
     });
     setGalleryOpen(false);
     setTab('build');
@@ -329,25 +349,26 @@ export function FormEditor({
     });
   }
   function reorderSteps(from: number, to: number) {
-    mutate((c) => {
-      const steps = [...c.steps];
-      const [moved] = steps.splice(from, 1);
-      if (!moved) return c;
-      steps.splice(to, 0, moved);
+    // Compute the final order OUTSIDE the updater so selection can follow the
+    // selected step BY KEY — on vertical the anchor pass may move more than the
+    // dragged card (a reveal dropped mid-list snaps back to the end).
+    const before = config.steps;
+    const arr = [...before];
+    const [moved] = arr.splice(from, 1);
+    if (!moved) return;
+    arr.splice(to, 0, moved);
+    const after = layout === 'vertical' ? anchorRevealsLast(arr) : arr;
+    const selectedKey = selected != null ? before[selected]?.key : undefined;
+    mutate((c) => ({
+      ...c,
+      steps: after,
       // Keep the partial-submit marker attached to the step it fires AFTER.
-      return {
-        ...c,
-        steps,
-        partialSubmitAfterStep: reanchorAfterReorder(c.partialSubmitAfterStep, c.steps, steps),
-      };
-    });
-    setSelected((sel) => {
-      if (sel == null) return null;
-      if (sel === from) return to;
-      if (from < sel && to >= sel) return sel - 1;
-      if (from > sel && to <= sel) return sel + 1;
-      return sel;
-    });
+      partialSubmitAfterStep: reanchorAfterReorder(c.partialSubmitAfterStep, c.steps, after),
+    }));
+    if (selectedKey != null) {
+      const next = after.findIndex((s) => s.key === selectedKey);
+      setSelected(next >= 0 ? next : null);
+    }
   }
   function applyTemplate(tid: TemplateId) {
     const cfg = TEMPLATES[tid];
@@ -407,10 +428,52 @@ export function FormEditor({
   // flow round-trips it (normalizeConfig passes unknown top-level keys through).
   const setTracking = (tracking: FormTracking | undefined) =>
     mutate((c) => ({ ...c, tracking }) as FormConfig);
+  // Layout is switchable at any time: the config is identical either way, the
+  // renderers just present it differently — nothing is lost by toggling.
+  // 'slides' is stored as ABSENT so a slides form keeps the exact config shape
+  // every pre-layout form has. Switching TO vertical folds any mid-list reveal
+  // to the end, where that layout actually plays it.
+  const setLayout = (next: FormLayout) =>
+    mutate((c) => ({
+      ...c,
+      layout: next === 'slides' ? undefined : next,
+      steps: next === 'vertical' ? anchorRevealsLast(c.steps) : c.steps,
+      partialSubmitAfterStep:
+        next === 'vertical'
+          ? reanchorAfterReorder(c.partialSubmitAfterStep, c.steps, anchorRevealsLast(c.steps))
+          : c.partialSubmitAfterStep,
+    }));
+  /**
+   * The vertical layout's ONE reveal, controlled from Design: ON appends a
+   * reveal card at the end (edit its copy by selecting it), OFF removes every
+   * reveal card. Per-question "reveal after" switches don't exist on vertical —
+   * position is meaningless when the reveal always plays after Submit.
+   */
+  const hasReveal = config.steps.some((s) => s.type === 'reveal');
+  function setEndReveal(on: boolean) {
+    const keepLen = config.steps.filter((s) => s.type !== 'reveal').length;
+    mutate((c) => {
+      const has = c.steps.some((s) => s.type === 'reveal');
+      if (on === has) return c;
+      if (on) {
+        const step = createEmptyStep('reveal', new Set(c.steps.map((s) => s.key)));
+        return { ...c, steps: [...c.steps, step] }; // appended last — the marker never shifts
+      }
+      const keep = c.steps.filter((s) => s.type !== 'reveal');
+      // Re-anchor the partial marker by the key it pointed at (a reveal can't
+      // be the anchor's own step — it captures no answer — but positions shift).
+      const anchorKey = c.partialSubmitAfterStep != null ? c.steps[c.partialSubmitAfterStep - 1]?.key : undefined;
+      const idx = anchorKey ? keep.findIndex((s) => s.key === anchorKey) : -1;
+      return { ...c, steps: keep, partialSubmitAfterStep: idx >= 0 ? idx + 1 : undefined };
+    });
+    // Removing cards can strand the selection past the end of the list.
+    if (!on) setSelected((sel) => (sel == null ? sel : keepLen === 0 ? null : Math.min(sel, keepLen - 1)));
+  }
 
   const selectedStep = selected != null ? config.steps[selected] : undefined;
   const scoringEnabled = config.scoring?.enabled !== false;
   const hasQuestions = config.steps.length > 0;
+  const layout = resolveFormLayout(config);
 
   const tabs: { id: Tab; label: string; icon: string }[] = [
     { id: 'build', label: bm.shell.tabBuild, icon: 'pi-th-large' },
@@ -505,7 +568,17 @@ export function FormEditor({
           </button>
           <LinkActions
             publicPath={publicPath}
-            labels={{ copyLink: bm.shell.copyLink, copied: bm.shell.copied, openForm: bm.shell.openForm }}
+            formName={name}
+            labels={{
+              copyLink: bm.shell.copyLink,
+              copied: bm.shell.copied,
+              openForm: bm.shell.openForm,
+              embed: bm.shell.embed,
+              embedTitle: bm.shell.embedTitle,
+              embedIntro: bm.shell.embedIntro,
+              embedCopy: bm.shell.embedCopy,
+              embedCopied: bm.shell.embedCopied,
+            }}
           />
           <PublishButton
             formId={id}
@@ -587,16 +660,31 @@ export function FormEditor({
                 </div>
                 <div className="flex-1 px-4 py-6 sm:px-8">
                   {selectedStep && selected != null ? (
-                    <CanvasQuestion
-                      key={`${selected}-${focusCanvas}`}
-                      config={config}
-                      step={selectedStep}
-                      index={selected}
-                      total={config.steps.length}
-                      device={device}
-                      onUpdate={(patch) => patchStep(selected, patch)}
-                      m={bm}
-                    />
+                    layout === 'vertical' ? (
+                      // The one-page canvas IS the page: every question stacked
+                      // and editable, one Submit — no remount on selection, so
+                      // switching questions scrolls instead of swapping cards.
+                      <CanvasPage
+                        config={config}
+                        selected={selected}
+                        device={device}
+                        focusSignal={focusCanvas}
+                        onSelect={setSelected}
+                        onUpdateStep={patchStep}
+                        m={bm}
+                      />
+                    ) : (
+                      <CanvasQuestion
+                        key={`${selected}-${focusCanvas}`}
+                        config={config}
+                        step={selectedStep}
+                        index={selected}
+                        total={config.steps.length}
+                        device={device}
+                        onUpdate={(patch) => patchStep(selected, patch)}
+                        m={bm}
+                      />
+                    )
                   ) : (
                     <p className="py-16 text-center text-sm text-muted-foreground">{bm.settings.empty}</p>
                   )}
@@ -635,6 +723,7 @@ export function FormEditor({
                     step={selectedStep}
                     index={selected}
                     steps={config.steps}
+                    layout={layout}
                     scoringEnabled={scoringEnabled}
                     onUpdate={(patch) => patchStep(selected, patch)}
                     onDelete={() => deleteStep(selected)}
@@ -687,6 +776,10 @@ export function FormEditor({
             name={name}
             publicPath={publicPath}
             locale={locale}
+            layout={layout}
+            onLayoutChange={setLayout}
+            hasReveal={hasReveal}
+            onEndRevealChange={setEndReveal}
             onCoverChange={patchCover}
             onBrandingChange={patchBranding}
             m={m}
@@ -702,13 +795,22 @@ export function FormEditor({
         )}
       </div>
 
-      <TypeGallery open={galleryOpen} onClose={() => setGalleryOpen(false)} onPick={addFromGallery} m={bm} />
+      <TypeGallery
+        open={galleryOpen}
+        onClose={() => setGalleryOpen(false)}
+        onPick={addFromGallery}
+        m={bm}
+        // Vertical: one reveal, always at the end — a second tile pick would
+        // create a card the renderer ignores, so it's offered exactly once.
+        disabled={layout === 'vertical' && hasReveal ? { reveal: bm.gallery.revealVerticalTaken } : undefined}
+      />
       <DevicePreviewModal
         open={previewOpen}
         onClose={() => setPreviewOpen(false)}
         config={config}
         name={name}
         locale={locale}
+        layout={layout}
         m={m.preview}
       />
     </div>

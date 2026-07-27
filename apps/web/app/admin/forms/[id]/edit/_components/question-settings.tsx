@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import type { FormStep } from '@quill/engine';
+import type { FormStep, FormLayout } from '@quill/engine';
 import {
   clampSliderValue,
   defaultFlowGroup,
@@ -66,6 +66,7 @@ export function QuestionSettings({
   step,
   index,
   steps,
+  layout = 'slides',
   scoringEnabled,
   onUpdate,
   onDelete,
@@ -81,6 +82,8 @@ export function QuestionSettings({
   step: FormStep;
   index: number;
   steps: FormStep[];
+  /** The form's presentation layout — a reveal behaves differently on vertical. */
+  layout?: FormLayout;
   scoringEnabled: boolean;
   onUpdate: (patch: Partial<FormStep>) => void;
   onDelete: () => void;
@@ -548,7 +551,11 @@ export function QuestionSettings({
             after a HIDDEN question never plays — the respondent never completes
             the step it follows — so the pair isn't offered (V5-QA). Nor after a
             reveal: back-to-back interstitials are never what an author means. */}
-        {step.hidden || step.type === 'reveal' ? null : (
+        {/* On VERTICAL the switch is not offered at all: "after this question"
+            is a position, and the one-page reveal has none — it plays once,
+            after Submit. Its switch lives in Design, next to the layout picker
+            (impossible-combination rule: don't offer a control that lies). */}
+        {step.hidden || step.type === 'reveal' || layout === 'vertical' ? null : (
           <InlineField label={em.behavior.reveal} hint={em.behavior.revealHint}>
             <Switch
               checked={revealAfter}

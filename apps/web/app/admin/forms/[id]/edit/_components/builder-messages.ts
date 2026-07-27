@@ -33,6 +33,12 @@ export interface BuilderMessages {
     mobile: string;
     settings: string;
     copyLink: string;
+    /** Embed-in-your-site dialog (iframe snippet + auto-height script). */
+    embed: string;
+    embedTitle: string;
+    embedIntro: string;
+    embedCopy: string;
+    embedCopied: string;
     copied: string;
     openForm: string;
   };
@@ -87,6 +93,8 @@ export interface BuilderMessages {
     revealHeadlinePlaceholder: string;
     revealSubtitlePlaceholder: string;
     revealPlays: string;
+    /** Vertical layout: where the reveal actually plays (page-canvas block). */
+    revealVerticalNote: string;
     /** V6 — the scheduler's live Calendly embed on the canvas. */
     schedulerUnset: string;
     schedulerNote: string;
@@ -207,6 +215,8 @@ export interface BuilderMessages {
     hint: string;
     close: string;
     noResults: string;
+    /** Vertical layout: why the reveal tile is off once the form has one. */
+    revealVerticalTaken: string;
     items: Record<GalleryItemId, { title: string; desc: string }>;
   };
   map: {
@@ -328,6 +338,12 @@ const en: BuilderMessages = {
     mobile: 'Mobile',
     settings: 'Settings',
     copyLink: 'Copy link',
+    embed: 'Embed',
+    embedTitle: 'Embed this form on your site',
+    embedIntro:
+      'Paste this snippet into your page. The form loads inside it and grows to fit its content — the script keeps the height in sync, so there is never an inner scrollbar.',
+    embedCopy: 'Copy snippet',
+    embedCopied: 'Copied',
     copied: 'Copied',
     openForm: 'Open form',
   },
@@ -366,6 +382,7 @@ const en: BuilderMessages = {
     revealHeadlinePlaceholder: 'Reviewing your answers…',
     revealSubtitlePlaceholder: 'Add a line of reassurance (optional)',
     revealPlays: 'Plays for {ms} ms, then the form continues on its own.',
+    revealVerticalNote: 'Plays once, after Submit, before the result.',
     schedulerUnset: 'No event type picked yet',
     schedulerNote: 'Respondents pick a time here. Booking answers this question and moves the form on.',
     schedulerLoading: 'Loading the calendar…',
@@ -472,6 +489,7 @@ const en: BuilderMessages = {
     hint: 'Picking a type drops the question in and focuses the canvas to edit it.',
     close: 'Close',
     noResults: 'No matching types.',
+    revealVerticalTaken: 'Already added — a one-page form plays its reveal once, after Submit.',
     items: {
       name: { title: 'Name', desc: 'Full name field' },
       email: { title: 'Email', desc: 'Validated email' },
@@ -593,6 +611,12 @@ const es: BuilderMessages = {
     mobile: 'Móvil',
     settings: 'Ajustes',
     copyLink: 'Copiar enlace',
+    embed: 'Insertar',
+    embedTitle: 'Inserta este formulario en tu sitio',
+    embedIntro:
+      'Pega este fragmento en tu página. El formulario carga dentro y crece según su contenido — el script mantiene la altura sincronizada, así nunca hay scroll interno.',
+    embedCopy: 'Copiar fragmento',
+    embedCopied: 'Copiado',
     copied: 'Copiado',
     openForm: 'Abrir formulario',
   },
@@ -632,6 +656,7 @@ const es: BuilderMessages = {
     revealHeadlinePlaceholder: 'Revisando tus respuestas…',
     revealSubtitlePlaceholder: 'Añade una línea que tranquilice (opcional)',
     revealPlays: 'Se muestra {ms} ms y luego el formulario continúa solo.',
+    revealVerticalNote: 'Se muestra una vez, después de Enviar y antes del resultado.',
     schedulerUnset: 'Aún no eliges un tipo de evento',
     schedulerNote: 'Aquí eligen un horario. Agendar responde esta pregunta y avanza el formulario.',
     schedulerLoading: 'Cargando el calendario…',
@@ -739,6 +764,7 @@ const es: BuilderMessages = {
     hint: 'Al elegir un tipo se añade la pregunta y se enfoca el lienzo para editarla.',
     close: 'Cerrar',
     noResults: 'No hay tipos que coincidan.',
+    revealVerticalTaken: 'Ya añadida — un formulario de una página muestra su revelación una vez, después de Enviar.',
     items: {
       name: { title: 'Nombre', desc: 'Campo de nombre completo' },
       email: { title: 'Correo', desc: 'Correo validado' },

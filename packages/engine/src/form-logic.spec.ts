@@ -36,6 +36,8 @@ import {
   sanitizeStepKey,
   resolveQuestion,
   resolveEnding,
+  resolveFormLayout,
+  FORM_LAYOUTS,
   type FormConfig,
   type FormStep,
   type FormOutcome,
@@ -1795,5 +1797,29 @@ describe('scheduler step (V6)', () => {
     };
     expect(runtimeSteps(cfg, { pick: 'a' }).map((s) => s.key)).toEqual(['pick']);
     expect(runtimeSteps(cfg, { pick: 'b' }).map((s) => s.key)).toEqual(['pick', 'later']);
+  });
+});
+
+describe('resolveFormLayout (vertical layout — back-compat default)', () => {
+  it('defaults to slides when the field is absent (every legacy config)', () => {
+    expect(resolveFormLayout({ version: 1, steps: [] } as FormConfig)).toBe('slides');
+  });
+
+  it('defaults to slides for a null/undefined config', () => {
+    expect(resolveFormLayout(null)).toBe('slides');
+    expect(resolveFormLayout(undefined)).toBe('slides');
+  });
+
+  it('returns the configured layout when set', () => {
+    expect(resolveFormLayout({ version: 1, steps: [], layout: 'vertical' } as FormConfig)).toBe(
+      'vertical',
+    );
+    expect(resolveFormLayout({ version: 1, steps: [], layout: 'slides' } as FormConfig)).toBe(
+      'slides',
+    );
+  });
+
+  it('FORM_LAYOUTS lists exactly the two supported layouts', () => {
+    expect(FORM_LAYOUTS).toEqual(['slides', 'vertical']);
   });
 });

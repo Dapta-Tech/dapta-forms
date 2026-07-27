@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import type { FormBranding, FormConfig, FormCover } from '@quill/engine';
+import type { FormBranding, FormConfig, FormCover, FormLayout } from '@quill/engine';
 import {
   DEFAULT_FORM_FONT,
   FORM_BACKGROUND_STYLES,
@@ -49,6 +49,10 @@ export function DesignPanel({
   name,
   publicPath,
   locale,
+  layout,
+  onLayoutChange,
+  hasReveal,
+  onEndRevealChange,
   onCoverChange,
   onBrandingChange,
   children,
@@ -58,6 +62,13 @@ export function DesignPanel({
   name: string;
   publicPath: string;
   locale: string;
+  /** Slides or one page — the first decision, because it changes what several
+   *  controls below even mean. */
+  layout: FormLayout;
+  onLayoutChange: (next: FormLayout) => void;
+  /** Vertical's single end-of-form reveal (a form-level fact, not a question). */
+  hasReveal: boolean;
+  onEndRevealChange: (on: boolean) => void;
   onCoverChange: (patch: Partial<FormCover>) => void;
   onBrandingChange: (patch: Partial<FormBranding>) => void;
   /** Non-design panels that share this tab (flow note, ending) — rendered last. */
@@ -66,6 +77,13 @@ export function DesignPanel({
 }) {
   const [device, setDevice] = useState<PreviewDevice>('desktop');
   const [screen, setScreen] = useState<number | 'cover'>('cover');
+  // Four axes do nothing on one page, so they are not offered there: the form
+  // never changes step (transition), the layout pins questions left
+  // (contentAlign), it draws its own answered-count progress bar
+  // (progressStyle), and the logo sits in a hero rather than a top bar
+  // (logoSize/logoPosition). Offering a control that changes nothing is worse
+  // than not having it.
+  const vertical = layout === 'vertical';
 
   const d = m.design;
   const branding = config.branding ?? {};
@@ -93,6 +111,47 @@ export function DesignPanel({
     <div className="grid h-full min-h-0 gap-4 px-4 py-6 sm:px-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,46%)] lg:overflow-hidden">
       {/* ── Controls ───────────────────────────────────────────────────── */}
       <div className="flex min-w-0 flex-col gap-4 lg:overflow-y-auto lg:pr-1">
+        <PanelSection title={m.layout.title} subtitle={m.layout.subtitle}>
+          <div className="grid max-w-[520px] grid-cols-2 gap-2" role="radiogroup" aria-label={m.layout.title}>
+            {[
+              { id: 'slides' as const, label: m.layout.slides, hint: m.layout.slidesHint },
+              { id: 'vertical' as const, label: m.layout.vertical, hint: m.layout.verticalHint },
+            ].map((opt) => (
+              <button
+                key={opt.id}
+                type="button"
+                role="radio"
+                aria-checked={layout === opt.id}
+                data-testid={`design-layout-${opt.id}`}
+                onClick={() => onLayoutChange(opt.id)}
+                className={cn(
+                  'flex flex-col gap-1 rounded-md border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                  layout === opt.id
+                    ? 'border-primary bg-primary/10 text-foreground'
+                    : 'border-border text-muted-foreground hover:border-muted-foreground hover:text-foreground',
+                )}
+              >
+                <span className="text-sm font-medium">{opt.label}</span>
+                <span className="text-xs text-muted-foreground">{opt.hint}</span>
+              </button>
+            ))}
+          </div>
+          {/* Vertical's one reveal is a FORM-level fact (it always plays after
+              Submit), so its switch lives here — not on a question. */}
+          {vertical ? (
+            <div className="max-w-[520px] border-t border-border pt-3">
+              <InlineField label={m.layout.endReveal} hint={m.layout.endRevealHint}>
+                <Switch
+                  checked={hasReveal}
+                  onCheckedChange={onEndRevealChange}
+                  data-testid="design-end-reveal"
+                  aria-label={m.layout.endReveal}
+                />
+              </InlineField>
+            </div>
+          ) : null}
+        </PanelSection>
+
         <PanelSection title={d.presetsTitle} subtitle={d.presetsSubtitle}>
           <ThemePresets branding={branding} onApply={onBrandingChange} m={d} />
         </PanelSection>
@@ -293,6 +352,7 @@ export function DesignPanel({
               aria-label={d.buttonFullWidth}
             />
           </InlineField>
+          {vertical ? null : (
           <InlineField label={d.progress}>
             <SegmentedToggle
               value={design.progressStyle}
@@ -306,6 +366,7 @@ export function DesignPanel({
               ariaLabel={d.progress}
             />
           </InlineField>
+          )}
         </PanelSection>
 
         <PanelSection title={d.layoutTitle} subtitle={d.layoutSubtitle}>
@@ -321,29 +382,36 @@ export function DesignPanel({
               {m.cover.logoInvalid}
             </p>
           ) : null}
-          <InlineField label={d.logoSize}>
-            <SegmentedToggle
-              value={design.logoSize}
-              onChange={(logoSize) => onBrandingChange({ logoSize })}
-              options={[
-                { value: 'sm' as const, label: d.sizeSm },
-                { value: 'md' as const, label: d.sizeMd },
-                { value: 'lg' as const, label: d.sizeLg },
-              ]}
-              ariaLabel={d.logoSize}
-            />
-          </InlineField>
-          <InlineField label={d.logoPosition}>
-            <SegmentedToggle
-              value={design.logoPosition}
-              onChange={(logoPosition) => onBrandingChange({ logoPosition })}
-              options={[
-                { value: 'left' as const, label: d.alignLeft },
-                { value: 'center' as const, label: d.alignCenter },
-              ]}
-              ariaLabel={d.logoPosition}
-            />
-          </InlineField>
+          {/* The one-page layout puts the logo in a hero, not a top bar, so
+              neither size nor placement applies there. */}
+          {vertical ? null : (
+            <>
+              <InlineField label={d.logoSize}>
+                <SegmentedToggle
+                  value={design.logoSize}
+                  onChange={(logoSize) => onBrandingChange({ logoSize })}
+                  options={[
+                    { value: 'sm' as const, label: d.sizeSm },
+                    { value: 'md' as const, label: d.sizeMd },
+                    { value: 'lg' as const, label: d.sizeLg },
+                  ]}
+                  ariaLabel={d.logoSize}
+                />
+              </InlineField>
+              <InlineField label={d.logoPosition}>
+                <SegmentedToggle
+                  value={design.logoPosition}
+                  onChange={(logoPosition) => onBrandingChange({ logoPosition })}
+                  options={[
+                    { value: 'left' as const, label: d.alignLeft },
+                    { value: 'center' as const, label: d.alignCenter },
+                  ]}
+                  ariaLabel={d.logoPosition}
+                />
+              </InlineField>
+            </>
+          )}
+          {vertical ? null : (
           <InlineField label={d.contentAlign}>
             <SegmentedToggle
               value={design.contentAlign}
@@ -355,6 +423,7 @@ export function DesignPanel({
               ariaLabel={d.contentAlign}
             />
           </InlineField>
+          )}
           <InlineField label={d.contentWidth}>
             <SegmentedToggle
               value={design.contentWidth}
@@ -366,6 +435,7 @@ export function DesignPanel({
               ariaLabel={d.contentWidth}
             />
           </InlineField>
+          {vertical ? null : (
           <InlineField label={d.transition}>
             <SegmentedToggle
               value={design.transition}
@@ -378,6 +448,7 @@ export function DesignPanel({
               ariaLabel={d.transition}
             />
           </InlineField>
+          )}
         </PanelSection>
 
         <PanelSection title={d.shareTitle} subtitle={d.shareSubtitle}>
@@ -405,6 +476,7 @@ export function DesignPanel({
           publicPath={publicPath}
           m={m.preview}
           toolbar={
+            vertical ? undefined : (
             <div className="flex min-w-0 items-center gap-1.5">
               <label htmlFor="design-preview-screen" className="sr-only">
                 {m.preview.title}
@@ -423,9 +495,17 @@ export function DesignPanel({
                 ))}
               </select>
             </div>
+            )
           }
         >
-          <LivePreview config={config} selected={screen} name={name} locale={locale} m={m.preview} />
+          <LivePreview
+            config={config}
+            selected={vertical ? 'cover' : screen}
+            layout={layout}
+            name={name}
+            locale={locale}
+            m={m.preview}
+          />
         </PreviewFrame>
       </div>
     </div>

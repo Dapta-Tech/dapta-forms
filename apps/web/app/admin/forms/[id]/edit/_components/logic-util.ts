@@ -98,3 +98,19 @@ export function describeCondition(
     }
   }
 }
+
+/**
+ * Vertical layout: reveal cards live at the END of the list — on a one-page
+ * form a reveal plays once, after Submit, never between questions, so a card
+ * sitting mid-list would promise an interstitial that never happens there.
+ * Every steps mutation in the editor funnels through this on vertical (add,
+ * reorder, switching the layout) so the list always tells the truth.
+ * Returns the SAME array when nothing needs to move (callers use identity to
+ * know whether anything changed — e.g. to avoid dirtying an untouched form).
+ */
+export function anchorRevealsLast(steps: FormStep[]): FormStep[] {
+  const reveals = steps.filter((s) => s.type === 'reveal');
+  if (reveals.length === 0) return steps;
+  const anchored = [...steps.filter((s) => s.type !== 'reveal'), ...reveals];
+  return anchored.every((s, i) => s === steps[i]) ? steps : anchored;
+}

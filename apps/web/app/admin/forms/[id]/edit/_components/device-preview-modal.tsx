@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { Answers, FormConfig } from '@quill/engine';
+import type { Answers, FormConfig, FormLayout } from '@quill/engine';
 import { runtimeSteps } from '@quill/engine';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/cn';
@@ -29,6 +29,7 @@ export function DevicePreviewModal({
   config,
   name,
   locale,
+  layout = 'slides',
   m,
 }: {
   open: boolean;
@@ -36,12 +37,15 @@ export function DevicePreviewModal({
   config: FormConfig;
   name: string;
   locale: string;
+  /** One page has no screens to step through — the navigation hides. */
+  layout?: FormLayout;
   m: EditorMessages['preview'];
 }) {
   const [device, setDevice] = useState<PreviewDevice>('mobile');
   const [index, setIndex] = useState<number | 'cover'>('cover');
   const restoreRef = useRef<HTMLElement | null>(null);
 
+  const vertical = layout === 'vertical';
   const hasCover = config.cover?.enabled !== false;
   // Empty answers: the preview walks the default branch, which is the path a
   // respondent who has answered nothing yet would see.
@@ -95,29 +99,37 @@ export function DevicePreviewModal({
         className="relative flex h-[92vh] w-full max-w-5xl flex-col gap-3 rounded-xl border border-border bg-popover p-3 shadow-lg"
       >
         <div className="flex items-center justify-between gap-3">
-          <div className="flex min-w-0 items-center gap-2">
-            <button
-              type="button"
-              onClick={() => go(-1)}
-              disabled={!canPrev}
-              aria-label={m.previous}
-              className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              <i aria-hidden className="pi pi-chevron-left" style={{ fontSize: 11 }} />
-            </button>
-            <span className="min-w-0 truncate text-xs tabular-nums text-muted-foreground" data-testid="preview-position">
-              {index === 'cover' ? m.coverTitle : `${m.step} ${position + 1} ${m.of} ${total}`}
-            </span>
-            <button
-              type="button"
-              onClick={() => go(1)}
-              disabled={!canNext}
-              aria-label={m.next}
-              className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              <i aria-hidden className="pi pi-chevron-right" style={{ fontSize: 11 }} />
-            </button>
-          </div>
+          {/* A one-page form has no screens to step through — it scrolls. */}
+          {vertical ? (
+            <span className="text-xs text-muted-foreground">{m.inert}</span>
+          ) : (
+            <div className="flex min-w-0 items-center gap-2">
+              <button
+                type="button"
+                onClick={() => go(-1)}
+                disabled={!canPrev}
+                aria-label={m.previous}
+                className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <i aria-hidden className="pi pi-chevron-left" style={{ fontSize: 11 }} />
+              </button>
+              <span
+                className="min-w-0 truncate text-xs tabular-nums text-muted-foreground"
+                data-testid="preview-position"
+              >
+                {index === 'cover' ? m.coverTitle : `${m.step} ${position + 1} ${m.of} ${total}`}
+              </span>
+              <button
+                type="button"
+                onClick={() => go(1)}
+                disabled={!canNext}
+                aria-label={m.next}
+                className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <i aria-hidden className="pi pi-chevron-right" style={{ fontSize: 11 }} />
+              </button>
+            </div>
+          )}
           <Button variant="ghost" size="sm" onClick={onClose} aria-label={m.close}>
             <i aria-hidden className="pi pi-times" style={{ fontSize: 13 }} /> {m.close}
           </Button>
@@ -125,7 +137,14 @@ export function DevicePreviewModal({
 
         <div className={cn('min-h-0 flex-1')}>
           <PreviewFrame device={device} onDeviceChange={setDevice} publicPath={''} m={m} hideAddressBar>
-            <LivePreview config={config} selected={index} name={name} locale={locale} m={m} />
+            <LivePreview
+              config={config}
+              selected={vertical ? 'cover' : index}
+              layout={layout}
+              name={name}
+              locale={locale}
+              m={m}
+            />
           </PreviewFrame>
         </div>
       </div>

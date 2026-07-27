@@ -34,6 +34,10 @@ export interface FormsMessages {
     ctaQuestion: string;
     ctaAction: string;
     progressLabel: string; // {current} {total}
+    /** Vertical layout: the answered-question counter. // {answered} {total} */
+    verticalProgress: string;
+    /** Vertical layout: inline error summary shown next to the Submit button. */
+    verticalErrors: string;
     revealHeadline: string;
     revealSubtitle: string;
     noSteps: string;
@@ -257,6 +261,12 @@ export interface FormsMessages {
       namePlaceholder: string;
       /** V5 — inline blank-name error (replaces the browser's native bubble). */
       nameRequired: string;
+      /** Layout picker in the create dialog (slides vs vertical page). */
+      layoutLabel: string;
+      layoutSlides: string;
+      layoutSlidesDesc: string;
+      layoutVertical: string;
+      layoutVerticalDesc: string;
       cancel: string;
       emptyTitle: string;
       emptyBody: string;
@@ -544,6 +554,20 @@ export interface FormsMessages {
         none: string;
         afterStep: string; // {n}
       };
+      /** Form layout picker (Design tab): slides vs one-page vertical. */
+      layout: {
+        title: string;
+        subtitle: string;
+        slides: string;
+        slidesHint: string;
+        vertical: string;
+        verticalHint: string;
+        /** Shown in the cover section when vertical: no Start gate, CTA unused. */
+        coverCtaNote: string;
+        /** Vertical's ONE reveal (form-level): shown once, after Submit. */
+        endReveal: string;
+        endRevealHint: string;
+      };
       cover: {
         title: string;
         subtitle: string;
@@ -598,6 +622,8 @@ export interface FormsMessages {
         title: string;
         empty: string;
         coverTitle: string;
+        /** Vertical page preview: the single Submit at the end of the page. */
+        verticalSubmit: string;
         step: string;
         of: string;
         device: string;
@@ -981,6 +1007,8 @@ export const en: FormsMessages = {
     ctaQuestion: 'Want your own form?',
     ctaAction: 'Get Dapta Forms — free',
     progressLabel: 'Step {current} of {total}',
+    verticalProgress: '{answered} of {total} answered',
+    verticalErrors: 'Check the highlighted questions above.',
     revealHeadline: 'Reviewing your answers…',
     revealSubtitle: 'One moment while we match you with the best next step.',
     noSteps: 'This form has no steps yet.',
@@ -1184,6 +1212,11 @@ export const en: FormsMessages = {
       nameLabel: 'Form name',
       namePlaceholder: 'e.g. Lead qualification quiz',
       nameRequired: 'Give your form a name.',
+      layoutLabel: 'Layout',
+      layoutSlides: 'Slides',
+      layoutSlidesDesc: 'One question per screen, step by step.',
+      layoutVertical: 'One page',
+      layoutVerticalDesc: 'All questions on a single page, one Submit.',
       cancel: 'Cancel',
       emptyTitle: 'No forms yet',
       emptyBody: 'Create your first form to start collecting responses.',
@@ -1440,6 +1473,20 @@ export const en: FormsMessages = {
         none: 'Off — only save completed submissions',
         afterStep: 'After question {n}',
       },
+      layout: {
+        title: 'Layout',
+        subtitle: 'How respondents move through the form.',
+        slides: 'Slides',
+        slidesHint: 'One question per screen, step by step.',
+        vertical: 'One page',
+        verticalHint:
+          'Every question on a single page with one Submit. Logic still applies live — questions show and hide as answers change.',
+        coverCtaNote:
+          'On a one-page form the cover renders as a header above the questions — there is no Start button, so its text is not used.',
+        endReveal: 'Reveal screen before results',
+        endRevealHint:
+          'Plays once, after Submit and before the result. Edit its copy by selecting the card at the end of the question list.',
+      },
       cover: {
         title: 'Cover screen',
         subtitle: 'The intro screen shown before the first step.',
@@ -1494,6 +1541,7 @@ export const en: FormsMessages = {
         title: 'Live preview',
         empty: 'Select a step to preview it.',
         coverTitle: 'Cover',
+        verticalSubmit: 'Submit',
         step: 'Step',
         of: 'of',
         device: 'Device preview',
@@ -1869,6 +1917,8 @@ export const es: FormsMessages = {
     ctaQuestion: '¿Quieres tu propio formulario?',
     ctaAction: 'Consigue Dapta Forms — gratis',
     progressLabel: 'Paso {current} de {total}',
+    verticalProgress: '{answered} de {total} respondidas',
+    verticalErrors: 'Revisa las preguntas marcadas arriba.',
     revealHeadline: 'Revisando tus respuestas…',
     revealSubtitle: 'Un momento mientras encontramos el mejor siguiente paso para ti.',
     noSteps: 'Este formulario aún no tiene pasos.',
@@ -2073,6 +2123,11 @@ export const es: FormsMessages = {
       nameLabel: 'Nombre del formulario',
       namePlaceholder: 'p. ej. Cuestionario de calificación de leads',
       nameRequired: 'Ponle un nombre a tu formulario.',
+      layoutLabel: 'Diseño',
+      layoutSlides: 'Diapositivas',
+      layoutSlidesDesc: 'Una pregunta por pantalla, paso a paso.',
+      layoutVertical: 'Una página',
+      layoutVerticalDesc: 'Todas las preguntas en una sola página, un solo Enviar.',
       cancel: 'Cancelar',
       emptyTitle: 'Aún no hay formularios',
       emptyBody: 'Crea tu primer formulario para empezar a recibir respuestas.',
@@ -2329,6 +2384,20 @@ export const es: FormsMessages = {
         none: 'Desactivado — solo guardar envíos completos',
         afterStep: 'Tras la pregunta {n}',
       },
+      layout: {
+        title: 'Diseño',
+        subtitle: 'Cómo avanzan los respondientes por el formulario.',
+        slides: 'Diapositivas',
+        slidesHint: 'Una pregunta por pantalla, paso a paso.',
+        vertical: 'Una página',
+        verticalHint:
+          'Todas las preguntas en una sola página con un solo Enviar. La lógica sigue aplicando en vivo — las preguntas aparecen y se ocultan según las respuestas.',
+        coverCtaNote:
+          'En un formulario de una página la portada se muestra como encabezado sobre las preguntas — no hay botón de inicio, así que su texto no se usa.',
+        endReveal: 'Pantalla de revelación antes del resultado',
+        endRevealHint:
+          'Se muestra una vez, después de Enviar y antes del resultado. Edita su texto seleccionando la tarjeta al final de la lista de preguntas.',
+      },
       cover: {
         title: 'Portada',
         subtitle: 'La pantalla de introducción antes del primer paso.',
@@ -2383,6 +2452,7 @@ export const es: FormsMessages = {
         title: 'Vista previa en vivo',
         empty: 'Selecciona un paso para previsualizarlo.',
         coverTitle: 'Portada',
+        verticalSubmit: 'Enviar',
         step: 'Paso',
         of: 'de',
         device: 'Vista por dispositivo',

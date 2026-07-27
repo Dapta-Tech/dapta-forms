@@ -61,7 +61,8 @@ qa/test-results/
 test-results/
 qa/shots/
 # Any alternate Next build dir (NEXT_DIST_DIR) — one per worktree, so two
-# checkouts can run dev side by side without fighting over .next/.
+# checkouts can run dev side by side without fighting over .next/. Covers the
+# QA runner's .next-qa/ too.
 .next-*/
 
 # Throwaway QA agent artifacts (screenshots + scratch specs)
