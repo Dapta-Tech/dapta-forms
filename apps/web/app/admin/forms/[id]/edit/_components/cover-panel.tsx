@@ -1,6 +1,6 @@
 'use client';
 
-import type { FormConfig, FormCover, FormBranding, FormClientLogo } from '@quill/engine';
+import type { FormConfig, FormCover, FormBranding, FormClientLogo, FormLayout } from '@quill/engine';
 import { isSafeImageUrl } from '@quill/engine';
 import { clampAccent, accentWasAdjusted, DEFAULT_ACCENT } from '@quill/shared';
 import { Switch } from '@/components/ui/switch';
@@ -20,16 +20,20 @@ const MAX_CLIENT_LOGOS = 24;
  */
 export function CoverPanel({
   config,
+  layout = 'slides',
   onCoverChange,
   onBrandingChange,
   m,
 }: {
   config: FormConfig;
+  /** The form's presentation layout — vertical renders the cover as a hero. */
+  layout?: FormLayout;
   onCoverChange: (patch: Partial<FormCover>) => void;
   onBrandingChange: (patch: Partial<FormBranding>) => void;
   m: EditorMessages;
 }) {
   const cover = config.cover ?? {};
+  const vertical = layout === 'vertical';
   const raw = config.branding?.primaryColor || DEFAULT_ACCENT;
   const clamped = clampAccent(raw);
   const adjusted = accentWasAdjusted(raw);
@@ -73,9 +77,18 @@ export function CoverPanel({
           <Field label={m.cover.subheadline}>
             <TextArea value={cover.subheadline ?? ''} rows={2} onChange={(e) => onCoverChange({ subheadline: e.target.value || null })} />
           </Field>
-          <Field label={m.cover.ctaText}>
-            <TextField value={cover.ctaText ?? ''} onChange={(e) => onCoverChange({ ctaText: e.target.value || null })} />
-          </Field>
+          {/* No Start gate on a one-page form: the cover is a header, so the
+              CTA text is a control that changes nothing — say so instead of
+              offering it (impossible-combination rule). */}
+          {vertical ? (
+            <p className="text-xs text-muted-foreground" data-testid="cover-cta-vertical-note">
+              <i aria-hidden className="pi pi-info-circle" style={{ fontSize: 11 }} /> {m.layout.coverCtaNote}
+            </p>
+          ) : (
+            <Field label={m.cover.ctaText}>
+              <TextField value={cover.ctaText ?? ''} onChange={(e) => onCoverChange({ ctaText: e.target.value || null })} />
+            </Field>
+          )}
           <Field label={m.cover.trustBadge}>
             <TextField value={cover.trustBadge ?? ''} onChange={(e) => onCoverChange({ trustBadge: e.target.value || null })} />
           </Field>
@@ -142,7 +155,7 @@ export function CoverPanel({
 
       <div className="lg:sticky lg:top-[7.5rem] lg:self-start">
         <p className="mb-2 text-sm font-semibold text-foreground">{m.preview.title}</p>
-        <LivePreview config={config} selected="cover" m={m.preview} />
+        <LivePreview config={config} selected="cover" layout={layout} m={m.preview} />
       </div>
     </div>
   );

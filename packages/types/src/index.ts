@@ -9,6 +9,7 @@ import {
   CONDITION_OPS,
   FORM_BANNER_SCOPES,
   FORM_FIELD_TYPES,
+  FORM_LAYOUTS,
   FORM_OPTION_LAYOUTS,
   isImageIcon,
   isSafeHttpUrl,
@@ -630,6 +631,11 @@ export const formConfigSchema = z.object({
   version: z.literal(1),
   branding: formBrandingSchema.nullable().optional(),
   cover: formCoverSchema.nullable().optional(),
+  /**
+   * Presentation layout for the public form (ADDITIVE — absent on every legacy
+   * config, which then renders as `'slides'`, exactly as it always has).
+   */
+  layout: z.enum(FORM_LAYOUTS).optional(),
   steps: z.array(formStepSchema).default([]),
   scoring: z.object({ enabled: z.boolean().optional() }).nullable().optional(),
   outcomes: z.array(formOutcomeSchema).optional(),

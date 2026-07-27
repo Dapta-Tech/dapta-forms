@@ -262,7 +262,8 @@ export const adminApi = {
   // Forms
   listForms: () => req<FormSummary[]>('GET', '/v1/forms'),
   getForm: (id: string) => req<FormDetail>('GET', `/v1/forms/${id}`),
-  createForm: (b: { name: string; slug?: string }) => req<FormDetail>('POST', '/v1/forms', b),
+  createForm: (b: { name: string; slug?: string; config?: unknown }) =>
+    req<FormDetail>('POST', '/v1/forms', b),
   updateForm: (id: string, b: { name?: string; slug?: string; config?: unknown }) =>
     req<FormDetail>('PUT', `/v1/forms/${id}`, b),
   duplicateForm: (id: string) => req<FormDetail>('POST', `/v1/forms/${id}/duplicate`),

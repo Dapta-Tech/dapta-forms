@@ -7,7 +7,14 @@ import { adminApi } from '@/lib/admin-api';
 /** Create a form and jump straight into its editor. */
 export async function createFormAction(formData: FormData): Promise<void> {
   const name = String(formData.get('name') ?? '').trim() || 'Untitled form';
-  const created = await adminApi.createForm({ name });
+  // Layout picked in the create dialog. Only 'vertical' is stored — an absent
+  // `layout` already means slides (the engine's back-compat default), so a
+  // slides form keeps the exact config shape every existing form has.
+  const layout = String(formData.get('layout') ?? '');
+  const created = await adminApi.createForm({
+    name,
+    ...(layout === 'vertical' ? { config: { version: 1, steps: [], layout: 'vertical' } } : {}),
+  });
   revalidatePath('/admin');
   revalidatePath('/admin/forms');
   redirect(`/admin/forms/${created.id}/edit`);
