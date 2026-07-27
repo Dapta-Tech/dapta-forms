@@ -390,18 +390,23 @@
   line-height: 1.35;
 }
 
-/* ── Choices — icon grid ── */
+/* ── Choices — card grid ──
+   Flex, not `grid-template-columns: repeat(3, 1fr)`: a fixed 3-track grid left a
+   single card stranded in the left third and two cards hugging the left edge.
+   Wrapping flex items with `justify-content: center` centre ANY count — one card
+   sits in the middle, two sit centred as a pair, and beyond three they wrap into
+   centred rows. The basis targets three per row at full width while `min-width`
+   forces fewer as the viewport narrows, so the count adapts to the screen. */
 .pf-choices--icons {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
   gap: var(--pf-gap);
 }
-@media (max-width: 400px) {
-  .pf-choices--icons {
-    grid-template-columns: repeat(2, 1fr);
-  }
-}
 .pf-choice-icon {
+  flex: 0 1 calc((100% - 2 * var(--pf-gap)) / 3);
+  min-width: 132px;
+  max-width: 220px;
   display: flex;
   flex-direction: column;
   align-items: center;

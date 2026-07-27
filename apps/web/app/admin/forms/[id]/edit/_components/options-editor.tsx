@@ -1,10 +1,11 @@
 'use client';
 
-import type { FormOption } from '@quill/engine';
+import type { FormOption, FormOptionLayout } from '@quill/engine';
 import { slugify } from '@quill/engine';
 import { Button } from '@/components/ui/button';
 import { HelpTip } from '@/components/ui/help-tip';
 import { TextField, NumberField } from './fields';
+import { IconPicker } from './icon-picker';
 import { SortableList, SortableRow } from './sortable';
 import type { EditorMessages } from './messages';
 
@@ -19,6 +20,7 @@ export function OptionsEditor({
   onChange,
   showPoints = true,
   showIcon = false,
+  layout = 'list',
   m,
 }: {
   options: FormOption[];
@@ -30,11 +32,13 @@ export function OptionsEditor({
    */
   showPoints?: boolean;
   /**
-   * Render the Icon column. Same reasoning as `showPoints`: only the card
-   * layout displays an icon, so in a plain list the column would be a field
-   * that changes nothing.
+   * Render the Icon field. Choice questions draw an icon in BOTH layouts (a
+   * list row shows an emoji or initials where the radio would be), so this
+   * tracks the question type, not the layout.
    */
   showIcon?: boolean;
+  /** Gates which icon kinds the picker offers — images are card-only. */
+  layout?: FormOptionLayout;
   m: EditorMessages['options'];
 }) {
   const ids = options.map((_, i) => `opt-${i}`);
@@ -135,19 +139,19 @@ export function OptionsEditor({
                     </Button>
                   </div>
                   {showIcon ? (
-                    <label className="flex min-w-0 flex-col gap-1 pl-7">
+                    <div className="flex min-w-0 flex-col gap-1 pl-7" data-testid={`option-icon-${index}`}>
                       <span className="flex items-center gap-1 text-[11px] font-medium text-muted-foreground">
                         {m.icon}
                         <HelpTip text={m.iconHelp} label={m.icon} />
                       </span>
-                      <TextField
-                        aria-label={m.icon}
-                        data-testid={`option-icon-${index}`}
-                        placeholder={m.iconPlaceholder}
-                        value={o.icon ?? ''}
-                        onChange={(e) => update(index, { icon: e.target.value || null })}
+                      <IconPicker
+                        value={o.icon}
+                        label={o.label}
+                        layout={layout}
+                        onChange={(icon) => update(index, { icon })}
+                        m={m}
                       />
-                    </label>
+                    </div>
                   ) : null}
                   </div>
                 )}

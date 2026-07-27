@@ -380,7 +380,8 @@ const en: BuilderMessages = {
     options: 'Options',
     addOption: 'Add option',
     optionLayout: 'Show options as',
-    optionLayoutHint: 'Cards add an icon to each option — an emoji, or an image URL.',
+    optionLayoutHint:
+      'Each option can carry an emoji or initials in both layouts. Cards lay them out in a centred grid and are the only layout that can show a logo.',
     optionLayoutList: 'List',
     optionLayoutCards: 'Cards',
     logic: 'Logic',
@@ -645,7 +646,8 @@ const es: BuilderMessages = {
     options: 'Opciones',
     addOption: 'Añadir opción',
     optionLayout: 'Mostrar opciones como',
-    optionLayoutHint: 'Las tarjetas añaden un ícono a cada opción — un emoji, o la URL de una imagen.',
+    optionLayoutHint:
+      'Cada opción puede llevar un emoji o iniciales en ambos diseños. Las tarjetas los ordenan en una cuadrícula centrada y son el único diseño que puede mostrar un logo.',
     optionLayoutList: 'Lista',
     optionLayoutCards: 'Tarjetas',
     logic: 'Lógica',

@@ -18,6 +18,8 @@ import {
   isSafeHttpUrl,
   isSafeImageUrl,
   isImageIcon,
+  optionInitials,
+  resolveOptionIcon,
   resolveOptionLayout,
   showBanner,
   showClientLogos,
@@ -828,6 +830,67 @@ describe('choice option presentation', () => {
     expect(isImageIcon(hostile) && isSafeImageUrl(hostile)).toBe(false);
     const ok = 'https://cdn.example.com/logo.png';
     expect(isImageIcon(ok) && isSafeImageUrl(ok)).toBe(true);
+  });
+
+  it('optionInitials takes up to two letters from the first two words', () => {
+    expect(optionInitials('Hubspot')).toBe('H');
+    expect(optionInitials('HubSpot Sales')).toBe('HS');
+    expect(optionInitials('one two three')).toBe('OT');
+    expect(optionInitials('  spaced   out  ')).toBe('SO');
+    expect(optionInitials('')).toBe('');
+    expect(optionInitials('   ')).toBe('');
+  });
+});
+
+describe('resolveOptionIcon — one answer for every surface', () => {
+  const IMG = 'https://cdn.example.com/logo.png';
+
+  it('draws an image on cards', () => {
+    expect(resolveOptionIcon({ icon: IMG, label: 'Hubspot' }, 'cards')).toEqual({
+      kind: 'image',
+      src: IMG,
+    });
+  });
+
+  it('degrades an image to initials on a list — logos are card-only', () => {
+    expect(resolveOptionIcon({ icon: IMG, label: 'Hubspot' }, 'list')).toEqual({
+      kind: 'glyph',
+      text: 'H',
+    });
+  });
+
+  it('an unsafe image never becomes an <img>, on either layout', () => {
+    const hostile = 'data:text/html,<script>alert(1)</script>';
+    // `isImageIcon` already rejects this, so it is treated as a glyph verbatim.
+    expect(resolveOptionIcon({ icon: hostile, label: 'X' }, 'cards').kind).toBe('glyph');
+  });
+
+  it('keeps an emoji or letters as a glyph on both layouts', () => {
+    for (const layout of ['cards', 'list'] as const) {
+      expect(resolveOptionIcon({ icon: '😍', label: 'Love it' }, layout)).toEqual({
+        kind: 'glyph',
+        text: '😍',
+      });
+      expect(resolveOptionIcon({ icon: 'HS', label: 'Hubspot' }, layout)).toEqual({
+        kind: 'glyph',
+        text: 'HS',
+      });
+    }
+  });
+
+  it('falls back to the label initials when there is no icon', () => {
+    expect(resolveOptionIcon({ label: 'Team lead' }, 'cards')).toEqual({
+      kind: 'glyph',
+      text: 'TL',
+    });
+    expect(resolveOptionIcon({ icon: null, label: 'Founder' }, 'list')).toEqual({
+      kind: 'glyph',
+      text: 'F',
+    });
+    expect(resolveOptionIcon({ icon: '   ', label: 'Founder' }, 'cards')).toEqual({
+      kind: 'glyph',
+      text: 'F',
+    });
   });
 });
 

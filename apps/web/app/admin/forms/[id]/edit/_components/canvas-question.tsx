@@ -7,8 +7,7 @@ import {
   sliderBounds,
   clampSliderValue,
   resolveOptionLayout,
-  isImageIcon,
-  isSafeImageUrl,
+  resolveOptionIcon,
 } from '@quill/engine';
 import { clampAccent, onAccent, DEFAULT_ACCENT } from '@quill/shared';
 import { cn } from '@/lib/cn';
@@ -189,53 +188,97 @@ export function CanvasQuestion({
         {/* Body: the real rendered input */}
         <div className="mt-6">
           {hasOptions(step.type) ? (
-            <div className="flex flex-col gap-2.5">
-              {(step.options ?? []).map((opt, i) => (
-                <div
-                  key={i}
-                  className="group flex items-center gap-3 rounded-xl border border-border bg-background px-4 py-3.5 transition-colors focus-within:border-primary/60 hover:border-muted-foreground/60"
-                >
-                  {/* The canvas stays a vertical list even for the card layout —
-                      it is an inline EDITOR, not a preview. Swapping the A/B/C
-                      badge for the option's own icon is enough to see what each
-                      card will carry; Preview shows the real grid. */}
-                  <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border text-[11px] font-semibold text-muted-foreground">
-                    {cardLayout && opt.icon ? (
-                      isImageIcon(opt.icon) && isSafeImageUrl(opt.icon) ? (
-                        <img src={opt.icon} alt="" className="max-h-full max-w-full object-contain" />
-                      ) : (
-                        <span className="text-[13px] leading-none">{opt.icon}</span>
-                      )
-                    ) : (
-                      String.fromCharCode(65 + i)
-                    )}
-                  </span>
-                  <input
-                    value={opt.label}
-                    onChange={(e) => updateOption(i, { label: e.target.value })}
-                    placeholder={`${m.canvas.optionPlaceholder} ${i + 1}`}
-                    aria-label={`${m.canvas.optionPlaceholder} ${i + 1}`}
-                    className="min-w-0 flex-1 bg-transparent text-[15px] font-medium text-foreground outline-none placeholder:text-muted-foreground/50"
-                  />
-                  {showsPoints ? (
-                    <span className="shrink-0 rounded-full bg-primary/15 px-2.5 py-1 text-xs font-semibold text-primary">
-                      {tb(m.canvas.pts, { n: opt.points ?? 0 })}
-                    </span>
-                  ) : null}
-                  <button
-                    type="button"
-                    aria-label={m.settings.delete}
-                    onClick={() => removeOption(i)}
-                    className="shrink-0 text-muted-foreground/0 transition-colors group-hover:text-muted-foreground hover:!text-destructive focus-visible:!text-muted-foreground focus-visible:outline-none"
+            // The canvas mirrors the CHOSEN layout — picking Cards and still
+            // seeing a radio list here is the builder contradicting the form.
+            // Both branches keep the label editable inline; only the shell and
+            // the icon treatment differ, exactly as the public renderer does.
+            <div
+              className={
+                cardLayout
+                  ? 'flex flex-wrap justify-center gap-2.5'
+                  : 'flex flex-col gap-2.5'
+              }
+            >
+              {(step.options ?? []).map((opt, i) => {
+                const icon = resolveOptionIcon(opt, cardLayout ? 'cards' : 'list');
+                return cardLayout ? (
+                  <div
+                    key={i}
+                    className="group relative flex min-h-[104px] w-[calc((100%-1.25rem)/3)] min-w-[132px] max-w-[220px] flex-col items-center gap-2 rounded-xl border border-border bg-background px-2 py-4 transition-colors focus-within:border-primary/60 hover:border-muted-foreground/60"
                   >
-                    <i aria-hidden className="pi pi-times" style={{ fontSize: 12 }} />
-                  </button>
-                </div>
-              ))}
+                    {icon.kind === 'image' ? (
+                      <span className="flex h-[46px] w-full max-w-[88px] items-center justify-center overflow-hidden rounded-lg bg-muted px-2">
+                        <img src={icon.src} alt="" className="max-h-full max-w-full object-contain" />
+                      </span>
+                    ) : (
+                      <span className="flex h-[46px] w-[46px] items-center justify-center rounded-full bg-muted text-[23px] leading-none">
+                        {icon.text}
+                      </span>
+                    )}
+                    <input
+                      value={opt.label}
+                      onChange={(e) => updateOption(i, { label: e.target.value })}
+                      placeholder={`${m.canvas.optionPlaceholder} ${i + 1}`}
+                      aria-label={`${m.canvas.optionPlaceholder} ${i + 1}`}
+                      className="w-full min-w-0 bg-transparent text-center text-sm font-medium text-foreground outline-none placeholder:text-muted-foreground/50"
+                    />
+                    {showsPoints ? (
+                      <span className="rounded-full bg-primary/15 px-2 py-0.5 text-[11px] font-semibold text-primary">
+                        {tb(m.canvas.pts, { n: opt.points ?? 0 })}
+                      </span>
+                    ) : null}
+                    <button
+                      type="button"
+                      aria-label={m.settings.delete}
+                      onClick={() => removeOption(i)}
+                      className="absolute right-1.5 top-1.5 text-muted-foreground/0 transition-colors group-hover:text-muted-foreground hover:!text-destructive focus-visible:!text-muted-foreground focus-visible:outline-none"
+                    >
+                      <i aria-hidden className="pi pi-times" style={{ fontSize: 12 }} />
+                    </button>
+                  </div>
+                ) : (
+                  <div
+                    key={i}
+                    className="group flex items-center gap-3 rounded-xl border border-border bg-background px-4 py-3.5 transition-colors focus-within:border-primary/60 hover:border-muted-foreground/60"
+                  >
+                    <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border text-[11px] font-semibold text-muted-foreground">
+                      {opt.icon && icon.kind === 'glyph' ? (
+                        <span className="text-[13px] leading-none">{icon.text}</span>
+                      ) : (
+                        String.fromCharCode(65 + i)
+                      )}
+                    </span>
+                    <input
+                      value={opt.label}
+                      onChange={(e) => updateOption(i, { label: e.target.value })}
+                      placeholder={`${m.canvas.optionPlaceholder} ${i + 1}`}
+                      aria-label={`${m.canvas.optionPlaceholder} ${i + 1}`}
+                      className="min-w-0 flex-1 bg-transparent text-[15px] font-medium text-foreground outline-none placeholder:text-muted-foreground/50"
+                    />
+                    {showsPoints ? (
+                      <span className="shrink-0 rounded-full bg-primary/15 px-2.5 py-1 text-xs font-semibold text-primary">
+                        {tb(m.canvas.pts, { n: opt.points ?? 0 })}
+                      </span>
+                    ) : null}
+                    <button
+                      type="button"
+                      aria-label={m.settings.delete}
+                      onClick={() => removeOption(i)}
+                      className="shrink-0 text-muted-foreground/0 transition-colors group-hover:text-muted-foreground hover:!text-destructive focus-visible:!text-muted-foreground focus-visible:outline-none"
+                    >
+                      <i aria-hidden className="pi pi-times" style={{ fontSize: 12 }} />
+                    </button>
+                  </div>
+                );
+              })}
               <button
                 type="button"
                 onClick={addOption}
-                className="flex items-center gap-3 rounded-xl border border-dashed border-border px-4 py-3.5 text-left text-[15px] text-muted-foreground transition-colors hover:border-primary/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className={
+                  cardLayout
+                    ? 'flex min-h-[104px] w-[calc((100%-1.25rem)/3)] min-w-[132px] max-w-[220px] flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border px-2 py-4 text-sm text-muted-foreground transition-colors hover:border-primary/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
+                    : 'flex items-center gap-3 rounded-xl border border-dashed border-border px-4 py-3.5 text-left text-[15px] text-muted-foreground transition-colors hover:border-primary/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
+                }
               >
                 <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-dashed border-border">
                   <i aria-hidden className="pi pi-plus" style={{ fontSize: 11 }} />

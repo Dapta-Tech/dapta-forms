@@ -367,9 +367,28 @@ export interface FormsMessages {
         /** One-line explainer under the options list tying points to scoring. */
         pointsHint: string;
         icon: string;
-        /** What may go in the Icon column: an emoji, or an image URL. */
+        /** What may go in the Icon column: an emoji, initials, or an image. */
         iconHelp: string;
         iconPlaceholder: string;
+        /** Icon picker: the three kinds, plus its empty/clear affordances. */
+        iconTabEmoji: string;
+        iconTabLetters: string;
+        iconTabImage: string;
+        iconClear: string;
+        iconEmpty: string;
+        iconLettersHint: string;
+        iconImageHint: string;
+        iconUrlInvalid: string;
+        /** Section headings inside the emoji grid. */
+        emojiGroups: {
+          reactions: string;
+          people: string;
+          business: string;
+          tech: string;
+          comms: string;
+          status: string;
+          places: string;
+        };
         remove: string;
         empty: string;
         /** V5 — what the `value` column is for, vs the visible label (B5). */
@@ -1199,8 +1218,25 @@ export const en: FormsMessages = {
         pointsHint: 'Added to the score when this option is picked. Use a negative number to subtract.',
         icon: 'Icon',
         iconHelp:
-          'An emoji, or the URL of an image. Emoji show in a circle; images get a box they fit inside, so a wide logo is not cropped.',
+          'An emoji, one or two letters, or an image. Emoji and letters show in a circle; images get a box they fit inside, so a wide logo is not cropped. Images are available on the card layout only.',
         iconPlaceholder: '🚀 or https://…',
+        iconTabEmoji: 'Emoji',
+        iconTabLetters: 'Letters',
+        iconTabImage: 'Image',
+        iconClear: 'Clear',
+        iconEmpty: 'Pick an icon',
+        iconLettersHint: 'Up to two letters, e.g. HS for HubSpot. Empty falls back to the label’s initials.',
+        iconImageHint: 'An https:// image URL. Logos keep their shape — they are fit inside a box, not cropped to a circle.',
+        iconUrlInvalid: 'This URL protocol is not allowed for images.',
+        emojiGroups: {
+          reactions: 'Reactions',
+          people: 'People',
+          business: 'Business',
+          tech: 'Tech',
+          comms: 'Communication',
+          status: 'Status',
+          places: 'Places',
+        },
         remove: 'Remove option',
         empty: 'No options yet.',
         labelHelp: 'What respondents read on the option. Safe to reword at any time.',
@@ -1987,8 +2023,25 @@ export const es: FormsMessages = {
           'Lo que se guarda en la respuesta y se envía a HubSpot o al webhook. Mantenlo estable — cambiarlo rompe las respuestas anteriores y cualquier mapeo que lo use.',
         icon: 'Ícono',
         iconHelp:
-          'Un emoji, o la URL de una imagen. Los emoji se muestran en un círculo; las imágenes reciben una caja donde entran completas, así un logo ancho no se recorta.',
+          'Un emoji, una o dos letras, o una imagen. Los emoji y las letras se muestran en un círculo; las imágenes reciben una caja donde entran completas, así un logo ancho no se recorta. Las imágenes solo están disponibles en el diseño de tarjetas.',
         iconPlaceholder: '🚀 o https://…',
+        iconTabEmoji: 'Emoji',
+        iconTabLetters: 'Letras',
+        iconTabImage: 'Imagen',
+        iconClear: 'Quitar',
+        iconEmpty: 'Elige un ícono',
+        iconLettersHint: 'Hasta dos letras, por ejemplo HS para HubSpot. Si lo dejas vacío se usan las iniciales de la etiqueta.',
+        iconImageHint: 'Una URL de imagen https://. Los logos conservan su forma — entran completos en una caja, no se recortan en un círculo.',
+        iconUrlInvalid: 'Este protocolo de URL no está permitido para imágenes.',
+        emojiGroups: {
+          reactions: 'Reacciones',
+          people: 'Personas',
+          business: 'Negocio',
+          tech: 'Tecnología',
+          comms: 'Comunicación',
+          status: 'Estado',
+          places: 'Lugares',
+        },
         remove: 'Quitar opción',
         empty: 'Aún no hay opciones.',
       },

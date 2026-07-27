@@ -8,8 +8,7 @@ import {
   clampSliderValue,
   showBanner,
   resolveOptionLayout,
-  isImageIcon,
-  isSafeImageUrl,
+  resolveOptionIcon,
 } from '@quill/engine';
 import { clampAccent, onAccent, DEFAULT_ACCENT } from '@quill/shared';
 import type { EditorMessages } from './messages';
@@ -88,17 +87,17 @@ function CoverPreview({
 
 /** The card layout's option icon — a circle for a glyph, a box for an image. */
 function PreviewOptionIcon({ option }: { option: FormOption }) {
-  const src = option.icon ?? '';
-  if (isImageIcon(src) && isSafeImageUrl(src)) {
+  const icon = resolveOptionIcon(option, 'cards');
+  if (icon.kind === 'image') {
     return (
       <span className="flex h-8 w-full max-w-[64px] items-center justify-center overflow-hidden rounded-md bg-muted px-1">
-        <img src={src} alt="" className="max-h-full max-w-full object-contain" />
+        <img src={icon.src} alt="" className="max-h-full max-w-full object-contain" />
       </span>
     );
   }
   return (
     <span className="flex h-8 w-8 items-center justify-center rounded-full bg-muted text-base leading-none">
-      {option.icon || option.label.charAt(0).toUpperCase()}
+      {icon.text}
     </span>
   );
 }

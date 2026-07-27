@@ -8,8 +8,8 @@ import {
   sliderBounds,
   clampSliderValue,
   resolveOptionLayout,
-  isImageIcon,
-  isSafeImageUrl,
+  resolveOptionIcon,
+  optionInitials,
 } from '@quill/engine';
 import { getMessages } from '@quill/shared';
 import { SearchableDropdown } from './searchable-dropdown';
@@ -37,33 +37,42 @@ function asArray(value: AnswerValue): string[] {
 }
 
 /**
- * An option's icon. An emoji (or the label's initial) is a square glyph, so it
- * centres in a circle; an uploaded logo has an arbitrary aspect ratio and would
- * be cropped by one, so images get a rectangle to letterbox into instead.
+ * An option's icon. An emoji or initials are square glyphs, so they centre in a
+ * circle; a logo has an arbitrary aspect ratio a circle would crop, so images
+ * get a rectangle to letterbox into. `resolveOptionIcon` decides which — and
+ * confines images to the card layout.
  *
- * A broken image URL falls back to the glyph treatment rather than leaving a
- * torn-image box — the option must stay pickable whatever the icon does.
- * `isSafeImageUrl` re-guards the `src` here: the config may predate the schema
- * check, or arrive from a looser source.
+ * A broken image URL falls back to the glyph rather than leaving a torn-image
+ * box: the option must stay pickable whatever the icon does.
  */
-function OptionIcon({ option, variant }: { option: FormOption; variant: 'card' | 'row' }) {
+function OptionIcon({
+  option,
+  layout,
+}: {
+  option: FormOption;
+  layout: 'cards' | 'list';
+}) {
   const [failed, setFailed] = useState(false);
-  const src = option.icon ?? '';
-  const isImage = isImageIcon(src) && isSafeImageUrl(src) && !failed;
-  const base = variant === 'card' ? 'pf-choice-icon' : 'pf-choice-list';
+  const resolved = resolveOptionIcon(option, layout);
+  const base = layout === 'cards' ? 'pf-choice-icon' : 'pf-choice-list';
 
-  if (isImage) {
+  if (resolved.kind === 'image' && !failed) {
     return (
       <span className={`${base}__img-wrap`} aria-hidden>
-        <img src={src} alt="" className={`${base}__img`} onError={() => setFailed(true)} />
+        <img
+          src={resolved.src}
+          alt=""
+          className={`${base}__img`}
+          onError={() => setFailed(true)}
+        />
       </span>
     );
   }
+  const glyph =
+    resolved.kind === 'glyph' ? resolved.text : optionInitials(option.label);
   return (
     <span className={`${base}__circle`} aria-hidden>
-      {option.icon && !isImageIcon(option.icon)
-        ? option.icon
-        : option.label.charAt(0).toUpperCase()}
+      {glyph}
     </span>
   );
 }
@@ -208,7 +217,7 @@ export function StepInput({
                 className={`pf-choice-icon${value === opt.value ? ' pf-choice-icon--selected' : ''}`}
                 onClick={() => onSelect(opt.value)}
               >
-                <OptionIcon option={opt} variant="card" />
+                <OptionIcon option={opt} layout="cards" />
                 <span className="pf-choice-icon__label">{opt.label}</span>
               </button>
             ))}
@@ -227,7 +236,7 @@ export function StepInput({
               onClick={() => onSelect(opt.value)}
             >
               {opt.icon ? (
-                <OptionIcon option={opt} variant="row" />
+                <OptionIcon option={opt} layout="list" />
               ) : (
                 <span className="pf-choice-list__radio" aria-hidden="true" />
               )}

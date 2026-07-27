@@ -223,7 +223,8 @@ export function QuestionSettings({
             options={step.options ?? []}
             onChange={(options) => onUpdate({ options })}
             showPoints={stepScores}
-            showIcon={step.type === 'multiple_choice' && resolveOptionLayout(step) === 'cards'}
+            showIcon={step.type === 'multiple_choice'}
+            layout={resolveOptionLayout(step)}
             m={em.options}
           />
           <div className="border-t border-border/60 pt-3">

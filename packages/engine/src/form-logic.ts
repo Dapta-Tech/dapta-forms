@@ -1595,6 +1595,51 @@ export function isImageIcon(icon: string | null | undefined): boolean {
   return /^(?:https?:\/\/|\/\/|\/|data:image\/)/i.test(icon.trim());
 }
 
+/** Longest glyph an option icon may be: an emoji, or initials like "HS". */
+export const OPTION_ICON_GLYPH_MAX = 2;
+
+/**
+ * The initials a label falls back to when it has no icon: up to two letters,
+ * taken from the first two words ("HubSpot Sales" → "HS", "Hubspot" → "H").
+ */
+export function optionInitials(label: string): string {
+  const words = label.trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return '';
+  if (words.length === 1) return (words[0]?.charAt(0) ?? '').toUpperCase();
+  return words
+    .slice(0, OPTION_ICON_GLYPH_MAX)
+    .map((w) => w.charAt(0).toUpperCase())
+    .join('');
+}
+
+/** What an option's icon resolves to on a given layout. */
+export type ResolvedOptionIcon =
+  | { kind: 'image'; src: string }
+  | { kind: 'glyph'; text: string };
+
+/**
+ * The single answer to "what do I draw for this option?", shared by the public
+ * renderer, the builder canvas and the live preview so all three agree.
+ *
+ * An image is a CARD-ONLY affordance. A list row gives an icon 38px of height
+ * and sits inline with the label, where a wordmark renders as an illegible
+ * sliver — so under `list` an image URL degrades to the label's initials rather
+ * than drawing badly. That also means an OLD config pairing a URL with a list
+ * can't produce the broken combination.
+ */
+export function resolveOptionIcon(
+  option: Pick<FormOption, 'icon' | 'label'>,
+  layout: FormOptionLayout,
+): ResolvedOptionIcon {
+  const icon = option.icon?.trim() ?? '';
+  if (icon && isImageIcon(icon)) {
+    if (layout === 'cards' && isSafeImageUrl(icon)) return { kind: 'image', src: icon };
+    return { kind: 'glyph', text: optionInitials(option.label) };
+  }
+  if (icon) return { kind: 'glyph', text: icon };
+  return { kind: 'glyph', text: optionInitials(option.label) };
+}
+
 // ---------------------------------------------------------------------------
 // URL safety (XSS). Shared by the zod config schema (server-side validation on
 // save) AND the public renderer (a runtime guard before navigating). Belt-and-
