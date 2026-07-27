@@ -120,9 +120,10 @@ export function DesignPanel({
               />
             </Field>
             <Field label={d.accent}>
-              {/* No `against`: an accent is mostly a FILL, not body text, so the
-                  4.5:1 body threshold would flag good brand colors. It is held
-                  to 3:1 by the warning below instead. */}
+              {/* No `against`: the accent is ONLY ever a fill or a border on the
+                  public form — no text is accent-coloured — so the 4.5:1 body
+                  threshold does not apply and would flag good brand colors. The
+                  warning below holds it to 3:1, the UI-component threshold. */}
               <ColorPicker
                 value={branding.primaryColor}
                 onChange={(primaryColor) => onBrandingChange({ primaryColor, themePreset: null })}

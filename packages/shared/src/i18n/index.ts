@@ -1532,7 +1532,7 @@ export const en: FormsMessages = {
         contrastButton: 'Label on button',
         contrastFail: 'Below AA — hard to read.',
         accentLowContrast:
-          'Your accent is {ratio}:1 against the background. Where it is used as text — the cover badge, a slider value — it will be hard to read.',
+          'Your accent is {ratio}:1 against the background. No text uses it, so nothing becomes unreadable — but a selected option and the button may be hard to pick out.',
         suggestApply: 'Use {color}',
         typographyTitle: 'Typography',
         typographySubtitle: 'All eight faces are self-hosted, so the form loads nothing from a font CDN.',
@@ -2421,7 +2421,7 @@ export const es: FormsMessages = {
         contrastButton: 'Texto del botón',
         contrastFail: 'Por debajo de AA: cuesta leerlo.',
         accentLowContrast:
-          'Tu color de marca tiene {ratio}:1 contra el fondo. Donde se usa como texto — el badge de la portada, el valor del slider — costará leerlo.',
+          'Tu color de marca tiene {ratio}:1 contra el fondo. Ningún texto lo usa, así que nada queda ilegible, pero puede costar distinguir una opción seleccionada y el botón.',
         suggestApply: 'Usar {color}',
         typographyTitle: 'Tipografía',
         typographySubtitle:

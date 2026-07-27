@@ -137,8 +137,15 @@
   letter-spacing: -0.01em;
   color: var(--foreground);
 }
+/* NO TEXT ON THIS SURFACE IS ACCENT-COLOURED.
+   The accent is a fill and a border — never letters. Colouring text with it
+   means a pale brand color silently erases whatever it is applied to, and an
+   author choosing a bright accent should not be quietly choosing to hide their
+   own copy. The brand still reads everywhere it fills something: the button,
+   the progress bar, a selected option, the focus ring, the badge's wash.
+   Three rules used to break this (here, the slider's value, the cover badge). */
 .pf__logo-dot {
-  color: var(--pf-primary);
+  color: var(--foreground);
 }
 
 /* ── Progress ── */
@@ -668,7 +675,9 @@
   font-size: 38px;
   font-weight: 800;
   line-height: 1;
-  color: var(--pf-primary);
+  /* The answer itself — the one number the respondent is reading. It cannot be
+     the accent (see `.pf__logo-dot`); the accent shows on the filled track. */
+  color: var(--foreground);
   letter-spacing: -0.02em;
 }
 .pf-slider__pill-label {
@@ -816,8 +825,12 @@
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--pf-primary);
-  background: color-mix(in srgb, var(--pf-primary) 14%, transparent);
+  /* The eyebrow stays branded through its WASH, not its letters (see
+     `.pf__logo-dot`) — a pale accent used as 12px uppercase type is the single
+     easiest way to make a cover's first line vanish. */
+  color: var(--foreground);
+  background: color-mix(in srgb, var(--pf-primary) 16%, transparent);
+  border: 1px solid color-mix(in srgb, var(--pf-primary) 32%, transparent);
   border-radius: 999px;
   padding: 6px 14px;
   margin: 0 0 18px;
