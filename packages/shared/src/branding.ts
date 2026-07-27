@@ -236,10 +236,24 @@ export function formThemeVars(colors: FormThemeColors): Record<string, string> {
   }
 
   if (colors.primaryColor) {
-    const accent = clampAccent(colors.primaryColor, background ?? DEFAULT_CANVAS);
-    vars['--pf-primary'] = accent;
-    vars['--pf-primary-contrast'] = onAccent(accent);
-    vars['--ring'] = `color-mix(in srgb, ${accent} 45%, transparent)`;
+    const raw = colors.primaryColor.trim();
+    const ground = background ?? DEFAULT_CANVAS;
+
+    // The brand color is painted EXACTLY as chosen wherever it is a fill — the
+    // progress bar, a solid button, a selected option, borders, the glow. A
+    // brand color is the brand, and silently turning a client's lime into olive
+    // because the page went white is the product overruling its author.
+    vars['--pf-primary'] = raw;
+    // The label on that fill still has to be legible, so it is picked FROM the
+    // raw color (black or white, whichever wins) rather than from a clamped one.
+    vars['--pf-primary-contrast'] = onAccent(raw);
+    vars['--ring'] = `color-mix(in srgb, ${raw} 45%, transparent)`;
+
+    // The one case that genuinely cannot pass through: the accent used as TEXT
+    // sitting on the form ground (the cover badge, the slider's value, the logo
+    // dot). Lime letters on a white page are not a brand statement, they are
+    // unreadable — so those three, and only those, get the clamped value.
+    vars['--pf-primary-ink'] = clampAccent(raw, ground);
   }
 
   return vars;

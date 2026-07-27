@@ -76,9 +76,10 @@ export function DesignPanel({
   // renders on — measuring against white would grade a form nobody will see.
   const ground = branding.background?.trim() || DEFAULT_CANVAS;
   const text = branding.foreground?.trim() || (branding.background ? readableOn(ground) : DEFAULT_CANVAS_FOREGROUND);
-  // The accent the form will ACTUALLY paint, not the raw pick — the clamp may
-  // have moved it, and grading the raw value would describe a color nobody sees.
-  const accent = clampAccent(branding.primaryColor || DEFAULT_ACCENT, ground);
+  // The accent is painted EXACTLY as chosen wherever it fills something, so the
+  // button-label reading is taken against the RAW color. Only the accent-as-text
+  // usages get clamped, which is what `accentAdjusted` now reports.
+  const accent = branding.primaryColor?.trim() || DEFAULT_ACCENT;
   const accentAdjusted = branding.primaryColor ? accentWasAdjusted(branding.primaryColor, ground) : false;
 
   const screens: { value: number | 'cover'; label: string }[] = [
@@ -431,6 +432,10 @@ function ContrastRow({
   failLabel: string;
 }) {
   const ratio = contrastRatio(a, b);
+  // 0 means a color the ratio math cannot read — the schema also accepts
+  // `rgb()`, `hsl()` and named colors. Saying nothing is honest; showing
+  // "fail 0:1" would invent a problem that isn't there.
+  if (ratio === 0) return null;
   const grade = contrastGrade(ratio);
   return (
     <div className="flex items-center gap-2 text-xs" data-testid="contrast-row">

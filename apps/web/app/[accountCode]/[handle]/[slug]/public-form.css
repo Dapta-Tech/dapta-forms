@@ -18,6 +18,12 @@
   /* Accent defaults to the theme primary; branding.primaryColor overrides inline. */
   --pf-primary: var(--primary);
   --pf-primary-contrast: var(--primary-foreground);
+  /* The accent used as TEXT on the form ground — the cover badge, the slider's
+     value, the logo dot. It is the ONLY accent variable that gets contrast-
+     clamped against the background (`formThemeVars`): a fill can be any brand
+     color, but accent-colored letters on a mismatched ground are unreadable.
+     Defaults to the fill, so an unbranded form is unchanged. */
+  --pf-primary-ink: var(--pf-primary);
 
   /* Radii derived from the token scale (8px control / 16px card). */
   --pf-radius: calc(var(--radius) * 2); /* 16px — cards & prominent controls */
@@ -138,7 +144,7 @@
   color: var(--foreground);
 }
 .pf__logo-dot {
-  color: var(--pf-primary);
+  color: var(--pf-primary-ink);
 }
 
 /* ── Progress ── */
@@ -668,7 +674,7 @@
   font-size: 38px;
   font-weight: 800;
   line-height: 1;
-  color: var(--pf-primary);
+  color: var(--pf-primary-ink);
   letter-spacing: -0.02em;
 }
 .pf-slider__pill-label {
@@ -816,7 +822,7 @@
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--pf-primary);
+  color: var(--pf-primary-ink);
   background: color-mix(in srgb, var(--pf-primary) 14%, transparent);
   border-radius: 999px;
   padding: 6px 14px;

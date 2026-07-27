@@ -29,7 +29,19 @@ was always dark. On a light ground it "clamped" a pale accent further into
 unreadable and then reported it as safe. It now takes the real background
 (defaulting to the previous dark canvas, so existing call sites are unchanged)
 and nudges away from that ground in whichever direction separates. Same for
-`accentWasAdjusted` and `accentLabelContrast`. New: `contrastRatio`,
+`accentWasAdjusted` and `accentLabelContrast`.
+
+The clamp is applied NARROWLY. `formThemeVars` paints `--pf-primary` with the
+author's exact color wherever the accent is a fill — the progress bar, a solid
+button, a selected option, borders, the glow — because a brand color is the
+brand, and turning a client's lime into olive because the page went white is the
+product overruling its author. The label on that fill is derived from the raw
+color, so it stays legible without changing it. Only `--pf-primary-ink`, used by
+the three places the accent is TEXT on the form ground (the cover badge, the
+slider's value, the logo dot), is clamped — lime letters on a white page are not
+a brand statement, they are unreadable.
+
+New: `contrastRatio`,
 `contrastGrade`, `isLightColor`, `readableOn`, `resolveThemeMode`, and
 `formThemeVars`, which derives the supporting tokens (card, muted, border) by
 mixing the author's ground toward their text — so an arbitrary background gets a

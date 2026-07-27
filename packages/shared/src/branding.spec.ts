@@ -126,6 +126,37 @@ describe('formThemeVars', () => {
     expect(vars['--card']).toBeUndefined();
   });
 
+  it('paints the brand color EXACTLY as chosen wherever it is a fill', () => {
+    // The product must not turn a client's lime into olive because the page
+    // went white. Fills, and the label picked to sit on them, use the raw value.
+    const lime = '#cbe84f';
+    const onWhite = formThemeVars({ background: '#ffffff', primaryColor: lime });
+    expect(onWhite['--pf-primary']).toBe(lime);
+    expect(onWhite['--pf-primary-contrast']).toBe(onAccent(lime));
+    // Black on lime is highly readable, which is why the fill needs no clamp.
+    expect(contrastRatio(onAccent(lime), lime)).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it('clamps ONLY the accent-as-text variable, and only when the ground needs it', () => {
+    const lime = '#cbe84f';
+    const onDark = formThemeVars({ background: '#222222', primaryColor: lime });
+    const onWhite = formThemeVars({ background: '#ffffff', primaryColor: lime });
+    // Dark ground: lime letters are legible, so ink is the untouched brand color.
+    expect(onDark['--pf-primary-ink']).toBe(lime);
+    // White ground: lime letters are not, so ink darkens — while the fill above
+    // stayed exactly `#cbe84f`.
+    expect(onWhite['--pf-primary-ink']).not.toBe(lime);
+    expect(contrastRatio(onWhite['--pf-primary-ink']!, '#ffffff')).toBeGreaterThanOrEqual(3);
+    expect(onWhite['--pf-primary']).toBe(lime);
+  });
+
+  it('leaves ink alone for an accent that already reads on a light ground', () => {
+    const blue = '#1f6feb';
+    const vars = formThemeVars({ background: '#ffffff', primaryColor: blue });
+    expect(vars['--pf-primary']).toBe(blue);
+    expect(vars['--pf-primary-ink']).toBe(blue);
+  });
+
   it('derives the supporting tokens from the author’s own two colors', () => {
     const vars = formThemeVars({ background: '#f7f2e9', foreground: '#2a241d' });
     expect(vars['--background']).toBe('#f7f2e9');
@@ -141,8 +172,8 @@ describe('formThemeVars', () => {
     expect(formThemeVars({ background: '#0d0d0f' })['--foreground']).toBe('#fafafa');
   });
 
-  it('clamps the accent against the CHOSEN ground, not the default one', () => {
+  it('clamps ink against the CHOSEN ground, not the default one', () => {
     const onLight = formThemeVars({ background: '#ffffff', primaryColor: '#f2f7c8' });
-    expect(contrastRatio(onLight['--pf-primary']!, '#ffffff')).toBeGreaterThanOrEqual(3);
+    expect(contrastRatio(onLight['--pf-primary-ink']!, '#ffffff')).toBeGreaterThanOrEqual(3);
   });
 });

@@ -1526,7 +1526,8 @@ export const en: FormsMessages = {
         contrastText: 'Text on background',
         contrastButton: 'Label on button',
         contrastFail: 'Below AA — hard to read.',
-        accentAdjusted: 'Adjusted to stay readable on this background: {color}',
+        accentAdjusted:
+          'Your accent is used as-is everywhere it fills something. Where it is TEXT — the cover badge, a slider value — it darkens to {color} so it stays readable on this background.',
         typographyTitle: 'Typography',
         typographySubtitle: 'All eight faces are self-hosted, so the form loads nothing from a font CDN.',
         font: 'Typeface',
@@ -2411,7 +2412,8 @@ export const es: FormsMessages = {
         contrastText: 'Texto sobre fondo',
         contrastButton: 'Texto del botón',
         contrastFail: 'Por debajo de AA: cuesta leerlo.',
-        accentAdjusted: 'Ajustado para que se lea sobre este fondo: {color}',
+        accentAdjusted:
+          'Tu color de marca se usa tal cual en todo lo que rellena. Donde es TEXTO — el badge de la portada, el valor del slider — se oscurece a {color} para que se lea sobre este fondo.',
         typographyTitle: 'Tipografía',
         typographySubtitle:
           'Las ocho tipografías se sirven desde aquí, así que el formulario no carga nada de un CDN de fuentes.',
