@@ -28,6 +28,7 @@ export function PreviewFrame({
   onDeviceChange,
   publicPath,
   toolbar,
+  hideAddressBar = false,
   children,
   m,
 }: {
@@ -36,6 +37,12 @@ export function PreviewFrame({
   publicPath: string;
   /** Extra controls beside the device switch — e.g. which screen to preview. */
   toolbar?: ReactNode;
+  /**
+   * Drop the address bar. The Preview modal already sits above the editor
+   * header, which carries Copy link and Open form — repeating the URL there
+   * would be chrome about chrome.
+   */
+  hideAddressBar?: boolean;
   children: ReactNode;
   m: EditorMessages['preview'];
 }) {
@@ -90,7 +97,12 @@ export function PreviewFrame({
 
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-border bg-muted/30">
         {/* Address bar — the form's real public URL. */}
-        <div className="flex shrink-0 items-center gap-1.5 border-b border-border bg-card px-2.5 py-2">
+        <div
+          className={cn(
+            'shrink-0 items-center gap-1.5 border-b border-border bg-card px-2.5 py-2',
+            hideAddressBar ? 'hidden' : 'flex',
+          )}
+        >
           <span aria-hidden className="flex shrink-0 gap-1">
             <span className="h-2 w-2 rounded-full bg-border" />
             <span className="h-2 w-2 rounded-full bg-border" />

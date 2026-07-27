@@ -611,6 +611,8 @@ export interface FormsMessages {
         openForm: string;
         /** Says the frame is a picture of the form, not a working form. */
         inert: string;
+        previous: string;
+        next: string;
       };
       /** The Design tab: everything about how the form looks. */
       design: {
@@ -1503,6 +1505,8 @@ export const en: FormsMessages = {
         copied: 'Copied',
         openForm: 'Open',
         inert: 'Preview only — nothing here is submitted.',
+        previous: 'Previous screen',
+        next: 'Next screen',
       },
       design: {
         presetsTitle: 'Theme',
@@ -2390,6 +2394,8 @@ export const es: FormsMessages = {
         copied: 'Copiado',
         openForm: 'Abrir',
         inert: 'Solo vista previa: nada de esto se envía.',
+        previous: 'Pantalla anterior',
+        next: 'Pantalla siguiente',
       },
       design: {
         presetsTitle: 'Tema',

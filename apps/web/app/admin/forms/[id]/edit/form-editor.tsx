@@ -703,7 +703,14 @@ export function FormEditor({
       </div>
 
       <TypeGallery open={galleryOpen} onClose={() => setGalleryOpen(false)} onPick={addFromGallery} m={bm} />
-      <DevicePreviewModal open={previewOpen} onClose={() => setPreviewOpen(false)} publicPath={publicPath} m={m.preview} />
+      <DevicePreviewModal
+        open={previewOpen}
+        onClose={() => setPreviewOpen(false)}
+        config={config}
+        name={name}
+        locale={locale}
+        m={m.preview}
+      />
     </div>
   );
 }
