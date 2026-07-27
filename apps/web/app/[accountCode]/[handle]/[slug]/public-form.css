@@ -1227,6 +1227,12 @@
    button's parents (`.pf__fields`, `.pf__cover-footer`) are plain blocks, so a
    flex-only property silently does nothing and the button collapses against the
    left edge of a centred column. */
+/* Positioned BOTH ways on purpose, because the button has two kinds of parent:
+   `.pf__fields` / `.pf__cover-footer` are plain blocks, where `align-self` is
+   ignored and the auto margins do the work; `.pf-v__footer` is a column flex,
+   where `align-self` defaults to `stretch` and would override `fit-content`,
+   so it has to be set explicitly. Each property covers the case the other
+   misses — using only one silently fails on half the layouts. */
 .pf[data-pf-button-width='auto'] .pf__btn {
   display: flex;
   align-items: center;
@@ -1235,6 +1241,7 @@
   min-width: 180px;
   padding: 0 32px;
   margin-inline: auto;
+  align-self: center;
 }
 /* The cover is a centred composition whatever the question alignment is, so it
    is EXCLUDED here rather than overridden after — a `.pf--cover` override would
@@ -1242,6 +1249,14 @@
    how the button ended up hugging the left edge under centred cover copy. */
 .pf:not(.pf--cover)[data-pf-button-width='auto'][data-pf-align='left'] .pf__btn {
   margin-inline: 0 auto;
+  align-self: flex-start;
+}
+/* The one-page layout reads as a document and pins its questions left, so its
+   Submit hugs the same edge regardless of the alignment axis (which it does not
+   expose). Wins over the cover exclusion above by being more specific. */
+.pf--vertical[data-pf-button-width='auto'] .pf-v__footer .pf__btn {
+  margin-inline: 0 auto;
+  align-self: flex-start;
 }
 /* Below 480px a shrink-wrapped primary action is a usability regression, so the
    button goes full-width regardless of the setting. */
@@ -1373,6 +1388,12 @@
 .pf[data-pf-width='wide'] .pf__topbar-inner,
 .pf[data-pf-width='wide'] .pf-progress {
   max-width: 660px;
+}
+/* The one-page layout holds its column in `.pf-v__page`, not `.pf__inner`, so
+   it needs its own rule — without it the control is offered on a vertical form
+   and changes nothing, which is worse than not offering it. */
+.pf[data-pf-width='wide'] .pf-v__page {
+  max-width: 760px;
 }
 /* CENTRE is the legacy alignment (`.pf__question` has always been centred), so
    `left` is the override — the direction matters, because defaulting the other
