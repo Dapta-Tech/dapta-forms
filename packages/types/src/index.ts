@@ -5,7 +5,15 @@
  * from the same schema (never trust the client; validate on both sides).
  */
 import { z } from 'zod';
-import { CONDITION_OPS, FORM_FIELD_TYPES, isSafeHttpUrl, isSafeImageUrl } from '@quill/engine';
+import {
+  CONDITION_OPS,
+  FORM_BANNER_SCOPES,
+  FORM_FIELD_TYPES,
+  FORM_OPTION_LAYOUTS,
+  isImageIcon,
+  isSafeHttpUrl,
+  isSafeImageUrl,
+} from '@quill/engine';
 
 /** A URL rendered into `<img src>` — reject script protocols (XSS defense-in-depth). */
 const safeImageUrl = z
@@ -42,7 +50,20 @@ const optionSchema = z.object({
   label: z.string().min(1).max(200),
   value: z.string().min(1).max(200),
   points: z.number().int().optional(),
-  icon: z.string().max(64).nullable().optional(),
+  /**
+   * An emoji/short glyph OR an image URL. The cap is generous enough for a real
+   * CDN URL (it was 64 — emoji-sized — before images were an option), and any
+   * value that LOOKS like an image must also be a safe one, so a hostile config
+   * cannot reach the renderer's `<img src>` with a script protocol.
+   */
+  icon: z
+    .string()
+    .max(512)
+    .refine((v) => !isImageIcon(v) || isSafeImageUrl(v), {
+      message: 'Icon image URL protocol not allowed.',
+    })
+    .nullable()
+    .optional(),
 });
 
 /**
@@ -177,6 +198,9 @@ export const formStepSchema = z.object({
   placeholders: z.record(z.string(), z.string().max(200)).optional(),
   sliderLabelVariants: z.record(z.string(), z.string().max(80)).optional(),
   sliderUnitLabel: z.string().max(80).nullable().optional(),
+  /** ADDITIVE. Absent falls back to `showIcons` — see `resolveOptionLayout`. */
+  optionLayout: z.enum(FORM_OPTION_LAYOUTS).optional(),
+  /** @deprecated Superseded by `optionLayout`; still read as the fallback. */
   showIcons: z.boolean().optional(),
   showForPersonalEmailOnly: z.boolean().optional(),
   terminal: z.boolean().optional(),
@@ -217,8 +241,13 @@ export type FormStepInput = z.infer<typeof formStepSchema>;
 
 export const formCoverSchema = z.object({
   enabled: z.boolean().optional(),
-  /** A sticky banner line shown above the form throughout the flow. */
+  /** A sticky banner line shown above the form — scoped by `bannerScope`. */
   bannerText: z.string().max(200).nullable().optional(),
+  /**
+   * Where `bannerText` renders (ADDITIVE): `'cover'` confines it to the cover
+   * screen; absent — every legacy config — keeps it above every screen.
+   */
+  bannerScope: z.enum(FORM_BANNER_SCOPES).optional(),
   eyebrow: z.string().max(200).nullable().optional(),
   badge: z.string().max(200).nullable().optional(),
   headline: z.string().max(300).nullable().optional(),
@@ -227,6 +256,11 @@ export const formCoverSchema = z.object({
   trustBadge: z.string().max(200).nullable().optional(),
   logo: safeImageUrl.nullable().optional(),
   clientLogos: z.array(clientLogoSchema).max(24).optional(),
+  /**
+   * Whether the "trusted by" marquee renders (ADDITIVE). Absent — every legacy
+   * config — means shown, so switching it off never deletes the logos.
+   */
+  showClientLogos: z.boolean().optional(),
 });
 
 /**

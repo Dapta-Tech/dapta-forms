@@ -1,8 +1,16 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
-import type { Answers, AnswerValue, FormStep } from '@quill/engine';
-import { nameFields, isMultiSelect, sliderBounds, clampSliderValue } from '@quill/engine';
+import { useEffect, useRef, useState } from 'react';
+import type { Answers, AnswerValue, FormOption, FormStep } from '@quill/engine';
+import {
+  nameFields,
+  isMultiSelect,
+  sliderBounds,
+  clampSliderValue,
+  resolveOptionLayout,
+  resolveOptionIcon,
+  optionInitials,
+} from '@quill/engine';
 import { getMessages } from '@quill/shared';
 import { SearchableDropdown } from './searchable-dropdown';
 import { PhoneInput } from './phone-input';
@@ -26,6 +34,47 @@ function asArray(value: AnswerValue): string[] {
   if (Array.isArray(value)) return value.map(String);
   if (value == null || value === '') return [];
   return [String(value)];
+}
+
+/**
+ * An option's icon. An emoji or initials are square glyphs, so they centre in a
+ * circle; a logo has an arbitrary aspect ratio a circle would crop, so images
+ * get a rectangle to letterbox into. `resolveOptionIcon` decides which — and
+ * confines images to the card layout.
+ *
+ * A broken image URL falls back to the glyph rather than leaving a torn-image
+ * box: the option must stay pickable whatever the icon does.
+ */
+function OptionIcon({
+  option,
+  layout,
+}: {
+  option: FormOption;
+  layout: 'cards' | 'list';
+}) {
+  const [failed, setFailed] = useState(false);
+  const resolved = resolveOptionIcon(option, layout);
+  const base = layout === 'cards' ? 'pf-choice-icon' : 'pf-choice-list';
+
+  if (resolved.kind === 'image' && !failed) {
+    return (
+      <span className={`${base}__img-wrap`} aria-hidden>
+        <img
+          src={resolved.src}
+          alt=""
+          className={`${base}__img`}
+          onError={() => setFailed(true)}
+        />
+      </span>
+    );
+  }
+  const glyph =
+    resolved.kind === 'glyph' ? resolved.text : optionInitials(option.label);
+  return (
+    <span className={`${base}__circle`} aria-hidden>
+      {glyph}
+    </span>
+  );
 }
 
 /** Renders the input for a single step. `message` renders info copy, no input. */
@@ -156,7 +205,7 @@ export function StepInput({
           </div>
         );
       }
-      if (step.showIcons) {
+      if (resolveOptionLayout(step) === 'cards') {
         return (
           <div className="pf-choices--icons" role="radiogroup" aria-label={step.question ?? step.key}>
             {(step.options ?? []).map((opt) => (
@@ -168,9 +217,7 @@ export function StepInput({
                 className={`pf-choice-icon${value === opt.value ? ' pf-choice-icon--selected' : ''}`}
                 onClick={() => onSelect(opt.value)}
               >
-                <span className="pf-choice-icon__circle" aria-hidden="true">
-                  {opt.icon ?? opt.label.charAt(0).toUpperCase()}
-                </span>
+                <OptionIcon option={opt} layout="cards" />
                 <span className="pf-choice-icon__label">{opt.label}</span>
               </button>
             ))}
@@ -189,9 +236,7 @@ export function StepInput({
               onClick={() => onSelect(opt.value)}
             >
               {opt.icon ? (
-                <span className="pf-choice-list__icon" aria-hidden="true">
-                  {opt.icon}
-                </span>
+                <OptionIcon option={opt} layout="list" />
               ) : (
                 <span className="pf-choice-list__radio" aria-hidden="true" />
               )}

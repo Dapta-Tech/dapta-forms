@@ -349,7 +349,9 @@
   border-width: 0 2px 2px 0;
   transform: rotate(45deg);
 }
-.pf-choice-list__icon {
+/* An emoji or initial: a square glyph, so a circle fits it. */
+.pf-choice-list__icon,
+.pf-choice-list__circle {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -361,23 +363,30 @@
   font-size: 19px;
   line-height: 1;
 }
+/* No image variant here on purpose: `resolveOptionIcon` confines logos to the
+   card layout, so a list row only ever draws the glyph circle above. */
 .pf-choice-list__text {
   flex: 1;
   line-height: 1.35;
 }
 
-/* ── Choices — icon grid ── */
+/* ── Choices — card grid ──
+   Flex, not `grid-template-columns: repeat(3, 1fr)`: a fixed 3-track grid left a
+   single card stranded in the left third and two cards hugging the left edge.
+   Wrapping flex items with `justify-content: center` centre ANY count — one card
+   sits in the middle, two sit centred as a pair, and beyond three they wrap into
+   centred rows. The basis targets three per row at full width while `min-width`
+   forces fewer as the viewport narrows, so the count adapts to the screen. */
 .pf-choices--icons {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
   gap: var(--pf-gap);
 }
-@media (max-width: 400px) {
-  .pf-choices--icons {
-    grid-template-columns: repeat(2, 1fr);
-  }
-}
 .pf-choice-icon {
+  flex: 0 1 calc((100% - 2 * var(--pf-gap)) / 3);
+  min-width: 132px;
+  max-width: 220px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -414,6 +423,29 @@
   background: var(--muted);
   font-size: 23px;
   line-height: 1;
+}
+/* Card image icon. NO background, border or padding: a logo already carries its
+   own shape and fill — Facebook's blue disc, Instagram's gradient tile — so a
+   grey rounded box behind it reads as a chip stuck onto the card rather than as
+   the card's icon, and the padding pushes the mark off-centre.
+   The element still RESERVES the same 46px band as the glyph circle, so logos
+   of differing proportions stay on one baseline and the cards line up. */
+.pf-choice-icon__img-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  max-width: 96px;
+  height: 46px;
+  overflow: hidden;
+}
+.pf-choice-icon__img {
+  max-width: 100%;
+  max-height: 100%;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  display: block;
 }
 .pf-choice-icon__label {
   font-size: 14px;

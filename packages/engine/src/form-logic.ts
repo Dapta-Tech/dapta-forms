@@ -29,11 +29,20 @@ export const FORM_FIELD_TYPES = [
 ] as const;
 export type FormFieldType = (typeof FORM_FIELD_TYPES)[number];
 
+/** How a choice step lays its options out. */
+export const FORM_OPTION_LAYOUTS = ['list', 'cards'] as const;
+export type FormOptionLayout = (typeof FORM_OPTION_LAYOUTS)[number];
+
 /** A single option for a choice/dropdown step; `points` feeds the score. */
 export interface FormOption {
   label: string;
   value: string;
   points?: number;
+  /**
+   * Either an emoji/short glyph or an image URL — `isImageIcon` tells them
+   * apart, because the two need opposite treatment when rendered (a glyph
+   * centres in a circle; a logo needs a rectangle it can letterbox into).
+   */
   icon?: string | null;
 }
 
@@ -156,7 +165,16 @@ export interface FormStep {
   sliderLabelVariants?: Record<string, string>;
   /** Static unit label shown next to the slider value (e.g. "leads / mo"). */
   sliderUnitLabel?: string | null;
-  /** `multiple_choice`: render as an icon grid instead of a radio list. */
+  /**
+   * `multiple_choice`: render options as a card grid instead of a radio list.
+   * Absent falls back to `showIcons` — see `resolveOptionLayout`.
+   */
+  optionLayout?: FormOptionLayout;
+  /**
+   * @deprecated Superseded by `optionLayout` — the flag named its content
+   * (icons) rather than what it actually switched (the layout). Still read as
+   * the fallback so configs saved before `optionLayout` keep their card grid.
+   */
   showIcons?: boolean;
   /**
    * Branch insertion: show this step ONLY when the `email` answer is a personal/
@@ -266,10 +284,19 @@ export interface FormClientLogo {
   src?: string | null;
 }
 
+/** Where the cover's promo banner is allowed to render. */
+export const FORM_BANNER_SCOPES = ['form', 'cover'] as const;
+export type FormBannerScope = (typeof FORM_BANNER_SCOPES)[number];
+
 export interface FormCover {
   enabled?: boolean;
-  /** A sticky banner line (promo strip) shown above every screen throughout the flow. */
+  /** A sticky banner line (promo strip) shown above the form — see `bannerScope`. */
   bannerText?: string | null;
+  /**
+   * Where `bannerText` shows: `'form'` pins it above every screen (the legacy
+   * behaviour, and the default when absent), `'cover'` limits it to the cover.
+   */
+  bannerScope?: FormBannerScope;
   eyebrow?: string | null;
   /** Alias for eyebrow (pilot `badge`); eyebrow wins when both are set. */
   badge?: string | null;
@@ -281,6 +308,11 @@ export interface FormCover {
   logo?: string | null;
   /** Optional "trusted by" marquee shown on the cover. */
   clientLogos?: FormClientLogo[];
+  /**
+   * Whether the "trusted by" marquee renders. Absent means shown (the legacy
+   * behaviour), so the logos can be switched off without deleting them.
+   */
+  showClientLogos?: boolean;
 }
 
 /** Per-form branding — the accent color threads the banner/CTA/selected states. */
@@ -1507,6 +1539,105 @@ export function revealAfterKey(config: FormConfig): string | null {
   const triggered = steps.find((s) => s.triggersReveal);
   if (triggered) return triggered.key;
   return steps[steps.length - 1]?.key ?? null;
+}
+
+// ---------------------------------------------------------------------------
+// Cover presentation. Both helpers answer "should this chrome render on this
+// screen?" and both default to the pre-toggle behaviour, so a config saved
+// before the toggles existed renders exactly as it always did.
+// ---------------------------------------------------------------------------
+
+/**
+ * Whether the promo banner renders on a given screen. `bannerScope: 'cover'`
+ * confines it to the cover; anything else (including absent) keeps the legacy
+ * behaviour of pinning it above every screen in the flow.
+ */
+export function showBanner(cover: FormCover | null | undefined, isCover: boolean): boolean {
+  if (!cover?.bannerText) return false;
+  return isCover || cover.bannerScope !== 'cover';
+}
+
+/**
+ * Whether the "trusted by" marquee renders. Only an explicit `false` hides it,
+ * so the logos can be switched off without deleting them — and a config saved
+ * before the toggle existed still shows them.
+ */
+export function showClientLogos(cover: FormCover | null | undefined): boolean {
+  return cover?.showClientLogos !== false;
+}
+
+// ---------------------------------------------------------------------------
+// Choice-option presentation. An option's `icon` may be an emoji OR an image
+// URL, and the two render differently, so the renderer asks here rather than
+// sniffing the string in JSX.
+// ---------------------------------------------------------------------------
+
+/**
+ * How a choice step lays its options out. `optionLayout` wins; absent, the
+ * deprecated `showIcons` still selects the card grid, so a config saved before
+ * `optionLayout` existed renders exactly as it always did.
+ */
+export function resolveOptionLayout(
+  step: Pick<FormStep, 'optionLayout' | 'showIcons'> | null | undefined,
+): FormOptionLayout {
+  if (step?.optionLayout) return step.optionLayout;
+  return step?.showIcons ? 'cards' : 'list';
+}
+
+/**
+ * True when an option's `icon` is an image reference rather than an emoji or
+ * letter: http(s), protocol-relative, a root path, or a `data:image/…` URI.
+ * Safety is a SEPARATE question — pair this with `isSafeImageUrl` before the
+ * value reaches an `<img src>`.
+ */
+export function isImageIcon(icon: string | null | undefined): boolean {
+  if (!icon) return false;
+  return /^(?:https?:\/\/|\/\/|\/|data:image\/)/i.test(icon.trim());
+}
+
+/** Longest glyph an option icon may be: an emoji, or initials like "HS". */
+export const OPTION_ICON_GLYPH_MAX = 2;
+
+/**
+ * The initials a label falls back to when it has no icon: up to two letters,
+ * taken from the first two words ("HubSpot Sales" → "HS", "Hubspot" → "H").
+ */
+export function optionInitials(label: string): string {
+  const words = label.trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return '';
+  if (words.length === 1) return (words[0]?.charAt(0) ?? '').toUpperCase();
+  return words
+    .slice(0, OPTION_ICON_GLYPH_MAX)
+    .map((w) => w.charAt(0).toUpperCase())
+    .join('');
+}
+
+/** What an option's icon resolves to on a given layout. */
+export type ResolvedOptionIcon =
+  | { kind: 'image'; src: string }
+  | { kind: 'glyph'; text: string };
+
+/**
+ * The single answer to "what do I draw for this option?", shared by the public
+ * renderer, the builder canvas and the live preview so all three agree.
+ *
+ * An image is a CARD-ONLY affordance. A list row gives an icon 38px of height
+ * and sits inline with the label, where a wordmark renders as an illegible
+ * sliver — so under `list` an image URL degrades to the label's initials rather
+ * than drawing badly. That also means an OLD config pairing a URL with a list
+ * can't produce the broken combination.
+ */
+export function resolveOptionIcon(
+  option: Pick<FormOption, 'icon' | 'label'>,
+  layout: FormOptionLayout,
+): ResolvedOptionIcon {
+  const icon = option.icon?.trim() ?? '';
+  if (icon && isImageIcon(icon)) {
+    if (layout === 'cards' && isSafeImageUrl(icon)) return { kind: 'image', src: icon };
+    return { kind: 'glyph', text: optionInitials(option.label) };
+  }
+  if (icon) return { kind: 'glyph', text: icon };
+  return { kind: 'glyph', text: optionInitials(option.label) };
 }
 
 // ---------------------------------------------------------------------------

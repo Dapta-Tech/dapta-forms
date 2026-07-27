@@ -447,7 +447,10 @@ export function FormEditor({
           onChange={(e) => rename(e.target.value)}
           placeholder={bm.shell.formNamePlaceholder}
           aria-label={bm.shell.formNamePlaceholder}
-          className="min-w-0 max-w-[38ch] flex-1 rounded-md border border-transparent bg-transparent px-1.5 py-1 text-base font-semibold tracking-tight hover:border-border focus-visible:border-input focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:flex-none sm:text-lg"
+          // The topbar's only elastic child: it absorbs the slack so the fixed
+          // controls on the right keep their intrinsic width. `sm:flex-none`
+          // used to pin it wide, which pushed the actions past the viewport.
+          className="min-w-[8ch] max-w-[38ch] flex-1 rounded-md border border-transparent bg-transparent px-1.5 py-1 text-base font-semibold tracking-tight hover:border-border focus-visible:border-input focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:text-lg"
         />
         <span
           className={cn(
@@ -463,9 +466,16 @@ export function FormEditor({
           {statusLabel}
         </span>
 
-        <div className="ml-auto flex items-center gap-2">
-          {/* Tabs (segmented) */}
-          <nav className="hidden items-center gap-0.5 rounded-lg border border-border bg-card p-0.5 md:flex" aria-label="Sections">
+        {/* `shrink-0`: the name input above owns the slack (`min-w-0 flex-1`), so
+            the actions keep their intrinsic width instead of squeezing their
+            labels onto a second line inside the fixed-height controls. */}
+        <div className="ml-auto flex shrink-0 items-center gap-2">
+          {/* Tabs (segmented). Everything in this bar reveals on a DIFFERENT
+              breakpoint on purpose: five labelled tabs (~425px), the two link
+              labels and the publish pill all appearing at once overflowed the
+              bar. Icons from `lg`, labels only at `2xl`; below `lg` the tab row
+              under the header takes over. */}
+          <nav className="hidden items-center gap-0.5 rounded-lg border border-border bg-card p-0.5 lg:flex" aria-label="Sections">
             {tabs.map((t) => (
               <button
                 key={t.id}
@@ -473,13 +483,14 @@ export function FormEditor({
                 data-testid={`editor-tab-${t.id}`}
                 onClick={() => setTab(t.id)}
                 aria-current={tab === t.id}
+                title={t.label}
                 className={cn(
-                  'inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
+                  'inline-flex items-center gap-1.5 whitespace-nowrap rounded-md px-2.5 py-1.5 text-sm font-medium transition-colors 2xl:px-3',
                   tab === t.id ? 'bg-muted text-foreground' : 'text-muted-foreground hover:text-foreground',
                 )}
               >
                 <i aria-hidden className={`pi ${t.icon}`} style={{ fontSize: 12 }} />
-                {t.label}
+                <span className="sr-only 2xl:not-sr-only">{t.label}</span>
               </button>
             ))}
           </nav>
@@ -487,7 +498,7 @@ export function FormEditor({
           <button
             type="button"
             onClick={() => setPreviewOpen(true)}
-            className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-border px-3 text-sm font-medium text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="inline-flex h-9 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border border-border px-3 text-sm font-medium text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             <i aria-hidden className="pi pi-eye" style={{ fontSize: 13 }} />
             <span className="hidden sm:inline">{bm.shell.preview}</span>
@@ -506,7 +517,7 @@ export function FormEditor({
       </header>
 
       {/* Mobile tab bar */}
-      <nav className="flex shrink-0 items-center gap-1 border-b border-border px-2 py-1.5 md:hidden" aria-label="Sections">
+      <nav className="flex shrink-0 items-center gap-1 border-b border-border px-2 py-1.5 lg:hidden" aria-label="Sections">
         {tabs.map((t) => (
           <button
             key={t.id}

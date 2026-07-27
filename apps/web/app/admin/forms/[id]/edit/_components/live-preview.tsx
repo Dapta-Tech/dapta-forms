@@ -1,8 +1,15 @@
 'use client';
 
 import { useState } from 'react';
-import type { FormConfig, FormStep } from '@quill/engine';
-import { resolveQuestion, sliderBounds, clampSliderValue } from '@quill/engine';
+import type { FormConfig, FormCover, FormOption, FormStep } from '@quill/engine';
+import {
+  resolveQuestion,
+  sliderBounds,
+  clampSliderValue,
+  showBanner,
+  resolveOptionLayout,
+  resolveOptionIcon,
+} from '@quill/engine';
 import { clampAccent, onAccent, DEFAULT_ACCENT } from '@quill/shared';
 import type { EditorMessages } from './messages';
 
@@ -29,7 +36,7 @@ export function LivePreview({
       {selected === 'cover' ? (
         <CoverPreview config={config} accent={accent} accentText={accentText} m={m} />
       ) : step ? (
-        <StepPreview step={step} accent={accent} accentText={accentText} m={m} index={selected} total={config.steps.length} />
+        <StepPreview step={step} cover={config.cover} accent={accent} accentText={accentText} m={m} index={selected} total={config.steps.length} />
       ) : (
         <p className="py-8 text-center text-sm text-muted-foreground">{m.empty}</p>
       )}
@@ -78,8 +85,28 @@ function CoverPreview({
   );
 }
 
+/** The card layout's option icon — a circle for a glyph, a box for an image. */
+function PreviewOptionIcon({ option }: { option: FormOption }) {
+  const icon = resolveOptionIcon(option, 'cards');
+  if (icon.kind === 'image') {
+    // No plate: a logo brings its own shape, and a grey box behind it reads as
+    // a chip rather than the card's icon.
+    return (
+      <span className="flex h-8 w-full max-w-[64px] items-center justify-center overflow-hidden">
+        <img src={icon.src} alt="" className="max-h-full max-w-full object-contain" />
+      </span>
+    );
+  }
+  return (
+    <span className="flex h-8 w-8 items-center justify-center rounded-full bg-muted text-base leading-none">
+      {icon.text}
+    </span>
+  );
+}
+
 function StepPreview({
   step,
+  cover,
   accent,
   accentText,
   index,
@@ -87,6 +114,7 @@ function StepPreview({
   m,
 }: {
   step: FormStep;
+  cover?: FormCover | null;
   accent: string;
   accentText: string;
   index: number;
@@ -95,9 +123,21 @@ function StepPreview({
 }) {
   const [value, setValue] = useState<string | number>('');
   const question = resolveQuestion(step, {}) || step.key;
+  // Only when the banner is scoped to the whole form — this is what makes the
+  // cover/form scope toggle visible without leaving the editor.
+  const banner = showBanner(cover, false) ? cover?.bannerText : null;
+  const cards = step.type === 'multiple_choice' && resolveOptionLayout(step) === 'cards';
 
   return (
     <div className="flex flex-col gap-4 rounded-md border border-border bg-card p-6">
+      {banner ? (
+        <div
+          className="-mt-1 w-full rounded-md px-3 py-1.5 text-center text-xs font-medium"
+          style={{ background: accent, color: accentText }}
+        >
+          {banner}
+        </div>
+      ) : null}
       <div className="flex items-center gap-1.5" aria-hidden>
         {Array.from({ length: Math.max(total, 1) }).map((_, i) => (
           <span
@@ -125,7 +165,13 @@ function StepPreview({
       </div>
 
       {step.type === 'message' ? null : step.type === 'dropdown' || step.type === 'multiple_choice' ? (
-        <div className="flex flex-col gap-2">
+        // Mirror the public renderer's two layouts, so picking Cards in the
+        // settings panel is visible without opening the form.
+        <div
+          className={
+            cards ? 'grid grid-cols-3 gap-2' : 'flex flex-col gap-2'
+          }
+        >
           {(step.options ?? []).map((o) => {
             const on = value === o.value;
             return (
@@ -133,13 +179,18 @@ function StepPreview({
                 key={o.value}
                 type="button"
                 onClick={() => setValue(o.value)}
-                className="rounded-md border px-4 py-3 text-left text-sm transition-colors"
+                className={
+                  cards
+                    ? 'flex flex-col items-center gap-2 rounded-md border px-2 py-3 text-center text-xs transition-colors'
+                    : 'rounded-md border px-4 py-3 text-left text-sm transition-colors'
+                }
                 style={
                   on
                     ? { borderColor: accent, background: 'color-mix(in srgb, ' + accent + ' 15%, transparent)' }
                     : { borderColor: 'var(--border)' }
                 }
               >
+                {cards ? <PreviewOptionIcon option={o} /> : null}
                 {o.label}
               </button>
             );

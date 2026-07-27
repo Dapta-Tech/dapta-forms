@@ -6,6 +6,7 @@ import {
   clampSliderValue,
   defaultFlowGroup,
   nameFields,
+  resolveOptionLayout,
   sanitizeStepKey,
   sliderBounds,
   sliderHasNoTravel,
@@ -16,7 +17,7 @@ import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
 import { Select, type SelectOption } from '@/components/ui/select';
 import { useConfirmDialog } from '@/components/ui/confirm-dialog';
-import { Field, NumberField, SelectField, InlineField, TextField } from './fields';
+import { Field, NumberField, SelectField, InlineField, TextField, SegmentedToggle } from './fields';
 import { OptionsEditor } from './options-editor';
 import { SliderScoringEditor } from './slider-scoring-editor';
 import { maxScoreForSteps } from './scoring-util';
@@ -205,10 +206,25 @@ export function QuestionSettings({
           <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             {bm.settings.options}
           </p>
+          {step.type === 'multiple_choice' ? (
+            <InlineField label={bm.settings.optionLayout} hint={bm.settings.optionLayoutHint}>
+              <SegmentedToggle
+                value={resolveOptionLayout(step)}
+                onChange={(optionLayout) => onUpdate({ optionLayout })}
+                options={[
+                  { value: 'list' as const, label: bm.settings.optionLayoutList },
+                  { value: 'cards' as const, label: bm.settings.optionLayoutCards },
+                ]}
+                ariaLabel={bm.settings.optionLayout}
+              />
+            </InlineField>
+          ) : null}
           <OptionsEditor
             options={step.options ?? []}
             onChange={(options) => onUpdate({ options })}
             showPoints={stepScores}
+            showIcon={step.type === 'multiple_choice'}
+            layout={resolveOptionLayout(step)}
             m={em.options}
           />
           <div className="border-t border-border/60 pt-3">
