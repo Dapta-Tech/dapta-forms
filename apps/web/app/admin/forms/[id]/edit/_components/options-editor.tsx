@@ -18,6 +18,7 @@ export function OptionsEditor({
   options,
   onChange,
   showPoints = true,
+  showIcon = false,
   m,
 }: {
   options: FormOption[];
@@ -28,6 +29,12 @@ export function OptionsEditor({
    * does nothing — and each remaining field gets the width back.
    */
   showPoints?: boolean;
+  /**
+   * Render the Icon column. Same reasoning as `showPoints`: only the card
+   * layout displays an icon, so in a plain list the column would be a field
+   * that changes nothing.
+   */
+  showIcon?: boolean;
   m: EditorMessages['options'];
 }) {
   const ids = options.map((_, i) => `opt-${i}`);
@@ -62,7 +69,11 @@ export function OptionsEditor({
             return (
               <SortableRow key={id} id={id}>
                 {({ handleProps }) => (
-                  <div className="flex items-end gap-2 rounded-md border border-border bg-background p-2">
+                  // Icon gets its OWN row rather than a fifth column: the panel
+                  // is ~420px, and squeezing label/value/icon/points side by
+                  // side clipped every header and cut the labels to 3 letters.
+                  <div className="flex flex-col gap-2 rounded-md border border-border bg-background p-2">
+                  <div className="flex items-end gap-2">
                     <button
                       type="button"
                       aria-label={m.title}
@@ -122,6 +133,22 @@ export function OptionsEditor({
                     >
                       <i aria-hidden className="pi pi-trash" style={{ fontSize: 13 }} />
                     </Button>
+                  </div>
+                  {showIcon ? (
+                    <label className="flex min-w-0 flex-col gap-1 pl-7">
+                      <span className="flex items-center gap-1 text-[11px] font-medium text-muted-foreground">
+                        {m.icon}
+                        <HelpTip text={m.iconHelp} label={m.icon} />
+                      </span>
+                      <TextField
+                        aria-label={m.icon}
+                        data-testid={`option-icon-${index}`}
+                        placeholder={m.iconPlaceholder}
+                        value={o.icon ?? ''}
+                        onChange={(e) => update(index, { icon: e.target.value || null })}
+                      />
+                    </label>
+                  ) : null}
                   </div>
                 )}
               </SortableRow>

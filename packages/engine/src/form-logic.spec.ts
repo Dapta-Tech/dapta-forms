@@ -17,6 +17,8 @@ import {
   nameFields,
   isSafeHttpUrl,
   isSafeImageUrl,
+  isImageIcon,
+  resolveOptionLayout,
   showBanner,
   showClientLogos,
   operatorsForFieldType,
@@ -776,6 +778,56 @@ describe('cover presentation toggles', () => {
     const cover = { clientLogos: [{ name: 'Acme' }], showClientLogos: false };
     expect(showClientLogos(cover)).toBe(false);
     expect(cover.clientLogos).toHaveLength(1);
+  });
+});
+
+describe('choice option presentation', () => {
+  it('resolveOptionLayout defaults to a list', () => {
+    expect(resolveOptionLayout(undefined)).toBe('list');
+    expect(resolveOptionLayout(null)).toBe('list');
+    expect(resolveOptionLayout({})).toBe('list');
+    expect(resolveOptionLayout({ showIcons: false })).toBe('list');
+  });
+
+  it("resolveOptionLayout still honours the deprecated showIcons, so a pre-optionLayout config keeps its grid", () => {
+    expect(resolveOptionLayout({ showIcons: true })).toBe('cards');
+  });
+
+  it('resolveOptionLayout lets optionLayout win over showIcons', () => {
+    expect(resolveOptionLayout({ optionLayout: 'list', showIcons: true })).toBe('list');
+    expect(resolveOptionLayout({ optionLayout: 'cards', showIcons: false })).toBe('cards');
+  });
+
+  it('isImageIcon spots image references', () => {
+    expect(isImageIcon('https://cdn.example.com/logo.png')).toBe(true);
+    expect(isImageIcon('http://example.com/a.svg')).toBe(true);
+    expect(isImageIcon('//cdn.example.com/logo.png')).toBe(true);
+    expect(isImageIcon('/assets/logo.svg')).toBe(true);
+    expect(isImageIcon('data:image/png;base64,iVBORw0KGgo=')).toBe(true);
+    expect(isImageIcon('  HTTPS://Example.com/a.png ')).toBe(true);
+  });
+
+  it('isImageIcon treats emoji, letters and empties as glyphs', () => {
+    expect(isImageIcon('🚀')).toBe(false);
+    expect(isImageIcon('😍')).toBe(false);
+    expect(isImageIcon('A')).toBe(false);
+    expect(isImageIcon('')).toBe(false);
+    expect(isImageIcon(null)).toBe(false);
+    expect(isImageIcon(undefined)).toBe(false);
+  });
+
+  it('isImageIcon does not classify script protocols as images — they never reach an <img src>', () => {
+    expect(isImageIcon('javascript:alert(1)')).toBe(false);
+    expect(isImageIcon('vbscript:msgbox(1)')).toBe(false);
+    expect(isImageIcon('data:text/html,<script>alert(1)</script>')).toBe(false);
+  });
+
+  it('an icon that looks like an image must also be a safe one', () => {
+    // The renderer requires BOTH; this pins the pair that guards the src.
+    const hostile = 'data:text/html,<script>alert(1)</script>';
+    expect(isImageIcon(hostile) && isSafeImageUrl(hostile)).toBe(false);
+    const ok = 'https://cdn.example.com/logo.png';
+    expect(isImageIcon(ok) && isSafeImageUrl(ok)).toBe(true);
   });
 });
 

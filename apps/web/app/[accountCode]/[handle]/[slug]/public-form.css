@@ -349,7 +349,9 @@
   border-width: 0 2px 2px 0;
   transform: rotate(45deg);
 }
-.pf-choice-list__icon {
+/* An emoji or initial: a square glyph, so a circle fits it. */
+.pf-choice-list__icon,
+.pf-choice-list__circle {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -360,6 +362,28 @@
   flex-shrink: 0;
   font-size: 19px;
   line-height: 1;
+}
+/* An image: arbitrary aspect ratio, so give it a rectangle to letterbox into
+   rather than a circle that would crop a wordmark to its middle. */
+.pf-choice-list__img-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 38px;
+  border-radius: 8px;
+  background: var(--muted);
+  flex-shrink: 0;
+  padding: 4px 6px;
+  overflow: hidden;
+}
+.pf-choice-list__img {
+  max-width: 100%;
+  max-height: 100%;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  display: block;
 }
 .pf-choice-list__text {
   flex: 1;
@@ -414,6 +438,29 @@
   background: var(--muted);
   font-size: 23px;
   line-height: 1;
+}
+/* Card-grid image icon. Same reasoning as the list variant: a logo is not a
+   square glyph, so it gets a rectangle and letterboxes inside it. Wider than
+   it is tall, because wordmarks are the common case. */
+.pf-choice-icon__img-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  max-width: 88px;
+  height: 46px;
+  border-radius: 8px;
+  background: var(--muted);
+  padding: 5px 8px;
+  overflow: hidden;
+}
+.pf-choice-icon__img {
+  max-width: 100%;
+  max-height: 100%;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  display: block;
 }
 .pf-choice-icon__label {
   font-size: 14px;

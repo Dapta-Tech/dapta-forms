@@ -2,7 +2,14 @@
 
 import { useEffect, useLayoutEffect, useRef } from 'react';
 import type { FormConfig, FormStep, FormOption } from '@quill/engine';
-import { nameFields, sliderBounds, clampSliderValue } from '@quill/engine';
+import {
+  nameFields,
+  sliderBounds,
+  clampSliderValue,
+  resolveOptionLayout,
+  isImageIcon,
+  isSafeImageUrl,
+} from '@quill/engine';
 import { clampAccent, onAccent, DEFAULT_ACCENT } from '@quill/shared';
 import { cn } from '@/lib/cn';
 import { iconForStep, hasOptions } from './question-types';
@@ -92,6 +99,7 @@ export function CanvasQuestion({
   const progress = total > 0 ? Math.round(((index + 1) / total) * 100) : 0;
   const showsPoints =
     (config.scoring?.enabled ?? false) !== false && step.flowGroup !== 'lead_capture' && maxStepPoints(step) >= 0;
+  const cardLayout = step.type === 'multiple_choice' && resolveOptionLayout(step) === 'cards';
 
   function updateOption(i: number, patch: Partial<FormOption>) {
     onUpdate({ options: (step.options ?? []).map((o, oi) => (oi === i ? { ...o, ...patch } : o)) });
@@ -187,8 +195,20 @@ export function CanvasQuestion({
                   key={i}
                   className="group flex items-center gap-3 rounded-xl border border-border bg-background px-4 py-3.5 transition-colors focus-within:border-primary/60 hover:border-muted-foreground/60"
                 >
-                  <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-border text-[11px] font-semibold text-muted-foreground">
-                    {String.fromCharCode(65 + i)}
+                  {/* The canvas stays a vertical list even for the card layout —
+                      it is an inline EDITOR, not a preview. Swapping the A/B/C
+                      badge for the option's own icon is enough to see what each
+                      card will carry; Preview shows the real grid. */}
+                  <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border text-[11px] font-semibold text-muted-foreground">
+                    {cardLayout && opt.icon ? (
+                      isImageIcon(opt.icon) && isSafeImageUrl(opt.icon) ? (
+                        <img src={opt.icon} alt="" className="max-h-full max-w-full object-contain" />
+                      ) : (
+                        <span className="text-[13px] leading-none">{opt.icon}</span>
+                      )
+                    ) : (
+                      String.fromCharCode(65 + i)
+                    )}
                   </span>
                   <input
                     value={opt.label}

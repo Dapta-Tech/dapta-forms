@@ -1,8 +1,16 @@
 'use client';
 
 import { useState } from 'react';
-import type { FormConfig, FormCover, FormStep } from '@quill/engine';
-import { resolveQuestion, sliderBounds, clampSliderValue, showBanner } from '@quill/engine';
+import type { FormConfig, FormCover, FormOption, FormStep } from '@quill/engine';
+import {
+  resolveQuestion,
+  sliderBounds,
+  clampSliderValue,
+  showBanner,
+  resolveOptionLayout,
+  isImageIcon,
+  isSafeImageUrl,
+} from '@quill/engine';
 import { clampAccent, onAccent, DEFAULT_ACCENT } from '@quill/shared';
 import type { EditorMessages } from './messages';
 
@@ -78,6 +86,23 @@ function CoverPreview({
   );
 }
 
+/** The card layout's option icon — a circle for a glyph, a box for an image. */
+function PreviewOptionIcon({ option }: { option: FormOption }) {
+  const src = option.icon ?? '';
+  if (isImageIcon(src) && isSafeImageUrl(src)) {
+    return (
+      <span className="flex h-8 w-full max-w-[64px] items-center justify-center overflow-hidden rounded-md bg-muted px-1">
+        <img src={src} alt="" className="max-h-full max-w-full object-contain" />
+      </span>
+    );
+  }
+  return (
+    <span className="flex h-8 w-8 items-center justify-center rounded-full bg-muted text-base leading-none">
+      {option.icon || option.label.charAt(0).toUpperCase()}
+    </span>
+  );
+}
+
 function StepPreview({
   step,
   cover,
@@ -100,6 +125,7 @@ function StepPreview({
   // Only when the banner is scoped to the whole form — this is what makes the
   // cover/form scope toggle visible without leaving the editor.
   const banner = showBanner(cover, false) ? cover?.bannerText : null;
+  const cards = step.type === 'multiple_choice' && resolveOptionLayout(step) === 'cards';
 
   return (
     <div className="flex flex-col gap-4 rounded-md border border-border bg-card p-6">
@@ -138,7 +164,13 @@ function StepPreview({
       </div>
 
       {step.type === 'message' ? null : step.type === 'dropdown' || step.type === 'multiple_choice' ? (
-        <div className="flex flex-col gap-2">
+        // Mirror the public renderer's two layouts, so picking Cards in the
+        // settings panel is visible without opening the form.
+        <div
+          className={
+            cards ? 'grid grid-cols-3 gap-2' : 'flex flex-col gap-2'
+          }
+        >
           {(step.options ?? []).map((o) => {
             const on = value === o.value;
             return (
@@ -146,13 +178,18 @@ function StepPreview({
                 key={o.value}
                 type="button"
                 onClick={() => setValue(o.value)}
-                className="rounded-md border px-4 py-3 text-left text-sm transition-colors"
+                className={
+                  cards
+                    ? 'flex flex-col items-center gap-2 rounded-md border px-2 py-3 text-center text-xs transition-colors'
+                    : 'rounded-md border px-4 py-3 text-left text-sm transition-colors'
+                }
                 style={
                   on
                     ? { borderColor: accent, background: 'color-mix(in srgb, ' + accent + ' 15%, transparent)' }
                     : { borderColor: 'var(--border)' }
                 }
               >
+                {cards ? <PreviewOptionIcon option={o} /> : null}
                 {o.label}
               </button>
             );

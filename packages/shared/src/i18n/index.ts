@@ -367,6 +367,9 @@ export interface FormsMessages {
         /** One-line explainer under the options list tying points to scoring. */
         pointsHint: string;
         icon: string;
+        /** What may go in the Icon column: an emoji, or an image URL. */
+        iconHelp: string;
+        iconPlaceholder: string;
         remove: string;
         empty: string;
         /** V5 — what the `value` column is for, vs the visible label (B5). */
@@ -1195,6 +1198,9 @@ export const en: FormsMessages = {
         points: 'Points',
         pointsHint: 'Added to the score when this option is picked. Use a negative number to subtract.',
         icon: 'Icon',
+        iconHelp:
+          'An emoji, or the URL of an image. Emoji show in a circle; images get a box they fit inside, so a wide logo is not cropped.',
+        iconPlaceholder: '🚀 or https://…',
         remove: 'Remove option',
         empty: 'No options yet.',
         labelHelp: 'What respondents read on the option. Safe to reword at any time.',
@@ -1980,6 +1986,9 @@ export const es: FormsMessages = {
         valueHelp:
           'Lo que se guarda en la respuesta y se envía a HubSpot o al webhook. Mantenlo estable — cambiarlo rompe las respuestas anteriores y cualquier mapeo que lo use.',
         icon: 'Ícono',
+        iconHelp:
+          'Un emoji, o la URL de una imagen. Los emoji se muestran en un círculo; las imágenes reciben una caja donde entran completas, así un logo ancho no se recorta.',
+        iconPlaceholder: '🚀 o https://…',
         remove: 'Quitar opción',
         empty: 'Aún no hay opciones.',
       },

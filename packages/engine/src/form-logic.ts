@@ -29,11 +29,20 @@ export const FORM_FIELD_TYPES = [
 ] as const;
 export type FormFieldType = (typeof FORM_FIELD_TYPES)[number];
 
+/** How a choice step lays its options out. */
+export const FORM_OPTION_LAYOUTS = ['list', 'cards'] as const;
+export type FormOptionLayout = (typeof FORM_OPTION_LAYOUTS)[number];
+
 /** A single option for a choice/dropdown step; `points` feeds the score. */
 export interface FormOption {
   label: string;
   value: string;
   points?: number;
+  /**
+   * Either an emoji/short glyph or an image URL — `isImageIcon` tells them
+   * apart, because the two need opposite treatment when rendered (a glyph
+   * centres in a circle; a logo needs a rectangle it can letterbox into).
+   */
   icon?: string | null;
 }
 
@@ -156,7 +165,16 @@ export interface FormStep {
   sliderLabelVariants?: Record<string, string>;
   /** Static unit label shown next to the slider value (e.g. "leads / mo"). */
   sliderUnitLabel?: string | null;
-  /** `multiple_choice`: render as an icon grid instead of a radio list. */
+  /**
+   * `multiple_choice`: render options as a card grid instead of a radio list.
+   * Absent falls back to `showIcons` — see `resolveOptionLayout`.
+   */
+  optionLayout?: FormOptionLayout;
+  /**
+   * @deprecated Superseded by `optionLayout` — the flag named its content
+   * (icons) rather than what it actually switched (the layout). Still read as
+   * the fallback so configs saved before `optionLayout` keep their card grid.
+   */
   showIcons?: boolean;
   /**
    * Branch insertion: show this step ONLY when the `email` answer is a personal/
@@ -1546,6 +1564,35 @@ export function showBanner(cover: FormCover | null | undefined, isCover: boolean
  */
 export function showClientLogos(cover: FormCover | null | undefined): boolean {
   return cover?.showClientLogos !== false;
+}
+
+// ---------------------------------------------------------------------------
+// Choice-option presentation. An option's `icon` may be an emoji OR an image
+// URL, and the two render differently, so the renderer asks here rather than
+// sniffing the string in JSX.
+// ---------------------------------------------------------------------------
+
+/**
+ * How a choice step lays its options out. `optionLayout` wins; absent, the
+ * deprecated `showIcons` still selects the card grid, so a config saved before
+ * `optionLayout` existed renders exactly as it always did.
+ */
+export function resolveOptionLayout(
+  step: Pick<FormStep, 'optionLayout' | 'showIcons'> | null | undefined,
+): FormOptionLayout {
+  if (step?.optionLayout) return step.optionLayout;
+  return step?.showIcons ? 'cards' : 'list';
+}
+
+/**
+ * True when an option's `icon` is an image reference rather than an emoji or
+ * letter: http(s), protocol-relative, a root path, or a `data:image/…` URI.
+ * Safety is a SEPARATE question — pair this with `isSafeImageUrl` before the
+ * value reaches an `<img src>`.
+ */
+export function isImageIcon(icon: string | null | undefined): boolean {
+  if (!icon) return false;
+  return /^(?:https?:\/\/|\/\/|\/|data:image\/)/i.test(icon.trim());
 }
 
 // ---------------------------------------------------------------------------

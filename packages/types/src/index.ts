@@ -9,6 +9,8 @@ import {
   CONDITION_OPS,
   FORM_BANNER_SCOPES,
   FORM_FIELD_TYPES,
+  FORM_OPTION_LAYOUTS,
+  isImageIcon,
   isSafeHttpUrl,
   isSafeImageUrl,
 } from '@quill/engine';
@@ -48,7 +50,20 @@ const optionSchema = z.object({
   label: z.string().min(1).max(200),
   value: z.string().min(1).max(200),
   points: z.number().int().optional(),
-  icon: z.string().max(64).nullable().optional(),
+  /**
+   * An emoji/short glyph OR an image URL. The cap is generous enough for a real
+   * CDN URL (it was 64 — emoji-sized — before images were an option), and any
+   * value that LOOKS like an image must also be a safe one, so a hostile config
+   * cannot reach the renderer's `<img src>` with a script protocol.
+   */
+  icon: z
+    .string()
+    .max(512)
+    .refine((v) => !isImageIcon(v) || isSafeImageUrl(v), {
+      message: 'Icon image URL protocol not allowed.',
+    })
+    .nullable()
+    .optional(),
 });
 
 /**
@@ -183,6 +198,9 @@ export const formStepSchema = z.object({
   placeholders: z.record(z.string(), z.string().max(200)).optional(),
   sliderLabelVariants: z.record(z.string(), z.string().max(80)).optional(),
   sliderUnitLabel: z.string().max(80).nullable().optional(),
+  /** ADDITIVE. Absent falls back to `showIcons` — see `resolveOptionLayout`. */
+  optionLayout: z.enum(FORM_OPTION_LAYOUTS).optional(),
+  /** @deprecated Superseded by `optionLayout`; still read as the fallback. */
   showIcons: z.boolean().optional(),
   showForPersonalEmailOnly: z.boolean().optional(),
   terminal: z.boolean().optional(),
