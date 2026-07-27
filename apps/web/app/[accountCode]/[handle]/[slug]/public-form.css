@@ -30,8 +30,13 @@
   flex-direction: column;
   background: var(--background);
   color: var(--foreground);
-  font-family: var(--font-sans, ui-sans-serif, system-ui, sans-serif);
+  /* `--pf-font` is set inline from `branding.fontFamily`; absent, the form keeps
+     inheriting the app's brand face exactly as it did before typography was
+     configurable. */
+  font-family: var(--pf-font, var(--font-sans, ui-sans-serif, system-ui, sans-serif));
   -webkit-font-smoothing: antialiased;
+  position: relative;
+  isolation: isolate;
 }
 
 /* Scrollbars are themed globally (globals.css, tokens); no native track appears.
@@ -1143,3 +1148,271 @@
   margin-top: 12px;
 }
 .pf-booking__trouble a { color: inherit; text-decoration: underline; }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * DESIGN AXES
+ *
+ * Every rule below is keyed off a `data-pf-*` attribute stamped on the `.pf`
+ * root by `designAttributes()` (@quill/engine). The attribute is ALWAYS present
+ * — the resolver fills every axis — so these are plain overrides of the base
+ * rules above rather than conditional additions, and the value that reproduces
+ * the pre-design look is the one the resolver returns for an absent config.
+ *
+ * Colors are NOT here: they arrive as inline custom properties from
+ * `formThemeVars()`, because they are per-form values rather than a fixed set
+ * of choices. This file only knows about the closed unions.
+ * ═════════════════════════════════════════════════════════════════════════ */
+
+/* ── Corner radius (B2) ─────────────────────────────────────────────────── */
+/* `soft` is the original 16/8 pair and is therefore the legacy default. Round
+   stops well short of a pill for inputs: a 999px text field reads as a search
+   box, not a form field. */
+.pf[data-pf-radius='sharp'] {
+  --pf-radius: 2px;
+  --pf-radius-sm: 2px;
+  --pf-radius-btn: 2px;
+}
+.pf[data-pf-radius='soft'] {
+  --pf-radius-btn: var(--pf-radius-sm);
+}
+.pf[data-pf-radius='round'] {
+  --pf-radius: 24px;
+  --pf-radius-sm: 14px;
+  --pf-radius-btn: 999px;
+}
+.pf__btn {
+  border-radius: var(--pf-radius-btn, var(--pf-radius-sm));
+}
+
+/* ── Button style (B3) ──────────────────────────────────────────────────── */
+/* `outline` and `soft` keep the LABEL on `--foreground` rather than on the
+   accent. The accent is clamped to 3:1 against the ground, which is the
+   large-text threshold — fine for a border or a wash, not for a 16px label.
+   The accent still carries the button's identity through its border/fill. */
+.pf[data-pf-button='outline'] .pf__btn {
+  background: transparent;
+  color: var(--foreground);
+  border: 1.5px solid var(--pf-primary);
+}
+.pf[data-pf-button='outline'] .pf__btn:hover {
+  background: color-mix(in srgb, var(--pf-primary) 12%, transparent);
+  opacity: 1;
+}
+.pf[data-pf-button='soft'] .pf__btn {
+  background: color-mix(in srgb, var(--pf-primary) 18%, var(--background));
+  color: var(--foreground);
+  border: 1px solid color-mix(in srgb, var(--pf-primary) 32%, transparent);
+}
+.pf[data-pf-button='soft'] .pf__btn:hover {
+  background: color-mix(in srgb, var(--pf-primary) 26%, var(--background));
+  opacity: 1;
+}
+
+/* Width. Full-width is the legacy behaviour (a thumb-sized target on mobile);
+   `auto` shrinks to the label and follows the content alignment, so it never
+   ends up orphaned on the left of a centred column. */
+.pf[data-pf-button-width='auto'] .pf__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: auto;
+  min-width: 160px;
+  padding: 0 32px;
+  align-self: flex-start;
+}
+.pf[data-pf-button-width='auto'][data-pf-align='center'] .pf__btn {
+  align-self: center;
+}
+/* Below 480px a shrink-wrapped primary action is a usability regression, so the
+   button goes full-width regardless of the setting. */
+@media (max-width: 480px) {
+  .pf[data-pf-button-width='auto'] .pf__btn {
+    width: 100%;
+    align-self: stretch;
+  }
+}
+
+/* ── Progress style (B4) ────────────────────────────────────────────────── */
+.pf[data-pf-progress='none'] .pf-progress {
+  display: none;
+}
+.pf-progress__dots {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+.pf-progress__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--muted);
+  transition: background 0.25s var(--pf-ease), transform 0.25s var(--pf-ease);
+}
+.pf-progress__dot--on {
+  background: var(--pf-primary);
+}
+.pf-progress__dot--current {
+  transform: scale(1.45);
+}
+/* Many steps would push the dots past the container; they compress instead of
+   wrapping, because a second row of dots reads as a second progress bar. */
+@media (max-width: 480px) {
+  .pf-progress__dots {
+    gap: 4px;
+  }
+}
+.pf-progress__steps {
+  text-align: center;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Background treatment (B5) ──────────────────────────────────────────── */
+/* Each treatment paints a layer BEHIND the content (`z-index:-1` inside the
+   root's own stacking context, hence `isolation:isolate` on `.pf`). Painting a
+   pseudo-element rather than the root's `background` keeps `--background`
+   meaningful for every child that mixes against it — cards, borders and the
+   banner all reference it. */
+.pf[data-pf-bg]:not([data-pf-bg='solid'])::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+}
+.pf[data-pf-bg='gradient']::before {
+  background: linear-gradient(
+    165deg,
+    color-mix(in srgb, var(--pf-primary) 16%, var(--background)) 0%,
+    var(--background) 58%
+  );
+}
+.pf[data-pf-bg='glow']::before {
+  background:
+    radial-gradient(
+      70% 50% at 50% 0%,
+      color-mix(in srgb, var(--pf-primary) 22%, transparent) 0%,
+      transparent 70%
+    ),
+    var(--background);
+}
+.pf[data-pf-bg='image']::before {
+  background-image: linear-gradient(
+      color-mix(in srgb, var(--background) var(--pf-bg-overlay, 55%), transparent),
+      color-mix(in srgb, var(--background) var(--pf-bg-overlay, 55%), transparent)
+    ),
+    var(--pf-bg-image);
+  background-size: cover;
+  background-position: center;
+}
+/* With a photograph behind it the top bar's flat `--card` fill reads as a stuck
+   panel, so it becomes a translucent blur over the image instead. */
+.pf[data-pf-bg='image'] .pf__topbar {
+  background: color-mix(in srgb, var(--card) 78%, transparent);
+  backdrop-filter: blur(10px);
+}
+
+/* ── Logo (B6) ─────────────────────────────────────────────────────────── */
+.pf[data-pf-logo-size='sm'] .pf__logo-img {
+  height: 22px;
+}
+.pf[data-pf-logo-size='md'] .pf__logo-img {
+  height: 30px;
+}
+.pf[data-pf-logo-size='lg'] .pf__logo-img {
+  height: 42px;
+  max-width: 220px;
+}
+.pf[data-pf-logo-size='sm'] .pf__logo--fallback {
+  font-size: 15px;
+}
+.pf[data-pf-logo-size='lg'] .pf__logo--fallback {
+  font-size: 22px;
+}
+/* Left placement collapses the trailing spacer track so the logo starts right
+   after the back button instead of being centred by the 3-column grid. */
+.pf[data-pf-logo-pos='left'] .pf__topbar-inner {
+  grid-template-columns: 40px 1fr 0;
+}
+.pf[data-pf-logo-pos='left'] .pf__logo-img {
+  margin: 0;
+}
+.pf[data-pf-logo-pos='left'] .pf__logo--fallback {
+  text-align: left;
+  display: block;
+}
+
+/* ── Content alignment & measure (B9) ──────────────────────────────────── */
+.pf[data-pf-width='wide'] .pf__inner {
+  max-width: 720px;
+}
+.pf[data-pf-width='wide'] .pf__topbar-inner,
+.pf[data-pf-width='wide'] .pf-progress {
+  max-width: 660px;
+}
+/* CENTRE is the legacy alignment (`.pf__question` has always been centred), so
+   `left` is the override — the direction matters, because defaulting the other
+   way would re-align every already-published form. */
+.pf[data-pf-align='left'] .pf__question,
+.pf[data-pf-align='left'] .pf__helper {
+  text-align: left;
+  text-wrap: pretty;
+}
+.pf[data-pf-align='left'] .pf__question-wrap {
+  margin-left: 0;
+}
+/* Inputs are left-aligned under either setting: centred placeholder text that
+   jumps left the moment you type is worse than the small asymmetry of a
+   left-aligned field under a centred question. */
+
+/* ── Step transition (B10) ─────────────────────────────────────────────── */
+/* `slide` is the original animation. All three are overridden wholesale by the
+   reduced-motion block that already exists above. */
+.pf[data-pf-transition='fade'] .pf-animate {
+  animation: pfFadeIn 0.28s var(--pf-ease);
+}
+.pf[data-pf-transition='none'] .pf-animate {
+  animation: none;
+}
+@keyframes pfFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pf[data-pf-transition='fade'] .pf-animate {
+    animation: none;
+  }
+}
+
+/* ── Embedded preview ───────────────────────────────────────────────────── */
+/* The builder renders the REAL `.pf` markup with the REAL stylesheet, inside a
+   device frame, instead of re-implementing the form in admin Tailwind classes.
+   That is what stops the preview and the public page drifting apart — but two
+   rules assume the form owns the viewport and have to be re-scoped to the frame:
+   the `100dvh` floor, and the `position: fixed` background layer, which would
+   otherwise paint over the whole builder. */
+.pf--embedded {
+  min-height: 100%;
+  height: 100%;
+  overflow-y: auto;
+}
+.pf--embedded[data-pf-bg]:not([data-pf-bg='solid'])::before {
+  position: absolute;
+}
+/* A sticky banner inside a scrolling frame sticks to the frame, which is right. */
+.pf--embedded .pf__banner {
+  position: static;
+}
+/* The preview is a picture of the form, not the form: nothing inside it should
+   look focusable or clickable-through to a real submission. */
+.pf--embedded [aria-hidden='true'] {
+  pointer-events: none;
+}

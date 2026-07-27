@@ -32,8 +32,9 @@ import {
   type FormStep,
   type FormOutcome,
 } from '@quill/engine';
-import { onAccent, getMessages } from '@quill/shared';
+import { getMessages } from '@quill/shared';
 import type { FormConfig, OutcomeBooking } from '@quill/types';
+import { formDesignProps, type FormDesignProps } from '@/lib/form-design';
 import { signupHref } from '@/lib/growth';
 import { FormLogo } from '@/components/public/form-logo';
 import { FormProgress } from '@/components/public/form-progress';
@@ -152,16 +153,27 @@ function capturePrefill(steps: FormStep[]): Answers {
 function PhaseShell({
   cover,
   isCover = false,
+  design,
   children,
   ...rootProps
 }: {
   cover?: FormCover | null;
   isCover?: boolean;
+  /**
+   * The form's resolved design. Applied HERE, on the one element every phase
+   * shares, so the cover, the steps, the reveal, the booking screen and the
+   * thank-you can never disagree about the form's look — and so adding an axis
+   * does not mean editing nine call sites.
+   */
+  design: FormDesignProps;
   children: React.ReactNode;
 } & React.HTMLAttributes<HTMLDivElement>) {
   const banner = showBanner(cover, isCover) ? cover?.bannerText : null;
   return (
-    <div {...rootProps}>
+    <div {...rootProps} {...design.attrs} style={{ ...design.style, ...rootProps.style }}>
+      {/* An author-supplied face has to be declared in the document; there is no
+          build step that could have hoisted it into the stylesheet. */}
+      {design.fontFace ? <style>{design.fontFace}</style> : null}
       {banner ? <div className="pf__banner">{banner}</div> : null}
       <div className="pf__main">{children}</div>
     </div>
@@ -239,11 +251,10 @@ export function FormRenderer({
   // migration of every published form.
   const revealKey = useMemo(() => revealAfterKey(engineConfig), [engineConfig]);
 
-  // Accent branding (only override the local default when a color is configured).
-  const primary = config.branding?.primaryColor ?? null;
-  const accentVars = primary
-    ? ({ ['--pf-primary']: primary, ['--pf-primary-contrast']: onAccent(primary) } as React.CSSProperties)
-    : undefined;
+  // The form's whole look — colors, typeface, shape, layout, motion — resolved
+  // once and applied by `PhaseShell`. Nothing here overrides a token the author
+  // did not set, so a form with no branding renders exactly as it always did.
+  const design = useMemo(() => formDesignProps(config.branding), [config.branding]);
 
   const err = (code: string) => m.errors[code as keyof typeof m.errors] ?? m.errors.required;
 
@@ -563,7 +574,7 @@ export function FormRenderer({
     const ending = resolveEnding(engineConfig, outcome);
     const cta = signupHref('confirmation', accountCode);
     return (
-      <PhaseShell className="pf pf--done" style={accentVars} cover={cover}>
+      <PhaseShell className="pf pf--done" design={design} cover={cover}>
         <div className="pf-done__inner pf-animate">
           <div className="pf-done__check" aria-hidden="true">
             ✓
@@ -593,7 +604,7 @@ export function FormRenderer({
 
   if (phase === 'booking' && booking?.outcome.booking) {
     return (
-      <PhaseShell className="pf pf--booking-page" style={accentVars} cover={cover}>
+      <PhaseShell className="pf pf--booking-page" design={design} cover={cover}>
         <BookingScreen
           booking={booking.outcome.booking}
           answers={answersRef.current}
@@ -609,7 +620,7 @@ export function FormRenderer({
     return (
       <PhaseShell
         className="pf pf--reveal"
-        style={accentVars}
+        design={design}
         role="status"
         aria-live="polite"
         cover={cover}
@@ -628,7 +639,7 @@ export function FormRenderer({
     return (
       <PhaseShell
         className="pf pf--reveal"
-        style={accentVars}
+        design={design}
         role="status"
         aria-live="polite"
         cover={cover}
@@ -647,7 +658,7 @@ export function FormRenderer({
     return (
       <PhaseShell
         className="pf pf--cover"
-        style={accentVars}
+        design={design}
         onKeyDown={(e) => e.key === 'Enter' && start()}
         tabIndex={-1}
         cover={cover}
@@ -678,7 +689,7 @@ export function FormRenderer({
 
   if (!step) {
     return (
-      <PhaseShell className="pf" style={accentVars}>
+      <PhaseShell className="pf" design={design}>
         <div className="pf__body">
           <p className="pf__helper">{m.noSteps}</p>
         </div>
@@ -695,7 +706,7 @@ export function FormRenderer({
     return (
       <PhaseShell
         className="pf pf--reveal"
-        style={accentVars}
+        design={design}
         role="status"
         aria-live="polite"
         cover={cover}
@@ -736,7 +747,7 @@ export function FormRenderer({
       : null;
     const schedLogo = cover?.logo ?? config.branding?.logo ?? null;
     return (
-      <PhaseShell className="pf" style={accentVars} cover={cover}>
+      <PhaseShell className="pf" design={design} cover={cover}>
         <header className="pf__topbar">
           <div className="pf__topbar-inner">
             {index > 0 || cover ? (
@@ -749,7 +760,7 @@ export function FormRenderer({
             <FormLogo src={schedLogo} name={name} />
             <span className="pf__back pf__back--placeholder" />
           </div>
-          <FormProgress total={steps.length} currentIndex={index} locale={locale} />
+          <FormProgress total={steps.length} currentIndex={index} locale={locale} style={design.design.progressStyle} />
         </header>
         <div className="pf__body">
           <div className="pf__inner">
@@ -798,7 +809,7 @@ export function FormRenderer({
   const logo = cover?.logo ?? config.branding?.logo ?? null;
 
   return (
-    <PhaseShell className="pf" style={accentVars} onKeyDown={onKeyDown} cover={cover}>
+    <PhaseShell className="pf" design={design} onKeyDown={onKeyDown} cover={cover}>
       <header className="pf__topbar">
         <div className="pf__topbar-inner">
           {index > 0 || cover ? (
@@ -811,7 +822,7 @@ export function FormRenderer({
           <FormLogo src={logo} name={name} />
           <span className="pf__back pf__back--placeholder" />
         </div>
-        <FormProgress total={steps.length} currentIndex={index} locale={locale} />
+        <FormProgress total={steps.length} currentIndex={index} locale={locale} style={design.design.progressStyle} />
       </header>
 
       <div className="pf__body">
