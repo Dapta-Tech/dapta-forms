@@ -9,15 +9,15 @@ import {
   resolveDesign,
 } from '@quill/engine';
 import {
+  AA_CONTRAST,
   DEFAULT_ACCENT,
   DEFAULT_CANVAS,
   DEFAULT_CANVAS_FOREGROUND,
-  accentWasAdjusted,
-  clampAccent,
   contrastGrade,
   contrastRatio,
   onAccent,
   readableOn,
+  suggestReadable,
   t,
 } from '@quill/shared';
 import { Switch } from '@/components/ui/switch';
@@ -76,11 +76,13 @@ export function DesignPanel({
   // renders on — measuring against white would grade a form nobody will see.
   const ground = branding.background?.trim() || DEFAULT_CANVAS;
   const text = branding.foreground?.trim() || (branding.background ? readableOn(ground) : DEFAULT_CANVAS_FOREGROUND);
-  // The accent is painted EXACTLY as chosen wherever it fills something, so the
-  // button-label reading is taken against the RAW color. Only the accent-as-text
-  // usages get clamped, which is what `accentAdjusted` now reports.
   const accent = branding.primaryColor?.trim() || DEFAULT_ACCENT;
-  const accentAdjusted = branding.primaryColor ? accentWasAdjusted(branding.primaryColor, ground) : false;
+  // Suggestions, never substitutions. `suggestReadable` returns null when the
+  // pair already reads, so a warning only appears when there is a real problem.
+  // Body text is held to AA (4.5:1); the accent to 3:1, the threshold that
+  // matters for the large/decorative places it actually appears.
+  const textSuggestion = branding.foreground ? suggestReadable(text, ground, AA_CONTRAST) : null;
+  const accentSuggestion = branding.primaryColor ? suggestReadable(accent, ground) : null;
 
   const screens: { value: number | 'cover'; label: string }[] = [
     { value: 'cover', label: m.preview.coverTitle },
@@ -118,12 +120,9 @@ export function DesignPanel({
               />
             </Field>
             <Field label={d.accent}>
-              {/* No `against`: an accent is a FILL, not body text. Grading it
-                  against the ground at the 4.5:1 body threshold flags a
-                  perfectly good brand color as unreadable — the accent only
-                  owes 3:1, which `clampAccent` already guarantees and
-                  `accentAdjusted` already reports. What is real text is the
-                  LABEL on top of it, measured below. */}
+              {/* No `against`: an accent is mostly a FILL, not body text, so the
+                  4.5:1 body threshold would flag good brand colors. It is held
+                  to 3:1 by the warning below instead. */}
               <ColorPicker
                 value={branding.primaryColor}
                 onChange={(primaryColor) => onBrandingChange({ primaryColor, themePreset: null })}
@@ -140,9 +139,8 @@ export function DesignPanel({
               would show no contrast information at all. */}
           <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5">
             <ContrastRow label={d.contrastText} a={text} b={ground} failLabel={d.contrastFail} />
-            {/* The two pairs that are actually TEXT on a surface. Only a solid
-                button puts the label on the accent; outline and soft put it on
-                the form ground, which the first row already covers. */}
+            {/* Only a solid button puts the label on the accent; outline and
+                soft put it on the form ground, which the first row covers. */}
             {design.buttonStyle === 'solid' ? (
               <ContrastRow
                 label={d.contrastButton}
@@ -153,11 +151,25 @@ export function DesignPanel({
             ) : null}
           </div>
 
-          {accentAdjusted ? (
-            <p className="text-xs text-muted-foreground">
-              <i aria-hidden className="pi pi-info-circle" style={{ fontSize: 11 }} />{' '}
-              {t(d.accentAdjusted, { color: clampAccent(branding.primaryColor ?? '', ground) })}
-            </p>
+          {/* The colors render EXACTLY as chosen — nothing is silently corrected,
+              because a substituted color reads as a bug. When a pair is risky the
+              author gets the number, the reason, and a readable alternative they
+              can take or ignore. */}
+          {textSuggestion ? (
+            <Warning
+              text={t(d.contrastFail, {})}
+              suggestion={textSuggestion}
+              applyLabel={t(d.suggestApply, { color: textSuggestion })}
+              onApply={() => onBrandingChange({ foreground: textSuggestion, themePreset: null })}
+            />
+          ) : null}
+          {accentSuggestion ? (
+            <Warning
+              text={t(d.accentLowContrast, { ratio: String(contrastRatio(accent, ground)) })}
+              suggestion={accentSuggestion}
+              applyLabel={t(d.suggestApply, { color: accentSuggestion })}
+              onApply={() => onBrandingChange({ primaryColor: accentSuggestion, themePreset: null })}
+            />
           ) : null}
           {branding.background ? (
             <p className="text-xs text-muted-foreground">
@@ -419,6 +431,42 @@ export function DesignPanel({
   );
 }
 
+/**
+ * A legibility warning with a way out. The colors still render exactly as
+ * chosen — this is advice, and taking it is one click rather than the author's
+ * job to work out which hex would have passed.
+ */
+function Warning({
+  text,
+  suggestion,
+  applyLabel,
+  onApply,
+}: {
+  text: string;
+  suggestion: string;
+  applyLabel: string;
+  onApply: () => void;
+}) {
+  return (
+    <div
+      role="status"
+      data-testid="contrast-warning"
+      className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-md border border-destructive/30 bg-destructive/10 px-2.5 py-1.5 text-xs text-foreground"
+    >
+      <i aria-hidden className="pi pi-exclamation-triangle shrink-0 text-destructive" style={{ fontSize: 11 }} />
+      <span className="min-w-0 flex-1">{text}</span>
+      <button
+        type="button"
+        onClick={onApply}
+        className="inline-flex shrink-0 items-center gap-1.5 rounded border border-border bg-background px-2 py-0.5 font-medium transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <span aria-hidden className="h-3 w-3 rounded-sm border border-border" style={{ background: suggestion }} />
+        {applyLabel}
+      </button>
+    </div>
+  );
+}
+
 /** A labelled WCAG readout for one color pair. */
 function ContrastRow({
   label,
@@ -626,7 +674,9 @@ function SharePreview({
   const image = branding.ogImage?.trim() || null;
   const headline = config.cover?.headline ?? name;
   const ground = branding.background?.trim() || DEFAULT_CANVAS;
-  const accent = clampAccent(branding.primaryColor || '#cbe84f', ground);
+  // The author's exact color, like everywhere else — the share card must show
+  // the card that will actually be generated, not a corrected version of it.
+  const accent = branding.primaryColor?.trim() || DEFAULT_ACCENT;
 
   return (
     <div className="max-w-sm overflow-hidden rounded-lg border border-border bg-card">

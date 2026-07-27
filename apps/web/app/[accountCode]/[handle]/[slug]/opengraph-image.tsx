@@ -1,5 +1,5 @@
 import { ImageResponse } from 'next/og';
-import { clampAccent, readableOn, DEFAULT_CANVAS, DEFAULT_CANVAS_FOREGROUND } from '@quill/shared';
+import { readableOn, DEFAULT_ACCENT, DEFAULT_CANVAS, DEFAULT_CANVAS_FOREGROUND } from '@quill/shared';
 import { getPublicForm } from '@/lib/api';
 
 /**
@@ -32,7 +32,8 @@ export default async function OgImage({
   const branding = form?.config.branding ?? {};
   const background = branding.background?.trim() || DEFAULT_CANVAS;
   const foreground = branding.foreground?.trim() || (branding.background ? readableOn(background) : DEFAULT_CANVAS_FOREGROUND);
-  const accent = clampAccent(branding.primaryColor || '#cbe84f', background);
+  // The author's exact color — the card shows the brand, not a corrected version.
+  const accent = branding.primaryColor?.trim() || DEFAULT_ACCENT;
 
   const headline = form?.config.cover?.headline || form?.name || 'Form';
   const sub = form?.config.cover?.subheadline ?? '';

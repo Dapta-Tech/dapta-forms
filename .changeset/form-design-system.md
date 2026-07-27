@@ -31,17 +31,16 @@ unreadable and then reported it as safe. It now takes the real background
 and nudges away from that ground in whichever direction separates. Same for
 `accentWasAdjusted` and `accentLabelContrast`.
 
-The clamp is applied NARROWLY. `formThemeVars` paints `--pf-primary` with the
-author's exact color wherever the accent is a fill — the progress bar, a solid
-button, a selected option, borders, the glow — because a brand color is the
-brand, and turning a client's lime into olive because the page went white is the
-product overruling its author. The label on that fill is derived from the raw
-color, so it stays legible without changing it. Only `--pf-primary-ink`, used by
-the three places the accent is TEXT on the form ground (the cover badge, the
-slider's value, the logo dot), is clamped — lime letters on a white page are not
-a brand statement, they are unreadable.
+The clamp is NOT applied at render time. `formThemeVars` paints the author's
+color exactly as chosen, everywhere — a silently corrected color reads as a bug:
+you set lime, the page shows olive, and nothing you click explains it. Legibility
+is handled where the author can act on it, in the editor: every risky pair is
+measured and warned about, with `suggestReadable` offering a readable
+alternative in one click, and the decision stays theirs. The one thing still
+derived is the label ON a solid accent, because nobody picks the color of button
+text.
 
-New: `contrastRatio`,
+New: `suggestReadable`, `contrastRatio`,
 `contrastGrade`, `isLightColor`, `readableOn`, `resolveThemeMode`, and
 `formThemeVars`, which derives the supporting tokens (card, muted, border) by
 mixing the author's ground toward their text — so an arbitrary background gets a

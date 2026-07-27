@@ -47,6 +47,12 @@ export function LivePreview({
   const isCover = selected === 'cover';
   const banner = showBanner(cover, isCover) ? cover.bannerText : null;
 
+  // A CSS animation only plays when the element mounts, so a motion setting is
+  // invisible in a static preview — you pick "Fade" and nothing happens. Keying
+  // the step content on the transition remounts it the moment the setting
+  // changes, which replays the animation the respondent will actually see.
+  const replayKey = `${design.design.transition}:${String(selected)}`;
+
   if (!isCover && !step) {
     return (
       <div className="flex h-full items-center justify-center bg-background">
@@ -74,6 +80,7 @@ export function LivePreview({
             index={selected as number}
             name={name}
             locale={locale}
+            replayKey={replayKey}
           />
         )}
       </div>
@@ -120,12 +127,15 @@ function StepBody({
   index,
   name,
   locale,
+  replayKey,
 }: {
   config: FormConfig;
   step: FormStep;
   index: number;
   name: string;
   locale: string;
+  /** Changing this remounts the content, replaying the step transition. */
+  replayKey: string;
 }) {
   const r = getMessages(locale).renderer;
   const design = formDesignProps(config.branding);
@@ -151,7 +161,7 @@ function StepBody({
       </header>
       <div className="pf__body">
         <div className="pf__inner">
-          <div className="pf__content">
+          <div className="pf__content pf-animate" key={replayKey}>
             <div className="pf__question-wrap">
               <h2 className="pf__question">{question}</h2>
               {step.helper && step.type !== 'message' ? <p className="pf__helper">{step.helper}</p> : null}

@@ -237,24 +237,45 @@ export function formThemeVars(colors: FormThemeColors): Record<string, string> {
 
   if (colors.primaryColor) {
     const raw = colors.primaryColor.trim();
-    const ground = background ?? DEFAULT_CANVAS;
 
-    // The brand color is painted EXACTLY as chosen wherever it is a fill — the
-    // progress bar, a solid button, a selected option, borders, the glow. A
-    // brand color is the brand, and silently turning a client's lime into olive
-    // because the page went white is the product overruling its author.
+    // The author's color is painted EXACTLY as chosen, everywhere, with no
+    // contrast correction. Silently substituting a color the author did not pick
+    // reads as a bug — you set lime, the page shows olive, and nothing you click
+    // explains it. Legibility is handled where it belongs: the editor measures
+    // every risky pair and warns, with a one-click readable alternative, and the
+    // decision stays the author's (see `suggestReadable`).
     vars['--pf-primary'] = raw;
-    // The label on that fill still has to be legible, so it is picked FROM the
-    // raw color (black or white, whichever wins) rather than from a clamped one.
+    // The label ON that fill is still chosen for contrast, because it is the
+    // renderer's own decision rather than an override of the author's — nobody
+    // picks the color of button text.
     vars['--pf-primary-contrast'] = onAccent(raw);
     vars['--ring'] = `color-mix(in srgb, ${raw} 45%, transparent)`;
-
-    // The one case that genuinely cannot pass through: the accent used as TEXT
-    // sitting on the form ground (the cover badge, the slider's value, the logo
-    // dot). Lime letters on a white page are not a brand statement, they are
-    // unreadable — so those three, and only those, get the clamped value.
-    vars['--pf-primary-ink'] = clampAccent(raw, ground);
   }
 
   return vars;
+}
+
+/**
+ * A readable version of `color` on `background`, or null when it already reads.
+ *
+ * This is `clampAccent`'s math offered as a SUGGESTION rather than applied
+ * silently: the editor shows it beside the warning so an author can take it in
+ * one click, or ignore it and publish the color they wanted.
+ */
+export function suggestReadable(
+  color: string,
+  background: string,
+  minRatio: number = MIN_ACCENT_CONTRAST,
+): string | null {
+  const rgb = parseHex(color);
+  const ground = parseHex(background);
+  if (!rgb || !ground) return null;
+  if (contrast(rgb, ground) >= minRatio) return null;
+  const target = luminance(ground) > 0.5 ? BLACK : WHITE;
+  let current = rgb;
+  for (let i = 0; i < 24 && contrast(current, ground) < minRatio; i++) {
+    current = mix(current, target, 0.08);
+  }
+  const out = toHex(current);
+  return out.toLowerCase() === toHex(rgb).toLowerCase() ? null : out;
 }
