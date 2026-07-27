@@ -1247,3 +1247,16 @@
     padding: 8px 14px;
   }
 }
+
+/* ── Embedded mode (?embed=1, inside a host page's iframe) ────────────────────
+   The page's height must BE the content's height — the embed reporter measures
+   the document and the host's embed.js sizes the iframe to match, so any
+   viewport-height rule here would turn into a feedback loop (iframe grows →
+   dvh grows → content "grows" → iframe grows…). Slides keeps a comfortable
+   floor so a single question doesn't render as a cramped strip. */
+.pf-embed-root .pf {
+  min-height: 480px;
+}
+.pf-embed-root .pf--vertical {
+  min-height: 0;
+}

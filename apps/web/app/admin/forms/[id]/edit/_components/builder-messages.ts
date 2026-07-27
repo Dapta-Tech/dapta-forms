@@ -33,6 +33,12 @@ export interface BuilderMessages {
     mobile: string;
     settings: string;
     copyLink: string;
+    /** Embed-in-your-site dialog (iframe snippet + auto-height script). */
+    embed: string;
+    embedTitle: string;
+    embedIntro: string;
+    embedCopy: string;
+    embedCopied: string;
     copied: string;
     openForm: string;
   };
@@ -327,6 +333,12 @@ const en: BuilderMessages = {
     mobile: 'Mobile',
     settings: 'Settings',
     copyLink: 'Copy link',
+    embed: 'Embed',
+    embedTitle: 'Embed this form on your site',
+    embedIntro:
+      'Paste this snippet into your page. The form loads inside it and grows to fit its content — the script keeps the height in sync, so there is never an inner scrollbar.',
+    embedCopy: 'Copy snippet',
+    embedCopied: 'Copied',
     copied: 'Copied',
     openForm: 'Open form',
   },
@@ -589,6 +601,12 @@ const es: BuilderMessages = {
     mobile: 'Móvil',
     settings: 'Ajustes',
     copyLink: 'Copiar enlace',
+    embed: 'Insertar',
+    embedTitle: 'Inserta este formulario en tu sitio',
+    embedIntro:
+      'Pega este fragmento en tu página. El formulario carga dentro y crece según su contenido — el script mantiene la altura sincronizada, así nunca hay scroll interno.',
+    embedCopy: 'Copiar fragmento',
+    embedCopied: 'Copiado',
     copied: 'Copiado',
     openForm: 'Abrir formulario',
   },

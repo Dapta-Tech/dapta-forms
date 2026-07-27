@@ -559,7 +559,17 @@ export function FormEditor({
           </button>
           <LinkActions
             publicPath={publicPath}
-            labels={{ copyLink: bm.shell.copyLink, copied: bm.shell.copied, openForm: bm.shell.openForm }}
+            formName={name}
+            labels={{
+              copyLink: bm.shell.copyLink,
+              copied: bm.shell.copied,
+              openForm: bm.shell.openForm,
+              embed: bm.shell.embed,
+              embedTitle: bm.shell.embedTitle,
+              embedIntro: bm.shell.embedIntro,
+              embedCopy: bm.shell.embedCopy,
+              embedCopied: bm.shell.embedCopied,
+            }}
           />
           <PublishButton
             formId={id}
