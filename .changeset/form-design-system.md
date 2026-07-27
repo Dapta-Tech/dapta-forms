@@ -23,28 +23,33 @@ and a `custom` typeface with an incomplete source falls back to the brand face,
 so a combination that renders as a blank page cannot be reached even from a
 hand-edited config.
 
-**Behavioural fix in `@quill/shared`:** `clampAccent` took no background and
-always lightened toward white, which was correct only because the public form
-was always dark. On a light ground it "clamped" a pale accent further into
-unreadable and then reported it as safe. It now takes the real background
-(defaulting to the previous dark canvas, so existing call sites are unchanged)
-and nudges away from that ground in whichever direction separates. Same for
-`accentWasAdjusted` and `accentLabelContrast`.
+**Colors are rendered exactly as chosen — nothing is corrected.** `formThemeVars`
+paints the author's color everywhere, because a silently substituted color reads
+as a bug: you set lime, the page shows olive, and nothing you click explains it.
+Legibility is handled where the author can act on it, in the editor: risky pairs
+are measured and warned about, with `suggestReadable` offering a readable
+alternative in one click, and the decision stays theirs. The only derived value
+left is the label ON a solid accent, since nobody picks the color of button text.
 
-The clamp is NOT applied at render time. `formThemeVars` paints the author's
-color exactly as chosen, everywhere — a silently corrected color reads as a bug:
-you set lime, the page shows olive, and nothing you click explains it. Legibility
-is handled where the author can act on it, in the editor: every risky pair is
-measured and warned about, with `suggestReadable` offering a readable
-alternative in one click, and the decision stays theirs. The one thing still
-derived is the label ON a solid accent, because nobody picks the color of button
-text.
+Nor is any text accent-coloured. Three rules used to be — the cover eyebrow, the
+slider's value, and the dot after the form name — which meant a bright or pale
+brand color silently erased whatever it was applied to. The accent is now only
+ever a fill or a border, so the whole class of problem is gone rather than warned
+about.
 
-New: `suggestReadable`, `contrastRatio`,
-`contrastGrade`, `isLightColor`, `readableOn`, `resolveThemeMode`, and
-`formThemeVars`, which derives the supporting tokens (card, muted, border) by
-mixing the author's ground toward their text — so an arbitrary background gets a
-coherent palette instead of a fixed light or dark one.
+**Bug fixed in `@quill/shared`'s color math:** `clampAccent` took no background
+and always lightened toward white, which was correct only because the public
+form was always dark. On a light ground it pushed a pale color further into
+unreadable and then reported it as safe. The corrected walk (ground-aware
+direction) now lives in one place and backs both `clampAccent` and
+`suggestReadable`. `accentWasAdjusted` is removed — the render path it served no
+longer exists.
+
+New: `suggestReadable`, `contrastRatio`, `contrastGrade`, `isLightColor`,
+`readableOn`, `resolveThemeMode`, and `formThemeVars`, which derives the
+supporting tokens (card, muted, border) by mixing the author's ground toward
+their text — so an arbitrary background gets a coherent palette instead of a
+fixed light or dark one.
 
 Setting a background LOCKS the form's theme: it stops following the visitor's
 light/dark preference. A page cannot honour both an author's chosen palette and

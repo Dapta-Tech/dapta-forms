@@ -130,25 +130,37 @@ export function readableOn(background: string): string {
 }
 
 /**
- * Clamp a host-chosen accent until it separates from the ground it sits on.
+ * Walk a color away from its ground until it clears `minRatio`.
  *
- * The nudge direction is derived from the GROUND, not fixed: on a dark canvas a
- * too-dark accent is lightened toward white, on a light canvas a too-light
- * accent is darkened toward black. Before per-form backgrounds existed this
- * always mixed toward white, which was right only because the public form was
- * always dark — on a white page that same code would have declared an
- * unreadable pastel "safe".
+ * The direction is derived from the GROUND, not fixed: on a dark canvas a
+ * too-dark color is lightened toward white, on a light canvas a too-light color
+ * is darkened toward black. Before per-form backgrounds existed this always
+ * mixed toward white, which was right only because the public form was always
+ * dark — on a white page that same code pushed a pale accent further into
+ * unreadable and then reported it as safe.
+ */
+function nudgeUntilReadable(rgb: Rgb, ground: Rgb, minRatio: number, step: number): Rgb {
+  const target = luminance(ground) > 0.5 ? BLACK : WHITE;
+  let current = rgb;
+  for (let i = 0; i < 24 && contrast(current, ground) < minRatio; i++) {
+    current = mix(current, target, step);
+  }
+  return current;
+}
+
+/**
+ * Clamp a color until it separates from the ground it sits on.
+ *
+ * NOTE: nothing on the public form calls this any more — a chosen color is
+ * rendered exactly as chosen (see `formThemeVars`). It survives as the shared
+ * math behind `suggestReadable`, which offers the same result as advice rather
+ * than applying it silently.
  */
 export function clampAccent(hex: string, background: string = DEFAULT_CANVAS): string {
   const rgb = parseHex(hex);
   if (!rgb) return DEFAULT_ACCENT;
   const ground = parseHex(background) ?? DARK_CANVAS_RGB;
-  const target = luminance(ground) > 0.5 ? BLACK : WHITE;
-  let current = rgb;
-  for (let i = 0; i < 20 && contrast(current, ground) < MIN_ACCENT_CONTRAST; i++) {
-    current = mix(current, target, 0.12);
-  }
-  return toHex(current);
+  return toHex(nudgeUntilReadable(rgb, ground, MIN_ACCENT_CONTRAST, 0.12));
 }
 
 /** The label color that reads on top of the accent (black or white). */
@@ -162,13 +174,6 @@ export function accentLabelContrast(hex: string, background: string = DEFAULT_CA
   const accent = parseHex(clamped)!;
   const label = parseHex(onAccent(clamped))!;
   return Math.round(contrast(accent, label) * 10) / 10;
-}
-
-/** True when the host's raw pick had to be nudged to stay readable on its ground. */
-export function accentWasAdjusted(hex: string, background: string = DEFAULT_CANVAS): boolean {
-  const parsed = parseHex(hex);
-  if (!parsed) return false;
-  return toHex(parsed).toLowerCase() !== clampAccent(hex, background).toLowerCase();
 }
 
 export function accentVars(rawAccent: string): Record<string, string> {
@@ -271,11 +276,8 @@ export function suggestReadable(
   const ground = parseHex(background);
   if (!rgb || !ground) return null;
   if (contrast(rgb, ground) >= minRatio) return null;
-  const target = luminance(ground) > 0.5 ? BLACK : WHITE;
-  let current = rgb;
-  for (let i = 0; i < 24 && contrast(current, ground) < minRatio; i++) {
-    current = mix(current, target, 0.08);
-  }
-  const out = toHex(current);
+  // A finer step than `clampAccent`'s: this result is shown to a human as "use
+  // this instead", so it should stop as close to their color as it can.
+  const out = toHex(nudgeUntilReadable(rgb, ground, minRatio, 0.08));
   return out.toLowerCase() === toHex(rgb).toLowerCase() ? null : out;
 }

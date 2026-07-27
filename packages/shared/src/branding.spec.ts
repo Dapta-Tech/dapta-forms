@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_ACCENT,
   DEFAULT_CANVAS,
-  accentWasAdjusted,
   clampAccent,
   contrastGrade,
   contrastRatio,
@@ -50,19 +49,6 @@ describe('clampAccent — ground awareness', () => {
 
   it('falls back to the brand accent for an unparseable color', () => {
     expect(clampAccent('not-a-color')).toBe(DEFAULT_ACCENT);
-  });
-});
-
-describe('accentWasAdjusted', () => {
-  it('is ground-relative', () => {
-    // The same lime is fine on dark and needs nudging on white — the warning in
-    // the editor has to follow the background the author actually chose.
-    expect(accentWasAdjusted(DEFAULT_ACCENT, '#222222')).toBe(false);
-    expect(accentWasAdjusted(DEFAULT_ACCENT, '#ffffff')).toBe(true);
-  });
-
-  it('is false for an unparseable color', () => {
-    expect(accentWasAdjusted('rgb(1,2,3)')).toBe(false);
   });
 });
 
