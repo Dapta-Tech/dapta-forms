@@ -494,7 +494,7 @@ export function VerticalFormRenderer({
         answers={answersRef.current}
         m={m}
         accountCode={accountCode}
-        bannerText={cover?.bannerText}
+        cover={cover}
         style={accentVars}
       />
     );
@@ -502,7 +502,7 @@ export function VerticalFormRenderer({
 
   if (phase === 'booking' && booking?.outcome.booking) {
     return (
-      <PhaseShell className="pf pf--booking-page" style={accentVars} bannerText={cover?.bannerText}>
+      <PhaseShell className="pf pf--booking-page" style={accentVars} cover={cover}>
         <BookingScreen
           booking={booking.outcome.booking}
           answers={answersRef.current}
@@ -521,7 +521,7 @@ export function VerticalFormRenderer({
         style={accentVars}
         role="status"
         aria-live="polite"
-        bannerText={cover?.bannerText}
+        cover={cover}
       >
         <RevealScreen
           reveal={pendingReveal ?? { enabled: true }}
@@ -540,7 +540,7 @@ export function VerticalFormRenderer({
         style={accentVars}
         role="status"
         aria-live="polite"
-        bannerText={cover?.bannerText}
+        cover={cover}
       >
         <div className="pf-reveal__inner">
           <div className="pf-reveal__spinner" aria-hidden="true" />
@@ -559,6 +559,9 @@ export function VerticalFormRenderer({
       {/* Banner + progress share ONE sticky group so they never fight for the
           viewport top; the banner's own sticky is neutralized on this layout. */}
       <div className="pf-v__sticky">
+        {/* The one page is simultaneously the cover and the form, so both
+            banner scopes show it here (showBanner(cover, true) === has text);
+            the post-submit phases defer to the scope via the shared shell. */}
         {cover?.bannerText ? <div className="pf__banner">{cover.bannerText}</div> : null}
         {total > 0 ? (
           <div className="pf-v__progressbar">

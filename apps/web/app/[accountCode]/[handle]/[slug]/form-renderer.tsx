@@ -23,6 +23,7 @@ import {
   nameFields,
   isMultiSelect,
   isSafeHttpUrl,
+  showClientLogos,
   type Answers,
   type AnswerValue,
   type FormStep,
@@ -450,7 +451,7 @@ export function FormRenderer({
         answers={answersRef.current}
         m={m}
         accountCode={accountCode}
-        bannerText={cover?.bannerText}
+        cover={cover}
         style={accentVars}
       />
     );
@@ -458,7 +459,7 @@ export function FormRenderer({
 
   if (phase === 'booking' && booking?.outcome.booking) {
     return (
-      <PhaseShell className="pf pf--booking-page" style={accentVars} bannerText={cover?.bannerText}>
+      <PhaseShell className="pf pf--booking-page" style={accentVars} cover={cover}>
         <BookingScreen
           booking={booking.outcome.booking}
           answers={answersRef.current}
@@ -477,7 +478,7 @@ export function FormRenderer({
         style={accentVars}
         role="status"
         aria-live="polite"
-        bannerText={cover?.bannerText}
+        cover={cover}
       >
         <RevealScreen
           reveal={config.reveal}
@@ -496,7 +497,7 @@ export function FormRenderer({
         style={accentVars}
         role="status"
         aria-live="polite"
-        bannerText={cover?.bannerText}
+        cover={cover}
       >
         <div className="pf-reveal__inner">
           <div className="pf-reveal__spinner" aria-hidden="true" />
@@ -508,14 +509,15 @@ export function FormRenderer({
 
   if (phase === 'cover' && cover) {
     const logo = cover.logo ?? config.branding?.logo ?? null;
-    const logos = cover.clientLogos ?? config.branding?.clientLogos ?? [];
+    const logos = showClientLogos(cover) ? (cover.clientLogos ?? config.branding?.clientLogos ?? []) : [];
     return (
       <PhaseShell
         className="pf pf--cover"
         style={accentVars}
         onKeyDown={(e) => e.key === 'Enter' && start()}
         tabIndex={-1}
-        bannerText={cover.bannerText}
+        cover={cover}
+        isCover
       >
         <header className="pf__cover-header">
           <FormLogo src={logo} name={name} />
@@ -562,7 +564,7 @@ export function FormRenderer({
         style={accentVars}
         role="status"
         aria-live="polite"
-        bannerText={cover?.bannerText}
+        cover={cover}
       >
         <RevealScreen
           reveal={step.reveal ?? { enabled: true }}
@@ -600,7 +602,7 @@ export function FormRenderer({
       : null;
     const schedLogo = cover?.logo ?? config.branding?.logo ?? null;
     return (
-      <PhaseShell className="pf" style={accentVars} bannerText={cover?.bannerText}>
+      <PhaseShell className="pf" style={accentVars} cover={cover}>
         <header className="pf__topbar">
           <div className="pf__topbar-inner">
             {index > 0 || cover ? (
@@ -662,7 +664,7 @@ export function FormRenderer({
   const logo = cover?.logo ?? config.branding?.logo ?? null;
 
   return (
-    <PhaseShell className="pf" style={accentVars} onKeyDown={onKeyDown} bannerText={cover?.bannerText}>
+    <PhaseShell className="pf" style={accentVars} onKeyDown={onKeyDown} cover={cover}>
       <header className="pf__topbar">
         <div className="pf__topbar-inner">
           {index > 0 || cover ? (

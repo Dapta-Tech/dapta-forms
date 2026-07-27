@@ -140,6 +140,11 @@ export interface BuilderMessages {
     required: string;
     options: string;
     addOption: string;
+    /** How a choice question lays its options out: a list, or a card grid. */
+    optionLayout: string;
+    optionLayoutHint: string;
+    optionLayoutList: string;
+    optionLayoutCards: string;
     logic: string;
     addRule: string;
     noRules: string;
@@ -391,6 +396,11 @@ const en: BuilderMessages = {
     required: 'Required',
     options: 'Options',
     addOption: 'Add option',
+    optionLayout: 'Show options as',
+    optionLayoutHint:
+      'Each option can carry an emoji or initials in both layouts. Cards lay them out in a centred grid and are the only layout that can show a logo.',
+    optionLayoutList: 'List',
+    optionLayoutCards: 'Cards',
     logic: 'Logic',
     addRule: 'Add rule',
     noRules: 'No rules — everyone sees this question.',
@@ -660,6 +670,11 @@ const es: BuilderMessages = {
     required: 'Obligatoria',
     options: 'Opciones',
     addOption: 'Añadir opción',
+    optionLayout: 'Mostrar opciones como',
+    optionLayoutHint:
+      'Cada opción puede llevar un emoji o iniciales en ambos diseños. Las tarjetas los ordenan en una cuadrícula centrada y son el único diseño que puede mostrar un logo.',
+    optionLayoutList: 'Lista',
+    optionLayoutCards: 'Tarjetas',
     logic: 'Lógica',
     addRule: 'Añadir regla',
     noRules: 'Sin reglas — todos ven esta pregunta.',

@@ -8,8 +8,8 @@
  * browser-only capture helpers; every flow decision stays in `@quill/engine`.
  */
 import { useState } from 'react';
-import type { Answers, FormStep, ResolvedEnding } from '@quill/engine';
-import { nameFields, isSafeHttpUrl, interpolate } from '@quill/engine';
+import type { Answers, FormCover, FormStep, ResolvedEnding } from '@quill/engine';
+import { nameFields, isSafeHttpUrl, interpolate, showBanner } from '@quill/engine';
 import type { OutcomeBooking } from '@quill/types';
 import type { getMessages } from '@quill/shared';
 import { signupHref } from '@/lib/growth';
@@ -107,22 +107,28 @@ export function schedulerToBooking(
 /**
  * Per-phase page shell. The promo banner (`cover.bannerText`) renders ONCE here
  * as the first child of `.pf`, so it is a full-width strip pinned to the top of
- * the viewport in EVERY phase; everything else lives in `.pf__main`, which owns
- * the remaining height. Desktop's per-phase vertical centering is applied to
- * `.pf__main` (public-form.css), so centering the content group can never drag
- * the banner toward the middle of the page.
+ * the viewport; everything else lives in `.pf__main`, which owns the remaining
+ * height. Desktop's per-phase vertical centering is applied to `.pf__main`
+ * (public-form.css), so centering the content group can never drag the banner
+ * toward the middle of the page.
+ *
+ * WHICH phases show it is `cover.bannerScope` (see `showBanner`): every phase by
+ * default, or the cover alone — hence `isCover`, set only by the cover phase.
  */
 export function PhaseShell({
-  bannerText,
+  cover,
+  isCover = false,
   children,
   ...rootProps
 }: {
-  bannerText?: string | null;
+  cover?: FormCover | null;
+  isCover?: boolean;
   children: React.ReactNode;
 } & React.HTMLAttributes<HTMLDivElement>) {
+  const banner = showBanner(cover, isCover) ? cover?.bannerText : null;
   return (
     <div {...rootProps}>
-      {bannerText ? <div className="pf__banner">{bannerText}</div> : null}
+      {banner ? <div className="pf__banner">{banner}</div> : null}
       <div className="pf__main">{children}</div>
     </div>
   );
@@ -139,19 +145,19 @@ export function DoneScreen({
   answers,
   m,
   accountCode,
-  bannerText,
+  cover,
   style,
 }: {
   ending: ResolvedEnding;
   answers: Answers;
   m: ReturnType<typeof getMessages>['renderer'];
   accountCode: string;
-  bannerText?: string | null;
+  cover?: FormCover | null;
   style?: React.CSSProperties;
 }) {
   const cta = signupHref('confirmation', accountCode);
   return (
-    <PhaseShell className="pf pf--done" style={style} bannerText={bannerText}>
+    <PhaseShell className="pf pf--done" style={style} cover={cover}>
       <div className="pf-done__inner pf-animate">
         <div className="pf-done__check" aria-hidden="true">
           ✓
