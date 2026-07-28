@@ -27,7 +27,7 @@ import {
   upsertIntegration,
 } from '@quill/db';
 import { formDestinationSchema, maskConfigSecrets, type FormDestination } from '@quill/types';
-import { WebhookDestination } from '@quill/destinations';
+import { WebhookDestination, WebhookHttpError } from '@quill/destinations';
 import type { ServerEnv } from '@quill/config/env';
 import { AuthService, type ReqLike } from './auth.service';
 import { assertAdmin } from './permissions';
@@ -495,7 +495,7 @@ export class FormDestinationsController {
   async pingWebhook(
     @Req() req: ReqLike,
     @Param('id') id: string,
-  ): Promise<{ ok: boolean; message?: string }> {
+  ): Promise<WebhookPingResult> {
     const p = await this.auth.resolveHost(req);
     assertAdmin(p);
     const form = await getFormById(this.db, p.accountId, id);
@@ -546,11 +546,87 @@ export class FormDestinationsController {
       });
       return { ok: true };
     } catch (err) {
-      // The adapter's messages already carry the HTTP status or the transport
-      // failure — that string IS the useful diagnostic for the far end.
-      return { ok: false, message: err instanceof Error ? err.message : String(err) };
+      // "HTTP 400" alone sends the author looking in the wrong place. Classify
+      // it into something the UI can explain, and pass along the endpoint's own
+      // response — which names the real reason far more often than the status
+      // code does.
+      return { ok: false, ...classifyWebhookFailure(err) };
     }
   }
+}
+
+/** What went wrong with a test delivery, in terms the UI can explain. */
+export type WebhookPingReason =
+  | 'method_not_allowed'
+  | 'unsupported_media_type'
+  | 'rejected_body'
+  | 'unauthorized'
+  | 'not_found'
+  | 'rate_limited'
+  | 'server_error'
+  | 'redirect'
+  | 'blocked'
+  | 'unreachable'
+  | 'unknown';
+
+export interface WebhookPingResult {
+  ok: boolean;
+  reason?: WebhookPingReason;
+  /** The status the endpoint answered with, when it answered at all. */
+  status?: number;
+  /** The endpoint's own response body, trimmed and truncated. */
+  detail?: string;
+  /** The raw adapter message — kept for the log and for reasons we cannot name. */
+  message?: string;
+}
+
+/**
+ * Map a failed delivery onto a reason the UI has copy for.
+ *
+ * Deliberately NOT a guess at intent. A 405 genuinely means "this endpoint does
+ * not accept POST" and we say exactly that; a 400 means the endpoint read the
+ * request and rejected the body, which is a different sentence, even though the
+ * underlying mistake is often the same one. Saying "your webhook is not POST"
+ * on a 400 would be right often enough to be trusted and wrong often enough to
+ * send someone down the wrong path — so the copy for 4xx states what we send
+ * (POST, application/json) and lets the endpoint's own message do the rest.
+ */
+export function classifyWebhookFailure(err: unknown): {
+  reason: WebhookPingReason;
+  status?: number;
+  detail?: string;
+  message: string;
+} {
+  const message = err instanceof Error ? err.message : String(err);
+
+  if (err instanceof WebhookHttpError) {
+    const { status, detail } = err;
+    const base = { status, detail: detail ?? undefined, message };
+    if (status >= 300 && status < 400) return { reason: 'redirect', ...base };
+    if (status === 405 || status === 501) return { reason: 'method_not_allowed', ...base };
+    if (status === 415) return { reason: 'unsupported_media_type', ...base };
+    if (status === 401 || status === 403) return { reason: 'unauthorized', ...base };
+    if (status === 404 || status === 410) return { reason: 'not_found', ...base };
+    if (status === 429) return { reason: 'rate_limited', ...base };
+    if (status >= 500) return { reason: 'server_error', ...base };
+    if (status >= 400) return { reason: 'rejected_body', ...base };
+    return { reason: 'unknown', ...base };
+  }
+
+  // The SSRF guard refused before anything left the process. Its own message is
+  // the explanation; naming it separately keeps "we blocked this" from reading
+  // like "your server is down".
+  if (/blocked|private|loopback|link-local|metadata|not a public/i.test(message)) {
+    return { reason: 'blocked', message };
+  }
+  // AbortError (our timeout) and fetch's TypeError both mean nobody answered.
+  if (err instanceof Error && (err.name === 'AbortError' || err.name === 'TimeoutError')) {
+    return { reason: 'unreachable', message };
+  }
+  if (/fetch failed|ENOTFOUND|ECONNREFUSED|ETIMEDOUT|EAI_AGAIN|socket hang up/i.test(message)) {
+    return { reason: 'unreachable', message };
+  }
+  return { reason: 'unknown', message };
 }
 
 /**

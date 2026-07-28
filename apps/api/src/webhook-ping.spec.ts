@@ -133,4 +133,82 @@ describe('webhook ping', () => {
     ).rejects.toBeInstanceOf(NotFoundException);
     expect(calls).toHaveLength(0);
   });
+
+  /**
+   * The failure REASON, which is the whole point of a test button.
+   *
+   * "webhook delivery failed: HTTP 400" is true and useless — it sends the
+   * author to check the wrong thing. Each status has to arrive as a reason the
+   * UI has a sentence for, carrying the endpoint's own words.
+   */
+  describe('explains why a delivery failed', () => {
+    /** Answer the ping with a chosen status + body, then read the result. */
+    async function ping(status: number, body = ''): Promise<Awaited<ReturnType<typeof controller.pingWebhook>>> {
+      await setWebhook('http://localhost:4999/hook');
+      controller.fetchImpl = (async (url: string, init: RequestInit) => {
+        calls.push({ url: String(url), init });
+        return new Response(body, { status });
+      }) as unknown as typeof fetch;
+      return controller.pingWebhook(asOwner(), formId);
+    }
+
+    it('names a refused method only when the endpoint actually said so', async () => {
+      const res = await ping(405);
+      expect(res.ok).toBe(false);
+      expect(res.reason).toBe('method_not_allowed');
+      expect(res.status).toBe(405);
+    });
+
+    it('does NOT claim the method was wrong on a 400 — the body was rejected', async () => {
+      const res = await ping(400);
+      expect(res.reason).toBe('rejected_body');
+      expect(res.reason).not.toBe('method_not_allowed');
+    });
+
+    it("passes through the endpoint's own explanation", async () => {
+      const res = await ping(400, '{"error":"missing field: email"}');
+      expect(res.detail).toBe('{"error":"missing field: email"}');
+    });
+
+    it('truncates a huge error page instead of storing it whole', async () => {
+      const res = await ping(500, 'x'.repeat(5000));
+      expect(res.reason).toBe('server_error');
+      expect(res.detail!.length).toBeLessThan(500);
+      expect(res.detail!.endsWith('…')).toBe(true);
+    });
+
+    it.each([
+      [401, 'unauthorized'],
+      [403, 'unauthorized'],
+      [404, 'not_found'],
+      [415, 'unsupported_media_type'],
+      [429, 'rate_limited'],
+      [502, 'server_error'],
+    ])('maps HTTP %i to %s', async (status, reason) => {
+      const res = await ping(status);
+      expect(res.reason).toBe(reason);
+    });
+
+    it('calls a refusal by the SSRF guard blocked, not unreachable', async () => {
+      await setWebhook('https://10.0.0.5/hook');
+      const res = await controller.pingWebhook(asOwner(), formId);
+      expect(res.reason).toBe('blocked');
+      expect(calls).toHaveLength(0);
+    });
+
+    it('reports a host that never answers as unreachable', async () => {
+      await setWebhook('http://localhost:4999/hook');
+      controller.fetchImpl = (async () => {
+        throw new TypeError('fetch failed');
+      }) as unknown as typeof fetch;
+      const res = await controller.pingWebhook(asOwner(), formId);
+      expect(res.reason).toBe('unreachable');
+    });
+
+    it('leaves a success with no reason at all', async () => {
+      await setWebhook('http://localhost:4999/hook');
+      const res = await controller.pingWebhook(asOwner(), formId);
+      expect(res).toEqual({ ok: true });
+    });
+  });
 });

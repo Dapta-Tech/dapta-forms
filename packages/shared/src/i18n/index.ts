@@ -123,6 +123,15 @@ export interface FormsMessages {
         calendars: string;
         opensNewTab: string;
       };
+      /** The workspace picker — a different axis from `switcher` (product). */
+      workspaces: {
+        menuLabel: string;
+        eyebrow: string;
+        /** Marks a workspace you were invited to and have not opened yet. */
+        invited: string;
+        /** The account is not among the caller's memberships (a stale choice). */
+        unknown: string;
+      };
     };
     /** The dashboard home (/admin) — greeting, public link, stats, quick actions. */
     home: {
@@ -978,6 +987,26 @@ export interface FormsMessages {
       pingFailed: string;
       pingNeedsUrl: string;
       pingHelp: string;
+      /**
+       * Why a test delivery failed. One line per reason the API can name — a
+       * bare "HTTP 400" told the author nothing about where to look. Only
+       * `pingMethodNotAllowed` may claim POST was refused; that is the one
+       * status that actually says so.
+       */
+      pingStatus: string;
+      pingWeSend: string;
+      pingEndpointSaid: string;
+      pingMethodNotAllowed: string;
+      pingUnsupportedMedia: string;
+      pingRejectedBody: string;
+      pingUnauthorized: string;
+      pingNotFound: string;
+      pingRateLimited: string;
+      pingServerError: string;
+      pingRedirect: string;
+      pingBlocked: string;
+      pingUnreachable: string;
+      pingUnknown: string;
       connectedBadge: string;
       propertiesUnavailable: string;
       mapQuestions: string;
@@ -1152,6 +1181,12 @@ export const en: FormsMessages = {
         dapta: 'Dapta AI',
         calendars: 'Dapta Calendars',
         opensNewTab: '(opens in a new tab)',
+      },
+      workspaces: {
+        menuLabel: 'Your workspaces',
+        eyebrow: 'Workspace',
+        invited: 'Invited',
+        unknown: 'Unknown workspace',
       },
     },
     home: {
@@ -1955,6 +1990,21 @@ export const en: FormsMessages = {
       pingNeedsUrl: 'Save a webhook URL first.',
       pingHelp:
         'Posts one sample body in the real shape, signed the same way, so you can check what your endpoint receives. The answers are made up and marked as a test.',
+      pingStatus: 'Your endpoint answered HTTP {status}.',
+      pingWeSend: 'Dapta Forms always delivers with POST and a JSON body.',
+      pingEndpointSaid: 'It replied: {detail}',
+      pingMethodNotAllowed: 'It does not accept POST on this URL.',
+      pingUnsupportedMedia: 'It refused the content type.',
+      pingRejectedBody: 'It read the request and rejected the body.',
+      pingUnauthorized: 'It refused the request as unauthorised — check any token or secret it expects.',
+      pingNotFound: 'There is nothing at that URL.',
+      pingRateLimited: 'It is rate-limiting us — try again shortly.',
+      pingServerError: 'It failed on its side.',
+      pingRedirect: 'It answered with a redirect, which we never follow. Use the final URL directly.',
+      pingBlocked:
+        'Blocked before sending: that address is private, reserved, or internal, and we never post to those.',
+      pingUnreachable: 'Nothing answered at that URL — check the host is reachable and not timing out.',
+      pingUnknown: 'The delivery failed for a reason we could not identify.',
       connectedBadge: 'HubSpot connected',
       propertiesUnavailable:
         'HubSpot properties are temporarily unavailable — you can still type a property name.',
@@ -2128,6 +2178,12 @@ export const es: FormsMessages = {
         dapta: 'Dapta AI',
         calendars: 'Dapta Calendars',
         opensNewTab: '(se abre en una pestaña nueva)',
+      },
+      workspaces: {
+        menuLabel: 'Tus workspaces',
+        eyebrow: 'Workspace',
+        invited: 'Invitado',
+        unknown: 'Workspace desconocido',
       },
     },
     home: {
@@ -2934,6 +2990,21 @@ export const es: FormsMessages = {
       pingNeedsUrl: 'Primero guarda una URL de webhook.',
       pingHelp:
         'Manda un cuerpo de ejemplo con la forma real, firmado igual, para que veas qué recibe tu endpoint. Las respuestas son inventadas y van marcadas como prueba.',
+      pingStatus: 'Tu endpoint respondió HTTP {status}.',
+      pingWeSend: 'Dapta Forms siempre entrega con POST y un cuerpo JSON.',
+      pingEndpointSaid: 'Respondió: {detail}',
+      pingMethodNotAllowed: 'No acepta POST en esa URL.',
+      pingUnsupportedMedia: 'Rechazó el tipo de contenido.',
+      pingRejectedBody: 'Leyó la petición y rechazó el cuerpo.',
+      pingUnauthorized: 'Rechazó la petición por falta de autorización: revisa el token o secreto que espera.',
+      pingNotFound: 'No hay nada en esa URL.',
+      pingRateLimited: 'Nos está limitando por frecuencia; probá de nuevo en un momento.',
+      pingServerError: 'Falló de su lado.',
+      pingRedirect: 'Respondió con una redirección, y nunca las seguimos. Usá la URL final directamente.',
+      pingBlocked:
+        'Bloqueado antes de enviar: esa dirección es privada, reservada o interna, y nunca publicamos hacia ahí.',
+      pingUnreachable: 'Nadie respondió en esa URL: revisá que el host esté accesible y no expire.',
+      pingUnknown: 'La entrega falló por un motivo que no pudimos identificar.',
       connectedBadge: 'HubSpot conectado',
       propertiesUnavailable:
         'Las propiedades de HubSpot no están disponibles temporalmente; aún puedes escribir el nombre de una propiedad.',

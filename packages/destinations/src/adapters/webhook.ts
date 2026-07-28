@@ -131,10 +131,55 @@ export class WebhookDestination implements SubmissionDestination {
     // No redirects: a 3xx (or the opaque redirect fetch surfaces as status 0)
     // is a failure, never a followed hop.
     if (res.status === 0 || (res.status >= 300 && res.status < 400)) {
-      throw new Error(`webhook delivery refused: endpoint attempted a redirect (HTTP ${res.status})`);
+      throw new WebhookHttpError(
+        `webhook delivery refused: endpoint attempted a redirect (HTTP ${res.status})`,
+        res.status,
+        null,
+      );
     }
-    if (!res.ok) throw new Error(`webhook delivery failed: HTTP ${res.status}`);
+    if (!res.ok) {
+      // The receiver's own body is the single most useful thing we can hand
+      // back — it usually names the exact reason a status code cannot. Read it
+      // best-effort and bounded: a failing endpoint may answer with a whole
+      // HTML error page, and none of this belongs in an outbox row.
+      const detail = await readErrorBody(res);
+      throw new WebhookHttpError(`webhook delivery failed: HTTP ${res.status}`, res.status, detail);
+    }
     return { delivered: true, driver: 'webhook' };
+  }
+}
+
+/** How much of the receiver's error body we keep. Enough to carry a JSON error. */
+const MAX_ERROR_BODY = 400;
+
+async function readErrorBody(res: Response): Promise<string | null> {
+  try {
+    const text = (await res.text()).trim();
+    if (!text) return null;
+    return text.length > MAX_ERROR_BODY ? `${text.slice(0, MAX_ERROR_BODY)}…` : text;
+  } catch {
+    return null; // an unreadable body must never mask the status we already have.
+  }
+}
+
+/**
+ * A delivery the endpoint answered and rejected.
+ *
+ * The `message` is byte-identical to what this adapter has always thrown — the
+ * outbox stores it and two tests assert on it, so it is a contract, not a
+ * string. The status and the receiver's body ride alongside it so a caller that
+ * can do something better with them (the admin test delivery, which explains the
+ * failure to a person) does not have to parse English out of a message.
+ */
+export class WebhookHttpError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    /** The endpoint's own response body, trimmed and truncated, when it sent one. */
+    readonly detail: string | null,
+  ) {
+    super(message);
+    this.name = 'WebhookHttpError';
   }
 }
 

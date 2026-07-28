@@ -10,9 +10,14 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Select, type SelectOption } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
+import { ProviderLogo, type LogoProvider } from '@/components/ui/provider-logo';
 import { useToast } from '@/components/toast';
 import { cn } from '@/lib/cn';
-import type { HubSpotPropertiesResponse } from '@/lib/admin-api';
+import type {
+  HubSpotPropertiesResponse,
+  WebhookPingReason,
+  WebhookPingResult,
+} from '@/lib/admin-api';
 import { trackDestinationWrite } from '@/lib/connect-sync';
 import { propertyLookup, suggestProperty, type QuestionMeta } from './auto-map';
 import { pingWebhookAction, saveIntegrationsAction } from './actions';
@@ -654,6 +659,45 @@ function KeySelect({
   );
 }
 
+/**
+ * Turn a failed test delivery into a sentence someone can act on.
+ *
+ * The old toast said "Test failed: webhook delivery failed: HTTP 400" — a true
+ * statement that sends the reader to the wrong place. What actually helps is
+ * three things in order: what the endpoint did, what we sent it (POST with a
+ * JSON body — the assumption most often wrong), and the endpoint's OWN response,
+ * which usually names the real reason.
+ *
+ * Only 405/501 lets us say outright that POST is refused. On a 400 the endpoint
+ * read the request and rejected the body; claiming the method was wrong there
+ * would be a guess dressed as a diagnosis.
+ */
+export function explainPingFailure(res: WebhookPingResult, m: Msgs): string {
+  const REASON: Record<WebhookPingReason, string> = {
+    method_not_allowed: m.pingMethodNotAllowed,
+    unsupported_media_type: m.pingUnsupportedMedia,
+    rejected_body: m.pingRejectedBody,
+    unauthorized: m.pingUnauthorized,
+    not_found: m.pingNotFound,
+    rate_limited: m.pingRateLimited,
+    server_error: m.pingServerError,
+    redirect: m.pingRedirect,
+    blocked: m.pingBlocked,
+    unreachable: m.pingUnreachable,
+    unknown: m.pingUnknown,
+  };
+  const headline = res.reason ? REASON[res.reason] : m.pingUnknown;
+  const parts = [
+    res.status ? fill(m.pingStatus, { status: String(res.status) }) : null,
+    headline,
+    // Not shown for `blocked` / `unreachable`: nothing was ever POSTed, so
+    // telling the reader what we send would only be noise.
+    res.status ? m.pingWeSend : null,
+    res.detail ? fill(m.pingEndpointSaid, { detail: res.detail }) : null,
+  ].filter(Boolean);
+  return parts.join(' ');
+}
+
 function Card({
   title,
   desc,
@@ -661,6 +705,7 @@ function Card({
   onToggle,
   m,
   badge,
+  logo,
   children,
 }: {
   title: string;
@@ -669,6 +714,8 @@ function Card({
   onToggle: (v: boolean) => void;
   m: Msgs;
   badge?: string;
+  /** The provider this card configures, when it is a named third party. */
+  logo?: LogoProvider;
   children: React.ReactNode;
 }) {
   return (
@@ -676,6 +723,7 @@ function Card({
       <div className="flex items-start justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
+            {logo ? <ProviderLogo provider={logo} size={20} /> : null}
             <h2 className="text-lg font-semibold">{title}</h2>
             {badge ? (
               <span className="inline-flex items-center gap-1 rounded-full border border-primary/40 bg-primary/10 px-2 py-0.5 text-xs font-medium text-foreground">
@@ -786,7 +834,7 @@ function WebhookCard({
     try {
       const res = await pingWebhookAction(formId);
       if (res.ok) success(m.pingOk);
-      else toastError(fill(m.pingFailed, { reason: res.message ?? '' }));
+      else toastError(explainPingFailure(res, m));
     } finally {
       setPinging(false);
     }
@@ -908,7 +956,10 @@ function HubspotCard({
   if (!emailSource) {
     return (
       <section data-testid="hubspot-card" className="rounded-lg border border-border bg-card p-5">
-        <h2 className="text-lg font-semibold">{m.hubspotTitle}</h2>
+        <div className="flex items-center gap-2">
+          <ProviderLogo provider="hubspot" size={20} />
+          <h2 className="text-lg font-semibold">{m.hubspotTitle}</h2>
+        </div>
         <p className="mt-0.5 text-sm text-muted-foreground">{m.hubspotDesc}</p>
         <div
           data-testid="hubspot-needs-email"
@@ -925,7 +976,10 @@ function HubspotCard({
   if (!showMapping) {
     return (
       <section className="rounded-lg border border-border bg-card p-5">
-        <h2 className="text-lg font-semibold">{m.hubspotTitle}</h2>
+        <div className="flex items-center gap-2">
+          <ProviderLogo provider="hubspot" size={20} />
+          <h2 className="text-lg font-semibold">{m.hubspotTitle}</h2>
+        </div>
         <p className="mt-0.5 text-sm text-muted-foreground">{m.hubspotDesc}</p>
         <div className="mt-4 rounded-md border border-dashed border-border bg-muted/40 p-4">
           <p className="text-sm font-medium text-foreground">{m.connectPromptTitle}</p>
@@ -1002,6 +1056,7 @@ function HubspotCard({
     <Card
       title={m.hubspotTitle}
       desc={m.hubspotDesc}
+      logo="hubspot"
       enabled={state.enabled}
       onToggle={(enabled) => onChange({ ...state, enabled })}
       m={m}

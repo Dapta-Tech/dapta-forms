@@ -119,6 +119,18 @@ export class AdminCrudController {
     return this.admin.me(p);
   }
 
+  /**
+   * Every workspace this person can enter, for the switcher.
+   *
+   * Answered from the caller's HOME identity rather than the workspace they are
+   * currently in — otherwise switching into a workspace would replace the list
+   * with that workspace's own view and there would be no way back out.
+   */
+  @Get('workspaces')
+  async workspaces(@Req() req: ReqLike) {
+    return this.auth.listWorkspaces(req);
+  }
+
   /** This member's public page config (the raw blob, or null). */
   @Get('me/profile')
   async myProfile(@Req() req: ReqLike) {
