@@ -424,6 +424,40 @@ export interface FormsMessages {
         valueHelp: string;
         /** V5 — what the visible label is. */
         labelHelp: string;
+        /** Spreadsheet-paste import (option + optional score columns). */
+        importer: {
+          /** The "Import options" button beside "Add option". */
+          open: string;
+          title: string;
+          /** One-line how-to above the textarea. */
+          intro: string;
+          placeholder: string;
+          modeReplace: string;
+          modeAppend: string;
+          colOption: string;
+          colScore: string;
+          colStatus: string;
+          statusOk: string;
+          statusDuplicate: string;
+          statusInvalid: string;
+          /** {n} — decimal rounded to this integer. */
+          statusRounded: string;
+          /** {n} valid rows summary chip. */
+          summaryValid: string;
+          /** {n} rows carrying a score. */
+          summaryWithScore: string;
+          summaryHeaderSkipped: string;
+          summaryExtraColumns: string;
+          /** {n} rows cut by the per-question cap. */
+          summaryTruncated: string;
+          /** CTA — {n} interpolated. */
+          submit: string;
+          /** Replace would drop icons the current options carry. */
+          replaceIconsNote: string;
+          /** Paste has no score column but the question is scored. */
+          noScoresNote: string;
+          cancel: string;
+        };
       };
       sliderScoring: {
         title: string;
@@ -1423,6 +1457,31 @@ export const en: FormsMessages = {
         labelHelp: 'What respondents read on the option. Safe to reword at any time.',
         valueHelp:
           'What gets stored in the response and sent to HubSpot or a webhook. Keep it stable — changing it breaks past answers and any mapping that points at it.',
+        importer: {
+          open: 'Import options',
+          title: 'Import options from a spreadsheet',
+          intro:
+            'Copy one or two columns from your sheet and paste them here. Column 1 is the option, column 2 (optional) is its score. A header row is detected automatically.',
+          placeholder: 'SaaS B2B\t10\nE-commerce\t8\nHealthcare\t7',
+          modeReplace: 'Replace options',
+          modeAppend: 'Add to the end',
+          colOption: 'Option',
+          colScore: 'Score',
+          colStatus: 'Status',
+          statusOk: 'ok',
+          statusDuplicate: 'duplicate',
+          statusInvalid: 'invalid score',
+          statusRounded: 'rounded to {n}',
+          summaryValid: '{n} valid',
+          summaryWithScore: '{n} with score',
+          summaryHeaderSkipped: 'header skipped',
+          summaryExtraColumns: 'extra columns ignored',
+          summaryTruncated: '{n} over the limit',
+          submit: 'Import {n} options',
+          replaceIconsNote: 'Replacing removes the icons your current options carry.',
+          noScoresNote: 'No scores in this paste — this question keeps its current points.',
+          cancel: 'Cancel',
+        },
       },
       sliderScoring: {
         title: 'Slider scoring',
@@ -2352,6 +2411,31 @@ export const es: FormsMessages = {
         labelHelp: 'Lo que leen los respondientes en la opción. Puedes reescribirlo cuando quieras.',
         valueHelp:
           'Lo que se guarda en la respuesta y se envía a HubSpot o al webhook. Mantenlo estable — cambiarlo rompe las respuestas anteriores y cualquier mapeo que lo use.',
+        importer: {
+          open: 'Importar opciones',
+          title: 'Importar opciones desde una hoja de cálculo',
+          intro:
+            'Copia una o dos columnas de tu hoja y pégalas aquí. La columna 1 es la opción y la columna 2 (opcional) su puntaje. La fila de encabezado se detecta sola.',
+          placeholder: 'SaaS B2B\t10\nE-commerce\t8\nSalud\t7',
+          modeReplace: 'Reemplazar opciones',
+          modeAppend: 'Agregar al final',
+          colOption: 'Opción',
+          colScore: 'Puntaje',
+          colStatus: 'Estado',
+          statusOk: 'ok',
+          statusDuplicate: 'duplicada',
+          statusInvalid: 'puntaje inválido',
+          statusRounded: 'redondeado a {n}',
+          summaryValid: '{n} válidas',
+          summaryWithScore: '{n} con puntaje',
+          summaryHeaderSkipped: 'encabezado omitido',
+          summaryExtraColumns: 'columnas extra ignoradas',
+          summaryTruncated: '{n} sobre el límite',
+          submit: 'Importar {n} opciones',
+          replaceIconsNote: 'Reemplazar elimina los íconos de las opciones actuales.',
+          noScoresNote: 'Este pegado no trae puntajes — la pregunta conserva sus puntos actuales.',
+          cancel: 'Cancelar',
+        },
         icon: 'Ícono',
         iconHelp:
           'Un emoji, una o dos letras, o una imagen. Los emoji y las letras se muestran en un círculo; las imágenes reciben una caja donde entran completas, así un logo ancho no se recorta. Las imágenes solo están disponibles en el diseño de tarjetas.',
