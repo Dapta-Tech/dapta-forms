@@ -26,7 +26,7 @@ describe('createEmailProvider — env gating', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const provider = createEmailProvider({
       provider: 'http',
-      fromEmail: 'form@notifications-dapta.ai',
+      fromEmail: 'forms@notifications-dapta.ai',
       http: { endpoint: 'https://email.example.com/api/internal/email/send', profile: 'transactional-v1' },
     });
     expect(provider).toBeInstanceOf(LogOnlyEmailProvider);
@@ -37,7 +37,7 @@ describe('createEmailProvider — env gating', () => {
   it('builds the signed HTTP provider when endpoint + clientId + secret are all set', () => {
     const provider = createEmailProvider({
       provider: 'http',
-      fromEmail: 'form@notifications-dapta.ai',
+      fromEmail: 'forms@notifications-dapta.ai',
       fromName: 'Dapta Forms',
       http: {
         endpoint: 'https://email.example.com/api/internal/email/send',
