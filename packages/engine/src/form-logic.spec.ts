@@ -10,6 +10,7 @@ import {
   interpolate,
   resolveStepDisplay,
   runtimeSteps,
+  emailSourceFor,
   isMultiSelect,
   isInputlessStep,
   partialSubmitKey,
@@ -1821,5 +1822,33 @@ describe('resolveFormLayout (vertical layout — back-compat default)', () => {
 
   it('FORM_LAYOUTS lists exactly the two supported layouts', () => {
     expect(FORM_LAYOUTS).toEqual(['slides', 'vertical']);
+  });
+});
+
+describe('emailSourceFor', () => {
+  const cfg = (...steps: FormStep[]): FormConfig => ({ version: 1, steps });
+
+  it('returns null when the form has nothing HubSpot could key a contact on', () => {
+    expect(emailSourceFor(cfg(step({ key: 'name', type: 'text' }), step({ key: 'budget', type: 'slider' })))).toBeNull();
+  });
+
+  it('finds an email question', () => {
+    const config = cfg(step({ key: 'name', type: 'text' }), step({ key: 'work_email', type: 'email' }));
+    expect(emailSourceFor(config)).toEqual({ kind: 'question', key: 'work_email' });
+  });
+
+  it('counts a HIDDEN email step — it is never drawn but still captures ?email=', () => {
+    const config = cfg(step({ key: 'email', type: 'email', hidden: true }));
+    expect(emailSourceFor(config)).toEqual({ kind: 'question', key: 'email' });
+  });
+
+  it('falls back to a scheduler, since Calendly always collects an invitee email', () => {
+    const config = cfg(step({ key: 'name', type: 'text' }), step({ key: 'book', type: 'scheduler' }));
+    expect(emailSourceFor(config)).toEqual({ kind: 'scheduler', key: 'book' });
+  });
+
+  it('prefers the question over the scheduler — it does not depend on anyone booking', () => {
+    const config = cfg(step({ key: 'book', type: 'scheduler' }), step({ key: 'email', type: 'email' }));
+    expect(emailSourceFor(config)).toEqual({ kind: 'question', key: 'email' });
   });
 });

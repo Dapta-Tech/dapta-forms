@@ -5,7 +5,13 @@
  * into a redirect to /login.
  */
 import { redirect } from 'next/navigation';
-import type { AnalyticsResponse, FormConfig, FormDestination, SubmissionsPage } from '@quill/types';
+import type {
+  AnalyticsResponse,
+  FormConfig,
+  FormDestination,
+  MemberProfile,
+  SubmissionsPage,
+} from '@quill/types';
 import { getSession, clearSession, authProvider } from './auth-session';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
@@ -166,6 +172,13 @@ export interface IntegrationStatus {
 export interface IntegrationsResponse {
   encryptionAvailable: boolean;
   providers: IntegrationStatus[];
+  /**
+   * Providers the DEPLOYMENT supplies a token for (the `*_TOKEN` env fallback).
+   * These work for every account without anyone connecting anything, which is
+   * why the page has to say so — otherwise it reports "Not connected" about an
+   * integration that is actively syncing.
+   */
+  serverProvided?: IntegrationProvider[];
 }
 
 /**
@@ -291,6 +304,14 @@ export const adminApi = {
   // Account-level integration connections (paste-token model; admin/owner writes)
   /** This account's connections (token-free) + whether server encryption is available. */
   listIntegrations: () => req<IntegrationsResponse>('GET', '/v1/integrations'),
+  /** The caller's own public page config (raw blob or null). */
+  myProfile: () => req<{ handle: string | null; profile: MemberProfile | null }>('GET', '/v1/me/profile'),
+  /** Replace the caller's own public page; null removes it. */
+  saveMyProfile: (profile: MemberProfile | null) =>
+    req<{ ok: boolean }>('PUT', '/v1/me/profile', { profile }),
+  /** Send one sample delivery to a form's webhook (admin-only, SSRF-guarded server-side). */
+  pingWebhook: (id: string) =>
+    req<{ ok: boolean; message?: string }>('POST', `/v1/forms/${id}/destinations/webhook/ping`),
   /** Validate + encrypt-store a pasted provider token; returns the token-free status. */
   connectIntegration: (provider: IntegrationProvider, token: string) =>
     req<IntegrationStatus>('POST', `/v1/integrations/${provider}/connect`, { token }),

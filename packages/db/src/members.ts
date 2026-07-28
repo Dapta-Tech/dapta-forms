@@ -12,6 +12,7 @@ import { randomUUID } from 'node:crypto';
 import { sql, type Db } from './client';
 import type { CrudResult } from './crud';
 import { deriveUniqueHandle } from './short-links';
+import { getAccountByCode, parseJsonColumn } from './forms';
 
 /** Account-level roles, most-privileged first. */
 export const ACCOUNT_ROLES = ['owner', 'admin', 'member'] as const;
@@ -209,4 +210,121 @@ export async function removeMember(
   }
   await db.run(sql`DELETE FROM member WHERE account_id = ${accountId} AND id = ${memberId}`);
   return { ok: true, value: { id: memberId } };
+}
+
+/**
+ * Flip a member from `invited` to `active` the first time they resolve.
+ *
+ * Deliberately narrow: ONLY the invited → active transition. A `disabled`
+ * member logging in must stay disabled — reviving them would defeat the point
+ * of disabling — and an already-active member must not be rewritten on every
+ * request. The WHERE clause enforces both, so this is a no-op for everyone
+ * except the person whose invite just landed.
+ */
+export async function activateInvitedMember(
+  db: Db,
+  accountId: string,
+  memberId: string,
+): Promise<void> {
+  await db.run(
+    sql`UPDATE member SET status = 'active'
+        WHERE id = ${memberId} AND account_id = ${accountId} AND status = 'invited'`,
+  );
+}
+
+// --- Public member page (the /[accountCode]/[handle] route) -------------------
+
+/** One published form as the public profile lists it. */
+export interface ProfileFormRow {
+  slug: string;
+  name: string;
+}
+
+/** A member's stored public page + the identity fields it renders alongside. */
+export interface MemberProfileRow {
+  memberId: string;
+  handle: string | null;
+  displayName: string | null;
+  avatarUrl: string | null;
+  /** The raw JSON blob, or null when this member has no page. */
+  profile: unknown;
+}
+
+/**
+ * The member behind a public handle URL, resolved through the SAME account
+ * lookup the public form route uses — so a retired account code keeps working
+ * here too, rather than 404-ing only on profiles.
+ *
+ * Handles are compared case-insensitively: a URL is typed by hand far more often
+ * than a slug is, and `/acme/Alex` failing while `/acme/alex` works would read
+ * as the page being gone.
+ */
+export async function getMemberByHandle(
+  db: Db,
+  accountCode: string,
+  handle: string,
+): Promise<MemberProfileRow | null> {
+  const account = await getAccountByCode(db, accountCode);
+  if (!account) return null;
+  const r = await db.get<Record<string, unknown>>(
+    sql`SELECT id, handle, display_name, avatar_url, profile FROM member
+        WHERE account_id = ${account.id} AND lower(handle) = ${handle.toLowerCase()}
+          AND status = 'active'
+        LIMIT 1`,
+  );
+  if (!r) return null;
+  return {
+    memberId: String(r.id),
+    handle: r.handle == null ? null : String(r.handle),
+    displayName: r.display_name == null ? null : String(r.display_name),
+    avatarUrl: r.avatar_url == null ? null : String(r.avatar_url),
+    profile: r.profile == null ? null : parseJsonColumn<unknown>(r.profile, null),
+  };
+}
+
+/**
+ * The PUBLISHED forms belonging to a member's account.
+ *
+ * Scoped to the account rather than the member because a form has no author
+ * column — which also means this lists the account's forms, not personally
+ * "theirs". The profile's `formSlugs` is what narrows it, and the caller applies
+ * that; keeping the filter out of SQL means an empty list stays distinguishable
+ * from an absent one.
+ */
+export async function listPublishedFormsForAccount(
+  db: Db,
+  accountCode: string,
+): Promise<ProfileFormRow[]> {
+  const account = await getAccountByCode(db, accountCode);
+  if (!account) return [];
+  const rows = await db.all<Record<string, unknown>>(
+    sql`SELECT slug, name FROM form WHERE account_id = ${account.id} ORDER BY created_at ASC`,
+  );
+  return rows.map((r) => ({ slug: String(r.slug), name: String(r.name) }));
+}
+
+/** Replace a member's public page (account-scoped). NULL removes it entirely. */
+export async function setMemberProfile(
+  db: Db,
+  accountId: string,
+  memberId: string,
+  profile: unknown | null,
+): Promise<void> {
+  await db.run(
+    sql`UPDATE member SET profile = ${profile == null ? null : JSON.stringify(profile)}
+        WHERE id = ${memberId} AND account_id = ${accountId}`,
+  );
+}
+
+/** The stored public-page blob for one member (account-scoped), or null. */
+export async function getMemberProfileRaw(
+  db: Db,
+  accountId: string,
+  memberId: string,
+): Promise<unknown> {
+  const r = await db.get<Record<string, unknown>>(
+    sql`SELECT profile FROM member WHERE id = ${memberId} AND account_id = ${accountId} LIMIT 1`,
+  );
+  if (!r || r.profile == null) return null;
+  return parseJsonColumn<unknown>(r.profile, null);
 }

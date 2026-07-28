@@ -579,6 +579,40 @@ function findEmailKey(config: FormConfig): string | null {
   return config.steps.find((s) => s.type === 'email')?.key ?? null;
 }
 
+/** Where a HubSpot sync could get the address it keys the contact on. */
+export type EmailSource =
+  /** An `email`-typed question this form asks directly. */
+  | { kind: 'question'; key: string }
+  /** A scheduler: Calendly's own booking form always collects an invitee email. */
+  | { kind: 'scheduler'; key: string }
+  | null;
+
+/**
+ * Can this form give HubSpot an email to key on?
+ *
+ * HubSpot upserts a contact by email — it looks one up by address and creates it
+ * when absent — so a form with no address reaches the CRM with nothing to
+ * identify. That delivery resolves as a permanent no-op, which means the lead is
+ * quietly never synced. This is the check that lets the editor say so BEFORE a
+ * respondent is lost, rather than after.
+ *
+ * A question wins over a scheduler because it is unconditional: the scheduler
+ * path only yields an address once someone actually books, and only when
+ * Calendly is connected for the enrichment call. Callers that care about that
+ * difference should combine this with the account's Calendly status.
+ *
+ * Pure and config-only, like everything else here.
+ */
+export function emailSourceFor(config: FormConfig): EmailSource {
+  // A HIDDEN email step counts: it is never drawn, but it still captures an
+  // answer from `?email=` and that answer reaches the submission.
+  const question = config.steps.find((s) => s.type === 'email');
+  if (question) return { kind: 'question', key: question.key };
+  const scheduler = config.steps.find((s) => s.type === 'scheduler');
+  if (scheduler) return { kind: 'scheduler', key: scheduler.key };
+  return null;
+}
+
 /**
  * The visibility operators offered for a referenced field's TYPE — the builder
  * shows exactly these in the operator dropdown, and they are the only ops the

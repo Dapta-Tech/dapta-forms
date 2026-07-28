@@ -87,6 +87,11 @@ export interface FormsMessages {
       lastPlaceholder: string;
     };
   };
+  /** The public member page (`/[accountCode]/[handle]`). */
+  profile: {
+    formsTitle: string;
+    noForms: string;
+  };
   admin: {
     /** Branded combobox (`components/ui/select`) that replaces native selects. */
     select: {
@@ -179,6 +184,20 @@ export interface FormsMessages {
       statusActive: string;
       statusInvited: string;
       statusDisabled: string;
+      /** The public member page (`/[accountCode]/[handle]`). */
+      publicPageHeading: string;
+      publicPageSubtitle: string;
+      publicPageEnable: string;
+      publicPageNoHandle: string;
+      publicPageHeadline: string;
+      publicPageHeadlinePlaceholder: string;
+      publicPageBio: string;
+      publicPageBioPlaceholder: string;
+      publicPageSave: string;
+      publicPageSaving: string;
+      publicPageSaved: string;
+      publicPageError: string;
+      publicPageView: string;
       membersEmpty: string;
       you: string;
       addMember: string;
@@ -908,6 +927,20 @@ export interface FormsMessages {
       connectPromptTitle: string;
       connectPromptBody: string;
       connectPromptCta: string;
+      /** HubSpot keys contacts on email — a form with no address cannot sync. */
+      emailRequiredTitle: string;
+      emailRequiredBody: string;
+      emailRequiredCta: string;
+      emailFromScheduler: string;
+      hubspotHowTitle: string;
+      hubspotHowBody: string;
+      /** Send one sample delivery to the configured webhook. */
+      pingWebhook: string;
+      pingSending: string;
+      pingOk: string;
+      pingFailed: string;
+      pingNeedsUrl: string;
+      pingHelp: string;
       connectedBadge: string;
       propertiesUnavailable: string;
       mapQuestions: string;
@@ -963,6 +996,10 @@ export interface FormsMessages {
       encryptionOffBody: string;
       loadError: string;
       perFormNote: string;
+      /** The deployment already supplies this provider's token (env fallback). */
+      serverProvided: string;
+      serverProvidedTitle: string;
+      serverProvidedBody: string;
     };
     /** Draft → publish controls in the form editor (publish button + badge). */
     publish: {
@@ -1047,6 +1084,10 @@ export const en: FormsMessages = {
       firstPlaceholder: 'First name',
       lastPlaceholder: 'Last name',
     },
+  },
+  profile: {
+    formsTitle: 'Forms',
+    noForms: 'Nothing published yet.',
   },
   admin: {
     select: {
@@ -1133,6 +1174,20 @@ export const en: FormsMessages = {
       statusActive: 'Active',
       statusInvited: 'Invited',
       statusDisabled: 'Disabled',
+      publicPageHeading: 'Your public page',
+      publicPageSubtitle:
+        'A page at your handle listing the forms you want people to find. Off until you turn it on.',
+      publicPageEnable: 'Published',
+      publicPageNoHandle: 'You need a handle before this page can have a URL.',
+      publicPageHeadline: 'Headline',
+      publicPageHeadlinePlaceholder: 'What you help people with',
+      publicPageBio: 'About',
+      publicPageBioPlaceholder: 'A short paragraph about what you do.',
+      publicPageSave: 'Save',
+      publicPageSaving: 'Saving…',
+      publicPageSaved: 'Public page saved.',
+      publicPageError: 'Could not save your public page.',
+      publicPageView: 'View page',
       membersEmpty: 'No members yet.',
       you: 'You',
       addMember: 'Add member',
@@ -1819,6 +1874,22 @@ export const en: FormsMessages = {
       connectPromptBody:
         'HubSpot isn’t connected for your account yet. Connect it once, then come back to map each question to a contact property.',
       connectPromptCta: 'Go to Connections',
+      emailRequiredTitle: 'This form has no email address to sync',
+      emailRequiredBody:
+        'HubSpot matches a contact by email address — it updates the one it finds, or creates a new one. A submission with no address arrives with nothing to identify, so no contact is created and the lead is not synced. Add an email question, or a scheduler: Calendly collects the invitee’s address when someone books.',
+      emailRequiredCta: 'Add an email question',
+      emailFromScheduler:
+        'Contacts will be keyed on the address Calendly collects when someone books. Answers only reach HubSpot once a meeting is booked.',
+      hubspotHowTitle: 'How the sync works',
+      hubspotHowBody:
+        'Every submission is matched to a contact by email address: an existing contact is updated, and a new one is created when there is no match. A form that never asks for an email cannot be synced.',
+      pingWebhook: 'Send test',
+      pingSending: 'Sending…',
+      pingOk: 'Test delivered — your endpoint accepted it.',
+      pingFailed: 'Test failed: {reason}',
+      pingNeedsUrl: 'Save a webhook URL first.',
+      pingHelp:
+        'Posts one sample body in the real shape, signed the same way, so you can check what your endpoint receives. The answers are made up and marked as a test.',
       connectedBadge: 'HubSpot connected',
       propertiesUnavailable:
         'HubSpot properties are temporarily unavailable — you can still type a property name.',
@@ -1877,6 +1948,10 @@ export const en: FormsMessages = {
         'The server needs a FORMS_ENCRYPTION_KEY to store credentials securely. Set it and restart the API to enable connections.',
       loadError: 'Could not load your connections.',
       perFormNote: 'Field mapping is configured per form, from each form’s integrations tab.',
+      serverProvided: 'Provided by the server',
+      serverProvidedTitle: 'Already working, using the server’s token',
+      serverProvidedBody:
+        'This deployment supplies a token for {provider}, so every account here can already sync. Connecting your own replaces it for this account only.',
     },
     publish: {
       publish: 'Publish',
@@ -1957,6 +2032,10 @@ export const es: FormsMessages = {
       firstPlaceholder: 'Nombre',
       lastPlaceholder: 'Apellidos',
     },
+  },
+  profile: {
+    formsTitle: 'Formularios',
+    noForms: 'Todavía no hay nada publicado.',
   },
   admin: {
     select: {
@@ -2043,6 +2122,20 @@ export const es: FormsMessages = {
       statusActive: 'Activo',
       statusInvited: 'Invitado',
       statusDisabled: 'Desactivado',
+      publicPageHeading: 'Tu página pública',
+      publicPageSubtitle:
+        'Una página en tu handle con los formularios que quieres que la gente encuentre. Apagada hasta que la prendas.',
+      publicPageEnable: 'Publicada',
+      publicPageNoHandle: 'Necesitas un handle antes de que esta página tenga URL.',
+      publicPageHeadline: 'Titular',
+      publicPageHeadlinePlaceholder: 'En qué ayudas a la gente',
+      publicPageBio: 'Sobre ti',
+      publicPageBioPlaceholder: 'Un párrafo corto sobre lo que haces.',
+      publicPageSave: 'Guardar',
+      publicPageSaving: 'Guardando…',
+      publicPageSaved: 'Página pública guardada.',
+      publicPageError: 'No se pudo guardar tu página pública.',
+      publicPageView: 'Ver página',
       membersEmpty: 'Aún no hay miembros.',
       you: 'Tú',
       addMember: 'Añadir miembro',
@@ -2732,6 +2825,22 @@ export const es: FormsMessages = {
       connectPromptBody:
         'HubSpot aún no está conectado en tu cuenta. Conéctalo una vez y luego vuelve para asignar cada pregunta a una propiedad de contacto.',
       connectPromptCta: 'Ir a Conexiones',
+      emailRequiredTitle: 'Este formulario no tiene correo que sincronizar',
+      emailRequiredBody:
+        'HubSpot identifica al contacto por su correo: actualiza el que encuentra, o crea uno nuevo. Un envío sin correo llega sin nada con qué identificarlo, así que no se crea ningún contacto y ese lead no se sincroniza. Agrega una pregunta de correo, o un agendador: Calendly pide el correo de quien reserva.',
+      emailRequiredCta: 'Agregar una pregunta de correo',
+      emailFromScheduler:
+        'Los contactos se identificarán con el correo que Calendly pide al reservar. Las respuestas llegan a HubSpot solo cuando alguien agenda.',
+      hubspotHowTitle: 'Cómo funciona la sincronización',
+      hubspotHowBody:
+        'Cada envío se busca en HubSpot por correo: si el contacto existe se actualiza, y si no, se crea uno nuevo. Un formulario que nunca pide correo no se puede sincronizar.',
+      pingWebhook: 'Enviar prueba',
+      pingSending: 'Enviando…',
+      pingOk: 'Prueba entregada: tu endpoint la aceptó.',
+      pingFailed: 'La prueba falló: {reason}',
+      pingNeedsUrl: 'Primero guarda una URL de webhook.',
+      pingHelp:
+        'Manda un cuerpo de ejemplo con la forma real, firmado igual, para que veas qué recibe tu endpoint. Las respuestas son inventadas y van marcadas como prueba.',
       connectedBadge: 'HubSpot conectado',
       propertiesUnavailable:
         'Las propiedades de HubSpot no están disponibles temporalmente; aún puedes escribir el nombre de una propiedad.',
@@ -2790,6 +2899,10 @@ export const es: FormsMessages = {
         'El servidor necesita una FORMS_ENCRYPTION_KEY para guardar credenciales de forma segura. Configúrala y reinicia la API para habilitar las conexiones.',
       loadError: 'No se pudieron cargar tus conexiones.',
       perFormNote: 'La asignación de campos se configura por formulario, desde la pestaña de integraciones de cada uno.',
+      serverProvided: 'La da el servidor',
+      serverProvidedTitle: 'Ya funciona, con el token del servidor',
+      serverProvidedBody:
+        'Este despliegue trae un token para {provider}, así que todas las cuentas de aquí ya pueden sincronizar. Si conectas el tuyo, lo reemplaza solo para esta cuenta.',
     },
     publish: {
       publish: 'Publicar',

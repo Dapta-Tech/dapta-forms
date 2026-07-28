@@ -12,6 +12,7 @@ import {
   Post,
   Put,
   Req,
+  UseGuards,
 } from '@nestjs/common';
 import { z, ZodError } from 'zod';
 import type { Db, IntegrationProvider, IntegrationStatus } from '@quill/db';
@@ -21,13 +22,16 @@ import {
   integrationProviders,
   listIntegrationStatuses,
   resolveProviderToken,
+  getFormById,
   updateFormDestinations,
   upsertIntegration,
 } from '@quill/db';
-import { formDestinationSchema, maskConfigSecrets } from '@quill/types';
+import { formDestinationSchema, maskConfigSecrets, type FormDestination } from '@quill/types';
+import { WebhookDestination } from '@quill/destinations';
 import type { ServerEnv } from '@quill/config/env';
 import { AuthService, type ReqLike } from './auth.service';
 import { assertAdmin } from './permissions';
+import { RateLimitGuard } from './rate-limit';
 import { DB, ENV } from './tokens';
 
 /** A HubSpot contact property surfaced to the mapping UI. */
@@ -293,14 +297,35 @@ export class IntegrationsController {
     @Inject(ENV) private readonly env: ServerEnv,
   ) {}
 
-  /** This account's connections (token-free) + whether server encryption is available. */
+  /**
+   * This account's connections (token-free) + whether server encryption is
+   * available + which providers the DEPLOYMENT already supplies a token for.
+   *
+   * That last list closes a reporting hole: a provider can be fully working
+   * through its env fallback (`HUBSPOT_PRIVATE_APP_TOKEN` / `CALENDLY_API_TOKEN`)
+   * while `account_integration` is empty, so the page said "Not connected" about
+   * an integration that was syncing submissions. Both statements were true and
+   * together they were a lie. Env knowledge stays here rather than in
+   * `@quill/db`, which must not read the environment.
+   */
   @Get()
-  async list(
-    @Req() req: ReqLike,
-  ): Promise<{ encryptionAvailable: boolean; providers: IntegrationStatus[] }> {
+  async list(@Req() req: ReqLike): Promise<{
+    encryptionAvailable: boolean;
+    providers: IntegrationStatus[];
+    serverProvided: IntegrationProvider[];
+  }> {
     const p = await this.auth.resolveHost(req);
     const providers = await listIntegrationStatuses(this.db, p.accountId);
-    return { encryptionAvailable: hasEncryptionKey(this.env.FORMS_ENCRYPTION_KEY), providers };
+    const usable = (token: string | undefined): boolean =>
+      !!token?.trim() && !PLACEHOLDER_TOKENS.has(token.trim());
+    const serverProvided: IntegrationProvider[] = [];
+    if (usable(this.env.HUBSPOT_PRIVATE_APP_TOKEN)) serverProvided.push('hubspot');
+    if (usable(this.env.CALENDLY_API_TOKEN)) serverProvided.push('calendly');
+    return {
+      encryptionAvailable: hasEncryptionKey(this.env.FORMS_ENCRYPTION_KEY),
+      providers,
+      serverProvided,
+    };
   }
 
   /**
@@ -420,6 +445,9 @@ const destinationsBodySchema = z.object({ destinations: z.array(formDestinationS
  */
 @Controller('v1')
 export class FormDestinationsController {
+  /** Injectable for tests; defaults to global fetch for the webhook ping. */
+  fetchImpl: typeof fetch = fetch;
+
   constructor(
     @Inject(DB) private readonly db: Db,
     @Inject(AuthService) private readonly auth: AuthService,
@@ -441,4 +469,129 @@ export class FormDestinationsController {
     // Never echo the stored webhook secret back to the client (mask on READ).
     return { ...out.value, config: maskConfigSecrets(out.value.config) };
   }
+
+  /**
+   * Send ONE sample delivery to this form's configured webhook, so an author can
+   * see the shape their endpoint receives without waiting for a real respondent.
+   *
+   * Three things make this safe to expose, and all three are load-bearing:
+   *  - **admin-only + account-scoped.** The form is fetched with the principal's
+   *    `accountId`, so this can only ever ping a webhook the caller owns.
+   *  - **the SSRF guard runs.** `WebhookDestination.deliver` resolves the host
+   *    and rejects private/loopback/link-local/metadata targets before any
+   *    request leaves. An endpoint that makes the SERVER fetch a URL the USER
+   *    typed is the textbook internal-network probe; reusing the real adapter
+   *    means the guard cannot be forgotten here.
+   *  - **rate limited.** Same guard the public surface uses, so the route cannot
+   *    be turned into a scanner by repetition.
+   *
+   * The payload is the real `WebhookPayload` shape with sample answers built
+   * from the form's own steps, and it carries `phase: 'partial'` plus a
+   * `test` marker so a receiver can tell it apart from a lead.
+   */
+  @UseGuards(RateLimitGuard)
+  @Post('forms/:id/destinations/webhook/ping')
+  @HttpCode(200)
+  async pingWebhook(
+    @Req() req: ReqLike,
+    @Param('id') id: string,
+  ): Promise<{ ok: boolean; message?: string }> {
+    const p = await this.auth.resolveHost(req);
+    assertAdmin(p);
+    const form = await getFormById(this.db, p.accountId, id);
+    if (!form) throw new NotFoundException({ error: 'NOT_FOUND', message: 'Not found.' });
+
+    const config = form.config as { steps?: { key: string; type: string }[] };
+    const destinations = (form.config as { destinations?: FormDestination[] }).destinations ?? [];
+    const webhook = destinations.find((d) => d.type === 'webhook');
+    if (!webhook || webhook.type !== 'webhook' || !webhook.settings.url) {
+      throw new BadRequestException({
+        error: 'NO_WEBHOOK',
+        message: 'This form has no webhook URL configured.',
+      });
+    }
+
+    // Loopback is permitted ONLY when the stored hostname is literally localhost
+    // — exactly the case the URL validator carves out for a developer pointing a
+    // form at a local catcher. Blanket-allowing it would also accept an https
+    // host that RESOLVES to 127.0.0.1, which is the DNS-rebinding path into the
+    // deployment's own loopback. Private and reserved ranges (10/8, 192.168/16,
+    // the 169.254 metadata address) are refused either way by the guard.
+    const literalLoopback = isLiteralLoopbackHost(webhook.settings.url);
+    const dest = new WebhookDestination(
+      {
+        url: webhook.settings.url,
+        secret: webhook.settings.secret || undefined,
+        signatureHeader: webhook.settings.signatureHeader || undefined,
+        allowLocalhost: literalLoopback,
+      },
+      this.fetchImpl,
+    );
+
+    const now = Date.now();
+    try {
+      await dest.deliver({
+        idempotencyKey: `ping:${id}:${now}`,
+        submissionId: 'test-submission',
+        formId: form.id,
+        formName: form.name,
+        accountId: p.accountId,
+        sessionId: 'test-session',
+        score: 0,
+        outcomeLabel: null,
+        phase: 'partial',
+        submittedAt: now,
+        data: { ...sampleAnswers(config.steps ?? []), test: true },
+        utm: {},
+      });
+      return { ok: true };
+    } catch (err) {
+      // The adapter's messages already carry the HTTP status or the transport
+      // failure — that string IS the useful diagnostic for the far end.
+      return { ok: false, message: err instanceof Error ? err.message : String(err) };
+    }
+  }
+}
+
+/**
+ * Is this URL's hostname LITERALLY loopback (not merely resolving there)?
+ * Mirrors the webhook URL validator's one http exception, and nothing wider.
+ */
+function isLiteralLoopbackHost(rawUrl: string): boolean {
+  try {
+    const host = new URL(rawUrl).hostname.replace(/^\[|\]$/g, '').toLowerCase();
+    return host === 'localhost' || host === '127.0.0.1' || host === '::1';
+  } catch {
+    return false;
+  }
+}
+
+/** A plausible answer per question type, so the sample body has real shape. */
+function sampleAnswers(steps: { key: string; type: string }[]): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const s of steps) {
+    if (s.type === 'message') continue;
+    switch (s.type) {
+      case 'email':
+        out[s.key] = 'sample@example.com';
+        break;
+      case 'phone':
+        out[s.key] = '+15555550123';
+        break;
+      case 'slider':
+        out[s.key] = 5;
+        break;
+      case 'multiple_choice':
+      case 'dropdown':
+        out[s.key] = 'sample-option';
+        break;
+      case 'name':
+        out.firstname = 'Sample';
+        out.lastname = 'Respondent';
+        break;
+      default:
+        out[s.key] = 'Sample answer';
+    }
+  }
+  return out;
 }

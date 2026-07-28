@@ -3,6 +3,7 @@ import { escapeHtml } from './util';
 import {
   applyCopyOverride,
   normalizeLocale,
+  renderMemberInvited,
   renderSubmissionConfirmed,
   renderSubmissionReceived,
   type NotificationLocale,
@@ -14,6 +15,19 @@ function htmlBody(lines: string[]): string {
 }
 
 /** Everything a submission notification needs to render, provider-agnostic. */
+/** Everything the invitation email needs, resolved before it is enqueued. */
+export interface MemberInvitedNotification {
+  accountId: string;
+  /** The member row this invitation belongs to (the idempotency anchor). */
+  memberId: string;
+  /** The invited address. */
+  to: string;
+  accountName: string;
+  invitedBy?: string | null;
+  signInLink?: string | null;
+  locale?: string | null;
+}
+
 export interface SubmissionNotification {
   accountId: string;
   /** The submission id (used as the idempotency anchor). */
@@ -70,6 +84,25 @@ export class SubmissionNotifier {
       html: htmlBody(body),
       headers: { 'X-Submission-Id': n.submissionId },
       idempotencyKey: `submission:${n.submissionId}:received`,
+    });
+  }
+
+  /**
+   * "You were added to a workspace." No copy override applies: this is platform
+   * copy, not the per-account submission templates an owner can edit.
+   */
+  sendMemberInvited(n: MemberInvitedNotification): Promise<EmailResult> {
+    const { subject, lines } = renderMemberInvited(normalizeLocale(n.locale), n);
+    const body = lines.filter(Boolean);
+    return this.email.send({
+      accountId: n.accountId,
+      to: [n.to],
+      subject,
+      text: body.join('\n'),
+      html: htmlBody(body),
+      // One invite per member row — a retried delivery must not read as a second
+      // invitation to a managed service that de-duplicates on this key.
+      idempotencyKey: `member:${n.memberId}:invited`,
     });
   }
 

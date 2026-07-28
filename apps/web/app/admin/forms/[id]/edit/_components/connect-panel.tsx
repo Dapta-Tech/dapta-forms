@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import type { FormConfig } from '@quill/engine';
+import { emailSourceFor, type EmailSource, type FormConfig } from '@quill/engine';
 import type { FormTracking } from '@quill/types';
 import { getMessages, type Locale } from '@quill/shared';
 import { Button } from '@/components/ui/button';
@@ -62,9 +62,21 @@ export function ConnectPanel({
     [config.steps],
   );
 
+  // Computed from the LIVE config for the same reason `questions` is: adding an
+  // email question has to unblock the HubSpot mapping immediately, not after a
+  // save and a refetch.
+  const emailSource = useMemo(() => emailSourceFor(config), [config]);
+
   return (
     <div data-testid="connect-panel" className="mx-auto flex w-full max-w-[900px] flex-col gap-4">
-      <IntegrationsSection formId={formId} questions={questions} mc={mc} im={im} locale={loc} />
+      <IntegrationsSection
+        formId={formId}
+        questions={questions}
+        emailSource={emailSource}
+        mc={mc}
+        im={im}
+        locale={loc}
+      />
       <TrackingSection config={config} onTrackingChange={onTrackingChange} mc={mc} />
       <ConnectEmailsSection formId={formId} m={mc} locale={locale} />
     </div>
@@ -81,12 +93,15 @@ type LoadState =
 function IntegrationsSection({
   formId,
   questions,
+  emailSource,
   mc,
   im,
   locale,
 }: {
   formId: string;
   questions: QuestionMeta[];
+  /** Where a HubSpot sync could get an address, or null if nowhere. */
+  emailSource: EmailSource;
   mc: EditorMessages['connect'];
   im: ReturnType<typeof getMessages>['admin']['integrations'];
   locale: Locale;
@@ -145,6 +160,7 @@ function IntegrationsSection({
           hubspot={state.data.hubspot}
           hubspotConnected={state.data.hubspotConnected}
           questions={questions}
+          emailSource={emailSource}
           messages={im}
           locale={locale}
         />

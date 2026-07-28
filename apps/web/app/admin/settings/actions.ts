@@ -1,6 +1,7 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
+import type { MemberProfile } from '@quill/types';
 import {
   adminApi,
   ApiError,
@@ -159,5 +160,21 @@ export async function resetNotificationAction(
       return { ok: false, code: 'FORBIDDEN' };
     }
     return { ok: false, code: 'FAILED' };
+  }
+}
+
+/**
+ * Save (or clear) the caller's own public page. Scoped server-side to the
+ * authenticated member — the id is never taken from the request.
+ */
+export async function saveMyProfileAction(
+  profile: MemberProfile | null,
+): Promise<{ ok: boolean; message?: string }> {
+  try {
+    await adminApi.saveMyProfile(profile);
+    revalidatePath('/admin/settings');
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, message: e instanceof Error ? e.message : 'Could not save.' };
   }
 }

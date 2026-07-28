@@ -4,7 +4,7 @@
  * decoupled.
  */
 import { cache } from 'react';
-import type { PublicForm } from '@quill/types';
+import type { PublicForm, PublicProfile } from '@quill/types';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 
@@ -20,6 +20,18 @@ export const getPublicForm = cache(
   (accountCode: string, slug: string): Promise<PublicForm | null> =>
     getJson<PublicForm>(
       `/v1/public/forms/${encodeURIComponent(accountCode)}/${encodeURIComponent(slug)}`,
+    ),
+);
+
+/**
+ * A member's public page, or null when they have not enabled one. A 404 is the
+ * normal, expected answer here — most handles have no page — so it resolves to
+ * null rather than throwing.
+ */
+export const getPublicProfile = cache(
+  (accountCode: string, handle: string): Promise<PublicProfile | null> =>
+    getJson<PublicProfile>(
+      `/v1/public/profiles/${encodeURIComponent(accountCode)}/${encodeURIComponent(handle)}`,
     ),
 );
 
