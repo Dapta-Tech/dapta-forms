@@ -56,6 +56,7 @@ import { submitFormAction, recordEventAction, recordBookingAction } from './acti
 import {
   useSessionId,
   captureUtm,
+  captureDefaults,
   capturePrefill,
   schedulerToBooking,
   PhaseShell,
@@ -250,7 +251,9 @@ export function VerticalFormRenderer({
   // seeded visible step never causes an SSR/hydration mismatch).
   useEffect(() => {
     utmRef.current = captureUtm();
-    const seed = capturePrefill(engineConfig.steps);
+    // Defaults first, then the URL on top: a link that names a value must beat
+    // a default the author configured earlier.
+    const seed = { ...captureDefaults(engineConfig.steps), ...capturePrefill(engineConfig.steps) };
     if (Object.keys(seed).length > 0) setAnswers((a) => ({ ...seed, ...a }));
   }, []);
   useEffect(() => {

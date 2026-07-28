@@ -24,7 +24,6 @@ import { maxScoreForSteps } from './scoring-util';
 import { LogicRules } from './logic-rules';
 import { LogicConditions } from './logic-conditions';
 import { QuestionVariants } from './question-variants';
-import { QuestionHubspotSection } from './question-hubspot';
 import { SchedulerPanel } from './scheduler-panel';
 import { tokenOptionsBefore } from './token-textarea';
 import { HelpTip } from '@/components/ui/help-tip';
@@ -37,6 +36,7 @@ import {
   type GalleryItem,
 } from './question-types';
 import type { EditorMessages } from './messages';
+import { AdvancedSettings, PrefillRow } from './advanced-settings';
 import type { BuilderMessages } from './builder-messages';
 
 const ALL_ITEMS: GalleryItem[] = GALLERY_GROUPS.flatMap((g) => GALLERY[g]);
@@ -72,12 +72,11 @@ export function QuestionSettings({
   onDelete,
   bm,
   em,
-  formId,
   locale,
-  onOpenConnect,
   revealAfter,
   onRevealAfterChange,
   onRenameKey,
+  publicUrl,
 }: {
   step: FormStep;
   index: number;
@@ -89,16 +88,15 @@ export function QuestionSettings({
   onDelete: () => void;
   bm: BuilderMessages;
   em: EditorMessages;
-  formId: string;
   locale: string;
-  /** Switch the editor to the Connect tab (HubSpot destination setup). */
-  onOpenConnect: () => void;
   /** Whether the step right after this one is already a reveal card. */
   revealAfter: boolean;
   /** Insert (or remove) a reveal card immediately after this question. */
   onRevealAfterChange: (on: boolean) => void;
   /** Rename this step's answer key, cascading every reference — V5-A10. */
   onRenameKey: (nextKey: string) => void;
+  /** The form's real public URL, for the prefill example. */
+  publicUrl?: string | null;
 }) {
   const contact = isContactType(step.type);
   // Form-wide "highest possible" total (same math as Results). Drives the
@@ -154,6 +152,17 @@ export function QuestionSettings({
     if (!hasOptions(item.type) && step.goto) patch.goto = undefined;
     onUpdate(patch);
   }
+
+  // What the collapsed header says. Same vocabulary the left spine already uses,
+  // so "Conditional" means the same thing in both places.
+  const advancedBadges = [
+    step.showWhen || step.hideWhen || step.showForPersonalEmailOnly ? bm.settings.badgeConditional : null,
+    Object.keys(step.questionVariants ?? {}).length > 0 ? bm.settings.badgeDynamic : null,
+    step.terminal ? bm.settings.badgeEndsForm : null,
+    step.hidden ? bm.settings.badgeHidden : null,
+    step.defaultValue ? bm.settings.badgeDefault : null,
+    step.scoringEnabled && (step.sliderScoring?.length ?? 0) > 0 ? bm.settings.badgeScored : null,
+  ].filter((b): b is string => !!b);
 
   return (
     <div className="flex h-full flex-col gap-5 overflow-y-auto border-l border-border p-4">
@@ -455,6 +464,35 @@ export function QuestionSettings({
         </section>
       ) : null}
 
+      {/* Everything below is ADVANCED: conditional visibility, dynamic copy,
+          behaviour flags, the answer key, and scoring. Collapsed by default, but
+          the header names whatever is configured inside — hiding that a question
+          is conditional or terminal would be worse than the flat list this
+          replaces. */}
+      <AdvancedSettings badges={advancedBadges} m={bm.settings}>
+        {/* What parameter prefills this answer. The runtime already supports it;
+            nothing ever said so, which is why it went unused. */}
+        {!isInputlessType(step.type) ? (
+          <PrefillRow step={step} publicUrl={publicUrl ?? null} m={bm.settings} />
+        ) : null}
+
+        {/* Sits next to the prefill row on purpose: both fill an answer before
+            anyone types, and seeing them together is what makes the precedence
+            (default loses to the URL) legible. A scheduler's answer is a booking
+            and a name step writes two subfields, so neither takes one. */}
+        {!isInputlessType(step.type) && step.type !== 'scheduler' && step.type !== 'name' ? (
+          <Field label={bm.settings.defaultAnswer} hint={bm.settings.defaultAnswerHint}>
+            <TextField
+              value={step.defaultValue ?? ''}
+              maxLength={512}
+              placeholder={bm.settings.defaultAnswerPlaceholder}
+              data-testid="default-answer"
+              aria-label={bm.settings.defaultAnswer}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => onUpdate({ defaultValue: e.target.value.trim() || undefined })}
+            />
+          </Field>
+        ) : null}
+
       {/* Visibility — declarative show/hide conditions + personal-email branch */}
       <section className="flex flex-col gap-3 border-t border-border pt-4">
         <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -599,17 +637,7 @@ export function QuestionSettings({
         </section>
       ) : null}
 
-      {/* HubSpot — map this answer to a contact property (message steps
-          collect no answer, so there is nothing to map). */}
-      {!isInputlessType(step.type) ? (
-        <QuestionHubspotSection
-          formId={formId}
-          stepKey={step.key}
-          locale={locale}
-          onOpenConnect={onOpenConnect}
-          m={bm.hubspot}
-        />
-      ) : null}
+      </AdvancedSettings>
       {dialog}
     </div>
   );
