@@ -202,11 +202,14 @@ export function SegmentedToggle<T extends string>({
   onChange,
   options,
   ariaLabel,
+  disabled = false,
 }: {
   value: T;
   onChange: (value: T) => void;
   options: { value: T; label: string }[];
   ariaLabel: string;
+  /** Read-only mode: options render but cannot be chosen. */
+  disabled?: boolean;
 }) {
   return (
     <div
@@ -220,6 +223,7 @@ export function SegmentedToggle<T extends string>({
           type="button"
           role="radio"
           aria-checked={value === o.value}
+          disabled={disabled}
           onClick={() => onChange(o.value)}
           className={cn(
             'whitespace-nowrap rounded-md px-3 py-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',

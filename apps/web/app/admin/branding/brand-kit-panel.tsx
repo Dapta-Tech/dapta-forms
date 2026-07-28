@@ -181,6 +181,7 @@ export function BrandKitPanel({
               label={design.background}
               value={kit.background}
               allowEmpty
+              disabled={disabled}
               onChange={(background) => patch({ background })}
               m={design}
             />
@@ -190,6 +191,7 @@ export function BrandKitPanel({
               against={ground}
               againstLabel={design.contrastText}
               allowEmpty
+              disabled={disabled}
               onChange={(foreground) => patch({ foreground })}
               m={design}
             />
@@ -199,6 +201,7 @@ export function BrandKitPanel({
               against={ground}
               againstLabel={design.contrastButton}
               allowEmpty
+              disabled={disabled}
               onChange={(primaryColor) => patch({ primaryColor })}
               m={design}
             />
@@ -212,6 +215,7 @@ export function BrandKitPanel({
               <div className="min-w-0 flex-1">
                 <FontPicker
                   value={kit.fontFamily ?? DEFAULT_FORM_FONT}
+                  disabled={disabled}
                   onChange={(fontFamily: FormFont) => patch({ fontFamily })}
                   m={design}
                 />
@@ -268,6 +272,7 @@ export function BrandKitPanel({
                     { value: 'round', label: design.radiusRound },
                   ]}
                   ariaLabel={design.radius}
+                  disabled={disabled}
                 />
                 {kit.radius ? (
                   <button
@@ -294,6 +299,7 @@ export function BrandKitPanel({
                     { value: 'soft', label: design.buttonSoft },
                   ]}
                   ariaLabel={design.buttonStyle}
+                  disabled={disabled}
                 />
                 {kit.buttonStyle ? (
                   <button

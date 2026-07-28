@@ -161,15 +161,29 @@ export async function applyBrandKit(
     const nextDraft = draft ? { ...draft, branding: mergeKitIntoBranding(brandingOf(draft), kit) } : null;
 
     const now = Date.now();
-    await db.run(
-      sql`UPDATE form
-          SET config = ${jsonParam(nextConfig)},
-              draft_config = ${nextDraft ? jsonParam(nextDraft) : null},
-              brand_backup = ${jsonParam(backup)},
-              brand_applied_at = ${now},
-              updated_at = ${now}
-          WHERE account_id = ${accountId} AND id = ${id}`,
-    );
+    // draft_config is only written when a draft was actually merged — a stored
+    // value that didn't parse to an object must pass through untouched, not be
+    // nulled (that would silently destroy someone's pending draft).
+    if (nextDraft) {
+      await db.run(
+        sql`UPDATE form
+            SET config = ${jsonParam(nextConfig)},
+                draft_config = ${jsonParam(nextDraft)},
+                brand_backup = ${jsonParam(backup)},
+                brand_applied_at = ${now},
+                updated_at = ${now}
+            WHERE account_id = ${accountId} AND id = ${id}`,
+      );
+    } else {
+      await db.run(
+        sql`UPDATE form
+            SET config = ${jsonParam(nextConfig)},
+                brand_backup = ${jsonParam(backup)},
+                brand_applied_at = ${now},
+                updated_at = ${now}
+            WHERE account_id = ${accountId} AND id = ${id}`,
+      );
+    }
     applied.push(id);
   }
   return { applied };
@@ -214,15 +228,29 @@ export async function revertBrandKit(
       ? { ...draft, branding: restoreKitFields(brandingOf(draft), backup.draft ?? backup.live) }
       : null;
 
-    await db.run(
-      sql`UPDATE form
-          SET config = ${jsonParam(nextConfig)},
-              draft_config = ${nextDraft ? jsonParam(nextDraft) : null},
-              brand_backup = NULL,
-              brand_applied_at = NULL,
-              updated_at = ${Date.now()}
-          WHERE account_id = ${accountId} AND id = ${id}`,
-    );
+    // Same rule as apply: never write draft_config unless a draft was merged —
+    // an unparseable stored draft passes through untouched instead of being
+    // nulled.
+    if (nextDraft) {
+      await db.run(
+        sql`UPDATE form
+            SET config = ${jsonParam(nextConfig)},
+                draft_config = ${jsonParam(nextDraft)},
+                brand_backup = NULL,
+                brand_applied_at = NULL,
+                updated_at = ${Date.now()}
+            WHERE account_id = ${accountId} AND id = ${id}`,
+      );
+    } else {
+      await db.run(
+        sql`UPDATE form
+            SET config = ${jsonParam(nextConfig)},
+                brand_backup = NULL,
+                brand_applied_at = NULL,
+                updated_at = ${Date.now()}
+            WHERE account_id = ${accountId} AND id = ${id}`,
+      );
+    }
     reverted.push(id);
   }
   return { reverted };

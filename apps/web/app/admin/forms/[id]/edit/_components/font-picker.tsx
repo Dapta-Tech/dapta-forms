@@ -34,10 +34,13 @@ const CURATED = FORM_FONTS.filter((f) => f !== 'custom');
 export function FontPicker({
   value,
   onChange,
+  disabled = false,
   m,
 }: {
   value: FormFont;
   onChange: (font: FormFont) => void;
+  /** Read-only mode: the trigger renders but never opens the listbox. */
+  disabled?: boolean;
   m: EditorMessages['design'];
 }) {
   const [open, setOpen] = useState(false);
@@ -72,6 +75,7 @@ export function FontPicker({
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-label={m.font}
+        disabled={disabled}
         onClick={() => setOpen((v) => !v)}
         className="flex h-9 w-full items-center gap-2 rounded-md border border-input bg-background px-2.5 text-left transition-colors hover:border-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
