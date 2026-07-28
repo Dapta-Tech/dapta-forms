@@ -26,11 +26,18 @@ export default async function AdminLayout({ children }: { children: ReactNode })
   const initialCollapsed = jar.get('forms.nav.collapsed')?.value === '1';
   const chrome = getMessages(await getLocale()).admin.chrome;
 
+  // Best-effort: a failure here must never take down the dashboard. Without the
+  // list the switcher simply does not render, which is exactly how it behaves
+  // for the single-workspace majority anyway.
+  const workspaces = await adminApi.listWorkspaces().catch(() => []);
+
   return (
     <ToastProvider>
       <AdminShell
         initialCollapsed={initialCollapsed}
         messages={chrome}
+        workspaces={workspaces}
+        currentAccountId={me.accountId}
         user={{ displayName: me.displayName, handle: me.handle, accountCode: me.accountCode }}
       >
         {children}

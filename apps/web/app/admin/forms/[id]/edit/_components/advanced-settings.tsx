@@ -39,7 +39,15 @@ export function AdvancedSettings({
     <section
       data-testid="advanced-settings"
       data-open={open}
-      className="mt-2 overflow-hidden rounded-md border border-border"
+      // `shrink-0` is load-bearing, not tidiness. `overflow-hidden` (which clips
+      // the children to the rounded corners) makes CSS resolve this box's
+      // `min-height: auto` to 0 — and as a flex child of the settings column,
+      // which routinely overflows, the browser then compressed the whole group
+      // to 2px. It read as "Advanced settings is missing and the panel won't
+      // scroll"; there was simply nothing left to scroll to. Every sibling
+      // survives because they are `overflow: visible` and keep their min-content
+      // floor. The column is a scroll container, so nothing in it should shrink.
+      className="mt-2 shrink-0 overflow-hidden rounded-md border border-border"
     >
       <button
         type="button"

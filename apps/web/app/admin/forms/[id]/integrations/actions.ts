@@ -1,7 +1,7 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import { adminApi } from '@/lib/admin-api';
+import { adminApi, type WebhookPingResult } from '@/lib/admin-api';
 import type { FormDestination } from '@quill/types';
 
 /**
@@ -36,10 +36,14 @@ export async function saveIntegrationsAction(
  * account, and routed through the real adapter so the SSRF check that protects
  * every live delivery protects this one too.
  */
-export async function pingWebhookAction(id: string): Promise<{ ok: boolean; message?: string }> {
+export async function pingWebhookAction(id: string): Promise<WebhookPingResult> {
   try {
     return await adminApi.pingWebhook(id);
   } catch (e) {
-    return { ok: false, message: e instanceof Error ? e.message : 'Could not reach the webhook.' };
+    return {
+      ok: false,
+      reason: 'unknown',
+      message: e instanceof Error ? e.message : 'Could not reach the webhook.',
+    };
   }
 }

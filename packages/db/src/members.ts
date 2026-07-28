@@ -232,6 +232,136 @@ export async function activateInvitedMember(
   );
 }
 
+// --- Workspaces (the accounts one person belongs to) --------------------------
+
+/**
+ * Who is asking, independent of which account they are currently in.
+ *
+ * `externalId` is the identity provider's stable subject (the JWT `sub`) and is
+ * the right key when there is one. `email` is the fallback for the local dev
+ * provider, whose JIT members carry no external id — and it is also how an
+ * INVITE binds: an admin types an address, and whoever proves control of that
+ * address is that member. Both come from an already-authenticated principal;
+ * neither is ever read from the request.
+ */
+export interface MemberIdentity {
+  externalId: string | null;
+  email: string | null;
+}
+
+/** One account this person can act in. */
+export interface WorkspaceRow {
+  accountId: string;
+  accountCode: string;
+  accountName: string;
+  memberId: string;
+  role: AccountRole;
+  /** `invited` until they first enter it — the switcher marks these as pending. */
+  status: MemberStatus;
+}
+
+/**
+ * Read the identity of an already-resolved member, so the caller can look for
+ * the same person elsewhere. Returns null for a member that does not exist.
+ */
+export async function getMemberIdentity(
+  db: Db,
+  accountId: string,
+  memberId: string,
+): Promise<MemberIdentity | null> {
+  const r = await db.get<{ external_id: string | null; email: string | null }>(
+    sql`SELECT external_id, email FROM member WHERE id = ${memberId} AND account_id = ${accountId} LIMIT 1`,
+  );
+  if (!r) return null;
+  return { externalId: r.external_id ?? null, email: r.email ?? null };
+}
+
+/**
+ * Every account this person can enter — the ones they are in, plus the ones
+ * they have been invited to and not yet opened.
+ *
+ * The data model has always allowed this — uniqueness on `member` is per
+ * account, and `inviteMember` writes a row into the INVITING account — but
+ * nothing ever read it back. Login resolves one row and stops
+ * (`ORDER BY created_at LIMIT 1`), so an invited teammate signed in and landed
+ * in their own oldest account, and the invitation led nowhere at all. This is
+ * the query that was missing.
+ *
+ * `invited` rows ARE listed: an invitation you cannot see is an invitation that
+ * does not work, and entering one is what accepting it means. `disabled` rows
+ * never appear — a revoked membership must not be reachable by picking it out
+ * of a menu.
+ */
+export async function listWorkspacesForIdentity(
+  db: Db,
+  identity: MemberIdentity,
+): Promise<WorkspaceRow[]> {
+  const email = identity.email?.trim().toLowerCase() || null;
+  const externalId = identity.externalId || null;
+  if (!email && !externalId) return [];
+
+  // Match on EITHER key. A person can hold rows created by two different paths
+  // — an IAM-provisioned one carrying `external_id`, and an invite that only
+  // ever knew their address — and both are the same human.
+  const rows = await db.all<{
+    account_id: string;
+    code: string;
+    name: string;
+    member_id: string;
+    role: string;
+    status: string;
+  }>(
+    sql`SELECT a.id AS account_id, a.code, a.name, m.id AS member_id, m.role, m.status
+        FROM member m JOIN account a ON a.id = m.account_id
+        WHERE m.status IN ('active', 'invited')
+          AND (
+            (${externalId} IS NOT NULL AND m.external_id = ${externalId})
+            OR (${email} IS NOT NULL AND lower(m.email) = ${email})
+          )
+        ORDER BY a.name ASC, a.created_at ASC`,
+  );
+
+  // The same account can match on both keys (one row, two predicates) — and in
+  // principle a person could hold two member rows in one account. Collapse to
+  // one entry per account so the switcher never lists a workspace twice.
+  const seen = new Set<string>();
+  const out: WorkspaceRow[] = [];
+  for (const r of rows) {
+    if (seen.has(r.account_id)) continue;
+    seen.add(r.account_id);
+    out.push({
+      accountId: r.account_id,
+      accountCode: r.code,
+      accountName: r.name,
+      memberId: r.member_id,
+      role: (ACCOUNT_ROLES as readonly string[]).includes(r.role)
+        ? (r.role as AccountRole)
+        : 'member',
+      status: (MEMBER_STATUSES as readonly string[]).includes(r.status)
+        ? (r.status as MemberStatus)
+        : 'active',
+    });
+  }
+  return out;
+}
+
+/**
+ * Resolve this person's membership in one specific account, or null.
+ *
+ * This is the authorization check behind the workspace switch — the only thing
+ * standing between an account id someone asked for and another tenant's data.
+ * It re-derives membership from the database on every request and never trusts
+ * anything the request carried.
+ */
+export async function findMembership(
+  db: Db,
+  identity: MemberIdentity,
+  accountId: string,
+): Promise<WorkspaceRow | null> {
+  const all = await listWorkspacesForIdentity(db, identity);
+  return all.find((w) => w.accountId === accountId) ?? null;
+}
+
 // --- Public member page (the /[accountCode]/[handle] route) -------------------
 
 /** One published form as the public profile lists it. */
