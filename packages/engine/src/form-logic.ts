@@ -210,6 +210,14 @@ export interface FormStep {
    */
   hidden?: boolean;
   /**
+   * A value this answer starts with, used only when nothing else supplied one.
+   *
+   * Precedence is default < URL prefill < what the person types: a link that
+   * carries `?email=` must win, or a campaign link would be silently overridden
+   * by a default the author set months earlier.
+   */
+  defaultValue?: string;
+  /**
    * Per-question scoring switch (additive; back-compat — V5-B2). `false` makes
    * THIS step contribute nothing to the score while the rest of the form keeps
    * scoring normally; absent/`true` scores as it always has, so every existing

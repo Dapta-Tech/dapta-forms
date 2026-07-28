@@ -155,6 +155,26 @@ export interface BuilderMessages {
     /** Shown near the toggle when scoring is on but no points are assigned yet. */
     scoringZeroHint: string;
     contactHint: string;
+    /** The collapsible Advanced group + what it says when shut. */
+    advancedTitle: string;
+    badgeConditional: string;
+    badgeDynamic: string;
+    badgeEndsForm: string;
+    badgeHidden: string;
+    badgeRenamedKey: string;
+    badgeScored: string;
+    badgeDefault: string;
+    /** The URL parameter that prefills this question (informational). */
+    prefillTitle: string;
+    prefillHint: string;
+    prefillReadOnly: string;
+    prefillCopy: string;
+    prefillCopied: string;
+    prefillUtmWarning: string;
+    /** A value the answer starts with; anything in the URL wins over it. */
+    defaultAnswer: string;
+    defaultAnswerHint: string;
+    defaultAnswerPlaceholder: string;
     delete: string;
     deleteConfirm: string;
     empty: string;
@@ -437,6 +457,24 @@ const en: BuilderMessages = {
     scoringFormOff: 'Scoring is off for the whole form — turn it on in Results to score individual questions.',
     scoringZeroHint: 'Assign points to your answers to enable ranges.',
     contactHint: 'Contact field — doesn’t affect the score.',
+    advancedTitle: 'Advanced settings',
+    badgeConditional: 'Conditional',
+    badgeDynamic: 'Dynamic',
+    badgeEndsForm: 'Ends form',
+    badgeHidden: 'Hidden',
+    badgeRenamedKey: 'Custom key',
+    badgeScored: 'Scored',
+    badgeDefault: 'Default set',
+    prefillTitle: 'Prefill from URL',
+    prefillHint: 'Add this parameter to the link and the answer arrives filled in.',
+    prefillReadOnly: 'read only',
+    prefillCopy: 'Copy',
+    prefillCopied: 'Copied',
+    prefillUtmWarning:
+      'A key starting with utm_ is never read from the URL — those are captured separately as campaign data. Rename the key to make prefill work.',
+    defaultAnswer: 'Default answer',
+    defaultAnswerHint: 'Used when the link carries no value. Anything in the URL wins over this.',
+    defaultAnswerPlaceholder: 'Leave empty for none',
     delete: 'Delete question',
     deleteConfirm: 'Delete this question?',
     empty: 'Select a question to edit it.',
@@ -712,6 +750,24 @@ const es: BuilderMessages = {
     scoringFormOff: 'El puntaje está apagado para todo el formulario — enciéndelo en Resultados para puntuar preguntas individuales.',
     scoringZeroHint: 'Asigna puntos a tus respuestas para habilitar los rangos.',
     contactHint: 'Campo de contacto — no afecta el puntaje.',
+    advancedTitle: 'Ajustes avanzados',
+    badgeConditional: 'Condicional',
+    badgeDynamic: 'Dinámica',
+    badgeEndsForm: 'Termina el formulario',
+    badgeHidden: 'Oculta',
+    badgeRenamedKey: 'Clave propia',
+    badgeScored: 'Con puntos',
+    badgeDefault: 'Con valor por defecto',
+    prefillTitle: 'Prellenar desde la URL',
+    prefillHint: 'Agrega este parámetro al link y la respuesta llega llena.',
+    prefillReadOnly: 'solo lectura',
+    prefillCopy: 'Copiar',
+    prefillCopied: 'Copiado',
+    prefillUtmWarning:
+      'Una clave que empieza con utm_ nunca se lee de la URL: esas se capturan aparte como datos de campaña. Renombra la clave para que el prellenado funcione.',
+    defaultAnswer: 'Respuesta por defecto',
+    defaultAnswerHint: 'Se usa cuando el link no trae valor. Lo que venga en la URL gana sobre esto.',
+    defaultAnswerPlaceholder: 'Vacío para ninguna',
     delete: 'Eliminar pregunta',
     deleteConfirm: '¿Eliminar esta pregunta?',
     empty: 'Selecciona una pregunta para editarla.',

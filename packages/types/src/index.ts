@@ -222,6 +222,8 @@ export const formStepSchema = z.object({
    * parameter and carried into the submission. Not shown for `message` steps.
    */
   hidden: z.boolean().optional(),
+  /** Seeds the answer when neither the URL nor the person supplied one. */
+  defaultValue: z.string().max(512).optional(),
   /**
    * `phone` step: ISO 3166-1 alpha-2 the public country picker defaults to
    * (e.g. "CO"). ADDITIVE — absent = the locale-based default. Two-char cap so a

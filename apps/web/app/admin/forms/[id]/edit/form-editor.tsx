@@ -720,6 +720,7 @@ export function FormEditor({
               <aside className="min-h-0 overflow-y-auto border-t border-border lg:border-t-0">
                 {selectedStep && selected != null ? (
                   <QuestionSettings
+                    publicUrl={publicPath}
                     step={selectedStep}
                     index={selected}
                     steps={config.steps}
@@ -729,9 +730,7 @@ export function FormEditor({
                     onDelete={() => deleteStep(selected)}
                     bm={bm}
                     em={m}
-                    formId={id}
                     locale={locale}
-                    onOpenConnect={() => setTab('connect')}
                     revealAfter={config.steps[selected + 1]?.type === 'reveal'}
                     onRevealAfterChange={(on) => setRevealAfter(selected, on)}
                     onRenameKey={(nextKey) => renameStepKey(selected, nextKey)}

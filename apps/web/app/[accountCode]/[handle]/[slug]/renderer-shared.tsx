@@ -74,6 +74,27 @@ export function capturePrefill(steps: FormStep[]): Answers {
 }
 
 /**
+ * The answers a form starts with from its own configured DEFAULTS.
+ *
+ * Separate from `capturePrefill` and applied BEFORE it, which is the whole
+ * precedence rule: default < URL < what the person types. A campaign link
+ * carrying `?email=` has to win over a default the author set months earlier,
+ * or the link would silently do nothing.
+ *
+ * A `name` step is skipped: it writes two subfield answers, not one under its
+ * own key, so a single default has nowhere to go.
+ */
+export function captureDefaults(steps: FormStep[]): Answers {
+  const seed: Answers = {};
+  for (const step of steps) {
+    if (step.type === 'message' || step.type === 'name') continue;
+    const value = step.defaultValue;
+    if (typeof value === 'string' && value !== '') seed[step.key] = value;
+  }
+  return seed;
+}
+
+/**
  * Map a `scheduler` step's config to the booking shape the shared BookingScreen
  * embeds, or `null` when no event type has been picked yet (renders a fallback).
  * "Show event details? → No" becomes Calendly's `hide_event_type_details=1`.
