@@ -7,6 +7,7 @@ import { PageHeader } from '@/components/ui/page-header';
 import { InviteMember } from './invite-member';
 import { MemberRowActions } from './member-row-actions';
 import { NotificationSettings } from './notification-settings';
+import { PublicPageSettings } from './public-page';
 
 export const dynamic = 'force-dynamic';
 
@@ -34,10 +35,14 @@ export default async function SettingsPage() {
     disabled: s.statusDisabled,
   };
   const publicPath = me.handle ? `/${me.accountCode}/${me.handle}` : null;
+  // Every member edits their OWN page, so this is not admin-gated.
+  const myProfile = await adminApi.myProfile().catch(() => null);
 
   return (
     <div className="mx-auto max-w-[1520px] px-6 py-10 sm:px-8">
       <PageHeader title={s.title} subtitle={s.subtitle} />
+
+      <PublicPageSettings publicPath={publicPath} initial={myProfile?.profile ?? null} m={s} />
 
       <section className="mb-8 rounded-md border border-border bg-card p-6">
         <h2 className="text-lg font-semibold tracking-tight">{s.workspaceHeading}</h2>

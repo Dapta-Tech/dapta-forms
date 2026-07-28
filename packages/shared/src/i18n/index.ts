@@ -184,6 +184,20 @@ export interface FormsMessages {
       statusActive: string;
       statusInvited: string;
       statusDisabled: string;
+      /** The public member page (`/[accountCode]/[handle]`). */
+      publicPageHeading: string;
+      publicPageSubtitle: string;
+      publicPageEnable: string;
+      publicPageNoHandle: string;
+      publicPageHeadline: string;
+      publicPageHeadlinePlaceholder: string;
+      publicPageBio: string;
+      publicPageBioPlaceholder: string;
+      publicPageSave: string;
+      publicPageSaving: string;
+      publicPageSaved: string;
+      publicPageError: string;
+      publicPageView: string;
       membersEmpty: string;
       you: string;
       addMember: string;
@@ -1160,6 +1174,20 @@ export const en: FormsMessages = {
       statusActive: 'Active',
       statusInvited: 'Invited',
       statusDisabled: 'Disabled',
+      publicPageHeading: 'Your public page',
+      publicPageSubtitle:
+        'A page at your handle listing the forms you want people to find. Off until you turn it on.',
+      publicPageEnable: 'Published',
+      publicPageNoHandle: 'You need a handle before this page can have a URL.',
+      publicPageHeadline: 'Headline',
+      publicPageHeadlinePlaceholder: 'What you help people with',
+      publicPageBio: 'About',
+      publicPageBioPlaceholder: 'A short paragraph about what you do.',
+      publicPageSave: 'Save',
+      publicPageSaving: 'Saving…',
+      publicPageSaved: 'Public page saved.',
+      publicPageError: 'Could not save your public page.',
+      publicPageView: 'View page',
       membersEmpty: 'No members yet.',
       you: 'You',
       addMember: 'Add member',
@@ -2094,6 +2122,20 @@ export const es: FormsMessages = {
       statusActive: 'Activo',
       statusInvited: 'Invitado',
       statusDisabled: 'Desactivado',
+      publicPageHeading: 'Tu página pública',
+      publicPageSubtitle:
+        'Una página en tu handle con los formularios que quieres que la gente encuentre. Apagada hasta que la prendas.',
+      publicPageEnable: 'Publicada',
+      publicPageNoHandle: 'Necesitas un handle antes de que esta página tenga URL.',
+      publicPageHeadline: 'Titular',
+      publicPageHeadlinePlaceholder: 'En qué ayudas a la gente',
+      publicPageBio: 'Sobre ti',
+      publicPageBioPlaceholder: 'Un párrafo corto sobre lo que haces.',
+      publicPageSave: 'Guardar',
+      publicPageSaving: 'Guardando…',
+      publicPageSaved: 'Página pública guardada.',
+      publicPageError: 'No se pudo guardar tu página pública.',
+      publicPageView: 'Ver página',
       membersEmpty: 'Aún no hay miembros.',
       you: 'Tú',
       addMember: 'Añadir miembro',

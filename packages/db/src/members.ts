@@ -315,3 +315,16 @@ export async function setMemberProfile(
         WHERE id = ${memberId} AND account_id = ${accountId}`,
   );
 }
+
+/** The stored public-page blob for one member (account-scoped), or null. */
+export async function getMemberProfileRaw(
+  db: Db,
+  accountId: string,
+  memberId: string,
+): Promise<unknown> {
+  const r = await db.get<Record<string, unknown>>(
+    sql`SELECT profile FROM member WHERE id = ${memberId} AND account_id = ${accountId} LIMIT 1`,
+  );
+  if (!r || r.profile == null) return null;
+  return parseJsonColumn<unknown>(r.profile, null);
+}
