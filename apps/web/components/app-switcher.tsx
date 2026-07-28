@@ -39,16 +39,17 @@ function suiteHref(base: string): string {
   }
 }
 
-export function AppSwitcher({
-  messages: m,
-  collapsed = false,
-}: {
-  messages: SwitcherMessages;
-  collapsed?: boolean;
-}) {
+export function AppSwitcher({ messages: m }: { messages: SwitcherMessages }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  // Viewport coordinates for the menu. It renders position:fixed because the
+  // desktop rail is a scroll container (md:overflow-y-auto) — an absolute menu
+  // inside it gets CLIPPED at the rail's edge, which with the rail collapsed
+  // (64px) hid the whole menu behind the main content. Fixed positioning
+  // escapes the clip regardless of the rail state.
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
 
   // No sibling product configured → the switcher would only show "current"; hide it.
   const hasSuite = PLATFORM_URL.length > 0 || CALENDARS_URL.length > 0;
@@ -61,11 +62,16 @@ export function AppSwitcher({
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') setOpen(false);
     };
+    // The menu is position:fixed — anchored to viewport coordinates captured on
+    // open — so any scroll would leave it floating detached. Close instead.
+    const onScroll = () => setOpen(false);
     document.addEventListener('mousedown', onDown);
     document.addEventListener('keydown', onKey);
+    document.addEventListener('scroll', onScroll, true);
     return () => {
       document.removeEventListener('mousedown', onDown);
       document.removeEventListener('keydown', onKey);
+      document.removeEventListener('scroll', onScroll, true);
     };
   }, [open]);
 
@@ -83,20 +89,30 @@ export function AppSwitcher({
         aria-expanded={open}
         aria-label={m.trigger}
         title={m.trigger}
-        onClick={() => setOpen((o) => !o)}
+        ref={triggerRef}
+        onClick={() => {
+          const rect = triggerRef.current?.getBoundingClientRect();
+          // Clamp so the 240px panel never leaves the viewport on narrow screens.
+          if (rect) {
+            setPos({
+              top: rect.bottom + 8,
+              left: Math.max(8, Math.min(rect.left, window.innerWidth - 248)),
+            });
+          }
+          setOpen((o) => !o);
+        }}
         className="flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground active:scale-[0.98]"
       >
         <i aria-hidden className="pi pi-th-large" style={{ fontSize: 18 }} />
       </button>
 
-      {open ? (
+      {open && pos ? (
         <div
           ref={menuRef}
           role="menu"
           aria-label={m.menuLabel}
-          className={`absolute z-50 mt-2 w-60 rounded-md border border-border bg-popover p-1.5 text-popover-foreground shadow-lg ${
-            collapsed ? 'left-0' : 'left-0'
-          }`}
+          style={{ top: pos.top, left: pos.left }}
+          className="fixed z-50 w-60 rounded-md border border-border bg-popover p-1.5 text-popover-foreground shadow-lg"
         >
           <p className="px-2 py-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             {m.eyebrow}

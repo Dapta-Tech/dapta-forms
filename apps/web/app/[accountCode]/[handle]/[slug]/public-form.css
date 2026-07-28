@@ -881,6 +881,7 @@
   color: var(--muted-foreground);
 }
 .pf-logos__viewport {
+  position: relative; /* anchors the hidden measuring row */
   overflow: hidden;
   width: 100%;
   mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent);
@@ -891,12 +892,23 @@
   width: max-content;
   animation: pf-logos-marquee 24s linear infinite;
 }
+/* Invisible single-copy row the component measures to size the real track. */
+.pf-logos__track--measure {
+  position: absolute;
+  visibility: hidden;
+  pointer-events: none;
+  animation: none;
+}
 @media (prefers-reduced-motion: reduce) {
   .pf-logos__track {
     animation: none;
     flex-wrap: wrap;
     justify-content: center;
     width: 100%;
+  }
+  /* Static fallback shows each logo once — the loop copies disappear. */
+  .pf-logos__chip--dup {
+    display: none;
   }
 }
 .pf-logos__chip {

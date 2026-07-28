@@ -180,7 +180,7 @@ export function AdminShell({
         {PRODUCT_NAME.charAt(0)}
       </span>
       {!railCollapsed ? <span className="text-sm font-semibold text-foreground">{PRODUCT_NAME}</span> : null}
-      <AppSwitcher messages={messages.switcher} collapsed={railCollapsed} />
+      <AppSwitcher messages={messages.switcher} />
       {/* The rail toggle is a desktop pref; hidden on the editor route where the
           rail is force-collapsed for canvas. */}
       {!studio ? (
