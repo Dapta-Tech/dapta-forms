@@ -7,10 +7,20 @@
 import { z } from 'zod';
 import {
   CONDITION_OPS,
+  FORM_BACKGROUND_STYLES,
   FORM_BANNER_SCOPES,
+  FORM_BUTTON_STYLES,
+  FORM_CONTENT_ALIGNS,
+  FORM_CONTENT_WIDTHS,
   FORM_FIELD_TYPES,
+  FORM_FONTS,
   FORM_LAYOUTS,
+  FORM_LOGO_POSITIONS,
+  FORM_LOGO_SIZES,
   FORM_OPTION_LAYOUTS,
+  FORM_PROGRESS_STYLES,
+  FORM_RADII,
+  FORM_TRANSITIONS,
   isImageIcon,
   isSafeHttpUrl,
   isSafeImageUrl,
@@ -281,10 +291,59 @@ const cssColor = z
     { message: 'primaryColor must be a hex, rgb(a)/hsl(a), or named CSS color.' },
   );
 
+/**
+ * An author-supplied typeface. This repo has no asset storage, so the source is
+ * a URL the deployment fetches — the same shape every other image in the config
+ * takes. Restricted to http(s) because it becomes an `@font-face src`.
+ */
+export const customFontSchema = z.object({
+  name: z.string().min(1).max(64),
+  url: z
+    .string()
+    .max(2048)
+    .refine(isSafeHttpUrl, { message: 'Font URL must use http(s).' }),
+});
+
+/**
+ * Per-form branding + design. Everything beyond the original three fields is
+ * OPTIONAL and resolves, when absent, to the pre-design look (`resolveDesign` /
+ * `formThemeVars`) — config invariant #4: extend v1, never break it. A form
+ * published before any of this existed must keep parsing and keep rendering
+ * identically, which is what the engine's legacy-default tests pin down.
+ */
 export const formBrandingSchema = z.object({
   primaryColor: cssColor.nullable().optional(),
   logo: safeImageUrl.nullable().optional(),
   clientLogos: z.array(clientLogoSchema).max(24).optional(),
+
+  // Color. Setting `background` locks the form's light/dark theme.
+  background: cssColor.nullable().optional(),
+  foreground: cssColor.nullable().optional(),
+  backgroundStyle: z.enum(FORM_BACKGROUND_STYLES).optional(),
+  backgroundImage: safeImageUrl.nullable().optional(),
+  backgroundOverlay: z.number().min(0).max(100).optional(),
+
+  // Typography.
+  fontFamily: z.enum(FORM_FONTS).optional(),
+  customFont: customFontSchema.nullable().optional(),
+
+  // Shape & controls.
+  radius: z.enum(FORM_RADII).optional(),
+  buttonStyle: z.enum(FORM_BUTTON_STYLES).optional(),
+  buttonFullWidth: z.boolean().optional(),
+  progressStyle: z.enum(FORM_PROGRESS_STYLES).optional(),
+
+  // Layout.
+  logoSize: z.enum(FORM_LOGO_SIZES).optional(),
+  logoPosition: z.enum(FORM_LOGO_POSITIONS).optional(),
+  contentAlign: z.enum(FORM_CONTENT_ALIGNS).optional(),
+  contentWidth: z.enum(FORM_CONTENT_WIDTHS).optional(),
+  transition: z.enum(FORM_TRANSITIONS).optional(),
+
+  /** Editor bookkeeping — which preset was last applied. Never read at render. */
+  themePreset: z.string().max(32).nullable().optional(),
+  /** Social-share card. Absent = generated from the branding above. */
+  ogImage: safeImageUrl.nullable().optional(),
 });
 
 // --- Outcome extensions (booking + answer-forced overrides) ------------------

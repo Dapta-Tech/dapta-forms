@@ -42,13 +42,14 @@ import {
   type FormOutcome,
   type FormReveal,
 } from '@quill/engine';
-import { onAccent, getMessages, t } from '@quill/shared';
+import { getMessages, t } from '@quill/shared';
 import type { FormConfig } from '@quill/types';
 import { FormLogo } from '@/components/public/form-logo';
 import { ClientLogosMarquee } from '@/components/public/client-logos-marquee';
 import { StepInput } from '@/components/public/step-input';
 import { BookingScreen } from '@/components/public/booking-screen';
 import { RevealScreen } from '@/components/public/reveal-screen';
+import { formDesignProps } from '@/lib/form-design';
 import { warmBookingEmbed, type BookingScheduledDetails } from '@/lib/booking-embed';
 import { resolveSchedulerPrefill } from '@/lib/booking-prefill';
 import { submitFormAction, recordEventAction, recordBookingAction } from './actions';
@@ -215,11 +216,11 @@ export function VerticalFormRenderer({
 
   const thresholdKey = useMemo(() => partialSubmitKey(engineConfig), [engineConfig]);
 
-  // Accent branding (only override the local default when a color is configured).
-  const primary = config.branding?.primaryColor ?? null;
-  const accentVars = primary
-    ? ({ ['--pf-primary']: primary, ['--pf-primary-contrast']: onAccent(primary) } as React.CSSProperties)
-    : undefined;
+  // The form's whole look — colors, typeface, shape, background treatment —
+  // resolved once and applied to every phase root below, exactly as the slides
+  // layout does. Before this the vertical form carried only the accent, so an
+  // author who set a background, a font or a corner radius saw none of it here.
+  const design = useMemo(() => formDesignProps(config.branding), [config.branding]);
 
   const err = (code: string) => m.errors[code as keyof typeof m.errors] ?? m.errors.required;
 
@@ -495,14 +496,14 @@ export function VerticalFormRenderer({
         m={m}
         accountCode={accountCode}
         cover={cover}
-        style={accentVars}
+        design={design}
       />
     );
   }
 
   if (phase === 'booking' && booking?.outcome.booking) {
     return (
-      <PhaseShell className="pf pf--booking-page" style={accentVars} cover={cover}>
+      <PhaseShell className="pf pf--booking-page" design={design} cover={cover}>
         <BookingScreen
           booking={booking.outcome.booking}
           answers={answersRef.current}
@@ -518,7 +519,7 @@ export function VerticalFormRenderer({
     return (
       <PhaseShell
         className="pf pf--reveal"
-        style={accentVars}
+        design={design}
         role="status"
         aria-live="polite"
         cover={cover}
@@ -537,7 +538,7 @@ export function VerticalFormRenderer({
     return (
       <PhaseShell
         className="pf pf--reveal"
-        style={accentVars}
+        design={design}
         role="status"
         aria-live="polite"
         cover={cover}
@@ -555,7 +556,10 @@ export function VerticalFormRenderer({
   const total = answerable.length;
 
   return (
-    <div className="pf pf--vertical" style={accentVars}>
+    <div className="pf pf--vertical" {...design.attrs} style={design.style}>
+      {/* An author-supplied face has to be declared in the document. This root
+          is not a PhaseShell, so it declares its own. */}
+      {design.fontFace ? <style>{design.fontFace}</style> : null}
       {/* Banner + progress share ONE sticky group so they never fight for the
           viewport top; the banner's own sticky is neutralized on this layout. */}
       <div className="pf-v__sticky">

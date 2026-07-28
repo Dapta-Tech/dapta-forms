@@ -8,8 +8,9 @@ import {
   clampSliderValue,
   resolveOptionLayout,
   resolveOptionIcon,
+  resolveDesign,
 } from '@quill/engine';
-import { clampAccent, onAccent, DEFAULT_ACCENT } from '@quill/shared';
+import { onAccent, DEFAULT_ACCENT } from '@quill/shared';
 import { cn } from '@/lib/cn';
 import { iconForStep, hasOptions } from './question-types';
 import { maxStepPoints } from './scoring-util';
@@ -93,8 +94,42 @@ export function CanvasQuestion({
   onUpdate: (patch: Partial<FormStep>) => void;
   m: BuilderMessages;
 }) {
-  const accent = clampAccent(config.branding?.primaryColor || DEFAULT_ACCENT);
+  // The author's exact color, matching the renderer and the live preview. This
+  // used to call `clampAccent` with no ground, so it corrected against the dark
+  // canvas — which meant the canvas, the preview and the published page could
+  // each show a different accent. Nothing corrects a chosen color any more.
+  const accent = config.branding?.primaryColor?.trim() || DEFAULT_ACCENT;
   const accentText = onAccent(accent);
+
+  // The canvas honours the design axes that change SHAPE — corner radius,
+  // measure, alignment, and how the primary action and progress are drawn — so
+  // the builder never contradicts the form about its structure.
+  //
+  // It deliberately does NOT take the palette or the typeface. This is an
+  // EDITING surface: the title and description are inline textareas, options are
+  // dragged and renamed, and there are point chips and delete controls layered
+  // on top. A brand background, a decorative image or a display serif make that
+  // work harder to do, and the editing affordances need admin contrast rather
+  // than the author's. The real appearance lives in the preview beside it and in
+  // the Preview modal, both of which render the form exactly as published.
+  const design = resolveDesign(config.branding);
+  const cardRadius =
+    design.radius === 'sharp' ? 'rounded-sm' : design.radius === 'round' ? 'rounded-[28px]' : 'rounded-2xl';
+  const btnRadius =
+    design.radius === 'sharp' ? 'rounded-sm' : design.radius === 'round' ? 'rounded-full' : 'rounded-xl';
+  const canvasWidth =
+    device === 'mobile' ? 'max-w-[380px]' : design.contentWidth === 'wide' ? 'max-w-[760px]' : 'max-w-[640px]';
+  const centred = design.contentAlign === 'center';
+  const btnStyle =
+    design.buttonStyle === 'outline'
+      ? { background: 'transparent', color: 'var(--foreground)', border: `1.5px solid ${accent}` }
+      : design.buttonStyle === 'soft'
+        ? {
+            background: `color-mix(in srgb, ${accent} 18%, var(--card))`,
+            color: 'var(--foreground)',
+            border: `1px solid color-mix(in srgb, ${accent} 32%, transparent)`,
+          }
+        : { background: accent, color: accentText };
   const progress = total > 0 ? Math.round(((index + 1) / total) * 100) : 0;
   const isLast = index + 1 >= total;
 
@@ -117,16 +152,28 @@ export function CanvasQuestion({
 
   return (
     <div className="flex justify-center">
-      <div
-        className={cn(
-          'w-full rounded-2xl border border-border bg-card p-6 shadow-xl sm:p-8',
-          device === 'mobile' ? 'max-w-[380px]' : 'max-w-[640px]',
-        )}
-      >
-        {/* Respondent progress bar */}
-        <div className="mb-6 h-1.5 w-full overflow-hidden rounded-full bg-muted">
-          <div className="h-full rounded-full transition-all" style={{ width: `${progress}%`, background: accent }} />
-        </div>
+      <div className={cn('w-full border border-border bg-card p-6 shadow-xl sm:p-8', cardRadius, canvasWidth)}>
+        {/* Respondent progress — drawn the way the form draws it, so choosing
+            dots or hiding it entirely is visible while building. */}
+        {design.progressStyle === 'bar' ? (
+          <div className="mb-6 h-1.5 w-full overflow-hidden rounded-full bg-muted">
+            <div className="h-full rounded-full transition-all" style={{ width: `${progress}%`, background: accent }} />
+          </div>
+        ) : design.progressStyle === 'dots' ? (
+          <div className="mb-6 flex items-center justify-center gap-1.5">
+            {Array.from({ length: Math.max(total, 1) }).map((_, i) => (
+              <span
+                key={i}
+                className={cn('h-1.5 w-1.5 rounded-full transition-transform', i === index && 'scale-150')}
+                style={{ background: i <= index ? accent : 'var(--muted)' }}
+              />
+            ))}
+          </div>
+        ) : design.progressStyle === 'steps' ? (
+          <p className="mb-6 text-center text-[11px] font-semibold tabular-nums text-muted-foreground">
+            {index + 1} / {total}
+          </p>
+        ) : null}
 
         <QuestionEditableBody
           config={config}
@@ -142,11 +189,15 @@ export function CanvasQuestion({
             advances itself — showing a Submit here promised a button that never
             renders. */}
         {step.type !== 'dropdown' && step.type !== 'scheduler' ? (
-          <div className="mt-7">
+          <div className={cn('mt-7', centred && !design.buttonFullWidth && 'text-center')}>
             <button
               type="button"
-              className="inline-flex items-center gap-2 rounded-xl px-6 py-3 text-sm font-semibold"
-              style={{ background: accent, color: accentText }}
+              className={cn(
+                'items-center justify-center gap-2 px-6 py-3 text-sm font-semibold',
+                btnRadius,
+                design.buttonFullWidth ? 'flex w-full' : 'inline-flex',
+              )}
+              style={btnStyle}
             >
               {step.buttonText || (isLast ? m.canvas.submit : m.canvas.next)}
               <i aria-hidden className="pi pi-arrow-right" style={{ fontSize: 12 }} />
@@ -182,6 +233,13 @@ function QuestionEditableBody({
   const showsPoints =
     (config.scoring?.enabled ?? false) !== false && step.flowGroup !== 'lead_capture' && maxStepPoints(step) >= 0;
   const cardLayout = step.type === 'multiple_choice' && resolveOptionLayout(step) === 'cards';
+  // Derived here rather than passed in, so the per-step card and the vertical
+  // page canvas both pick up the shape axes from the one place that renders a
+  // question. Colour and typeface are deliberately NOT taken — see CanvasQuestion.
+  const design = resolveDesign(config.branding);
+  const optionRadius =
+    design.radius === 'sharp' ? 'rounded-sm' : design.radius === 'round' ? 'rounded-2xl' : 'rounded-xl';
+  const centred = design.contentAlign === 'center';
 
   function updateOption(i: number, patch: Partial<FormOption>) {
     onUpdate({ options: (step.options ?? []).map((o, oi) => (oi === i ? { ...o, ...patch } : o)) });
@@ -217,7 +275,10 @@ function QuestionEditableBody({
         m={m.tokens}
         hint={m.tokens.hint}
         testId="canvas-title-input"
-        className="canvas-title text-2xl font-semibold tracking-tight text-foreground sm:text-[28px]"
+        className={cn(
+          'canvas-title text-2xl font-semibold tracking-tight text-foreground sm:text-[28px]',
+          centred && 'text-center',
+        )}
       />
 
       {/* Inline editable description — same @ picker as the title (tokens =
@@ -234,7 +295,7 @@ function QuestionEditableBody({
           allKeys={allTokenKeys(config.steps)}
           m={m.tokens}
           testId="canvas-description-input"
-          className="text-[15px] leading-relaxed text-muted-foreground"
+          className={cn('text-[15px] leading-relaxed text-muted-foreground', centred && 'text-center')}
         />
       </div>
 
@@ -257,7 +318,10 @@ function QuestionEditableBody({
               return cardLayout ? (
                 <div
                   key={i}
-                  className="group relative flex min-h-[104px] w-[calc((100%-1.25rem)/3)] min-w-[132px] max-w-[220px] flex-col items-center gap-2 rounded-xl border border-border bg-background px-2 py-4 transition-colors focus-within:border-primary/60 hover:border-muted-foreground/60"
+                  className={cn(
+                    'group relative flex min-h-[104px] w-[calc((100%-1.25rem)/3)] min-w-[132px] max-w-[220px] flex-col items-center gap-2 border border-border bg-background px-2 py-4 transition-colors focus-within:border-primary/60 hover:border-muted-foreground/60',
+                    optionRadius,
+                  )}
                 >
                   {icon.kind === 'image' ? (
                     // No plate behind a logo — it carries its own shape. The
@@ -294,7 +358,10 @@ function QuestionEditableBody({
               ) : (
                 <div
                   key={i}
-                  className="group flex items-center gap-3 rounded-xl border border-border bg-background px-4 py-3.5 transition-colors focus-within:border-primary/60 hover:border-muted-foreground/60"
+                  className={cn(
+                    'group flex items-center gap-3 border border-border bg-background px-4 py-3.5 transition-colors focus-within:border-primary/60 hover:border-muted-foreground/60',
+                    optionRadius,
+                  )}
                 >
                   <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border text-[11px] font-semibold text-muted-foreground">
                     {opt.icon && icon.kind === 'glyph' ? (
@@ -398,7 +465,9 @@ export function CanvasPage({
   onUpdateStep: (index: number, patch: Partial<FormStep>) => void;
   m: BuilderMessages;
 }) {
-  const accent = clampAccent(config.branding?.primaryColor || DEFAULT_ACCENT);
+  // The author's exact color, like every other surface — nothing corrects a
+  // chosen color any more.
+  const accent = config.branding?.primaryColor?.trim() || DEFAULT_ACCENT;
   const accentText = onAccent(accent);
   const blockRefs = useRef<Map<string, HTMLElement>>(new Map());
 

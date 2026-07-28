@@ -630,6 +630,96 @@ export interface FormsMessages {
         mobile: string;
         desktop: string;
         close: string;
+        /** The address bar above the preview frame. */
+        urlLabel: string;
+        copyLink: string;
+        copied: string;
+        openForm: string;
+        /** Says the frame is a picture of the form, not a working form. */
+        inert: string;
+        previous: string;
+        next: string;
+      };
+      /** The Design tab: everything about how the form looks. */
+      design: {
+        presetsTitle: string;
+        presetsSubtitle: string;
+        presetsCustom: string;
+        colorsTitle: string;
+        colorsSubtitle: string;
+        background: string;
+        foreground: string;
+        accent: string;
+        /** Warns that choosing colors stops the form following the visitor's theme. */
+        themeLockHint: string;
+        backgroundStyle: string;
+        bgSolid: string;
+        bgGradient: string;
+        bgGlow: string;
+        bgImage: string;
+        backgroundImage: string;
+        backgroundImageHint: string;
+        overlay: string;
+        contrast: string;
+        contrastText: string;
+        contrastButton: string;
+        contrastFail: string;
+        accentLowContrast: string;
+        suggestApply: string;
+        typographyTitle: string;
+        typographySubtitle: string;
+        font: string;
+        fontSans: string;
+        fontSerif: string;
+        fontCustomGroup: string;
+        customFontName: string;
+        customFontNamePlaceholder: string;
+        customFontUrl: string;
+        customFontHint: string;
+        controlsTitle: string;
+        controlsSubtitle: string;
+        radius: string;
+        radiusSharp: string;
+        radiusSoft: string;
+        radiusRound: string;
+        buttonStyle: string;
+        buttonSolid: string;
+        buttonOutline: string;
+        buttonSoft: string;
+        buttonFullWidth: string;
+        progress: string;
+        progressBar: string;
+        progressDots: string;
+        progressSteps: string;
+        progressNone: string;
+        layoutTitle: string;
+        layoutSubtitle: string;
+        logoSize: string;
+        sizeSm: string;
+        sizeMd: string;
+        sizeLg: string;
+        logoPosition: string;
+        alignLeft: string;
+        alignCenter: string;
+        contentAlign: string;
+        contentWidth: string;
+        widthNarrow: string;
+        widthWide: string;
+        transition: string;
+        transitionSlide: string;
+        transitionFade: string;
+        transitionNone: string;
+        shareTitle: string;
+        shareSubtitle: string;
+        ogImage: string;
+        ogImageHint: string;
+        ogFallback: string;
+        reset: string;
+        /** The custom color popover. */
+        colorSwatches: string;
+        colorCustom: string;
+        colorHex: string;
+        colorInvalid: string;
       };
       /** The editor's Connect tab (per-form integrations, tracking, emails). */
       connect: {
@@ -1458,6 +1548,93 @@ export const en: FormsMessages = {
         mobile: 'Mobile',
         desktop: 'Desktop',
         close: 'Close',
+        urlLabel: 'Public link',
+        copyLink: 'Copy link',
+        copied: 'Copied',
+        openForm: 'Open',
+        inert: 'Preview only — nothing here is submitted.',
+        previous: 'Previous screen',
+        next: 'Next screen',
+      },
+      design: {
+        presetsTitle: 'Theme',
+        presetsSubtitle: 'A starting point you can edit. Pick one, then change anything below.',
+        presetsCustom: 'Custom',
+        colorsTitle: 'Colors',
+        colorsSubtitle: 'The ground, the text on it, and the one accent.',
+        background: 'Background',
+        foreground: 'Text',
+        accent: 'Accent',
+        themeLockHint:
+          'Choosing a background fixes the form to this palette — it stops following the visitor’s light or dark setting.',
+        backgroundStyle: 'Background style',
+        bgSolid: 'Solid',
+        bgGradient: 'Gradient',
+        bgGlow: 'Glow',
+        bgImage: 'Image',
+        backgroundImage: 'Image URL',
+        backgroundImageHint: 'Paste a link to the image. A dark layer keeps the text readable over it.',
+        overlay: 'Image dimming',
+        contrast: 'Contrast',
+        contrastText: 'Text on background',
+        contrastButton: 'Label on button',
+        contrastFail: 'Below AA — hard to read.',
+        accentLowContrast:
+          'Your accent is {ratio}:1 against the background. No text uses it, so nothing becomes unreadable — but a selected option and the button may be hard to pick out.',
+        suggestApply: 'Use {color}',
+        typographyTitle: 'Typography',
+        typographySubtitle: 'All eight faces are self-hosted, so the form loads nothing from a font CDN.',
+        font: 'Typeface',
+        fontSans: 'Sans',
+        fontSerif: 'Serif',
+        fontCustomGroup: 'Your own',
+        customFontName: 'Font name',
+        customFontNamePlaceholder: 'e.g. Söhne',
+        customFontUrl: 'Font file URL (.woff2)',
+        customFontHint: 'Host the file yourself and paste its link. Both fields are required.',
+        controlsTitle: 'Shape and controls',
+        controlsSubtitle: 'Corners, buttons, and how progress is shown.',
+        radius: 'Corners',
+        radiusSharp: 'Sharp',
+        radiusSoft: 'Soft',
+        radiusRound: 'Round',
+        buttonStyle: 'Button',
+        buttonSolid: 'Solid',
+        buttonOutline: 'Outline',
+        buttonSoft: 'Soft',
+        buttonFullWidth: 'Full-width button',
+        progress: 'Progress',
+        progressBar: 'Bar',
+        progressDots: 'Dots',
+        progressSteps: 'Counter',
+        progressNone: 'Hidden',
+        layoutTitle: 'Layout',
+        layoutSubtitle: 'Where things sit and how the form moves between steps.',
+        logoSize: 'Logo size',
+        sizeSm: 'Small',
+        sizeMd: 'Medium',
+        sizeLg: 'Large',
+        logoPosition: 'Logo position',
+        alignLeft: 'Left',
+        alignCenter: 'Center',
+        contentAlign: 'Question alignment',
+        contentWidth: 'Content width',
+        widthNarrow: 'Narrow',
+        widthWide: 'Wide',
+        transition: 'Step transition',
+        transitionSlide: 'Slide',
+        transitionFade: 'Fade',
+        transitionNone: 'None',
+        shareTitle: 'Share card',
+        shareSubtitle: 'How the link looks when someone shares it in chat or social.',
+        ogImage: 'Share image URL',
+        ogImageHint: 'Ideal size 1200×630.',
+        ogFallback: 'Left empty, the card is generated from the colors and logo above.',
+        reset: 'Reset design',
+        colorSwatches: 'Presets',
+        colorCustom: 'Custom',
+        colorHex: 'Hex',
+        colorInvalid: 'Enter a color like #1f6feb.',
       },
       connect: {
         tab: 'Connect',
@@ -2282,6 +2459,94 @@ export const es: FormsMessages = {
         mobile: 'Móvil',
         desktop: 'Escritorio',
         close: 'Cerrar',
+        urlLabel: 'Enlace público',
+        copyLink: 'Copiar enlace',
+        copied: 'Copiado',
+        openForm: 'Abrir',
+        inert: 'Solo vista previa: nada de esto se envía.',
+        previous: 'Pantalla anterior',
+        next: 'Pantalla siguiente',
+      },
+      design: {
+        presetsTitle: 'Tema',
+        presetsSubtitle: 'Un punto de partida editable. Elige uno y luego cambia lo que quieras.',
+        presetsCustom: 'Personalizado',
+        colorsTitle: 'Colores',
+        colorsSubtitle: 'El fondo, el texto encima y el color de marca.',
+        background: 'Fondo',
+        foreground: 'Texto',
+        accent: 'Color de marca',
+        themeLockHint:
+          'Al elegir un fondo, el formulario queda fijo en esta paleta: deja de seguir el modo claro u oscuro del visitante.',
+        backgroundStyle: 'Estilo de fondo',
+        bgSolid: 'Plano',
+        bgGradient: 'Degradado',
+        bgGlow: 'Resplandor',
+        bgImage: 'Imagen',
+        backgroundImage: 'URL de la imagen',
+        backgroundImageHint: 'Pega el enlace de la imagen. Una capa oscura mantiene el texto legible encima.',
+        overlay: 'Oscurecer imagen',
+        contrast: 'Contraste',
+        contrastText: 'Texto sobre fondo',
+        contrastButton: 'Texto del botón',
+        contrastFail: 'Por debajo de AA: cuesta leerlo.',
+        accentLowContrast:
+          'Tu color de marca tiene {ratio}:1 contra el fondo. Ningún texto lo usa, así que nada queda ilegible, pero puede costar distinguir una opción seleccionada y el botón.',
+        suggestApply: 'Usar {color}',
+        typographyTitle: 'Tipografía',
+        typographySubtitle:
+          'Las ocho tipografías se sirven desde aquí, así que el formulario no carga nada de un CDN de fuentes.',
+        font: 'Tipografía',
+        fontSans: 'Sans',
+        fontSerif: 'Serif',
+        fontCustomGroup: 'La tuya',
+        customFontName: 'Nombre de la fuente',
+        customFontNamePlaceholder: 'p. ej. Söhne',
+        customFontUrl: 'URL del archivo (.woff2)',
+        customFontHint: 'Hospeda el archivo y pega su enlace. Los dos campos son obligatorios.',
+        controlsTitle: 'Forma y controles',
+        controlsSubtitle: 'Esquinas, botones y cómo se muestra el progreso.',
+        radius: 'Esquinas',
+        radiusSharp: 'Rectas',
+        radiusSoft: 'Suaves',
+        radiusRound: 'Redondas',
+        buttonStyle: 'Botón',
+        buttonSolid: 'Sólido',
+        buttonOutline: 'Contorno',
+        buttonSoft: 'Suave',
+        buttonFullWidth: 'Botón de ancho completo',
+        progress: 'Progreso',
+        progressBar: 'Barra',
+        progressDots: 'Puntos',
+        progressSteps: 'Contador',
+        progressNone: 'Oculto',
+        layoutTitle: 'Distribución',
+        layoutSubtitle: 'Dónde va cada cosa y cómo se mueve el formulario entre pasos.',
+        logoSize: 'Tamaño del logo',
+        sizeSm: 'Pequeño',
+        sizeMd: 'Mediano',
+        sizeLg: 'Grande',
+        logoPosition: 'Posición del logo',
+        alignLeft: 'Izquierda',
+        alignCenter: 'Centro',
+        contentAlign: 'Alineación de la pregunta',
+        contentWidth: 'Ancho del contenido',
+        widthNarrow: 'Angosto',
+        widthWide: 'Amplio',
+        transition: 'Transición entre pasos',
+        transitionSlide: 'Deslizar',
+        transitionFade: 'Desvanecer',
+        transitionNone: 'Ninguna',
+        shareTitle: 'Tarjeta al compartir',
+        shareSubtitle: 'Cómo se ve el enlace cuando alguien lo comparte en chat o redes.',
+        ogImage: 'URL de la imagen',
+        ogImageHint: 'Tamaño ideal 1200×630.',
+        ogFallback: 'Si lo dejas vacío, la tarjeta se genera con los colores y el logo de arriba.',
+        reset: 'Restablecer diseño',
+        colorSwatches: 'Predefinidos',
+        colorCustom: 'Personalizado',
+        colorHex: 'Hex',
+        colorInvalid: 'Escribe un color como #1f6feb.',
       },
       connect: {
         tab: 'Conectar',

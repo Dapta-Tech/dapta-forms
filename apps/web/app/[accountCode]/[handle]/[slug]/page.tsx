@@ -27,11 +27,25 @@ export async function generateMetadata({
   const locale = await publicLocale();
   const description =
     form.config.cover?.subheadline ?? t(getMessages(locale).growth.seoForm, { name: form.name });
+
+  // An author-supplied card wins outright; otherwise the sibling
+  // `opengraph-image` route renders one from the form's own branding, and Next
+  // wires it up automatically when `images` is left undefined.
+  const custom = form.config.branding?.ogImage?.trim();
+  const images = custom ? [{ url: custom }] : undefined;
+
   return {
     title: form.name,
     description,
-    openGraph: { title: form.name, description, type: 'website' },
-    twitter: { card: 'summary', title: form.name, description },
+    openGraph: { title: form.name, description, type: 'website', ...(images ? { images } : {}) },
+    twitter: {
+      // A generated 1200×630 card deserves the large format; only a form with
+      // neither would fall back to the small one, and there is no such form.
+      card: 'summary_large_image',
+      title: form.name,
+      description,
+      ...(images ? { images } : {}),
+    },
   };
 }
 

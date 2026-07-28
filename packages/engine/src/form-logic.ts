@@ -9,6 +9,20 @@
  * same flow and the same score (never trust the client; recompute on submit).
  */
 
+import type {
+  FormBackgroundStyle,
+  FormButtonStyle,
+  FormContentAlign,
+  FormContentWidth,
+  FormCustomFont,
+  FormFont,
+  FormLogoPosition,
+  FormLogoSize,
+  FormProgressStyle,
+  FormRadius,
+  FormTransition,
+} from './form-design';
+
 /**
  * The step kinds a form can contain. `message` is an info step with no input;
  * `reveal` is a timed processing interstitial (V5-B3) — also inputless, but it
@@ -316,10 +330,55 @@ export interface FormCover {
 }
 
 /** Per-form branding — the accent color threads the banner/CTA/selected states. */
+/**
+ * Per-form branding. `primaryColor`, `logo` and `clientLogos` are the original
+ * three; everything below is the design system (`form-design.ts`), where every
+ * field is optional and its absence resolves to the pre-design look — so a form
+ * published before these existed renders exactly as it always did.
+ *
+ * `background`/`foreground` are the pair that matters most: setting them LOCKS
+ * the form's theme (it stops following the viewer's light/dark preference),
+ * because a page can't honour both an author's chosen palette and a visitor's
+ * OS setting without one of them being wrong. See `resolveThemeMode` in
+ * `@quill/shared/branding`.
+ */
 export interface FormBranding {
   primaryColor?: string | null;
   logo?: string | null;
   clientLogos?: FormClientLogo[];
+
+  // --- Color -------------------------------------------------------------
+  background?: string | null;
+  foreground?: string | null;
+  backgroundStyle?: FormBackgroundStyle;
+  backgroundImage?: string | null;
+  /** 0–100: how heavily the readability scrim covers a background image. */
+  backgroundOverlay?: number;
+
+  // --- Typography --------------------------------------------------------
+  fontFamily?: FormFont;
+  customFont?: FormCustomFont | null;
+
+  // --- Shape & controls --------------------------------------------------
+  radius?: FormRadius;
+  buttonStyle?: FormButtonStyle;
+  buttonFullWidth?: boolean;
+  progressStyle?: FormProgressStyle;
+
+  // --- Layout ------------------------------------------------------------
+  logoSize?: FormLogoSize;
+  logoPosition?: FormLogoPosition;
+  contentAlign?: FormContentAlign;
+  contentWidth?: FormContentWidth;
+  transition?: FormTransition;
+
+  /**
+   * Which preset was last applied — an editor affordance only. Nothing at
+   * render time reads it; the preset's values live in the fields above.
+   */
+  themePreset?: string | null;
+  /** Social-share card image. Absent = generated from the branding above. */
+  ogImage?: string | null;
 }
 
 /** A `scheduler` step's embedded booking config (Calendly in v1). */

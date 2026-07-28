@@ -24,8 +24,6 @@ import { formConfigSchema } from '@quill/types';
 import { saveFormAction } from '@/app/admin/actions';
 import { useToast } from '@/components/toast';
 import { cn } from '@/lib/cn';
-import { Switch } from '@/components/ui/switch';
-import { InlineField } from './_components/fields';
 import { anchorRevealsLast } from './_components/logic-util';
 import { QuestionSpine } from './_components/question-spine';
 import { CanvasQuestion, CanvasPage } from './_components/canvas-question';
@@ -36,7 +34,7 @@ import { TypeGallery } from './_components/type-gallery';
 import { LogicMap } from './_components/logic-map';
 import { ResultsView } from './_components/results-view';
 import { EmptyState } from './_components/empty-state';
-import { CoverPanel } from './_components/cover-panel';
+import { DesignPanel } from './_components/design-panel';
 import { FlowPanel } from './_components/flow-panel';
 import { EndingPanel } from './_components/ending-panel';
 import { ConnectPanel } from './_components/connect-panel';
@@ -773,60 +771,19 @@ export function FormEditor({
             />
           </div>
         ) : (
-          <div className="flex h-full flex-col gap-4 overflow-y-auto px-4 py-6 sm:px-8">
-            {/* Layout picker first: it changes what several controls below mean
-                (cover CTA, per-question reveals), so it reads before them. */}
-            <section className="rounded-lg border border-border bg-card p-4">
-              <p className="text-sm font-semibold text-foreground">{m.layout.title}</p>
-              <p className="mb-3 mt-0.5 text-xs text-muted-foreground">{m.layout.subtitle}</p>
-              <div className="grid max-w-[520px] grid-cols-2 gap-2" role="radiogroup" aria-label={m.layout.title}>
-                {(
-                  [
-                    { id: 'slides' as const, label: m.layout.slides, hint: m.layout.slidesHint },
-                    { id: 'vertical' as const, label: m.layout.vertical, hint: m.layout.verticalHint },
-                  ]
-                ).map((opt) => (
-                  <button
-                    key={opt.id}
-                    type="button"
-                    role="radio"
-                    aria-checked={layout === opt.id}
-                    data-testid={`design-layout-${opt.id}`}
-                    onClick={() => setLayout(opt.id)}
-                    className={cn(
-                      'flex flex-col gap-1 rounded-md border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                      layout === opt.id
-                        ? 'border-primary bg-primary/10 text-foreground'
-                        : 'border-border text-muted-foreground hover:border-muted-foreground hover:text-foreground',
-                    )}
-                  >
-                    <span className="text-sm font-medium">{opt.label}</span>
-                    <span className="text-xs text-muted-foreground">{opt.hint}</span>
-                  </button>
-                ))}
-              </div>
-              {/* Vertical's one reveal is a FORM-level fact (it always plays
-                  after Submit), so its switch lives here — not on a question. */}
-              {layout === 'vertical' ? (
-                <div className="mt-4 max-w-[520px] border-t border-border pt-3">
-                  <InlineField label={m.layout.endReveal} hint={m.layout.endRevealHint}>
-                    <Switch
-                      checked={hasReveal}
-                      onCheckedChange={setEndReveal}
-                      data-testid="design-end-reveal"
-                      aria-label={m.layout.endReveal}
-                    />
-                  </InlineField>
-                </div>
-              ) : null}
-            </section>
-            <CoverPanel
-              config={config}
-              layout={layout}
-              onCoverChange={patchCover}
-              onBrandingChange={patchBranding}
-              m={m}
-            />
+          <DesignPanel
+            config={config}
+            name={name}
+            publicPath={publicPath}
+            locale={locale}
+            layout={layout}
+            onLayoutChange={setLayout}
+            hasReveal={hasReveal}
+            onEndRevealChange={setEndReveal}
+            onCoverChange={patchCover}
+            onBrandingChange={patchBranding}
+            m={m}
+          >
             <FlowPanel partialNote={bm.partial.designNote} m={m} />
             <EndingPanel
               config={config}
@@ -834,7 +791,7 @@ export function FormEditor({
               hasOutcomes={(config.outcomes?.length ?? 0) > 0 && scoringEnabled}
               m={m}
             />
-          </div>
+          </DesignPanel>
         )}
       </div>
 
@@ -847,7 +804,15 @@ export function FormEditor({
         // create a card the renderer ignores, so it's offered exactly once.
         disabled={layout === 'vertical' && hasReveal ? { reveal: bm.gallery.revealVerticalTaken } : undefined}
       />
-      <DevicePreviewModal open={previewOpen} onClose={() => setPreviewOpen(false)} publicPath={publicPath} m={m.preview} />
+      <DevicePreviewModal
+        open={previewOpen}
+        onClose={() => setPreviewOpen(false)}
+        config={config}
+        name={name}
+        locale={locale}
+        layout={layout}
+        m={m.preview}
+      />
     </div>
   );
 }

@@ -1,17 +1,8 @@
 import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
-import { Poppins } from 'next/font/google';
 import 'primeicons/primeicons.css';
 import './globals.css';
-
-// Poppins is the brand typeface (Dapta design system). next/font self-hosts it
-// after the first build, so runtime stays offline-safe.
-const poppins = Poppins({
-  subsets: ['latin'],
-  weight: ['400', '500', '600', '700'],
-  variable: '--font-poppins',
-  display: 'swap',
-});
+import { fontVariables } from '@/lib/fonts';
 
 // Customer-facing name comes from the deployment (NEXT_PUBLIC_PRODUCT_NAME,
 // inlined at build time) — "Dapta Forms" in Dapta's builds, "Forms"
@@ -37,7 +28,9 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en" data-theme="dark" className={poppins.variable} suppressHydrationWarning>
+    // Every curated face is declared here so a public form can switch typeface
+    // without a rebuild; only the brand face is preloaded (see lib/fonts.ts).
+    <html lang="en" data-theme="dark" className={fontVariables} suppressHydrationWarning>
       <body className="min-h-dvh bg-background text-foreground">{children}</body>
     </html>
   );

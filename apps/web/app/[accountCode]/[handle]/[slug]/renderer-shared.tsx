@@ -12,6 +12,7 @@ import type { Answers, FormCover, FormStep, ResolvedEnding } from '@quill/engine
 import { nameFields, isSafeHttpUrl, interpolate, showBanner } from '@quill/engine';
 import type { OutcomeBooking } from '@quill/types';
 import type { getMessages } from '@quill/shared';
+import type { FormDesignProps } from '@/lib/form-design';
 import { signupHref } from '@/lib/growth';
 
 export function useSessionId(key: string): string {
@@ -118,16 +119,31 @@ export function schedulerToBooking(
 export function PhaseShell({
   cover,
   isCover = false,
+  design,
   children,
   ...rootProps
 }: {
   cover?: FormCover | null;
   isCover?: boolean;
+  /**
+   * The form's resolved design. Applied HERE, on the one element every phase of
+   * BOTH layouts shares, so the cover, the steps, the one-page form, the
+   * reveal, the booking screen and the thank-you can never disagree about the
+   * form's look — and adding an axis does not mean editing every call site.
+   */
+  design?: FormDesignProps;
   children: React.ReactNode;
 } & React.HTMLAttributes<HTMLDivElement>) {
   const banner = showBanner(cover, isCover) ? cover?.bannerText : null;
   return (
-    <div {...rootProps}>
+    <div
+      {...rootProps}
+      {...(design?.attrs ?? {})}
+      style={{ ...(design?.style ?? {}), ...rootProps.style }}
+    >
+      {/* An author-supplied face has to be declared in the document; there is no
+          build step that could have hoisted it into the stylesheet. */}
+      {design?.fontFace ? <style>{design.fontFace}</style> : null}
       {banner ? <div className="pf__banner">{banner}</div> : null}
       <div className="pf__main">{children}</div>
     </div>
@@ -146,18 +162,18 @@ export function DoneScreen({
   m,
   accountCode,
   cover,
-  style,
+  design,
 }: {
   ending: ResolvedEnding;
   answers: Answers;
   m: ReturnType<typeof getMessages>['renderer'];
   accountCode: string;
   cover?: FormCover | null;
-  style?: React.CSSProperties;
+  design?: FormDesignProps;
 }) {
   const cta = signupHref('confirmation', accountCode);
   return (
-    <PhaseShell className="pf pf--done" style={style} cover={cover}>
+    <PhaseShell className="pf pf--done" design={design} cover={cover}>
       <div className="pf-done__inner pf-animate">
         <div className="pf-done__check" aria-hidden="true">
           ✓
