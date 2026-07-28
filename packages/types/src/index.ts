@@ -348,6 +348,51 @@ export const formBrandingSchema = z.object({
   ogImage: safeImageUrl.nullable().optional(),
 });
 
+// --- Workspace brand kit ------------------------------------------------------
+
+/**
+ * The branding fields a workspace brand kit carries — the identity subset of
+ * `formBrandingSchema` (logo, client logos, the three colors, typography, shape,
+ * button style). Per-form presentation fields (cover copy, layout, background
+ * image, ogImage, …) deliberately stay per-form. This list is the single source
+ * of truth for what an "apply" overwrites on a form's `config.branding` — keep
+ * it in sync with `brandKitSchema` below.
+ */
+export const BRAND_KIT_FIELDS = [
+  'logo',
+  'clientLogos',
+  'primaryColor',
+  'background',
+  'foreground',
+  'fontFamily',
+  'customFont',
+  'radius',
+  'buttonStyle',
+] as const;
+export type BrandKitField = (typeof BRAND_KIT_FIELDS)[number];
+
+/**
+ * A workspace's brand kit (stored per account, `account_branding.config`).
+ * Forms SNAPSHOT it — merged into `config.branding` at creation and on an
+ * explicit apply — so the engine, public renderer, and og-image pipeline never
+ * see anything but a plain per-form branding object. Every field is optional:
+ * absent means "the kit does not set this axis" and the form keeps its own
+ * value (or the platform default).
+ */
+export const brandKitSchema = z.object({
+  logo: safeImageUrl.nullable().optional(),
+  clientLogos: z.array(clientLogoSchema).max(24).optional(),
+  primaryColor: cssColor.nullable().optional(),
+  /** Setting `background` locks the light/dark theme of forms it is applied to. */
+  background: cssColor.nullable().optional(),
+  foreground: cssColor.nullable().optional(),
+  fontFamily: z.enum(FORM_FONTS).optional(),
+  customFont: customFontSchema.nullable().optional(),
+  radius: z.enum(FORM_RADII).optional(),
+  buttonStyle: z.enum(FORM_BUTTON_STYLES).optional(),
+});
+export type BrandKit = z.infer<typeof brandKitSchema>;
+
 // --- Outcome extensions (booking + answer-forced overrides) ------------------
 
 /** Scheduling providers an outcome can hand off to after the form completes. */

@@ -42,6 +42,7 @@ export function ColorPicker({
   /** How the contrast pair is described, e.g. "Text on background". */
   againstLabel,
   allowEmpty = false,
+  disabled = false,
   m,
 }: {
   value: string | null | undefined;
@@ -51,6 +52,8 @@ export function ColorPicker({
   againstLabel?: string;
   /** When true, clearing the field is allowed and means "inherit". */
   allowEmpty?: boolean;
+  /** Read-only mode: the trigger renders but never opens the popover. */
+  disabled?: boolean;
   m: EditorMessages['design'];
 }) {
   const [open, setOpen] = useState(false);
@@ -96,6 +99,7 @@ export function ColorPicker({
           aria-haspopup="dialog"
           aria-expanded={open}
           aria-label={label}
+          disabled={disabled}
           onClick={() => setOpen((v) => !v)}
           className="flex h-9 min-w-0 flex-1 items-center gap-2 rounded-md border border-input bg-background px-2 text-left transition-colors hover:border-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >

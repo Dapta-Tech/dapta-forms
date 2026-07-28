@@ -112,6 +112,7 @@ export interface FormsMessages {
         submissions: string;
         analytics: string;
         integrations: string;
+        branding: string;
         settings: string;
       };
       /** The Dapta suite app-switcher. */
@@ -153,6 +154,52 @@ export interface FormsMessages {
       integrationsDesc: string;
       analytics: string;
       analyticsDesc: string;
+    };
+    /** The workspace brand-kit page (/admin/branding). */
+    brandKit: {
+      title: string;
+      subtitle: string;
+      save: string;
+      saving: string;
+      saved: string;
+      /** Read-only banner for non-admin members. */
+      adminOnly: string;
+      logoTitle: string;
+      logoSubtitle: string;
+      logoUrl: string;
+      logoUrlPlaceholder: string;
+      clientLogosTitle: string;
+      clientLogosSubtitle: string;
+      clientLogosAdd: string;
+      clientLogosRemove: string;
+      clientLogoUrlPlaceholder: string;
+      clientLogoNamePlaceholder: string;
+      colorsTitle: string;
+      colorsSubtitle: string;
+      /** An axis the kit leaves to each form. */
+      notSet: string;
+      clearAxis: string;
+      typographyTitle: string;
+      typographySubtitle: string;
+      controlsTitle: string;
+      controlsSubtitle: string;
+      previewTitle: string;
+      previewQuestion: string;
+      previewButton: string;
+      applyTitle: string;
+      applySubtitle: string;
+      applyWarning: string;
+      applySelectAll: string;
+      applyClear: string;
+      applyButton: string; // {count}
+      applying: string;
+      appliedToast: string; // {count}
+      appliedBadge: string;
+      revert: string;
+      reverting: string;
+      revertedToast: string;
+      emptyForms: string;
+      updatedAt: string; // {date}
     };
     /** The global submissions/analytics/integrations landing pages (form picker). */
     picker: {
@@ -1172,6 +1219,7 @@ export const en: FormsMessages = {
         submissions: 'Submissions',
         analytics: 'Analytics',
         integrations: 'Integrations',
+        branding: 'Brand kit',
         settings: 'Settings',
       },
       switcher: {
@@ -1203,11 +1251,56 @@ export const en: FormsMessages = {
       createForm: 'Create a form',
       createFormDesc: 'Build a new form and share its link.',
       branding: 'Branding & style',
-      brandingDesc: 'Cover, colors and the public look.',
+      brandingDesc: 'Your brand kit — logo, colors and the public look.',
       integrations: 'Integrations & webhooks',
       integrationsDesc: 'Send responses to your CRM or a webhook.',
       analytics: 'Analytics',
       analyticsDesc: 'Funnel performance and drop-off.',
+    },
+    brandKit: {
+      title: 'Brand kit',
+      subtitle:
+        'Your workspace look — logo, colors, font and controls. New forms start with it; you can apply it to existing forms below.',
+      save: 'Save brand kit',
+      saving: 'Saving…',
+      saved: 'Brand kit saved.',
+      adminOnly: 'Only an admin or owner can edit the brand kit.',
+      logoTitle: 'Logo',
+      logoSubtitle: 'Shown on covers and headers unless a form sets its own.',
+      logoUrl: 'Logo URL',
+      logoUrlPlaceholder: 'https://…/logo.png',
+      clientLogosTitle: 'Client logos',
+      clientLogosSubtitle: 'The “trusted by” marquee on covers.',
+      clientLogosAdd: 'Add logo',
+      clientLogosRemove: 'Remove',
+      clientLogoUrlPlaceholder: 'https://…/client.svg',
+      clientLogoNamePlaceholder: 'Client name',
+      colorsTitle: 'Colors',
+      colorsSubtitle: 'Setting a background locks the light/dark theme of forms the kit is applied to.',
+      notSet: 'Not set — each form keeps its own',
+      clearAxis: 'Clear',
+      typographyTitle: 'Typography',
+      typographySubtitle: 'The typeface forms render with.',
+      controlsTitle: 'Controls',
+      controlsSubtitle: 'Corner radius and button style.',
+      previewTitle: 'Preview',
+      previewQuestion: 'How should we reach you?',
+      previewButton: 'Continue',
+      applyTitle: 'Apply to existing forms',
+      applySubtitle: 'Pick the forms that should adopt the kit. Fields the kit doesn’t set are left as each form has them.',
+      applyWarning:
+        'Applying updates the selected forms immediately, including their published version. You can undo per form.',
+      applySelectAll: 'Select all',
+      applyClear: 'Clear selection',
+      applyButton: 'Apply to selected ({count})',
+      applying: 'Applying…',
+      appliedToast: 'Brand kit applied ({count}).',
+      appliedBadge: 'Kit applied',
+      revert: 'Undo',
+      reverting: 'Undoing…',
+      revertedToast: 'Brand kit apply undone.',
+      emptyForms: 'No forms yet — the kit will style your first one automatically.',
+      updatedAt: 'Last saved {date}',
     },
     picker: {
       submissionsTitle: 'Submissions',
@@ -2169,6 +2262,7 @@ export const es: FormsMessages = {
         submissions: 'Respuestas',
         analytics: 'Analíticas',
         integrations: 'Integraciones',
+        branding: 'Kit de marca',
         settings: 'Ajustes',
       },
       switcher: {
@@ -2200,11 +2294,57 @@ export const es: FormsMessages = {
       createForm: 'Crear un formulario',
       createFormDesc: 'Crea un formulario nuevo y comparte su enlace.',
       branding: 'Marca y estilo',
-      brandingDesc: 'Portada, colores y la apariencia pública.',
+      brandingDesc: 'Tu kit de marca: logo, colores y la apariencia pública.',
       integrations: 'Integraciones y webhooks',
       integrationsDesc: 'Envía respuestas a tu CRM o a un webhook.',
       analytics: 'Analíticas',
       analyticsDesc: 'Rendimiento del embudo y abandono.',
+    },
+    brandKit: {
+      title: 'Kit de marca',
+      subtitle:
+        'La apariencia de tu workspace: logo, colores, tipografía y controles. Los formularios nuevos nacen con él; abajo puedes aplicarlo a los existentes.',
+      save: 'Guardar kit de marca',
+      saving: 'Guardando…',
+      saved: 'Kit de marca guardado.',
+      adminOnly: 'Solo un admin o el owner puede editar el kit de marca.',
+      logoTitle: 'Logo',
+      logoSubtitle: 'Se muestra en portadas y encabezados salvo que un formulario tenga el suyo.',
+      logoUrl: 'URL del logo',
+      logoUrlPlaceholder: 'https://…/logo.png',
+      clientLogosTitle: 'Logos de clientes',
+      clientLogosSubtitle: 'La marquesina “confían en nosotros” de las portadas.',
+      clientLogosAdd: 'Agregar logo',
+      clientLogosRemove: 'Quitar',
+      clientLogoUrlPlaceholder: 'https://…/cliente.svg',
+      clientLogoNamePlaceholder: 'Nombre del cliente',
+      colorsTitle: 'Colores',
+      colorsSubtitle: 'Elegir un fondo fija el tema claro/oscuro de los formularios donde se aplique el kit.',
+      notSet: 'Sin definir — cada formulario conserva el suyo',
+      clearAxis: 'Limpiar',
+      typographyTitle: 'Tipografía',
+      typographySubtitle: 'La tipografía con la que se renderizan los formularios.',
+      controlsTitle: 'Controles',
+      controlsSubtitle: 'Radio de esquinas y estilo de botones.',
+      previewTitle: 'Vista previa',
+      previewQuestion: '¿Cómo te contactamos?',
+      previewButton: 'Continuar',
+      applyTitle: 'Aplicar a formularios existentes',
+      applySubtitle:
+        'Elige los formularios que deben adoptar el kit. Los campos que el kit no define quedan como cada formulario los tiene.',
+      applyWarning:
+        'Aplicar actualiza los formularios seleccionados de inmediato, incluida su versión publicada. Puedes deshacerlo por formulario.',
+      applySelectAll: 'Seleccionar todos',
+      applyClear: 'Limpiar selección',
+      applyButton: 'Aplicar a seleccionados ({count})',
+      applying: 'Aplicando…',
+      appliedToast: 'Kit de marca aplicado ({count}).',
+      appliedBadge: 'Kit aplicado',
+      revert: 'Deshacer',
+      reverting: 'Deshaciendo…',
+      revertedToast: 'Aplicación del kit deshecha.',
+      emptyForms: 'Aún no hay formularios — el kit vestirá el primero automáticamente.',
+      updatedAt: 'Guardado por última vez {date}',
     },
     picker: {
       submissionsTitle: 'Respuestas',
