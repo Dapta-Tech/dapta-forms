@@ -1,6 +1,8 @@
 import { Inject, Injectable, Optional } from '@nestjs/common';
 import type { Db } from '@quill/db';
 import {
+  getMemberByHandle,
+  listPublishedFormsForAccount,
   getPublishedForm,
   insertBookingEvent,
   upsertSubmission,
@@ -10,10 +12,12 @@ import {
 } from '@quill/db';
 import { computeScore, resolveOutcome, type FormConfig } from '@quill/engine';
 import {
+  memberProfileSchema,
   submissionSchema,
   formEventSchema,
   bookingCallbackSchema,
   type PublicForm,
+  type PublicProfile,
 } from '@quill/types';
 import { EmailEffects } from './email-effects';
 import { DestinationEffects } from './destination-effects';
@@ -38,6 +42,44 @@ export class SubmissionService {
     // Optional for the same reason: enqueues the durable booking → CRM sync.
     @Optional() @Inject(BookingEffects) private readonly bookings?: BookingEffects,
   ) {}
+
+  /**
+   * A member's PUBLIC PAGE, or null when there is none.
+   *
+   * Returns null — a 404 — for every case that is not an explicitly enabled
+   * page: no such member, no profile blob, or `enabled: false`. The route
+   * 404-ed before this feature existed and it must keep 404-ing until someone
+   * deliberately turns their page on.
+   *
+   * Only PUBLISHED forms are listed, by name and slug only. Nothing else from a
+   * form's config crosses this boundary: no steps, no destinations, no drafts.
+   */
+  async publicProfile(accountCode: string, handle: string): Promise<PublicProfile | null> {
+    const member = await getMemberByHandle(this.db, accountCode, handle);
+    if (!member) return null;
+    const parsed = memberProfileSchema.safeParse(member.profile);
+    if (!parsed.success || !parsed.data.enabled) return null;
+    const profile = parsed.data;
+
+    const published = await listPublishedFormsForAccount(this.db, accountCode);
+    // Absent `formSlugs` = list them all; an EMPTY array = list none. The two
+    // must stay distinct, or unlisting everything would silently restore
+    // everything.
+    const allowed = profile.formSlugs;
+    const forms =
+      allowed == null ? published : published.filter((f) => allowed.includes(f.slug));
+
+    return {
+      handle: member.handle ?? handle,
+      displayName: member.displayName,
+      avatarUrl: member.avatarUrl,
+      headline: profile.headline ?? null,
+      bio: profile.bio ?? null,
+      links: profile.links ?? [],
+      forms: forms.map((f) => ({ slug: f.slug, name: f.name })),
+      branding: profile.branding ?? null,
+    };
+  }
 
   /** The published form for a public code + slug (the renderer's config). */
   async publicForm(accountCode: string, slug: string): Promise<PublicForm | null> {

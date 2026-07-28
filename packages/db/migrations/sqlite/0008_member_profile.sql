@@ -1,0 +1,13 @@
+-- Public member page (the /[accountCode]/[handle] route) — additive, nullable.
+-- The route existed in the URL shape from the start but had no page behind it:
+-- only [handle]/[slug] was ever built, so a handle URL was a real 404.
+--
+-- ONE column, holding the whole page as JSON, rather than a bio/links/design
+-- column each. This is the same blob pattern `form.config` uses, and it is the
+-- reason nothing else in this change touches the database: anything describing
+-- what a page LOOKS LIKE goes in the blob, and only queryable entities earn a
+-- column.
+--
+-- NULL means "no public page", which is exactly the behaviour every existing
+-- member already has. Nothing is published by adding this column.
+ALTER TABLE member ADD COLUMN profile TEXT;

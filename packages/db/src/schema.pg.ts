@@ -39,6 +39,8 @@ export const member = pgTable(
     status: text('status').notNull().default('active'),
     avatarUrl: text('avatar_url'),
     locale: text('locale'),
+    /** The public member page, or NULL when there is none (see 0008). */
+    profile: jsonb('profile'),
     createdAt: bigint('created_at', { mode: 'number' }).notNull(),
   },
   (t) => ({

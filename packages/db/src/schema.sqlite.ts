@@ -49,6 +49,8 @@ export const member = sqliteTable(
     status: text('status').notNull().default('active'),
     avatarUrl: text('avatar_url'),
     locale: text('locale'),
+    /** The public member page, or NULL when there is none (see 0008). */
+    profile: text('profile'),
     createdAt: integer('created_at').notNull(),
   },
   (t) => ({

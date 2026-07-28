@@ -686,6 +686,71 @@ export const formEndingSchema = z.object({
 });
 export type FormEndingInput = z.infer<typeof formEndingSchema>;
 
+/**
+ * A member's PUBLIC PAGE (`/[accountCode]/[handle]`), stored as one JSON blob on
+ * `member.profile`.
+ *
+ * The route shape has existed since the first public form URL, but nothing was
+ * ever built at the handle level — only `[handle]/[slug]` — so a handle URL was
+ * a real 404. This is the contract behind it.
+ *
+ * `enabled` defaults to FALSE and the whole column defaults to NULL, which
+ * together mean the page keeps 404-ing until someone deliberately turns it on.
+ * Publishing a page about a person as a side-effect of a schema migration would
+ * be the wrong default in every sense.
+ *
+ * Versioned like the form config, and extended the same way: add optional
+ * fields, never repurpose one.
+ */
+export const memberProfileLinkSchema = z.object({
+  label: z.string().trim().min(1).max(60),
+  url: z
+    .string()
+    .trim()
+    .max(2048)
+    .refine(isSafeHttpUrl, { message: 'Link URL must use http(s).' }),
+});
+
+export const memberProfileSchema = z.object({
+  version: z.literal(1),
+  /** Off until someone turns it on — absent/false keeps today's 404. */
+  enabled: z.boolean().default(false),
+  headline: z.string().trim().max(120).nullable().optional(),
+  bio: z.string().trim().max(600).nullable().optional(),
+  links: z.array(memberProfileLinkSchema).max(6).optional(),
+  /**
+   * Which of the member's PUBLISHED forms to list, by slug. Absent means "all
+   * of them"; an empty array means "none", and the two are deliberately
+   * different — an author who unlists everything must not get every form back.
+   */
+  formSlugs: z.array(z.string().trim().min(1).max(120)).max(50).nullable().optional(),
+  /** Reuses the form design vocabulary rather than inventing a second one. */
+  branding: formBrandingSchema.nullable().optional(),
+});
+
+export type MemberProfile = z.infer<typeof memberProfileSchema>;
+export type MemberProfileLink = z.infer<typeof memberProfileLinkSchema>;
+
+/** One published form as the public profile page lists it. */
+export interface PublicProfileForm {
+  slug: string;
+  name: string;
+  /** The form's own cover headline, when it has one worth showing. */
+  headline?: string | null;
+}
+
+/** What `GET /v1/public/profiles/:accountCode/:handle` returns. */
+export interface PublicProfile {
+  handle: string;
+  displayName: string | null;
+  avatarUrl: string | null;
+  headline: string | null;
+  bio: string | null;
+  links: MemberProfileLink[];
+  forms: PublicProfileForm[];
+  branding: z.infer<typeof formBrandingSchema> | null;
+}
+
 export const formConfigSchema = z.object({
   version: z.literal(1),
   branding: formBrandingSchema.nullable().optional(),

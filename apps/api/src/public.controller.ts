@@ -39,6 +39,14 @@ export class PublicController {
     return f;
   }
 
+  /** A member's public page, or 404 when they have not turned one on. */
+  @Get('profiles/:accountCode/:handle')
+  async profile(@Param('accountCode') accountCode: string, @Param('handle') handle: string) {
+    const p = await this.svc.publicProfile(accountCode, handle);
+    if (!p) throw new NotFoundException({ error: 'NOT_FOUND', message: 'Page not found.' });
+    return p;
+  }
+
   /** Persist a submission (partial or complete); the score is recomputed server-side. */
   @Post('forms/:accountCode/:slug/submissions')
   @HttpCode(201)

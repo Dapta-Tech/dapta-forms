@@ -87,6 +87,11 @@ export interface FormsMessages {
       lastPlaceholder: string;
     };
   };
+  /** The public member page (`/[accountCode]/[handle]`). */
+  profile: {
+    formsTitle: string;
+    noForms: string;
+  };
   admin: {
     /** Branded combobox (`components/ui/select`) that replaces native selects. */
     select: {
@@ -1066,6 +1071,10 @@ export const en: FormsMessages = {
       lastPlaceholder: 'Last name',
     },
   },
+  profile: {
+    formsTitle: 'Forms',
+    noForms: 'Nothing published yet.',
+  },
   admin: {
     select: {
       search: 'Search…',
@@ -1995,6 +2004,10 @@ export const es: FormsMessages = {
       firstPlaceholder: 'Nombre',
       lastPlaceholder: 'Apellidos',
     },
+  },
+  profile: {
+    formsTitle: 'Formularios',
+    noForms: 'Todavía no hay nada publicado.',
   },
   admin: {
     select: {

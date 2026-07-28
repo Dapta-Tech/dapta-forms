@@ -1610,3 +1610,121 @@
 .pf-embed-root .pf--vertical {
   min-height: 0;
 }
+
+/* --- Public member page (/[accountCode]/[handle]) --------------------------
+   Reuses the form's own tokens (--background, --foreground, --pf-primary,
+   --pf-font) rather than a second palette, so a profile and the forms it links
+   to can be made to match by setting the same branding. */
+.pf--profile {
+  min-height: 100vh;
+  padding: 48px 20px 72px;
+}
+.pf-profile {
+  width: min(100%, 620px);
+  margin-inline: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+.pf-profile__head {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.pf-profile__avatar {
+  width: 72px;
+  height: 72px;
+  border-radius: 999px;
+  object-fit: cover;
+  flex-shrink: 0;
+  border: 1px solid var(--border);
+}
+.pf-profile__avatar--initials {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--pf-primary);
+  color: var(--pf-primary-contrast);
+  font-size: 24px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.pf-profile__id {
+  min-width: 0;
+}
+.pf-profile__name {
+  font-size: 28px;
+  font-weight: 600;
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+}
+.pf-profile__headline {
+  margin-top: 4px;
+  font-size: 15px;
+  color: var(--muted-foreground);
+}
+.pf-profile__bio {
+  font-size: 16px;
+  line-height: 1.6;
+  color: var(--foreground);
+  max-width: 60ch;
+}
+.pf-profile__links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  list-style: none;
+}
+.pf-profile__links a {
+  display: inline-block;
+  padding: 6px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--pf-radius, 8px);
+  font-size: 14px;
+  color: var(--foreground);
+  text-decoration: none;
+}
+.pf-profile__links a:hover {
+  border-color: var(--pf-primary);
+}
+.pf-profile__section {
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+  margin-bottom: 12px;
+}
+.pf-profile__list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.pf-profile__list a {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 18px;
+  border: 1px solid var(--border);
+  border-radius: var(--pf-radius, 8px);
+  background: var(--card);
+  color: var(--foreground);
+  text-decoration: none;
+  transition: border-color 0.15s;
+}
+.pf-profile__list a:hover {
+  border-color: var(--pf-primary);
+}
+.pf-profile__form-name {
+  font-size: 16px;
+  font-weight: 500;
+}
+.pf-profile__form-go {
+  color: var(--pf-primary);
+  flex-shrink: 0;
+}
+.pf-profile__empty {
+  font-size: 15px;
+  color: var(--muted-foreground);
+}
