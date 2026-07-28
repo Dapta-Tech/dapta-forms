@@ -32,6 +32,7 @@ export default async function ConnectionsPage() {
       <ConnectionsPanel
         initialProviders={data.providers}
         encryptionAvailable={data.encryptionAvailable}
+        serverProvided={data.serverProvided ?? []}
         loadError={loadError}
         messages={c}
         locale={locale}

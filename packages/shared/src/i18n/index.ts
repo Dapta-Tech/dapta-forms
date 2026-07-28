@@ -963,6 +963,10 @@ export interface FormsMessages {
       encryptionOffBody: string;
       loadError: string;
       perFormNote: string;
+      /** The deployment already supplies this provider's token (env fallback). */
+      serverProvided: string;
+      serverProvidedTitle: string;
+      serverProvidedBody: string;
     };
     /** Draft → publish controls in the form editor (publish button + badge). */
     publish: {
@@ -1877,6 +1881,10 @@ export const en: FormsMessages = {
         'The server needs a FORMS_ENCRYPTION_KEY to store credentials securely. Set it and restart the API to enable connections.',
       loadError: 'Could not load your connections.',
       perFormNote: 'Field mapping is configured per form, from each form’s integrations tab.',
+      serverProvided: 'Provided by the server',
+      serverProvidedTitle: 'Already working, using the server’s token',
+      serverProvidedBody:
+        'This deployment supplies a token for {provider}, so every account here can already sync. Connecting your own replaces it for this account only.',
     },
     publish: {
       publish: 'Publish',
@@ -2790,6 +2798,10 @@ export const es: FormsMessages = {
         'El servidor necesita una FORMS_ENCRYPTION_KEY para guardar credenciales de forma segura. Configúrala y reinicia la API para habilitar las conexiones.',
       loadError: 'No se pudieron cargar tus conexiones.',
       perFormNote: 'La asignación de campos se configura por formulario, desde la pestaña de integraciones de cada uno.',
+      serverProvided: 'La da el servidor',
+      serverProvidedTitle: 'Ya funciona, con el token del servidor',
+      serverProvidedBody:
+        'Este despliegue trae un token para {provider}, así que todas las cuentas de aquí ya pueden sincronizar. Si conectas el tuyo, lo reemplaza solo para esta cuenta.',
     },
     publish: {
       publish: 'Publicar',

@@ -293,14 +293,35 @@ export class IntegrationsController {
     @Inject(ENV) private readonly env: ServerEnv,
   ) {}
 
-  /** This account's connections (token-free) + whether server encryption is available. */
+  /**
+   * This account's connections (token-free) + whether server encryption is
+   * available + which providers the DEPLOYMENT already supplies a token for.
+   *
+   * That last list closes a reporting hole: a provider can be fully working
+   * through its env fallback (`HUBSPOT_PRIVATE_APP_TOKEN` / `CALENDLY_API_TOKEN`)
+   * while `account_integration` is empty, so the page said "Not connected" about
+   * an integration that was syncing submissions. Both statements were true and
+   * together they were a lie. Env knowledge stays here rather than in
+   * `@quill/db`, which must not read the environment.
+   */
   @Get()
-  async list(
-    @Req() req: ReqLike,
-  ): Promise<{ encryptionAvailable: boolean; providers: IntegrationStatus[] }> {
+  async list(@Req() req: ReqLike): Promise<{
+    encryptionAvailable: boolean;
+    providers: IntegrationStatus[];
+    serverProvided: IntegrationProvider[];
+  }> {
     const p = await this.auth.resolveHost(req);
     const providers = await listIntegrationStatuses(this.db, p.accountId);
-    return { encryptionAvailable: hasEncryptionKey(this.env.FORMS_ENCRYPTION_KEY), providers };
+    const usable = (token: string | undefined): boolean =>
+      !!token?.trim() && !PLACEHOLDER_TOKENS.has(token.trim());
+    const serverProvided: IntegrationProvider[] = [];
+    if (usable(this.env.HUBSPOT_PRIVATE_APP_TOKEN)) serverProvided.push('hubspot');
+    if (usable(this.env.CALENDLY_API_TOKEN)) serverProvided.push('calendly');
+    return {
+      encryptionAvailable: hasEncryptionKey(this.env.FORMS_ENCRYPTION_KEY),
+      providers,
+      serverProvided,
+    };
   }
 
   /**

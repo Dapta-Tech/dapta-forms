@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useToast } from '@/components/toast';
+import { ProviderLogo } from '@/components/ui/provider-logo';
 import { connectIntegrationAction, disconnectIntegrationAction } from './actions';
 
 type Msgs = FormsMessages['admin']['connections'];
@@ -19,7 +20,6 @@ interface ProviderMeta {
   id: IntegrationProvider;
   name: string;
   desc: string;
-  icon: string;
 }
 
 /**
@@ -32,19 +32,22 @@ interface ProviderMeta {
 export function ConnectionsPanel({
   initialProviders,
   encryptionAvailable,
+  serverProvided = [],
   loadError,
   messages: m,
   locale,
 }: {
   initialProviders: IntegrationStatus[];
   encryptionAvailable: boolean;
+  /** Providers the deployment already supplies a token for. */
+  serverProvided?: IntegrationProvider[];
   loadError?: boolean;
   messages: Msgs;
   locale: Locale;
 }) {
   const providers: ProviderMeta[] = [
-    { id: 'hubspot', name: m.hubspotName, desc: m.hubspotDesc, icon: 'pi-sync' },
-    { id: 'calendly', name: m.calendlyName, desc: m.calendlyDesc, icon: 'pi-calendar' },
+    { id: 'hubspot', name: m.hubspotName, desc: m.hubspotDesc },
+    { id: 'calendly', name: m.calendlyName, desc: m.calendlyDesc },
   ];
 
   const [statuses, setStatuses] = useState<Record<string, IntegrationStatus | null>>(() => {
@@ -68,6 +71,7 @@ export function ConnectionsPanel({
             meta={meta}
             status={statuses[meta.id] ?? null}
             encryptionAvailable={encryptionAvailable}
+            serverProvided={serverProvided.includes(meta.id)}
             onStatusChange={(s) => setStatuses((prev) => ({ ...prev, [meta.id]: s }))}
             m={m}
             locale={locale}
@@ -84,6 +88,7 @@ function ProviderCard({
   meta,
   status,
   encryptionAvailable,
+  serverProvided = false,
   onStatusChange,
   m,
   locale,
@@ -91,6 +96,7 @@ function ProviderCard({
   meta: ProviderMeta;
   status: IntegrationStatus | null;
   encryptionAvailable: boolean;
+  serverProvided?: boolean;
   onStatusChange: (s: IntegrationStatus | null) => void;
   m: Msgs;
   locale: Locale;
@@ -146,28 +152,38 @@ function ProviderCard({
       <header className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
           <span
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-muted text-foreground"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-muted"
             aria-hidden
           >
-            <i className={`pi ${meta.icon}`} style={{ fontSize: 16 }} />
+            <ProviderLogo provider={meta.id} size={20} />
           </span>
           <div className="min-w-0">
             <h2 className="font-semibold tracking-tight">{meta.name}</h2>
             <p className="mt-0.5 text-sm text-muted-foreground">{meta.desc}</p>
           </div>
         </div>
-        <StatusBadge connected={connected} m={m} />
+        <StatusBadge connected={connected} serverProvided={serverProvided} m={m} />
       </header>
 
-      <div className="mt-4">
+      {/* `mt-auto` pins the action row to the bottom of the card. Without it the
+          button followed its description, and HubSpot's two-line copy pushed its
+          Connect button a line lower than Calendly's — the two never lined up. */}
+      <div className="mt-auto pt-4">
         {!encryptionAvailable ? (
-          <div className="rounded-md border border-dashed border-border bg-muted/40 p-3">
-            <p className="text-sm font-medium text-foreground">{m.encryptionOff}</p>
-            <p className="mt-1 text-xs text-muted-foreground">{m.encryptionOffBody}</p>
+          // Still say the integration works when the server supplies the token:
+          // "connecting is unavailable" on its own reads as "nothing works here".
+          <div className="flex flex-col gap-3">
+            {serverProvided ? <ServerProvidedNote providerName={meta.name} m={m} /> : null}
+            <div className="rounded-md border border-dashed border-border bg-muted/40 p-3">
+              <p className="text-sm font-medium text-foreground">{m.encryptionOff}</p>
+              <p className="mt-1 text-xs text-muted-foreground">{m.encryptionOffBody}</p>
+            </div>
           </div>
         ) : connected && status ? (
           <ConnectedView status={status} onDisconnect={disconnect} pending={pending} m={m} locale={locale} />
         ) : showConnect ? (
+          // Connecting stays available while the server supplies a token — an
+          // account can override the shared one with its own.
           <ConnectForm
             token={token}
             setToken={setToken}
@@ -181,10 +197,13 @@ function ProviderCard({
             m={m}
           />
         ) : (
-          <Button onClick={() => setShowConnect(true)}>
-            <i aria-hidden className="pi pi-link" style={{ fontSize: 12 }} />
-            {m.connect}
-          </Button>
+          <div className="flex flex-col gap-3">
+            {serverProvided ? <ServerProvidedNote providerName={meta.name} m={m} /> : null}
+            <Button onClick={() => setShowConnect(true)} className="self-start">
+              <i aria-hidden className="pi pi-link" style={{ fontSize: 12 }} />
+              {m.connect}
+            </Button>
+          </div>
         )}
       </div>
       {dialog}
@@ -192,21 +211,57 @@ function ProviderCard({
   );
 }
 
-function StatusBadge({ connected, m }: { connected: boolean; m: Msgs }) {
+/** "The deployment already gave us a token" — shown wherever Connect would be. */
+function ServerProvidedNote({ providerName, m }: { providerName: string; m: Msgs }) {
+  return (
+    <div
+      data-testid="server-provided-note"
+      className="rounded-md border border-dashed border-border bg-muted/40 p-3"
+    >
+      <p className="text-sm font-medium text-foreground">{m.serverProvidedTitle}</p>
+      <p className="mt-1 text-xs text-muted-foreground">
+        {fill(m.serverProvidedBody, { provider: providerName })}
+      </p>
+    </div>
+  );
+}
+
+/**
+ * Three states, not two. "Not connected" alone was wrong whenever the deployment
+ * supplied the token: the account really has connected nothing, and the
+ * integration really is working, and only saying the first half reads as broken.
+ */
+function StatusBadge({
+  connected,
+  serverProvided = false,
+  m,
+}: {
+  connected: boolean;
+  serverProvided?: boolean;
+  m: Msgs;
+}) {
+  // A connected account outranks the server token — its own credential is what
+  // actually gets used, so the badge must name that one.
+  const state = connected ? 'account' : serverProvided ? 'server' : 'none';
+  const tone =
+    state === 'account'
+      ? 'border-primary/40 bg-primary/10 text-foreground'
+      : state === 'server'
+        ? 'border-border bg-muted/60 text-foreground'
+        : 'border-border bg-muted/40 text-muted-foreground';
+  const dot =
+    state === 'account' ? 'bg-primary' : state === 'server' ? 'bg-primary/50' : 'bg-muted-foreground';
   return (
     <span
+      data-testid="connection-status"
+      data-state={state}
       className={
         'inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium ' +
-        (connected
-          ? 'border-primary/40 bg-primary/10 text-foreground'
-          : 'border-border bg-muted/40 text-muted-foreground')
+        tone
       }
     >
-      <span
-        aria-hidden
-        className={'h-1.5 w-1.5 rounded-full ' + (connected ? 'bg-primary' : 'bg-muted-foreground')}
-      />
-      {connected ? m.connected : m.notConnected}
+      <span aria-hidden className={'h-1.5 w-1.5 rounded-full ' + dot} />
+      {state === 'account' ? m.connected : state === 'server' ? m.serverProvided : m.notConnected}
     </span>
   );
 }

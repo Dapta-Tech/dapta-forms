@@ -166,6 +166,13 @@ export interface IntegrationStatus {
 export interface IntegrationsResponse {
   encryptionAvailable: boolean;
   providers: IntegrationStatus[];
+  /**
+   * Providers the DEPLOYMENT supplies a token for (the `*_TOKEN` env fallback).
+   * These work for every account without anyone connecting anything, which is
+   * why the page has to say so — otherwise it reports "Not connected" about an
+   * integration that is actively syncing.
+   */
+  serverProvided?: IntegrationProvider[];
 }
 
 /**
