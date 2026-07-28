@@ -1,11 +1,13 @@
 'use client';
 
+import { useState } from 'react';
 import type { FormOption, FormOptionLayout } from '@quill/engine';
 import { slugify } from '@quill/engine';
 import { Button } from '@/components/ui/button';
 import { HelpTip } from '@/components/ui/help-tip';
 import { TextField, NumberField } from './fields';
 import { IconPicker } from './icon-picker';
+import { OptionsImportModal } from './options-import-modal';
 import { SortableList, SortableRow } from './sortable';
 import type { EditorMessages } from './messages';
 
@@ -42,6 +44,7 @@ export function OptionsEditor({
   m: EditorMessages['options'];
 }) {
   const ids = options.map((_, i) => `opt-${i}`);
+  const [importOpen, setImportOpen] = useState(false);
 
   function update(index: number, patch: Partial<FormOption>) {
     onChange(options.map((o, i) => (i === index ? { ...o, ...patch } : o)));
@@ -165,11 +168,27 @@ export function OptionsEditor({
           {m.pointsHint}
         </p>
       ) : null}
-      <div>
+      <div className="flex flex-wrap gap-2">
         <Button variant="outline" size="sm" onClick={add}>
           <i aria-hidden className="pi pi-plus" style={{ fontSize: 11 }} /> {m.add}
         </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          data-testid="options-import-open"
+          onClick={() => setImportOpen(true)}
+        >
+          <i aria-hidden className="pi pi-file-import" style={{ fontSize: 11 }} /> {m.importer.open}
+        </Button>
       </div>
+      <OptionsImportModal
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+        options={options}
+        onApply={onChange}
+        scoringEnabled={showPoints}
+        m={m.importer}
+      />
     </div>
   );
 }
