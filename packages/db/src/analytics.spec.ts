@@ -20,7 +20,9 @@ import {
   uniqueViewCount,
   startCount,
   stepViewCounts,
+  stepCompleteCounts,
   partialCount,
+  bookingCount,
   completedSubmissions,
   dailyViewSessions,
   dailyStartSessions,
@@ -53,6 +55,14 @@ async function ev(
     sql`INSERT INTO form_event (id, form_id, session_id, type, step_index, step_key, created_at)
         VALUES (${randomUUID()}, ${formId}, ${sessionId}, ${type},
                 ${opts.stepIndex ?? null}, ${opts.stepKey ?? null}, ${createdAt})`,
+  );
+}
+
+/** Insert one booking-event row (provider callback) for a session. */
+async function booking(sessionId: string, createdAt: number): Promise<void> {
+  await db.run(
+    sql`INSERT INTO booking_event (id, form_id, session_id, provider, created_at)
+        VALUES (${randomUUID()}, ${formId}, ${sessionId}, ${'calendly'}, ${createdAt})`,
   );
 }
 
@@ -89,6 +99,7 @@ beforeEach(async () => {
 afterEach(async () => {
   // Leave a shared Postgres database clean (memory SQLite just evaporates).
   await db.run(sql`DELETE FROM form_event WHERE form_id = ${formId}`);
+  await db.run(sql`DELETE FROM booking_event WHERE form_id = ${formId}`);
   await db.run(sql`DELETE FROM submission WHERE form_id = ${formId}`);
   await db.run(sql`DELETE FROM form WHERE id = ${formId}`);
   await db.run(sql`DELETE FROM account WHERE id = ${accountId}`);
@@ -105,12 +116,40 @@ describe('unique counting (COUNT DISTINCT session_id)', () => {
     expect(await uniqueViewCount(db, formId)).toBe(2);
   });
 
-  it('counts a Start only for sessions that reached step_view index 0', async () => {
+  it('counts a Start only for sessions that started answering (start OR step_complete)', async () => {
+    // s1: cover form — clicked the Start CTA (start event), no answer yet.
     await ev('s1', 'view', D1 + 10);
-    await ev('s1', 'step_view', D1 + 20, { stepIndex: 0 });
-    await ev('s1', 'step_view', D1 + 30, { stepIndex: 0 }); // reload → still one
-    await ev('s2', 'view', D1 + 40); // viewed but never reached the first question
-    expect(await startCount(db, formId)).toBe(1);
+    await ev('s1', 'start', D1 + 20);
+    await ev('s1', 'start', D1 + 30); // double-fire → still one session
+    // s2: cover-less form — answered the first question (no start event).
+    await ev('s2', 'view', D1 + 40);
+    await ev('s2', 'step_view', D1 + 50, { stepIndex: 0 });
+    await ev('s2', 'step_complete', D1 + 60, { stepIndex: 0, stepKey: 'q1' });
+    // s3: only SAW the first question (cover-less mount) and left. Under the
+    // old step_view-idx-0 definition this counted as a Start, making
+    // Starts ≈ Views on cover-less forms. It must NOT count.
+    await ev('s3', 'view', D1 + 70);
+    await ev('s3', 'step_view', D1 + 80, { stepIndex: 0 });
+    expect(await startCount(db, formId)).toBe(2);
+  });
+});
+
+describe('booking count (distinct sessions, cohort-anchor windowed)', () => {
+  it('de-dupes provider double-callbacks and windows by the session anchor', async () => {
+    // s1: full funnel inside the window; Calendly fires the callback twice.
+    await ev('s1', 'view', D1 + 100);
+    await booking('s1', D1 + 500);
+    await booking('s1', D1 + 501); // duplicate callback → still one session
+    // s2: anchored the day BEFORE the window; its booking lands inside it.
+    // Cohort anchoring must attribute the booking to the anchor day (excluded).
+    await ev('s2', 'view', D0 + 100);
+    await booking('s2', D1 + 600);
+    // s3: no funnel events at all (beacons lost) — falls back to the booking's
+    // own created_at, inside the window.
+    await booking('s3', D1 + 700);
+
+    expect(await bookingCount(db, formId, WINDOW)).toBe(2); // s1 + s3
+    expect(await bookingCount(db, formId)).toBe(3); // unbounded sees all
   });
 });
 
@@ -142,10 +181,10 @@ describe('integer day bucketing (anchor / 86400000)', () => {
   });
 
   it('daily Starts follow the same anchor day even when the start event lands next day', async () => {
-    // First-seen at the end of day 20000; the actual step_view crosses into
+    // First-seen at the end of day 20000; the actual answer crosses into
     // 20001. The start must bucket into 20000 (the anchor day), not 20001.
     await ev('s', 'view', D2 - 1000);
-    await ev('s', 'step_view', D2 + 1000, { stepIndex: 0 });
+    await ev('s', 'step_complete', D2 + 1000, { stepIndex: 0, stepKey: 'q1' });
     const byDay = new Map(
       (await dailyStartSessions(db, formId)).map((r) => [r.day, r.n]),
     );
@@ -214,5 +253,17 @@ describe('step-view attribution — by authored key vs legacy index', () => {
     expect(counts.byKey.get('q_email')).toBe(1);
     expect(counts.byIndex.get(2)).toBe(1);
     expect(counts.byKey.has('__none__')).toBe(false);
+  });
+
+  it('counts step COMPLETIONS separately (the vertical funnel body)', async () => {
+    // Both sessions SAW q1; only one answered it. The answered funnel must say
+    // 1 while the viewed funnel says 2 — this split is the whole point of the
+    // vertical drop-off mode.
+    await ev('s_a', 'step_view', D1 + 100, { stepIndex: 0, stepKey: 'q1' });
+    await ev('s_a', 'step_complete', D1 + 150, { stepIndex: 0, stepKey: 'q1' });
+    await ev('s_b', 'step_view', D1 + 200, { stepIndex: 0, stepKey: 'q1' });
+
+    expect((await stepCompleteCounts(db, formId)).byKey.get('q1')).toBe(1);
+    expect((await stepViewCounts(db, formId)).byKey.get('q1')).toBe(2);
   });
 });

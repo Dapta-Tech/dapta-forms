@@ -68,6 +68,10 @@ export interface BuilderMessages {
     tipCapture: string;
     /** Popover: how a partial is stored/upgraded. */
     tipStored: string;
+    /** Lead-capture nudge: email question present but no threshold set. */
+    suggestEmail: string;
+    /** The nudge's one-click action label. */
+    suggestEmailAction: string;
     /** Popover: privacy nudge about collecting unfinished answers. */
     tipNotify: string;
     /** Popover: where partials appear in the admin. */
@@ -364,6 +368,9 @@ const en: BuilderMessages = {
       'Captures respondents’ answers once they reach this point, even if they never finish the form.',
     tipStored:
       'Each partial is stored as a submission and upgraded in place if the respondent completes the form.',
+    suggestEmail:
+      'This form asks for an email, but answers are only saved at the end. Capture the lead as soon as they share their email — even if they never finish.',
+    suggestEmailAction: 'Capture after the email question',
     tipNotify: 'Consider letting respondents know their answers may be collected before they submit.',
     tipWhere: 'View them in Submissions with the “Partial” filter.',
     tipAfterLast: 'After the last question it never fires — the final submit already captures everything.',
@@ -637,6 +644,9 @@ const es: BuilderMessages = {
       'Captura las respuestas cuando la persona llega a este punto, aunque nunca termine el formulario.',
     tipStored:
       'Cada parcial se guarda como un envío y se actualiza en su lugar si la persona completa el formulario.',
+    suggestEmail:
+      'Este formulario pide un email, pero las respuestas solo se guardan al final. Captura el lead en cuanto comparta su email — aunque nunca termine.',
+    suggestEmailAction: 'Capturar tras la pregunta de email',
     tipNotify: 'Considera avisar a tus respondientes de que sus respuestas pueden recopilarse antes de enviar.',
     tipWhere: 'Míralos en Envíos con el filtro «Parciales».',
     tipAfterLast: 'Después de la última pregunta nunca se activa — el envío final ya lo captura todo.',
