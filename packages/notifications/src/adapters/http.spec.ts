@@ -47,7 +47,7 @@ describe('HttpEmailProvider — transactional-v1', () => {
         profile: 'transactional-v1',
         clientId: CLIENT_ID,
         signingSecret: SECRET,
-        fromEmail: 'form@notifications-dapta.ai',
+        fromEmail: 'forms@notifications-dapta.ai',
         fromName: 'Dapta Forms',
       },
       impl,
@@ -101,7 +101,7 @@ describe('HttpEmailProvider — transactional-v1', () => {
   it('requires a tenant account context on the signed wire', async () => {
     const { impl } = stubFetch();
     const provider = new HttpEmailProvider(
-      { endpoint: ENDPOINT, profile: 'transactional-v1', clientId: CLIENT_ID, signingSecret: SECRET, fromEmail: 'form@notifications-dapta.ai' },
+      { endpoint: ENDPOINT, profile: 'transactional-v1', clientId: CLIENT_ID, signingSecret: SECRET, fromEmail: 'forms@notifications-dapta.ai' },
       impl,
     );
     expect(provider.requiresAccountContext).toBe(true);
@@ -111,7 +111,7 @@ describe('HttpEmailProvider — transactional-v1', () => {
   it('throws on a non-2xx so the outbox retries (never a silent drop)', async () => {
     const { impl } = stubFetch(500, {});
     const provider = new HttpEmailProvider(
-      { endpoint: ENDPOINT, profile: 'transactional-v1', clientId: CLIENT_ID, signingSecret: SECRET, fromEmail: 'form@notifications-dapta.ai' },
+      { endpoint: ENDPOINT, profile: 'transactional-v1', clientId: CLIENT_ID, signingSecret: SECRET, fromEmail: 'forms@notifications-dapta.ai' },
       impl,
     );
     await expect(
