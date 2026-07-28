@@ -39,21 +39,37 @@ export function AdvancedSettings({
     <section
       data-testid="advanced-settings"
       data-open={open}
-      // `shrink-0` is load-bearing, not tidiness. `overflow-hidden` (which clips
-      // the children to the rounded corners) makes CSS resolve this box's
-      // `min-height: auto` to 0 — and as a flex child of the settings column,
-      // which routinely overflows, the browser then compressed the whole group
-      // to 2px. It read as "Advanced settings is missing and the panel won't
-      // scroll"; there was simply nothing left to scroll to. Every sibling
-      // survives because they are `overflow: visible` and keep their min-content
-      // floor. The column is a scroll container, so nothing in it should shrink.
-      className="mt-2 shrink-0 overflow-hidden rounded-md border border-border"
+      // NO `overflow-hidden` here, deliberately, and the reason is worth the
+      // paragraph. It was originally set to clip the children to the rounded
+      // corners. But any `overflow` other than `visible` makes CSS resolve this
+      // box's `min-height: auto` to **0**, which removes its min-content floor —
+      // and as a flex child of the settings column, which routinely overflows,
+      // the browser then compressed the whole group to 2px. Open or closed.
+      //
+      // The failure mode was the worst kind: the content still existed, laid out
+      // at its full 840px, silently clipped inside a 2px box. The column's
+      // scrollHeight never grew, so there was nothing to scroll to either. It
+      // read exactly as reported — "I can expand it, but I cannot scroll to the
+      // options, they hide behind the screen."
+      //
+      // `shrink-0` alone also fixes it, and is kept as a second line of defence,
+      // but removing the clip is what makes the bug impossible rather than
+      // merely counteracted: with `overflow: visible` this box cannot be squashed
+      // no matter what the flex algorithm wants, and anything unexpected would
+      // overflow VISIBLY instead of vanishing. The corners are rounded on the
+      // button itself instead.
+      className="mt-2 shrink-0 rounded-md border border-border"
     >
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
-        className="flex w-full flex-wrap items-center gap-2 px-3 py-2.5 text-left transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        // Rounds itself rather than relying on the parent to clip it: the header
+        // is the only thing whose background reaches the corners. Closed, it is
+        // the whole box; open, only the top two.
+        className={`flex w-full flex-wrap items-center gap-2 px-3 py-2.5 text-left transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+          open ? 'rounded-t-md' : 'rounded-md'
+        }`}
       >
         <i
           aria-hidden
