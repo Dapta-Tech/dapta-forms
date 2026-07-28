@@ -298,6 +298,9 @@ export const adminApi = {
   // Account-level integration connections (paste-token model; admin/owner writes)
   /** This account's connections (token-free) + whether server encryption is available. */
   listIntegrations: () => req<IntegrationsResponse>('GET', '/v1/integrations'),
+  /** Send one sample delivery to a form's webhook (admin-only, SSRF-guarded server-side). */
+  pingWebhook: (id: string) =>
+    req<{ ok: boolean; message?: string }>('POST', `/v1/forms/${id}/destinations/webhook/ping`),
   /** Validate + encrypt-store a pasted provider token; returns the token-free status. */
   connectIntegration: (provider: IntegrationProvider, token: string) =>
     req<IntegrationStatus>('POST', `/v1/integrations/${provider}/connect`, { token }),
