@@ -15,7 +15,7 @@ type ChromeMessages = FormsMessages['admin']['chrome'];
  *  a desktop collapse rail (cookie-persisted, no FOUC), and a <768px off-canvas
  *  drawer with a hamburger top bar. Tokens only; R22 press/hover; R27/R28. */
 
-type IconName = 'home' | 'forms' | 'submissions' | 'analytics' | 'integrations' | 'cog';
+type IconName = 'home' | 'forms' | 'submissions' | 'analytics' | 'integrations' | 'branding' | 'cog';
 
 interface NavItem {
   key: keyof ChromeMessages['nav'];
@@ -34,6 +34,7 @@ const NAV: NavItem[] = [
   { key: 'submissions', href: '/admin/submissions', icon: 'submissions' },
   { key: 'analytics', href: '/admin/analytics', icon: 'analytics' },
   { key: 'integrations', href: '/admin/integrations', icon: 'integrations' },
+  { key: 'branding', href: '/admin/branding', icon: 'branding' },
   { key: 'settings', href: '/admin/settings', icon: 'cog' },
 ];
 
@@ -49,6 +50,7 @@ const PI_BY_NAME: Record<IconName, string> = {
   submissions: 'pi-inbox',
   analytics: 'pi-chart-bar',
   integrations: 'pi-link',
+  branding: 'pi-palette',
   cog: 'pi-cog',
 };
 

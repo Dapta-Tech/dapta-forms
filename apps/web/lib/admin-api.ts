@@ -7,6 +7,7 @@
 import { redirect } from 'next/navigation';
 import type {
   AnalyticsResponse,
+  BrandKit,
   FormConfig,
   FormDestination,
   MemberProfile,
@@ -77,9 +78,18 @@ export interface FormSummary {
   id: string;
   name: string;
   slug: string;
+  /** Epoch-ms of the last brand-kit apply; null when never applied or reverted. */
+  brandAppliedAt: number | null;
   createdAt: number;
   updatedAt: number;
 }
+
+/** GET/PUT /v1/branding — the workspace brand kit (null = none saved yet). */
+export interface BrandingResponse {
+  config: BrandKit | null;
+  updatedAt: number | null;
+}
+export type { BrandKit };
 
 export interface FormDetail {
   id: string;
@@ -283,6 +293,16 @@ export const adminApi = {
   /** Publish the pending draft config (no-op when no draft is pending). */
   publishForm: (id: string) => req<FormDetail>('POST', `/v1/forms/${id}/publish`),
   deleteForm: (id: string) => req<void>('DELETE', `/v1/forms/${id}`),
+
+  // Workspace brand kit (reads open to members; writes + apply/revert admin/owner)
+  getBranding: () => req<BrandingResponse>('GET', '/v1/branding'),
+  saveBranding: (config: BrandKit) => req<BrandingResponse>('PUT', '/v1/branding', config),
+  /** Snapshot-apply the kit to the given forms (live config + pending draft). */
+  applyBranding: (formIds: string[]) =>
+    req<{ applied: string[] }>('POST', '/v1/branding/apply', { formIds }),
+  /** Undo the last apply on the given forms (one level of undo). */
+  revertBranding: (formIds: string[]) =>
+    req<{ reverted: string[] }>('POST', '/v1/branding/revert', { formIds }),
 
   // Analytics + submissions (this track)
   getAnalytics: (id: string, range: { from?: number; to?: number } = {}) =>

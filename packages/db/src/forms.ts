@@ -119,6 +119,8 @@ export interface FormRow {
   draftConfig: unknown | null;
   /** Epoch-ms of the last publish; null = never published via the draft flow. */
   publishedAt: number | null;
+  /** Epoch-ms of the last brand-kit apply; null when never applied or reverted. */
+  brandAppliedAt: number | null;
   createdAt: number;
   updatedAt: number;
 }
@@ -127,6 +129,8 @@ export interface FormSummary {
   id: string;
   name: string;
   slug: string;
+  /** Epoch-ms of the last brand-kit apply; null when never applied or reverted. */
+  brandAppliedAt: number | null;
   createdAt: number;
   updatedAt: number;
 }
@@ -140,6 +144,7 @@ function mapForm(r: Record<string, unknown>): FormRow {
     config: parseJsonColumn(r.config, { version: 1, steps: [] }),
     draftConfig: r.draft_config == null ? null : parseJsonColumn(r.draft_config, null),
     publishedAt: r.published_at == null ? null : Number(r.published_at),
+    brandAppliedAt: r.brand_applied_at == null ? null : Number(r.brand_applied_at),
     createdAt: Number(r.created_at),
     updatedAt: Number(r.updated_at),
   };
@@ -173,13 +178,14 @@ export async function uniqueFormSlug(db: Db, accountId: string, base: string): P
 
 export async function listForms(db: Db, accountId: string): Promise<FormSummary[]> {
   const rows = await db.all<Record<string, unknown>>(
-    sql`SELECT id, name, slug, created_at, updated_at FROM form
+    sql`SELECT id, name, slug, brand_applied_at, created_at, updated_at FROM form
         WHERE account_id = ${accountId} ORDER BY updated_at DESC, created_at DESC`,
   );
   return rows.map((r) => ({
     id: String(r.id),
     name: String(r.name),
     slug: String(r.slug),
+    brandAppliedAt: r.brand_applied_at == null ? null : Number(r.brand_applied_at),
     createdAt: Number(r.created_at),
     updatedAt: Number(r.updated_at),
   }));

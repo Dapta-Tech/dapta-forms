@@ -18,6 +18,7 @@ import type { Db } from '@quill/db';
 import { HealthController, DocsController } from './controllers';
 import { PublicController } from './public.controller';
 import { AdminCrudController } from './admin-crud.controller';
+import { BrandingController } from './branding.controller';
 import { AnalyticsController } from './analytics.controller';
 import { AnalyticsService } from './analytics.service';
 import {
@@ -33,6 +34,7 @@ import {
     DocsController,
     PublicController,
     AdminCrudController,
+    BrandingController,
     AnalyticsController,
     IntegrationsController,
     FormDestinationsController,

@@ -8,6 +8,7 @@ export * from './crud';
 export * from './forms';
 export * from './bookings';
 export * from './account-integrations';
+export * from './account-branding';
 export * from './crypto';
 export * from './analytics';
 export * from './members';

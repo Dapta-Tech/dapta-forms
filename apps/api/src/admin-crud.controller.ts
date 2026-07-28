@@ -20,6 +20,8 @@ import type { Db, NotificationSetting } from '@quill/db';
 import {
   changeMemberRole,
   createForm,
+  getAccountBranding,
+  mergeKitIntoBranding,
   defaultNotificationSetting,
   deleteForm,
   deleteNotificationSetting,
@@ -181,7 +183,24 @@ export class AdminCrudController {
   async createForm(@Req() req: ReqLike, @Body() body: unknown) {
     const p = await this.auth.resolveHost(req);
     const input = parse(formInputSchema, body);
-    return maskForm(unwrapCrud(await createForm(this.db, p.accountId, input)));
+    // New forms are born on-brand: snapshot the workspace brand kit into the
+    // initial config's `branding`. Server-side so API-created forms inherit the
+    // kit exactly like dashboard-created ones. Caller-supplied branding wins
+    // over the kit (explicit input beats a default).
+    const kit = await getAccountBranding(this.db, p.accountId);
+    let config: unknown = input.config;
+    if (kit) {
+      const base =
+        config && typeof config === 'object' && !Array.isArray(config)
+          ? (config as Record<string, unknown>)
+          : { version: 1, steps: [] };
+      const own =
+        base.branding && typeof base.branding === 'object' && !Array.isArray(base.branding)
+          ? (base.branding as Record<string, unknown>)
+          : {};
+      config = { ...base, branding: { ...mergeKitIntoBranding(null, kit.config), ...own } };
+    }
+    return maskForm(unwrapCrud(await createForm(this.db, p.accountId, { ...input, config })));
   }
 
   /**
