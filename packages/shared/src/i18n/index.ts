@@ -797,6 +797,7 @@ export interface FormsMessages {
       metricCompletionRate: string;
       metricTimeToComplete: string;
       metricPartials: string;
+      metricBookings: string;
       rangeToday: string;
       rangeWeek: string;
       rangeMonth: string;
@@ -815,7 +816,9 @@ export interface FormsMessages {
       dropoffSubtitle: string;
       colStep: string;
       colViews: string;
+      colAnswered: string;
       colDropoff: string;
+      dropoffSubtitleAnswered: string;
       coverRow: string;
       landingRow: string;
       emptyRangeTitle: string;
@@ -1745,6 +1748,7 @@ export const en: FormsMessages = {
       metricCompletionRate: 'Completion rate',
       metricTimeToComplete: 'Time to complete',
       metricPartials: 'Partial submits',
+      metricBookings: 'Bookings',
       rangeToday: 'Today',
       rangeWeek: 'Last week',
       rangeMonth: 'Last month',
@@ -1762,7 +1766,9 @@ export const en: FormsMessages = {
       dropoffSubtitle: 'How many people reach each step, and how many leave.',
       colStep: 'Step',
       colViews: 'Views',
+      colAnswered: 'Answered',
       colDropoff: 'Drop-off',
+      dropoffSubtitleAnswered: 'How many people answer each question, and how many stop there.',
       coverRow: 'Cover / landing',
       landingRow: 'Form views',
       emptyRangeTitle: 'No activity in this range',
@@ -2696,6 +2702,7 @@ export const es: FormsMessages = {
       metricCompletionRate: 'Tasa de finalización',
       metricTimeToComplete: 'Tiempo para completar',
       metricPartials: 'Envíos parciales',
+      metricBookings: 'Reservas',
       rangeToday: 'Hoy',
       rangeWeek: 'Última semana',
       rangeMonth: 'Último mes',
@@ -2713,7 +2720,9 @@ export const es: FormsMessages = {
       dropoffSubtitle: 'Cuántas personas llegan a cada paso y cuántas se van.',
       colStep: 'Paso',
       colViews: 'Vistas',
+      colAnswered: 'Respondida',
       colDropoff: 'Abandono',
+      dropoffSubtitleAnswered: 'Cuántas personas responden cada pregunta y cuántas se detienen ahí.',
       coverRow: 'Portada / inicio',
       landingRow: 'Vistas del formulario',
       emptyRangeTitle: 'Sin actividad en este rango',

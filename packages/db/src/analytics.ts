@@ -79,17 +79,22 @@ export async function uniqueViewCount(db: Db, formId: string, range?: DateRange)
 }
 
 /**
- * "Starts" = unique sessions that reached the first question (`step_view` with
- * `step_index = 0`). This is the signal that fires for EVERY form: the legacy
- * `start` event is only emitted by the cover CTA, so a cover-less form never
- * produced one and reported 0 starts (and 0% completion) despite real answers.
- * `step_view` idx 0 is captured whether or not a cover exists. Windowed by the
+ * "Starts" = unique sessions that STARTED ANSWERING: they clicked the cover CTA
+ * (`start`) or completed at least one question (`step_complete`). The previous
+ * definition — `step_view` with `step_index = 0` — degenerated on forms without
+ * a cover (and on the vertical layout, where the first question is visible on
+ * load): the first question renders on mount, so Starts ≈ Views and the metric
+ * carried no signal. Counting explicit intent instead fixes that for BOTH kinds
+ * of form, retroactively: historical sessions already carry `step_complete`
+ * rows, and cover sessions already carry `start`, so no cutover or backfill is
+ * needed. A session that only looked at question 1 and left now counts as a
+ * View (and as drop-off on that question), not as a Start. Windowed by the
  * session's cohort anchor (V5-D1) — see {@link cohortSessionIds}.
  */
 export async function startCount(db: Db, formId: string, range?: DateRange): Promise<number> {
   const row = await db.get<{ n: number | string | null }>(
     sql`SELECT COUNT(DISTINCT session_id) AS n FROM form_event
-        WHERE form_id = ${formId} AND type = 'step_view' AND step_index = 0
+        WHERE form_id = ${formId} AND type IN ('start', 'step_complete')
         AND session_id IN ${cohortSessionIds(formId, range)}`,
   );
   return Number(row?.n ?? 0);
@@ -121,16 +126,40 @@ export async function stepViewCounts(
   formId: string,
   range?: DateRange,
 ): Promise<StepViewCounts> {
+  return stepEventCounts(db, formId, 'step_view', range);
+}
+
+/**
+ * Unique-session step COMPLETIONS ("answered"), same dual keying as
+ * {@link stepViewCounts}. This is the honest funnel body for the VERTICAL
+ * layout: every question is on one page, so "viewed" fires for most of the
+ * form the moment it loads and the per-step drop-off flattens into Views.
+ * What actually varies per question there is whether it got answered.
+ */
+export async function stepCompleteCounts(
+  db: Db,
+  formId: string,
+  range?: DateRange,
+): Promise<StepViewCounts> {
+  return stepEventCounts(db, formId, 'step_complete', range);
+}
+
+async function stepEventCounts(
+  db: Db,
+  formId: string,
+  type: 'step_view' | 'step_complete',
+  range?: DateRange,
+): Promise<StepViewCounts> {
   const [keyRows, indexRows] = await Promise.all([
     db.all<{ step_key: string; n: number | string }>(
       sql`SELECT step_key, COUNT(DISTINCT session_id) AS n FROM form_event
-          WHERE form_id = ${formId} AND type = 'step_view' AND step_key IS NOT NULL
+          WHERE form_id = ${formId} AND type = ${type} AND step_key IS NOT NULL
           AND session_id IN ${cohortSessionIds(formId, range)}
           GROUP BY step_key`,
     ),
     db.all<{ step_index: number | string | null; n: number | string }>(
       sql`SELECT step_index, COUNT(DISTINCT session_id) AS n FROM form_event
-          WHERE form_id = ${formId} AND type = 'step_view' AND step_key IS NULL
+          WHERE form_id = ${formId} AND type = ${type} AND step_key IS NULL
           AND step_index IS NOT NULL
           AND session_id IN ${cohortSessionIds(formId, range)}
           GROUP BY step_index`,
@@ -167,6 +196,27 @@ export async function partialCount(db: Db, formId: string, range?: DateRange): P
     sql`SELECT COUNT(*) AS n FROM submission s
         WHERE s.form_id = ${formId} AND s.completed_at IS NULL AND s.partial_at IS NOT NULL
         ${andRange(submissionAnchor(), range)}`,
+  );
+  return Number(row?.n ?? 0);
+}
+
+/**
+ * Unique sessions that booked a meeting (scheduler step / booking outcome) —
+ * DISTINCT session_id so a provider double-callback can never count twice.
+ * Windowed by the session's cohort anchor like every other funnel metric
+ * (V5-D1): the session's earliest `form_event`, falling back to the booking's
+ * own `created_at` for a session whose top-of-funnel beacons were all lost.
+ */
+export async function bookingCount(db: Db, formId: string, range?: DateRange): Promise<number> {
+  const anchor = sql`COALESCE(
+    (SELECT MIN(fe.created_at) FROM form_event fe
+     WHERE fe.form_id = b.form_id AND fe.session_id = b.session_id),
+    b.created_at
+  )`;
+  const row = await db.get<{ n: number | string | null }>(
+    sql`SELECT COUNT(DISTINCT b.session_id) AS n FROM booking_event b
+        WHERE b.form_id = ${formId}
+        ${andRange(anchor, range)}`,
   );
   return Number(row?.n ?? 0);
 }
@@ -278,14 +328,15 @@ export async function dailyViewSessions(
   return rows.map((r) => ({ day: Number(r.day), n: Number(r.n) }));
 }
 
-/** Per-day unique sessions that reached the first question (trend for Starts). */
+/** Per-day unique sessions that started answering (trend for Starts — same
+ *  `start`/`step_complete` definition as {@link startCount}). */
 export async function dailyStartSessions(
   db: Db,
   formId: string,
   range?: DateRange,
 ): Promise<{ day: number; n: number }[]> {
   const rows = await db.all<{ day: number | string; n: number | string }>(
-    dailySessionsQuery(formId, sql`type = 'step_view' AND step_index = 0`, range),
+    dailySessionsQuery(formId, sql`type IN ('start', 'step_complete')`, range),
   );
   return rows.map((r) => ({ day: Number(r.day), n: Number(r.n) }));
 }

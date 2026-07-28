@@ -240,6 +240,33 @@ export function QuestionSpine({
           {m.partial.add}
         </button>
       ) : null}
+
+      {(() => {
+        // Lead-capture nudge: the form asks for an email but has no partial
+        // threshold, so a respondent who answers everything and abandons at the
+        // end (e.g. a required scheduler) leaves NOTHING behind. Suggest the
+        // fix with a one-click "capture after the email question". Only when
+        // the email question is not the last step — after the last question a
+        // threshold never fires (the final submit already captures it all).
+        const emailIdx = steps.findIndex((s) => s.type === 'email' && !s.hidden);
+        if (partialIdx != null || emailIdx < 0 || emailIdx >= steps.length - 1) return null;
+        return (
+          <div
+            data-testid="partial-point-suggest"
+            className="rounded-xl border border-secondary/40 bg-secondary/[0.06] p-3 text-xs text-muted-foreground"
+          >
+            <p>{m.partial.suggestEmail}</p>
+            <button
+              type="button"
+              data-testid="partial-point-suggest-apply"
+              onClick={() => onPartialChange(emailIdx + 1)}
+              className="mt-2 rounded-md border border-secondary/60 px-2.5 py-1 font-medium text-secondary transition-colors hover:bg-secondary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              {m.partial.suggestEmailAction}
+            </button>
+          </div>
+        );
+      })()}
     </div>
   );
 }

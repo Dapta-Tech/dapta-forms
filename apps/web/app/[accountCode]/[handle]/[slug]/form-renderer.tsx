@@ -81,6 +81,7 @@ export function FormRenderer({
   const utmRef = useRef<Record<string, string>>({});
   const redirected = useRef(false); // a deferred redirect fires exactly once
   const viewTracked = useRef(false);
+  const startSent = useRef(false); // one `start` per session, whichever path emits it
   const partialSent = useRef(false);
   const advancing = useRef(false);
   const submitAfterReveal = useRef(false);
@@ -277,6 +278,14 @@ export function FormRenderer({
         const completedIdx = nextSteps.findIndex((s) => s.key === completed.key);
         const isLast = completedIdx >= 0 ? completedIdx >= nextSteps.length - 1 : index >= nextSteps.length - 1;
 
+        // A cover-less form has no Start CTA, so the first completed answer IS
+        // the start signal ("started answering"). The metric already counts
+        // `step_complete` sessions; this keeps the event stream itself
+        // consistent across form shapes. Cover forms emit it from `start()`.
+        if (!cover && !startSent.current) {
+          startSent.current = true;
+          track('start');
+        }
         track('step_complete', index, completed.key);
 
         // Partial submit once past the configured lead-capture threshold.
@@ -391,6 +400,7 @@ export function FormRenderer({
   }
 
   function start() {
+    startSent.current = true;
     track('start');
     lastStepViewKey.current = null;
     setPhase('steps');

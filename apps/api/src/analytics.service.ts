@@ -1,10 +1,13 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { resolveFormLayout } from '@quill/engine';
 import type { Db } from '@quill/db';
 import {
   uniqueViewCount,
   startCount,
   stepViewCounts,
+  stepCompleteCounts,
   partialCount,
+  bookingCount,
   completedSubmissions,
   dailyViewSessions,
   dailyStartSessions,
@@ -155,13 +158,21 @@ export class AnalyticsService {
     if (!form) return null;
     const config = form.config as FormConfig;
     const steps = config.steps ?? [];
+    // Vertical shows every question on one page, so "viewed step X" fires for
+    // most of the form on load and the per-step funnel flattens into Views.
+    // There the honest per-question signal is "answered" (step_complete);
+    // slides keeps "reached the step" (step_view).
+    const dropoffMode = resolveFormLayout(config) === 'vertical' ? 'answered' : 'viewed';
 
-    const [views, starts, stepViews, partialSubmits, completed, dailyViews, dailyStarts] =
+    const [views, starts, stepViews, partialSubmits, bookings, completed, dailyViews, dailyStarts] =
       await Promise.all([
         uniqueViewCount(this.db, formId, range),
         startCount(this.db, formId, range),
-        stepViewCounts(this.db, formId, range),
+        dropoffMode === 'answered'
+          ? stepCompleteCounts(this.db, formId, range)
+          : stepViewCounts(this.db, formId, range),
         partialCount(this.db, formId, range),
+        bookingCount(this.db, formId, range),
         completedSubmissions(this.db, formId, range),
         dailyViewSessions(this.db, formId, range),
         dailyStartSessions(this.db, formId, range),
@@ -234,6 +245,8 @@ export class AnalyticsService {
       completionRate,
       timeToComplete,
       partialSubmits,
+      bookings,
+      dropoffMode,
       dropoff,
       trends,
       range: { from: range.from ?? null, to: range.to ?? null },

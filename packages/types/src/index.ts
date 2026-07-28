@@ -984,6 +984,18 @@ export const analyticsResponseSchema = z.object({
   timeToComplete: z.number().int().nullable(),
   /** Partial-only submissions (partialAt set, completedAt null). */
   partialSubmits: z.number().int(),
+  /**
+   * Unique sessions that booked a meeting (scheduler step / booking outcome).
+   * For a form whose conversion is the meeting, this is the real bottom of the
+   * funnel — Submissions alone under-reports it.
+   */
+  bookings: z.number().int(),
+  /**
+   * What the drop-off funnel body counts per step: `viewed` (slides — reached
+   * the step) or `answered` (vertical — completed it; every question is
+   * visible on load there, so "viewed" would flatten into Views).
+   */
+  dropoffMode: z.enum(['viewed', 'answered']),
   /** Cover row + one row per configured step. */
   dropoff: z.array(dropoffRowSchema),
   /** Gap-filled per-day series for the Trends chart (oldest → newest). */
