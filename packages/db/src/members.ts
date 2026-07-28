@@ -210,3 +210,23 @@ export async function removeMember(
   await db.run(sql`DELETE FROM member WHERE account_id = ${accountId} AND id = ${memberId}`);
   return { ok: true, value: { id: memberId } };
 }
+
+/**
+ * Flip a member from `invited` to `active` the first time they resolve.
+ *
+ * Deliberately narrow: ONLY the invited → active transition. A `disabled`
+ * member logging in must stay disabled — reviving them would defeat the point
+ * of disabling — and an already-active member must not be rewritten on every
+ * request. The WHERE clause enforces both, so this is a no-op for everyone
+ * except the person whose invite just landed.
+ */
+export async function activateInvitedMember(
+  db: Db,
+  accountId: string,
+  memberId: string,
+): Promise<void> {
+  await db.run(
+    sql`UPDATE member SET status = 'active'
+        WHERE id = ${memberId} AND account_id = ${accountId} AND status = 'invited'`,
+  );
+}

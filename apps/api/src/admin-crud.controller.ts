@@ -8,6 +8,7 @@ import {
   HttpCode,
   Inject,
   NotFoundException,
+  Optional,
   Param,
   Patch,
   Post,
@@ -57,6 +58,7 @@ import { AdminService } from './admin.service';
 import { SubmissionService } from './submission.service';
 import { AnalyticsService } from './analytics.service';
 import { AuthService, type ReqLike } from './auth.service';
+import { EmailEffects } from './email-effects';
 import { assertAdmin, assertCanManageTarget, assertNotSelf } from './permissions';
 import { parseBound, parseIntParam, parseStatus } from './query-params';
 import { DB } from './tokens';
@@ -102,6 +104,9 @@ export class AdminCrudController {
     @Inject(AdminService) private readonly admin: AdminService,
     @Inject(SubmissionService) private readonly submissions: SubmissionService,
     @Inject(AnalyticsService) private readonly analytics: AnalyticsService,
+    // Optional so existing direct constructions (tests) keep working; the module
+    // always provides it in the running app.
+    @Optional() @Inject(EmailEffects) private readonly emails?: EmailEffects,
   ) {}
 
   // --- Identity ----------------------------------------------------------
@@ -236,7 +241,19 @@ export class AdminCrudController {
     const p = await this.auth.resolveHost(req);
     assertAdmin(p);
     const input = parse(memberInviteSchema, body);
-    return unwrapCrud(await inviteMember(this.db, p.accountId, input));
+    const member = unwrapCrud(await inviteMember(this.db, p.accountId, input));
+    // Tell them. Until now the row was created and nobody was ever notified.
+    // Enqueued (never sent inline) and fire-and-forget: a mail provider being
+    // down must not fail an invite that already succeeded.
+    const inviter = await getAccountMember(this.db, p.accountId, p.memberId);
+    void this.emails?.enqueueMemberInvited({
+      accountId: p.accountId,
+      memberId: member.id,
+      to: member.email ?? input.email,
+      invitedBy: inviter?.displayName ?? inviter?.email ?? null,
+      locale: null,
+    });
+    return member;
   }
 
   @Patch('members/:id')

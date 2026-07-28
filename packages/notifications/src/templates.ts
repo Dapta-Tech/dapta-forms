@@ -107,6 +107,54 @@ export function renderSubmissionConfirmed(
   };
 }
 
+/** What an invitation email needs to say. */
+export interface MemberInvitedCopyVars {
+  /** The workspace they are being invited into. */
+  accountName: string;
+  /** Who sent it, when we know — an invitation from a stranger reads as spam. */
+  invitedBy?: string | null;
+  /** Where to sign in. Absent in a bare fork with no PUBLIC_APP_URL set. */
+  signInLink?: string | null;
+}
+
+/**
+ * "You have been added to a workspace."
+ *
+ * There was no invitation email at all: `inviteMember` inserted a row with
+ * status `invited` and stopped, so the person being invited was never told. The
+ * copy stays deliberately plain — it names the workspace, who added them, and
+ * where to sign in, because everything else an invite usually carries (a token,
+ * an accept step) does not exist here: signing in with the invited address is
+ * what binds the account.
+ */
+export function renderMemberInvited(
+  locale: NotificationLocale,
+  v: MemberInvitedCopyVars,
+): RenderedCopy {
+  if (locale === 'es') {
+    return {
+      subject: `Te agregaron a ${v.accountName}`,
+      lines: [
+        v.invitedBy
+          ? `${v.invitedBy} te agregó al espacio de trabajo "${v.accountName}" en Dapta Forms.`
+          : `Te agregaron al espacio de trabajo "${v.accountName}" en Dapta Forms.`,
+        'Entra con este mismo correo y vas a llegar directo ahí.',
+        v.signInLink ? `Entrar: ${v.signInLink}` : '',
+      ],
+    };
+  }
+  return {
+    subject: `You were added to ${v.accountName}`,
+    lines: [
+      v.invitedBy
+        ? `${v.invitedBy} added you to the "${v.accountName}" workspace on Dapta Forms.`
+        : `You were added to the "${v.accountName}" workspace on Dapta Forms.`,
+      'Sign in with this same address and you will land straight in it.',
+      v.signInLink ? `Sign in: ${v.signInLink}` : '',
+    ],
+  };
+}
+
 // --- Account-editable overrides (Settings → Notifications) --------------------
 //
 // An account owner may replace the stock subject/body above with their own copy,

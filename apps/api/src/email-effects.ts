@@ -3,6 +3,7 @@ import { enqueueOutbox, getNotificationSettings, sql, type Db } from '@quill/db'
 import {
   SubmissionNotifier,
   type EmailProvider,
+  type MemberInvitedNotification,
   type SubmissionNotification,
 } from '@quill/notifications';
 import type { ServerEnv } from '@quill/config/env';
@@ -150,6 +151,53 @@ export class EmailEffects {
   }
 
   /**
+   * Tell an invited person they were invited.
+   *
+   * Until now `inviteMember` inserted a member row with status `invited` and
+   * stopped — no email existed anywhere in the notifications package, so nobody
+   * was ever told. Enqueued through the outbox like every other side-effect
+   * (never sent inline from the request handler), so a mail provider being down
+   * cannot fail the invite itself.
+   *
+   * Never rejects: the caller fire-and-forgets, and a member who was created
+   * must not be un-created because the notice could not be queued.
+   */
+  async enqueueMemberInvited(input: {
+    accountId: string;
+    memberId: string;
+    to: string;
+    invitedBy?: string | null;
+    locale?: string | null;
+  }): Promise<void> {
+    try {
+      if (!input.to) return;
+      const account = await this.db.get<{ name: string }>(
+        sql`SELECT name FROM account WHERE id = ${input.accountId} LIMIT 1`,
+      );
+      const payload: MemberInvitedNotification = {
+        accountId: input.accountId,
+        memberId: input.memberId,
+        to: input.to,
+        accountName: account?.name ?? 'your workspace',
+        invitedBy: input.invitedBy ?? null,
+        // Empty in a bare fork with no PUBLIC_APP_URL — the template drops the
+        // line rather than printing a broken link.
+        signInLink: this.env?.PUBLIC_APP_URL ? `${this.env!.PUBLIC_APP_URL.replace(/\/$/, '')}/login` : null,
+        locale: input.locale ?? null,
+      };
+      await enqueueOutbox(this.db, {
+        kind: 'email',
+        action: 'member_invited',
+        accountId: input.accountId,
+        subjectUid: input.memberId,
+        payload: JSON.stringify(payload),
+      });
+    } catch (err) {
+      this.log.error(`failed to enqueue member_invited: ${String(err)}`);
+    }
+  }
+
+  /**
    * The worker's executor for an `email` outbox row. Rebuilds the notification
    * from the payload and sends it; a THROWN transport error propagates so the
    * worker retries. A missing tenant on a transport that requires it is a
@@ -164,6 +212,14 @@ export class EmailEffects {
       );
     }
     switch (action) {
+      case 'member_invited':
+        // A different payload shape rides the same `email` kind — decoded here
+        // rather than given its own outbox kind, because the transport, the
+        // retry policy and the missing-tenant decision above are identical.
+        await this.notifier.sendMemberInvited(
+          JSON.parse(payloadJson) as MemberInvitedNotification,
+        );
+        return;
       case 'submission_received':
         await this.notifier.sendSubmissionReceived(n);
         return;
