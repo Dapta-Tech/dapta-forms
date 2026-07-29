@@ -174,7 +174,9 @@ export function AdminShell({
   const userLabel = user?.displayName ?? 'Not signed in';
 
   const brand = (
-    <div className={`flex items-center gap-2 ${railCollapsed ? 'flex-col px-0' : 'px-2'}`}>
+    // px-3 matches the nav links' own padding, so the wordmark's left edge lands
+    // on the same column as the nav icons instead of hanging 3.5px outside it.
+    <div className={`flex items-center gap-2 ${railCollapsed ? 'flex-col px-0' : 'px-3'}`}>
       {/* Inside the app the shell already says Dapta, so the rail carries the
           product wordmark alone — at ~3:1 it reads at a size where the 6:1 full
           lockup turns to mush. Collapsed to 64px, only the mark fits. */}

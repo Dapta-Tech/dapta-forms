@@ -47,7 +47,7 @@ export function FormsMark({ title, ...props }: SVGProps<SVGSVGElement> & { title
 export function FormsWordmark({ title, ...props }: SVGProps<SVGSVGElement> & { title?: string }) {
   return (
     <svg
-      viewBox="0 0 3412.3 1115.6"
+      viewBox="0 0 3412.3 860.6"
       role={title ? 'img' : 'presentation'}
       aria-hidden={title ? undefined : true}
       focusable="false"
