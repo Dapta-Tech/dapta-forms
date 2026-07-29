@@ -108,8 +108,11 @@ export class BookingSyncEffects {
       }
     }
 
+    // --- The session's submission (one read serves three consumers below) ----
+    const submission = await this.loadSubmission(payload.formId, payload.sessionId);
+
     // --- Respondent email: invitee first, else the session's submission ------
-    const submissionEmail = await this.emailFromSubmission(payload.formId, payload.sessionId);
+    const submissionEmail = submission ? looseEmailFromData(submission.data) : null;
     const email = inviteeEmail ?? submissionEmail;
     if (!email) {
       throw new OutboxSkipError(
@@ -127,7 +130,6 @@ export class BookingSyncEffects {
       }
     }
 
-    // --- Upsert the contact ----------------------------------------------------
     // Per-account HubSpot token (connected → decrypted), else the env fallback.
     const hubspotToken = await resolveProviderToken(
       this.db,
@@ -145,38 +147,71 @@ export class BookingSyncEffects {
       throw new OutboxSkipError('HUBSPOT_PRIVATE_APP_TOKEN not set — booking sync logged property keys only');
     }
 
+    // --- Booking properties FIRST — write order is the retry-safety here -------
+    // The answers sync below ends in a Note engagement, which HubSpot's API
+    // offers no idempotent create for. Everything BEFORE the Note must therefore
+    // be a retry-safe upsert, and NOTHING may run after it: with the booking
+    // upsert first and the Note last, no retryable failure can fire once a Note
+    // exists, so the outbox retrying this row can never duplicate one.
+    const wroteBooking = Object.keys(properties).length > 0;
+    if (wroteBooking) await this.upsertContact(hubspotToken, email, properties);
+
     // --- Full answers sync, keyed on the invitee (V7) --------------------------
     // A form whose scheduler collects the email (no email QUESTION of its own)
     // reaches submit time with nothing for the HubSpot destination to key on, so
     // that delivery resolved as a permanent no-op and the quiz answers never
     // synced. The Calendly invitee address closes the gap: run the SAME mapped
     // delivery the submit path would have run, with the invitee email injected.
-    // Gated on the submission having no email of its own, so a form WITH an
-    // email question — whose submit-time delivery already ran, Note included —
-    // never double-writes.
+    // Gated on the ADAPTER's own email resolution (a mapping to `email`, or an
+    // `email` answer): when THAT delivery already ran at submit time — Note
+    // included — this path must never double-write. The looser email heuristic
+    // above stays only as the booking-properties key fallback it always was.
+    const adapterEmail = submission ? adapterResolvableEmail(destination, submission.data) : null;
     const syncedAnswers =
-      !submissionEmail && inviteeEmail
-        ? await this.syncAnswersAtBooking(payload, form, destination, hubspotToken, inviteeEmail)
+      !adapterEmail && inviteeEmail && submission
+        ? await this.syncAnswersAtBooking(payload, form, destination, hubspotToken, inviteeEmail, submission)
         : false;
 
-    if (Object.keys(properties).length === 0) {
-      if (syncedAnswers) {
-        this.log.log(
-          `booking sync delivered (booking ${payload.bookingEventId}): answers synced; ` +
-            'no booking properties configured',
-        );
-        return;
-      }
+    if (!wroteBooking && !syncedAnswers) {
       throw new OutboxSkipError(
         'booking sync: nothing to write (no meeting start time resolvable and no stage configured)',
       );
     }
-
-    await this.upsertContact(hubspotToken, email, properties);
     this.log.log(
-      `booking sync delivered (booking ${payload.bookingEventId}): contact updated ` +
-        `[${Object.keys(properties).join(', ')}]${syncedAnswers ? ' + submission answers' : ''}`,
+      `booking sync delivered (booking ${payload.bookingEventId}): ` +
+        `${wroteBooking ? `contact updated [${Object.keys(properties).join(', ')}]` : 'no booking properties configured'}` +
+        `${syncedAnswers ? ' + submission answers' : ''}`,
     );
+  }
+
+  /**
+   * The session's stored submission, parsed once for the three consumers in
+   * `deliver` (email gate, booking-key fallback, answers sync). Null when the
+   * session never persisted one (e.g. a booking with no partial save yet).
+   */
+  private async loadSubmission(formId: string, sessionId: string): Promise<SubmissionRow | null> {
+    const row = await this.db.get<{
+      id: string;
+      data: unknown;
+      score: number;
+      completed_at: number | null;
+      partial_at: number | null;
+      started_at: number;
+    }>(
+      sql`SELECT id, data, score, completed_at, partial_at, started_at FROM submission
+          WHERE form_id = ${formId} AND session_id = ${sessionId} LIMIT 1`,
+    );
+    if (!row) return null;
+    return {
+      id: String(row.id),
+      data: parseJsonColumn<Record<string, unknown>>(row.data, {}),
+      score: Number(row.score) || 0,
+      completedAt: row.completed_at == null ? null : Number(row.completed_at),
+      // The moment the submission reached its CURRENT phase — what the port's
+      // `submittedAt` means. Never the delivery clock: outbox retries/backoff
+      // can run hours later, and the date property + Note would lie.
+      submittedAt: Number(row.completed_at ?? row.partial_at ?? row.started_at) || Date.now(),
+    };
   }
 
   /**
@@ -184,8 +219,9 @@ export class BookingSyncEffects {
    * mappings, value maps, score/outcome/static properties, Note — keyed on the
    * Calendly invitee's email. Reuses the exact adapter the submit path uses so
    * the two flows can never drift on mapping semantics. Retryable adapter
-   * failures propagate (the outbox retries the whole row; every write here is
-   * an idempotent upsert). Returns false when there is no submission to sync.
+   * failures propagate and the outbox retries the whole row — safe because the
+   * contact write is an idempotent upsert and the Note is the LAST side effect
+   * of the whole delivery (see the write-order comment in `deliver`).
    */
   private async syncAnswersAtBooking(
     payload: BookingSyncPayload,
@@ -193,17 +229,9 @@ export class BookingSyncEffects {
     destination: HubspotDestination,
     token: string,
     inviteeEmail: string,
+    submission: SubmissionRow,
   ): Promise<boolean> {
-    const row = await this.db.get<{ id: string; data: unknown; score: number }>(
-      sql`SELECT id, data, score FROM submission
-          WHERE form_id = ${payload.formId} AND session_id = ${payload.sessionId} LIMIT 1`,
-    );
-    if (!row) {
-      this.log.warn('booking sync: no submission for the session — booking properties only');
-      return false;
-    }
-    const data = parseJsonColumn<Record<string, unknown>>(row.data, {});
-    const score = Number(row.score) || 0;
+    const { data, score } = submission;
 
     // Outcome label recomputed exactly as submit time does (engine, stored config).
     const parsed = formConfigSchema.safeParse(form.config);
@@ -237,15 +265,20 @@ export class BookingSyncEffects {
     );
     const result = await adapter.deliver({
       idempotencyKey: `booking:${payload.bookingEventId}:hubspot`,
-      submissionId: row.id,
+      submissionId: submission.id,
       formId: payload.formId,
       formName: form.name,
       accountId: payload.accountId,
       sessionId: payload.sessionId,
       score,
       outcomeLabel,
-      phase: 'complete',
-      submittedAt: Date.now(),
+      // Honest phase: a mid-form scheduler books BEFORE the final submit, and
+      // the adapter's complete-only extras (Note, score/outcome/static props)
+      // must not fire off a partial answer set. Known limit: answers given
+      // AFTER the scheduler still reach HubSpot only if the form collects an
+      // email — the submit-time delivery keys on that, not on this booking.
+      phase: submission.completedAt != null ? 'complete' : 'partial',
+      submittedAt: submission.submittedAt,
       // The invitee email rides as the `email` answer the adapter keys on; a
       // stored value would win, but this path only runs when none exists.
       data: { ...data, email: inviteeEmail },
@@ -279,22 +312,6 @@ export class BookingSyncEffects {
     return (await res.json()) as CalendlyResource;
   }
 
-  /** Best-effort respondent email from the session's stored submission answers. */
-  private async emailFromSubmission(formId: string, sessionId: string): Promise<string | null> {
-    const row = await this.db.get<{ data: unknown }>(
-      sql`SELECT data FROM submission WHERE form_id = ${formId} AND session_id = ${sessionId} LIMIT 1`,
-    );
-    if (!row) return null;
-    const data = parseJsonColumn<Record<string, unknown>>(row.data, {});
-    for (const [key, value] of Object.entries(data)) {
-      if (typeof value !== 'string') continue;
-      if (/@/.test(value) && (key.toLowerCase().includes('email') || /@[^@]+\.[^@]+$/.test(value))) {
-        return value.trim().toLowerCase();
-      }
-    }
-    return null;
-  }
-
   /**
    * Minimal focused HubSpot client: upsert one contact keyed by email (the
    * same `batch/upsert` wire the pilot used). Deliberately NOT the destinations
@@ -322,6 +339,51 @@ export class BookingSyncEffects {
       );
     }
   }
+}
+
+/** The session's submission, parsed and phase-stamped (see `loadSubmission`). */
+interface SubmissionRow {
+  id: string;
+  data: Record<string, unknown>;
+  score: number;
+  completedAt: number | null;
+  submittedAt: number;
+}
+
+/**
+ * Best-effort respondent email from the stored answers — the BOOKING-KEY
+ * fallback only. Deliberately loose (any email-shaped string in any answer):
+ * for stamping date/hours on a contact, a probably-right key beats no key.
+ */
+function looseEmailFromData(data: Record<string, unknown>): string | null {
+  for (const [key, value] of Object.entries(data)) {
+    if (typeof value !== 'string') continue;
+    if (/@/.test(value) && (key.toLowerCase().includes('email') || /@[^@]+\.[^@]+$/.test(value))) {
+      return value.trim().toLowerCase();
+    }
+  }
+  return null;
+}
+
+/**
+ * The email the SUBMIT-TIME adapter would have keyed on — a field mapping to
+ * the `email` contact property, else a literal `email` answer (mirrors
+ * `HubspotDestination.resolveEmail`). This, not the loose heuristic above, is
+ * the answers-sync gate: the question is "did the submit delivery already run
+ * with a key?", and only the adapter's own semantics can answer it.
+ */
+function adapterResolvableEmail(
+  destination: HubspotDestination,
+  data: Record<string, unknown>,
+): string | null {
+  for (const [stepKey, property] of Object.entries(destination.fieldMappings ?? {})) {
+    const value = data[stepKey];
+    if (property?.trim() === 'email' && typeof value === 'string' && value.trim()) {
+      return value.trim();
+    }
+  }
+  const direct = data.email;
+  return typeof direct === 'string' && direct.trim() ? direct.trim() : null;
 }
 
 /** UTC-midnight epoch-ms of the calendar day containing `epochMs` (UTC). */
