@@ -13,6 +13,7 @@
  * origin-allowlisted, shape-checked, and URI/date fields validated before use.
  */
 import type { BookingCallbackInput, BookingProvider } from '@quill/types';
+import { serverApiUrl } from './api-url';
 import type { CalendlyWidgetPrefill } from './booking-prefill';
 
 export const CALENDLY_SCRIPT_SRC = 'https://assets.calendly.com/assets/external/widget.js';
@@ -228,9 +229,11 @@ export function attachBookingMessageListener(
   return () => window.removeEventListener('message', listener);
 }
 
-// Same base-URL resolution as apps/web/lib/api.ts — NEXT_PUBLIC_* is inlined
-// client-side and readable server-side, so this helper works from either.
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
+// Same base-URL resolution as apps/web/lib/api.ts. This module runs from BOTH
+// sides, and each gets the right answer: on the server `API_URL` resolves from
+// the per-environment runtime env, and in the browser it is absent so the
+// inlined public host is used — which is the only one a browser could reach.
+const API_URL = serverApiUrl;
 
 /**
  * Report a booked meeting to the public API (`bookingCallbackSchema` payload)
