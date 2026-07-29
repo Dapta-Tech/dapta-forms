@@ -135,7 +135,7 @@ async function AnalyticsData({
     throw e;
   }
 
-  const hasActivity = a.views + a.starts + a.submissions + a.partialSubmits > 0;
+  const hasActivity = a.views + a.starts + a.submissions + a.partialSubmits + a.bookings > 0;
   if (!hasActivity) {
     // A filtered range with no activity is NOT the same as a form nobody has
     // ever opened — telling an owner with 500 responses "once people open your
@@ -167,13 +167,20 @@ async function AnalyticsData({
       value: a.timeToComplete == null ? '—' : formatDuration(a.timeToComplete, m.seconds),
     },
     { label: m.metricPartials, value: String(a.partialSubmits) },
+    // Only when the form actually converts through a meeting: an eternal "0"
+    // on every plain form would read as a broken metric, not an absent feature.
+    ...(a.bookings > 0 ? [{ label: m.metricBookings, value: String(a.bookings) }] : []),
   ];
 
   const maxViews = Math.max(1, ...a.dropoff.map((r) => r.views));
 
   return (
     <div className="flex flex-col gap-8">
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+      <div
+        className={`grid grid-cols-2 gap-3 sm:grid-cols-3 ${
+          cards.length === 7 ? 'lg:grid-cols-7' : 'lg:grid-cols-6'
+        }`}
+      >
         {cards.map((c) => (
           <div key={c.label} className="rounded-lg border border-border bg-card p-4">
             <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{c.label}</div>
@@ -203,13 +210,17 @@ async function AnalyticsData({
 
       <section>
         <h2 className="text-lg font-semibold">{m.dropoffTitle}</h2>
-        <p className="mb-3 text-sm text-muted-foreground">{m.dropoffSubtitle}</p>
+        <p className="mb-3 text-sm text-muted-foreground">
+          {a.dropoffMode === 'answered' ? m.dropoffSubtitleAnswered : m.dropoffSubtitle}
+        </p>
         <div className="overflow-hidden rounded-lg border border-border bg-card">
           <table className="w-full border-collapse text-sm">
             <thead>
               <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
                 <th className="px-4 py-3 font-medium">{m.colStep}</th>
-                <th className="w-[45%] px-4 py-3 font-medium">{m.colViews}</th>
+                <th className="w-[45%] px-4 py-3 font-medium">
+                  {a.dropoffMode === 'answered' ? m.colAnswered : m.colViews}
+                </th>
                 <th className="px-4 py-3 text-right font-medium">{m.colDropoff}</th>
               </tr>
             </thead>

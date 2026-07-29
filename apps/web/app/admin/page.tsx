@@ -31,7 +31,6 @@ export default async function AdminHome() {
   // The dashboard's shareable link points at the most recently updated form.
   const latest = [...forms].sort((a, b) => b.updatedAt - a.updatedAt)[0];
   const publicUrl = latest ? `/${me.accountCode}/${me.handle ?? 'me'}/${latest.slug}` : null;
-  const brandingHref = latest ? `/admin/forms/${latest.id}/edit` : '/admin/forms';
 
   const firstName = me.displayName?.split(' ')[0];
   const createLabels = {
@@ -41,6 +40,11 @@ export default async function AdminHome() {
     namePlaceholder: messages.forms.namePlaceholder,
     nameRequired: messages.forms.nameRequired,
     cancel: messages.forms.cancel,
+    layoutLabel: messages.forms.layoutLabel,
+    layoutSlides: messages.forms.layoutSlides,
+    layoutSlidesDesc: messages.forms.layoutSlidesDesc,
+    layoutVertical: messages.forms.layoutVertical,
+    layoutVerticalDesc: messages.forms.layoutVerticalDesc,
   };
 
   return (
@@ -65,7 +69,7 @@ export default async function AdminHome() {
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <CreateForm labels={createLabels} variant="card" cardTitle={h.createForm} cardDesc={h.createFormDesc} />
-        <Shortcut href={brandingHref} icon="pi-palette" title={h.branding} desc={h.brandingDesc} />
+        <Shortcut href="/admin/branding" icon="pi-palette" title={h.branding} desc={h.brandingDesc} />
         <Shortcut href="/admin/integrations" icon="pi-link" title={h.integrations} desc={h.integrationsDesc} />
         <Shortcut href="/admin/analytics" icon="pi-chart-bar" title={h.analytics} desc={h.analyticsDesc} />
       </div>

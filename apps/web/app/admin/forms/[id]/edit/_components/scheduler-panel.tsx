@@ -7,6 +7,7 @@ import type { CalendlyEventType } from '@/lib/admin-api';
 import { Select } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { buttonVariants } from '@/components/ui/button';
+import { ProviderLogo } from '@/components/ui/provider-logo';
 import { cn } from '@/lib/cn';
 import { Field } from './fields';
 import { loadCalendlyEventTypesAction } from './scheduler-actions';
@@ -93,7 +94,11 @@ export function SchedulerPanel({
 
   return (
     <section className="flex flex-col gap-3 border-t border-border pt-4" data-testid="scheduler-panel">
-      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+      {/* The mark, not a generic calendar glyph: this section books through
+          Calendly specifically, and every other surface that says so now shows
+          the same logo. */}
+      <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        <ProviderLogo provider="calendly" size={13} />
         {s.schedulerSection}
       </p>
       <p className="text-xs text-muted-foreground">{s.schedulerHint}</p>

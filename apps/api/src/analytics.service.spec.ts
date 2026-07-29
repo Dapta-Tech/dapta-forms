@@ -144,14 +144,18 @@ describe('P0 metric-definition fixes', () => {
   const ev = (sessionId: string, type: string, stepIndex: number | null, at: number) =>
     recordFormEvent(db, { formId, sessionId, type, stepIndex, now: at });
 
-  it('Starts come from step_view idx 0, so a cover-less session (no `start` event) counts', async () => {
-    // A cover-less form never emits the cover-CTA `start` event; the old code
-    // counted `start` and reported 0 starts. These 3 sessions reach Q1 with NO
-    // `start` event and MUST count.
-    for (const s of ['nocover-1', 'nocover-2', 'nocover-3']) await ev(s, 'step_view', 0, NOW);
+  it('Starts count sessions that STARTED ANSWERING (start OR step_complete)', async () => {
+    // A cover-less form never emits the cover-CTA `start` event — but its
+    // respondents DO answer questions. These 3 sessions each completed Q1 with
+    // NO `start` event and MUST count. A 4th session merely SAW Q1 (step_view
+    // idx 0, the previous definition) and must NOT count — on a cover-less
+    // form the first question renders on mount, so counting sight made
+    // Starts ≈ Views.
+    for (const s of ['nocover-1', 'nocover-2', 'nocover-3']) await ev(s, 'step_complete', 0, NOW);
+    await ev('looker', 'step_view', 0, NOW);
 
     const a = (await svc.funnel(accountId, formId, {}))!;
-    expect(a.starts).toBe(11); // 8 baseline + 3 cover-less (would stay 8 under old `start`-event count)
+    expect(a.starts).toBe(11); // 8 baseline `start` + 3 answered (NOT the looker)
     expect(a.completionRate).toBe(27.3); // 3 completed / 11 starts — non-zero, the P0 fix
     // Prove the added sessions truly have no `start` event backing them.
     const startEvents = await db.get<{ n: number | string }>(
@@ -210,13 +214,13 @@ describe('P0 metric-definition fixes', () => {
     // window (each has a 'view'), but only one ever recorded reaching Q1.
     const T = NOW + 3_000_000;
     await ev('clamp-a', 'view', null, T);
-    await ev('clamp-a', 'step_view', 0, T); // clamp-a's start beacon landed
+    await ev('clamp-a', 'step_complete', 0, T); // clamp-a's start beacon landed
     await ev('clamp-b', 'view', null, T); // clamp-b's start beacon was lost
     await insertSubmission({ session: 'clamp-a', data: {}, score: 0, startedAt: T - 5_000, completedAt: T });
     await insertSubmission({ session: 'clamp-b', data: {}, score: 0, startedAt: T - 5_000, completedAt: T });
 
     const a = (await svc.funnel(accountId, formId, { from: T - 1, to: T + 1 }))!;
-    expect(a.starts).toBe(1); // only clamp-a has a step_view idx0 row
+    expect(a.starts).toBe(1); // only clamp-a has a start signal (step_complete)
     expect(a.submissions).toBe(2); // both are in-cohort (both have a 'view') and both completed
     expect(a.completionRate).toBe(100); // raw ratio would be 200%
     expect(a.trends.every((p) => p.completionRate == null || p.completionRate <= 100)).toBe(true);
@@ -331,7 +335,7 @@ describe('P0 metric-definition fixes', () => {
     // it in the SAME day.
     const midnight = Math.floor((NOW + 20 * DAY) / DAY) * DAY;
     await ev('midnight1', 'view', null, midnight - 5_000); // 5s before midnight
-    await ev('midnight1', 'step_view', 0, midnight + 5_000); // 5s after midnight
+    await ev('midnight1', 'step_complete', 0, midnight + 5_000); // 5s after midnight
     await insertSubmission({
       session: 'midnight1',
       data: {},

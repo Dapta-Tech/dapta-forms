@@ -10,6 +10,7 @@ import {
   interpolate,
   resolveStepDisplay,
   runtimeSteps,
+  emailSourceFor,
   isMultiSelect,
   isInputlessStep,
   partialSubmitKey,
@@ -17,6 +18,12 @@ import {
   nameFields,
   isSafeHttpUrl,
   isSafeImageUrl,
+  isImageIcon,
+  optionInitials,
+  resolveOptionIcon,
+  resolveOptionLayout,
+  showBanner,
+  showClientLogos,
   operatorsForFieldType,
   conditionsContradict,
   conditionsNarrow,
@@ -30,6 +37,8 @@ import {
   sanitizeStepKey,
   resolveQuestion,
   resolveEnding,
+  resolveFormLayout,
+  FORM_LAYOUTS,
   type FormConfig,
   type FormStep,
   type FormOutcome,
@@ -732,6 +741,159 @@ describe('URL safety guards (XSS)', () => {
     expect(isSafeImageUrl('javascript:alert(1)')).toBe(false);
     expect(isSafeImageUrl('vbscript:msgbox(1)')).toBe(false);
     expect(isSafeImageUrl('data:text/html,<script>alert(1)</script>')).toBe(false);
+  });
+});
+
+describe('cover presentation toggles', () => {
+  it('showBanner needs banner text before anything else', () => {
+    expect(showBanner(undefined, true)).toBe(false);
+    expect(showBanner(null, true)).toBe(false);
+    expect(showBanner({}, true)).toBe(false);
+    expect(showBanner({ bannerText: '' }, true)).toBe(false);
+    expect(showBanner({ bannerScope: 'form' }, false)).toBe(false);
+  });
+
+  it("showBanner defaults to every screen — a config saved before the toggle can't lose its banner", () => {
+    const legacy = { bannerText: 'Limited spots' };
+    expect(showBanner(legacy, true)).toBe(true);
+    expect(showBanner(legacy, false)).toBe(true);
+  });
+
+  it("showBanner scoped to 'cover' hides it on every other screen", () => {
+    const scoped = { bannerText: 'Limited spots', bannerScope: 'cover' as const };
+    expect(showBanner(scoped, true)).toBe(true);
+    expect(showBanner(scoped, false)).toBe(false);
+  });
+
+  it("showBanner scoped to 'form' shows it everywhere", () => {
+    const scoped = { bannerText: 'Limited spots', bannerScope: 'form' as const };
+    expect(showBanner(scoped, true)).toBe(true);
+    expect(showBanner(scoped, false)).toBe(true);
+  });
+
+  it('showClientLogos hides the marquee only on an explicit false', () => {
+    expect(showClientLogos(undefined)).toBe(true);
+    expect(showClientLogos(null)).toBe(true);
+    expect(showClientLogos({})).toBe(true);
+    expect(showClientLogos({ showClientLogos: true })).toBe(true);
+    expect(showClientLogos({ showClientLogos: false })).toBe(false);
+  });
+
+  it('showClientLogos off keeps the logos in the config — it hides, never deletes', () => {
+    const cover = { clientLogos: [{ name: 'Acme' }], showClientLogos: false };
+    expect(showClientLogos(cover)).toBe(false);
+    expect(cover.clientLogos).toHaveLength(1);
+  });
+});
+
+describe('choice option presentation', () => {
+  it('resolveOptionLayout defaults to a list', () => {
+    expect(resolveOptionLayout(undefined)).toBe('list');
+    expect(resolveOptionLayout(null)).toBe('list');
+    expect(resolveOptionLayout({})).toBe('list');
+    expect(resolveOptionLayout({ showIcons: false })).toBe('list');
+  });
+
+  it("resolveOptionLayout still honours the deprecated showIcons, so a pre-optionLayout config keeps its grid", () => {
+    expect(resolveOptionLayout({ showIcons: true })).toBe('cards');
+  });
+
+  it('resolveOptionLayout lets optionLayout win over showIcons', () => {
+    expect(resolveOptionLayout({ optionLayout: 'list', showIcons: true })).toBe('list');
+    expect(resolveOptionLayout({ optionLayout: 'cards', showIcons: false })).toBe('cards');
+  });
+
+  it('isImageIcon spots image references', () => {
+    expect(isImageIcon('https://cdn.example.com/logo.png')).toBe(true);
+    expect(isImageIcon('http://example.com/a.svg')).toBe(true);
+    expect(isImageIcon('//cdn.example.com/logo.png')).toBe(true);
+    expect(isImageIcon('/assets/logo.svg')).toBe(true);
+    expect(isImageIcon('data:image/png;base64,iVBORw0KGgo=')).toBe(true);
+    expect(isImageIcon('  HTTPS://Example.com/a.png ')).toBe(true);
+  });
+
+  it('isImageIcon treats emoji, letters and empties as glyphs', () => {
+    expect(isImageIcon('🚀')).toBe(false);
+    expect(isImageIcon('😍')).toBe(false);
+    expect(isImageIcon('A')).toBe(false);
+    expect(isImageIcon('')).toBe(false);
+    expect(isImageIcon(null)).toBe(false);
+    expect(isImageIcon(undefined)).toBe(false);
+  });
+
+  it('isImageIcon does not classify script protocols as images — they never reach an <img src>', () => {
+    expect(isImageIcon('javascript:alert(1)')).toBe(false);
+    expect(isImageIcon('vbscript:msgbox(1)')).toBe(false);
+    expect(isImageIcon('data:text/html,<script>alert(1)</script>')).toBe(false);
+  });
+
+  it('an icon that looks like an image must also be a safe one', () => {
+    // The renderer requires BOTH; this pins the pair that guards the src.
+    const hostile = 'data:text/html,<script>alert(1)</script>';
+    expect(isImageIcon(hostile) && isSafeImageUrl(hostile)).toBe(false);
+    const ok = 'https://cdn.example.com/logo.png';
+    expect(isImageIcon(ok) && isSafeImageUrl(ok)).toBe(true);
+  });
+
+  it('optionInitials takes up to two letters from the first two words', () => {
+    expect(optionInitials('Hubspot')).toBe('H');
+    expect(optionInitials('HubSpot Sales')).toBe('HS');
+    expect(optionInitials('one two three')).toBe('OT');
+    expect(optionInitials('  spaced   out  ')).toBe('SO');
+    expect(optionInitials('')).toBe('');
+    expect(optionInitials('   ')).toBe('');
+  });
+});
+
+describe('resolveOptionIcon — one answer for every surface', () => {
+  const IMG = 'https://cdn.example.com/logo.png';
+
+  it('draws an image on cards', () => {
+    expect(resolveOptionIcon({ icon: IMG, label: 'Hubspot' }, 'cards')).toEqual({
+      kind: 'image',
+      src: IMG,
+    });
+  });
+
+  it('degrades an image to initials on a list — logos are card-only', () => {
+    expect(resolveOptionIcon({ icon: IMG, label: 'Hubspot' }, 'list')).toEqual({
+      kind: 'glyph',
+      text: 'H',
+    });
+  });
+
+  it('an unsafe image never becomes an <img>, on either layout', () => {
+    const hostile = 'data:text/html,<script>alert(1)</script>';
+    // `isImageIcon` already rejects this, so it is treated as a glyph verbatim.
+    expect(resolveOptionIcon({ icon: hostile, label: 'X' }, 'cards').kind).toBe('glyph');
+  });
+
+  it('keeps an emoji or letters as a glyph on both layouts', () => {
+    for (const layout of ['cards', 'list'] as const) {
+      expect(resolveOptionIcon({ icon: '😍', label: 'Love it' }, layout)).toEqual({
+        kind: 'glyph',
+        text: '😍',
+      });
+      expect(resolveOptionIcon({ icon: 'HS', label: 'Hubspot' }, layout)).toEqual({
+        kind: 'glyph',
+        text: 'HS',
+      });
+    }
+  });
+
+  it('falls back to the label initials when there is no icon', () => {
+    expect(resolveOptionIcon({ label: 'Team lead' }, 'cards')).toEqual({
+      kind: 'glyph',
+      text: 'TL',
+    });
+    expect(resolveOptionIcon({ icon: null, label: 'Founder' }, 'list')).toEqual({
+      kind: 'glyph',
+      text: 'F',
+    });
+    expect(resolveOptionIcon({ icon: '   ', label: 'Founder' }, 'cards')).toEqual({
+      kind: 'glyph',
+      text: 'F',
+    });
   });
 });
 
@@ -1636,5 +1798,57 @@ describe('scheduler step (V6)', () => {
     };
     expect(runtimeSteps(cfg, { pick: 'a' }).map((s) => s.key)).toEqual(['pick']);
     expect(runtimeSteps(cfg, { pick: 'b' }).map((s) => s.key)).toEqual(['pick', 'later']);
+  });
+});
+
+describe('resolveFormLayout (vertical layout — back-compat default)', () => {
+  it('defaults to slides when the field is absent (every legacy config)', () => {
+    expect(resolveFormLayout({ version: 1, steps: [] } as FormConfig)).toBe('slides');
+  });
+
+  it('defaults to slides for a null/undefined config', () => {
+    expect(resolveFormLayout(null)).toBe('slides');
+    expect(resolveFormLayout(undefined)).toBe('slides');
+  });
+
+  it('returns the configured layout when set', () => {
+    expect(resolveFormLayout({ version: 1, steps: [], layout: 'vertical' } as FormConfig)).toBe(
+      'vertical',
+    );
+    expect(resolveFormLayout({ version: 1, steps: [], layout: 'slides' } as FormConfig)).toBe(
+      'slides',
+    );
+  });
+
+  it('FORM_LAYOUTS lists exactly the two supported layouts', () => {
+    expect(FORM_LAYOUTS).toEqual(['slides', 'vertical']);
+  });
+});
+
+describe('emailSourceFor', () => {
+  const cfg = (...steps: FormStep[]): FormConfig => ({ version: 1, steps });
+
+  it('returns null when the form has nothing HubSpot could key a contact on', () => {
+    expect(emailSourceFor(cfg(step({ key: 'name', type: 'text' }), step({ key: 'budget', type: 'slider' })))).toBeNull();
+  });
+
+  it('finds an email question', () => {
+    const config = cfg(step({ key: 'name', type: 'text' }), step({ key: 'work_email', type: 'email' }));
+    expect(emailSourceFor(config)).toEqual({ kind: 'question', key: 'work_email' });
+  });
+
+  it('counts a HIDDEN email step — it is never drawn but still captures ?email=', () => {
+    const config = cfg(step({ key: 'email', type: 'email', hidden: true }));
+    expect(emailSourceFor(config)).toEqual({ kind: 'question', key: 'email' });
+  });
+
+  it('falls back to a scheduler, since Calendly always collects an invitee email', () => {
+    const config = cfg(step({ key: 'name', type: 'text' }), step({ key: 'book', type: 'scheduler' }));
+    expect(emailSourceFor(config)).toEqual({ kind: 'scheduler', key: 'book' });
+  });
+
+  it('prefers the question over the scheduler — it does not depend on anyone booking', () => {
+    const config = cfg(step({ key: 'book', type: 'scheduler' }), step({ key: 'email', type: 'email' }));
+    expect(emailSourceFor(config)).toEqual({ kind: 'question', key: 'email' });
   });
 });

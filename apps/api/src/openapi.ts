@@ -79,6 +79,49 @@ export const openapiSpec = {
         responses: { '200': { description: 'Published (no-op without a draft)' } },
       },
     },
+    '/v1/branding': {
+      get: {
+        summary: "The workspace brand kit (host)",
+        description:
+          "The account's brand kit (logo, client logos, colors, font, radius, button style) or { config: null } when none is saved. Forms snapshot the kit at creation and on an explicit apply — it is never resolved live at render.",
+        security: [{ hostSession: [] }],
+        responses: { '200': { description: '{ config, updatedAt }' } },
+      },
+      put: {
+        summary: 'Save the workspace brand kit (host, admin/owner)',
+        description:
+          'Replaces the stored kit. Body is the brand-kit object; every field optional — absent fields leave the corresponding axis to each form.',
+        security: [{ hostSession: [] }],
+        responses: {
+          '200': { description: '{ config, updatedAt }' },
+          '403': { description: 'Requires an admin or owner' },
+        },
+      },
+    },
+    '/v1/branding/apply': {
+      post: {
+        summary: 'Apply the brand kit to forms (host, admin/owner)',
+        description:
+          "Body { formIds: string[] }. Snapshot-merges the kit's fields into each form's live config.branding (and a pending draft, so publishing cannot silently undo the brand). The previous branding is kept in a per-form backup, making the apply reversible via /v1/branding/revert. Affects PUBLISHED forms immediately.",
+        security: [{ hostSession: [] }],
+        responses: {
+          '200': { description: '{ applied: string[] }' },
+          '403': { description: 'Requires an admin or owner' },
+        },
+      },
+    },
+    '/v1/branding/revert': {
+      post: {
+        summary: 'Undo the last brand-kit apply on forms (host, admin/owner)',
+        description:
+          'Body { formIds: string[] }. Restores the kit-managed branding fields from each form\'s backup (one level of undo). Forms without a pending apply are skipped.',
+        security: [{ hostSession: [] }],
+        responses: {
+          '200': { description: '{ reverted: string[] }' },
+          '403': { description: 'Requires an admin or owner' },
+        },
+      },
+    },
     '/v1/notifications': {
       get: {
         summary: "List the account's submission-email settings (host, admin/owner)",

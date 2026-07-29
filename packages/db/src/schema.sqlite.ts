@@ -49,6 +49,8 @@ export const member = sqliteTable(
     status: text('status').notNull().default('active'),
     avatarUrl: text('avatar_url'),
     locale: text('locale'),
+    /** The public member page, or NULL when there is none (see 0008). */
+    profile: text('profile'),
     createdAt: integer('created_at').notNull(),
   },
   (t) => ({
@@ -139,6 +141,10 @@ export const form = sqliteTable(
     draftConfig: text('draft_config'),
     /** Epoch-ms of the last publish; NULL = never published via the draft flow. */
     publishedAt: integer('published_at'),
+    /** The form's `branding` (live + draft, TEXT JSON) before the last brand-kit apply; NULL = nothing to revert. */
+    brandBackup: text('brand_backup'),
+    /** Epoch-ms of the last brand-kit apply; NULL when never applied or reverted. */
+    brandAppliedAt: integer('brand_applied_at'),
     createdAt: integer('created_at').notNull(),
     updatedAt: integer('updated_at').notNull(),
   },
@@ -146,6 +152,18 @@ export const form = sqliteTable(
     formAccountSlugUq: uniqueIndex('form_account_slug_uq').on(t.accountId, t.slug),
   }),
 );
+
+/**
+ * Workspace brand kit — one row per account. `config` (TEXT JSON) is the brand
+ * kit blob (validated by `brandKitSchema` in @quill/types). Forms snapshot it at
+ * creation / on explicit apply; the public renderer never reads this table.
+ */
+export const accountBranding = sqliteTable('account_branding', {
+  accountId: text('account_id').primaryKey(),
+  config: text('config').notNull(),
+  createdAt: integer('created_at').notNull(),
+  updatedAt: integer('updated_at').notNull(),
+});
 
 /** One persisted submission (partial or complete) per session. */
 export const submission = sqliteTable(

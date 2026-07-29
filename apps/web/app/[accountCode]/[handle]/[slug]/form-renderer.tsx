@@ -20,18 +20,18 @@ import {
   computeScore,
   partialSubmitKey,
   revealAfterKey,
-  interpolate,
   nameFields,
   isMultiSelect,
   isSafeHttpUrl,
+  showClientLogos,
   type Answers,
   type AnswerValue,
   type FormStep,
   type FormOutcome,
 } from '@quill/engine';
-import { onAccent, getMessages } from '@quill/shared';
-import type { FormConfig, OutcomeBooking } from '@quill/types';
-import { signupHref } from '@/lib/growth';
+import { getMessages } from '@quill/shared';
+import type { FormConfig } from '@quill/types';
+import { formDesignProps } from '@/lib/form-design';
 import { FormLogo } from '@/components/public/form-logo';
 import { FormProgress } from '@/components/public/form-progress';
 import { ClientLogosMarquee } from '@/components/public/client-logos-marquee';
@@ -41,123 +41,18 @@ import { RevealScreen } from '@/components/public/reveal-screen';
 import { warmBookingEmbed, type BookingScheduledDetails } from '@/lib/booking-embed';
 import { resolveSchedulerPrefill } from '@/lib/booking-prefill';
 import { submitFormAction, recordEventAction, recordBookingAction } from './actions';
+import {
+  useSessionId,
+  captureUtm,
+  captureDefaults,
+  capturePrefill,
+  schedulerToBooking,
+  PhaseShell,
+  DoneScreen,
+} from './renderer-shared';
 import './public-form.css';
 
 type Phase = 'cover' | 'steps' | 'reveal' | 'submitting' | 'booking' | 'done';
-
-function useSessionId(key: string): string {
-  const [id] = useState(() => {
-    if (typeof window === 'undefined') return '';
-    const existing = window.sessionStorage.getItem(key);
-    if (existing) return existing;
-    const fresh = crypto.randomUUID();
-    window.sessionStorage.setItem(key, fresh);
-    return fresh;
-  });
-  return id;
-}
-
-/** Read `utm_*` query params from the current URL into a flat string map. */
-function captureUtm(): Record<string, string> {
-  if (typeof window === 'undefined') return {};
-  const params = new URLSearchParams(window.location.search);
-  const utm: Record<string, string> = {};
-  for (const [k, v] of params.entries()) {
-    if (k.toLowerCase().startsWith('utm_') && v) utm[k] = v;
-  }
-  return utm;
-}
-
-/** A query value can never be longer than this once seeded (defense-in-depth). */
-const PREFILL_MAX_LEN = 512;
-
-/**
- * Map a `scheduler` step's config to the booking shape the shared BookingScreen
- * embeds, or `null` when no event type has been picked yet (renders a fallback).
- * "Show event details? → No" becomes Calendly's `hide_event_type_details=1`.
- * The URL is re-guarded to http(s) — it flows into an embed (XSS defense).
- */
-function schedulerToBooking(
-  scheduler: NonNullable<FormStep['scheduler']>,
-  customAnswers: Record<string, string> = {},
-): OutcomeBooking | null {
-  const url = scheduler.url?.trim();
-  if (!url || !isSafeHttpUrl(url)) return null;
-  const provider = scheduler.provider ?? 'calendly';
-  let finalUrl = url;
-  if (provider === 'calendly') {
-    try {
-      const u = new URL(url);
-      if (scheduler.hideEventDetails) u.searchParams.set('hide_event_type_details', '1');
-      // The event type's custom questions are prefilled by their positional id,
-      // so they ride the URL as-is (the embed builder preserves existing query
-      // params). Built-in name/email travel through the overlaid answers.
-      for (const [field, value] of Object.entries(customAnswers)) {
-        if (value) u.searchParams.set(field, value);
-      }
-      finalUrl = u.toString();
-    } catch {
-      /* keep the original url */
-    }
-  }
-  return { provider, url: finalUrl, prefill: scheduler.prefill !== false };
-}
-
-/**
- * URL-parameter prefill (V4-13): read the query string and seed the answer for
- * each param whose key matches a DECLARED field — a step's own key, or a `name`
- * step's subfields (`nameFields`). Security-scoped by design:
- *  - only keys that correspond to a declared step field are ever read (an
- *    arbitrary `?anything=` is ignored — never trust the URL to name new fields);
- *  - `utm_*` is captured separately (`captureUtm`) and skipped here;
- *  - values are treated as PLAIN answer strings, capped in length, never eval'd
- *    or interpreted as markup — and the engine re-validates every answer on
- *    submit, so a bad value can only be rejected, never trusted.
- * A prefilled HIDDEN step carries its answer into the submission though it is
- * never shown; a prefilled VISIBLE step simply renders pre-filled.
- */
-function capturePrefill(steps: FormStep[]): Answers {
-  if (typeof window === 'undefined') return {};
-  const declared = new Set<string>();
-  for (const step of steps) {
-    if (step.type === 'message') continue; // message steps capture no answer
-    for (const key of nameFields(step)) declared.add(key);
-  }
-  if (declared.size === 0) return {};
-  const params = new URLSearchParams(window.location.search);
-  const seed: Answers = {};
-  for (const [key, value] of params.entries()) {
-    if (key.toLowerCase().startsWith('utm_')) continue;
-    if (!declared.has(key)) continue;
-    if (typeof value !== 'string' || value === '') continue;
-    seed[key] = value.slice(0, PREFILL_MAX_LEN);
-  }
-  return seed;
-}
-
-/**
- * Per-phase page shell. The promo banner (`cover.bannerText`) renders ONCE here
- * as the first child of `.pf`, so it is a full-width strip pinned to the top of
- * the viewport in EVERY phase; everything else lives in `.pf__main`, which owns
- * the remaining height. Desktop's per-phase vertical centering is applied to
- * `.pf__main` (public-form.css), so centering the content group can never drag
- * the banner toward the middle of the page.
- */
-function PhaseShell({
-  bannerText,
-  children,
-  ...rootProps
-}: {
-  bannerText?: string | null;
-  children: React.ReactNode;
-} & React.HTMLAttributes<HTMLDivElement>) {
-  return (
-    <div {...rootProps}>
-      {bannerText ? <div className="pf__banner">{bannerText}</div> : null}
-      <div className="pf__main">{children}</div>
-    </div>
-  );
-}
 
 export function FormRenderer({
   accountCode,
@@ -187,6 +82,7 @@ export function FormRenderer({
   const utmRef = useRef<Record<string, string>>({});
   const redirected = useRef(false); // a deferred redirect fires exactly once
   const viewTracked = useRef(false);
+  const startSent = useRef(false); // one `start` per session, whichever path emits it
   const partialSent = useRef(false);
   const advancing = useRef(false);
   const submitAfterReveal = useRef(false);
@@ -230,11 +126,10 @@ export function FormRenderer({
   // migration of every published form.
   const revealKey = useMemo(() => revealAfterKey(engineConfig), [engineConfig]);
 
-  // Accent branding (only override the local default when a color is configured).
-  const primary = config.branding?.primaryColor ?? null;
-  const accentVars = primary
-    ? ({ ['--pf-primary']: primary, ['--pf-primary-contrast']: onAccent(primary) } as React.CSSProperties)
-    : undefined;
+  // The form's whole look — colors, typeface, shape, layout, motion — resolved
+  // once and applied by `PhaseShell`. Nothing here overrides a token the author
+  // did not set, so a form with no branding renders exactly as it always did.
+  const design = useMemo(() => formDesignProps(config.branding), [config.branding]);
 
   const err = (code: string) => m.errors[code as keyof typeof m.errors] ?? m.errors.required;
 
@@ -262,7 +157,9 @@ export function FormRenderer({
   // ride their seeded answer into the submission; visible steps render filled.
   useEffect(() => {
     utmRef.current = captureUtm();
-    const seed = capturePrefill(engineConfig.steps);
+    // Defaults first, then the URL on top: a link that names a value must beat
+    // a default the author configured earlier.
+    const seed = { ...captureDefaults(engineConfig.steps), ...capturePrefill(engineConfig.steps) };
     if (Object.keys(seed).length > 0) setAnswers((a) => ({ ...seed, ...a }));
   }, []);
   useEffect(() => {
@@ -384,6 +281,14 @@ export function FormRenderer({
         const completedIdx = nextSteps.findIndex((s) => s.key === completed.key);
         const isLast = completedIdx >= 0 ? completedIdx >= nextSteps.length - 1 : index >= nextSteps.length - 1;
 
+        // A cover-less form has no Start CTA, so the first completed answer IS
+        // the start signal ("started answering"). The metric already counts
+        // `step_complete` sessions; this keeps the event stream itself
+        // consistent across form shapes. Cover forms emit it from `start()`.
+        if (!cover && !startSent.current) {
+          startSent.current = true;
+          track('start');
+        }
         track('step_complete', index, completed.key);
 
         // Partial submit once past the configured lead-capture threshold.
@@ -498,6 +403,7 @@ export function FormRenderer({
   }
 
   function start() {
+    startSent.current = true;
     track('start');
     lastStepViewKey.current = null;
     setPhase('steps');
@@ -552,39 +458,21 @@ export function FormRenderer({
     const outcome = resolveOutcome(engineConfig, done.score, answersRef.current);
     // V5-B1: outcome copy → form-level ending copy → the built-in localized copy.
     const ending = resolveEnding(engineConfig, outcome);
-    const cta = signupHref('confirmation', accountCode);
     return (
-      <PhaseShell className="pf pf--done" style={accentVars} bannerText={cover?.bannerText}>
-        <div className="pf-done__inner pf-animate">
-          <div className="pf-done__check" aria-hidden="true">
-            ✓
-          </div>
-          {/* The heading interpolates too. It did not, so a `[firstname]` typed
-              into a range's heading reached the respondent as literal text —
-              while the body right beneath it resolved correctly. */}
-          <h1 className="pf-done__title">
-            {ending.headline ? interpolate(ending.headline, answersRef.current) : m.thankYouTitle}
-          </h1>
-          <p className="pf-done__body">
-            {ending.body ? interpolate(ending.body, answersRef.current) : m.thankYouBody}
-          </p>
-          {cta ? (
-            <>
-              <p className="pf-done__cta-question">{m.ctaQuestion}</p>
-              <a className="pf-done__cta" href={cta} target="_blank" rel="noopener noreferrer">
-                {m.ctaAction}
-                <span className="sr-only"> {m.newTab}</span>
-              </a>
-            </>
-          ) : null}
-        </div>
-      </PhaseShell>
+<DoneScreen
+        ending={ending}
+        answers={answersRef.current}
+        m={m}
+        accountCode={accountCode}
+        cover={cover}
+        design={design}
+      />
     );
   }
 
   if (phase === 'booking' && booking?.outcome.booking) {
     return (
-      <PhaseShell className="pf pf--booking-page" style={accentVars} bannerText={cover?.bannerText}>
+      <PhaseShell className="pf pf--booking-page" design={design} cover={cover}>
         <BookingScreen
           booking={booking.outcome.booking}
           answers={answersRef.current}
@@ -600,10 +488,10 @@ export function FormRenderer({
     return (
       <PhaseShell
         className="pf pf--reveal"
-        style={accentVars}
+        design={design}
         role="status"
         aria-live="polite"
-        bannerText={cover?.bannerText}
+        cover={cover}
       >
         <RevealScreen
           reveal={config.reveal}
@@ -619,10 +507,10 @@ export function FormRenderer({
     return (
       <PhaseShell
         className="pf pf--reveal"
-        style={accentVars}
+        design={design}
         role="status"
         aria-live="polite"
-        bannerText={cover?.bannerText}
+        cover={cover}
       >
         <div className="pf-reveal__inner">
           <div className="pf-reveal__spinner" aria-hidden="true" />
@@ -634,14 +522,15 @@ export function FormRenderer({
 
   if (phase === 'cover' && cover) {
     const logo = cover.logo ?? config.branding?.logo ?? null;
-    const logos = cover.clientLogos ?? config.branding?.clientLogos ?? [];
+    const logos = showClientLogos(cover) ? (cover.clientLogos ?? config.branding?.clientLogos ?? []) : [];
     return (
       <PhaseShell
         className="pf pf--cover"
-        style={accentVars}
+        design={design}
         onKeyDown={(e) => e.key === 'Enter' && start()}
         tabIndex={-1}
-        bannerText={cover.bannerText}
+        cover={cover}
+        isCover
       >
         <header className="pf__cover-header">
           <FormLogo src={logo} name={name} />
@@ -668,7 +557,7 @@ export function FormRenderer({
 
   if (!step) {
     return (
-      <PhaseShell className="pf" style={accentVars}>
+      <PhaseShell className="pf" design={design}>
         <div className="pf__body">
           <p className="pf__helper">{m.noSteps}</p>
         </div>
@@ -685,10 +574,10 @@ export function FormRenderer({
     return (
       <PhaseShell
         className="pf pf--reveal"
-        style={accentVars}
+        design={design}
         role="status"
         aria-live="polite"
-        bannerText={cover?.bannerText}
+        cover={cover}
       >
         <RevealScreen
           reveal={step.reveal ?? { enabled: true }}
@@ -726,7 +615,7 @@ export function FormRenderer({
       : null;
     const schedLogo = cover?.logo ?? config.branding?.logo ?? null;
     return (
-      <PhaseShell className="pf" style={accentVars} bannerText={cover?.bannerText}>
+      <PhaseShell className="pf" design={design} cover={cover}>
         <header className="pf__topbar">
           <div className="pf__topbar-inner">
             {index > 0 || cover ? (
@@ -739,7 +628,7 @@ export function FormRenderer({
             <FormLogo src={schedLogo} name={name} />
             <span className="pf__back pf__back--placeholder" />
           </div>
-          <FormProgress total={steps.length} currentIndex={index} locale={locale} />
+          <FormProgress total={steps.length} currentIndex={index} locale={locale} style={design.design.progressStyle} />
         </header>
         <div className="pf__body">
           <div className="pf__inner">
@@ -788,7 +677,7 @@ export function FormRenderer({
   const logo = cover?.logo ?? config.branding?.logo ?? null;
 
   return (
-    <PhaseShell className="pf" style={accentVars} onKeyDown={onKeyDown} bannerText={cover?.bannerText}>
+    <PhaseShell className="pf" design={design} onKeyDown={onKeyDown} cover={cover}>
       <header className="pf__topbar">
         <div className="pf__topbar-inner">
           {index > 0 || cover ? (
@@ -801,7 +690,7 @@ export function FormRenderer({
           <FormLogo src={logo} name={name} />
           <span className="pf__back pf__back--placeholder" />
         </div>
-        <FormProgress total={steps.length} currentIndex={index} locale={locale} />
+        <FormProgress total={steps.length} currentIndex={index} locale={locale} style={design.design.progressStyle} />
       </header>
 
       <div className="pf__body">

@@ -1,10 +1,13 @@
 'use client';
 
-import type { FormOption } from '@quill/engine';
+import { useState } from 'react';
+import type { FormOption, FormOptionLayout } from '@quill/engine';
 import { slugify } from '@quill/engine';
 import { Button } from '@/components/ui/button';
 import { HelpTip } from '@/components/ui/help-tip';
 import { TextField, NumberField } from './fields';
+import { IconPicker } from './icon-picker';
+import { OptionsImportModal } from './options-import-modal';
 import { SortableList, SortableRow } from './sortable';
 import type { EditorMessages } from './messages';
 
@@ -18,6 +21,8 @@ export function OptionsEditor({
   options,
   onChange,
   showPoints = true,
+  showIcon = false,
+  layout = 'list',
   m,
 }: {
   options: FormOption[];
@@ -28,9 +33,18 @@ export function OptionsEditor({
    * does nothing — and each remaining field gets the width back.
    */
   showPoints?: boolean;
+  /**
+   * Render the Icon field. Choice questions draw an icon in BOTH layouts (a
+   * list row shows an emoji or initials where the radio would be), so this
+   * tracks the question type, not the layout.
+   */
+  showIcon?: boolean;
+  /** Gates which icon kinds the picker offers — images are card-only. */
+  layout?: FormOptionLayout;
   m: EditorMessages['options'];
 }) {
   const ids = options.map((_, i) => `opt-${i}`);
+  const [importOpen, setImportOpen] = useState(false);
 
   function update(index: number, patch: Partial<FormOption>) {
     onChange(options.map((o, i) => (i === index ? { ...o, ...patch } : o)));
@@ -62,7 +76,11 @@ export function OptionsEditor({
             return (
               <SortableRow key={id} id={id}>
                 {({ handleProps }) => (
-                  <div className="flex items-end gap-2 rounded-md border border-border bg-background p-2">
+                  // Icon gets its OWN row rather than a fifth column: the panel
+                  // is ~420px, and squeezing label/value/icon/points side by
+                  // side clipped every header and cut the labels to 3 letters.
+                  <div className="flex flex-col gap-2 rounded-md border border-border bg-background p-2">
+                  <div className="flex items-end gap-2">
                     <button
                       type="button"
                       aria-label={m.title}
@@ -123,6 +141,22 @@ export function OptionsEditor({
                       <i aria-hidden className="pi pi-trash" style={{ fontSize: 13 }} />
                     </Button>
                   </div>
+                  {showIcon ? (
+                    <div className="flex min-w-0 flex-col gap-1 pl-7" data-testid={`option-icon-${index}`}>
+                      <span className="flex items-center gap-1 text-[11px] font-medium text-muted-foreground">
+                        {m.icon}
+                        <HelpTip text={m.iconHelp} label={m.icon} />
+                      </span>
+                      <IconPicker
+                        value={o.icon}
+                        label={o.label}
+                        layout={layout}
+                        onChange={(icon) => update(index, { icon })}
+                        m={m}
+                      />
+                    </div>
+                  ) : null}
+                  </div>
                 )}
               </SortableRow>
             );
@@ -134,11 +168,27 @@ export function OptionsEditor({
           {m.pointsHint}
         </p>
       ) : null}
-      <div>
+      <div className="flex flex-wrap gap-2">
         <Button variant="outline" size="sm" onClick={add}>
           <i aria-hidden className="pi pi-plus" style={{ fontSize: 11 }} /> {m.add}
         </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          data-testid="options-import-open"
+          onClick={() => setImportOpen(true)}
+        >
+          <i aria-hidden className="pi pi-file-import" style={{ fontSize: 11 }} /> {m.importer.open}
+        </Button>
       </div>
+      <OptionsImportModal
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+        options={options}
+        onApply={onChange}
+        scoringEnabled={showPoints}
+        m={m.importer}
+      />
     </div>
   );
 }

@@ -12,6 +12,7 @@ import { randomUUID } from 'node:crypto';
 import { sql, type Db } from './client';
 import type { CrudResult } from './crud';
 import { deriveUniqueHandle } from './short-links';
+import { getAccountByCode, parseJsonColumn } from './forms';
 
 /** Account-level roles, most-privileged first. */
 export const ACCOUNT_ROLES = ['owner', 'admin', 'member'] as const;
@@ -209,4 +210,251 @@ export async function removeMember(
   }
   await db.run(sql`DELETE FROM member WHERE account_id = ${accountId} AND id = ${memberId}`);
   return { ok: true, value: { id: memberId } };
+}
+
+/**
+ * Flip a member from `invited` to `active` the first time they resolve.
+ *
+ * Deliberately narrow: ONLY the invited → active transition. A `disabled`
+ * member logging in must stay disabled — reviving them would defeat the point
+ * of disabling — and an already-active member must not be rewritten on every
+ * request. The WHERE clause enforces both, so this is a no-op for everyone
+ * except the person whose invite just landed.
+ */
+export async function activateInvitedMember(
+  db: Db,
+  accountId: string,
+  memberId: string,
+): Promise<void> {
+  await db.run(
+    sql`UPDATE member SET status = 'active'
+        WHERE id = ${memberId} AND account_id = ${accountId} AND status = 'invited'`,
+  );
+}
+
+// --- Workspaces (the accounts one person belongs to) --------------------------
+
+/**
+ * Who is asking, independent of which account they are currently in.
+ *
+ * `externalId` is the identity provider's stable subject (the JWT `sub`) and is
+ * the right key when there is one. `email` is the fallback for the local dev
+ * provider, whose JIT members carry no external id — and it is also how an
+ * INVITE binds: an admin types an address, and whoever proves control of that
+ * address is that member. Both come from an already-authenticated principal;
+ * neither is ever read from the request.
+ */
+export interface MemberIdentity {
+  externalId: string | null;
+  email: string | null;
+}
+
+/** One account this person can act in. */
+export interface WorkspaceRow {
+  accountId: string;
+  accountCode: string;
+  accountName: string;
+  memberId: string;
+  role: AccountRole;
+  /** `invited` until they first enter it — the switcher marks these as pending. */
+  status: MemberStatus;
+}
+
+/**
+ * Read the identity of an already-resolved member, so the caller can look for
+ * the same person elsewhere. Returns null for a member that does not exist.
+ */
+export async function getMemberIdentity(
+  db: Db,
+  accountId: string,
+  memberId: string,
+): Promise<MemberIdentity | null> {
+  const r = await db.get<{ external_id: string | null; email: string | null }>(
+    sql`SELECT external_id, email FROM member WHERE id = ${memberId} AND account_id = ${accountId} LIMIT 1`,
+  );
+  if (!r) return null;
+  return { externalId: r.external_id ?? null, email: r.email ?? null };
+}
+
+/**
+ * Every account this person can enter — the ones they are in, plus the ones
+ * they have been invited to and not yet opened.
+ *
+ * The data model has always allowed this — uniqueness on `member` is per
+ * account, and `inviteMember` writes a row into the INVITING account — but
+ * nothing ever read it back. Login resolves one row and stops
+ * (`ORDER BY created_at LIMIT 1`), so an invited teammate signed in and landed
+ * in their own oldest account, and the invitation led nowhere at all. This is
+ * the query that was missing.
+ *
+ * `invited` rows ARE listed: an invitation you cannot see is an invitation that
+ * does not work, and entering one is what accepting it means. `disabled` rows
+ * never appear — a revoked membership must not be reachable by picking it out
+ * of a menu.
+ */
+export async function listWorkspacesForIdentity(
+  db: Db,
+  identity: MemberIdentity,
+): Promise<WorkspaceRow[]> {
+  const email = identity.email?.trim().toLowerCase() || null;
+  const externalId = identity.externalId || null;
+  if (!email && !externalId) return [];
+
+  // Match on EITHER key. A person can hold rows created by two different paths
+  // — an IAM-provisioned one carrying `external_id`, and an invite that only
+  // ever knew their address — and both are the same human.
+  const rows = await db.all<{
+    account_id: string;
+    code: string;
+    name: string;
+    member_id: string;
+    role: string;
+    status: string;
+  }>(
+    sql`SELECT a.id AS account_id, a.code, a.name, m.id AS member_id, m.role, m.status
+        FROM member m JOIN account a ON a.id = m.account_id
+        WHERE m.status IN ('active', 'invited')
+          AND (
+            (${externalId} IS NOT NULL AND m.external_id = ${externalId})
+            OR (${email} IS NOT NULL AND lower(m.email) = ${email})
+          )
+        ORDER BY a.name ASC, a.created_at ASC`,
+  );
+
+  // The same account can match on both keys (one row, two predicates) — and in
+  // principle a person could hold two member rows in one account. Collapse to
+  // one entry per account so the switcher never lists a workspace twice.
+  const seen = new Set<string>();
+  const out: WorkspaceRow[] = [];
+  for (const r of rows) {
+    if (seen.has(r.account_id)) continue;
+    seen.add(r.account_id);
+    out.push({
+      accountId: r.account_id,
+      accountCode: r.code,
+      accountName: r.name,
+      memberId: r.member_id,
+      role: (ACCOUNT_ROLES as readonly string[]).includes(r.role)
+        ? (r.role as AccountRole)
+        : 'member',
+      status: (MEMBER_STATUSES as readonly string[]).includes(r.status)
+        ? (r.status as MemberStatus)
+        : 'active',
+    });
+  }
+  return out;
+}
+
+/**
+ * Resolve this person's membership in one specific account, or null.
+ *
+ * This is the authorization check behind the workspace switch — the only thing
+ * standing between an account id someone asked for and another tenant's data.
+ * It re-derives membership from the database on every request and never trusts
+ * anything the request carried.
+ */
+export async function findMembership(
+  db: Db,
+  identity: MemberIdentity,
+  accountId: string,
+): Promise<WorkspaceRow | null> {
+  const all = await listWorkspacesForIdentity(db, identity);
+  return all.find((w) => w.accountId === accountId) ?? null;
+}
+
+// --- Public member page (the /[accountCode]/[handle] route) -------------------
+
+/** One published form as the public profile lists it. */
+export interface ProfileFormRow {
+  slug: string;
+  name: string;
+}
+
+/** A member's stored public page + the identity fields it renders alongside. */
+export interface MemberProfileRow {
+  memberId: string;
+  handle: string | null;
+  displayName: string | null;
+  avatarUrl: string | null;
+  /** The raw JSON blob, or null when this member has no page. */
+  profile: unknown;
+}
+
+/**
+ * The member behind a public handle URL, resolved through the SAME account
+ * lookup the public form route uses — so a retired account code keeps working
+ * here too, rather than 404-ing only on profiles.
+ *
+ * Handles are compared case-insensitively: a URL is typed by hand far more often
+ * than a slug is, and `/acme/Alex` failing while `/acme/alex` works would read
+ * as the page being gone.
+ */
+export async function getMemberByHandle(
+  db: Db,
+  accountCode: string,
+  handle: string,
+): Promise<MemberProfileRow | null> {
+  const account = await getAccountByCode(db, accountCode);
+  if (!account) return null;
+  const r = await db.get<Record<string, unknown>>(
+    sql`SELECT id, handle, display_name, avatar_url, profile FROM member
+        WHERE account_id = ${account.id} AND lower(handle) = ${handle.toLowerCase()}
+          AND status = 'active'
+        LIMIT 1`,
+  );
+  if (!r) return null;
+  return {
+    memberId: String(r.id),
+    handle: r.handle == null ? null : String(r.handle),
+    displayName: r.display_name == null ? null : String(r.display_name),
+    avatarUrl: r.avatar_url == null ? null : String(r.avatar_url),
+    profile: r.profile == null ? null : parseJsonColumn<unknown>(r.profile, null),
+  };
+}
+
+/**
+ * The PUBLISHED forms belonging to a member's account.
+ *
+ * Scoped to the account rather than the member because a form has no author
+ * column — which also means this lists the account's forms, not personally
+ * "theirs". The profile's `formSlugs` is what narrows it, and the caller applies
+ * that; keeping the filter out of SQL means an empty list stays distinguishable
+ * from an absent one.
+ */
+export async function listPublishedFormsForAccount(
+  db: Db,
+  accountCode: string,
+): Promise<ProfileFormRow[]> {
+  const account = await getAccountByCode(db, accountCode);
+  if (!account) return [];
+  const rows = await db.all<Record<string, unknown>>(
+    sql`SELECT slug, name FROM form WHERE account_id = ${account.id} ORDER BY created_at ASC`,
+  );
+  return rows.map((r) => ({ slug: String(r.slug), name: String(r.name) }));
+}
+
+/** Replace a member's public page (account-scoped). NULL removes it entirely. */
+export async function setMemberProfile(
+  db: Db,
+  accountId: string,
+  memberId: string,
+  profile: unknown | null,
+): Promise<void> {
+  await db.run(
+    sql`UPDATE member SET profile = ${profile == null ? null : JSON.stringify(profile)}
+        WHERE id = ${memberId} AND account_id = ${accountId}`,
+  );
+}
+
+/** The stored public-page blob for one member (account-scoped), or null. */
+export async function getMemberProfileRaw(
+  db: Db,
+  accountId: string,
+  memberId: string,
+): Promise<unknown> {
+  const r = await db.get<Record<string, unknown>>(
+    sql`SELECT profile FROM member WHERE id = ${memberId} AND account_id = ${accountId} LIMIT 1`,
+  );
+  if (!r || r.profile == null) return null;
+  return parseJsonColumn<unknown>(r.profile, null);
 }

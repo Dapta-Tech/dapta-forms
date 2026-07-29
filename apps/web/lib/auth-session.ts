@@ -2,7 +2,8 @@ import 'server-only';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { createHmac, timingSafeEqual } from 'node:crypto';
-import { SESSION_COOKIE } from './session';
+import { SESSION_COOKIE, WORKSPACE_COOKIE } from './session';
+import { signValue, unsignValue } from './signed-value';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 
@@ -80,9 +81,44 @@ export async function getSession(): Promise<Session | null> {
  */
 export async function hostHeaders(): Promise<Record<string, string>> {
   const s = await getSession();
-  if (s?.provider === 'workos') return { authorization: `Bearer ${s.accessToken}` };
-  if (s?.provider === 'local') return { 'x-quill-email': s.email };
-  return {};
+  const h: Record<string, string> = {};
+  if (s?.provider === 'workos') h['authorization'] = `Bearer ${s.accessToken}`;
+  else if (s?.provider === 'local') h['x-quill-email'] = s.email;
+  // The workspace travels ALONGSIDE identity, never instead of it — and it is
+  // sent even when there is no session, because the OSS `local` provider
+  // resolves a developer who never signed in. It authorizes nothing on its own.
+  const workspace = await getWorkspace();
+  if (workspace) h['x-quill-workspace'] = workspace;
+  return h;
+}
+
+// --- The chosen workspace -----------------------------------------------------
+//
+// Signed with the same secret as the session, but stored separately, because
+// the two have different lifetimes: a session may not exist at all (the OSS
+// local provider needs no cookie), and hanging the choice off one meant the
+// switcher silently did nothing for precisely those users.
+
+/** The account the person chose to act in, or null for their home one. */
+export async function getWorkspace(): Promise<string | null> {
+  const jar = await cookies();
+  return unsignValue(jar.get(WORKSPACE_COOKIE)?.value, secret());
+}
+
+/** Record (or clear, with null) the chosen workspace. */
+export async function setWorkspace(accountId: string | null): Promise<void> {
+  const jar = await cookies();
+  if (!accountId) {
+    jar.delete(WORKSPACE_COOKIE);
+    return;
+  }
+  jar.set(WORKSPACE_COOKIE, signValue(accountId, secret()), {
+    path: '/',
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production',
+    maxAge: 60 * 60 * 24 * 30,
+  });
 }
 
 /**

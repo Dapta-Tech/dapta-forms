@@ -5,8 +5,15 @@
  * into a redirect to /login.
  */
 import { redirect } from 'next/navigation';
-import type { AnalyticsResponse, FormConfig, FormDestination, SubmissionsPage } from '@quill/types';
-import { getSession, clearSession, authProvider } from './auth-session';
+import type {
+  AnalyticsResponse,
+  BrandKit,
+  FormConfig,
+  FormDestination,
+  MemberProfile,
+  SubmissionsPage,
+} from '@quill/types';
+import { getSession, clearSession, authProvider, getWorkspace } from './auth-session';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 
@@ -24,10 +31,15 @@ export class ApiError extends Error {
 
 async function req<T>(method: string, path: string, body?: unknown): Promise<T> {
   const session = await getSession();
+  // Which workspace, asked separately from who — and read from its own cookie,
+  // because the local provider serves developers who have no session at all.
+  // The API re-checks membership against the database; this authorizes nothing.
+  const workspace = await getWorkspace();
   const headers: Record<string, string> = {};
   if (body) headers['content-type'] = 'application/json';
   if (session?.provider === 'workos') headers['authorization'] = `Bearer ${session.accessToken}`;
   else if (session?.provider === 'local') headers['x-quill-email'] = session.email;
+  if (workspace) headers['x-quill-workspace'] = workspace;
 
   const res = await fetch(`${API_URL}${path}`, {
     method,
@@ -43,6 +55,18 @@ async function req<T>(method: string, path: string, body?: unknown): Promise<T> 
     }
     redirect(authProvider() === 'workos' ? '/api/auth/logout' : '/login');
   }
+  // The stored workspace is no longer ours — the membership was revoked, or the
+  // account is gone. Self-heal rather than leaving every page 403ing with no way
+  // back, which is what being removed from a workspace would otherwise feel like.
+  //
+  // Via a ROUTE HANDLER, not a `setWorkspace(null)` here: this code runs inside
+  // a Server Component render, where `cookies().set()` throws. Clearing it here
+  // and redirecting anyway produced an infinite loop — the dead workspace was
+  // re-sent on every hop. The handler owns its response, so the delete lands.
+  if (res.status === 403 && workspace) {
+    const j = (await res.clone().json().catch(() => ({}))) as { error?: string };
+    if (j.error === 'WORKSPACE_FORBIDDEN') redirect('/api/workspace/reset');
+  }
   if (!res.ok) {
     const j = (await res.json().catch(() => ({}))) as { message?: string; error?: string };
     throw new ApiError(res.status, j.message ?? j.error ?? `${method} ${path} → ${res.status}`, j.error);
@@ -53,6 +77,40 @@ async function req<T>(method: string, path: string, body?: unknown): Promise<T> 
 
 export type AccountRole = 'owner' | 'admin' | 'member';
 export type MemberStatus = 'active' | 'invited' | 'disabled';
+
+/** One account the signed-in person can act in. */
+export interface Workspace {
+  accountId: string;
+  accountCode: string;
+  accountName: string;
+  memberId: string;
+  role: AccountRole;
+  /** `invited` until they first open it — shown as pending in the switcher. */
+  status: MemberStatus;
+}
+
+/** Why a webhook test delivery failed — mirrors `WebhookPingReason` in the API. */
+export type WebhookPingReason =
+  | 'method_not_allowed'
+  | 'unsupported_media_type'
+  | 'rejected_body'
+  | 'unauthorized'
+  | 'not_found'
+  | 'rate_limited'
+  | 'server_error'
+  | 'redirect'
+  | 'blocked'
+  | 'unreachable'
+  | 'unknown';
+
+export interface WebhookPingResult {
+  ok: boolean;
+  reason?: WebhookPingReason;
+  status?: number;
+  /** The endpoint's own response body, trimmed and truncated by the API. */
+  detail?: string;
+  message?: string;
+}
 
 export interface Me {
   accountId: string;
@@ -71,9 +129,18 @@ export interface FormSummary {
   id: string;
   name: string;
   slug: string;
+  /** Epoch-ms of the last brand-kit apply; null when never applied or reverted. */
+  brandAppliedAt: number | null;
   createdAt: number;
   updatedAt: number;
 }
+
+/** GET/PUT /v1/branding — the workspace brand kit (null = none saved yet). */
+export interface BrandingResponse {
+  config: BrandKit | null;
+  updatedAt: number | null;
+}
+export type { BrandKit };
 
 export interface FormDetail {
   id: string;
@@ -166,6 +233,13 @@ export interface IntegrationStatus {
 export interface IntegrationsResponse {
   encryptionAvailable: boolean;
   providers: IntegrationStatus[];
+  /**
+   * Providers the DEPLOYMENT supplies a token for (the `*_TOKEN` env fallback).
+   * These work for every account without anyone connecting anything, which is
+   * why the page has to say so — otherwise it reports "Not connected" about an
+   * integration that is actively syncing.
+   */
+  serverProvided?: IntegrationProvider[];
 }
 
 /**
@@ -262,13 +336,24 @@ export const adminApi = {
   // Forms
   listForms: () => req<FormSummary[]>('GET', '/v1/forms'),
   getForm: (id: string) => req<FormDetail>('GET', `/v1/forms/${id}`),
-  createForm: (b: { name: string; slug?: string }) => req<FormDetail>('POST', '/v1/forms', b),
+  createForm: (b: { name: string; slug?: string; config?: unknown }) =>
+    req<FormDetail>('POST', '/v1/forms', b),
   updateForm: (id: string, b: { name?: string; slug?: string; config?: unknown }) =>
     req<FormDetail>('PUT', `/v1/forms/${id}`, b),
   duplicateForm: (id: string) => req<FormDetail>('POST', `/v1/forms/${id}/duplicate`),
   /** Publish the pending draft config (no-op when no draft is pending). */
   publishForm: (id: string) => req<FormDetail>('POST', `/v1/forms/${id}/publish`),
   deleteForm: (id: string) => req<void>('DELETE', `/v1/forms/${id}`),
+
+  // Workspace brand kit (reads open to members; writes + apply/revert admin/owner)
+  getBranding: () => req<BrandingResponse>('GET', '/v1/branding'),
+  saveBranding: (config: BrandKit) => req<BrandingResponse>('PUT', '/v1/branding', config),
+  /** Snapshot-apply the kit to the given forms (live config + pending draft). */
+  applyBranding: (formIds: string[]) =>
+    req<{ applied: string[] }>('POST', '/v1/branding/apply', { formIds }),
+  /** Undo the last apply on the given forms (one level of undo). */
+  revertBranding: (formIds: string[]) =>
+    req<{ reverted: string[] }>('POST', '/v1/branding/revert', { formIds }),
 
   // Analytics + submissions (this track)
   getAnalytics: (id: string, range: { from?: number; to?: number } = {}) =>
@@ -290,6 +375,16 @@ export const adminApi = {
   // Account-level integration connections (paste-token model; admin/owner writes)
   /** This account's connections (token-free) + whether server encryption is available. */
   listIntegrations: () => req<IntegrationsResponse>('GET', '/v1/integrations'),
+  /** The caller's own public page config (raw blob or null). */
+  myProfile: () => req<{ handle: string | null; profile: MemberProfile | null }>('GET', '/v1/me/profile'),
+  /** Replace the caller's own public page; null removes it. */
+  saveMyProfile: (profile: MemberProfile | null) =>
+    req<{ ok: boolean }>('PUT', '/v1/me/profile', { profile }),
+  /** Every workspace the caller can enter, for the switcher. */
+  listWorkspaces: () => req<Workspace[]>('GET', '/v1/workspaces'),
+  /** Send one sample delivery to a form's webhook (admin-only, SSRF-guarded server-side). */
+  pingWebhook: (id: string) =>
+    req<WebhookPingResult>('POST', `/v1/forms/${id}/destinations/webhook/ping`),
   /** Validate + encrypt-store a pasted provider token; returns the token-free status. */
   connectIntegration: (provider: IntegrationProvider, token: string) =>
     req<IntegrationStatus>('POST', `/v1/integrations/${provider}/connect`, { token }),

@@ -4,9 +4,12 @@ import { getPublicForm } from '@/lib/api';
 import { publicLocale } from '@/lib/locale';
 import { getMessages, t } from '@quill/shared';
 import { MadeWithBadge } from '@/components/made-with-badge';
+import { resolveFormLayout } from '@quill/engine';
 import { resolveTracking } from '@/components/tracking/resolve-tracking';
 import { TrackingScripts } from '@/components/tracking/tracking-scripts';
+import { EmbedHeightReporter } from '@/components/public/embed-height-reporter';
 import { FormRenderer } from './form-renderer';
+import { VerticalFormRenderer } from './vertical-form-renderer';
 
 /**
  * SEO/OG metadata for the public form — the form name as the title and a
@@ -24,11 +27,25 @@ export async function generateMetadata({
   const locale = await publicLocale();
   const description =
     form.config.cover?.subheadline ?? t(getMessages(locale).growth.seoForm, { name: form.name });
+
+  // An author-supplied card wins outright; otherwise the sibling
+  // `opengraph-image` route renders one from the form's own branding, and Next
+  // wires it up automatically when `images` is left undefined.
+  const custom = form.config.branding?.ogImage?.trim();
+  const images = custom ? [{ url: custom }] : undefined;
+
   return {
     title: form.name,
     description,
-    openGraph: { title: form.name, description, type: 'website' },
-    twitter: { card: 'summary', title: form.name, description },
+    openGraph: { title: form.name, description, type: 'website', ...(images ? { images } : {}) },
+    twitter: {
+      // A generated 1200×630 card deserves the large format; only a form with
+      // neither would fall back to the small one, and there is no such form.
+      card: 'summary_large_image',
+      title: form.name,
+      description,
+      ...(images ? { images } : {}),
+    },
   };
 }
 
@@ -39,11 +56,14 @@ export default async function PublicFormPage({
   searchParams,
 }: {
   params: Promise<{ accountCode: string; handle: string; slug: string }>;
-  searchParams: Promise<{ lang?: string }>;
+  searchParams: Promise<{ lang?: string; embed?: string }>;
 }) {
   const { accountCode, slug } = await params;
-  const { lang } = await searchParams;
+  const { lang, embed } = await searchParams;
   const locale = await publicLocale(lang);
+  // Embedded render (?embed=1): same form, sized by its content instead of the
+  // viewport, reporting its height to the host page's embed.js (iframe embeds).
+  const embedded = embed === '1';
 
   const form = await getPublicForm(accountCode, slug);
   if (!form) notFound();
@@ -53,16 +73,25 @@ export default async function PublicFormPage({
   // renders nothing (zero third-party requests).
   const tracking = resolveTracking(form.config.tracking);
 
+  // The config decides the presentation: slides (the original one-question-per-
+  // screen walk) or vertical (one page). Same engine, same submit contract.
+  const Renderer = resolveFormLayout(form.config) === 'vertical' ? VerticalFormRenderer : FormRenderer;
+
   return (
     <>
       <TrackingScripts tracking={tracking} />
-      <FormRenderer
-        accountCode={accountCode}
-        slug={slug}
-        name={form.name}
-        config={form.config}
-        locale={locale}
-      />
+      {embedded ? <EmbedHeightReporter /> : null}
+      {/* The wrapper class relaxes the renderers' viewport-height rules so the
+          document's height IS the content's — what the reporter measures. */}
+      <div className={embedded ? 'pf-embed-root' : undefined}>
+        <Renderer
+          accountCode={accountCode}
+          slug={slug}
+          name={form.name}
+          config={form.config}
+          locale={locale}
+        />
+      </div>
       <MadeWithBadge locale={locale} accountCode={accountCode} />
     </>
   );

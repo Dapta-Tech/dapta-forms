@@ -15,6 +15,7 @@ export {
 export { LogOnlyDestination } from './adapters/log-only';
 export {
   WebhookDestination,
+  WebhookHttpError,
   type WebhookDestinationOptions,
   type WebhookPayload,
   signWebhookBody,

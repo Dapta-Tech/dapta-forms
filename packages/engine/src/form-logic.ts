@@ -9,6 +9,20 @@
  * same flow and the same score (never trust the client; recompute on submit).
  */
 
+import type {
+  FormBackgroundStyle,
+  FormButtonStyle,
+  FormContentAlign,
+  FormContentWidth,
+  FormCustomFont,
+  FormFont,
+  FormLogoPosition,
+  FormLogoSize,
+  FormProgressStyle,
+  FormRadius,
+  FormTransition,
+} from './form-design';
+
 /**
  * The step kinds a form can contain. `message` is an info step with no input;
  * `reveal` is a timed processing interstitial (V5-B3) — also inputless, but it
@@ -29,11 +43,20 @@ export const FORM_FIELD_TYPES = [
 ] as const;
 export type FormFieldType = (typeof FORM_FIELD_TYPES)[number];
 
+/** How a choice step lays its options out. */
+export const FORM_OPTION_LAYOUTS = ['list', 'cards'] as const;
+export type FormOptionLayout = (typeof FORM_OPTION_LAYOUTS)[number];
+
 /** A single option for a choice/dropdown step; `points` feeds the score. */
 export interface FormOption {
   label: string;
   value: string;
   points?: number;
+  /**
+   * Either an emoji/short glyph or an image URL — `isImageIcon` tells them
+   * apart, because the two need opposite treatment when rendered (a glyph
+   * centres in a circle; a logo needs a rectangle it can letterbox into).
+   */
   icon?: string | null;
 }
 
@@ -156,7 +179,16 @@ export interface FormStep {
   sliderLabelVariants?: Record<string, string>;
   /** Static unit label shown next to the slider value (e.g. "leads / mo"). */
   sliderUnitLabel?: string | null;
-  /** `multiple_choice`: render as an icon grid instead of a radio list. */
+  /**
+   * `multiple_choice`: render options as a card grid instead of a radio list.
+   * Absent falls back to `showIcons` — see `resolveOptionLayout`.
+   */
+  optionLayout?: FormOptionLayout;
+  /**
+   * @deprecated Superseded by `optionLayout` — the flag named its content
+   * (icons) rather than what it actually switched (the layout). Still read as
+   * the fallback so configs saved before `optionLayout` keep their card grid.
+   */
   showIcons?: boolean;
   /**
    * Branch insertion: show this step ONLY when the `email` answer is a personal/
@@ -177,6 +209,14 @@ export interface FormStep {
    * parameter in the public renderer) and carried along into the submission.
    */
   hidden?: boolean;
+  /**
+   * A value this answer starts with, used only when nothing else supplied one.
+   *
+   * Precedence is default < URL prefill < what the person types: a link that
+   * carries `?email=` must win, or a campaign link would be silently overridden
+   * by a default the author set months earlier.
+   */
+  defaultValue?: string;
   /**
    * Per-question scoring switch (additive; back-compat — V5-B2). `false` makes
    * THIS step contribute nothing to the score while the rest of the form keeps
@@ -266,10 +306,19 @@ export interface FormClientLogo {
   src?: string | null;
 }
 
+/** Where the cover's promo banner is allowed to render. */
+export const FORM_BANNER_SCOPES = ['form', 'cover'] as const;
+export type FormBannerScope = (typeof FORM_BANNER_SCOPES)[number];
+
 export interface FormCover {
   enabled?: boolean;
-  /** A sticky banner line (promo strip) shown above every screen throughout the flow. */
+  /** A sticky banner line (promo strip) shown above the form — see `bannerScope`. */
   bannerText?: string | null;
+  /**
+   * Where `bannerText` shows: `'form'` pins it above every screen (the legacy
+   * behaviour, and the default when absent), `'cover'` limits it to the cover.
+   */
+  bannerScope?: FormBannerScope;
   eyebrow?: string | null;
   /** Alias for eyebrow (pilot `badge`); eyebrow wins when both are set. */
   badge?: string | null;
@@ -281,13 +330,63 @@ export interface FormCover {
   logo?: string | null;
   /** Optional "trusted by" marquee shown on the cover. */
   clientLogos?: FormClientLogo[];
+  /**
+   * Whether the "trusted by" marquee renders. Absent means shown (the legacy
+   * behaviour), so the logos can be switched off without deleting them.
+   */
+  showClientLogos?: boolean;
 }
 
 /** Per-form branding — the accent color threads the banner/CTA/selected states. */
+/**
+ * Per-form branding. `primaryColor`, `logo` and `clientLogos` are the original
+ * three; everything below is the design system (`form-design.ts`), where every
+ * field is optional and its absence resolves to the pre-design look — so a form
+ * published before these existed renders exactly as it always did.
+ *
+ * `background`/`foreground` are the pair that matters most: setting them LOCKS
+ * the form's theme (it stops following the viewer's light/dark preference),
+ * because a page can't honour both an author's chosen palette and a visitor's
+ * OS setting without one of them being wrong. See `resolveThemeMode` in
+ * `@quill/shared/branding`.
+ */
 export interface FormBranding {
   primaryColor?: string | null;
   logo?: string | null;
   clientLogos?: FormClientLogo[];
+
+  // --- Color -------------------------------------------------------------
+  background?: string | null;
+  foreground?: string | null;
+  backgroundStyle?: FormBackgroundStyle;
+  backgroundImage?: string | null;
+  /** 0–100: how heavily the readability scrim covers a background image. */
+  backgroundOverlay?: number;
+
+  // --- Typography --------------------------------------------------------
+  fontFamily?: FormFont;
+  customFont?: FormCustomFont | null;
+
+  // --- Shape & controls --------------------------------------------------
+  radius?: FormRadius;
+  buttonStyle?: FormButtonStyle;
+  buttonFullWidth?: boolean;
+  progressStyle?: FormProgressStyle;
+
+  // --- Layout ------------------------------------------------------------
+  logoSize?: FormLogoSize;
+  logoPosition?: FormLogoPosition;
+  contentAlign?: FormContentAlign;
+  contentWidth?: FormContentWidth;
+  transition?: FormTransition;
+
+  /**
+   * Which preset was last applied — an editor affordance only. Nothing at
+   * render time reads it; the preset's values live in the fields above.
+   */
+  themePreset?: string | null;
+  /** Social-share card image. Absent = generated from the branding above. */
+  ogImage?: string | null;
 }
 
 /** A `scheduler` step's embedded booking config (Calendly in v1). */
@@ -351,10 +450,23 @@ export interface FormEnding {
   redirectDelayMs?: number;
 }
 
+/**
+ * How the public form presents its steps (additive — absent = `'slides'`, so
+ * every form published before this field existed renders exactly as it did):
+ *  - `'slides'`   — one question per screen, walked step by step (the original).
+ *  - `'vertical'` — every visible question on one page, answered in any order
+ *    and submitted once. Skip-logic still applies live: `runtimeSteps` is
+ *    recomputed on every answer, so questions show/hide as the respondent types.
+ */
+export const FORM_LAYOUTS = ['slides', 'vertical'] as const;
+export type FormLayout = (typeof FORM_LAYOUTS)[number];
+
 export interface FormConfig {
   version: 1;
   branding?: FormBranding | null;
   cover?: FormCover | null;
+  /** Presentation layout for the public form. Absent = `'slides'` (back-compat). */
+  layout?: FormLayout;
   steps: FormStep[];
   scoring?: { enabled?: boolean } | null;
   outcomes?: FormOutcome[];
@@ -385,6 +497,15 @@ export type AnswerValue =
   | null
   | undefined;
 export type Answers = Record<string, AnswerValue>;
+
+/**
+ * The layout the public form renders with. Pure resolver shared by the
+ * renderer and the builder so both always agree — and the single place the
+ * `absent = 'slides'` back-compat default lives.
+ */
+export function resolveFormLayout(config: Pick<FormConfig, 'layout'> | null | undefined): FormLayout {
+  return config?.layout ?? 'slides';
+}
 
 /** Normalize an answer to the set of string tokens it represents (for matching). */
 function tokens(value: AnswerValue): string[] {
@@ -464,6 +585,40 @@ export function visibleSteps(config: FormConfig, answers: Answers): FormStep[] {
 /** The first `email`-typed step's key (the branch pivot for personal-email logic). */
 function findEmailKey(config: FormConfig): string | null {
   return config.steps.find((s) => s.type === 'email')?.key ?? null;
+}
+
+/** Where a HubSpot sync could get the address it keys the contact on. */
+export type EmailSource =
+  /** An `email`-typed question this form asks directly. */
+  | { kind: 'question'; key: string }
+  /** A scheduler: Calendly's own booking form always collects an invitee email. */
+  | { kind: 'scheduler'; key: string }
+  | null;
+
+/**
+ * Can this form give HubSpot an email to key on?
+ *
+ * HubSpot upserts a contact by email — it looks one up by address and creates it
+ * when absent — so a form with no address reaches the CRM with nothing to
+ * identify. That delivery resolves as a permanent no-op, which means the lead is
+ * quietly never synced. This is the check that lets the editor say so BEFORE a
+ * respondent is lost, rather than after.
+ *
+ * A question wins over a scheduler because it is unconditional: the scheduler
+ * path only yields an address once someone actually books, and only when
+ * Calendly is connected for the enrichment call. Callers that care about that
+ * difference should combine this with the account's Calendly status.
+ *
+ * Pure and config-only, like everything else here.
+ */
+export function emailSourceFor(config: FormConfig): EmailSource {
+  // A HIDDEN email step counts: it is never drawn, but it still captures an
+  // answer from `?email=` and that answer reaches the submission.
+  const question = config.steps.find((s) => s.type === 'email');
+  if (question) return { kind: 'question', key: question.key };
+  const scheduler = config.steps.find((s) => s.type === 'scheduler');
+  if (scheduler) return { kind: 'scheduler', key: scheduler.key };
+  return null;
 }
 
 /**
@@ -1507,6 +1662,105 @@ export function revealAfterKey(config: FormConfig): string | null {
   const triggered = steps.find((s) => s.triggersReveal);
   if (triggered) return triggered.key;
   return steps[steps.length - 1]?.key ?? null;
+}
+
+// ---------------------------------------------------------------------------
+// Cover presentation. Both helpers answer "should this chrome render on this
+// screen?" and both default to the pre-toggle behaviour, so a config saved
+// before the toggles existed renders exactly as it always did.
+// ---------------------------------------------------------------------------
+
+/**
+ * Whether the promo banner renders on a given screen. `bannerScope: 'cover'`
+ * confines it to the cover; anything else (including absent) keeps the legacy
+ * behaviour of pinning it above every screen in the flow.
+ */
+export function showBanner(cover: FormCover | null | undefined, isCover: boolean): boolean {
+  if (!cover?.bannerText) return false;
+  return isCover || cover.bannerScope !== 'cover';
+}
+
+/**
+ * Whether the "trusted by" marquee renders. Only an explicit `false` hides it,
+ * so the logos can be switched off without deleting them — and a config saved
+ * before the toggle existed still shows them.
+ */
+export function showClientLogos(cover: FormCover | null | undefined): boolean {
+  return cover?.showClientLogos !== false;
+}
+
+// ---------------------------------------------------------------------------
+// Choice-option presentation. An option's `icon` may be an emoji OR an image
+// URL, and the two render differently, so the renderer asks here rather than
+// sniffing the string in JSX.
+// ---------------------------------------------------------------------------
+
+/**
+ * How a choice step lays its options out. `optionLayout` wins; absent, the
+ * deprecated `showIcons` still selects the card grid, so a config saved before
+ * `optionLayout` existed renders exactly as it always did.
+ */
+export function resolveOptionLayout(
+  step: Pick<FormStep, 'optionLayout' | 'showIcons'> | null | undefined,
+): FormOptionLayout {
+  if (step?.optionLayout) return step.optionLayout;
+  return step?.showIcons ? 'cards' : 'list';
+}
+
+/**
+ * True when an option's `icon` is an image reference rather than an emoji or
+ * letter: http(s), protocol-relative, a root path, or a `data:image/…` URI.
+ * Safety is a SEPARATE question — pair this with `isSafeImageUrl` before the
+ * value reaches an `<img src>`.
+ */
+export function isImageIcon(icon: string | null | undefined): boolean {
+  if (!icon) return false;
+  return /^(?:https?:\/\/|\/\/|\/|data:image\/)/i.test(icon.trim());
+}
+
+/** Longest glyph an option icon may be: an emoji, or initials like "HS". */
+export const OPTION_ICON_GLYPH_MAX = 2;
+
+/**
+ * The initials a label falls back to when it has no icon: up to two letters,
+ * taken from the first two words ("HubSpot Sales" → "HS", "Hubspot" → "H").
+ */
+export function optionInitials(label: string): string {
+  const words = label.trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return '';
+  if (words.length === 1) return (words[0]?.charAt(0) ?? '').toUpperCase();
+  return words
+    .slice(0, OPTION_ICON_GLYPH_MAX)
+    .map((w) => w.charAt(0).toUpperCase())
+    .join('');
+}
+
+/** What an option's icon resolves to on a given layout. */
+export type ResolvedOptionIcon =
+  | { kind: 'image'; src: string }
+  | { kind: 'glyph'; text: string };
+
+/**
+ * The single answer to "what do I draw for this option?", shared by the public
+ * renderer, the builder canvas and the live preview so all three agree.
+ *
+ * An image is a CARD-ONLY affordance. A list row gives an icon 38px of height
+ * and sits inline with the label, where a wordmark renders as an illegible
+ * sliver — so under `list` an image URL degrades to the label's initials rather
+ * than drawing badly. That also means an OLD config pairing a URL with a list
+ * can't produce the broken combination.
+ */
+export function resolveOptionIcon(
+  option: Pick<FormOption, 'icon' | 'label'>,
+  layout: FormOptionLayout,
+): ResolvedOptionIcon {
+  const icon = option.icon?.trim() ?? '';
+  if (icon && isImageIcon(icon)) {
+    if (layout === 'cards' && isSafeImageUrl(icon)) return { kind: 'image', src: icon };
+    return { kind: 'glyph', text: optionInitials(option.label) };
+  }
+  if (icon) return { kind: 'glyph', text: icon };
+  return { kind: 'glyph', text: optionInitials(option.label) };
 }
 
 // ---------------------------------------------------------------------------

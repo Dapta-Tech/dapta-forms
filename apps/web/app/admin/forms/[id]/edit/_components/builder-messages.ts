@@ -33,6 +33,12 @@ export interface BuilderMessages {
     mobile: string;
     settings: string;
     copyLink: string;
+    /** Embed-in-your-site dialog (iframe snippet + auto-height script). */
+    embed: string;
+    embedTitle: string;
+    embedIntro: string;
+    embedCopy: string;
+    embedCopied: string;
     copied: string;
     openForm: string;
   };
@@ -62,6 +68,10 @@ export interface BuilderMessages {
     tipCapture: string;
     /** Popover: how a partial is stored/upgraded. */
     tipStored: string;
+    /** Lead-capture nudge: email question present but no threshold set. */
+    suggestEmail: string;
+    /** The nudge's one-click action label. */
+    suggestEmailAction: string;
     /** Popover: privacy nudge about collecting unfinished answers. */
     tipNotify: string;
     /** Popover: where partials appear in the admin. */
@@ -87,6 +97,8 @@ export interface BuilderMessages {
     revealHeadlinePlaceholder: string;
     revealSubtitlePlaceholder: string;
     revealPlays: string;
+    /** Vertical layout: where the reveal actually plays (page-canvas block). */
+    revealVerticalNote: string;
     /** V6 — the scheduler's live Calendly embed on the canvas. */
     schedulerUnset: string;
     schedulerNote: string;
@@ -132,6 +144,11 @@ export interface BuilderMessages {
     required: string;
     options: string;
     addOption: string;
+    /** How a choice question lays its options out: a list, or a card grid. */
+    optionLayout: string;
+    optionLayoutHint: string;
+    optionLayoutList: string;
+    optionLayoutCards: string;
     logic: string;
     addRule: string;
     noRules: string;
@@ -142,6 +159,26 @@ export interface BuilderMessages {
     /** Shown near the toggle when scoring is on but no points are assigned yet. */
     scoringZeroHint: string;
     contactHint: string;
+    /** The collapsible Advanced group + what it says when shut. */
+    advancedTitle: string;
+    badgeConditional: string;
+    badgeDynamic: string;
+    badgeEndsForm: string;
+    badgeHidden: string;
+    badgeRenamedKey: string;
+    badgeScored: string;
+    badgeDefault: string;
+    /** The URL parameter that prefills this question (informational). */
+    prefillTitle: string;
+    prefillHint: string;
+    prefillReadOnly: string;
+    prefillCopy: string;
+    prefillCopied: string;
+    prefillUtmWarning: string;
+    /** A value the answer starts with; anything in the URL wins over it. */
+    defaultAnswer: string;
+    defaultAnswerHint: string;
+    defaultAnswerPlaceholder: string;
     delete: string;
     deleteConfirm: string;
     empty: string;
@@ -202,6 +239,8 @@ export interface BuilderMessages {
     hint: string;
     close: string;
     noResults: string;
+    /** Vertical layout: why the reveal tile is off once the form has one. */
+    revealVerticalTaken: string;
     items: Record<GalleryItemId, { title: string; desc: string }>;
   };
   map: {
@@ -323,6 +362,12 @@ const en: BuilderMessages = {
     mobile: 'Mobile',
     settings: 'Settings',
     copyLink: 'Copy link',
+    embed: 'Embed',
+    embedTitle: 'Embed this form on your site',
+    embedIntro:
+      'Paste this snippet into your page. The form loads inside it and grows to fit its content — the script keeps the height in sync, so there is never an inner scrollbar.',
+    embedCopy: 'Copy snippet',
+    embedCopied: 'Copied',
     copied: 'Copied',
     openForm: 'Open form',
   },
@@ -343,6 +388,9 @@ const en: BuilderMessages = {
       'Captures respondents’ answers once they reach this point, even if they never finish the form.',
     tipStored:
       'Each partial is stored as a submission and upgraded in place if the respondent completes the form.',
+    suggestEmail:
+      'This form asks for an email, but answers are only saved at the end. Capture the lead as soon as they share their email — even if they never finish.',
+    suggestEmailAction: 'Capture after the email question',
     tipNotify: 'Consider letting respondents know their answers may be collected before they submit.',
     tipWhere: 'View them in Submissions with the “Partial” filter.',
     tipAfterLast: 'After the last question it never fires — the final submit already captures everything.',
@@ -361,6 +409,7 @@ const en: BuilderMessages = {
     revealHeadlinePlaceholder: 'Reviewing your answers…',
     revealSubtitlePlaceholder: 'Add a line of reassurance (optional)',
     revealPlays: 'Plays for {ms} ms, then the form continues on its own.',
+    revealVerticalNote: 'Plays once, after Submit, before the result.',
     schedulerUnset: 'No event type picked yet',
     schedulerNote: 'Respondents pick a time here. Booking answers this question and moves the form on.',
     schedulerLoading: 'Loading the calendar…',
@@ -374,6 +423,11 @@ const en: BuilderMessages = {
     required: 'Required',
     options: 'Options',
     addOption: 'Add option',
+    optionLayout: 'Show options as',
+    optionLayoutHint:
+      'Each option can carry an emoji or initials in both layouts. Cards lay them out in a centred grid and are the only layout that can show a logo.',
+    optionLayoutList: 'List',
+    optionLayoutCards: 'Cards',
     logic: 'Logic',
     addRule: 'Add rule',
     noRules: 'No rules — everyone sees this question.',
@@ -410,6 +464,24 @@ const en: BuilderMessages = {
     scoringFormOff: 'Scoring is off for the whole form — turn it on in Results to score individual questions.',
     scoringZeroHint: 'Assign points to your answers to enable ranges.',
     contactHint: 'Contact field — doesn’t affect the score.',
+    advancedTitle: 'Advanced settings',
+    badgeConditional: 'Conditional',
+    badgeDynamic: 'Dynamic',
+    badgeEndsForm: 'Ends form',
+    badgeHidden: 'Hidden',
+    badgeRenamedKey: 'Custom key',
+    badgeScored: 'Scored',
+    badgeDefault: 'Default set',
+    prefillTitle: 'Prefill from URL',
+    prefillHint: 'Add this parameter to the link and the answer arrives filled in.',
+    prefillReadOnly: 'read only',
+    prefillCopy: 'Copy',
+    prefillCopied: 'Copied',
+    prefillUtmWarning:
+      'A key starting with utm_ is never read from the URL — those are captured separately as campaign data. Rename the key to make prefill work.',
+    defaultAnswer: 'Default answer',
+    defaultAnswerHint: 'Used when the link carries no value. Anything in the URL wins over this.',
+    defaultAnswerPlaceholder: 'Leave empty for none',
     delete: 'Delete question',
     deleteConfirm: 'Delete this question?',
     empty: 'Select a question to edit it.',
@@ -462,6 +534,7 @@ const en: BuilderMessages = {
     hint: 'Picking a type drops the question in and focuses the canvas to edit it.',
     close: 'Close',
     noResults: 'No matching types.',
+    revealVerticalTaken: 'Already added — a one-page form plays its reveal once, after Submit.',
     items: {
       name: { title: 'Name', desc: 'Full name field' },
       email: { title: 'Email', desc: 'Validated email' },
@@ -583,6 +656,12 @@ const es: BuilderMessages = {
     mobile: 'Móvil',
     settings: 'Ajustes',
     copyLink: 'Copiar enlace',
+    embed: 'Insertar',
+    embedTitle: 'Inserta este formulario en tu sitio',
+    embedIntro:
+      'Pega este fragmento en tu página. El formulario carga dentro y crece según su contenido — el script mantiene la altura sincronizada, así nunca hay scroll interno.',
+    embedCopy: 'Copiar fragmento',
+    embedCopied: 'Copiado',
     copied: 'Copiado',
     openForm: 'Abrir formulario',
   },
@@ -603,6 +682,9 @@ const es: BuilderMessages = {
       'Captura las respuestas cuando la persona llega a este punto, aunque nunca termine el formulario.',
     tipStored:
       'Cada parcial se guarda como un envío y se actualiza en su lugar si la persona completa el formulario.',
+    suggestEmail:
+      'Este formulario pide un email, pero las respuestas solo se guardan al final. Captura el lead en cuanto comparta su email — aunque nunca termine.',
+    suggestEmailAction: 'Capturar tras la pregunta de email',
     tipNotify: 'Considera avisar a tus respondientes de que sus respuestas pueden recopilarse antes de enviar.',
     tipWhere: 'Míralos en Envíos con el filtro «Parciales».',
     tipAfterLast: 'Después de la última pregunta nunca se activa — el envío final ya lo captura todo.',
@@ -622,6 +704,7 @@ const es: BuilderMessages = {
     revealHeadlinePlaceholder: 'Revisando tus respuestas…',
     revealSubtitlePlaceholder: 'Añade una línea que tranquilice (opcional)',
     revealPlays: 'Se muestra {ms} ms y luego el formulario continúa solo.',
+    revealVerticalNote: 'Se muestra una vez, después de Enviar y antes del resultado.',
     schedulerUnset: 'Aún no eliges un tipo de evento',
     schedulerNote: 'Aquí eligen un horario. Agendar responde esta pregunta y avanza el formulario.',
     schedulerLoading: 'Cargando el calendario…',
@@ -635,6 +718,11 @@ const es: BuilderMessages = {
     required: 'Obligatoria',
     options: 'Opciones',
     addOption: 'Añadir opción',
+    optionLayout: 'Mostrar opciones como',
+    optionLayoutHint:
+      'Cada opción puede llevar un emoji o iniciales en ambos diseños. Las tarjetas los ordenan en una cuadrícula centrada y son el único diseño que puede mostrar un logo.',
+    optionLayoutList: 'Lista',
+    optionLayoutCards: 'Tarjetas',
     logic: 'Lógica',
     addRule: 'Añadir regla',
     noRules: 'Sin reglas — todos ven esta pregunta.',
@@ -672,6 +760,24 @@ const es: BuilderMessages = {
     scoringFormOff: 'El puntaje está apagado para todo el formulario — enciéndelo en Resultados para puntuar preguntas individuales.',
     scoringZeroHint: 'Asigna puntos a tus respuestas para habilitar los rangos.',
     contactHint: 'Campo de contacto — no afecta el puntaje.',
+    advancedTitle: 'Ajustes avanzados',
+    badgeConditional: 'Condicional',
+    badgeDynamic: 'Dinámica',
+    badgeEndsForm: 'Termina el formulario',
+    badgeHidden: 'Oculta',
+    badgeRenamedKey: 'Clave propia',
+    badgeScored: 'Con puntos',
+    badgeDefault: 'Con valor por defecto',
+    prefillTitle: 'Prellenar desde la URL',
+    prefillHint: 'Agrega este parámetro al link y la respuesta llega llena.',
+    prefillReadOnly: 'solo lectura',
+    prefillCopy: 'Copiar',
+    prefillCopied: 'Copiado',
+    prefillUtmWarning:
+      'Una clave que empieza con utm_ nunca se lee de la URL: esas se capturan aparte como datos de campaña. Renombra la clave para que el prellenado funcione.',
+    defaultAnswer: 'Respuesta por defecto',
+    defaultAnswerHint: 'Se usa cuando el link no trae valor. Lo que venga en la URL gana sobre esto.',
+    defaultAnswerPlaceholder: 'Vacío para ninguna',
     delete: 'Eliminar pregunta',
     deleteConfirm: '¿Eliminar esta pregunta?',
     empty: 'Selecciona una pregunta para editarla.',
@@ -724,6 +830,7 @@ const es: BuilderMessages = {
     hint: 'Al elegir un tipo se añade la pregunta y se enfoca el lienzo para editarla.',
     close: 'Cerrar',
     noResults: 'No hay tipos que coincidan.',
+    revealVerticalTaken: 'Ya añadida — un formulario de una página muestra su revelación una vez, después de Enviar.',
     items: {
       name: { title: 'Nombre', desc: 'Campo de nombre completo' },
       email: { title: 'Correo', desc: 'Correo validado' },

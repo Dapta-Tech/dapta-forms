@@ -39,6 +39,8 @@ export const member = pgTable(
     status: text('status').notNull().default('active'),
     avatarUrl: text('avatar_url'),
     locale: text('locale'),
+    /** The public member page, or NULL when there is none (see 0008). */
+    profile: jsonb('profile'),
     createdAt: bigint('created_at', { mode: 'number' }).notNull(),
   },
   (t) => ({
@@ -124,6 +126,10 @@ export const form = pgTable(
     draftConfig: jsonb('draft_config'),
     /** Epoch-ms of the last publish; NULL = never published via the draft flow. */
     publishedAt: bigint('published_at', { mode: 'number' }),
+    /** The form's `branding` (live + draft) before the last brand-kit apply; NULL = nothing to revert. */
+    brandBackup: jsonb('brand_backup'),
+    /** Epoch-ms of the last brand-kit apply; NULL when never applied or reverted. */
+    brandAppliedAt: bigint('brand_applied_at', { mode: 'number' }),
     createdAt: bigint('created_at', { mode: 'number' }).notNull(),
     updatedAt: bigint('updated_at', { mode: 'number' }).notNull(),
   },
@@ -131,6 +137,18 @@ export const form = pgTable(
     formAccountSlugUq: uniqueIndex('form_account_slug_uq').on(t.accountId, t.slug),
   }),
 );
+
+/**
+ * Workspace brand kit — one row per account. `config` is the brand kit blob
+ * (validated by `brandKitSchema` in @quill/types). Forms snapshot it at
+ * creation / on explicit apply; the public renderer never reads this table.
+ */
+export const accountBranding = pgTable('account_branding', {
+  accountId: text('account_id').primaryKey(),
+  config: jsonb('config').notNull(),
+  createdAt: bigint('created_at', { mode: 'number' }).notNull(),
+  updatedAt: bigint('updated_at', { mode: 'number' }).notNull(),
+});
 
 export const submission = pgTable(
   'submission',

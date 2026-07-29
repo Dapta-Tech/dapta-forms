@@ -32,6 +32,11 @@ export default async function FormsList() {
     namePlaceholder: m.namePlaceholder,
     nameRequired: m.nameRequired,
     cancel: m.cancel,
+    layoutLabel: m.layoutLabel,
+    layoutSlides: m.layoutSlides,
+    layoutSlidesDesc: m.layoutSlidesDesc,
+    layoutVertical: m.layoutVertical,
+    layoutVerticalDesc: m.layoutVerticalDesc,
   };
   const rowLabels = {
     menu: m.actions,

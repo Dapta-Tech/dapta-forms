@@ -6,6 +6,8 @@ import { usePathname } from 'next/navigation';
 import { isNavItemActive, type FormsMessages } from '@quill/shared';
 import { signOutAction } from '@/app/login/actions';
 import { AppSwitcher } from '@/components/app-switcher';
+import { WorkspaceSwitcher } from '@/components/workspace-switcher';
+import type { Workspace } from '@/lib/admin-api';
 
 type ChromeMessages = FormsMessages['admin']['chrome'];
 
@@ -15,7 +17,7 @@ type ChromeMessages = FormsMessages['admin']['chrome'];
  *  a desktop collapse rail (cookie-persisted, no FOUC), and a <768px off-canvas
  *  drawer with a hamburger top bar. Tokens only; R22 press/hover; R27/R28. */
 
-type IconName = 'home' | 'forms' | 'submissions' | 'analytics' | 'integrations' | 'cog';
+type IconName = 'home' | 'forms' | 'submissions' | 'analytics' | 'integrations' | 'branding' | 'cog';
 
 interface NavItem {
   key: keyof ChromeMessages['nav'];
@@ -34,6 +36,7 @@ const NAV: NavItem[] = [
   { key: 'submissions', href: '/admin/submissions', icon: 'submissions' },
   { key: 'analytics', href: '/admin/analytics', icon: 'analytics' },
   { key: 'integrations', href: '/admin/integrations', icon: 'integrations' },
+  { key: 'branding', href: '/admin/branding', icon: 'branding' },
   { key: 'settings', href: '/admin/settings', icon: 'cog' },
 ];
 
@@ -49,6 +52,7 @@ const PI_BY_NAME: Record<IconName, string> = {
   submissions: 'pi-inbox',
   analytics: 'pi-chart-bar',
   integrations: 'pi-link',
+  branding: 'pi-palette',
   cog: 'pi-cog',
 };
 
@@ -114,6 +118,8 @@ export function AdminShell({
   user,
   messages,
   initialCollapsed = false,
+  workspaces = [],
+  currentAccountId,
   children,
 }: {
   user: ShellUser | null;
@@ -121,6 +127,10 @@ export function AdminShell({
   messages: ChromeMessages;
   /** Server-read cookie value → no collapse-rail FOUC on reload. */
   initialCollapsed?: boolean;
+  /** Every account the caller can enter. Fewer than two renders no switcher. */
+  workspaces?: Workspace[];
+  /** The account these pages are currently scoped to. */
+  currentAccountId?: string;
   children: ReactNode;
 }) {
   const pathname = usePathname();
@@ -170,7 +180,7 @@ export function AdminShell({
         {PRODUCT_NAME.charAt(0)}
       </span>
       {!railCollapsed ? <span className="text-sm font-semibold text-foreground">{PRODUCT_NAME}</span> : null}
-      <AppSwitcher messages={messages.switcher} collapsed={railCollapsed} />
+      <AppSwitcher messages={messages.switcher} />
       {/* The rail toggle is a desktop pref; hidden on the editor route where the
           rail is force-collapsed for canvas. */}
       {!studio ? (
@@ -263,13 +273,31 @@ export function AdminShell({
         <span className="text-sm font-semibold">{PRODUCT_NAME}</span>
       </header>
 
-      {/* Desktop sidebar — flush, bordered, collapsible rail */}
+      {/* Desktop sidebar — flush, bordered, collapsible rail.
+          Pinned to the viewport (`sticky h-dvh`) rather than left to stretch
+          with the page. As a plain flex item it grew to the FULL document
+          height — 2834px on Settings — which dragged the `mt-auto` footer, and
+          with it the account name and sign-out, ~2000px below the fold. The
+          editor never showed the bug only because that route is its own
+          `h-[100dvh] overflow-hidden` shell. `overflow-y-auto` keeps the rail
+          usable if the nav ever outgrows a short viewport. */}
       <aside
-        className={`hidden shrink-0 flex-col gap-6 border-r border-border bg-popover py-4 transition-[width] md:flex ${
+        className={`hidden shrink-0 flex-col gap-6 border-r border-border bg-popover py-4 transition-[width] md:sticky md:top-0 md:flex md:h-dvh md:overflow-y-auto ${
           railCollapsed ? 'w-[64px] px-2' : 'w-60 px-4'
         }`}
       >
         {brand}
+        {/* Directly under the wordmark and above the nav: which tenant every
+            link below belongs to. It renders nothing at all for the single-
+            workspace majority. */}
+        {currentAccountId ? (
+          <WorkspaceSwitcher
+            workspaces={workspaces}
+            currentAccountId={currentAccountId}
+            collapsed={railCollapsed}
+            m={messages.workspaces}
+          />
+        ) : null}
         <nav aria-label="Primary">
           <NavLinks collapsed={railCollapsed} nav={messages.nav} />
         </nav>
@@ -303,6 +331,13 @@ export function AdminShell({
           <span className="text-sm font-semibold text-foreground">{PRODUCT_NAME}</span>
           <AppSwitcher messages={messages.switcher} />
         </div>
+        {currentAccountId ? (
+          <WorkspaceSwitcher
+            workspaces={workspaces}
+            currentAccountId={currentAccountId}
+            m={messages.workspaces}
+          />
+        ) : null}
         <nav>
           <NavLinks collapsed={false} nav={messages.nav} onNavigate={() => setDrawerOpen(false)} />
         </nav>

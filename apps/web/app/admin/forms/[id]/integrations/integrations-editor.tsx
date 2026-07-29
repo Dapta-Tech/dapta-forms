@@ -1,5 +1,6 @@
 'use client';
 
+import type { EmailSource } from '@quill/engine';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import type { FormsMessages, Locale } from '@quill/shared';
@@ -9,12 +10,17 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Select, type SelectOption } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
+import { ProviderLogo, type LogoProvider } from '@/components/ui/provider-logo';
 import { useToast } from '@/components/toast';
 import { cn } from '@/lib/cn';
-import type { HubSpotPropertiesResponse } from '@/lib/admin-api';
+import type {
+  HubSpotPropertiesResponse,
+  WebhookPingReason,
+  WebhookPingResult,
+} from '@/lib/admin-api';
 import { trackDestinationWrite } from '@/lib/connect-sync';
 import { propertyLookup, suggestProperty, type QuestionMeta } from './auto-map';
-import { saveIntegrationsAction } from './actions';
+import { pingWebhookAction, saveIntegrationsAction } from './actions';
 
 type Msgs = FormsMessages['admin']['integrations'];
 
@@ -185,6 +191,7 @@ export function IntegrationsEditor({
   hubspot: hubspotProps,
   hubspotConnected,
   questions,
+  emailSource = null,
   messages: m,
   locale,
 }: {
@@ -195,6 +202,8 @@ export function IntegrationsEditor({
   hubspotConnected: boolean;
   /** The form's mappable questions (from its steps). */
   questions: QuestionMeta[];
+  /** Where a HubSpot sync could get the address it keys contacts on. */
+  emailSource?: EmailSource;
   messages: Msgs;
   locale: Locale;
 }) {
@@ -455,6 +464,7 @@ export function IntegrationsEditor({
         onChange={editWebhook}
         urlError={webhookError}
         clearUrlError={() => setWebhookError(null)}
+        formId={id}
         m={m}
       />
       <LocaleContext.Provider value={locale}>
@@ -465,6 +475,7 @@ export function IntegrationsEditor({
           pickerEnabled={pickerEnabled}
           accountConnected={hubspotConnected}
           showMapping={showMapping}
+          emailSource={emailSource}
           questions={questions}
           m={m}
         />
@@ -648,6 +659,45 @@ function KeySelect({
   );
 }
 
+/**
+ * Turn a failed test delivery into a sentence someone can act on.
+ *
+ * The old toast said "Test failed: webhook delivery failed: HTTP 400" — a true
+ * statement that sends the reader to the wrong place. What actually helps is
+ * three things in order: what the endpoint did, what we sent it (POST with a
+ * JSON body — the assumption most often wrong), and the endpoint's OWN response,
+ * which usually names the real reason.
+ *
+ * Only 405/501 lets us say outright that POST is refused. On a 400 the endpoint
+ * read the request and rejected the body; claiming the method was wrong there
+ * would be a guess dressed as a diagnosis.
+ */
+export function explainPingFailure(res: WebhookPingResult, m: Msgs): string {
+  const REASON: Record<WebhookPingReason, string> = {
+    method_not_allowed: m.pingMethodNotAllowed,
+    unsupported_media_type: m.pingUnsupportedMedia,
+    rejected_body: m.pingRejectedBody,
+    unauthorized: m.pingUnauthorized,
+    not_found: m.pingNotFound,
+    rate_limited: m.pingRateLimited,
+    server_error: m.pingServerError,
+    redirect: m.pingRedirect,
+    blocked: m.pingBlocked,
+    unreachable: m.pingUnreachable,
+    unknown: m.pingUnknown,
+  };
+  const headline = res.reason ? REASON[res.reason] : m.pingUnknown;
+  const parts = [
+    res.status ? fill(m.pingStatus, { status: String(res.status) }) : null,
+    headline,
+    // Not shown for `blocked` / `unreachable`: nothing was ever POSTed, so
+    // telling the reader what we send would only be noise.
+    res.status ? m.pingWeSend : null,
+    res.detail ? fill(m.pingEndpointSaid, { detail: res.detail }) : null,
+  ].filter(Boolean);
+  return parts.join(' ');
+}
+
 function Card({
   title,
   desc,
@@ -655,6 +705,7 @@ function Card({
   onToggle,
   m,
   badge,
+  logo,
   children,
 }: {
   title: string;
@@ -663,6 +714,8 @@ function Card({
   onToggle: (v: boolean) => void;
   m: Msgs;
   badge?: string;
+  /** The provider this card configures, when it is a named third party. */
+  logo?: LogoProvider;
   children: React.ReactNode;
 }) {
   return (
@@ -670,6 +723,7 @@ function Card({
       <div className="flex items-start justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
+            {logo ? <ProviderLogo provider={logo} size={20} /> : null}
             <h2 className="text-lg font-semibold">{title}</h2>
             {badge ? (
               <span className="inline-flex items-center gap-1 rounded-full border border-primary/40 bg-primary/10 px-2 py-0.5 text-xs font-medium text-foreground">
@@ -751,14 +805,40 @@ function WebhookCard({
   onChange,
   urlError,
   clearUrlError,
+  formId,
   m,
 }: {
   state: WebhookState;
   onChange: (s: WebhookState) => void;
   urlError: string | null;
   clearUrlError: () => void;
+  /** Needed for the test delivery — the API resolves the saved webhook by form. */
+  formId: string;
   m: Msgs;
 }) {
+  const { success, error: toastError } = useToast();
+  const [pinging, setPinging] = useState(false);
+
+  /**
+   * Ask the API to send one sample delivery. Deliberately server-side: the
+   * browser must never fetch the endpoint itself (it would leak the signing
+   * secret and bypass the SSRF guard), and the signature has to be computed
+   * where the secret lives.
+   */
+  async function ping() {
+    if (!state.url.trim()) {
+      toastError(m.pingNeedsUrl);
+      return;
+    }
+    setPinging(true);
+    try {
+      const res = await pingWebhookAction(formId);
+      if (res.ok) success(m.pingOk);
+      else toastError(explainPingFailure(res, m));
+    } finally {
+      setPinging(false);
+    }
+  }
   // Keep at least one phase checked — a webhook with neither would never fire
   // (that is what the enable switch is for), and empty `events` means BOTH.
   function toggleEvent(which: 'partial' | 'complete', checked: boolean) {
@@ -793,6 +873,21 @@ function WebhookCard({
             {urlError}
           </p>
         ) : null}
+        {/* Test delivery: the fastest way to find out the far end is wrong is to
+            send it something, rather than waiting for a real respondent. */}
+        <div className="flex flex-wrap items-center gap-2 pt-1">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={ping}
+            disabled={pinging || !state.url.trim()}
+            data-testid="webhook-ping"
+          >
+            <i aria-hidden className="pi pi-send" style={{ fontSize: 12 }} />
+            {pinging ? m.pingSending : m.pingWebhook}
+          </Button>
+          <span className="text-xs text-muted-foreground">{m.pingHelp}</span>
+        </div>
       </Field>
       <Field label={m.webhookSecret} help={m.webhookSecretHelp}>
         <Input
@@ -834,6 +929,7 @@ function HubspotCard({
   pickerEnabled,
   accountConnected,
   showMapping,
+  emailSource,
   questions,
   m,
 }: {
@@ -843,6 +939,7 @@ function HubspotCard({
   pickerEnabled: boolean;
   accountConnected: boolean;
   showMapping: boolean;
+  emailSource: EmailSource;
   questions: QuestionMeta[];
   m: Msgs;
 }) {
@@ -850,11 +947,39 @@ function HubspotCard({
   const utmValues = useMemo(() => state.utmMappings, [state.utmMappings]);
   const questionKeys = useMemo(() => new Set(questions.map((q) => q.key)), [questions]);
 
+  // Nothing to key a contact on → mapping is pointless and, worse, silently
+  // lossy: HubSpot's upsert is BY EMAIL, so a submission with no address
+  // resolves as a permanent no-op and that lead is never synced. Say so here,
+  // while the form is being built, instead of letting it be discovered from a
+  // CRM that stayed empty. This gate sits BEFORE the connect prompt: an account
+  // with HubSpot ready still cannot sync a form that asks for no address.
+  if (!emailSource) {
+    return (
+      <section data-testid="hubspot-card" className="rounded-lg border border-border bg-card p-5">
+        <div className="flex items-center gap-2">
+          <ProviderLogo provider="hubspot" size={20} />
+          <h2 className="text-lg font-semibold">{m.hubspotTitle}</h2>
+        </div>
+        <p className="mt-0.5 text-sm text-muted-foreground">{m.hubspotDesc}</p>
+        <div
+          data-testid="hubspot-needs-email"
+          className="mt-4 rounded-md border border-dashed border-border bg-muted/40 p-4"
+        >
+          <p className="text-sm font-medium text-foreground">{m.emailRequiredTitle}</p>
+          <p className="mt-1 text-sm text-muted-foreground">{m.emailRequiredBody}</p>
+        </div>
+      </section>
+    );
+  }
+
   // Not usable at all → prompt the user to connect HubSpot for their account.
   if (!showMapping) {
     return (
       <section className="rounded-lg border border-border bg-card p-5">
-        <h2 className="text-lg font-semibold">{m.hubspotTitle}</h2>
+        <div className="flex items-center gap-2">
+          <ProviderLogo provider="hubspot" size={20} />
+          <h2 className="text-lg font-semibold">{m.hubspotTitle}</h2>
+        </div>
         <p className="mt-0.5 text-sm text-muted-foreground">{m.hubspotDesc}</p>
         <div className="mt-4 rounded-md border border-dashed border-border bg-muted/40 p-4">
           <p className="text-sm font-medium text-foreground">{m.connectPromptTitle}</p>
@@ -931,6 +1056,7 @@ function HubspotCard({
     <Card
       title={m.hubspotTitle}
       desc={m.hubspotDesc}
+      logo="hubspot"
       enabled={state.enabled}
       onToggle={(enabled) => onChange({ ...state, enabled })}
       m={m}
@@ -941,6 +1067,22 @@ function HubspotCard({
           {m.propertiesUnavailable}
         </div>
       ) : null}
+
+      {/* What the sync actually does. "Map a question to a property" does not
+          tell anyone that the CONTACT is matched by email and created when
+          absent — which is the one rule that decides whether a lead lands. */}
+      <div
+        data-testid="hubspot-how"
+        className="rounded-md border border-border bg-muted/30 p-3"
+      >
+        <p className="text-xs font-medium text-foreground">{m.hubspotHowTitle}</p>
+        <p className="mt-1 text-xs text-muted-foreground">{m.hubspotHowBody}</p>
+        {emailSource?.kind === 'scheduler' ? (
+          <p data-testid="hubspot-scheduler-note" className="mt-2 text-xs text-muted-foreground">
+            {m.emailFromScheduler}
+          </p>
+        ) : null}
+      </div>
 
       {/* Map questions — each form question → a HubSpot contact property */}
       <Section

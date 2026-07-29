@@ -34,6 +34,10 @@ export interface FormsMessages {
     ctaQuestion: string;
     ctaAction: string;
     progressLabel: string; // {current} {total}
+    /** Vertical layout: the answered-question counter. // {answered} {total} */
+    verticalProgress: string;
+    /** Vertical layout: inline error summary shown next to the Submit button. */
+    verticalErrors: string;
     revealHeadline: string;
     revealSubtitle: string;
     noSteps: string;
@@ -83,6 +87,11 @@ export interface FormsMessages {
       lastPlaceholder: string;
     };
   };
+  /** The public member page (`/[accountCode]/[handle]`). */
+  profile: {
+    formsTitle: string;
+    noForms: string;
+  };
   admin: {
     /** Branded combobox (`components/ui/select`) that replaces native selects. */
     select: {
@@ -103,6 +112,7 @@ export interface FormsMessages {
         submissions: string;
         analytics: string;
         integrations: string;
+        branding: string;
         settings: string;
       };
       /** The Dapta suite app-switcher. */
@@ -113,6 +123,15 @@ export interface FormsMessages {
         dapta: string;
         calendars: string;
         opensNewTab: string;
+      };
+      /** The workspace picker — a different axis from `switcher` (product). */
+      workspaces: {
+        menuLabel: string;
+        eyebrow: string;
+        /** Marks a workspace you were invited to and have not opened yet. */
+        invited: string;
+        /** The account is not among the caller's memberships (a stale choice). */
+        unknown: string;
       };
     };
     /** The dashboard home (/admin) — greeting, public link, stats, quick actions. */
@@ -135,6 +154,52 @@ export interface FormsMessages {
       integrationsDesc: string;
       analytics: string;
       analyticsDesc: string;
+    };
+    /** The workspace brand-kit page (/admin/branding). */
+    brandKit: {
+      title: string;
+      subtitle: string;
+      save: string;
+      saving: string;
+      saved: string;
+      /** Read-only banner for non-admin members. */
+      adminOnly: string;
+      logoTitle: string;
+      logoSubtitle: string;
+      logoUrl: string;
+      logoUrlPlaceholder: string;
+      clientLogosTitle: string;
+      clientLogosSubtitle: string;
+      clientLogosAdd: string;
+      clientLogosRemove: string;
+      clientLogoUrlPlaceholder: string;
+      clientLogoNamePlaceholder: string;
+      colorsTitle: string;
+      colorsSubtitle: string;
+      /** An axis the kit leaves to each form. */
+      notSet: string;
+      clearAxis: string;
+      typographyTitle: string;
+      typographySubtitle: string;
+      controlsTitle: string;
+      controlsSubtitle: string;
+      previewTitle: string;
+      previewQuestion: string;
+      previewButton: string;
+      applyTitle: string;
+      applySubtitle: string;
+      applyWarning: string;
+      applySelectAll: string;
+      applyClear: string;
+      applyButton: string; // {count}
+      applying: string;
+      appliedToast: string; // {count}
+      appliedBadge: string;
+      revert: string;
+      reverting: string;
+      revertedToast: string;
+      emptyForms: string;
+      updatedAt: string; // {date}
     };
     /** The global submissions/analytics/integrations landing pages (form picker). */
     picker: {
@@ -175,6 +240,20 @@ export interface FormsMessages {
       statusActive: string;
       statusInvited: string;
       statusDisabled: string;
+      /** The public member page (`/[accountCode]/[handle]`). */
+      publicPageHeading: string;
+      publicPageSubtitle: string;
+      publicPageEnable: string;
+      publicPageNoHandle: string;
+      publicPageHeadline: string;
+      publicPageHeadlinePlaceholder: string;
+      publicPageBio: string;
+      publicPageBioPlaceholder: string;
+      publicPageSave: string;
+      publicPageSaving: string;
+      publicPageSaved: string;
+      publicPageError: string;
+      publicPageView: string;
       membersEmpty: string;
       you: string;
       addMember: string;
@@ -257,6 +336,12 @@ export interface FormsMessages {
       namePlaceholder: string;
       /** V5 — inline blank-name error (replaces the browser's native bubble). */
       nameRequired: string;
+      /** Layout picker in the create dialog (slides vs vertical page). */
+      layoutLabel: string;
+      layoutSlides: string;
+      layoutSlidesDesc: string;
+      layoutVertical: string;
+      layoutVerticalDesc: string;
       cancel: string;
       emptyTitle: string;
       emptyBody: string;
@@ -367,12 +452,68 @@ export interface FormsMessages {
         /** One-line explainer under the options list tying points to scoring. */
         pointsHint: string;
         icon: string;
+        /** What may go in the Icon column: an emoji, initials, or an image. */
+        iconHelp: string;
+        iconPlaceholder: string;
+        /** Icon picker: the three kinds, plus its empty/clear affordances. */
+        iconTabEmoji: string;
+        iconTabLetters: string;
+        iconTabImage: string;
+        iconClear: string;
+        iconEmpty: string;
+        iconLettersHint: string;
+        iconImageHint: string;
+        iconUrlInvalid: string;
+        /** Section headings inside the emoji grid. */
+        emojiGroups: {
+          reactions: string;
+          people: string;
+          business: string;
+          tech: string;
+          comms: string;
+          status: string;
+          places: string;
+        };
         remove: string;
         empty: string;
         /** V5 — what the `value` column is for, vs the visible label (B5). */
         valueHelp: string;
         /** V5 — what the visible label is. */
         labelHelp: string;
+        /** Spreadsheet-paste import (option + optional score columns). */
+        importer: {
+          /** The "Import options" button beside "Add option". */
+          open: string;
+          title: string;
+          /** One-line how-to above the textarea. */
+          intro: string;
+          placeholder: string;
+          modeReplace: string;
+          modeAppend: string;
+          colOption: string;
+          colScore: string;
+          colStatus: string;
+          statusOk: string;
+          statusDuplicate: string;
+          statusInvalid: string;
+          /** {n} — decimal rounded to this integer. */
+          statusRounded: string;
+          /** {n} valid rows summary chip. */
+          summaryValid: string;
+          /** {n} rows carrying a score. */
+          summaryWithScore: string;
+          summaryHeaderSkipped: string;
+          summaryExtraColumns: string;
+          /** {n} rows cut by the per-question cap. */
+          summaryTruncated: string;
+          /** CTA — {n} interpolated. */
+          submit: string;
+          /** Replace would drop icons the current options carry. */
+          replaceIconsNote: string;
+          /** Paste has no score column but the question is scored. */
+          noScoresNote: string;
+          cancel: string;
+        };
       };
       sliderScoring: {
         title: string;
@@ -522,11 +663,28 @@ export interface FormsMessages {
         none: string;
         afterStep: string; // {n}
       };
+      /** Form layout picker (Design tab): slides vs one-page vertical. */
+      layout: {
+        title: string;
+        subtitle: string;
+        slides: string;
+        slidesHint: string;
+        vertical: string;
+        verticalHint: string;
+        /** Shown in the cover section when vertical: no Start gate, CTA unused. */
+        coverCtaNote: string;
+        /** Vertical's ONE reveal (form-level): shown once, after Submit. */
+        endReveal: string;
+        endRevealHint: string;
+      };
       cover: {
         title: string;
         subtitle: string;
         enabled: string;
         bannerText: string;
+        bannerScope: string;
+        bannerScopeForm: string;
+        bannerScopeCover: string;
         eyebrow: string;
         badge: string;
         headline: string;
@@ -541,6 +699,7 @@ export interface FormsMessages {
         logoInvalid: string;
         clientLogos: string;
         clientLogosHint: string;
+        showClientLogos: string;
         clientLogoName: string;
         clientLogoSrc: string;
         addClientLogo: string;
@@ -572,12 +731,104 @@ export interface FormsMessages {
         title: string;
         empty: string;
         coverTitle: string;
+        /** Vertical page preview: the single Submit at the end of the page. */
+        verticalSubmit: string;
         step: string;
         of: string;
         device: string;
         mobile: string;
         desktop: string;
         close: string;
+        /** The address bar above the preview frame. */
+        urlLabel: string;
+        copyLink: string;
+        copied: string;
+        openForm: string;
+        /** Says the frame is a picture of the form, not a working form. */
+        inert: string;
+        previous: string;
+        next: string;
+      };
+      /** The Design tab: everything about how the form looks. */
+      design: {
+        presetsTitle: string;
+        presetsSubtitle: string;
+        presetsCustom: string;
+        colorsTitle: string;
+        colorsSubtitle: string;
+        background: string;
+        foreground: string;
+        accent: string;
+        /** Warns that choosing colors stops the form following the visitor's theme. */
+        themeLockHint: string;
+        backgroundStyle: string;
+        bgSolid: string;
+        bgGradient: string;
+        bgGlow: string;
+        bgImage: string;
+        backgroundImage: string;
+        backgroundImageHint: string;
+        overlay: string;
+        contrast: string;
+        contrastText: string;
+        contrastButton: string;
+        contrastFail: string;
+        accentLowContrast: string;
+        suggestApply: string;
+        typographyTitle: string;
+        typographySubtitle: string;
+        font: string;
+        fontSans: string;
+        fontSerif: string;
+        fontCustomGroup: string;
+        customFontName: string;
+        customFontNamePlaceholder: string;
+        customFontUrl: string;
+        customFontHint: string;
+        controlsTitle: string;
+        controlsSubtitle: string;
+        radius: string;
+        radiusSharp: string;
+        radiusSoft: string;
+        radiusRound: string;
+        buttonStyle: string;
+        buttonSolid: string;
+        buttonOutline: string;
+        buttonSoft: string;
+        buttonFullWidth: string;
+        progress: string;
+        progressBar: string;
+        progressDots: string;
+        progressSteps: string;
+        progressNone: string;
+        layoutTitle: string;
+        layoutSubtitle: string;
+        logoSize: string;
+        sizeSm: string;
+        sizeMd: string;
+        sizeLg: string;
+        logoPosition: string;
+        alignLeft: string;
+        alignCenter: string;
+        contentAlign: string;
+        contentWidth: string;
+        widthNarrow: string;
+        widthWide: string;
+        transition: string;
+        transitionSlide: string;
+        transitionFade: string;
+        transitionNone: string;
+        shareTitle: string;
+        shareSubtitle: string;
+        ogImage: string;
+        ogImageHint: string;
+        ogFallback: string;
+        reset: string;
+        /** The custom color popover. */
+        colorSwatches: string;
+        colorCustom: string;
+        colorHex: string;
+        colorInvalid: string;
       };
       /** The editor's Connect tab (per-form integrations, tracking, emails). */
       connect: {
@@ -636,6 +887,7 @@ export interface FormsMessages {
       metricCompletionRate: string;
       metricTimeToComplete: string;
       metricPartials: string;
+      metricBookings: string;
       rangeToday: string;
       rangeWeek: string;
       rangeMonth: string;
@@ -654,7 +906,9 @@ export interface FormsMessages {
       dropoffSubtitle: string;
       colStep: string;
       colViews: string;
+      colAnswered: string;
       colDropoff: string;
+      dropoffSubtitleAnswered: string;
       coverRow: string;
       landingRow: string;
       emptyRangeTitle: string;
@@ -766,6 +1020,40 @@ export interface FormsMessages {
       connectPromptTitle: string;
       connectPromptBody: string;
       connectPromptCta: string;
+      /** HubSpot keys contacts on email — a form with no address cannot sync. */
+      emailRequiredTitle: string;
+      emailRequiredBody: string;
+      emailRequiredCta: string;
+      emailFromScheduler: string;
+      hubspotHowTitle: string;
+      hubspotHowBody: string;
+      /** Send one sample delivery to the configured webhook. */
+      pingWebhook: string;
+      pingSending: string;
+      pingOk: string;
+      pingFailed: string;
+      pingNeedsUrl: string;
+      pingHelp: string;
+      /**
+       * Why a test delivery failed. One line per reason the API can name — a
+       * bare "HTTP 400" told the author nothing about where to look. Only
+       * `pingMethodNotAllowed` may claim POST was refused; that is the one
+       * status that actually says so.
+       */
+      pingStatus: string;
+      pingWeSend: string;
+      pingEndpointSaid: string;
+      pingMethodNotAllowed: string;
+      pingUnsupportedMedia: string;
+      pingRejectedBody: string;
+      pingUnauthorized: string;
+      pingNotFound: string;
+      pingRateLimited: string;
+      pingServerError: string;
+      pingRedirect: string;
+      pingBlocked: string;
+      pingUnreachable: string;
+      pingUnknown: string;
       connectedBadge: string;
       propertiesUnavailable: string;
       mapQuestions: string;
@@ -821,6 +1109,10 @@ export interface FormsMessages {
       encryptionOffBody: string;
       loadError: string;
       perFormNote: string;
+      /** The deployment already supplies this provider's token (env fallback). */
+      serverProvided: string;
+      serverProvidedTitle: string;
+      serverProvidedBody: string;
     };
     /** Draft → publish controls in the form editor (publish button + badge). */
     publish: {
@@ -865,6 +1157,8 @@ export const en: FormsMessages = {
     ctaQuestion: 'Want your own form?',
     ctaAction: 'Get Dapta Forms — free',
     progressLabel: 'Step {current} of {total}',
+    verticalProgress: '{answered} of {total} answered',
+    verticalErrors: 'Check the highlighted questions above.',
     revealHeadline: 'Reviewing your answers…',
     revealSubtitle: 'One moment while we match you with the best next step.',
     noSteps: 'This form has no steps yet.',
@@ -904,6 +1198,10 @@ export const en: FormsMessages = {
       lastPlaceholder: 'Last name',
     },
   },
+  profile: {
+    formsTitle: 'Forms',
+    noForms: 'Nothing published yet.',
+  },
   admin: {
     select: {
       search: 'Search…',
@@ -921,6 +1219,7 @@ export const en: FormsMessages = {
         submissions: 'Submissions',
         analytics: 'Analytics',
         integrations: 'Integrations',
+        branding: 'Brand kit',
         settings: 'Settings',
       },
       switcher: {
@@ -930,6 +1229,12 @@ export const en: FormsMessages = {
         dapta: 'Dapta AI',
         calendars: 'Dapta Calendars',
         opensNewTab: '(opens in a new tab)',
+      },
+      workspaces: {
+        menuLabel: 'Your workspaces',
+        eyebrow: 'Workspace',
+        invited: 'Invited',
+        unknown: 'Unknown workspace',
       },
     },
     home: {
@@ -946,11 +1251,56 @@ export const en: FormsMessages = {
       createForm: 'Create a form',
       createFormDesc: 'Build a new form and share its link.',
       branding: 'Branding & style',
-      brandingDesc: 'Cover, colors and the public look.',
+      brandingDesc: 'Your brand kit — logo, colors and the public look.',
       integrations: 'Integrations & webhooks',
       integrationsDesc: 'Send responses to your CRM or a webhook.',
       analytics: 'Analytics',
       analyticsDesc: 'Funnel performance and drop-off.',
+    },
+    brandKit: {
+      title: 'Brand kit',
+      subtitle:
+        'Your workspace look — logo, colors, font and controls. New forms start with it; you can apply it to existing forms below.',
+      save: 'Save brand kit',
+      saving: 'Saving…',
+      saved: 'Brand kit saved.',
+      adminOnly: 'Only an admin or owner can edit the brand kit.',
+      logoTitle: 'Logo',
+      logoSubtitle: 'Shown on covers and headers unless a form sets its own.',
+      logoUrl: 'Logo URL',
+      logoUrlPlaceholder: 'https://…/logo.png',
+      clientLogosTitle: 'Client logos',
+      clientLogosSubtitle: 'The “trusted by” marquee on covers.',
+      clientLogosAdd: 'Add logo',
+      clientLogosRemove: 'Remove',
+      clientLogoUrlPlaceholder: 'https://…/client.svg',
+      clientLogoNamePlaceholder: 'Client name',
+      colorsTitle: 'Colors',
+      colorsSubtitle: 'Setting a background locks the light/dark theme of forms the kit is applied to.',
+      notSet: 'Not set — each form keeps its own',
+      clearAxis: 'Clear',
+      typographyTitle: 'Typography',
+      typographySubtitle: 'The typeface forms render with.',
+      controlsTitle: 'Controls',
+      controlsSubtitle: 'Corner radius and button style.',
+      previewTitle: 'Preview',
+      previewQuestion: 'How should we reach you?',
+      previewButton: 'Continue',
+      applyTitle: 'Apply to existing forms',
+      applySubtitle: 'Pick the forms that should adopt the kit. Fields the kit doesn’t set are left as each form has them.',
+      applyWarning:
+        'Applying updates the selected forms immediately, including their published version. You can undo per form.',
+      applySelectAll: 'Select all',
+      applyClear: 'Clear selection',
+      applyButton: 'Apply to selected ({count})',
+      applying: 'Applying…',
+      appliedToast: 'Brand kit applied ({count}).',
+      appliedBadge: 'Kit applied',
+      revert: 'Undo',
+      reverting: 'Undoing…',
+      revertedToast: 'Brand kit apply undone.',
+      emptyForms: 'No forms yet — the kit will style your first one automatically.',
+      updatedAt: 'Last saved {date}',
     },
     picker: {
       submissionsTitle: 'Submissions',
@@ -989,6 +1339,20 @@ export const en: FormsMessages = {
       statusActive: 'Active',
       statusInvited: 'Invited',
       statusDisabled: 'Disabled',
+      publicPageHeading: 'Your public page',
+      publicPageSubtitle:
+        'A page at your handle listing the forms you want people to find. Off until you turn it on.',
+      publicPageEnable: 'Published',
+      publicPageNoHandle: 'You need a handle before this page can have a URL.',
+      publicPageHeadline: 'Headline',
+      publicPageHeadlinePlaceholder: 'What you help people with',
+      publicPageBio: 'About',
+      publicPageBioPlaceholder: 'A short paragraph about what you do.',
+      publicPageSave: 'Save',
+      publicPageSaving: 'Saving…',
+      publicPageSaved: 'Public page saved.',
+      publicPageError: 'Could not save your public page.',
+      publicPageView: 'View page',
       membersEmpty: 'No members yet.',
       you: 'You',
       addMember: 'Add member',
@@ -1068,6 +1432,11 @@ export const en: FormsMessages = {
       nameLabel: 'Form name',
       namePlaceholder: 'e.g. Lead qualification quiz',
       nameRequired: 'Give your form a name.',
+      layoutLabel: 'Layout',
+      layoutSlides: 'Slides',
+      layoutSlidesDesc: 'One question per screen, step by step.',
+      layoutVertical: 'One page',
+      layoutVerticalDesc: 'All questions on a single page, one Submit.',
       cancel: 'Cancel',
       emptyTitle: 'No forms yet',
       emptyBody: 'Create your first form to start collecting responses.',
@@ -1191,11 +1560,56 @@ export const en: FormsMessages = {
         points: 'Points',
         pointsHint: 'Added to the score when this option is picked. Use a negative number to subtract.',
         icon: 'Icon',
+        iconHelp:
+          'An emoji, one or two letters, or an image. Emoji and letters show in a circle; images get a box they fit inside, so a wide logo is not cropped. Images are available on the card layout only.',
+        iconPlaceholder: '🚀 or https://…',
+        iconTabEmoji: 'Emoji',
+        iconTabLetters: 'Letters',
+        iconTabImage: 'Image',
+        iconClear: 'Clear',
+        iconEmpty: 'Pick an icon',
+        iconLettersHint: 'Up to two letters, e.g. HS for HubSpot. Empty falls back to the label’s initials.',
+        iconImageHint: 'An https:// image URL. Logos keep their shape — they are fit inside a box, not cropped to a circle.',
+        iconUrlInvalid: 'This URL protocol is not allowed for images.',
+        emojiGroups: {
+          reactions: 'Reactions',
+          people: 'People',
+          business: 'Business',
+          tech: 'Tech',
+          comms: 'Communication',
+          status: 'Status',
+          places: 'Places',
+        },
         remove: 'Remove option',
         empty: 'No options yet.',
         labelHelp: 'What respondents read on the option. Safe to reword at any time.',
         valueHelp:
           'What gets stored in the response and sent to HubSpot or a webhook. Keep it stable — changing it breaks past answers and any mapping that points at it.',
+        importer: {
+          open: 'Import options',
+          title: 'Import options from a spreadsheet',
+          intro:
+            'Copy one or two columns from your sheet and paste them here. Column 1 is the option, column 2 (optional) is its score. A header row is detected automatically.',
+          placeholder: 'SaaS B2B\t10\nE-commerce\t8\nHealthcare\t7',
+          modeReplace: 'Replace options',
+          modeAppend: 'Add to the end',
+          colOption: 'Option',
+          colScore: 'Score',
+          colStatus: 'Status',
+          statusOk: 'ok',
+          statusDuplicate: 'duplicate',
+          statusInvalid: 'invalid score',
+          statusRounded: 'rounded to {n}',
+          summaryValid: '{n} valid',
+          summaryWithScore: '{n} with score',
+          summaryHeaderSkipped: 'header skipped',
+          summaryExtraColumns: 'extra columns ignored',
+          summaryTruncated: '{n} over the limit',
+          submit: 'Import {n} options',
+          replaceIconsNote: 'Replacing removes the icons your current options carry.',
+          noScoresNote: 'No scores in this paste — this question keeps its current points.',
+          cancel: 'Cancel',
+        },
       },
       sliderScoring: {
         title: 'Slider scoring',
@@ -1304,11 +1718,28 @@ export const en: FormsMessages = {
         none: 'Off — only save completed submissions',
         afterStep: 'After question {n}',
       },
+      layout: {
+        title: 'Layout',
+        subtitle: 'How respondents move through the form.',
+        slides: 'Slides',
+        slidesHint: 'One question per screen, step by step.',
+        vertical: 'One page',
+        verticalHint:
+          'Every question on a single page with one Submit. Logic still applies live — questions show and hide as answers change.',
+        coverCtaNote:
+          'On a one-page form the cover renders as a header above the questions — there is no Start button, so its text is not used.',
+        endReveal: 'Reveal screen before results',
+        endRevealHint:
+          'Plays once, after Submit and before the result. Edit its copy by selecting the card at the end of the question list.',
+      },
       cover: {
         title: 'Cover screen',
         subtitle: 'The intro screen shown before the first step.',
         enabled: 'Show a cover screen',
         bannerText: 'Banner text',
+        bannerScope: 'Show the banner on',
+        bannerScopeForm: 'Every screen',
+        bannerScopeCover: 'Cover only',
         eyebrow: 'Eyebrow',
         badge: 'Badge',
         headline: 'Headline',
@@ -1323,6 +1754,7 @@ export const en: FormsMessages = {
         logoInvalid: 'This URL protocol is not allowed for images.',
         clientLogos: 'Client logos',
         clientLogosHint: 'A “trusted by” marquee on the cover. The name shows when no image is set.',
+        showClientLogos: 'Show the marquee',
         clientLogoName: 'Name',
         clientLogoSrc: 'Image URL',
         addClientLogo: 'Add logo',
@@ -1354,12 +1786,100 @@ export const en: FormsMessages = {
         title: 'Live preview',
         empty: 'Select a step to preview it.',
         coverTitle: 'Cover',
+        verticalSubmit: 'Submit',
         step: 'Step',
         of: 'of',
         device: 'Device preview',
         mobile: 'Mobile',
         desktop: 'Desktop',
         close: 'Close',
+        urlLabel: 'Public link',
+        copyLink: 'Copy link',
+        copied: 'Copied',
+        openForm: 'Open',
+        inert: 'Preview only — nothing here is submitted.',
+        previous: 'Previous screen',
+        next: 'Next screen',
+      },
+      design: {
+        presetsTitle: 'Theme',
+        presetsSubtitle: 'A starting point you can edit. Pick one, then change anything below.',
+        presetsCustom: 'Custom',
+        colorsTitle: 'Colors',
+        colorsSubtitle: 'The ground, the text on it, and the one accent.',
+        background: 'Background',
+        foreground: 'Text',
+        accent: 'Accent',
+        themeLockHint:
+          'Choosing a background fixes the form to this palette — it stops following the visitor’s light or dark setting.',
+        backgroundStyle: 'Background style',
+        bgSolid: 'Solid',
+        bgGradient: 'Gradient',
+        bgGlow: 'Glow',
+        bgImage: 'Image',
+        backgroundImage: 'Image URL',
+        backgroundImageHint: 'Paste a link to the image. A dark layer keeps the text readable over it.',
+        overlay: 'Image dimming',
+        contrast: 'Contrast',
+        contrastText: 'Text on background',
+        contrastButton: 'Label on button',
+        contrastFail: 'Below AA — hard to read.',
+        accentLowContrast:
+          'Your accent is {ratio}:1 against the background. No text uses it, so nothing becomes unreadable — but a selected option and the button may be hard to pick out.',
+        suggestApply: 'Use {color}',
+        typographyTitle: 'Typography',
+        typographySubtitle: 'All eight faces are self-hosted, so the form loads nothing from a font CDN.',
+        font: 'Typeface',
+        fontSans: 'Sans',
+        fontSerif: 'Serif',
+        fontCustomGroup: 'Your own',
+        customFontName: 'Font name',
+        customFontNamePlaceholder: 'e.g. Söhne',
+        customFontUrl: 'Font file URL (.woff2)',
+        customFontHint: 'Host the file yourself and paste its link. Both fields are required.',
+        controlsTitle: 'Shape and controls',
+        controlsSubtitle: 'Corners, buttons, and how progress is shown.',
+        radius: 'Corners',
+        radiusSharp: 'Sharp',
+        radiusSoft: 'Soft',
+        radiusRound: 'Round',
+        buttonStyle: 'Button',
+        buttonSolid: 'Solid',
+        buttonOutline: 'Outline',
+        buttonSoft: 'Soft',
+        buttonFullWidth: 'Full-width button',
+        progress: 'Progress',
+        progressBar: 'Bar',
+        progressDots: 'Dots',
+        progressSteps: 'Counter',
+        progressNone: 'Hidden',
+        layoutTitle: 'Layout',
+        layoutSubtitle: 'Where things sit and how the form moves between steps.',
+        logoSize: 'Logo size',
+        sizeSm: 'Small',
+        sizeMd: 'Medium',
+        sizeLg: 'Large',
+        logoPosition: 'Logo position',
+        alignLeft: 'Left',
+        alignCenter: 'Center',
+        contentAlign: 'Question alignment',
+        contentWidth: 'Content width',
+        widthNarrow: 'Narrow',
+        widthWide: 'Wide',
+        transition: 'Step transition',
+        transitionSlide: 'Slide',
+        transitionFade: 'Fade',
+        transitionNone: 'None',
+        shareTitle: 'Share card',
+        shareSubtitle: 'How the link looks when someone shares it in chat or social.',
+        ogImage: 'Share image URL',
+        ogImageHint: 'Ideal size 1200×630.',
+        ogFallback: 'Left empty, the card is generated from the colors and logo above.',
+        reset: 'Reset design',
+        colorSwatches: 'Presets',
+        colorCustom: 'Custom',
+        colorHex: 'Hex',
+        colorInvalid: 'Enter a color like #1f6feb.',
       },
       connect: {
         tab: 'Connect',
@@ -1415,6 +1935,7 @@ export const en: FormsMessages = {
       metricCompletionRate: 'Completion rate',
       metricTimeToComplete: 'Time to complete',
       metricPartials: 'Partial submits',
+      metricBookings: 'Bookings',
       rangeToday: 'Today',
       rangeWeek: 'Last week',
       rangeMonth: 'Last month',
@@ -1432,7 +1953,9 @@ export const en: FormsMessages = {
       dropoffSubtitle: 'How many people reach each step, and how many leave.',
       colStep: 'Step',
       colViews: 'Views',
+      colAnswered: 'Answered',
       colDropoff: 'Drop-off',
+      dropoffSubtitleAnswered: 'How many people answer each question, and how many stop there.',
       coverRow: 'Cover / landing',
       landingRow: 'Form views',
       emptyRangeTitle: 'No activity in this range',
@@ -1544,6 +2067,37 @@ export const en: FormsMessages = {
       connectPromptBody:
         'HubSpot isn’t connected for your account yet. Connect it once, then come back to map each question to a contact property.',
       connectPromptCta: 'Go to Connections',
+      emailRequiredTitle: 'This form has no email address to sync',
+      emailRequiredBody:
+        'HubSpot matches a contact by email address — it updates the one it finds, or creates a new one. A submission with no address arrives with nothing to identify, so no contact is created and the lead is not synced. Add an email question, or a scheduler: Calendly collects the invitee’s address when someone books.',
+      emailRequiredCta: 'Add an email question',
+      emailFromScheduler:
+        'Contacts will be keyed on the address Calendly collects when someone books. Answers only reach HubSpot once a meeting is booked.',
+      hubspotHowTitle: 'How the sync works',
+      hubspotHowBody:
+        'Every submission is matched to a contact by email address: an existing contact is updated, and a new one is created when there is no match. A form that never asks for an email cannot be synced.',
+      pingWebhook: 'Send test',
+      pingSending: 'Sending…',
+      pingOk: 'Test delivered — your endpoint accepted it.',
+      pingFailed: 'Test failed: {reason}',
+      pingNeedsUrl: 'Save a webhook URL first.',
+      pingHelp:
+        'Posts one sample body in the real shape, signed the same way, so you can check what your endpoint receives. The answers are made up and marked as a test.',
+      pingStatus: 'Your endpoint answered HTTP {status}.',
+      pingWeSend: 'Dapta Forms always delivers with POST and a JSON body.',
+      pingEndpointSaid: 'It replied: {detail}',
+      pingMethodNotAllowed: 'It does not accept POST on this URL.',
+      pingUnsupportedMedia: 'It refused the content type.',
+      pingRejectedBody: 'It read the request and rejected the body.',
+      pingUnauthorized: 'It refused the request as unauthorised — check any token or secret it expects.',
+      pingNotFound: 'There is nothing at that URL.',
+      pingRateLimited: 'It is rate-limiting us — try again shortly.',
+      pingServerError: 'It failed on its side.',
+      pingRedirect: 'It answered with a redirect, which we never follow. Use the final URL directly.',
+      pingBlocked:
+        'Blocked before sending: that address is private, reserved, or internal, and we never post to those.',
+      pingUnreachable: 'Nothing answered at that URL — check the host is reachable and not timing out.',
+      pingUnknown: 'The delivery failed for a reason we could not identify.',
       connectedBadge: 'HubSpot connected',
       propertiesUnavailable:
         'HubSpot properties are temporarily unavailable — you can still type a property name.',
@@ -1602,6 +2156,10 @@ export const en: FormsMessages = {
         'The server needs a FORMS_ENCRYPTION_KEY to store credentials securely. Set it and restart the API to enable connections.',
       loadError: 'Could not load your connections.',
       perFormNote: 'Field mapping is configured per form, from each form’s integrations tab.',
+      serverProvided: 'Provided by the server',
+      serverProvidedTitle: 'Already working, using the server’s token',
+      serverProvidedBody:
+        'This deployment supplies a token for {provider}, so every account here can already sync. Connecting your own replaces it for this account only.',
     },
     publish: {
       publish: 'Publish',
@@ -1642,6 +2200,8 @@ export const es: FormsMessages = {
     ctaQuestion: '¿Quieres tu propio formulario?',
     ctaAction: 'Consigue Dapta Forms — gratis',
     progressLabel: 'Paso {current} de {total}',
+    verticalProgress: '{answered} de {total} respondidas',
+    verticalErrors: 'Revisa las preguntas marcadas arriba.',
     revealHeadline: 'Revisando tus respuestas…',
     revealSubtitle: 'Un momento mientras encontramos el mejor siguiente paso para ti.',
     noSteps: 'Este formulario aún no tiene pasos.',
@@ -1681,6 +2241,10 @@ export const es: FormsMessages = {
       lastPlaceholder: 'Apellidos',
     },
   },
+  profile: {
+    formsTitle: 'Formularios',
+    noForms: 'Todavía no hay nada publicado.',
+  },
   admin: {
     select: {
       search: 'Buscar…',
@@ -1698,6 +2262,7 @@ export const es: FormsMessages = {
         submissions: 'Respuestas',
         analytics: 'Analíticas',
         integrations: 'Integraciones',
+        branding: 'Kit de marca',
         settings: 'Ajustes',
       },
       switcher: {
@@ -1707,6 +2272,12 @@ export const es: FormsMessages = {
         dapta: 'Dapta AI',
         calendars: 'Dapta Calendars',
         opensNewTab: '(se abre en una pestaña nueva)',
+      },
+      workspaces: {
+        menuLabel: 'Tus workspaces',
+        eyebrow: 'Workspace',
+        invited: 'Invitado',
+        unknown: 'Workspace desconocido',
       },
     },
     home: {
@@ -1723,11 +2294,57 @@ export const es: FormsMessages = {
       createForm: 'Crear un formulario',
       createFormDesc: 'Crea un formulario nuevo y comparte su enlace.',
       branding: 'Marca y estilo',
-      brandingDesc: 'Portada, colores y la apariencia pública.',
+      brandingDesc: 'Tu kit de marca: logo, colores y la apariencia pública.',
       integrations: 'Integraciones y webhooks',
       integrationsDesc: 'Envía respuestas a tu CRM o a un webhook.',
       analytics: 'Analíticas',
       analyticsDesc: 'Rendimiento del embudo y abandono.',
+    },
+    brandKit: {
+      title: 'Kit de marca',
+      subtitle:
+        'La apariencia de tu workspace: logo, colores, tipografía y controles. Los formularios nuevos nacen con él; abajo puedes aplicarlo a los existentes.',
+      save: 'Guardar kit de marca',
+      saving: 'Guardando…',
+      saved: 'Kit de marca guardado.',
+      adminOnly: 'Solo un admin o el owner puede editar el kit de marca.',
+      logoTitle: 'Logo',
+      logoSubtitle: 'Se muestra en portadas y encabezados salvo que un formulario tenga el suyo.',
+      logoUrl: 'URL del logo',
+      logoUrlPlaceholder: 'https://…/logo.png',
+      clientLogosTitle: 'Logos de clientes',
+      clientLogosSubtitle: 'La marquesina “confían en nosotros” de las portadas.',
+      clientLogosAdd: 'Agregar logo',
+      clientLogosRemove: 'Quitar',
+      clientLogoUrlPlaceholder: 'https://…/cliente.svg',
+      clientLogoNamePlaceholder: 'Nombre del cliente',
+      colorsTitle: 'Colores',
+      colorsSubtitle: 'Elegir un fondo fija el tema claro/oscuro de los formularios donde se aplique el kit.',
+      notSet: 'Sin definir — cada formulario conserva el suyo',
+      clearAxis: 'Limpiar',
+      typographyTitle: 'Tipografía',
+      typographySubtitle: 'La tipografía con la que se renderizan los formularios.',
+      controlsTitle: 'Controles',
+      controlsSubtitle: 'Radio de esquinas y estilo de botones.',
+      previewTitle: 'Vista previa',
+      previewQuestion: '¿Cómo te contactamos?',
+      previewButton: 'Continuar',
+      applyTitle: 'Aplicar a formularios existentes',
+      applySubtitle:
+        'Elige los formularios que deben adoptar el kit. Los campos que el kit no define quedan como cada formulario los tiene.',
+      applyWarning:
+        'Aplicar actualiza los formularios seleccionados de inmediato, incluida su versión publicada. Puedes deshacerlo por formulario.',
+      applySelectAll: 'Seleccionar todos',
+      applyClear: 'Limpiar selección',
+      applyButton: 'Aplicar a seleccionados ({count})',
+      applying: 'Aplicando…',
+      appliedToast: 'Kit de marca aplicado ({count}).',
+      appliedBadge: 'Kit aplicado',
+      revert: 'Deshacer',
+      reverting: 'Deshaciendo…',
+      revertedToast: 'Aplicación del kit deshecha.',
+      emptyForms: 'Aún no hay formularios — el kit vestirá el primero automáticamente.',
+      updatedAt: 'Guardado por última vez {date}',
     },
     picker: {
       submissionsTitle: 'Respuestas',
@@ -1766,6 +2383,20 @@ export const es: FormsMessages = {
       statusActive: 'Activo',
       statusInvited: 'Invitado',
       statusDisabled: 'Desactivado',
+      publicPageHeading: 'Tu página pública',
+      publicPageSubtitle:
+        'Una página en tu handle con los formularios que quieres que la gente encuentre. Apagada hasta que la prendas.',
+      publicPageEnable: 'Publicada',
+      publicPageNoHandle: 'Necesitas un handle antes de que esta página tenga URL.',
+      publicPageHeadline: 'Titular',
+      publicPageHeadlinePlaceholder: 'En qué ayudas a la gente',
+      publicPageBio: 'Sobre ti',
+      publicPageBioPlaceholder: 'Un párrafo corto sobre lo que haces.',
+      publicPageSave: 'Guardar',
+      publicPageSaving: 'Guardando…',
+      publicPageSaved: 'Página pública guardada.',
+      publicPageError: 'No se pudo guardar tu página pública.',
+      publicPageView: 'Ver página',
       membersEmpty: 'Aún no hay miembros.',
       you: 'Tú',
       addMember: 'Añadir miembro',
@@ -1846,6 +2477,11 @@ export const es: FormsMessages = {
       nameLabel: 'Nombre del formulario',
       namePlaceholder: 'p. ej. Cuestionario de calificación de leads',
       nameRequired: 'Ponle un nombre a tu formulario.',
+      layoutLabel: 'Diseño',
+      layoutSlides: 'Diapositivas',
+      layoutSlidesDesc: 'Una pregunta por pantalla, paso a paso.',
+      layoutVertical: 'Una página',
+      layoutVerticalDesc: 'Todas las preguntas en una sola página, un solo Enviar.',
       cancel: 'Cancelar',
       emptyTitle: 'Aún no hay formularios',
       emptyBody: 'Crea tu primer formulario para empezar a recibir respuestas.',
@@ -1971,7 +2607,52 @@ export const es: FormsMessages = {
         labelHelp: 'Lo que leen los respondientes en la opción. Puedes reescribirlo cuando quieras.',
         valueHelp:
           'Lo que se guarda en la respuesta y se envía a HubSpot o al webhook. Mantenlo estable — cambiarlo rompe las respuestas anteriores y cualquier mapeo que lo use.',
+        importer: {
+          open: 'Importar opciones',
+          title: 'Importar opciones desde una hoja de cálculo',
+          intro:
+            'Copia una o dos columnas de tu hoja y pégalas aquí. La columna 1 es la opción y la columna 2 (opcional) su puntaje. La fila de encabezado se detecta sola.',
+          placeholder: 'SaaS B2B\t10\nE-commerce\t8\nSalud\t7',
+          modeReplace: 'Reemplazar opciones',
+          modeAppend: 'Agregar al final',
+          colOption: 'Opción',
+          colScore: 'Puntaje',
+          colStatus: 'Estado',
+          statusOk: 'ok',
+          statusDuplicate: 'duplicada',
+          statusInvalid: 'puntaje inválido',
+          statusRounded: 'redondeado a {n}',
+          summaryValid: '{n} válidas',
+          summaryWithScore: '{n} con puntaje',
+          summaryHeaderSkipped: 'encabezado omitido',
+          summaryExtraColumns: 'columnas extra ignoradas',
+          summaryTruncated: '{n} sobre el límite',
+          submit: 'Importar {n} opciones',
+          replaceIconsNote: 'Reemplazar elimina los íconos de las opciones actuales.',
+          noScoresNote: 'Este pegado no trae puntajes — la pregunta conserva sus puntos actuales.',
+          cancel: 'Cancelar',
+        },
         icon: 'Ícono',
+        iconHelp:
+          'Un emoji, una o dos letras, o una imagen. Los emoji y las letras se muestran en un círculo; las imágenes reciben una caja donde entran completas, así un logo ancho no se recorta. Las imágenes solo están disponibles en el diseño de tarjetas.',
+        iconPlaceholder: '🚀 o https://…',
+        iconTabEmoji: 'Emoji',
+        iconTabLetters: 'Letras',
+        iconTabImage: 'Imagen',
+        iconClear: 'Quitar',
+        iconEmpty: 'Elige un ícono',
+        iconLettersHint: 'Hasta dos letras, por ejemplo HS para HubSpot. Si lo dejas vacío se usan las iniciales de la etiqueta.',
+        iconImageHint: 'Una URL de imagen https://. Los logos conservan su forma — entran completos en una caja, no se recortan en un círculo.',
+        iconUrlInvalid: 'Este protocolo de URL no está permitido para imágenes.',
+        emojiGroups: {
+          reactions: 'Reacciones',
+          people: 'Personas',
+          business: 'Negocio',
+          tech: 'Tecnología',
+          comms: 'Comunicación',
+          status: 'Estado',
+          places: 'Lugares',
+        },
         remove: 'Quitar opción',
         empty: 'Aún no hay opciones.',
       },
@@ -2082,11 +2763,28 @@ export const es: FormsMessages = {
         none: 'Desactivado — solo guardar envíos completos',
         afterStep: 'Tras la pregunta {n}',
       },
+      layout: {
+        title: 'Diseño',
+        subtitle: 'Cómo avanzan los respondientes por el formulario.',
+        slides: 'Diapositivas',
+        slidesHint: 'Una pregunta por pantalla, paso a paso.',
+        vertical: 'Una página',
+        verticalHint:
+          'Todas las preguntas en una sola página con un solo Enviar. La lógica sigue aplicando en vivo — las preguntas aparecen y se ocultan según las respuestas.',
+        coverCtaNote:
+          'En un formulario de una página la portada se muestra como encabezado sobre las preguntas — no hay botón de inicio, así que su texto no se usa.',
+        endReveal: 'Pantalla de revelación antes del resultado',
+        endRevealHint:
+          'Se muestra una vez, después de Enviar y antes del resultado. Edita su texto seleccionando la tarjeta al final de la lista de preguntas.',
+      },
       cover: {
         title: 'Portada',
         subtitle: 'La pantalla de introducción antes del primer paso.',
         enabled: 'Mostrar una portada',
         bannerText: 'Texto del banner',
+        bannerScope: 'Mostrar el banner en',
+        bannerScopeForm: 'Todas las pantallas',
+        bannerScopeCover: 'Solo la portada',
         eyebrow: 'Antetítulo',
         badge: 'Insignia',
         headline: 'Titular',
@@ -2101,6 +2799,7 @@ export const es: FormsMessages = {
         logoInvalid: 'Este protocolo de URL no está permitido para imágenes.',
         clientLogos: 'Logos de clientes',
         clientLogosHint: 'Una marquesina de «confían en nosotros» en la portada. El nombre se muestra si no hay imagen.',
+        showClientLogos: 'Mostrar la marquesina',
         clientLogoName: 'Nombre',
         clientLogoSrc: 'URL de la imagen',
         addClientLogo: 'Añadir logo',
@@ -2132,12 +2831,101 @@ export const es: FormsMessages = {
         title: 'Vista previa en vivo',
         empty: 'Selecciona un paso para previsualizarlo.',
         coverTitle: 'Portada',
+        verticalSubmit: 'Enviar',
         step: 'Paso',
         of: 'de',
         device: 'Vista por dispositivo',
         mobile: 'Móvil',
         desktop: 'Escritorio',
         close: 'Cerrar',
+        urlLabel: 'Enlace público',
+        copyLink: 'Copiar enlace',
+        copied: 'Copiado',
+        openForm: 'Abrir',
+        inert: 'Solo vista previa: nada de esto se envía.',
+        previous: 'Pantalla anterior',
+        next: 'Pantalla siguiente',
+      },
+      design: {
+        presetsTitle: 'Tema',
+        presetsSubtitle: 'Un punto de partida editable. Elige uno y luego cambia lo que quieras.',
+        presetsCustom: 'Personalizado',
+        colorsTitle: 'Colores',
+        colorsSubtitle: 'El fondo, el texto encima y el color de marca.',
+        background: 'Fondo',
+        foreground: 'Texto',
+        accent: 'Color de marca',
+        themeLockHint:
+          'Al elegir un fondo, el formulario queda fijo en esta paleta: deja de seguir el modo claro u oscuro del visitante.',
+        backgroundStyle: 'Estilo de fondo',
+        bgSolid: 'Plano',
+        bgGradient: 'Degradado',
+        bgGlow: 'Resplandor',
+        bgImage: 'Imagen',
+        backgroundImage: 'URL de la imagen',
+        backgroundImageHint: 'Pega el enlace de la imagen. Una capa oscura mantiene el texto legible encima.',
+        overlay: 'Oscurecer imagen',
+        contrast: 'Contraste',
+        contrastText: 'Texto sobre fondo',
+        contrastButton: 'Texto del botón',
+        contrastFail: 'Por debajo de AA: cuesta leerlo.',
+        accentLowContrast:
+          'Tu color de marca tiene {ratio}:1 contra el fondo. Ningún texto lo usa, así que nada queda ilegible, pero puede costar distinguir una opción seleccionada y el botón.',
+        suggestApply: 'Usar {color}',
+        typographyTitle: 'Tipografía',
+        typographySubtitle:
+          'Las ocho tipografías se sirven desde aquí, así que el formulario no carga nada de un CDN de fuentes.',
+        font: 'Tipografía',
+        fontSans: 'Sans',
+        fontSerif: 'Serif',
+        fontCustomGroup: 'La tuya',
+        customFontName: 'Nombre de la fuente',
+        customFontNamePlaceholder: 'p. ej. Söhne',
+        customFontUrl: 'URL del archivo (.woff2)',
+        customFontHint: 'Hospeda el archivo y pega su enlace. Los dos campos son obligatorios.',
+        controlsTitle: 'Forma y controles',
+        controlsSubtitle: 'Esquinas, botones y cómo se muestra el progreso.',
+        radius: 'Esquinas',
+        radiusSharp: 'Rectas',
+        radiusSoft: 'Suaves',
+        radiusRound: 'Redondas',
+        buttonStyle: 'Botón',
+        buttonSolid: 'Sólido',
+        buttonOutline: 'Contorno',
+        buttonSoft: 'Suave',
+        buttonFullWidth: 'Botón de ancho completo',
+        progress: 'Progreso',
+        progressBar: 'Barra',
+        progressDots: 'Puntos',
+        progressSteps: 'Contador',
+        progressNone: 'Oculto',
+        layoutTitle: 'Distribución',
+        layoutSubtitle: 'Dónde va cada cosa y cómo se mueve el formulario entre pasos.',
+        logoSize: 'Tamaño del logo',
+        sizeSm: 'Pequeño',
+        sizeMd: 'Mediano',
+        sizeLg: 'Grande',
+        logoPosition: 'Posición del logo',
+        alignLeft: 'Izquierda',
+        alignCenter: 'Centro',
+        contentAlign: 'Alineación de la pregunta',
+        contentWidth: 'Ancho del contenido',
+        widthNarrow: 'Angosto',
+        widthWide: 'Amplio',
+        transition: 'Transición entre pasos',
+        transitionSlide: 'Deslizar',
+        transitionFade: 'Desvanecer',
+        transitionNone: 'Ninguna',
+        shareTitle: 'Tarjeta al compartir',
+        shareSubtitle: 'Cómo se ve el enlace cuando alguien lo comparte en chat o redes.',
+        ogImage: 'URL de la imagen',
+        ogImageHint: 'Tamaño ideal 1200×630.',
+        ogFallback: 'Si lo dejas vacío, la tarjeta se genera con los colores y el logo de arriba.',
+        reset: 'Restablecer diseño',
+        colorSwatches: 'Predefinidos',
+        colorCustom: 'Personalizado',
+        colorHex: 'Hex',
+        colorInvalid: 'Escribe un color como #1f6feb.',
       },
       connect: {
         tab: 'Conectar',
@@ -2194,6 +2982,7 @@ export const es: FormsMessages = {
       metricCompletionRate: 'Tasa de finalización',
       metricTimeToComplete: 'Tiempo para completar',
       metricPartials: 'Envíos parciales',
+      metricBookings: 'Reservas',
       rangeToday: 'Hoy',
       rangeWeek: 'Última semana',
       rangeMonth: 'Último mes',
@@ -2211,7 +3000,9 @@ export const es: FormsMessages = {
       dropoffSubtitle: 'Cuántas personas llegan a cada paso y cuántas se van.',
       colStep: 'Paso',
       colViews: 'Vistas',
+      colAnswered: 'Respondida',
       colDropoff: 'Abandono',
+      dropoffSubtitleAnswered: 'Cuántas personas responden cada pregunta y cuántas se detienen ahí.',
       coverRow: 'Portada / inicio',
       landingRow: 'Vistas del formulario',
       emptyRangeTitle: 'Sin actividad en este rango',
@@ -2323,6 +3114,37 @@ export const es: FormsMessages = {
       connectPromptBody:
         'HubSpot aún no está conectado en tu cuenta. Conéctalo una vez y luego vuelve para asignar cada pregunta a una propiedad de contacto.',
       connectPromptCta: 'Ir a Conexiones',
+      emailRequiredTitle: 'Este formulario no tiene correo que sincronizar',
+      emailRequiredBody:
+        'HubSpot identifica al contacto por su correo: actualiza el que encuentra, o crea uno nuevo. Un envío sin correo llega sin nada con qué identificarlo, así que no se crea ningún contacto y ese lead no se sincroniza. Agrega una pregunta de correo, o un agendador: Calendly pide el correo de quien reserva.',
+      emailRequiredCta: 'Agregar una pregunta de correo',
+      emailFromScheduler:
+        'Los contactos se identificarán con el correo que Calendly pide al reservar. Las respuestas llegan a HubSpot solo cuando alguien agenda.',
+      hubspotHowTitle: 'Cómo funciona la sincronización',
+      hubspotHowBody:
+        'Cada envío se busca en HubSpot por correo: si el contacto existe se actualiza, y si no, se crea uno nuevo. Un formulario que nunca pide correo no se puede sincronizar.',
+      pingWebhook: 'Enviar prueba',
+      pingSending: 'Enviando…',
+      pingOk: 'Prueba entregada: tu endpoint la aceptó.',
+      pingFailed: 'La prueba falló: {reason}',
+      pingNeedsUrl: 'Primero guarda una URL de webhook.',
+      pingHelp:
+        'Manda un cuerpo de ejemplo con la forma real, firmado igual, para que veas qué recibe tu endpoint. Las respuestas son inventadas y van marcadas como prueba.',
+      pingStatus: 'Tu endpoint respondió HTTP {status}.',
+      pingWeSend: 'Dapta Forms siempre entrega con POST y un cuerpo JSON.',
+      pingEndpointSaid: 'Respondió: {detail}',
+      pingMethodNotAllowed: 'No acepta POST en esa URL.',
+      pingUnsupportedMedia: 'Rechazó el tipo de contenido.',
+      pingRejectedBody: 'Leyó la petición y rechazó el cuerpo.',
+      pingUnauthorized: 'Rechazó la petición por falta de autorización: revisa el token o secreto que espera.',
+      pingNotFound: 'No hay nada en esa URL.',
+      pingRateLimited: 'Nos está limitando por frecuencia; probá de nuevo en un momento.',
+      pingServerError: 'Falló de su lado.',
+      pingRedirect: 'Respondió con una redirección, y nunca las seguimos. Usá la URL final directamente.',
+      pingBlocked:
+        'Bloqueado antes de enviar: esa dirección es privada, reservada o interna, y nunca publicamos hacia ahí.',
+      pingUnreachable: 'Nadie respondió en esa URL: revisá que el host esté accesible y no expire.',
+      pingUnknown: 'La entrega falló por un motivo que no pudimos identificar.',
       connectedBadge: 'HubSpot conectado',
       propertiesUnavailable:
         'Las propiedades de HubSpot no están disponibles temporalmente; aún puedes escribir el nombre de una propiedad.',
@@ -2381,6 +3203,10 @@ export const es: FormsMessages = {
         'El servidor necesita una FORMS_ENCRYPTION_KEY para guardar credenciales de forma segura. Configúrala y reinicia la API para habilitar las conexiones.',
       loadError: 'No se pudieron cargar tus conexiones.',
       perFormNote: 'La asignación de campos se configura por formulario, desde la pestaña de integraciones de cada uno.',
+      serverProvided: 'La da el servidor',
+      serverProvidedTitle: 'Ya funciona, con el token del servidor',
+      serverProvidedBody:
+        'Este despliegue trae un token para {provider}, así que todas las cuentas de aquí ya pueden sincronizar. Si conectas el tuyo, lo reemplaza solo para esta cuenta.',
     },
     publish: {
       publish: 'Publicar',

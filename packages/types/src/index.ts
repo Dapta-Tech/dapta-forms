@@ -5,7 +5,26 @@
  * from the same schema (never trust the client; validate on both sides).
  */
 import { z } from 'zod';
-import { CONDITION_OPS, FORM_FIELD_TYPES, isSafeHttpUrl, isSafeImageUrl } from '@quill/engine';
+import {
+  CONDITION_OPS,
+  FORM_BACKGROUND_STYLES,
+  FORM_BANNER_SCOPES,
+  FORM_BUTTON_STYLES,
+  FORM_CONTENT_ALIGNS,
+  FORM_CONTENT_WIDTHS,
+  FORM_FIELD_TYPES,
+  FORM_FONTS,
+  FORM_LAYOUTS,
+  FORM_LOGO_POSITIONS,
+  FORM_LOGO_SIZES,
+  FORM_OPTION_LAYOUTS,
+  FORM_PROGRESS_STYLES,
+  FORM_RADII,
+  FORM_TRANSITIONS,
+  isImageIcon,
+  isSafeHttpUrl,
+  isSafeImageUrl,
+} from '@quill/engine';
 
 /** A URL rendered into `<img src>` — reject script protocols (XSS defense-in-depth). */
 const safeImageUrl = z
@@ -42,7 +61,20 @@ const optionSchema = z.object({
   label: z.string().min(1).max(200),
   value: z.string().min(1).max(200),
   points: z.number().int().optional(),
-  icon: z.string().max(64).nullable().optional(),
+  /**
+   * An emoji/short glyph OR an image URL. The cap is generous enough for a real
+   * CDN URL (it was 64 — emoji-sized — before images were an option), and any
+   * value that LOOKS like an image must also be a safe one, so a hostile config
+   * cannot reach the renderer's `<img src>` with a script protocol.
+   */
+  icon: z
+    .string()
+    .max(512)
+    .refine((v) => !isImageIcon(v) || isSafeImageUrl(v), {
+      message: 'Icon image URL protocol not allowed.',
+    })
+    .nullable()
+    .optional(),
 });
 
 /**
@@ -177,6 +209,9 @@ export const formStepSchema = z.object({
   placeholders: z.record(z.string(), z.string().max(200)).optional(),
   sliderLabelVariants: z.record(z.string(), z.string().max(80)).optional(),
   sliderUnitLabel: z.string().max(80).nullable().optional(),
+  /** ADDITIVE. Absent falls back to `showIcons` — see `resolveOptionLayout`. */
+  optionLayout: z.enum(FORM_OPTION_LAYOUTS).optional(),
+  /** @deprecated Superseded by `optionLayout`; still read as the fallback. */
   showIcons: z.boolean().optional(),
   showForPersonalEmailOnly: z.boolean().optional(),
   terminal: z.boolean().optional(),
@@ -187,6 +222,8 @@ export const formStepSchema = z.object({
    * parameter and carried into the submission. Not shown for `message` steps.
    */
   hidden: z.boolean().optional(),
+  /** Seeds the answer when neither the URL nor the person supplied one. */
+  defaultValue: z.string().max(512).optional(),
   /**
    * `phone` step: ISO 3166-1 alpha-2 the public country picker defaults to
    * (e.g. "CO"). ADDITIVE — absent = the locale-based default. Two-char cap so a
@@ -217,8 +254,13 @@ export type FormStepInput = z.infer<typeof formStepSchema>;
 
 export const formCoverSchema = z.object({
   enabled: z.boolean().optional(),
-  /** A sticky banner line shown above the form throughout the flow. */
+  /** A sticky banner line shown above the form — scoped by `bannerScope`. */
   bannerText: z.string().max(200).nullable().optional(),
+  /**
+   * Where `bannerText` renders (ADDITIVE): `'cover'` confines it to the cover
+   * screen; absent — every legacy config — keeps it above every screen.
+   */
+  bannerScope: z.enum(FORM_BANNER_SCOPES).optional(),
   eyebrow: z.string().max(200).nullable().optional(),
   badge: z.string().max(200).nullable().optional(),
   headline: z.string().max(300).nullable().optional(),
@@ -227,6 +269,11 @@ export const formCoverSchema = z.object({
   trustBadge: z.string().max(200).nullable().optional(),
   logo: safeImageUrl.nullable().optional(),
   clientLogos: z.array(clientLogoSchema).max(24).optional(),
+  /**
+   * Whether the "trusted by" marquee renders (ADDITIVE). Absent — every legacy
+   * config — means shown, so switching it off never deletes the logos.
+   */
+  showClientLogos: z.boolean().optional(),
 });
 
 /**
@@ -246,11 +293,105 @@ const cssColor = z
     { message: 'primaryColor must be a hex, rgb(a)/hsl(a), or named CSS color.' },
   );
 
+/**
+ * An author-supplied typeface. This repo has no asset storage, so the source is
+ * a URL the deployment fetches — the same shape every other image in the config
+ * takes. Restricted to http(s) because it becomes an `@font-face src`.
+ */
+export const customFontSchema = z.object({
+  name: z.string().min(1).max(64),
+  url: z
+    .string()
+    .max(2048)
+    .refine(isSafeHttpUrl, { message: 'Font URL must use http(s).' }),
+});
+
+/**
+ * Per-form branding + design. Everything beyond the original three fields is
+ * OPTIONAL and resolves, when absent, to the pre-design look (`resolveDesign` /
+ * `formThemeVars`) — config invariant #4: extend v1, never break it. A form
+ * published before any of this existed must keep parsing and keep rendering
+ * identically, which is what the engine's legacy-default tests pin down.
+ */
 export const formBrandingSchema = z.object({
   primaryColor: cssColor.nullable().optional(),
   logo: safeImageUrl.nullable().optional(),
   clientLogos: z.array(clientLogoSchema).max(24).optional(),
+
+  // Color. Setting `background` locks the form's light/dark theme.
+  background: cssColor.nullable().optional(),
+  foreground: cssColor.nullable().optional(),
+  backgroundStyle: z.enum(FORM_BACKGROUND_STYLES).optional(),
+  backgroundImage: safeImageUrl.nullable().optional(),
+  backgroundOverlay: z.number().min(0).max(100).optional(),
+
+  // Typography.
+  fontFamily: z.enum(FORM_FONTS).optional(),
+  customFont: customFontSchema.nullable().optional(),
+
+  // Shape & controls.
+  radius: z.enum(FORM_RADII).optional(),
+  buttonStyle: z.enum(FORM_BUTTON_STYLES).optional(),
+  buttonFullWidth: z.boolean().optional(),
+  progressStyle: z.enum(FORM_PROGRESS_STYLES).optional(),
+
+  // Layout.
+  logoSize: z.enum(FORM_LOGO_SIZES).optional(),
+  logoPosition: z.enum(FORM_LOGO_POSITIONS).optional(),
+  contentAlign: z.enum(FORM_CONTENT_ALIGNS).optional(),
+  contentWidth: z.enum(FORM_CONTENT_WIDTHS).optional(),
+  transition: z.enum(FORM_TRANSITIONS).optional(),
+
+  /** Editor bookkeeping — which preset was last applied. Never read at render. */
+  themePreset: z.string().max(32).nullable().optional(),
+  /** Social-share card. Absent = generated from the branding above. */
+  ogImage: safeImageUrl.nullable().optional(),
 });
+
+// --- Workspace brand kit ------------------------------------------------------
+
+/**
+ * The branding fields a workspace brand kit carries — the identity subset of
+ * `formBrandingSchema` (logo, client logos, the three colors, typography, shape,
+ * button style). Per-form presentation fields (cover copy, layout, background
+ * image, ogImage, …) deliberately stay per-form. This list is the single source
+ * of truth for what an "apply" overwrites on a form's `config.branding` — keep
+ * it in sync with `brandKitSchema` below.
+ */
+export const BRAND_KIT_FIELDS = [
+  'logo',
+  'clientLogos',
+  'primaryColor',
+  'background',
+  'foreground',
+  'fontFamily',
+  'customFont',
+  'radius',
+  'buttonStyle',
+] as const;
+export type BrandKitField = (typeof BRAND_KIT_FIELDS)[number];
+
+/**
+ * A workspace's brand kit (stored per account, `account_branding.config`).
+ * Forms SNAPSHOT it — merged into `config.branding` at creation and on an
+ * explicit apply — so the engine, public renderer, and og-image pipeline never
+ * see anything but a plain per-form branding object. Every field is optional:
+ * absent means "the kit does not set this axis" and the form keeps its own
+ * value (or the platform default).
+ */
+export const brandKitSchema = z.object({
+  logo: safeImageUrl.nullable().optional(),
+  clientLogos: z.array(clientLogoSchema).max(24).optional(),
+  primaryColor: cssColor.nullable().optional(),
+  /** Setting `background` locks the light/dark theme of forms it is applied to. */
+  background: cssColor.nullable().optional(),
+  foreground: cssColor.nullable().optional(),
+  fontFamily: z.enum(FORM_FONTS).optional(),
+  customFont: customFontSchema.nullable().optional(),
+  radius: z.enum(FORM_RADII).optional(),
+  buttonStyle: z.enum(FORM_BUTTON_STYLES).optional(),
+});
+export type BrandKit = z.infer<typeof brandKitSchema>;
 
 // --- Outcome extensions (booking + answer-forced overrides) ------------------
 
@@ -592,10 +733,80 @@ export const formEndingSchema = z.object({
 });
 export type FormEndingInput = z.infer<typeof formEndingSchema>;
 
+/**
+ * A member's PUBLIC PAGE (`/[accountCode]/[handle]`), stored as one JSON blob on
+ * `member.profile`.
+ *
+ * The route shape has existed since the first public form URL, but nothing was
+ * ever built at the handle level — only `[handle]/[slug]` — so a handle URL was
+ * a real 404. This is the contract behind it.
+ *
+ * `enabled` defaults to FALSE and the whole column defaults to NULL, which
+ * together mean the page keeps 404-ing until someone deliberately turns it on.
+ * Publishing a page about a person as a side-effect of a schema migration would
+ * be the wrong default in every sense.
+ *
+ * Versioned like the form config, and extended the same way: add optional
+ * fields, never repurpose one.
+ */
+export const memberProfileLinkSchema = z.object({
+  label: z.string().trim().min(1).max(60),
+  url: z
+    .string()
+    .trim()
+    .max(2048)
+    .refine(isSafeHttpUrl, { message: 'Link URL must use http(s).' }),
+});
+
+export const memberProfileSchema = z.object({
+  version: z.literal(1),
+  /** Off until someone turns it on — absent/false keeps today's 404. */
+  enabled: z.boolean().default(false),
+  headline: z.string().trim().max(120).nullable().optional(),
+  bio: z.string().trim().max(600).nullable().optional(),
+  links: z.array(memberProfileLinkSchema).max(6).optional(),
+  /**
+   * Which of the member's PUBLISHED forms to list, by slug. Absent means "all
+   * of them"; an empty array means "none", and the two are deliberately
+   * different — an author who unlists everything must not get every form back.
+   */
+  formSlugs: z.array(z.string().trim().min(1).max(120)).max(50).nullable().optional(),
+  /** Reuses the form design vocabulary rather than inventing a second one. */
+  branding: formBrandingSchema.nullable().optional(),
+});
+
+export type MemberProfile = z.infer<typeof memberProfileSchema>;
+export type MemberProfileLink = z.infer<typeof memberProfileLinkSchema>;
+
+/** One published form as the public profile page lists it. */
+export interface PublicProfileForm {
+  slug: string;
+  name: string;
+  /** The form's own cover headline, when it has one worth showing. */
+  headline?: string | null;
+}
+
+/** What `GET /v1/public/profiles/:accountCode/:handle` returns. */
+export interface PublicProfile {
+  handle: string;
+  displayName: string | null;
+  avatarUrl: string | null;
+  headline: string | null;
+  bio: string | null;
+  links: MemberProfileLink[];
+  forms: PublicProfileForm[];
+  branding: z.infer<typeof formBrandingSchema> | null;
+}
+
 export const formConfigSchema = z.object({
   version: z.literal(1),
   branding: formBrandingSchema.nullable().optional(),
   cover: formCoverSchema.nullable().optional(),
+  /**
+   * Presentation layout for the public form (ADDITIVE — absent on every legacy
+   * config, which then renders as `'slides'`, exactly as it always has).
+   */
+  layout: z.enum(FORM_LAYOUTS).optional(),
   steps: z.array(formStepSchema).default([]),
   scoring: z.object({ enabled: z.boolean().optional() }).nullable().optional(),
   outcomes: z.array(formOutcomeSchema).optional(),
@@ -820,6 +1031,18 @@ export const analyticsResponseSchema = z.object({
   timeToComplete: z.number().int().nullable(),
   /** Partial-only submissions (partialAt set, completedAt null). */
   partialSubmits: z.number().int(),
+  /**
+   * Unique sessions that booked a meeting (scheduler step / booking outcome).
+   * For a form whose conversion is the meeting, this is the real bottom of the
+   * funnel — Submissions alone under-reports it.
+   */
+  bookings: z.number().int(),
+  /**
+   * What the drop-off funnel body counts per step: `viewed` (slides — reached
+   * the step) or `answered` (vertical — completed it; every question is
+   * visible on load there, so "viewed" would flatten into Views).
+   */
+  dropoffMode: z.enum(['viewed', 'answered']),
   /** Cover row + one row per configured step. */
   dropoff: z.array(dropoffRowSchema),
   /** Gap-filled per-day series for the Trends chart (oldest → newest). */

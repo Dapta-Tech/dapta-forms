@@ -1,7 +1,8 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import type { TrendPoint } from '@quill/types';
+import { Select } from '@/components/ui/select';
 
 /**
  * The Trends chart: one switchable metric plotted per day over the selected
@@ -31,10 +32,53 @@ export interface TrendsLabels {
   metrics: Record<MetricKey, string>;
 }
 
-/** Chart geometry (viewBox units; the SVG scales to its container). */
-const W = 720;
+/**
+ * Chart geometry. The viewBox width TRACKS THE MEASURED CONTAINER WIDTH, so one
+ * viewBox unit is exactly one pixel and the drawing is never scaled.
+ *
+ * This used to be a fixed 720-unit viewBox drawn with `preserveAspectRatio="none"`
+ * into a container that is ~1400px on a laptop — which stretched everything ~2x
+ * horizontally and nothing vertically. The tell was the isolated-day marker: a
+ * `<circle>` rendered as an ellipse, and horizontal strokes came out twice as
+ * thick as vertical ones.
+ */
+const W_FALLBACK = 720;
 const H = 220;
 const PAD = { left: 46, right: 12, top: 12, bottom: 26 };
+
+/**
+ * Observe the container's width so the geometry can be computed in real pixels.
+ * Falls back to a fixed width on the server and before the first measurement —
+ * uniform scaling then, never distortion.
+ */
+function useMeasuredWidth<T extends HTMLElement>(): [RefObject<T | null>, number] {
+  const ref = useRef<T>(null);
+  const [width, setWidth] = useState(W_FALLBACK);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    // A width of 0 is "not laid out yet", not a real measurement — taking it
+    // would collapse the geometry. But SKIPPING it and waiting for the observer
+    // to fire again strands the chart on the fallback until something resizes
+    // the window, which is exactly what happened on first paint. So: ignore the
+    // zero, and re-measure on the next frame instead of waiting.
+    const apply = (next: number) => {
+      if (next > 0) setWidth(Math.round(next));
+    };
+    apply(el.getBoundingClientRect().width);
+    const raf = requestAnimationFrame(() => apply(el.getBoundingClientRect().width));
+    if (typeof ResizeObserver === 'undefined') return () => cancelAnimationFrame(raf);
+    const ro = new ResizeObserver((entries) => {
+      apply(entries[0]?.contentRect.width ?? el.getBoundingClientRect().width);
+    });
+    ro.observe(el);
+    return () => {
+      cancelAnimationFrame(raf);
+      ro.disconnect();
+    };
+  }, []);
+  return [ref, width];
+}
 
 /** Format seconds as `Ns`, `Nm Ss` or `Nh Nm` (mirrors the stat card). */
 function formatDuration(seconds: number, unit: string): string {
@@ -67,6 +111,7 @@ export function TrendsChart({
   locale: string;
 }) {
   const [metric, setMetric] = useState<MetricKey>('submissions');
+  const [plotRef, W] = useMeasuredWidth<HTMLDivElement>();
 
   // Buckets are whole UTC days, so render their labels in UTC too — otherwise a
   // point would be titled with the day before/after the data it holds.
@@ -117,9 +162,16 @@ export function TrendsChart({
   // A run of one has no line to draw — mark it so the day is not invisible.
   const isolated = runs.filter((r) => r.length === 1).map((r) => r[0]!);
 
-  // First / middle / last ticks only — a label per day would collide.
+  // As many date ticks as the measured width can hold without labels colliding
+  // (~150px each), always including the first and last day. A fixed three-tick
+  // rule left a 1400px chart with two labels and a huge gap between them.
+  const tickTarget = Math.max(2, Math.min(8, Math.floor(innerW / 150)));
   const tickIdx =
-    points.length <= 1 ? [0] : [0, Math.floor((points.length - 1) / 2), points.length - 1];
+    points.length <= 1
+      ? [0]
+      : Array.from({ length: tickTarget }, (_, k) =>
+          Math.round((k / (tickTarget - 1)) * (points.length - 1)),
+        );
   const uniqueTicks = [...new Set(tickIdx)].filter((i) => i >= 0 && i < points.length);
 
   const metricOptions: MetricKey[] = [
@@ -137,36 +189,36 @@ export function TrendsChart({
           <h2 className="text-lg font-semibold">{labels.title}</h2>
           <p className="text-sm text-muted-foreground">{labels.subtitle}</p>
         </div>
-        <label className="flex items-center gap-2 text-xs text-muted-foreground">
-          {labels.metricLabel}
-          <select
-            data-testid="trends-metric"
+        {/* The shared Select, not a native one: this was the last `<select>` in
+            the admin, and the OS-drawn chevron sat on the border. */}
+        <div className="flex items-center gap-2 text-xs text-muted-foreground" data-testid="trends-metric">
+          <span id="trends-metric-label">{labels.metricLabel}</span>
+          <Select
             value={metric}
-            onChange={(e) => setMetric(e.target.value as MetricKey)}
-            aria-label={labels.metricLabel}
-            className="h-9 rounded-md border border-border bg-background px-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            {metricOptions.map((k) => (
-              <option key={k} value={k}>
-                {labels.metrics[k]}
-              </option>
-            ))}
-          </select>
-        </label>
+            onChange={(v) => setMetric(v as MetricKey)}
+            options={metricOptions.map((k) => ({ value: k, label: labels.metrics[k] }))}
+            ariaLabel={labels.metricLabel}
+            locale={locale}
+            className="h-9 min-w-[160px]"
+          />
+        </div>
       </div>
 
       <div className="rounded-lg border border-border bg-card p-4">
         {points.length === 0 ? (
           <p className="py-10 text-center text-sm text-muted-foreground">{labels.empty}</p>
         ) : (
+          <div ref={plotRef}>
           <svg
             viewBox={`0 0 ${W} ${H}`}
-            className="h-[220px] w-full"
-            preserveAspectRatio="none"
+            width="100%"
+            height={H}
+            className="block"
             role="img"
             aria-label={`${labels.metrics[metric]} — ${labels.title}`}
             data-testid="trends-svg"
             data-metric={metric}
+            data-plot-width={W}
           >
             {/* Baseline always; the peak guide only when data actually reaches it. */}
             <line
@@ -222,6 +274,19 @@ export function TrendsChart({
             {isolated.map((i) => (
               <circle key={i} cx={xAt(i)} cy={yAt(values[i]!)} r={3.5} fill="var(--primary)" />
             ))}
+            {/* A single day has no line to read a value off, so print it next to
+                the dot — otherwise the chart is a lone mark on an empty grid. */}
+            {points.length === 1 && values[0] != null ? (
+              <text
+                x={xAt(0) + 10}
+                y={yAt(values[0]!) + 4}
+                fontSize={12}
+                fill="var(--foreground)"
+                data-testid="trends-single-value"
+              >
+                {formatValue(metric, values[0]!, labels.seconds)}
+              </text>
+            ) : null}
 
             {uniqueTicks.map((i) => (
               <text
@@ -236,6 +301,7 @@ export function TrendsChart({
               </text>
             ))}
           </svg>
+          </div>
         )}
       </div>
     </section>
