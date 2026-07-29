@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { BrandMark } from '@/components/brand/brand';
 
 /**
  * App-switcher — the discreet door to the wider Dapta suite (design-parity with
@@ -172,8 +173,11 @@ export function AppSwitcher({ messages: m }: { messages: SwitcherMessages }) {
             aria-current="true"
             className="flex items-center gap-2.5 rounded-sm bg-muted px-2 py-2 text-sm font-medium"
           >
-            <span className="flex h-6 w-6 items-center justify-center rounded-md bg-primary text-xs font-semibold text-primary-foreground">
-              {PRODUCT_NAME.charAt(0)}
+            {/* A 24px tile, matching the two sibling rows above — the row already
+                carries bg-muted as the current-item highlight, so the tile takes
+                the plain background to stay legible against it. */}
+            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-background">
+              <BrandMark className="h-3.5 w-auto text-foreground" />
             </span>
             <span className="flex-1 truncate">{PRODUCT_NAME}</span>
             <i aria-hidden className="pi pi-check text-primary" style={{ fontSize: 14 }} />

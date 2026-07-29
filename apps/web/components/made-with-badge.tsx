@@ -1,4 +1,5 @@
 import { getMessages } from '@quill/shared';
+import { BrandMark } from '@/components/brand/brand';
 import { signupHref } from '@/lib/growth';
 
 /**
@@ -27,13 +28,10 @@ export function MadeWithBadge({
         rel="noopener noreferrer"
         className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:border-primary hover:text-foreground"
       >
-        <img
-          src="/dapta-mark.png"
-          alt=""
-          width={14}
-          height={14}
-          className="h-3.5 w-3.5 shrink-0 rounded-[3px] object-contain"
-        />
+        {/* The product's own mark, not the parent Dapta D — the copy next to it
+            reads "Made with Dapta Forms". Ink is currentColor, so it picks up the
+            pill's muted foreground and stays legible on any host background. */}
+        <BrandMark className="h-3.5 w-auto shrink-0" />
         <span>{m.madeWith}</span>
         <span className="sr-only">(opens in a new tab)</span>
       </a>

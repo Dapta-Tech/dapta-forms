@@ -1,9 +1,7 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
+import { BrandLockup } from '@/components/brand/brand';
 import { authProvider, getSession } from '@/lib/auth-session';
-
-// Customer-facing name (build-time inlined); "Quill" never surfaces in the UI.
-const productName = process.env.NEXT_PUBLIC_PRODUCT_NAME || 'Forms';
 
 // Per-request render: the workos-vs-local branch reads RUNTIME env + cookies.
 // Without this, next build (no AUTH_PROVIDER in the builder) bakes the OSS
@@ -26,9 +24,7 @@ export default async function HomePage() {
   return (
     <main className="mx-auto flex min-h-dvh max-w-2xl flex-col items-center justify-center gap-8 px-6 py-16 text-center">
       <div className="flex flex-col items-center gap-3">
-        <span className="rounded-md bg-primary px-3 py-1 text-sm font-semibold text-primary-foreground">
-          {productName}
-        </span>
+        <BrandLockup className="h-12 w-auto max-w-[min(440px,86vw)] text-foreground" labelled />
         <h1 className="text-4xl font-semibold tracking-tight">Open-source forms</h1>
         <p className="max-w-md text-muted-foreground">
           A clone-and-run forms platform. SQLite by default, deploy anywhere. This dev instance is

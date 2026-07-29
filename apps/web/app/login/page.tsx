@@ -1,14 +1,12 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getMessages } from '@quill/shared';
+import { BrandLockup, PRODUCT_NAME } from '@/components/brand/brand';
 import { getLocale } from '@/lib/locale';
 import { authProvider } from '@/lib/auth-session';
 import { LoginForm } from './login-form';
 
-// Customer-facing name (build-time inlined); "Quill" never surfaces in the UI.
-const productName = process.env.NEXT_PUBLIC_PRODUCT_NAME || 'Forms';
-
-export const metadata = { title: `Sign in — ${productName}` };
+export const metadata = { title: `Sign in — ${PRODUCT_NAME}` };
 
 export default async function LoginPage({
   searchParams,
@@ -26,12 +24,10 @@ export default async function LoginPage({
 
   return (
     <main className="flex min-h-dvh flex-col items-center justify-center gap-8 px-6">
-      <div className="flex items-center gap-2">
-        <span className="rounded-md bg-primary px-2.5 py-1 text-base font-semibold text-primary-foreground">
-          {productName.charAt(0)}
-        </span>
-        <span className="text-2xl font-semibold tracking-tight">{productName}</span>
-      </div>
+      {/* Sign-in is an entrance, so it gets the full company lockup at display
+          size. Width-capped as well as height-capped: at ~6:1 a fixed height
+          alone would push past the 24px gutters on a 320px screen. */}
+      <BrandLockup className="h-11 w-auto max-w-[min(400px,86vw)] text-foreground" labelled />
 
       <div className="w-full max-w-sm rounded-xl border border-border bg-card p-6">
         <h1 className="mb-1 text-xl font-semibold">{m.title}</h1>

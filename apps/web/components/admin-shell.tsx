@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation';
 import { isNavItemActive, type FormsMessages } from '@quill/shared';
 import { signOutAction } from '@/app/login/actions';
 import { AppSwitcher } from '@/components/app-switcher';
+import { BrandMark, BrandWordmark } from '@/components/brand/brand';
 import { WorkspaceSwitcher } from '@/components/workspace-switcher';
 import type { Workspace } from '@/lib/admin-api';
 
@@ -41,8 +42,6 @@ const NAV: NavItem[] = [
 ];
 
 const NAV_COLLAPSED_KEY = 'forms.nav.collapsed';
-// Customer-facing name (build-time inlined); the codename never surfaces.
-const PRODUCT_NAME = process.env.NEXT_PUBLIC_PRODUCT_NAME || 'Forms';
 
 // Dapta's icon system is PrimeIcons (pi pi-*) — the same set Calendars + the
 // production admin panel use. Sized at the design-system's 20px sidebar icon.
@@ -176,10 +175,14 @@ export function AdminShell({
 
   const brand = (
     <div className={`flex items-center gap-2 ${railCollapsed ? 'flex-col px-0' : 'px-2'}`}>
-      <span className="rounded-md bg-primary px-2 py-0.5 text-sm font-semibold text-primary-foreground">
-        {PRODUCT_NAME.charAt(0)}
-      </span>
-      {!railCollapsed ? <span className="text-sm font-semibold text-foreground">{PRODUCT_NAME}</span> : null}
+      {/* Inside the app the shell already says Dapta, so the rail carries the
+          product wordmark alone — at ~3:1 it reads at a size where the 6:1 full
+          lockup turns to mush. Collapsed to 64px, only the mark fits. */}
+      {railCollapsed ? (
+        <BrandMark className="h-6 w-auto text-foreground" labelled />
+      ) : (
+        <BrandWordmark className="h-6 w-auto text-foreground" labelled />
+      )}
       <AppSwitcher messages={messages.switcher} />
       {/* The rail toggle is a desktop pref; hidden on the editor route where the
           rail is force-collapsed for canvas. */}
@@ -267,10 +270,12 @@ export function AdminShell({
         >
           <i aria-hidden className="pi pi-bars" style={{ fontSize: 20 }} />
         </button>
-        <span className="rounded-md bg-primary px-2 py-0.5 text-sm font-semibold text-primary-foreground">
-          {PRODUCT_NAME.charAt(0)}
-        </span>
-        <span className="text-sm font-semibold">{PRODUCT_NAME}</span>
+        {/* Under 360px the hamburger plus the wordmark crowds the bar, so the
+            mark takes over. Done in CSS rather than JS so there is no flash on
+            first paint and no resize listener. Only the visible one is display:
+            block, so only one accessible name reaches the a11y tree. */}
+        <BrandWordmark className="hidden h-6 w-auto text-foreground min-[360px]:block" labelled />
+        <BrandMark className="h-6 w-auto text-foreground min-[360px]:hidden" labelled />
       </header>
 
       {/* Desktop sidebar — flush, bordered, collapsible rail.
@@ -325,10 +330,8 @@ export function AdminShell({
         inert={!drawerOpen || undefined}
       >
         <div className="flex items-center gap-2 px-2">
-          <span className="rounded-md bg-primary px-2 py-0.5 text-sm font-semibold text-primary-foreground">
-            {PRODUCT_NAME.charAt(0)}
-          </span>
-          <span className="text-sm font-semibold text-foreground">{PRODUCT_NAME}</span>
+          {/* The drawer is 82vw capped at 320px, so the wordmark always fits. */}
+          <BrandWordmark className="h-6 w-auto text-foreground" labelled />
           <AppSwitcher messages={messages.switcher} />
         </div>
         {currentAccountId ? (
