@@ -69,9 +69,17 @@ export function FormRenderer({
 }) {
   const m = getMessages(locale).renderer;
   const sessionId = useSessionId(`quill-form-${accountCode}-${slug}`);
-  const cover = config.cover && config.cover.enabled !== false ? config.cover : null;
+  // The cover SCREEN: null when switched off, which is what gates the `cover`
+  // phase, the Start CTA and the back-to-cover step.
+  const coverScreen = config.cover && config.cover.enabled !== false ? config.cover : null;
+  // The banner is page CHROME, not part of the cover screen — `bannerScope:
+  // 'form'` exists precisely to pin it above the steps. Reading it off the
+  // gated value above made it unreachable whenever the cover was switched off,
+  // even though `showBanner` handles that case, and it disagreed with the
+  // builder preview (which reads `config.cover` directly).
+  const chrome = config.cover ?? null;
 
-  const [phase, setPhase] = useState<Phase>(cover ? 'cover' : 'steps');
+  const [phase, setPhase] = useState<Phase>(coverScreen ? 'cover' : 'steps');
   const [answers, setAnswers] = useState<Answers>({});
   const [index, setIndex] = useState(0);
   const [animKey, setAnimKey] = useState(0);
@@ -285,7 +293,7 @@ export function FormRenderer({
         // the start signal ("started answering"). The metric already counts
         // `step_complete` sessions; this keeps the event stream itself
         // consistent across form shapes. Cover forms emit it from `start()`.
-        if (!cover && !startSent.current) {
+        if (!coverScreen && !startSent.current) {
           startSent.current = true;
           track('start');
         }
@@ -416,7 +424,7 @@ export function FormRenderer({
     if (phase === 'steps' && index > 0) {
       setAnimKey((k) => k + 1);
       setIndex((i) => i - 1);
-    } else if (phase === 'steps' && index === 0 && cover) {
+    } else if (phase === 'steps' && index === 0 && coverScreen) {
       setPhase('cover');
     }
   }
@@ -464,7 +472,7 @@ export function FormRenderer({
         answers={answersRef.current}
         m={m}
         accountCode={accountCode}
-        cover={cover}
+        cover={chrome}
         design={design}
       />
     );
@@ -472,7 +480,7 @@ export function FormRenderer({
 
   if (phase === 'booking' && booking?.outcome.booking) {
     return (
-      <PhaseShell className="pf pf--booking-page" design={design} cover={cover}>
+      <PhaseShell className="pf pf--booking-page" design={design} cover={chrome}>
         <BookingScreen
           booking={booking.outcome.booking}
           answers={answersRef.current}
@@ -491,7 +499,7 @@ export function FormRenderer({
         design={design}
         role="status"
         aria-live="polite"
-        cover={cover}
+        cover={chrome}
       >
         <RevealScreen
           reveal={config.reveal}
@@ -510,7 +518,7 @@ export function FormRenderer({
         design={design}
         role="status"
         aria-live="polite"
-        cover={cover}
+        cover={chrome}
       >
         <div className="pf-reveal__inner">
           <div className="pf-reveal__spinner" aria-hidden="true" />
@@ -520,16 +528,18 @@ export function FormRenderer({
     );
   }
 
-  if (phase === 'cover' && cover) {
-    const logo = cover.logo ?? config.branding?.logo ?? null;
-    const logos = showClientLogos(cover) ? (cover.clientLogos ?? config.branding?.clientLogos ?? []) : [];
+  if (phase === 'cover' && coverScreen) {
+    const logo = coverScreen.logo ?? config.branding?.logo ?? null;
+    const logos = showClientLogos(coverScreen)
+      ? (coverScreen.clientLogos ?? config.branding?.clientLogos ?? [])
+      : [];
     return (
       <PhaseShell
         className="pf pf--cover"
         design={design}
         onKeyDown={(e) => e.key === 'Enter' && start()}
         tabIndex={-1}
-        cover={cover}
+        cover={chrome}
         isCover
       >
         <header className="pf__cover-header">
@@ -537,18 +547,18 @@ export function FormRenderer({
         </header>
         <div className="pf__cover-main">
           <div className="pf__cover-content pf-animate">
-            {cover.eyebrow || cover.badge ? (
-              <p className="pf__badge">{cover.eyebrow ?? cover.badge}</p>
+            {coverScreen.eyebrow || coverScreen.badge ? (
+              <p className="pf__badge">{coverScreen.eyebrow ?? coverScreen.badge}</p>
             ) : null}
-            <h1 className="pf__title">{cover.headline ?? name}</h1>
-            {cover.subheadline ? <p className="pf__subheadline">{cover.subheadline}</p> : null}
-            {cover.trustBadge ? <p className="pf__trust">{cover.trustBadge}</p> : null}
+            <h1 className="pf__title">{coverScreen.headline ?? name}</h1>
+            {coverScreen.subheadline ? <p className="pf__subheadline">{coverScreen.subheadline}</p> : null}
+            {coverScreen.trustBadge ? <p className="pf__trust">{coverScreen.trustBadge}</p> : null}
           </div>
           <ClientLogosMarquee logos={logos} label={m.trustedBy} />
         </div>
         <div className="pf__cover-footer">
           <button type="button" className="pf__btn" onClick={start}>
-            {cover.ctaText ?? m.start}
+            {coverScreen.ctaText ?? m.start}
           </button>
         </div>
       </PhaseShell>
@@ -577,7 +587,7 @@ export function FormRenderer({
         design={design}
         role="status"
         aria-live="polite"
-        cover={cover}
+        cover={chrome}
       >
         <RevealScreen
           reveal={step.reveal ?? { enabled: true }}
@@ -613,12 +623,12 @@ export function FormRenderer({
     const booking = step.scheduler
       ? schedulerToBooking(step.scheduler, schedPrefill.customAnswers)
       : null;
-    const schedLogo = cover?.logo ?? config.branding?.logo ?? null;
+    const schedLogo = coverScreen?.logo ?? config.branding?.logo ?? null;
     return (
-      <PhaseShell className="pf" design={design} cover={cover}>
+      <PhaseShell className="pf" design={design} cover={chrome}>
         <header className="pf__topbar">
           <div className="pf__topbar-inner">
-            {index > 0 || cover ? (
+            {index > 0 || coverScreen ? (
               <button type="button" className="pf__back" onClick={back} aria-label={m.back}>
                 ←
               </button>
@@ -674,13 +684,13 @@ export function FormRenderer({
   // multi-select choice (pick several, then Continue) — shows the button.
   const autoAdvances = step.type === 'dropdown' || (step.type === 'multiple_choice' && !isMultiSelect(step));
   const showContinue = !autoAdvances;
-  const logo = cover?.logo ?? config.branding?.logo ?? null;
+  const logo = coverScreen?.logo ?? config.branding?.logo ?? null;
 
   return (
-    <PhaseShell className="pf" design={design} onKeyDown={onKeyDown} cover={cover}>
+    <PhaseShell className="pf" design={design} onKeyDown={onKeyDown} cover={chrome}>
       <header className="pf__topbar">
         <div className="pf__topbar-inner">
-          {index > 0 || cover ? (
+          {index > 0 || coverScreen ? (
             <button type="button" className="pf__back" onClick={back} aria-label={m.back}>
               ←
             </button>

@@ -36,6 +36,7 @@ import {
   revealAfterKey,
   nameFields,
   isSafeHttpUrl,
+  showBanner,
   type Answers,
   type AnswerValue,
   type FormStep,
@@ -159,7 +160,12 @@ export function VerticalFormRenderer({
 }) {
   const m = getMessages(locale).renderer;
   const sessionId = useSessionId(`quill-form-${accountCode}-${slug}`);
-  const cover = config.cover && config.cover.enabled !== false ? config.cover : null;
+  // The cover HERO: null when switched off, which is what gates the hero block.
+  const coverScreen = config.cover && config.cover.enabled !== false ? config.cover : null;
+  // The banner is page CHROME, independent of the hero — see the note in
+  // `form-renderer.tsx`. `showBanner` already handles a disabled cover; reading
+  // it off the gated value above is what made it unreachable.
+  const chrome = config.cover ?? null;
 
   const [phase, setPhase] = useState<Phase>('form');
   const [answers, setAnswers] = useState<Answers>({});
@@ -498,7 +504,7 @@ export function VerticalFormRenderer({
         answers={answersRef.current}
         m={m}
         accountCode={accountCode}
-        cover={cover}
+        cover={chrome}
         design={design}
       />
     );
@@ -506,7 +512,7 @@ export function VerticalFormRenderer({
 
   if (phase === 'booking' && booking?.outcome.booking) {
     return (
-      <PhaseShell className="pf pf--booking-page" design={design} cover={cover}>
+      <PhaseShell className="pf pf--booking-page" design={design} cover={chrome}>
         <BookingScreen
           booking={booking.outcome.booking}
           answers={answersRef.current}
@@ -525,7 +531,7 @@ export function VerticalFormRenderer({
         design={design}
         role="status"
         aria-live="polite"
-        cover={cover}
+        cover={chrome}
       >
         <RevealScreen
           reveal={pendingReveal ?? { enabled: true }}
@@ -544,7 +550,7 @@ export function VerticalFormRenderer({
         design={design}
         role="status"
         aria-live="polite"
-        cover={cover}
+        cover={chrome}
       >
         <div className="pf-reveal__inner">
           <div className="pf-reveal__spinner" aria-hidden="true" />
@@ -554,8 +560,8 @@ export function VerticalFormRenderer({
     );
   }
 
-  const logo = cover?.logo ?? config.branding?.logo ?? null;
-  const logos = cover?.clientLogos ?? config.branding?.clientLogos ?? [];
+  const logo = coverScreen?.logo ?? config.branding?.logo ?? null;
+  const logos = coverScreen?.clientLogos ?? config.branding?.clientLogos ?? [];
   const total = answerable.length;
 
   return (
@@ -566,10 +572,15 @@ export function VerticalFormRenderer({
       {/* Banner + progress share ONE sticky group so they never fight for the
           viewport top; the banner's own sticky is neutralized on this layout. */}
       <div className="pf-v__sticky">
-        {/* The one page is simultaneously the cover and the form, so both
-            banner scopes show it here (showBanner(cover, true) === has text);
-            the post-submit phases defer to the scope via the shared shell. */}
-        {cover?.bannerText ? <div className="pf__banner">{cover.bannerText}</div> : null}
+        {/* This page is simultaneously the cover and the form, so a
+            'cover'-scoped banner belongs here — but only when the hero is
+            actually rendered. With the cover switched off there is no cover on
+            the page, so 'cover' scope has nothing to attach to and only 'form'
+            shows, exactly as in the slides layout. The post-submit phases defer
+            to the scope via the shared shell. */}
+        {showBanner(chrome, coverScreen != null) ? (
+          <div className="pf__banner">{chrome?.bannerText}</div>
+        ) : null}
         {total > 0 ? (
           <div className="pf-v__progressbar">
             <div className="pf-progress" aria-hidden="true">
@@ -593,14 +604,14 @@ export function VerticalFormRenderer({
             <FormLogo src={logo} name={name} />
           </header>
 
-          {cover ? (
+          {coverScreen ? (
             <section className="pf-v__hero pf-animate">
-              {cover.eyebrow || cover.badge ? (
-                <p className="pf__badge">{cover.eyebrow ?? cover.badge}</p>
+              {coverScreen.eyebrow || coverScreen.badge ? (
+                <p className="pf__badge">{coverScreen.eyebrow ?? coverScreen.badge}</p>
               ) : null}
-              <h1 className="pf__title">{cover.headline ?? name}</h1>
-              {cover.subheadline ? <p className="pf__subheadline">{cover.subheadline}</p> : null}
-              {cover.trustBadge ? <p className="pf__trust">{cover.trustBadge}</p> : null}
+              <h1 className="pf__title">{coverScreen.headline ?? name}</h1>
+              {coverScreen.subheadline ? <p className="pf__subheadline">{coverScreen.subheadline}</p> : null}
+              {coverScreen.trustBadge ? <p className="pf__trust">{coverScreen.trustBadge}</p> : null}
               <ClientLogosMarquee logos={logos} label={m.trustedBy} />
             </section>
           ) : null}

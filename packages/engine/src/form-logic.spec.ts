@@ -771,6 +771,18 @@ describe('cover presentation toggles', () => {
     expect(showBanner(scoped, false)).toBe(true);
   });
 
+  it('showBanner ignores cover.enabled — a banner is page chrome, not the cover screen', () => {
+    // The renderers used to pass a value already nulled by `enabled === false`,
+    // which made `bannerScope: 'form'` unreachable on exactly the forms that
+    // need it: the ones with no cover screen. `showBanner` decides this, and it
+    // decides it from the SCOPE, so a disabled cover still shows a 'form' banner.
+    const off = { enabled: false, bannerText: 'Limited spots', bannerScope: 'form' as const };
+    expect(showBanner(off, false)).toBe(true);
+    // ...and a 'cover'-scoped banner still has nowhere to show without a cover.
+    const offCoverScoped = { enabled: false, bannerText: 'Limited spots', bannerScope: 'cover' as const };
+    expect(showBanner(offCoverScoped, false)).toBe(false);
+  });
+
   it('showClientLogos hides the marquee only on an explicit false', () => {
     expect(showClientLogos(undefined)).toBe(true);
     expect(showClientLogos(null)).toBe(true);
