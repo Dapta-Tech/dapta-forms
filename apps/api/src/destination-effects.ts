@@ -229,7 +229,7 @@ function extractDestinations(config: unknown): FormDestination[] {
  * that is the primary source. Flat top-level `utm_*` answer keys are accepted as
  * a robustness fallback only; they never override a nested value.
  */
-function extractUtm(data: Record<string, unknown>): Record<string, string> {
+export function extractUtm(data: Record<string, unknown>): Record<string, string> {
   const out: Record<string, string> = {};
   const add = (key: string, value: unknown) => {
     if (key in out) return; // first writer wins — nested is written first
