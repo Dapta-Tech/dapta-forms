@@ -652,8 +652,9 @@ export function QuestionSettings({
 
       </AdvancedSettings>
 
-      {/* HubSpot — map this answer to a contact property. Message/reveal/scheduler
-          steps collect no answer, so there is nothing to map. Restored here after
+      {/* HubSpot — map this answer to a contact property. Message/reveal steps
+          collect no answer, so there is nothing to map (a scheduler DOES answer
+          — the booked slot — so it keeps the section). Restored here after
           d0ecffe dropped the render while collapsing the advanced settings; it
           stays OUTSIDE AdvancedSettings so the mapping is visible at a glance. */}
       {!isInputlessType(step.type) ? (

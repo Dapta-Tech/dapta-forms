@@ -52,6 +52,13 @@ export function LogicConditions({
   // with no scoring question above, every gate would read a constant 0.
   const scoreSource =
     scoringEnabled && prior.some((s) => scoresPoints(s)) ? SCORE_FIELD : null;
+  // A rule ALREADY on the score while nothing above can move it: the gate reads
+  // a constant 0, so a show rule hides the question from everyone — silently,
+  // since the rule itself is perfectly well-formed. Name it.
+  const scoreDead =
+    !scoreSource &&
+    ((step.showWhen && isScoreCondition(step.showWhen)) ||
+      (step.hideWhen && isScoreCondition(step.hideWhen)));
 
   if (prior.length === 0) {
     return <p className="text-xs text-muted-foreground">{m.noPriorFields}</p>;
@@ -120,6 +127,15 @@ export function LogicConditions({
           className="rounded-md border border-destructive/50 bg-destructive/10 px-2.5 py-2 text-xs font-medium text-destructive"
         >
           {brokenCopy}
+        </p>
+      ) : null}
+      {scoreDead ? (
+        <p
+          role="alert"
+          data-testid="logic-score-dead"
+          className="rounded-md border border-destructive/50 bg-destructive/10 px-2.5 py-2 text-xs font-medium text-destructive"
+        >
+          {m.scoreDead}
         </p>
       ) : null}
       {hideBroken ? (
@@ -259,7 +275,7 @@ function ConditionEditor({
         className="h-8 py-1 text-xs"
       >
         <option value={NONE}>{noneLabel}</option>
-        {scoreSource ? <option value={SCORE_FIELD}>{m.scoreField}</option> : null}
+        {scoreSource || onScore ? <option value={SCORE_FIELD}>{m.scoreField}</option> : null}
         {prior.map((s, i) => (
           <option key={s.key} value={s.key}>
             {s.question?.trim() || `${i + 1} · ${s.key}`}

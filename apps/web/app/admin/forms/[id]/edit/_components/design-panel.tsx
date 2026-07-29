@@ -6,8 +6,7 @@ import {
   DEFAULT_FORM_FONT,
   FORM_BACKGROUND_STYLES,
   isSafeImageUrl,
-  resolveDesign,
-} from '@quill/engine';
+  resolveDesign, publicTitle } from '@quill/engine';
 import {
   AA_CONTRAST,
   DEFAULT_ACCENT,
@@ -517,7 +516,7 @@ export function DesignPanel({
             config={config}
             selected={vertical ? 'cover' : screen}
             layout={layout}
-            name={name}
+            name={publicTitle(config, name)}
             locale={locale}
             m={m.preview}
           />
@@ -768,7 +767,8 @@ function SharePreview({
 }) {
   const branding = config.branding ?? {};
   const image = branding.ogImage?.trim() || null;
-  const headline = config.cover?.headline ?? name;
+  // Same resolution as the real card: cover headline, else the PUBLIC title.
+  const headline = config.cover?.headline ?? publicTitle(config, name);
   const ground = branding.background?.trim() || DEFAULT_CANVAS;
   // The author's exact color, like everywhere else — the share card must show
   // the card that will actually be generated, not a corrected version of it.

@@ -541,6 +541,7 @@ export interface FormsMessages {
         noPriorFields: string;
         scoreField: string;
         scoreHint: string;
+        scoreDead: string;
         hint: string;
         hideNone: string;
         personalEmailOnly: string;
@@ -1639,6 +1640,8 @@ export const en: FormsMessages = {
         noPriorFields: 'Add a step before this one to branch on its answer.',
         scoreField: 'Score so far',
         scoreHint: 'The points collected by the questions above this one. This question\u2019s own answer is not counted \u2014 it has not been given yet.',
+        scoreDead:
+          'This rule reads the score, but no question above this one can add points \u2014 the score is always 0 here, so it can never change what respondents see. Clear it, or move a scored question above.',
         hint: 'Show or hide this question based on an earlier answer.',
         hideNone: 'Never hidden',
         personalEmailOnly: 'Personal email only',
@@ -2689,6 +2692,8 @@ export const es: FormsMessages = {
         noPriorFields: 'Añade un paso antes de este para ramificar por su respuesta.',
         scoreField: 'Puntaje hasta aquí',
         scoreHint: 'Los puntos que suman las preguntas anteriores a esta. La respuesta de esta pregunta no cuenta: todavía no la dieron.',
+        scoreDead:
+          'Esta regla lee el puntaje, pero ninguna pregunta anterior a esta suma puntos: aquí el puntaje siempre es 0 y la regla nunca cambia lo que se muestra. Bórrala, o mueve una pregunta con puntos arriba.',
         hint: 'Muestra u oculta esta pregunta según una respuesta anterior.',
         hideNone: 'Nunca se oculta',
         personalEmailOnly: 'Solo correo personal',
