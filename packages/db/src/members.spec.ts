@@ -123,3 +123,32 @@ describe('removeMember', () => {
     expect(res.ok).toBe(true);
   });
 });
+
+describe('listPublishedFormsForAccount — public title extraction', () => {
+  it('surfaces config.title when set and null otherwise, on both dialects', async () => {
+    const { listPublishedFormsForAccount } = await import('./members');
+    const { insertAccountWithShortCode } = await import('./short-links');
+    const externalId = `x-${randomUUID()}`;
+    await insertAccountWithShortCode(db, { name: 'Titled Co', externalId });
+    const account = await db.get<{ id: string; code: string }>(
+      sql`SELECT id, code FROM account WHERE external_id = ${externalId} LIMIT 1`,
+    );
+    const mk = async (slug: string, config: unknown) => {
+      await db.run(
+        sql`INSERT INTO form (id, account_id, name, slug, config, created_at, updated_at)
+            VALUES (${randomUUID()}, ${account!.id}, ${'Internal ' + slug}, ${slug},
+                    ${JSON.stringify(config)}, ${Date.now()}, ${Date.now()})`,
+      );
+    };
+    await mk('with-title', { version: 1, title: '  Público  ', steps: [] });
+    await mk('no-title', { version: 1, steps: [] });
+    await mk('empty-title', { version: 1, title: '   ', steps: [] });
+
+    const rows = await listPublishedFormsForAccount(db, account!.code);
+    const bySlug = Object.fromEntries(rows.map((r) => [r.slug, r]));
+    expect(bySlug['with-title']!.title).toBe('Público'); // trimmed
+    expect(bySlug['with-title']!.name).toBe('Internal with-title');
+    expect(bySlug['no-title']!.title).toBeNull();
+    expect(bySlug['empty-title']!.title).toBeNull(); // whitespace = unset
+  });
+});

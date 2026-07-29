@@ -277,6 +277,8 @@ export interface BuilderMessages {
     condBetween: string;
     condAnd: string;
     condBlank: string;
+    /** Name for the reserved running-score condition source. */
+    condScore: string;
     condMissingField: string;
     /** V5-QA — this step's rules mean it can never be shown. */
     neverAppears: string;
@@ -576,6 +578,7 @@ const en: BuilderMessages = {
     condBetween: 'is between',
     condAnd: 'and',
     condBlank: '(not set)',
+    condScore: 'Score so far',
     condMissingField: 'question deleted',
     neverAppears: 'These rules mean this question never appears.',
     outcomeKicker: 'Ending',
@@ -872,6 +875,7 @@ const es: BuilderMessages = {
     condBetween: 'está entre',
     condAnd: 'y',
     condBlank: '(sin definir)',
+    condScore: 'Puntaje hasta aquí',
     condMissingField: 'pregunta eliminada',
     neverAppears: 'Con estas reglas, esta pregunta nunca aparece.',
     outcomeKicker: 'Final',

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Answers, FormConfig, FormLayout } from '@quill/engine';
-import { runtimeSteps } from '@quill/engine';
+import { runtimeSteps, publicTitle } from '@quill/engine';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/cn';
 import { LivePreview } from './live-preview';
@@ -141,7 +141,7 @@ export function DevicePreviewModal({
               config={config}
               selected={vertical ? 'cover' : index}
               layout={layout}
-              name={name}
+              name={publicTitle(config, name)}
               locale={locale}
               m={m}
             />

@@ -73,14 +73,17 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 /** Point the seeded form at ONE enabled HubSpot destination with bookingSync. */
-async function setHubspotDestination(bookingSyncConfig?: Record<string, string>) {
+async function setHubspotDestination(
+  bookingSyncConfig?: Record<string, string>,
+  extra: Record<string, unknown> = {},
+) {
   const account = await getAccountByCode(db, 'acme');
   const forms = await listForms(db, account!.id);
   const form = forms.find((f) => f.slug === 'lead-qualifier')!;
   const full = await db.get<{ config: string }>(sql`SELECT config FROM form WHERE id = ${form.id}`);
   const config = JSON.parse(full!.config);
   config.destinations = [
-    { type: 'hubspot', enabled: true, settings: {}, bookingSync: bookingSyncConfig },
+    { type: 'hubspot', enabled: true, settings: {}, bookingSync: bookingSyncConfig, ...extra },
   ];
   await updateForm(db, account!.id, form.id, { config });
   return { accountId: account!.id, formId: form.id };
@@ -269,8 +272,14 @@ describe('booking_sync delivery', () => {
     expect(rows[0]!.nextAttemptAt).toBeGreaterThan(rows[0]!.createdAt);
   });
 
-  it('no bookingSync config on the destination → skipped (permanent config gap)', async () => {
+  it('no bookingSync config and nothing else to write → skipped (permanent config gap)', async () => {
     await setHubspotDestination(undefined);
+    // The submission HAS an email, so the submit path already synced the
+    // answers — at booking time there is genuinely nothing left to write.
+    await svc.submit('acme', 'lead-qualifier', {
+      sessionId: 'sess-nocfg',
+      data: { role: 'founder', team_size: 20, email: 'lead@acme.io' },
+    });
     await svc.booking('acme', 'lead-qualifier', {
       sessionId: 'sess-nocfg',
       provider: 'hubspot_meetings',
@@ -283,6 +292,167 @@ describe('booking_sync delivery', () => {
 
     const rows = await listOutbox(db, { kind: 'booking_sync' });
     expect(rows[0]!.status).toBe('skipped');
+    expect(rows[0]!.lastError).toContain('nothing to write');
     expect(calls).toHaveLength(0);
+  });
+
+  it('scheduler-collected email: the quiz answers sync at booking, keyed on the invitee', async () => {
+    // The form asks for NO email — the scheduler collects it. The submit-time
+    // destination was a no-op, so booking is where the answers reach the CRM.
+    await setHubspotDestination(BOOKING_SYNC_CONFIG, {
+      fieldMappings: { role: 'contact_role' },
+      valueMaps: { role: { founder: 'Founder / CEO' } },
+      staticProperties: { bz_optin: 'Form submitted Producto' },
+      outcomeProperty: 'lead_tier',
+      settings: { note: false },
+    });
+    await svc.submit('acme', 'lead-qualifier', {
+      sessionId: 'sess-sched',
+      data: { role: 'founder', team_size: 20 }, // no email anywhere
+    });
+    await svc.booking('acme', 'lead-qualifier', {
+      sessionId: 'sess-sched',
+      provider: 'calendly',
+      eventUri: EVENT_URI,
+      inviteeUri: INVITEE_URI,
+    });
+
+    const startIso = '2026-08-02T10:00:00Z';
+    const calls: RecordedCall[] = [];
+    bookingSync.fetchImpl = recordingFetch(calls, {
+      [EVENT_URI]: () => jsonResponse({ resource: { start_time: startIso } }),
+      [INVITEE_URI]: () => jsonResponse({ resource: { email: 'Invitee@Corp.IO' } }),
+      [HUBSPOT_UPSERT_URL]: () => jsonResponse({ results: [{ id: '77' }] }),
+    });
+    await newWorker().drainOnce();
+
+    const rows = await listOutbox(db, { kind: 'booking_sync' });
+    expect(rows[0]!.status).toBe('done');
+
+    // TWO upserts, both keyed on the invitee — BOOKING PROPERTIES FIRST. The
+    // order is the retry-safety: the answers sync ends in a Note (no idempotent
+    // create), so it must be the LAST write of the whole delivery.
+    const hubspot = calls.filter((c) => c.url === HUBSPOT_UPSERT_URL);
+    expect(hubspot).toHaveLength(2);
+    const inputs = hubspot.map(
+      (c) => (c.body as { inputs: Array<Record<string, unknown>> }).inputs[0]!,
+    );
+    for (const input of inputs) expect(input.id).toBe('invitee@corp.io');
+
+    expect(inputs[0]!.properties).toEqual({
+      sales_stage: 'demo_booked',
+      hours_booking: String(Date.parse(startIso)),
+      sales_date_booked: String(Date.UTC(2026, 7, 2)),
+    });
+    const answerProps = inputs[1]!.properties as Record<string, string>;
+    expect(answerProps.email).toBe('invitee@corp.io');
+    expect(answerProps.contact_role).toBe('Founder / CEO'); // value map applied
+    expect(answerProps.bz_optin).toBe('Form submitted Producto');
+  });
+
+  it('a free-text answer that merely LOOKS like an email does not suppress the answers sync', async () => {
+    // The gate follows the ADAPTER's email semantics (mapping to `email` /
+    // an `email` answer) — not the loose booking-key heuristic. A company
+    // field like "ceo@acme.io's startup" must not strand the answers.
+    await setHubspotDestination(BOOKING_SYNC_CONFIG, {
+      fieldMappings: { role: 'contact_role' },
+      settings: { note: false },
+    });
+    await svc.submit('acme', 'lead-qualifier', {
+      sessionId: 'sess-lookalike',
+      data: { role: 'founder', team_size: 20, company: 'ceo@acme.io' },
+    });
+    await svc.booking('acme', 'lead-qualifier', {
+      sessionId: 'sess-lookalike',
+      provider: 'calendly',
+      eventUri: EVENT_URI,
+      inviteeUri: INVITEE_URI,
+    });
+
+    const calls: RecordedCall[] = [];
+    bookingSync.fetchImpl = recordingFetch(calls, {
+      [EVENT_URI]: () => jsonResponse({ resource: { start_time: '2026-08-02T10:00:00Z' } }),
+      [INVITEE_URI]: () => jsonResponse({ resource: { email: 'real@corp.io' } }),
+      [HUBSPOT_UPSERT_URL]: () => jsonResponse({ results: [{ id: '3' }] }),
+    });
+    await newWorker().drainOnce();
+
+    const rows = await listOutbox(db, { kind: 'booking_sync' });
+    expect(rows[0]!.status).toBe('done');
+    const hubspot = calls.filter((c) => c.url === HUBSPOT_UPSERT_URL);
+    expect(hubspot).toHaveLength(2); // booking props + the answers sync
+    const answers = (hubspot[1]!.body as { inputs: Array<{ id: string; properties: Record<string, string> }> })
+      .inputs[0]!;
+    expect(answers.id).toBe('real@corp.io'); // keyed on the INVITEE, not the lookalike
+    expect(answers.properties.contact_role).toBe('founder');
+  });
+
+  it('a submission that already carries an email never re-syncs the answers', async () => {
+    await setHubspotDestination(BOOKING_SYNC_CONFIG, {
+      fieldMappings: { role: 'contact_role' },
+      settings: { note: false },
+    });
+    await svc.submit('acme', 'lead-qualifier', {
+      sessionId: 'sess-hasmail',
+      data: { role: 'founder', team_size: 20, email: 'own@corp.io' },
+    });
+    await svc.booking('acme', 'lead-qualifier', {
+      sessionId: 'sess-hasmail',
+      provider: 'calendly',
+      eventUri: EVENT_URI,
+      inviteeUri: INVITEE_URI,
+    });
+
+    const calls: RecordedCall[] = [];
+    bookingSync.fetchImpl = recordingFetch(calls, {
+      [EVENT_URI]: () => jsonResponse({ resource: { start_time: '2026-08-02T10:00:00Z' } }),
+      [INVITEE_URI]: () => jsonResponse({ resource: { email: 'invitee@corp.io' } }),
+      [HUBSPOT_UPSERT_URL]: () => jsonResponse({ results: [{ id: '5' }] }),
+    });
+    await newWorker().drainOnce();
+
+    const rows = await listOutbox(db, { kind: 'booking_sync' });
+    expect(rows[0]!.status).toBe('done');
+
+    // ONE upsert only — the booking properties. The submit path owns the
+    // answers for a form that asks its own email question.
+    const hubspot = calls.filter((c) => c.url === HUBSPOT_UPSERT_URL);
+    expect(hubspot).toHaveLength(1);
+    const props = (hubspot[0]!.body as { inputs: Array<{ properties: Record<string, string> }> })
+      .inputs[0]!.properties;
+    expect(props.contact_role).toBeUndefined();
+  });
+
+  it('answers sync alone completes the row when no bookingSync properties exist', async () => {
+    await setHubspotDestination(undefined, {
+      fieldMappings: { role: 'contact_role' },
+      settings: { note: false },
+    });
+    await svc.submit('acme', 'lead-qualifier', {
+      sessionId: 'sess-onlyanswers',
+      data: { role: 'founder', team_size: 20 },
+    });
+    await svc.booking('acme', 'lead-qualifier', {
+      sessionId: 'sess-onlyanswers',
+      provider: 'calendly',
+      eventUri: EVENT_URI,
+      inviteeUri: INVITEE_URI,
+    });
+
+    const calls: RecordedCall[] = [];
+    bookingSync.fetchImpl = recordingFetch(calls, {
+      [EVENT_URI]: () => jsonResponse({ resource: { start_time: '2026-08-02T10:00:00Z' } }),
+      [INVITEE_URI]: () => jsonResponse({ resource: { email: 'solo@corp.io' } }),
+      [HUBSPOT_UPSERT_URL]: () => jsonResponse({ results: [{ id: '8' }] }),
+    });
+    await newWorker().drainOnce();
+
+    const rows = await listOutbox(db, { kind: 'booking_sync' });
+    expect(rows[0]!.status).toBe('done'); // not skipped — the answers went out
+    const hubspot = calls.filter((c) => c.url === HUBSPOT_UPSERT_URL);
+    expect(hubspot).toHaveLength(1);
+    const props = (hubspot[0]!.body as { inputs: Array<{ properties: Record<string, string> }> })
+      .inputs[0]!.properties;
+    expect(props.contact_role).toBe('founder'); // no value map on this destination
   });
 });

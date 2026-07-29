@@ -25,10 +25,13 @@ export type DestinationType = 'webhook' | 'hubspot';
  */
 export interface DestinationContext {
   /**
-   * Stable, event-specific de-duplication key
-   * (`submission:<id>:<phase>:<destinationType>`). A retried delivery reuses the
-   * same key; distinct events get distinct keys. Webhooks forward it as a header
-   * and HubSpot uses it to guard the note engagement.
+   * Stable, event-specific de-duplication key. Submission deliveries use
+   * `submission:<id>:<phase>:<destinationType>:<index>`; the booking-time
+   * answers sync uses `booking:<bookingEventId>:hubspot`. A retried delivery
+   * reuses the same key; distinct events get distinct keys. Webhooks forward it
+   * as a header so the RECEIVER can dedupe. NOTE: the HubSpot adapter does not
+   * read it — its Note create is not idempotent, which is why every caller must
+   * make the Note the LAST side effect of a delivery (nothing retryable after).
    */
   idempotencyKey: string;
   /** The persisted submission id (the domain anchor). */

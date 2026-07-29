@@ -23,6 +23,7 @@ import { SliderScoringEditor } from './slider-scoring-editor';
 import { maxScoreForSteps } from './scoring-util';
 import { LogicRules } from './logic-rules';
 import { LogicConditions } from './logic-conditions';
+import { QuestionHubspotSection } from './question-hubspot';
 import { QuestionVariants } from './question-variants';
 import { SchedulerPanel } from './scheduler-panel';
 import { tokenOptionsBefore } from './token-textarea';
@@ -63,6 +64,7 @@ function currentItemId(step: FormStep): string {
  * the "doesn't affect the score" hint instead of scoring.
  */
 export function QuestionSettings({
+  formId,
   step,
   index,
   steps,
@@ -77,7 +79,9 @@ export function QuestionSettings({
   onRevealAfterChange,
   onRenameKey,
   publicUrl,
+  onOpenConnect,
 }: {
+  formId: string;
   step: FormStep;
   index: number;
   steps: FormStep[];
@@ -97,6 +101,8 @@ export function QuestionSettings({
   onRenameKey: (nextKey: string) => void;
   /** The form's real public URL, for the prefill example. */
   publicUrl?: string | null;
+  /** Switch the editor to the Connect tab (the mapping's other home). */
+  onOpenConnect: () => void;
 }) {
   const contact = isContactType(step.type);
   // Form-wide "highest possible" total (same math as Results). Drives the
@@ -499,7 +505,14 @@ export function QuestionSettings({
           <i aria-hidden className="pi pi-eye text-secondary" style={{ fontSize: 11 }} />
           {em.logic.title}
         </p>
-        <LogicConditions step={step} index={index} steps={steps} onUpdate={onUpdate} m={em.logic} />
+        <LogicConditions
+          step={step}
+          index={index}
+          steps={steps}
+          scoringEnabled={scoringEnabled}
+          onUpdate={onUpdate}
+          m={em.logic}
+        />
         {/* Personal-email branch needs an earlier email answer — impossible on
             the first question, so hide it there. A reveal is skipped or played
             by the plain conditions above; a second, narrower visibility rule on
@@ -638,6 +651,21 @@ export function QuestionSettings({
       ) : null}
 
       </AdvancedSettings>
+
+      {/* HubSpot — map this answer to a contact property. Message/reveal steps
+          collect no answer, so there is nothing to map (a scheduler DOES answer
+          — the booked slot — so it keeps the section). Restored here after
+          d0ecffe dropped the render while collapsing the advanced settings; it
+          stays OUTSIDE AdvancedSettings so the mapping is visible at a glance. */}
+      {!isInputlessType(step.type) ? (
+        <QuestionHubspotSection
+          formId={formId}
+          stepKey={step.key}
+          locale={locale}
+          onOpenConnect={onOpenConnect}
+          m={bm.hubspot}
+        />
+      ) : null}
       {dialog}
     </div>
   );
