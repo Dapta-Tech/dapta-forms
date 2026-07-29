@@ -50,6 +50,7 @@ export function DesignPanel({
   publicPath,
   locale,
   layout,
+  onTitleChange,
   onLayoutChange,
   hasReveal,
   onEndRevealChange,
@@ -65,6 +66,8 @@ export function DesignPanel({
   /** Slides or one page — the first decision, because it changes what several
    *  controls below even mean. */
   layout: FormLayout;
+  /** Set/clear the PUBLIC title (empty = fall back to the dashboard name). */
+  onTitleChange: (title: string) => void;
   onLayoutChange: (next: FormLayout) => void;
   /** Vertical's single end-of-form reveal (a form-level fact, not a question). */
   hasReveal: boolean;
@@ -111,6 +114,18 @@ export function DesignPanel({
     <div className="grid h-full min-h-0 gap-4 px-4 py-6 sm:px-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,46%)] lg:overflow-hidden">
       {/* ── Controls ───────────────────────────────────────────────────── */}
       <div className="flex min-w-0 flex-col gap-4 lg:overflow-y-auto lg:pr-1">
+        <PanelSection title={d.publicTitle} subtitle={d.publicTitleHint}>
+          <div className="max-w-[520px]">
+            <TextField
+              aria-label={d.publicTitle}
+              value={config.title ?? ''}
+              placeholder={name}
+              maxLength={200}
+              onChange={(e) => onTitleChange(e.target.value)}
+            />
+          </div>
+        </PanelSection>
+
         <PanelSection title={m.layout.title} subtitle={m.layout.subtitle}>
           <div className="grid max-w-[520px] grid-cols-2 gap-2" role="radiogroup" aria-label={m.layout.title}>
             {[

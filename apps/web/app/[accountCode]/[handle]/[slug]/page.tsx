@@ -4,7 +4,7 @@ import { getPublicForm } from '@/lib/api';
 import { publicLocale } from '@/lib/locale';
 import { getMessages, t } from '@quill/shared';
 import { MadeWithBadge } from '@/components/made-with-badge';
-import { resolveFormLayout } from '@quill/engine';
+import { resolveFormLayout, publicTitle } from '@quill/engine';
 import { resolveTracking } from '@/components/tracking/resolve-tracking';
 import { TrackingScripts } from '@/components/tracking/tracking-scripts';
 import { EmbedHeightReporter } from '@/components/public/embed-height-reporter';
@@ -25,8 +25,10 @@ export async function generateMetadata({
   const form = await getPublicForm(accountCode, slug);
   if (!form) return {};
   const locale = await publicLocale();
+  // The author-set public title wins over the private dashboard name.
+  const title = publicTitle(form.config, form.name);
   const description =
-    form.config.cover?.subheadline ?? t(getMessages(locale).growth.seoForm, { name: form.name });
+    form.config.cover?.subheadline ?? t(getMessages(locale).growth.seoForm, { name: title });
 
   // An author-supplied card wins outright; otherwise the sibling
   // `opengraph-image` route renders one from the form's own branding, and Next
@@ -35,14 +37,14 @@ export async function generateMetadata({
   const images = custom ? [{ url: custom }] : undefined;
 
   return {
-    title: form.name,
+    title,
     description,
-    openGraph: { title: form.name, description, type: 'website', ...(images ? { images } : {}) },
+    openGraph: { title, description, type: 'website', ...(images ? { images } : {}) },
     twitter: {
       // A generated 1200×630 card deserves the large format; only a form with
       // neither would fall back to the small one, and there is no such form.
       card: 'summary_large_image',
-      title: form.name,
+      title,
       description,
       ...(images ? { images } : {}),
     },
@@ -87,7 +89,7 @@ export default async function PublicFormPage({
         <Renderer
           accountCode={accountCode}
           slug={slug}
-          name={form.name}
+          name={publicTitle(form.config, form.name)}
           config={form.config}
           locale={locale}
         />
