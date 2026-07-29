@@ -5,7 +5,9 @@ import {
   conditionsContradict,
   conditionsNarrow,
   conditionNeverHolds,
+  isScoreCondition,
   operatorsForFieldType,
+  SCORE_FIELD,
   type ConditionOp,
   type FormStep,
   type StepCondition,
@@ -32,16 +34,31 @@ export function LogicConditions({
   step,
   index,
   steps,
+  scoringEnabled = true,
   onUpdate,
   m,
 }: {
   step: FormStep;
   index: number;
   steps: FormStep[];
+  /** Form-level scoring switch — off means every score gate would read 0. */
+  scoringEnabled?: boolean;
   onUpdate: (patch: Partial<FormStep>) => void;
   m: LogicMessages;
 }) {
   const prior = steps.slice(0, index);
+
+  // The running score is only worth offering when something ahead can move it;
+  // with no scoring question above, every gate would read a constant 0.
+  const scoreSource =
+    scoringEnabled && prior.some((s) => scoresPoints(s)) ? SCORE_FIELD : null;
+  // A rule ALREADY on the score while nothing above can move it: the gate reads
+  // a constant 0, so a show rule hides the question from everyone — silently,
+  // since the rule itself is perfectly well-formed. Name it.
+  const scoreDead =
+    !scoreSource &&
+    ((step.showWhen && isScoreCondition(step.showWhen)) ||
+      (step.hideWhen && isScoreCondition(step.hideWhen)));
 
   if (prior.length === 0) {
     return <p className="text-xs text-muted-foreground">{m.noPriorFields}</p>;
@@ -80,6 +97,7 @@ export function LogicConditions({
         noneLabel={m.none}
         cond={step.showWhen ?? null}
         prior={prior}
+        scoreSource={scoreSource}
         onChange={(showWhen) => onUpdate({ showWhen: showWhen ?? undefined })}
         m={m}
       />
@@ -89,6 +107,7 @@ export function LogicConditions({
         noneLabel={m.hideNone}
         cond={step.hideWhen ?? null}
         prior={prior}
+        scoreSource={scoreSource}
         onChange={(hideWhen) => onUpdate({ hideWhen: hideWhen ?? undefined })}
         m={m}
       />
@@ -108,6 +127,15 @@ export function LogicConditions({
           className="rounded-md border border-destructive/50 bg-destructive/10 px-2.5 py-2 text-xs font-medium text-destructive"
         >
           {brokenCopy}
+        </p>
+      ) : null}
+      {scoreDead ? (
+        <p
+          role="alert"
+          data-testid="logic-score-dead"
+          className="rounded-md border border-destructive/50 bg-destructive/10 px-2.5 py-2 text-xs font-medium text-destructive"
+        >
+          {m.scoreDead}
         </p>
       ) : null}
       {hideBroken ? (
@@ -148,6 +176,16 @@ function opLabel(op: ConditionOp, m: LogicMessages): string {
   }
 }
 
+/**
+ * Does this step move the score? Mirrors the engine's `stepScore`: only choice
+ * and slider types score, and lead-capture / opted-out steps never do.
+ */
+function scoresPoints(step: FormStep): boolean {
+  if (step.flowGroup === 'lead_capture') return false;
+  if (step.scoringEnabled === false) return false;
+  return step.type === 'dropdown' || step.type === 'multiple_choice' || step.type === 'slider';
+}
+
 /** One condition row: field select (none = rule off) + operator/value picker. */
 function ConditionEditor({
   testid,
@@ -155,6 +193,7 @@ function ConditionEditor({
   noneLabel,
   cond,
   prior,
+  scoreSource,
   onChange,
   m,
 }: {
@@ -163,12 +202,19 @@ function ConditionEditor({
   noneLabel: string;
   cond: StepCondition | null;
   prior: FormStep[];
+  /** `SCORE_FIELD` when the running score is offerable here, else null. */
+  scoreSource: typeof SCORE_FIELD | null;
   onChange: (next: StepCondition | null) => void;
   m: LogicMessages;
 }) {
   const NONE = '';
-  const source = cond ? prior.find((s) => s.key === cond.field) : undefined;
-  const ops: ConditionOp[] = source ? operatorsForFieldType(source.type) : ['in'];
+  const onScore = cond ? isScoreCondition(cond) : false;
+  const source = cond && !onScore ? prior.find((s) => s.key === cond.field) : undefined;
+  const ops: ConditionOp[] = onScore
+    ? operatorsForFieldType(SCORE_FIELD)
+    : source
+      ? operatorsForFieldType(source.type)
+      : ['in'];
   // Numeric sources (slider) expose the comparison operators; everything else
   // keeps the single `in` ("matches any of") behavior with no operator UI.
   const numeric = ops[0] !== 'in';
@@ -180,10 +226,15 @@ function ConditionEditor({
       onChange(null);
       return;
     }
+    // Keep the operands when re-picking the same source.
+    if (cond && cond.field === key) return;
+    if (key === SCORE_FIELD) {
+      // Numeric by definition — seed the first comparison op, operand next.
+      onChange({ field: SCORE_FIELD, values: [], op: operatorsForFieldType(SCORE_FIELD)[0] });
+      return;
+    }
     const next = prior.find((s) => s.key === key);
     if (!next) return;
-    // Keep the operands when re-picking the same field.
-    if (cond && cond.field === key) return;
     const nextOps = operatorsForFieldType(next.type);
     if (nextOps[0] !== 'in') {
       // Numeric source: seed the first comparison op (operand typed next).
@@ -224,12 +275,14 @@ function ConditionEditor({
         className="h-8 py-1 text-xs"
       >
         <option value={NONE}>{noneLabel}</option>
+        {scoreSource || onScore ? <option value={SCORE_FIELD}>{m.scoreField}</option> : null}
         {prior.map((s, i) => (
           <option key={s.key} value={s.key}>
             {s.question?.trim() || `${i + 1} · ${s.key}`}
           </option>
         ))}
       </SelectField>
+      {onScore ? <p className="text-[11px] leading-relaxed text-muted-foreground">{m.scoreHint}</p> : null}
 
       {cond ? (
         numeric ? (

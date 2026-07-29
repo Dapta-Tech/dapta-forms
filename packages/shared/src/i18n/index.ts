@@ -539,6 +539,9 @@ export interface FormsMessages {
         valuesHint: string;
         clear: string;
         noPriorFields: string;
+        scoreField: string;
+        scoreHint: string;
+        scoreDead: string;
         hint: string;
         hideNone: string;
         personalEmailOnly: string;
@@ -751,6 +754,8 @@ export interface FormsMessages {
       };
       /** The Design tab: everything about how the form looks. */
       design: {
+        publicTitle: string;
+        publicTitleHint: string;
         presetsTitle: string;
         presetsSubtitle: string;
         presetsCustom: string;
@@ -1633,6 +1638,10 @@ export const en: FormsMessages = {
         valuesHint: 'Comma-separated values from that field’s options.',
         clear: 'Clear',
         noPriorFields: 'Add a step before this one to branch on its answer.',
+        scoreField: 'Score so far',
+        scoreHint: 'The points collected by the questions above this one. This question\u2019s own answer is not counted \u2014 it has not been given yet.',
+        scoreDead:
+          'This rule reads the score, but no question above this one can add points \u2014 the score is always 0 here, so it can never change what respondents see. Clear it, or move a scored question above.',
         hint: 'Show or hide this question based on an earlier answer.',
         hideNone: 'Never hidden',
         personalEmailOnly: 'Personal email only',
@@ -1802,6 +1811,9 @@ export const en: FormsMessages = {
         next: 'Next screen',
       },
       design: {
+        publicTitle: 'Form title',
+        publicTitleHint:
+          'What visitors see — the browser tab, share previews, and the cover heading. Leave empty to use the form\u2019s internal name.',
         presetsTitle: 'Theme',
         presetsSubtitle: 'A starting point you can edit. Pick one, then change anything below.',
         presetsCustom: 'Custom',
@@ -2678,6 +2690,10 @@ export const es: FormsMessages = {
         valuesHint: 'Valores separados por comas de las opciones de ese campo.',
         clear: 'Limpiar',
         noPriorFields: 'Añade un paso antes de este para ramificar por su respuesta.',
+        scoreField: 'Puntaje hasta aquí',
+        scoreHint: 'Los puntos que suman las preguntas anteriores a esta. La respuesta de esta pregunta no cuenta: todavía no la dieron.',
+        scoreDead:
+          'Esta regla lee el puntaje, pero ninguna pregunta anterior a esta suma puntos: aquí el puntaje siempre es 0 y la regla nunca cambia lo que se muestra. Bórrala, o mueve una pregunta con puntos arriba.',
         hint: 'Muestra u oculta esta pregunta según una respuesta anterior.',
         hideNone: 'Nunca se oculta',
         personalEmailOnly: 'Solo correo personal',
@@ -2847,6 +2863,9 @@ export const es: FormsMessages = {
         next: 'Pantalla siguiente',
       },
       design: {
+        publicTitle: 'Título del formulario',
+        publicTitleHint:
+          'Lo que ven los visitantes: la pestaña del navegador, las vistas previas al compartir y el encabezado de portada. Déjalo vacío para usar el nombre interno del formulario.',
         presetsTitle: 'Tema',
         presetsSubtitle: 'Un punto de partida editable. Elige uno y luego cambia lo que quieras.',
         presetsCustom: 'Personalizado',

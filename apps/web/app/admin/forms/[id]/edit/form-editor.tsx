@@ -382,6 +382,9 @@ export function FormEditor({
     setStatus('saving');
   }
 
+  // Public title (V7): what the tab/OG/cover show. Empty clears back to `name`.
+  const setTitle = (title: string) =>
+    mutate((c) => ({ ...c, title: title.trim() ? title : null }));
   const patchCover = (patch: Partial<FormCover>) =>
     mutate((c) => ({ ...c, cover: { ...c.cover, ...patch } }));
   const patchBranding = (patch: Partial<FormBranding>) =>
@@ -720,6 +723,8 @@ export function FormEditor({
               <aside className="min-h-0 overflow-y-auto border-t border-border lg:border-t-0">
                 {selectedStep && selected != null ? (
                   <QuestionSettings
+                    formId={id}
+                    onOpenConnect={() => setTab('connect')}
                     publicUrl={publicPath}
                     step={selectedStep}
                     index={selected}
@@ -776,6 +781,7 @@ export function FormEditor({
             publicPath={publicPath}
             locale={locale}
             layout={layout}
+            onTitleChange={setTitle}
             onLayoutChange={setLayout}
             hasReveal={hasReveal}
             onEndRevealChange={setEndReveal}

@@ -26,3 +26,34 @@ describe('anchorRevealsLast (vertical layout — reveals always at the end)', ()
     expect(anchorRevealsLast(steps)).toBe(steps);
   });
 });
+
+describe('describeCondition — the reserved score source', () => {
+  const labels = {
+    fallbackQuestion: (i: number) => `Question ${i + 1}`,
+    opIn: 'is any of',
+    opEq: 'equals',
+    opGt: 'is greater than',
+    opLt: 'is less than',
+    opBetween: 'is between',
+    and: 'and',
+    blank: '(not set)',
+    score: 'Score so far',
+  };
+  const steps = [q('role'), q('company')];
+
+  it('names the score source and never marks it dangling', async () => {
+    const { describeCondition } = await import('./logic-util');
+    const d = describeCondition({ field: '@score', op: 'gt', value: 5 }, steps, labels);
+    expect(d.field).toBe('Score so far');
+    expect(d.operator).toBe('is greater than');
+    expect(d.operand).toBe('5');
+    expect(d.dangling).toBe(false);
+  });
+
+  it('a missing STEP field still dangles (score handling must not mask it)', async () => {
+    const { describeCondition } = await import('./logic-util');
+    const d = describeCondition({ field: 'ghost', values: ['x'] }, steps, labels);
+    expect(d.field).toBe('ghost');
+    expect(d.dangling).toBe(true);
+  });
+});

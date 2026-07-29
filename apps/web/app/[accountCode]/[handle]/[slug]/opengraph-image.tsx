@@ -1,3 +1,4 @@
+import { publicTitle } from '@quill/engine';
 import { ImageResponse } from 'next/og';
 import { readableOn, DEFAULT_ACCENT, DEFAULT_CANVAS, DEFAULT_CANVAS_FOREGROUND } from '@quill/shared';
 import { getPublicForm } from '@/lib/api';
@@ -35,7 +36,8 @@ export default async function OgImage({
   // The author's exact color — the card shows the brand, not a corrected version.
   const accent = branding.primaryColor?.trim() || DEFAULT_ACCENT;
 
-  const headline = form?.config.cover?.headline || form?.name || 'Form';
+  const headline =
+    form?.config.cover?.headline || (form ? publicTitle(form.config, form.name) : null) || 'Form';
   const sub = form?.config.cover?.subheadline ?? '';
   const eyebrow = form?.config.cover?.eyebrow ?? form?.config.cover?.badge ?? '';
 

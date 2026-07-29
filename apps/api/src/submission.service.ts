@@ -76,7 +76,7 @@ export class SubmissionService {
       headline: profile.headline ?? null,
       bio: profile.bio ?? null,
       links: profile.links ?? [],
-      forms: forms.map((f) => ({ slug: f.slug, name: f.name })),
+      forms: forms.map((f) => ({ slug: f.slug, name: f.title ?? f.name })),
       branding: profile.branding ?? null,
     };
   }
