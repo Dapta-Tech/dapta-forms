@@ -800,6 +800,13 @@ export interface PublicProfile {
 
 export const formConfigSchema = z.object({
   version: z.literal(1),
+  /**
+   * PUBLIC title (ADDITIVE). Separate from `form.name`, the private label in the
+   * dashboard. Absent — every legacy config — falls back to the name, so no
+   * published form changes. Deliberately NOT under `branding`: the brand kit
+   * snapshots that object across forms, and a title is per-form by definition.
+   */
+  title: z.string().max(200).nullable().optional(),
   branding: formBrandingSchema.nullable().optional(),
   cover: formCoverSchema.nullable().optional(),
   /**

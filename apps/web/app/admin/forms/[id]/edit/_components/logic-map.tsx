@@ -332,6 +332,7 @@ function ConditionLine({
     opBetween: m.map.condBetween,
     and: m.map.condAnd,
     blank: m.map.condBlank,
+    score: m.map.condScore,
   });
   const show = kind === 'show';
   return (

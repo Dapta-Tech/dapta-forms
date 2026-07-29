@@ -4,7 +4,7 @@
  * the declarative `showWhen`/`hideWhen` conditions still work (honored by the
  * engine, drawn on the map) and count toward a question's rule total.
  */
-import type { FormStep } from '@quill/engine';
+import { SCORE_FIELD, type FormStep } from '@quill/engine';
 
 /** How many logic rules a question carries (goto jumps + show/hide conditions). */
 export function ruleCount(step: FormStep): number {
@@ -65,28 +65,36 @@ export function describeCondition(
     and: string;
     /** Shown in place of an operand the author has not filled in yet. */
     blank: string;
+    /** Name for the reserved running-score source. */
+    score: string;
   },
 ): DescribedCondition {
-  const sourceIndex = steps.findIndex((s) => s.key === cond.field);
+  // The running score is a reserved source, not a question — resolving it
+  // against `steps` would find nothing and mark a valid rule as dangling.
+  const onScore = cond.field === SCORE_FIELD;
+  const sourceIndex = onScore ? -1 : steps.findIndex((s) => s.key === cond.field);
   const source = sourceIndex >= 0 ? steps[sourceIndex] : undefined;
-  const field = source
-    ? source.question?.trim() || labels.fallbackQuestion(sourceIndex)
-    : cond.field;
+  const field = onScore
+    ? labels.score
+    : source
+      ? source.question?.trim() || labels.fallbackQuestion(sourceIndex)
+      : cond.field;
+  const dangling = !onScore && !source;
 
   const num = (n: number | undefined): string => (n == null ? labels.blank : String(n));
   switch (cond.op) {
     case 'eq':
-      return { field, operator: labels.opEq, operand: num(cond.value), dangling: !source };
+      return { field, operator: labels.opEq, operand: num(cond.value), dangling };
     case 'gt':
-      return { field, operator: labels.opGt, operand: num(cond.value), dangling: !source };
+      return { field, operator: labels.opGt, operand: num(cond.value), dangling };
     case 'lt':
-      return { field, operator: labels.opLt, operand: num(cond.value), dangling: !source };
+      return { field, operator: labels.opLt, operand: num(cond.value), dangling };
     case 'between':
       return {
         field,
         operator: labels.opBetween,
         operand: `${num(cond.min)} ${labels.and} ${num(cond.max)}`,
-        dangling: !source,
+        dangling,
       };
     default: {
       // `in` (or an absent op, which the engine treats as `in`).
@@ -94,7 +102,7 @@ export function describeCondition(
       const operand = values.length
         ? values.map((v) => (source ? optionLabel(source, v) : v)).join(', ')
         : labels.blank;
-      return { field, operator: labels.opIn, operand, dangling: !source };
+      return { field, operator: labels.opIn, operand, dangling };
     }
   }
 }
