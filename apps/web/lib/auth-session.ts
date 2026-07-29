@@ -4,8 +4,9 @@ import { redirect } from 'next/navigation';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { SESSION_COOKIE, WORKSPACE_COOKIE } from './session';
 import { signValue, unsignValue } from './signed-value';
+import { serverApiUrl } from './api-url';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
+const API_URL = serverApiUrl;
 
 /**
  * Web session lifecycle (per AUTH-WEB-CONTRACT §1–4). The web owns the session;

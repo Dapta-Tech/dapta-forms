@@ -13,9 +13,10 @@ import type {
   MemberProfile,
   SubmissionsPage,
 } from '@quill/types';
+import { serverApiUrl } from './api-url';
 import { getSession, clearSession, authProvider, getWorkspace } from './auth-session';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
+const API_URL = serverApiUrl;
 
 /** An API error that carries the HTTP status + error code. */
 export class ApiError extends Error {
