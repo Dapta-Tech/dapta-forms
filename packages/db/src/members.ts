@@ -367,7 +367,10 @@ export async function findMembership(
 /** One published form as the public profile lists it. */
 export interface ProfileFormRow {
   slug: string;
+  /** The private dashboard label — the fallback when no public title is set. */
   name: string;
+  /** The author's public title, when the form has one. */
+  title: string | null;
 }
 
 /** A member's stored public page + the identity fields it renders alongside. */
@@ -427,10 +430,17 @@ export async function listPublishedFormsForAccount(
 ): Promise<ProfileFormRow[]> {
   const account = await getAccountByCode(db, accountCode);
   if (!account) return [];
+  // `config` rides along so the listing can show the PUBLIC title. The column is
+  // jsonb on Postgres and TEXT on SQLite, so the extraction happens here in JS
+  // rather than in dialect-specific SQL.
   const rows = await db.all<Record<string, unknown>>(
-    sql`SELECT slug, name FROM form WHERE account_id = ${account.id} ORDER BY created_at ASC`,
+    sql`SELECT slug, name, config FROM form WHERE account_id = ${account.id} ORDER BY created_at ASC`,
   );
-  return rows.map((r) => ({ slug: String(r.slug), name: String(r.name) }));
+  return rows.map((r) => {
+    const config = parseJsonColumn<{ title?: unknown }>(r.config, {});
+    const title = typeof config.title === 'string' && config.title.trim() ? config.title.trim() : null;
+    return { slug: String(r.slug), name: String(r.name), title };
+  });
 }
 
 /** Replace a member's public page (account-scoped). NULL removes it entirely. */

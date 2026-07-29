@@ -28,6 +28,7 @@ import {
   conditionsContradict,
   conditionsNarrow,
   conditionNeverHolds,
+  SCORE_FIELD,
   sliderHasNoTravel,
   overlappingSliderRanges,
   sliderBounds,
@@ -769,6 +770,18 @@ describe('cover presentation toggles', () => {
     const scoped = { bannerText: 'Limited spots', bannerScope: 'form' as const };
     expect(showBanner(scoped, true)).toBe(true);
     expect(showBanner(scoped, false)).toBe(true);
+  });
+
+  it('showBanner ignores cover.enabled — a banner is page chrome, not the cover screen', () => {
+    // The renderers used to pass a value already nulled by `enabled === false`,
+    // which made `bannerScope: 'form'` unreachable on exactly the forms that
+    // need it: the ones with no cover screen. `showBanner` decides this, and it
+    // decides it from the SCOPE, so a disabled cover still shows a 'form' banner.
+    const off = { enabled: false, bannerText: 'Limited spots', bannerScope: 'form' as const };
+    expect(showBanner(off, false)).toBe(true);
+    // ...and a 'cover'-scoped banner still has nowhere to show without a cover.
+    const offCoverScoped = { enabled: false, bannerText: 'Limited spots', bannerScope: 'cover' as const };
+    expect(showBanner(offCoverScoped, false)).toBe(false);
   });
 
   it('showClientLogos hides the marquee only on an explicit false', () => {
@@ -1850,5 +1863,114 @@ describe('emailSourceFor', () => {
   it('prefers the question over the scheduler — it does not depend on anyone booking', () => {
     const config = cfg(step({ key: 'book', type: 'scheduler' }), step({ key: 'email', type: 'email' }));
     expect(emailSourceFor(config)).toEqual({ kind: 'question', key: 'email' });
+  });
+});
+
+describe('score-sourced conditions (SCORE_FIELD)', () => {
+  /** q1 (+8 when 'hi') → gate → q3 (+1). The gate reads the score BEFORE itself. */
+  const cfg = {
+    version: 1,
+    steps: [
+      {
+        key: 'q1',
+        type: 'multiple_choice',
+        options: [
+          { label: 'hi', value: 'hi', points: 8 },
+          { label: 'lo', value: 'lo', points: 1 },
+        ],
+      },
+      { key: 'gate', type: 'message', showWhen: { field: SCORE_FIELD, op: 'gt', value: 5 } },
+      { key: 'q3', type: 'multiple_choice', options: [{ label: 'y', value: 'y', points: 1 }] },
+    ],
+  } as unknown as FormConfig;
+
+  it('shows the gated step once the running score passes the bound', () => {
+    expect(visibleSteps(cfg, { q1: 'hi' }).map((s) => s.key)).toEqual(['q1', 'gate', 'q3']);
+  });
+
+  it('hides it when the running score is below the bound', () => {
+    expect(visibleSteps(cfg, { q1: 'lo' }).map((s) => s.key)).toEqual(['q1', 'q3']);
+  });
+
+  it('unanswered upstream means a zero running score', () => {
+    expect(visibleSteps(cfg, {}).map((s) => s.key)).toEqual(['q1', 'q3']);
+  });
+
+  it('terminates — the score and the visibility do not recurse', () => {
+    expect(computeScore(cfg, { q1: 'hi', q3: 'y' })).toBe(9);
+    expect(computeScore(cfg, { q1: 'lo', q3: 'y' })).toBe(2);
+  });
+
+  it('a gated step keeps its OWN points; they just count from the next step on', () => {
+    const scored = {
+      version: 1,
+      steps: [
+        { key: 'q1', type: 'multiple_choice', options: [{ label: 'a', value: 'a', points: 6 }] },
+        {
+          key: 'bonus',
+          type: 'multiple_choice',
+          showWhen: { field: SCORE_FIELD, op: 'gt', value: 5 },
+          options: [{ label: 'b', value: 'b', points: 10 }],
+        },
+      ],
+    } as unknown as FormConfig;
+    // The gate saw 6 (q1 only) and admitted `bonus`; the TOTAL still counts both.
+    expect(visibleSteps(scored, { q1: 'a', bonus: 'b' }).map((s) => s.key)).toEqual(['q1', 'bonus']);
+    expect(computeScore(scored, { q1: 'a', bonus: 'b' })).toBe(16);
+  });
+
+  it('a step cannot gate on a score its own answer produced', () => {
+    const selfish = {
+      version: 1,
+      steps: [
+        {
+          key: 'only',
+          type: 'multiple_choice',
+          showWhen: { field: SCORE_FIELD, op: 'gt', value: 5 },
+          options: [{ label: 'a', value: 'a', points: 10 }],
+        },
+      ],
+    } as unknown as FormConfig;
+    // Its own 10 points are not in the prefix, so the gate sees 0 and hides it.
+    expect(visibleSteps(selfish, { only: 'a' })).toEqual([]);
+    expect(computeScore(selfish, { only: 'a' })).toBe(0);
+  });
+
+  it('hideWhen reads the running score too', () => {
+    const hidden = {
+      version: 1,
+      steps: [
+        { key: 'q1', type: 'multiple_choice', options: [{ label: 'a', value: 'a', points: 9 }] },
+        { key: 'consolation', type: 'message', hideWhen: { field: SCORE_FIELD, op: 'gt', value: 5 } },
+      ],
+    } as unknown as FormConfig;
+    expect(visibleSteps(hidden, { q1: 'a' }).map((s) => s.key)).toEqual(['q1']);
+    expect(visibleSteps(hidden, {}).map((s) => s.key)).toEqual(['q1', 'consolation']);
+  });
+
+  it('scoring turned off leaves every score gate reading zero', () => {
+    const off = { ...cfg, scoring: { enabled: false } } as unknown as FormConfig;
+    expect(visibleSteps(off, { q1: 'hi' }).map((s) => s.key)).toEqual(['q1', 'q3']);
+  });
+
+  it('offers the numeric operators, never `in`', () => {
+    expect(operatorsForFieldType(SCORE_FIELD)).toEqual(['gt', 'lt', 'eq', 'between']);
+  });
+
+  it('flags an `in` rule on the score as broken rather than silently dead', () => {
+    expect(conditionNeverHolds({ field: SCORE_FIELD, values: ['5'] })).toBe('missing_operand');
+    expect(conditionNeverHolds({ field: SCORE_FIELD, op: 'gt', value: 5 })).toBeNull();
+  });
+
+  it('`between` bounds the running score inclusively', () => {
+    const band = {
+      version: 1,
+      steps: [
+        { key: 'q1', type: 'slider', min: 0, max: 10, sliderScoring: [{ min: 0, max: 10, points: 3 }] },
+        { key: 'mid', type: 'message', showWhen: { field: SCORE_FIELD, op: 'between', min: 3, max: 5 } },
+      ],
+    } as unknown as FormConfig;
+    expect(visibleSteps(band, { q1: 4 }).map((s) => s.key)).toEqual(['q1', 'mid']);
+    expect(visibleSteps(band, {}).map((s) => s.key)).toEqual(['q1']);
   });
 });

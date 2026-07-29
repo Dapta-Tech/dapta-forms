@@ -461,8 +461,27 @@ export interface FormEnding {
 export const FORM_LAYOUTS = ['slides', 'vertical'] as const;
 export type FormLayout = (typeof FORM_LAYOUTS)[number];
 
+/**
+ * The title to show the PUBLIC — `config.title` when the author set one, else
+ * the form's internal name. One resolver so the tab, the OG/Twitter cards, the
+ * generated share image, the cover heading and the profile listing can never
+ * disagree about what a form is called.
+ */
+export function publicTitle(config: { title?: string | null } | null | undefined, name: string): string {
+  const t = config?.title?.trim();
+  return t ? t : name;
+}
+
 export interface FormConfig {
   version: 1;
+  /**
+   * The form's PUBLIC title — the browser tab, the share cards, and the cover
+   * heading. Separate from `form.name`, which stays the private label the author
+   * picked at creation and only ever shows inside the dashboard. Absent falls
+   * back to `name`, so every form authored before this field keeps its exact
+   * current title. See {@link publicTitle}.
+   */
+  title?: string | null;
   branding?: FormBranding | null;
   cover?: FormCover | null;
   /** Presentation layout for the public form. Absent = `'slides'` (back-compat). */
@@ -530,6 +549,29 @@ function numericAnswer(value: AnswerValue): number | null {
 }
 
 /**
+ * The reserved condition source meaning "the running score at this point in the
+ * form" — the total over the steps ALREADY on the runtime path, before the step
+ * being decided.
+ *
+ * Why a prefix and not the final score: a step's visibility cannot depend on a
+ * total that includes the step itself, or `computeScore -> runtimeSteps ->
+ * visibleSteps -> conditionHolds -> computeScore` never terminates. A prefix is
+ * both non-circular and what the respondent actually experiences — by the time
+ * they reach step N they have answered 1..N-1, and N is still unanswered, so it
+ * could not have contributed anyway. No step's points are ever discarded: they
+ * simply count from the next step onward.
+ *
+ * `@` is outside the step-key grammar (`sanitizeStepKey` keeps `[a-z0-9_]`), so
+ * this token can never collide with a real key.
+ */
+export const SCORE_FIELD = '@score';
+
+/** Is this condition sourced from the running score rather than an answer? */
+export function isScoreCondition(cond: Pick<StepCondition, 'field'>): boolean {
+  return cond.field === SCORE_FIELD;
+}
+
+/**
  * Does the current answer to `cond.field` satisfy the condition? The operator
  * (`cond.op`, default `in` for back-compat) selects the comparison:
  *  - `in`   — the answer's tokens intersect `values` (the legacy choice match).
@@ -537,14 +579,19 @@ function numericAnswer(value: AnswerValue): number | null {
  *  - `between` — the numeric answer lies within `[min, max]` inclusive.
  * A numeric op whose operand is missing, or whose answer isn't numeric, never
  * holds (the step stays in its default visibility).
+ *
+ * `scoreSoFar` is the running score (see `SCORE_FIELD`). It is only read when
+ * the condition names that reserved source; an `in` op against it never holds,
+ * because a score is a number and has no tokens to intersect.
  */
-function conditionHolds(cond: StepCondition, answers: Answers): boolean {
+function conditionHolds(cond: StepCondition, answers: Answers, scoreSoFar = 0): boolean {
   const op = cond.op ?? 'in';
   if (op === 'in') {
+    if (isScoreCondition(cond)) return false;
     const got = new Set(tokens(answers[cond.field]));
     return (cond.values ?? []).some((v) => got.has(v));
   }
-  const n = numericAnswer(answers[cond.field]);
+  const n = isScoreCondition(cond) ? scoreSoFar : numericAnswer(answers[cond.field]);
   if (n == null) return false;
   switch (op) {
     case 'eq':
@@ -565,21 +612,36 @@ function conditionHolds(cond: StepCondition, answers: Answers): boolean {
  * when it is not `hidden`, its `showWhen` holds (or is absent) AND its `hideWhen`
  * does not hold — and, for a personal-email-only branch step, only when the
  * email is personal.
+ *
+ * This is a FORWARD walk, not a filter, because a condition may read the running
+ * score (`SCORE_FIELD`): each step is decided against the total over the steps
+ * already admitted ahead of it. That ordering is what keeps the score and the
+ * visibility from depending on each other — see `SCORE_FIELD`.
+ *
+ * The running score here is the pre-`goto` prefix. A forward jump is applied
+ * afterwards (`runtimeSteps`), so a step that a branch skips can still have
+ * contributed to a gate upstream of the jump — but only if it carries a STALE
+ * answer, since a step the respondent never saw is unanswered and scores 0.
  */
 export function visibleSteps(config: FormConfig, answers: Answers): FormStep[] {
-  return config.steps.filter((step) => {
+  const scored = config.scoring?.enabled !== false;
+  const out: FormStep[] = [];
+  let scoreSoFar = 0;
+  for (const step of config.steps) {
     // A hidden step is never rendered as a question — it is skipped in the walk
     // (and therefore never scored). Its answer can still be seeded (e.g. from a
     // URL parameter) and rides along into the submission via the answers map.
-    if (step.hidden) return false;
-    if (step.showWhen && !conditionHolds(step.showWhen, answers)) return false;
-    if (step.hideWhen && conditionHolds(step.hideWhen, answers)) return false;
+    if (step.hidden) continue;
+    if (step.showWhen && !conditionHolds(step.showWhen, answers, scoreSoFar)) continue;
+    if (step.hideWhen && conditionHolds(step.hideWhen, answers, scoreSoFar)) continue;
     if (step.showForPersonalEmailOnly) {
       const emailKey = findEmailKey(config);
-      if (!emailKey || !isPersonalEmail(answers[emailKey])) return false;
+      if (!emailKey || !isPersonalEmail(answers[emailKey])) continue;
     }
-    return true;
-  });
+    out.push(step);
+    if (scored) scoreSoFar += stepScore(step, answers);
+  }
+  return out;
 }
 
 /** The first `email`-typed step's key (the branch pivot for personal-email logic). */
@@ -628,7 +690,10 @@ export function emailSourceFor(config: FormConfig): EmailSource {
  * comparison set; every other type keeps the legacy "matches any of" (`in`).
  * Shared so the editor and the engine can never drift on which op is valid where.
  */
-export function operatorsForFieldType(type: FormFieldType): ConditionOp[] {
+export function operatorsForFieldType(type: FormFieldType | typeof SCORE_FIELD): ConditionOp[] {
+  // The running score is a number, so it gets the comparison set and never `in`
+  // — a score has no tokens for a set-membership test to intersect.
+  if (type === SCORE_FIELD) return ['gt', 'lt', 'eq', 'between'];
   return type === 'slider' ? ['eq', 'gt', 'lt', 'between'] : ['in'];
 }
 
@@ -734,6 +799,10 @@ export function conditionNeverHolds(
       if (cond.min == null || cond.max == null) return 'missing_operand';
       return cond.min > cond.max ? 'empty_interval' : null;
     default:
+      // `in` against the running score can never hold — a number has no tokens.
+      // The builder only offers numeric ops for it, so this catches a config
+      // written by hand or migrated from an answer source.
+      if (isScoreCondition(cond)) return 'missing_operand';
       return (cond.values ?? []).length === 0 ? 'no_values' : null;
   }
 }
@@ -1234,6 +1303,23 @@ function sliderPoints(step: FormStep, value: AnswerValue): number {
  * up (V4-17). No builder path writes `step.points`; it is ignored now, matching
  * `maxStepPoints` and `scoringSteps`.
  */
+/**
+ * One step's contribution to the score, ignoring visibility (the caller decides
+ * that). Shared by `computeScore` and the running-score prefix in
+ * `visibleSteps`, so a gate and the final total can never disagree about what a
+ * step is worth. Lead-capture fields, per-question opt-outs, unanswered steps,
+ * and every non-scoring type all contribute 0.
+ */
+function stepScore(step: FormStep, answers: Answers): number {
+  if (step.flowGroup === 'lead_capture') return 0;
+  if (step.scoringEnabled === false) return 0; // per-question opt-out (V5-B2)
+  const value = answers[step.key];
+  if (value == null || value === '') return 0;
+  if (step.type === 'dropdown' || step.type === 'multiple_choice') return optionPoints(step, value);
+  if (step.type === 'slider') return sliderPoints(step, value);
+  return 0;
+}
+
 export function computeScore(config: FormConfig, answers: Answers): number {
   if (config.scoring && config.scoring.enabled === false) return 0;
   // The runtime PATH (visibility + forward goto jumps) — a step jumped over by a
@@ -1241,13 +1327,8 @@ export function computeScore(config: FormConfig, answers: Answers): number {
   const visible = new Set(runtimeSteps(config, answers).map((s) => s.key));
   let score = 0;
   for (const step of config.steps) {
-    if (step.flowGroup === 'lead_capture') continue;
-    if (step.scoringEnabled === false) continue; // per-question opt-out (V5-B2)
     if (!visible.has(step.key)) continue;
-    const value = answers[step.key];
-    if (value == null || value === '') continue;
-    if (step.type === 'dropdown' || step.type === 'multiple_choice') score += optionPoints(step, value);
-    else if (step.type === 'slider') score += sliderPoints(step, value);
+    score += stepScore(step, answers);
   }
   return score;
 }
