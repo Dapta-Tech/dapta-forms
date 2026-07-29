@@ -5,8 +5,9 @@
  */
 import { cache } from 'react';
 import type { PublicForm, PublicProfile } from '@quill/types';
+import { serverApiUrl } from './api-url';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
+const API_URL = serverApiUrl;
 
 async function getJson<T>(path: string): Promise<T | null> {
   const res = await fetch(`${API_URL}${path}`, { cache: 'no-store' });
