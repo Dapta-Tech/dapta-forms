@@ -714,6 +714,72 @@ export function emailSourceFor(config: FormConfig): EmailSource {
   return null;
 }
 
+/** Why a form cannot give the CRM an address to key its contact on. */
+export type ContactKeyBlocker =
+  /** It asks for no address and books nothing — there is no source at all. */
+  | 'no_source'
+  /**
+   * A scheduler WOULD supply it, but the account has not connected that
+   * provider — so nothing can read the invitee back and the sync dies with
+   * "no respondent email resolvable", silently, after a booking that looked
+   * perfectly successful to the respondent.
+   */
+  | 'scheduler_disconnected';
+
+/** Whether a form can key a CRM contact, and what is missing when it cannot. */
+export type ContactKeyReadiness =
+  | { ok: true; source: NonNullable<EmailSource> }
+  | { ok: false; blocker: ContactKeyBlocker; source: EmailSource };
+
+/**
+ * Can this form actually identify a contact at delivery time?
+ *
+ * {@link emailSourceFor} answers the CONFIG half — is there anything that could
+ * produce an address. That is necessary and not sufficient: a scheduler only
+ * yields one if the account has connected the provider, because the address
+ * comes from reading the invitee back over that provider's API. A form can
+ * therefore be perfectly configured and still sync nothing.
+ *
+ * Both halves belong together in one answer so the builder, the Connect screen
+ * and publish cannot disagree about whether a form is ready — and so the screen
+ * stops promising "contacts will be keyed on the address the booking collects"
+ * without checking that anyone can read it.
+ *
+ * Stays pure: the connection state is passed IN, never fetched here.
+ */
+export function contactKeyReadiness(
+  config: FormConfig,
+  connected: { scheduler: boolean },
+): ContactKeyReadiness {
+  const source = emailSourceFor(config);
+  if (!source) return { ok: false, blocker: 'no_source', source: null };
+  if (source.kind === 'scheduler' && !connected.scheduler) {
+    return { ok: false, blocker: 'scheduler_disconnected', source };
+  }
+  return { ok: true, source };
+}
+
+/**
+ * Does this destination's mapping fight the scheduler for the contact key?
+ *
+ * The booking path only runs when the ADAPTER cannot resolve an address on its
+ * own (`adapterResolvableEmail`). Pointing any question at the `email` property
+ * satisfies it, so the answers stop syncing at booking and the submit-time
+ * delivery tries to identify the contact with that answer instead. The lead
+ * quietly stops arriving.
+ *
+ * Returns the offending step keys so the editor can name them.
+ */
+export function emailMappingsConflictingWithScheduler(
+  source: EmailSource,
+  fieldMappings: Record<string, string> | undefined,
+): string[] {
+  if (source?.kind !== 'scheduler' || !fieldMappings) return [];
+  return Object.entries(fieldMappings)
+    .filter(([, property]) => property.trim().toLowerCase() === 'email')
+    .map(([stepKey]) => stepKey);
+}
+
 /**
  * The visibility operators offered for a referenced field's TYPE — the builder
  * shows exactly these in the operator dropdown, and they are the only ops the

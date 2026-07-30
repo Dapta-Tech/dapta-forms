@@ -1,6 +1,11 @@
 'use client';
 
-import { INVITEE_FIELDS, type EmailSource } from '@quill/engine';
+import {
+  INVITEE_FIELDS,
+  emailMappingsConflictingWithScheduler,
+  type ContactKeyReadiness,
+  type EmailSource,
+} from '@quill/engine';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import type { FormsMessages, Locale } from '@quill/shared';
@@ -48,6 +53,9 @@ interface SystemKey {
   key: string;
   label: string;
 }
+
+/** No config supplied → nothing can key a contact. Never claims readiness. */
+const NOT_READY: ContactKeyReadiness = { ok: false, blocker: 'no_source', source: null };
 
 /** Sentinel option values for the key pickers — never valid step keys. */
 const CUSTOM_KEY_OPTION = '__custom_key__';
@@ -202,7 +210,7 @@ export function IntegrationsEditor({
   hubspot: hubspotProps,
   hubspotConnected,
   questions,
-  emailSource = null,
+  readiness = NOT_READY,
   messages: m,
   locale,
 }: {
@@ -213,8 +221,12 @@ export function IntegrationsEditor({
   hubspotConnected: boolean;
   /** The form's mappable questions (from its steps). */
   questions: QuestionMeta[];
-  /** Where a HubSpot sync could get the address it keys contacts on. */
-  emailSource?: EmailSource;
+  /**
+   * Whether this form can key a CRM contact — config AND connections. The
+   * screen must not promise a sync it cannot deliver, so the copy below reads
+   * this rather than the config alone.
+   */
+  readiness?: ContactKeyReadiness;
   messages: Msgs;
   locale: Locale;
 }) {
@@ -486,7 +498,7 @@ export function IntegrationsEditor({
           pickerEnabled={pickerEnabled}
           accountConnected={hubspotConnected}
           showMapping={showMapping}
-          emailSource={emailSource}
+          readiness={readiness}
           questions={questions}
           m={m}
         />
@@ -945,7 +957,7 @@ function HubspotCard({
   pickerEnabled,
   accountConnected,
   showMapping,
-  emailSource,
+  readiness,
   questions,
   m,
 }: {
@@ -955,11 +967,12 @@ function HubspotCard({
   pickerEnabled: boolean;
   accountConnected: boolean;
   showMapping: boolean;
-  emailSource: EmailSource;
+  readiness: ContactKeyReadiness;
   questions: QuestionMeta[];
   m: Msgs;
 }) {
   const { success, toast } = useToast();
+  const emailSource = readiness.source;
   const utmValues = useMemo(() => state.utmMappings, [state.utmMappings]);
   const questionKeys = useMemo(() => new Set(questions.map((q) => q.key)), [questions]);
 
@@ -978,6 +991,23 @@ function HubspotCard({
       { key: INVITEE_FIELDS.phone, label: m.inviteePhone },
     ];
   }, [emailSource, m]);
+
+  // Questions pointed at the `email` property while a SCHEDULER is what supplies
+  // the address. The booking-time sync only runs when the adapter cannot resolve
+  // an address itself, so this mapping switches it off and the lead stops
+  // arriving — with no error anywhere.
+  const emailConflicts = useMemo(
+    () =>
+      emailMappingsConflictingWithScheduler(
+        emailSource,
+        Object.fromEntries(
+          state.fieldMappings
+            .filter((p) => p.key.trim() && p.property.trim())
+            .map((p) => [p.key.trim(), p.property.trim()]),
+        ),
+      ),
+    [emailSource, state.fieldMappings],
+  );
 
   // Nothing to key a contact on → mapping is pointless and, worse, silently
   // lossy: HubSpot's upsert is BY EMAIL, so a submission with no address
@@ -1102,24 +1132,48 @@ function HubspotCard({
 
       {/* What the sync actually does. "Map a question to a property" does not
           tell anyone that the CONTACT is matched by email and created when
-          absent — which is the one rule that decides whether a lead lands. */}
+          absent — which is the one rule that decides whether a lead lands.
+
+          The body is per-source, not one paragraph for everyone: the generic
+          copy ends "a form that never asks for an email cannot be synced",
+          which is FALSE for a form whose address comes from the booking — and
+          it sat directly above the note saying the opposite. */}
       <div
         data-testid="hubspot-how"
         className="rounded-md border border-border bg-muted/30 p-3"
       >
         <p className="text-xs font-medium text-foreground">{m.hubspotHowTitle}</p>
-        <p className="mt-1 text-xs text-muted-foreground">{m.hubspotHowBody}</p>
+        <p className="mt-1 text-xs text-muted-foreground">
+          {emailSource?.kind === 'scheduler' ? m.hubspotHowBodyScheduler : m.hubspotHowBody}
+        </p>
         {emailSource?.kind === 'scheduler' ? (
           <p data-testid="hubspot-scheduler-note" className="mt-2 text-xs text-muted-foreground">
-            {m.emailFromScheduler}
+            {readiness.ok ? m.emailFromScheduler : m.schedulerDisconnected}
           </p>
         ) : null}
       </div>
 
+      {/* The mapping the old help text INSTRUCTED, which switches the sync off.
+          Named per question so it can be found, not just described. */}
+      {emailConflicts.length > 0 ? (
+        <div
+          data-testid="hubspot-email-conflict"
+          role="alert"
+          className="rounded-md border border-destructive/40 bg-destructive/10 p-3"
+        >
+          <p className="text-xs font-medium text-foreground">{m.emailMappingConflictTitle}</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {fill(m.emailMappingConflictBody, { keys: emailConflicts.join(', ') })}
+          </p>
+        </div>
+      ) : null}
+
       {/* Map questions — each form question → a HubSpot contact property */}
       <Section
         title={m.mapQuestions}
-        help={m.mapQuestionsHelp}
+        help={
+          emailSource?.kind === 'scheduler' ? m.mapQuestionsHelpScheduler : m.mapQuestionsHelp
+        }
         action={
           <Button variant="outline" size="sm" onClick={autoMap} disabled={questions.length === 0}>
             <i aria-hidden className="pi pi-bolt" style={{ fontSize: 12 }} />

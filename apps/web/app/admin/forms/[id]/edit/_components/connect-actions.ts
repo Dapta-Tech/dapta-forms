@@ -19,6 +19,12 @@ export interface ConnectIntegrationsData {
   destinations: FormDestination[];
   hubspot: HubSpotPropertiesResponse;
   hubspotConnected: boolean;
+  /**
+   * Whether the scheduling provider is connected for the account. A form whose
+   * address comes from a scheduler needs this to be true or the invitee can
+   * never be read back — see `contactKeyReadiness`.
+   */
+  calendlyConnected: boolean;
 }
 
 export async function loadConnectIntegrationsAction(
@@ -48,11 +54,16 @@ export async function loadConnectIntegrationsAction(
   // failure degrades to "not connected" — the editor still shows the mapping
   // when the property picker resolved via the server env fallback.
   let hubspotConnected = false;
+  let calendlyConnected = false;
   try {
     const integrations = await adminApi.listIntegrations();
     hubspotConnected = integrations.providers.some((p) => p.provider === 'hubspot' && p.connected);
+    calendlyConnected = integrations.providers.some(
+      (p) => p.provider === 'calendly' && p.connected,
+    );
   } catch {
     hubspotConnected = false;
+    calendlyConnected = false;
   }
 
   return {
@@ -61,6 +72,7 @@ export async function loadConnectIntegrationsAction(
       destinations: (form.config.destinations ?? []) as FormDestination[],
       hubspot,
       hubspotConnected,
+      calendlyConnected,
     },
   };
 }

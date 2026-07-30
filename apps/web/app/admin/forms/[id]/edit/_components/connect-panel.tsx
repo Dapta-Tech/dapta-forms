@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { emailSourceFor, type EmailSource, type FormConfig } from '@quill/engine';
+import { contactKeyReadiness, type ContactKeyReadiness, type FormConfig } from '@quill/engine';
 import type { FormTracking } from '@quill/types';
 import { getMessages, type Locale } from '@quill/shared';
 import { Button } from '@/components/ui/button';
@@ -62,17 +62,14 @@ export function ConnectPanel({
     [config.steps],
   );
 
-  // Computed from the LIVE config for the same reason `questions` is: adding an
-  // email question has to unblock the HubSpot mapping immediately, not after a
-  // save and a refetch.
-  const emailSource = useMemo(() => emailSourceFor(config), [config]);
+
 
   return (
     <div data-testid="connect-panel" className="mx-auto flex w-full max-w-[900px] flex-col gap-4">
       <IntegrationsSection
         formId={formId}
         questions={questions}
-        emailSource={emailSource}
+        config={config}
         mc={mc}
         im={im}
         locale={loc}
@@ -93,21 +90,36 @@ type LoadState =
 function IntegrationsSection({
   formId,
   questions,
-  emailSource,
+  config,
   mc,
   im,
   locale,
 }: {
   formId: string;
   questions: QuestionMeta[];
-  /** Where a HubSpot sync could get an address, or null if nowhere. */
-  emailSource: EmailSource;
+  /** The LIVE editor config — readiness is derived here, next to the fetched
+   *  connection state, so both halves of the answer come from one place. */
+  config: FormConfig;
   mc: EditorMessages['connect'];
   im: ReturnType<typeof getMessages>['admin']['integrations'];
   locale: Locale;
 }) {
   const [state, setState] = useState<LoadState>({ status: 'loading' });
   const [attempt, setAttempt] = useState(0);
+
+  // Whether this form can key a CRM contact at all. Derived from the LIVE
+  // config so adding an email question unblocks the mapping immediately, and
+  // crossed with the account's connections because a scheduler only yields an
+  // address while its provider is connected — the config alone cannot answer
+  // "will this sync". While the fetch is in flight, assume connected: a
+  // transient "not connected" warning would be worse than a late one.
+  const readiness: ContactKeyReadiness = useMemo(
+    () =>
+      contactKeyReadiness(config, {
+        scheduler: state.status !== 'ready' || state.data.calendlyConnected,
+      }),
+    [config, state],
+  );
 
   // Fetch on tab activation (the panel mounts only while the Connect tab is
   // active, so re-entering the tab always shows the latest saved destinations).
@@ -160,7 +172,7 @@ function IntegrationsSection({
           hubspot={state.data.hubspot}
           hubspotConnected={state.data.hubspotConnected}
           questions={questions}
-          emailSource={emailSource}
+          readiness={readiness}
           messages={im}
           locale={locale}
         />

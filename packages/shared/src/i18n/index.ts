@@ -1032,6 +1032,14 @@ export interface FormsMessages {
       emailFromScheduler: string;
       hubspotHowTitle: string;
       hubspotHowBody: string;
+      /** Same explanation for a form whose address comes from the booking. */
+      hubspotHowBodyScheduler: string;
+      /** A scheduler supplies the address, but its provider is not connected. */
+      schedulerDisconnected: string;
+      mapQuestionsHelpScheduler: string;
+      emailMappingConflictTitle: string;
+      /** `{keys}` — the questions pointed at the email property. */
+      emailMappingConflictBody: string;
       /** Send one sample delivery to the configured webhook. */
       pingWebhook: string;
       pingSending: string;
@@ -2093,6 +2101,15 @@ export const en: FormsMessages = {
       hubspotHowTitle: 'How the sync works',
       hubspotHowBody:
         'Every submission is matched to a contact by email address: an existing contact is updated, and a new one is created when there is no match. A form that never asks for an email cannot be synced.',
+      hubspotHowBodyScheduler:
+        'Every submission is matched to a contact by email address: an existing contact is updated, and a new one is created when there is no match. This form does not ask for one — the booking collects it, so nothing here should be mapped to “email”.',
+      schedulerDisconnected:
+        'Calendly is not connected for this account, so the invitee’s address cannot be read back and nothing will reach HubSpot — the booking still succeeds, which is why this fails quietly. Connect Calendly in Connections.',
+      mapQuestionsHelpScheduler:
+        'Send each answer to a HubSpot contact property. Do not map anything to “email” — the booking supplies it, and a mapping here takes over and stops the sync.',
+      emailMappingConflictTitle: 'This mapping stops the sync',
+      emailMappingConflictBody:
+        'The booking already supplies the address. A question mapped to “email” takes over as the contact key, so answers stop reaching HubSpot after a booking. Remove the mapping on: {keys}.',
       pingWebhook: 'Send test',
       pingSending: 'Sending…',
       pingOk: 'Test delivered — your endpoint accepted it.',
@@ -3151,6 +3168,15 @@ export const es: FormsMessages = {
       hubspotHowTitle: 'Cómo funciona la sincronización',
       hubspotHowBody:
         'Cada envío se busca en HubSpot por correo: si el contacto existe se actualiza, y si no, se crea uno nuevo. Un formulario que nunca pide correo no se puede sincronizar.',
+      hubspotHowBodyScheduler:
+        'Cada envío se busca en HubSpot por correo: si el contacto existe se actualiza, y si no, se crea uno nuevo. Este formulario no lo pide — lo recoge la agenda, así que acá no hay que mapear nada a «email».',
+      schedulerDisconnected:
+        'Calendly no está conectado en esta cuenta, así que no se puede leer el correo del invitado y no va a llegar nada a HubSpot — la reserva igual funciona, por eso falla en silencio. Conectá Calendly en Conexiones.',
+      mapQuestionsHelpScheduler:
+        'Mandá cada respuesta a una propiedad de contacto de HubSpot. No mapees nada a «email»: lo aporta la agenda, y un mapeo acá lo reemplaza y apaga la sincronización.',
+      emailMappingConflictTitle: 'Este mapeo apaga la sincronización',
+      emailMappingConflictBody:
+        'La agenda ya aporta el correo. Una pregunta mapeada a «email» pasa a ser la llave del contacto, así que las respuestas dejan de llegar a HubSpot después de agendar. Quitá el mapeo en: {keys}.',
       pingWebhook: 'Enviar prueba',
       pingSending: 'Enviando…',
       pingOk: 'Prueba entregada: tu endpoint la aceptó.',

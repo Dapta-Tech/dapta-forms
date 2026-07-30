@@ -8,6 +8,7 @@ import { Select, type SelectOption } from '@/components/ui/select';
 import { useToast } from '@/components/toast';
 import { cn } from '@/lib/cn';
 import { TextField } from './fields';
+import { contactKeyReadiness, type FormConfig, type FormStep } from '@quill/engine';
 import { loadConnectIntegrationsAction, type ConnectIntegrationsData } from './connect-actions';
 import { saveQuestionMappingAction } from './question-hubspot-actions';
 import type { BuilderMessages } from './builder-messages';
@@ -94,6 +95,7 @@ type SectionState =
 export function QuestionHubspotSection({
   formId,
   stepKey,
+  steps,
   locale,
   onOpenConnect,
   m,
@@ -101,6 +103,10 @@ export function QuestionHubspotSection({
   formId: string;
   /** The selected question's answer key — the `fieldMappings` entry it owns. */
   stepKey: string;
+  /** The form's steps, to answer "can this form key a contact at all?" here —
+   *  an author who never opens Connect would otherwise map properties on a form
+   *  that can never sync, and nothing would say so. */
+  steps: FormStep[];
   locale: string;
   /** Switch the editor to the Connect tab (destination setup lives there). */
   onOpenConnect: () => void;
@@ -219,6 +225,29 @@ export function QuestionHubspotSection({
       );
     }
     const data = state.data;
+    // Can this form key a contact AT ALL? Config plus connections, the same
+    // answer Connect shows — because an author can map every property from the
+    // Build tab, publish, and never open Connect. Without this the mapping
+    // looks finished and syncs nothing.
+    const readiness = contactKeyReadiness({ version: 1, steps } as unknown as FormConfig, {
+      scheduler: data.calendlyConnected,
+    });
+    if (!readiness.ok) {
+      return (
+        <div className="flex flex-col items-start gap-2" data-testid="qs-hubspot-unready">
+          <p role="alert" className="text-xs text-muted-foreground">
+            {readiness.blocker === 'no_source' ? m.needsEmail : m.schedulerDisconnected}
+          </p>
+          <Link
+            href="/admin/integrations"
+            className={buttonVariants({ variant: 'outline', size: 'sm' })}
+          >
+            {m.goToConnections}
+            <i aria-hidden className="pi pi-arrow-right" style={{ fontSize: 11 }} />
+          </Link>
+        </div>
+      );
+    }
     // Usable when the account is connected OR the property picker resolved via
     // the server env fallback (self-host) — mirrors the integrations editor.
     if (!data.hubspotConnected && !data.hubspot.enabled) {
