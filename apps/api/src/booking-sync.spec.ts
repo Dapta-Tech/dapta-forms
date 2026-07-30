@@ -22,7 +22,7 @@ import { SubmissionNotifier, LogOnlyEmailProvider } from '@quill/notifications';
 import { SubmissionService } from './submission.service';
 import { EmailEffects } from './email-effects';
 import { DestinationEffects } from './destination-effects';
-import { BookingEffects } from './booking-effects';
+import { BookingEffects, BOOKING_SYNC_DELAY_MS } from './booking-effects';
 import { BookingSyncEffects } from './booking-sync';
 import { OutboxWorker } from './outbox.worker';
 
@@ -47,6 +47,16 @@ function newEmailEffects() {
 function newWorker() {
   const env = { OUTBOX_WORKER_ENABLED: false, OUTBOX_POLL_MS: 5000, NODE_ENV: 'test' } as never;
   return new OutboxWorker(db, env, newEmailEffects(), new DestinationEffects(db), bookingSync);
+}
+
+/**
+ * Drain with the clock advanced past `BOOKING_SYNC_DELAY_MS`, which is when a
+ * `booking_sync` row first becomes due. Every delivery test goes through this:
+ * calling `drainOnce()` at the real clock claims nothing, which is exactly the
+ * dormancy the delay exists to create.
+ */
+function drainDue() {
+  return newWorker().drainOnce(Date.now() + BOOKING_SYNC_DELAY_MS + 1_000);
 }
 
 /** Record every call; answer per-URL from `responses` (default 200 `{}`). */
@@ -141,6 +151,32 @@ describe('booking callback enqueue', () => {
     expect(payload.inviteeUri).toBe(INVITEE_URI);
     expect(typeof payload.accountId).toBe('string');
   });
+
+  // A booking on a mid-form `scheduler` step is recorded BEFORE the submission
+  // is finalized. Draining inside that gap delivers as `partial`, which drops
+  // the outcome property, the static properties and the Note — permanently,
+  // since the row closes on success. The row therefore starts DORMANT.
+  it('holds the row dormant so the submission can finish first', async () => {
+    await setHubspotDestination(BOOKING_SYNC_CONFIG);
+    const before = Date.now();
+    await svc.booking('acme', 'lead-qualifier', {
+      sessionId: 'sess-delay',
+      provider: 'calendly',
+      eventUri: EVENT_URI,
+      inviteeUri: INVITEE_URI,
+    });
+
+    const [row] = await listOutbox(db, { kind: 'booking_sync' });
+    expect(row!.nextAttemptAt).toBeGreaterThanOrEqual(before + BOOKING_SYNC_DELAY_MS);
+
+    // Draining at the real clock claims nothing — the row is not due yet.
+    bookingSync.fetchImpl = recordingFetch([]);
+    expect(await newWorker().drainOnce()).toBe(0);
+    expect((await listOutbox(db, { kind: 'booking_sync' }))[0]!.status).toBe('pending');
+
+    // Past the delay it is claimed exactly once.
+    expect(await drainDue()).toBe(1);
+  });
 });
 
 describe('booking_sync delivery', () => {
@@ -164,7 +200,7 @@ describe('booking_sync delivery', () => {
       [HUBSPOT_UPSERT_URL]: () => jsonResponse({ results: [{ id: '123' }] }),
     });
 
-    await newWorker().drainOnce();
+    await drainDue();
 
     const rows = await listOutbox(db, { kind: 'booking_sync' });
     expect(rows[0]!.status).toBe('done');
@@ -208,7 +244,7 @@ describe('booking_sync delivery', () => {
     bookingSync.fetchImpl = recordingFetch(calls, {
       [HUBSPOT_UPSERT_URL]: () => jsonResponse({ results: [{ id: '9' }] }),
     });
-    await newWorker().drainOnce();
+    await drainDue();
 
     const rows = await listOutbox(db, { kind: 'booking_sync' });
     expect(rows[0]!.status).toBe('done');
@@ -239,7 +275,7 @@ describe('booking_sync delivery', () => {
 
     const calls: RecordedCall[] = [];
     bookingSync.fetchImpl = recordingFetch(calls);
-    await newWorker().drainOnce();
+    await drainDue();
 
     const rows = await listOutbox(db, { kind: 'booking_sync' });
     expect(rows[0]!.status).toBe('skipped'); // a decision, recorded once — not retried
@@ -263,7 +299,7 @@ describe('booking_sync delivery', () => {
     bookingSync.fetchImpl = recordingFetch(calls, {
       [HUBSPOT_UPSERT_URL]: () => jsonResponse({ error: 'boom' }, 500),
     });
-    await newWorker().drainOnce();
+    await drainDue();
 
     const rows = await listOutbox(db, { kind: 'booking_sync' });
     expect(rows[0]!.status).toBe('pending'); // retryable — backoff, not terminal
@@ -288,7 +324,7 @@ describe('booking_sync delivery', () => {
 
     const calls: RecordedCall[] = [];
     bookingSync.fetchImpl = recordingFetch(calls);
-    await newWorker().drainOnce();
+    await drainDue();
 
     const rows = await listOutbox(db, { kind: 'booking_sync' });
     expect(rows[0]!.status).toBe('skipped');
@@ -324,7 +360,7 @@ describe('booking_sync delivery', () => {
       [INVITEE_URI]: () => jsonResponse({ resource: { email: 'Invitee@Corp.IO' } }),
       [HUBSPOT_UPSERT_URL]: () => jsonResponse({ results: [{ id: '77' }] }),
     });
-    await newWorker().drainOnce();
+    await drainDue();
 
     const rows = await listOutbox(db, { kind: 'booking_sync' });
     expect(rows[0]!.status).toBe('done');
@@ -375,7 +411,7 @@ describe('booking_sync delivery', () => {
       [INVITEE_URI]: () => jsonResponse({ resource: { email: 'real@corp.io' } }),
       [HUBSPOT_UPSERT_URL]: () => jsonResponse({ results: [{ id: '3' }] }),
     });
-    await newWorker().drainOnce();
+    await drainDue();
 
     const rows = await listOutbox(db, { kind: 'booking_sync' });
     expect(rows[0]!.status).toBe('done');
@@ -409,7 +445,7 @@ describe('booking_sync delivery', () => {
       [INVITEE_URI]: () => jsonResponse({ resource: { email: 'invitee@corp.io' } }),
       [HUBSPOT_UPSERT_URL]: () => jsonResponse({ results: [{ id: '5' }] }),
     });
-    await newWorker().drainOnce();
+    await drainDue();
 
     const rows = await listOutbox(db, { kind: 'booking_sync' });
     expect(rows[0]!.status).toBe('done');
@@ -445,7 +481,7 @@ describe('booking_sync delivery', () => {
       [INVITEE_URI]: () => jsonResponse({ resource: { email: 'solo@corp.io' } }),
       [HUBSPOT_UPSERT_URL]: () => jsonResponse({ results: [{ id: '8' }] }),
     });
-    await newWorker().drainOnce();
+    await drainDue();
 
     const rows = await listOutbox(db, { kind: 'booking_sync' });
     expect(rows[0]!.status).toBe('done'); // not skipped — the answers went out
