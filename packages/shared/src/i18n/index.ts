@@ -372,6 +372,16 @@ export interface FormsMessages {
         outcomeHeadingHelp: string;
         /** V5-A1 — why the ranges are inert while scoring is off. */
         outcomesInert: string;
+        redirectDelayLabel: string;
+        redirectDelayHelp: string;
+        redirectDelayHint: string;
+        overridesLabel: string;
+        overridesHelp: string;
+        overrideRemove: string;
+        /** `{field}` `{bound}` — an override read back as a sentence. */
+        overrideAtMost: string;
+        overrideAtLeast: string;
+        overrideIsAnyOf: string;
         /** V5-B5 — the heading field's tooltip (it IS the thank-you headline). */
         outcomeHeadingHelp2: string;
         /** V5-B5 — spells out that a redirect replaces the screen entirely. */
@@ -1487,6 +1497,17 @@ export const en: FormsMessages = {
           'If you set this, the thank-you screen above is never shown for this range — the respondent goes straight to the URL. Leave it empty to show the screen.',
         outcomesInert:
           'Scoring is off, so no range can be reached — everyone sees the form’s own thank-you screen. Anything set on a range is skipped too, including its redirect and its scheduling handoff. Your ranges are kept; turn scoring on to use them again.',
+        redirectDelayLabel: 'Show the thank-you first (ms)',
+        redirectDelayHelp:
+          'How long the thank-you screen stays up before the redirect happens. 0 leaves immediately.',
+        redirectDelayHint: '0 = redirect immediately. 1500 shows the message for a second and a half.',
+        overridesLabel: 'Forced by an answer',
+        overridesHelp:
+          'These beat the score outright: a respondent matching one lands here no matter what they scored. Shown so the range above can be trusted.',
+        overrideRemove: 'Remove',
+        overrideAtMost: '{field} is at most {bound}',
+        overrideAtLeast: '{field} is at least {bound}',
+        overrideIsAnyOf: '{field} is any of {bound}',
         redirectLabel: 'Redirect URL (optional)',
         redirectHelp:
           'Leave empty to show the thank-you screen. If set, respondents are sent here instead.',
@@ -2552,6 +2573,17 @@ export const es: FormsMessages = {
           'Si la defines, la pantalla de agradecimiento de arriba nunca se muestra para este rango — el respondiente va directo a la URL. Déjala vacía para mostrar la pantalla.',
         outcomesInert:
           'El puntaje está apagado, así que ningún rango puede alcanzarse — todos ven la pantalla de agradecimiento del formulario. También se omite todo lo configurado en un rango, incluida su redirección y su agenda. Tus rangos se conservan; enciende el puntaje para volver a usarlos.',
+        redirectDelayLabel: 'Mostrar el agradecimiento antes (ms)',
+        redirectDelayHelp:
+          'Cuánto se queda la pantalla de agradecimiento antes de redirigir. 0 se va de inmediato.',
+        redirectDelayHint: '0 = redirige de inmediato. 1500 muestra el mensaje segundo y medio.',
+        overridesLabel: 'Forzado por una respuesta',
+        overridesHelp:
+          'Estas le ganan al puntaje: quien las cumpla cae acá sin importar cuánto sumó. Se muestran para que el rango de arriba se pueda creer.',
+        overrideRemove: 'Quitar',
+        overrideAtMost: '{field} es como máximo {bound}',
+        overrideAtLeast: '{field} es al menos {bound}',
+        overrideIsAnyOf: '{field} es alguno de {bound}',
         redirectLabel: 'URL de redirección (opcional)',
         redirectHelp:
           'Déjalo vacío para mostrar la pantalla de agradecimiento. Si lo defines, se redirige ahí a los respondientes.',
