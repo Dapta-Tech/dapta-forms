@@ -772,11 +772,12 @@ export function contactKeyReadiness(
  */
 export function emailMappingsConflictingWithScheduler(
   source: EmailSource,
-  fieldMappings: Record<string, string> | undefined,
+  fieldMappings: Record<string, string | string[]> | undefined,
 ): string[] {
   if (source?.kind !== 'scheduler' || !fieldMappings) return [];
+  const targets = (v: string | string[]): string[] => (Array.isArray(v) ? v : [v]);
   return Object.entries(fieldMappings)
-    .filter(([, property]) => property.trim().toLowerCase() === 'email')
+    .filter(([, target]) => targets(target).some((p) => p.trim().toLowerCase() === 'email'))
     .map(([stepKey]) => stepKey);
 }
 

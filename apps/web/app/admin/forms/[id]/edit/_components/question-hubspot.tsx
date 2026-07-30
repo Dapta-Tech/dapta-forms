@@ -9,6 +9,7 @@ import { useToast } from '@/components/toast';
 import { cn } from '@/lib/cn';
 import { TextField } from './fields';
 import { contactKeyReadiness, type FormConfig, type FormStep } from '@quill/engine';
+import { propertiesFor } from '@quill/types';
 import { loadConnectIntegrationsAction, type ConnectIntegrationsData } from './connect-actions';
 import { saveQuestionMappingAction } from './question-hubspot-actions';
 import type { BuilderMessages } from './builder-messages';
@@ -80,7 +81,13 @@ function withMapping(
     destinations: data.destinations.map((d) => {
       if (d.type !== 'hubspot') return d;
       const fieldMappings = { ...(d.fieldMappings ?? {}) };
-      if (property) fieldMappings[stepKey] = property;
+      // This panel edits ONE property — the first. A mapping that fans out to
+      // several is authored in Connect, and clearing the field here must not
+      // silently drop the others, so the tail is preserved either way.
+      const rest = propertiesFor(fieldMappings[stepKey]).slice(1);
+      const next = property ? [property, ...rest] : rest;
+      if (next.length > 1) fieldMappings[stepKey] = next;
+      else if (next.length === 1) fieldMappings[stepKey] = next[0]!;
       else delete fieldMappings[stepKey];
       return { ...d, fieldMappings };
     }),
@@ -282,7 +289,8 @@ export function QuestionHubspotSection({
         </div>
       );
     }
-    const value = dest.fieldMappings?.[stepKey] ?? '';
+    const targets = propertiesFor(dest.fieldMappings?.[stepKey]);
+    const value = targets[0] ?? '';
     return (
       <div data-testid="qs-hubspot-mapto" className="flex flex-col gap-1.5">
         <div className="flex items-center justify-between gap-2">

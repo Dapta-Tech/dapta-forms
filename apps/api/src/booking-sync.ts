@@ -3,6 +3,7 @@ import { getFormById, parseJsonColumn, resolveProviderToken, sql, type Db } from
 import {
   formConfigSchema,
   formDestinationSchema,
+  propertiesFor,
   type FormDestination,
   type HubspotDestination,
 } from '@quill/types';
@@ -446,9 +447,9 @@ function adapterResolvableEmail(
   destination: HubspotDestination,
   data: Record<string, unknown>,
 ): string | null {
-  for (const [stepKey, property] of Object.entries(destination.fieldMappings ?? {})) {
+  for (const [stepKey, target] of Object.entries(destination.fieldMappings ?? {})) {
     const value = data[stepKey];
-    if (property?.trim() === 'email' && typeof value === 'string' && value.trim()) {
+    if (propertiesFor(target).includes('email') && typeof value === 'string' && value.trim()) {
       return value.trim();
     }
   }

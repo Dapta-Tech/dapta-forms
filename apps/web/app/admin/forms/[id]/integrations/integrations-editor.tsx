@@ -1,5 +1,6 @@
 'use client';
 
+import { propertiesFor } from '@quill/types';
 import {
   INVITEE_FIELDS,
   emailMappingsConflictingWithScheduler,
@@ -153,7 +154,12 @@ function initialHubspot(destinations: FormDestination[]): HubspotState {
   if (h && h.type === 'hubspot') {
     return {
       enabled: h.enabled,
-      fieldMappings: Object.entries(h.fieldMappings ?? {}).map(([key, property]) => ({ key, property })),
+      // One ROW per target property: a mapping that fans out to several shows
+      // as several rows with the same key, which is the shape the editor can
+      // actually author. `buildDestinations` groups them back.
+      fieldMappings: Object.entries(h.fieldMappings ?? {}).flatMap(([key, target]) =>
+        propertiesFor(target).map((property) => ({ key, property })),
+      ),
       utmMappings: { ...(h.utmMappings ?? {}) },
       scoreProperty: h.scoreProperty ?? '',
       dateProperty: h.dateProperty ?? '',
@@ -307,10 +313,21 @@ export function IntegrationsEditor({
     }
     // else: empty url (switch on or off) → no webhook persisted. An enabled
     // webhook with no URL is incomplete, not stored; clearing the URL removes it.
-    const fieldMappings: Record<string, string> = {};
+    // Rows GROUP by key rather than overwriting. The old flatten was
+    // last-one-wins and silent: two rows on the same question — the escape
+    // hatch the UI itself offers via "Custom key…" — quietly discarded the
+    // first mapping on save.
+    const grouped = new Map<string, string[]>();
     for (const p of hs.fieldMappings) {
-      if (p.key.trim() && p.property.trim()) fieldMappings[p.key.trim()] = p.property.trim();
+      const key = p.key.trim();
+      const property = p.property.trim();
+      if (!key || !property) continue;
+      const list = grouped.get(key) ?? [];
+      if (!list.includes(property)) list.push(property);
+      grouped.set(key, list);
     }
+    const fieldMappings: Record<string, string | string[]> = {};
+    for (const [key, list] of grouped) fieldMappings[key] = list.length === 1 ? list[0]! : list;
     const utmMappings: Record<string, string> = {};
     for (const [k, v] of Object.entries(hs.utmMappings)) {
       if (v && v.trim()) utmMappings[k] = v.trim();
@@ -1081,7 +1098,10 @@ function HubspotCard({
   // already mapped drop out of a custom row's picker (no double-mapping); a
   // row's own key is always kept so its selection stays visible.
   const usedKeys = new Set(state.fieldMappings.map((p) => p.key));
-  const unmappedQuestions = questions.filter((q) => !usedKeys.has(q.key));
+  // Every question stays pickable. Hiding the mapped ones was how the editor
+  // enforced one-property-per-answer; now a second row on the same question IS
+  // the way to send it somewhere else too.
+  const unmappedQuestions = questions;
 
   // Value maps translate answers, so choice-type questions (fixed option
   // lists) lead the picker; free-text questions follow. Plain computation —

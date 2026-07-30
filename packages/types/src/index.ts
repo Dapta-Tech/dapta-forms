@@ -483,6 +483,37 @@ export type DestinationType = (typeof destinationType)[number];
 const propertyMapSchema = z.record(z.string().min(1).max(200), z.string().min(1).max(200));
 
 /**
+ * What ONE answer writes to: a property, or several.
+ *
+ * A single string was the shape for a long time and stays valid, so every
+ * stored config keeps parsing. The array exists because one answer legitimately
+ * feeds more than one CRM property — a use-case field that a reporting property
+ * mirrors, say — and a record keyed by step key can only hold one value per
+ * key, so the workaround was a SECOND destination. That second destination is
+ * invisible to the integrations screen (it reads the first) and is never
+ * delivered by the booking sync (same), which made it config that looks correct
+ * in an audit and writes nothing.
+ */
+const propertyTargetsSchema = z.union([
+  z.string().min(1).max(200),
+  z.array(z.string().min(1).max(200)).min(1).max(20),
+]);
+
+/** stepKey -> one property or several. Read it through {@link propertiesFor}. */
+const fieldMapSchema = z.record(z.string().min(1).max(200), propertyTargetsSchema);
+
+/**
+ * The properties one mapping targets, as a list — the single reader for both
+ * stored shapes, so no call site has to remember that a string is also valid.
+ * Blank entries are dropped, so a half-typed row never writes an empty property.
+ */
+export function propertiesFor(target: string | string[] | undefined | null): string[] {
+  if (target == null) return [];
+  const list = Array.isArray(target) ? target : [target];
+  return list.map((p) => p.trim()).filter((p) => p.length > 0);
+}
+
+/**
  * Webhook destination — POST each submission as JSON to a URL, optionally HMAC
  * signed. The secret is server-side config, never leaked to the public renderer
  * (the API strips `destinations` before serving a public form).
@@ -554,8 +585,9 @@ export const hubspotDestinationSchema = z.object({
   type: z.literal('hubspot'),
   enabled: z.boolean().default(false),
   settings: z.object({ note: z.boolean().optional() }).default({}),
-  /** stepKey -> contact property (one property SHOULD be `email`). */
-  fieldMappings: propertyMapSchema.default({}),
+  /** stepKey -> contact property, or several (one SHOULD be `email` unless a
+   *  scheduler supplies the address). */
+  fieldMappings: fieldMapSchema.default({}),
   /** utm_source/medium/campaign/term/content -> contact property. */
   utmMappings: propertyMapSchema.default({}),
   /** Contact property to receive the score (complete submissions). */
