@@ -677,9 +677,6 @@ export const INVITEE_FIELDS = {
   phone: '@invitee_phone',
 } as const;
 
-/** Every invitee key, for the builder's pickers and the delivery-side injection. */
-export const INVITEE_FIELD_KEYS = Object.values(INVITEE_FIELDS);
-
 /** Where a HubSpot sync could get the address it keys the contact on. */
 export type EmailSource =
   /** An `email`-typed question this form asks directly. */
