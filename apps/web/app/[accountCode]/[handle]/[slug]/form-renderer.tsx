@@ -24,6 +24,7 @@ import {
   isMultiSelect,
   isSafeHttpUrl,
   showClientLogos,
+  resolveFormLogos,
   type Answers,
   type AnswerValue,
   type FormStep,
@@ -72,6 +73,11 @@ export function FormRenderer({
   // The cover SCREEN: null when switched off, which is what gates the `cover`
   // phase, the Start CTA and the back-to-cover step.
   const coverScreen = config.cover && config.cover.enabled !== false ? config.cover : null;
+  // Both logos, resolved once. Like the banner below, the LOGO is not part of
+  // the cover screen either: reading it off the gated value above meant that
+  // switching the cover off silently dropped the author's logo everywhere and
+  // fell back to whatever the brand kit had once snapshotted into the form.
+  const logos = resolveFormLogos(config);
   // The banner is page CHROME, not part of the cover screen — `bannerScope:
   // 'form'` exists precisely to pin it above the steps. Reading it off the
   // gated value above made it unreachable whenever the cover was switched off,
@@ -529,8 +535,7 @@ export function FormRenderer({
   }
 
   if (phase === 'cover' && coverScreen) {
-    const logo = coverScreen.logo ?? config.branding?.logo ?? null;
-    const logos = showClientLogos(coverScreen)
+    const clientLogos = showClientLogos(coverScreen)
       ? (coverScreen.clientLogos ?? config.branding?.clientLogos ?? [])
       : [];
     return (
@@ -543,7 +548,7 @@ export function FormRenderer({
         isCover
       >
         <header className="pf__cover-header">
-          <FormLogo src={logo} name={name} />
+          <FormLogo src={logos.cover} name={name} />
         </header>
         <div className="pf__cover-main">
           <div className="pf__cover-content pf-animate">
@@ -554,7 +559,7 @@ export function FormRenderer({
             {coverScreen.subheadline ? <p className="pf__subheadline">{coverScreen.subheadline}</p> : null}
             {coverScreen.trustBadge ? <p className="pf__trust">{coverScreen.trustBadge}</p> : null}
           </div>
-          <ClientLogosMarquee logos={logos} label={m.trustedBy} />
+          <ClientLogosMarquee logos={clientLogos} label={m.trustedBy} />
         </div>
         <div className="pf__cover-footer">
           <button type="button" className="pf__btn" onClick={start}>
@@ -623,7 +628,6 @@ export function FormRenderer({
     const booking = step.scheduler
       ? schedulerToBooking(step.scheduler, schedPrefill.customAnswers)
       : null;
-    const schedLogo = coverScreen?.logo ?? config.branding?.logo ?? null;
     return (
       <PhaseShell className="pf" design={design} cover={chrome}>
         <header className="pf__topbar">
@@ -635,7 +639,7 @@ export function FormRenderer({
             ) : (
               <span className="pf__back pf__back--placeholder" />
             )}
-            <FormLogo src={schedLogo} name={name} />
+            <FormLogo src={logos.form} name={name} />
             <span className="pf__back pf__back--placeholder" />
           </div>
           <FormProgress total={steps.length} currentIndex={index} locale={locale} style={design.design.progressStyle} />
@@ -684,8 +688,6 @@ export function FormRenderer({
   // multi-select choice (pick several, then Continue) — shows the button.
   const autoAdvances = step.type === 'dropdown' || (step.type === 'multiple_choice' && !isMultiSelect(step));
   const showContinue = !autoAdvances;
-  const logo = coverScreen?.logo ?? config.branding?.logo ?? null;
-
   return (
     <PhaseShell className="pf" design={design} onKeyDown={onKeyDown} cover={chrome}>
       <header className="pf__topbar">
@@ -697,7 +699,7 @@ export function FormRenderer({
           ) : (
             <span className="pf__back pf__back--placeholder" />
           )}
-          <FormLogo src={logo} name={name} />
+          <FormLogo src={logos.form} name={name} />
           <span className="pf__back pf__back--placeholder" />
         </div>
         <FormProgress total={steps.length} currentIndex={index} locale={locale} style={design.design.progressStyle} />

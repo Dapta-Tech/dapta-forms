@@ -24,6 +24,7 @@ import {
   resolveOptionLayout,
   showBanner,
   showClientLogos,
+  resolveFormLogos,
   operatorsForFieldType,
   conditionsContradict,
   conditionsNarrow,
@@ -796,6 +797,76 @@ describe('cover presentation toggles', () => {
     const cover = { clientLogos: [{ name: 'Acme' }], showClientLogos: false };
     expect(showClientLogos(cover)).toBe(false);
     expect(cover.clientLogos).toHaveLength(1);
+  });
+});
+
+describe('resolveFormLogos', () => {
+  const WHITE = 'https://cdn.example.com/white.png';
+  const BLACK = 'https://cdn.example.com/black.png';
+
+  it('a config with neither field shows no logo anywhere', () => {
+    expect(resolveFormLogos({})).toEqual({ form: null, cover: null });
+    expect(resolveFormLogos({ cover: {}, branding: {} })).toEqual({ form: null, cover: null });
+  });
+
+  it('LEGACY: a cover-only logo still reaches every screen', () => {
+    // Every config written before the form logo had its own field looks like
+    // this. `branding.logo` is ABSENT (not null), which is what makes the form
+    // surface inherit — these must render exactly as they always did.
+    expect(resolveFormLogos({ cover: { logo: WHITE } })).toEqual({ form: WHITE, cover: WHITE });
+  });
+
+  it('LEGACY: a brand-kit logo with no cover logo reaches every screen', () => {
+    expect(resolveFormLogos({ branding: { logo: WHITE } })).toEqual({ form: WHITE, cover: WHITE });
+  });
+
+  it('the two fields are independent once both are set', () => {
+    expect(resolveFormLogos({ cover: { logo: BLACK }, branding: { logo: WHITE } })).toEqual({
+      form: WHITE,
+      cover: BLACK,
+    });
+  });
+
+  it('clearing the form logo removes it and does NOT resurrect the cover one', () => {
+    // The reported bug: emptying a logo field brought an old image back, because
+    // an absent value fell through to the other surface's. An explicit null is
+    // the author saying "none", and it has to win.
+    expect(resolveFormLogos({ cover: { logo: BLACK }, branding: { logo: null } })).toEqual({
+      form: null,
+      cover: BLACK,
+    });
+  });
+
+  it('clearing the cover logo removes it and does NOT resurrect the form one', () => {
+    expect(resolveFormLogos({ cover: { logo: null }, branding: { logo: WHITE } })).toEqual({
+      form: WHITE,
+      cover: null,
+    });
+  });
+
+  it('clearing both leaves nothing behind', () => {
+    expect(resolveFormLogos({ cover: { logo: null }, branding: { logo: null } })).toEqual({
+      form: null,
+      cover: null,
+    });
+  });
+
+  it('a cleared form logo on a legacy cover-only config still clears', () => {
+    // The unstick path for a form carrying a brand-kit snapshot nobody could see:
+    // the editor now writes null here, and null is not "inherit".
+    expect(resolveFormLogos({ cover: {}, branding: { logo: null } })).toEqual({
+      form: null,
+      cover: null,
+    });
+  });
+
+  it('ignores cover.enabled — a logo is not part of the cover screen', () => {
+    // Switching the cover off used to drop the author's logo from every screen
+    // and fall back to whatever the brand kit had snapshotted into the form.
+    expect(resolveFormLogos({ cover: { enabled: false, logo: BLACK } })).toEqual({
+      form: BLACK,
+      cover: BLACK,
+    });
   });
 });
 

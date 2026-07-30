@@ -326,7 +326,10 @@ export interface FormCover {
   subheadline?: string | null;
   ctaText?: string | null;
   trustBadge?: string | null;
-  /** Cover logo image URL (falls back to branding.logo, then the product mark). */
+  /**
+   * The COVER SCREEN's logo — see `resolveFormLogos`. `null` means "none here";
+   * absent inherits the form's own (`branding.logo`).
+   */
   logo?: string | null;
   /** Optional "trusted by" marquee shown on the cover. */
   clientLogos?: FormClientLogo[];
@@ -352,6 +355,11 @@ export interface FormCover {
  */
 export interface FormBranding {
   primaryColor?: string | null;
+  /**
+   * The FORM's logo — every question screen, and the one-page hero when there
+   * is no cover — see `resolveFormLogos`. Also where a workspace brand kit
+   * snapshots its logo, so it must stay editable per form: `null` means "none".
+   */
   logo?: string | null;
   clientLogos?: FormClientLogo[];
 
@@ -1768,6 +1776,41 @@ export function showBanner(cover: FormCover | null | undefined, isCover: boolean
  */
 export function showClientLogos(cover: FormCover | null | undefined): boolean {
   return cover?.showClientLogos !== false;
+}
+
+/** The logo each surface of a form shows. `null` on either axis means "none". */
+export interface FormLogos {
+  /** The form's own logo — the top bar on slides, the hero on one page. */
+  form: string | null;
+  /** The cover screen's logo. */
+  cover: string | null;
+}
+
+/**
+ * Resolve the two logos a form can show.
+ *
+ * They are INDEPENDENT axes with their own editor controls: `branding.logo` is
+ * the form's logo and `cover.logo` is the cover screen's. The distinction that
+ * makes this work is `null` (explicitly cleared — show NOTHING) versus ABSENT
+ * (never set — inherit). Without it, clearing a logo fell through to the other
+ * one and the old image came back, with no control anywhere that could remove
+ * it: `branding.logo` is written by the workspace brand-kit snapshot, so a form
+ * carried a logo that neither the Design tab (which showed `cover.logo`) nor the
+ * brand kit (which shows the ACCOUNT kit, not the form's copy of it) displayed.
+ *
+ * ABSENT inheriting is what keeps every config written before the two fields
+ * were separately editable rendering exactly as it always did: those carry only
+ * `cover.logo`, and it still reaches every screen. The first edit to either
+ * field takes ownership of that axis.
+ */
+export function resolveFormLogos(config: {
+  cover?: FormCover | null;
+  branding?: FormBranding | null;
+}): FormLogos {
+  const coverLogo = config.cover?.logo;
+  const brandingLogo = config.branding?.logo;
+  const form = brandingLogo !== undefined ? brandingLogo : (coverLogo ?? null);
+  return { form: form ?? null, cover: (coverLogo !== undefined ? coverLogo : form) ?? null };
 }
 
 // ---------------------------------------------------------------------------
