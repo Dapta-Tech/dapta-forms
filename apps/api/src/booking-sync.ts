@@ -6,7 +6,7 @@ import {
   type FormDestination,
   type HubspotDestination,
 } from '@quill/types';
-import { resolveOutcome, type FormConfig } from '@quill/engine';
+import { resolveOutcome, INVITEE_FIELDS, type FormConfig } from '@quill/engine';
 import { createDestination } from '@quill/destinations';
 import type { ServerEnv } from '@quill/config/env';
 import { OutboxSkipError } from './email-effects';
@@ -22,7 +22,53 @@ const CALENDLY_API_HOST = 'api.calendly.com';
 
 /** Calendly GET /scheduled_events/:uuid | /invitees/:uuid response envelope. */
 interface CalendlyResource {
-  resource?: { start_time?: string; email?: string };
+  resource?: {
+    start_time?: string;
+    email?: string;
+    /** Invitee identity. `name` is always set; the split pair only sometimes. */
+    name?: string;
+    first_name?: string;
+    last_name?: string;
+    /** Present only when the event type asks for an SMS reminder number. */
+    text_reminder_number?: string;
+  };
+}
+
+/** What the booking page collected about the person, beyond their address. */
+interface InviteeDetails {
+  name: string | null;
+  firstName: string | null;
+  lastName: string | null;
+  phone: string | null;
+}
+
+const NO_INVITEE_DETAILS: InviteeDetails = {
+  name: null,
+  firstName: null,
+  lastName: null,
+  phone: null,
+};
+
+/**
+ * The invitee identity as answer keys, ready to merge into the submission data.
+ *
+ * Calendly always returns `name` and only sometimes the split pair, so a missing
+ * `first_name`/`last_name` is derived from it: everything before the first space
+ * is the first name, the remainder the last. That is a heuristic, and it is the
+ * same one the booking page itself applies when it splits a single field — a
+ * mononym yields a first name and no last, which is the correct outcome.
+ */
+function inviteeAnswers(details: InviteeDetails): Record<string, string> {
+  const out: Record<string, string> = {};
+  const full = details.name?.trim() ?? '';
+  const space = full.indexOf(' ');
+  const first = details.firstName?.trim() || (space > 0 ? full.slice(0, space) : full);
+  const last = details.lastName?.trim() || (space > 0 ? full.slice(space + 1).trim() : '');
+  if (full) out[INVITEE_FIELDS.name] = full;
+  if (first) out[INVITEE_FIELDS.first_name] = first;
+  if (last) out[INVITEE_FIELDS.last_name] = last;
+  if (details.phone?.trim()) out[INVITEE_FIELDS.phone] = details.phone.trim();
+  return out;
 }
 
 /**
@@ -76,9 +122,10 @@ export class BookingSyncEffects {
     const sync = destination.bookingSync;
     const hasStage = Boolean(sync?.stageProperty?.trim() && sync?.stageValue?.trim());
 
-    // --- Calendly enrichment (event start + invitee email) -------------------
+    // --- Calendly enrichment (event start + invitee identity) ----------------
     let startMs = payload.startTime;
     let inviteeEmail: string | null = null;
+    let invitee: InviteeDetails = NO_INVITEE_DETAILS;
     if (payload.provider === 'calendly' && (payload.eventUri || payload.inviteeUri)) {
       // Per-account Calendly token (connected → decrypted), else the env fallback.
       const token = await resolveProviderToken(
@@ -94,7 +141,7 @@ export class BookingSyncEffects {
           'CALENDLY_API_TOKEN not set — booking sync proceeds without Calendly enrichment',
         );
       } else {
-        const [event, invitee] = await Promise.all([
+        const [event, fetchedInvitee] = await Promise.all([
           payload.eventUri ? this.calendlyGet(payload.eventUri, token) : null,
           payload.inviteeUri ? this.calendlyGet(payload.inviteeUri, token) : null,
         ]);
@@ -103,8 +150,18 @@ export class BookingSyncEffects {
           const parsed = Date.parse(fetchedStart);
           if (Number.isFinite(parsed)) startMs = parsed;
         }
-        const fetchedEmail = invitee?.resource?.email?.trim();
+        const fetchedEmail = fetchedInvitee?.resource?.email?.trim();
         if (fetchedEmail) inviteeEmail = fetchedEmail.toLowerCase();
+        // The rest of the identity the booking page collected. Kept whether or
+        // not the account also runs the provider's own CRM integration: both
+        // write the same values to the same contact, and the upsert is
+        // idempotent, so there is no ordering to arbitrate.
+        invitee = {
+          name: fetchedInvitee?.resource?.name?.trim() || null,
+          firstName: fetchedInvitee?.resource?.first_name?.trim() || null,
+          lastName: fetchedInvitee?.resource?.last_name?.trim() || null,
+          phone: fetchedInvitee?.resource?.text_reminder_number?.trim() || null,
+        };
       }
     }
 
@@ -169,7 +226,15 @@ export class BookingSyncEffects {
     const adapterEmail = submission ? adapterResolvableEmail(destination, submission.data) : null;
     const syncedAnswers =
       !adapterEmail && inviteeEmail && submission
-        ? await this.syncAnswersAtBooking(payload, form, destination, hubspotToken, inviteeEmail, submission)
+        ? await this.syncAnswersAtBooking(
+            payload,
+            form,
+            destination,
+            hubspotToken,
+            inviteeEmail,
+            submission,
+            invitee,
+          )
         : false;
 
     if (!wroteBooking && !syncedAnswers) {
@@ -230,6 +295,7 @@ export class BookingSyncEffects {
     token: string,
     inviteeEmail: string,
     submission: SubmissionRow,
+    invitee: InviteeDetails,
   ): Promise<boolean> {
     const { data, score } = submission;
 
@@ -280,8 +346,12 @@ export class BookingSyncEffects {
       phase: submission.completedAt != null ? 'complete' : 'partial',
       submittedAt: submission.submittedAt,
       // The invitee email rides as the `email` answer the adapter keys on; a
-      // stored value would win, but this path only runs when none exists.
-      data: { ...data, email: inviteeEmail },
+      // stored value would win, but this path only runs when none exists. The
+      // rest of the invitee identity rides on reserved `@invitee_*` keys, so an
+      // author maps it to CRM properties exactly like any answer — and a real
+      // ANSWER always wins, since the form asking the question outranks whatever
+      // the booking page happened to collect.
+      data: { ...inviteeAnswers(invitee), ...data, email: inviteeEmail },
       utm: extractUtm(data),
     });
     return result.delivered;

@@ -1076,6 +1076,11 @@ export interface FormsMessages {
       keyGroupQuestions: string;
       keyGroupSystem: string;
       keyCustomOption: string;
+      /** Labels for what the booking page collected about the invitee. */
+      inviteeName: string;
+      inviteeFirstName: string;
+      inviteeLastName: string;
+      inviteePhone: string;
       keyCustomBack: string;
       selectKeyPlaceholder: string;
       webhookEvents: string;
@@ -2129,6 +2134,10 @@ export const en: FormsMessages = {
       keyGroupQuestions: 'Form questions',
       keyGroupSystem: 'System fields',
       keyCustomOption: 'Custom key…',
+      inviteeName: 'Booking — full name',
+      inviteeFirstName: 'Booking — first name',
+      inviteeLastName: 'Booking — last name',
+      inviteePhone: 'Booking — phone',
       keyCustomBack: 'Back to list',
       selectKeyPlaceholder: 'Select a field…',
       webhookEvents: 'Trigger on',
@@ -3183,6 +3192,10 @@ export const es: FormsMessages = {
       keyGroupQuestions: 'Preguntas del formulario',
       keyGroupSystem: 'Campos del sistema',
       keyCustomOption: 'Clave personalizada…',
+      inviteeName: 'Agenda — nombre completo',
+      inviteeFirstName: 'Agenda — nombre',
+      inviteeLastName: 'Agenda — apellido',
+      inviteePhone: 'Agenda — teléfono',
       keyCustomBack: 'Volver a la lista',
       selectKeyPlaceholder: 'Selecciona un campo…',
       webhookEvents: 'Disparar en',

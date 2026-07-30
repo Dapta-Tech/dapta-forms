@@ -649,6 +649,37 @@ function findEmailKey(config: FormConfig): string | null {
   return config.steps.find((s) => s.type === 'email')?.key ?? null;
 }
 
+/**
+ * Answer keys carrying what the SCHEDULING PROVIDER collected from the invitee,
+ * for forms that do not ask for those details themselves.
+ *
+ * A booking form always collects a name and an email, and often a phone. Only
+ * the email was ever used — to key the contact — and the rest was discarded, so
+ * a form whose booking is its only contact step produced CRM records with an
+ * address and no name. The gap was invisible because most accounts also run the
+ * provider's own CRM integration, which writes those fields independently; a
+ * customer without it silently got nameless contacts.
+ *
+ * These ride in the submission `data` at delivery time, so they map to CRM
+ * properties through the ordinary `fieldMappings` — the same mechanism as an
+ * answer, with no special case in any adapter.
+ *
+ * `@` is outside the step-key grammar (`sanitizeStepKey` keeps `[a-z0-9_]`), so
+ * these can never collide with a real question's key — same guarantee as
+ * {@link SCORE_FIELD}.
+ */
+export const INVITEE_FIELDS = {
+  /** Full name as the provider recorded it (often the only one populated). */
+  name: '@invitee_name',
+  first_name: '@invitee_first_name',
+  last_name: '@invitee_last_name',
+  /** Only present when the booking page asked for a number. */
+  phone: '@invitee_phone',
+} as const;
+
+/** Every invitee key, for the builder's pickers and the delivery-side injection. */
+export const INVITEE_FIELD_KEYS = Object.values(INVITEE_FIELDS);
+
 /** Where a HubSpot sync could get the address it keys the contact on. */
 export type EmailSource =
   /** An `email`-typed question this form asks directly. */

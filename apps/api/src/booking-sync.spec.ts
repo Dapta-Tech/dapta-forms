@@ -386,6 +386,118 @@ describe('booking_sync delivery', () => {
     expect(answerProps.bz_optin).toBe('Form submitted Producto');
   });
 
+  // The booking page collects a name (and sometimes a phone) that the form never
+  // asks for. Only the address was ever used, so a form whose booking is its
+  // only contact step produced contacts with an address and no name.
+  it('maps what the booking page collected about the invitee', async () => {
+    await setHubspotDestination(undefined, {
+      fieldMappings: {
+        '@invitee_first_name': 'firstname',
+        '@invitee_last_name': 'lastname',
+        '@invitee_phone': 'mobilephone',
+        '@invitee_name': 'full_name',
+      },
+    });
+    await svc.submit('acme', 'lead-qualifier', { sessionId: 'sess-inv', data: { role: 'founder' } });
+    await svc.booking('acme', 'lead-qualifier', {
+      sessionId: 'sess-inv',
+      provider: 'calendly',
+      eventUri: EVENT_URI,
+      inviteeUri: INVITEE_URI,
+    });
+
+    const calls: RecordedCall[] = [];
+    bookingSync.fetchImpl = recordingFetch(calls, {
+      [EVENT_URI]: () => jsonResponse({ resource: { start_time: '2026-08-02T10:00:00Z' } }),
+      [INVITEE_URI]: () =>
+        jsonResponse({
+          resource: {
+            email: 'Invitee@Corp.IO',
+            name: 'Ada Lovelace',
+            first_name: 'Ada',
+            last_name: 'Lovelace',
+            text_reminder_number: '+57 300 111 2233',
+          },
+        }),
+      [HUBSPOT_UPSERT_URL]: () => jsonResponse({ results: [{ id: '88' }] }),
+    });
+    await drainDue();
+
+    const props = (
+      calls.filter((c) => c.url === HUBSPOT_UPSERT_URL).at(-1)!.body as {
+        inputs: Array<{ properties: Record<string, string> }>;
+      }
+    ).inputs[0]!.properties;
+    expect(props.firstname).toBe('Ada');
+    expect(props.lastname).toBe('Lovelace');
+    expect(props.mobilephone).toBe('+57 300 111 2233');
+    expect(props.full_name).toBe('Ada Lovelace');
+  });
+
+  // Calendly always returns `name` and only sometimes the split pair.
+  it('derives first/last from the full name when the provider omits the split pair', async () => {
+    await setHubspotDestination(undefined, {
+      fieldMappings: { '@invitee_first_name': 'firstname', '@invitee_last_name': 'lastname' },
+    });
+    await svc.submit('acme', 'lead-qualifier', { sessionId: 'sess-split', data: { role: 'founder' } });
+    await svc.booking('acme', 'lead-qualifier', {
+      sessionId: 'sess-split',
+      provider: 'calendly',
+      eventUri: EVENT_URI,
+      inviteeUri: INVITEE_URI,
+    });
+
+    const calls: RecordedCall[] = [];
+    bookingSync.fetchImpl = recordingFetch(calls, {
+      [EVENT_URI]: () => jsonResponse({ resource: { start_time: '2026-08-02T10:00:00Z' } }),
+      [INVITEE_URI]: () =>
+        jsonResponse({ resource: { email: 'g@corp.io', name: 'Grace Brewster Hopper' } }),
+      [HUBSPOT_UPSERT_URL]: () => jsonResponse({ results: [{ id: '89' }] }),
+    });
+    await drainDue();
+
+    const props = (
+      calls.filter((c) => c.url === HUBSPOT_UPSERT_URL).at(-1)!.body as {
+        inputs: Array<{ properties: Record<string, string> }>;
+      }
+    ).inputs[0]!.properties;
+    expect(props.firstname).toBe('Grace');
+    expect(props.lastname).toBe('Brewster Hopper');
+  });
+
+  // A question the form actually asks outranks whatever the booking page had.
+  it('a real answer wins over the invitee field mapped to the same key', async () => {
+    await setHubspotDestination(undefined, {
+      fieldMappings: { full_name: 'full_name', '@invitee_name': 'booked_as' },
+    });
+    await svc.submit('acme', 'lead-qualifier', {
+      sessionId: 'sess-win',
+      data: { full_name: 'What they typed' },
+    });
+    await svc.booking('acme', 'lead-qualifier', {
+      sessionId: 'sess-win',
+      provider: 'calendly',
+      eventUri: EVENT_URI,
+      inviteeUri: INVITEE_URI,
+    });
+
+    const calls: RecordedCall[] = [];
+    bookingSync.fetchImpl = recordingFetch(calls, {
+      [EVENT_URI]: () => jsonResponse({ resource: { start_time: '2026-08-02T10:00:00Z' } }),
+      [INVITEE_URI]: () => jsonResponse({ resource: { email: 'w@corp.io', name: 'Booked Name' } }),
+      [HUBSPOT_UPSERT_URL]: () => jsonResponse({ results: [{ id: '90' }] }),
+    });
+    await drainDue();
+
+    const props = (
+      calls.filter((c) => c.url === HUBSPOT_UPSERT_URL).at(-1)!.body as {
+        inputs: Array<{ properties: Record<string, string> }>;
+      }
+    ).inputs[0]!.properties;
+    expect(props.full_name).toBe('What they typed');
+    expect(props.booked_as).toBe('Booked Name');
+  });
+
   it('a free-text answer that merely LOOKS like an email does not suppress the answers sync', async () => {
     // The gate follows the ADAPTER's email semantics (mapping to `email` /
     // an `email` answer) — not the loose booking-key heuristic. A company

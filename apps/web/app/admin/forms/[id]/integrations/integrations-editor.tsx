@@ -1,6 +1,6 @@
 'use client';
 
-import type { EmailSource } from '@quill/engine';
+import { INVITEE_FIELDS, type EmailSource } from '@quill/engine';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import type { FormsMessages, Locale } from '@quill/shared';
@@ -37,6 +37,17 @@ export type { QuestionMeta } from './auto-map';
 const LocaleContext = createContext<Locale>('en');
 
 const UTM_KEYS = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content'] as const;
+
+/**
+ * A submission-data key the form never asks for but still carries — a UTM off
+ * the URL, or something the booking page collected. Labelled because the key
+ * itself is a token: `@invitee_first_name` is not a name anyone wants to read
+ * in a dropdown.
+ */
+interface SystemKey {
+  key: string;
+  label: string;
+}
 
 /** Sentinel option values for the key pickers — never valid step keys. */
 const CUSTOM_KEY_OPTION = '__custom_key__';
@@ -589,15 +600,20 @@ function KeySelect({
   onChange: (v: string) => void;
   /** Pickable question entries — already filtered/ordered by the caller. */
   questionOptions: QuestionMeta[];
-  /** Auto-captured submission-data keys (UTMs). Empty = omit the group. */
-  systemKeys: readonly string[];
+  /**
+   * Submission-data keys the form does not ask for but still carries: UTMs from
+   * the URL, and what the booking page collected about the invitee. Labelled,
+   * because a raw `@invitee_first_name` is a token, not a name. Empty = omit
+   * the group.
+   */
+  systemKeys: readonly SystemKey[];
   m: Msgs;
   testId: string;
   customTestId: string;
 }) {
   const locale = useContext(LocaleContext);
   const selectable = (v: string): boolean =>
-    systemKeys.includes(v) || questionOptions.some((q) => q.key === v);
+    systemKeys.some((k) => k.key === v) || questionOptions.some((q) => q.key === v);
   // Stored keys that match neither group (hidden/legacy) open in custom mode.
   const [customMode, setCustomMode] = useState(() => value !== '' && !selectable(value));
 
@@ -634,7 +650,7 @@ function KeySelect({
   }
   if (systemKeys.length > 0) {
     options.push({ value: KEY_GROUP_SYSTEM, label: m.keyGroupSystem, disabled: true });
-    options.push(...systemKeys.map((k) => ({ value: k, label: k })));
+    options.push(...systemKeys.map((k) => ({ value: k.key, label: k.label })));
   }
   options.push({ value: CUSTOM_KEY_OPTION, label: m.keyCustomOption });
 
@@ -947,6 +963,22 @@ function HubspotCard({
   const utmValues = useMemo(() => state.utmMappings, [state.utmMappings]);
   const questionKeys = useMemo(() => new Set(questions.map((q) => q.key)), [questions]);
 
+  // What this form carries beyond its own answers. The invitee's details only
+  // exist when a SCHEDULER is what supplies the address — a form that asks for
+  // an email itself never books, so offering them there would map keys that
+  // stay empty forever.
+  const systemKeyOptions = useMemo<SystemKey[]>(() => {
+    const utm: SystemKey[] = UTM_KEYS.map((k) => ({ key: k, label: k }));
+    if (emailSource?.kind !== 'scheduler') return utm;
+    return [
+      ...utm,
+      { key: INVITEE_FIELDS.name, label: m.inviteeName },
+      { key: INVITEE_FIELDS.first_name, label: m.inviteeFirstName },
+      { key: INVITEE_FIELDS.last_name, label: m.inviteeLastName },
+      { key: INVITEE_FIELDS.phone, label: m.inviteePhone },
+    ];
+  }, [emailSource, m]);
+
   // Nothing to key a contact on → mapping is pointless and, worse, silently
   // lossy: HubSpot's upsert is BY EMAIL, so a submission with no address
   // resolves as a permanent no-op and that lead is never synced. Say so here,
@@ -1138,7 +1170,9 @@ function HubspotCard({
                 <KeySelect
                   value={pair.key}
                   questionOptions={unmappedQuestions}
-                  systemKeys={UTM_KEYS.filter((k) => k === pair.key || !usedKeys.has(k))}
+                  systemKeys={systemKeyOptions.filter(
+                    (k) => k.key === pair.key || !usedKeys.has(k.key),
+                  )}
                   m={m}
                   testId="mapping-key-select"
                   customTestId="mapping-key-custom"
