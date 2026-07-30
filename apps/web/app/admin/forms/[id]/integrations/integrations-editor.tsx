@@ -5,7 +5,6 @@ import {
   INVITEE_FIELDS,
   emailMappingsConflictingWithScheduler,
   type ContactKeyReadiness,
-  type EmailSource,
 } from '@quill/engine';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';

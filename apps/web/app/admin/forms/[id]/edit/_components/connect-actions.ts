@@ -1,6 +1,6 @@
 'use server';
 
-import { adminApi, ApiError, type HubSpotPropertiesResponse } from '@/lib/admin-api';
+import { adminApi, ApiError, type FailedDelivery, type HubSpotPropertiesResponse } from '@/lib/admin-api';
 import { getMessages } from '@quill/shared';
 import type { FormDestination } from '@quill/types';
 
@@ -75,4 +75,19 @@ export async function loadConnectIntegrationsAction(
       calendlyConnected,
     },
   };
+}
+
+/**
+ * Deliveries for this form that ended without landing.
+ *
+ * Degrades to an empty list rather than surfacing an error: this is a diagnostic
+ * panel, and a lookup failure must never make the Connect tab look broken.
+ */
+export async function loadFailedDeliveriesAction(id: string): Promise<FailedDelivery[]> {
+  try {
+    const res = await adminApi.formDeliveries(id);
+    return res.items;
+  } catch {
+    return [];
+  }
 }

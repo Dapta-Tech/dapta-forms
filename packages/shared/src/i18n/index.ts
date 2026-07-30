@@ -852,6 +852,10 @@ export interface FormsMessages {
         integrationsSubtitle: string;
         integrationsLoadError: string;
         retry: string;
+        /** Deliveries that ended without landing — hidden when there are none. */
+        deliveriesTitle: string;
+        deliveriesSubtitle: string;
+        deliveriesNoReason: string;
         trackingTitle: string;
         trackingSubtitle: string;
         /** V5-QA — these ride the draft, unlike the integrations above them. */
@@ -1934,6 +1938,10 @@ export const en: FormsMessages = {
           'Send each submission to your CRM or a webhook. Delivery is durable and retried.',
         integrationsLoadError: 'Could not load integrations.',
         retry: 'Retry',
+        deliveriesTitle: 'Deliveries that did not land',
+        deliveriesSubtitle:
+          'Submissions reached this form, but these deliveries never completed. The respondent saw nothing wrong, so this is the only place it shows.',
+        deliveriesNoReason: 'No reason was recorded.',
         trackingTitle: 'Tracking & pixels',
         trackingSubtitle:
           'Measure visits and conversions on this form’s public page. Each tag loads only when its ID is set.',
@@ -3011,6 +3019,10 @@ export const es: FormsMessages = {
           'Envía cada respuesta a tu CRM o a un webhook. La entrega es duradera y con reintentos.',
         integrationsLoadError: 'No se pudieron cargar las integraciones.',
         retry: 'Reintentar',
+        deliveriesTitle: 'Entregas que no llegaron',
+        deliveriesSubtitle:
+          'Las respuestas llegaron al formulario, pero estas entregas nunca se completaron. Quien respondió no vio ningún problema, así que este es el único lugar donde aparece.',
+        deliveriesNoReason: 'No se registró un motivo.',
         trackingTitle: 'Seguimiento y píxeles',
         trackingSubtitle:
           'Mide visitas y conversiones en la página pública de este formulario. Cada etiqueta se carga solo cuando su ID está configurado.',
