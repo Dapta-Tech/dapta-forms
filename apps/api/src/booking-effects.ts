@@ -25,6 +25,26 @@ export interface BookingSyncPayload {
 }
 
 /**
+ * How long a `booking_sync` row stays dormant before the worker may drain it.
+ *
+ * A booking made on a mid-form `scheduler` STEP is recorded BEFORE the form
+ * finishes: the renderer awaits `recordBookingAction` and only then advances,
+ * which is what finalizes the submission (see `handleSchedulerBooked`). Drain
+ * the row inside that gap and `loadSubmission` still reads `completed_at = null`
+ * — so the delivery runs as `partial`, and the adapter's complete-only writes
+ * (the outcome property, the static properties, and the Note) are skipped.
+ *
+ * That loss is PERMANENT: the delivery is idempotent per booking event and the
+ * row is closed on success, so nothing re-runs it once the submission completes.
+ *
+ * The gap is one browser→API round trip, but the worker polls on a fixed
+ * interval, so without a delay a few percent of bookings land in it. Waiting
+ * costs nothing — the sync is already asynchronous and retried — and it makes
+ * the ordering explicit instead of leaving it to a race.
+ */
+export const BOOKING_SYNC_DELAY_MS = 15_000;
+
+/**
  * Durable BOOKING → CRM sync enqueue (mirrors EmailEffects). After a booking
  * callback is persisted, the sync is ENQUEUED as an `outbox` row (kind
  * `booking_sync`) instead of delivered inline; the OutboxWorker drains it with
@@ -38,7 +58,7 @@ export class BookingEffects {
   constructor(@Inject(DB) private readonly db: Db) {}
 
   /** Never rejects — the booking handler must not fail on a bad enqueue. */
-  async enqueueBookingSync(payload: BookingSyncPayload): Promise<void> {
+  async enqueueBookingSync(payload: BookingSyncPayload, now: number = Date.now()): Promise<void> {
     try {
       await enqueueOutbox(this.db, {
         kind: 'booking_sync',
@@ -46,6 +66,9 @@ export class BookingEffects {
         subjectUid: payload.bookingEventId,
         accountId: payload.accountId,
         payload: JSON.stringify(payload),
+        now,
+        // Let the submission finish first — see BOOKING_SYNC_DELAY_MS.
+        nextAttemptAt: now + BOOKING_SYNC_DELAY_MS,
       });
     } catch (err) {
       this.log.error(`failed to enqueue booking_sync: ${String(err)}`);

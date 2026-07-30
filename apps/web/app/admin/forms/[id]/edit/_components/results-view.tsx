@@ -5,6 +5,7 @@ import type { FormConfig, FormOutcome, FormStep } from '@quill/engine';
 import { createEmptyOutcome } from '@quill/engine';
 import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/cn';
 import { HelpTip } from '@/components/ui/help-tip';
 import { TextField, NumberField } from './fields';
@@ -275,6 +276,74 @@ export function ResultsView({
                   />
                   <p className="text-[11px] text-muted-foreground">{rm.redirectHelp}</p>
                 </div>
+                {/* How long the thank-you shows before the redirect. Stored
+                    since V5-B1 with no control anywhere, so a form could sit on
+                    a delay nobody could see, change, or explain. Only relevant
+                    with a destination — without one there is nothing to delay. */}
+                {o.redirectUrl?.trim() ? (
+                  <div className="mt-2.5 flex flex-col gap-1 pl-[64px]">
+                    <span className="flex items-center gap-1.5">
+                      <label
+                        htmlFor={`outcome-delay-${o.id}`}
+                        className="text-xs font-medium text-foreground"
+                      >
+                        {rm.redirectDelayLabel}
+                      </label>
+                      <HelpTip text={rm.redirectDelayHelp} label={rm.redirectDelayLabel} />
+                    </span>
+                    <Input
+                      id={`outcome-delay-${o.id}`}
+                      type="number"
+                      min={0}
+                      step={100}
+                      className="max-w-[160px]"
+                      data-testid="outcome-redirect-delay"
+                      value={String(o.redirectDelayMs ?? 0)}
+                      onChange={(e) => {
+                        const n = Number(e.target.value);
+                        update(index, {
+                          redirectDelayMs: Number.isFinite(n) ? Math.max(0, Math.trunc(n)) : 0,
+                        });
+                      }}
+                    />
+                    <p className="text-[11px] text-muted-foreground">{rm.redirectDelayHint}</p>
+                  </div>
+                ) : null}
+                {/* Answer-forced overrides. These beat the score outright, so a
+                    range can read "6 and up" while a lead who cleared it still
+                    lands here — the one rule that made the panel lie. Shown
+                    read-only with a way to remove it: authoring a new one needs
+                    a field+bound picker, and being able to SEE it is what was
+                    actually missing. */}
+                {o.overrides?.length ? (
+                  <div className="mt-2.5 flex flex-col gap-1 pl-[64px]">
+                    <span className="text-xs font-medium text-foreground">{rm.overridesLabel}</span>
+                    {o.overrides.map((rule, ri) => (
+                      <div
+                        key={`${rule.field}-${ri}`}
+                        data-testid="outcome-override"
+                        className="flex items-center justify-between gap-2 rounded-md border border-border bg-muted/30 px-2.5 py-1.5"
+                      >
+                        <code className="min-w-0 truncate text-[11px] text-muted-foreground">
+                          {describeOverride(rule, rm)}
+                        </code>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          aria-label={rm.overrideRemove}
+                          onClick={() =>
+                            update(index, {
+                              overrides: (o.overrides ?? []).filter((_, j) => j !== ri),
+                            })
+                          }
+                        >
+                          {rm.overrideRemove}
+                        </Button>
+                      </div>
+                    ))}
+                    <p className="text-[11px] text-muted-foreground">{rm.overridesHelp}</p>
+                  </div>
+                ) : null}
               </div>
             );
           })}
@@ -293,6 +362,31 @@ export function ResultsView({
       </section>
     </div>
   );
+}
+
+/**
+ * An answer-forced override, read back as a sentence.
+ *
+ * The stored shape is `{ field, maxValue?, minValue?, values? }` and it decides
+ * which outcome a lead lands in BEFORE any score is compared — so leaving it
+ * invisible meant the range labels could be read carefully and still be wrong.
+ * A clause the schema allows but nothing sets renders as the bare field, which
+ * is honest: it says a rule exists without inventing what it means.
+ */
+function describeOverride(
+  rule: { field: string; maxValue?: number; minValue?: number; values?: string[] },
+  rm: EditorMessages['resultsHelp'],
+): string {
+  if (rule.maxValue != null) {
+    return tb(rm.overrideAtMost, { field: rule.field, bound: String(rule.maxValue) });
+  }
+  if (rule.minValue != null) {
+    return tb(rm.overrideAtLeast, { field: rule.field, bound: String(rule.minValue) });
+  }
+  if (rule.values?.length) {
+    return tb(rm.overrideIsAnyOf, { field: rule.field, bound: rule.values.join(', ') });
+  }
+  return rule.field;
 }
 
 /** A segmented bar of the score ranges, from cold (muted) to hot (lime). */

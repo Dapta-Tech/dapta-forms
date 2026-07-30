@@ -372,6 +372,16 @@ export interface FormsMessages {
         outcomeHeadingHelp: string;
         /** V5-A1 — why the ranges are inert while scoring is off. */
         outcomesInert: string;
+        redirectDelayLabel: string;
+        redirectDelayHelp: string;
+        redirectDelayHint: string;
+        overridesLabel: string;
+        overridesHelp: string;
+        overrideRemove: string;
+        /** `{field}` `{bound}` — an override read back as a sentence. */
+        overrideAtMost: string;
+        overrideAtLeast: string;
+        overrideIsAnyOf: string;
         /** V5-B5 — the heading field's tooltip (it IS the thank-you headline). */
         outcomeHeadingHelp2: string;
         /** V5-B5 — spells out that a redirect replaces the screen entirely. */
@@ -808,6 +818,8 @@ export interface FormsMessages {
         progressNone: string;
         layoutTitle: string;
         layoutSubtitle: string;
+        formLogo: string;
+        formLogoHint: string;
         logoSize: string;
         sizeSm: string;
         sizeMd: string;
@@ -842,6 +854,10 @@ export interface FormsMessages {
         integrationsSubtitle: string;
         integrationsLoadError: string;
         retry: string;
+        /** Deliveries that ended without landing — hidden when there are none. */
+        deliveriesTitle: string;
+        deliveriesSubtitle: string;
+        deliveriesNoReason: string;
         trackingTitle: string;
         trackingSubtitle: string;
         /** V5-QA — these ride the draft, unlike the integrations above them. */
@@ -1032,6 +1048,14 @@ export interface FormsMessages {
       emailFromScheduler: string;
       hubspotHowTitle: string;
       hubspotHowBody: string;
+      /** Same explanation for a form whose address comes from the booking. */
+      hubspotHowBodyScheduler: string;
+      /** A scheduler supplies the address, but its provider is not connected. */
+      schedulerDisconnected: string;
+      mapQuestionsHelpScheduler: string;
+      emailMappingConflictTitle: string;
+      /** `{keys}` — the questions pointed at the email property. */
+      emailMappingConflictBody: string;
       /** Send one sample delivery to the configured webhook. */
       pingWebhook: string;
       pingSending: string;
@@ -1076,6 +1100,11 @@ export interface FormsMessages {
       keyGroupQuestions: string;
       keyGroupSystem: string;
       keyCustomOption: string;
+      /** Labels for what the booking page collected about the invitee. */
+      inviteeName: string;
+      inviteeFirstName: string;
+      inviteeLastName: string;
+      inviteePhone: string;
       keyCustomBack: string;
       selectKeyPlaceholder: string;
       webhookEvents: string;
@@ -1474,6 +1503,17 @@ export const en: FormsMessages = {
           'If you set this, the thank-you screen above is never shown for this range — the respondent goes straight to the URL. Leave it empty to show the screen.',
         outcomesInert:
           'Scoring is off, so no range can be reached — everyone sees the form’s own thank-you screen. Anything set on a range is skipped too, including its redirect and its scheduling handoff. Your ranges are kept; turn scoring on to use them again.',
+        redirectDelayLabel: 'Show the thank-you first (ms)',
+        redirectDelayHelp:
+          'How long the thank-you screen stays up before the redirect happens. 0 leaves immediately.',
+        redirectDelayHint: '0 = redirect immediately. 1500 shows the message for a second and a half.',
+        overridesLabel: 'Forced by an answer',
+        overridesHelp:
+          'These beat the score outright: a respondent matching one lands here no matter what they scored. Shown so the range above can be trusted.',
+        overrideRemove: 'Remove',
+        overrideAtMost: '{field} is at most {bound}',
+        overrideAtLeast: '{field} is at least {bound}',
+        overrideIsAnyOf: '{field} is any of {bound}',
         redirectLabel: 'Redirect URL (optional)',
         redirectHelp:
           'Leave empty to show the thank-you screen. If set, respondents are sent here instead.',
@@ -1758,8 +1798,8 @@ export const en: FormsMessages = {
         branding: 'Branding',
         primaryColor: 'Primary color',
         primaryColorHint: 'Drives the accent on the public form. Auto-adjusted for contrast.',
-        logo: 'Logo URL',
-        logoHint: 'Shown at the top of the form. An https:// image URL.',
+        logo: 'Cover logo URL',
+        logoHint: 'Shown on the cover screen only. Leave empty for no logo there.',
         logoInvalid: 'This URL protocol is not allowed for images.',
         clientLogos: 'Client logos',
         clientLogosHint: 'A “trusted by” marquee on the cover. The name shows when no image is set.',
@@ -1867,6 +1907,8 @@ export const en: FormsMessages = {
         progressNone: 'Hidden',
         layoutTitle: 'Layout',
         layoutSubtitle: 'Where things sit and how the form moves between steps.',
+        formLogo: 'Form logo URL',
+        formLogoHint: 'Shown on every question screen. Leave empty for no logo.',
         logoSize: 'Logo size',
         sizeSm: 'Small',
         sizeMd: 'Medium',
@@ -1900,6 +1942,10 @@ export const en: FormsMessages = {
           'Send each submission to your CRM or a webhook. Delivery is durable and retried.',
         integrationsLoadError: 'Could not load integrations.',
         retry: 'Retry',
+        deliveriesTitle: 'Deliveries that did not land',
+        deliveriesSubtitle:
+          'Submissions reached this form, but these deliveries never completed. The respondent saw nothing wrong, so this is the only place it shows.',
+        deliveriesNoReason: 'No reason was recorded.',
         trackingTitle: 'Tracking & pixels',
         trackingSubtitle:
           'Measure visits and conversions on this form’s public page. Each tag loads only when its ID is set.',
@@ -2088,6 +2134,15 @@ export const en: FormsMessages = {
       hubspotHowTitle: 'How the sync works',
       hubspotHowBody:
         'Every submission is matched to a contact by email address: an existing contact is updated, and a new one is created when there is no match. A form that never asks for an email cannot be synced.',
+      hubspotHowBodyScheduler:
+        'Every submission is matched to a contact by email address: an existing contact is updated, and a new one is created when there is no match. This form does not ask for one — the booking collects it, so nothing here should be mapped to “email”.',
+      schedulerDisconnected:
+        'Calendly is not connected for this account, so the invitee’s address cannot be read back and nothing will reach HubSpot — the booking still succeeds, which is why this fails quietly. Connect Calendly in Connections.',
+      mapQuestionsHelpScheduler:
+        'Send each answer to a HubSpot contact property. Do not map anything to “email” — the booking supplies it, and a mapping here takes over and stops the sync.',
+      emailMappingConflictTitle: 'This mapping stops the sync',
+      emailMappingConflictBody:
+        'The booking already supplies the address. A question mapped to “email” takes over as the contact key, so answers stop reaching HubSpot after a booking. Remove the mapping on: {keys}.',
       pingWebhook: 'Send test',
       pingSending: 'Sending…',
       pingOk: 'Test delivered — your endpoint accepted it.',
@@ -2129,6 +2184,10 @@ export const en: FormsMessages = {
       keyGroupQuestions: 'Form questions',
       keyGroupSystem: 'System fields',
       keyCustomOption: 'Custom key…',
+      inviteeName: 'Booking — full name',
+      inviteeFirstName: 'Booking — first name',
+      inviteeLastName: 'Booking — last name',
+      inviteePhone: 'Booking — phone',
       keyCustomBack: 'Back to list',
       selectKeyPlaceholder: 'Select a field…',
       webhookEvents: 'Trigger on',
@@ -2526,6 +2585,17 @@ export const es: FormsMessages = {
           'Si la defines, la pantalla de agradecimiento de arriba nunca se muestra para este rango — el respondiente va directo a la URL. Déjala vacía para mostrar la pantalla.',
         outcomesInert:
           'El puntaje está apagado, así que ningún rango puede alcanzarse — todos ven la pantalla de agradecimiento del formulario. También se omite todo lo configurado en un rango, incluida su redirección y su agenda. Tus rangos se conservan; enciende el puntaje para volver a usarlos.',
+        redirectDelayLabel: 'Mostrar el agradecimiento antes (ms)',
+        redirectDelayHelp:
+          'Cuánto se queda la pantalla de agradecimiento antes de redirigir. 0 se va de inmediato.',
+        redirectDelayHint: '0 = redirige de inmediato. 1500 muestra el mensaje segundo y medio.',
+        overridesLabel: 'Forzado por una respuesta',
+        overridesHelp:
+          'Estas le ganan al puntaje: quien las cumpla cae acá sin importar cuánto sumó. Se muestran para que el rango de arriba se pueda creer.',
+        overrideRemove: 'Quitar',
+        overrideAtMost: '{field} es como máximo {bound}',
+        overrideAtLeast: '{field} es al menos {bound}',
+        overrideIsAnyOf: '{field} es alguno de {bound}',
         redirectLabel: 'URL de redirección (opcional)',
         redirectHelp:
           'Déjalo vacío para mostrar la pantalla de agradecimiento. Si lo defines, se redirige ahí a los respondientes.',
@@ -2810,8 +2880,8 @@ export const es: FormsMessages = {
         branding: 'Marca',
         primaryColor: 'Color primario',
         primaryColorHint: 'Define el acento del formulario público. Se ajusta para contraste.',
-        logo: 'URL del logo',
-        logoHint: 'Se muestra en la parte superior del formulario. Una URL de imagen https://.',
+        logo: 'URL del logo de la portada',
+        logoHint: 'Solo en la portada. Vacío = sin logo ahí.',
         logoInvalid: 'Este protocolo de URL no está permitido para imágenes.',
         clientLogos: 'Logos de clientes',
         clientLogosHint: 'Una marquesina de «confían en nosotros» en la portada. El nombre se muestra si no hay imagen.',
@@ -2920,6 +2990,8 @@ export const es: FormsMessages = {
         progressNone: 'Oculto',
         layoutTitle: 'Distribución',
         layoutSubtitle: 'Dónde va cada cosa y cómo se mueve el formulario entre pasos.',
+        formLogo: 'URL del logo del formulario',
+        formLogoHint: 'Se muestra en cada pantalla de pregunta. Vacío = sin logo.',
         logoSize: 'Tamaño del logo',
         sizeSm: 'Pequeño',
         sizeMd: 'Mediano',
@@ -2953,6 +3025,10 @@ export const es: FormsMessages = {
           'Envía cada respuesta a tu CRM o a un webhook. La entrega es duradera y con reintentos.',
         integrationsLoadError: 'No se pudieron cargar las integraciones.',
         retry: 'Reintentar',
+        deliveriesTitle: 'Entregas que no llegaron',
+        deliveriesSubtitle:
+          'Las respuestas llegaron al formulario, pero estas entregas nunca se completaron. Quien respondió no vio ningún problema, así que este es el único lugar donde aparece.',
+        deliveriesNoReason: 'No se registró un motivo.',
         trackingTitle: 'Seguimiento y píxeles',
         trackingSubtitle:
           'Mide visitas y conversiones en la página pública de este formulario. Cada etiqueta se carga solo cuando su ID está configurado.',
@@ -3142,6 +3218,15 @@ export const es: FormsMessages = {
       hubspotHowTitle: 'Cómo funciona la sincronización',
       hubspotHowBody:
         'Cada envío se busca en HubSpot por correo: si el contacto existe se actualiza, y si no, se crea uno nuevo. Un formulario que nunca pide correo no se puede sincronizar.',
+      hubspotHowBodyScheduler:
+        'Cada envío se busca en HubSpot por correo: si el contacto existe se actualiza, y si no, se crea uno nuevo. Este formulario no lo pide — lo recoge la agenda, así que acá no hay que mapear nada a «email».',
+      schedulerDisconnected:
+        'Calendly no está conectado en esta cuenta, así que no se puede leer el correo del invitado y no va a llegar nada a HubSpot — la reserva igual funciona, por eso falla en silencio. Conectá Calendly en Conexiones.',
+      mapQuestionsHelpScheduler:
+        'Mandá cada respuesta a una propiedad de contacto de HubSpot. No mapees nada a «email»: lo aporta la agenda, y un mapeo acá lo reemplaza y apaga la sincronización.',
+      emailMappingConflictTitle: 'Este mapeo apaga la sincronización',
+      emailMappingConflictBody:
+        'La agenda ya aporta el correo. Una pregunta mapeada a «email» pasa a ser la llave del contacto, así que las respuestas dejan de llegar a HubSpot después de agendar. Quitá el mapeo en: {keys}.',
       pingWebhook: 'Enviar prueba',
       pingSending: 'Enviando…',
       pingOk: 'Prueba entregada: tu endpoint la aceptó.',
@@ -3183,6 +3268,10 @@ export const es: FormsMessages = {
       keyGroupQuestions: 'Preguntas del formulario',
       keyGroupSystem: 'Campos del sistema',
       keyCustomOption: 'Clave personalizada…',
+      inviteeName: 'Agenda — nombre completo',
+      inviteeFirstName: 'Agenda — nombre',
+      inviteeLastName: 'Agenda — apellido',
+      inviteePhone: 'Agenda — teléfono',
       keyCustomBack: 'Volver a la lista',
       selectKeyPlaceholder: 'Selecciona un campo…',
       webhookEvents: 'Disparar en',
