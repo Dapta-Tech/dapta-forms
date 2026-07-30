@@ -808,6 +808,8 @@ export interface FormsMessages {
         progressNone: string;
         layoutTitle: string;
         layoutSubtitle: string;
+        formLogo: string;
+        formLogoHint: string;
         logoSize: string;
         sizeSm: string;
         sizeMd: string;
@@ -1758,8 +1760,8 @@ export const en: FormsMessages = {
         branding: 'Branding',
         primaryColor: 'Primary color',
         primaryColorHint: 'Drives the accent on the public form. Auto-adjusted for contrast.',
-        logo: 'Logo URL',
-        logoHint: 'Shown at the top of the form. An https:// image URL.',
+        logo: 'Cover logo URL',
+        logoHint: 'Shown on the cover screen only. Leave empty for no logo there.',
         logoInvalid: 'This URL protocol is not allowed for images.',
         clientLogos: 'Client logos',
         clientLogosHint: 'A “trusted by” marquee on the cover. The name shows when no image is set.',
@@ -1867,6 +1869,8 @@ export const en: FormsMessages = {
         progressNone: 'Hidden',
         layoutTitle: 'Layout',
         layoutSubtitle: 'Where things sit and how the form moves between steps.',
+        formLogo: 'Form logo URL',
+        formLogoHint: 'Shown on every question screen. Leave empty for no logo.',
         logoSize: 'Logo size',
         sizeSm: 'Small',
         sizeMd: 'Medium',
@@ -2810,8 +2814,8 @@ export const es: FormsMessages = {
         branding: 'Marca',
         primaryColor: 'Color primario',
         primaryColorHint: 'Define el acento del formulario público. Se ajusta para contraste.',
-        logo: 'URL del logo',
-        logoHint: 'Se muestra en la parte superior del formulario. Una URL de imagen https://.',
+        logo: 'URL del logo de la portada',
+        logoHint: 'Solo en la portada. Vacío = sin logo ahí.',
         logoInvalid: 'Este protocolo de URL no está permitido para imágenes.',
         clientLogos: 'Logos de clientes',
         clientLogosHint: 'Una marquesina de «confían en nosotros» en la portada. El nombre se muestra si no hay imagen.',
@@ -2920,6 +2924,8 @@ export const es: FormsMessages = {
         progressNone: 'Oculto',
         layoutTitle: 'Distribución',
         layoutSubtitle: 'Dónde va cada cosa y cómo se mueve el formulario entre pasos.',
+        formLogo: 'URL del logo del formulario',
+        formLogoHint: 'Se muestra en cada pantalla de pregunta. Vacío = sin logo.',
         logoSize: 'Tamaño del logo',
         sizeSm: 'Pequeño',
         sizeMd: 'Mediano',

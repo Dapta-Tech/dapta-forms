@@ -6,7 +6,10 @@ import {
   DEFAULT_FORM_FONT,
   FORM_BACKGROUND_STYLES,
   isSafeImageUrl,
-  resolveDesign, publicTitle } from '@quill/engine';
+  resolveDesign,
+  resolveFormLogos,
+  publicTitle,
+} from '@quill/engine';
 import {
   AA_CONTRAST,
   DEFAULT_ACCENT,
@@ -90,6 +93,11 @@ export function DesignPanel({
   const d = m.design;
   const branding = config.branding ?? {};
   const design = resolveDesign(branding);
+  const cover = config.cover ?? {};
+  // What each surface actually shows right now — the fields below are bound to
+  // this, not to the raw stored values, so the panel can never claim a form has
+  // no logo while one is rendering.
+  const logos = resolveFormLogos(config);
 
   // The colors every contrast readout is measured against. When the author has
   // not chosen a ground, that is the shared dark canvas the form actually
@@ -384,17 +392,48 @@ export function DesignPanel({
         </PanelSection>
 
         <PanelSection title={d.layoutTitle} subtitle={d.layoutSubtitle}>
-          <Field label={m.cover.logo} hint={m.cover.logoHint}>
+          {/* TWO logos, each with its own field and each clearable to nothing.
+              The form's logo shows the RESOLVED value, so a form carrying a logo
+              snapshotted from the workspace brand kit finally displays it here —
+              that value used to render on every screen while both this panel and
+              the brand-kit page showed an empty box, which made it impossible to
+              replace or remove. Emptying either field writes null, which the
+              resolver reads as "show nothing" rather than falling back. */}
+          <Field label={d.formLogo} hint={d.formLogoHint}>
             <TextField
-              value={config.cover?.logo ?? ''}
+              value={logos.form ?? ''}
               placeholder="https://…"
-              onChange={(e) => onCoverChange({ logo: e.target.value || null })}
+              data-testid="design-form-logo"
+              onChange={(e) => onBrandingChange({ logo: e.target.value || null })}
             />
           </Field>
-          {config.cover?.logo && !isSafeImageUrl(config.cover.logo) ? (
+          {logos.form && !isSafeImageUrl(logos.form) ? (
             <p className="text-xs text-destructive" role="alert">
               {m.cover.logoInvalid}
             </p>
+          ) : null}
+          {/* Offering a cover logo on a form with no cover screen would be a
+              control that changes nothing — the same rule the axes below follow. */}
+          {cover.enabled !== false ? (
+            <>
+              {/* Bound to the RESOLVED cover logo, like the field above. A form
+                  that inherits shows the URL it inherits rather than an empty
+                  box, so emptying this field is always the same promise: the
+                  cover shows no logo. */}
+              <Field label={m.cover.logo} hint={m.cover.logoHint}>
+                <TextField
+                  value={logos.cover ?? ''}
+                  placeholder="https://…"
+                  data-testid="design-cover-logo"
+                  onChange={(e) => onCoverChange({ logo: e.target.value || null })}
+                />
+              </Field>
+              {logos.cover && !isSafeImageUrl(logos.cover) ? (
+                <p className="text-xs text-destructive" role="alert">
+                  {m.cover.logoInvalid}
+                </p>
+              ) : null}
+            </>
           ) : null}
           {/* The one-page layout puts the logo in a hero, not a top bar, so
               neither size nor placement applies there. */}

@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import type { AnswerValue, Answers, FormConfig, FormLayout, FormStep } from '@quill/engine';
-import { resolveQuestion, showBanner, showClientLogos } from '@quill/engine';
+import { resolveFormLogos, resolveQuestion, showBanner, showClientLogos } from '@quill/engine';
 import { getMessages } from '@quill/shared';
 import { formDesignProps } from '@/lib/form-design';
 import { FormLogo } from '@/components/public/form-logo';
@@ -122,7 +122,11 @@ function VerticalBody({
   const r = getMessages(locale).renderer;
   const [answers, setAnswers] = useState<Answers>({});
   const cover = config.cover ?? {};
-  const logo = cover.logo ?? config.branding?.logo ?? null;
+  // Same rule as the published one-page layout: the hero IS the cover when one
+  // is on, so the single header shows the cover's logo there and the form's own
+  // when the cover is off.
+  const formLogos = resolveFormLogos(config);
+  const logo = cover.enabled !== false ? formLogos.cover : formLogos.form;
   const logos = showClientLogos(cover) ? (cover.clientLogos ?? config.branding?.clientLogos ?? []) : [];
   // A reveal is an interstitial the one-page layout plays after submit, not a
   // block on the page — same filter the renderer applies.
@@ -205,7 +209,7 @@ function VerticalBody({
 function CoverBody({ config, name, locale }: { config: FormConfig; name: string; locale: string }) {
   const r = getMessages(locale).renderer;
   const cover = config.cover ?? {};
-  const logo = cover.logo ?? config.branding?.logo ?? null;
+  const logo = resolveFormLogos(config).cover;
   const logos = showClientLogos(cover) ? (cover.clientLogos ?? config.branding?.clientLogos ?? []) : [];
 
   return (
@@ -254,7 +258,7 @@ function StepBody({
   const r = getMessages(locale).renderer;
   const design = formDesignProps(config.branding);
   const [answers, setAnswers] = useState<Answers>({});
-  const logo = config.cover?.logo ?? config.branding?.logo ?? null;
+  const logo = resolveFormLogos(config).form;
   const total = config.steps.length;
   // The same display resolution the public renderer applies, so a question that
   // interpolates an earlier answer previews the way it will read.
