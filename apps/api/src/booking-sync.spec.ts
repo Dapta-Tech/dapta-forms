@@ -22,7 +22,7 @@ import { SubmissionNotifier, LogOnlyEmailProvider } from '@quill/notifications';
 import { SubmissionService } from './submission.service';
 import { EmailEffects } from './email-effects';
 import { DestinationEffects } from './destination-effects';
-import { BookingEffects } from './booking-effects';
+import { BookingEffects, BOOKING_SYNC_DELAY_MS } from './booking-effects';
 import { BookingSyncEffects } from './booking-sync';
 import { OutboxWorker } from './outbox.worker';
 
@@ -47,6 +47,16 @@ function newEmailEffects() {
 function newWorker() {
   const env = { OUTBOX_WORKER_ENABLED: false, OUTBOX_POLL_MS: 5000, NODE_ENV: 'test' } as never;
   return new OutboxWorker(db, env, newEmailEffects(), new DestinationEffects(db), bookingSync);
+}
+
+/**
+ * Drain with the clock advanced past `BOOKING_SYNC_DELAY_MS`, which is when a
+ * `booking_sync` row first becomes due. Every delivery test goes through this:
+ * calling `drainOnce()` at the real clock claims nothing, which is exactly the
+ * dormancy the delay exists to create.
+ */
+function drainDue() {
+  return newWorker().drainOnce(Date.now() + BOOKING_SYNC_DELAY_MS + 1_000);
 }
 
 /** Record every call; answer per-URL from `responses` (default 200 `{}`). */
@@ -141,6 +151,32 @@ describe('booking callback enqueue', () => {
     expect(payload.inviteeUri).toBe(INVITEE_URI);
     expect(typeof payload.accountId).toBe('string');
   });
+
+  // A booking on a mid-form `scheduler` step is recorded BEFORE the submission
+  // is finalized. Draining inside that gap delivers as `partial`, which drops
+  // the outcome property, the static properties and the Note — permanently,
+  // since the row closes on success. The row therefore starts DORMANT.
+  it('holds the row dormant so the submission can finish first', async () => {
+    await setHubspotDestination(BOOKING_SYNC_CONFIG);
+    const before = Date.now();
+    await svc.booking('acme', 'lead-qualifier', {
+      sessionId: 'sess-delay',
+      provider: 'calendly',
+      eventUri: EVENT_URI,
+      inviteeUri: INVITEE_URI,
+    });
+
+    const [row] = await listOutbox(db, { kind: 'booking_sync' });
+    expect(row!.nextAttemptAt).toBeGreaterThanOrEqual(before + BOOKING_SYNC_DELAY_MS);
+
+    // Draining at the real clock claims nothing — the row is not due yet.
+    bookingSync.fetchImpl = recordingFetch([]);
+    expect(await newWorker().drainOnce()).toBe(0);
+    expect((await listOutbox(db, { kind: 'booking_sync' }))[0]!.status).toBe('pending');
+
+    // Past the delay it is claimed exactly once.
+    expect(await drainDue()).toBe(1);
+  });
 });
 
 describe('booking_sync delivery', () => {
@@ -164,7 +200,7 @@ describe('booking_sync delivery', () => {
       [HUBSPOT_UPSERT_URL]: () => jsonResponse({ results: [{ id: '123' }] }),
     });
 
-    await newWorker().drainOnce();
+    await drainDue();
 
     const rows = await listOutbox(db, { kind: 'booking_sync' });
     expect(rows[0]!.status).toBe('done');
@@ -208,7 +244,7 @@ describe('booking_sync delivery', () => {
     bookingSync.fetchImpl = recordingFetch(calls, {
       [HUBSPOT_UPSERT_URL]: () => jsonResponse({ results: [{ id: '9' }] }),
     });
-    await newWorker().drainOnce();
+    await drainDue();
 
     const rows = await listOutbox(db, { kind: 'booking_sync' });
     expect(rows[0]!.status).toBe('done');
@@ -239,7 +275,7 @@ describe('booking_sync delivery', () => {
 
     const calls: RecordedCall[] = [];
     bookingSync.fetchImpl = recordingFetch(calls);
-    await newWorker().drainOnce();
+    await drainDue();
 
     const rows = await listOutbox(db, { kind: 'booking_sync' });
     expect(rows[0]!.status).toBe('skipped'); // a decision, recorded once — not retried
@@ -263,7 +299,7 @@ describe('booking_sync delivery', () => {
     bookingSync.fetchImpl = recordingFetch(calls, {
       [HUBSPOT_UPSERT_URL]: () => jsonResponse({ error: 'boom' }, 500),
     });
-    await newWorker().drainOnce();
+    await drainDue();
 
     const rows = await listOutbox(db, { kind: 'booking_sync' });
     expect(rows[0]!.status).toBe('pending'); // retryable — backoff, not terminal
@@ -288,7 +324,7 @@ describe('booking_sync delivery', () => {
 
     const calls: RecordedCall[] = [];
     bookingSync.fetchImpl = recordingFetch(calls);
-    await newWorker().drainOnce();
+    await drainDue();
 
     const rows = await listOutbox(db, { kind: 'booking_sync' });
     expect(rows[0]!.status).toBe('skipped');
@@ -324,7 +360,7 @@ describe('booking_sync delivery', () => {
       [INVITEE_URI]: () => jsonResponse({ resource: { email: 'Invitee@Corp.IO' } }),
       [HUBSPOT_UPSERT_URL]: () => jsonResponse({ results: [{ id: '77' }] }),
     });
-    await newWorker().drainOnce();
+    await drainDue();
 
     const rows = await listOutbox(db, { kind: 'booking_sync' });
     expect(rows[0]!.status).toBe('done');
@@ -348,6 +384,118 @@ describe('booking_sync delivery', () => {
     expect(answerProps.email).toBe('invitee@corp.io');
     expect(answerProps.contact_role).toBe('Founder / CEO'); // value map applied
     expect(answerProps.bz_optin).toBe('Form submitted Producto');
+  });
+
+  // The booking page collects a name (and sometimes a phone) that the form never
+  // asks for. Only the address was ever used, so a form whose booking is its
+  // only contact step produced contacts with an address and no name.
+  it('maps what the booking page collected about the invitee', async () => {
+    await setHubspotDestination(undefined, {
+      fieldMappings: {
+        '@invitee_first_name': 'firstname',
+        '@invitee_last_name': 'lastname',
+        '@invitee_phone': 'mobilephone',
+        '@invitee_name': 'full_name',
+      },
+    });
+    await svc.submit('acme', 'lead-qualifier', { sessionId: 'sess-inv', data: { role: 'founder' } });
+    await svc.booking('acme', 'lead-qualifier', {
+      sessionId: 'sess-inv',
+      provider: 'calendly',
+      eventUri: EVENT_URI,
+      inviteeUri: INVITEE_URI,
+    });
+
+    const calls: RecordedCall[] = [];
+    bookingSync.fetchImpl = recordingFetch(calls, {
+      [EVENT_URI]: () => jsonResponse({ resource: { start_time: '2026-08-02T10:00:00Z' } }),
+      [INVITEE_URI]: () =>
+        jsonResponse({
+          resource: {
+            email: 'Invitee@Corp.IO',
+            name: 'Ada Lovelace',
+            first_name: 'Ada',
+            last_name: 'Lovelace',
+            text_reminder_number: '+57 300 111 2233',
+          },
+        }),
+      [HUBSPOT_UPSERT_URL]: () => jsonResponse({ results: [{ id: '88' }] }),
+    });
+    await drainDue();
+
+    const props = (
+      calls.filter((c) => c.url === HUBSPOT_UPSERT_URL).at(-1)!.body as {
+        inputs: Array<{ properties: Record<string, string> }>;
+      }
+    ).inputs[0]!.properties;
+    expect(props.firstname).toBe('Ada');
+    expect(props.lastname).toBe('Lovelace');
+    expect(props.mobilephone).toBe('+57 300 111 2233');
+    expect(props.full_name).toBe('Ada Lovelace');
+  });
+
+  // Calendly always returns `name` and only sometimes the split pair.
+  it('derives first/last from the full name when the provider omits the split pair', async () => {
+    await setHubspotDestination(undefined, {
+      fieldMappings: { '@invitee_first_name': 'firstname', '@invitee_last_name': 'lastname' },
+    });
+    await svc.submit('acme', 'lead-qualifier', { sessionId: 'sess-split', data: { role: 'founder' } });
+    await svc.booking('acme', 'lead-qualifier', {
+      sessionId: 'sess-split',
+      provider: 'calendly',
+      eventUri: EVENT_URI,
+      inviteeUri: INVITEE_URI,
+    });
+
+    const calls: RecordedCall[] = [];
+    bookingSync.fetchImpl = recordingFetch(calls, {
+      [EVENT_URI]: () => jsonResponse({ resource: { start_time: '2026-08-02T10:00:00Z' } }),
+      [INVITEE_URI]: () =>
+        jsonResponse({ resource: { email: 'g@corp.io', name: 'Grace Brewster Hopper' } }),
+      [HUBSPOT_UPSERT_URL]: () => jsonResponse({ results: [{ id: '89' }] }),
+    });
+    await drainDue();
+
+    const props = (
+      calls.filter((c) => c.url === HUBSPOT_UPSERT_URL).at(-1)!.body as {
+        inputs: Array<{ properties: Record<string, string> }>;
+      }
+    ).inputs[0]!.properties;
+    expect(props.firstname).toBe('Grace');
+    expect(props.lastname).toBe('Brewster Hopper');
+  });
+
+  // A question the form actually asks outranks whatever the booking page had.
+  it('a real answer wins over the invitee field mapped to the same key', async () => {
+    await setHubspotDestination(undefined, {
+      fieldMappings: { full_name: 'full_name', '@invitee_name': 'booked_as' },
+    });
+    await svc.submit('acme', 'lead-qualifier', {
+      sessionId: 'sess-win',
+      data: { full_name: 'What they typed' },
+    });
+    await svc.booking('acme', 'lead-qualifier', {
+      sessionId: 'sess-win',
+      provider: 'calendly',
+      eventUri: EVENT_URI,
+      inviteeUri: INVITEE_URI,
+    });
+
+    const calls: RecordedCall[] = [];
+    bookingSync.fetchImpl = recordingFetch(calls, {
+      [EVENT_URI]: () => jsonResponse({ resource: { start_time: '2026-08-02T10:00:00Z' } }),
+      [INVITEE_URI]: () => jsonResponse({ resource: { email: 'w@corp.io', name: 'Booked Name' } }),
+      [HUBSPOT_UPSERT_URL]: () => jsonResponse({ results: [{ id: '90' }] }),
+    });
+    await drainDue();
+
+    const props = (
+      calls.filter((c) => c.url === HUBSPOT_UPSERT_URL).at(-1)!.body as {
+        inputs: Array<{ properties: Record<string, string> }>;
+      }
+    ).inputs[0]!.properties;
+    expect(props.full_name).toBe('What they typed');
+    expect(props.booked_as).toBe('Booked Name');
   });
 
   it('a free-text answer that merely LOOKS like an email does not suppress the answers sync', async () => {
@@ -375,7 +523,7 @@ describe('booking_sync delivery', () => {
       [INVITEE_URI]: () => jsonResponse({ resource: { email: 'real@corp.io' } }),
       [HUBSPOT_UPSERT_URL]: () => jsonResponse({ results: [{ id: '3' }] }),
     });
-    await newWorker().drainOnce();
+    await drainDue();
 
     const rows = await listOutbox(db, { kind: 'booking_sync' });
     expect(rows[0]!.status).toBe('done');
@@ -409,7 +557,7 @@ describe('booking_sync delivery', () => {
       [INVITEE_URI]: () => jsonResponse({ resource: { email: 'invitee@corp.io' } }),
       [HUBSPOT_UPSERT_URL]: () => jsonResponse({ results: [{ id: '5' }] }),
     });
-    await newWorker().drainOnce();
+    await drainDue();
 
     const rows = await listOutbox(db, { kind: 'booking_sync' });
     expect(rows[0]!.status).toBe('done');
@@ -445,7 +593,7 @@ describe('booking_sync delivery', () => {
       [INVITEE_URI]: () => jsonResponse({ resource: { email: 'solo@corp.io' } }),
       [HUBSPOT_UPSERT_URL]: () => jsonResponse({ results: [{ id: '8' }] }),
     });
-    await newWorker().drainOnce();
+    await drainDue();
 
     const rows = await listOutbox(db, { kind: 'booking_sync' });
     expect(rows[0]!.status).toBe('done'); // not skipped — the answers went out

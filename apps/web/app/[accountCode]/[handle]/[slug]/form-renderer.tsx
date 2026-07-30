@@ -454,10 +454,28 @@ export function FormRenderer({
     }
   }, []);
 
-  // Pre-warm the booking embed while the interstitial plays: when the form
-  // opts in (reveal.prewarm) and the PENDING outcome (client-side score over
-  // the answers so far) hands off to a scheduler, warm its origins now so the
-  // embed after submit paints faster. warmBookingEmbed is idempotent + safe.
+  // Pre-warm the booking embed while an interstitial plays, so the booking
+  // screen after it paints faster. `warmBookingEmbed` is idempotent and a no-op
+  // on the server, so warming twice costs nothing.
+  //
+  // Both shapes of "reveal, then book" are covered, because both exist in the
+  // wild at once:
+  //  - LEGACY — `config.reveal.prewarm` plays as its own `phase`, and the
+  //    booking is the PENDING outcome's (client-side score over the answers so
+  //    far). A published config keeps this shape until it is re-saved.
+  //  - STEPS — a `reveal` STEP carries its own `prewarm`, and the booking is the
+  //    next visible `scheduler` step. `migrateRevealToStep` drops
+  //    `config.reveal` the moment the builder opens the form, so reading only
+  //    the legacy field silently disabled prewarm for every edited form.
+  const nextScheduler =
+    phase === 'steps' && step?.type === 'reveal' && step.reveal?.prewarm
+      ? (steps.slice(index + 1).find((s) => s.type === 'scheduler')?.scheduler ?? null)
+      : null;
+  const nextSchedulerUrl = nextScheduler?.url ?? null;
+  const nextSchedulerProvider = nextScheduler?.provider ?? 'calendly';
+  useEffect(() => {
+    if (nextSchedulerUrl) warmBookingEmbed(nextSchedulerProvider, nextSchedulerUrl);
+  }, [nextSchedulerUrl, nextSchedulerProvider]);
   useEffect(() => {
     if (phase !== 'reveal') return;
     if (!config.reveal?.prewarm) return;

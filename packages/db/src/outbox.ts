@@ -268,20 +268,97 @@ export async function markOutboxFailed(
   );
 }
 
-/** Inspect the queue / delivery log (tests, a future admin view). */
+/** Inspect the queue / delivery log (tests, the admin deliveries view). */
 export async function listOutbox(
   db: Db,
-  filter: { status?: OutboxStatus; kind?: OutboxKind; subjectUid?: string } = {},
+  filter: {
+    status?: OutboxStatus;
+    kind?: OutboxKind;
+    subjectUid?: string;
+    /** Scope to one account — required by any admin-facing caller. */
+    accountId?: string;
+  } = {},
 ): Promise<OutboxRow[]> {
   const conds = [sql`1 = 1`];
   if (filter.status) conds.push(sql`status = ${filter.status}`);
   if (filter.kind) conds.push(sql`kind = ${filter.kind}`);
   if (filter.subjectUid) conds.push(sql`subject_uid = ${filter.subjectUid}`);
+  if (filter.accountId) conds.push(sql`account_id = ${filter.accountId}`);
   const where = sql.join(conds, sql` AND `);
   const rows = await db.all<Record<string, unknown>>(
     sql`SELECT * FROM outbox WHERE ${where} ORDER BY created_at ASC`,
   );
   return rows.map(mapRow);
+}
+
+/** A side-effect that did not land, in the terms the person who owns the form has. */
+export interface FailedDelivery {
+  id: string;
+  /** `booking_sync`, `destination`, `email`… — what was being delivered. */
+  kind: OutboxKind;
+  /** `failed` = retries exhausted; `skipped` = a permanent gap, never retried. */
+  status: 'failed' | 'skipped';
+  /** The reason the worker recorded. This is the whole point of the view. */
+  lastError: string | null;
+  attempts: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+/**
+ * Deliveries for one form that ended without landing.
+ *
+ * Nothing in the admin surfaced the outbox, so a delivery that died — an expired
+ * CRM token, a disconnected scheduling provider, a form with no resolvable
+ * respondent email — existed only in server logs. From the outside everything
+ * looked fine: the respondent submitted, the booking succeeded, the confirmation
+ * arrived. The lead simply never reached the CRM, and the person who owned the
+ * form had no way to find out.
+ *
+ * The form is matched from the row's serialized payload rather than a column:
+ * `outbox` is deliberately generic (kind + payload), and adding a form column
+ * would mean a destructive migration on a table every deployment already has.
+ * The account IS a column, so the scope that matters for isolation is enforced
+ * in SQL; the form filter narrows within one account's own rows.
+ */
+export async function listFailedDeliveries(
+  db: Db,
+  accountId: string,
+  formId: string,
+  limit = 50,
+): Promise<FailedDelivery[]> {
+  const rows = await db.all<Record<string, unknown>>(
+    sql`SELECT * FROM outbox
+        WHERE account_id = ${accountId} AND status IN ('failed', 'skipped')
+        ORDER BY updated_at DESC`,
+  );
+  const out: FailedDelivery[] = [];
+  for (const raw of rows) {
+    const row = mapRow(raw);
+    if (!payloadTargetsForm(row.payload, formId)) continue;
+    out.push({
+      id: row.id,
+      kind: row.kind,
+      status: row.status as 'failed' | 'skipped',
+      lastError: row.lastError,
+      attempts: row.attempts,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+    });
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
+/** Does this row's payload name the form? Malformed payloads simply do not match. */
+function payloadTargetsForm(payload: string | null, formId: string): boolean {
+  if (!payload) return false;
+  try {
+    const parsed = JSON.parse(payload) as { formId?: unknown };
+    return typeof parsed.formId === 'string' && parsed.formId === formId;
+  } catch {
+    return false;
+  }
 }
 
 /** Count rows in a status (readiness/backlog reporting). */

@@ -1,6 +1,11 @@
 'use client';
 
-import type { EmailSource } from '@quill/engine';
+import { propertiesFor } from '@quill/types';
+import {
+  INVITEE_FIELDS,
+  emailMappingsConflictingWithScheduler,
+  type ContactKeyReadiness,
+} from '@quill/engine';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import type { FormsMessages, Locale } from '@quill/shared';
@@ -37,6 +42,20 @@ export type { QuestionMeta } from './auto-map';
 const LocaleContext = createContext<Locale>('en');
 
 const UTM_KEYS = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content'] as const;
+
+/**
+ * A submission-data key the form never asks for but still carries — a UTM off
+ * the URL, or something the booking page collected. Labelled because the key
+ * itself is a token: `@invitee_first_name` is not a name anyone wants to read
+ * in a dropdown.
+ */
+interface SystemKey {
+  key: string;
+  label: string;
+}
+
+/** No config supplied → nothing can key a contact. Never claims readiness. */
+const NOT_READY: ContactKeyReadiness = { ok: false, blocker: 'no_source', source: null };
 
 /** Sentinel option values for the key pickers — never valid step keys. */
 const CUSTOM_KEY_OPTION = '__custom_key__';
@@ -134,7 +153,12 @@ function initialHubspot(destinations: FormDestination[]): HubspotState {
   if (h && h.type === 'hubspot') {
     return {
       enabled: h.enabled,
-      fieldMappings: Object.entries(h.fieldMappings ?? {}).map(([key, property]) => ({ key, property })),
+      // One ROW per target property: a mapping that fans out to several shows
+      // as several rows with the same key, which is the shape the editor can
+      // actually author. `buildDestinations` groups them back.
+      fieldMappings: Object.entries(h.fieldMappings ?? {}).flatMap(([key, target]) =>
+        propertiesFor(target).map((property) => ({ key, property })),
+      ),
       utmMappings: { ...(h.utmMappings ?? {}) },
       scoreProperty: h.scoreProperty ?? '',
       dateProperty: h.dateProperty ?? '',
@@ -191,7 +215,7 @@ export function IntegrationsEditor({
   hubspot: hubspotProps,
   hubspotConnected,
   questions,
-  emailSource = null,
+  readiness = NOT_READY,
   messages: m,
   locale,
 }: {
@@ -202,8 +226,12 @@ export function IntegrationsEditor({
   hubspotConnected: boolean;
   /** The form's mappable questions (from its steps). */
   questions: QuestionMeta[];
-  /** Where a HubSpot sync could get the address it keys contacts on. */
-  emailSource?: EmailSource;
+  /**
+   * Whether this form can key a CRM contact — config AND connections. The
+   * screen must not promise a sync it cannot deliver, so the copy below reads
+   * this rather than the config alone.
+   */
+  readiness?: ContactKeyReadiness;
   messages: Msgs;
   locale: Locale;
 }) {
@@ -284,10 +312,21 @@ export function IntegrationsEditor({
     }
     // else: empty url (switch on or off) → no webhook persisted. An enabled
     // webhook with no URL is incomplete, not stored; clearing the URL removes it.
-    const fieldMappings: Record<string, string> = {};
+    // Rows GROUP by key rather than overwriting. The old flatten was
+    // last-one-wins and silent: two rows on the same question — the escape
+    // hatch the UI itself offers via "Custom key…" — quietly discarded the
+    // first mapping on save.
+    const grouped = new Map<string, string[]>();
     for (const p of hs.fieldMappings) {
-      if (p.key.trim() && p.property.trim()) fieldMappings[p.key.trim()] = p.property.trim();
+      const key = p.key.trim();
+      const property = p.property.trim();
+      if (!key || !property) continue;
+      const list = grouped.get(key) ?? [];
+      if (!list.includes(property)) list.push(property);
+      grouped.set(key, list);
     }
+    const fieldMappings: Record<string, string | string[]> = {};
+    for (const [key, list] of grouped) fieldMappings[key] = list.length === 1 ? list[0]! : list;
     const utmMappings: Record<string, string> = {};
     for (const [k, v] of Object.entries(hs.utmMappings)) {
       if (v && v.trim()) utmMappings[k] = v.trim();
@@ -475,7 +514,7 @@ export function IntegrationsEditor({
           pickerEnabled={pickerEnabled}
           accountConnected={hubspotConnected}
           showMapping={showMapping}
-          emailSource={emailSource}
+          readiness={readiness}
           questions={questions}
           m={m}
         />
@@ -589,15 +628,20 @@ function KeySelect({
   onChange: (v: string) => void;
   /** Pickable question entries — already filtered/ordered by the caller. */
   questionOptions: QuestionMeta[];
-  /** Auto-captured submission-data keys (UTMs). Empty = omit the group. */
-  systemKeys: readonly string[];
+  /**
+   * Submission-data keys the form does not ask for but still carries: UTMs from
+   * the URL, and what the booking page collected about the invitee. Labelled,
+   * because a raw `@invitee_first_name` is a token, not a name. Empty = omit
+   * the group.
+   */
+  systemKeys: readonly SystemKey[];
   m: Msgs;
   testId: string;
   customTestId: string;
 }) {
   const locale = useContext(LocaleContext);
   const selectable = (v: string): boolean =>
-    systemKeys.includes(v) || questionOptions.some((q) => q.key === v);
+    systemKeys.some((k) => k.key === v) || questionOptions.some((q) => q.key === v);
   // Stored keys that match neither group (hidden/legacy) open in custom mode.
   const [customMode, setCustomMode] = useState(() => value !== '' && !selectable(value));
 
@@ -634,7 +678,7 @@ function KeySelect({
   }
   if (systemKeys.length > 0) {
     options.push({ value: KEY_GROUP_SYSTEM, label: m.keyGroupSystem, disabled: true });
-    options.push(...systemKeys.map((k) => ({ value: k, label: k })));
+    options.push(...systemKeys.map((k) => ({ value: k.key, label: k.label })));
   }
   options.push({ value: CUSTOM_KEY_OPTION, label: m.keyCustomOption });
 
@@ -929,7 +973,7 @@ function HubspotCard({
   pickerEnabled,
   accountConnected,
   showMapping,
-  emailSource,
+  readiness,
   questions,
   m,
 }: {
@@ -939,13 +983,47 @@ function HubspotCard({
   pickerEnabled: boolean;
   accountConnected: boolean;
   showMapping: boolean;
-  emailSource: EmailSource;
+  readiness: ContactKeyReadiness;
   questions: QuestionMeta[];
   m: Msgs;
 }) {
   const { success, toast } = useToast();
+  const emailSource = readiness.source;
   const utmValues = useMemo(() => state.utmMappings, [state.utmMappings]);
   const questionKeys = useMemo(() => new Set(questions.map((q) => q.key)), [questions]);
+
+  // What this form carries beyond its own answers. The invitee's details only
+  // exist when a SCHEDULER is what supplies the address — a form that asks for
+  // an email itself never books, so offering them there would map keys that
+  // stay empty forever.
+  const systemKeyOptions = useMemo<SystemKey[]>(() => {
+    const utm: SystemKey[] = UTM_KEYS.map((k) => ({ key: k, label: k }));
+    if (emailSource?.kind !== 'scheduler') return utm;
+    return [
+      ...utm,
+      { key: INVITEE_FIELDS.name, label: m.inviteeName },
+      { key: INVITEE_FIELDS.first_name, label: m.inviteeFirstName },
+      { key: INVITEE_FIELDS.last_name, label: m.inviteeLastName },
+      { key: INVITEE_FIELDS.phone, label: m.inviteePhone },
+    ];
+  }, [emailSource, m]);
+
+  // Questions pointed at the `email` property while a SCHEDULER is what supplies
+  // the address. The booking-time sync only runs when the adapter cannot resolve
+  // an address itself, so this mapping switches it off and the lead stops
+  // arriving — with no error anywhere.
+  const emailConflicts = useMemo(
+    () =>
+      emailMappingsConflictingWithScheduler(
+        emailSource,
+        Object.fromEntries(
+          state.fieldMappings
+            .filter((p) => p.key.trim() && p.property.trim())
+            .map((p) => [p.key.trim(), p.property.trim()]),
+        ),
+      ),
+    [emailSource, state.fieldMappings],
+  );
 
   // Nothing to key a contact on → mapping is pointless and, worse, silently
   // lossy: HubSpot's upsert is BY EMAIL, so a submission with no address
@@ -1019,7 +1097,10 @@ function HubspotCard({
   // already mapped drop out of a custom row's picker (no double-mapping); a
   // row's own key is always kept so its selection stays visible.
   const usedKeys = new Set(state.fieldMappings.map((p) => p.key));
-  const unmappedQuestions = questions.filter((q) => !usedKeys.has(q.key));
+  // Every question stays pickable. Hiding the mapped ones was how the editor
+  // enforced one-property-per-answer; now a second row on the same question IS
+  // the way to send it somewhere else too.
+  const unmappedQuestions = questions;
 
   // Value maps translate answers, so choice-type questions (fixed option
   // lists) lead the picker; free-text questions follow. Plain computation —
@@ -1070,24 +1151,48 @@ function HubspotCard({
 
       {/* What the sync actually does. "Map a question to a property" does not
           tell anyone that the CONTACT is matched by email and created when
-          absent — which is the one rule that decides whether a lead lands. */}
+          absent — which is the one rule that decides whether a lead lands.
+
+          The body is per-source, not one paragraph for everyone: the generic
+          copy ends "a form that never asks for an email cannot be synced",
+          which is FALSE for a form whose address comes from the booking — and
+          it sat directly above the note saying the opposite. */}
       <div
         data-testid="hubspot-how"
         className="rounded-md border border-border bg-muted/30 p-3"
       >
         <p className="text-xs font-medium text-foreground">{m.hubspotHowTitle}</p>
-        <p className="mt-1 text-xs text-muted-foreground">{m.hubspotHowBody}</p>
+        <p className="mt-1 text-xs text-muted-foreground">
+          {emailSource?.kind === 'scheduler' ? m.hubspotHowBodyScheduler : m.hubspotHowBody}
+        </p>
         {emailSource?.kind === 'scheduler' ? (
           <p data-testid="hubspot-scheduler-note" className="mt-2 text-xs text-muted-foreground">
-            {m.emailFromScheduler}
+            {readiness.ok ? m.emailFromScheduler : m.schedulerDisconnected}
           </p>
         ) : null}
       </div>
 
+      {/* The mapping the old help text INSTRUCTED, which switches the sync off.
+          Named per question so it can be found, not just described. */}
+      {emailConflicts.length > 0 ? (
+        <div
+          data-testid="hubspot-email-conflict"
+          role="alert"
+          className="rounded-md border border-destructive/40 bg-destructive/10 p-3"
+        >
+          <p className="text-xs font-medium text-foreground">{m.emailMappingConflictTitle}</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {fill(m.emailMappingConflictBody, { keys: emailConflicts.join(', ') })}
+          </p>
+        </div>
+      ) : null}
+
       {/* Map questions — each form question → a HubSpot contact property */}
       <Section
         title={m.mapQuestions}
-        help={m.mapQuestionsHelp}
+        help={
+          emailSource?.kind === 'scheduler' ? m.mapQuestionsHelpScheduler : m.mapQuestionsHelp
+        }
         action={
           <Button variant="outline" size="sm" onClick={autoMap} disabled={questions.length === 0}>
             <i aria-hidden className="pi pi-bolt" style={{ fontSize: 12 }} />
@@ -1138,7 +1243,9 @@ function HubspotCard({
                 <KeySelect
                   value={pair.key}
                   questionOptions={unmappedQuestions}
-                  systemKeys={UTM_KEYS.filter((k) => k === pair.key || !usedKeys.has(k))}
+                  systemKeys={systemKeyOptions.filter(
+                    (k) => k.key === pair.key || !usedKeys.has(k.key),
+                  )}
                   m={m}
                   testId="mapping-key-select"
                   customTestId="mapping-key-custom"
