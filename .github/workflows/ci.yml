@@ -19,7 +19,18 @@ jobs:
     # Enforce Conventional Commits on every PR commit so history stays legible and
     # Changesets/release automation can hook off the types. PR-only: it lints the
     # commits the PR adds (base..head), never rewrites or fails existing history.
-    if: github.event_name == 'pull_request'
+    #
+    # A release PR (develop -> main) is the one case where base..head is NOT what
+    # the PR adds — it is every commit that entered `develop` since the last
+    # release, each already linted by its own PR on the way in. Re-linting them
+    # here fails on history nobody can fix without rewriting a shared branch, which
+    # is exactly what the line above promises not to do. Earlier releases hid this
+    # by squashing; squashing is what orphaned the SHAs and forced the back-merges
+    # in #34/#38/#54, so the fix belongs here rather than in the merge strategy.
+    # Any OTHER PR into main (a hotfix off a topic branch) is still linted.
+    if: >-
+      github.event_name == 'pull_request' &&
+      !(github.base_ref == 'main' && github.head_ref == 'develop')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
