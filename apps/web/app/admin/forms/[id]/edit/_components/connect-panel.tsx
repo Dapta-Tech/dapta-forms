@@ -1,13 +1,18 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { emailSourceFor, type EmailSource, type FormConfig } from '@quill/engine';
+import { contactKeyReadiness, type ContactKeyReadiness, type FormConfig } from '@quill/engine';
 import type { FormTracking } from '@quill/types';
 import { getMessages, type Locale } from '@quill/shared';
 import { Button } from '@/components/ui/button';
 import { awaitPendingDestinationWrite } from '@/lib/connect-sync';
 import { IntegrationsEditor, type QuestionMeta } from '../../integrations/integrations-editor';
-import { loadConnectIntegrationsAction, type ConnectIntegrationsData } from './connect-actions';
+import {
+  loadConnectIntegrationsAction,
+  loadFailedDeliveriesAction,
+  type ConnectIntegrationsData,
+} from './connect-actions';
+import type { FailedDelivery } from '@/lib/admin-api';
 import { ConnectEmailsSection } from './connect-emails-section';
 import { Field, PanelSection, TextField } from './fields';
 import type { EditorMessages } from './messages';
@@ -62,24 +67,92 @@ export function ConnectPanel({
     [config.steps],
   );
 
-  // Computed from the LIVE config for the same reason `questions` is: adding an
-  // email question has to unblock the HubSpot mapping immediately, not after a
-  // save and a refetch.
-  const emailSource = useMemo(() => emailSourceFor(config), [config]);
+
 
   return (
     <div data-testid="connect-panel" className="mx-auto flex w-full max-w-[900px] flex-col gap-4">
       <IntegrationsSection
         formId={formId}
         questions={questions}
-        emailSource={emailSource}
+        config={config}
         mc={mc}
         im={im}
         locale={loc}
       />
+      <FailedDeliveriesSection formId={formId} mc={mc} />
       <TrackingSection config={config} onTrackingChange={onTrackingChange} mc={mc} />
       <ConnectEmailsSection formId={formId} m={mc} locale={locale} />
     </div>
+  );
+}
+
+// --- Failed deliveries -------------------------------------------------------
+
+/**
+ * Deliveries for this form that ended without landing.
+ *
+ * Nothing in the admin ever surfaced the outbox, so a delivery that died — an
+ * expired CRM token, a disconnected scheduling provider, a form with no
+ * resolvable respondent email — existed only in server logs. From the outside
+ * everything looked fine: the respondent submitted, the booking succeeded, the
+ * confirmation arrived. The lead simply never reached the CRM.
+ *
+ * Renders nothing when there is nothing wrong: an empty panel here would be
+ * noise on the overwhelming majority of forms.
+ */
+function FailedDeliveriesSection({
+  formId,
+  mc,
+}: {
+  formId: string;
+  mc: EditorMessages['connect'];
+}) {
+  const [items, setItems] = useState<FailedDelivery[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    loadFailedDeliveriesAction(formId)
+      .then((rows) => {
+        if (!cancelled) setItems(rows);
+      })
+      .catch(() => {
+        // Diagnostics must never break the tab they diagnose.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [formId]);
+
+  if (items.length === 0) return null;
+
+  return (
+    <section data-testid="connect-failed-deliveries" className="flex flex-col gap-2">
+      <div className="min-w-0">
+        <h3 className="text-sm font-semibold text-foreground">{mc.deliveriesTitle}</h3>
+        <p className="mt-0.5 text-xs text-muted-foreground">{mc.deliveriesSubtitle}</p>
+      </div>
+      <ul className="flex flex-col gap-1.5">
+        {items.map((d) => (
+          <li
+            key={d.id}
+            data-testid="failed-delivery"
+            className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2"
+          >
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-xs font-medium text-foreground">{d.kind}</span>
+              <span className="text-[11px] text-muted-foreground">
+                {new Date(d.updatedAt).toLocaleString()}
+              </span>
+            </div>
+            {/* The worker's own reason, verbatim. Paraphrasing it here would
+                lose the one detail that says what to fix. */}
+            <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+              {d.lastError ?? mc.deliveriesNoReason}
+            </p>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 
@@ -93,21 +166,36 @@ type LoadState =
 function IntegrationsSection({
   formId,
   questions,
-  emailSource,
+  config,
   mc,
   im,
   locale,
 }: {
   formId: string;
   questions: QuestionMeta[];
-  /** Where a HubSpot sync could get an address, or null if nowhere. */
-  emailSource: EmailSource;
+  /** The LIVE editor config — readiness is derived here, next to the fetched
+   *  connection state, so both halves of the answer come from one place. */
+  config: FormConfig;
   mc: EditorMessages['connect'];
   im: ReturnType<typeof getMessages>['admin']['integrations'];
   locale: Locale;
 }) {
   const [state, setState] = useState<LoadState>({ status: 'loading' });
   const [attempt, setAttempt] = useState(0);
+
+  // Whether this form can key a CRM contact at all. Derived from the LIVE
+  // config so adding an email question unblocks the mapping immediately, and
+  // crossed with the account's connections because a scheduler only yields an
+  // address while its provider is connected — the config alone cannot answer
+  // "will this sync". While the fetch is in flight, assume connected: a
+  // transient "not connected" warning would be worse than a late one.
+  const readiness: ContactKeyReadiness = useMemo(
+    () =>
+      contactKeyReadiness(config, {
+        scheduler: state.status !== 'ready' || state.data.calendlyConnected,
+      }),
+    [config, state],
+  );
 
   // Fetch on tab activation (the panel mounts only while the Connect tab is
   // active, so re-entering the tab always shows the latest saved destinations).
@@ -160,7 +248,7 @@ function IntegrationsSection({
           hubspot={state.data.hubspot}
           hubspotConnected={state.data.hubspotConnected}
           questions={questions}
-          emailSource={emailSource}
+          readiness={readiness}
           messages={im}
           locale={locale}
         />

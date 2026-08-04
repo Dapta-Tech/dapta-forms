@@ -30,6 +30,7 @@ import {
   getFormById,
   getNotificationSettings,
   inviteMember,
+  listFailedDeliveries,
   listForms,
   listMembers,
   publishForm,
@@ -286,6 +287,25 @@ export class AdminCrudController {
       limit: parseIntParam(limit),
       offset: parseIntParam(offset),
     });
+  }
+
+  /**
+   * Deliveries for this form that ended without landing.
+   *
+   * A side-effect that died — an expired CRM token, a disconnected scheduling
+   * provider, a form with no resolvable respondent email — used to exist only in
+   * server logs, so a form could stop syncing leads while every visible signal
+   * said it was working.
+   */
+  @Get('forms/:id/deliveries')
+  async formDeliveries(@Req() req: ReqLike, @Param('id') id: string, @Query('limit') limit?: string) {
+    const p = await this.auth.resolveHost(req);
+    // Account scoping twice on purpose: the form lookup proves this caller owns
+    // the form, and the query itself is filtered by account_id in SQL.
+    const f = await getFormById(this.db, p.accountId, id);
+    if (!f) throw new NotFoundException({ error: 'NOT_FOUND', message: 'Not found.' });
+    const items = await listFailedDeliveries(this.db, p.accountId, id, parseIntParam(limit) ?? 50);
+    return { items };
   }
 
   // --- Members (workspace roster; admin/owner-only) ----------------------

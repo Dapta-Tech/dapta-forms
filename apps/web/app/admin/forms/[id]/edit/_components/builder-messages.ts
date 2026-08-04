@@ -213,6 +213,10 @@ export interface BuilderMessages {
     /** No account-level HubSpot connection at all. */
     notConnected: string;
     goToConnections: string;
+    /** The form has nothing that can identify a contact. */
+    needsEmail: string;
+    /** A booking would supply the address, but its provider is not connected. */
+    schedulerDisconnected: string;
   };
   rules: {
     ifAnswerIs: string;
@@ -511,6 +515,10 @@ const en: BuilderMessages = {
     configureInConnect: 'Set up in Connect',
     notConnected: 'Connect HubSpot to map answers to contact properties.',
     goToConnections: 'Go to Connections',
+    needsEmail:
+      'This form asks for no email and books nothing, so HubSpot has no way to identify the contact — nothing mapped here would sync. Add an email question, or a booking step.',
+    schedulerDisconnected:
+      'The booking step would supply the address, but Calendly is not connected for this account — so the invitee cannot be read back and nothing mapped here will reach HubSpot.',
   },
   rules: {
     ifAnswerIs: 'If answer is',
@@ -808,6 +816,10 @@ const es: BuilderMessages = {
     configureInConnect: 'Configurar en Conectar',
     notConnected: 'Conecta HubSpot para asignar respuestas a propiedades del contacto.',
     goToConnections: 'Ir a Conexiones',
+    needsEmail:
+      'Este formulario no pide correo ni agenda nada, así que HubSpot no tiene cómo identificar al contacto — nada de lo que mapees acá se va a sincronizar. Agregá una pregunta de correo, o un paso de agenda.',
+    schedulerDisconnected:
+      'El paso de agenda aportaría el correo, pero Calendly no está conectado en esta cuenta — así que no se puede leer al invitado y nada de lo mapeado acá va a llegar a HubSpot.',
   },
   rules: {
     ifAnswerIs: 'Si la respuesta es',

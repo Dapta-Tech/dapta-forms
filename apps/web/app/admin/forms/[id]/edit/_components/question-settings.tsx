@@ -661,6 +661,7 @@ export function QuestionSettings({
         <QuestionHubspotSection
           formId={formId}
           stepKey={step.key}
+          steps={steps}
           locale={locale}
           onOpenConnect={onOpenConnect}
           m={bm.hubspot}

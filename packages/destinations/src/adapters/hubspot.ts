@@ -1,3 +1,4 @@
+import { propertiesFor } from '@quill/types';
 import type {
   DestinationContext,
   DestinationResult,
@@ -15,7 +16,7 @@ export interface HubspotDestinationOptions {
   /** HubSpot private-app token (server-side only; never sent to the browser). */
   token: string;
   /** stepKey -> contact property. One mapping's property SHOULD be `email`. */
-  fieldMappings: Record<string, string>;
+  fieldMappings: Record<string, string | string[]>;
   /** utmKey (utm_source…) -> contact property. */
   utmMappings?: Record<string, string>;
   /** Contact property to write the server-computed score to (complete only). */
@@ -102,12 +103,16 @@ export class HubspotDestination implements SubmissionDestination {
     // Field mappings: stepKey -> contact property, with per-step value maps
     // translating a raw answer to its CRM picklist value (unmapped raw values
     // pass through unchanged).
-    for (const [stepKey, property] of Object.entries(this.opts.fieldMappings)) {
-      if (!property?.trim()) continue;
+    for (const [stepKey, target] of Object.entries(this.opts.fieldMappings)) {
+      const properties = propertiesFor(target);
+      if (properties.length === 0) continue;
       const value = ctx.data[stepKey];
       if (value !== undefined && value !== null && String(value).trim() !== '') {
         const raw = String(value).trim();
-        props[property.trim()] = this.opts.valueMaps?.[stepKey]?.[raw] ?? raw;
+        // The value map is per STEP, so every property this answer feeds gets
+        // the same translated value — which is the whole point of fanning out.
+        const translated = this.opts.valueMaps?.[stepKey]?.[raw] ?? raw;
+        for (const property of properties) props[property] = translated;
       }
     }
 
@@ -163,8 +168,8 @@ export class HubspotDestination implements SubmissionDestination {
 
   /** Resolve the respondent email from the field mappings, then the raw data. */
   resolveEmail(ctx: DestinationContext): string | null {
-    for (const [stepKey, property] of Object.entries(this.opts.fieldMappings)) {
-      if (property?.trim() === 'email' && ctx.data[stepKey]) {
+    for (const [stepKey, target] of Object.entries(this.opts.fieldMappings)) {
+      if (propertiesFor(target).includes('email') && ctx.data[stepKey]) {
         return String(ctx.data[stepKey]).trim();
       }
     }

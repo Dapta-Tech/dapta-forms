@@ -37,6 +37,7 @@ import {
   nameFields,
   isSafeHttpUrl,
   showBanner,
+  resolveFormLogos,
   type Answers,
   type AnswerValue,
   type FormStep,
@@ -560,8 +561,12 @@ export function VerticalFormRenderer({
     );
   }
 
-  const logo = coverScreen?.logo ?? config.branding?.logo ?? null;
-  const logos = coverScreen?.clientLogos ?? config.branding?.clientLogos ?? [];
+  // One page, one header — and the hero right under it IS the cover screen when
+  // one is on, so the header carries the cover's logo there and the form's own
+  // when the cover is off. Either can be cleared to nothing independently.
+  const logos = resolveFormLogos(config);
+  const headerLogo = coverScreen ? logos.cover : logos.form;
+  const clientLogos = coverScreen?.clientLogos ?? config.branding?.clientLogos ?? [];
   const total = answerable.length;
 
   return (
@@ -601,7 +606,7 @@ export function VerticalFormRenderer({
       <div className="pf__main">
         <div className="pf-v__page">
           <header className="pf-v__header">
-            <FormLogo src={logo} name={name} />
+            <FormLogo src={headerLogo} name={name} />
           </header>
 
           {coverScreen ? (
@@ -612,7 +617,7 @@ export function VerticalFormRenderer({
               <h1 className="pf__title">{coverScreen.headline ?? name}</h1>
               {coverScreen.subheadline ? <p className="pf__subheadline">{coverScreen.subheadline}</p> : null}
               {coverScreen.trustBadge ? <p className="pf__trust">{coverScreen.trustBadge}</p> : null}
-              <ClientLogosMarquee logos={logos} label={m.trustedBy} />
+              <ClientLogosMarquee logos={clientLogos} label={m.trustedBy} />
             </section>
           ) : null}
 

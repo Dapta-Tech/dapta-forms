@@ -211,6 +211,18 @@ export interface HubSpotProperty {
 }
 
 /** The property-picker response: disabled (no server token) or the property list. */
+/** One side-effect that never landed, as the admin surfaces it. */
+export interface FailedDelivery {
+  id: string;
+  kind: string;
+  /** `failed` = retries exhausted; `skipped` = a permanent gap, never retried. */
+  status: 'failed' | 'skipped';
+  lastError: string | null;
+  attempts: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
 export type HubSpotPropertiesResponse =
   | { enabled: false; reason: string }
   | { enabled: true; cached: boolean; properties: HubSpotProperty[] };
@@ -366,6 +378,9 @@ export const adminApi = {
   // Integrations
   hubspotProperties: () =>
     req<HubSpotPropertiesResponse>('GET', '/v1/integrations/hubspot/properties'),
+  /** Deliveries for this form that ended without landing (the failure log). */
+  formDeliveries: (id: string) =>
+    req<{ items: FailedDelivery[] }>('GET', `/v1/forms/${id}/deliveries`),
   /** Calendly event types for the scheduler step's picker (per-account token). */
   calendlyEventTypes: () =>
     req<CalendlyEventTypesResponse>('GET', '/v1/integrations/calendly/event-types'),

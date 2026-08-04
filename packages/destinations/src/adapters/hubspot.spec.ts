@@ -56,6 +56,41 @@ describe('HubspotDestination.buildProperties', () => {
     expect(props.submitted_date).toBe(String(Date.UTC(2026, 0, 15)));
   });
 
+  // One answer, several properties. The workaround before this was a SECOND
+  // hubspot destination — which the integrations screen cannot see and the
+  // booking sync never delivers, so it wrote nothing at all.
+  it('fans one answer out to every property it targets', () => {
+    const dest = new HubspotDestination({
+      token: 't',
+      fieldMappings: { goal: ['typeform_use_case', 'goal_ai_agent'], name: 'firstname' },
+      valueMaps: { goal: { leads_frios: 'AI Calls' } },
+    });
+    const props = dest.buildProperties(ctx({ data: { goal: 'leads_frios', name: 'Ada' } }));
+    // The value map is per STEP, so both properties receive the TRANSLATED
+    // value — sending the raw slug to one of them is the bug this replaces.
+    expect(props.typeform_use_case).toBe('AI Calls');
+    expect(props.goal_ai_agent).toBe('AI Calls');
+    expect(props.firstname).toBe('Ada'); // a plain string still maps
+  });
+
+  it('resolves email when it is one of several properties an answer feeds', () => {
+    const dest = new HubspotDestination({
+      token: 't',
+      fieldMappings: { work: ['email', 'work_email'] },
+    });
+    expect(dest.resolveEmail(ctx({ data: { work: 'lead@acme.io' } }))).toBe('lead@acme.io');
+  });
+
+  it('drops blank targets instead of writing an empty property name', () => {
+    const dest = new HubspotDestination({
+      token: 't',
+      fieldMappings: { name: ['  ', 'firstname'], other: '   ' },
+    });
+    const props = dest.buildProperties(ctx({ data: { name: 'Ada', other: 'x' } }));
+    expect(props.firstname).toBe('Ada');
+    expect(Object.keys(props)).not.toContain('');
+  });
+
   it('omits the score property on a partial submission', () => {
     const dest = new HubspotDestination({ token: 't', ...MAPPING });
     expect(dest.buildProperties(ctx({ phase: 'partial' })).lead_score).toBeUndefined();
