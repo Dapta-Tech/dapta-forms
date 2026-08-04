@@ -235,6 +235,36 @@ test.describe('V9 — rail menus open above the page on every admin surface', ()
     }
   });
 
+  test('the open drawer contains assistive tech with inert, not aria-modal', async ({ page }) => {
+    // The menus portal to <body>, outside the drawer. aria-modal would hide
+    // them from screen readers on mobile and nowhere else, so the drawer leans
+    // on inert siblings instead — which leaves the portal reachable. Portalling
+    // into the drawer to keep aria-modal is not an option: its overflow clips
+    // the panel, which the hit test above catches.
+    await page.setViewportSize({ width: 375, height: 812 });
+    await page.goto('/admin/forms');
+    await page.getByRole('button', { name: /nav|menu|navegación/i }).first().click();
+    await expect(triggerFor(page, 'app-switcher')).toBeInViewport();
+
+    const state = await page.evaluate(() => {
+      const drawer = document.querySelector('aside[role="dialog"]');
+      const rail = document.querySelector('aside:not([role="dialog"])');
+      return {
+        ariaModal: drawer?.getAttribute('aria-modal') ?? null,
+        drawerInert: drawer?.hasAttribute('inert') ?? null,
+        headerInert: document.querySelector('header')?.hasAttribute('inert') ?? null,
+        mainInert: document.querySelector('main')?.hasAttribute('inert') ?? null,
+        railDisplay: rail ? getComputedStyle(rail).display : null,
+      };
+    });
+
+    expect(state.ariaModal, 'the drawer does not hide the portalled menus').toBeNull();
+    expect(state.drawerInert, 'the open drawer itself is reachable').toBe(false);
+    expect(state.headerInert, 'the top bar is inert behind it').toBe(true);
+    expect(state.mainInert, 'and so is the page').toBe(true);
+    expect(state.railDisplay, 'the desktop rail is out of the tree at this width').toBe('none');
+  });
+
   test('the menu follows its trigger while the page scrolls', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 700 });
     await page.goto('/admin/settings');
@@ -252,6 +282,66 @@ test.describe('V9 — rail menus open above the page on every admin surface', ()
     const after = await menu.boundingBox();
     expect(Math.abs((after?.y ?? 0) - (before?.y ?? 0)), 'the panel stays glued to its trigger').toBeLessThan(4);
     await expectMenuOnTop(page, 'app-switcher', '/admin/settings after scrolling');
+  });
+
+  test('a panel taller than the space available clamps and scrolls in place', async ({ page }) => {
+    // The panel is position:fixed, so nothing the user scrolls can bring an
+    // overflowing one back — it has to scroll inside itself. Squeezing the
+    // viewport is the deterministic way to reach that branch; the QA database
+    // only ever seeds a handful of workspaces, so the panel always fit before.
+    await page.setViewportSize({ width: 1440, height: 160 });
+    await page.goto('/admin/forms');
+    await triggerFor(page, 'app-switcher').click();
+    const menu = page.getByTestId('app-switcher-menu');
+    await expect(menu).toBeVisible();
+
+    const geometry = await page.evaluate(() => {
+      const el = document.querySelector<HTMLElement>('[data-testid="app-switcher-menu"]')!;
+      const rect = el.getBoundingClientRect();
+      return {
+        top: rect.top,
+        bottom: rect.bottom,
+        viewport: window.innerHeight,
+        clientHeight: el.clientHeight,
+        scrollHeight: el.scrollHeight,
+        overflowY: getComputedStyle(el).overflowY,
+      };
+    });
+
+    expect(geometry.top, 'the panel starts inside the viewport').toBeGreaterThanOrEqual(0);
+    expect(geometry.bottom, 'and it ends inside it too').toBeLessThanOrEqual(geometry.viewport);
+    expect(geometry.overflowY, 'the overflow scrolls rather than spilling').toBe('auto');
+    expect(
+      geometry.scrollHeight,
+      'this viewport really is too short for the panel — otherwise the test proves nothing',
+    ).toBeGreaterThan(geometry.clientHeight);
+
+    // The content below the fold is reachable by scrolling the panel itself.
+    const last = menu.locator('[role="menuitem"]').last();
+    await last.scrollIntoViewIfNeeded();
+    await expect(last).toBeInViewport();
+  });
+
+  test('dismissing hands focus back to the trigger', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto('/admin/forms');
+    const trigger = triggerFor(page, 'app-switcher');
+    await trigger.click();
+    const menu = page.getByTestId('app-switcher-menu');
+    await expect(menu).toBeVisible();
+
+    // autoFocus only works once the panel is placed — before the fix it ran a
+    // frame early, against a visibility:hidden panel, and silently did nothing.
+    await expect(
+      menu.locator('[role="menuitem"]').first(),
+      'focus lands on the first item once the panel is placed',
+    ).toBeFocused();
+
+    await page.keyboard.press('Escape');
+    await expect(menu).toBeHidden();
+    // The panel is a portal at the end of its container, so without an explicit
+    // hand-back the caret is left on the document, nowhere near the rail.
+    await expect(trigger, 'Escape returns focus to the trigger').toBeFocused();
   });
 
   test('clicking the page dismisses the menu', async ({ page }) => {

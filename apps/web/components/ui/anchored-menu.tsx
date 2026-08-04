@@ -33,13 +33,27 @@ import { createPortal } from 'react-dom';
  *     included. That is the builder screenshot: the switcher opens, and the
  *     question cards sit over it.
  *
- * A portal to `document.body` is what fixes (2): the panel becomes a child of
- * the ROOT stacking context, where its z-index finally means what it says.
+ * A portal out of the rail is what fixes (2): the panel becomes a child of the
+ * ROOT stacking context, where its z-index finally means what it says.
  * `position: fixed` + viewport coordinates then fixes (1).
  *
- * Because the panel is no longer a DOM descendant of the trigger, dismissal
- * has to test the trigger and the panel separately — a `wrapRef.contains()`
- * check would close the menu the instant you clicked an item inside it.
+ * The target is always `document.body`, including on mobile. Portalling into
+ * the drawer instead — to keep the panel inside its `aria-modal` subtree — was
+ * tried and reverted: the drawer is 82vw, the panel is wider than what is left
+ * of it, and the drawer's `overflow-y-auto` (which computes `overflow-x` to
+ * `auto` with it) clips the overhang straight back off. The mobile hit test
+ * catches it as the backdrop winning `elementFromPoint`. Assistive tech reaches
+ * the panel because the drawer relies on `inert` siblings rather than
+ * `aria-modal` for containment — see admin-shell.tsx.
+ *
+ * Because the panel is no longer a DOM descendant of the trigger, three things
+ * that a normal `absolute` popup gets for free have to be done by hand:
+ * dismissal tests the trigger and the panel separately (a `wrapRef.contains()`
+ * check would close the menu the instant you clicked an item inside it), focus
+ * is handed back to the trigger on the way out (the panel sits at the end of
+ * `<body>`, so otherwise the caret is left on the document), and the panel is
+ * clamped to the viewport in BOTH axes — being `fixed`, it cannot be scrolled
+ * back into view, so anything that does not fit has to scroll inside itself.
  *
  * WAI-ARIA menu-button pattern: Escape and outside click dismiss, and focus
  * optionally lands on the first item when it opens.
@@ -49,6 +63,12 @@ import { createPortal } from 'react-dom';
 const EDGE = 8;
 /** Space between the trigger and the panel. */
 const GAP = 6;
+/**
+ * Below this a panel is a slit, not a menu. When neither side of the trigger
+ * can hold at least this much, the panel takes the full usable viewport and
+ * overlaps the trigger instead — the same trade a native `<select>` makes.
+ */
+const MIN_HEIGHT = 160;
 
 /**
  * Above every popover, dropdown and modal inside `<main>` (all `z-50`), below
@@ -56,6 +76,13 @@ const GAP = 6;
  * confirmation must never end up under a workspace list.
  */
 const Z_INDEX = 55;
+
+interface Box {
+  top: number;
+  left: number;
+  width: number;
+  maxHeight: number;
+}
 
 export function AnchoredMenu({
   anchorRef,
@@ -77,9 +104,9 @@ export function AnchoredMenu({
   label: string;
   /** Panel width in px, or `'anchor'` to match the trigger. */
   width?: number | 'anchor';
-  /** Floor for `width: 'anchor'` — the collapsed rail's trigger is 48px wide. */
+  /** Floor for `width: 'anchor'` only — the collapsed rail's trigger is 48px. */
   minWidth?: number;
-  /** Move focus to the first `[role="menuitem"]` on open. */
+  /** Move focus to the first `[role="menuitem"]` once the panel is placed. */
   autoFocus?: boolean;
   /** Padding/layout for the panel; the frame and z-index are fixed here. */
   className?: string;
@@ -90,13 +117,17 @@ export function AnchoredMenu({
   const menuRef = useRef<HTMLDivElement>(null);
   // Portals need a DOM to target, which the server render does not have.
   const [mounted, setMounted] = useState(false);
-  const [box, setBox] = useState<{ top: number; left: number; width: number } | null>(null);
+  const [box, setBox] = useState<Box | null>(null);
 
   useEffect(() => setMounted(true), []);
 
   // Kept in a ref so `place` stays referentially stable across renders.
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
+
+  // A dismissal that was a click elsewhere already put focus where the user
+  // asked for it; only the other exits reclaim it. See the focus effect below.
+  const pointerDismissRef = useRef(false);
 
   const place = useCallback(() => {
     const anchor = anchorRef.current;
@@ -109,15 +140,42 @@ export function AnchoredMenu({
       closeRef.current();
       return;
     }
-    const w = Math.max(minWidth, width === 'anchor' ? rect.width : width);
+
+    const w = width === 'anchor' ? Math.max(minWidth, rect.width) : width;
     // Clamp so the panel never leaves the viewport on a narrow screen.
     const left = Math.max(EDGE, Math.min(rect.left, window.innerWidth - w - EDGE));
-    const height = menuRef.current?.offsetHeight ?? 0;
-    const below = rect.bottom + GAP;
-    // Flip above only when it would otherwise overflow the bottom AND there is
-    // room up there — a long workspace list near the footer stays readable.
-    const flip = height > 0 && below + height > window.innerHeight - EDGE && rect.top - GAP - height > EDGE;
-    setBox({ top: flip ? rect.top - GAP - height : below, left, width: w });
+
+    // Measure the CONTENT, not the rendered box: once a max-height is applied
+    // the rendered box is the clamp itself, and reading that back would ratchet
+    // the panel smaller on every pass. scrollHeight ignores the clamp; the
+    // offset/client delta adds the borders it leaves out.
+    const el = menuRef.current;
+    const natural = el ? el.scrollHeight + (el.offsetHeight - el.clientHeight) : 0;
+
+    const viewport = window.innerHeight;
+    const spaceBelow = viewport - EDGE - (rect.bottom + GAP);
+    const spaceAbove = rect.top - GAP - EDGE;
+
+    if (Math.max(spaceBelow, spaceAbove) < MIN_HEIGHT) {
+      // A very short window, or a trigger stranded mid-viewport. Overlapping
+      // the trigger beats both alternatives: a panel squeezed into a slit, or
+      // one hanging off an edge that — being `fixed` — no scroll can recover.
+      setBox({ top: EDGE, left, width: w, maxHeight: viewport - EDGE * 2 });
+      return;
+    }
+
+    // Prefer below. Flip up only when below cannot hold the content AND above
+    // is genuinely roomier, so a long workspace list near the footer opens
+    // toward the space that exists.
+    const flip = natural > spaceBelow && spaceAbove > spaceBelow;
+    const maxHeight = flip ? spaceAbove : spaceBelow;
+    const height = Math.min(natural, maxHeight);
+    setBox({
+      top: flip ? rect.top - GAP - height : rect.bottom + GAP,
+      left,
+      width: w,
+      maxHeight,
+    });
   }, [anchorRef, minWidth, width]);
 
   // Re-place instead of closing on scroll: the rail itself scrolls
@@ -150,6 +208,7 @@ export function AnchoredMenu({
       // immediately reopen. The panel is a portal, so it needs its own test.
       if (anchorRef.current?.contains(target)) return;
       if (menuRef.current?.contains(target)) return;
+      pointerDismissRef.current = true;
       onClose();
     };
     const onKey = (e: KeyboardEvent) => {
@@ -163,9 +222,32 @@ export function AnchoredMenu({
     };
   }, [open, onClose, anchorRef]);
 
+  // Focus lands on the first item only once the panel is actually placed:
+  // until then it is `visibility: hidden`, where `.focus()` is a silent no-op
+  // that never retries. `placed` flips exactly once per open.
+  const placed = box !== null;
   useEffect(() => {
-    if (open && autoFocus) menuRef.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus();
-  }, [open, autoFocus]);
+    if (!open || !placed || !autoFocus) return;
+    menuRef.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus();
+  }, [open, placed, autoFocus]);
+
+  // Hand focus back on the way out. The panel is a portal at the end of
+  // `<body>`, so when it unmounts the caret is left on the document instead of
+  // on the control that opened it — and the tab order behind it is nowhere
+  // near the rail.
+  useEffect(() => {
+    if (!open) return;
+    pointerDismissRef.current = false;
+    const trigger = anchorRef.current;
+    return () => {
+      if (pointerDismissRef.current) return;
+      const active = document.activeElement;
+      // Either ordering of unmount-vs-cleanup: focus is still on an item, or
+      // it has already fallen through to the document.
+      const adrift = !active || active === document.body || !!menuRef.current?.contains(active);
+      if (adrift) trigger?.focus?.();
+    };
+  }, [open, anchorRef]);
 
   if (!mounted || !open) return null;
 
@@ -180,6 +262,12 @@ export function AnchoredMenu({
         top: box?.top ?? 0,
         left: box?.left ?? 0,
         width: box?.width,
+        maxHeight: box?.maxHeight,
+        // `fixed` means no ancestor scroll can ever bring an overflowing panel
+        // back — whatever does not fit has to scroll in place. Inline so it
+        // wins over an `overflow-hidden` in the caller's className, which stays
+        // in force on the x axis and keeps the rounded corners clipping.
+        overflowY: 'auto',
         // The first paint measures the panel to decide top/left; showing it at
         // 0,0 for that frame would read as a flicker in the corner.
         visibility: box ? 'visible' : 'hidden',

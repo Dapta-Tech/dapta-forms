@@ -328,8 +328,16 @@ export function AdminShell({
           drawerOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
         role="dialog"
-        aria-modal="true"
         aria-label="Primary"
+        // Containment is `inert` on everything else, NOT aria-modal. The rail's
+        // popup menus render through a portal at the end of <body> — they have
+        // to, or the drawer's own overflow clips them (see anchored-menu.tsx) —
+        // and aria-modal means "hide everything outside this subtree", which
+        // would hide those menus from assistive tech on mobile and nowhere
+        // else. While the drawer is open the header and <main> are inert and
+        // the desktop rail is display:none, so the only things reachable are
+        // the drawer and the menu it opened. That is the containment aria-modal
+        // was there to express, minus the collateral damage.
         inert={!drawerOpen || undefined}
       >
         <div className="flex items-center gap-2 px-2">
