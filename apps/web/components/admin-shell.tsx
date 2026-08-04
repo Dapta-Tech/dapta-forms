@@ -192,6 +192,7 @@ export function AdminShell({
         <button
           type="button"
           onClick={toggleCollapse}
+          data-testid="rail-toggle"
           aria-expanded={!collapsed}
           aria-label={collapsed ? messages.expand : messages.collapse}
           title={collapsed ? messages.expand : messages.collapse}
