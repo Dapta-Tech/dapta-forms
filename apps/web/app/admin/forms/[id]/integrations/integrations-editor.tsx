@@ -2,7 +2,7 @@
 
 import { propertiesFor } from '@quill/types';
 import {
-  INVITEE_FIELDS,
+  bookingFieldsFor,
   emailMappingsConflictingWithScheduler,
   type ContactKeyReadiness,
 } from '@quill/engine';
@@ -18,6 +18,7 @@ import { Switch } from '@/components/ui/switch';
 import { ProviderLogo, type LogoProvider } from '@/components/ui/provider-logo';
 import { useToast } from '@/components/toast';
 import { cn } from '@/lib/cn';
+import { bookingLabel } from '@/lib/booking-fields';
 import type {
   HubSpotPropertiesResponse,
   WebhookPingReason,
@@ -999,12 +1000,15 @@ function HubspotCard({
   const systemKeyOptions = useMemo<SystemKey[]>(() => {
     const utm: SystemKey[] = UTM_KEYS.map((k) => ({ key: k, label: k }));
     if (emailSource?.kind !== 'scheduler') return utm;
+    // One list with the builder's question panel, so neither screen can offer a
+    // booking field the other has never heard of. The meeting time is dropped
+    // here: it lives under the scheduler's own step key and is already a
+    // QUESTION row, so keeping it would put the same mapping on screen twice.
     return [
       ...utm,
-      { key: INVITEE_FIELDS.name, label: m.inviteeName },
-      { key: INVITEE_FIELDS.first_name, label: m.inviteeFirstName },
-      { key: INVITEE_FIELDS.last_name, label: m.inviteeLastName },
-      { key: INVITEE_FIELDS.phone, label: m.inviteePhone },
+      ...bookingFieldsFor(emailSource.key)
+        .filter((f) => f.kind !== 'start_time')
+        .map((f) => ({ key: f.key, label: bookingLabel(f.kind, m) })),
     ];
   }, [emailSource, m]);
 

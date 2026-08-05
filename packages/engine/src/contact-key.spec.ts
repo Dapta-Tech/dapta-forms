@@ -5,6 +5,8 @@
  */
 import { describe, it, expect } from 'vitest';
 import {
+  INVITEE_FIELDS,
+  bookingFieldsFor,
   contactKeyReadiness,
   emailMappingsConflictingWithScheduler,
   emailSourceFor,
@@ -82,5 +84,48 @@ describe('emailMappingsConflictingWithScheduler', () => {
       emailMappingsConflictingWithScheduler({ kind: 'question', key: 'email' }, { email: 'email' }),
     ).toEqual([]);
     expect(emailMappingsConflictingWithScheduler(null, { work: 'email' })).toEqual([]);
+  });
+});
+
+describe('bookingFieldsFor', () => {
+  it('leads with the scheduler own key — that is where the meeting time lands', () => {
+    const fields = bookingFieldsFor('book');
+    expect(fields[0]).toEqual({ key: 'book', kind: 'start_time' });
+  });
+
+  it('carries the invitee identity under the @-prefixed keys the sync writes', () => {
+    expect(bookingFieldsFor('book')).toEqual([
+      { key: 'book', kind: 'start_time' },
+      { key: INVITEE_FIELDS.name, kind: 'name' },
+      { key: INVITEE_FIELDS.first_name, kind: 'first_name' },
+      { key: INVITEE_FIELDS.last_name, kind: 'last_name' },
+      { key: INVITEE_FIELDS.phone, kind: 'phone' },
+    ]);
+  });
+
+  // The address is the contact KEY the booking supplies. Offering it as a
+  // mappable field is what `emailMappingsConflictingWithScheduler` exists to
+  // catch after the fact — the list must not put it there in the first place.
+  it('never offers the invitee email as a mappable field', () => {
+    const keys = bookingFieldsFor('book').map((f) => f.key);
+    expect(keys).not.toContain('email');
+    expect(keys.some((k) => k.toLowerCase().includes('email'))).toBe(false);
+  });
+
+  // Only the first entry is the step's; the rest are fixed system keys, so two
+  // schedulers in one form share the invitee rows and differ on the time row.
+  it('rekeys only the meeting time when the scheduler step is renamed', () => {
+    const before = bookingFieldsFor('book');
+    const after = bookingFieldsFor('demo_slot');
+    expect(after[0]!.key).toBe('demo_slot');
+    expect(after.slice(1)).toEqual(before.slice(1));
+  });
+
+  // `@` is outside the step-key grammar, so a question can never collide with
+  // one of these — the guarantee INVITEE_FIELDS documents, asserted here.
+  it('keeps the system keys outside the step-key grammar', () => {
+    for (const f of bookingFieldsFor('book').slice(1)) {
+      expect(f.key.startsWith('@')).toBe(true);
+    }
   });
 });
