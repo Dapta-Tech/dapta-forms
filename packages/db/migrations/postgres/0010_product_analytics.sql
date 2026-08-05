@@ -1,0 +1,33 @@
+-- Product analytics groundwork — additive.
+--
+-- Three nullable columns that let the product answer questions the schema could
+-- not answer before. No table is rewritten and no existing row is touched: every
+-- column starts NULL and NULL is a meaningful "not known", never a default that
+-- misreports history.
+--
+--   account.attribution   — first-touch acquisition context for the account, as
+--                           a JSON blob: utm_source/medium/campaign/content/term,
+--                           referrer, landing_path, first_seen_at. Captured in the
+--                           browser on the FIRST visit (landing or app) and sent
+--                           with signup; persisted here so attribution survives a
+--                           cookie wipe and can be joined in SQL. NULL = signed up
+--                           before this shipped, or arrived with no context at all
+--                           (direct traffic) — the two are distinguished by the
+--                           account's created_at, not by this column.
+--
+--   form.created_by       — member.id of whoever created the form; NULL for forms
+--                           created before this shipped, and for any path that
+--                           creates a form without a member principal (API key).
+--                           Deliberately NOT a foreign key: the platform tables
+--                           carry no FK constraints, and a deleted member must not
+--                           cascade into deleting someone's form. Ownership of a
+--                           form stays with account_id — this column is authorship,
+--                           for per-user analytics, never for authorization.
+--
+--   member.last_seen_at   — epoch-ms of the member's most recent authenticated
+--                           request. NULL = never seen since this shipped. Turns
+--                           "N members exist" into "N exist, M came back", which
+--                           member.created_at alone cannot express.
+ALTER TABLE account ADD COLUMN IF NOT EXISTS attribution JSONB;
+ALTER TABLE form ADD COLUMN IF NOT EXISTS created_by TEXT;
+ALTER TABLE member ADD COLUMN IF NOT EXISTS last_seen_at BIGINT;

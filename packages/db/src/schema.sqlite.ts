@@ -26,6 +26,8 @@ export const account = sqliteTable('account', {
   vanitySlug: text('vanity_slug').unique(),
   daptaEntitlement: text('dapta_entitlement'),
   entitlementCheckedAt: integer('entitlement_checked_at'),
+  /** First-touch acquisition context (TEXT JSON: utm_*, referrer, landing_path); NULL = unknown (see 0010). */
+  attribution: text('attribution'),
   createdAt: integer('created_at').notNull(),
 });
 
@@ -51,6 +53,8 @@ export const member = sqliteTable(
     locale: text('locale'),
     /** The public member page, or NULL when there is none (see 0008). */
     profile: text('profile'),
+    /** Epoch-ms of the member's last authenticated request; NULL = never seen (see 0010). */
+    lastSeenAt: integer('last_seen_at'),
     createdAt: integer('created_at').notNull(),
   },
   (t) => ({
@@ -145,6 +149,8 @@ export const form = sqliteTable(
     brandBackup: text('brand_backup'),
     /** Epoch-ms of the last brand-kit apply; NULL when never applied or reverted. */
     brandAppliedAt: integer('brand_applied_at'),
+    /** member.id of the author; NULL for pre-0010 forms and API-key creates. Authorship, never authorization. */
+    createdBy: text('created_by'),
     createdAt: integer('created_at').notNull(),
     updatedAt: integer('updated_at').notNull(),
   },
