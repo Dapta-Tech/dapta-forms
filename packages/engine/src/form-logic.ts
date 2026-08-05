@@ -786,6 +786,44 @@ export function emailMappingsConflictingWithScheduler(
     .map(([stepKey]) => stepKey);
 }
 
+/** Which fact of a booking a {@link BookingField} carries. */
+export type BookingFieldKind = 'start_time' | 'name' | 'first_name' | 'last_name' | 'phone';
+
+/** One fact a booking produces, as the key it arrives under in the submission. */
+export interface BookingField {
+  /** The submission-data key — exactly what `fieldMappings` is keyed by. */
+  key: string;
+  kind: BookingFieldKind;
+}
+
+/**
+ * Everything a booking on `schedulerKey` can send to a CRM.
+ *
+ * A scheduler's OWN step key holds the meeting start time; {@link INVITEE_FIELDS}
+ * hold who booked. Both already reach the CRM through the ordinary `fieldMappings`
+ * — but nothing ever said so. The builder offered one unlabelled picker on the
+ * scheduler's key, so an author could map "the booking" without learning the value
+ * behind it is a timestamp, and the invitee's name and phone were reachable only
+ * from the Connect screen. One list here so the two screens cannot drift on what a
+ * booking actually offers.
+ *
+ * The invitee's EMAIL is deliberately absent: it is the contact key the booking
+ * supplies, and pointing any field at `email` takes that role over and stops the
+ * sync — see {@link emailMappingsConflictingWithScheduler}.
+ *
+ * `kind` names the fact and the CALLER supplies the label: this package holds no
+ * user-facing copy.
+ */
+export function bookingFieldsFor(schedulerKey: string): BookingField[] {
+  return [
+    { key: schedulerKey, kind: 'start_time' },
+    { key: INVITEE_FIELDS.name, kind: 'name' },
+    { key: INVITEE_FIELDS.first_name, kind: 'first_name' },
+    { key: INVITEE_FIELDS.last_name, kind: 'last_name' },
+    { key: INVITEE_FIELDS.phone, kind: 'phone' },
+  ];
+}
+
 /**
  * The visibility operators offered for a referenced field's TYPE — the builder
  * shows exactly these in the operator dropdown, and they are the only ops the
