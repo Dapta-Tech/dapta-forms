@@ -17,8 +17,12 @@ export const account = pgTable('account', {
   vanitySlug: text('vanity_slug').unique(),
   daptaEntitlement: text('dapta_entitlement'),
   entitlementCheckedAt: bigint('entitlement_checked_at', { mode: 'number' }),
-  /** First-touch acquisition context (utm_*, referrer, landing_path); NULL = unknown (see 0010). */
+  /** RESERVED — first-touch acquisition context; nothing writes it yet (see 0010). */
   attribution: jsonb('attribution'),
+  /** Milestone CLAIM: epoch-ms of the first completed submission. Written once, via UPDATE…WHERE IS NULL. */
+  activatedAt: bigint('activated_at', { mode: 'number' }),
+  /** Milestone CLAIM: epoch-ms of the first form view. Same write-once discipline. */
+  firstViewedAt: bigint('first_viewed_at', { mode: 'number' }),
   createdAt: bigint('created_at', { mode: 'number' }).notNull(),
 });
 

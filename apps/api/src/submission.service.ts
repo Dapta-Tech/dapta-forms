@@ -8,8 +8,8 @@ import {
   upsertSubmission,
   recordFormEvent,
   listSubmissions,
-  isFirstAccountCompletion,
-  isFirstAccountFormView,
+  claimAccountActivation,
+  claimAccountFirstView,
   getAccountOwner,
   type SubmissionRow,
 } from '@quill/db';
@@ -180,12 +180,15 @@ export class SubmissionService {
     // browser, and the account owner (who the event is about) is not there. The
     // owner is resolved from the form's account, never from the respondent.
     //
-    // Deduplicated against the database, not a cookie or a client flag, so it
-    // survives a dropped event and a replayed row: an account activates exactly
-    // once, on its first completed submission, no matter how many follow. The
-    // check runs only when analytics is on, so a fork pays nothing for it.
+    // Exactly once per account, enforced by an atomic CLAIM on the account row
+    // (`UPDATE … WHERE activated_at IS NULL`) rather than by asking whether an
+    // earlier answer exists. That question is a read-then-act: two answers
+    // landing together each see the other and both decline, and the account can
+    // then never activate; a re-submitted session double-fires. Both were
+    // reproduced against this service. The claim has neither failure mode and is
+    // idempotent against a replayed row. Runs only when analytics is on.
     if (!input.partial && this.productAnalytics?.enabled) {
-      const first = await isFirstAccountCompletion(this.db, form.accountId, row.id);
+      const first = await claimAccountActivation(this.db, form.accountId);
       if (first) {
         const owner = await getAccountOwner(this.db, form.accountId);
         if (owner?.email) {
@@ -207,14 +210,15 @@ export class SubmissionService {
     const form = await getPublishedForm(this.db, accountCode, slug);
     if (!form) return { error: 'NOT_FOUND', message: 'Form not found.', status: 404 };
 
-    // Checked BEFORE the insert, or the view being recorded would find itself.
-    // Gated on `type === 'view'` and on analytics being on, so the ordinary hot
-    // path (step_view/step_complete, and every deployment without a key) does
-    // not run an extra query per event.
+    // Same atomic claim as activation, for the same reason: two visitors opening
+    // two forms at the same instant must produce ONE event. Gated on
+    // `type === 'view'` and on analytics being on, so the ordinary hot path
+    // (step_view/step_complete, and every deployment without a key) never runs
+    // the extra write.
     const firstEverView =
       input.type === 'view' &&
       this.productAnalytics?.enabled === true &&
-      (await isFirstAccountFormView(this.db, form.accountId, form.id));
+      (await claimAccountFirstView(this.db, form.accountId));
 
     await recordFormEvent(this.db, {
       formId: form.id,

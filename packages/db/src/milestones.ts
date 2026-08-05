@@ -16,59 +16,71 @@ import { sql } from 'drizzle-orm';
 import type { Db } from './client';
 
 /**
- * True when `submissionId` is the FIRST completed submission across every form
- * this account owns — the activation moment.
+ * Claim a write-once milestone on `account`, atomically.
  *
- * Excludes the submission itself so it can be called after the row is written
- * (which it must be: activation is only real once the answer is durable).
- * Partials never count — `completed_at IS NULL` is someone who started and left.
+ * Returns true for EXACTLY ONE caller, ever — the one whose UPDATE found the
+ * column still NULL. Everyone after gets false, including concurrent callers,
+ * because the guard lives in the WHERE clause and the database serializes the
+ * row write. `RETURNING id` is how the caller learns it won: `db.run` reports no
+ * affected-row count on either dialect, so the claim has to hand back a row.
+ *
+ * This replaces the obvious "does an earlier one already exist?" query, which is
+ * a read-then-act and fails BOTH ways — verified against the real service, not
+ * reasoned about:
+ *
+ *   - Two answers committing at the same instant each SEE the other and both
+ *     decline. The account now has completions forever, so every later check
+ *     also declines: it can never activate. (Observed: 0 events.)
+ *   - A re-submitted session upserts the SAME row, which the check excludes
+ *     from itself, so the milestone fires again. (Observed: 2 events on a
+ *     double-click.)
+ *
+ * A claim has neither failure mode and needs no exclusion, so it is also
+ * idempotent against a replayed outbox row.
  */
-export async function isFirstAccountCompletion(
+async function claimAccountMilestone(
   db: Db,
   accountId: string,
-  submissionId: string,
+  column: 'activated_at' | 'first_viewed_at',
+  now: number,
 ): Promise<boolean> {
-  const earlier = await db.get<{ one: number }>(
-    sql`SELECT 1 AS one
-        FROM submission s JOIN form f ON f.id = s.form_id
-        WHERE f.account_id = ${accountId}
-          AND s.completed_at IS NOT NULL
-          AND s.id <> ${submissionId}
-        LIMIT 1`,
+  // Interpolated, not parameterized: a column name cannot be a bind parameter,
+  // and the value is a closed union chosen by this module — never user input.
+  const col = sql.raw(column);
+  const claimed = await db.get<{ id: string }>(
+    sql`UPDATE account SET ${col} = ${now}
+        WHERE id = ${accountId} AND ${col} IS NULL
+        RETURNING id`,
   );
-  return !earlier;
+  return Boolean(claimed);
 }
 
 /**
- * True when this account has never had a form VIEWED before — its first taste
- * of real traffic.
+ * Claim ACTIVATION for an account: its first completed submission ever.
  *
- * Two-step on purpose. The per-form check runs first because it is served by
- * `form_event_form_idx (form_id, created_at)` and answers the overwhelmingly
- * common case — a form that already has views — without touching the join. Only
- * a form receiving its very first view pays for the account-wide scan, which
- * happens at most once per form, ever.
- *
- * Call BEFORE inserting the view being recorded, or it will find itself.
+ * Call AFTER the submission row is durable — activation is only real once the
+ * answer is stored — and only for a completed submission. A partial is someone
+ * who started and left, which is not an answer.
  */
-export async function isFirstAccountFormView(
+export function claimAccountActivation(
   db: Db,
   accountId: string,
-  formId: string,
+  now: number = Date.now(),
 ): Promise<boolean> {
-  const onThisForm = await db.get<{ one: number }>(
-    sql`SELECT 1 AS one FROM form_event
-        WHERE form_id = ${formId} AND type = 'view' LIMIT 1`,
-  );
-  if (onThisForm) return false;
+  return claimAccountMilestone(db, accountId, 'activated_at', now);
+}
 
-  const onAnyForm = await db.get<{ one: number }>(
-    sql`SELECT 1 AS one
-        FROM form_event e JOIN form f ON f.id = e.form_id
-        WHERE f.account_id = ${accountId} AND e.type = 'view'
-        LIMIT 1`,
-  );
-  return !onAnyForm;
+/**
+ * Claim FIRST VIEW for an account: the first time any of its forms met a real
+ * visitor. Same write-once discipline as activation — two people opening two
+ * forms at the same instant produce one event, not two.
+ */
+export function claimAccountFirstView(
+  db: Db,
+  accountId: string,
+  now: number = Date.now(),
+): Promise<boolean> {
+  return claimAccountMilestone(db, accountId, 'first_viewed_at', now);
 }
 
 /**

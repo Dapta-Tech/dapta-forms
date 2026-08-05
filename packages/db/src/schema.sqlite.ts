@@ -26,8 +26,12 @@ export const account = sqliteTable('account', {
   vanitySlug: text('vanity_slug').unique(),
   daptaEntitlement: text('dapta_entitlement'),
   entitlementCheckedAt: integer('entitlement_checked_at'),
-  /** First-touch acquisition context (TEXT JSON: utm_*, referrer, landing_path); NULL = unknown (see 0010). */
+  /** RESERVED — first-touch acquisition context (TEXT JSON); nothing writes it yet (see 0010). */
   attribution: text('attribution'),
+  /** Milestone CLAIM: epoch-ms of the first completed submission. Written once, via UPDATE…WHERE IS NULL. */
+  activatedAt: integer('activated_at'),
+  /** Milestone CLAIM: epoch-ms of the first form view. Same write-once discipline. */
+  firstViewedAt: integer('first_viewed_at'),
   createdAt: integer('created_at').notNull(),
 });
 

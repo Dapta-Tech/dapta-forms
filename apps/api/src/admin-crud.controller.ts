@@ -246,7 +246,14 @@ export class AdminCrudController {
   @HttpCode(201)
   async duplicateForm(@Req() req: ReqLike, @Param('id') id: string) {
     const p = await this.auth.resolveHost(req);
-    return maskForm(unwrapCrud(await duplicateForm(this.db, p.accountId, id)));
+    // Duplicating is the OTHER way a form is born in the builder. Without this
+    // it would be the one creation path with no author and no funnel event.
+    const copy = unwrapCrud(await duplicateForm(this.db, p.accountId, id, p.memberId));
+    await this.productAnalytics?.captureForMember('form_created', p, {
+      form_id: copy.id,
+      from_duplicate: true,
+    });
+    return maskForm(copy);
   }
 
   /**
@@ -261,12 +268,26 @@ export class AdminCrudController {
     // stamped, so after the call every publish looks like the first one.
     // Republishing an existing form is not a new conversion, and counting it as
     // one would make the funnel improve the more a happy customer edits.
-    const before = await getFormById(this.db, p.accountId, id);
+    // Gated: a deployment without analytics must not pay for this read.
+    const before = this.productAnalytics?.enabled
+      ? await getFormById(this.db, p.accountId, id)
+      : null;
     const published = unwrapCrud(await publishForm(this.db, p.accountId, id));
-    await this.productAnalytics?.captureForMember('form_published', p, {
-      form_id: id,
-      is_first_publish: before?.publishedAt == null,
-    });
+    // Only when the publish ACTUALLY happened. `publishForm` is a no-op when no
+    // draft is pending (it returns the row untouched, never stamping
+    // `published_at`), so capturing unconditionally would emit a first-publish
+    // conversion on every repeat call for a form that was never published.
+    //
+    // The test is "was a draft pending", NOT "did published_at change":
+    // `published_at` is `Date.now()`, so two publishes inside the same
+    // millisecond are indistinguishable and the second would be swallowed. A
+    // pending draft is the exact precondition `publishForm` itself branches on.
+    if (before?.draftConfig != null) {
+      await this.productAnalytics?.captureForMember('form_published', p, {
+        form_id: id,
+        is_first_publish: before?.publishedAt == null,
+      });
+    }
     return maskForm(published);
   }
 

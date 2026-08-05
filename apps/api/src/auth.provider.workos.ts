@@ -141,17 +141,26 @@ export class WorkOsAuthProvider implements AuthProvider {
         // the only difference is that a teammate created the row ahead of them.
         // The role is whatever the invite granted, so it is read back rather
         // than assumed. Never the account's first member: an invite implies one.
-        const invitedRole = await this.db.get<{ role: AccountRole }>(
-          sql`SELECT role FROM member WHERE id = ${invited.id} LIMIT 1`,
-        );
-        notifySignup(this.onSignup, this.log, {
-          accountId,
-          memberId: invited.id,
-          email,
-          role: invitedRole?.role ?? 'member',
-          isFirstMember: false,
-          fromInvite: true,
-        });
+        //
+        // Gated on there being an observer at all: with none wired (the fork
+        // default) this login must cost exactly what it did before. Scoped by
+        // account_id like every other member read here — `invited.id` was
+        // already resolved within the account, but a member query without that
+        // predicate is the pattern that eventually leaks one.
+        if (this.onSignup) {
+          const invitedRole = await this.db.get<{ role: AccountRole }>(
+            sql`SELECT role FROM member
+                WHERE id = ${invited.id} AND account_id = ${accountId} LIMIT 1`,
+          );
+          notifySignup(this.onSignup, this.log, {
+            accountId,
+            memberId: invited.id,
+            email,
+            role: invitedRole?.role ?? 'member',
+            isFirstMember: false,
+            fromInvite: true,
+          });
+        }
         return invited.id;
       }
     }

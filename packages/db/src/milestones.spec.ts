@@ -6,8 +6,8 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createDb, migrate, sql, type Db } from './index';
 import {
-  isFirstAccountCompletion,
-  isFirstAccountFormView,
+  claimAccountActivation,
+  claimAccountFirstView,
   getAccountOwner,
   touchMemberLastSeen,
 } from './milestones';
@@ -23,9 +23,6 @@ let db: Db;
  */
 let ACCOUNT: string;
 let OTHER_ACCOUNT: string;
-let F1: string;
-let F2: string;
-let F_OTHER: string;
 let n = 0;
 
 async function seedAccount(accountId: string, code: string): Promise<void> {
@@ -49,99 +46,76 @@ async function seedMember(
   );
 }
 
-async function seedForm(id: string, accountId: string): Promise<void> {
-  await db.run(
-    sql`INSERT INTO form (id, account_id, name, slug, config, created_at, updated_at)
-        VALUES (${id}, ${accountId}, ${id}, ${id}, '{}', 1000, 1000)`,
-  );
-}
-
-async function seedSubmission(id: string, formId: string, completedAt: number | null) {
-  await db.run(
-    sql`INSERT INTO submission (id, form_id, session_id, data, score, started_at, completed_at)
-        VALUES (${id}, ${formId}, ${id}, '{}', 0, 1000, ${completedAt})`,
-  );
-}
-
-async function seedView(id: string, formId: string, type = 'view'): Promise<void> {
-  await db.run(
-    sql`INSERT INTO form_event (id, form_id, session_id, type, created_at)
-        VALUES (${id}, ${formId}, ${id}, ${type}, 1000)`,
-  );
-}
-
 beforeEach(async () => {
   db = await createDb(process.env.DATABASE_URL ?? 'file::memory:');
   await migrate(db);
   const run = `${Date.now()}_${n++}`;
   ACCOUNT = `acc_a_${run}`;
   OTHER_ACCOUNT = `acc_b_${run}`;
-  F1 = `f1_${run}`;
-  F2 = `f2_${run}`;
-  F_OTHER = `fo_${run}`;
   // `code` is UNIQUE account-wide, so it has to be per-run too.
   await seedAccount(ACCOUNT, `a${run}`.slice(0, 20));
   await seedAccount(OTHER_ACCOUNT, `b${run}`.slice(0, 20));
-  await seedForm(F1, ACCOUNT);
-  await seedForm(F2, ACCOUNT);
-  await seedForm(F_OTHER, OTHER_ACCOUNT);
 });
 
 afterEach(() => {
   db.close?.();
 });
 
-describe('isFirstAccountCompletion — activation fires once per account', () => {
-  it('is true for the very first completed submission', async () => {
-    await seedSubmission(`s_1_${ACCOUNT}`, F1, 2000);
-    expect(await isFirstAccountCompletion(db, ACCOUNT, `s_1_${ACCOUNT}`)).toBe(true);
+describe('claimAccountActivation — exactly once, ever', () => {
+  it('the first caller wins', async () => {
+    expect(await claimAccountActivation(db, ACCOUNT, 2000)).toBe(true);
   });
 
-  it('is false for every submission after it, on ANY form of the account', async () => {
-    await seedSubmission(`s_1_${ACCOUNT}`, F1, 2000);
-    await seedSubmission(`s_2_${ACCOUNT}`, F2, 3000);
-    // Without this, an account that gets 1000 answers "activates" 1000 times
-    // and the funnel improves the more a happy customer succeeds.
-    expect(await isFirstAccountCompletion(db, ACCOUNT, `s_2_${ACCOUNT}`)).toBe(false);
+  it('every later caller loses', async () => {
+    await claimAccountActivation(db, ACCOUNT, 2000);
+    expect(await claimAccountActivation(db, ACCOUNT, 3000)).toBe(false);
+    expect(await claimAccountActivation(db, ACCOUNT, 4000)).toBe(false);
   });
 
-  it('ignores partials — starting and leaving is not an answer', async () => {
-    await seedSubmission(`s_partial_${ACCOUNT}`, F1, null);
-    await seedSubmission(`s_1_${ACCOUNT}`, F1, 2000);
-    expect(await isFirstAccountCompletion(db, ACCOUNT, `s_1_${ACCOUNT}`)).toBe(true);
+  it('CONCURRENT callers produce exactly one winner', async () => {
+    // The bug this replaced: a read-then-act check had both callers see the
+    // other's row and BOTH decline, leaving the account unable to ever activate.
+    const results = await Promise.all([
+      claimAccountActivation(db, ACCOUNT, 2000),
+      claimAccountActivation(db, ACCOUNT, 2000),
+      claimAccountActivation(db, ACCOUNT, 2000),
+    ]);
+    expect(results.filter(Boolean)).toHaveLength(1);
+  });
+
+  it('records WHEN it happened, and never moves it', async () => {
+    await claimAccountActivation(db, ACCOUNT, 2000);
+    await claimAccountActivation(db, ACCOUNT, 9999);
+    const row = await db.get<{ activated_at: number | string }>(
+      sql`SELECT activated_at FROM account WHERE id = ${ACCOUNT}`,
+    );
+    expect(Number(row!.activated_at)).toBe(2000);
   });
 
   it('does not leak across accounts', async () => {
-    await seedSubmission(`s_other_${ACCOUNT}`, F_OTHER, 2000);
-    await seedSubmission(`s_1_${ACCOUNT}`, F1, 3000);
-    expect(await isFirstAccountCompletion(db, ACCOUNT, `s_1_${ACCOUNT}`)).toBe(true);
+    await claimAccountActivation(db, ACCOUNT, 2000);
+    expect(await claimAccountActivation(db, OTHER_ACCOUNT, 2000)).toBe(true);
   });
 });
 
-describe('isFirstAccountFormView', () => {
-  it('is true when nothing of this account was ever viewed', async () => {
-    expect(await isFirstAccountFormView(db, ACCOUNT, F1)).toBe(true);
+describe('claimAccountFirstView', () => {
+  it('the first caller wins and later ones lose', async () => {
+    expect(await claimAccountFirstView(db, ACCOUNT, 2000)).toBe(true);
+    expect(await claimAccountFirstView(db, ACCOUNT, 3000)).toBe(false);
   });
 
-  it('is false once the same form has a view', async () => {
-    await seedView(`e_1_${ACCOUNT}`, F1);
-    expect(await isFirstAccountFormView(db, ACCOUNT, F1)).toBe(false);
+  it('CONCURRENT callers produce exactly one winner', async () => {
+    const results = await Promise.all([
+      claimAccountFirstView(db, ACCOUNT, 2000),
+      claimAccountFirstView(db, ACCOUNT, 2000),
+    ]);
+    expect(results.filter(Boolean)).toHaveLength(1);
   });
 
-  it('is false when a DIFFERENT form of the account was already viewed', async () => {
-    await seedView(`e_1_${ACCOUNT}`, F1);
-    // The milestone is the account's first traffic ever, not each form's.
-    expect(await isFirstAccountFormView(db, ACCOUNT, F2)).toBe(false);
-  });
-
-  it('ignores non-view events', async () => {
-    await seedView(`e_1_${ACCOUNT}`, F1, 'step_view');
-    expect(await isFirstAccountFormView(db, ACCOUNT, F1)).toBe(true);
-  });
-
-  it('does not leak across accounts', async () => {
-    await seedView(`e_other_${ACCOUNT}`, F_OTHER);
-    expect(await isFirstAccountFormView(db, ACCOUNT, F1)).toBe(true);
+  it('is independent of the activation claim', async () => {
+    await claimAccountActivation(db, ACCOUNT, 2000);
+    // Two separate milestones on the same row — one must not consume the other.
+    expect(await claimAccountFirstView(db, ACCOUNT, 2000)).toBe(true);
   });
 });
 

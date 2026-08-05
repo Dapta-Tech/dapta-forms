@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import type { ServerEnv } from '@quill/config/env';
 import { ENV } from './tokens';
 import { OutboxSkipError } from './email-effects';
@@ -32,7 +32,6 @@ const REQUEST_TIMEOUT_MS = 10_000;
  */
 @Injectable()
 export class AnalyticsCapture {
-  private readonly log = new Logger('AnalyticsCapture');
   /** Injectable for tests; defaults to global fetch. */
   fetchImpl: typeof fetch = fetch;
 

@@ -120,6 +120,11 @@ describe('forms_form_published', () => {
     await controller.updateForm(asOwner(), formId, { config: { version: 1, steps: [] } });
     await controller.publishForm(asOwner(), formId);
 
+    // A third publish with NO pending draft: publishForm is a no-op that never
+    // stamps published_at, so it must emit nothing at all. Capturing here would
+    // report a brand-new first-publish conversion on every repeat call.
+    await controller.publishForm(asOwner(), formId);
+
     const publishes = (await captured()).filter((c) => c.event === 'forms_form_published');
     expect(publishes).toHaveLength(2);
     // Both publishes are real events, but only one is a CONVERSION. Republishing
@@ -146,6 +151,23 @@ describe('forms_activation — the north star', () => {
     // The whole point of the DB-side dedup: an account that succeeds a thousand
     // times must not look like a thousand activations.
     expect(activations).toHaveLength(1);
+  });
+
+  it('fires once when the SAME session is submitted twice (double-click)', async () => {
+    await answer('s1');
+    await answer('s1');
+    // Regression: the previous read-then-act check excluded the submission from
+    // its own lookup, so a re-submitted session — an upsert on the same row —
+    // could not see itself and fired a second activation.
+    expect((await names()).filter((n) => n === 'forms_activation')).toHaveLength(1);
+  });
+
+  it('fires once when two answers land at the SAME INSTANT', async () => {
+    await Promise.all([answer('sA'), answer('sB')]);
+    // Regression, and the worse half: both callers used to see the other's row
+    // and BOTH declined — zero activations, and since completions now existed
+    // forever, that account could never activate again.
+    expect((await names()).filter((n) => n === 'forms_activation')).toHaveLength(1);
   });
 
   it('does not fire on a partial — starting and leaving is not an answer', async () => {
@@ -183,6 +205,11 @@ describe('forms_form_first_view', () => {
     await view('v2');
     await view('v3');
 
+    expect((await names()).filter((n) => n === 'forms_form_first_view')).toHaveLength(1);
+  });
+
+  it('fires once when two visitors arrive at the SAME INSTANT', async () => {
+    await Promise.all([view('v1'), view('v2')]);
     expect((await names()).filter((n) => n === 'forms_form_first_view')).toHaveLength(1);
   });
 

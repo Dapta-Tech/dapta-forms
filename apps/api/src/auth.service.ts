@@ -1,4 +1,4 @@
-import { ForbiddenException, Inject, Injectable } from '@nestjs/common';
+import { ForbiddenException, Inject, Injectable, Optional } from '@nestjs/common';
 import type { Db } from '@quill/db';
 import {
   activateInvitedMember,
@@ -9,6 +9,7 @@ import {
   touchMemberLastSeen,
   type WorkspaceRow,
 } from '@quill/db';
+import { AnalyticsEffects } from './analytics-effects';
 import { AUTH_PROVIDER, DB } from './tokens';
 import { header, type AuthProvider, type HostPrincipal, type ReqLike } from './auth.provider';
 
@@ -27,6 +28,9 @@ export class AuthService {
   constructor(
     @Inject(DB) private readonly db: Db,
     @Inject(AUTH_PROVIDER) private readonly provider: AuthProvider,
+    // Optional so existing direct constructions (tests) keep working. Only its
+    // `enabled` flag is read here — auth never emits an event itself.
+    @Optional() @Inject(AnalyticsEffects) private readonly productAnalytics?: AnalyticsEffects,
   ) {}
 
   /**
@@ -60,9 +64,17 @@ export class AuthService {
 
     // Liveness. Stamped on the HOME member (the person), not the workspace they
     // happen to be viewing — "did this human come back" is a property of the
-    // human. Throttled inside, so an active session writes a handful of times
-    // an hour instead of once per API call. Never blocks the request.
-    await touchMemberLastSeen(this.db, home.memberId).catch(() => {});
+    // human. Throttled inside the UPDATE, so an active session writes a handful
+    // of times an hour instead of once per API call.
+    //
+    // Gated AND not awaited: this is analytics data, and a deployment that
+    // collects none must not pay a round trip on every authenticated request —
+    // the busiest path in the API. Awaiting it would serialize a write into
+    // auth; `void` keeps it off the critical path, and the internal catch means
+    // a failure can never surface as a rejected login.
+    if (this.productAnalytics?.enabled) {
+      void touchMemberLastSeen(this.db, home.memberId).catch(() => {});
+    }
 
     const requested = header(req, WORKSPACE_HEADER)?.trim();
     if (!requested || requested === home.accountId) {

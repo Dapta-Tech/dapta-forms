@@ -381,14 +381,21 @@ export async function duplicateForm(
   db: Db,
   accountId: string,
   id: string,
+  /** Author of the COPY — whoever duplicated it, not whoever wrote the original. */
+  createdBy?: string | null,
 ): Promise<CrudResult<FormRow>> {
   const src = await getFormById(db, accountId, id);
   if (!src) return { ok: false, reason: 'NOT_FOUND' };
-  return createForm(db, accountId, {
-    name: `${src.name} (copy)`,
-    slug: src.slug,
-    config: src.config,
-  });
+  return createForm(
+    db,
+    accountId,
+    {
+      name: `${src.name} (copy)`,
+      slug: src.slug,
+      config: src.config,
+    },
+    createdBy,
+  );
 }
 
 export async function deleteForm(db: Db, accountId: string, id: string): Promise<void> {

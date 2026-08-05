@@ -750,10 +750,13 @@ export type FormTracking = z.infer<typeof formTrackingSchema>;
 
 /**
  * FIRST-TOUCH acquisition context for an account — what the browser saw the
- * very first time this visitor arrived, on the landing or the app. Captured
- * client-side, sent once with signup, and persisted to `account.attribution`
- * (migration 0010) so attribution survives a cookie wipe and can be joined in
- * SQL without going through the analytics vendor.
+ * very first time this visitor arrived, on the landing or the app.
+ *
+ * RESERVED: nothing in this repo writes it yet. The landing already captures
+ * this shape and forwards it on the CTA as query parameters; the server-side
+ * writer that persists it to `account.attribution` (migration 0010) lands with
+ * the signup form. Defined here first so both ends agree on the shape before
+ * either is built — and so the column is never populated ad hoc.
  *
  * FIRST touch, never last: the values are written on the first visit and never
  * overwritten, so a user who arrives from an ad, leaves, and returns via a
