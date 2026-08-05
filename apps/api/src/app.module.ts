@@ -10,6 +10,8 @@ import { EmailEffects } from './email-effects';
 import { DestinationEffects } from './destination-effects';
 import { BookingEffects } from './booking-effects';
 import { BookingSyncEffects } from './booking-sync';
+import { AnalyticsEffects } from './analytics-effects';
+import { AnalyticsCapture } from './analytics-capture';
 import { OutboxWorker } from './outbox.worker';
 import { RateLimitGuard, createRateLimiter } from './rate-limit';
 import { resolveEntitlementsProvider } from './entitlements.provider';
@@ -81,8 +83,25 @@ import {
     // Host auth backend selected by AUTH_PROVIDER (local stub / WorkOS overlay).
     {
       provide: AUTH_PROVIDER,
-      useFactory: (env: ServerEnv, db: Db) => createAuthProvider(env, db),
-      inject: [ENV, DB],
+      // The signup observer is the ONLY hook for "a person joined": accounts and
+      // members are materialized just-in-time inside the provider, so there is
+      // no signup endpoint to instrument. Passed as a plain callback so the auth
+      // adapters stay ignorant of analytics (invariant 6).
+      useFactory: (env: ServerEnv, db: Db, productAnalytics: AnalyticsEffects) =>
+        createAuthProvider(env, db, (signup) => {
+          if (!signup.email) return;
+          void productAnalytics.capture('signup_completed', {
+            distinctId: signup.email,
+            accountId: signup.accountId,
+            properties: {
+              member_id: signup.memberId,
+              role: signup.role,
+              is_first_member: signup.isFirstMember,
+              from_invite: signup.fromInvite,
+            },
+          });
+        }),
+      inject: [ENV, DB, AnalyticsEffects],
     },
     // Rate limiter for the public surface (P1-5): token bucket by default, noop
     // when RATE_LIMIT_ENABLED=false; swappable for a distributed limiter.
@@ -101,6 +120,12 @@ import {
     // HubSpot contact update). Tokens absent = graceful log-only degradation.
     BookingEffects,
     BookingSyncEffects,
+    // Product analytics about OUR OWN users: the enqueue side (used by services)
+    // and its worker-side executor (outbox kind `analytics`). With
+    // PRODUCT_ANALYTICS_KEY unset — the default, and every bare fork — the
+    // enqueue is a no-op and nothing is ever sent.
+    AnalyticsEffects,
+    AnalyticsCapture,
     // Server-side HubSpot property lookup for the mapping UI (5-min cache, clear
     // disabled state without a token). Resolves the per-account token (else the
     // env fallback), so it needs the DB. Factory so `fetch` isn't DI-reflected.

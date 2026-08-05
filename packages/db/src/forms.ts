@@ -13,6 +13,16 @@ import type { CrudResult } from './crud';
 
 export type { CrudResult } from './crud';
 
+/**
+ * `publishForm`'s result. `published` is true ONLY on the call that actually
+ * copied the draft over the live config — false on the no-op (no draft pending)
+ * and false for the loser of two concurrent publishes. Callers that count
+ * publishes as conversions must read this, never guess from the returned row.
+ */
+export type PublishResult =
+  | { ok: true; value: FormRow; published: boolean }
+  | Extract<CrudResult<FormRow>, { ok: false }>;
+
 // --- JSON column helpers (portable across jsonb / TEXT) ----------------------
 
 /** Parse a JSON column value (string on SQLite, object on PG) with a fallback. */
@@ -121,6 +131,12 @@ export interface FormRow {
   publishedAt: number | null;
   /** Epoch-ms of the last brand-kit apply; null when never applied or reverted. */
   brandAppliedAt: number | null;
+  /**
+   * `member.id` of the author; null for forms created before 0010 and for any
+   * path with no member principal. AUTHORSHIP ONLY — access is decided by
+   * `accountId`, never by this.
+   */
+  createdBy: string | null;
   createdAt: number;
   updatedAt: number;
 }
@@ -145,6 +161,7 @@ function mapForm(r: Record<string, unknown>): FormRow {
     draftConfig: r.draft_config == null ? null : parseJsonColumn(r.draft_config, null),
     publishedAt: r.published_at == null ? null : Number(r.published_at),
     brandAppliedAt: r.brand_applied_at == null ? null : Number(r.brand_applied_at),
+    createdBy: r.created_by == null ? null : String(r.created_by),
     createdAt: Number(r.created_at),
     updatedAt: Number(r.updated_at),
   };
@@ -202,14 +219,22 @@ export async function createForm(
   db: Db,
   accountId: string,
   input: { name: string; slug?: string; config?: unknown },
+  /**
+   * `member.id` of the author, for per-user analytics (migration 0010).
+   * MUST come from the resolved principal, never from request input — this is
+   * authorship, and a caller-supplied value would let anyone forge it. Omitted
+   * on the paths with no member principal (API key, seeding), leaving it NULL.
+   */
+  createdBy?: string | null,
 ): Promise<CrudResult<FormRow>> {
   const slug = await uniqueFormSlug(db, accountId, input.slug ?? input.name);
   const id = randomUUID();
   const now = Date.now();
   const config = input.config ?? { version: 1, steps: [] };
   await db.run(
-    sql`INSERT INTO form (id, account_id, name, slug, config, created_at, updated_at)
-        VALUES (${id}, ${accountId}, ${input.name}, ${slug}, ${jsonParam(config)}, ${now}, ${now})`,
+    sql`INSERT INTO form (id, account_id, name, slug, config, created_by, created_at, updated_at)
+        VALUES (${id}, ${accountId}, ${input.name}, ${slug}, ${jsonParam(config)},
+                ${createdBy ?? null}, ${now}, ${now})`,
   );
   const created = await getFormById(db, accountId, id);
   return created ? { ok: true, value: created } : { ok: false, reason: 'CONFLICT' };
@@ -340,10 +365,12 @@ export async function publishForm(
   db: Db,
   accountId: string,
   id: string,
-): Promise<CrudResult<FormRow>> {
+): Promise<PublishResult> {
   const existing = await getFormById(db, accountId, id);
   if (!existing) return { ok: false, reason: 'NOT_FOUND' };
-  if (existing.draftConfig == null) return { ok: true, value: existing }; // no draft — no-op
+  // No draft pending — a successful no-op. `published: false` is what stops a
+  // caller counting this as a conversion.
+  if (existing.draftConfig == null) return { ok: true, value: existing, published: false };
   // Drafts never stage `destinations` (see saveDraftConfig) — integrations are
   // edited live. Carry the live set over the draft on publish so publishing
   // can never revert them; everything else comes from the draft.
@@ -353,27 +380,42 @@ export async function publishForm(
   if (live && live.destinations !== undefined) next.destinations = live.destinations;
   else delete next.destinations;
   const now = Date.now();
-  await db.run(
+  // RETURNING, so the caller LEARNS whether this call is the one that published
+  // rather than inferring it. `draft_config IS NOT NULL` in the WHERE already
+  // makes the write exactly-once; without a row back, two concurrent publishes
+  // both look like "a draft was pending" to a caller that pre-read the row, and
+  // a single publish gets counted twice. `published_at` cannot substitute for
+  // this either — it is Date.now(), so two publishes in the same millisecond are
+  // indistinguishable.
+  const fired = await db.get<{ id: string }>(
     sql`UPDATE form
         SET config = ${jsonParam(next)}, draft_config = NULL,
             published_at = ${now}, updated_at = ${now}
-        WHERE account_id = ${accountId} AND id = ${id} AND draft_config IS NOT NULL`,
+        WHERE account_id = ${accountId} AND id = ${id} AND draft_config IS NOT NULL
+        RETURNING id`,
   );
-  return { ok: true, value: (await getFormById(db, accountId, id))! };
+  return { ok: true, value: (await getFormById(db, accountId, id))!, published: Boolean(fired) };
 }
 
 export async function duplicateForm(
   db: Db,
   accountId: string,
   id: string,
+  /** Author of the COPY — whoever duplicated it, not whoever wrote the original. */
+  createdBy?: string | null,
 ): Promise<CrudResult<FormRow>> {
   const src = await getFormById(db, accountId, id);
   if (!src) return { ok: false, reason: 'NOT_FOUND' };
-  return createForm(db, accountId, {
-    name: `${src.name} (copy)`,
-    slug: src.slug,
-    config: src.config,
-  });
+  return createForm(
+    db,
+    accountId,
+    {
+      name: `${src.name} (copy)`,
+      slug: src.slug,
+      config: src.config,
+    },
+    createdBy,
+  );
 }
 
 export async function deleteForm(db: Db, accountId: string, id: string): Promise<void> {

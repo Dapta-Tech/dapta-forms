@@ -65,6 +65,7 @@ import { SubmissionService } from './submission.service';
 import { AnalyticsService } from './analytics.service';
 import { AuthService, type ReqLike } from './auth.service';
 import { EmailEffects } from './email-effects';
+import { AnalyticsEffects } from './analytics-effects';
 import { assertAdmin, assertCanManageTarget, assertNotSelf } from './permissions';
 import { parseBound, parseIntParam, parseStatus } from './query-params';
 import { DB } from './tokens';
@@ -113,6 +114,10 @@ export class AdminCrudController {
     // Optional so existing direct constructions (tests) keep working; the module
     // always provides it in the running app.
     @Optional() @Inject(EmailEffects) private readonly emails?: EmailEffects,
+    // `productAnalytics`, not `analytics` — `analytics` above is the FORM funnel
+    // service (per-question drop-off shown to a form owner). This one is our own
+    // telemetry about the people using the builder. Different audience entirely.
+    @Optional() @Inject(AnalyticsEffects) private readonly productAnalytics?: AnalyticsEffects,
   ) {}
 
   // --- Identity ----------------------------------------------------------
@@ -213,7 +218,10 @@ export class AdminCrudController {
           : {};
       config = { ...base, branding: { ...mergeKitIntoBranding(null, kit.config), ...own } };
     }
-    return maskForm(unwrapCrud(await createForm(this.db, p.accountId, { ...input, config })));
+    // `p.memberId` — from the resolved principal, never the body.
+    const created = unwrapCrud(await createForm(this.db, p.accountId, { ...input, config }, p.memberId));
+    await this.productAnalytics?.captureForMember('form_created', p, { form_id: created.id });
+    return maskForm(created);
   }
 
   /**
@@ -238,7 +246,14 @@ export class AdminCrudController {
   @HttpCode(201)
   async duplicateForm(@Req() req: ReqLike, @Param('id') id: string) {
     const p = await this.auth.resolveHost(req);
-    return maskForm(unwrapCrud(await duplicateForm(this.db, p.accountId, id)));
+    // Duplicating is the OTHER way a form is born in the builder. Without this
+    // it would be the one creation path with no author and no funnel event.
+    const copy = unwrapCrud(await duplicateForm(this.db, p.accountId, id, p.memberId));
+    await this.productAnalytics?.captureForMember('form_created', p, {
+      form_id: copy.id,
+      from_duplicate: true,
+    });
+    return maskForm(copy);
   }
 
   /**
@@ -249,7 +264,30 @@ export class AdminCrudController {
   @Post('forms/:id/publish')
   async publishForm(@Req() req: ReqLike, @Param('id') id: string) {
     const p = await this.auth.resolveHost(req);
-    return maskForm(unwrapCrud(await publishForm(this.db, p.accountId, id)));
+    // Read the PRIOR state before publishing: `published_at` is about to be
+    // stamped, so after the call every publish looks like the first one.
+    // Republishing an existing form is not a new conversion, and counting it as
+    // one would make the funnel improve the more a happy customer edits.
+    // Gated: a deployment without analytics must not pay for this read.
+    const before = this.productAnalytics?.enabled
+      ? await getFormById(this.db, p.accountId, id)
+      : null;
+    const result = await publishForm(this.db, p.accountId, id);
+    const published = unwrapCrud(result);
+    // `result.published` comes from the UPDATE's own RETURNING, so it is true
+    // exactly on the call that copied the draft over. Reading the row BEFORE and
+    // deciding here would be a read-then-act: two concurrent publishes both saw
+    // a pending draft and both counted a first-publish conversion — the same
+    // class of bug the activation claim exists to kill, one function over.
+    // `result.ok` is redundant at runtime — `unwrapCrud` already threw on
+    // failure — but it is what narrows the union so `published` is readable.
+    if (result.ok && result.published) {
+      await this.productAnalytics?.captureForMember('form_published', p, {
+        form_id: id,
+        is_first_publish: before?.publishedAt == null,
+      });
+    }
+    return maskForm(published);
   }
 
   @Delete('forms/:id')

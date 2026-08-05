@@ -26,9 +26,11 @@ import type { ServerEnv } from '@quill/config/env';
 import {
   header,
   maybeSeedDemoForm,
+  notifySignup,
   type AuthProvider,
   type ResolvedHost,
   type ReqLike,
+  type SignupObserver,
 } from './auth.provider';
 import { verifyJwtHs256, JwtError, type JwtClaims } from './jwt';
 
@@ -51,6 +53,8 @@ export class WorkOsAuthProvider implements AuthProvider {
   constructor(
     private readonly db: Db,
     private readonly env: WorkOsEnv,
+    /** Optional; omitted means nothing observes signups (the fork default). */
+    private readonly onSignup?: SignupObserver,
   ) {
     if (!env.JWT_SECRET) {
       // Defensive: the factory already guards this, but never run without a key.
@@ -133,6 +137,30 @@ export class WorkOsAuthProvider implements AuthProvider {
                 display_name = COALESCE(display_name, ${displayName})
               WHERE id = ${invited.id}`,
         );
+        // An adopted invite IS a signup — this is the person's first login, and
+        // the only difference is that a teammate created the row ahead of them.
+        // The role is whatever the invite granted, so it is read back rather
+        // than assumed. Never the account's first member: an invite implies one.
+        //
+        // Gated on there being an observer at all: with none wired (the fork
+        // default) this login must cost exactly what it did before. Scoped by
+        // account_id like every other member read here — `invited.id` was
+        // already resolved within the account, but a member query without that
+        // predicate is the pattern that eventually leaks one.
+        if (this.onSignup) {
+          const invitedRole = await this.db.get<{ role: AccountRole }>(
+            sql`SELECT role FROM member
+                WHERE id = ${invited.id} AND account_id = ${accountId} LIMIT 1`,
+          );
+          notifySignup(this.onSignup, this.log, {
+            accountId,
+            memberId: invited.id,
+            email,
+            role: invitedRole?.role ?? 'member',
+            isFirstMember: false,
+            fromInvite: true,
+          });
+        }
         return invited.id;
       }
     }
@@ -161,6 +189,18 @@ export class WorkOsAuthProvider implements AuthProvider {
     if (role === 'owner') {
       await maybeSeedDemoForm(this.db, accountId, this.env.SEED_DEMO_FORM, this.log);
     }
+    // Fires only here, after the INSERT won: every earlier return in this method
+    // is an existing member signing in again, which is not a signup. `row.id`
+    // rather than `id` because a concurrent first login may have won the
+    // ON CONFLICT race — the observer must name the member that actually exists.
+    notifySignup(this.onSignup, this.log, {
+      accountId,
+      memberId: row.id,
+      email,
+      role,
+      isFirstMember: role === 'owner',
+      fromInvite: false,
+    });
     return row.id;
   }
 }
