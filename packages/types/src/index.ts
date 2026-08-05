@@ -746,6 +746,42 @@ export const formTrackingSchema = z.object({
 });
 export type FormTracking = z.infer<typeof formTrackingSchema>;
 
+// --- Acquisition attribution (first touch, persisted on the account) ---------
+
+/**
+ * FIRST-TOUCH acquisition context for an account — what the browser saw the
+ * very first time this visitor arrived, on the landing or the app. Captured
+ * client-side, sent once with signup, and persisted to `account.attribution`
+ * (migration 0010) so attribution survives a cookie wipe and can be joined in
+ * SQL without going through the analytics vendor.
+ *
+ * FIRST touch, never last: the values are written on the first visit and never
+ * overwritten, so a user who arrives from an ad, leaves, and returns via a
+ * bookmark is still credited to the ad. Every field is optional — direct
+ * traffic legitimately carries none of them, and an account that predates this
+ * feature has the whole blob NULL. Absent means "not known", never "direct";
+ * the two are told apart by `account.created_at`, not by this shape.
+ *
+ * This is UNTRUSTED input: it originates in the browser and anyone can put
+ * anything in a query string. Lengths are capped so a hostile URL cannot bloat
+ * the row, unknown keys are stripped by zod, and nothing here is ever used for
+ * authorization or rendered as markup.
+ */
+export const attributionSchema = z.object({
+  utmSource: z.string().max(128).nullable().optional(),
+  utmMedium: z.string().max(128).nullable().optional(),
+  utmCampaign: z.string().max(128).nullable().optional(),
+  utmContent: z.string().max(128).nullable().optional(),
+  utmTerm: z.string().max(128).nullable().optional(),
+  /** `document.referrer` as the browser reported it; '' (blank) is normalized to null. */
+  referrer: z.string().max(512).nullable().optional(),
+  /** Path-only entry point (never the query string — it can carry PII). */
+  landingPath: z.string().max(512).nullable().optional(),
+  /** Epoch-ms of that first visit, as the CLIENT clock reported it — may skew. */
+  firstSeenAt: z.number().int().nonnegative().nullable().optional(),
+});
+export type Attribution = z.infer<typeof attributionSchema>;
+
 /** The versioned config blob. `version` gates future migrations of the shape. */
 /**
  * Form-level ending (V5-B1): the defaults an outcome may override. `redirectUrl`

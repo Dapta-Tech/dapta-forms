@@ -10,6 +10,8 @@ import { EmailEffects } from './email-effects';
 import { DestinationEffects } from './destination-effects';
 import { BookingEffects } from './booking-effects';
 import { BookingSyncEffects } from './booking-sync';
+import { AnalyticsEffects } from './analytics-effects';
+import { AnalyticsCapture } from './analytics-capture';
 import { OutboxWorker } from './outbox.worker';
 import { RateLimitGuard, createRateLimiter } from './rate-limit';
 import { resolveEntitlementsProvider } from './entitlements.provider';
@@ -101,6 +103,12 @@ import {
     // HubSpot contact update). Tokens absent = graceful log-only degradation.
     BookingEffects,
     BookingSyncEffects,
+    // Product analytics about OUR OWN users: the enqueue side (used by services)
+    // and its worker-side executor (outbox kind `analytics`). With
+    // PRODUCT_ANALYTICS_KEY unset — the default, and every bare fork — the
+    // enqueue is a no-op and nothing is ever sent.
+    AnalyticsEffects,
+    AnalyticsCapture,
     // Server-side HubSpot property lookup for the mapping UI (5-min cache, clear
     // disabled state without a token). Resolves the per-account token (else the
     // env fallback), so it needs the DB. Factory so `fetch` isn't DI-reflected.

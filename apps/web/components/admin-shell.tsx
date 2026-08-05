@@ -9,6 +9,7 @@ import { AppSwitcher } from '@/components/app-switcher';
 import { BrandMark, BrandWordmark } from '@/components/brand/brand';
 import { WorkspaceSwitcher } from '@/components/workspace-switcher';
 import type { Workspace } from '@/lib/admin-api';
+import { resetAnalytics } from '@/lib/product-analytics';
 
 type ChromeMessages = FormsMessages['admin']['chrome'];
 
@@ -225,6 +226,11 @@ export function AdminShell({
     <form action={signOutAction}>
       <button
         type="submit"
+        // Drop the analytics identity BEFORE the session goes away. Without
+        // this the distinct id survives in the browser and the next person to
+        // sign in on this machine has their events attributed to whoever
+        // logged out — a shared laptop is enough to corrupt per-user data.
+        onClick={() => resetAnalytics()}
         title={messages.signOut}
         aria-label={messages.signOut}
         className="flex h-11 w-11 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground active:scale-[0.98]"
