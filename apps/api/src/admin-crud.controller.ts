@@ -279,7 +279,9 @@ export class AdminCrudController {
     // deciding here would be a read-then-act: two concurrent publishes both saw
     // a pending draft and both counted a first-publish conversion — the same
     // class of bug the activation claim exists to kill, one function over.
-    if (result.published) {
+    // `result.ok` is redundant at runtime — `unwrapCrud` already threw on
+    // failure — but it is what narrows the union so `published` is readable.
+    if (result.ok && result.published) {
       await this.productAnalytics?.captureForMember('form_published', p, {
         form_id: id,
         is_first_publish: before?.publishedAt == null,

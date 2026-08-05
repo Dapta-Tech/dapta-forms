@@ -19,7 +19,9 @@ export type { CrudResult } from './crud';
  * and false for the loser of two concurrent publishes. Callers that count
  * publishes as conversions must read this, never guess from the returned row.
  */
-export type PublishResult = CrudResult<FormRow> & { published?: boolean };
+export type PublishResult =
+  | { ok: true; value: FormRow; published: boolean }
+  | Extract<CrudResult<FormRow>, { ok: false }>;
 
 // --- JSON column helpers (portable across jsonb / TEXT) ----------------------
 
@@ -366,7 +368,9 @@ export async function publishForm(
 ): Promise<PublishResult> {
   const existing = await getFormById(db, accountId, id);
   if (!existing) return { ok: false, reason: 'NOT_FOUND' };
-  if (existing.draftConfig == null) return { ok: true, value: existing }; // no draft — no-op
+  // No draft pending — a successful no-op. `published: false` is what stops a
+  // caller counting this as a conversion.
+  if (existing.draftConfig == null) return { ok: true, value: existing, published: false };
   // Drafts never stage `destinations` (see saveDraftConfig) — integrations are
   // edited live. Carry the live set over the draft on publish so publishing
   // can never revert them; everything else comes from the draft.

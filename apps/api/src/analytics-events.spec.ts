@@ -196,6 +196,52 @@ describe('forms_activation — the north star', () => {
   });
 });
 
+describe('activation must never participate in the request', () => {
+  it('a FAILING claim does not fail a submission that was already saved', async () => {
+    const real = db.get.bind(db);
+    // Simulate what a lock timeout or a deadlock on `account` looks like — e.g.
+    // while a later migration holds ACCESS EXCLUSIVE on that table.
+    (db as unknown as { get: unknown }).get = (q: unknown) => {
+      if (String((q as { queryChunks?: unknown })?.queryChunks ?? q).includes('activated_at')) {
+        return Promise.reject(new Error('lock timeout on account'));
+      }
+      return real(q as Parameters<typeof real>[0]);
+    };
+    const out = await submissions.submit('acme', 'lead-qualifier', {
+      sessionId: 's1',
+      data: { work_email: 's1@x.com' },
+      partial: false,
+    } as never);
+    (db as unknown as { get: unknown }).get = real;
+
+    // By this point the submission is COMMITTED and its emails and deliveries
+    // are enqueued. Throwing here would hand the respondent a 500 for an answer
+    // that was in fact saved — telemetry participating in the product.
+    expect('error' in (out as object)).toBe(false);
+    const n = await db.get<{ n: number }>(sql`SELECT COUNT(*) AS n FROM submission`);
+    expect(Number(n!.n)).toBe(1);
+  });
+
+  it('still emits when the account has no ACTIVE owner', async () => {
+    await db.run(sql`UPDATE member SET status = 'disabled' WHERE role = 'owner'`);
+    await submissions.submit('acme', 'lead-qualifier', {
+      sessionId: 's1',
+      data: { work_email: 's1@x.com' },
+      partial: false,
+    } as never);
+
+    // The claim is spent the moment it succeeds, and it can only be spent once
+    // ever. If the event depended on an owner lookup that filters on
+    // `status = 'active'`, a workspace with a deactivated owner would burn its
+    // activation and never emit one.
+    const rows = await listOutbox(db, { kind: 'analytics' });
+    const activation = rows.find((r) => r.action === 'forms_activation');
+    expect(activation).toBeDefined();
+    const payload = JSON.parse(String(activation!.payload)) as { distinctId: string };
+    expect(payload.distinctId).toMatch(/^account:/);
+  });
+});
+
 describe('forms_form_first_view', () => {
   const view = (sessionId: string) =>
     submissions.event('acme', 'lead-qualifier', { sessionId, type: 'view' });
@@ -282,6 +328,11 @@ describe('turning analytics ON later', () => {
     await answer('early-2');
     await sOff.event('acme', 'lead-qualifier', { sessionId: 'early-v', type: 'view' });
     expect(await listOutbox(db, { kind: 'analytics' })).toHaveLength(0);
+    const during = await db.get<{ activated_at: number | string; first_viewed_at: number | string }>(
+      sql`SELECT activated_at, first_viewed_at FROM account WHERE code = 'acme'`,
+    );
+    expect(during!.activated_at).not.toBeNull();
+    expect(during!.first_viewed_at).not.toBeNull();
 
     // Key goes in. `submissions` is the ON service from beforeEach.
     await submissions.submit('acme', 'lead-qualifier', {
@@ -297,6 +348,15 @@ describe('turning analytics ON later', () => {
     const fired = await names();
     expect(fired).not.toContain('forms_activation');
     expect(fired).not.toContain('forms_form_first_view');
+
+    // The positive half: absence alone would also pass if the ON service threw
+    // before reaching the claim. The milestones must actually be SET, and still
+    // hold the timestamps taken during the OFF window — not re-stamped today.
+    const after = await db.get<{ activated_at: number | string; first_viewed_at: number | string }>(
+      sql`SELECT activated_at, first_viewed_at FROM account WHERE code = 'acme'`,
+    );
+    expect(Number(after!.activated_at)).toBe(Number(during!.activated_at));
+    expect(Number(after!.first_viewed_at)).toBe(Number(during!.first_viewed_at));
   });
 });
 

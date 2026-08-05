@@ -198,17 +198,30 @@ export class SubmissionService {
     // instead of migration timing. The cost of always claiming is one
     // primary-key UPDATE that matches nothing after the first answer, next to a
     // submission write that already happened.
+    //
+    // `.catch(() => false)` is load-bearing, not defensive habit. By this point
+    // the submission is COMMITTED and its emails and deliveries are enqueued; a
+    // throw here would hand the respondent a 500 for an answer that was in fact
+    // saved. A lost claim costs nothing — the claim is idempotent, so the next
+    // completed answer takes it — while a failed request cannot be undone. Same
+    // rule the rest of this feature already states: analytics observes the
+    // product, it never participates in it.
     if (!input.partial) {
-      const first = await claimAccountActivation(this.db, form.accountId);
+      const first = await claimAccountActivation(this.db, form.accountId).catch(() => false);
       if (first && this.productAnalytics?.enabled) {
-        const owner = await getAccountOwner(this.db, form.accountId);
-        if (owner?.email) {
-          await this.productAnalytics.capture('activation', {
-            distinctId: owner.email,
-            accountId: form.accountId,
-            properties: { form_id: form.id },
-          });
-        }
+        // The claim is already SPENT, so the event has to go out no matter what
+        // the identity lookup returns. `getAccountOwner` filters on
+        // `status = 'active'`, so a workspace whose owner is deactivated would
+        // otherwise burn its activation and never emit one — the milestone can
+        // only be claimed once, ever. The account fallback keeps the funnel
+        // whole: `forms_account` is the group these milestones are counted by,
+        // and that grouping is what the number actually measures.
+        const owner = await getAccountOwner(this.db, form.accountId).catch(() => null);
+        await this.productAnalytics.capture('activation', {
+          distinctId: owner?.email ?? `account:${form.accountId}`,
+          accountId: form.accountId,
+          properties: { form_id: form.id, has_owner_email: Boolean(owner?.email) },
+        });
       }
     }
 
@@ -240,22 +253,26 @@ export class SubmissionService {
     // while telemetry was off announces that visit the day the key is set.
     // Restricted to `type === 'view'` so the ordinary hot path
     // (step_view/step_complete, which is most of this table) never touches it.
+    // `.catch(() => false)` for the same reason as activation: the funnel event
+    // is already recorded, and a lock on `account` must not turn a public form
+    // view into an error. A lost claim is retried by the next visitor.
     const firstEverView =
-      input.type === 'view' && (await claimAccountFirstView(this.db, form.accountId));
+      input.type === 'view' &&
+      (await claimAccountFirstView(this.db, form.accountId).catch(() => false));
 
     // The moment a workspace's work first met a real visitor. It splits the two
     // halves of the funnel: published-but-never-viewed is a DISTRIBUTION problem
     // (the owner never shared it), viewed-but-never-answered is a FORM problem.
     // Without this event both look identical from the outside.
     if (firstEverView && this.productAnalytics?.enabled) {
-      const owner = await getAccountOwner(this.db, form.accountId);
-      if (owner?.email) {
-        await this.productAnalytics?.capture('form_first_view', {
-          distinctId: owner.email,
-          accountId: form.accountId,
-          properties: { form_id: form.id },
-        });
-      }
+      // Same as activation: the claim is spent, so the event must not depend on
+      // an identity lookup that can come back empty.
+      const owner = await getAccountOwner(this.db, form.accountId).catch(() => null);
+      await this.productAnalytics?.capture('form_first_view', {
+        distinctId: owner?.email ?? `account:${form.accountId}`,
+        accountId: form.accountId,
+        properties: { form_id: form.id, has_owner_email: Boolean(owner?.email) },
+      });
     }
     return { ok: true };
   }
