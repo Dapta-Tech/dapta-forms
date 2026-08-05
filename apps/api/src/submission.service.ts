@@ -1,4 +1,4 @@
-import { Inject, Injectable, Optional } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import type { Db } from '@quill/db';
 import {
   getMemberByHandle,
@@ -37,6 +37,8 @@ export type ServiceError = { error: string; message: string; status: number };
  */
 @Injectable()
 export class SubmissionService {
+  private readonly log = new Logger('SubmissionService');
+
   constructor(
     @Inject(DB) private readonly db: Db,
     @Inject(EmailEffects) private readonly email: EmailEffects,
@@ -206,8 +208,18 @@ export class SubmissionService {
     // completed answer takes it — while a failed request cannot be undone. Same
     // rule the rest of this feature already states: analytics observes the
     // product, it never participates in it.
+    //
+    // Logged, though, because two of its failure modes are permanent and do NOT
+    // self-heal: a claim that commits and THEN loses its response (the column is
+    // set, so nothing can ever claim it again), and an API running ahead of
+    // migration 0010 (every milestone silently missing until the deploy
+    // completes). Both are invisible without this line, and the first thing
+    // anyone does with this feature is ask why activation reads zero.
     if (!input.partial) {
-      const first = await claimAccountActivation(this.db, form.accountId).catch(() => false);
+      const first = await claimAccountActivation(this.db, form.accountId).catch((err) => {
+        this.log.warn(`activation claim failed for account ${form.accountId}: ${String(err)}`);
+        return false;
+      });
       if (first && this.productAnalytics?.enabled) {
         // The claim is already SPENT, so the event has to go out no matter what
         // the identity lookup returns. `getAccountOwner` filters on
@@ -258,7 +270,10 @@ export class SubmissionService {
     // view into an error. A lost claim is retried by the next visitor.
     const firstEverView =
       input.type === 'view' &&
-      (await claimAccountFirstView(this.db, form.accountId).catch(() => false));
+      (await claimAccountFirstView(this.db, form.accountId).catch((err) => {
+        this.log.warn(`first-view claim failed for account ${form.accountId}: ${String(err)}`);
+        return false;
+      }));
 
     // The moment a workspace's work first met a real visitor. It splits the two
     // halves of the funnel: published-but-never-viewed is a DISTRIBUTION problem

@@ -207,12 +207,17 @@ describe('activation must never participate in the request', () => {
       }
       return real(q as Parameters<typeof real>[0]);
     };
-    const out = await submissions.submit('acme', 'lead-qualifier', {
-      sessionId: 's1',
-      data: { work_email: 's1@x.com' },
-      partial: false,
-    } as never);
-    (db as unknown as { get: unknown }).get = real;
+    let out;
+    try {
+      out = await submissions.submit('acme', 'lead-qualifier', {
+        sessionId: 's1',
+        data: { work_email: 's1@x.com' },
+        partial: false,
+      } as never);
+    } finally {
+      // finally, so a regression cannot leak the stub into the rest of the test.
+      (db as unknown as { get: unknown }).get = real;
+    }
 
     // By this point the submission is COMMITTED and its emails and deliveries
     // are enqueued. Throwing here would hand the respondent a 500 for an answer
