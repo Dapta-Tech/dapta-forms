@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { enqueueOutbox, type Db } from '@quill/db';
+import { enqueueOutbox, getMe, type Db } from '@quill/db';
 import type { ServerEnv } from '@quill/config/env';
 import { DB, ENV } from './tokens';
 
@@ -110,6 +110,40 @@ export class AnalyticsEffects {
       });
     } catch (err) {
       this.log.error(`failed to enqueue analytics event ${event}: ${String(err)}`);
+    }
+  }
+
+  /**
+   * Capture an event for an authenticated member, resolving their email (the
+   * distinct id) from the account-scoped member row.
+   *
+   * The lookup is skipped entirely when analytics is off, so a deployment
+   * without a key pays nothing — not even the query. A member with no email on
+   * file is dropped rather than captured under a placeholder id: a made-up
+   * distinct id would merge unrelated people into one analytics "person", which
+   * is worse than a missing event.
+   *
+   * The identifiers MUST come from the resolved principal, never from request
+   * input — an attacker-supplied member id would let anyone attribute activity
+   * to someone else (and, for `created_by`, forge authorship).
+   */
+  async captureForMember(
+    event: string,
+    principal: { accountId: string; memberId: string },
+    properties?: Record<string, string | number | boolean | null>,
+    now: number = Date.now(),
+  ): Promise<void> {
+    if (!this.enabled) return;
+    try {
+      const me = await getMe(this.db, principal.accountId, principal.memberId);
+      if (!me?.email) return;
+      await this.capture(
+        event,
+        { distinctId: me.email, accountId: principal.accountId, properties },
+        now,
+      );
+    } catch (err) {
+      this.log.error(`failed to resolve identity for analytics event ${event}: ${String(err)}`);
     }
   }
 }

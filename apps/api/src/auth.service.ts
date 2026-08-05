@@ -6,6 +6,7 @@ import {
   getMemberIdentity,
   getMemberRole,
   listWorkspacesForIdentity,
+  touchMemberLastSeen,
   type WorkspaceRow,
 } from '@quill/db';
 import { AUTH_PROVIDER, DB } from './tokens';
@@ -56,6 +57,12 @@ export class AuthService {
     // from an active teammate. Scoped to exactly that transition — `disabled`
     // must never be revived by a login, which is the whole point of disabling.
     await activateInvitedMember(this.db, home.accountId, home.memberId);
+
+    // Liveness. Stamped on the HOME member (the person), not the workspace they
+    // happen to be viewing — "did this human come back" is a property of the
+    // human. Throttled inside, so an active session writes a handful of times
+    // an hour instead of once per API call. Never blocks the request.
+    await touchMemberLastSeen(this.db, home.memberId).catch(() => {});
 
     const requested = header(req, WORKSPACE_HEADER)?.trim();
     if (!requested || requested === home.accountId) {

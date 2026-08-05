@@ -121,6 +121,12 @@ export interface FormRow {
   publishedAt: number | null;
   /** Epoch-ms of the last brand-kit apply; null when never applied or reverted. */
   brandAppliedAt: number | null;
+  /**
+   * `member.id` of the author; null for forms created before 0010 and for any
+   * path with no member principal. AUTHORSHIP ONLY — access is decided by
+   * `accountId`, never by this.
+   */
+  createdBy: string | null;
   createdAt: number;
   updatedAt: number;
 }
@@ -145,6 +151,7 @@ function mapForm(r: Record<string, unknown>): FormRow {
     draftConfig: r.draft_config == null ? null : parseJsonColumn(r.draft_config, null),
     publishedAt: r.published_at == null ? null : Number(r.published_at),
     brandAppliedAt: r.brand_applied_at == null ? null : Number(r.brand_applied_at),
+    createdBy: r.created_by == null ? null : String(r.created_by),
     createdAt: Number(r.created_at),
     updatedAt: Number(r.updated_at),
   };
@@ -202,14 +209,22 @@ export async function createForm(
   db: Db,
   accountId: string,
   input: { name: string; slug?: string; config?: unknown },
+  /**
+   * `member.id` of the author, for per-user analytics (migration 0010).
+   * MUST come from the resolved principal, never from request input — this is
+   * authorship, and a caller-supplied value would let anyone forge it. Omitted
+   * on the paths with no member principal (API key, seeding), leaving it NULL.
+   */
+  createdBy?: string | null,
 ): Promise<CrudResult<FormRow>> {
   const slug = await uniqueFormSlug(db, accountId, input.slug ?? input.name);
   const id = randomUUID();
   const now = Date.now();
   const config = input.config ?? { version: 1, steps: [] };
   await db.run(
-    sql`INSERT INTO form (id, account_id, name, slug, config, created_at, updated_at)
-        VALUES (${id}, ${accountId}, ${input.name}, ${slug}, ${jsonParam(config)}, ${now}, ${now})`,
+    sql`INSERT INTO form (id, account_id, name, slug, config, created_by, created_at, updated_at)
+        VALUES (${id}, ${accountId}, ${input.name}, ${slug}, ${jsonParam(config)},
+                ${createdBy ?? null}, ${now}, ${now})`,
   );
   const created = await getFormById(db, accountId, id);
   return created ? { ok: true, value: created } : { ok: false, reason: 'CONFLICT' };

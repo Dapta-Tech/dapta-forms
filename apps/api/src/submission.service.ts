@@ -8,6 +8,9 @@ import {
   upsertSubmission,
   recordFormEvent,
   listSubmissions,
+  isFirstAccountCompletion,
+  isFirstAccountFormView,
+  getAccountOwner,
   type SubmissionRow,
 } from '@quill/db';
 import { computeScore, resolveOutcome, type FormConfig } from '@quill/engine';
@@ -22,6 +25,7 @@ import {
 import { EmailEffects } from './email-effects';
 import { DestinationEffects } from './destination-effects';
 import { BookingEffects } from './booking-effects';
+import { AnalyticsEffects } from './analytics-effects';
 import { DB } from './tokens';
 
 export type ServiceError = { error: string; message: string; status: number };
@@ -41,6 +45,8 @@ export class SubmissionService {
     @Optional() @Inject(DestinationEffects) private readonly destinations?: DestinationEffects,
     // Optional for the same reason: enqueues the durable booking → CRM sync.
     @Optional() @Inject(BookingEffects) private readonly bookings?: BookingEffects,
+    // Product analytics about the form OWNER (activation), not the respondent.
+    @Optional() @Inject(AnalyticsEffects) private readonly productAnalytics?: AnalyticsEffects,
   ) {}
 
   /**
@@ -168,6 +174,30 @@ export class SubmissionService {
       config,
     });
 
+    // ACTIVATION — the north star: this account's form got a real answer.
+    //
+    // Server-side, and it has to be: the submission happens in the RESPONDENT's
+    // browser, and the account owner (who the event is about) is not there. The
+    // owner is resolved from the form's account, never from the respondent.
+    //
+    // Deduplicated against the database, not a cookie or a client flag, so it
+    // survives a dropped event and a replayed row: an account activates exactly
+    // once, on its first completed submission, no matter how many follow. The
+    // check runs only when analytics is on, so a fork pays nothing for it.
+    if (!input.partial && this.productAnalytics?.enabled) {
+      const first = await isFirstAccountCompletion(this.db, form.accountId, row.id);
+      if (first) {
+        const owner = await getAccountOwner(this.db, form.accountId);
+        if (owner?.email) {
+          await this.productAnalytics.capture('activation', {
+            distinctId: owner.email,
+            accountId: form.accountId,
+            properties: { form_id: form.id },
+          });
+        }
+      }
+    }
+
     return { id: row.id, score, outcome: outcome?.id ?? null };
   }
 
@@ -176,6 +206,16 @@ export class SubmissionService {
     const input = formEventSchema.parse(raw);
     const form = await getPublishedForm(this.db, accountCode, slug);
     if (!form) return { error: 'NOT_FOUND', message: 'Form not found.', status: 404 };
+
+    // Checked BEFORE the insert, or the view being recorded would find itself.
+    // Gated on `type === 'view'` and on analytics being on, so the ordinary hot
+    // path (step_view/step_complete, and every deployment without a key) does
+    // not run an extra query per event.
+    const firstEverView =
+      input.type === 'view' &&
+      this.productAnalytics?.enabled === true &&
+      (await isFirstAccountFormView(this.db, form.accountId, form.id));
+
     await recordFormEvent(this.db, {
       formId: form.id,
       sessionId: input.sessionId,
@@ -183,6 +223,21 @@ export class SubmissionService {
       stepIndex: input.stepIndex ?? null,
       stepKey: input.stepKey ?? null,
     });
+
+    // The moment a workspace's work first met a real visitor. It splits the two
+    // halves of the funnel: published-but-never-viewed is a DISTRIBUTION problem
+    // (the owner never shared it), viewed-but-never-answered is a FORM problem.
+    // Without this event both look identical from the outside.
+    if (firstEverView) {
+      const owner = await getAccountOwner(this.db, form.accountId);
+      if (owner?.email) {
+        await this.productAnalytics?.capture('form_first_view', {
+          distinctId: owner.email,
+          accountId: form.accountId,
+          properties: { form_id: form.id },
+        });
+      }
+    }
     return { ok: true };
   }
 

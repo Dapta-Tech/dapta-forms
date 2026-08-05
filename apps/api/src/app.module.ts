@@ -83,8 +83,25 @@ import {
     // Host auth backend selected by AUTH_PROVIDER (local stub / WorkOS overlay).
     {
       provide: AUTH_PROVIDER,
-      useFactory: (env: ServerEnv, db: Db) => createAuthProvider(env, db),
-      inject: [ENV, DB],
+      // The signup observer is the ONLY hook for "a person joined": accounts and
+      // members are materialized just-in-time inside the provider, so there is
+      // no signup endpoint to instrument. Passed as a plain callback so the auth
+      // adapters stay ignorant of analytics (invariant 6).
+      useFactory: (env: ServerEnv, db: Db, productAnalytics: AnalyticsEffects) =>
+        createAuthProvider(env, db, (signup) => {
+          if (!signup.email) return;
+          void productAnalytics.capture('signup_completed', {
+            distinctId: signup.email,
+            accountId: signup.accountId,
+            properties: {
+              member_id: signup.memberId,
+              role: signup.role,
+              is_first_member: signup.isFirstMember,
+              from_invite: signup.fromInvite,
+            },
+          });
+        }),
+      inject: [ENV, DB, AnalyticsEffects],
     },
     // Rate limiter for the public surface (P1-5): token bucket by default, noop
     // when RATE_LIMIT_ENABLED=false; swappable for a distributed limiter.

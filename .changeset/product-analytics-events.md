@@ -1,0 +1,5 @@
+---
+'@quill/db': minor
+---
+
+The five product-analytics events, emitted at their real call sites: `forms_signup_completed` (from a new SignupObserver port — accounts are materialized just-in-time inside the auth provider, so there is no signup endpoint to instrument), `forms_form_created`, `forms_form_published` (carrying `is_first_publish`), `forms_form_first_view` and `forms_activation`. The two milestone events deduplicate against the DATABASE rather than a cookie or client flag, so an account activates exactly once no matter how many answers follow — new `isFirstAccountCompletion` / `isFirstAccountFormView` / `getAccountOwner` helpers in @quill/db. Also writes the 0010 columns: `form.created_by` from the resolved principal (never request input), and `member.last_seen_at` throttled to at most one write per member per 15 minutes so liveness does not become a row UPDATE per API call. Every capture is gated on analytics being configured, so a fork without a key runs none of the extra queries.

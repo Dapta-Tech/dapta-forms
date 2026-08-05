@@ -11,6 +11,7 @@ export * from './account-integrations';
 export * from './account-branding';
 export * from './crypto';
 export * from './analytics';
+export * from './milestones';
 export * from './members';
 export * from './demo-form';
 export * from './short-links';
