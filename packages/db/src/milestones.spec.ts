@@ -75,6 +75,11 @@ describe('claimAccountActivation — exactly once, ever', () => {
   it('CONCURRENT callers produce exactly one winner', async () => {
     // The bug this replaced: a read-then-act check had both callers see the
     // other's row and BOTH decline, leaving the account unable to ever activate.
+    //
+    // This assertion only has teeth on POSTGRES. better-sqlite3 is synchronous,
+    // so `Promise.all` runs these one after another and the test would pass even
+    // without the WHERE guard. Real concurrency is exercised by the Postgres
+    // parity job, where the guard is enforced by a row lock.
     const results = await Promise.all([
       claimAccountActivation(db, ACCOUNT, 2000),
       claimAccountActivation(db, ACCOUNT, 2000),

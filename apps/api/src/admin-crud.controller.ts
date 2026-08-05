@@ -272,17 +272,14 @@ export class AdminCrudController {
     const before = this.productAnalytics?.enabled
       ? await getFormById(this.db, p.accountId, id)
       : null;
-    const published = unwrapCrud(await publishForm(this.db, p.accountId, id));
-    // Only when the publish ACTUALLY happened. `publishForm` is a no-op when no
-    // draft is pending (it returns the row untouched, never stamping
-    // `published_at`), so capturing unconditionally would emit a first-publish
-    // conversion on every repeat call for a form that was never published.
-    //
-    // The test is "was a draft pending", NOT "did published_at change":
-    // `published_at` is `Date.now()`, so two publishes inside the same
-    // millisecond are indistinguishable and the second would be swallowed. A
-    // pending draft is the exact precondition `publishForm` itself branches on.
-    if (before?.draftConfig != null) {
+    const result = await publishForm(this.db, p.accountId, id);
+    const published = unwrapCrud(result);
+    // `result.published` comes from the UPDATE's own RETURNING, so it is true
+    // exactly on the call that copied the draft over. Reading the row BEFORE and
+    // deciding here would be a read-then-act: two concurrent publishes both saw
+    // a pending draft and both counted a first-publish conversion — the same
+    // class of bug the activation claim exists to kill, one function over.
+    if (result.published) {
       await this.productAnalytics?.captureForMember('form_published', p, {
         form_id: id,
         is_first_publish: before?.publishedAt == null,

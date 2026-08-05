@@ -186,10 +186,21 @@ export class SubmissionService {
     // landing together each see the other and both decline, and the account can
     // then never activate; a re-submitted session double-fires. Both were
     // reproduced against this service. The claim has neither failure mode and is
-    // idempotent against a replayed row. Runs only when analytics is on.
-    if (!input.partial && this.productAnalytics?.enabled) {
+    // idempotent against a replayed row.
+    //
+    // The CLAIM is deliberately NOT gated on analytics, only the capture is.
+    // `activated_at` is a fact about the workspace — the day its first form was
+    // really answered — and it has to be recorded whether or not anyone is
+    // listening. Gating it would leave every account that activates while
+    // telemetry is off with a NULL, and the moment the key is set each one would
+    // claim and announce an activation dated today: exactly the false-conversion
+    // wave the 0010 backfill exists to prevent, just triggered by env timing
+    // instead of migration timing. The cost of always claiming is one
+    // primary-key UPDATE that matches nothing after the first answer, next to a
+    // submission write that already happened.
+    if (!input.partial) {
       const first = await claimAccountActivation(this.db, form.accountId);
-      if (first) {
+      if (first && this.productAnalytics?.enabled) {
         const owner = await getAccountOwner(this.db, form.accountId);
         if (owner?.email) {
           await this.productAnalytics.capture('activation', {
@@ -210,16 +221,6 @@ export class SubmissionService {
     const form = await getPublishedForm(this.db, accountCode, slug);
     if (!form) return { error: 'NOT_FOUND', message: 'Form not found.', status: 404 };
 
-    // Same atomic claim as activation, for the same reason: two visitors opening
-    // two forms at the same instant must produce ONE event. Gated on
-    // `type === 'view'` and on analytics being on, so the ordinary hot path
-    // (step_view/step_complete, and every deployment without a key) never runs
-    // the extra write.
-    const firstEverView =
-      input.type === 'view' &&
-      this.productAnalytics?.enabled === true &&
-      (await claimAccountFirstView(this.db, form.accountId));
-
     await recordFormEvent(this.db, {
       formId: form.id,
       sessionId: input.sessionId,
@@ -228,11 +229,25 @@ export class SubmissionService {
       stepKey: input.stepKey ?? null,
     });
 
+    // Claimed AFTER the insert, not before. The old read-then-act HAD to run
+    // first or it would have found the very row being written; a claim has no
+    // such constraint, and claiming first meant a failed insert burned
+    // `first_viewed_at` on a view that was never recorded.
+    //
+    // Same atomic claim as activation and, like it, NOT gated on analytics —
+    // only the capture is. `first_viewed_at` is a fact about the workspace, and
+    // recording it lazily would mean every account that got its first visitor
+    // while telemetry was off announces that visit the day the key is set.
+    // Restricted to `type === 'view'` so the ordinary hot path
+    // (step_view/step_complete, which is most of this table) never touches it.
+    const firstEverView =
+      input.type === 'view' && (await claimAccountFirstView(this.db, form.accountId));
+
     // The moment a workspace's work first met a real visitor. It splits the two
     // halves of the funnel: published-but-never-viewed is a DISTRIBUTION problem
     // (the owner never shared it), viewed-but-never-answered is a FORM problem.
     // Without this event both look identical from the outside.
-    if (firstEverView) {
+    if (firstEverView && this.productAnalytics?.enabled) {
       const owner = await getAccountOwner(this.db, form.accountId);
       if (owner?.email) {
         await this.productAnalytics?.capture('form_first_view', {

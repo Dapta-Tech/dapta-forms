@@ -13,6 +13,14 @@ import type { CrudResult } from './crud';
 
 export type { CrudResult } from './crud';
 
+/**
+ * `publishForm`'s result. `published` is true ONLY on the call that actually
+ * copied the draft over the live config — false on the no-op (no draft pending)
+ * and false for the loser of two concurrent publishes. Callers that count
+ * publishes as conversions must read this, never guess from the returned row.
+ */
+export type PublishResult = CrudResult<FormRow> & { published?: boolean };
+
 // --- JSON column helpers (portable across jsonb / TEXT) ----------------------
 
 /** Parse a JSON column value (string on SQLite, object on PG) with a fallback. */
@@ -355,7 +363,7 @@ export async function publishForm(
   db: Db,
   accountId: string,
   id: string,
-): Promise<CrudResult<FormRow>> {
+): Promise<PublishResult> {
   const existing = await getFormById(db, accountId, id);
   if (!existing) return { ok: false, reason: 'NOT_FOUND' };
   if (existing.draftConfig == null) return { ok: true, value: existing }; // no draft — no-op
@@ -368,13 +376,21 @@ export async function publishForm(
   if (live && live.destinations !== undefined) next.destinations = live.destinations;
   else delete next.destinations;
   const now = Date.now();
-  await db.run(
+  // RETURNING, so the caller LEARNS whether this call is the one that published
+  // rather than inferring it. `draft_config IS NOT NULL` in the WHERE already
+  // makes the write exactly-once; without a row back, two concurrent publishes
+  // both look like "a draft was pending" to a caller that pre-read the row, and
+  // a single publish gets counted twice. `published_at` cannot substitute for
+  // this either — it is Date.now(), so two publishes in the same millisecond are
+  // indistinguishable.
+  const fired = await db.get<{ id: string }>(
     sql`UPDATE form
         SET config = ${jsonParam(next)}, draft_config = NULL,
             published_at = ${now}, updated_at = ${now}
-        WHERE account_id = ${accountId} AND id = ${id} AND draft_config IS NOT NULL`,
+        WHERE account_id = ${accountId} AND id = ${id} AND draft_config IS NOT NULL
+        RETURNING id`,
   );
-  return { ok: true, value: (await getFormById(db, accountId, id))! };
+  return { ok: true, value: (await getFormById(db, accountId, id))!, published: Boolean(fired) };
 }
 
 export async function duplicateForm(

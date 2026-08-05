@@ -259,6 +259,47 @@ describe('forms_signup_completed', () => {
   });
 });
 
+describe('turning analytics ON later', () => {
+  it('does NOT announce accounts that already activated while it was off', async () => {
+    const off = new AnalyticsEffects(db, { PRODUCT_ANALYTICS_KEY: undefined } as never);
+    const sOff = new SubmissionService(
+      db,
+      new EmailEffects(new SubmissionNotifier(new LogOnlyEmailProvider()), db),
+      undefined,
+      undefined,
+      off,
+    );
+    const answer = (sid: string) =>
+      sOff.submit('acme', 'lead-qualifier', {
+        sessionId: sid,
+        data: { work_email: `${sid}@x.com` },
+        partial: false,
+      } as never);
+
+    // Real activity happens while telemetry is off — the window between the
+    // migration landing and the operator setting the key.
+    await answer('early-1');
+    await answer('early-2');
+    await sOff.event('acme', 'lead-qualifier', { sessionId: 'early-v', type: 'view' });
+    expect(await listOutbox(db, { kind: 'analytics' })).toHaveLength(0);
+
+    // Key goes in. `submissions` is the ON service from beforeEach.
+    await submissions.submit('acme', 'lead-qualifier', {
+      sessionId: 'later',
+      data: { work_email: 'later@x.com' },
+      partial: false,
+    } as never);
+    await submissions.event('acme', 'lead-qualifier', { sessionId: 'later-v', type: 'view' });
+
+    // The milestones were CLAIMED while off, so there is nothing left to claim
+    // and nothing is announced. Gating the claim itself would fire both here,
+    // months late — the same false-conversion wave the 0010 backfill prevents.
+    const fired = await names();
+    expect(fired).not.toContain('forms_activation');
+    expect(fired).not.toContain('forms_form_first_view');
+  });
+});
+
 describe('analytics OFF (the bare-fork default)', () => {
   it('emits nothing from any call site', async () => {
     const off = new AnalyticsEffects(db, { PRODUCT_ANALYTICS_KEY: undefined } as never);
@@ -289,5 +330,31 @@ describe('analytics OFF (the bare-fork default)', () => {
     } as never);
 
     expect(await listOutbox(db, { kind: 'analytics' })).toHaveLength(0);
+
+    // The milestone CLAIMS still happen — they are facts about the workspace,
+    // not telemetry, and skipping them is what would make enabling the key later
+    // announce a wave of stale activations. One primary-key UPDATE that matches
+    // nothing after the first answer is the whole cost.
+    const acct = await db.get<{ activated_at: number | string | null }>(
+      sql`SELECT activated_at FROM account WHERE code = 'acme'`,
+    );
+    expect(acct!.activated_at).not.toBeNull();
+  });
+});
+
+describe('forms_form_published — concurrency', () => {
+  it('counts ONE conversion when the same publish is fired twice at once', async () => {
+    await controller.updateForm(asOwner(), formId, { config: { version: 1, steps: [] } });
+    await Promise.all([
+      controller.publishForm(asOwner(), formId),
+      controller.publishForm(asOwner(), formId),
+    ]);
+
+    // Only one publish can win (`publishForm`'s UPDATE carries
+    // `draft_config IS NOT NULL`), so only one conversion may be counted. A
+    // caller that pre-read the row saw a pending draft in BOTH calls and
+    // double-counted — the same read-then-act shape as the activation bug.
+    const publishes = (await captured()).filter((c) => c.event === 'forms_form_published');
+    expect(publishes).toHaveLength(1);
   });
 });
