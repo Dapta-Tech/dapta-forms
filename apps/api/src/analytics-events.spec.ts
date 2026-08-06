@@ -6,6 +6,7 @@
  * where and as often as the funnel assumes it does.
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { ForbiddenException } from '@nestjs/common';
 import {
   createDb,
   migrate,
@@ -32,6 +33,7 @@ let productAnalytics: AnalyticsEffects;
 let formId: string;
 
 const asOwner = (): ReqLike => ({ headers: {} });
+const asEmail = (email: string): ReqLike => ({ headers: { 'x-quill-email': email } });
 
 const ANALYTICS_ON = { PRODUCT_ANALYTICS_KEY: 'phc_test', PRODUCT_ANALYTICS_HOST: 'https://x.test' };
 const LOCAL_ENV = {
@@ -421,5 +423,111 @@ describe('forms_form_published — concurrency', () => {
     // double-counted — the same read-then-act shape as the activation bug.
     const publishes = (await captured()).filter((c) => c.event === 'forms_form_published');
     expect(publishes).toHaveLength(1);
+  });
+});
+
+describe('attribution — first touch, recorded once', () => {
+  /** The stored value, dialect-neutral (jsonb parsed on pg, TEXT on sqlite). */
+  async function stored(): Promise<Record<string, string> | null> {
+    const row = await db.get<{ attribution: unknown }>(
+      sql`SELECT attribution FROM account WHERE code = 'acme'`,
+    );
+    const raw = row?.attribution ?? null;
+    if (raw == null) return null;
+    return typeof raw === 'string'
+      ? (JSON.parse(raw) as Record<string, string>)
+      : (raw as Record<string, string>);
+  }
+
+  it('stores the tags under the documented field names and says it recorded them', async () => {
+    const res = await controller.recordAttribution(asOwner(), {
+      utmSource: 'landing',
+      utmMedium: 'cpc',
+      utmCampaign: 'launch',
+    });
+    expect(res).toEqual({ recorded: true });
+    expect(await stored()).toEqual({ utmSource: 'landing', utmMedium: 'cpc', utmCampaign: 'launch' });
+    expect(await names()).toContain('forms_attribution_captured');
+  });
+
+  it('stores camelCase but emits snake_case event properties', async () => {
+    // Two conventions on purpose, pinned together so neither drifts: the COLUMN
+    // uses the camelCase shape `attributionSchema` declares, while the analytics
+    // wire is snake_case like every other property this product sends
+    // (`form_id`, `is_first_publish`). That project is shared with the rest of the
+    // Dapta estate, so property naming there is a cross-product contract.
+    await controller.recordAttribution(asOwner(), { utmSource: 'landing', utmMedium: 'cpc' });
+    expect(await stored()).toEqual({ utmSource: 'landing', utmMedium: 'cpc' });
+    const event = (await captured()).find((c) => c.event === 'forms_attribution_captured');
+    expect(event?.props).toMatchObject({ utm_source: 'landing', utm_medium: 'cpc' });
+    expect(event?.props).not.toHaveProperty('utmSource');
+  });
+
+  it('keeps the FIRST touch and emits nothing the second time', async () => {
+    await controller.recordAttribution(asOwner(), { utmSource: 'google-ads' });
+    const res = await controller.recordAttribution(asOwner(), { utmSource: 'direct' });
+    expect(res).toEqual({ recorded: false });
+    expect(await stored()).toEqual({ utmSource: 'google-ads' });
+    // Exactly one event: a second one would double-count the acquisition.
+    expect((await names()).filter((n) => n === 'forms_attribution_captured')).toHaveLength(1);
+  });
+
+  it('refuses a workspace that is older than the claim window', async () => {
+    // Every account predating this feature has a NULL column, so NULL alone is not
+    // evidence of a new workspace. Age it past the window and the claim must
+    // decline — otherwise a campaign link clicked by a long-time customer would
+    // permanently record their workspace as acquired by that campaign.
+    await db.run(sql`UPDATE account SET created_at = ${Date.now() - 24 * 60 * 60_000} WHERE code = 'acme'`);
+    expect(await controller.recordAttribution(asOwner(), { utmSource: 'landing' })).toEqual({
+      recorded: false,
+    });
+    expect(await stored()).toBeNull();
+    expect(await names()).not.toContain('forms_attribution_captured');
+  });
+
+  it('ignores an empty payload rather than spending the claim on it', async () => {
+    expect(await controller.recordAttribution(asOwner(), {})).toEqual({ recorded: false });
+    expect(await stored()).toBeNull();
+    // The real campaign must still be recordable afterwards.
+    expect(await controller.recordAttribution(asOwner(), { utmSource: 'landing' })).toEqual({
+      recorded: true,
+    });
+  });
+
+  it('treats an all-null payload as empty', async () => {
+    // Every field of the schema is nullable, so a hand-written body can pass
+    // validation while carrying nothing. It must not spend the claim.
+    expect(await controller.recordAttribution(asOwner(), { utmSource: null, gclid: null })).toEqual({
+      recorded: false,
+    });
+    expect(await stored()).toBeNull();
+  });
+
+  it('drops keys that are not on the allowlist', async () => {
+    // The body is attacker-supplied — anyone can craft the link that produced it.
+    await controller.recordAttribution(asOwner(), {
+      utmSource: 'landing',
+      evil: 'nope',
+      accountId: 'someone-else',
+    });
+    expect(await stored()).toEqual({ utmSource: 'landing' });
+  });
+
+  it('refuses a plain member — acquisition is workspace-level data', async () => {
+    // The gate exists because a review found it missing; without this case it can be
+    // deleted and every other test still passes. Same shape as the other
+    // admin-gated writes in this controller.
+    await controller.inviteMember(asOwner(), { email: 'plain@acme.test', role: 'member' });
+    await expect(
+      controller.recordAttribution(asEmail('plain@acme.test'), { utmSource: 'landing' }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(await stored()).toBeNull();
+  });
+
+  it('never throws on a malformed body', async () => {
+    // A login already succeeded by the time this runs; it must not turn into a 500.
+    expect(await controller.recordAttribution(asOwner(), 'not-an-object')).toEqual({ recorded: false });
+    expect(await controller.recordAttribution(asOwner(), null)).toEqual({ recorded: false });
+    expect(await stored()).toBeNull();
   });
 });

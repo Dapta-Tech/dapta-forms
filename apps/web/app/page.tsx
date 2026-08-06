@@ -1,7 +1,34 @@
+import { headers } from 'next/headers';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { BrandLockup } from '@/components/brand/brand';
+import { attributionHandoffQuery } from '@/lib/attribution';
 import { authProvider, getSession } from '@/lib/auth-session';
+import { selfHost } from '@/lib/request-origin';
+
+/**
+ * Carry the acquisition tags into the login hand-off.
+ *
+ * `redirect()` drops the query string, and the identity round-trip leaves our
+ * origin entirely — so tags not forwarded HERE are gone for good. This is the only
+ * surface the campaign link actually lands on.
+ *
+ * The pure part lives in `lib/attribution.ts` so it can be unit-tested; a redirect
+ * cannot. `landing_path` is deliberately not set: it would be '/' on every visit,
+ * making the parse non-empty for a plain bookmark hit and burning the write-once
+ * claim on a value that says nothing.
+ */
+async function loginHandoff(params: Record<string, string | string[] | undefined>): Promise<string> {
+  const h = await headers();
+  const query = attributionHandoffQuery(
+    params,
+    h.get('referer'),
+    // Same trust order as `requestOrigin`: PUBLIC_APP_URL first, headers only as a
+    // self-host fallback. `Host` / `X-Forwarded-Host` are client-supplied.
+    selfHost((n) => h.get(n)),
+  );
+  return query ? `/api/auth/login?${query}` : '/api/auth/login';
+}
 
 // Per-request render: the workos-vs-local branch reads RUNTIME env + cookies.
 // Without this, next build (no AUTH_PROVIDER in the builder) bakes the OSS
@@ -15,10 +42,15 @@ export const dynamic = 'force-dynamic';
  *    hosted login (no intermediate sign-in card).
  *  - local/OSS fork: keep the clone-and-run landing with the demo form.
  */
-export default async function HomePage() {
+export default async function HomePage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   if (authProvider() === 'workos') {
     const session = await getSession();
-    redirect(session ? '/admin' : '/api/auth/login');
+    if (session) redirect('/admin');
+    redirect(await loginHandoff(await searchParams));
   }
 
   return (

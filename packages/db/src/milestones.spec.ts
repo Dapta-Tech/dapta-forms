@@ -10,6 +10,7 @@ import {
   claimAccountFirstView,
   getAccountOwner,
   touchMemberLastSeen,
+  claimAccountAttribution,
 } from './milestones';
 
 let db: Db;
@@ -173,5 +174,83 @@ describe('touchMemberLastSeen', () => {
     await touchMemberLastSeen(db, `m1_${ACCOUNT}`, 10_000);
     await touchMemberLastSeen(db, `m1_${ACCOUNT}`, 10_000 + 15 * 60_000 + 1);
     expect(await lastSeen(`m1_${ACCOUNT}`)).toBe(10_000 + 15 * 60_000 + 1);
+  });
+});
+
+describe('claimAccountAttribution — first touch, once, and only for a NEW account', () => {
+  // Seeded accounts are born at epoch-ms 1000, so `now` is passed explicitly:
+  // the claim is bounded by account AGE, and Date.now() would put these accounts
+  // decades outside the window. That is the behaviour under test, not a nuisance.
+  const JUST_BORN = 2000;
+
+  async function storedAttribution(accountId: string): Promise<Record<string, string> | null> {
+    const row = await db.get<{ attribution: unknown }>(
+      sql`SELECT attribution FROM account WHERE id = ${accountId}`,
+    );
+    const raw = row?.attribution ?? null;
+    if (raw == null) return null;
+    // Postgres `jsonb` comes back parsed; SQLite stores the same value as TEXT
+    // and hands back the string. Same dual-dialect coercion the package applies
+    // to every other JSON column read.
+    return typeof raw === 'string' ? (JSON.parse(raw) as Record<string, string>) : (raw as Record<string, string>);
+  }
+
+  it('the first caller wins and the payload round-trips', async () => {
+    expect(
+      await claimAccountAttribution(db, ACCOUNT, { utmSource: 'landing', utmMedium: 'cpc' }, JUST_BORN),
+    ).toBe(true);
+    expect(await storedAttribution(ACCOUNT)).toEqual({ utmSource: 'landing', utmMedium: 'cpc' });
+  });
+
+  it('keeps FIRST touch, not last', async () => {
+    // Overwriting would credit whichever link the customer clicked most recently
+    // — usually an untagged direct return — and the paid campaign loses the
+    // signup it paid for.
+    await claimAccountAttribution(db, ACCOUNT, { utmSource: 'google-ads' }, JUST_BORN);
+    expect(await claimAccountAttribution(db, ACCOUNT, { utmSource: 'direct' }, JUST_BORN)).toBe(false);
+    expect(await storedAttribution(ACCOUNT)).toEqual({ utmSource: 'google-ads' });
+  });
+
+  it('REFUSES an account older than the window, even though its column is NULL', async () => {
+    // The guard that matters most in production: every account that predates this
+    // feature has a NULL column. Without the age bound, the first tagged login by
+    // anyone — the owner of a year-old workspace clicking a campaign link, or an
+    // invited member just browsing — would permanently stamp that workspace as
+    // acquired by a campaign it predates. Write-once, so unrecoverable.
+    const wayLater = 1000 + 10 * 60_000 + 1;
+    expect(await claimAccountAttribution(db, ACCOUNT, { utmSource: 'landing' }, wayLater)).toBe(false);
+    expect(await storedAttribution(ACCOUNT)).toBeNull();
+  });
+
+  it('honours a caller-supplied window', async () => {
+    const wayLater = 1000 + 60 * 60_000;
+    expect(
+      await claimAccountAttribution(db, ACCOUNT, { utmSource: 'landing' }, wayLater, 2 * 60 * 60_000),
+    ).toBe(true);
+  });
+
+  it('CONCURRENT callers produce exactly one winner', async () => {
+    // Only has teeth on POSTGRES (better-sqlite3 is synchronous, so Promise.all
+    // serializes) — the Postgres parity job is where the row lock is exercised.
+    const results = await Promise.all([
+      claimAccountAttribution(db, ACCOUNT, { utmSource: 'a' }, JUST_BORN),
+      claimAccountAttribution(db, ACCOUNT, { utmSource: 'b' }, JUST_BORN),
+      claimAccountAttribution(db, ACCOUNT, { utmSource: 'c' }, JUST_BORN),
+    ]);
+    expect(results.filter(Boolean)).toHaveLength(1);
+  });
+
+  it('does not leak across accounts', async () => {
+    await claimAccountAttribution(db, ACCOUNT, { utmSource: 'landing' }, JUST_BORN);
+    expect(await claimAccountAttribution(db, OTHER_ACCOUNT, { utmSource: 'other' }, JUST_BORN)).toBe(
+      true,
+    );
+    expect(await storedAttribution(OTHER_ACCOUNT)).toEqual({ utmSource: 'other' });
+  });
+
+  it('is independent of the timestamp milestones on the same row', async () => {
+    await claimAccountActivation(db, ACCOUNT, 1500);
+    await claimAccountFirstView(db, ACCOUNT, 1500);
+    expect(await claimAccountAttribution(db, ACCOUNT, { utmSource: 'landing' }, JUST_BORN)).toBe(true);
   });
 });
