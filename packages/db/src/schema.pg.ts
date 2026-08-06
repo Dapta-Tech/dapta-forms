@@ -17,7 +17,7 @@ export const account = pgTable('account', {
   vanitySlug: text('vanity_slug').unique(),
   daptaEntitlement: text('dapta_entitlement'),
   entitlementCheckedAt: bigint('entitlement_checked_at', { mode: 'number' }),
-  /** RESERVED — first-touch acquisition context; nothing writes it yet (see 0010). */
+  /** First-touch acquisition context (see 0010). Written once by `claimAccountAttribution`. */
   attribution: jsonb('attribution'),
   /** Milestone CLAIM: epoch-ms of the first completed submission. Written once, via UPDATE…WHERE IS NULL. */
   activatedAt: bigint('activated_at', { mode: 'number' }),

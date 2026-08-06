@@ -54,7 +54,11 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   const attribution = parseAttribution(
     Object.fromEntries([...new Set(sp.keys())].map((k) => [k, sp.getAll(k)])),
   );
-  if (attribution) {
+  // An already-parked value is NOT overwritten. The account-level claim is genuine
+  // first-touch, but at this point no account exists yet, so nothing else enforces
+  // it ACROSS login attempts: arrive from campaign A, abandon at the provider, come
+  // back from campaign B inside ten minutes, and last-wins would credit B.
+  if (attribution && !jar.get(ATTRIBUTION_COOKIE)) {
     jar.set(ATTRIBUTION_COOKIE, JSON.stringify(attribution), {
       path: '/',
       httpOnly: true,

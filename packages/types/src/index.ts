@@ -792,7 +792,12 @@ export const attributionSchema = z.object({
   referrer: z.string().max(512).nullable().optional(),
   /** Path-only entry point (never the query string — it can carry PII). */
   landingPath: z.string().max(512).nullable().optional(),
-  /** Epoch-ms of that first visit, as the CLIENT clock reported it — may skew. */
+  /**
+   * RESERVED — epoch-ms of that first visit, as the CLIENT clock reported it.
+   * Structurally unwritable today: `ATTRIBUTION_QUERY_MAP` only carries the
+   * string-valued fields, so nothing can populate a number. Kept because the
+   * landing already computes it and a reader must keep parsing rows that have it.
+   */
   firstSeenAt: z.number().int().nonnegative().nullable().optional(),
 });
 export type Attribution = z.infer<typeof attributionSchema>;

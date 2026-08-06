@@ -6,6 +6,7 @@
  * where and as often as the funnel assumes it does.
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { ForbiddenException } from '@nestjs/common';
 import {
   createDb,
   migrate,
@@ -32,6 +33,7 @@ let productAnalytics: AnalyticsEffects;
 let formId: string;
 
 const asOwner = (): ReqLike => ({ headers: {} });
+const asEmail = (email: string): ReqLike => ({ headers: { 'x-quill-email': email } });
 
 const ANALYTICS_ON = { PRODUCT_ANALYTICS_KEY: 'phc_test', PRODUCT_ANALYTICS_HOST: 'https://x.test' };
 const LOCAL_ENV = {
@@ -509,6 +511,17 @@ describe('attribution — first touch, recorded once', () => {
       accountId: 'someone-else',
     });
     expect(await stored()).toEqual({ utmSource: 'landing' });
+  });
+
+  it('refuses a plain member — acquisition is workspace-level data', async () => {
+    // The gate exists because a review found it missing; without this case it can be
+    // deleted and every other test still passes. Same shape as the other
+    // admin-gated writes in this controller.
+    await controller.inviteMember(asOwner(), { email: 'plain@acme.test', role: 'member' });
+    await expect(
+      controller.recordAttribution(asEmail('plain@acme.test'), { utmSource: 'landing' }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(await stored()).toBeNull();
   });
 
   it('never throws on a malformed body', async () => {

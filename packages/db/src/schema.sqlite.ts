@@ -26,7 +26,7 @@ export const account = sqliteTable('account', {
   vanitySlug: text('vanity_slug').unique(),
   daptaEntitlement: text('dapta_entitlement'),
   entitlementCheckedAt: integer('entitlement_checked_at'),
-  /** RESERVED — first-touch acquisition context (TEXT JSON); nothing writes it yet (see 0010). */
+  /** First-touch acquisition context (TEXT JSON, see 0010). Written once by `claimAccountAttribution`. */
   attribution: text('attribution'),
   /** Milestone CLAIM: epoch-ms of the first completed submission. Written once, via UPDATE…WHERE IS NULL. */
   activatedAt: integer('activated_at'),

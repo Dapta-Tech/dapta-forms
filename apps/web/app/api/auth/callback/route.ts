@@ -42,14 +42,18 @@ async function recordAttribution(
   const parked = jar.get(ATTRIBUTION_COOKIE)?.value;
   if (!parked) return;
   try {
-    await fetch(`${serverApiUrl}/v1/account/attribution`, {
+    const res = await fetch(`${serverApiUrl}/v1/account/attribution`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', authorization: `Bearer ${accessToken}` },
       body: parked,
       cache: 'no-store',
       signal: AbortSignal.timeout(3000),
     });
-    jar.delete(ATTRIBUTION_COOKIE);
+    // `fetch` resolves for EVERY status, so the status has to be read: a 500 from a
+    // failed-over database, or a 502 from the ingress while a pod drains, is not the
+    // API having its say — it is the same transient failure as a dead socket, and
+    // deleting here would lose the tags for good.
+    if (res.status < 500) jar.delete(ATTRIBUTION_COOKIE);
   } catch {
     // Kept for a retry — see the note above. Never rethrown: the login succeeded.
   }
