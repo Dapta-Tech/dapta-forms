@@ -1,7 +1,41 @@
+import { headers } from 'next/headers';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
+import { parseAttribution } from '@quill/types';
 import { BrandLockup } from '@/components/brand/brand';
 import { authProvider, getSession } from '@/lib/auth-session';
+
+/**
+ * Carry the acquisition tags into the login hand-off.
+ *
+ * `redirect()` drops the query string, and the identity round-trip leaves our
+ * origin entirely — so tags not forwarded HERE are gone for good. This is the
+ * only surface the campaign link actually lands on.
+ *
+ * Only allowlisted keys travel: forwarding the raw query would let a crafted
+ * link smuggle arbitrary params into the login route.
+ */
+async function loginHandoff(params: Record<string, string | string[] | undefined>): Promise<string> {
+  const h = await headers();
+  const referer = h.get('referer');
+  let referrer: string | undefined;
+  if (referer) {
+    // Drop a SAME-ORIGIN referer. `attribution` is written once and never again,
+    // so storing "came from our own page" would spend first touch on a value that
+    // says nothing, and the real campaign could never be recorded afterwards.
+    try {
+      referrer = new URL(referer).host === h.get('host') ? undefined : referer;
+    } catch {
+      referrer = undefined;
+    }
+  }
+  // `landing_path` is deliberately NOT set here: it would be '/' on every visit,
+  // which would make the parse non-empty for a plain bookmark hit and burn the
+  // claim. It is for surfaces where the path itself carries information.
+  const attribution = parseAttribution({ ...params, referrer });
+  if (!attribution) return '/api/auth/login';
+  return `/api/auth/login?${new URLSearchParams(Object.entries(attribution)).toString()}`;
+}
 
 // Per-request render: the workos-vs-local branch reads RUNTIME env + cookies.
 // Without this, next build (no AUTH_PROVIDER in the builder) bakes the OSS
@@ -15,10 +49,15 @@ export const dynamic = 'force-dynamic';
  *    hosted login (no intermediate sign-in card).
  *  - local/OSS fork: keep the clone-and-run landing with the demo form.
  */
-export default async function HomePage() {
+export default async function HomePage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   if (authProvider() === 'workos') {
     const session = await getSession();
-    redirect(session ? '/admin' : '/api/auth/login');
+    if (session) redirect('/admin');
+    redirect(await loginHandoff(await searchParams));
   }
 
   return (

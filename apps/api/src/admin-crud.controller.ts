@@ -7,6 +7,7 @@ import {
   Get,
   HttpCode,
   Inject,
+  Logger,
   NotFoundException,
   Optional,
   Param,
@@ -19,6 +20,7 @@ import {
 import type { Db, NotificationSetting } from '@quill/db';
 import {
   changeMemberRole,
+  claimAccountAttribution,
   createForm,
   getAccountBranding,
   mergeKitIntoBranding,
@@ -52,6 +54,7 @@ import {
   type SubmissionEmailKey,
 } from '@quill/notifications';
 import {
+  accountAttributionSchema,
   formInputSchema,
   maskConfigSecrets,
   memberInviteSchema,
@@ -105,6 +108,8 @@ function maskForm<T extends { config: unknown; draftConfig?: unknown }>(form: T)
 /** Host-authed CRUD for forms + submissions + members, and identity/vanity. */
 @Controller('v1')
 export class AdminCrudController {
+  private readonly log = new Logger('AdminCrudController');
+
   constructor(
     @Inject(DB) private readonly db: Db,
     @Inject(AuthService) private readonly auth: AuthService,
@@ -125,6 +130,43 @@ export class AdminCrudController {
   async me(@Req() req: ReqLike) {
     const p = await this.auth.resolveHost(req);
     return this.admin.me(p);
+  }
+
+  /**
+   * Record where this workspace came from. First touch, once, ever.
+   *
+   * POSTed by the web the moment a login completes, carrying the acquisition
+   * tags it stashed BEFORE bouncing to the identity provider. That bounce leaves
+   * our origin, so the query string never comes back — this request is the only
+   * point at which those values exist server-side. Miss it and the campaign that
+   * paid for the signup is unrecoverable.
+   *
+   * `accountId` comes from the resolved principal, NEVER the body. The body is
+   * attacker-supplied by definition (anyone can craft a link), so letting it name
+   * an account would let a stranger overwrite someone else's attribution.
+   *
+   * Never throws on a bad payload and never blocks: attribution is an observer of
+   * the product, not a participant. A login must not fail because a UTM could not
+   * be stored, which is why the caller gets `{ recorded }` instead of a 4xx.
+   */
+  @Post('account/attribution')
+  async recordAttribution(@Req() req: ReqLike, @Body() body: unknown) {
+    const p = await this.auth.resolveHost(req);
+    const parsed = accountAttributionSchema.safeParse(body ?? {});
+    // `{}` passes the schema but is nothing to store, and storing it would SPEND
+    // the write-once claim — the real campaign could never be recorded after.
+    if (!parsed.success || Object.keys(parsed.data).length === 0) return { recorded: false };
+
+    const first = await claimAccountAttribution(this.db, p.accountId, parsed.data).catch((err) => {
+      // Same shape as the activation claim: a lock or a dead connection must not
+      // turn a completed login into a 500 on the way to the dashboard.
+      this.log.warn(`attribution claim failed for account ${p.accountId}: ${String(err)}`);
+      return false;
+    });
+    if (first && this.productAnalytics?.enabled) {
+      await this.productAnalytics.captureForMember('attribution_captured', p, { ...parsed.data });
+    }
+    return { recorded: first };
   }
 
   /**

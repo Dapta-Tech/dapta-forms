@@ -14,6 +14,7 @@
  */
 import { sql } from 'drizzle-orm';
 import type { Db } from './client';
+import { jsonParam } from './forms';
 
 /**
  * Claim a write-once milestone on `account`, atomically.
@@ -135,4 +136,34 @@ export async function touchMemberLastSeen(
         WHERE id = ${memberId}
           AND (last_seen_at IS NULL OR last_seen_at < ${now - throttleMs})`,
   );
+}
+
+/**
+ * Claim FIRST-TOUCH ATTRIBUTION for an account: where it came from.
+ *
+ * Write-once for the same reason activation is, but the stakes are different:
+ * a timestamp can be recomputed from the rows it summarizes, while acquisition
+ * context exists only in the URL that brought the person here. Once that request
+ * is over it is gone. So this claim is not an optimization — it is the only
+ * chance to record the value at all.
+ *
+ * First touch, not last: overwriting on a later visit would credit whichever
+ * link the customer happened to click most recently (usually a direct return
+ * with no tags at all), which is how paid campaigns lose the signups they paid
+ * for. Callers must pass `null`-free payloads — `parseAttribution` returns null
+ * rather than `{}` precisely so an untagged direct visit cannot spend the claim.
+ */
+export async function claimAccountAttribution(
+  db: Db,
+  accountId: string,
+  attribution: Record<string, string>,
+): Promise<boolean> {
+  // `jsonParam` is the repo's dialect-neutral JSON bind (jsonb on Postgres,
+  // text on SQLite) — the same helper every other JSON column write uses.
+  const claimed = await db.get<{ id: string }>(
+    sql`UPDATE account SET attribution = ${jsonParam(attribution)}
+        WHERE id = ${accountId} AND attribution IS NULL
+        RETURNING id`,
+  );
+  return Boolean(claimed);
 }

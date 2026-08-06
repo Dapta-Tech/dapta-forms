@@ -1,10 +1,49 @@
 import { timingSafeEqual } from 'node:crypto';
 import { cookies } from 'next/headers';
 import { NextResponse, type NextRequest } from 'next/server';
+import { serverApiUrl } from '@/lib/api-url';
 import { setSession } from '@/lib/auth-session';
 import { requestOrigin } from '@/lib/request-origin';
 
 const OAUTH_STATE_COOKIE = 'quill_oauth_state';
+const ATTRIBUTION_COOKIE = 'quill_attribution';
+
+/**
+ * Hand the parked acquisition tags to the API, which stores them write-once.
+ *
+ * Uses the freshly-minted access token directly instead of reading the session
+ * back: `setSession` writes its cookie on the OUTGOING response, so a read in
+ * this same request is not guaranteed to see it.
+ *
+ * This POST doubles as the first authenticated call, so it is what MATERIALIZES
+ * the workspace — the API resolves the principal, which JIT-creates the account.
+ * It therefore has to run before the redirect: after it, the dashboard's own
+ * first request would win the race and the tags would arrive to an account whose
+ * first touch had already been claimed as empty.
+ *
+ * Never throws, and gives up after a few seconds. Attribution is an observer of
+ * the product, never a participant: a slow or down API must not strand somebody
+ * who just logged in successfully.
+ */
+async function recordAttribution(
+  jar: Awaited<ReturnType<typeof cookies>>,
+  accessToken: string,
+): Promise<void> {
+  const parked = jar.get(ATTRIBUTION_COOKIE)?.value;
+  jar.delete(ATTRIBUTION_COOKIE);
+  if (!parked) return;
+  try {
+    await fetch(`${serverApiUrl}/v1/account/attribution`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${accessToken}` },
+      body: parked,
+      cache: 'no-store',
+      signal: AbortSignal.timeout(4000),
+    });
+  } catch {
+    // Swallowed on purpose — see the note above.
+  }
+}
 
 /** Constant-time string equality (guards length leak). */
 function safeEqual(a: string, b: string): boolean {
@@ -73,5 +112,6 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     refreshToken: tokens.refresh_token,
     sessionId: tokens.session_id,
   });
+  await recordAttribution(jar, tokens.access_token);
   return NextResponse.redirect(new URL('/admin', origin));
 }

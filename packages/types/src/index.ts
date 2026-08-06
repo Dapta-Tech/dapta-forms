@@ -1201,3 +1201,86 @@ export const apiErrorSchema = z.object({
   message: z.string(),
 });
 export type ApiError = z.infer<typeof apiErrorSchema>;
+
+/* ---------------------------------------------------------------------------
+ * Inbound acquisition context ("where did this workspace come from?").
+ *
+ * Lives here, not in @quill/shared: this is a WIRE CONTRACT. The web reads the
+ * tags off the first request and hands them to the API, which stores them on
+ * `account.attribution` exactly once. `@quill/shared` is dependency-free (no
+ * zod) and the API does not depend on it, so a shared parser there could not be
+ * validated on the receiving end.
+ *
+ * Why write-once matters for the shape: acquisition context exists only in the
+ * URL that brought the person here. A timestamp can be recomputed from the rows
+ * it summarizes; this cannot be recovered after the request ends.
+ * ------------------------------------------------------------------------- */
+
+/**
+ * Per-value cap. Real `fbclid`s run past 200 characters, so this is generous on
+ * purpose — but it IS a cap, because the payload lands in a JSONB column and an
+ * unbounded string is how one row becomes a megabyte.
+ */
+export const ATTRIBUTION_VALUE_MAX = 256;
+
+/**
+ * The ONLY keys ever stored, and the validator for the POST body.
+ *
+ * An allowlist rather than "copy every query param": anyone can craft a link, so
+ * this value is attacker-supplied, and it feeds a column that later feeds a CRM.
+ * zod's default behavior STRIPS unknown keys (no `.strict()` on purpose — a
+ * stranger appending `?password=…` should be ignored, not answered with a 400
+ * that tells them the shape).
+ *
+ * `gclid` / `fbclid` are the paid-click ids Google and Meta append; the existing
+ * Dapta booking links already carry them, and they are what reconciles a signup
+ * with a row of ad spend when UTMs alone are ambiguous.
+ */
+export const accountAttributionSchema = z.object({
+  utm_source: z.string().trim().min(1).max(ATTRIBUTION_VALUE_MAX).optional(),
+  utm_medium: z.string().trim().min(1).max(ATTRIBUTION_VALUE_MAX).optional(),
+  utm_campaign: z.string().trim().min(1).max(ATTRIBUTION_VALUE_MAX).optional(),
+  utm_term: z.string().trim().min(1).max(ATTRIBUTION_VALUE_MAX).optional(),
+  utm_content: z.string().trim().min(1).max(ATTRIBUTION_VALUE_MAX).optional(),
+  gclid: z.string().trim().min(1).max(ATTRIBUTION_VALUE_MAX).optional(),
+  fbclid: z.string().trim().min(1).max(ATTRIBUTION_VALUE_MAX).optional(),
+  /** Where the browser came from. Catches in-product buttons that carry no UTM. */
+  referrer: z.string().trim().min(1).max(ATTRIBUTION_VALUE_MAX).optional(),
+  /** Path of the first page seen on this deployment, WITHOUT its query string. */
+  landing_path: z.string().trim().min(1).max(ATTRIBUTION_VALUE_MAX).optional(),
+});
+export type AccountAttribution = z.infer<typeof accountAttributionSchema>;
+
+/**
+ * Derived from the schema, never hand-maintained: a second literal list would
+ * drift from the validator the first time someone adds a key to one of them.
+ */
+export const ATTRIBUTION_KEYS = Object.keys(
+  accountAttributionSchema.shape,
+) as ReadonlyArray<keyof AccountAttribution>;
+
+/**
+ * Normalize inbound query params into the stored shape, or `null` when there is
+ * nothing worth storing.
+ *
+ * Returning `null` for "no keys present" is load-bearing: the column is
+ * write-once, so persisting `{}` for an untagged direct visit would SPEND first
+ * touch, and the real campaign could never be recorded afterwards.
+ */
+export function parseAttribution(
+  params: Readonly<Record<string, string | string[] | undefined | null>>,
+): AccountAttribution | null {
+  const out: Record<string, string> = {};
+  for (const key of ATTRIBUTION_KEYS) {
+    const raw = params[key];
+    // A repeated param (`?utm_source=a&utm_source=b`) arrives as an array. Take
+    // the FIRST: last-wins would let an appended duplicate override the real one.
+    const value = (Array.isArray(raw) ? raw[0] : raw) ?? '';
+    const trimmed = String(value).trim();
+    if (!trimmed) continue;
+    out[key] = trimmed.slice(0, ATTRIBUTION_VALUE_MAX);
+  }
+  const parsed = accountAttributionSchema.safeParse(out);
+  if (!parsed.success) return null;
+  return Object.keys(parsed.data).length > 0 ? parsed.data : null;
+}

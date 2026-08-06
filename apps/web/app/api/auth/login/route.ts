@@ -1,10 +1,20 @@
 import { randomBytes } from 'node:crypto';
 import { cookies } from 'next/headers';
 import { NextResponse, type NextRequest } from 'next/server';
+import { parseAttribution } from '@quill/types';
 import { authProvider } from '@/lib/auth-session';
 import { requestOrigin } from '@/lib/request-origin';
 
 const OAUTH_STATE_COOKIE = 'quill_oauth_state';
+/**
+ * Acquisition tags, parked for the identity round-trip.
+ *
+ * A cookie and not the `returnTo` URL: `returnTo` is handed to an external
+ * service and echoed back, so anything in it is visible and editable by whoever
+ * holds the link. The cookie stays on this origin, is httpOnly, and expires with
+ * the login attempt — the callback is the only reader.
+ */
+const ATTRIBUTION_COOKIE = 'quill_attribution';
 
 /**
  * WorkOS login hand-off (AUTH-WEB-CONTRACT §3.1). The web holds NO WorkOS secret;
@@ -22,13 +32,30 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   }
 
   const state = randomBytes(24).toString('base64url');
-  (await cookies()).set(OAUTH_STATE_COOKIE, state, {
+  const jar = await cookies();
+  jar.set(OAUTH_STATE_COOKIE, state, {
     path: '/',
     httpOnly: true,
     sameSite: 'lax',
     secure: process.env.NODE_ENV === 'production',
     maxAge: 600, // 10 min — just long enough to finish the round-trip
   });
+
+  // Park the acquisition tags the root page forwarded. Same lifetime as the CSRF
+  // state: they are only meaningful for THIS login attempt, and a stale cookie
+  // would attribute a later signup to a campaign the person saw days ago.
+  // Absent tags set no cookie — the callback then has nothing to send, which is
+  // what keeps a direct visit from spending the write-once first-touch claim.
+  const attribution = parseAttribution(Object.fromEntries(new URL(req.url).searchParams));
+  if (attribution) {
+    jar.set(ATTRIBUTION_COOKIE, JSON.stringify(attribution), {
+      path: '/',
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: process.env.NODE_ENV === 'production',
+      maxAge: 600,
+    });
+  }
 
   const returnTo = `${origin}/api/auth/callback`;
   const res = await fetch(

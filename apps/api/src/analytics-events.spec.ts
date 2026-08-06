@@ -423,3 +423,69 @@ describe('forms_form_published — concurrency', () => {
     expect(publishes).toHaveLength(1);
   });
 });
+
+describe('attribution — first touch, recorded once', () => {
+  /** The stored value, dialect-neutral (jsonb parsed on pg, TEXT on sqlite). */
+  async function stored(): Promise<Record<string, string> | null> {
+    const row = await db.get<{ attribution: unknown }>(
+      sql`SELECT attribution FROM account WHERE code = 'acme'`,
+    );
+    const raw = row?.attribution ?? null;
+    if (raw == null) return null;
+    return typeof raw === 'string'
+      ? (JSON.parse(raw) as Record<string, string>)
+      : (raw as Record<string, string>);
+  }
+
+  it('stores the allowlisted tags and reports that it recorded them', async () => {
+    const res = await controller.recordAttribution(asOwner(), {
+      utm_source: 'landing',
+      utm_medium: 'cpc',
+      utm_campaign: 'launch',
+    });
+    expect(res).toEqual({ recorded: true });
+    expect(await stored()).toEqual({ utm_source: 'landing', utm_medium: 'cpc', utm_campaign: 'launch' });
+    expect(await names()).toContain('forms_attribution_captured');
+  });
+
+  it('carries the tags as event properties so PostHog can group by source', async () => {
+    await controller.recordAttribution(asOwner(), { utm_source: 'landing' });
+    const event = (await captured()).find((c) => c.event === 'forms_attribution_captured');
+    expect(event?.props).toMatchObject({ utm_source: 'landing' });
+  });
+
+  it('keeps the FIRST touch and emits nothing the second time', async () => {
+    await controller.recordAttribution(asOwner(), { utm_source: 'google-ads' });
+    const res = await controller.recordAttribution(asOwner(), { utm_source: 'direct' });
+    expect(res).toEqual({ recorded: false });
+    expect(await stored()).toEqual({ utm_source: 'google-ads' });
+    // Exactly one event: a second one would double-count the acquisition.
+    expect((await names()).filter((n) => n === 'forms_attribution_captured')).toHaveLength(1);
+  });
+
+  it('ignores an empty payload rather than spending the claim on it', async () => {
+    expect(await controller.recordAttribution(asOwner(), {})).toEqual({ recorded: false });
+    expect(await stored()).toBeNull();
+    // The real campaign must still be recordable afterwards.
+    expect(await controller.recordAttribution(asOwner(), { utm_source: 'landing' })).toEqual({
+      recorded: true,
+    });
+  });
+
+  it('drops keys that are not on the allowlist', async () => {
+    // The body is attacker-supplied — anyone can craft the link that produced it.
+    await controller.recordAttribution(asOwner(), {
+      utm_source: 'landing',
+      evil: 'nope',
+      accountId: 'someone-else',
+    });
+    expect(await stored()).toEqual({ utm_source: 'landing' });
+  });
+
+  it('never throws on a malformed body', async () => {
+    // A login already succeeded by the time this runs; it must not turn into a 500.
+    expect(await controller.recordAttribution(asOwner(), 'not-an-object')).toEqual({ recorded: false });
+    expect(await controller.recordAttribution(asOwner(), null)).toEqual({ recorded: false });
+    expect(await stored()).toBeNull();
+  });
+});

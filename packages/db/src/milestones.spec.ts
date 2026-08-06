@@ -10,6 +10,7 @@ import {
   claimAccountFirstView,
   getAccountOwner,
   touchMemberLastSeen,
+  claimAccountAttribution,
 } from './milestones';
 
 let db: Db;
@@ -173,5 +174,56 @@ describe('touchMemberLastSeen', () => {
     await touchMemberLastSeen(db, `m1_${ACCOUNT}`, 10_000);
     await touchMemberLastSeen(db, `m1_${ACCOUNT}`, 10_000 + 15 * 60_000 + 1);
     expect(await lastSeen(`m1_${ACCOUNT}`)).toBe(10_000 + 15 * 60_000 + 1);
+  });
+});
+
+describe('claimAccountAttribution — first touch, once, ever', () => {
+  async function storedAttribution(accountId: string): Promise<Record<string, string> | null> {
+    const row = await db.get<{ attribution: unknown }>(
+      sql`SELECT attribution FROM account WHERE id = ${accountId}`,
+    );
+    const raw = row?.attribution ?? null;
+    if (raw == null) return null;
+    // Postgres `jsonb` comes back parsed; SQLite stores the same value as TEXT
+    // and hands back the string. Same dual-dialect coercion the package applies
+    // to every other JSON column read.
+    return typeof raw === 'string' ? (JSON.parse(raw) as Record<string, string>) : (raw as Record<string, string>);
+  }
+
+  it('the first caller wins and the payload round-trips', async () => {
+    expect(await claimAccountAttribution(db, ACCOUNT, { utm_source: 'landing', utm_medium: 'cpc' })).toBe(true);
+    expect(await storedAttribution(ACCOUNT)).toEqual({ utm_source: 'landing', utm_medium: 'cpc' });
+  });
+
+  it('keeps FIRST touch, not last', async () => {
+    // Overwriting would credit whichever link the customer clicked most recently
+    // — usually an untagged direct return — and the paid campaign loses the
+    // signup it paid for.
+    await claimAccountAttribution(db, ACCOUNT, { utm_source: 'google-ads' });
+    expect(await claimAccountAttribution(db, ACCOUNT, { utm_source: 'direct' })).toBe(false);
+    expect(await storedAttribution(ACCOUNT)).toEqual({ utm_source: 'google-ads' });
+  });
+
+  it('CONCURRENT callers produce exactly one winner', async () => {
+    // Only has teeth on POSTGRES (better-sqlite3 is synchronous, so Promise.all
+    // serializes) — the Postgres parity job is where the row lock is exercised.
+    const results = await Promise.all([
+      claimAccountAttribution(db, ACCOUNT, { utm_source: 'a' }),
+      claimAccountAttribution(db, ACCOUNT, { utm_source: 'b' }),
+      claimAccountAttribution(db, ACCOUNT, { utm_source: 'c' }),
+    ]);
+    expect(results.filter(Boolean)).toHaveLength(1);
+  });
+
+  it('does not leak across accounts', async () => {
+    await claimAccountAttribution(db, ACCOUNT, { utm_source: 'landing' });
+    expect(await claimAccountAttribution(db, OTHER_ACCOUNT, { utm_source: 'other' })).toBe(true);
+    expect(await storedAttribution(OTHER_ACCOUNT)).toEqual({ utm_source: 'other' });
+  });
+
+  it('is independent of the timestamp milestones on the same row', async () => {
+    await claimAccountActivation(db, ACCOUNT, 2000);
+    await claimAccountFirstView(db, ACCOUNT, 2000);
+    expect(await claimAccountAttribution(db, ACCOUNT, { utm_source: 'landing' })).toBe(true);
   });
 });
