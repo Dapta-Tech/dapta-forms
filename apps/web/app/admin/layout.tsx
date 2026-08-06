@@ -6,6 +6,8 @@ import { adminApi, ApiError } from '@/lib/admin-api';
 import { AdminShell } from '@/components/admin-shell';
 import { getLocale } from '@/lib/locale';
 import { ToastProvider } from '@/components/toast';
+import { resolveProductAnalytics } from '@/lib/product-analytics';
+import { ProductAnalytics } from '@/components/analytics/product-analytics';
 
 export default async function AdminLayout({ children }: { children: ReactNode }) {
   const jar = await cookies();
@@ -31,8 +33,23 @@ export default async function AdminLayout({ children }: { children: ReactNode })
   // for the single-workspace majority anyway.
   const workspaces = await adminApi.listWorkspaces().catch(() => []);
 
+  // Product analytics is scoped to the dashboard on purpose — mounting it here
+  // (never in the root layout) is what keeps it off public form pages, where
+  // the visitor is a form owner's respondent and not a user of this product.
+  const analytics = resolveProductAnalytics();
+
   return (
     <ToastProvider>
+      <ProductAnalytics
+        analytics={analytics}
+        identity={{
+          email: me.email,
+          memberId: me.memberId,
+          accountId: me.accountId,
+          accountCode: me.accountCode,
+          role: me.role,
+        }}
+      />
       <AdminShell
         initialCollapsed={initialCollapsed}
         messages={chrome}

@@ -746,6 +746,62 @@ export const formTrackingSchema = z.object({
 });
 export type FormTracking = z.infer<typeof formTrackingSchema>;
 
+// --- Acquisition attribution (first touch, persisted on the account) ---------
+
+/**
+ * FIRST-TOUCH acquisition context for an account — what the browser saw the
+ * very first time this visitor arrived, on the landing or the app.
+ *
+ * The landing captures this shape and forwards it on the CTA as query
+ * parameters — in snake_case, the URL convention (`utm_source`), which
+ * `parseAttribution` below maps onto these camelCase field names. The web parks
+ * the result across the login round-trip and the API persists it to
+ * `account.attribution` (migration 0010) with a write-once claim.
+ *
+ * ONE shape for the column, deliberately: a second schema would let a writer
+ * store keys the documented reader strips, and the mismatch would be silent —
+ * `parse` returns `{}` for unknown keys rather than throwing.
+ *
+ * FIRST touch, never last: the values are written on the first visit and never
+ * overwritten, so a user who arrives from an ad, leaves, and returns via a
+ * bookmark is still credited to the ad. Every field is optional — direct
+ * traffic legitimately carries none of them, and an account that predates this
+ * feature has the whole blob NULL. Absent means "not known", never "direct";
+ * the two are told apart by `account.created_at`, not by this shape.
+ *
+ * This is UNTRUSTED input: it originates in the browser and anyone can put
+ * anything in a query string. Lengths are capped so a hostile URL cannot bloat
+ * the row, unknown keys are stripped by zod, and nothing here is ever used for
+ * authorization or rendered as markup.
+ */
+export const attributionSchema = z.object({
+  utmSource: z.string().max(128).nullable().optional(),
+  utmMedium: z.string().max(128).nullable().optional(),
+  utmCampaign: z.string().max(128).nullable().optional(),
+  utmContent: z.string().max(128).nullable().optional(),
+  utmTerm: z.string().max(128).nullable().optional(),
+  /**
+   * Paid-click ids Google and Meta append to an ad destination. They reconcile a
+   * signup with a row of ad spend when the UTM set alone is ambiguous, and the
+   * existing Dapta booking links already carry them. Longer cap: a real `fbclid`
+   * runs well past 200 characters.
+   */
+  gclid: z.string().max(512).nullable().optional(),
+  fbclid: z.string().max(512).nullable().optional(),
+  /** `document.referrer` as the browser reported it; '' (blank) is normalized to null. */
+  referrer: z.string().max(512).nullable().optional(),
+  /** Path-only entry point (never the query string — it can carry PII). */
+  landingPath: z.string().max(512).nullable().optional(),
+  /**
+   * RESERVED — epoch-ms of that first visit, as the CLIENT clock reported it.
+   * Structurally unwritable today: `ATTRIBUTION_QUERY_MAP` only carries the
+   * string-valued fields, so nothing can populate a number. Kept because the
+   * landing already computes it and a reader must keep parsing rows that have it.
+   */
+  firstSeenAt: z.number().int().nonnegative().nullable().optional(),
+});
+export type Attribution = z.infer<typeof attributionSchema>;
+
 /** The versioned config blob. `version` gates future migrations of the shape. */
 /**
  * Form-level ending (V5-B1): the defaults an outcome may override. `redirectUrl`
@@ -1162,3 +1218,93 @@ export const apiErrorSchema = z.object({
   message: z.string(),
 });
 export type ApiError = z.infer<typeof apiErrorSchema>;
+
+/* ---------------------------------------------------------------------------
+ * Reading the inbound tags off a request.
+ *
+ * The wire format is snake_case because that is the URL convention every ad
+ * platform emits (`utm_source`, `gclid`). The STORED format is `attributionSchema`
+ * above. This is the one place the two are mapped, so neither side has to know
+ * about the other's casing.
+ * ------------------------------------------------------------------------- */
+
+/**
+ * Inbound query key -> stored field, with the cap that field allows.
+ *
+ * The cap is applied by TRUNCATING before validation, not by letting zod reject:
+ * a single over-long value (a hostile URL, or just a very long `fbclid`) would
+ * otherwise fail the whole parse and discard the campaign along with it. The spec
+ * case "never returns null because a value was too long" pins that.
+ */
+/**
+ * Only the STRING-valued fields can appear in the map. `attributionSchema` also
+ * has the numeric `firstSeenAt`, and the loop below assigns a string — mapping it
+ * would make `safeParse` fail and silently drop the ENTIRE payload. The compiler
+ * refuses it instead.
+ */
+type AttributionStringKey = {
+  [K in keyof Attribution]-?: NonNullable<Attribution[K]> extends string ? K : never;
+}[keyof Attribution];
+
+const ATTRIBUTION_QUERY_MAP = [
+  ['utm_source', 'utmSource', 128],
+  ['utm_medium', 'utmMedium', 128],
+  ['utm_campaign', 'utmCampaign', 128],
+  ['utm_content', 'utmContent', 128],
+  ['utm_term', 'utmTerm', 128],
+  ['gclid', 'gclid', 512],
+  ['fbclid', 'fbclid', 512],
+  ['referrer', 'referrer', 512],
+  ['landing_path', 'landingPath', 512],
+] as const satisfies ReadonlyArray<readonly [string, AttributionStringKey, number]>;
+
+/** The query parameters this product reads. Everything else is ignored. */
+export const ATTRIBUTION_QUERY_KEYS: ReadonlyArray<string> = ATTRIBUTION_QUERY_MAP.map(([q]) => q);
+
+/**
+ * Normalize inbound query params into the stored shape, or `null` when there is
+ * nothing worth storing.
+ *
+ * Returning `null` for "no keys present" is load-bearing: the column is written
+ * once and never again, so persisting `{}` for an untagged direct visit would
+ * SPEND first touch and the real campaign could never be recorded afterwards.
+ *
+ * An allowlist rather than "copy every query param": anyone can craft a link, so
+ * this input is attacker-supplied, and it lands in a column that later feeds a
+ * CRM. Nothing here is ever used for authorization or rendered as markup.
+ */
+export function parseAttribution(
+  params: Readonly<Record<string, string | string[] | undefined | null>>,
+): Attribution | null {
+  const out: Record<string, string> = {};
+  for (const [queryKey, field, cap] of ATTRIBUTION_QUERY_MAP) {
+    const raw = params[queryKey];
+    // A repeated param (`?utm_source=a&utm_source=b`) arrives as an array. Take
+    // the FIRST: last-wins would let an appended duplicate override the real one.
+    const value = (Array.isArray(raw) ? raw[0] : raw) ?? '';
+    const trimmed = String(value).trim();
+    if (!trimmed) continue;
+    out[field] = trimmed.slice(0, cap);
+  }
+  if (Object.keys(out).length === 0) return null;
+  const parsed = attributionSchema.safeParse(out);
+  return parsed.success ? parsed.data : null;
+}
+
+/**
+ * The stored blob re-keyed to snake_case, for the product-analytics wire.
+ *
+ * The column stores camelCase, but every other property this product sends is
+ * snake_case (`form_id`, `is_first_publish`), and the analytics project is shared
+ * with the rest of the Dapta estate — property naming there is a cross-product
+ * contract, not a local style choice. Non-string values are dropped, so a numeric
+ * field can never arrive where a tag is expected.
+ */
+export function attributionEventProps(attribution: Attribution): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [queryKey, field] of ATTRIBUTION_QUERY_MAP) {
+    const value = attribution[field];
+    if (typeof value === 'string' && value) out[queryKey] = value;
+  }
+  return out;
+}

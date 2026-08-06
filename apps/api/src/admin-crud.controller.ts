@@ -7,6 +7,7 @@ import {
   Get,
   HttpCode,
   Inject,
+  Logger,
   NotFoundException,
   Optional,
   Param,
@@ -19,6 +20,7 @@ import {
 import type { Db, NotificationSetting } from '@quill/db';
 import {
   changeMemberRole,
+  claimAccountAttribution,
   createForm,
   getAccountBranding,
   mergeKitIntoBranding,
@@ -52,6 +54,8 @@ import {
   type SubmissionEmailKey,
 } from '@quill/notifications';
 import {
+  attributionEventProps,
+  attributionSchema,
   formInputSchema,
   maskConfigSecrets,
   memberInviteSchema,
@@ -65,6 +69,7 @@ import { SubmissionService } from './submission.service';
 import { AnalyticsService } from './analytics.service';
 import { AuthService, type ReqLike } from './auth.service';
 import { EmailEffects } from './email-effects';
+import { AnalyticsEffects } from './analytics-effects';
 import { assertAdmin, assertCanManageTarget, assertNotSelf } from './permissions';
 import { parseBound, parseIntParam, parseStatus } from './query-params';
 import { DB } from './tokens';
@@ -104,6 +109,8 @@ function maskForm<T extends { config: unknown; draftConfig?: unknown }>(form: T)
 /** Host-authed CRUD for forms + submissions + members, and identity/vanity. */
 @Controller('v1')
 export class AdminCrudController {
+  private readonly log = new Logger('AdminCrudController');
+
   constructor(
     @Inject(DB) private readonly db: Db,
     @Inject(AuthService) private readonly auth: AuthService,
@@ -113,6 +120,10 @@ export class AdminCrudController {
     // Optional so existing direct constructions (tests) keep working; the module
     // always provides it in the running app.
     @Optional() @Inject(EmailEffects) private readonly emails?: EmailEffects,
+    // `productAnalytics`, not `analytics` — `analytics` above is the FORM funnel
+    // service (per-question drop-off shown to a form owner). This one is our own
+    // telemetry about the people using the builder. Different audience entirely.
+    @Optional() @Inject(AnalyticsEffects) private readonly productAnalytics?: AnalyticsEffects,
   ) {}
 
   // --- Identity ----------------------------------------------------------
@@ -120,6 +131,66 @@ export class AdminCrudController {
   async me(@Req() req: ReqLike) {
     const p = await this.auth.resolveHost(req);
     return this.admin.me(p);
+  }
+
+  /**
+   * Record where this workspace came from. First touch, once, ever.
+   *
+   * POSTed by the web the moment a login completes, carrying the acquisition
+   * tags it stashed BEFORE bouncing to the identity provider. That bounce leaves
+   * our origin, so the query string never comes back — this request is the only
+   * point at which those values exist server-side. Miss it and the campaign that
+   * paid for the signup is unrecoverable.
+   *
+   * `accountId` comes from the resolved principal, NEVER the body. The body is
+   * attacker-supplied by definition (anyone can craft a link), so letting it name
+   * an account would let a stranger overwrite someone else's attribution.
+   *
+   * Admin-gated like every other workspace-level write in this controller: a
+   * plain `member` must not be able to rewrite the workspace's acquisition
+   * record. The intended caller is a brand-new account whose first member IS the
+   * owner, so the happy path is unaffected — and a 403 here cannot break the
+   * login, because the web discards this response entirely.
+   *
+   * Past the principal checks it never throws on a bad payload and never blocks:
+   * attribution is an observer of the product, not a participant. A login must
+   * not fail because a UTM could not be stored, which is why a junk body gets
+   * `{ recorded: false }` rather than a 400.
+   */
+  @Post('account/attribution')
+  async recordAttribution(@Req() req: ReqLike, @Body() body: unknown) {
+    const p = await this.auth.resolveHost(req);
+    assertAdmin(p);
+    const parsed = attributionSchema.safeParse(body ?? {});
+    if (!parsed.success) return { recorded: false };
+
+    // Every field of the schema is nullable, so drop the empties BEFORE deciding
+    // there is something to store. `{}` — and `{ utmSource: null }`, which a
+    // hand-written body can produce — would otherwise SPEND the write-once claim
+    // and the real campaign could never be recorded afterwards. The `typeof`
+    // check is not decoration: `firstSeenAt` is a NUMBER, so a crafted
+    // `{"firstSeenAt":0}` would survive a mere null-check and spend the claim
+    // carrying nothing.
+    const tags: Record<string, string> = {};
+    for (const [key, value] of Object.entries(parsed.data)) {
+      if (typeof value === 'string' && value !== '') tags[key] = value;
+    }
+    if (Object.keys(tags).length === 0) return { recorded: false };
+
+    const first = await claimAccountAttribution(this.db, p.accountId, tags).catch((err) => {
+      // Same shape as the activation claim: a lock or a dead connection must not
+      // turn a completed login into a 500 on the way to the dashboard.
+      this.log.warn(`attribution claim failed for account ${p.accountId}: ${String(err)}`);
+      return false;
+    });
+    if (first && this.productAnalytics?.enabled) {
+      await this.productAnalytics.captureForMember(
+        'attribution_captured',
+        p,
+        attributionEventProps(tags),
+      );
+    }
+    return { recorded: first };
   }
 
   /**
@@ -213,7 +284,10 @@ export class AdminCrudController {
           : {};
       config = { ...base, branding: { ...mergeKitIntoBranding(null, kit.config), ...own } };
     }
-    return maskForm(unwrapCrud(await createForm(this.db, p.accountId, { ...input, config })));
+    // `p.memberId` — from the resolved principal, never the body.
+    const created = unwrapCrud(await createForm(this.db, p.accountId, { ...input, config }, p.memberId));
+    await this.productAnalytics?.captureForMember('form_created', p, { form_id: created.id });
+    return maskForm(created);
   }
 
   /**
@@ -238,7 +312,14 @@ export class AdminCrudController {
   @HttpCode(201)
   async duplicateForm(@Req() req: ReqLike, @Param('id') id: string) {
     const p = await this.auth.resolveHost(req);
-    return maskForm(unwrapCrud(await duplicateForm(this.db, p.accountId, id)));
+    // Duplicating is the OTHER way a form is born in the builder. Without this
+    // it would be the one creation path with no author and no funnel event.
+    const copy = unwrapCrud(await duplicateForm(this.db, p.accountId, id, p.memberId));
+    await this.productAnalytics?.captureForMember('form_created', p, {
+      form_id: copy.id,
+      from_duplicate: true,
+    });
+    return maskForm(copy);
   }
 
   /**
@@ -249,7 +330,30 @@ export class AdminCrudController {
   @Post('forms/:id/publish')
   async publishForm(@Req() req: ReqLike, @Param('id') id: string) {
     const p = await this.auth.resolveHost(req);
-    return maskForm(unwrapCrud(await publishForm(this.db, p.accountId, id)));
+    // Read the PRIOR state before publishing: `published_at` is about to be
+    // stamped, so after the call every publish looks like the first one.
+    // Republishing an existing form is not a new conversion, and counting it as
+    // one would make the funnel improve the more a happy customer edits.
+    // Gated: a deployment without analytics must not pay for this read.
+    const before = this.productAnalytics?.enabled
+      ? await getFormById(this.db, p.accountId, id)
+      : null;
+    const result = await publishForm(this.db, p.accountId, id);
+    const published = unwrapCrud(result);
+    // `result.published` comes from the UPDATE's own RETURNING, so it is true
+    // exactly on the call that copied the draft over. Reading the row BEFORE and
+    // deciding here would be a read-then-act: two concurrent publishes both saw
+    // a pending draft and both counted a first-publish conversion — the same
+    // class of bug the activation claim exists to kill, one function over.
+    // `result.ok` is redundant at runtime — `unwrapCrud` already threw on
+    // failure — but it is what narrows the union so `published` is readable.
+    if (result.ok && result.published) {
+      await this.productAnalytics?.captureForMember('form_published', p, {
+        form_id: id,
+        is_first_publish: before?.publishedAt == null,
+      });
+    }
+    return maskForm(published);
   }
 
   @Delete('forms/:id')

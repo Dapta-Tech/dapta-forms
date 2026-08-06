@@ -167,12 +167,37 @@ export const serverEnvSchema = z.object({
   RATE_LIMIT_ENABLED: boolish.default('true'),
   RATE_LIMIT_CAPACITY: z.coerce.number().int().positive().default(60),
   RATE_LIMIT_REFILL_PER_SEC: z.coerce.number().positive().default(1),
+
+  // Product analytics — OUR OWN telemetry about the people who USE Dapta Forms
+  // (signup, publish, activation), drained from the outbox by AnalyticsCapture.
+  //
+  // NOT to be confused with NEXT_PUBLIC_POSTHOG_KEY, which is a DIFFERENT thing
+  // that already exists: the deployment-wide default for the tracking pixels a
+  // form OWNER puts on their own PUBLIC form page to measure THEIR respondents
+  // (see apps/web/components/tracking/resolve-tracking.ts). The two must never
+  // share a variable — pointing them at one key would inject our telemetry into
+  // every customer's public form.
+  //
+  // Unset (the default) = product analytics OFF: nothing is enqueued and
+  // nothing is sent, so a bare fork runs end to end and makes zero third-party
+  // requests. This is a write-only ingestion key, never a personal API key.
+  PRODUCT_ANALYTICS_KEY: z.string().optional(),
+  PRODUCT_ANALYTICS_HOST: z.string().url().default('https://us.i.posthog.com'),
 });
 
 export type ServerEnv = z.infer<typeof serverEnvSchema>;
 
 export const clientEnvSchema = z.object({
   NEXT_PUBLIC_API_URL: z.string().url().default('http://localhost:4000'),
+
+  // Browser half of product analytics (pageviews + admin activity). Same
+  // project as PRODUCT_ANALYTICS_KEY above; deliberately a SEPARATE name from
+  // the per-form NEXT_PUBLIC_POSTHOG_* pixels — see the note there. The
+  // ingestion key is public by design (it ships in every bundle and can only
+  // write events), which is exactly why it may be NEXT_PUBLIC_. Unset = the
+  // admin loads no analytics script at all.
+  NEXT_PUBLIC_PRODUCT_ANALYTICS_KEY: z.string().optional(),
+  NEXT_PUBLIC_PRODUCT_ANALYTICS_HOST: z.string().url().default('https://us.i.posthog.com'),
 });
 
 export type ClientEnv = z.infer<typeof clientEnvSchema>;

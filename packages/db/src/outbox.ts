@@ -34,11 +34,13 @@ import type { Db } from './client';
  * `email` = submission lifecycle emails; `webhook`/`hubspot` = pluggable
  * submission destinations (drained by the same worker + retry machinery);
  * `booking_sync` = CRM sync of a scheduling callback (booking_event → HubSpot
- * contact update, enriched via Calendly). Adding a kind here is all the queue
- * needs — the delivery logic lives in the API (DestinationEffects /
- * BookingSyncEffects).
+ * contact update, enriched via Calendly); `analytics` = a first-party product
+ * analytics event about OUR OWN users (signup, publish, activation), which is a
+ * network call and therefore never fired inline from a request handler. Adding
+ * a kind here is all the queue needs — the delivery logic lives in the API
+ * (DestinationEffects / BookingSyncEffects / AnalyticsCapture).
  */
-export type OutboxKind = 'webhook' | 'email' | 'hubspot' | 'booking_sync';
+export type OutboxKind = 'webhook' | 'email' | 'hubspot' | 'booking_sync' | 'analytics';
 /**
  * `skipped` = deliberately not performed (e.g. an email row whose tenant
  * context is unrecoverable on a transport that requires it) — recorded ONCE

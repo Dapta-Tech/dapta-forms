@@ -217,6 +217,12 @@ export interface BuilderMessages {
     needsEmail: string;
     /** A booking would supply the address, but its provider is not connected. */
     schedulerDisconnected: string;
+    /** A SCHEDULER step maps several booking facts, not one answer. */
+    bookingIntro: string;
+    /** Why the meeting time arrives as text, and where a real date lives. */
+    bookingStartHint: string;
+    /** Why the invitee's email is not in the list. */
+    bookingEmailNote: string;
   };
   rules: {
     ifAnswerIs: string;
@@ -519,6 +525,11 @@ const en: BuilderMessages = {
       'This form asks for no email and books nothing, so HubSpot has no way to identify the contact — nothing mapped here would sync. Add an email question, or a booking step.',
     schedulerDisconnected:
       'The booking step would supply the address, but Calendly is not connected for this account — so the invitee cannot be read back and nothing mapped here will reach HubSpot.',
+    bookingIntro: 'A booking produces these. Send each one to a contact property.',
+    bookingStartHint:
+      'Sent as text, exactly as the booking reported it. For a real HubSpot date property, use the booking sync in Connect.',
+    bookingEmailNote:
+      'The invitee’s email is the contact key — the booking supplies it, so it is never mapped here.',
   },
   rules: {
     ifAnswerIs: 'If answer is',
@@ -820,6 +831,11 @@ const es: BuilderMessages = {
       'Este formulario no pide correo ni agenda nada, así que HubSpot no tiene cómo identificar al contacto — nada de lo que mapees acá se va a sincronizar. Agregá una pregunta de correo, o un paso de agenda.',
     schedulerDisconnected:
       'El paso de agenda aportaría el correo, pero Calendly no está conectado en esta cuenta — así que no se puede leer al invitado y nada de lo mapeado acá va a llegar a HubSpot.',
+    bookingIntro: 'Una reserva produce estos datos. Mandá cada uno a una propiedad del contacto.',
+    bookingStartHint:
+      'Se envía como texto, tal cual lo reportó la reserva. Para una propiedad de fecha real de HubSpot, usá la sincronización de reservas en Conectar.',
+    bookingEmailNote:
+      'El correo del invitado es la llave del contacto: lo aporta la reserva, por eso no se mapea acá.',
   },
   rules: {
     ifAnswerIs: 'Si la respuesta es',

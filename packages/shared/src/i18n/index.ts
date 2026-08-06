@@ -1105,6 +1105,8 @@ export interface FormsMessages {
       inviteeFirstName: string;
       inviteeLastName: string;
       inviteePhone: string;
+      /** The meeting slot itself — the scheduler step's own answer. */
+      bookingStart: string;
       keyCustomBack: string;
       selectKeyPlaceholder: string;
       webhookEvents: string;
@@ -2188,6 +2190,7 @@ export const en: FormsMessages = {
       inviteeFirstName: 'Booking — first name',
       inviteeLastName: 'Booking — last name',
       inviteePhone: 'Booking — phone',
+      bookingStart: 'Booking — meeting time',
       keyCustomBack: 'Back to list',
       selectKeyPlaceholder: 'Select a field…',
       webhookEvents: 'Trigger on',
@@ -3272,6 +3275,7 @@ export const es: FormsMessages = {
       inviteeFirstName: 'Agenda — nombre',
       inviteeLastName: 'Agenda — apellido',
       inviteePhone: 'Agenda — teléfono',
+      bookingStart: 'Agenda — hora de la reunión',
       keyCustomBack: 'Volver a la lista',
       selectKeyPlaceholder: 'Selecciona un campo…',
       webhookEvents: 'Disparar en',

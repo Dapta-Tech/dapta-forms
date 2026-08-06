@@ -9,6 +9,7 @@ import { AppSwitcher } from '@/components/app-switcher';
 import { BrandMark, BrandWordmark } from '@/components/brand/brand';
 import { WorkspaceSwitcher } from '@/components/workspace-switcher';
 import type { Workspace } from '@/lib/admin-api';
+import { resetAnalytics } from '@/lib/product-analytics';
 
 type ChromeMessages = FormsMessages['admin']['chrome'];
 
@@ -192,6 +193,7 @@ export function AdminShell({
         <button
           type="button"
           onClick={toggleCollapse}
+          data-testid="rail-toggle"
           aria-expanded={!collapsed}
           aria-label={collapsed ? messages.expand : messages.collapse}
           title={collapsed ? messages.expand : messages.collapse}
@@ -224,6 +226,11 @@ export function AdminShell({
     <form action={signOutAction}>
       <button
         type="submit"
+        // Drop the analytics identity BEFORE the session goes away. Without
+        // this the distinct id survives in the browser and the next person to
+        // sign in on this machine has their events attributed to whoever
+        // logged out — a shared laptop is enough to corrupt per-user data.
+        onClick={() => resetAnalytics()}
         title={messages.signOut}
         aria-label={messages.signOut}
         className="flex h-11 w-11 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground active:scale-[0.98]"
@@ -327,8 +334,16 @@ export function AdminShell({
           drawerOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
         role="dialog"
-        aria-modal="true"
         aria-label="Primary"
+        // Containment is `inert` on everything else, NOT aria-modal. The rail's
+        // popup menus render through a portal at the end of <body> — they have
+        // to, or the drawer's own overflow clips them (see anchored-menu.tsx) —
+        // and aria-modal means "hide everything outside this subtree", which
+        // would hide those menus from assistive tech on mobile and nowhere
+        // else. While the drawer is open the header and <main> are inert and
+        // the desktop rail is display:none, so the only things reachable are
+        // the drawer and the menu it opened. That is the containment aria-modal
+        // was there to express, minus the collateral damage.
         inert={!drawerOpen || undefined}
       >
         <div className="flex items-center gap-2 px-2">

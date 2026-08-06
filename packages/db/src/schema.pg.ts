@@ -17,6 +17,12 @@ export const account = pgTable('account', {
   vanitySlug: text('vanity_slug').unique(),
   daptaEntitlement: text('dapta_entitlement'),
   entitlementCheckedAt: bigint('entitlement_checked_at', { mode: 'number' }),
+  /** First-touch acquisition context (see 0010). Written once by `claimAccountAttribution`. */
+  attribution: jsonb('attribution'),
+  /** Milestone CLAIM: epoch-ms of the first completed submission. Written once, via UPDATE…WHERE IS NULL. */
+  activatedAt: bigint('activated_at', { mode: 'number' }),
+  /** Milestone CLAIM: epoch-ms of the first form view. Same write-once discipline. */
+  firstViewedAt: bigint('first_viewed_at', { mode: 'number' }),
   createdAt: bigint('created_at', { mode: 'number' }).notNull(),
 });
 
@@ -41,6 +47,8 @@ export const member = pgTable(
     locale: text('locale'),
     /** The public member page, or NULL when there is none (see 0008). */
     profile: jsonb('profile'),
+    /** Epoch-ms of the member's last authenticated request; NULL = never seen (see 0010). */
+    lastSeenAt: bigint('last_seen_at', { mode: 'number' }),
     createdAt: bigint('created_at', { mode: 'number' }).notNull(),
   },
   (t) => ({
@@ -130,6 +138,8 @@ export const form = pgTable(
     brandBackup: jsonb('brand_backup'),
     /** Epoch-ms of the last brand-kit apply; NULL when never applied or reverted. */
     brandAppliedAt: bigint('brand_applied_at', { mode: 'number' }),
+    /** member.id of the author; NULL for pre-0010 forms and API-key creates. Authorship, never authorization. */
+    createdBy: text('created_by'),
     createdAt: bigint('created_at', { mode: 'number' }).notNull(),
     updatedAt: bigint('updated_at', { mode: 'number' }).notNull(),
   },

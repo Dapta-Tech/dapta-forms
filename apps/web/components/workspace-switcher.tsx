@@ -1,9 +1,10 @@
 'use client';
 
-import { useEffect, useRef, useState, useTransition } from 'react';
+import { useCallback, useRef, useState, useTransition } from 'react';
 import type { FormsMessages } from '@quill/shared';
 import type { Workspace } from '@/lib/admin-api';
 import { switchWorkspaceAction } from '@/app/admin/workspace-actions';
+import { AnchoredMenu } from '@/components/ui/anchored-menu';
 
 type Messages = FormsMessages['admin']['chrome']['workspaces'];
 
@@ -18,6 +19,11 @@ type Messages = FormsMessages['admin']['chrome']['workspaces'];
  * Switching is a server action: it rewrites the signed session cookie and
  * reloads. It grants nothing on its own — the API re-checks membership on every
  * request — so the worst a tampered choice can do is 403.
+ *
+ * The panel renders through AnchoredMenu — a portal to document.body — because
+ * the rail clips it (overflow-y-auto) and, more importantly, buries it: the
+ * rail is its own stacking context, so anything positioned inside <main> paints
+ * over it no matter what z-index the panel carries. See anchored-menu.tsx.
  *
  * WAI-ARIA menu-button pattern, matching AppSwitcher: Escape and outside click
  * dismiss, and focus lands on the first item when it opens.
@@ -35,25 +41,8 @@ export function WorkspaceSwitcher({
 }) {
   const [open, setOpen] = useState(false);
   const [pending, start] = useTransition();
-  const wrapRef = useRef<HTMLDivElement>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent) => {
-      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false);
-    };
-    document.addEventListener('mousedown', onDown);
-    document.addEventListener('keydown', onKey);
-    menuRef.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus();
-    return () => {
-      document.removeEventListener('mousedown', onDown);
-      document.removeEventListener('keydown', onKey);
-    };
-  }, [open]);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const close = useCallback(() => setOpen(false), []);
 
   // One membership is not a choice. Say nothing rather than show a dead control.
   if (workspaces.length < 2) return null;
@@ -72,9 +61,11 @@ export function WorkspaceSwitcher({
   }
 
   return (
-    <div ref={wrapRef} className="relative" data-testid="workspace-switcher">
+    <div data-testid="workspace-switcher">
       <button
         type="button"
+        ref={triggerRef}
+        data-testid="workspace-switcher-trigger"
         onClick={() => setOpen((v) => !v)}
         aria-haspopup="menu"
         aria-expanded={open}
@@ -104,45 +95,50 @@ export function WorkspaceSwitcher({
         ) : null}
       </button>
 
-      {open ? (
-        <div
-          ref={menuRef}
-          role="menu"
-          aria-label={m.menuLabel}
-          className="absolute left-0 right-0 top-full z-50 mt-1 flex flex-col overflow-hidden rounded-md border border-border bg-popover py-1 shadow-lg"
-        >
-          <p className="px-2.5 py-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-            {m.eyebrow}
-          </p>
-          {workspaces.map((w) => {
-            const active = w.accountId === currentAccountId;
-            return (
-              <button
-                key={w.accountId}
-                type="button"
-                role="menuitem"
-                onClick={() => choose(w.accountId)}
-                className="flex items-center gap-2 px-2.5 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-muted focus-visible:bg-muted focus-visible:outline-none"
-              >
-                <i
-                  aria-hidden
-                  className={`pi ${active ? 'pi-check text-primary' : 'pi-circle-off opacity-0'}`}
-                  style={{ fontSize: 11 }}
-                />
-                <span className="min-w-0 flex-1 truncate">{w.accountName}</span>
-                {/* An invitation you have not opened yet. Naming it is the
-                    difference between "why are there two?" and "ah, that one is
-                    waiting for me." */}
-                {w.status === 'invited' ? (
-                  <span className="shrink-0 rounded-sm bg-secondary/15 px-1.5 py-0.5 text-[10px] font-medium text-secondary">
-                    {m.invited}
-                  </span>
-                ) : null}
-              </button>
-            );
-          })}
-        </div>
-      ) : null}
+      {/* Matches the trigger in the expanded rail; in the collapsed rail the
+          trigger is a 48px square, so the floor keeps the names readable. */}
+      <AnchoredMenu
+        anchorRef={triggerRef}
+        open={open}
+        onClose={close}
+        label={m.menuLabel}
+        width="anchor"
+        minWidth={200}
+        autoFocus
+        className="flex flex-col overflow-hidden py-1"
+        testId="workspace-switcher-menu"
+      >
+        <p className="px-2.5 py-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+          {m.eyebrow}
+        </p>
+        {workspaces.map((w) => {
+          const active = w.accountId === currentAccountId;
+          return (
+            <button
+              key={w.accountId}
+              type="button"
+              role="menuitem"
+              onClick={() => choose(w.accountId)}
+              className="flex items-center gap-2 px-2.5 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-muted focus-visible:bg-muted focus-visible:outline-none"
+            >
+              <i
+                aria-hidden
+                className={`pi ${active ? 'pi-check text-primary' : 'pi-circle-off opacity-0'}`}
+                style={{ fontSize: 11 }}
+              />
+              <span className="min-w-0 flex-1 truncate">{w.accountName}</span>
+              {/* An invitation you have not opened yet. Naming it is the
+                  difference between "why are there two?" and "ah, that one is
+                  waiting for me." */}
+              {w.status === 'invited' ? (
+                <span className="shrink-0 rounded-sm bg-secondary/15 px-1.5 py-0.5 text-[10px] font-medium text-secondary">
+                  {m.invited}
+                </span>
+              ) : null}
+            </button>
+          );
+        })}
+      </AnchoredMenu>
     </div>
   );
 }

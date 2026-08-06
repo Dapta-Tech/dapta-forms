@@ -1,7 +1,7 @@
 'use server';
 
 import { adminApi, ApiError } from '@/lib/admin-api';
-import type { FormDestination } from '@quill/types';
+import { propertiesFor, type FormDestination } from '@quill/types';
 
 /**
  * Partial mapping write for the Build tab's per-question "Map to" picker:
@@ -95,8 +95,17 @@ export async function saveQuestionMappingAction(
     if (!current?.enabled) return { ok: false, code: 'no_destination' };
 
     const fieldMappings = { ...(current.fieldMappings ?? {}) };
-    const next = property?.trim();
-    if (next) fieldMappings[stepKey] = next;
+    // The panel edits ONE property — the first. A mapping that fans out to
+    // several is authored in Connect, and a pick here must not silently drop the
+    // others, so the tail rides through either way. Mirrors the optimistic
+    // `withMapping` on the client, which already preserved it: without this the
+    // server write put the two out of step and the extra properties vanished on
+    // the next load.
+    const rest = propertiesFor(fieldMappings[stepKey]).slice(1);
+    const first = property?.trim();
+    const next = first ? [first, ...rest] : rest;
+    if (next.length > 1) fieldMappings[stepKey] = next;
+    else if (next.length === 1) fieldMappings[stepKey] = next[0]!;
     else delete fieldMappings[stepKey];
 
     const updated = await adminApi.updateFormDestinations(

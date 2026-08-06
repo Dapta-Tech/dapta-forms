@@ -48,6 +48,30 @@ export interface HostPrincipal extends ResolvedHost {
   role: AccountRole;
 }
 
+/**
+ * Notified ONCE when a login just-in-time created a member that did not exist
+ * before. There is no `POST /signup` in this product — an account and its first
+ * member are materialized inside the auth provider on the first authenticated
+ * request — so this callback is the only honest "a person joined" moment.
+ *
+ * A narrow function rather than an injected service on purpose: the providers
+ * stay ignorant of what observes them (invariant 6 cuts both ways), and a fork
+ * that wires nothing keeps the exact behavior it has today.
+ *
+ * MUST NOT THROW and MUST NOT BLOCK: it runs on the login path, where anything
+ * that fails would lock a real user out over telemetry.
+ */
+export type SignupObserver = (signup: {
+  accountId: string;
+  memberId: string;
+  email: string | null;
+  role: AccountRole;
+  /** True when this member is the account's FIRST — i.e. a brand-new workspace. */
+  isFirstMember: boolean;
+  /** True when an existing invite row was adopted rather than a new row created. */
+  fromInvite: boolean;
+}) => void;
+
 export function header(req: ReqLike, name: string): string | undefined {
   const v = req.headers[name];
   return Array.isArray(v) ? v[0] : v;
@@ -125,6 +149,8 @@ export class LocalAuthProvider implements AuthProvider {
       ServerEnv,
       'NODE_ENV' | 'DEV_LOGIN_EMAIL' | 'AUTH_LOCAL_STRICT' | 'SEED_DEMO_FORM'
     >,
+    /** Optional; omitted means nothing observes signups (the fork default). */
+    private readonly onSignup?: SignupObserver,
   ) {}
 
   async resolveHost(req: ReqLike): Promise<ResolvedHost> {
@@ -199,7 +225,37 @@ export class LocalAuthProvider implements AuthProvider {
     if (role === 'owner') {
       await maybeSeedDemoForm(this.db, account.id, this.env.SEED_DEMO_FORM, this.log);
     }
+    // Fires only on the JIT path — every early return above is an EXISTING
+    // member signing in again, which is not a signup.
+    notifySignup(this.onSignup, this.log, {
+      accountId: account.id,
+      memberId,
+      email,
+      role,
+      isFirstMember: role === 'owner',
+      fromInvite: false,
+    });
     return { accountId: account.id, memberId };
+  }
+}
+
+/**
+ * Invoke a SignupObserver without letting it affect the login.
+ *
+ * Swallowing here rather than trusting each observer is deliberate: this runs
+ * after the member row is committed, on the request that logs a real person in.
+ * An observer that throws must cost that person nothing.
+ */
+export function notifySignup(
+  observer: SignupObserver | undefined,
+  log: Logger,
+  signup: Parameters<SignupObserver>[0],
+): void {
+  if (!observer) return;
+  try {
+    observer(signup);
+  } catch (err) {
+    log.error(`signup observer failed: ${String(err)}`);
   }
 }
 
@@ -214,10 +270,14 @@ export class LocalAuthProvider implements AuthProvider {
  * internal-first phase the adapter lives in-repo; it later moves to the private
  * overlay behind this same seam.)
  */
-export function createAuthProvider(env: ServerEnv, db: Db): AuthProvider {
+export function createAuthProvider(
+  env: ServerEnv,
+  db: Db,
+  onSignup?: SignupObserver,
+): AuthProvider {
   switch (env.AUTH_PROVIDER) {
     case 'local':
-      return new LocalAuthProvider(db, env);
+      return new LocalAuthProvider(db, env, onSignup);
     case 'workos':
       if (!env.JWT_SECRET) {
         throw new Error(
@@ -226,7 +286,7 @@ export function createAuthProvider(env: ServerEnv, db: Db): AuthProvider {
             'AUTH_PROVIDER=local for development only.',
         );
       }
-      return new WorkOsAuthProvider(db, env);
+      return new WorkOsAuthProvider(db, env, onSignup);
     default:
       throw new Error(`Unknown AUTH_PROVIDER: ${String((env as ServerEnv).AUTH_PROVIDER)}`);
   }
