@@ -15,15 +15,15 @@ const ATTRIBUTION_COOKIE = 'quill_attribution';
  * back: `setSession` writes its cookie on the OUTGOING response, so a read in
  * this same request is not guaranteed to see it.
  *
- * This POST doubles as the first authenticated call, so it is what MATERIALIZES
- * the workspace — the API resolves the principal, which JIT-creates the account.
- * It therefore has to run before the redirect: after it, the dashboard's own
- * first request would win the race and the tags would arrive to an account whose
- * first touch had already been claimed as empty.
+ * It runs BEFORE the redirect for a mundane reason: a route handler cannot
+ * outlive its own response, so work started here and not awaited may simply be
+ * killed. Nothing races it — `claimAccountAttribution` is the column's only
+ * writer, so the dashboard's first request cannot claim anything.
  *
- * Never throws, and gives up after a few seconds. Attribution is an observer of
- * the product, never a participant: a slow or down API must not strand somebody
- * who just logged in successfully.
+ * The timeout is deliberately short. This is the one request where somebody is
+ * already waiting on a login that has succeeded, and it is a same-cluster call:
+ * attribution is an observer of the product, never a participant, so a slow API
+ * must cost the person milliseconds, not seconds.
  */
 async function recordAttribution(
   jar: Awaited<ReturnType<typeof cookies>>,
@@ -38,7 +38,7 @@ async function recordAttribution(
       headers: { 'content-type': 'application/json', authorization: `Bearer ${accessToken}` },
       body: parked,
       cache: 'no-store',
-      signal: AbortSignal.timeout(4000),
+      signal: AbortSignal.timeout(1500),
     });
   } catch {
     // Swallowed on purpose — see the note above.

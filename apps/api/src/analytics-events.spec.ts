@@ -437,49 +437,71 @@ describe('attribution — first touch, recorded once', () => {
       : (raw as Record<string, string>);
   }
 
-  it('stores the allowlisted tags and reports that it recorded them', async () => {
+  it('stores the tags under the documented field names and says it recorded them', async () => {
     const res = await controller.recordAttribution(asOwner(), {
-      utm_source: 'landing',
-      utm_medium: 'cpc',
-      utm_campaign: 'launch',
+      utmSource: 'landing',
+      utmMedium: 'cpc',
+      utmCampaign: 'launch',
     });
     expect(res).toEqual({ recorded: true });
-    expect(await stored()).toEqual({ utm_source: 'landing', utm_medium: 'cpc', utm_campaign: 'launch' });
+    expect(await stored()).toEqual({ utmSource: 'landing', utmMedium: 'cpc', utmCampaign: 'launch' });
     expect(await names()).toContain('forms_attribution_captured');
   });
 
   it('carries the tags as event properties so PostHog can group by source', async () => {
-    await controller.recordAttribution(asOwner(), { utm_source: 'landing' });
+    await controller.recordAttribution(asOwner(), { utmSource: 'landing' });
     const event = (await captured()).find((c) => c.event === 'forms_attribution_captured');
-    expect(event?.props).toMatchObject({ utm_source: 'landing' });
+    expect(event?.props).toMatchObject({ utmSource: 'landing' });
   });
 
   it('keeps the FIRST touch and emits nothing the second time', async () => {
-    await controller.recordAttribution(asOwner(), { utm_source: 'google-ads' });
-    const res = await controller.recordAttribution(asOwner(), { utm_source: 'direct' });
+    await controller.recordAttribution(asOwner(), { utmSource: 'google-ads' });
+    const res = await controller.recordAttribution(asOwner(), { utmSource: 'direct' });
     expect(res).toEqual({ recorded: false });
-    expect(await stored()).toEqual({ utm_source: 'google-ads' });
+    expect(await stored()).toEqual({ utmSource: 'google-ads' });
     // Exactly one event: a second one would double-count the acquisition.
     expect((await names()).filter((n) => n === 'forms_attribution_captured')).toHaveLength(1);
+  });
+
+  it('refuses a workspace that is older than the claim window', async () => {
+    // Every account predating this feature has a NULL column, so NULL alone is not
+    // evidence of a new workspace. Age it past the window and the claim must
+    // decline — otherwise a campaign link clicked by a long-time customer would
+    // permanently record their workspace as acquired by that campaign.
+    await db.run(sql`UPDATE account SET created_at = ${Date.now() - 24 * 60 * 60_000} WHERE code = 'acme'`);
+    expect(await controller.recordAttribution(asOwner(), { utmSource: 'landing' })).toEqual({
+      recorded: false,
+    });
+    expect(await stored()).toBeNull();
+    expect(await names()).not.toContain('forms_attribution_captured');
   });
 
   it('ignores an empty payload rather than spending the claim on it', async () => {
     expect(await controller.recordAttribution(asOwner(), {})).toEqual({ recorded: false });
     expect(await stored()).toBeNull();
     // The real campaign must still be recordable afterwards.
-    expect(await controller.recordAttribution(asOwner(), { utm_source: 'landing' })).toEqual({
+    expect(await controller.recordAttribution(asOwner(), { utmSource: 'landing' })).toEqual({
       recorded: true,
     });
+  });
+
+  it('treats an all-null payload as empty', async () => {
+    // Every field of the schema is nullable, so a hand-written body can pass
+    // validation while carrying nothing. It must not spend the claim.
+    expect(await controller.recordAttribution(asOwner(), { utmSource: null, gclid: null })).toEqual({
+      recorded: false,
+    });
+    expect(await stored()).toBeNull();
   });
 
   it('drops keys that are not on the allowlist', async () => {
     // The body is attacker-supplied — anyone can craft the link that produced it.
     await controller.recordAttribution(asOwner(), {
-      utm_source: 'landing',
+      utmSource: 'landing',
       evil: 'nope',
       accountId: 'someone-else',
     });
-    expect(await stored()).toEqual({ utm_source: 'landing' });
+    expect(await stored()).toEqual({ utmSource: 'landing' });
   });
 
   it('never throws on a malformed body', async () => {

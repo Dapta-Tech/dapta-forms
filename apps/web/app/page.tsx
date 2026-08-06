@@ -1,7 +1,7 @@
 import { headers } from 'next/headers';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { parseAttribution } from '@quill/types';
+import { parseAttribution, ATTRIBUTION_QUERY_KEYS } from '@quill/types';
 import { BrandLockup } from '@/components/brand/brand';
 import { authProvider, getSession } from '@/lib/auth-session';
 
@@ -23,8 +23,20 @@ async function loginHandoff(params: Record<string, string | string[] | undefined
     // Drop a SAME-ORIGIN referer. `attribution` is written once and never again,
     // so storing "came from our own page" would spend first touch on a value that
     // says nothing, and the real campaign could never be recorded afterwards.
+    //
+    // The comparison host comes from PUBLIC_APP_URL first, the way
+    // `requestOrigin` resolves it: `Host` / `X-Forwarded-Host` are client-supplied
+    // and this app runs behind a proxy, so trusting them means a crafted `Host:`
+    // makes our own pages look external and burns the claim on a useless value.
+    let selfHost: string | null = null;
     try {
-      referrer = new URL(referer).host === h.get('host') ? undefined : referer;
+      selfHost = process.env.PUBLIC_APP_URL ? new URL(process.env.PUBLIC_APP_URL).host : null;
+    } catch {
+      selfHost = null;
+    }
+    selfHost ??= h.get('x-forwarded-host') ?? h.get('host');
+    try {
+      referrer = new URL(referer).host === selfHost ? undefined : referer;
     } catch {
       referrer = undefined;
     }
@@ -32,9 +44,24 @@ async function loginHandoff(params: Record<string, string | string[] | undefined
   // `landing_path` is deliberately NOT set here: it would be '/' on every visit,
   // which would make the parse non-empty for a plain bookmark hit and burn the
   // claim. It is for surfaces where the path itself carries information.
-  const attribution = parseAttribution({ ...params, referrer });
-  if (!attribution) return '/api/auth/login';
-  return `/api/auth/login?${new URLSearchParams(Object.entries(attribution)).toString()}`;
+  const candidate: Record<string, string | string[] | undefined> = { ...params, referrer };
+
+  // Decide with the SAME parser the login route will use, so the two can never
+  // disagree about what counts as "nothing to carry".
+  if (!parseAttribution(candidate)) return '/api/auth/login';
+
+  // Forward the WIRE format (snake_case), not the parsed shape: parsing belongs at
+  // the end of the chain, and re-emitting camelCase here would hand the login
+  // route keys its own parser does not recognize — the tags would vanish while
+  // every unit test still passed.
+  const qs = new URLSearchParams();
+  for (const key of ATTRIBUTION_QUERY_KEYS) {
+    const raw = candidate[key];
+    // First of a repeated param, matching the parser's first-wins rule.
+    const value = Array.isArray(raw) ? raw[0] : raw;
+    if (typeof value === 'string' && value.trim()) qs.set(key, value.trim());
+  }
+  return `/api/auth/login?${qs.toString()}`;
 }
 
 // Per-request render: the workos-vs-local branch reads RUNTIME env + cookies.

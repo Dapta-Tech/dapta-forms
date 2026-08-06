@@ -46,7 +46,14 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   // would attribute a later signup to a campaign the person saw days ago.
   // Absent tags set no cookie — the callback then has nothing to send, which is
   // what keeps a direct visit from spending the write-once first-touch claim.
-  const attribution = parseAttribution(Object.fromEntries(new URL(req.url).searchParams));
+  // `getAll` per key, not `Object.fromEntries`: that collapses a repeated param to
+  // the LAST value, which would quietly invert `parseAttribution`'s first-wins rule
+  // — and this route is directly reachable, so it is the one surface that sees a
+  // raw query string somebody else composed.
+  const sp = new URL(req.url).searchParams;
+  const attribution = parseAttribution(
+    Object.fromEntries([...new Set(sp.keys())].map((k) => [k, sp.getAll(k)])),
+  );
   if (attribution) {
     jar.set(ATTRIBUTION_COOKIE, JSON.stringify(attribution), {
       path: '/',

@@ -54,7 +54,7 @@ import {
   type SubmissionEmailKey,
 } from '@quill/notifications';
 import {
-  accountAttributionSchema,
+  attributionSchema,
   formInputSchema,
   maskConfigSecrets,
   memberInviteSchema,
@@ -145,26 +145,41 @@ export class AdminCrudController {
    * attacker-supplied by definition (anyone can craft a link), so letting it name
    * an account would let a stranger overwrite someone else's attribution.
    *
-   * Never throws on a bad payload and never blocks: attribution is an observer of
-   * the product, not a participant. A login must not fail because a UTM could not
-   * be stored, which is why the caller gets `{ recorded }` instead of a 4xx.
+   * Admin-gated like every other workspace-level write in this controller: a
+   * plain `member` must not be able to rewrite the workspace's acquisition
+   * record. The intended caller is a brand-new account whose first member IS the
+   * owner, so the happy path is unaffected — and a 403 here cannot break the
+   * login, because the web discards this response entirely.
+   *
+   * Past the principal checks it never throws on a bad payload and never blocks:
+   * attribution is an observer of the product, not a participant. A login must
+   * not fail because a UTM could not be stored, which is why a junk body gets
+   * `{ recorded: false }` rather than a 400.
    */
   @Post('account/attribution')
   async recordAttribution(@Req() req: ReqLike, @Body() body: unknown) {
     const p = await this.auth.resolveHost(req);
-    const parsed = accountAttributionSchema.safeParse(body ?? {});
-    // `{}` passes the schema but is nothing to store, and storing it would SPEND
-    // the write-once claim — the real campaign could never be recorded after.
-    if (!parsed.success || Object.keys(parsed.data).length === 0) return { recorded: false };
+    assertAdmin(p);
+    const parsed = attributionSchema.safeParse(body ?? {});
+    if (!parsed.success) return { recorded: false };
 
-    const first = await claimAccountAttribution(this.db, p.accountId, parsed.data).catch((err) => {
+    // Every field of the schema is nullable, so drop the empties BEFORE deciding
+    // there is something to store. `{}` — and `{ utmSource: null }`, which a
+    // hand-written body can produce — would otherwise SPEND the write-once claim
+    // and the real campaign could never be recorded afterwards.
+    const tags = Object.fromEntries(
+      Object.entries(parsed.data).filter(([, v]) => v != null && v !== ''),
+    ) as Record<string, string>;
+    if (Object.keys(tags).length === 0) return { recorded: false };
+
+    const first = await claimAccountAttribution(this.db, p.accountId, tags).catch((err) => {
       // Same shape as the activation claim: a lock or a dead connection must not
       // turn a completed login into a 500 on the way to the dashboard.
       this.log.warn(`attribution claim failed for account ${p.accountId}: ${String(err)}`);
       return false;
     });
     if (first && this.productAnalytics?.enabled) {
-      await this.productAnalytics.captureForMember('attribution_captured', p, { ...parsed.data });
+      await this.productAnalytics.captureForMember('attribution_captured', p, { ...tags });
     }
     return { recorded: first };
   }
