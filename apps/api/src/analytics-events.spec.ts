@@ -448,10 +448,17 @@ describe('attribution — first touch, recorded once', () => {
     expect(await names()).toContain('forms_attribution_captured');
   });
 
-  it('carries the tags as event properties so PostHog can group by source', async () => {
-    await controller.recordAttribution(asOwner(), { utmSource: 'landing' });
+  it('stores camelCase but emits snake_case event properties', async () => {
+    // Two conventions on purpose, pinned together so neither drifts: the COLUMN
+    // uses the camelCase shape `attributionSchema` declares, while the analytics
+    // wire is snake_case like every other property this product sends
+    // (`form_id`, `is_first_publish`). That project is shared with the rest of the
+    // Dapta estate, so property naming there is a cross-product contract.
+    await controller.recordAttribution(asOwner(), { utmSource: 'landing', utmMedium: 'cpc' });
+    expect(await stored()).toEqual({ utmSource: 'landing', utmMedium: 'cpc' });
     const event = (await captured()).find((c) => c.event === 'forms_attribution_captured');
-    expect(event?.props).toMatchObject({ utmSource: 'landing' });
+    expect(event?.props).toMatchObject({ utm_source: 'landing', utm_medium: 'cpc' });
+    expect(event?.props).not.toHaveProperty('utmSource');
   });
 
   it('keeps the FIRST touch and emits nothing the second time', async () => {

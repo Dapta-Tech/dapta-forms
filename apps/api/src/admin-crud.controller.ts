@@ -54,6 +54,7 @@ import {
   type SubmissionEmailKey,
 } from '@quill/notifications';
 import {
+  attributionEventProps,
   attributionSchema,
   formInputSchema,
   maskConfigSecrets,
@@ -166,10 +167,14 @@ export class AdminCrudController {
     // Every field of the schema is nullable, so drop the empties BEFORE deciding
     // there is something to store. `{}` — and `{ utmSource: null }`, which a
     // hand-written body can produce — would otherwise SPEND the write-once claim
-    // and the real campaign could never be recorded afterwards.
-    const tags = Object.fromEntries(
-      Object.entries(parsed.data).filter(([, v]) => v != null && v !== ''),
-    ) as Record<string, string>;
+    // and the real campaign could never be recorded afterwards. The `typeof`
+    // check is not decoration: `firstSeenAt` is a NUMBER, so a crafted
+    // `{"firstSeenAt":0}` would survive a mere null-check and spend the claim
+    // carrying nothing.
+    const tags: Record<string, string> = {};
+    for (const [key, value] of Object.entries(parsed.data)) {
+      if (typeof value === 'string' && value !== '') tags[key] = value;
+    }
     if (Object.keys(tags).length === 0) return { recorded: false };
 
     const first = await claimAccountAttribution(this.db, p.accountId, tags).catch((err) => {
@@ -179,7 +184,11 @@ export class AdminCrudController {
       return false;
     });
     if (first && this.productAnalytics?.enabled) {
-      await this.productAnalytics.captureForMember('attribution_captured', p, { ...tags });
+      await this.productAnalytics.captureForMember(
+        'attribution_captured',
+        p,
+        attributionEventProps(tags),
+      );
     }
     return { recorded: first };
   }

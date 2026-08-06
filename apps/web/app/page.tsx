@@ -1,67 +1,33 @@
 import { headers } from 'next/headers';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { parseAttribution, ATTRIBUTION_QUERY_KEYS } from '@quill/types';
 import { BrandLockup } from '@/components/brand/brand';
+import { attributionHandoffQuery } from '@/lib/attribution';
 import { authProvider, getSession } from '@/lib/auth-session';
+import { selfHost } from '@/lib/request-origin';
 
 /**
  * Carry the acquisition tags into the login hand-off.
  *
  * `redirect()` drops the query string, and the identity round-trip leaves our
- * origin entirely — so tags not forwarded HERE are gone for good. This is the
- * only surface the campaign link actually lands on.
+ * origin entirely — so tags not forwarded HERE are gone for good. This is the only
+ * surface the campaign link actually lands on.
  *
- * Only allowlisted keys travel: forwarding the raw query would let a crafted
- * link smuggle arbitrary params into the login route.
+ * The pure part lives in `lib/attribution.ts` so it can be unit-tested; a redirect
+ * cannot. `landing_path` is deliberately not set: it would be '/' on every visit,
+ * making the parse non-empty for a plain bookmark hit and burning the write-once
+ * claim on a value that says nothing.
  */
 async function loginHandoff(params: Record<string, string | string[] | undefined>): Promise<string> {
   const h = await headers();
-  const referer = h.get('referer');
-  let referrer: string | undefined;
-  if (referer) {
-    // Drop a SAME-ORIGIN referer. `attribution` is written once and never again,
-    // so storing "came from our own page" would spend first touch on a value that
-    // says nothing, and the real campaign could never be recorded afterwards.
-    //
-    // The comparison host comes from PUBLIC_APP_URL first, the way
-    // `requestOrigin` resolves it: `Host` / `X-Forwarded-Host` are client-supplied
-    // and this app runs behind a proxy, so trusting them means a crafted `Host:`
-    // makes our own pages look external and burns the claim on a useless value.
-    let selfHost: string | null = null;
-    try {
-      selfHost = process.env.PUBLIC_APP_URL ? new URL(process.env.PUBLIC_APP_URL).host : null;
-    } catch {
-      selfHost = null;
-    }
-    selfHost ??= h.get('x-forwarded-host') ?? h.get('host');
-    try {
-      referrer = new URL(referer).host === selfHost ? undefined : referer;
-    } catch {
-      referrer = undefined;
-    }
-  }
-  // `landing_path` is deliberately NOT set here: it would be '/' on every visit,
-  // which would make the parse non-empty for a plain bookmark hit and burn the
-  // claim. It is for surfaces where the path itself carries information.
-  const candidate: Record<string, string | string[] | undefined> = { ...params, referrer };
-
-  // Decide with the SAME parser the login route will use, so the two can never
-  // disagree about what counts as "nothing to carry".
-  if (!parseAttribution(candidate)) return '/api/auth/login';
-
-  // Forward the WIRE format (snake_case), not the parsed shape: parsing belongs at
-  // the end of the chain, and re-emitting camelCase here would hand the login
-  // route keys its own parser does not recognize — the tags would vanish while
-  // every unit test still passed.
-  const qs = new URLSearchParams();
-  for (const key of ATTRIBUTION_QUERY_KEYS) {
-    const raw = candidate[key];
-    // First of a repeated param, matching the parser's first-wins rule.
-    const value = Array.isArray(raw) ? raw[0] : raw;
-    if (typeof value === 'string' && value.trim()) qs.set(key, value.trim());
-  }
-  return `/api/auth/login?${qs.toString()}`;
+  const query = attributionHandoffQuery(
+    params,
+    h.get('referer'),
+    // Same trust order as `requestOrigin`: PUBLIC_APP_URL first, headers only as a
+    // self-host fallback. `Host` / `X-Forwarded-Host` are client-supplied.
+    selfHost((n) => h.get(n)),
+  );
+  return query ? `/api/auth/login?${query}` : '/api/auth/login';
 }
 
 // Per-request render: the workos-vs-local branch reads RUNTIME env + cookies.

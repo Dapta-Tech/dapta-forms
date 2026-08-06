@@ -10,6 +10,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { parseAttribution, attributionSchema, ATTRIBUTION_QUERY_KEYS } from '@quill/types';
+import { attributionHandoffQuery, crossOriginReferer } from './attribution';
 
 describe('parseAttribution — snake_case URL in, camelCase blob out', () => {
   it('maps the UTM set and the paid-click ids onto the stored field names', () => {
@@ -87,5 +88,68 @@ describe('parseAttribution — snake_case URL in, camelCase blob out', () => {
       referrer: 'https://app.example.com/home',
       landingPath: '/admin',
     });
+  });
+});
+
+describe('attributionHandoffQuery — hop 1, the seam that already broke', () => {
+  /** What the login route does with whatever hop 1 emitted. */
+  const receive = (query: string) => {
+    const sp = new URLSearchParams(query);
+    return parseAttribution(Object.fromEntries([...new Set(sp.keys())].map((k) => [k, sp.getAll(k)])));
+  };
+
+  it('round-trips every tag through both hops', () => {
+    // The regression this pins: emitting the PARSED (camelCase) shape here loses
+    // every utm_* tag while gclid/fbclid survive, because only those two keys are
+    // spelled the same in both casings. Nothing throws, no other test fails, and
+    // the write-once claim is then spent on a half-empty blob.
+    const query = attributionHandoffQuery(
+      { utm_source: 'google', utm_medium: 'cpc', utm_campaign: 'launch', gclid: 'CJ0abc' },
+      null,
+      null,
+    );
+    expect(receive(query)).toEqual({
+      utmSource: 'google',
+      utmMedium: 'cpc',
+      utmCampaign: 'launch',
+      gclid: 'CJ0abc',
+    });
+  });
+
+  it('emits nothing for an untagged visit, so no cookie is set downstream', () => {
+    expect(attributionHandoffQuery({}, null, null)).toBe('');
+    expect(attributionHandoffQuery({ unrelated: 'x' }, null, null)).toBe('');
+  });
+
+  it('carries a cross-origin referer and drops a same-origin one', () => {
+    expect(receive(attributionHandoffQuery({}, 'https://ads.example.com/x', 'forms.example.com'))).toEqual(
+      { referrer: 'https://ads.example.com/x' },
+    );
+    // Same origin says nothing, and storing it would spend first touch.
+    expect(attributionHandoffQuery({}, 'https://forms.example.com/pricing', 'forms.example.com')).toBe('');
+  });
+
+  it('keeps the first of a repeated param across the hop', () => {
+    expect(receive(attributionHandoffQuery({ utm_source: ['real', 'injected'] }, null, null))).toEqual({
+      utmSource: 'real',
+    });
+  });
+
+  it('caps a forwarded value so the redirect cannot carry a huge Location header', () => {
+    const query = attributionHandoffQuery({ utm_source: 'a'.repeat(4096) }, null, null);
+    expect(new URLSearchParams(query).get('utm_source')).toHaveLength(512);
+  });
+});
+
+describe('crossOriginReferer', () => {
+  it('treats a malformed referer as absent', () => {
+    expect(crossOriginReferer('not a url', 'forms.example.com')).toBeUndefined();
+    expect(crossOriginReferer(null, 'forms.example.com')).toBeUndefined();
+  });
+
+  it('keeps a referer when our own host is unknown', () => {
+    // A self-host with no PUBLIC_APP_URL and no proxy headers: better to record the
+    // referer than to silently treat every visit as internal.
+    expect(crossOriginReferer('https://ads.example.com/x', null)).toBe('https://ads.example.com/x');
   });
 });

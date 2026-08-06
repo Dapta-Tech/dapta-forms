@@ -20,17 +20,26 @@ const ATTRIBUTION_COOKIE = 'quill_attribution';
  * killed. Nothing races it — `claimAccountAttribution` is the column's only
  * writer, so the dashboard's first request cannot claim anything.
  *
- * The timeout is deliberately short. This is the one request where somebody is
- * already waiting on a login that has succeeded, and it is a same-cluster call:
- * attribution is an observer of the product, never a participant, so a slow API
- * must cost the person milliseconds, not seconds.
+ * Do NOT read the timeout as "this is a cheap call". Being the first authenticated
+ * request makes it the most expensive one in the product: `resolveHost` inserts the
+ * account and the member, derives a unique handle, seeds the demo form, and fires
+ * the signup event. The bound exists because somebody is sitting in front of a
+ * login that already succeeded — attribution is an observer, never a participant —
+ * not because the work is small.
+ *
+ * The cookie survives a transport failure on purpose. It is deleted once the API
+ * has ANSWERED (2xx or 4xx — either way it had its say), but a timeout or a dead
+ * connection leaves it in place, so the next login on this browser retries. That is
+ * safe precisely because the write is claimed once and bounded by account age: a
+ * replay cannot double-count or overwrite. The residual cost is that a DIFFERENT
+ * person logging in on the same browser inside the cookie's 10 minutes inherits the
+ * tags — the same window the CSRF state cookie already accepts.
  */
 async function recordAttribution(
   jar: Awaited<ReturnType<typeof cookies>>,
   accessToken: string,
 ): Promise<void> {
   const parked = jar.get(ATTRIBUTION_COOKIE)?.value;
-  jar.delete(ATTRIBUTION_COOKIE);
   if (!parked) return;
   try {
     await fetch(`${serverApiUrl}/v1/account/attribution`, {
@@ -38,10 +47,11 @@ async function recordAttribution(
       headers: { 'content-type': 'application/json', authorization: `Bearer ${accessToken}` },
       body: parked,
       cache: 'no-store',
-      signal: AbortSignal.timeout(1500),
+      signal: AbortSignal.timeout(3000),
     });
+    jar.delete(ATTRIBUTION_COOKIE);
   } catch {
-    // Swallowed on purpose — see the note above.
+    // Kept for a retry — see the note above. Never rethrown: the login succeeded.
   }
 }
 

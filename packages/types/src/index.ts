@@ -1228,9 +1228,19 @@ export type ApiError = z.infer<typeof apiErrorSchema>;
  *
  * The cap is applied by TRUNCATING before validation, not by letting zod reject:
  * a single over-long value (a hostile URL, or just a very long `fbclid`) would
- * otherwise fail the whole parse and discard the campaign along with it.
- * `attribution-caps` in the spec asserts these stay in step with the schema.
+ * otherwise fail the whole parse and discard the campaign along with it. The spec
+ * case "never returns null because a value was too long" pins that.
  */
+/**
+ * Only the STRING-valued fields can appear in the map. `attributionSchema` also
+ * has the numeric `firstSeenAt`, and the loop below assigns a string — mapping it
+ * would make `safeParse` fail and silently drop the ENTIRE payload. The compiler
+ * refuses it instead.
+ */
+type AttributionStringKey = {
+  [K in keyof Attribution]-?: NonNullable<Attribution[K]> extends string ? K : never;
+}[keyof Attribution];
+
 const ATTRIBUTION_QUERY_MAP = [
   ['utm_source', 'utmSource', 128],
   ['utm_medium', 'utmMedium', 128],
@@ -1241,7 +1251,7 @@ const ATTRIBUTION_QUERY_MAP = [
   ['fbclid', 'fbclid', 512],
   ['referrer', 'referrer', 512],
   ['landing_path', 'landingPath', 512],
-] as const satisfies ReadonlyArray<readonly [string, keyof Attribution, number]>;
+] as const satisfies ReadonlyArray<readonly [string, AttributionStringKey, number]>;
 
 /** The query parameters this product reads. Everything else is ignored. */
 export const ATTRIBUTION_QUERY_KEYS: ReadonlyArray<string> = ATTRIBUTION_QUERY_MAP.map(([q]) => q);
@@ -1274,4 +1284,22 @@ export function parseAttribution(
   if (Object.keys(out).length === 0) return null;
   const parsed = attributionSchema.safeParse(out);
   return parsed.success ? parsed.data : null;
+}
+
+/**
+ * The stored blob re-keyed to snake_case, for the product-analytics wire.
+ *
+ * The column stores camelCase, but every other property this product sends is
+ * snake_case (`form_id`, `is_first_publish`), and the analytics project is shared
+ * with the rest of the Dapta estate — property naming there is a cross-product
+ * contract, not a local style choice. Non-string values are dropped, so a numeric
+ * field can never arrive where a tag is expected.
+ */
+export function attributionEventProps(attribution: Attribution): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [queryKey, field] of ATTRIBUTION_QUERY_MAP) {
+    const value = attribution[field];
+    if (typeof value === 'string' && value) out[queryKey] = value;
+  }
+  return out;
 }
