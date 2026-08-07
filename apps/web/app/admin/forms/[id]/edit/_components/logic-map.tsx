@@ -158,7 +158,16 @@ export function LogicMap({ config, m }: { config: FormConfig; m: BuilderMessages
               {branches.length ? (
                 <div className="mt-2 flex flex-col gap-2">
                   {branches.map((rule, ri) => {
-                    const value = rule.values.map((v) => optionLabel(step, v)).join(', ');
+                    // A scheduler routes from a CATCH-ALL rule whose value is
+                    // the literal `*` — it has no options to name, its answer is
+                    // a booking. `optionLabel` falls back to the raw value, so
+                    // this used to read "If * → Thank you".
+                    const catchAll = rule.values.includes('*');
+                    const value = catchAll
+                      ? step.type === 'scheduler'
+                        ? m.branching.anyBooking
+                        : m.branching.anyAnswer
+                      : rule.values.map((v) => optionLabel(step, v)).join(', ');
                     if (rule.target == null) {
                       return (
                         <BranchEdge key={ri} label={tb(m.map.skipEdge, { value })}>
