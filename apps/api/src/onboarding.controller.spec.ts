@@ -135,6 +135,30 @@ describe('/v1/me — the dashboard gate', () => {
     const me = await controllerWith(true).me(asOwner());
     expect(me?.onboardingRequired).toBe(false);
   });
+
+  /**
+   * The lockout. The gate is account-scoped, the endpoints are admin-scoped, and
+   * nothing used to reconcile the two.
+   *
+   * A colleague joining an org whose owner abandoned the wizard was sent to
+   * `/onboarding` by the dashboard layout, had every PATCH silently 403'd, had
+   * the completion 403'd outright, and was bounced back to `/onboarding` by the
+   * same gate when the action fell through to `/admin`. The wizard renders no
+   * sidebar and no sign-out, so that loop had no exit at all.
+   */
+  it('does NOT require it of a plain member — they cannot complete it', async () => {
+    const me = await controllerWith(true).me(asMember());
+    expect(me?.onboardingRequired).toBe(false);
+    // Still genuinely un-onboarded — the account state is unchanged, only who is
+    // asked to fix it.
+    expect(me?.onboardingCompletedAt).toBeNull();
+  });
+
+  it('still requires it of the owner of that same un-onboarded account', async () => {
+    const c = controllerWith(true);
+    expect((await c.me(asMember()))?.onboardingRequired).toBe(false);
+    expect((await c.me(asOwner()))?.onboardingRequired).toBe(true);
+  });
 });
 
 describe('PATCH /v1/account/onboarding', () => {
@@ -326,6 +350,74 @@ describe('POST /v1/account/onboarding/complete', () => {
       template: 'customer-feedback',
       lastStep: 'template',
     });
+  });
+
+  /**
+   * The template screen arms its CTA the moment question three is answered, so
+   * the completion can be sent before that answer's PATCH has landed. Carrying
+   * the answers ON the completion is what makes the record independent of which
+   * request wins.
+   */
+  it('stores answers that arrive WITH the completion, never having been PATCHed', async () => {
+    const c = controllerWith(true);
+    await c.completeOnboarding(asOwner(), {
+      template: 'lead-qualifier',
+      role: 'founder',
+      industry: 'software',
+      useCase: 'leads',
+    });
+
+    expect((await getAccountOnboarding(db, accountId))?.onboarding).toMatchObject({
+      role: 'founder',
+      industry: 'software',
+      useCase: 'leads',
+      template: 'lead-qualifier',
+    });
+  });
+
+  it('names the form in the locale the wizard rendered its cards in', async () => {
+    // The card said "Calificador de leads"; a form called "Lead qualifier" is a
+    // different answer to the same click.
+    const res = await controllerWith(true).completeOnboarding(asOwner(), {
+      template: 'lead-qualifier',
+      locale: 'es',
+    });
+    const form = await db.get<{ name: string }>(sql`SELECT name FROM form WHERE id = ${res.formId!}`);
+    expect(form?.name).toBe('Calificador de leads');
+  });
+
+  it('falls back to the registry name when no locale is named', async () => {
+    const res = await controllerWith(true).completeOnboarding(asOwner(), { template: 'blank' });
+    const form = await db.get<{ name: string }>(sql`SELECT name FROM form WHERE id = ${res.formId!}`);
+    expect(form?.name).toBe('Untitled form');
+  });
+
+  /**
+   * The losing claim used to be handed `ORDER BY created_at ASC LIMIT 1` — the
+   * account's OLDEST form. On an account that already had one, that is an
+   * unrelated form, and the loser lands in it with the first-run tour armed.
+   */
+  it('sends a losing claim to the form the WINNER made, not the oldest one', async () => {
+    // A form that predates the wizard entirely — a re-gated workspace, or a fork
+    // that toggled the flag off and on.
+    await db.run(
+      sql`INSERT INTO form (id, account_id, name, slug, config, created_at, updated_at)
+          VALUES (${'form_old'}, ${accountId}, ${'Older form'}, ${'older'},
+            ${'{"version":1,"steps":[]}'}, 100, 100)`,
+    );
+
+    const c = controllerWith(true);
+    const winner = await c.completeOnboarding(asOwner(), { template: 'lead-qualifier' });
+    const loser = await c.completeOnboarding(asOwner(), { template: 'lead-qualifier' });
+
+    expect(loser.completed).toBe(false);
+    expect(loser.formId).toBe(winner.formId);
+    expect(loser.formId).not.toBe('form_old');
+  });
+
+  it('records the created form id on the account, so the loser has something to read', async () => {
+    const res = await controllerWith(true).completeOnboarding(asOwner(), { template: 'blank' });
+    expect((await getAccountOnboarding(db, accountId))?.onboarding?.formId).toBe(res.formId);
   });
 });
 

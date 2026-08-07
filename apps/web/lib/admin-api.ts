@@ -154,6 +154,20 @@ export interface OnboardingProgress {
   lastStep?: string | null;
 }
 
+/**
+ * The completion body. The answers ride along with the template rather than
+ * being left to the last PATCH to deliver in time — see `onboardingCompleteSchema`
+ * in @quill/types, which is the contract this mirrors.
+ */
+export interface OnboardingComplete {
+  template: string;
+  role?: string | null;
+  industry?: string | null;
+  useCase?: string | null;
+  /** What the wizard rendered in, so the created form is named to match. */
+  locale?: string;
+}
+
 export interface FormSummary {
   id: string;
   name: string;
@@ -379,7 +393,7 @@ export const adminApi = {
       '/v1/account/onboarding',
       b,
     ),
-  completeOnboarding: (b: { template: string }) =>
+  completeOnboarding: (b: OnboardingComplete) =>
     req<{ completed: boolean; formId: string | null }>(
       'POST',
       '/v1/account/onboarding/complete',

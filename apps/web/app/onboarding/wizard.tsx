@@ -54,6 +54,8 @@ export function OnboardingWizard({ messages: m, locale }: { messages: Messages; 
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [template, setTemplate] = useState<string | null>(null);
   const [submitting, startSubmit] = useTransition();
+  /** Set when the completion could not be made — see `finish`. */
+  const [failed, setFailed] = useState(false);
 
   /** Past the last question is the template screen. */
   const onTemplates = index >= questions.length;
@@ -69,6 +71,31 @@ export function OnboardingWizard({ messages: m, locale }: { messages: Messages; 
     const useCase = answers.useCase as OnboardingUseCase | undefined;
     return useCase ? USE_CASE_TEMPLATE[useCase] : null;
   }, [answers.useCase]);
+
+  /**
+   * The progress patches, one at a time and in order.
+   *
+   * The wizard has two writers — the arrival effect below and every answer — and
+   * they both patch the SAME JSON column by read-modify-write. Left unchained
+   * they overlap: the arrival patch, fired un-awaited on mount, can still be in
+   * flight when the first answer's patch reads the row, and whichever writes
+   * second overwrites the other's field with a snapshot taken before it existed.
+   * Serializing costs nothing here — nothing in the UI waits on these — and it
+   * removes the only interleaving this screen can actually produce.
+   *
+   * The chain swallows rejections rather than propagating them. It has to: a
+   * rejected link would leave `queue.current` permanently rejected, so every
+   * later patch would be skipped and the progress column would stop at whatever
+   * the last success wrote. The action already treats a failed save as a
+   * non-event by design, and the next advance re-sends every answer anyway.
+   */
+  const queue = useRef<Promise<unknown>>(Promise.resolve());
+  const save = useCallback((patch: Parameters<typeof saveOnboardingStepAction>[0]) => {
+    queue.current = queue.current
+      .catch(() => undefined)
+      .then(() => saveOnboardingStepAction(patch))
+      .catch(() => undefined);
+  }, []);
 
   /**
    * Emit `step_viewed` once per screen ARRIVAL, not once per render.
@@ -96,16 +123,18 @@ export function OnboardingWizard({ messages: m, locale }: { messages: Messages; 
     // all. Those are opposite problems: one is a wizard failing, the other is a
     // signup that never arrived.
     //
-    // Safe to fire alongside `answer`'s patch because it only ever runs for
-    // index 0, which no answer patch targets — the two never race on the row.
-    void saveOnboardingStepAction({ lastStep: 'role' });
-  }, [stepKey, index, questions.length, locale]);
+    // Harmless on a RETURN visit even though it re-announces step one: the
+    // server only ever advances `lastStep`, so it cannot drag a stored
+    // `template` back to `role` and misfile a finisher as a first-question quit.
+    save({ lastStep: 'role' });
+  }, [stepKey, index, questions.length, locale, save]);
 
   /** Answer the current question and advance. Choosing IS continuing — one tap. */
   const answer = useCallback(
     (value: string) => {
       if (!current) return;
-      setAnswers((a) => ({ ...a, [current.field]: value }));
+      const next = { ...answers, [current.field]: value };
+      setAnswers(next);
       // Changing the use case invalidates an explicit template pick made on a
       // later screen. Without this, going back and choosing a different purpose
       // leaves the OLD card selected while the "Recommended for you" badge moves
@@ -121,10 +150,14 @@ export function OnboardingWizard({ messages: m, locale }: { messages: Messages; 
       // `lastStep` names the screen being REACHED, which is what makes the
       // stored value a drop-off bucket rather than a record of the last answer.
       const reached = questions[advancing]?.key ?? 'template';
-      void saveOnboardingStepAction({ [current.field]: value, lastStep: reached });
+      // Every answer so far, not just this one. A patch that never landed — the
+      // action swallows its failures by design — is repaired by the next advance
+      // instead of leaving a permanent hole in the column, and the merge ignores
+      // fields it already has, so re-sending them costs nothing.
+      save({ ...next, lastStep: reached });
       setIndex(advancing);
     },
-    [current, index, questions],
+    [answers, current, index, questions, save],
   );
 
   const back = useCallback(() => setIndex((i) => Math.max(0, i - 1)), []);
@@ -136,9 +169,31 @@ export function OnboardingWizard({ messages: m, locale }: { messages: Messages; 
         recommended: id === recommended,
         use_case: answers.useCase ?? null,
       });
-      startSubmit(() => void completeOnboardingAction(id));
+      setFailed(false);
+      // `async` so the scope returns a PROMISE. A non-thenable body ends the
+      // transition in the same tick: `submitting` would flip straight back to
+      // false, the interstitial below would never paint, the CTA would stay live
+      // for the whole round trip, and a rejection would have nobody to catch it.
+      startSubmit(async () => {
+        // The answers travel WITH the completion, so the claim writes them in
+        // its own single statement and cannot lose the last one to a PATCH still
+        // in flight. `locale` so the created form is named like the card.
+        const result = await completeOnboardingAction({
+          template: id,
+          role: answers.role ?? null,
+          industry: answers.industry ?? null,
+          useCase: answers.useCase ?? null,
+          locale,
+        });
+        // Only a FAILURE returns: every path where the API answered ends in a
+        // redirect, which throws. `/admin` is not a fallback while the claim is
+        // unwritten — the first-run gate reads the same column this request
+        // failed to set and would bounce them back into a wizard remounted at
+        // question one, with their answers gone. Say so, and offer a retry.
+        if (result && !result.ok) setFailed(true);
+      });
     },
-    [answers.useCase, recommended],
+    [answers, locale, recommended],
   );
 
   const stage = onTemplates ? TEMPLATE_STAGE : QUESTION_STAGE;
@@ -148,6 +203,12 @@ export function OnboardingWizard({ messages: m, locale }: { messages: Messages; 
   // disabled copy of itself — a frozen page with a greyed-out button reads as a
   // hang, and this is the last thing before a screen they have never seen.
   if (submitting) return <CreatingScreen m={m} />;
+  // The completion did not go through. The template pick is still in state, so
+  // retrying is one button and nothing has to be re-answered.
+  if (failed) {
+    const pick = template ?? recommended;
+    return <FailedScreen m={m} onRetry={pick ? () => finish(pick) : undefined} />;
+  }
 
   return (
     <div className="pf ob">
@@ -290,6 +351,33 @@ function CreatingScreen({ m }: { m: Messages }) {
         <div className="ob__creating-track" role="progressbar" aria-label={m.creating}>
           <div className="ob__creating-fill" />
         </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The completion failed and there is nowhere safe to send them.
+ *
+ * The dashboard is not that place: the claim is unwritten, so the first-run gate
+ * would read the same NULL column and redirect them back into a wizard that
+ * remounts with none of their answers. Standing still and saying so keeps the
+ * template pick alive in state, which makes the retry one click.
+ *
+ * Same shell as the interstitial it replaces, so nothing jumps between the two.
+ */
+function FailedScreen({ m, onRetry }: { m: Messages; onRetry?: () => void }) {
+  return (
+    <div className="pf ob ob--creating">
+      <div className="ob__creating" role="alert">
+        <FormsMark className="ob__creating-mark" title="Dapta Forms" />
+        <h1 className="ob__creating-headline">{m.error.headline}</h1>
+        <p className="ob__creating-sub">{m.error.body}</p>
+        {onRetry ? (
+          <button type="button" className="pf__btn ob__cta" onClick={onRetry}>
+            {m.error.retry}
+          </button>
+        ) : null}
       </div>
     </div>
   );

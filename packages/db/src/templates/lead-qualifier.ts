@@ -7,8 +7,11 @@
  * — scoring is the feature a lead-gen user came for, and a template that ships
  * it switched off teaches them the product does not have it.
  *
- * Copy is English (the OSS default); Spanish parity lives beside it in
- * `TEMPLATE_COPY_ES` (see ./copy-es.ts) for anyone localizing a fork.
+ * The QUESTIONS are English only. The form's NAME is localized — the API
+ * resolves it from `admin.onboarding.templates.options` so it matches the card
+ * that was clicked — but the config below is not, so a Spanish signup gets a
+ * Spanish-named form asking English questions. That is a known gap, not a
+ * design: translating the four template configs is tracked separately.
  */
 import type { FormConfig } from '@quill/types';
 

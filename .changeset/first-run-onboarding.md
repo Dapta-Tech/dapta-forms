@@ -5,7 +5,7 @@
 '@quill/config': minor
 ---
 
-First-run onboarding wizard, behind `ONBOARDING_WIZARD` (default off).
+First-run onboarding wizard, behind `ONBOARDING_WIZARD` (**default on**).
 
 A brand-new workspace is asked three questions — role, industry, and what they
 want to use Forms for — and then picks the template its first form is built from,
@@ -13,6 +13,11 @@ replacing the demo form that used to be seeded for everyone. The two are mutuall
 exclusive by construction: the seed only writes into an account with zero forms,
 so `ONBOARDING_WIZARD` suppresses it rather than relying on operators to switch
 both correctly.
+
+> **Upgrading a self-hosted deployment:** because the flag defaults to on, this
+> release also turns `SEED_DEMO_FORM` inert — a new workspace gets the wizard and
+> the template it picks, not the seeded demo form. Set `ONBOARDING_WIZARD=false`
+> to keep the previous behaviour.
 
 - `@quill/types`: `accountOnboardingSchema` and the answer enums, the template id
   union, and the use-case → template mapping.

@@ -59,6 +59,9 @@ importers:
       '@quill/notifications':
         specifier: workspace:*
         version: link:../../packages/notifications
+      '@quill/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
       '@quill/types':
         specifier: workspace:*
         version: link:../../packages/types

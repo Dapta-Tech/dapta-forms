@@ -1181,6 +1181,8 @@ export interface FormsMessages {
       /** Headline of the interstitial shown while the first form is created. */
       creating: string;
       creatingSubtitle: string;
+      /** Shown in place of the interstitial when the form could not be created. */
+      error: { headline: string; body: string; retry: string };
       /** Announced to assistive tech as the wizard advances. */
       progress: string; // {current} {total}
       role: {
@@ -1235,12 +1237,19 @@ export interface FormsMessages {
         /** Badge on the card the previous answer pre-selected. */
         recommended: string;
         cta: string;
+        /**
+         * `name`/`description` are the CARD; `formName` is what the created form
+         * is actually called. They are two strings because they are two jobs —
+         * the blank card invites you to "Start from scratch" and the form it
+         * makes is an "Untitled form" — and they live together so the name the
+         * API writes cannot drift from the card that was clicked.
+         */
         options: {
-          'lead-qualifier': { name: string; description: string };
-          'customer-feedback': { name: string; description: string };
-          'event-registration': { name: string; description: string };
-          application: { name: string; description: string };
-          blank: { name: string; description: string };
+          'lead-qualifier': { name: string; description: string; formName: string };
+          'customer-feedback': { name: string; description: string; formName: string };
+          'event-registration': { name: string; description: string; formName: string };
+          application: { name: string; description: string; formName: string };
+          blank: { name: string; description: string; formName: string };
         };
       };
       /** The three coach marks shown in the builder right after the form is made. */
@@ -2350,6 +2359,11 @@ export const en: FormsMessages = {
       back: 'Back',
       creating: 'Building your form…',
       creatingSubtitle: 'Setting up your questions. This only takes a second.',
+      error: {
+        headline: 'We could not create your form',
+        body: 'Your answers are saved. Try again — it is usually a passing connection problem.',
+        retry: 'Try again',
+      },
       progress: 'Question {current} of {total}',
       role: {
         question: 'What best describes your role?',
@@ -2406,22 +2420,27 @@ export const en: FormsMessages = {
           'lead-qualifier': {
             name: 'Lead qualifier',
             description: 'Scores each answer and splits the results into hot and warm.',
+            formName: 'Lead qualifier',
           },
           'customer-feedback': {
             name: 'Customer feedback',
             description: 'A short satisfaction survey with an NPS question.',
+            formName: 'Customer feedback',
           },
           'event-registration': {
             name: 'Event registration',
             description: 'Collect who is coming, how, and what they need.',
+            formName: 'Event registration',
           },
           application: {
             name: 'Applications and requests',
             description: 'For job applications and inbound work requests alike.',
+            formName: 'Applications and requests',
           },
           blank: {
             name: 'Start from scratch',
             description: 'An empty form. You write every question.',
+            formName: 'Untitled form',
           },
         },
       },
@@ -3541,6 +3560,11 @@ export const es: FormsMessages = {
       back: 'Atrás',
       creating: 'Creando tu formulario…',
       creatingSubtitle: 'Preparando tus preguntas. Solo toma un segundo.',
+      error: {
+        headline: 'No pudimos crear tu formulario',
+        body: 'Tus respuestas están guardadas. Inténtalo de nuevo: casi siempre es la conexión.',
+        retry: 'Reintentar',
+      },
       progress: 'Pregunta {current} de {total}',
       role: {
         question: '¿Cuál es tu rol?',
@@ -3597,22 +3621,27 @@ export const es: FormsMessages = {
           'lead-qualifier': {
             name: 'Calificador de leads',
             description: 'Puntúa cada respuesta y separa los resultados en calientes y tibios.',
+            formName: 'Calificador de leads',
           },
           'customer-feedback': {
             name: 'Opiniones de clientes',
             description: 'Una encuesta corta de satisfacción con una pregunta NPS.',
+            formName: 'Opiniones de clientes',
           },
           'event-registration': {
             name: 'Registro a evento',
             description: 'Recoge quién viene, cómo y qué necesita.',
+            formName: 'Registro a evento',
           },
           application: {
             name: 'Postulaciones y solicitudes',
             description: 'Sirve igual para vacantes que para pedidos de trabajo.',
+            formName: 'Postulaciones y solicitudes',
           },
           blank: {
             name: 'Empezar desde cero',
             description: 'Un formulario vacío. Tú escribes cada pregunta.',
+            formName: 'Formulario sin título',
           },
         },
       },
