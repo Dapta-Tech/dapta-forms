@@ -119,7 +119,7 @@ beats trapping a person on question two because the network blipped.
 
 **Write 2: `claimOnboardingComplete` — once.** `UPDATE … WHERE
 onboarding_completed_at IS NULL`: exactly one caller wins, so the first form is
-created once and `onboarding_completed` fires once even on a double-click or a
+created once and `forms_onboarding_completed` fires once even on a double-click or a
 second tab. A loser is handed the winner's form id and lands on the same form.
 Both writes guard on the claim, so a stale PATCH after completion can never
 rewrite a finished onboarding's answers.
@@ -147,20 +147,39 @@ everyone would make that state invisible.
 
 ## 6. Analytics
 
+**Every event name carries a `forms_` prefix**, added inside `captureEvent`
+(`apps/web/lib/product-analytics.ts`) and never at the call site — the analytics
+project is shared with the rest of Dapta, where `start_onboarding` and
+`dof_onboarding_*` already exist and mean something else entirely. Querying
+PostHog for the unprefixed name returns zero rows.
+
 Client events (`apps/web/app/onboarding/wizard.tsx` via `captureEvent`):
 
 | Event | When | Properties |
 |-------|------|------------|
-| `onboarding_started` | wizard first opens | `locale` |
-| `onboarding_step_viewed` | once per screen **arrival** (ref-guarded — not per render, and StrictMode-safe) | `step_key`, `step_index`, `total_steps` |
-| `onboarding_step_answered` | each answer | `step_key`, `step_index`, `value` |
-| `onboarding_template_picked` | template card chosen | `template`, `recommended`, `use_case` |
+| `forms_onboarding_started` | wizard first opens | `locale` |
+| `forms_onboarding_step_viewed` | once per screen **arrival** (ref-guarded — not per render, and StrictMode-safe) | `step_key`, `step_index`, `total_steps` |
+| `forms_onboarding_step_answered` | each answer | `step_key`, `step_index`, `value` |
+| `forms_onboarding_template_picked` | template card chosen | `template`, `recommended`, `use_case` |
 
 Server event (`apps/api/src/admin-crud.controller.ts`):
 
 | Event | When | Properties |
 |-------|------|------------|
-| `onboarding_completed` | the claim's **winner** only | `template`, `form_id` |
+| `forms_onboarding_completed` | the claim's **winner** only | `template`, `form_id` |
+
+The builder tour that follows emits `forms_onboarding_tour_step` (per coach
+mark) and `forms_onboarding_tour_finished`, so the funnel can run past the
+wizard into the first minute of the builder.
+
+**The server event carries no `account_code`.** Client events are enriched by
+the browser SDK's registered identity (`account_code`, `account_id`,
+`member_id`, `role`); the server event is a bare `captureForMember` call and
+carries only `product`, `template`, `form_id` — plus the `forms_account` group
+and the member's email as `distinct_id`, which both halves share. An insight
+filtered on the `account_code` **property** therefore drops the conversion
+event silently. Filter by the `forms_account` group instead; that is what every
+event has.
 
 Completion is counted server-side on purpose: it counts **accounts that
 finished**, not browsers that reached the last screen — a retry cannot
