@@ -1159,6 +1159,91 @@ export interface FormsMessages {
       unpublishedChanges: string;
       noChanges: string;
     };
+    /**
+     * First-run wizard: three questions, then the template the first form is
+     * built from. Keys are spelled out rather than derived from the @quill/types
+     * enums on purpose — this package is dependency-free by design, and the
+     * compiler still enforces EN/ES parity and a complete option set either way.
+     */
+    onboarding: {
+      /** The three stages, all visible from the first screen so the end is never a surprise. */
+      stages: { account: string; profile: string; firstForm: string };
+      next: string;
+      back: string;
+      creating: string;
+      /** Announced to assistive tech as the wizard advances. */
+      progress: string; // {current} {total}
+      role: {
+        question: string;
+        helper: string;
+        options: {
+          sales: string;
+          marketing: string;
+          support: string;
+          product: string;
+          founder: string;
+          engineering: string;
+          hr: string;
+          operations: string;
+          other: string;
+        };
+      };
+      industry: {
+        question: string;
+        helper: string;
+        placeholder: string;
+        search: string;
+        empty: string;
+        options: {
+          software: string;
+          ecommerce: string;
+          services: string;
+          agency: string;
+          health: string;
+          finance: string;
+          education: string;
+          realestate: string;
+          manufacturing: string;
+          nonprofit: string;
+          other: string;
+        };
+      };
+      useCase: {
+        question: string;
+        helper: string;
+        options: {
+          leads: string;
+          feedback: string;
+          event: string;
+          application: string;
+          other: string;
+        };
+      };
+      templates: {
+        question: string;
+        helper: string;
+        /** Badge on the card the previous answer pre-selected. */
+        recommended: string;
+        cta: string;
+        options: {
+          'lead-qualifier': { name: string; description: string };
+          'customer-feedback': { name: string; description: string };
+          'event-registration': { name: string; description: string };
+          application: { name: string; description: string };
+          blank: { name: string; description: string };
+        };
+      };
+      /** The three coach marks shown in the builder right after the form is made. */
+      tour: {
+        next: string;
+        done: string;
+        dismiss: string;
+        step: string; // {current} {total}
+        edit: { title: string; body: string };
+        preview: { title: string; body: string };
+        publish: { title: string; body: string };
+      };
+    };
   };
   /** Branded confirm dialog that replaces native browser confirm() prompts. */
   dialog: {
@@ -2242,6 +2327,105 @@ export const en: FormsMessages = {
       publishError: 'Could not publish — please try again.',
       unpublishedChanges: 'Unpublished changes',
       noChanges: 'All changes are published',
+    },
+    onboarding: {
+      stages: { account: 'Your account', profile: 'Get to know you', firstForm: 'Your first form' },
+      next: 'Continue',
+      back: 'Back',
+      creating: 'Building your form…',
+      progress: 'Question {current} of {total}',
+      role: {
+        question: 'What best describes your role?',
+        helper: 'Pick the closest one. It changes what we put in front of you first.',
+        options: {
+          sales: 'Sales',
+          marketing: 'Marketing',
+          support: 'Customer success or support',
+          product: 'Product, design or research',
+          founder: 'Founder or CEO',
+          engineering: 'Engineering or IT',
+          hr: 'People or HR',
+          operations: 'Operations',
+          other: 'Something else',
+        },
+      },
+      industry: {
+        question: 'What industry are you in?',
+        helper: 'Start typing to find yours.',
+        placeholder: 'Search industries',
+        search: 'Search',
+        empty: 'Nothing matches — pick Other.',
+        options: {
+          software: 'Software and technology',
+          ecommerce: 'Ecommerce and retail',
+          services: 'Professional services',
+          agency: 'Agency or marketing',
+          health: 'Healthcare',
+          finance: 'Finance and insurance',
+          education: 'Education',
+          realestate: 'Real estate',
+          manufacturing: 'Manufacturing and logistics',
+          nonprofit: 'Nonprofit',
+          other: 'Other',
+        },
+      },
+      useCase: {
+        question: 'What do you want to use Forms for?',
+        helper: 'We will set your first form up for exactly that.',
+        options: {
+          leads: 'Get more customers and leads',
+          feedback: 'Collect feedback',
+          event: 'Register people for an event',
+          application: 'Take applications or requests',
+          other: 'Something else',
+        },
+      },
+      templates: {
+        question: 'Here is your first form',
+        helper: 'Start from one of these — every question is yours to change.',
+        recommended: 'Recommended for you',
+        cta: 'Create my form',
+        options: {
+          'lead-qualifier': {
+            name: 'Lead qualifier',
+            description: 'Scores each answer and splits the results into hot and warm.',
+          },
+          'customer-feedback': {
+            name: 'Customer feedback',
+            description: 'A short satisfaction survey with an NPS question.',
+          },
+          'event-registration': {
+            name: 'Event registration',
+            description: 'Collect who is coming, how, and what they need.',
+          },
+          application: {
+            name: 'Applications and requests',
+            description: 'For job applications and inbound work requests alike.',
+          },
+          blank: {
+            name: 'Start from scratch',
+            description: 'An empty form. You write every question.',
+          },
+        },
+      },
+      tour: {
+        next: 'Next',
+        done: 'Got it',
+        dismiss: 'Dismiss',
+        step: '{current} of {total}',
+        edit: {
+          title: 'Edit any question',
+          body: 'Click a question to change its wording, its options, or what it asks for.',
+        },
+        preview: {
+          title: 'See what they see',
+          body: 'Preview opens the form exactly as the person answering it will find it.',
+        },
+        publish: {
+          title: 'Publish when you are ready',
+          body: 'Nothing is live until you publish. Then you get a link to share.',
+        },
+      },
     },
   },
   dialog: {
@@ -3327,6 +3511,105 @@ export const es: FormsMessages = {
       publishError: 'No se pudo publicar. Inténtalo de nuevo.',
       unpublishedChanges: 'Cambios sin publicar',
       noChanges: 'Todos los cambios están publicados',
+    },
+    onboarding: {
+      stages: { account: 'Tu cuenta', profile: 'Conocerte', firstForm: 'Tu primer formulario' },
+      next: 'Continuar',
+      back: 'Atrás',
+      creating: 'Creando tu formulario…',
+      progress: 'Pregunta {current} de {total}',
+      role: {
+        question: '¿Cuál es tu rol?',
+        helper: 'Elige el más cercano. Cambia lo que te mostramos primero.',
+        options: {
+          sales: 'Ventas',
+          marketing: 'Marketing',
+          support: 'Atención al cliente o soporte',
+          product: 'Producto, diseño o research',
+          founder: 'Fundador o CEO',
+          engineering: 'Tecnología o desarrollo',
+          hr: 'Recursos humanos',
+          operations: 'Operaciones',
+          other: 'Otro',
+        },
+      },
+      industry: {
+        question: '¿En qué industria estás?',
+        helper: 'Empieza a escribir para encontrar la tuya.',
+        placeholder: 'Buscar industrias',
+        search: 'Buscar',
+        empty: 'No hay coincidencias. Elige Otra.',
+        options: {
+          software: 'Software y tecnología',
+          ecommerce: 'Ecommerce y retail',
+          services: 'Servicios profesionales',
+          agency: 'Agencia o marketing',
+          health: 'Salud',
+          finance: 'Finanzas y seguros',
+          education: 'Educación',
+          realestate: 'Inmobiliaria',
+          manufacturing: 'Manufactura y logística',
+          nonprofit: 'ONG o sin fines de lucro',
+          other: 'Otra',
+        },
+      },
+      useCase: {
+        question: '¿Para qué quieres usar Forms?',
+        helper: 'Dejamos tu primer formulario listo para eso.',
+        options: {
+          leads: 'Captar clientes o leads',
+          feedback: 'Recibir feedback',
+          event: 'Registrar gente a un evento',
+          application: 'Recibir postulaciones o solicitudes',
+          other: 'Otra cosa',
+        },
+      },
+      templates: {
+        question: 'Aquí está tu primer formulario',
+        helper: 'Empieza con uno de estos. Cada pregunta es tuya para cambiarla.',
+        recommended: 'Recomendado para ti',
+        cta: 'Crear mi formulario',
+        options: {
+          'lead-qualifier': {
+            name: 'Calificador de leads',
+            description: 'Puntúa cada respuesta y separa los resultados en calientes y tibios.',
+          },
+          'customer-feedback': {
+            name: 'Opiniones de clientes',
+            description: 'Una encuesta corta de satisfacción con una pregunta NPS.',
+          },
+          'event-registration': {
+            name: 'Registro a evento',
+            description: 'Recoge quién viene, cómo y qué necesita.',
+          },
+          application: {
+            name: 'Postulaciones y solicitudes',
+            description: 'Sirve igual para vacantes que para pedidos de trabajo.',
+          },
+          blank: {
+            name: 'Empezar desde cero',
+            description: 'Un formulario vacío. Tú escribes cada pregunta.',
+          },
+        },
+      },
+      tour: {
+        next: 'Siguiente',
+        done: 'Entendido',
+        dismiss: 'Cerrar',
+        step: '{current} de {total}',
+        edit: {
+          title: 'Edita cualquier pregunta',
+          body: 'Haz clic en una pregunta para cambiar su texto, sus opciones o lo que pide.',
+        },
+        preview: {
+          title: 'Mira lo que ellos ven',
+          body: 'La vista previa abre el formulario tal como lo encontrará quien lo responda.',
+        },
+        publish: {
+          title: 'Publica cuando estés listo',
+          body: 'Nada está en línea hasta que publiques. Ahí obtienes el enlace para compartir.',
+        },
+      },
     },
   },
   dialog: {

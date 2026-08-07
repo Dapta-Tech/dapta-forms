@@ -46,6 +46,7 @@ describe('webhook ping', () => {
       DEV_LOGIN_EMAIL: undefined,
       AUTH_LOCAL_STRICT: undefined,
       SEED_DEMO_FORM: false,
+      ONBOARDING_WIZARD: false,
     });
     const auth = new AuthService(db, provider);
     controller = new FormDestinationsController(db, auth);

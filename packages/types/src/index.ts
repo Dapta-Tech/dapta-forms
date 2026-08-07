@@ -1308,3 +1308,157 @@ export function attributionEventProps(attribution: Attribution): Record<string, 
   }
   return out;
 }
+
+/* ---------------------------------------------------------------------------
+ * ONBOARDING — the wizard a brand-new workspace sees before its dashboard.
+ *
+ * Three questions and a template pick. The answers describe WHO the workspace is
+ * for; the bookkeeping fields describe HOW FAR they got, which is the half that
+ * makes drop-off answerable at all.
+ * ------------------------------------------------------------------------- */
+
+/**
+ * Question 1 — "what best describes your role?".
+ *
+ * `other` is LAST on purpose. It is an escape hatch, not a peer of the real
+ * answers, and a list that buries it mid-way (as Typeform's does, at 7 of 8)
+ * makes people scan past their own role to find it.
+ */
+export const ONBOARDING_ROLES = [
+  'sales',
+  'marketing',
+  'support',
+  'product',
+  'founder',
+  'engineering',
+  'hr',
+  'operations',
+  'other',
+] as const;
+export type OnboardingRole = (typeof ONBOARDING_ROLES)[number];
+
+/**
+ * Question 2 — "what industry are you in?".
+ *
+ * Eleven buckets, not the 52 the Dapta IAM's `pre_signup` bank carries. Fifty-two
+ * options in a three-screen wizard is noise; these group the same space, and a
+ * 52 -> 11 mapping is a lookup table if the two ever need to be joined.
+ */
+export const ONBOARDING_INDUSTRIES = [
+  'software',
+  'ecommerce',
+  'services',
+  'agency',
+  'health',
+  'finance',
+  'education',
+  'realestate',
+  'manufacturing',
+  'nonprofit',
+  'other',
+] as const;
+export type OnboardingIndustry = (typeof ONBOARDING_INDUSTRIES)[number];
+
+/**
+ * Question 3 — "what do you want to use Forms for?".
+ *
+ * Deliberately 1:1 with the templates below (minus `other`): the question IS the
+ * template picker, answered a screen early. Answer `leads` and the lead
+ * qualifier is already selected on the next screen, so the momentum never breaks.
+ */
+export const ONBOARDING_USE_CASES = ['leads', 'feedback', 'event', 'application', 'other'] as const;
+export type OnboardingUseCase = (typeof ONBOARDING_USE_CASES)[number];
+
+/**
+ * The starting points offered at the end of the wizard.
+ *
+ * `blank` is not a template — it is the honest "start from scratch" choice, and
+ * it resolves to an empty form rather than to a config. Keeping it in the same
+ * union is what lets `template` record what the person actually picked instead
+ * of going NULL and being indistinguishable from an abandon.
+ */
+export const FORM_TEMPLATE_IDS = [
+  'lead-qualifier',
+  'customer-feedback',
+  'event-registration',
+  'application',
+  'blank',
+] as const;
+export type FormTemplateId = (typeof FORM_TEMPLATE_IDS)[number];
+
+/** Which use case pre-selects which template. `other` pre-selects nothing. */
+export const USE_CASE_TEMPLATE: Readonly<Record<OnboardingUseCase, FormTemplateId | null>> = {
+  leads: 'lead-qualifier',
+  feedback: 'customer-feedback',
+  event: 'event-registration',
+  application: 'application',
+  other: null,
+};
+
+/**
+ * The wizard's screens, in order. `lastStep` names the furthest one REACHED, so
+ * these are the buckets a drop-off report groups by.
+ */
+export const ONBOARDING_STEPS = ['role', 'industry', 'use_case', 'template'] as const;
+export type OnboardingStep = (typeof ONBOARDING_STEPS)[number];
+
+/**
+ * `account.onboarding` (migration 0011) — the wizard's working state AND result.
+ *
+ * Every field is optional because this row is written on EVERY step advance, not
+ * only at the end. A half-filled blob is the normal, expected shape: it is the
+ * record of someone who is still mid-wizard, or who left. Requiring the answers
+ * would mean nothing is stored until completion, and an abandoned onboarding
+ * would leave no trace — which is precisely the thing this column exists to
+ * measure.
+ *
+ * Answers are stored RAW, with no score attached. Weighting them is a decision
+ * to make against real data later; baking a guess into the column now would make
+ * it unrecoverable.
+ *
+ * The API validates against this before writing, so an enum value the product
+ * does not offer can never reach the column even though the request body is
+ * client-supplied.
+ */
+export const accountOnboardingSchema = z.object({
+  version: z.literal(1),
+  role: z.enum(ONBOARDING_ROLES).nullable().optional(),
+  industry: z.enum(ONBOARDING_INDUSTRIES).nullable().optional(),
+  useCase: z.enum(ONBOARDING_USE_CASES).nullable().optional(),
+  template: z.enum(FORM_TEMPLATE_IDS).nullable().optional(),
+  /** The furthest screen REACHED — the drop-off bucket. */
+  lastStep: z.enum(ONBOARDING_STEPS).nullable().optional(),
+  /**
+   * Every screen reached, in order, deduped. `lastStep` alone cannot tell a
+   * straight run from one that went back and forth, and back-navigation is a
+   * usability signal worth keeping. Capped at the step count so a crafted body
+   * cannot grow the row.
+   */
+  stepsSeen: z.array(z.enum(ONBOARDING_STEPS)).max(ONBOARDING_STEPS.length).optional(),
+  /** Epoch-ms the wizard was first opened, for time-to-complete. */
+  startedAt: z.number().int().nonnegative().nullable().optional(),
+});
+export type AccountOnboarding = z.infer<typeof accountOnboardingSchema>;
+
+/**
+ * The PATCH body: a partial the client may send as it advances.
+ *
+ * `version` is deliberately NOT accepted — it is stamped server-side. A client
+ * that could set it could park a blob the reader will not understand.
+ * `stepsSeen` is likewise server-derived (appended from `lastStep`), so the
+ * ordering cannot be forged into a straight run that never happened.
+ */
+export const onboardingProgressSchema = z.object({
+  role: z.enum(ONBOARDING_ROLES).nullable().optional(),
+  industry: z.enum(ONBOARDING_INDUSTRIES).nullable().optional(),
+  useCase: z.enum(ONBOARDING_USE_CASES).nullable().optional(),
+  template: z.enum(FORM_TEMPLATE_IDS).nullable().optional(),
+  lastStep: z.enum(ONBOARDING_STEPS).nullable().optional(),
+});
+export type OnboardingProgressInput = z.infer<typeof onboardingProgressSchema>;
+
+/** The complete body: which starting point to create the first form from. */
+export const onboardingCompleteSchema = z.object({
+  template: z.enum(FORM_TEMPLATE_IDS),
+});
+export type OnboardingCompleteInput = z.infer<typeof onboardingCompleteSchema>;

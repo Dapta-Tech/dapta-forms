@@ -77,6 +77,9 @@ export function header(req: ReqLike, name: string): string | undefined {
   return Array.isArray(v) ? v[0] : v;
 }
 
+/** The two switches that decide whether a new account gets a demo form. */
+export type SeedDemoEnv = Pick<ServerEnv, 'SEED_DEMO_FORM' | 'ONBOARDING_WIZARD'>;
+
 /**
  * Best-effort demo-form seed, shared by every AuthProvider that JIT-creates a
  * new account+owner. Gated by `SEED_DEMO_FORM` (env, default ON) and idempotent
@@ -84,14 +87,25 @@ export function header(req: ReqLike, name: string): string | undefined {
  * forms), so a repeat login never duplicates it. Seeding NEVER fails a login: a
  * DB error here is logged and swallowed — the user still lands in their (empty)
  * workspace rather than being locked out over a cosmetic sample.
+ *
+ * `ONBOARDING_WIZARD` SUPPRESSES it, and the rule lives here rather than at each
+ * call site so the two features cannot be switched on together by accident. The
+ * conflict is structural: the seed only writes into an account with zero forms,
+ * so a demo seeded at first login makes the account non-empty and the form the
+ * wizard is supposed to create — the one the person chose a template for — is
+ * silently never made.
+ *
+ * Suppressing it is also what makes abandonment MEASURABLE. With the wizard on,
+ * someone who quits partway is left with zero forms, and that is a fact the
+ * funnel can see; with a demo seeded for everyone, the state is invisible.
  */
 export async function maybeSeedDemoForm(
   db: Db,
   accountId: string,
-  enabled: boolean,
+  env: SeedDemoEnv,
   log: Logger,
 ): Promise<void> {
-  if (!enabled) return;
+  if (!env.SEED_DEMO_FORM || env.ONBOARDING_WIZARD) return;
   try {
     const form = await seedDemoFormForAccount(db, accountId);
     if (form) log.log(`Seeded demo form ${form.id} for new account ${accountId}`);
@@ -147,7 +161,7 @@ export class LocalAuthProvider implements AuthProvider {
     private readonly db: Db,
     private readonly env: Pick<
       ServerEnv,
-      'NODE_ENV' | 'DEV_LOGIN_EMAIL' | 'AUTH_LOCAL_STRICT' | 'SEED_DEMO_FORM'
+      'NODE_ENV' | 'DEV_LOGIN_EMAIL' | 'AUTH_LOCAL_STRICT' | 'SEED_DEMO_FORM' | 'ONBOARDING_WIZARD'
     >,
     /** Optional; omitted means nothing observes signups (the fork default). */
     private readonly onSignup?: SignupObserver,
@@ -223,7 +237,7 @@ export class LocalAuthProvider implements AuthProvider {
     // A fresh account (its first member is the owner) gets the polished demo form
     // so the dashboard is never empty. Idempotent + best-effort (never blocks login).
     if (role === 'owner') {
-      await maybeSeedDemoForm(this.db, account.id, this.env.SEED_DEMO_FORM, this.log);
+      await maybeSeedDemoForm(this.db, account.id, this.env, this.log);
     }
     // Fires only on the JIT path — every early return above is an EXISTING
     // member signing in again, which is not a signup.

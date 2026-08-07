@@ -45,7 +45,30 @@ export interface AnalyticsIdentity {
   accountId: string;
   accountCode: string;
   role: string;
+  /**
+   * The account's first-touch acquisition tags, attached as GROUP properties so
+   * every workspace-level funnel is sliceable by campaign. Absent for direct
+   * traffic and for accounts that predate attribution — which is why they are
+   * only registered when present (see `identifyMember`).
+   */
+  attribution?: Record<string, string | number | null | undefined> | null;
 }
+
+/**
+ * The attribution fields worth carrying into the analytics vendor, re-keyed to
+ * the snake_case every other property here uses.
+ *
+ * An allowlist, not a copy of the blob: the column also holds `gclid`/`fbclid`,
+ * which are per-click ids. Those would give each account a unique group-property
+ * value, which is useless for grouping and needless data to hand a third party.
+ */
+const GROUP_ATTRIBUTION_FIELDS = [
+  ['utmSource', 'utm_source'],
+  ['utmMedium', 'utm_medium'],
+  ['utmCampaign', 'utm_campaign'],
+  ['utmContent', 'utm_content'],
+  ['utmTerm', 'utm_term'],
+] as const;
 
 function clean(value: string | null | undefined): string | null {
   if (typeof value !== 'string') return null;
@@ -150,7 +173,31 @@ export function identifyMember(identity: AnalyticsIdentity): void {
     member_id: identity.memberId,
     role: identity.role,
   });
-  ph.group('forms_account', identity.accountId, { account_code: identity.accountCode });
+  ph.group('forms_account', identity.accountId, {
+    account_code: identity.accountCode,
+    // Campaign tags ride on the GROUP, not the person, because that is what
+    // they describe: the workspace was acquired from a campaign, and every
+    // member who later joins it inherits that fact. Attaching them per-event
+    // instead would leave the vendor's autocaptured events unattributed, so
+    // "which campaign produced accounts that finished onboarding" would only be
+    // answerable across the handful of events we hand-instrument.
+    ...groupAttribution(identity.attribution),
+  });
+}
+
+/** The campaign subset of the attribution blob, snake_cased. Empty when absent. */
+function groupAttribution(
+  attribution: AnalyticsIdentity['attribution'],
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (!attribution) return out;
+  for (const [field, key] of GROUP_ATTRIBUTION_FIELDS) {
+    const value = attribution[field];
+    // Only non-empty STRINGS: the blob also carries a numeric `firstSeenAt`, and
+    // a number arriving where a tag is expected would break grouping silently.
+    if (typeof value === 'string' && value) out[key] = value;
+  }
+  return out;
 }
 
 /**

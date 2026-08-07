@@ -23,6 +23,17 @@ export const account = pgTable('account', {
   activatedAt: bigint('activated_at', { mode: 'number' }),
   /** Milestone CLAIM: epoch-ms of the first form view. Same write-once discipline. */
   firstViewedAt: bigint('first_viewed_at', { mode: 'number' }),
+  /**
+   * Onboarding wizard state AND result (see 0011) — `accountOnboardingSchema` in
+   * @quill/types. Written on every step advance, so a row with a `lastStep` and
+   * no `onboardingCompletedAt` IS the drop-off record.
+   */
+  onboarding: jsonb('onboarding'),
+  /**
+   * Milestone CLAIM: epoch-ms the wizard was finished. Also the dashboard gate —
+   * NULL means "send them to the wizard".
+   */
+  onboardingCompletedAt: bigint('onboarding_completed_at', { mode: 'number' }),
   createdAt: bigint('created_at', { mode: 'number' }).notNull(),
 });
 

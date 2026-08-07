@@ -23,6 +23,17 @@ export default async function AdminLayout({ children }: { children: ReactNode })
     throw e;
   }
 
+  // The first-run gate. The API decides — `onboardingRequired` already folds in
+  // the feature flag — so the dashboard never carries a second copy of the
+  // switch that could disagree with it.
+  //
+  // The wizard lives at `/onboarding`, NOT under `/admin`, and that is what
+  // keeps this from looping: a child of this route would re-enter this layout,
+  // be redirected again, and the person would never reach a page. It also wants
+  // none of the chrome below — no sidebar to wander off into before the first
+  // form exists.
+  if (me.onboardingRequired) redirect('/onboarding');
+
   // Server-read the collapse pref so the sidebar renders at the right width on
   // first paint (no rail FOUC).
   const initialCollapsed = jar.get('forms.nav.collapsed')?.value === '1';

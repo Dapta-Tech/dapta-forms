@@ -563,6 +563,7 @@ export function FormEditor({
 
           <button
             type="button"
+            data-tour="preview"
             onClick={() => setPreviewOpen(true)}
             className="inline-flex h-9 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border border-border px-3 text-sm font-medium text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
@@ -623,7 +624,7 @@ export function FormEditor({
             // past 360 at xl, so a 13" laptop keeps the canvas width it had.
             <div className="grid h-full grid-cols-1 lg:grid-cols-[260px_minmax(0,1fr)_360px] xl:grid-cols-[280px_minmax(0,1fr)_420px] 2xl:grid-cols-[300px_minmax(0,1fr)_460px]">
               {/* Left spine */}
-              <aside className="hidden min-h-0 overflow-y-auto lg:block">
+              <aside className="hidden min-h-0 overflow-y-auto lg:block" data-tour="edit">
                 <QuestionSpine
                   steps={config.steps}
                   selectedIndex={selected}

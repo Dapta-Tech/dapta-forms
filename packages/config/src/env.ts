@@ -117,6 +117,22 @@ export const serverEnvSchema = z.object({
   // ship empty workspaces.
   SEED_DEMO_FORM: boolish.default('true'),
 
+  // Onboarding WIZARD: gate the whole first-run experience — three qualifying
+  // questions, then the person picks the template their first form is built
+  // from. OFF by default so a fork (and this product, until the flag is flipped
+  // per environment) behaves exactly as before.
+  //
+  // It also SUPPRESSES the auto-seed above, and must: `seedDemoFormForAccount`
+  // only writes when the account has zero forms, so a demo seeded at first login
+  // would make the account non-empty and the wizard's own form would never be
+  // created. The two features are mutually exclusive by construction, not by
+  // convention — see `maybeSeedDemoForm`'s callers.
+  //
+  // Suppressing the seed is also what makes abandonment MEASURABLE: with it off,
+  // someone who quits mid-wizard is left with zero forms, which is a fact the
+  // funnel can see. With a demo seeded for everyone, that state is invisible.
+  ONBOARDING_WIZARD: boolish.default('false'),
+
   // Auth — unset selects the local dev stub.
   AUTH_PROVIDER: z.enum(['local', 'workos']).default('local'),
 

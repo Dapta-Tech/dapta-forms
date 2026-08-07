@@ -7,3 +7,4 @@ export const AUTH_PROVIDER = Symbol('AUTH_PROVIDER');
 export const RATE_LIMITER = Symbol('RATE_LIMITER');
 export const ENTITLEMENTS = Symbol('ENTITLEMENTS');
 export const PREMIUM_MODE = Symbol('PREMIUM_MODE');
+export const ONBOARDING_ENABLED = Symbol('ONBOARDING_ENABLED');

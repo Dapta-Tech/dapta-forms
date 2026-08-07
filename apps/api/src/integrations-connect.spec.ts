@@ -90,6 +90,7 @@ function build(env: ServerEnv, fetchImpl: typeof fetch): void {
     DEV_LOGIN_EMAIL: undefined,
     AUTH_LOCAL_STRICT: undefined,
     SEED_DEMO_FORM: false,
+    ONBOARDING_WIZARD: false,
   });
   const auth = new AuthService(db, provider);
   const hubspot = new HubspotPropertiesService(env, db, fetchImpl);
