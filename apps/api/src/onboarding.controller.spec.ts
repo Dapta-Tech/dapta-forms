@@ -73,6 +73,16 @@ async function capturedEvents(): Promise<string[]> {
   return rows.map((r) => (JSON.parse(String(r.payload)) as { event: string }).event);
 }
 
+/** The same rows, with their properties — for assertions about what was sent. */
+async function capturedPayloads(): Promise<
+  { event: string; properties?: Record<string, unknown> }[]
+> {
+  const rows: OutboxRow[] = await listOutbox(db, { kind: 'analytics' });
+  return rows.map(
+    (r) => JSON.parse(String(r.payload)) as { event: string; properties?: Record<string, unknown> },
+  );
+}
+
 beforeEach(async () => {
   db = await createDb('file::memory:');
   await migrate(db);
@@ -269,6 +279,37 @@ describe('POST /v1/account/onboarding/complete', () => {
 
     const events = (await capturedEvents()).filter((e) => e === 'forms_onboarding_completed');
     expect(events).toHaveLength(1);
+  });
+
+  // The activation funnel's second stage. The wizard creates a form without
+  // going through `createForm`/`duplicateForm`, the only two other emitters, so
+  // without this the whole wizard cohort reads as "never made a form" — and
+  // because the funnel is ordered, every stage after it becomes unreachable too.
+  it('emits forms_form_created so the wizard cohort enters the activation funnel', async () => {
+    const analytics = new AnalyticsEffects(db, ANALYTICS_ON as never);
+    const c = controllerWith(true, analytics);
+    const res = await c.completeOnboarding(asOwner(), { template: 'lead-qualifier' });
+
+    const created = (await capturedPayloads()).filter((e) => e.event === 'forms_form_created');
+    expect(created).toHaveLength(1);
+    // The id must be the form the wizard actually built, not just any truthy
+    // value: a funnel stage pointing at a form that does not exist is worse
+    // than a missing one.
+    expect(created[0]?.properties).toMatchObject({
+      form_id: res.formId,
+      from_onboarding: true,
+      template: 'lead-qualifier',
+    });
+  });
+
+  it('does not re-announce the form when a second claim loses', async () => {
+    const analytics = new AnalyticsEffects(db, ANALYTICS_ON as never);
+    const c = controllerWith(true, analytics);
+    await c.completeOnboarding(asOwner(), { template: 'blank' });
+    await c.completeOnboarding(asOwner(), { template: 'blank' });
+
+    const created = (await capturedEvents()).filter((e) => e === 'forms_form_created');
+    expect(created).toHaveLength(1);
   });
 
   it('preserves the answers gathered on the way', async () => {

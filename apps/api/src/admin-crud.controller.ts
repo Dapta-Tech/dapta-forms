@@ -256,6 +256,28 @@ export class AdminCrudController {
         template: parsed.data.template,
         form_id: result.formId,
       });
+      // The wizard is the THIRD way a form is born, alongside `createForm` and
+      // `duplicateForm`, and it has to announce itself the same way they do.
+      //
+      // Without this the activation funnel breaks for every account the wizard
+      // creates: `form_created` is its second stage, the funnel is `ordered`,
+      // and a stage that never fires makes every LATER stage unreachable. The
+      // account would read as "signed up, never made a form" forever — while
+      // holding a form the wizard built for it — and publishing or receiving a
+      // response would not move it. Suppressing the demo seed made the wizard
+      // the ONLY source of a first form, so this is the whole cohort, not an
+      // edge case.
+      //
+      // Guarded on `formId` because a failed create still leaves the completion
+      // claimed (see `completeOnboarding`), and announcing a form that does not
+      // exist would put a phantom into the funnel.
+      if (result.formId) {
+        await this.productAnalytics.captureForMember('form_created', p, {
+          form_id: result.formId,
+          from_onboarding: true,
+          template: parsed.data.template,
+        });
+      }
     }
     return result;
   }
