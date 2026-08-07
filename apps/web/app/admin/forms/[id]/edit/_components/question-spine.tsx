@@ -39,7 +39,6 @@ export function QuestionSpine({
   selectedIndex,
   onSelect,
   onReorder,
-  onAdd,
   partialAfterStep,
   onPartialChange,
   m,
@@ -48,7 +47,6 @@ export function QuestionSpine({
   selectedIndex: number | null;
   onSelect: (index: number) => void;
   onReorder: (from: number, to: number) => void;
-  onAdd: () => void;
   /** 1-based `config.partialSubmitAfterStep`; marker shows when 1..steps.length. */
   partialAfterStep?: number;
   /** Set (1-based), move, or clear (`undefined`) the partial-submit threshold. */
@@ -218,14 +216,11 @@ export function QuestionSpine({
         }}
       </SortableList>
 
-      <button
-        type="button"
-        onClick={onAdd}
-        className="mt-1 flex items-center justify-center gap-2 rounded-xl border border-dashed border-border py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:border-primary/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-      >
-        <i aria-hidden className="pi pi-plus" style={{ fontSize: 12 }} />
-        {m.shell.addQuestion}
-      </button>
+      {/* No add button here: "+ Add question" lives ONCE, as the contextual
+          toolbar's primary action. This list had its own dashed one, so the
+          screen offered the same action twice — the duplicate was called out
+          directly. The empty state and the mobile strip keep their own routes
+          into the gallery. */}
 
       {partialIdx == null && steps.length > 0 ? (
         // No visible partial marker (unset OR out-of-range) → offer to place one

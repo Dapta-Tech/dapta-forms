@@ -1,30 +1,23 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 import { Modal } from '@/components/modal';
 import { Button } from '@/components/ui/button';
-import { AnchoredMenu } from '@/components/ui/anchored-menu';
 import { cn } from '@/lib/cn';
 
 /**
- * The topbar's share control: one icon button opening a menu with Copy link,
- * Embed and Open form.
+ * The topbar's sharing controls: Copy link, Embed and Open form as THREE
+ * visible icon-only buttons.
  *
- * These were three labelled buttons sitting in the header next to Preview and
- * Publish, which is what pushed the tab labels behind a `2xl` breakpoint. They
- * are also the same KIND of thing — "get this form to somebody" — so collapsing
- * them into one affordance costs a click on actions nobody performs mid-edit and
- * buys the header enough room to label its tabs at every width.
- *
- * The panel goes through `AnchoredMenu`, i.e. a portal to `document.body`. A
- * plain absolute (or even `position: fixed`) panel would be trapped: the header
- * is a flex row inside the editor shell, and any positioned element in the
- * scrolling body below it paints over a panel whose z-index is scoped to the
- * header's own stacking context. That is the bug PR #61 fixed for the rail
- * menus, and it applies verbatim here.
+ * They were labelled buttons once (which crowded the tab labels out of the
+ * header), then briefly a single popover menu — which tested as one hop too
+ * many: "reduce them to icons" meant icons you can SEE, not a menu you must
+ * discover. Icon-only is the compromise that keeps the header narrow AND the
+ * actions one click away; the label reaches hover (title) and assistive tech
+ * (aria-label).
  *
  * The public URL is resolved client-side from the real origin (`publicPath` is
- * a server-stable path). A 2s "Copied" flash confirms each copy.
+ * a server-stable path). A 2s check-flash confirms each copy.
  */
 export function LinkActions({
   publicPath,
@@ -35,7 +28,6 @@ export function LinkActions({
   /** The form's name — becomes the embed iframe's accessible title. */
   formName: string;
   labels: {
-    share: string;
     copyLink: string;
     copied: string;
     openForm: string;
@@ -46,11 +38,9 @@ export function LinkActions({
     embedCopied: string;
   };
 }) {
-  const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [embedOpen, setEmbedOpen] = useState(false);
   const [snippetCopied, setSnippetCopied] = useState(false);
-  const triggerRef = useRef<HTMLButtonElement>(null);
 
   const copy = async () => {
     try {
@@ -87,83 +77,43 @@ export function LinkActions({
     }
   };
 
-  const item =
-    'flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-popover-foreground ' +
-    'transition-colors hover:bg-accent focus-visible:bg-accent focus-visible:outline-none';
+  const icon =
+    'inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border text-foreground ' +
+    'transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
 
   return (
-    <>
+    <div className="flex shrink-0 items-center gap-1.5">
       <button
-        ref={triggerRef}
         type="button"
-        onClick={() => setOpen((v) => !v)}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        aria-label={labels.share}
-        title={labels.share}
-        data-testid="editor-share"
-        className={cn(
-          'inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border text-foreground',
-          'transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-          open && 'bg-accent',
-        )}
+        onClick={() => void copy()}
+        className={cn(icon, copied && 'border-primary text-primary')}
+        aria-label={copied ? labels.copied : labels.copyLink}
+        title={copied ? labels.copied : labels.copyLink}
+        data-testid="editor-copy-link"
       >
-        <i aria-hidden className="pi pi-share-alt" style={{ fontSize: 13 }} />
+        <i aria-hidden className={`pi ${copied ? 'pi-check' : 'pi-link'}`} style={{ fontSize: 13 }} />
       </button>
-
-      <AnchoredMenu
-        anchorRef={triggerRef}
-        open={open}
-        onClose={() => setOpen(false)}
-        label={labels.share}
-        width={220}
-        testId="editor-share-menu"
-        className="py-1"
+      <button
+        type="button"
+        onClick={() => setEmbedOpen(true)}
+        className={icon}
+        aria-label={labels.embed}
+        title={labels.embed}
+        data-testid="editor-embed"
       >
-        <button
-          type="button"
-          role="menuitem"
-          onClick={() => void copy()}
-          className={item}
-          data-testid="editor-copy-link"
-        >
-          <i
-            aria-hidden
-            className={`pi ${copied ? 'pi-check' : 'pi-link'} shrink-0 text-muted-foreground`}
-            style={{ fontSize: 13 }}
-          />
-          {copied ? labels.copied : labels.copyLink}
-        </button>
-        <button
-          type="button"
-          role="menuitem"
-          onClick={() => {
-            setOpen(false);
-            setEmbedOpen(true);
-          }}
-          className={item}
-          data-testid="editor-embed"
-        >
-          <i aria-hidden className="pi pi-code shrink-0 text-muted-foreground" style={{ fontSize: 13 }} />
-          {labels.embed}
-        </button>
-        <a
-          href={publicPath}
-          target="_blank"
-          rel="noreferrer"
-          role="menuitem"
-          onClick={() => setOpen(false)}
-          className={item}
-          data-testid="editor-open-form"
-        >
-          <i
-            aria-hidden
-            className="pi pi-external-link shrink-0 text-muted-foreground"
-            style={{ fontSize: 13 }}
-          />
-          {labels.openForm}
-        </a>
-      </AnchoredMenu>
+        <i aria-hidden className="pi pi-code" style={{ fontSize: 13 }} />
+      </button>
+      <a
+        href={publicPath}
+        target="_blank"
+        rel="noreferrer"
+        className={icon}
+        aria-label={labels.openForm}
+        title={labels.openForm}
+        data-testid="editor-open-form"
+      >
+        <i aria-hidden className="pi pi-external-link" style={{ fontSize: 13 }} />
+      </a>
 
       <Modal open={embedOpen} onClose={() => setEmbedOpen(false)} title={labels.embedTitle} labelId="embed-form-title">
         <div className="flex flex-col gap-4">
@@ -182,6 +132,6 @@ export function LinkActions({
           </div>
         </div>
       </Modal>
-    </>
+    </div>
   );
 }

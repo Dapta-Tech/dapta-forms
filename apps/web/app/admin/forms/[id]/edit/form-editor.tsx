@@ -612,7 +612,6 @@ export function FormEditor({
             publicPath={publicPath}
             formName={name}
             labels={{
-              share: bm.shell.share,
               copyLink: bm.shell.copyLink,
               copied: bm.shell.copied,
               openForm: bm.shell.openForm,
@@ -636,6 +635,10 @@ export function FormEditor({
       <EditorToolbar m={bm}>
         {tab === 'build' ? (
           <>
+            {/* The ONE add button — the spine's dashed duplicate is gone. No
+                Design shortcut either: the tab row already says Design, and a
+                second button with the same word was read as a bug, not a
+                convenience. */}
             <ToolbarButton
               icon="pi-plus"
               label={bm.shell.addQuestion}
@@ -643,14 +646,20 @@ export function FormEditor({
               primary
               testId="toolbar-add-question"
             />
-            <ToolbarButton
-              icon="pi-palette"
-              label={bm.shell.tabDesign}
-              onClick={() => setTab('design')}
-              testId="toolbar-design"
-            />
             <ToolbarSeparator />
             {hasQuestions ? <DeviceToggle device={device} onChange={setDevice} m={bm} /> : null}
+            {/* Preview rides WITH the viewport cluster (Typeform's ▷ sits right
+                beside the device icons) instead of drifting to the far edge.
+                `data-tour` anchors the first-run tour's Preview step: the
+                control left the header row, so the anchor moves with it. */}
+            <span className="flex shrink-0 items-center" data-tour="preview">
+              <ToolbarIconButton
+                icon="pi-play"
+                label={bm.shell.preview}
+                onClick={() => setPreviewOpen(true)}
+                testId="toolbar-preview"
+              />
+            </span>
           </>
         ) : null}
         {/* Logic's own menu. Each entry is a FORM-WIDE view of one axis — the
@@ -678,19 +687,18 @@ export function FormEditor({
             />
           </>
         ) : null}
-        {/* Preview is the one control every section shares: it answers "what
-            does this look like now?", which is true of the form as a whole. The
-            play triangle carries it — the same glyph Typeform uses. */}
-        {/* `data-tour` anchors the first-run tour's Preview step: the control
-            moved out of the header row, so the anchor moves with it. */}
-        <span className="ml-auto flex items-center gap-1.5" data-tour="preview">
-          <ToolbarIconButton
-            icon="pi-play"
-            label={bm.shell.preview}
-            onClick={() => setPreviewOpen(true)}
-            testId="toolbar-preview"
-          />
-        </span>
+        {/* On the non-Build tabs the preview keeps a home at the row's end —
+            "what does this look like now?" is true of every section. */}
+        {tab !== 'build' ? (
+          <span className="ml-auto flex items-center gap-1.5">
+            <ToolbarIconButton
+              icon="pi-play"
+              label={bm.shell.preview}
+              onClick={() => setPreviewOpen(true)}
+              testId="toolbar-preview"
+            />
+          </span>
+        ) : null}
       </EditorToolbar>
 
       {/* Body */}
@@ -710,7 +718,6 @@ export function FormEditor({
                   selectedIndex={selected}
                   onSelect={setSelected}
                   onReorder={reorderSteps}
-                  onAdd={() => setGalleryOpen(true)}
                   partialAfterStep={config.partialSubmitAfterStep}
                   onPartialChange={setPartialSubmitAfterStep}
                   m={bm}

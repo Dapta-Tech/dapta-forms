@@ -40,8 +40,6 @@ export interface BuilderMessages {
     embedCopied: string;
     copied: string;
     openForm: string;
-    /** The topbar's link popover, which now holds copy/embed/open (F1). */
-    share: string;
     /** Accessible name for the per-tab contextual toolbar (topbar row 2). */
     toolbar: string;
   };
@@ -475,7 +473,6 @@ const en: BuilderMessages = {
     embedCopied: 'Copied',
     copied: 'Copied',
     openForm: 'Open form',
-    share: 'Share',
     toolbar: 'Tools',
   },
   logicDialog: {
@@ -828,7 +825,6 @@ const es: BuilderMessages = {
     embedCopied: 'Copiado',
     copied: 'Copiado',
     openForm: 'Abrir formulario',
-    share: 'Compartir',
     toolbar: 'Herramientas',
   },
   logicDialog: {

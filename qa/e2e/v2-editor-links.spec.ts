@@ -9,21 +9,17 @@ import { test, expect, type APIRequestContext, type BrowserContext } from '@play
  * here from GET /v1/me so the QA principal's real account code is never
  * hardcoded (it is NOT necessarily `acme`).
  *
- * The three actions used to be three labelled buttons sitting in the header.
- * They now live behind ONE share control ([data-testid="editor-share"]), which
- * is what freed the room for the tabs to carry labels at every width. The
- * assertions below are unchanged in substance — same testids, same element
- * types, same behaviour — they just open the menu first. The panel is portalled
- * to document.body (AnchoredMenu), so it is NOT a DOM descendant of the trigger.
+ * The three actions are ICON-ONLY buttons, visible in the header (labels live
+ * on title/aria-label). They were labelled buttons once, then briefly a single
+ * popover menu — which tested as one hop too many and was reverted.
  *
- *   1. The menu exposes [data-testid="editor-copy-link"] (a <button>) and
+ *   1. The header exposes [data-testid="editor-copy-link"] (a <button>) and
  *      [data-testid="editor-open-form"] (an <a>).
  *   2. editor-open-form opens the public form in a new tab: it is an anchor with
  *      target="_blank" whose href resolves to the form's public path.
  *   3. Clicking editor-copy-link flips it into a transient "copied" state (icon
- *      pi-link → pi-check) within 2s. Copying deliberately leaves the menu open
- *      so that flip is visible. Clipboard-write permission is granted so the
- *      flip — which the component performs only after a successful copy —
+ *      pi-link → pi-check) within 2s. Clipboard-write permission is granted so
+ *      the flip — which the component performs only after a successful copy —
  *      actually fires; the grant is best-effort so a blocked clipboard can never
  *      crash the run.
  */
@@ -78,32 +74,15 @@ async function allowClipboard(context: BrowserContext) {
   }
 }
 
-/**
- * Open the topbar's share menu and wait for the portalled panel.
- *
- * Retried as a unit: the trigger is a client island, so a click that lands
- * before hydration is swallowed silently — the button is present and visible
- * the whole time, which is exactly the failure a bare `click()` cannot see.
- */
-async function openShareMenu(page: import('@playwright/test').Page) {
-  const trigger = page.getByTestId('editor-share');
-  await expect(trigger, 'share control present in header').toBeVisible({ timeout: 25_000 });
-  await expect(async () => {
-    if (!(await page.getByTestId('editor-share-menu').isVisible())) await trigger.click();
-    await expect(page.getByTestId('editor-share-menu')).toBeVisible({ timeout: 1_000 });
-  }).toPass({ timeout: 15_000 });
-}
-
 test.describe('N4 — editor header link actions', () => {
-  test('share menu renders copy-link and open-form controls', async ({ page, request }, testInfo) => {
+  test('header renders copy-link and open-form controls', async ({ page, request }, testInfo) => {
     const form = await createForm(request, 'header', testInfo.workerIndex);
     await page.goto(`/admin/forms/${form.id}/edit`);
-    await openShareMenu(page);
 
     const copyLink = page.getByTestId('editor-copy-link');
     const openForm = page.getByTestId('editor-open-form');
-    await expect(copyLink, 'copy-link control present in the share menu').toBeVisible();
-    await expect(openForm, 'open-form control present in the share menu').toBeVisible();
+    await expect(copyLink, 'copy-link control present in header').toBeVisible({ timeout: 25_000 });
+    await expect(openForm, 'open-form control present in header').toBeVisible();
 
     // Exactly one of each, and the expected element types (see link-actions.tsx).
     await expect(page.locator('button[data-testid="editor-copy-link"]')).toHaveCount(1);
@@ -115,10 +94,9 @@ test.describe('N4 — editor header link actions', () => {
     const expectedPath = await publicPath(request, form.slug);
 
     await page.goto(`/admin/forms/${form.id}/edit`);
-    await openShareMenu(page);
 
     const openForm = page.locator('a[data-testid="editor-open-form"]');
-    await expect(openForm).toBeVisible();
+    await expect(openForm).toBeVisible({ timeout: 25_000 });
     await expect(openForm, 'opens in a new tab').toHaveAttribute('target', '_blank');
     await expect(openForm, 'external open carries noreferrer').toHaveAttribute('rel', /noreferrer/);
     // Raw attribute is the server-stable relative path…
@@ -132,11 +110,10 @@ test.describe('N4 — editor header link actions', () => {
     await allowClipboard(context);
     const form = await createForm(request, 'copy', testInfo.workerIndex);
     await page.goto(`/admin/forms/${form.id}/edit`);
-    await openShareMenu(page);
 
     const copyLink = page.getByTestId('editor-copy-link');
     const icon = copyLink.locator('i');
-    await expect(copyLink).toBeVisible();
+    await expect(copyLink).toBeVisible({ timeout: 25_000 });
 
     // Resting state: the link icon, never the check.
     await expect(icon, 'starts on the link icon').toHaveClass(/pi-link/);
@@ -145,8 +122,7 @@ test.describe('N4 — editor header link actions', () => {
     // Click then assert the copied flip, retrying the pair to absorb client
     // hydration timing. Each click re-arms the 2s "copied" window, so repeated
     // clicks are harmless; toHaveClass resolves on first match, so the auto-
-    // revert cannot race the assertion. Copying does not dismiss the menu —
-    // that is what makes the flip observable at all.
+    // revert cannot race the assertion.
     await expect(async () => {
       await copyLink.click();
       await expect(icon).toHaveClass(/pi-check/, { timeout: 1_000 });

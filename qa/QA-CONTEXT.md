@@ -74,7 +74,7 @@ Steps with `triggersReveal: true` show the reveal after completing that step. `p
 - **Integration connect API**: `GET /v1/integrations` (status, token-free), `POST /v1/integrations/:provider/connect {token}`, `DELETE /v1/integrations/:provider`. Never assert on a raw token.
 - **Notifications API**: `GET /v1/notifications`, `PUT /v1/notifications/:emailKey {enabled?,subject?,body?}` (emailKey ∈ submission_received|submission_confirmed), `POST /v1/notifications/:emailKey/reset`.
 - **New admin UIs**: `/admin/integrations` = account connections (cards per provider, connect/disconnect). Per-form mapping at `/admin/forms/:id/integrations` (Typeform-style, only usable when connected; branded searchable property `Select`; "Auto-map" button toasts a count). `/admin/settings` has a Notifications section (per-email enable toggle, subject input, body textarea, {{token}} chips, live preview, reset).
-- **Editor header** (`/admin/forms/:id/edit`): `data-testid="editor-copy-link"` and `data-testid="editor-open-form"`. **These now live inside the share menu** — click `editor-share` first, then assert against the portalled `editor-share-menu` panel (it hangs off `document.body`, not the trigger). `editor-embed` is in the same menu. Copying does NOT dismiss the menu, so the transient "copied" flip stays observable.
+- **Editor header** (`/admin/forms/:id/edit`): `editor-copy-link`, `editor-embed` and `editor-open-form` are three ICON-ONLY buttons, directly visible beside Publish (the interim single share-menu was reverted). Labels live on `title`/`aria-label`.
 - **Branded dropdowns**: admin `<select>`s are now a custom combobox (`components/ui/select.tsx`) — the trigger is a `<button aria-haspopup="listbox">`; the panel is `role="listbox"` with `role="option"`s. NOT a native `<select>`. The public `dropdown` step is still the pf-* SearchableDropdown.
 - **Phone step**: public phone renders `apps/web/components/public/phone-input.tsx` — a `.pf-phone` combobox (country flag+dial trigger opens a searchable `.pf-phone__panel` listbox of countries) + a digits input. Value stored E.164 (`+<dial><digits>`). Default country from locale (en→US, es→MX).
 - **Interpolation fix**: a question like `"[firstname], what problem…"` with no firstname answered renders `"What problem…"` (no leading comma). The pilot form's Q2 exercises this (qualification shows before the name step).
@@ -91,7 +91,7 @@ Steps with `triggersReveal: true` show the reveal after completing that step. `p
 - **Branching edits INLINE (R7)** — no per-step Edit button, no handoff to the per-question dialog. Each `branching-step` block carries: `branching-always` (a wrapper div around the branded Always-go-to combobox; drive it via the trigger `role=button` named `Always go to — <question>` / for schedulers `After a booking`, then pick a `role=option`), `branching-rules` (the shared `LogicRules` rows, option types only, catch-all excluded), and `branching-visibility` (the shared `LogicConditions`, from step 2 on). Absent controls are deliberate — a type that can't do a thing shows nothing, never an explanation. The catch-all `goto` (`values:['*']`) is always written LAST in the array.
 - **Per-question logic** moved out of the Advanced accordion: the Build panel shows a read-only summary (`question-logic`, `question-logic-count`, `question-logic-show|hide|goto|booking`) and `question-logic-edit` opens the shared `logic-dialog`, which is where `logic-show`/`logic-hide` and the rule editor now live.
 - **Preview is an iframe** (`preview-iframe`) rendering the REAL public renderer at a true viewport, fed the in-memory draft by postMessage. Reach inside with `frameLocator('[data-testid="preview-iframe"]')`; `live-preview` now lives in that document and carries `data-preview-state="waiting"|"ready"`. Three presets: `preview-device-mobile` (390×844) · `preview-device-tablet` (768×1024) · `preview-device-desktop` (1280×800), read back from `preview-viewport`. There is no screen picker — walk the form like a respondent.
-- **Editor topbar is two rows.** Row 1 (whole-form scope): back · name · save status · centred labelled tabs · `editor-share` · Publish. Row 2 (`editor-toolbar`, section scope) changes with the active tab — on Build: `toolbar-add-question`, `toolbar-design`, `canvas-device-desktop` / `canvas-device-mobile`; on every tab: `toolbar-preview` (the ▷). The device switch MOVED here from the canvas sub-header, which now carries only the "Question n of N" caption.
+- **Editor topbar is two rows.** Row 1 (whole-form scope): back · name · save status · centred labelled tabs · the three share icons · Publish. Row 2 (`editor-toolbar`, section scope) changes with the active tab — on Build: `toolbar-add-question` (the ONE add button; the spine's dashed duplicate is gone), the `canvas-device-*` switch, and `toolbar-preview` (▷) right beside it; there is NO `toolbar-design` (the tab row already says Design). On non-Build tabs `toolbar-preview` sits at the row's end. The device switch MOVED here from the canvas sub-header, which now carries only the "Question n of N" caption.
 - **Connect tab**: `connect-panel` with `connect-integrations` (embedded integrations editor), Tracking & Pixels inputs (`tracking-gtm`, `tracking-meta`, `tracking-posthog-key`, `tracking-posthog-host`, `tracking-hubspot` → write `config.tracking`, injected on the public page), and `connect-emails` (per-form overrides).
 - **Mapping key dropdowns**: custom mappings + value maps use grouped searchable selects — `mapping-key-select` / `mapping-key-custom`, `valuemap-key-select` / `valuemap-key-custom` (groups: form questions, UTM system fields, custom escape).
 - **Per-question Map to**: question settings HubSpot section — `qs-hubspot-section`, `qs-hubspot-mapto`, `qs-hubspot-connect-cta`, `qs-hubspot-saved`; writes live `fieldMappings` via `PUT /v1/forms/:id/destinations`.
@@ -99,3 +99,56 @@ Steps with `triggersReveal: true` show the reveal after completing that step. `p
 - **Per-form emails**: `GET/PUT /v1/forms/:id/notifications(/:emailKey)` + `POST …/reset`; precedence form → account → stock (per field; a form row's `enabled` wins). UI testids `connect-email-{key}`, `connect-email-customize-{key}`, `connect-email-use-account-{key}`, `connect-email-save-{key}`, `connect-email-{key}-subject|-body`. Migration 0005 (`notification_setting.form_id`, partial uniques) applied to the QA DB.
 - **@ token picker**: canvas title textarea = `canvas-title-input` (role=combobox); dropdown `token-picker` with `token-option[data-key]`; hint `token-hint`; warnings `token-warning[data-kind="later"|"unknown"]`. Only earlier capturing steps' keys (name subfields included) are offered.
 - **Name placeholders**: public name inputs default to localized "First name"/"Last name" (es: Nombre/Apellidos); canvas previews live (`canvas-name-first`, `canvas-name-second`); settings placeholder fields `name-placeholder-0/1`.
+
+## Traps that cost a spec an hour (found during the builder-redesign triage)
+
+- **A builder `Field` label is NOT the control's sibling.** `_components/fields.tsx`
+  renders `<div><span><label>Badge</label></span><control/></div>` and sets no
+  `htmlFor`, so **both** `label:text-is("X") + input` and
+  `getByText('X').locator('xpath=following-sibling::div[1]')` match nothing.
+  Reach the control through the wrapper instead — `label:text-is("X")` +
+  `xpath=ancestor::div[1]`, or `xpath=../following-sibling::div[1]`. (`getByLabel`
+  only works where the `<label>` *wraps* the input, e.g. the client-logo rows.)
+- **Open Advanced before touching Behavior.** `Ends the form`, `Hidden`,
+  `Show reveal screen after`, the field-key editor and the default-answer row all
+  live inside `advanced-settings`, which is COLLAPSED by default — but
+  auto-opens when the step already carries a badge (dynamic / ends-form / hidden
+  / default / scored). A blind click therefore closes it. Toggle only when
+  `aria-expanded` is not `"true"`.
+- **Per-question conditions are in the dialog, not the panel.** `logic-show` /
+  `logic-hide` (and the `Show when — Field` / `Hide when — Field` comboboxes)
+  render inside `logic-dialog`, opened by `question-logic-edit`. Close it with
+  `logic-dialog-close` before driving the topbar (save status / Publish).
+- **The public API rate limit will bite any spec that walks several forms.**
+  Per-IP token bucket, 60 burst / 1-per-second refill (`RATE_LIMIT_CAPACITY`,
+  `RATE_LIMIT_REFILL_PER_SEC`), shared by every suite. A 429 on the page's
+  server-side config fetch throws in `getJson`, so the public subtree renders its
+  error boundary — **"This page didn't load"**, with no `.pf__*` markup at all —
+  and a naive `expect(input).toBeVisible()` just times out. Load public pages via
+  a goto-retry with a ~5s refill pause (see `gotoPublic` in
+  `builder-gaps.spec.ts`, `openFirstStep` in `v6-scheduler-booking.spec.ts`,
+  `openForm` in `v5-reveal-positions.spec.ts`).
+- **Do not scroll the settings COLUMN to assert a row is reachable.** The HubSpot
+  "Map to" section renders *below* the Advanced group, so the column's maximum
+  scrollTop puts the HubSpot card in frame and the last advanced row off the top.
+  Scroll to the ROW (`scrollIntoViewIfNeeded`) and assert the ROW.
+
+## Known environmental gaps in a `dev-sqlite.sh`-only QA DB
+
+These are fixture gaps, not product regressions. Do not "fix" the specs that hit
+them by weakening assertions — reproduce the fixture or skip.
+
+- **No HubSpot token.** `GET /v1/integrations` → `{"providers":[],"serverProvided":["hubspot"]}`.
+  Anything asserting "HubSpot connected", the 856-property picker, or real
+  HubSpot property names fails. (The V2 section above describes an environment
+  that HAD a token connected at account level.) Affects e.g.
+  `v3-shots.spec.ts › shot · editor Connect tab`.
+- **No imported pilot form.** `/…/pilot-lead-qualifier` renders "Not found":
+  `qa/import-pilot-form.ts` is a MANUAL step and the seed never creates it. All 5
+  `suite-regression.spec.ts` tests depend on it, and the forms-list shot used to
+  gate on its display names ("Pilot Lead Qualifier", "Test").
+- **Only a handful of seeded workspaces.** The app-switcher panel's content is
+  ~116px, so `v9-rail-menus.spec.ts › a panel taller than the space available
+  clamps and scrolls in place` cannot reach its overflow branch even at a 160px
+  viewport (measured `scrollHeight === clientHeight === 116`). The test guards a
+  real behaviour; it needs either more seeded workspaces or a shorter viewport.
