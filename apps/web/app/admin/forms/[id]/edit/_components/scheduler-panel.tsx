@@ -5,6 +5,7 @@ import Link from 'next/link';
 import type { FormStep } from '@quill/engine';
 import type { CalendlyEventType } from '@/lib/admin-api';
 import { Select } from '@/components/ui/select';
+import { GOTO_END, GOTO_NEXT, buildGoto } from './logic-util';
 import { Switch } from '@/components/ui/switch';
 import { buttonVariants } from '@/components/ui/button';
 import { ProviderLogo } from '@/components/ui/provider-logo';
@@ -167,8 +168,12 @@ export function SchedulerPanel({
               ...laterSteps.map((st) => ({ value: st.key, label: st.label })),
             ]}
             onChange={(v) => {
-              if (!v) return onGotoChange(undefined);
-              onGotoChange([{ values: ['*'], target: v === AFTER_SUBMIT ? null : v }]);
+              // Through the shared builder, not a whole-array replacement:
+              // this picker owns the catch-all ONLY, and a scheduler can carry
+              // value rules too (a jump authored in Branching). Replacing the
+              // array here used to drop them.
+              const valueRules = (goto ?? []).filter((r) => !r.values.includes('*'));
+              onGotoChange(buildGoto(valueRules, !v ? GOTO_NEXT : v === AFTER_SUBMIT ? GOTO_END : v));
             }}
           />
         </div>

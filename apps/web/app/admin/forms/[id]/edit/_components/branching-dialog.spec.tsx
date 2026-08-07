@@ -115,11 +115,37 @@ describe('BranchingDialog — the whole form, in order', () => {
 });
 
 describe('BranchingDialog — every block is the editor (R7)', () => {
-  it('gives EVERY question the Always-go-to select, free text included', () => {
+  it('gives every ANSWERED question the Always-go-to select, free text included', () => {
     const els = render({
       steps: [choice('budget', 'Budget?'), { key: 'why', type: 'textarea', question: 'Why?' }],
     });
     expect(allByTestId(els, 'branching-always')).toHaveLength(2);
+  });
+
+  it('offers NO Always-go-to on a message or a reveal — the rule could never fire', () => {
+    // The engine matches `*` only when the step recorded an answer; a message
+    // card and a reveal record none, so the select would author a dead jump.
+    const els = render({
+      steps: [
+        choice('budget', 'Budget?'),
+        { key: 'note', type: 'message', question: 'Read this' },
+        { key: 'result', type: 'reveal' },
+      ],
+    });
+    expect(allByTestId(els, 'branching-always')).toHaveLength(1);
+    // And no warning about it either: absence is the whole explanation.
+    expect(byTestId(els, 'branching-never-appears')).toBeUndefined();
+  });
+
+  it('reports a stale catch-all on a message card as no logic at all', () => {
+    // Written before `*` was restricted, or by an older build. It stays in the
+    // config — but it must not raise a badge, colour a border or count.
+    const note: FormStep = { key: 'note', type: 'message', goto: [{ values: ['*'], target: 'later' }] };
+    const els = render({ steps: [note, { key: 'later', type: 'textarea', question: 'Why?' }] });
+
+    const block = allByTestId(els, 'branching-step')[0]!;
+    expect((block.props as AnyProps)['data-rule-count']).toBe(0);
+    expect((byTestId(els, 'branching-summary')!.props as AnyProps).children).toBe(bm.branching.summaryNone);
   });
 
   /** The SelectField element inside an Always wrapper (the testid is on a

@@ -5,7 +5,7 @@ import type { FormConfig, FormStep } from '@quill/engine';
 import { conditionNeverHolds, conditionsContradict } from '@quill/engine';
 import { cn } from '@/lib/cn';
 import { iconForStep } from './question-types';
-import { describeCondition } from './logic-util';
+import { describeCondition, liveRuleCount } from './logic-util';
 import {
   anchorIn,
   anchorOut,
@@ -69,6 +69,18 @@ export function LogicCanvas({
   const [drag, setDrag] = useState<{ id: string; dx: number; dy: number; x: number; y: number } | null>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
   const panning = useRef<{ x: number; y: number; px: number; py: number } | null>(null);
+  // The wheel listener is bound ONCE (non-passive, so it can preventDefault),
+  // which means it cannot read `zoom` from its closure. It reads the live value
+  // from here — and writes the new one back — so consecutive ticks inside a
+  // single frame still compound, exactly as a `setZoom` updater used to.
+  const zoomRef = useRef(zoom);
+  // EVERY zoom change goes through here, so the ref can never lag the state:
+  // a wheel tick that lands between a button click and the next render still
+  // compounds on the button's step instead of overwriting it.
+  const applyZoom = useCallback((next: number) => {
+    zoomRef.current = next;
+    setZoom(next);
+  }, []);
 
   // Centre the graph on first paint (and whenever the form's shape changes
   // enough to move the bounding box) rather than pinning it to a corner.
@@ -77,9 +89,9 @@ export function LogicCanvas({
     if (!el) return;
     const box = el.getBoundingClientRect();
     const next = Math.min(1, Math.max(MIN_ZOOM, (box.width - 64) / Math.max(1, layout.width)));
-    setZoom(next);
+    applyZoom(next);
     setPan({ x: 32, y: box.height / 2 });
-  }, [layout.width]);
+  }, [layout.width, applyZoom]);
 
   useEffect(() => {
     fit();
@@ -97,12 +109,16 @@ export function LogicCanvas({
       const box = el.getBoundingClientRect();
       const px = e.clientX - box.left;
       const py = e.clientY - box.top;
-      setZoom((z) => {
-        const next = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, z * (e.deltaY < 0 ? 1.1 : 1 / 1.1)));
-        // Keep the graph point under the cursor fixed while the scale changes.
-        setPan((p) => ({ x: px - ((px - p.x) * next) / z, y: py - ((py - p.y) * next) / z }));
-        return next;
-      });
+      // Both values are computed FIRST and the setters called in sequence.
+      // Nesting `setPan` inside `setZoom`'s updater made that updater impure,
+      // and React double-invokes updaters under StrictMode — so in `pnpm dev`
+      // every tick enqueued the pan delta twice and the zoom drifted off the
+      // cursor. Production applied it once, which is why it only bit in dev.
+      const z = zoomRef.current;
+      const next = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, z * (e.deltaY < 0 ? 1.1 : 1 / 1.1)));
+      applyZoom(next);
+      // Keep the graph point under the cursor fixed while the scale changes.
+      setPan((p) => ({ x: px - ((px - p.x) * next) / z, y: py - ((py - p.y) * next) / z }));
     };
     el.addEventListener('wheel', onWheel, { passive: false });
     return () => el.removeEventListener('wheel', onWheel);
@@ -201,6 +217,15 @@ export function LogicCanvas({
               if (!from || !to) return null;
               const a = anchorOut({ ...from, ...nodePos(from) });
               const b = anchorIn({ ...to, ...nodePos(to) });
+              // A catch-all rule (`values: ['*']`) has no option to name, so the
+              // layout flags it and the wording is chosen HERE, where the
+              // messages are: a scheduler's "any answer" is a booking. Without
+              // this the edge printed a bare asterisk.
+              const label = e.catchAll
+                ? from.step?.type === 'scheduler'
+                  ? m.branching.anyBooking
+                  : m.branching.anyAnswer
+                : e.label;
               return (
                 <g key={e.id} data-testid={`logic-edge-${e.kind}`}>
                   <path
@@ -210,14 +235,14 @@ export function LogicCanvas({
                     className={e.kind === 'goto' ? 'stroke-secondary' : 'stroke-border'}
                     strokeDasharray={e.kind === 'goto' ? '5 4' : undefined}
                   />
-                  {e.label && zoom >= LOD_TITLE ? (
+                  {label && zoom >= LOD_TITLE ? (
                     <text
                       x={(a.x + b.x) / 2}
                       y={(a.y + b.y) / 2 - 6}
                       textAnchor="middle"
                       className="fill-secondary text-[10px] font-semibold"
                     >
-                      {e.label}
+                      {label}
                     </text>
                   ) : null}
                 </g>
@@ -244,7 +269,6 @@ export function LogicCanvas({
                   viewportRef.current?.setPointerCapture(e.pointerId);
                   const p = toGraph(e.clientX, e.clientY);
                   setDrag({ id: n.id, dx: p.x - pos.x, dy: p.y - pos.y, x: pos.x, y: pos.y });
-                  (e.currentTarget.parentElement as HTMLElement | null)?.focus?.();
                 }}
               >
                 {n.kind === 'start' ? (
@@ -263,11 +287,11 @@ export function LogicCanvas({
       </div>
 
       <div className="flex shrink-0 items-center gap-1.5 border-t border-border px-3 py-1.5">
-        <ZoomButton icon="pi-minus" label={m.map.zoomOut} onClick={() => setZoom((z) => Math.max(MIN_ZOOM, z / 1.2))} testId="logic-zoom-out" />
+        <ZoomButton icon="pi-minus" label={m.map.zoomOut} onClick={() => applyZoom(Math.max(MIN_ZOOM, zoomRef.current / 1.2))} testId="logic-zoom-out" />
         <span className="w-12 text-center text-xs tabular-nums text-muted-foreground" data-testid="logic-zoom-level">
           {Math.round(zoom * 100)}%
         </span>
-        <ZoomButton icon="pi-plus" label={m.map.zoomIn} onClick={() => setZoom((z) => Math.min(MAX_ZOOM, z * 1.2))} testId="logic-zoom-in" />
+        <ZoomButton icon="pi-plus" label={m.map.zoomIn} onClick={() => applyZoom(Math.min(MAX_ZOOM, zoomRef.current * 1.2))} testId="logic-zoom-in" />
         <ZoomButton icon="pi-arrows-alt" label={m.map.zoomFit} onClick={fit} testId="logic-zoom-fit" />
         <span aria-hidden className="mx-1 h-4 w-px bg-border" />
         <button
@@ -355,7 +379,11 @@ function StepNode({
 }) {
   const step = node.step!;
   const index = node.stepIndex!;
-  const rules = (step.goto?.length ?? 0) + (step.showWhen ? 1 : 0) + (step.hideWhen ? 1 : 0);
+  // An inlined copy of `ruleCount` used to live here; it counted a stale
+  // catch-all on a message/reveal and coloured this node's border for a rule
+  // that can never fire. `liveRuleCount` is the one definition every surface
+  // reads — see its doc comment, which names this border specifically.
+  const rules = liveRuleCount(step);
   // Both audits the old map already performed, kept because this is the screen
   // an author opens to find out WHY a question never appears.
   const broken =

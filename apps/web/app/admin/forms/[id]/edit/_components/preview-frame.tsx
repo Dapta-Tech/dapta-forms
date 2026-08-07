@@ -310,16 +310,22 @@ export function PreviewFrame({
           </button>
           {layout === 'vertical' ? null : (
             /* The "nothing is submitted" note, folded behind an icon — as a
-               sentence it dominated the row without earning the space. */
-            <button
-              type="button"
+               sentence it dominated the row without earning the space.
+
+               NOT a button: it carries a tooltip and does nothing else, so a
+               <button> put a stop in the tab order that led nowhere and
+               announced an action that does not exist. `role="img"` with a
+               name is the honest markup — the copy still reaches assistive
+               tech, and `title` still shows it on hover. */
+            <span
+              role="img"
               title={m.inert}
               aria-label={m.inert}
               data-testid="preview-inert"
-              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:text-foreground"
             >
               <i aria-hidden className="pi pi-info-circle" style={{ fontSize: 12 }} />
-            </button>
+            </span>
           )}
           {endSlot}
         </div>

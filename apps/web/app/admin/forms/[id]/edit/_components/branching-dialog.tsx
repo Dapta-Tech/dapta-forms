@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/cn';
 import { SelectField } from './fields';
 import { iconForStep, hasOptions } from './question-types';
-import { jumpTargetsAfter, ruleCount } from './logic-util';
+import { GOTO_END, GOTO_NEXT, alwaysValueOf, buildGoto, catchAllFires, jumpTargetsAfter, liveRuleCount, splitGoto } from './logic-util';
 import { LogicRules } from './logic-rules';
 import { LogicConditions } from './logic-conditions';
 import { tb } from './builder-messages';
@@ -22,10 +22,12 @@ import type { EditorMessages } from './messages';
  * The feedback was direct: the rules should be EDITABLE HERE, with dropdowns,
  * the way Typeform's Branching panel works. So every block now IS the editor:
  *
- *  - **"Always go to"** — one select per question, on EVERY question type. It
- *    reads and writes the catch-all `goto` rule (`values: ['*']`, which the
- *    engine resolves as "any answer at all" for every step type, scheduler
- *    included). Empty = continue in order, i.e. no rule stored.
+ *  - **"Always go to"** — one select per question that CAN take one. It reads
+ *    and writes the catch-all `goto` rule (`values: ['*']`, which the engine
+ *    resolves as "any answer at all"). Empty = continue in order, i.e. no rule
+ *    stored. A message card and a reveal are the exception: they record no
+ *    answer, so the engine can never match `*` on them and the select would
+ *    author a jump that provably never fires — it is simply absent there.
  *  - **Value rules** — the same `LogicRules` rows the per-question dialog uses,
  *    inline, only on types with discrete answer values.
  *  - **Visibility** — the same `LogicConditions` editors, inline.
@@ -64,7 +66,9 @@ export function BranchingDialog({
   const b = bm.branching;
   const titleOf = (step: FormStep, i: number) =>
     step.question?.trim() || tb(bm.canvas.questionN, { n: i + 1 });
-  const withLogic = steps.filter((s) => ruleCount(s) > 0).length;
+  // Rules that can never fire do not make a question "carry logic" — see
+  // {@link liveRuleCount}.
+  const withLogic = steps.filter((s) => liveRuleCount(s) > 0).length;
 
   return (
     <Modal open={open} onClose={onClose} title={b.title} labelId="branching-dialog-title" size="xl">
@@ -111,11 +115,6 @@ export function BranchingDialog({
   );
 }
 
-/** Sentinel select value for "end the form" (a `target: null` catch-all). */
-const END = '__end__';
-/** Sentinel select value for "no catch-all rule" (continue in order). */
-const NEXT = '';
-
 /**
  * One step as an inline editor block: header, then the Always-go-to select,
  * then whatever else this TYPE can configure. The block never explains an
@@ -141,22 +140,28 @@ function StepBlock({
   em: EditorMessages;
 }) {
   const b = bm.branching;
-  const rules = ruleCount(step);
+  const rules = liveRuleCount(step);
   const routable = hasOptions(step.type);
   const targets = jumpTargetsAfter(steps, index, bm.canvas.questionN.replace(' {n}', ''));
   // Same audit the Logic map runs — a step whose rules cancel out never shows.
   const never = conditionsContradict(step.showWhen, step.hideWhen) || conditionNeverHolds(step.showWhen);
 
-  const catchAll = (step.goto ?? []).find((r) => r.values.includes('*'));
-  const valueRules = (step.goto ?? []).filter((r) => !r.values.includes('*'));
-  const alwaysValue = !catchAll ? NEXT : (catchAll.target ?? END);
+  // Shared with the per-question dialog: the same split, the same sentinels,
+  // the same rebuild — one array, two doors.
+  const { valueRules, catchAll } = splitGoto(step);
+  const alwaysValue = alwaysValueOf(catchAll);
+  // A message and a reveal record no answer, so `*` can never match on one:
+  // the select would author a jump that provably never fires.
+  const always = catchAllFires(step);
+  // Everything under the header line. On a first-step message that is nothing
+  // at all — and an empty ruled box reads as a broken control, not as "there
+  // is nothing to configure here".
+  const body = always || routable || never || index > 0;
 
   /** Rebuild `goto` from parts — value rules first, catch-all LAST (it matches
    *  any answer, so anywhere earlier it would swallow the rules above it). */
   function writeGoto(nextValueRules: GotoRule[], nextAlways: string) {
-    const all: GotoRule[] = [...nextValueRules];
-    if (nextAlways !== NEXT) all.push({ values: ['*'], target: nextAlways === END ? null : nextAlways });
-    onUpdate({ goto: all.length ? all : undefined });
+    onUpdate({ goto: buildGoto(nextValueRules, nextAlways) });
   }
 
   return (
@@ -194,75 +199,81 @@ function StepBlock({
         ) : null}
       </div>
 
-      <div className="mt-2.5 flex flex-col gap-2.5 border-t border-border/60 pt-2.5">
-        {never ? (
-          <p
-            data-testid="branching-never-appears"
-            className="flex items-start gap-1.5 rounded-md bg-destructive/10 px-2 py-1 text-[11px] font-medium leading-relaxed text-destructive"
-          >
-            <i aria-hidden className="pi pi-exclamation-triangle mt-0.5 shrink-0" style={{ fontSize: 10 }} />
-            {bm.map.neverAppears}
-          </p>
-        ) : null}
-
-        {/* Always go to — the universal row. `*` is "any answer" to the engine
-            on every type, so every question gets it, scheduler included (there
-            it reads as "after the booking"). */}
-        <div className="flex items-center gap-2">
-          <span className="shrink-0 text-xs text-muted-foreground">
-            {step.type === 'scheduler' ? bm.logicDialog.booking : b.alwaysGoTo}
-          </span>
-          {/* The testid lives on a wrapper: SelectField renders the branded
-              combobox and forwards only a fixed prop set — a testid handed to
-              it would silently vanish. */}
-          <div data-testid="branching-always" className="w-full max-w-[340px]">
-            <SelectField
-              aria-label={`${b.alwaysGoTo} — ${title}`}
-              value={alwaysValue}
-              onChange={(e) => writeGoto(valueRules, e.target.value)}
-              className="h-8 py-1 text-xs"
+      {body ? (
+        <div className="mt-2.5 flex flex-col gap-2.5 border-t border-border/60 pt-2.5">
+          {never ? (
+            <p
+              data-testid="branching-never-appears"
+              className="flex items-start gap-1.5 rounded-md bg-destructive/10 px-2 py-1 text-[11px] font-medium leading-relaxed text-destructive"
             >
-              <option value={NEXT}>{b.nextInOrder}</option>
-              {targets.map((t) => (
-                <option key={t.key} value={t.key}>
-                  {t.label}
-                </option>
-              ))}
-              <option value={END}>{b.endOfForm}</option>
-            </SelectField>
-          </div>
+              <i aria-hidden className="pi pi-exclamation-triangle mt-0.5 shrink-0" style={{ fontSize: 10 }} />
+              {bm.map.neverAppears}
+            </p>
+          ) : null}
+
+          {/* Always go to — `*` is "any answer" to the engine, so every question
+              that HAS an answer gets this row, scheduler included (there it reads
+              as "after the booking"). A message or a reveal gets nothing: the
+              rule could not fire, and by this dialog's rule the absence is the
+              whole explanation. */}
+          {always ? (
+            <div className="flex items-center gap-2">
+              <span className="shrink-0 text-xs text-muted-foreground">
+                {step.type === 'scheduler' ? bm.logicDialog.booking : b.alwaysGoTo}
+              </span>
+              {/* The testid lives on a wrapper: SelectField renders the branded
+                  combobox and forwards only a fixed prop set — a testid handed to
+                  it would silently vanish. */}
+              <div data-testid="branching-always" className="w-full max-w-[340px]">
+                <SelectField
+                  aria-label={`${b.alwaysGoTo} — ${title}`}
+                  value={alwaysValue}
+                  onChange={(e) => writeGoto(valueRules, e.target.value)}
+                  className="h-8 py-1 text-xs"
+                >
+                  <option value={GOTO_NEXT}>{b.nextInOrder}</option>
+                  {targets.map((t) => (
+                    <option key={t.key} value={t.key}>
+                      {t.label}
+                    </option>
+                  ))}
+                  <option value={GOTO_END}>{b.endOfForm}</option>
+                </SelectField>
+              </div>
+            </div>
+          ) : null}
+
+          {/* Value rules — only where the type HAS discrete values. The catch-all
+              is split out above, so LogicRules sees (and edits) only real value
+              rules; its writes are re-merged with the catch-all kept last. */}
+          {routable ? (
+            <div data-testid="branching-rules">
+              <LogicRules
+                step={{ ...step, goto: valueRules.length ? valueRules : undefined }}
+                index={index}
+                steps={steps}
+                onUpdate={(patch) => writeGoto(patch.goto ?? [], alwaysValue)}
+                m={bm}
+              />
+            </div>
+          ) : null}
+
+          {/* Visibility — absent on the first step (nothing precedes it), never
+              explained away with a sentence. */}
+          {index > 0 ? (
+            <div data-testid="branching-visibility" className="border-t border-border/60 pt-2.5">
+              <LogicConditions
+                step={step}
+                index={index}
+                steps={steps}
+                scoringEnabled={scoringEnabled}
+                onUpdate={onUpdate}
+                m={em.logic}
+              />
+            </div>
+          ) : null}
         </div>
-
-        {/* Value rules — only where the type HAS discrete values. The catch-all
-            is split out above, so LogicRules sees (and edits) only real value
-            rules; its writes are re-merged with the catch-all kept last. */}
-        {routable ? (
-          <div data-testid="branching-rules">
-            <LogicRules
-              step={{ ...step, goto: valueRules.length ? valueRules : undefined }}
-              index={index}
-              steps={steps}
-              onUpdate={(patch) => writeGoto(patch.goto ?? [], alwaysValue)}
-              m={bm}
-            />
-          </div>
-        ) : null}
-
-        {/* Visibility — absent on the first step (nothing precedes it), never
-            explained away with a sentence. */}
-        {index > 0 ? (
-          <div data-testid="branching-visibility" className="border-t border-border/60 pt-2.5">
-            <LogicConditions
-              step={step}
-              index={index}
-              steps={steps}
-              scoringEnabled={scoringEnabled}
-              onUpdate={onUpdate}
-              m={em.logic}
-            />
-          </div>
-        ) : null}
-      </div>
+      ) : null}
     </div>
   );
 }

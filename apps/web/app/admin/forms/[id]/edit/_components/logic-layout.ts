@@ -1,5 +1,6 @@
 import type { FormConfig, FormOutcome, FormStep } from '@quill/engine';
 import { isScoreCondition } from '@quill/engine';
+import { liveGotoRules } from './logic-util';
 
 /**
  * Where every node on the Logic canvas goes — a pure function of the config, so
@@ -56,8 +57,19 @@ export interface LayoutEdge {
   from: string;
   to: string;
   kind: EdgeKind;
-  /** Rendered on the edge — the answer values that take this jump. */
+  /**
+   * Rendered on the edge — the answer values that take this jump. Absent on a
+   * catch-all, which has no values to name.
+   */
   label?: string;
+  /**
+   * The rule's `values` contain the literal `*`: "any answer at all". There is
+   * no option to resolve, so this layout emits a FLAG rather than a label and
+   * the renderer supplies the wording — it can read the source node's step type
+   * and say "a booking" for a scheduler where "any answer" would be wrong.
+   * Words do not belong here: this function is pure and locale-free.
+   */
+  catchAll?: true;
 }
 
 export interface Layout {
@@ -178,21 +190,38 @@ export function computeLayout(config: FormConfig): Layout {
   // A `target: null` rule means "skip to the end": those collect here and get
   // ONE shared terminal node after everything else, so the hardest branch to
   // reason about is visible instead of silently undrawn.
-  const skips: Array<{ from: string; ri: number; label: string }> = [];
+  const skips: Array<{ from: string; ri: number; label?: string; catchAll?: true }> = [];
   for (const step of steps) {
     const from = nodeByStepKey.get(step.key);
     if (!from) continue;
-    for (const [ri, rule] of (step.goto ?? []).entries()) {
-      const label = rule.values
-        .map((v) => (step.options ?? []).find((o) => o.value === v)?.label ?? v)
-        .join(', ');
+    // Only the rules that can actually run: a step recording no answer (a
+    // message, a reveal) can never match a `goto`, so drawing one would
+    // promise a jump the respondent never takes.
+    for (const [ri, rule] of liveGotoRules(step).entries()) {
+      // `*` matches ANY answer, so it is not an option value and resolving it
+      // against `step.options` yields the raw asterisk — which is exactly what
+      // the canvas used to print on the edge. Flag it instead; the renderer
+      // words it.
+      const catchAll = rule.values.includes('*');
+      const label = catchAll
+        ? undefined
+        : rule.values
+            .map((v) => (step.options ?? []).find((o) => o.value === v)?.label ?? v)
+            .join(', ');
       if (rule.target == null) {
-        skips.push({ from: from.id, ri, label });
+        skips.push({ from: from.id, ri, label, ...(catchAll ? { catchAll: true as const } : {}) });
         continue;
       }
       const to = nodeByStepKey.get(rule.target);
       if (!to) continue; // dangling target — normalizeConfig prunes these
-      edges.push({ id: `goto:${step.key}:${ri}`, from: from.id, to: to.id, kind: 'goto', label });
+      edges.push({
+        id: `goto:${step.key}:${ri}`,
+        from: from.id,
+        to: to.id,
+        kind: 'goto',
+        label,
+        ...(catchAll ? { catchAll: true as const } : {}),
+      });
     }
   }
 
@@ -240,7 +269,14 @@ export function computeLayout(config: FormConfig): Layout {
     };
     nodes.push(endNode);
     for (const s of skips) {
-      edges.push({ id: `goto-end:${s.from}:${s.ri}`, from: s.from, to: endNode.id, kind: 'goto', label: s.label });
+      edges.push({
+        id: `goto-end:${s.from}:${s.ri}`,
+        from: s.from,
+        to: endNode.id,
+        kind: 'goto',
+        label: s.label,
+        ...(s.catchAll ? { catchAll: true as const } : {}),
+      });
     }
   }
 

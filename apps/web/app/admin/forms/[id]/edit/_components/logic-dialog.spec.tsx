@@ -114,15 +114,29 @@ describe('LogicDialog — sections per step type', () => {
     expect(options.some((o) => o.value === scorer.key)).toBe(false);
   });
 
-  it('shows the noRouting copy instead of an empty rule editor for a type with no options', () => {
-    const free: FormStep = { key: 'why', type: 'textarea', question: 'Why?' };
-    const els = render({ step: free, steps: [scorer, free], index: 1 });
+  it('shows the noRouting copy instead of an empty rule editor for a step that routes nothing', () => {
+    // A message card has no answer values to branch on AND records no answer,
+    // so `*` could never fire either: NOTHING here can route.
+    const note: FormStep = { key: 'note', type: 'message', question: 'Read this' };
+    const els = render({ step: note, steps: [scorer, note], index: 1 });
 
     expect(byTestId(els, 'logic-dialog-no-routing')).toBeDefined();
     expect(text(els)).toContain(d.noRouting);
     expect(els.some((el) => el.type === LogicRules)).toBe(false);
+    expect(byTestId(els, 'logic-dialog-always')).toBeUndefined();
     // The misleading "first matching rule wins" hint is suppressed with it.
     expect(text(els)).not.toContain(d.routingHint);
+  });
+
+  it('gives a free-text step the Always-go-to select — Branching can write one there', () => {
+    const free: FormStep = { key: 'why', type: 'textarea', question: 'Why?' };
+    const els = render({ step: free, steps: [scorer, free], index: 1 });
+
+    expect(byTestId(els, 'logic-dialog-always')).toBeDefined();
+    // It has no discrete values, so no rule rows — and no lecture about it
+    // either, now that the section does offer something.
+    expect(els.some((el) => el.type === LogicRules)).toBe(false);
+    expect(byTestId(els, 'logic-dialog-no-routing')).toBeUndefined();
   });
 
   it('renders the real rule editor for a choice step', () => {
@@ -130,7 +144,8 @@ describe('LogicDialog — sections per step type', () => {
     expect(byTestId(els, 'logic-dialog-no-routing')).toBeUndefined();
     const rules = els.find((el) => el.type === LogicRules);
     expect(rules).toBeDefined();
-    expect((rules!.props as AnyProps).step).toBe(scorer);
+    // The step is handed through with only its VALUE rules (it has none here).
+    expect((rules!.props as AnyProps).step).toEqual(scorer);
     expect(text(els)).toContain(d.routingHint);
   });
 
@@ -142,6 +157,99 @@ describe('LogicDialog — sections per step type', () => {
     const modal = els[0]!;
     expect((modal.props as AnyProps).title).toBe(tb(d.title, { question: 'Pick budget' }));
     expect((modal.props as AnyProps).labelId).toBe('logic-dialog-title');
+  });
+});
+
+/**
+ * The catch-all (`values: ['*']`, "any answer at all") is writable on every
+ * answered step, from either door — this dialog or the form-wide Branching
+ * dialog. Both must read and write it the same way, or one silently rewrites
+ * what the other stored: handed to the value-rule editor it renders a
+ * controlled `<select value="*">` with no matching option (blank), and the
+ * first touch turns the author's "always" into a single-value rule.
+ */
+describe('LogicDialog — the catch-all is a select, never a rule row', () => {
+  const later: FormStep = { key: 'later', type: 'message', question: 'Later' };
+  /** A choice step with one value rule and an "always → end of form" catch-all. */
+  const withCatchAll: FormStep = {
+    ...scorer,
+    goto: [
+      { values: ['budget_1'], target: 'later' },
+      { values: ['*'], target: null },
+    ],
+  };
+  const renderCatchAll = (onUpdate?: (patch: Partial<FormStep>) => void) =>
+    render({ step: withCatchAll, steps: [withCatchAll, later], index: 0, onUpdate });
+
+  /** The select inside the Always wrapper (the testid is on a wrapper div —
+   *  SelectField forwards a fixed prop set and drops testids). */
+  function alwaysSelect(els: ReactElement[]): ReactElement | undefined {
+    const wrapper = byTestId(els, 'logic-dialog-always');
+    if (!wrapper) return undefined;
+    return collect((wrapper.props as AnyProps).children).find(
+      (el) => typeof (el.props as AnyProps).onChange === 'function',
+    );
+  }
+
+  it('keeps the catch-all out of the rule editor and reads it back into the select', () => {
+    const els = renderCatchAll();
+    const rules = els.find((el) => el.type === LogicRules)!;
+    expect(((rules.props as AnyProps).step as FormStep).goto).toEqual([{ values: ['budget_1'], target: 'later' }]);
+    expect((alwaysSelect(els)!.props as AnyProps).value).toBe('__end__');
+  });
+
+  it('offers next-in-order, the later steps and the end of the form as targets', () => {
+    const els = renderCatchAll();
+    const options = collect((alwaysSelect(els)!.props as AnyProps).children as ReactNode)
+      .filter((el) => el.type === 'option')
+      .map((el) => (el.props as AnyProps).value);
+    expect(options).toEqual(['', 'later', '__end__']);
+  });
+
+  it('keeps the catch-all LAST when a value rule changes', () => {
+    const onUpdate = vi.fn();
+    const els = renderCatchAll(onUpdate);
+    const rules = els.find((el) => el.type === LogicRules)!;
+
+    // What LogicRules emits: only the value rules it can see.
+    ((rules.props as AnyProps).onUpdate as (p: Partial<FormStep>) => void)({
+      goto: [{ values: ['budget_2'], target: 'later' }],
+    });
+    expect(onUpdate).toHaveBeenCalledWith({
+      goto: [
+        { values: ['budget_2'], target: 'later' },
+        { values: ['*'], target: null },
+      ],
+    });
+  });
+
+  it('keeps the value rules when the Always target changes, and drops only the catch-all on "next in order"', () => {
+    const onUpdate = vi.fn();
+    const select = alwaysSelect(renderCatchAll(onUpdate))!;
+    const onChange = (select.props as AnyProps).onChange as (e: { target: { value: string } }) => void;
+
+    onChange({ target: { value: 'later' } });
+    expect(onUpdate).toHaveBeenLastCalledWith({
+      goto: [
+        { values: ['budget_1'], target: 'later' },
+        { values: ['*'], target: 'later' },
+      ],
+    });
+
+    onChange({ target: { value: '' } });
+    expect(onUpdate).toHaveBeenLastCalledWith({ goto: [{ values: ['budget_1'], target: 'later' }] });
+  });
+
+  it('ignores a stale catch-all saved on a step that records no answer', () => {
+    // The engine matches `*` only when the step recorded an answer, so this
+    // jump can never fire: no control offers it, and nothing reports it as a
+    // rule — but it stays in the stored config, untouched.
+    const note: FormStep = { key: 'note', type: 'message', goto: [{ values: ['*'], target: 'later' }] };
+    const els = render({ step: note, steps: [note, later], index: 0 });
+
+    expect(byTestId(els, 'logic-dialog-always')).toBeUndefined();
+    expect(byTestId(els, 'logic-dialog-empty')).toBeDefined();
+    expect(els.some((el) => el.type === LogicRules)).toBe(false);
   });
 });
 
@@ -211,20 +319,27 @@ describe('LogicDialog — every edit leaves through onUpdate', () => {
     expect((select.props as AnyProps).value).toBe('__submit__');
   });
 
-  it('hands the SAME onUpdate to both reused child editors (no draft state)', () => {
+  it('patches every child editor straight through to onUpdate (no draft state)', () => {
     const onUpdate = vi.fn();
     const els = render({ step: scorer, onUpdate });
 
     const conditions = els.find((el) => el.type === LogicConditions)!;
     const rules = els.find((el) => el.type === LogicRules)!;
     expect((conditions.props as AnyProps).onUpdate).toBe(onUpdate);
-    expect((rules.props as AnyProps).onUpdate).toBe(onUpdate);
 
     // A child editor changing a condition patches straight through, live.
     ((conditions.props as AnyProps).onUpdate as (p: Partial<FormStep>) => void)({
       showWhen: { field: 'budget', values: ['budget_1'] },
     });
     expect(onUpdate).toHaveBeenCalledWith({ showWhen: { field: 'budget', values: ['budget_1'] } });
+
+    // The rule editor's write is the one exception: it only ever sees the VALUE
+    // rules, so its patch is re-merged with the catch-all before it leaves —
+    // still live, still one `onUpdate`, no draft state.
+    ((rules.props as AnyProps).onUpdate as (p: Partial<FormStep>) => void)({
+      goto: [{ values: ['budget_1'], target: null }],
+    });
+    expect(onUpdate).toHaveBeenLastCalledWith({ goto: [{ values: ['budget_1'], target: null }] });
   });
 
   it('threads the form-level scoring switch into the visibility editor', () => {

@@ -22,7 +22,7 @@ import { OptionsEditor } from './options-editor';
 import { SliderScoringEditor } from './slider-scoring-editor';
 import { maxScoreForSteps } from './scoring-util';
 import { LogicDialog } from './logic-dialog';
-import { describeCondition, optionLabel, ruleCount } from './logic-util';
+import { describeCondition, liveGotoRules, liveRuleCount, optionLabel, splitGoto } from './logic-util';
 import { QuestionHubspotSection } from './question-hubspot';
 import { QuestionVariants } from './question-variants';
 import { SchedulerPanel } from './scheduler-panel';
@@ -695,8 +695,9 @@ function LogicCard({
   // step, editing rules the author never opened.
   useEffect(() => setOpen(false), [step.key]);
 
-  const rules = step.goto ?? [];
-  const count = ruleCount(step);
+  // A catch-all that can never fire (a stale `*` on a message or a reveal) is
+  // not logic: it is not counted, not bordered and not spelled out below.
+  const count = liveRuleCount(step);
   const titleOf = (s: FormStep, i: number): string => s.question?.trim() || tb(bm.canvas.questionN, { n: i + 1 });
   const targetLabel = (target: string): string => {
     const ti = steps.findIndex((s) => s.key === target);
@@ -704,17 +705,29 @@ function LogicCard({
     return t ? titleOf(t, ti) : target;
   };
 
-  // A scheduler's answer is a booking, not an option value, so its forward jump
-  // is stored as a catch-all `goto` on `*` (the shape both the scheduler panel
-  // and the dialog write). Rendering it through the value-based sentence would
-  // read "If * → Q3"; it gets the After-booking wording instead.
-  const catchAll = step.type === 'scheduler' ? rules.find((r) => r.values.includes('*')) : undefined;
-  const bookingLabel = !catchAll
-    ? null
-    : catchAll.target == null
-      ? bm.settings.schedulerAfterSubmit
-      : targetLabel(catchAll.target);
-  const routed = rules.filter((r) => r !== catchAll);
+  // A catch-all `goto` on `*` is writable on EVERY step type, not just a
+  // scheduler — the Branching dialog's "Always go to" writes exactly this rule.
+  // So it is detected everywhere; only the WORDING is per type. A scheduler
+  // gets the After-booking line (its answer is a booking, and that line names
+  // the target on its own); every other type reads as a sentence below, where
+  // `*` must never print raw — "If * → Q4" is the config, not an answer anyone
+  // could give.
+  // …and only rules that can RUN are drawn. A step that records no answer (a
+  // message, a reveal) can never match a `goto` of any shape, so a rule saved
+  // on one is dead config — it stays in the config, but it is not a sentence
+  // this card is willing to print.
+  const { valueRules, catchAll } = splitGoto(step);
+  const live = liveGotoRules(step).length > 0;
+  const scheduler = step.type === 'scheduler';
+  const bookingLabel =
+    !scheduler || !catchAll
+      ? null
+      : catchAll.target == null
+        ? bm.settings.schedulerAfterSubmit
+        : targetLabel(catchAll.target);
+  // Last, the order the engine walks: the catch-all matches any answer, so
+  // every value rule above it is tried first.
+  const routed = !live ? [] : catchAll && !bookingLabel ? [...valueRules, catchAll] : valueRules;
 
   // The personal-email gate is a visibility rule too — it just is not one of the
   // declarative conditions the dialog edits, so it keeps its own switch and
@@ -774,7 +787,14 @@ function LogicCard({
             </p>
           ) : null}
           {routed.map((rule, i) => {
-            const value = rule.values.map((v) => optionLabel(step, v)).join(', ');
+            // Same expression the Logic map reads from, so the panel and the map
+            // can never word one rule two ways. `optionLabel` falls back to the
+            // raw value, which on a catch-all is the literal `*`.
+            const value = rule.values.includes('*')
+              ? scheduler
+                ? bm.branching.anyBooking
+                : bm.branching.anyAnswer
+              : rule.values.map((v) => optionLabel(step, v)).join(', ');
             return (
               <p
                 key={i}

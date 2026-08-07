@@ -1,13 +1,23 @@
 'use client';
 
-import type { FormStep } from '@quill/engine';
+import type { FormStep, GotoRule } from '@quill/engine';
 import { Modal } from '@/components/modal';
 import { Button } from '@/components/ui/button';
 import { Select } from '@/components/ui/select';
+import { SelectField } from './fields';
 import { LogicConditions } from './logic-conditions';
 import { LogicRules } from './logic-rules';
 import { hasOptions, stepListLabel } from './question-types';
-import { ruleCount } from './logic-util';
+import {
+  GOTO_END,
+  GOTO_NEXT,
+  alwaysValueOf,
+  buildGoto,
+  catchAllFires,
+  jumpTargetsAfter,
+  liveRuleCount,
+  splitGoto,
+} from './logic-util';
 import { maxScoreForSteps } from './scoring-util';
 import { tb } from './builder-messages';
 import type { BuilderMessages } from './builder-messages';
@@ -37,6 +47,23 @@ import type { EditorMessages } from './messages';
 
 /** Sentinel for "end the form here" in the After-booking picker (mirrors {@link SchedulerPanel}). */
 const AFTER_SUBMIT = '__submit__';
+
+/* ------------------------------------------------------------------ *
+ * The shared `goto` vocabulary.
+ *
+ * A step's `goto` array holds TWO different things that two different
+ * controls edit: value rules ("if Enterprise → Q4") and at most one
+ * CATCH-ALL (`values: ['*']`, "any answer at all"). Both this dialog and the
+ * form-wide Branching dialog are doors onto the same array, so the split, the
+ * select sentinels and the rebuild live here once — two implementations would
+ * drift, and drift here means one door silently rewriting what the other
+ * wrote (the catch-all landing anywhere but last swallows every rule above it,
+ * because the engine takes the first match).
+ * ------------------------------------------------------------------ */
+
+/* The goto vocabulary moved to `logic-util.ts` — it is read by pure,
+ * non-React modules (the canvas layout) and written by the scheduler panel
+ * too, none of which should import a dialog component to reach it. */
 
 export function LogicDialog({
   open,
@@ -76,12 +103,24 @@ export function LogicDialog({
   // source: with scoring off, every gate reads a constant 0.
   const priorMax = scoringEnabled ? maxScoreForSteps(steps.slice(0, index)) : 0;
 
-  // Only steps AFTER this one are legal forward jump targets (same shape the
-  // scheduler panel builds).
-  const laterSteps = steps.slice(index + 1).map((s) => ({ key: s.key, label: s.question?.trim() || s.key }));
-  // The catch-all rule the after-booking picker owns, mapped back onto it.
-  const catchAll = step.goto?.find((r) => r.values.includes('*'));
+  // Only steps AFTER this one are legal forward jump targets — the same list,
+  // with the same labels, the Branching dialog offers, so the two doors onto
+  // one rule can never disagree about where it may point.
+  const laterSteps = jumpTargetsAfter(steps, index, bm.canvas.questionN.replace(' {n}', ''));
+
+  // The catch-all is NOT a value rule: it belongs to the Always-go-to select
+  // (the After-booking picker on a scheduler), never to the rule editor, which
+  // would render it as a `<select>` with no matching option — blank, and
+  // rewriting the author's "any answer" into a single value on first touch.
+  const { valueRules, catchAll } = splitGoto(step);
+  const alwaysValue = alwaysValueOf(catchAll);
   const afterValue = !catchAll ? '' : (catchAll.target ?? AFTER_SUBMIT);
+  // A step that records no answer can never match `*`, so it is offered no
+  // Always-go-to at all (see {@link catchAllFires}).
+  const alwaysOffered = catchAllFires(step);
+
+  /** Every write to `goto` from this dialog — keeps the catch-all last. */
+  const writeGoto = (rules: GotoRule[], always: string) => onUpdate({ goto: buildGoto(rules, always) });
 
   return (
     <Modal
@@ -96,7 +135,7 @@ export function LogicDialog({
       <div data-testid="logic-dialog" className="flex flex-col gap-4">
         <p className="text-xs text-muted-foreground">{d.subtitle}</p>
 
-        {ruleCount(step) === 0 ? (
+        {liveRuleCount(step) === 0 ? (
           <p data-testid="logic-dialog-empty" className="text-xs text-muted-foreground">
             {d.empty}
           </p>
@@ -149,10 +188,7 @@ export function LogicDialog({
                     { value: AFTER_SUBMIT, label: bm.settings.schedulerAfterSubmit },
                     ...laterSteps.map((s) => ({ value: s.key, label: s.label })),
                   ]}
-                  onChange={(v) => {
-                    if (!v) return onUpdate({ goto: undefined });
-                    onUpdate({ goto: [{ values: ['*'], target: v === AFTER_SUBMIT ? null : v }] });
-                  }}
+                  onChange={(v) => writeGoto(valueRules, v === AFTER_SUBMIT ? GOTO_END : v)}
                 />
               </div>
             </section>
@@ -163,15 +199,54 @@ export function LogicDialog({
                 <i aria-hidden className="pi pi-sitemap text-secondary" style={{ fontSize: 11 }} />
                 {d.routing}
               </p>
+              {/* Always go to — the catch-all, edited as what it is. It is the
+                  SAME control (same options, same sentinels, same write) the
+                  Branching dialog puts on this question, because it is the same
+                  stored rule: a round-trip through either door must leave the
+                  array byte-identical. */}
+              {alwaysOffered ? (
+                <div className="flex items-center gap-2">
+                  <span className="shrink-0 text-xs text-muted-foreground">{bm.branching.alwaysGoTo}</span>
+                  {/* The testid lives on a wrapper: SelectField forwards only a
+                      fixed prop set, so one handed to it would vanish. */}
+                  <div data-testid="logic-dialog-always" className="w-full max-w-[340px]">
+                    <SelectField
+                      aria-label={bm.branching.alwaysGoTo}
+                      value={alwaysValue}
+                      onChange={(e) => writeGoto(valueRules, e.target.value)}
+                      className="h-8 py-1 text-xs"
+                    >
+                      <option value={GOTO_NEXT}>{bm.branching.nextInOrder}</option>
+                      {laterSteps.map((t) => (
+                        <option key={t.key} value={t.key}>
+                          {t.label}
+                        </option>
+                      ))}
+                      <option value={GOTO_END}>{bm.branching.endOfForm}</option>
+                    </SelectField>
+                  </div>
+                </div>
+              ) : null}
+
               {routable ? (
                 <>
                   <p className="text-[11px] leading-relaxed text-muted-foreground">{d.routingHint}</p>
-                  <LogicRules step={step} index={index} steps={steps} onUpdate={onUpdate} m={bm} />
+                  {/* Value rules only — the catch-all is the select's business
+                      above. Its writes are re-merged with the catch-all kept
+                      last, the order the engine walks. */}
+                  <LogicRules
+                    step={{ ...step, goto: valueRules.length ? valueRules : undefined }}
+                    index={index}
+                    steps={steps}
+                    onUpdate={(patch) => writeGoto(patch.goto ?? [], alwaysValue)}
+                    m={bm}
+                  />
                 </>
-              ) : (
-                /* A rule needs discrete answer values to match on. Free text,
-                   a message card, a reveal — none have any, so an empty rule
-                   editor here would read as broken rather than inapplicable. */
+              ) : alwaysOffered ? null : (
+                /* Neither surface applies: a message card and a reveal collect
+                   no answer, so they have no value to branch on AND no
+                   catch-all that could ever fire. An empty rule editor here
+                   would read as broken rather than as inapplicable. */
                 <p data-testid="logic-dialog-no-routing" className="text-xs text-muted-foreground">
                   {d.noRouting}
                 </p>

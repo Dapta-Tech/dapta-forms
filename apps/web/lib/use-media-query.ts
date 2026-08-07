@@ -1,6 +1,6 @@
 'use client';
 
-import { useSyncExternalStore } from 'react';
+import { useCallback, useSyncExternalStore } from 'react';
 
 /**
  * Subscribe to a CSS media query from React.
@@ -16,12 +16,20 @@ import { useSyncExternalStore } from 'react';
  * working with JS disabled.
  */
 export function useMediaQuery(query: string, serverValue = false): boolean {
-  return useSyncExternalStore(
-    (onChange) => {
+  // `subscribe` is memoised because `useSyncExternalStore` re-subscribes
+  // whenever its identity changes: a fresh arrow per render tore down and
+  // rebuilt the `MediaQueryList` listener on EVERY render of the component
+  // above — in the builder, every keystroke. Only `query` can change it.
+  const subscribe = useCallback(
+    (onChange: () => void) => {
       const mql = window.matchMedia(query);
       mql.addEventListener('change', onChange);
       return () => mql.removeEventListener('change', onChange);
     },
+    [query],
+  );
+  return useSyncExternalStore(
+    subscribe,
     () => window.matchMedia(query).matches,
     () => serverValue,
   );

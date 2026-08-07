@@ -3,9 +3,9 @@
 import { useEffect, useState, type HTMLAttributes, type ReactNode } from 'react';
 import type { FormStep } from '@quill/engine';
 import { cn } from '@/lib/cn';
+import { liveRuleCount } from './logic-util';
 import { SortableList, SortableRow } from './sortable';
 import { iconForStep, isContactType, stepListLabel } from './question-types';
-import { ruleCount } from './logic-util';
 import type { BuilderMessages } from './builder-messages';
 import { tb } from './builder-messages';
 
@@ -136,7 +136,11 @@ export function QuestionSpine({
           const step = steps[stepIndex];
           if (!step) return null;
           const active = stepIndex === selectedIndex;
-          const rules = ruleCount(step);
+          // `liveRuleCount`, not `ruleCount`: a stale catch-all on a message or
+          // a reveal can never fire, and the settings panel already refuses to
+          // count it — the badge here has to agree, or the spine advertises a
+          // rule the panel says does not exist.
+          const rules = liveRuleCount(step);
           const contact = isContactType(step.type);
           const title = stepListLabel(step, m);
           return (

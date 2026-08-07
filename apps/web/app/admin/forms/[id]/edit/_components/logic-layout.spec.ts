@@ -14,6 +14,14 @@ const choice = (key: string, extra: Partial<FormStep> = {}): FormStep => ({
   ...extra,
 });
 
+/** A booking step: no options at all, so a catch-all is its ONLY way to route. */
+const scheduler = (key: string, extra: Partial<FormStep> = {}): FormStep => ({
+  key,
+  type: 'scheduler',
+  question: key,
+  ...extra,
+});
+
 const cfg = (steps: FormStep[], rest: Partial<FormConfig> = {}): FormConfig =>
   ({ version: 1, steps, ...rest }) as FormConfig;
 
@@ -161,5 +169,62 @@ describe('computeLayout — skip-to-end', () => {
   it('emits no end node when nothing skips', () => {
     const { nodes } = computeLayout(cfg([choice('q1'), choice('q2')]));
     expect(nodes.filter((n) => n.kind === 'end')).toHaveLength(0);
+  });
+});
+
+describe('computeLayout — catch-all (`*`) rules', () => {
+  // `*` means "any answer at all" and is not an option value, so resolving it
+  // against `step.options` returns the raw asterisk. The layout must say
+  // CATCH-ALL and let the renderer word it — it has no locale to word it with.
+
+  it('flags a scheduler catch-all instead of labelling it with the raw `*`', () => {
+    const { edges } = computeLayout(
+      cfg([scheduler('book', { goto: [{ values: ['*'], target: 'q2' }] }), choice('q2')]),
+    );
+    const jump = edges.find((e) => e.kind === 'goto');
+    expect(jump).toMatchObject({ from: 'book', to: 'q2', catchAll: true });
+    expect(jump?.label).toBeUndefined();
+  });
+
+  it('flags a catch-all on a NON-scheduler step the same way', () => {
+    // `*` became writable on every step type, not just schedulers — the shape
+    // the canvas has to survive is a choice step whose last rule is "anything".
+    const { edges } = computeLayout(
+      cfg([choice('q1', { goto: [{ values: ['*'], target: 'q2' }] }), choice('q2')]),
+    );
+    const jump = edges.find((e) => e.kind === 'goto');
+    expect(jump).toMatchObject({ catchAll: true });
+    expect(jump?.label).toBeUndefined();
+  });
+
+  it('leaves ordinary rules labelled and unflagged alongside a catch-all', () => {
+    // First match wins, so the catch-all is always LAST. Both rules ride the
+    // same array and must come out differently.
+    const { edges } = computeLayout(
+      cfg([
+        choice('q1', {
+          goto: [
+            { values: ['a'], target: 'q2' },
+            { values: ['*'], target: 'q3' },
+          ],
+        }),
+        choice('q2'),
+        choice('q3'),
+      ]),
+    );
+    const specific = edges.find((e) => e.kind === 'goto' && e.to === 'q2');
+    const any = edges.find((e) => e.kind === 'goto' && e.to === 'q3');
+    expect(specific?.label).toBe('A');
+    expect(specific?.catchAll).toBeUndefined();
+    expect(any?.catchAll).toBe(true);
+  });
+
+  it('carries the flag onto a catch-all that skips to the end', () => {
+    const { edges } = computeLayout(
+      cfg([scheduler('book', { goto: [{ values: ['*'], target: null }] })]),
+    );
+    const skip = edges.find((e) => e.to === '__end__');
+    expect(skip).toMatchObject({ from: 'book', kind: 'goto', catchAll: true });
+    expect(skip?.label).toBeUndefined();
   });
 });

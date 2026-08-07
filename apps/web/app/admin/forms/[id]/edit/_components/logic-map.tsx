@@ -4,7 +4,7 @@ import type { FormConfig, FormOutcome, FormStep } from '@quill/engine';
 import { cn } from '@/lib/cn';
 import { iconForStep } from './question-types';
 import { conditionNeverHolds, conditionsContradict } from '@quill/engine';
-import { describeCondition, optionLabel } from './logic-util';
+import { describeCondition, liveGotoRules, optionLabel } from './logic-util';
 import type { BuilderMessages, GalleryItemId } from './builder-messages';
 import { tb } from './builder-messages';
 
@@ -65,7 +65,10 @@ export function LogicMap({ config, m }: { config: FormConfig; m: BuilderMessages
         </div>
 
         {steps.map((step, i) => {
-          const branches = step.goto ?? [];
+          // Only the rules that can fire — a message/reveal records no
+          // answer, so a `goto` saved on one is dead config (see
+          // `liveGotoRules`) and must not read as routing here either.
+          const branches = liveGotoRules(step);
           const hasCond = !!(step.showWhen || step.hideWhen);
           const isLast = i === steps.length - 1;
           const hasLogic = branches.length > 0 || hasCond;
