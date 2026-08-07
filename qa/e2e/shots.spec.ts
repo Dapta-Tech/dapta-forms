@@ -140,6 +140,8 @@ test('N4 · editor header link buttons', async ({ page, request }) => {
   });
   await page.goto(`/admin/forms/${id}/edit`);
   await page.waitForLoadState('networkidle');
+  // Copy link / Embed / Open form now live behind the topbar's share control.
+  await page.getByTestId('editor-share').click();
   await expect(page.getByTestId('editor-copy-link')).toBeVisible();
   await page.screenshot({ path: shot('n4-editor-links'), fullPage: false });
 });
@@ -180,6 +182,7 @@ test('N4b · copy-link copied state', async ({ page, context, request }) => {
   });
   await page.goto(`/admin/forms/${id}/edit`);
   await page.waitForLoadState('networkidle');
+  await page.getByTestId('editor-share').click();
   await page.getByTestId('editor-copy-link').click();
   await page.waitForTimeout(200);
   await page.screenshot({ path: shot('n4b-copied'), fullPage: false });

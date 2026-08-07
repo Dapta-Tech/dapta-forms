@@ -1,13 +1,30 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Modal } from '@/components/modal';
 import { Button } from '@/components/ui/button';
+import { AnchoredMenu } from '@/components/ui/anchored-menu';
+import { cn } from '@/lib/cn';
 
 /**
- * Compact copy-link + embed + open-in-new-tab controls for the editor header.
- * The public URL is resolved client-side from the real origin (the `publicPath`
- * prop is a server-stable path). A 2s "Copied" flash confirms each copy.
+ * The topbar's share control: one icon button opening a menu with Copy link,
+ * Embed and Open form.
+ *
+ * These were three labelled buttons sitting in the header next to Preview and
+ * Publish, which is what pushed the tab labels behind a `2xl` breakpoint. They
+ * are also the same KIND of thing — "get this form to somebody" — so collapsing
+ * them into one affordance costs a click on actions nobody performs mid-edit and
+ * buys the header enough room to label its tabs at every width.
+ *
+ * The panel goes through `AnchoredMenu`, i.e. a portal to `document.body`. A
+ * plain absolute (or even `position: fixed`) panel would be trapped: the header
+ * is a flex row inside the editor shell, and any positioned element in the
+ * scrolling body below it paints over a panel whose z-index is scoped to the
+ * header's own stacking context. That is the bug PR #61 fixed for the rail
+ * menus, and it applies verbatim here.
+ *
+ * The public URL is resolved client-side from the real origin (`publicPath` is
+ * a server-stable path). A 2s "Copied" flash confirms each copy.
  */
 export function LinkActions({
   publicPath,
@@ -18,6 +35,7 @@ export function LinkActions({
   /** The form's name — becomes the embed iframe's accessible title. */
   formName: string;
   labels: {
+    share: string;
     copyLink: string;
     copied: string;
     openForm: string;
@@ -28,9 +46,11 @@ export function LinkActions({
     embedCopied: string;
   };
 }) {
+  const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [embedOpen, setEmbedOpen] = useState(false);
   const [snippetCopied, setSnippetCopied] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
 
   const copy = async () => {
     try {
@@ -67,50 +87,83 @@ export function LinkActions({
     }
   };
 
-  // `shrink-0` + `whitespace-nowrap`: these live in a flex topbar that gets tight
-  // between the `lg` label breakpoint and a roomy viewport. Without both, the
-  // label wraps to a second line inside a fixed `h-9` box and the button breaks.
-  const btn =
-    'inline-flex h-9 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border border-border px-3 text-sm font-medium text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
+  const item =
+    'flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-popover-foreground ' +
+    'transition-colors hover:bg-accent focus-visible:bg-accent focus-visible:outline-none';
 
   return (
-    <div className="flex shrink-0 items-center gap-2">
+    <>
       <button
+        ref={triggerRef}
         type="button"
-        onClick={copy}
-        className={btn}
-        aria-label={labels.copyLink}
-        title={labels.copyLink}
-        data-testid="editor-copy-link"
+        onClick={() => setOpen((v) => !v)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={labels.share}
+        title={labels.share}
+        data-testid="editor-share"
+        className={cn(
+          'inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border text-foreground',
+          'transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+          open && 'bg-accent',
+        )}
       >
-        <i aria-hidden className={`pi ${copied ? 'pi-check' : 'pi-link'}`} style={{ fontSize: 13 }} />
-        <span className="hidden xl:inline">{copied ? labels.copied : labels.copyLink}</span>
+        <i aria-hidden className="pi pi-share-alt" style={{ fontSize: 13 }} />
       </button>
-      <button
-        type="button"
-        onClick={() => setEmbedOpen(true)}
-        className={btn}
-        aria-label={labels.embed}
-        title={labels.embed}
-        data-testid="editor-embed"
+
+      <AnchoredMenu
+        anchorRef={triggerRef}
+        open={open}
+        onClose={() => setOpen(false)}
+        label={labels.share}
+        width={220}
+        testId="editor-share-menu"
+        className="py-1"
       >
-        <i aria-hidden className="pi pi-code" style={{ fontSize: 13 }} />
-        {/* xl like its siblings — the topbar's staggered breakpoints (PR #31)
-            keep it from overflowing between lg and xl. */}
-        <span className="hidden xl:inline">{labels.embed}</span>
-      </button>
-      <a
-        href={publicPath}
-        target="_blank"
-        rel="noreferrer"
-        className={btn}
-        aria-label={labels.openForm}
-        title={labels.openForm}
-        data-testid="editor-open-form"
-      >
-        <i aria-hidden className="pi pi-external-link" style={{ fontSize: 13 }} />
-        <span className="hidden xl:inline">{labels.openForm}</span>
-      </a>
+        <button
+          type="button"
+          role="menuitem"
+          onClick={() => void copy()}
+          className={item}
+          data-testid="editor-copy-link"
+        >
+          <i
+            aria-hidden
+            className={`pi ${copied ? 'pi-check' : 'pi-link'} shrink-0 text-muted-foreground`}
+            style={{ fontSize: 13 }}
+          />
+          {copied ? labels.copied : labels.copyLink}
+        </button>
+        <button
+          type="button"
+          role="menuitem"
+          onClick={() => {
+            setOpen(false);
+            setEmbedOpen(true);
+          }}
+          className={item}
+          data-testid="editor-embed"
+        >
+          <i aria-hidden className="pi pi-code shrink-0 text-muted-foreground" style={{ fontSize: 13 }} />
+          {labels.embed}
+        </button>
+        <a
+          href={publicPath}
+          target="_blank"
+          rel="noreferrer"
+          role="menuitem"
+          onClick={() => setOpen(false)}
+          className={item}
+          data-testid="editor-open-form"
+        >
+          <i
+            aria-hidden
+            className="pi pi-external-link shrink-0 text-muted-foreground"
+            style={{ fontSize: 13 }}
+          />
+          {labels.openForm}
+        </a>
+      </AnchoredMenu>
 
       <Modal open={embedOpen} onClose={() => setEmbedOpen(false)} title={labels.embedTitle} labelId="embed-form-title">
         <div className="flex flex-col gap-4">
@@ -129,6 +182,6 @@ export function LinkActions({
           </div>
         </div>
       </Modal>
-    </div>
+    </>
   );
 }
