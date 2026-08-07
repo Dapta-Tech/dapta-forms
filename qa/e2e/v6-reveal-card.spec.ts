@@ -99,8 +99,8 @@ test.describe('V6 — the reveal screen is a card, and only a card', () => {
   }) => {
     const { id } = await createForm(request, [textStep('q1', 'First question')]);
     await openEditor(page, id);
-    // The topbar's contextual row now carries its own "Design" shortcut, so the
-  // role+name lookup resolves to two buttons — target the TAB by testid.
+    // Design is a Build sub-mode now: `editor-tab-design` lives in the
+  // contextual toolbar (not the nav tabs) and opens the same design view.
   await page.getByTestId('editor-tab-design').click();
 
     // Everything else Design owns is untouched…

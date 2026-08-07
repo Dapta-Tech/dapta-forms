@@ -525,11 +525,13 @@ export function FormEditor({
   const hasQuestions = config.steps.length > 0;
   const layout = resolveFormLayout(config);
 
+  // The GENERAL menu (Typeform's Content/Workflow/Connect row). Design is not
+  // here: it is a sub-mode of Build, entered from the builder's own toolbar —
+  // the tab still exists as a parseable value so `?tab=design` links resolve.
   const tabs: { id: Tab; label: string; icon: string }[] = [
     { id: 'build', label: bm.shell.tabBuild, icon: 'pi-th-large' },
     { id: 'logic', label: bm.shell.tabLogic, icon: 'pi-sitemap' },
     { id: 'connect', label: m.connect.tab, icon: 'pi-link' },
-    { id: 'design', label: bm.shell.tabDesign, icon: 'pi-palette' },
   ];
 
   const statusLabel =
@@ -594,7 +596,10 @@ export function FormEditor({
               type="button"
               data-testid={`editor-tab-${t.id}`}
               onClick={() => setTab(t.id)}
-              aria-current={tab === t.id}
+              // Design is a Build sub-mode, so Build stays the current section
+              // while it is open — exactly how Typeform keeps Content lit while
+              // its Design panel is up.
+              aria-current={tab === t.id || (t.id === 'build' && tab === 'design')}
               title={t.label}
               className={cn(
                 'inline-flex items-center gap-1.5 whitespace-nowrap rounded-md px-2.5 py-1.5 text-sm font-medium transition-colors',
@@ -633,12 +638,11 @@ export function FormEditor({
 
       {/* Topbar, row 2 — contextual: only what acts on the CURRENT section. */}
       <EditorToolbar m={bm}>
-        {tab === 'build' ? (
+        {/* The builder's own submenu, Typeform-shaped: "+ Add content · Design ·
+            device · preview" live INSIDE the builder, not in the general menu.
+            Design renders on the design sub-mode too, lit, and toggles back. */}
+        {tab === 'build' || tab === 'design' ? (
           <>
-            {/* The ONE add button — the spine's dashed duplicate is gone. No
-                Design shortcut either: the tab row already says Design, and a
-                second button with the same word was read as a bug, not a
-                convenience. */}
             <ToolbarButton
               icon="pi-plus"
               label={bm.shell.addQuestion}
@@ -647,14 +651,24 @@ export function FormEditor({
               testId="toolbar-add-question"
             />
             <ToolbarSeparator />
-            {hasQuestions ? <DeviceToggle device={device} onChange={setDevice} m={bm} /> : null}
-            {/* Preview rides WITH the viewport cluster (Typeform's ▷ sits right
-                beside the device icons) instead of drifting to the far edge.
+            <ToolbarButton
+              icon="pi-palette"
+              label={bm.shell.tabDesign}
+              active={tab === 'design'}
+              onClick={() => setTab(tab === 'design' ? 'build' : 'design')}
+              testId="editor-tab-design"
+            />
+            <ToolbarSeparator />
+            {hasQuestions && tab === 'build' ? (
+              <DeviceToggle device={device} onChange={setDevice} m={bm} />
+            ) : null}
+            {/* Preview rides WITH the viewport cluster instead of drifting to
+                the far edge. The eye is the product's original preview glyph.
                 `data-tour` anchors the first-run tour's Preview step: the
                 control left the header row, so the anchor moves with it. */}
             <span className="flex shrink-0 items-center" data-tour="preview">
               <ToolbarIconButton
-                icon="pi-play"
+                icon="pi-eye"
                 label={bm.shell.preview}
                 onClick={() => setPreviewOpen(true)}
                 testId="toolbar-preview"
@@ -687,12 +701,12 @@ export function FormEditor({
             />
           </>
         ) : null}
-        {/* On the non-Build tabs the preview keeps a home at the row's end —
+        {/* On Logic and Connect the preview keeps a home at the row's end —
             "what does this look like now?" is true of every section. */}
-        {tab !== 'build' ? (
+        {tab === 'logic' || tab === 'connect' ? (
           <span className="ml-auto flex items-center gap-1.5">
             <ToolbarIconButton
-              icon="pi-play"
+              icon="pi-eye"
               label={bm.shell.preview}
               onClick={() => setPreviewOpen(true)}
               testId="toolbar-preview"
@@ -718,6 +732,7 @@ export function FormEditor({
                   selectedIndex={selected}
                   onSelect={setSelected}
                   onReorder={reorderSteps}
+                  onAdd={() => setGalleryOpen(true)}
                   partialAfterStep={config.partialSubmitAfterStep}
                   onPartialChange={setPartialSubmitAfterStep}
                   m={bm}

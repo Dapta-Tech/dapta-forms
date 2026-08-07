@@ -182,8 +182,8 @@ test.describe('N2 — branded admin dropdowns (custom combobox, not native <sele
     // as a pointer: a note telling the author where the control now lives.
     const form = await createForm(request, uniqueName('partial', testInfo.workerIndex));
     await openEditor(page, form.id);
-    // The topbar's contextual row now carries its own "Design" shortcut, so the
-    // role+name lookup resolves to two buttons — target the TAB by testid.
+    // Design is a Build sub-mode now: `editor-tab-design` lives in the
+    // contextual toolbar (not the nav tabs) and opens the same design view.
     await page.getByTestId('editor-tab-design').click();
 
     // The section survives with its pointer note…

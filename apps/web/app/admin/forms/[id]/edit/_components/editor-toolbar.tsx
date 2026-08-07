@@ -61,6 +61,7 @@ export function ToolbarButton({
   label,
   onClick,
   primary = false,
+  active = false,
   testId,
   disabled,
 }: {
@@ -70,6 +71,8 @@ export function ToolbarButton({
   onClick: () => void;
   /** The section's main action (e.g. "Add question") — filled, not quiet. */
   primary?: boolean;
+  /** The entry opens a sub-mode that is currently showing (e.g. Design). */
+  active?: boolean;
   testId?: string;
   disabled?: boolean;
 }) {
@@ -78,10 +81,12 @@ export function ToolbarButton({
       type="button"
       onClick={onClick}
       disabled={disabled}
+      aria-pressed={active || undefined}
       data-testid={testId}
       className={cn(
         itemClass,
         primary && 'bg-foreground text-background hover:bg-foreground/90 hover:text-background',
+        active && 'bg-muted text-foreground',
       )}
     >
       <i aria-hidden className={`pi ${icon}`} style={{ fontSize: 12 }} />
