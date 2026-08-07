@@ -5,10 +5,85 @@
  * engine, drawn on the map) and count toward a question's rule total.
  */
 import { SCORE_FIELD, type FormStep } from '@quill/engine';
+import type { GotoRule } from '@quill/engine';
+import { isInputlessType } from './question-types';
 
 /** How many logic rules a question carries (goto jumps + show/hide conditions). */
 export function ruleCount(step: FormStep): number {
   return (step.goto?.length ?? 0) + (step.showWhen ? 1 : 0) + (step.hideWhen ? 1 : 0);
+}
+
+/* ── The `goto` vocabulary ─────────────────────────────────────────────────
+ * One home for reading and writing a step's `goto` array, because four
+ * surfaces author it (this question's Logic dialog, the form-wide Branching
+ * dialog, the scheduler panel's After-a-booking picker) and five more draw it
+ * (canvas, list, spine badge, settings card, dialogs). Divergence here is not
+ * cosmetic: the engine takes the FIRST matching rule, so a catch-all written
+ * anywhere but last swallows every rule below it.
+ * -------------------------------------------------------------------------- */
+
+/** Sentinel select value for "end the form" (a `target: null` catch-all). */
+export const GOTO_END = '__end__';
+/** Sentinel select value for "no catch-all at all" — continue in order. */
+export const GOTO_NEXT = '';
+
+/**
+ * Does this step record an answer?
+ *
+ * The whole `goto` machinery hangs off this. `resolveGoto` matches a rule
+ * against the step's OWN answer — `got.has(v)` for a value rule, `got.size > 0`
+ * for the `*` catch-all — so on a step that collects nothing, NO rule can ever
+ * fire, whatever it says. A message and a reveal are exactly those steps.
+ */
+export function stepRecordsAnswer(step: FormStep): boolean {
+  return !isInputlessType(step.type);
+}
+
+/** Can a catch-all ever fire here? Same question, narrower name. */
+export const catchAllFires = stepRecordsAnswer;
+
+/**
+ * The `goto` rules that can actually run. On a step that records no answer
+ * that is none of them — such rules are dead config and must not colour a
+ * border, raise a badge, draw an edge or print a sentence, because each of
+ * those advertises routing the respondent will never take.
+ *
+ * They are IGNORED, never stripped: silently rewriting an author's stored
+ * config on open is worse than declining to draw it.
+ */
+export function liveGotoRules(step: FormStep): GotoRule[] {
+  return stepRecordsAnswer(step) ? (step.goto ?? []) : [];
+}
+
+/** {@link ruleCount} minus the rules that can never fire. */
+export function liveRuleCount(step: FormStep): number {
+  return liveGotoRules(step).length + (step.showWhen ? 1 : 0) + (step.hideWhen ? 1 : 0);
+}
+
+/**
+ * A step's `goto` split into the parts each control owns. The catch-all comes
+ * back only when it can fire; every `*` rule is stripped from `valueRules`
+ * regardless, so a rule editor can never render `*` as an answer value.
+ */
+export function splitGoto(step: FormStep): { valueRules: GotoRule[]; catchAll: GotoRule | undefined } {
+  const rules = step.goto ?? [];
+  const found = rules.find((r) => r.values.includes('*'));
+  return {
+    valueRules: rules.filter((r) => !r.values.includes('*')),
+    catchAll: found && catchAllFires(step) ? found : undefined,
+  };
+}
+
+/** Read a catch-all back into an Always-go-to select. */
+export function alwaysValueOf(catchAll: GotoRule | undefined): string {
+  return !catchAll ? GOTO_NEXT : (catchAll.target ?? GOTO_END);
+}
+
+/** Rebuild `goto` from its parts — value rules first, catch-all LAST. */
+export function buildGoto(valueRules: GotoRule[], always: string): GotoRule[] | undefined {
+  const all: GotoRule[] = [...valueRules];
+  if (always !== GOTO_NEXT) all.push({ values: ['*'], target: always === GOTO_END ? null : always });
+  return all.length ? all : undefined;
 }
 
 /** A later question a `goto` rule can jump to (only forward targets are valid). */

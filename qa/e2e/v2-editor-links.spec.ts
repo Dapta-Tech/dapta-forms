@@ -4,20 +4,24 @@ import { test, expect, type APIRequestContext, type BrowserContext } from '@play
  * N4 — editor header link actions (copy-link + open-in-new-tab).
  *
  * Under test: apps/web/app/admin/forms/[id]/edit/link-actions.tsx, rendered by
- * form-editor.tsx between the Preview and Publish controls. The public path is
+ * form-editor.tsx in the topbar's first row beside Publish. The public path is
  * `/${accountCode}/${handle ?? 'me'}/${slug}` (see edit/page.tsx) — resolved
  * here from GET /v1/me so the QA principal's real account code is never
  * hardcoded (it is NOT necessarily `acme`).
+ *
+ * The three actions are ICON-ONLY buttons, visible in the header (labels live
+ * on title/aria-label). They were labelled buttons once, then briefly a single
+ * popover menu — which tested as one hop too many and was reverted.
  *
  *   1. The header exposes [data-testid="editor-copy-link"] (a <button>) and
  *      [data-testid="editor-open-form"] (an <a>).
  *   2. editor-open-form opens the public form in a new tab: it is an anchor with
  *      target="_blank" whose href resolves to the form's public path.
- *   3. Clicking editor-copy-link flips the button into a transient "copied"
- *      state (icon pi-link → pi-check) within 2s. Clipboard-write permission is
- *      granted so the flip — which the component performs only after a
- *      successful copy — actually fires; the grant is best-effort so a blocked
- *      clipboard can never crash the run.
+ *   3. Clicking editor-copy-link flips it into a transient "copied" state (icon
+ *      pi-link → pi-check) within 2s. Clipboard-write permission is granted so
+ *      the flip — which the component performs only after a successful copy —
+ *      actually fires; the grant is best-effort so a blocked clipboard can never
+ *      crash the run.
  */
 
 const API = 'http://localhost:4400';

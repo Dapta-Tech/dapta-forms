@@ -28,7 +28,6 @@ import { ColorPicker } from './color-picker';
 import { FontPicker } from './font-picker';
 import { ThemePresets } from './theme-presets';
 import { PreviewFrame, type PreviewDevice } from './preview-frame';
-import { LivePreview } from './live-preview';
 import { cn } from '@/lib/cn';
 import type { EditorMessages } from './messages';
 
@@ -81,7 +80,6 @@ export function DesignPanel({
   m: EditorMessages;
 }) {
   const [device, setDevice] = useState<PreviewDevice>('desktop');
-  const [screen, setScreen] = useState<number | 'cover'>('cover');
   // Four axes do nothing on one page, so they are not offered there: the form
   // never changes step (transition), the layout pins questions left
   // (contentAlign), it draws its own answered-count progress bar
@@ -111,11 +109,6 @@ export function DesignPanel({
   // matters for the large/decorative places it actually appears.
   const textSuggestion = branding.foreground ? suggestReadable(text, ground, AA_CONTRAST) : null;
   const accentSuggestion = branding.primaryColor ? suggestReadable(accent, ground) : null;
-
-  const screens: { value: number | 'cover'; label: string }[] = [
-    { value: 'cover', label: m.preview.coverTitle },
-    ...config.steps.map((s, i) => ({ value: i, label: `${i + 1}. ${s.key}` })),
-  ];
 
   return (
     <div className="grid h-full min-h-0 gap-4 px-4 py-6 sm:px-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,46%)] lg:overflow-hidden">
@@ -521,45 +514,25 @@ export function DesignPanel({
         {children}
       </div>
 
-      {/* ── Preview ────────────────────────────────────────────────────── */}
+      {/* ── Preview ─────────────────────────────────────────────────────────
+          The tab where fidelity matters MOST: this is where colours and
+          typefaces get chosen, and until now it was chosen while looking at
+          something that lied about mobile — every "mobile" measurement it
+          showed was the desktop rendering in a 390px box. It is the same
+          `PreviewFrame` the Preview modal uses, so both surfaces are honest or
+          neither is. The frame runs the real renderer and walks itself; its
+          prev/next only choose which screen the renderer STARTS on. */}
       <div className="min-w-0 lg:sticky lg:top-0 lg:h-full lg:min-h-0">
         <PreviewFrame
           device={device}
           onDeviceChange={setDevice}
           publicPath={publicPath}
+          config={config}
+          name={name}
+          locale={locale}
+          layout={layout}
           m={m.preview}
-          toolbar={
-            vertical ? undefined : (
-            <div className="flex min-w-0 items-center gap-1.5">
-              <label htmlFor="design-preview-screen" className="sr-only">
-                {m.preview.title}
-              </label>
-              <select
-                id="design-preview-screen"
-                value={String(screen)}
-                onChange={(e) => setScreen(e.target.value === 'cover' ? 'cover' : Number(e.target.value))}
-                data-testid="preview-screen"
-                className="h-7 max-w-[13rem] truncate rounded-md border border-input bg-background px-2 text-xs text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              >
-                {screens.map((s) => (
-                  <option key={String(s.value)} value={String(s.value)}>
-                    {s.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-            )
-          }
-        >
-          <LivePreview
-            config={config}
-            selected={vertical ? 'cover' : screen}
-            layout={layout}
-            name={publicTitle(config, name)}
-            locale={locale}
-            m={m.preview}
-          />
-        </PreviewFrame>
+        />
       </div>
     </div>
   );

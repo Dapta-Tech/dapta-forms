@@ -51,6 +51,7 @@ import { ClientLogosMarquee } from '@/components/public/client-logos-marquee';
 import { StepInput } from '@/components/public/step-input';
 import { BookingScreen } from '@/components/public/booking-screen';
 import { RevealScreen } from '@/components/public/reveal-screen';
+import { MadeWithBadge } from '@/components/made-with-badge';
 import { formDesignProps } from '@/lib/form-design';
 import { warmBookingEmbed, type BookingScheduledDetails } from '@/lib/booking-embed';
 import { resolveSchedulerPrefill } from '@/lib/booking-prefill';
@@ -683,6 +684,11 @@ export function VerticalFormRenderer({
               </button>
             </div>
           ) : null}
+
+          {/* In-flow page footer, at the end of the column — deliberately NOT
+              sticky on this layout: the page reads as a document, and a pinned
+              pill would trail the respondent past every question. */}
+          <MadeWithBadge locale={locale} accountCode={accountCode} />
         </div>
       </div>
     </div>

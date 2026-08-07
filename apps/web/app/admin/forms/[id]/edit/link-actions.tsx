@@ -3,11 +3,21 @@
 import { useState } from 'react';
 import { Modal } from '@/components/modal';
 import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/cn';
 
 /**
- * Compact copy-link + embed + open-in-new-tab controls for the editor header.
- * The public URL is resolved client-side from the real origin (the `publicPath`
- * prop is a server-stable path). A 2s "Copied" flash confirms each copy.
+ * The topbar's sharing controls: Copy link, Embed and Open form as THREE
+ * visible icon-only buttons.
+ *
+ * They were labelled buttons once (which crowded the tab labels out of the
+ * header), then briefly a single popover menu — which tested as one hop too
+ * many: "reduce them to icons" meant icons you can SEE, not a menu you must
+ * discover. Icon-only is the compromise that keeps the header narrow AND the
+ * actions one click away; the label reaches hover (title) and assistive tech
+ * (aria-label).
+ *
+ * The public URL is resolved client-side from the real origin (`publicPath` is
+ * a server-stable path). A 2s check-flash confirms each copy.
  */
 export function LinkActions({
   publicPath,
@@ -67,49 +77,42 @@ export function LinkActions({
     }
   };
 
-  // `shrink-0` + `whitespace-nowrap`: these live in a flex topbar that gets tight
-  // between the `lg` label breakpoint and a roomy viewport. Without both, the
-  // label wraps to a second line inside a fixed `h-9` box and the button breaks.
-  const btn =
-    'inline-flex h-9 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border border-border px-3 text-sm font-medium text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
+  const icon =
+    'inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border text-foreground ' +
+    'transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
 
   return (
-    <div className="flex shrink-0 items-center gap-2">
+    <div className="flex shrink-0 items-center gap-1.5">
       <button
         type="button"
-        onClick={copy}
-        className={btn}
-        aria-label={labels.copyLink}
-        title={labels.copyLink}
+        onClick={() => void copy()}
+        className={cn(icon, copied && 'border-primary text-primary')}
+        aria-label={copied ? labels.copied : labels.copyLink}
+        title={copied ? labels.copied : labels.copyLink}
         data-testid="editor-copy-link"
       >
         <i aria-hidden className={`pi ${copied ? 'pi-check' : 'pi-link'}`} style={{ fontSize: 13 }} />
-        <span className="hidden xl:inline">{copied ? labels.copied : labels.copyLink}</span>
       </button>
       <button
         type="button"
         onClick={() => setEmbedOpen(true)}
-        className={btn}
+        className={icon}
         aria-label={labels.embed}
         title={labels.embed}
         data-testid="editor-embed"
       >
         <i aria-hidden className="pi pi-code" style={{ fontSize: 13 }} />
-        {/* xl like its siblings — the topbar's staggered breakpoints (PR #31)
-            keep it from overflowing between lg and xl. */}
-        <span className="hidden xl:inline">{labels.embed}</span>
       </button>
       <a
         href={publicPath}
         target="_blank"
         rel="noreferrer"
-        className={btn}
+        className={icon}
         aria-label={labels.openForm}
         title={labels.openForm}
         data-testid="editor-open-form"
       >
         <i aria-hidden className="pi pi-external-link" style={{ fontSize: 13 }} />
-        <span className="hidden xl:inline">{labels.openForm}</span>
       </a>
 
       <Modal open={embedOpen} onClose={() => setEmbedOpen(false)} title={labels.embedTitle} labelId="embed-form-title">

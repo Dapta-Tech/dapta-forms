@@ -88,18 +88,21 @@ for (const height of [900, 720, 560]) {
     expect(hidden, 'no rows clipped inside the group').toBe(0);
 
     // And it must be possible to actually get to the last row by scrolling, the
-    // way a person would.
-    const panel = page.locator('div.flex.h-full.flex-col.gap-5.overflow-y-auto');
-    await panel.evaluate((el) => {
-      el.scrollTop = el.scrollHeight;
+    // way a person would — i.e. scroll TO THE ROW.
+    //
+    // This used to slam the settings COLUMN to its maximum scrollTop and then
+    // assert the row happened to land in frame. That only ever worked by
+    // accident: the group is not the last thing in the column — the HubSpot
+    // "Map to" section renders BELOW it, deliberately outside the accordion —
+    // so the column's bottom is the HubSpot card, and scrolling to the end
+    // pushes the last advanced row back off the top. At 1440x560 the geometry
+    // makes that unsatisfiable no matter what the layout does (the last row is
+    // ~385px and the section below it adds ~133px plus gaps, against a ~460px
+    // client height), so the old assertion was measuring the wrong scroll.
+    const lastRow = advanced.locator(':scope > div').locator(':scope > *').last();
+    await lastRow.scrollIntoViewIfNeeded();
+    await expect(lastRow, 'the last advanced row can be scrolled into view').toBeInViewport({
+      ratio: 1,
     });
-    const lastRowVisible = await advanced.evaluate((el, vh) => {
-      const rows = [...(el.querySelector(':scope > div')?.children ?? [])];
-      const last = rows[rows.length - 1];
-      if (!last) return false;
-      const r = last.getBoundingClientRect();
-      return r.top >= 0 && r.bottom <= vh + 1;
-    }, height);
-    expect(lastRowVisible, 'the last advanced row can be scrolled into view').toBe(true);
   });
 }

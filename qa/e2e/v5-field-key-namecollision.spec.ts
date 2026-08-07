@@ -67,6 +67,8 @@ test('renaming a field key onto a name subfield is refused with a visible error'
 
   // Select the text step so its Field Key editor is shown.
   await page.getByTestId('question-spine').getByRole('button', { name: /Where from\?/ }).click();
+  // The field-key editor sits inside the collapsed Advanced group.
+  await page.getByRole('button', { name: /Advanced/ }).click();
   const keyInput = page.getByTestId('step-field-key');
   await expect(keyInput).toBeVisible();
   await expect(keyInput).toHaveValue('src');

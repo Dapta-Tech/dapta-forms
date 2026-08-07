@@ -173,6 +173,13 @@ test.describe('V4-08 — contradiction guard + operator UI (editor)', () => {
     // Select the second question — the one that will carry the show/hide rules.
     await page.getByTestId('question-spine').getByRole('button', { name: /Reason/ }).click();
 
+    // The condition editors moved out of the settings panel into the shared
+    // per-question logic dialog: the panel now SUMMARISES the rules and this
+    // button opens the one place that edits them. Everything below is unchanged
+    // — same editors, same testids, one dialog around them.
+    await page.getByTestId('question-logic-edit').click();
+    await expect(page.getByTestId('logic-dialog')).toBeVisible();
+
     // The Visibility panel's Show/Hide field selects are present.
     await expect(page.getByRole('button', { name: 'Show when — Field' })).toBeVisible();
 

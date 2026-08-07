@@ -263,7 +263,16 @@ test('a per-outcome message is editable, autosaves, and shows on the done screen
   });
 
   // --- Editor: type a message on the HIGH range in Results --------------------
-  await page.goto(`/admin/forms/${form.id}/edit?tab=results`);
+  // The Results tab was absorbed into Logic → Outcomes; same rows, same
+  // testids, one dialog around them.
+  await page.goto(`/admin/forms/${form.id}/edit?tab=logic`);
+  await expect(page.getByTestId('toolbar-outcomes')).toBeVisible({ timeout: 20_000 });
+  await expect(async () => {
+    if (!(await page.getByTestId('outcomes-dialog').isVisible())) {
+      await page.getByTestId('toolbar-outcomes').click();
+    }
+    await expect(page.getByTestId('outcomes-dialog')).toBeVisible({ timeout: 1_000 });
+  }).toPass({ timeout: 15_000 });
   const rows = page.getByTestId('outcome-row');
   await expect(rows).toHaveCount(2); // sorted ascending → [Nurture(0), Priority(5)]
   const message = 'You booked a spot at [email] — talk soon!';

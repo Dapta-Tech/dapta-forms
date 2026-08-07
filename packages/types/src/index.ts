@@ -919,6 +919,16 @@ export const formConfigSchema = z.object({
   reveal: formRevealSchema.nullable().optional(),
   /** Third-party tracking ids (ADDITIVE — absent on every legacy config). */
   tracking: formTrackingSchema.nullable().optional(),
+  /**
+   * BUILDER-ONLY node positions for the Logic canvas, keyed by step key
+   * (ADDITIVE — absent on every legacy config and on every form whose author
+   * never dragged a node). The engine and both renderers ignore it entirely.
+   * Coordinates are `.finite()` on purpose: a NaN reaching the config would
+   * fail this schema and take the whole form's autosave down with it.
+   */
+  logicLayout: z
+    .record(z.string(), z.object({ x: z.number().finite(), y: z.number().finite() }))
+    .optional(),
   partialSubmitAfterStep: z.number().int().positive().optional(),
   /**
    * WHERE the reveal interstitial plays (1-based over `steps`; ADDITIVE —

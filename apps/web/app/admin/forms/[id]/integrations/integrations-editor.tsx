@@ -15,7 +15,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Select, type SelectOption } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
-import { ProviderLogo, type LogoProvider } from '@/components/ui/provider-logo';
+import { GoogleSheetsLogo, ProviderLogo, type LogoProvider } from '@/components/ui/provider-logo';
 import { useToast } from '@/components/toast';
 import { cn } from '@/lib/cn';
 import { bookingLabel } from '@/lib/booking-fields';
@@ -520,6 +520,27 @@ export function IntegrationsEditor({
           m={m}
         />
       </LocaleContext.Provider>
+
+      {/* Google Sheets — announced, not shipped. Inert by design: no toggle,
+          nothing focusable, and it never writes a destination to the config. */}
+      <section
+        data-testid="integration-gsheets"
+        aria-disabled="true"
+        className="cursor-default rounded-lg border border-border bg-card p-5 opacity-60"
+      >
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-2">
+              <GoogleSheetsLogo size={20} />
+              <h2 className="text-lg font-semibold">{m.gsheetsTitle}</h2>
+              <span className="rounded border border-border bg-muted px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                {m.comingSoon}
+              </span>
+            </div>
+            <p className="mt-0.5 text-sm text-muted-foreground">{m.gsheetsDesc}</p>
+          </div>
+        </div>
+      </section>
 
       {/* The Save button is gone (V5-A4) — everything here autosaves, so what
           belongs in this bar is the state of that save, not an action. */}

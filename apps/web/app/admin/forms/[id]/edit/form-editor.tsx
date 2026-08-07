@@ -32,7 +32,12 @@ import { invalidateQuestionHubspotCache } from './_components/question-hubspot';
 import { renameQuestionMappingAction } from './_components/question-hubspot-actions';
 import { TypeGallery } from './_components/type-gallery';
 import { LogicMap } from './_components/logic-map';
-import { ResultsView } from './_components/results-view';
+import { LogicCanvas } from './_components/logic-canvas';
+import { LogicDialog } from './_components/logic-dialog';
+import { BranchingDialog } from './_components/branching-dialog';
+import { ScoringDialog } from './_components/scoring-dialog';
+import { OutcomesDialog } from './_components/outcomes-dialog';
+import { useIsDesktop } from '@/lib/use-media-query';
 import { EmptyState } from './_components/empty-state';
 import { DesignPanel } from './_components/design-panel';
 import { FlowPanel } from './_components/flow-panel';
@@ -41,13 +46,20 @@ import { ConnectPanel } from './_components/connect-panel';
 import { PublishButton } from './publish-button';
 import { LinkActions } from './link-actions';
 import { DevicePreviewModal } from './_components/device-preview-modal';
+import {
+  DeviceToggle,
+  EditorToolbar,
+  ToolbarButton,
+  ToolbarIconButton,
+  ToolbarSeparator,
+  type Tab,
+} from './_components/editor-toolbar';
 import { stepFromGalleryItem, stepListLabel, type GalleryItem } from './_components/question-types';
 import { TEMPLATES } from './_components/templates';
 import { getBuilderMessages, tb, type TemplateId } from './_components/builder-messages';
 import type { EditorMessages } from './_components/messages';
 import './_components/builder.css';
 
-type Tab = 'build' | 'logic' | 'connect' | 'results' | 'design';
 type SaveStatus = 'saved' | 'saving' | 'draft' | 'error';
 const AUTOSAVE_MS = 900;
 /** One backoff retry after a failed/transient save so a blip self-heals. */
@@ -55,7 +67,10 @@ const RETRY_MS = 1500;
 /** Same admin API base the server-side admin-api client uses (client-exposed). */
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 
-const TAB_IDS: readonly Tab[] = ['build', 'logic', 'connect', 'results', 'design'];
+// `results` is deliberately NOT in this list: `parseTab('results')` falls
+// through to Build, so a bookmark or an old link lands somewhere real instead
+// of dead-ending. Its two panels live behind Logic → Scoring and Logic → Outcomes.
+const TAB_IDS: readonly Tab[] = ['build', 'logic', 'connect', 'design'];
 /** Unknown/absent `?tab` → build (the default view). */
 const parseTab = (value: string | null): Tab =>
   TAB_IDS.includes(value as Tab) ? (value as Tab) : 'build';
@@ -155,6 +170,11 @@ export function FormEditor({
   );
   const [selected, setSelected] = useState<number | null>(initialConfig.steps.length ? 0 : null);
   const [device, setDevice] = useState<'desktop' | 'mobile'>('desktop');
+  /** Which step's logic dialog the Logic canvas has open, if any. */
+  const [logicStep, setLogicStep] = useState<number | null>(null);
+  /** Which FORM-WIDE logic dialog the Logic toolbar has open, if any. */
+  const [logicView, setLogicView] = useState<'branching' | 'scoring' | 'outcomes' | null>(null);
+  const isDesktop = useIsDesktop();
   const [galleryOpen, setGalleryOpen] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [status, setStatus] = useState<SaveStatus>(initialConfig.steps.length ? 'saved' : 'draft');
@@ -473,17 +493,45 @@ export function FormEditor({
     if (!on) setSelected((sel) => (sel == null ? sel : keepLen === 0 ? null : Math.min(sel, keepLen - 1)));
   }
 
+  /**
+   * Pin (or, with `null`, release) one Logic-canvas node's position.
+   *
+   * Purely presentational — the engine ignores `logicLayout` entirely — but it
+   * lives on the config so an arrangement survives a reload and reaches a
+   * teammate. An emptied map is dropped rather than stored as `{}`, which is
+   * what "no manual positions" already means everywhere else.
+   */
+  function pinLogicNode(nodeId: string, pos: { x: number; y: number } | null) {
+    mutate((c) => {
+      const next = { ...(c.logicLayout ?? {}) };
+      if (pos) next[nodeId] = pos;
+      else delete next[nodeId];
+      return { ...c, logicLayout: Object.keys(next).length ? next : undefined };
+    });
+  }
+  /**
+   * Drop every pinned position at once. This is the escape hatch that keeps
+   * pinning from rotting: a node pinned before its step was reordered sits
+   * where it no longer belongs, and without a one-click way back the canvas
+   * would slowly become the stale picture it exists to replace.
+   */
+  function autoArrangeLogic() {
+    mutate((c) => ({ ...c, logicLayout: undefined }));
+  }
+
   const selectedStep = selected != null ? config.steps[selected] : undefined;
+  const logicDialogStep = logicStep != null ? config.steps[logicStep] : undefined;
   const scoringEnabled = config.scoring?.enabled !== false;
   const hasQuestions = config.steps.length > 0;
   const layout = resolveFormLayout(config);
 
+  // The GENERAL menu (Typeform's Content/Workflow/Connect row). Design is not
+  // here: it is a sub-mode of Build, entered from the builder's own toolbar —
+  // the tab still exists as a parseable value so `?tab=design` links resolve.
   const tabs: { id: Tab; label: string; icon: string }[] = [
     { id: 'build', label: bm.shell.tabBuild, icon: 'pi-th-large' },
     { id: 'logic', label: bm.shell.tabLogic, icon: 'pi-sitemap' },
     { id: 'connect', label: m.connect.tab, icon: 'pi-link' },
-    { id: 'results', label: bm.shell.tabResults, icon: 'pi-chart-line' },
-    { id: 'design', label: bm.shell.tabDesign, icon: 'pi-palette' },
   ];
 
   const statusLabel =
@@ -499,77 +547,72 @@ export function FormEditor({
 
   return (
     <div className="flex h-[100dvh] flex-col overflow-hidden bg-background">
-      {/* Topbar */}
-      <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border px-3 sm:px-4">
-        <Link
-          href="/admin/forms"
-          className="inline-flex shrink-0 items-center gap-1.5 rounded-md px-1 text-sm text-muted-foreground transition-colors hover:text-foreground"
-        >
-          <i aria-hidden className="pi pi-chevron-left" style={{ fontSize: 12 }} />
-          <span className="hidden sm:inline">{bm.shell.back}</span>
-        </Link>
-        <input
-          value={name}
-          onChange={(e) => rename(e.target.value)}
-          placeholder={bm.shell.formNamePlaceholder}
-          aria-label={bm.shell.formNamePlaceholder}
-          // The topbar's only elastic child: it absorbs the slack so the fixed
-          // controls on the right keep their intrinsic width. `sm:flex-none`
-          // used to pin it wide, which pushed the actions past the viewport.
-          className="min-w-[8ch] max-w-[38ch] flex-1 rounded-md border border-transparent bg-transparent px-1.5 py-1 text-base font-semibold tracking-tight hover:border-border focus-visible:border-input focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:text-lg"
-        />
-        <span
-          className={cn(
-            'hidden items-center gap-1.5 text-xs text-muted-foreground sm:inline-flex',
-            status === 'error' && lastError ? 'cursor-help' : '',
-          )}
-          data-testid="editor-save-status"
-          data-status={status}
-          // Native tooltip: hover the "Not saved" indicator to read WHY it failed.
-          title={status === 'error' && lastError ? tb(m.saveErrorReason, { reason: lastError }) : undefined}
-        >
-          <span className={cn('h-1.5 w-1.5 rounded-full', statusDot)} />
-          {statusLabel}
-        </span>
-
-        {/* `shrink-0`: the name input above owns the slack (`min-w-0 flex-1`), so
-            the actions keep their intrinsic width instead of squeezing their
-            labels onto a second line inside the fixed-height controls. */}
-        <div className="ml-auto flex shrink-0 items-center gap-2">
-          {/* Tabs (segmented). Everything in this bar reveals on a DIFFERENT
-              breakpoint on purpose: five labelled tabs (~425px), the two link
-              labels and the publish pill all appearing at once overflowed the
-              bar. Icons from `lg`, labels only at `2xl`; below `lg` the tab row
-              under the header takes over. */}
-          <nav className="hidden items-center gap-0.5 rounded-lg border border-border bg-card p-0.5 lg:flex" aria-label="Sections">
-            {tabs.map((t) => (
-              <button
-                key={t.id}
-                type="button"
-                data-testid={`editor-tab-${t.id}`}
-                onClick={() => setTab(t.id)}
-                aria-current={tab === t.id}
-                title={t.label}
-                className={cn(
-                  'inline-flex items-center gap-1.5 whitespace-nowrap rounded-md px-2.5 py-1.5 text-sm font-medium transition-colors 2xl:px-3',
-                  tab === t.id ? 'bg-muted text-foreground' : 'text-muted-foreground hover:text-foreground',
-                )}
-              >
-                <i aria-hidden className={`pi ${t.icon}`} style={{ fontSize: 12 }} />
-                <span className="sr-only 2xl:not-sr-only">{t.label}</span>
-              </button>
-            ))}
-          </nav>
-
-          <button
-            type="button"
-            data-tour="preview"
-            onClick={() => setPreviewOpen(true)}
-            className="inline-flex h-9 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border border-border px-3 text-sm font-medium text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      {/* Topbar, row 1 — everything true of the WHOLE form.
+          A three-column grid rather than a flex row: the tabs sit in the middle
+          cell, so they stay centred no matter how long the form's name is or how
+          wide the actions get. The old flex row made the tabs the first thing to
+          lose space, which is why their labels had retreated behind `2xl` and a
+          duplicate tab bar existed below `lg`. Both are gone: with the
+          section-scoped controls moved to row 2, the tabs can be labelled from
+          `md` up at every width. */}
+      <header className="grid h-14 shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 border-b border-border px-3 sm:px-4">
+        <div className="flex min-w-0 items-center gap-2">
+          <Link
+            href="/admin/forms"
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-md px-1 text-sm text-muted-foreground transition-colors hover:text-foreground"
           >
-            <i aria-hidden className="pi pi-eye" style={{ fontSize: 13 }} />
-            <span className="hidden sm:inline">{bm.shell.preview}</span>
-          </button>
+            <i aria-hidden className="pi pi-chevron-left" style={{ fontSize: 12 }} />
+            <span className="hidden sm:inline">{bm.shell.back}</span>
+          </Link>
+          <input
+            value={name}
+            onChange={(e) => rename(e.target.value)}
+            placeholder={bm.shell.formNamePlaceholder}
+            aria-label={bm.shell.formNamePlaceholder}
+            className="min-w-0 max-w-[28ch] flex-1 rounded-md border border-transparent bg-transparent px-1.5 py-1 text-base font-semibold tracking-tight hover:border-border focus-visible:border-input focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          />
+          <span
+            className={cn(
+              'hidden shrink-0 items-center gap-1.5 text-xs text-muted-foreground xl:inline-flex',
+              status === 'error' && lastError ? 'cursor-help' : '',
+            )}
+            data-testid="editor-save-status"
+            data-status={status}
+            // Native tooltip: hover the "Not saved" indicator to read WHY it failed.
+            title={status === 'error' && lastError ? tb(m.saveErrorReason, { reason: lastError }) : undefined}
+          >
+            <span className={cn('h-1.5 w-1.5 rounded-full', statusDot)} />
+            {statusLabel}
+          </span>
+        </div>
+
+        <nav
+          className="flex items-center gap-0.5 justify-self-center rounded-lg border border-border bg-card p-0.5"
+          aria-label="Sections"
+        >
+          {tabs.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              data-testid={`editor-tab-${t.id}`}
+              onClick={() => setTab(t.id)}
+              // Design is a Build sub-mode, so Build stays the current section
+              // while it is open — exactly how Typeform keeps Content lit while
+              // its Design panel is up.
+              aria-current={tab === t.id || (t.id === 'build' && tab === 'design')}
+              title={t.label}
+              className={cn(
+                'inline-flex items-center gap-1.5 whitespace-nowrap rounded-md px-2.5 py-1.5 text-sm font-medium transition-colors',
+                tab === t.id ? 'bg-muted text-foreground' : 'text-muted-foreground hover:text-foreground',
+              )}
+            >
+              <i aria-hidden className={`pi ${t.icon}`} style={{ fontSize: 12 }} />
+              <span className="sr-only md:not-sr-only">{t.label}</span>
+            </button>
+          ))}
+        </nav>
+
+        <div className="flex min-w-0 items-center justify-end gap-2">
           <LinkActions
             publicPath={publicPath}
             formName={name}
@@ -593,25 +636,84 @@ export function FormEditor({
         </div>
       </header>
 
-      {/* Mobile tab bar */}
-      <nav className="flex shrink-0 items-center gap-1 border-b border-border px-2 py-1.5 lg:hidden" aria-label="Sections">
-        {tabs.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            data-testid={`editor-tab-${t.id}-mobile`}
-            onClick={() => setTab(t.id)}
-            aria-current={tab === t.id}
-            className={cn(
-              'inline-flex flex-1 items-center justify-center gap-1.5 rounded-md py-2 text-xs font-medium transition-colors',
-              tab === t.id ? 'bg-muted text-foreground' : 'text-muted-foreground',
-            )}
-          >
-            <i aria-hidden className={`pi ${t.icon}`} style={{ fontSize: 12 }} />
-            {t.label}
-          </button>
-        ))}
-      </nav>
+      {/* Topbar, row 2 — contextual: only what acts on the CURRENT section. */}
+      <EditorToolbar m={bm}>
+        {/* The builder's own submenu, Typeform-shaped: "+ Add content · Design ·
+            device · preview" live INSIDE the builder, not in the general menu.
+            Design renders on the design sub-mode too, lit, and toggles back. */}
+        {tab === 'build' || tab === 'design' ? (
+          <>
+            <ToolbarButton
+              icon="pi-plus"
+              label={bm.shell.addQuestion}
+              onClick={() => setGalleryOpen(true)}
+              primary
+              testId="toolbar-add-question"
+            />
+            <ToolbarSeparator />
+            <ToolbarButton
+              icon="pi-palette"
+              label={bm.shell.tabDesign}
+              active={tab === 'design'}
+              onClick={() => setTab(tab === 'design' ? 'build' : 'design')}
+              testId="editor-tab-design"
+            />
+            <ToolbarSeparator />
+            {hasQuestions && tab === 'build' ? (
+              <DeviceToggle device={device} onChange={setDevice} m={bm} />
+            ) : null}
+            {/* Preview rides WITH the viewport cluster instead of drifting to
+                the far edge. The eye is the product's original preview glyph.
+                `data-tour` anchors the first-run tour's Preview step: the
+                control left the header row, so the anchor moves with it. */}
+            <span className="flex shrink-0 items-center" data-tour="preview">
+              <ToolbarIconButton
+                icon="pi-eye"
+                label={bm.shell.preview}
+                onClick={() => setPreviewOpen(true)}
+                testId="toolbar-preview"
+              />
+            </span>
+          </>
+        ) : null}
+        {/* Logic's own menu. Each entry is a FORM-WIDE view of one axis — the
+            builder can otherwise only ever show logic one question at a time,
+            so there was nowhere to answer "what does this whole form do?". */}
+        {tab === 'logic' ? (
+          <>
+            <ToolbarButton
+              icon="pi-sitemap"
+              label={bm.branching.open}
+              onClick={() => setLogicView('branching')}
+              testId="toolbar-branching"
+            />
+            <ToolbarButton
+              icon="pi-star"
+              label={bm.scoring.open}
+              onClick={() => setLogicView('scoring')}
+              testId="toolbar-scoring"
+            />
+            <ToolbarButton
+              icon="pi-flag"
+              label={bm.outcomes.open}
+              onClick={() => setLogicView('outcomes')}
+              testId="toolbar-outcomes"
+            />
+          </>
+        ) : null}
+        {/* On Logic and Connect the preview keeps a home at the row's end —
+            "what does this look like now?" is true of every section. */}
+        {tab === 'logic' || tab === 'connect' ? (
+          <span className="ml-auto flex items-center gap-1.5">
+            <ToolbarIconButton
+              icon="pi-eye"
+              label={bm.shell.preview}
+              onClick={() => setPreviewOpen(true)}
+              testId="toolbar-preview"
+            />
+          </span>
+        ) : null}
+      </EditorToolbar>
 
       {/* Body */}
       <div className="min-h-0 flex-1 overflow-hidden">
@@ -639,28 +741,17 @@ export function FormEditor({
 
               {/* Center canvas */}
               <main className="flex min-h-0 flex-col overflow-y-auto">
-                <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-2.5 text-sm text-muted-foreground">
+                {/* The device switch used to live here, in a third chrome strip
+                    directly under the topbar's two. It is a Build-scoped
+                    control, so it moved into the contextual toolbar — one strip
+                    instead of two, and the canvas gets the height back. What
+                    stays is the caption, which describes the canvas itself. */}
+                <div className="border-b border-border px-4 py-2.5 text-sm text-muted-foreground">
                   <span className="truncate">
                     {selected != null
                       ? `${tb(bm.shell.questionOfTotal, { n: selected + 1, total: config.steps.length })} · ${bm.shell.editingLive}`
                       : ''}
                   </span>
-                  <div className="flex shrink-0 items-center gap-0.5 rounded-lg border border-border bg-card p-0.5">
-                    {(['desktop', 'mobile'] as const).map((d) => (
-                      <button
-                        key={d}
-                        type="button"
-                        onClick={() => setDevice(d)}
-                        aria-current={device === d}
-                        className={cn(
-                          'rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
-                          device === d ? 'bg-muted text-foreground' : 'text-muted-foreground hover:text-foreground',
-                        )}
-                      >
-                        {d === 'desktop' ? bm.shell.desktop : bm.shell.mobile}
-                      </button>
-                    ))}
-                  </div>
                 </div>
                 <div className="flex-1 px-4 py-6 sm:px-8">
                   {selectedStep && selected != null ? (
@@ -750,10 +841,27 @@ export function FormEditor({
             </div>
           )
         ) : tab === 'logic' ? (
-          <div className="h-full overflow-y-auto px-4 py-6 sm:px-8">
-            <p className="mb-4 text-sm text-muted-foreground">{bm.map.title}</p>
-            <LogicMap config={config} m={bm} />
-          </div>
+          // The canvas needs a real viewport to lay itself out against and pans
+          // with the pointer, neither of which a phone gives it — so below `lg`
+          // the readable vertical list stays. Branching on a media QUERY rather
+          // than a CSS class because these are different components: a hidden
+          // canvas would measure a zero-width box on mount and fit to nothing.
+          isDesktop ? (
+            <LogicCanvas
+              config={config}
+              m={bm}
+              onEditStep={setLogicStep}
+              onEditOutcomes={() => setLogicView('outcomes')}
+              onMoveStep={reorderSteps}
+              onPinNode={pinLogicNode}
+              onAutoArrange={autoArrangeLogic}
+            />
+          ) : (
+            <div className="h-full overflow-y-auto px-4 py-6 sm:px-8">
+              <p className="mb-4 text-sm text-muted-foreground">{bm.map.title}</p>
+              <LogicMap config={config} m={bm} />
+            </div>
+          )
         ) : tab === 'connect' ? (
           <div className="h-full overflow-y-auto px-4 py-6 sm:px-8">
             <ConnectPanel
@@ -762,17 +870,6 @@ export function FormEditor({
               onTrackingChange={setTracking}
               m={m}
               locale={locale}
-            />
-          </div>
-        ) : tab === 'results' ? (
-          <div className="h-full overflow-y-auto">
-            <ResultsView
-              config={config}
-              onScoringChange={setScoring}
-              onOutcomesChange={setOutcomes}
-              onStepScoringChange={(index, on) => patchStep(index, { scoringEnabled: on ? undefined : false })}
-              m={bm}
-              rm={m.resultsHelp}
             />
           </div>
         ) : (
@@ -810,6 +907,52 @@ export function FormEditor({
         // create a card the renderer ignores, so it's offered exactly once.
         disabled={layout === 'vertical' && hasReveal ? { reveal: bm.gallery.revealVerticalTaken } : undefined}
       />
+      {/* The three form-wide views. Branching edits INLINE (R7) — same
+          LogicRules/LogicConditions the per-question dialog hosts, same
+          patchStep write path, so the two surfaces can never disagree. */}
+      <BranchingDialog
+        open={logicView === 'branching'}
+        onClose={() => setLogicView(null)}
+        steps={config.steps}
+        scoringEnabled={scoringEnabled}
+        onUpdateStep={patchStep}
+        bm={bm}
+        em={m}
+      />
+      <ScoringDialog
+        open={logicView === 'scoring'}
+        onClose={() => setLogicView(null)}
+        config={config}
+        onScoringChange={setScoring}
+        onStepScoringChange={(index, on) => patchStep(index, { scoringEnabled: on ? undefined : false })}
+        onStepPatch={patchStep}
+        bm={bm}
+        em={m}
+      />
+      <OutcomesDialog
+        open={logicView === 'outcomes'}
+        onClose={() => setLogicView(null)}
+        config={config}
+        onOutcomesChange={setOutcomes}
+        bm={bm}
+        rm={m.resultsHelp}
+      />
+      {/* The canvas's nodes open the SAME per-question dialog the Build panel
+          opens. It is mounted here rather than inside the canvas because the
+          canvas has many nodes and only one dialog may exist at a time. */}
+      {logicDialogStep && logicStep != null ? (
+        <LogicDialog
+          open
+          onClose={() => setLogicStep(null)}
+          step={logicDialogStep}
+          index={logicStep}
+          steps={config.steps}
+          scoringEnabled={scoringEnabled}
+          onUpdate={(patch) => patchStep(logicStep, patch)}
+          bm={bm}
+          em={m}
+        />
+      ) : null}
       <DevicePreviewModal
         open={previewOpen}
         onClose={() => setPreviewOpen(false)}

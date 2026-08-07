@@ -14,7 +14,6 @@ export interface BuilderMessages {
     formNamePlaceholder: string;
     tabBuild: string;
     tabLogic: string;
-    tabResults: string;
     tabDesign: string;
     saved: string;
     saving: string;
@@ -41,6 +40,90 @@ export interface BuilderMessages {
     embedCopied: string;
     copied: string;
     openForm: string;
+    /** Accessible name for the per-tab contextual toolbar (topbar row 2). */
+    toolbar: string;
+  };
+  /**
+   * The per-question logic dialog (F0): ONE place holding a step's whole
+   * routing — when it appears, where it goes next, and (for a scheduler) where
+   * a booking leads. Opened from the Build panel, the Logic canvas, and the
+   * form-wide Branching dialog, so all three edit the same thing.
+   */
+  logicDialog: {
+    /** Trigger label in the Build panel / canvas hover buttons. */
+    open: string;
+    /** "Logic — {question}" */
+    title: string;
+    subtitle: string;
+    visibility: string;
+    visibilityHint: string;
+    routing: string;
+    routingHint: string;
+    booking: string;
+    bookingHint: string;
+    /** "Highest possible score before this question: {n}" */
+    scoreContext: string;
+    /** Shown instead when nothing above this step awards points. */
+    scoreContextNone: string;
+    /** A step type with no forward-rule surface (free text, message, …). */
+    noRouting: string;
+    /** Plain-language summary line when the step carries no logic at all. */
+    empty: string;
+    done: string;
+  };
+  /**
+   * F3b — the three FORM-WIDE logic editors, opened from the Logic tab's
+   * contextual toolbar. The builder can otherwise only show logic ONE question
+   * at a time; these three answer "what does this whole form do?" in one scroll.
+   * Copy that already exists under `results.*` is reused rather than restated,
+   * so the Results tab and these dialogs can never drift apart.
+   */
+  branching: {
+    /** Trigger label in the Logic tab's contextual toolbar. */
+    open: string;
+    title: string;
+    subtitle: string;
+    /** "{n} of {total} questions carry logic." */
+    summary: string;
+    /** Shown instead when nothing routes yet. */
+    summaryNone: string;
+    /** Per-step control that hands off to the per-question logic dialog. */
+    edit: string;
+    /** aria-label for that control — `{question}` names which step it opens. */
+    editAria: string;
+    /** The form has no questions at all, so there is nothing to route. */
+    empty: string;
+    /**
+     * Operand for a catch-all `goto` (stored as the value `*`). Printing the
+     * raw `*` as if it were an answer the respondent could give is a lie; a
+     * scheduler's catch-all fires on a booking, not on an answer at all.
+     */
+    anyAnswer: string;
+    anyBooking: string;
+    /**
+     * R7 — the inline "Always go to" row every question carries. It edits the
+     * catch-all rule; "next in order" means NO rule stored, which is the
+     * engine's default walk.
+     */
+    alwaysGoTo: string;
+    nextInOrder: string;
+    endOfForm: string;
+  };
+  scoring: {
+    open: string;
+    title: string;
+    subtitle: string;
+    /** "Max {n}" — the ceiling this ONE question can contribute. */
+    stepMax: string;
+    /** A choice question with no options yet: nothing to attach points to. */
+    noOptions: string;
+    /** Why the points are shown but frozen while form-level scoring is off. */
+    inert: string;
+  };
+  outcomes: {
+    open: string;
+    title: string;
+    subtitle: string;
   };
   badges: {
     /** V5-QA — marks a step respondents never see. */
@@ -151,7 +234,6 @@ export interface BuilderMessages {
     optionLayoutCards: string;
     logic: string;
     addRule: string;
-    noRules: string;
     scoring: string;
     scoringHint: string;
     /** V5-B2 — the per-question switch is inert while the form-level one is off. */
@@ -161,7 +243,6 @@ export interface BuilderMessages {
     contactHint: string;
     /** The collapsible Advanced group + what it says when shut. */
     advancedTitle: string;
-    badgeConditional: string;
     badgeDynamic: string;
     badgeEndsForm: string;
     badgeHidden: string;
@@ -294,6 +375,17 @@ export interface BuilderMessages {
     neverAppears: string;
     /** Small kicker above a scored outcome node. */
     outcomeKicker: string;
+    /**
+     * The Logic canvas viewport controls (F3a). They live under `map.*` with the
+     * rest of the flow-view copy so the read-only map and the interactive canvas
+     * keep one vocabulary.
+     */
+    zoomIn: string;
+    zoomOut: string;
+    zoomFit: string;
+    autoArrange: string;
+    /** Muted footer hint: how to move a node / pan the canvas. */
+    dragHint: string;
   };
   results: {
     pointsTitle: string;
@@ -356,7 +448,6 @@ const en: BuilderMessages = {
     formNamePlaceholder: 'Untitled form',
     tabBuild: 'Build',
     tabLogic: 'Logic',
-    tabResults: 'Results',
     tabDesign: 'Design',
     saved: 'Saved',
     saving: 'Saving…',
@@ -382,6 +473,52 @@ const en: BuilderMessages = {
     embedCopied: 'Copied',
     copied: 'Copied',
     openForm: 'Open form',
+    toolbar: 'Tools',
+  },
+  logicDialog: {
+    open: 'Edit logic',
+    title: 'Logic — {question}',
+    subtitle: 'Decide when this question appears and where it leads next.',
+    visibility: 'When this question appears',
+    visibilityHint: 'Leave both empty and it always appears.',
+    routing: 'Where the answer leads',
+    routingHint: 'The first matching rule wins; anything else continues in order.',
+    booking: 'After a booking',
+    bookingHint: 'Where a respondent lands once they book a slot.',
+    scoreContext: 'Highest possible score before this question: {n}',
+    scoreContextNone: 'No question above this one awards points, so a score rule would always read 0.',
+    noRouting: 'This question type has no answer values to branch on. Use the visibility rules above.',
+    empty: 'No logic yet — this question always appears and continues in order.',
+    done: 'Done',
+  },
+  branching: {
+    open: 'Branching',
+    title: 'Branching',
+    subtitle: 'Every question in order. Change where each one leads, right here.',
+    summary: '{n} of {total} questions carry logic.',
+    summaryNone: 'No question carries logic yet — everyone walks the same path.',
+    edit: 'Edit',
+    editAria: 'Edit the logic for {question}',
+    empty: 'Add a question first — there is nothing to route yet.',
+    anyAnswer: 'any answer',
+    anyBooking: 'any booking',
+    alwaysGoTo: 'Always go to',
+    nextInOrder: 'Next question in order',
+    endOfForm: 'End of the form',
+  },
+  scoring: {
+    open: 'Scoring',
+    title: 'Scoring',
+    subtitle: 'Every point value in the form, editable here. A negative number subtracts.',
+    stepMax: 'Max {n}',
+    noOptions: 'No options yet — add some to award points.',
+    inert:
+      'Scoring is off, so none of these points are awarded. They are kept exactly as they are — turn scoring on to use them again.',
+  },
+  outcomes: {
+    open: 'Outcomes',
+    title: 'Outcomes',
+    subtitle: 'Score ranges mapped to what a respondent sees at the end. The first matching range wins.',
   },
   badges: {
     hidden: 'Hidden',
@@ -442,7 +579,6 @@ const en: BuilderMessages = {
     optionLayoutCards: 'Cards',
     logic: 'Logic',
     addRule: 'Add rule',
-    noRules: 'No rules — everyone sees this question.',
     revealSection: 'Reveal screen',
     revealHeadline: 'Headline',
     revealSubtitle: 'Subtitle',
@@ -477,7 +613,6 @@ const en: BuilderMessages = {
     scoringZeroHint: 'Assign points to your answers to enable ranges.',
     contactHint: 'Contact field — doesn’t affect the score.',
     advancedTitle: 'Advanced settings',
-    badgeConditional: 'Conditional',
     badgeDynamic: 'Dynamic',
     badgeEndsForm: 'Ends form',
     badgeHidden: 'Hidden',
@@ -601,6 +736,11 @@ const en: BuilderMessages = {
     condMissingField: 'question deleted',
     neverAppears: 'These rules mean this question never appears.',
     outcomeKicker: 'Ending',
+    zoomIn: 'Zoom in',
+    zoomOut: 'Zoom out',
+    zoomFit: 'Fit to screen',
+    autoArrange: 'Auto-arrange',
+    dragHint: 'Drag a card to move it · drag the canvas to pan',
   },
   results: {
     pointsTitle: 'Points',
@@ -660,7 +800,6 @@ const es: BuilderMessages = {
     formNamePlaceholder: 'Formulario sin título',
     tabBuild: 'Construir',
     tabLogic: 'Lógica',
-    tabResults: 'Resultados',
     tabDesign: 'Diseño',
     saved: 'Guardado',
     saving: 'Guardando…',
@@ -686,6 +825,52 @@ const es: BuilderMessages = {
     embedCopied: 'Copiado',
     copied: 'Copiado',
     openForm: 'Abrir formulario',
+    toolbar: 'Herramientas',
+  },
+  logicDialog: {
+    open: 'Editar lógica',
+    title: 'Lógica — {question}',
+    subtitle: 'Define cuándo aparece esta pregunta y a dónde lleva después.',
+    visibility: 'Cuándo aparece esta pregunta',
+    visibilityHint: 'Si dejas las dos vacías, aparece siempre.',
+    routing: 'A dónde lleva la respuesta',
+    routingHint: 'Gana la primera regla que coincida; el resto sigue en orden.',
+    booking: 'Después de agendar',
+    bookingHint: 'A dónde llega quien reserva un espacio.',
+    scoreContext: 'Puntaje máximo posible antes de esta pregunta: {n}',
+    scoreContextNone: 'Ninguna pregunta anterior suma puntos, así que una regla por puntaje siempre leería 0.',
+    noRouting: 'Este tipo de pregunta no tiene valores de respuesta para ramificar. Usa las reglas de visibilidad de arriba.',
+    empty: 'Sin lógica — esta pregunta siempre aparece y continúa en orden.',
+    done: 'Listo',
+  },
+  branching: {
+    open: 'Ramificación',
+    title: 'Ramificación',
+    subtitle: 'Todas las preguntas en orden. Cambia a dónde lleva cada una, aquí mismo.',
+    summary: '{n} de {total} preguntas tienen lógica.',
+    summaryNone: 'Ninguna pregunta tiene lógica todavía — todos recorren el mismo camino.',
+    edit: 'Editar',
+    editAria: 'Editar la lógica de {question}',
+    empty: 'Añade una pregunta primero — todavía no hay nada que enrutar.',
+    anyAnswer: 'cualquier respuesta',
+    anyBooking: 'cualquier reserva',
+    alwaysGoTo: 'Siempre va a',
+    nextInOrder: 'Siguiente pregunta en orden',
+    endOfForm: 'Fin del formulario',
+  },
+  scoring: {
+    open: 'Puntaje',
+    title: 'Puntaje',
+    subtitle: 'Todos los puntos del formulario, editables aquí. Un número negativo resta.',
+    stepMax: 'Máx {n}',
+    noOptions: 'Sin opciones todavía — añade algunas para asignar puntos.',
+    inert:
+      'El puntaje está apagado, así que estos puntos no se otorgan. Se conservan tal cual — actívalo para volver a usarlos.',
+  },
+  outcomes: {
+    open: 'Resultados',
+    title: 'Resultados',
+    subtitle: 'Rangos de puntaje asignados a lo que ve quien responde al final. Gana el primer rango que coincida.',
   },
   badges: {
     hidden: 'Oculta',
@@ -747,7 +932,6 @@ const es: BuilderMessages = {
     optionLayoutCards: 'Tarjetas',
     logic: 'Lógica',
     addRule: 'Añadir regla',
-    noRules: 'Sin reglas — todos ven esta pregunta.',
     revealSection: 'Pantalla de revelación',
     revealHeadline: 'Titular',
     revealSubtitle: 'Subtítulo',
@@ -783,7 +967,6 @@ const es: BuilderMessages = {
     scoringZeroHint: 'Asigna puntos a tus respuestas para habilitar los rangos.',
     contactHint: 'Campo de contacto — no afecta el puntaje.',
     advancedTitle: 'Ajustes avanzados',
-    badgeConditional: 'Condicional',
     badgeDynamic: 'Dinámica',
     badgeEndsForm: 'Termina el formulario',
     badgeHidden: 'Oculta',
@@ -907,6 +1090,11 @@ const es: BuilderMessages = {
     condMissingField: 'pregunta eliminada',
     neverAppears: 'Con estas reglas, esta pregunta nunca aparece.',
     outcomeKicker: 'Final',
+    zoomIn: 'Acercar',
+    zoomOut: 'Alejar',
+    zoomFit: 'Ajustar a la pantalla',
+    autoArrange: 'Ordenar automáticamente',
+    dragHint: 'Arrastra una tarjeta para moverla · arrastra el lienzo para desplazarlo',
   },
   results: {
     pointsTitle: 'Puntos',
