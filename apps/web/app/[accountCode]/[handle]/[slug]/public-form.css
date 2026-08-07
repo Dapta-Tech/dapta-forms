@@ -1524,30 +1524,13 @@
   }
 }
 
-/* ── Embedded preview ───────────────────────────────────────────────────── */
-/* The builder renders the REAL `.pf` markup with the REAL stylesheet, inside a
-   device frame, instead of re-implementing the form in admin Tailwind classes.
-   That is what stops the preview and the public page drifting apart — but two
-   rules assume the form owns the viewport and have to be re-scoped to the frame:
-   the `100dvh` floor, and the `position: fixed` background layer, which would
-   otherwise paint over the whole builder. */
-.pf--embedded {
-  min-height: 100%;
-  height: 100%;
-  overflow-y: auto;
-}
-.pf--embedded[data-pf-bg]:not([data-pf-bg='solid'])::before {
-  position: absolute;
-}
-/* A sticky banner inside a scrolling frame sticks to the frame, which is right. */
-.pf--embedded .pf__banner {
-  position: static;
-}
-/* The preview is a picture of the form, not the form: nothing inside it should
-   look focusable or clickable-through to a real submission. */
-.pf--embedded [aria-hidden='true'] {
-  pointer-events: none;
-}
+/* NOTE: there is no `.pf--embedded` block any more. The builder used to render
+   this markup as a SUBTREE of the admin document, which needed preview-only
+   rules here to re-scope the `100dvh` floor, the fixed background layer and the
+   sticky banner to the device frame — and those rules were a rendering the
+   public page never has. The preview is now a same-origin iframe with its own
+   viewport (`app/preview/`), so every rule below applies to it unmodified and
+   the stylesheet describes exactly one form again. */
 
 /* ── Vertical layout (config.layout = 'vertical') ─────────────────────────────
    One page, natural document flow. Deliberately NO viewport-height tricks
