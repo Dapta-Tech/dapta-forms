@@ -32,6 +32,12 @@ import { invalidateQuestionHubspotCache } from './_components/question-hubspot';
 import { renameQuestionMappingAction } from './_components/question-hubspot-actions';
 import { TypeGallery } from './_components/type-gallery';
 import { LogicMap } from './_components/logic-map';
+import { LogicCanvas } from './_components/logic-canvas';
+import { LogicDialog } from './_components/logic-dialog';
+import { BranchingDialog } from './_components/branching-dialog';
+import { ScoringDialog } from './_components/scoring-dialog';
+import { OutcomesDialog } from './_components/outcomes-dialog';
+import { useIsDesktop } from '@/lib/use-media-query';
 import { ResultsView } from './_components/results-view';
 import { EmptyState } from './_components/empty-state';
 import { DesignPanel } from './_components/design-panel';
@@ -162,6 +168,11 @@ export function FormEditor({
   );
   const [selected, setSelected] = useState<number | null>(initialConfig.steps.length ? 0 : null);
   const [device, setDevice] = useState<'desktop' | 'mobile'>('desktop');
+  /** Which step's logic dialog the Logic canvas has open, if any. */
+  const [logicStep, setLogicStep] = useState<number | null>(null);
+  /** Which FORM-WIDE logic dialog the Logic toolbar has open, if any. */
+  const [logicView, setLogicView] = useState<'branching' | 'scoring' | 'outcomes' | null>(null);
+  const isDesktop = useIsDesktop();
   const [galleryOpen, setGalleryOpen] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [status, setStatus] = useState<SaveStatus>(initialConfig.steps.length ? 'saved' : 'draft');
@@ -480,7 +491,34 @@ export function FormEditor({
     if (!on) setSelected((sel) => (sel == null ? sel : keepLen === 0 ? null : Math.min(sel, keepLen - 1)));
   }
 
+  /**
+   * Pin (or, with `null`, release) one Logic-canvas node's position.
+   *
+   * Purely presentational — the engine ignores `logicLayout` entirely — but it
+   * lives on the config so an arrangement survives a reload and reaches a
+   * teammate. An emptied map is dropped rather than stored as `{}`, which is
+   * what "no manual positions" already means everywhere else.
+   */
+  function pinLogicNode(nodeId: string, pos: { x: number; y: number } | null) {
+    mutate((c) => {
+      const next = { ...(c.logicLayout ?? {}) };
+      if (pos) next[nodeId] = pos;
+      else delete next[nodeId];
+      return { ...c, logicLayout: Object.keys(next).length ? next : undefined };
+    });
+  }
+  /**
+   * Drop every pinned position at once. This is the escape hatch that keeps
+   * pinning from rotting: a node pinned before its step was reordered sits
+   * where it no longer belongs, and without a one-click way back the canvas
+   * would slowly become the stale picture it exists to replace.
+   */
+  function autoArrangeLogic() {
+    mutate((c) => ({ ...c, logicLayout: undefined }));
+  }
+
   const selectedStep = selected != null ? config.steps[selected] : undefined;
+  const logicDialogStep = logicStep != null ? config.steps[logicStep] : undefined;
   const scoringEnabled = config.scoring?.enabled !== false;
   const hasQuestions = config.steps.length > 0;
   const layout = resolveFormLayout(config);
@@ -612,6 +650,31 @@ export function FormEditor({
             />
             <ToolbarSeparator />
             {hasQuestions ? <DeviceToggle device={device} onChange={setDevice} m={bm} /> : null}
+          </>
+        ) : null}
+        {/* Logic's own menu. Each entry is a FORM-WIDE view of one axis — the
+            builder can otherwise only ever show logic one question at a time,
+            so there was nowhere to answer "what does this whole form do?". */}
+        {tab === 'logic' ? (
+          <>
+            <ToolbarButton
+              icon="pi-sitemap"
+              label={bm.branching.open}
+              onClick={() => setLogicView('branching')}
+              testId="toolbar-branching"
+            />
+            <ToolbarButton
+              icon="pi-star"
+              label={bm.scoring.open}
+              onClick={() => setLogicView('scoring')}
+              testId="toolbar-scoring"
+            />
+            <ToolbarButton
+              icon="pi-flag"
+              label={bm.outcomes.open}
+              onClick={() => setLogicView('outcomes')}
+              testId="toolbar-outcomes"
+            />
           </>
         ) : null}
         {/* Preview is the one control every section shares: it answers "what
@@ -755,10 +818,27 @@ export function FormEditor({
             </div>
           )
         ) : tab === 'logic' ? (
-          <div className="h-full overflow-y-auto px-4 py-6 sm:px-8">
-            <p className="mb-4 text-sm text-muted-foreground">{bm.map.title}</p>
-            <LogicMap config={config} m={bm} />
-          </div>
+          // The canvas needs a real viewport to lay itself out against and pans
+          // with the pointer, neither of which a phone gives it — so below `lg`
+          // the readable vertical list stays. Branching on a media QUERY rather
+          // than a CSS class because these are different components: a hidden
+          // canvas would measure a zero-width box on mount and fit to nothing.
+          isDesktop ? (
+            <LogicCanvas
+              config={config}
+              m={bm}
+              onEditStep={setLogicStep}
+              onEditOutcomes={() => setLogicView('outcomes')}
+              onMoveStep={reorderSteps}
+              onPinNode={pinLogicNode}
+              onAutoArrange={autoArrangeLogic}
+            />
+          ) : (
+            <div className="h-full overflow-y-auto px-4 py-6 sm:px-8">
+              <p className="mb-4 text-sm text-muted-foreground">{bm.map.title}</p>
+              <LogicMap config={config} m={bm} />
+            </div>
+          )
         ) : tab === 'connect' ? (
           <div className="h-full overflow-y-auto px-4 py-6 sm:px-8">
             <ConnectPanel
@@ -815,6 +895,53 @@ export function FormEditor({
         // create a card the renderer ignores, so it's offered exactly once.
         disabled={layout === 'vertical' && hasReveal ? { reveal: bm.gallery.revealVerticalTaken } : undefined}
       />
+      {/* The three form-wide views. Branching hands a step back to the SAME
+          per-question dialog below rather than mounting its own, so one rule is
+          never open in two editors that can disagree on screen. */}
+      <BranchingDialog
+        open={logicView === 'branching'}
+        onClose={() => setLogicView(null)}
+        steps={config.steps}
+        onEditStep={(index) => {
+          setLogicView(null);
+          setLogicStep(index);
+        }}
+        bm={bm}
+      />
+      <ScoringDialog
+        open={logicView === 'scoring'}
+        onClose={() => setLogicView(null)}
+        config={config}
+        onScoringChange={setScoring}
+        onStepScoringChange={(index, on) => patchStep(index, { scoringEnabled: on ? undefined : false })}
+        onStepPatch={patchStep}
+        bm={bm}
+        em={m}
+      />
+      <OutcomesDialog
+        open={logicView === 'outcomes'}
+        onClose={() => setLogicView(null)}
+        config={config}
+        onOutcomesChange={setOutcomes}
+        bm={bm}
+        rm={m.resultsHelp}
+      />
+      {/* The canvas's nodes open the SAME per-question dialog the Build panel
+          opens. It is mounted here rather than inside the canvas because the
+          canvas has many nodes and only one dialog may exist at a time. */}
+      {logicDialogStep && logicStep != null ? (
+        <LogicDialog
+          open
+          onClose={() => setLogicStep(null)}
+          step={logicDialogStep}
+          index={logicStep}
+          steps={config.steps}
+          scoringEnabled={scoringEnabled}
+          onUpdate={(patch) => patchStep(logicStep, patch)}
+          bm={bm}
+          em={m}
+        />
+      ) : null}
       <DevicePreviewModal
         open={previewOpen}
         onClose={() => setPreviewOpen(false)}
