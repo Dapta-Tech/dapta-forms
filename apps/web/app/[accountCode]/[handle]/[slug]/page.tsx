@@ -3,7 +3,6 @@ import { notFound } from 'next/navigation';
 import { getPublicForm } from '@/lib/api';
 import { publicLocale } from '@/lib/locale';
 import { getMessages, t } from '@quill/shared';
-import { MadeWithBadge } from '@/components/made-with-badge';
 import { resolveFormLayout, publicTitle } from '@quill/engine';
 import { resolveTracking } from '@/components/tracking/resolve-tracking';
 import { TrackingScripts } from '@/components/tracking/tracking-scripts';
@@ -86,6 +85,11 @@ export default async function PublicFormPage({
       {/* The wrapper class relaxes the renderers' viewport-height rules so the
           document's height IS the content's — what the reporter measures. */}
       <div className={embedded ? 'pf-embed-root' : undefined}>
+        {/* The "Made with Dapta Forms" attribution is NOT a document footer:
+            the renderers place it inside `.pf` themselves. As a sibling here it
+            started exactly where the first `100dvh` viewport ended, so it was
+            below the fold on every slides form and past the whole scroll on a
+            vertical one. See `components/made-with-badge.tsx`. */}
         <Renderer
           accountCode={accountCode}
           slug={slug}
@@ -94,7 +98,6 @@ export default async function PublicFormPage({
           locale={locale}
         />
       </div>
-      <MadeWithBadge locale={locale} accountCode={accountCode} />
     </>
   );
 }

@@ -39,6 +39,7 @@ import { ClientLogosMarquee } from '@/components/public/client-logos-marquee';
 import { StepInput } from '@/components/public/step-input';
 import { BookingScreen } from '@/components/public/booking-screen';
 import { RevealScreen } from '@/components/public/reveal-screen';
+import { MadeWithBadge } from '@/components/made-with-badge';
 import { warmBookingEmbed, type BookingScheduledDetails } from '@/lib/booking-embed';
 import { resolveSchedulerPrefill } from '@/lib/booking-prefill';
 import { submitFormAction, recordEventAction, recordBookingAction } from './actions';
@@ -583,6 +584,9 @@ export function FormRenderer({
           <button type="button" className="pf__btn" onClick={start}>
             {coverScreen.ctaText ?? m.start}
           </button>
+          {/* Under the CTA: every respondent sees the cover, so this is the
+              highest-value slot for the attribution and it displaces nothing. */}
+          <MadeWithBadge locale={locale} accountCode={accountCode} />
         </div>
       </PhaseShell>
     );
@@ -594,6 +598,7 @@ export function FormRenderer({
         <div className="pf__body">
           <p className="pf__helper">{m.noSteps}</p>
         </div>
+        <MadeWithBadge locale={locale} accountCode={accountCode} />
       </PhaseShell>
     );
   }
@@ -698,6 +703,10 @@ export function FormRenderer({
             </div>
           </div>
         </div>
+        {/* Last child of `.pf__main`, in flow — one DOM position that lands
+            correctly on all three bands: it ends the fluid column below 769px
+            and rides the centered card group above it. */}
+        <MadeWithBadge locale={locale} accountCode={accountCode} />
       </PhaseShell>
     );
   }
@@ -767,6 +776,10 @@ export function FormRenderer({
           </div>
         </div>
       </div>
+      {/* See the scheduler screen above: in flow at the end of `.pf__main`,
+          never fixed — a floating pill would fight the Continue button and the
+          mobile keyboard. */}
+      <MadeWithBadge locale={locale} accountCode={accountCode} />
     </PhaseShell>
   );
 }

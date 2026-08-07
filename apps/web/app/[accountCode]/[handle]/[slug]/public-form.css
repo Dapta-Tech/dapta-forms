@@ -865,6 +865,76 @@
   padding: 0 24px calc(36px + env(safe-area-inset-bottom));
 }
 
+/* ── "Made with Dapta Forms" attribution ──
+   Form CHROME, not a document footer. It is rendered INSIDE `.pf` by the
+   renderers — under the cover CTA, as the last child of `.pf__main` on slides,
+   at the end of the page on vertical — so it participates in this layout.
+   Rendered after the renderer (as it was) it began exactly where the first
+   `100dvh` viewport ended: below the fold on slides, past the entire scroll on
+   vertical. Nobody ever saw it.
+
+   Discreet but PRESENT: a solid `--card` pill with a soft shadow so it detaches
+   from any form ground — including a photographic background — at the same 14px
+   the rest of the secondary copy uses, on the full foreground rather than
+   `--muted-foreground` (12px muted type on an arbitrary background is a
+   whisper). Semantic tokens only, so it follows the host's theme and branding.
+
+   Never sticky, never `position: fixed`: on a phone a floating pill fights the
+   inline Continue button and the on-screen keyboard. In flow it moves with the
+   layout, and on an `?embed=1` render (where document height IS content height)
+   it is visible for free.
+
+   NOTE `.pf__badge` is the cover EYEBROW — hence `.pf__attribution` here. */
+.pf__attribution {
+  display: flex;
+  justify-content: center;
+  flex-shrink: 0;
+  padding: 20px 16px calc(20px + env(safe-area-inset-bottom));
+}
+.pf__attribution-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.2;
+  color: var(--foreground);
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  text-decoration: none;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18);
+  transition: border-color 0.12s var(--pf-ease), box-shadow 0.12s var(--pf-ease),
+    transform 0.08s var(--pf-ease);
+}
+.pf__attribution-link:hover {
+  border-color: var(--pf-primary);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.24);
+}
+.pf__attribution-link:active {
+  transform: scale(0.99);
+}
+.pf__attribution-mark {
+  height: 16px;
+  width: auto;
+  flex-shrink: 0;
+}
+
+/* Cover: directly under the CTA, inside the footer's own bottom padding. Every
+   respondent passes this screen, so it is the highest-value slot on the form
+   and it costs nothing — the footer already sits below the fold-safe CTA. */
+.pf__cover-footer .pf__attribution {
+  padding: 16px 0 0;
+}
+
+/* Vertical: an in-flow page footer at the end of the document (deliberately NOT
+   sticky — this layout reads as a page, and a pinned pill would follow the
+   respondent down every question). */
+.pf--vertical .pf__attribution {
+  padding: 32px 0 0;
+}
+
 /* ── Client-logos marquee ── */
 .pf-logos {
   width: 100%;
@@ -1115,6 +1185,15 @@
   /* Inputs on the card use the app canvas colour for depth contrast. */
   .pf:not(.pf--cover) .pf-input {
     background: var(--background);
+  }
+
+  /* The attribution is the last child of `.pf__main`, so on this band it rides
+     the centered card group and reads as ATTACHED beneath the card, in the same
+     centered column, inside the stage's own air. Below 769px `.pf__main` is
+     fluid and top-aligned — there is no card to attach to — so the base padding
+     just ends the column instead. */
+  .pf__main > .pf__attribution {
+    padding: 16px 0 0;
   }
 
   /* Cover: logo + hero card + CTA as one vertically-centered group (inside
