@@ -26,10 +26,30 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
-  --radius-md: var(--radius);
-  /* Poppins is the brand font, self-hosted via next/font (--font-poppins);
-     falls back to a system stack if the variable is ever absent. */
-  --font-sans: var(--font-poppins), 'Poppins', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  /* Faint Slate — the quietest legible voice (telemetry labels, hints, inactive
+     states). A fourth text step the old two-tone scale had no room for. */
+  --color-faint: var(--faint);
+  /* The accent at a lightness that reads against this theme's page — the rim on an
+     accent fill, the focus outline, and the mark on a selected control. */
+  --color-primary-edge: var(--primary-edge);
+
+  /* The WHOLE radius scale is pinned here, not just `md`: overriding one step
+     leaves `rounded-lg/xl/2xl` on Tailwind's defaults, so the scale contradicts
+     itself — a `rounded-lg` chip ends up sharper than the `rounded-md` button next
+     to it. One ladder, softest at the card step. `rounded-full` is left alone: it
+     is avatars and status dots, not a corner decision. */
+  --radius-sm: 6px;
+  --radius-md: var(--radius); /* 10px */
+  --radius-lg: 12px;
+  --radius-xl: var(--radius-monitor); /* 16px */
+  --radius-2xl: 20px;
+
+  /* Two voices, no third font. Visby CF does all the talking, Martian Mono does
+     all the measuring — both self-hosted via next/font (`--font-visby`,
+     `--font-martian-mono`); each falls back to a system stack if its variable is
+     ever absent. */
+  --font-sans: var(--font-visby), 'Visby CF', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: var(--font-martian-mono), 'Martian Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
 /* Default every element's border-color to the token, the shadcn contract. This
@@ -45,6 +65,32 @@
   }
 }
 
+/* Point the accent-as-TEXT utility at `--primary-ink` instead of `--primary`.
+   Done here rather than in ~50 components: the accent needs one lightness as a
+   fill and a darker one as letters (see `--primary-ink` in tokens.css), and
+   `text-primary`/`bg-primary` both read `--color-primary`. Overriding the single
+   utility keeps every call site untouched and cannot drift. In `@layer utilities`
+   so it still loses to an explicit color utility on the same element, and the
+   `hover:` variant is listed because its pseudo-class outranks a bare class. */
+@layer utilities {
+  .text-primary,
+  .hover\:text-primary:hover {
+    color: var(--primary-ink);
+  }
+
+  /* Rim every accent fill with `--primary-edge`, so the fill's SHAPE clears 3:1
+     against the page it sits on (WCAG 1.4.11). On dark the edge equals the fill and
+     this paints nothing; on light it is the difference between Publish being a
+     recognisable control and being a pale smear at 1.27:1.
+     An `inset` box-shadow rather than a border because a border would add 2px to
+     every one of ~60 accent fills and reflow all of them. Opacity-modified variants
+     (`bg-primary/10`, `bg-primary/[0.06]`) are different classes and untouched — they
+     are washes, not fills, and two of them carry their own `shadow-sm`. */
+  .bg-primary {
+    box-shadow: inset 0 0 0 1px var(--primary-edge);
+  }
+}
+
 html,
 body {
   background: var(--background);
@@ -53,9 +99,13 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* Lime focus ring (WCAG) honored everywhere. */
+/* Lime focus ring (WCAG) honored everywhere.
+   Uses `--primary-edge`, not `--primary`: the outline is the one thing that must be
+   findable on every surface, and the raw accent flattened to 1.27:1 over paper —
+   the focus indicator was the least visible thing on a focused control in light
+   mode. On dark the edge IS the accent, so nothing changes there. */
 :focus-visible {
-  outline: 2px solid var(--primary);
+  outline: 2px solid var(--primary-edge);
   outline-offset: 2px;
 }
 

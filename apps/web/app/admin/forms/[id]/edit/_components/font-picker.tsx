@@ -8,6 +8,7 @@ import type { EditorMessages } from './messages';
 
 /** Display names are proper nouns, so they are not localized. */
 const FONT_LABELS: Record<FormFont, string> = {
+  visby: 'Visby CF',
   poppins: 'Poppins',
   inter: 'Inter',
   'dm-sans': 'DM Sans',

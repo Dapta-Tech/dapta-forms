@@ -1,6 +1,12 @@
 'use client';
 
-import { FORM_THEME_PRESETS, type FormBranding, type FormThemePreset } from '@quill/engine';
+import {
+  DEFAULT_FORM_FONT,
+  FORM_THEME_PRESETS,
+  LEGACY_FORM_DESIGN,
+  type FormBranding,
+  type FormThemePreset,
+} from '@quill/engine';
 import { formFontStack } from '@/lib/fonts';
 import { cn } from '@/lib/cn';
 import type { EditorMessages } from './messages';
@@ -50,8 +56,12 @@ export function ThemePresets({
       p.background === branding?.background &&
       p.foreground === branding?.foreground &&
       p.primaryColor === branding?.primaryColor &&
-      p.font === (branding?.fontFamily ?? 'poppins') &&
-      p.radius === (branding?.radius ?? 'soft'),
+      // The absent-value defaults come from the engine's design table rather than
+      // being spelled out here: they were literals ('poppins' / 'soft') and went
+      // stale the moment the brand's default face and corner changed, which
+      // silently stopped the default preset's card from ever reading as selected.
+      p.font === (branding?.fontFamily ?? DEFAULT_FORM_FONT) &&
+      p.radius === (branding?.radius ?? LEGACY_FORM_DESIGN.radius),
   );
 
   return (

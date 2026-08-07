@@ -19,9 +19,23 @@
   --pf-primary: var(--primary);
   --pf-primary-contrast: var(--primary-foreground);
 
-  /* Radii derived from the token scale (8px control / 16px card). */
-  --pf-radius: calc(var(--radius) * 2); /* 16px — cards & prominent controls */
-  --pf-radius-sm: var(--radius); /* 8px — inputs */
+  /* Radii are OWNED here rather than derived from the app's `--radius`.
+     They used to be `calc(var(--radius) * 2)` / `var(--radius)`, which silently
+     coupled every author's corner choice to whatever the CHROME's control radius
+     happened to be — retune the app's scale and published forms move with it. The
+     three `data-pf-radius` values are a closed union with fixed meanings, so they
+     own their numbers. These are `soft`, the default: the same 16px/8px pair it
+     has always meant. */
+  --pf-radius: 16px; /* cards & prominent controls */
+  --pf-radius-sm: 8px; /* inputs */
+  /* Two more corner roles, so the `radius` axis actually reaches everything that
+     has a corner. They used to be literals scattered through this file (6px on
+     small controls, 999px on bars and badges), which meant a form set to `sharp`
+     still rendered pill progress bars and a rounded eyebrow badge — the axis
+     stopped at the elements that happened to read from it. `soft` keeps these at
+     their historical values, so no form that chose it changes. */
+  --pf-radius-chip: 6px; /* small controls: option rows, chips, checkmarks */
+  --pf-radius-pill: 999px; /* rails & badges: progress tracks, eyebrow badges */
   --pf-gap: 12px;
   --pf-ease: cubic-bezier(0.22, 1, 0.36, 1);
 
@@ -158,13 +172,13 @@
   height: 4px;
   width: 100%;
   background: var(--muted);
-  border-radius: 999px;
+  border-radius: var(--pf-radius-pill);
   overflow: hidden;
 }
 .pf-progress__fill {
   height: 100%;
   background: var(--pf-primary);
-  border-radius: 999px;
+  border-radius: var(--pf-radius-pill);
   transition: width 0.35s var(--pf-ease);
 }
 
@@ -340,7 +354,7 @@
   position: relative;
   width: 20px;
   height: 20px;
-  border-radius: 6px;
+  border-radius: var(--pf-radius-chip);
   border: 2px solid var(--border);
   background: var(--background);
   flex-shrink: 0;
@@ -497,7 +511,7 @@
   color: var(--popover-foreground);
   background: none;
   border: none;
-  border-radius: 6px;
+  border-radius: var(--pf-radius-chip);
   cursor: pointer;
   transition: background 0.1s;
 }
@@ -629,7 +643,7 @@
   color: var(--popover-foreground);
   background: none;
   border: none;
-  border-radius: 6px;
+  border-radius: var(--pf-radius-chip);
   cursor: pointer;
   transition: background 0.1s;
 }
@@ -667,7 +681,7 @@
   margin: 0 auto 24px;
   background: var(--muted);
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: var(--pf-radius-pill);
   padding: 14px 36px;
   white-space: nowrap;
 }
@@ -698,7 +712,7 @@
 }
 .pf-slider__input::-webkit-slider-runnable-track {
   height: 10px;
-  border-radius: 999px;
+  border-radius: var(--pf-radius-pill);
   background: linear-gradient(
     to right,
     var(--pf-primary) 0%,
@@ -734,12 +748,12 @@
 }
 .pf-slider__input::-moz-range-track {
   height: 10px;
-  border-radius: 999px;
+  border-radius: var(--pf-radius-pill);
   background: var(--muted);
 }
 .pf-slider__input::-moz-range-progress {
   height: 10px;
-  border-radius: 999px;
+  border-radius: var(--pf-radius-pill);
   background: var(--pf-primary);
 }
 .pf-slider__scale {
@@ -831,7 +845,7 @@
   color: var(--foreground);
   background: color-mix(in srgb, var(--pf-primary) 16%, transparent);
   border: 1px solid color-mix(in srgb, var(--pf-primary) 32%, transparent);
-  border-radius: 999px;
+  border-radius: var(--pf-radius-pill);
   padding: 6px 14px;
   margin: 0 0 18px;
 }
@@ -987,7 +1001,7 @@
   justify-content: center;
   background: var(--muted);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--pf-radius-chip);
   padding: 8px 16px;
   height: 46px;
   min-width: 88px;
@@ -1060,13 +1074,13 @@
   max-width: 100%;
   height: 8px;
   background: var(--muted);
-  border-radius: 999px;
+  border-radius: var(--pf-radius-pill);
   overflow: hidden;
 }
 .pf-reveal__fill {
   height: 100%;
   background: var(--pf-primary);
-  border-radius: 999px;
+  border-radius: var(--pf-radius-pill);
   transition: width 0.08s linear;
 }
 
@@ -1268,13 +1282,16 @@
  * ═════════════════════════════════════════════════════════════════════════ */
 
 /* ── Corner radius (B2) ─────────────────────────────────────────────────── */
-/* `soft` is the original 16/8 pair and is therefore the legacy default. Round
-   stops well short of a pill for inputs: a 999px text field reads as a search
-   box, not a form field. */
+/* `soft` is the original 16/8 pair and the default. `sharp` squares the chip and
+   pill roles too — a form whose buttons are hard-cornered but whose progress bar
+   is a lozenge is not sharp, it is inconsistent. Round stops well short of a pill
+   for inputs: a 999px text field reads as a search box, not a form field. */
 .pf[data-pf-radius='sharp'] {
   --pf-radius: 2px;
   --pf-radius-sm: 2px;
   --pf-radius-btn: 2px;
+  --pf-radius-chip: 2px;
+  --pf-radius-pill: 2px;
 }
 .pf[data-pf-radius='soft'] {
   --pf-radius-btn: var(--pf-radius-sm);

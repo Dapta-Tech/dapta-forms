@@ -3,79 +3,201 @@
  * from the source design system. Consumed by apps/web/app/globals.css. Semantic
  * names only — components reference these via Tailwind theme tokens, never raw
  * hex. The lime accent always pairs with near-black foreground (WCAG AA).
+ *
+ * The palette is the "Master Control Room" language shared with the marketing
+ * site (dapta-forms-landing/DESIGN.md), so forms.dapta.ai and the product read
+ * as one thing: a blue-cooled monochrome console lit by exactly two signals.
+ *
+ * ── The two lights ─────────────────────────────────────────────────────────
+ * Program Lime is the only saturated working color — actions, live data, active
+ * states, focus, progress. Tally Red is the only other saturated color.
+ *
+ * The landing reserves Tally Red for "we are on air" and forbids it for errors,
+ * because a landing page has no error states. The product does: validation,
+ * delete confirmations, failed deliveries. So HERE the red's one job is
+ * destructive/error — the same discipline (one red, one meaning), applied to a
+ * surface that actually has failures. Nothing else may be saturated: an element
+ * that needs emphasis earns lime or it stays slate.
+ *
+ * ── The surface ladder ─────────────────────────────────────────────────────
+ * Depth is tonal, not shadowed: Control-Room Black → Bezel Graphite → Monitor
+ * Panel → Raised Deck, separated by one cool hairline. Stacking two steps plus a
+ * border IS elevation.
+ *
+ * ── The live channel ───────────────────────────────────────────────────────
+ * The accent is composed from `--acc-h/--acc-s/--acc-l` rather than written as a
+ * literal, so hue and saturation can be retuned in one place (and match the
+ * landing's runtime tweaks contract). Never hardcode the lime.
  */
 
 :root {
-  /* Base surfaces (dark-first canvas). */
-  --background: #222222;
-  --foreground: #eeeeee;
-  --card: #292929;
-  --card-foreground: #eeeeee;
-  --popover: #1a1a1c;
-  --popover-foreground: #eeeeee;
+  /* Accent channels — retune the lime here, never at a call site. */
+  --acc-h: 68;
+  --acc-s: 76%;
+  --acc-l: 61%;
 
-  /* Accent — the one lime accent; pairs with near-black text. */
-  --primary: #cbe84f;
-  --primary-foreground: #1a1a1c;
+  /* Cool-hairline alpha. The blue-gray base never changes; only this does. */
+  --border-a: 0.16;
 
-  /* Secondary — purple. */
-  --secondary: #9059fc;
-  --secondary-foreground: #fafafa;
+  /* Base surfaces — the four-step console ladder. */
+  --background: #0a0c0e; /* Control-Room Black — the void of the room */
+  --foreground: #e8edf2; /* Signal White — never pure white */
+  --card: #101418; /* Monitor Panel — card/monitor body */
+  --card-foreground: #e8edf2;
+  --popover: #0d1013; /* Bezel Graphite — bezels, inputs, menus */
+  --popover-foreground: #e8edf2;
 
-  /* Muted / raised surfaces. */
-  --muted: #323232;
-  --muted-foreground: #7a7a7c;
-  --accent: #323232;
-  --accent-foreground: #eeeeee;
+  /* Accent — Program Lime; pairs with Lime Ink, the only text allowed on it. */
+  --primary: hsl(var(--acc-h) var(--acc-s) var(--acc-l));
+  --primary-foreground: #0c0e07; /* Lime Ink */
 
-  /* Feedback. */
-  --destructive: #ec655f;
-  --destructive-foreground: #fafafa;
+  /* The accent at a lightness that READS AGAINST THIS THEME'S PAGE.
+     Two jobs, one value: the rim on an accent fill, and the focus outline.
+     WCAG 1.4.11 wants 3:1 for anything that identifies a control or its state, and
+     a solid lime fill only clears that on a dark ground — on paper it is 1.27:1, so
+     Publish stops being identifiable as a shape. Darkening the FILL was the other
+     way out and it is worse: no lightness of this hue carries a white label at
+     4.5:1 (3.57:1 at the darkest usable step), so the fill would have to go olive
+     and the one saturated brand colour would be gone from light mode entirely.
+     Rimming the bright fill instead keeps the lime and moves the 3:1 burden to a
+     1px edge that costs no layout. On dark this equals the fill, so the rim is
+     invisible and the outline is the lime it always was. */
+  --primary-edge: hsl(var(--acc-h) var(--acc-s) var(--acc-l));
 
-  /* Lines & focus. */
-  --border: #404040;
-  --input: #404040;
-  --ring: rgba(203, 232, 79, 0.45);
+  /* The accent as LETTERS rather than as a fill.
+     A 61%-light lime is a superb text color on a near-black ground (14:1) and an
+     illegible one on paper (1.3:1) — and `text-primary` is used in ~50 places, so
+     on the light theme every one of them was invisible. `bg-primary` must stay
+     bright (a dark fill with Lime Ink on it is not this accent), so the fill and
+     the letters need different lightnesses off the same hue. On dark they are the
+     same value; on light this drops to a deep lime that clears AA on both paper
+     and card. globals.css points the `text-primary` utility here. */
+  --primary-ink: hsl(var(--acc-h) var(--acc-s) var(--acc-l));
 
-  --radius: 0.5rem; /* 8px control standard; cards use 16px */
+  /* Secondary — Neutral Trace. The non-accent data voice: "this exists but is
+     not the point." It carries the logic/branching/connected channel in the
+     builder, which used to be a purple; a third saturated color is not allowed
+     in this world, and slate is exactly what the system offers for data that
+     must read as distinct without competing with the program bus. */
+  --secondary: #7d8fa1;
+  --secondary-foreground: #0a0c0e;
+
+  /* Muted / raised surfaces — the top step of the ladder. */
+  --muted: #161c22; /* Raised Deck */
+  --muted-foreground: #93a1ae; /* Dimmed Slate — body copy, secondary values */
+  --accent: #161c22;
+  --accent-foreground: #e8edf2;
+
+  /* Faint Slate — telemetry labels, hints, metadata, inactive states. The
+     quietest legible voice; below this a value is not text, it is noise. */
+  --faint: #71818f;
+
+  /* Feedback — Tally Red, the second and last light. */
+  --destructive: #ff3b30;
+  --destructive-foreground: #0a0c0e;
+
+  /* Lines & focus — every DECORATIVE border in this world is the one cool hairline.
+     `--input` is deliberately no longer the same value. A hairline at 1.3:1 is the
+     right weight for separating two panels, and the wrong weight for a text field
+     whose own fill matches its container: there the border is the only thing saying
+     "you can type here", which is exactly the case WCAG 1.4.11 requires 3:1 for.
+     So the hairline stays a hairline and form controls get an edge that clears it. */
+  --border: rgba(148, 170, 190, var(--border-a));
+  --input: rgba(148, 170, 190, 0.58); /* 3.4:1 on card and on page */
+  --ring: hsl(var(--acc-h) var(--acc-s) var(--acc-l) / 0.45);
+
+  /* Corner rounding.
+     The landing is a strictly square world — hairline rectangles, radius only on
+     the monitor frame. Ported literally to a dense application surface it read as
+     harsh: a marketing page has a dozen edges and an admin has hundreds, and at
+     that density hard corners stop looking deliberate and start looking unstyled.
+     So the product keeps the palette and the hairlines and softens the corners
+     one step past where they were before the redesign. The full scale is mapped in
+     globals.css — pinning only `md` leaves `rounded-lg/xl/2xl` on Tailwind's
+     defaults, and the scale then contradicts itself. */
+  --radius: 0.625rem; /* 10px — controls: buttons, inputs, selects */
+  --radius-monitor: 16px; /* cards and framed surfaces */
 }
 
-/* Light theme override — honored via the theme toggle / prefers-color-scheme. */
+/* Light theme override — honored via the theme toggle / prefers-color-scheme.
+   The landing is dark-only, so this is the same language translated rather than
+   ported: cool paper instead of cool void, graphite ink instead of signal white,
+   the same single lime, the same one hairline.
+   ─────────────────────────────────────────────────────────────────────────────
+   It is NOT a tonal mirror of the dark theme, and trying to make it one is what
+   broke it the first time. On a near-black ground a hairline at 16% alpha and a
+   61%-light lime are both high-contrast; the same two values on paper are 1.3:1
+   and 1.27:1 — invisible. Paper has less range below it than the void has above
+   it, so every separating value here is authored for paper rather than derived
+   from its dark counterpart. Measured, against page / white card / muted wash:
+     accent edge 4.2 / 4.5 / 3.5 · input edge 3.2 / 3.3 · hairline 1.6 / 1.6
+     faint 5.6 / 6.1 / 4.7 · destructive 5.4 / 5.9 / 4.6 · muted-fg 5.7 / 6.2
+   The accent edge is checked against the MUTED WASH too, not just the page: it
+   also marks the selected nav row, and that mark sits inside the wash rather than
+   on the page behind it. At 32% light it cleared page and card and failed there at
+   2.79:1 — the one ground it actually had to work on.
+   KEEP THIS BLOCK AND THE `prefers-color-scheme` BLOCK BELOW IDENTICAL. */
 :root[data-theme='light'] {
-  --background: #fafafa;
-  --foreground: #1a1a1c;
+  --background: #f4f6f8;
+  --foreground: #0d1013;
   --card: #ffffff;
-  --card-foreground: #1a1a1c;
+  --card-foreground: #0d1013;
   --popover: #ffffff;
-  --popover-foreground: #1a1a1c;
-  --primary: #cbe84f;
-  --primary-foreground: #1a1a1c;
-  --secondary: #9059fc;
-  --secondary-foreground: #fafafa;
-  --muted: #f0f0f0;
-  --muted-foreground: #6a6a6c;
-  --accent: #f0f0f0;
-  --accent-foreground: #1a1a1c;
-  --destructive: #ec655f;
-  --destructive-foreground: #fafafa;
-  --border: #e2e2e2;
-  --input: #e2e2e2;
-  --ring: rgba(203, 232, 79, 0.55);
+  --popover-foreground: #0d1013;
+  /* The fill stays the brand lime; the EDGE carries the 3:1. See `--primary-edge`
+     in the base block for why darkening the fill was the wrong trade. */
+  --primary: hsl(var(--acc-h) var(--acc-s) var(--acc-l));
+  --primary-foreground: #0c0e07;
+  --primary-edge: hsl(var(--acc-h) var(--acc-s) 28%);
+  /* 26% light: 4.7:1 on the paper ground, 5.1:1 on a white card. */
+  --primary-ink: hsl(var(--acc-h) var(--acc-s) 26%);
+  --secondary: #5a6875;
+  --secondary-foreground: #ffffff;
+  /* One step darker than the old #e9edf1 so a `bg-muted` wash is a visible step
+     off a white card at all, rather than the 1.08:1 it used to be. It still does
+     not reach 3:1 — a grey chip on paper cannot — which is why selected states
+     now carry an accent mark as well as the wash. */
+  --muted: #dfe4ea;
+  --muted-foreground: #55636f;
+  --accent: #dfe4ea;
+  --accent-foreground: #0d1013;
+  /* Was #6b7885: 3.84:1 on muted, i.e. the token shipped failing AA. */
+  --faint: #586470;
+  /* Was #d42a1f: 3.96:1 on muted. */
+  --destructive: #c2261c;
+  --destructive-foreground: #ffffff;
+  --border: rgba(20, 32, 44, 0.22);
+  --input: rgba(20, 32, 44, 0.5);
+  /* Opaque, not 50% alpha: the old value flattened to 1.39:1 over paper, so the
+     focus ring was the least visible thing on a focused control. */
+  --ring: hsl(var(--acc-h) var(--acc-s) 28%);
 }
 
+/* The `system` preference: no `data-theme` is stamped, so this decides. Must stay
+   value-for-value identical to the `[data-theme='light']` block above — a token
+   that lands in only one of the two makes the OS-following path silently different
+   from the pinned one, which is the hardest kind of theme bug to notice. */
 @media (prefers-color-scheme: light) {
   :root:not([data-theme='dark']) {
-    --background: #fafafa;
-    --foreground: #1a1a1c;
+    --background: #f4f6f8;
+    --foreground: #0d1013;
     --card: #ffffff;
-    --card-foreground: #1a1a1c;
+    --card-foreground: #0d1013;
     --popover: #ffffff;
-    --popover-foreground: #1a1a1c;
-    --muted: #f0f0f0;
-    --muted-foreground: #6a6a6c;
-    --accent: #f0f0f0;
-    --accent-foreground: #1a1a1c;
-    --border: #e2e2e2;
-    --input: #e2e2e2;
+    --popover-foreground: #0d1013;
+    --primary-edge: hsl(var(--acc-h) var(--acc-s) 28%);
+    --primary-ink: hsl(var(--acc-h) var(--acc-s) 26%);
+    --secondary: #5a6875;
+    --secondary-foreground: #ffffff;
+    --muted: #dfe4ea;
+    --muted-foreground: #55636f;
+    --accent: #dfe4ea;
+    --accent-foreground: #0d1013;
+    --faint: #586470;
+    --destructive: #c2261c;
+    --destructive-foreground: #ffffff;
+    --border: rgba(20, 32, 44, 0.22);
+    --input: rgba(20, 32, 44, 0.5);
+    --ring: hsl(var(--acc-h) var(--acc-s) 28%);
   }
 }
