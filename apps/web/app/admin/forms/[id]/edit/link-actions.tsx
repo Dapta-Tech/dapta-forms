@@ -86,7 +86,7 @@ export function LinkActions({
       <button
         type="button"
         onClick={() => void copy()}
-        className={cn(icon, copied && 'border-primary text-primary')}
+        className={cn(icon, copied && 'border-primary-edge text-primary')}
         aria-label={copied ? labels.copied : labels.copyLink}
         title={copied ? labels.copied : labels.copyLink}
         data-testid="editor-copy-link"

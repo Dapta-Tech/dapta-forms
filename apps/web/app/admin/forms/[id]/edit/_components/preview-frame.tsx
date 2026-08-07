@@ -278,7 +278,10 @@ export function PreviewFrame({
               data-testid={`preview-device-${d}`}
               className={cn(
                 'inline-flex h-full items-center gap-1.5 whitespace-nowrap rounded-md px-2.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                device === d ? 'bg-muted text-foreground' : 'text-muted-foreground hover:text-foreground',
+                // Same rim as the toolbar's own device toggle (editor-toolbar.tsx).
+                device === d
+                  ? 'bg-muted text-foreground shadow-[inset_0_0_0_1px_var(--primary-edge)]'
+                  : 'text-muted-foreground hover:text-foreground',
               )}
             >
               <i aria-hidden className={DEVICE_ICON[d]} style={{ fontSize: 12 }} />

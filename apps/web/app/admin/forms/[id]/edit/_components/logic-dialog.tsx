@@ -145,7 +145,7 @@ export function LogicDialog({
           {/* Visibility — showWhen / hideWhen, reusing the editor that already
               knows the @score source, the per-type operators, and every guard. */}
           <section className="flex flex-col gap-2.5">
-            <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            <p className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wide text-faint">
               <i aria-hidden className="pi pi-eye text-secondary" style={{ fontSize: 11 }} />
               {d.visibility}
             </p>
@@ -174,7 +174,7 @@ export function LogicDialog({
                `goto` shape the settings panel writes ("any booking" → end the
                form, or jump), so both surfaces edit one rule, not two. */
             <section className="flex flex-col gap-2.5" data-testid="logic-dialog-booking">
-              <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              <p className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wide text-faint">
                 <i aria-hidden className="pi pi-calendar-plus text-secondary" style={{ fontSize: 11 }} />
                 {d.booking}
               </p>
@@ -195,7 +195,7 @@ export function LogicDialog({
           ) : (
             /* Routing — value-based forward rules. */
             <section className="flex flex-col gap-2.5" data-testid="logic-dialog-routing">
-              <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              <p className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wide text-faint">
                 <i aria-hidden className="pi pi-sitemap text-secondary" style={{ fontSize: 11 }} />
                 {d.routing}
               </p>

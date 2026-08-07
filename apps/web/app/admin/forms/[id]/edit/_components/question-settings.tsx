@@ -747,7 +747,7 @@ function LogicCard({
     // pixels with its content laid out, clipped, inside it.
     <section data-testid="question-logic" className="flex shrink-0 flex-col gap-3 border-t border-border pt-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        <p className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wide text-faint">
           <i aria-hidden className="pi pi-sitemap text-secondary" style={{ fontSize: 11 }} />
           {bm.settings.logic}
           {count > 0 ? (

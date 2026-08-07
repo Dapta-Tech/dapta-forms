@@ -533,7 +533,7 @@ export function IntegrationsEditor({
             <div className="flex items-center gap-2">
               <GoogleSheetsLogo size={20} />
               <h2 className="text-lg font-semibold">{m.gsheetsTitle}</h2>
-              <span className="rounded border border-border bg-muted px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+              <span className="rounded border border-border bg-muted px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-faint">
                 {m.comingSoon}
               </span>
             </div>

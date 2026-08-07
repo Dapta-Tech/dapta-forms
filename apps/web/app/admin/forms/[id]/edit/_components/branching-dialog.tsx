@@ -187,7 +187,7 @@ function StepBlock({
         <i aria-hidden className={`pi ${iconForStep(step)} shrink-0 text-muted-foreground`} style={{ fontSize: 12 }} />
         <span className="min-w-0 flex-1 truncate text-sm font-semibold text-foreground">{title}</span>
         {step.hidden ? (
-          <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+          <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-faint">
             {bm.badges.hidden}
           </span>
         ) : null}

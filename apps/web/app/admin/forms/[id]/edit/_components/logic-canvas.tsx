@@ -338,7 +338,7 @@ function StartNode({ label }: { label: string }) {
   return (
     <span
       data-testid="logic-start"
-      className="inline-flex h-full items-center gap-2 rounded-full border border-primary/40 bg-primary/[0.08] px-4"
+      className="inline-flex h-full items-center gap-2 rounded-full border border-primary-edge/40 bg-primary/[0.08] px-4"
     >
       <span aria-hidden className="inline-block h-2 w-2 shrink-0 rounded-full bg-primary" />
       <span className="text-xs font-semibold uppercase tracking-wide text-primary">{label}</span>
@@ -351,7 +351,7 @@ function EndNode({ label }: { label: string }) {
   return (
     <span
       data-testid="logic-end"
-      className="inline-flex h-full items-center gap-2 rounded-full border border-primary/50 bg-primary/[0.08] px-4"
+      className="inline-flex h-full items-center gap-2 rounded-full border border-primary-edge/50 bg-primary/[0.08] px-4"
     >
       <i aria-hidden className="pi pi-flag-fill text-primary" style={{ fontSize: 10 }} />
       <span className="text-xs font-semibold uppercase tracking-wide text-primary">{label}</span>
@@ -522,7 +522,7 @@ function OutcomeNode({
     <div
       data-testid="logic-outcome"
       className={cn(
-        'group flex h-full w-full select-none flex-col justify-center gap-0.5 rounded-xl border border-primary/50 bg-primary/[0.06] px-3 shadow-sm',
+        'group flex h-full w-full select-none flex-col justify-center gap-0.5 rounded-xl border border-primary-edge/50 bg-primary/[0.06] px-3 shadow-sm',
         node.pinned && 'ring-1 ring-secondary/40',
       )}
     >

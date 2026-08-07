@@ -603,7 +603,14 @@ export function FormEditor({
               title={t.label}
               className={cn(
                 'inline-flex items-center gap-1.5 whitespace-nowrap rounded-md px-2.5 py-1.5 text-sm font-medium transition-colors',
-                tab === t.id ? 'bg-muted text-foreground' : 'text-muted-foreground hover:text-foreground',
+                // Below `md` these chips are icon-only, which makes the selected
+                // state the ONLY thing saying which section you are in — and a
+                // bare `bg-muted` wash is 1.14:1 dark / 1.17:1 light against the
+                // bar. The rim carries the 3:1; the wash keeps doing the
+                // scanning. Same mark as every other segmented pill in the app.
+                tab === t.id
+                  ? 'bg-muted text-foreground shadow-[inset_0_0_0_1px_var(--primary-edge)]'
+                  : 'text-muted-foreground hover:text-foreground',
               )}
             >
               <i aria-hidden className={`pi ${t.icon}`} style={{ fontSize: 12 }} />

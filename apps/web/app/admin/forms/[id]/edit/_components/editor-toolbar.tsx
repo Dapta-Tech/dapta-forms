@@ -86,7 +86,14 @@ export function ToolbarButton({
       className={cn(
         itemClass,
         primary && 'bg-foreground text-background hover:bg-foreground/90 hover:text-background',
-        active && 'bg-muted text-foreground',
+        // The wash plus an accent rim, the app-wide mark for a selected chip. On
+        // its own `bg-muted` is 1.14:1 on dark and 1.17:1 on light against the
+        // bar behind it — under the 3:1 WCAG 1.4.11 asks of a state indicator,
+        // and a grey chip can never reach it. An INSET shadow rather than a
+        // `ring-*`: the ring shares its box-shadow slot with
+        // `focus-visible:ring-*`, so a focused-and-active item would lose the
+        // mark exactly while you were operating it by keyboard.
+        active && 'bg-muted text-foreground shadow-[inset_0_0_0_1px_var(--primary-edge)]',
       )}
     >
       <i aria-hidden className={`pi ${icon}`} style={{ fontSize: 12 }} />
@@ -161,7 +168,11 @@ export function DeviceToggle({
           data-testid={`canvas-device-${d}`}
           className={cn(
             'rounded-md px-2.5 py-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-            device === d ? 'bg-muted text-foreground' : 'text-muted-foreground hover:text-foreground',
+            // Same rim as `preview-frame.tsx`'s device toggle — two renderings of
+            // one control, so one selected state.
+            device === d
+              ? 'bg-muted text-foreground shadow-[inset_0_0_0_1px_var(--primary-edge)]'
+              : 'text-muted-foreground hover:text-foreground',
           )}
         >
           {d === 'desktop' ? m.shell.desktop : m.shell.mobile}

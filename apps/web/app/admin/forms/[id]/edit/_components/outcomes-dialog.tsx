@@ -314,7 +314,7 @@ export function OutcomesDialog({
                 type="button"
                 onClick={addRange}
                 data-testid="results-add-range"
-                className="flex items-center justify-center gap-2 rounded-xl border border-dashed border-border py-3 text-sm font-medium text-muted-foreground transition-colors hover:border-primary/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="flex items-center justify-center gap-2 rounded-xl border border-dashed border-border py-3 text-sm font-medium text-muted-foreground transition-colors hover:border-primary-edge/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 <i aria-hidden className="pi pi-plus" style={{ fontSize: 12 }} />
                 {bm.results.addRange}
