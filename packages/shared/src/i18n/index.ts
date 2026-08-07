@@ -1168,11 +1168,11 @@ export interface FormsMessages {
     onboarding: {
       /** The three stages, all visible from the first screen so the end is never a surprise. */
       stages: { account: string; profile: string; firstForm: string };
-      /** Accessible name for the language picker in the wizard's header. */
-      language: string;
       next: string;
       back: string;
+      /** Headline of the interstitial shown while the first form is created. */
       creating: string;
+      creatingSubtitle: string;
       /** Announced to assistive tech as the wizard advances. */
       progress: string; // {current} {total}
       role: {
@@ -2332,10 +2332,10 @@ export const en: FormsMessages = {
     },
     onboarding: {
       stages: { account: 'Your account', profile: 'Get to know you', firstForm: 'Your first form' },
-      language: 'Language',
       next: 'Continue',
       back: 'Back',
       creating: 'Building your form…',
+      creatingSubtitle: 'Setting up your questions. This only takes a second.',
       progress: 'Question {current} of {total}',
       role: {
         question: 'What best describes your role?',
@@ -3517,10 +3517,10 @@ export const es: FormsMessages = {
     },
     onboarding: {
       stages: { account: 'Tu cuenta', profile: 'Conocerte', firstForm: 'Tu primer formulario' },
-      language: 'Idioma',
       next: 'Continuar',
       back: 'Atrás',
       creating: 'Creando tu formulario…',
+      creatingSubtitle: 'Preparando tus preguntas. Solo toma un segundo.',
       progress: 'Pregunta {current} de {total}',
       role: {
         question: '¿Cuál es tu rol?',

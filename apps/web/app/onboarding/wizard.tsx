@@ -21,7 +21,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import type { FormsMessages, Locale } from '@quill/shared';
 import { SearchableDropdown } from '@/components/public/searchable-dropdown';
-import { LanguageSwitcher } from '@/components/language-switcher';
+import { FormsLockup, FormsMark } from '@/components/brand/forms-logo';
 import { captureEvent } from '@/lib/product-analytics';
 import { fill, wizardQuestions, wizardTemplates } from '@/lib/onboarding';
 import { USE_CASE_TEMPLATE, type OnboardingUseCase } from '@quill/types';
@@ -134,16 +134,30 @@ export function OnboardingWizard({ messages: m, locale }: { messages: Messages; 
 
   const stage = onTemplates ? TEMPLATE_STAGE : QUESTION_STAGE;
 
+  // The form is being created and a redirect is on its way. Nothing on this
+  // screen is actionable any more, so it becomes an interstitial rather than a
+  // disabled copy of itself — the wait is a second of real work, and a frozen
+  // page with a greyed-out button reads as a hang.
+  if (submitting) return <CreatingScreen m={m} />;
+
   return (
     <main className="ob">
+      {/* Three columns, so the stage bar is centred against the VIEWPORT rather
+          than against the space the logo leaves over. A flex row with
+          space-between put it visually left of centre. The empty third column
+          is what balances the logo. */}
       <header className="ob__top">
-        <StageBar m={m} stage={stage} />
-        <div className="ob__lang">
-          {/* A real label, not `""`. The switcher renders it into the select's
-              `aria-label`, so an empty string leaves a combobox with no
-              accessible name — the CSS hides it visually, screen readers keep it. */}
-          <LanguageSwitcher locale={locale} label={m.language} />
+        {/* Two marks, one shown per breakpoint. At phone width the full lockup
+            is ~110px of a 390px header, which squeezed the stage bar out of the
+            centre and left it hard against the logo; the F alone is ~24px and
+            keeps the brand present without taking the room. Only one is exposed
+            to assistive tech — the hidden one is `aria-hidden` via its own CSS. */}
+        <div className="ob__brand">
+          <FormsLockup className="ob__logo ob__logo--wide" title="Dapta Forms" />
+          <FormsMark className="ob__logo ob__logo--compact" title="Dapta Forms" />
         </div>
+        <StageBar m={m} stage={stage} />
+        <div aria-hidden="true" />
       </header>
 
       <div className="ob__body">
@@ -164,12 +178,15 @@ export function OnboardingWizard({ messages: m, locale }: { messages: Messages; 
                 />
               </div>
             ) : (
-              <ul className="ob__cards">
+              // Same markup for both option layouts — only the list class
+              // differs, so the grid-vs-rows decision lives entirely in CSS and
+              // a third layout costs one rule rather than a second branch here.
+              <ul className={current.layout === 'list' ? 'ob__list' : 'ob__cards'}>
                 {current.options.map((o) => (
                   <li key={o.value}>
                     <button
                       type="button"
-                      className="ob__card"
+                      className={current.layout === 'list' ? 'ob__row' : 'ob__card'}
                       aria-pressed={answers[current.field] === o.value}
                       data-selected={answers[current.field] === o.value || undefined}
                       onClick={() => answer(o.value)}
@@ -202,7 +219,10 @@ export function OnboardingWizard({ messages: m, locale }: { messages: Messages; 
                 const isRecommended = t.id === recommended;
                 const selected = (template ?? recommended) === t.id;
                 return (
-                  <li key={t.id}>
+                  // `blank` spans the full row: it is the last card and an odd
+                  // one out in a two-column grid, so left alone it sat as a
+                  // half-width orphan under the four real templates.
+                  <li key={t.id} className={t.id === 'blank' ? 'ob__templates-wide' : undefined}>
                     <button
                       type="button"
                       className="ob__template"
@@ -212,7 +232,12 @@ export function OnboardingWizard({ messages: m, locale }: { messages: Messages; 
                       onClick={() => setTemplate(t.id)}
                     >
                       {isRecommended && <span className="ob__badge">{m.templates.recommended}</span>}
-                      <span className="ob__template-name">{t.name}</span>
+                      <span className="ob__template-head">
+                        <span className="ob__template-icon" aria-hidden="true">
+                          {t.icon}
+                        </span>
+                        <span className="ob__template-name">{t.name}</span>
+                      </span>
                       <span className="ob__template-desc">{t.description}</span>
                     </button>
                   </li>
@@ -236,11 +261,42 @@ export function OnboardingWizard({ messages: m, locale }: { messages: Messages; 
                   if (pick) finish(pick);
                 }}
               >
-                {submitting ? m.creating : m.templates.cta}
+                {m.templates.cta}
               </button>
             </div>
           </section>
         )}
+      </div>
+    </main>
+  );
+}
+
+/**
+ * The interstitial between "Create my form" and the builder.
+ *
+ * The wait is real work — the API claims completion, builds the config from the
+ * template registry, and creates the form — and it is the last thing that
+ * happens before the person sees a screen they have never seen before. A
+ * determinate bar reads as progress where a spinner reads as a stall, and the
+ * same pattern is already what a respondent gets on a form's reveal step, so
+ * this is the product's own loading language rather than a new one.
+ *
+ * The bar is CSS-driven and does not report real progress; it cannot, because
+ * the work is a single round trip. It runs slightly longer than the request
+ * usually takes so it is never seen to finish and then sit there.
+ */
+function CreatingScreen({ m }: { m: Messages }) {
+  return (
+    <main className="ob ob--creating">
+      <div className="ob__creating">
+        <FormsMark className="ob__creating-mark" title="Dapta Forms" />
+        <h1 className="ob__creating-headline">{m.creating}</h1>
+        <p className="ob__creating-sub">{m.creatingSubtitle}</p>
+        {/* `role="progressbar"` with no value: indeterminate, which is the
+            honest reading — there is one round trip, not measurable steps. */}
+        <div className="ob__creating-track" role="progressbar" aria-label={m.creating}>
+          <div className="ob__creating-fill" />
+        </div>
       </div>
     </main>
   );

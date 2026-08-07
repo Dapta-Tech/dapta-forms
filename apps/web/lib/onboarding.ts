@@ -29,8 +29,14 @@ export interface WizardQuestion {
   key: Extract<OnboardingStep, 'role' | 'industry' | 'use_case'>;
   /** Which `OnboardingProgress` field this question's answer patches. */
   field: 'role' | 'industry' | 'useCase';
-  /** `cards` renders option tiles; `search` renders the searchable dropdown. */
-  layout: 'cards' | 'search';
+  /**
+   * `list` stacks full-width rows, `cards` renders a tile grid, `search`
+   * renders the searchable dropdown. Nine roles as tiles read as a wall of
+   * cards next to the five-tile use-case screen two questions later — a list
+   * scans top-to-bottom in one pass and keeps the card treatment meaningful
+   * where it is actually used.
+   */
+  layout: 'list' | 'cards' | 'search';
   question: string;
   helper: string;
   options: WizardOption[];
@@ -68,7 +74,7 @@ export function wizardQuestions(m: OnboardingMessages): WizardQuestion[] {
     {
       key: 'role',
       field: 'role',
-      layout: 'cards',
+      layout: 'list',
       question: m.role.question,
       helper: m.role.helper,
       options: ONBOARDING_ROLES.map((value) => ({
@@ -111,7 +117,21 @@ export interface WizardTemplate {
   id: FormTemplateId;
   name: string;
   description: string;
+  icon: string;
 }
+
+/**
+ * One glyph per template, keyed by the id so a new template cannot ship without
+ * one. Deliberately echoes `USE_CASE_ICONS` where the two correspond, so the
+ * card the previous answer pre-selects carries the same symbol that answer did.
+ */
+const TEMPLATE_ICONS: Readonly<Record<FormTemplateId, string>> = {
+  'lead-qualifier': '\u{1F3AF}',
+  'customer-feedback': '\u{1F4DD}',
+  'event-registration': '\u{1F39F}',
+  application: '\u{1F4C4}',
+  blank: '\u{270D}',
+};
 
 /**
  * The template cards, in offer order. `blank` is forced LAST regardless of where
@@ -124,6 +144,7 @@ export function wizardTemplates(m: OnboardingMessages): WizardTemplate[] {
     id,
     name: m.templates.options[id].name,
     description: m.templates.options[id].description,
+    icon: TEMPLATE_ICONS[id],
   }));
 }
 
