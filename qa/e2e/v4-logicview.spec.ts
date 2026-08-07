@@ -67,6 +67,11 @@ test('Logic tab renders the routing map: nodes, branch edges, otherwise path and
   page,
   request,
 }, testInfo) => {
+  // The vertical LIST view under test here now only renders below the `lg`
+  // breakpoint — at desktop widths the Logic tab is the pan/zoom canvas
+  // (covered by the canvas test below). Pin the viewport under 1024 so this
+  // spec keeps exercising the surface it describes.
+  await page.setViewportSize({ width: 1000, height: 900 });
   const { id } = await createForm(request, formName('map', testInfo.workerIndex));
 
   await page.goto(`/admin/forms/${id}/edit?tab=logic`);
@@ -103,9 +108,44 @@ test('Logic tab renders the routing map: nodes, branch edges, otherwise path and
 
   // Capture the whole map for visual review. The map lives in a scroll
   // container, so grow the viewport first to bring every node into paint
-  // (otherwise the below-the-fold endings stitch in blank).
-  await page.setViewportSize({ width: 1200, height: 1500 });
+  // (otherwise the below-the-fold endings stitch in blank). Stay under 1024 —
+  // crossing the `lg` breakpoint would swap the list for the canvas mid-test.
+  await page.setViewportSize({ width: 1000, height: 1500 });
   await page.getByTestId('logic-outcome').last().scrollIntoViewIfNeeded();
   await expect(map.getByText('Nurture')).toBeVisible();
   await map.screenshot({ path: 'qa/shots/v4-logic-view.png' });
+});
+
+test('desktop Logic tab is the canvas: parallel outcomes, real jump edges, a shared end node', async ({
+  page,
+  request,
+}, testInfo) => {
+  // Playwright's default 1280×720 viewport is ≥ the `lg` breakpoint, so this
+  // exercises what a desktop author actually sees — the canvas, not the list.
+  const { id } = await createForm(request, formName('canvas', testInfo.workerIndex));
+
+  await page.goto(`/admin/forms/${id}/edit?tab=logic`);
+
+  await expect(page.getByTestId('logic-canvas-viewport')).toBeVisible();
+  await expect(page.getByTestId('logic-start')).toBeVisible();
+  // One card per authored question, same count the list view asserts.
+  await expect(page.getByTestId('logic-node')).toHaveCount(4);
+
+  // The two goto rules on Q1 draw REAL edges now: the forward jump to the
+  // budget question, and the skip-to-end into ONE shared terminal node —
+  // the branch the old map drew as a chip with nothing joining it.
+  await expect(page.getByTestId('logic-edge-goto')).toHaveCount(2);
+  await expect(page.getByTestId('logic-end')).toHaveCount(1);
+
+  // Outcomes are parallel terminal nodes, never a series: both render, and
+  // they share an x column (alternatives), not a vertical sequence.
+  const outcomes = page.getByTestId('logic-outcome');
+  await expect(outcomes).toHaveCount(2);
+  const boxes = [await outcomes.nth(0).boundingBox(), await outcomes.nth(1).boundingBox()];
+  expect(Math.abs((boxes[0]?.x ?? 0) - (boxes[1]?.x ?? 1e9))).toBeLessThan(2);
+  expect(Math.abs((boxes[0]?.y ?? 0) - (boxes[1]?.y ?? 0))).toBeGreaterThan(10);
+
+  // The canvas chrome is present: zoom controls and the pin escape hatch.
+  await expect(page.getByTestId('logic-zoom-fit')).toBeVisible();
+  await expect(page.getByTestId('logic-auto-arrange')).toBeVisible();
 });

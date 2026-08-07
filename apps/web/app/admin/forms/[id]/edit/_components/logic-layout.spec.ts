@@ -139,3 +139,27 @@ describe('computeLayout', () => {
     expect(nodes[0]!.kind).toBe('start');
   });
 });
+
+describe('computeLayout — skip-to-end', () => {
+  it('routes every target-null rule to ONE shared end node', () => {
+    const { nodes, edges } = computeLayout(
+      cfg([
+        choice('q1', { goto: [{ values: ['a'], target: null }] }),
+        choice('q2', { goto: [{ values: ['b'], target: null }] }),
+        choice('q3'),
+      ]),
+    );
+    const ends = nodes.filter((n) => n.kind === 'end');
+    expect(ends).toHaveLength(1);
+    const skipEdges = edges.filter((e) => e.to === '__end__');
+    expect(skipEdges).toHaveLength(2);
+    expect(new Set(skipEdges.map((e) => e.from))).toEqual(new Set(['q1', 'q2']));
+    // The label rides along, resolved to the option LABEL.
+    expect(skipEdges.every((e) => e.kind === 'goto')).toBe(true);
+  });
+
+  it('emits no end node when nothing skips', () => {
+    const { nodes } = computeLayout(cfg([choice('q1'), choice('q2')]));
+    expect(nodes.filter((n) => n.kind === 'end')).toHaveLength(0);
+  });
+});

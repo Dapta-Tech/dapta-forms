@@ -233,8 +233,15 @@ export function LogicCanvas({
                 style={{ left: pos.x, top: pos.y, width: n.w, height: n.h }}
                 className="absolute"
                 onPointerDown={(e) => {
-                  if (n.kind === 'start') return;
+                  // Start and End are markers, not cards — nothing to drag.
+                  if (n.kind === 'start' || n.kind === 'end') return;
                   e.stopPropagation();
+                  // stopPropagation means the viewport's own pointerdown (which
+                  // would have captured) never runs — so capture HERE, on the
+                  // viewport element that owns the move/up handlers. Without
+                  // this, releasing outside the canvas leaves the drag armed
+                  // and the node re-attaches to the pointer on re-entry.
+                  viewportRef.current?.setPointerCapture(e.pointerId);
                   const p = toGraph(e.clientX, e.clientY);
                   setDrag({ id: n.id, dx: p.x - pos.x, dy: p.y - pos.y, x: pos.x, y: pos.y });
                   (e.currentTarget.parentElement as HTMLElement | null)?.focus?.();
@@ -242,6 +249,8 @@ export function LogicCanvas({
               >
                 {n.kind === 'start' ? (
                   <StartNode label={m.map.start} />
+                ) : n.kind === 'end' ? (
+                  <EndNode label={m.map.end} />
                 ) : n.kind === 'outcome' ? (
                   <OutcomeNode node={n} zoom={zoom} m={m} onOpen={onEditOutcomes} />
                 ) : (
@@ -308,6 +317,19 @@ function StartNode({ label }: { label: string }) {
       className="inline-flex h-full items-center gap-2 rounded-full border border-primary/40 bg-primary/[0.08] px-4"
     >
       <span aria-hidden className="inline-block h-2 w-2 shrink-0 rounded-full bg-primary" />
+      <span className="text-xs font-semibold uppercase tracking-wide text-primary">{label}</span>
+    </span>
+  );
+}
+
+/** The shared "skip to end" terminal — every `target: null` jump lands here. */
+function EndNode({ label }: { label: string }) {
+  return (
+    <span
+      data-testid="logic-end"
+      className="inline-flex h-full items-center gap-2 rounded-full border border-primary/50 bg-primary/[0.08] px-4"
+    >
+      <i aria-hidden className="pi pi-flag-fill text-primary" style={{ fontSize: 10 }} />
       <span className="text-xs font-semibold uppercase tracking-wide text-primary">{label}</span>
     </span>
   );

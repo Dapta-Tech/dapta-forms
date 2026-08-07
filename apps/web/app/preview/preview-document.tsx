@@ -8,6 +8,8 @@ import {
   PREVIEW_ACCOUNT_CODE,
   PREVIEW_CHANNEL,
   PREVIEW_SLUG,
+  isBlockedPreviewRequest,
+  isPreviewSameOrigin,
   readPreviewMessage,
   type PreviewConfigMessage,
 } from './protocol';
@@ -33,7 +35,7 @@ export function PreviewDocument() {
 
   useEffect(() => {
     function onMessage(event: MessageEvent) {
-      const message = readPreviewMessage(event, window.parent);
+      const message = readPreviewMessage(event, window.parent, window.location.origin);
       if (message?.type === 'config') setInput(message);
     }
     window.addEventListener('message', onMessage);
@@ -117,9 +119,13 @@ function installPreviewNetworkFence(): void {
   if (flags[FENCE_FLAG]) return;
   flags[FENCE_FLAG] = true;
 
+  // The decision functions live in `protocol.ts`, pure and unit-tested — this
+  // installer only binds them to the live window.
   const realFetch = window.fetch.bind(window);
   window.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
-    if (isBlockedRequest(input, init)) return new Promise<Response>(() => {});
+    if (isBlockedPreviewRequest(input, init, window.location.href)) {
+      return new Promise<Response>(() => {});
+    }
     return realFetch(input as RequestInfo, init);
   }) as typeof window.fetch;
 
@@ -128,34 +134,9 @@ function installPreviewNetworkFence(): void {
     navigator.sendBeacon = ((url: string | URL, data?: BodyInit | null) => {
       // Reported as delivered: a `false` return makes callers retry by other
       // means, which is the opposite of what a fence wants.
-      if (isSameOrigin(url)) return true;
+      if (isPreviewSameOrigin(url, window.location.href)) return true;
       return realBeacon(url, data);
     }) as typeof navigator.sendBeacon;
-  }
-}
-
-function isBlockedRequest(input: RequestInfo | URL, init?: RequestInit): boolean {
-  const method = (init?.method ?? (input instanceof Request ? input.method : 'GET')).toUpperCase();
-  if (method === 'GET' || method === 'HEAD') return false;
-  const raw = input instanceof Request ? input.url : String(input);
-  if (!isSameOrigin(raw)) return false;
-  const url = toUrl(raw);
-  if (!url) return true; // unparseable and same-origin-by-default: block
-  if (url.pathname.startsWith('/_next/') || url.pathname.startsWith('/__nextjs')) return false;
-  return true;
-}
-
-function isSameOrigin(value: string | URL): boolean {
-  const url = toUrl(value);
-  // A relative URL resolves against this document, so it is same-origin.
-  return url ? url.origin === window.location.origin : true;
-}
-
-function toUrl(value: string | URL): URL | null {
-  try {
-    return new URL(String(value), window.location.href);
-  } catch {
-    return null;
   }
 }
 

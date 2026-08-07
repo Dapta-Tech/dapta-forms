@@ -352,3 +352,37 @@ describe('normalizeConfig — logicLayout (builder-only node positions)', () => 
     expect('logicLayout' in next).toBe(false);
   });
 });
+
+describe('normalizeConfig — logicLayout outcome-node pins', () => {
+  const at = (x: number, y: number) => ({ x, y });
+  const base = {
+    version: 1 as const,
+    steps: [{ key: 'q1', type: 'text' as const, question: 'Q?' }],
+    outcomes: [{ id: 'hot', label: 'Hot', minScore: 5 }],
+  };
+
+  it('keeps a pin on an outcome that still exists — dragging a terminal node must survive autosave', () => {
+    const next = normalizeConfig({ ...base, logicLayout: { 'outcome:hot': at(900, -40) } });
+    expect(next.logicLayout).toEqual({ 'outcome:hot': at(900, -40) });
+  });
+
+  it('prunes a pin whose outcome was deleted', () => {
+    const next = normalizeConfig({ ...base, logicLayout: { 'outcome:gone': at(1, 1) } });
+    expect('logicLayout' in next).toBe(false);
+  });
+
+  it('never confuses an outcome key with a step key under the rename map', () => {
+    // Two steps colliding on `q1` triggers the rename path; the outcome pin
+    // must pass through it untouched — outcome ids are not step keys.
+    const next = normalizeConfig({
+      version: 1,
+      steps: [
+        { key: 'q1', type: 'text', question: 'A' },
+        { key: 'q1', type: 'text', question: 'B' },
+      ],
+      outcomes: [{ id: 'hot', label: 'Hot', minScore: 5 }],
+      logicLayout: { q1: at(10, 10), 'outcome:hot': at(700, 0) },
+    });
+    expect(next.logicLayout?.['outcome:hot']).toEqual(at(700, 0));
+  });
+});

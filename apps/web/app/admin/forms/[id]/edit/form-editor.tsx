@@ -67,9 +67,9 @@ const RETRY_MS = 1500;
 /** Same admin API base the server-side admin-api client uses (client-exposed). */
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 
-// `results` is deliberately still parsed: a bookmark or an old link carrying
-// `?tab=results` resolves to Build rather than 404-ing on a tab that no longer
-// exists. Its two panels now live behind Logic → Scoring and Logic → Outcomes.
+// `results` is deliberately NOT in this list: `parseTab('results')` falls
+// through to Build, so a bookmark or an old link lands somewhere real instead
+// of dead-ending. Its two panels live behind Logic → Scoring and Logic → Outcomes.
 const TAB_IDS: readonly Tab[] = ['build', 'logic', 'connect', 'design'];
 /** Unknown/absent `?tab` → build (the default view). */
 const parseTab = (value: string | null): Tab =>

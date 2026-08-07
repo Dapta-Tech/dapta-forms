@@ -280,18 +280,22 @@ export function normalizeConfig(config: FormConfig): FormConfig {
     ...passthrough
   } = config as FormConfig & Record<string, unknown>;
 
-  // The Logic canvas's stored node positions are keyed by STEP KEY, which makes
-  // them pointers like `goto[].target` and `showWhen.field` — so they follow the
-  // same rename map, and an entry whose step is gone is dropped. A stale entry
-  // would pin a node at coordinates its step no longer occupies, which is the
+  // The Logic canvas's stored node positions are keyed by STEP KEY — or, for a
+  // terminal node, by `outcome:<id>` — which makes them pointers like
+  // `goto[].target` and `showWhen.field`: step keys follow the same rename map,
+  // and an entry whose step (or outcome) is gone is dropped. A stale entry
+  // would pin a node at coordinates its owner no longer occupies, which is the
   // precise kind of lie the canvas exists to remove. Purely presentational, so
   // it is rebuilt rather than passed through untouched.
   const layout = (config as FormConfig).logicLayout;
+  const outcomeIdSet = new Set(outcomes.map((o) => `outcome:${o.id}`));
   const logicLayout = layout
     ? Object.fromEntries(
         Object.entries(layout)
-          .map(([key, pos]) => [remap(key), pos] as const)
-          .filter(([key]) => taken.has(key)),
+          .map(([key, pos]) =>
+            key.startsWith('outcome:') ? ([key, pos] as const) : ([remap(key), pos] as const),
+          )
+          .filter(([key]) => (key.startsWith('outcome:') ? outcomeIdSet.has(key) : taken.has(key))),
       )
     : undefined;
 

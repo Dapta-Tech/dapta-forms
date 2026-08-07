@@ -34,7 +34,7 @@ export const START_W = 96;
 
 export interface LayoutNode {
   id: string;
-  kind: 'start' | 'step' | 'outcome';
+  kind: 'start' | 'step' | 'outcome' | 'end';
   x: number;
   y: number;
   w: number;
@@ -175,6 +175,10 @@ export function computeLayout(config: FormConfig): Layout {
   // Forward jumps get REAL edges to the target node. The old map drew the
   // target twice — a chip under the source and a node in the column — with
   // nothing joining them, so a jump was something you read rather than traced.
+  // A `target: null` rule means "skip to the end": those collect here and get
+  // ONE shared terminal node after everything else, so the hardest branch to
+  // reason about is visible instead of silently undrawn.
+  const skips: Array<{ from: string; ri: number; label: string }> = [];
   for (const step of steps) {
     const from = nodeByStepKey.get(step.key);
     if (!from) continue;
@@ -182,7 +186,10 @@ export function computeLayout(config: FormConfig): Layout {
       const label = rule.values
         .map((v) => (step.options ?? []).find((o) => o.value === v)?.label ?? v)
         .join(', ');
-      if (rule.target == null) continue; // skip-to-end: drawn as an ending edge below
+      if (rule.target == null) {
+        skips.push({ from: from.id, ri, label });
+        continue;
+      }
       const to = nodeByStepKey.get(rule.target);
       if (!to) continue; // dangling target — normalizeConfig prunes these
       edges.push({ id: `goto:${step.key}:${ri}`, from: from.id, to: to.id, kind: 'goto', label });
@@ -214,6 +221,27 @@ export function computeLayout(config: FormConfig): Layout {
       }
     });
     x += NODE_W + COL_GAP;
+  }
+
+  // The shared "skip to end" terminal. One node no matter how many rules point
+  // at it, in its own final column — after the outcomes, because a skip
+  // bypasses the remaining QUESTIONS, not the scoring: the respondent still
+  // lands on whichever ending their score resolves to.
+  if (skips.length) {
+    const endNode: LayoutNode = {
+      id: '__end__',
+      kind: 'end',
+      x,
+      y: -NODE_H / 2,
+      w: START_W,
+      h: NODE_H,
+      branch: false,
+      pinned: false,
+    };
+    nodes.push(endNode);
+    for (const s of skips) {
+      edges.push({ id: `goto-end:${s.from}:${s.ri}`, from: s.from, to: endNode.id, kind: 'goto', label: s.label });
+    }
   }
 
   // The bounding box has to come from the PLACED nodes, not the column walk: a

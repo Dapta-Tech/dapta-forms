@@ -81,9 +81,10 @@ export type PreviewMessage = PreviewReadyMessage | PreviewConfigMessage;
 export function readPreviewMessage(
   event: MessageEvent,
   expectedSource: Window | null | undefined,
+  /** This document's own origin — passed in so the gate is pure and testable. */
+  selfOrigin: string,
 ): PreviewMessage | null {
-  if (typeof window === 'undefined') return null;
-  if (event.origin !== window.location.origin) return null;
+  if (!selfOrigin || event.origin !== selfOrigin) return null;
   if (!expectedSource || event.source !== expectedSource) return null;
 
   const data: unknown = event.data;
@@ -109,4 +110,53 @@ export function readPreviewMessage(
   }
 
   return null;
+}
+
+/**
+ * The network fence's decision function, pure so it can be unit-tested: given a
+ * request the preview document is about to make, should it be swallowed?
+ *
+ * Blocked = same-origin AND mutating. GET/HEAD pass (page assets, RSC
+ * payloads); cross-origin passes untouched (an author's own Calendly embed must
+ * keep working); `/_next/` and `/__nextjs` pass so the dev overlay works inside
+ * the frame. Everything else same-origin is exactly the renderers' Server
+ * Action surface — the three actions that would write a real submission.
+ *
+ * `baseHref` is the document's own URL (relative requests resolve against it);
+ * explicit rather than read from `window` so node tests can exercise the matrix.
+ */
+export function isBlockedPreviewRequest(
+  input: RequestInfo | URL,
+  init: RequestInit | undefined,
+  baseHref: string,
+): boolean {
+  const method = (
+    init?.method ?? (typeof Request !== 'undefined' && input instanceof Request ? input.method : 'GET')
+  ).toUpperCase();
+  if (method === 'GET' || method === 'HEAD') return false;
+  const raw = typeof Request !== 'undefined' && input instanceof Request ? input.url : String(input);
+  if (!isPreviewSameOrigin(raw, baseHref)) return false;
+  const url = toPreviewUrl(raw, baseHref);
+  if (!url) return true; // unparseable and same-origin-by-default: block
+  if (url.pathname.startsWith('/_next/') || url.pathname.startsWith('/__nextjs')) return false;
+  return true;
+}
+
+/** Same-origin test against the document's own URL. Unparseable = relative = same-origin. */
+export function isPreviewSameOrigin(value: string | URL, baseHref: string): boolean {
+  const url = toPreviewUrl(value, baseHref);
+  if (!url) return true;
+  try {
+    return url.origin === new URL(baseHref).origin;
+  } catch {
+    return true;
+  }
+}
+
+function toPreviewUrl(value: string | URL, baseHref: string): URL | null {
+  try {
+    return new URL(String(value), baseHref);
+  } catch {
+    return null;
+  }
 }

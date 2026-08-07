@@ -125,11 +125,6 @@ export function ToolbarSeparator() {
   return <span aria-hidden className="mx-1 h-5 w-px shrink-0 bg-border" />;
 }
 
-/** Pushes everything after it to the right edge of the toolbar. */
-export function ToolbarSpacer() {
-  return <span aria-hidden className="ml-auto" />;
-}
-
 /**
  * The Build canvas's viewport switch. It used to sit in a third bar under the
  * canvas, directly below this one — two stacked chrome strips for one form. It

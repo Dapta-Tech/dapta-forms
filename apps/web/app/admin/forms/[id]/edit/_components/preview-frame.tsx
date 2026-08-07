@@ -123,7 +123,7 @@ export function PreviewFrame({
 
   useEffect(() => {
     function onMessage(event: MessageEvent) {
-      const message = readPreviewMessage(event, frameRef.current?.contentWindow);
+      const message = readPreviewMessage(event, frameRef.current?.contentWindow, window.location.origin);
       if (message?.type === 'ready') setReadyTick((n) => n + 1);
     }
     window.addEventListener('message', onMessage);

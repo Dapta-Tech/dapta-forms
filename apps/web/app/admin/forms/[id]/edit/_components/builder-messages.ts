@@ -14,7 +14,6 @@ export interface BuilderMessages {
     formNamePlaceholder: string;
     tabBuild: string;
     tabLogic: string;
-    tabResults: string;
     tabDesign: string;
     saved: string;
     saving: string;
@@ -45,8 +44,6 @@ export interface BuilderMessages {
     share: string;
     /** Accessible name for the per-tab contextual toolbar (topbar row 2). */
     toolbar: string;
-    /** Third preview width — the 481–768px band has its own layout (F5). */
-    tablet: string;
   };
   /**
    * The per-question logic dialog (F0): ONE place holding a step's whole
@@ -231,7 +228,6 @@ export interface BuilderMessages {
     optionLayoutCards: string;
     logic: string;
     addRule: string;
-    noRules: string;
     scoring: string;
     scoringHint: string;
     /** V5-B2 — the per-question switch is inert while the form-level one is off. */
@@ -241,7 +237,6 @@ export interface BuilderMessages {
     contactHint: string;
     /** The collapsible Advanced group + what it says when shut. */
     advancedTitle: string;
-    badgeConditional: string;
     badgeDynamic: string;
     badgeEndsForm: string;
     badgeHidden: string;
@@ -447,7 +442,6 @@ const en: BuilderMessages = {
     formNamePlaceholder: 'Untitled form',
     tabBuild: 'Build',
     tabLogic: 'Logic',
-    tabResults: 'Results',
     tabDesign: 'Design',
     saved: 'Saved',
     saving: 'Saving…',
@@ -475,7 +469,6 @@ const en: BuilderMessages = {
     openForm: 'Open form',
     share: 'Share',
     toolbar: 'Tools',
-    tablet: 'Tablet',
   },
   logicDialog: {
     open: 'Edit logic',
@@ -578,7 +571,6 @@ const en: BuilderMessages = {
     optionLayoutCards: 'Cards',
     logic: 'Logic',
     addRule: 'Add rule',
-    noRules: 'No rules — everyone sees this question.',
     revealSection: 'Reveal screen',
     revealHeadline: 'Headline',
     revealSubtitle: 'Subtitle',
@@ -613,7 +605,6 @@ const en: BuilderMessages = {
     scoringZeroHint: 'Assign points to your answers to enable ranges.',
     contactHint: 'Contact field — doesn’t affect the score.',
     advancedTitle: 'Advanced settings',
-    badgeConditional: 'Conditional',
     badgeDynamic: 'Dynamic',
     badgeEndsForm: 'Ends form',
     badgeHidden: 'Hidden',
@@ -801,7 +792,6 @@ const es: BuilderMessages = {
     formNamePlaceholder: 'Formulario sin título',
     tabBuild: 'Construir',
     tabLogic: 'Lógica',
-    tabResults: 'Resultados',
     tabDesign: 'Diseño',
     saved: 'Guardado',
     saving: 'Guardando…',
@@ -829,7 +819,6 @@ const es: BuilderMessages = {
     openForm: 'Abrir formulario',
     share: 'Compartir',
     toolbar: 'Herramientas',
-    tablet: 'Tablet',
   },
   logicDialog: {
     open: 'Editar lógica',
@@ -933,7 +922,6 @@ const es: BuilderMessages = {
     optionLayoutCards: 'Tarjetas',
     logic: 'Lógica',
     addRule: 'Añadir regla',
-    noRules: 'Sin reglas — todos ven esta pregunta.',
     revealSection: 'Pantalla de revelación',
     revealHeadline: 'Titular',
     revealSubtitle: 'Subtítulo',
@@ -969,7 +957,6 @@ const es: BuilderMessages = {
     scoringZeroHint: 'Asigna puntos a tus respuestas para habilitar los rangos.',
     contactHint: 'Campo de contacto — no afecta el puntaje.',
     advancedTitle: 'Ajustes avanzados',
-    badgeConditional: 'Condicional',
     badgeDynamic: 'Dinámica',
     badgeEndsForm: 'Termina el formulario',
     badgeHidden: 'Oculta',
