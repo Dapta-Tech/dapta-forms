@@ -109,7 +109,7 @@ export function FontPicker({
                   }}
                   className={cn(
                     'flex w-full items-center justify-between gap-2 rounded-sm px-2 py-1.5 text-left transition-colors hover:bg-muted',
-                    value === f && 'bg-muted',
+                    value === f && 'bg-muted shadow-[inset_0_0_0_1px_var(--primary-edge)]',
                   )}
                 >
                   <span

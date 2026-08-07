@@ -25,7 +25,7 @@ export default async function SubmissionsPicker() {
             <li key={f.id}>
               <Link
                 href={`/admin/forms/${f.id}/submissions`}
-                className="flex items-center justify-between gap-4 rounded-xl border border-border bg-card p-5 transition-transform hover:border-primary active:scale-[0.99]"
+                className="flex items-center justify-between gap-4 rounded-xl border border-border bg-card p-5 transition-transform hover:border-primary-edge active:scale-[0.99]"
               >
                 <div className="min-w-0">
                   <span className="block truncate font-semibold tracking-tight">{f.name}</span>

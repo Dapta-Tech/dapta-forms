@@ -229,7 +229,7 @@ export function QuestionSettings({
           explanation of what turns it on. Options → their scoring, together. */}
       {hasOptions(step.type) ? (
         <section className="flex flex-col gap-3 border-t border-border pt-4">
-          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          <p className="text-2xs font-semibold uppercase tracking-wide text-faint">
             {bm.settings.options}
           </p>
           {step.type === 'multiple_choice' ? (
@@ -267,7 +267,7 @@ export function QuestionSettings({
 
       {step.type === 'reveal' ? (
         <section className="flex flex-col gap-3 border-t border-border pt-4">
-          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          <p className="text-2xs font-semibold uppercase tracking-wide text-faint">
             {bm.settings.revealSection}
           </p>
           <p className="text-xs text-muted-foreground">{bm.settings.revealHint}</p>
@@ -343,7 +343,7 @@ export function QuestionSettings({
 
       {step.type === 'slider' ? (
         <section className="flex flex-col gap-3 border-t border-border pt-4">
-          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{em.types.slider}</p>
+          <p className="text-2xs font-semibold uppercase tracking-wide text-faint">{em.types.slider}</p>
           <div className="grid grid-cols-2 gap-2.5">
             <Field label={em.props.sliderMin}>
               <NumberField
@@ -449,7 +449,7 @@ export function QuestionSettings({
       {/* Name step: the two collected fields + their placeholders */}
       {step.type === 'name' ? (
         <section className="flex flex-col gap-3 border-t border-border pt-4">
-          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          <p className="text-2xs font-semibold uppercase tracking-wide text-faint">
             {em.nameStep.title}
           </p>
           <p className="text-xs text-muted-foreground">{em.nameStep.hint}</p>
@@ -513,7 +513,7 @@ export function QuestionSettings({
           will never see. */}
       {step.type === 'reveal' ? null : (
         <section className="flex flex-col gap-3 border-t border-border pt-4">
-          <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          <p className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wide text-faint">
             <i aria-hidden className="pi pi-sync text-secondary" style={{ fontSize: 11 }} />
             {em.variants.title}
           </p>
@@ -523,7 +523,7 @@ export function QuestionSettings({
 
       {/* Behavior — terminal (disqualify) + reveal position (V4-04/V4-12) */}
       <section className="flex flex-col gap-1 border-t border-border pt-4">
-        <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        <p className="mb-1 text-2xs font-semibold uppercase tracking-wide text-faint">
           {em.behavior.title}
         </p>
         {/* "Ends the form" means DISQUALIFICATION here, which is the opposite of

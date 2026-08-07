@@ -175,7 +175,7 @@ export default async function SettingsPage() {
 function Field({ label, value, mono }: { label: string; value: string; mono?: boolean }): ReactNode {
   return (
     <div className="flex flex-col gap-1">
-      <dt className="text-xs uppercase tracking-wide text-muted-foreground">{label}</dt>
+      <dt className="text-2xs uppercase tracking-wide text-faint">{label}</dt>
       <dd className={`truncate text-sm text-foreground ${mono ? 'font-mono' : ''}`} title={value}>
         {value}
       </dd>

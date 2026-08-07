@@ -126,7 +126,7 @@ export function TypeGallery({
             <div className="flex flex-col gap-5">
               {filtered.map(({ group, items }) => (
                 <section key={group}>
-                  <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  <p className="mb-2 text-2xs font-semibold uppercase tracking-wide text-faint">
                     {groupLabel[group]}
                   </p>
                   <div className="grid gap-2.5 sm:grid-cols-3">
@@ -145,7 +145,7 @@ export function TypeGallery({
                             'group flex items-center gap-3 rounded-xl border border-border bg-background p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                             reason
                               ? 'cursor-not-allowed opacity-55'
-                              : 'hover:border-primary/60 hover:bg-muted/50',
+                              : 'hover:border-primary-edge/60 hover:bg-muted/50',
                           )}
                         >
                           <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground transition-colors group-enabled:group-hover:bg-primary/15 group-enabled:group-hover:text-foreground">

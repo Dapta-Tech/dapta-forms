@@ -73,7 +73,7 @@ export default async function FormsList() {
               <li
                 key={f.id}
                 data-testid="form-row"
-                className="flex flex-wrap items-center gap-x-4 gap-y-3 rounded-xl border border-border bg-card px-5 py-4 transition-colors hover:border-primary/60"
+                className="flex flex-wrap items-center gap-x-4 gap-y-3 rounded-xl border border-border bg-card px-5 py-4 transition-colors hover:border-primary-edge/60"
               >
                 <div className="min-w-0 flex-1 basis-60">
                   <Link

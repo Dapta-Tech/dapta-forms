@@ -51,7 +51,7 @@ export function CopyLink({
       <button
         type="button"
         onClick={copy}
-        className="shrink-0 whitespace-nowrap rounded-md border border-border px-3 py-1.5 text-sm transition-transform hover:border-primary active:scale-[0.98]"
+        className="shrink-0 whitespace-nowrap rounded-md border border-border px-3 py-1.5 text-sm transition-transform hover:border-primary-edge active:scale-[0.98]"
       >
         {copied ? (labels?.copied ?? 'Copied ✓') : (labels?.copy ?? 'Copy')}
       </button>

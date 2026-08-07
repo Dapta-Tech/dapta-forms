@@ -99,7 +99,7 @@ function MultiMatchPicker({
                 blocked
                   ? 'cursor-not-allowed border-dashed border-border/60 text-muted-foreground/60'
                   : on
-                    ? 'border-primary bg-primary/10 font-medium text-foreground'
+                    ? 'border-primary-edge bg-primary/10 font-medium text-foreground'
                     : 'border-border text-muted-foreground hover:text-foreground',
               )}
             >

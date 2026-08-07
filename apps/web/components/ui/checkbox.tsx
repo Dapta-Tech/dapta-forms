@@ -14,8 +14,8 @@ export const Checkbox = forwardRef<HTMLInputElement, React.InputHTMLAttributes<H
           ref={ref}
           type="checkbox"
           className={cn(
-            'peer h-[18px] w-[18px] shrink-0 cursor-pointer appearance-none rounded-[5px] border border-input bg-background transition-colors',
-            'hover:border-muted-foreground checked:border-primary checked:bg-primary checked:hover:border-primary',
+            'peer h-[18px] w-[18px] shrink-0 cursor-pointer appearance-none rounded-sm border border-input bg-background transition-colors',
+            'hover:border-muted-foreground checked:border-primary-edge checked:bg-primary checked:hover:border-primary-edge',
             'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
             className,
           )}

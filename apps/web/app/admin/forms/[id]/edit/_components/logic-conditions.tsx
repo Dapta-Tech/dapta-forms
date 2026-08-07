@@ -344,7 +344,7 @@ function ConditionEditor({
                   className={cn(
                     'rounded-md border px-2 py-1 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                     selected
-                      ? 'border-primary bg-primary/10 font-medium text-foreground'
+                      ? 'border-primary-edge bg-primary/10 font-medium text-foreground'
                       : 'border-border text-muted-foreground hover:text-foreground',
                   )}
                 >

@@ -139,7 +139,7 @@ export function IconPicker({
                 className={cn(
                   'flex-1 whitespace-nowrap rounded-sm px-2 py-1 text-xs font-medium transition-colors',
                   mode === t.id
-                    ? 'bg-muted text-foreground'
+                    ? 'bg-muted text-foreground shadow-[inset_0_0_0_1px_var(--primary-edge)]'
                     : 'text-muted-foreground hover:text-foreground',
                 )}
               >
@@ -178,7 +178,16 @@ export function IconPicker({
                         }}
                         className={cn(
                           'flex h-8 items-center justify-center rounded-sm text-lg leading-none transition-colors hover:bg-muted',
-                          current === e && 'bg-muted ring-1 ring-ring',
+                          // The accent rim, not `ring-ring`: this is a selected
+                          // state, not a focused one, and on LIGHT the two tokens
+                          // are the same declaration — so the selected emoji and
+                          // the focused one were the same colour while arrowing
+                          // through, separated only by the global outline's 2px
+                          // offset. An INSET shadow also stops the mark being
+                          // clipped: this grid scrolls inside `overflow-y-auto`
+                          // with no left padding, so an outset ring on the first
+                          // column was cut off at the container's edge.
+                          current === e && 'bg-muted shadow-[inset_0_0_0_1px_var(--primary-edge)]',
                         )}
                       >
                         {e}

@@ -281,7 +281,7 @@ function StatusBadge({
   const state = connected ? 'account' : serverProvided ? 'server' : 'none';
   const tone =
     state === 'account'
-      ? 'border-primary/40 bg-primary/10 text-foreground'
+      ? 'border-primary-edge/40 bg-primary/10 text-foreground'
       : state === 'server'
         ? 'border-border bg-muted/60 text-foreground'
         : 'border-border bg-muted/40 text-muted-foreground';

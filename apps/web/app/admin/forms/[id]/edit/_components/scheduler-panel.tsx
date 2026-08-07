@@ -98,7 +98,7 @@ export function SchedulerPanel({
       {/* The mark, not a generic calendar glyph: this section books through
           Calendly specifically, and every other surface that says so now shows
           the same logo. */}
-      <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+      <p className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wide text-faint">
         <ProviderLogo provider="calendly" size={13} />
         {s.schedulerSection}
       </p>

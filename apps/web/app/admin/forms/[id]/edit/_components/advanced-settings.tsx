@@ -152,7 +152,7 @@ export function PrefillRow({
   return (
     <div className="flex flex-col gap-1.5" data-testid="prefill-row">
       <div className="flex items-baseline justify-between gap-3">
-        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        <p className="text-2xs font-semibold uppercase tracking-wide text-faint">
           {m.prefillTitle}
         </p>
         <span className="text-xs text-muted-foreground">{m.prefillReadOnly}</span>

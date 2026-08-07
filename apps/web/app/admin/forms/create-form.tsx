@@ -75,7 +75,7 @@ export function CreateForm({
       <button
         type="button"
         onClick={openDialog}
-        className="group flex flex-col gap-1 rounded-xl border border-border bg-card p-5 text-left transition-transform hover:border-primary active:scale-[0.99]"
+        className="group flex flex-col gap-1 rounded-xl border border-border bg-card p-5 text-left transition-transform hover:border-primary-edge active:scale-[0.99]"
       >
         <span className="mb-1 flex h-9 w-9 items-center justify-center rounded-md bg-primary text-primary-foreground">
           <i aria-hidden className="pi pi-plus" style={{ fontSize: 14 }} />
@@ -181,7 +181,7 @@ export function CreateForm({
                   className={cn(
                     'flex flex-col items-center gap-1 rounded-md border p-3 text-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                     layout === opt.id
-                      ? 'border-primary bg-primary/10 text-foreground'
+                      ? 'border-primary-edge bg-primary/10 text-foreground'
                       : 'border-border text-muted-foreground hover:border-muted-foreground hover:text-foreground',
                   )}
                 >

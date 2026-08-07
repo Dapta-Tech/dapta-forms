@@ -150,7 +150,7 @@ export function QuestionSpine({
                   className={cn(
                     'relative flex items-center gap-2 overflow-hidden rounded-xl border py-2.5 pl-2 pr-2.5 transition-colors',
                     active
-                      ? 'border-primary bg-primary/[0.07]'
+                      ? 'border-primary-edge bg-primary/[0.07]'
                       : 'border-border bg-card hover:border-muted-foreground/60',
                   )}
                 >
@@ -230,7 +230,7 @@ export function QuestionSpine({
       <button
         type="button"
         onClick={onAdd}
-        className="mt-1 flex items-center justify-center gap-2 rounded-xl border border-dashed border-border py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:border-primary/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="mt-1 flex items-center justify-center gap-2 rounded-xl border border-dashed border-border py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:border-primary-edge/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         <i aria-hidden className="pi pi-plus" style={{ fontSize: 12 }} />
         {m.shell.addQuestion}

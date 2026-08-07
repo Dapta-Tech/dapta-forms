@@ -181,7 +181,7 @@ function NotificationEmailCard({
         <span
           className={`shrink-0 rounded-full border px-2 py-0.5 text-2xs font-medium uppercase tracking-wide ${
             isCustom
-              ? 'border-primary/50 text-primary'
+              ? 'border-primary-edge/50 text-primary'
               : 'border-border text-muted-foreground'
           }`}
         >

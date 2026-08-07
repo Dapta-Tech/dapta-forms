@@ -74,6 +74,27 @@
      and card. globals.css points the `text-primary` utility here. */
   --primary-ink: hsl(var(--acc-h) var(--acc-s) var(--acc-l));
 
+  /* Brand Ink — the one ground in this file that DOES NOT FLIP with the theme.
+     Every other token here is a pair, because the app's own artwork is drawn in
+     `currentColor` and follows. Third-party brand marks are not: `dapta-mark.png`
+     is fixed white artwork (mean luminance of its opaque pixels: 236/255), so on
+     the light popover it painted white-on-white and the Dapta AI row in the app
+     switcher showed an empty space where a logo should be.
+     A themed ground cannot fix that — the ground has to stay dark precisely
+     because the mark cannot change. So this is declared once, in `:root`, and
+     deliberately absent from the `[data-theme='light']` block below: a tile that
+     inverted with the theme would re-break the thing it exists to fix. Use it
+     ONLY behind fixed-colour artwork; anything drawn in `currentColor` belongs on
+     a real surface token. */
+  --brand-ink: #0d1013;
+
+  /* Its foreground, constant for the same reason. A mark drawn in `currentColor`
+     sitting on this tile cannot take `--foreground`: on the light theme that is
+     near-black, so the Forms mark's stem (its only `currentColor` path — the arms
+     are a fixed lime) would vanish into the tile and leave a floating lime bar.
+     15.7:1 on `--brand-ink`, and the lime arms clear 13.5:1 beside it. */
+  --brand-ink-foreground: #e8edf2;
+
   /* Secondary — Neutral Trace. The non-accent data voice: "this exists but is
      not the point." It carries the logic/branching/connected channel in the
      builder, which used to be a purple; a third saturated color is not allowed
@@ -89,8 +110,16 @@
   --accent-foreground: #e8edf2;
 
   /* Faint Slate — telemetry labels, hints, metadata, inactive states. The
-     quietest legible voice; below this a value is not text, it is noise. */
-  --faint: #71818f;
+     quietest legible voice; below this a value is not text, it is noise.
+
+     Lifted from #71818f, which measured 4.28:1 on `--muted` — under AA for the
+     10px it carries, and `--muted` is exactly where this tier lands most often
+     (it is the ground of every badge and chip). The tier has to clear AA on the
+     RAISED surface, not merely on the card: 4.52:1 there, 4.87:1 on card, 5.16:1
+     on the page. The cost is the step down from `--muted-foreground`, which
+     narrows from 1.52:1 to 1.44:1 — still a readable tone change, and a legible
+     label at a slightly smaller step beats an illegible one at a wider step. */
+  --faint: #758592;
 
   /* Feedback — Tally Red, the second and last light. */
   --destructive: #ff3b30;

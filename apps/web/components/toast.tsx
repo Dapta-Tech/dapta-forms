@@ -55,7 +55,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             className={[
               'pointer-events-auto flex w-full max-w-sm items-start gap-3 rounded-md border px-4 py-3 text-sm shadow-lg',
               'bg-popover text-popover-foreground',
-              t.type === 'error' ? 'border-destructive' : t.type === 'success' ? 'border-primary/50' : 'border-border',
+              t.type === 'error' ? 'border-destructive' : t.type === 'success' ? 'border-primary-edge/50' : 'border-border',
             ].join(' ')}
           >
             <span

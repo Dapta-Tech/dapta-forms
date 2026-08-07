@@ -142,7 +142,7 @@ export function DesignPanel({
                 className={cn(
                   'flex flex-col gap-1 rounded-md border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                   layout === opt.id
-                    ? 'border-primary bg-primary/10 text-foreground'
+                    ? 'border-primary-edge bg-primary/10 text-foreground'
                     : 'border-border text-muted-foreground hover:border-muted-foreground hover:text-foreground',
                 )}
               >
@@ -802,7 +802,7 @@ function SharePreview({
         )}
       </div>
       <div className="flex flex-col gap-0.5 px-3 py-2">
-        <span className="truncate text-xs uppercase tracking-wide text-muted-foreground">
+        <span className="truncate text-2xs uppercase tracking-wide text-faint">
           {publicPath.split('/')[1] ?? ''}
         </span>
         <span className="truncate text-xs font-medium">{headline}</span>

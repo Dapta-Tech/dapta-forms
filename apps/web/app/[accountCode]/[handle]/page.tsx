@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { getMessages } from '@quill/shared';
 import { getPublicProfile } from '@/lib/api';
 import { getLocale } from '@/lib/locale';
+import { personName } from '@/lib/person';
 import { formDesignProps } from '@/lib/form-design';
 import './[slug]/public-form.css';
 
@@ -33,7 +34,10 @@ export async function generateMetadata({
   const { accountCode, handle } = await params;
   const profile = await getPublicProfile(accountCode, handle);
   if (!profile) return { title: 'Not found' };
-  const name = profile.displayName || profile.handle;
+  // NEVER the raw `displayName`: for a local-auth account that column IS the
+  // email address, so this line put the owner's email in the page <title> and in
+  // the OpenGraph title of a page whose whole purpose is to be shared.
+  const name = personName(profile.displayName) ?? profile.handle;
   return {
     title: profile.headline ? `${name} — ${profile.headline}` : name,
     description: profile.bio ?? undefined,
@@ -57,7 +61,9 @@ export default async function MemberProfilePage({
   const locale = await getLocale();
   const m = getMessages(locale).profile;
   const design = formDesignProps(profile.branding ?? undefined);
-  const name = profile.displayName || profile.handle;
+  // Same guard as `generateMetadata` above — and it also feeds `initials`, which
+  // was rendering "YO" for `you@…`.
+  const name = personName(profile.displayName) ?? profile.handle;
   const initials = name.slice(0, 2).toUpperCase();
 
   return (

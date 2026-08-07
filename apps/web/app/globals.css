@@ -29,8 +29,25 @@
   /* Faint Slate — the quietest legible voice (telemetry labels, hints, inactive
      states). A fourth text step the old two-tone scale had no room for. */
   --color-faint: var(--faint);
+  /* The constant dark tile that every brand mark in the app switcher sits on, and
+     its foreground. Same values in both themes on purpose — see `--brand-ink` in
+     tokens.css. */
+  --color-brand-ink: var(--brand-ink);
+  --color-brand-ink-foreground: var(--brand-ink-foreground);
+
   /* The accent at a lightness that reads against this theme's page — the rim on an
-     accent fill, the focus outline, and the mark on a selected control. */
+     accent fill, the focus outline, and the mark on a selected control.
+
+     THE RULE, in one line: the accent has three jobs and three tokens.
+       FILL    `bg-primary`          — `--primary`, the brand lime, rimmed below
+       LETTERS `text-primary`        — `--primary-ink`, overridden below
+       LINES   `border-primary-edge` — this token, used directly at the call site
+     A border is the one job that is NOT overridden here, because `border-primary`
+     is nine different classes once you count `/40 /50 /60`, `hover:`, `checked:`
+     and `focus-within:` — overriding the bare one would have silently left the
+     other eight on the raw lime, which in light mode is a 1.27:1 line. So the call
+     sites name this token themselves and every opacity variant follows for free.
+     On dark `--primary-edge` IS `--primary`, so none of this changes that theme. */
   --color-primary-edge: var(--primary-edge);
 
   /* The WHOLE radius scale is pinned here, not just `md`: overriding one step
@@ -69,6 +86,11 @@
        14  body
        12  label / metadata
        10  telemetry (uppercase, tracked)
+     The telemetry step is a PAIR: `text-2xs` always travels with `text-faint`.
+     Half the app's eyebrow labels were drawn at `text-xs` + `text-muted-foreground`
+     instead, which is why the four-tone text ladder measured as a two-tone one —
+     the tier built to be quietest had 18 call sites against 395. Same object, same
+     two classes, everywhere.
      `lg` and `xl` are the same 20px on purpose: `lg` was 18px and carried the
      section headings, and moving it up merges a near-duplicate step rather than
      rewriting 17 call sites. Line heights are pinned with the sizes — 11px alone

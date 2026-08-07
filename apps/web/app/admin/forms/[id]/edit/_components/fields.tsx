@@ -227,7 +227,9 @@ export function SegmentedToggle<T extends string>({
           onClick={() => onChange(o.value)}
           className={cn(
             'whitespace-nowrap rounded-md px-3 py-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-            value === o.value ? 'bg-muted text-foreground' : 'text-muted-foreground hover:text-foreground',
+            value === o.value
+              ? 'bg-muted text-foreground shadow-[inset_0_0_0_1px_var(--primary-edge)]'
+              : 'text-muted-foreground hover:text-foreground',
           )}
         >
           {o.label}

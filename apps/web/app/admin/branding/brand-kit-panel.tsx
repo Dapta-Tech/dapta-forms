@@ -167,7 +167,7 @@ export function BrandKitPanel({
               type="button"
               disabled={disabled || clientLogos.length >= 24}
               onClick={() => patch({ clientLogos: [...clientLogos, { name: '' }] })}
-              className="self-start rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:border-primary"
+              className="self-start rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:border-primary-edge"
               data-testid="brand-client-logo-add"
             >
               {bk.clientLogosAdd}

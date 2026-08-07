@@ -77,7 +77,7 @@ export function ThemePresets({
             data-testid={`theme-preset-${p.id}`}
             className={cn(
               'group flex flex-col gap-1.5 rounded-lg border p-1.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-              selected ? 'border-primary' : 'border-border hover:border-muted-foreground',
+              selected ? 'border-primary-edge' : 'border-border hover:border-muted-foreground',
             )}
           >
             <span

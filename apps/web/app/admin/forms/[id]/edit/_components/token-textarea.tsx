@@ -381,6 +381,11 @@ export function TokenTextarea({
                 data-kind={s.kind}
                 style={{ boxDecorationBreak: 'clone', WebkitBoxDecorationBreak: 'clone' }}
                 className={cn(
+                  // Below the radius ladder's 6px floor on purpose. This is an
+                  // inline highlight sitting on a 20px line, not a box on the
+                  // page: at `rounded-sm` the corners eat into the glyphs and the
+                  // chip reads as a pill interrupting the sentence instead of a
+                  // mark on top of it. The ladder governs surfaces, not text runs.
                   'rounded-[3px]',
                   s.kind === 'valid' ? 'bg-primary/20 text-primary' : 'bg-destructive/15 text-destructive',
                 )}
@@ -450,7 +455,12 @@ export function TokenTextarea({
                   onMouseEnter={() => setActive(i)}
                   className={cn(
                     'flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left',
-                    i === activeIdx ? 'bg-muted' : 'hover:bg-muted',
+                    // The keyboard cursor, marked like every other one (see
+                    // `ui/select.tsx`): the wash alone could not say which token
+                    // Enter would insert.
+                    i === activeIdx
+                      ? 'bg-muted shadow-[inset_0_0_0_1px_var(--primary-edge)]'
+                      : 'hover:bg-muted',
                   )}
                 >
                   <i aria-hidden className={`pi ${t.icon} shrink-0 text-muted-foreground`} style={{ fontSize: 11 }} />

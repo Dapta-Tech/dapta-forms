@@ -51,7 +51,13 @@ export function ThemeSettings({ pref, s, m }: { pref: ThemePref; s: SettingsMess
             onClick={() => start(() => void setThemeAction(option))}
             className={cn(
               'flex items-center gap-2 whitespace-nowrap rounded-md px-3 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60',
-              pref === option ? 'bg-muted text-foreground' : 'text-muted-foreground hover:text-foreground',
+              // The accent rim every segmented pill in the app uses to mark its
+              // selected chip. It earns its keep hardest right here: this control
+              // is how you CHOOSE light mode, so it is the one place guaranteed to
+              // be read in the theme where a bare `bg-muted` wash sits at 1.17:1.
+              pref === option
+                ? 'bg-muted text-foreground shadow-[inset_0_0_0_1px_var(--primary-edge)]'
+                : 'text-muted-foreground hover:text-foreground',
             )}
           >
             <i aria-hidden className={`pi ${PI_BY_PREF[option]}`} style={{ fontSize: 13 }} />

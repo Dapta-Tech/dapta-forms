@@ -222,7 +222,7 @@ async function AnalyticsData({
         <div className="overflow-hidden rounded-lg border border-border bg-card">
           <table className="w-full border-collapse text-sm">
             <thead>
-              <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
+              <tr className="border-b border-border text-left text-2xs uppercase tracking-wide text-faint">
                 <th className="px-4 py-3 font-medium">{m.colStep}</th>
                 <th className="w-[45%] px-4 py-3 font-medium">
                   {a.dropoffMode === 'answered' ? m.colAnswered : m.colViews}
@@ -237,8 +237,11 @@ async function AnalyticsData({
                     <span className="font-medium">
                       {row.isCover ? (row.question ? m.coverRow : m.landingRow) : row.question}
                     </span>
+                    {/* The step number is the row's address, not its content — the
+                        quietest tier, so the question text beside it stays the
+                        thing you read. */}
                     {!row.isCover ? (
-                      <span className="ml-2 text-xs text-muted-foreground">#{row.stepIndex + 1}</span>
+                      <span className="ml-2 text-xs text-faint">#{row.stepIndex + 1}</span>
                     ) : null}
                   </td>
                   <td className="px-4 py-3">

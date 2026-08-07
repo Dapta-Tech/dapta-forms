@@ -127,7 +127,7 @@ async function SubmissionsData({
       <div className="overflow-x-auto rounded-lg border border-border bg-card">
         <table className="w-full min-w-[720px] border-collapse text-sm">
           <thead>
-            <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
+            <tr className="border-b border-border text-left text-2xs uppercase tracking-wide text-faint">
               <th className="whitespace-nowrap px-4 py-3 font-medium">{m.submissions.colSubmitted}</th>
               <th className="whitespace-nowrap px-4 py-3 font-medium">{m.submissions.colStatus}</th>
               <th className="whitespace-nowrap px-4 py-3 text-right font-medium">{m.submissions.colScore}</th>

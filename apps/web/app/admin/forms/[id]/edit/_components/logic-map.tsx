@@ -57,7 +57,7 @@ export function LogicMap({ config, m }: { config: FormConfig; m: BuilderMessages
             read-only map it read as a "run the form" button nobody could press.
             A plain dot marks the entry point without promising an action. */}
         <div className="flex flex-col items-center" data-testid="logic-start">
-          <span className="inline-flex items-center gap-2 rounded-full border border-primary/40 bg-primary/[0.08] px-4 py-2 shadow-sm">
+          <span className="inline-flex items-center gap-2 rounded-full border border-primary-edge/40 bg-primary/[0.08] px-4 py-2 shadow-sm">
             <span aria-hidden className="inline-block h-2 w-2 shrink-0 rounded-full bg-primary" />
             <span className="text-sm font-semibold uppercase tracking-wide text-primary">{m.map.start}</span>
           </span>
@@ -176,7 +176,7 @@ export function LogicMap({ config, m }: { config: FormConfig; m: BuilderMessages
                         <BranchEdge key={ri} label={tb(m.map.skipEdge, { value })}>
                           <div
                             data-testid="logic-end"
-                            className="rounded-lg border border-primary/50 bg-primary/[0.07] px-3 py-2"
+                            className="rounded-lg border border-primary-edge/50 bg-primary/[0.07] px-3 py-2"
                           >
                             <div className="flex items-center gap-2">
                               <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-primary/20">
@@ -290,7 +290,7 @@ function OutcomeNode({ outcome, m }: { outcome: FormOutcome; m: BuilderMessages 
   return (
     <div
       data-testid="logic-outcome"
-      className="relative w-full overflow-hidden rounded-xl border border-primary/50 bg-primary/[0.06] px-3.5 py-3 shadow-sm"
+      className="relative w-full overflow-hidden rounded-xl border border-primary-edge/50 bg-primary/[0.06] px-3.5 py-3 shadow-sm"
     >
       <span aria-hidden className="absolute inset-y-0 left-0 w-1 bg-primary/70" />
       <div className="flex items-center gap-3">

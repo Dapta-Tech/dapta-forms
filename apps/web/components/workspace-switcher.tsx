@@ -108,7 +108,7 @@ export function WorkspaceSwitcher({
         className="flex flex-col overflow-hidden py-1"
         testId="workspace-switcher-menu"
       >
-        <p className="px-2.5 py-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+        <p className="px-2.5 py-1 text-2xs font-medium uppercase tracking-wide text-faint">
           {m.eyebrow}
         </p>
         {workspaces.map((w) => {

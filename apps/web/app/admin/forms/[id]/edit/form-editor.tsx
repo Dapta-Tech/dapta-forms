@@ -793,7 +793,7 @@ export function FormEditor({
                       onClick={() => setSelected(i)}
                       className={cn(
                         'inline-flex shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs',
-                        i === selected ? 'border-primary bg-primary/10 text-foreground' : 'border-border text-muted-foreground',
+                        i === selected ? 'border-primary-edge bg-primary/10 text-foreground' : 'border-border text-muted-foreground',
                       )}
                     >
                       <span className="font-bold tabular-nums">{i + 1}</span>
