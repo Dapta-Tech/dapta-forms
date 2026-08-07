@@ -50,7 +50,7 @@ const MAX_REVEAL_MS = 30_000;
 
 /** Shared look for the inline slider-bounds warnings (V5-A2). */
 const sliderWarnClass =
-  'flex items-start gap-1.5 rounded-md bg-destructive/10 px-2 py-1 text-[11px] leading-relaxed text-destructive';
+  'flex items-start gap-1.5 rounded-md bg-destructive/10 px-2 py-1 text-xs leading-relaxed text-destructive';
 
 /** Match a step to its gallery item id (so the type <select> reflects single vs multiple). */
 function currentItemId(step: FormStep): string {
@@ -1008,7 +1008,7 @@ function FieldKeyEditor({
 
   return (
     <div className="mt-2 flex flex-col gap-1">
-      <span className="text-[11px] font-medium text-muted-foreground">{m.fieldKey}</span>
+      <span className="text-xs font-medium text-muted-foreground">{m.fieldKey}</span>
       <TextField
         value={text}
         data-testid="step-field-key"
@@ -1034,11 +1034,11 @@ function FieldKeyEditor({
         className="h-8 py-1 font-mono text-xs"
       />
       {collides || refused ? (
-        <p role="alert" data-testid="step-field-key-taken" className="text-[11px] text-destructive">
+        <p role="alert" data-testid="step-field-key-taken" className="text-xs text-destructive">
           {collides || refused === 'taken' ? m.fieldKeyTaken : m.fieldKeyInvalid}
         </p>
       ) : (
-        <p className="text-[10px] leading-relaxed text-muted-foreground">
+        <p className="text-2xs leading-relaxed text-faint">
           {m.fieldKeyHint} <span className="font-mono">{m.fieldKeyUrlExample.replace('{key}', stepKey)}</span>
         </p>
       )}
@@ -1097,11 +1097,11 @@ function NameFieldsEditor({
     <div className="flex flex-col gap-2.5">
       {fields.map((field, i) => (
         <div key={i} className="flex flex-col gap-2 rounded-lg border border-border bg-background p-2.5">
-          <span className="text-[11px] font-medium text-muted-foreground">
+          <span className="text-xs font-medium text-muted-foreground">
             {i === 0 ? m.first : m.second}
           </span>
           <label className="flex flex-col gap-1">
-            <span className="text-[11px] font-medium text-muted-foreground">{m.fieldKey}</span>
+            <span className="text-xs font-medium text-muted-foreground">{m.fieldKey}</span>
             <TextField
               value={field}
               onChange={(e) => setFieldKey(i, e.target.value)}
@@ -1109,7 +1109,7 @@ function NameFieldsEditor({
             />
           </label>
           <label className="flex flex-col gap-1">
-            <span className="text-[11px] font-medium text-muted-foreground">{m.placeholder}</span>
+            <span className="text-xs font-medium text-muted-foreground">{m.placeholder}</span>
             <TextField
               value={placeholders[field] ?? ''}
               onChange={(e) => setPlaceholder(field, e.target.value)}
@@ -1120,7 +1120,7 @@ function NameFieldsEditor({
           </label>
         </div>
       ))}
-      <p className="text-[10px] leading-relaxed text-muted-foreground" data-testid="name-fieldkey-hint">
+      <p className="text-2xs leading-relaxed text-faint" data-testid="name-fieldkey-hint">
         {m.fieldKeyHint}
       </p>
     </div>

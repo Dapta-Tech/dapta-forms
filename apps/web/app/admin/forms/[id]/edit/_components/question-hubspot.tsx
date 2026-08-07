@@ -437,7 +437,7 @@ function MappingRow({
         <label className="text-sm font-medium text-foreground">{label}</label>
         <span
           aria-live="polite"
-          className={cn('text-[11px]', saved ? 'text-primary' : 'text-muted-foreground')}
+          className={cn('text-xs', saved ? 'text-primary' : 'text-muted-foreground')}
         >
           {saving ? m.saving : saved ? <span data-testid="qs-hubspot-saved">{m.saved}</span> : null}
         </span>

@@ -282,7 +282,7 @@ function ConditionEditor({
           </option>
         ))}
       </SelectField>
-      {onScore ? <p className="text-[11px] leading-relaxed text-muted-foreground">{m.scoreHint}</p> : null}
+      {onScore ? <p className="text-xs leading-relaxed text-muted-foreground">{m.scoreHint}</p> : null}
 
       {cond ? (
         numeric ? (
@@ -394,7 +394,7 @@ function NumberOperand({
   const [text, setText] = useState(initial == null ? '' : String(initial));
   return (
     <label className="flex flex-1 flex-col gap-1">
-      <span className="text-[11px] font-medium text-muted-foreground">{label}</span>
+      <span className="text-xs font-medium text-muted-foreground">{label}</span>
       <input
         type="number"
         inputMode="decimal"
@@ -433,7 +433,7 @@ function FreeValuesInput({
   const [text, setText] = useState(initial.join(', '));
   return (
     <label className="flex flex-col gap-1">
-      <span className="text-[11px] font-medium text-muted-foreground">{label}</span>
+      <span className="text-xs font-medium text-muted-foreground">{label}</span>
       <TextField
         value={text}
         onChange={(e) => {
@@ -447,7 +447,7 @@ function FreeValuesInput({
         }}
         className="h-8 py-1 text-xs"
       />
-      <span className="text-[11px] text-muted-foreground">{hint}</span>
+      <span className="text-xs text-muted-foreground">{hint}</span>
     </label>
   );
 }

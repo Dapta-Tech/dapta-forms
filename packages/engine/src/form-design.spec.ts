@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_FORM_FONT,
+  FORM_FONTS,
   FORM_THEME_PRESETS,
   LEGACY_FORM_DESIGN,
   designAttributes,
@@ -18,9 +19,16 @@ describe('resolveDesign — legacy defaults', () => {
     expect(resolveDesign({})).toEqual(LEGACY_FORM_DESIGN);
   });
 
-  it('uses Visby CF as the default face', () => {
-    expect(resolveDesign({}).font).toBe('visby');
-    expect(DEFAULT_FORM_FONT).toBe('visby');
+  it('uses Figtree as the default face', () => {
+    expect(resolveDesign({}).font).toBe('figtree');
+    expect(DEFAULT_FORM_FONT).toBe('figtree');
+  });
+
+  // Every curated face is baked into the build by `next/font` and therefore into
+  // this repository, so the list may only ever hold freely-redistributable faces.
+  // This asserts the rule the same way a reader would check it: by name.
+  it('curates no commercially-licensed face', () => {
+    expect(FORM_FONTS).not.toContain('visby');
   });
 
   it('still accepts Poppins, the previous default, from a stored config', () => {

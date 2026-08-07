@@ -54,7 +54,7 @@ export default async function FormsList() {
       />
 
       {forms.length === 0 ? (
-        <div className="flex flex-col items-center gap-4 rounded-md border border-dashed border-border bg-card/40 p-12 text-center">
+        <div className="flex flex-col items-center gap-4 rounded-xl border border-dashed border-border bg-card/40 p-12 text-center">
           <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
             <i aria-hidden className="pi pi-file-edit" style={{ fontSize: 20 }} />
           </div>
@@ -73,7 +73,7 @@ export default async function FormsList() {
               <li
                 key={f.id}
                 data-testid="form-row"
-                className="flex flex-wrap items-center gap-x-4 gap-y-3 rounded-md border border-border bg-card px-5 py-4 transition-colors hover:border-primary/60"
+                className="flex flex-wrap items-center gap-x-4 gap-y-3 rounded-xl border border-border bg-card px-5 py-4 transition-colors hover:border-primary/60"
               >
                 <div className="min-w-0 flex-1 basis-60">
                   <Link
@@ -82,14 +82,19 @@ export default async function FormsList() {
                   >
                     {f.name}
                   </Link>
-                  <p className="mt-0.5 flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
-                    <span className="shrink-0">
+                  {/* The row's two facts are not equally interesting. The public
+                      path is what someone came here to copy, so it keeps the body
+                      tier; the timestamp and the separator drop to `text-faint` —
+                      the quiet step exists exactly so metadata can sit beside a
+                      value without competing with it. */}
+                  <p className="mt-0.5 flex min-w-0 items-center gap-2 text-xs">
+                    <span className="shrink-0 text-faint">
                       {t(m.updated, { when: new Date(f.updatedAt).toLocaleDateString(locale) })}
                     </span>
-                    <span aria-hidden className="shrink-0">
+                    <span aria-hidden className="shrink-0 text-faint">
                       ·
                     </span>
-                    <span className="min-w-0 truncate font-mono" title={publicPath}>
+                    <span className="min-w-0 truncate font-mono text-muted-foreground" title={publicPath}>
                       {publicPath}
                     </span>
                   </p>

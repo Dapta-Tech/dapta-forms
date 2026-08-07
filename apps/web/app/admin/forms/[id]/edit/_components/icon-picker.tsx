@@ -137,7 +137,7 @@ export function IconPicker({
                 onClick={() => setMode(t.id)}
                 aria-pressed={mode === t.id}
                 className={cn(
-                  'flex-1 whitespace-nowrap rounded px-2 py-1 text-xs font-medium transition-colors',
+                  'flex-1 whitespace-nowrap rounded-sm px-2 py-1 text-xs font-medium transition-colors',
                   mode === t.id
                     ? 'bg-muted text-foreground'
                     : 'text-muted-foreground hover:text-foreground',
@@ -152,7 +152,7 @@ export function IconPicker({
                 onChange(null);
                 setOpen(false);
               }}
-              className="shrink-0 rounded px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:text-destructive"
+              className="shrink-0 rounded-sm px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:text-destructive"
             >
               {m.iconClear}
             </button>
@@ -162,7 +162,7 @@ export function IconPicker({
             <div className="max-h-56 overflow-y-auto pr-1">
               {EMOJI_GROUPS.map((g) => (
                 <div key={g.key} className="mb-2 last:mb-0">
-                  <p className="mb-1 px-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  <p className="mb-1 px-0.5 text-2xs font-semibold uppercase tracking-wide text-faint">
                     {m.emojiGroups[g.key]}
                   </p>
                   <div className="grid grid-cols-8 gap-0.5">
@@ -177,7 +177,7 @@ export function IconPicker({
                           setOpen(false);
                         }}
                         className={cn(
-                          'flex h-8 items-center justify-center rounded text-lg leading-none transition-colors hover:bg-muted',
+                          'flex h-8 items-center justify-center rounded-sm text-lg leading-none transition-colors hover:bg-muted',
                           current === e && 'bg-muted ring-1 ring-ring',
                         )}
                       >
@@ -201,7 +201,7 @@ export function IconPicker({
                 value={currentIsImage ? '' : current}
                 onChange={(e) => onChange(e.target.value.toUpperCase() || null)}
               />
-              <p className="text-[11px] leading-relaxed text-muted-foreground">{m.iconLettersHint}</p>
+              <p className="text-xs leading-relaxed text-muted-foreground">{m.iconLettersHint}</p>
             </div>
           ) : null}
 
@@ -216,11 +216,11 @@ export function IconPicker({
                 onChange={(e) => onChange(e.target.value || null)}
               />
               {current && currentIsImage && !isSafeImageUrl(current) ? (
-                <p className="text-[11px] text-destructive" role="alert">
+                <p className="text-xs text-destructive" role="alert">
                   {m.iconUrlInvalid}
                 </p>
               ) : (
-                <p className="text-[11px] leading-relaxed text-muted-foreground">{m.iconImageHint}</p>
+                <p className="text-xs leading-relaxed text-muted-foreground">{m.iconImageHint}</p>
               )}
             </div>
           ) : null}

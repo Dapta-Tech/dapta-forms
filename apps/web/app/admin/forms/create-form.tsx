@@ -75,7 +75,7 @@ export function CreateForm({
       <button
         type="button"
         onClick={openDialog}
-        className="group flex flex-col gap-1 rounded-md border border-border bg-card p-5 text-left transition-transform hover:border-primary active:scale-[0.99]"
+        className="group flex flex-col gap-1 rounded-xl border border-border bg-card p-5 text-left transition-transform hover:border-primary active:scale-[0.99]"
       >
         <span className="mb-1 flex h-9 w-9 items-center justify-center rounded-md bg-primary text-primary-foreground">
           <i aria-hidden className="pi pi-plus" style={{ fontSize: 14 }} />

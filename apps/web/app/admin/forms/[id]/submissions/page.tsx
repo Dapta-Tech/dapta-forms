@@ -107,7 +107,7 @@ async function SubmissionsData({
 
   if (page.total === 0) {
     return (
-      <div className="rounded-lg border border-dashed border-border bg-card/40 p-12 text-center">
+      <div className="rounded-xl border border-dashed border-border bg-card/40 p-12 text-center">
         <p className="text-lg font-medium">{m.submissions.emptyTitle}</p>
         <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">{m.submissions.emptyBody}</p>
       </div>

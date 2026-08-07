@@ -1,15 +1,15 @@
 import {
   DM_Sans,
+  Figtree,
   Fraunces,
+  IBM_Plex_Mono,
   Inter,
   Manrope,
-  Martian_Mono,
   Playfair_Display,
   Poppins,
   Space_Grotesk,
   Work_Sans,
 } from 'next/font/google';
-import localFont from 'next/font/local';
 import type { FormFont } from '@quill/engine';
 
 /**
@@ -22,58 +22,63 @@ import type { FormFont } from '@quill/engine';
  * puts a third-party dependency on a page meant to run in a bare fork with
  * nothing configured.
  *
- * `preload` is TRUE only for the two brand faces (Visby CF and Martian Mono),
- * which every page paints. Every other face is declared on `<html>` so any form
+ * `preload` is TRUE only for Figtree, the face every page paints. Every other
+ * face — the mono included — is declared on `<html>` so any form
  * can use one without a re-render, but preloading all of them would emit a
  * `<link rel="preload">` per face on every page for fonts that page will never
  * paint. The rest load on demand, when a glyph actually needs them.
  */
 
 /**
- * Visby CF — the brand face, and the voice that does all the talking.
+ * Figtree — the brand face, and the voice that does all the talking.
  *
- * Local rather than `next/font/google` because it is a licensed commercial
- * typeface, not a Google-hosted one: the five weights in `assets/fonts/visby`
- * are subset to latin + latin-ext and converted to woff2 (~14 KB each). Only the
- * weights the type scale actually uses are declared — 400 body, 500 labels, 600
- * titles, 700 buttons, 800 display — because an unused weight is a file the
- * browser may still fetch. There are no obliques: this language has no italic
- * role, hierarchy comes from size and slate-vs-white.
+ * A geometric-humanist sans under the SIL Open Font License. The license is the
+ * reason it is here rather than a commercial face: `next/font/google` downloads
+ * it at BUILD time and serves it from our own origin, so the font files ship
+ * inside the deployed app and inside every clone of this repository. Only a
+ * freely-redistributable license makes that legal, and OFL is one.
  *
- * NOTE ON LICENSING: these binaries are redistributed by every clone of this
- * repository. Confirm the Visby CF license covers that before shipping, and if
- * it does not, drop the files and the fallback stack below degrades the page to a
- * system sans rather than breaking it.
+ * It is a variable font, so no `weight` is declared — the whole 300–900 axis
+ * arrives in one file and the type scale draws 400 body / 500 labels / 600
+ * titles / 700 buttons / 800 display off it. No obliques are used: this language
+ * has no italic role, hierarchy comes from size and slate-vs-white.
+ *
+ * Chosen over the other OFL geometrics by measurement, not taste: it is one of
+ * the three (with Outfit and Manrope) that leave the admin's dense panels at the
+ * exact same height, and of those it has the healthiest x-height — which is what
+ * decides whether a 10px uppercase telemetry label is still readable.
  */
-const visbyCF = localFont({
-  src: [
-    { path: '../assets/fonts/visby/visby-cf-400.woff2', weight: '400', style: 'normal' },
-    { path: '../assets/fonts/visby/visby-cf-500.woff2', weight: '500', style: 'normal' },
-    { path: '../assets/fonts/visby/visby-cf-600.woff2', weight: '600', style: 'normal' },
-    { path: '../assets/fonts/visby/visby-cf-700.woff2', weight: '700', style: 'normal' },
-    { path: '../assets/fonts/visby/visby-cf-800.woff2', weight: '800', style: 'normal' },
-  ],
-  variable: '--font-visby',
+const figtree = Figtree({
+  subsets: ['latin'],
+  variable: '--font-figtree',
   display: 'swap',
 });
 
 /**
- * Martian Mono — the voice that does all the measuring.
+ * IBM Plex Mono — the voice for things you copy rather than read.
  *
- * The second half of the two-voice system: telemetry labels, readouts, metric
- * values, codes and keys, always uppercase and tracked at 8–11px. It never sets
- * a sentence of prose. It is app chrome rather than a form-author choice, so it
- * is deliberately absent from `FORM_FONTS` — an author picks the voice their
- * questions speak in, not the voice the dashboard measures in.
+ * Its whole job is the fixed advance and the unambiguous `l`/`1`/`O`/`0`: public
+ * links, slugs, handles, account codes, hex values, interpolation tokens, question
+ * keys. Nothing else. In particular it no longer sets NUMBERS — a headline stat is
+ * something you glance at, not something you transcribe, and monospacing one only
+ * made it read as a code sample.
+ *
+ * Humanist rather than technical, which is why it replaced Martian Mono: that face
+ * is wide, high-waisted and loud enough that any string in it announced itself as
+ * a terminal. This one pairs with Figtree (both humanist) and says "literal"
+ * without saying "console".
+ *
+ * It is app chrome rather than a form-author choice, so it is deliberately absent
+ * from `FORM_FONTS` — an author picks the voice their questions speak in, not the
+ * voice the dashboard labels things in.
  */
-const martianMono = Martian_Mono({
+const plexMono = IBM_Plex_Mono({
   subsets: ['latin'],
-  weight: ['400', '500', '700'],
-  variable: '--font-martian-mono',
+  weight: ['400', '500', '600'],
+  variable: '--font-plex-mono',
   display: 'swap',
-  // Not preloaded: it paints the `font-mono` spots (URLs, slugs, tokens, hex
-  // values) rather than page furniture, so most routes never need it and the ones
-  // that do can swap a few short strings.
+  // Not preloaded: it paints the `font-mono` spots rather than page furniture, so
+  // most routes never need it and the ones that do can swap a few short strings.
   preload: false,
 });
 
@@ -108,8 +113,8 @@ const playfair = Playfair_Display({
 
 /** Every face's CSS variable, for the `<html>` element. */
 export const fontVariables = [
-  visbyCF.variable,
-  martianMono.variable,
+  figtree.variable,
+  plexMono.variable,
   poppins.variable,
   inter.variable,
   dmSans.variable,
@@ -121,7 +126,7 @@ export const fontVariables = [
 ].join(' ');
 
 /** The brand face, the app-wide default (`--font-sans` in globals.css). */
-export const brandFontVariable = visbyCF.variable;
+export const brandFontVariable = figtree.variable;
 
 const SANS_FALLBACK = 'ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif';
 const SERIF_FALLBACK = 'ui-serif, Georgia, "Times New Roman", serif';
@@ -132,7 +137,7 @@ const SERIF_FALLBACK = 'ui-serif, Georgia, "Times New Roman", serif';
  * stack itself (see `formFontStack`).
  */
 const CURATED_STACKS: Record<Exclude<FormFont, 'custom'>, string> = {
-  visby: `var(--font-visby), "Visby CF", ${SANS_FALLBACK}`,
+  figtree: `var(--font-figtree), Figtree, ${SANS_FALLBACK}`,
   poppins: `var(--font-poppins), Poppins, ${SANS_FALLBACK}`,
   inter: `var(--font-inter), Inter, ${SANS_FALLBACK}`,
   'dm-sans': `var(--font-dm-sans), "DM Sans", ${SANS_FALLBACK}`,
@@ -154,7 +159,7 @@ const CURATED_STACKS: Record<Exclude<FormFont, 'custom'>, string> = {
 export function formFontStack(font: FormFont, customName?: string | null): string {
   if (font === 'custom') {
     const name = customName?.trim();
-    return name ? `"${name.replace(/"/g, '')}", ${SANS_FALLBACK}` : CURATED_STACKS.visby;
+    return name ? `"${name.replace(/"/g, '')}", ${SANS_FALLBACK}` : CURATED_STACKS.figtree;
   }
   return CURATED_STACKS[font];
 }

@@ -33,7 +33,7 @@ export function ThemeSettings({ pref, s, m }: { pref: ThemePref; s: SettingsMess
   const [pending, start] = useTransition();
 
   return (
-    <section className="mb-8 rounded-md border border-border bg-card p-6">
+    <section className="mb-8 rounded-xl border border-border bg-card p-6">
       <h2 className="text-lg font-semibold tracking-tight">{s.appearanceHeading}</h2>
       <p className="mt-0.5 text-sm text-muted-foreground">{s.appearanceSubtitle}</p>
       <div

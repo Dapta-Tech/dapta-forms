@@ -785,7 +785,7 @@ function Card({
   children: React.ReactNode;
 }) {
   return (
-    <section className="rounded-lg border border-border bg-card p-5">
+    <section className="rounded-xl border border-border bg-card p-5">
       <div className="flex items-start justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
@@ -1058,7 +1058,7 @@ function HubspotCard({
   // with HubSpot ready still cannot sync a form that asks for no address.
   if (!emailSource) {
     return (
-      <section data-testid="hubspot-card" className="rounded-lg border border-border bg-card p-5">
+      <section data-testid="hubspot-card" className="rounded-xl border border-border bg-card p-5">
         <div className="flex items-center gap-2">
           <ProviderLogo provider="hubspot" size={20} />
           <h2 className="text-lg font-semibold">{m.hubspotTitle}</h2>
@@ -1078,7 +1078,7 @@ function HubspotCard({
   // Not usable at all → prompt the user to connect HubSpot for their account.
   if (!showMapping) {
     return (
-      <section className="rounded-lg border border-border bg-card p-5">
+      <section className="rounded-xl border border-border bg-card p-5">
         <div className="flex items-center gap-2">
           <ProviderLogo provider="hubspot" size={20} />
           <h2 className="text-lg font-semibold">{m.hubspotTitle}</h2>

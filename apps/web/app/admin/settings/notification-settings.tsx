@@ -60,7 +60,7 @@ export function NotificationSettings({
       : { title: labels.confirmedTitle, subtitle: labels.confirmedSubtitle };
 
   return (
-    <section className="mt-8 rounded-md border border-border bg-card p-6">
+    <section className="mt-8 rounded-xl border border-border bg-card p-6">
       <h2 className="text-lg font-semibold tracking-tight">{labels.heading}</h2>
       <p className="mt-0.5 text-sm text-muted-foreground">{labels.subtitle}</p>
       {/* These are the ACCOUNT templates — any form can pin its own copy. */}
@@ -179,7 +179,7 @@ function NotificationEmailCard({
           <p className="mt-0.5 text-xs text-muted-foreground">{subtitle}</p>
         </div>
         <span
-          className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide ${
+          className={`shrink-0 rounded-full border px-2 py-0.5 text-2xs font-medium uppercase tracking-wide ${
             isCustom
               ? 'border-primary/50 text-primary'
               : 'border-border text-muted-foreground'

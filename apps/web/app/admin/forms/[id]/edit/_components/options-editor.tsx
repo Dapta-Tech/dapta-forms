@@ -84,13 +84,13 @@ export function OptionsEditor({
                     <button
                       type="button"
                       aria-label={m.title}
-                      className="mb-1.5 shrink-0 cursor-grab touch-none rounded p-1 text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:cursor-grabbing"
+                      className="mb-1.5 shrink-0 cursor-grab touch-none rounded-sm p-1 text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:cursor-grabbing"
                       {...handleProps}
                     >
                       <i aria-hidden className="pi pi-bars" style={{ fontSize: 13 }} />
                     </button>
                     <label className="flex min-w-0 flex-[2] flex-col gap-1">
-                      <span className="flex items-center gap-1 text-[11px] font-medium text-muted-foreground">
+                      <span className="flex items-center gap-1 text-xs font-medium text-muted-foreground">
                         {m.label}
                         <HelpTip text={m.labelHelp} label={m.label} />
                       </span>
@@ -104,7 +104,7 @@ export function OptionsEditor({
                       />
                     </label>
                     <label className="flex min-w-0 flex-1 flex-col gap-1">
-                      <span className="flex items-center gap-1 text-[11px] font-medium text-muted-foreground">
+                      <span className="flex items-center gap-1 text-xs font-medium text-muted-foreground">
                         {m.value}
                         <HelpTip text={m.valueHelp} label={m.value} />
                       </span>
@@ -122,7 +122,7 @@ export function OptionsEditor({
                     </label>
                     {showPoints ? (
                       <label className="flex w-20 shrink-0 flex-col gap-1">
-                        <span className="text-[11px] font-medium text-muted-foreground">{m.points}</span>
+                        <span className="text-xs font-medium text-muted-foreground">{m.points}</span>
                         <NumberField
                           aria-label={m.points}
                           data-testid={`option-points-${index}`}
@@ -143,7 +143,7 @@ export function OptionsEditor({
                   </div>
                   {showIcon ? (
                     <div className="flex min-w-0 flex-col gap-1 pl-7" data-testid={`option-icon-${index}`}>
-                      <span className="flex items-center gap-1 text-[11px] font-medium text-muted-foreground">
+                      <span className="flex items-center gap-1 text-xs font-medium text-muted-foreground">
                         {m.icon}
                         <HelpTip text={m.iconHelp} label={m.icon} />
                       </span>
@@ -164,7 +164,7 @@ export function OptionsEditor({
         </SortableList>
       )}
       {showPoints ? (
-        <p className="text-[11px] leading-relaxed text-muted-foreground" data-testid="option-points-hint">
+        <p className="text-xs leading-relaxed text-muted-foreground" data-testid="option-points-hint">
           {m.pointsHint}
         </p>
       ) : null}

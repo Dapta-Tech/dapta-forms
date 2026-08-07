@@ -35,7 +35,7 @@ export function EmptyState({
         type="button"
         onClick={onScratch}
         data-testid="empty-scratch"
-        className="group mt-10 flex w-full max-w-xl cursor-pointer items-center gap-4 rounded-2xl border border-border bg-card p-5 text-left transition-colors hover:border-primary/60 hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="group mt-10 flex w-full max-w-xl cursor-pointer items-center gap-4 rounded-xl border border-border bg-card p-5 text-left transition-colors hover:border-primary/60 hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-muted text-muted-foreground transition-colors group-hover:text-foreground">
           <i aria-hidden className="pi pi-plus" style={{ fontSize: 18 }} />
@@ -72,7 +72,7 @@ export function EmptyState({
               type="button"
               onClick={() => onPickTemplate(id)}
               data-testid={`empty-template-${id}`}
-              className="group flex cursor-pointer flex-col rounded-2xl border border-border bg-card p-5 text-left transition-colors hover:border-primary/60 hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="group flex cursor-pointer flex-col rounded-xl border border-border bg-card p-5 text-left transition-colors hover:border-primary/60 hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               <span
                 className={

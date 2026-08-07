@@ -55,7 +55,7 @@ export default async function AdminHome() {
       <p className="mb-8 text-muted-foreground">{h.subtitle}</p>
 
       {publicUrl ? (
-        <div className="mb-8 flex flex-col gap-2 rounded-md border border-border bg-card p-5">
+        <div className="mb-8 flex flex-col gap-2 rounded-xl border border-border bg-card p-5">
           <span className="text-sm text-muted-foreground">{h.publicLink}</span>
           <CopyLink path={publicUrl} labels={{ copy: h.copy, copied: h.copied, open: h.open }} />
         </div>
@@ -81,9 +81,20 @@ function Stat({ label, value, href }: { label: string; value: string; href: stri
   return (
     <Link
       href={href}
-      className="flex flex-col gap-1 rounded-md border border-border bg-card p-5 transition-transform hover:border-primary active:scale-[0.99]"
+      className="flex flex-col gap-1 rounded-xl border border-border bg-card p-5 transition-transform hover:border-primary active:scale-[0.99]"
     >
-      <span className="text-3xl font-semibold tracking-tight">{value}</span>
+      {/* 24px, not 30px: at `text-3xl` this tied the page's own `<h1>` in size AND
+          weight, so four things on the screen claimed to be the most important and
+          the title stopped reading as one.
+
+          Set in the SANS, not the mono. A monospaced stat was the wrong read: a
+          headline figure is something you glance at, and the mono's fixed advance
+          plus its wide, high-waisted letterforms made a two-character number look
+          like a code sample and land far heavier than its weight says. The mono
+          stays for strings you copy — slugs, keys, hex — where the fixed advance is
+          doing real work. `tabular-nums` survives on its own: it is what actually
+          stops the number jittering as it updates, and every face here has it. */}
+      <span className="text-2xl font-semibold tracking-tight tabular-nums">{value}</span>
       <span className="text-sm text-muted-foreground">{label}</span>
     </Link>
   );
@@ -103,7 +114,7 @@ function Shortcut({
   return (
     <Link
       href={href}
-      className="flex flex-col gap-1 rounded-md border border-border bg-card p-5 transition-transform hover:border-primary active:scale-[0.99]"
+      className="flex flex-col gap-1 rounded-xl border border-border bg-card p-5 transition-transform hover:border-primary active:scale-[0.99]"
     >
       <span className="mb-1 flex h-9 w-9 items-center justify-center rounded-md bg-muted text-foreground">
         <i aria-hidden className={`pi ${icon}`} style={{ fontSize: 14 }} />

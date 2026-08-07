@@ -349,7 +349,7 @@ export function PreviewFrame({
             title={fullUrl}
           >
             <i aria-hidden className="pi pi-lock shrink-0 text-muted-foreground" style={{ fontSize: 9 }} />
-            <span className="truncate font-mono text-[11px] text-muted-foreground">
+            <span className="truncate font-mono text-xs text-muted-foreground">
               <span className="sr-only">{m.urlLabel}: </span>
               {displayUrl}
             </span>
@@ -360,7 +360,7 @@ export function PreviewFrame({
             title={copied ? m.copied : m.copyLink}
             aria-label={copied ? m.copied : m.copyLink}
             data-testid="preview-copy-link"
-            className="shrink-0 rounded p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="shrink-0 rounded-sm p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             <i aria-hidden className={`pi ${copied ? 'pi-check' : 'pi-copy'}`} style={{ fontSize: 12 }} />
           </button>
@@ -370,7 +370,7 @@ export function PreviewFrame({
             rel="noreferrer"
             title={m.openForm}
             aria-label={m.openForm}
-            className="shrink-0 rounded p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="shrink-0 rounded-sm p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             <i aria-hidden className="pi pi-external-link" style={{ fontSize: 12 }} />
           </a>

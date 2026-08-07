@@ -116,7 +116,7 @@ export function SchedulerEmbedPreview({ step, m }: { step: FormStep; m: BuilderM
         </p>
       ) : null}
 
-      <p className="border-t border-border px-4 py-2 text-[11px] leading-relaxed text-muted-foreground">
+      <p className="border-t border-border px-4 py-2 text-xs leading-relaxed text-muted-foreground">
         {m.canvas.schedulerNote}
       </p>
     </div>

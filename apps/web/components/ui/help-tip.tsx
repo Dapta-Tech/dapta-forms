@@ -88,7 +88,7 @@ export function HelpTip({
           data-testid="help-tip-bubble"
           className={cn(
             'absolute left-1/2 z-50 w-56 -translate-x-1/2 rounded-md border border-border bg-popover px-2.5 py-2',
-            'text-[11px] font-normal leading-relaxed text-popover-foreground shadow-lg',
+            'text-xs font-normal leading-relaxed text-popover-foreground shadow-lg',
             side === 'top' ? 'bottom-full mb-1.5' : 'top-full mt-1.5',
           )}
         >

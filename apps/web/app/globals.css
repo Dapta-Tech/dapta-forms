@@ -44,12 +44,51 @@
   --radius-xl: var(--radius-monitor); /* 16px */
   --radius-2xl: 20px;
 
-  /* Two voices, no third font. Visby CF does all the talking, Martian Mono does
-     all the measuring — both self-hosted via next/font (`--font-visby`,
-     `--font-martian-mono`); each falls back to a system stack if its variable is
-     ever absent. */
-  --font-sans: var(--font-visby), 'Visby CF', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
-  --font-mono: var(--font-martian-mono), 'Martian Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  /* Two voices, no third font. Figtree does all the talking; IBM Plex Mono is
+     reserved for strings you COPY rather than read — links, slugs, hex, keys —
+     where a fixed advance and an unambiguous l/1/O/0 do real work. Numbers are
+     NOT one of those: a stat is glanced at, and monospacing it only made it read
+     as code. Both self-hosted via next/font (`--font-figtree`, `--font-plex-mono`)
+     and both OFL, which is what lets next/font bake the files into the build and
+     into every clone of this repo. Each falls back to a system stack if its
+     variable is ever absent. */
+  --font-sans: var(--font-figtree), Figtree, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: var(--font-plex-mono), 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* The type scale, pinned end to end.
+     It had drifted to ELEVEN sizes — 10 · 11 · 12 · 13 · 14 · 15 · 16 · 18 · 23 ·
+     28 · 30 — with four of them crammed inside 10–14px where they cannot be told
+     apart, and nothing in regular use between 18 and 14 where the eye needs the
+     resolution. That is why every page read "title, then grey flatland": the scale
+     spent its steps where they do not show and had none where they would.
+     Seven steps, each a role:
+       30  page title
+       24  metric value — deliberately BELOW the title so the title still wins
+       20  section heading
+       16  card heading
+       14  body
+       12  label / metadata
+       10  telemetry (uppercase, tracked)
+     `lg` and `xl` are the same 20px on purpose: `lg` was 18px and carried the
+     section headings, and moving it up merges a near-duplicate step rather than
+     rewriting 17 call sites. Line heights are pinned with the sizes — 11px alone
+     had three different ones, which is what made small text look ragged. */
+  --text-2xs: 10px;
+  --text-2xs--line-height: 14px;
+  --text-xs: 12px;
+  --text-xs--line-height: 16px;
+  --text-sm: 14px;
+  --text-sm--line-height: 20px;
+  --text-base: 16px;
+  --text-base--line-height: 24px;
+  --text-lg: 20px;
+  --text-lg--line-height: 26px;
+  --text-xl: 20px;
+  --text-xl--line-height: 26px;
+  --text-2xl: 24px;
+  --text-2xl--line-height: 30px;
+  --text-3xl: 30px;
+  --text-3xl--line-height: 36px;
 }
 
 /* Default every element's border-color to the token, the shadcn contract. This

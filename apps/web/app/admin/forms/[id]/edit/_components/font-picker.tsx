@@ -8,7 +8,7 @@ import type { EditorMessages } from './messages';
 
 /** Display names are proper nouns, so they are not localized. */
 const FONT_LABELS: Record<FormFont, string> = {
-  visby: 'Visby CF',
+  figtree: 'Figtree',
   poppins: 'Poppins',
   inter: 'Inter',
   'dm-sans': 'DM Sans',
@@ -94,7 +94,7 @@ export function FontPicker({
         >
           {groups.map((g) => (
             <div key={g.label} className="mb-1 last:mb-0">
-              <p className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+              <p className="px-2 py-1 text-2xs font-semibold uppercase tracking-wide text-faint">
                 {g.label}
               </p>
               {g.fonts.map((f) => (
@@ -108,7 +108,7 @@ export function FontPicker({
                     setOpen(false);
                   }}
                   className={cn(
-                    'flex w-full items-center justify-between gap-2 rounded px-2 py-1.5 text-left transition-colors hover:bg-muted',
+                    'flex w-full items-center justify-between gap-2 rounded-sm px-2 py-1.5 text-left transition-colors hover:bg-muted',
                     value === f && 'bg-muted',
                   )}
                 >

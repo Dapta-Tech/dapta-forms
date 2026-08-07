@@ -75,7 +75,7 @@ function MultiMatchPicker({
 
   return (
     <div className="flex flex-col gap-1.5">
-      <span className="text-[11px] font-medium text-muted-foreground">{m.matchValueMulti}</span>
+      <span className="text-xs font-medium text-muted-foreground">{m.matchValueMulti}</span>
       <div className="flex flex-wrap gap-1.5" role="group" aria-label={m.matchValueMulti}>
         {options.map((o) => {
           const on = picked.includes(o.value);
@@ -109,11 +109,11 @@ function MultiMatchPicker({
         })}
       </div>
       {orphaned.length ? (
-        <span role="alert" data-testid="variant-multi-orphaned" className="text-[11px] text-destructive">
+        <span role="alert" data-testid="variant-multi-orphaned" className="text-xs text-destructive">
           {m.matchValueMultiOrphaned.replace('{values}', orphaned.join(', '))}
         </span>
       ) : null}
-      <span className="text-[11px] text-muted-foreground">{m.matchValueMultiExact}</span>
+      <span className="text-xs text-muted-foreground">{m.matchValueMultiExact}</span>
     </div>
   );
 }
@@ -267,7 +267,7 @@ export function QuestionVariants({
           {rows.map((key, i) => (
             <div key={i} className="flex flex-col gap-2 rounded-lg border border-border bg-background p-2.5">
               <div className="flex items-center justify-between gap-2">
-                <span className="text-[11px] font-medium text-muted-foreground">{m.matchValue}</span>
+                <span className="text-xs font-medium text-muted-foreground">{m.matchValue}</span>
                 <button
                   type="button"
                   aria-label={m.remove}
@@ -310,7 +310,7 @@ export function QuestionVariants({
                 />
               )}
               <div className="flex flex-col gap-1">
-                <span className="text-[11px] font-medium text-muted-foreground">{m.variantQuestion}</span>
+                <span className="text-xs font-medium text-muted-foreground">{m.variantQuestion}</span>
                 <TokenTextarea
                   value={variants[key] ?? ''}
                   rows={2}
@@ -325,7 +325,7 @@ export function QuestionVariants({
               </div>
               {isSlider ? (
                 <label className="flex flex-col gap-1">
-                  <span className="text-[11px] font-medium text-muted-foreground">{m.sliderLabel}</span>
+                  <span className="text-xs font-medium text-muted-foreground">{m.sliderLabel}</span>
                   <TextField
                     value={step.sliderLabelVariants?.[key] ?? ''}
                     onChange={(e) => setSliderLabel(key, e.target.value)}
@@ -358,13 +358,13 @@ export function QuestionVariants({
           </Button>
 
           <p
-            className="flex items-start gap-1.5 text-[11px] leading-relaxed text-muted-foreground"
+            className="flex items-start gap-1.5 text-xs leading-relaxed text-muted-foreground"
             data-testid="variants-scope-note"
           >
             <i aria-hidden className="pi pi-info-circle mt-0.5" style={{ fontSize: 10 }} />
             {m.scopeNote}
           </p>
-          <p className="flex items-start gap-1.5 text-[11px] leading-relaxed text-muted-foreground">
+          <p className="flex items-start gap-1.5 text-xs leading-relaxed text-muted-foreground">
             <i aria-hidden className="pi pi-info-circle mt-0.5" style={{ fontSize: 10 }} />
             {m.interpolationHint}
           </p>

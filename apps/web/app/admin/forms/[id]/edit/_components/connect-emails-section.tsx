@@ -76,7 +76,7 @@ export function ConnectEmailsSection({
   return (
     <section
       data-testid="connect-emails"
-      className="flex flex-col gap-4 rounded-lg border border-border bg-card p-4"
+      className="flex flex-col gap-4 rounded-xl border border-border bg-card p-4"
     >
       <div className="min-w-0">
         <h3 className="text-sm font-semibold text-foreground">{m.emailsTitle}</h3>
@@ -232,7 +232,7 @@ function FormEmailCard({
         </div>
         <span
           data-testid={`connect-email-badge-${key}`}
-          className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide ${
+          className={`shrink-0 rounded-full border px-2 py-0.5 text-2xs font-medium uppercase tracking-wide ${
             override !== null
               ? 'border-primary/50 text-primary'
               : 'border-border text-muted-foreground'

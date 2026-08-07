@@ -113,10 +113,17 @@ export function CanvasQuestion({
   // than the author's. The real appearance lives in the preview beside it and in
   // the Preview modal, both of which render the form exactly as published.
   const design = resolveDesign(config.branding);
+  // Mirrors `public-form.css`'s `data-pf-radius` block EXACTLY — card is
+  // `--pf-radius`, button is `--pf-radius-btn`. Written as arbitrary values on
+  // purpose: the admin's `rounded-*` ladder is the CHROME's scale and retuning it
+  // must not silently move what the canvas claims a published form looks like.
+  // These drifted (card soft showed 20px against the renderer's 16, button soft
+  // 16px against 8) — a preview that rounds differently than the page is the one
+  // thing this component exists to prevent.
   const cardRadius =
-    design.radius === 'sharp' ? 'rounded-sm' : design.radius === 'round' ? 'rounded-[28px]' : 'rounded-2xl';
+    design.radius === 'sharp' ? 'rounded-[2px]' : design.radius === 'round' ? 'rounded-[24px]' : 'rounded-[16px]';
   const btnRadius =
-    design.radius === 'sharp' ? 'rounded-sm' : design.radius === 'round' ? 'rounded-full' : 'rounded-xl';
+    design.radius === 'sharp' ? 'rounded-[2px]' : design.radius === 'round' ? 'rounded-full' : 'rounded-[8px]';
   const canvasWidth =
     device === 'mobile' ? 'max-w-[380px]' : design.contentWidth === 'wide' ? 'max-w-[760px]' : 'max-w-[640px]';
   const centred = design.contentAlign === 'center';
@@ -237,8 +244,9 @@ function QuestionEditableBody({
   // page canvas both pick up the shape axes from the one place that renders a
   // question. Colour and typeface are deliberately NOT taken — see CanvasQuestion.
   const design = resolveDesign(config.branding);
+  // `.pf-choice-list` (the option row) reads `--pf-radius-sm`: 2 / 8 / 14px.
   const optionRadius =
-    design.radius === 'sharp' ? 'rounded-sm' : design.radius === 'round' ? 'rounded-2xl' : 'rounded-xl';
+    design.radius === 'sharp' ? 'rounded-[2px]' : design.radius === 'round' ? 'rounded-[14px]' : 'rounded-[8px]';
   const centred = design.contentAlign === 'center';
 
   function updateOption(i: number, patch: Partial<FormOption>) {

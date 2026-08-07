@@ -48,7 +48,7 @@ export default async function SettingsPage() {
 
       <ThemeSettings pref={await getThemePref()} s={s} m={getMessages(locale).admin.chrome.theme} />
 
-      <section className="mb-8 rounded-md border border-border bg-card p-6">
+      <section className="mb-8 rounded-xl border border-border bg-card p-6">
         <h2 className="text-lg font-semibold tracking-tight">{s.workspaceHeading}</h2>
         <p className="mt-0.5 text-sm text-muted-foreground">{s.workspaceSubtitle}</p>
         <dl className="mt-5 grid grid-cols-1 gap-x-8 gap-y-4 sm:grid-cols-2">
@@ -75,7 +75,7 @@ export default async function SettingsPage() {
       </section>
 
       {isAdminRole(me.role) ? (
-        <section className="rounded-md border border-border bg-card p-6">
+        <section className="rounded-xl border border-border bg-card p-6">
           <div className="flex items-start justify-between gap-4">
             <div>
               <h2 className="text-lg font-semibold tracking-tight">{s.membersHeading}</h2>
@@ -124,7 +124,7 @@ export default async function SettingsPage() {
                       <span className="flex items-center gap-2 truncate text-sm font-medium">
                         {mem.displayName ?? mem.email ?? '—'}
                         {isYou ? (
-                          <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                          <span className="rounded-full bg-muted px-1.5 py-0.5 text-2xs font-medium uppercase tracking-wide text-faint">
                             {s.you}
                           </span>
                         ) : null}

@@ -90,10 +90,10 @@ export function ThemePresets({
                 fontFamily: formFontStack(p.font),
               }}
             >
-              <span className="text-[11px] font-semibold leading-tight">Aa</span>
+              <span className="text-xs font-semibold leading-tight">Aa</span>
               <span className="h-1 w-full rounded-full" style={{ background: `${p.primaryColor}` }} />
               <span
-                className="mt-0.5 inline-block px-2 py-1 text-center text-[9px] font-semibold"
+                className="mt-0.5 inline-block px-2 py-1 text-center text-2xs font-semibold"
                 style={{
                   borderRadius: p.radius === 'round' ? 999 : RADIUS_PX[p.radius],
                   ...(p.buttonStyle === 'solid'
@@ -116,7 +116,7 @@ export function ThemePresets({
         );
       })}
       {!active ? (
-        <p className="col-span-full text-[11px] text-muted-foreground">
+        <p className="col-span-full text-xs text-muted-foreground">
           <i aria-hidden className="pi pi-pencil" style={{ fontSize: 10 }} /> {m.presetsCustom}
         </p>
       ) : null}
