@@ -3,11 +3,13 @@ import type { ReactNode } from 'react';
 import { getMessages } from '@quill/shared';
 import { adminApi, isAdminRole, type AccountMember, type AccountRole, type MemberStatus } from '@/lib/admin-api';
 import { getLocale } from '@/lib/locale';
+import { getThemePref } from '@/lib/theme.server';
 import { PageHeader } from '@/components/ui/page-header';
 import { InviteMember } from './invite-member';
 import { MemberRowActions } from './member-row-actions';
 import { NotificationSettings } from './notification-settings';
 import { PublicPageSettings } from './public-page';
+import { ThemeSettings } from './theme-settings';
 
 export const dynamic = 'force-dynamic';
 
@@ -43,6 +45,8 @@ export default async function SettingsPage() {
       <PageHeader title={s.title} subtitle={s.subtitle} />
 
       <PublicPageSettings publicPath={publicPath} initial={myProfile?.profile ?? null} m={s} />
+
+      <ThemeSettings pref={await getThemePref()} s={s} m={getMessages(locale).admin.chrome.theme} />
 
       <section className="mb-8 rounded-md border border-border bg-card p-6">
         <h2 className="text-lg font-semibold tracking-tight">{s.workspaceHeading}</h2>
