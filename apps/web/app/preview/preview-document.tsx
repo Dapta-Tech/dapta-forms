@@ -49,7 +49,10 @@ export function PreviewDocument() {
     return () => window.removeEventListener('message', onMessage);
   }, []);
 
-  const Renderer = input?.layout === 'vertical' ? VerticalFormRenderer : FormRenderer;
+  // The renderer is remounted whenever the requested screen changes — `startAt`
+  // is a mount-time hint by contract, so navigation is a fresh mount, exactly
+  // like Restart is.
+  const rendererKey = input ? `${input.revision}:${String(input.screen ?? 'auto')}` : '';
 
   return (
     <>
@@ -63,14 +66,27 @@ export function PreviewDocument() {
           inside one plain div), so nothing about the box tree differs. */}
       <div data-testid="live-preview" data-preview-state={input ? 'ready' : 'waiting'}>
         {input ? (
-          <Renderer
-            key={input.revision}
-            accountCode={PREVIEW_ACCOUNT_CODE}
-            slug={PREVIEW_SLUG}
-            name={input.name}
-            config={input.config as unknown as PublicFormConfig}
-            locale={input.locale}
-          />
+          input.layout === 'vertical' ? (
+            // One page scrolls — there is no screen to start at, so no `startAt`.
+            <VerticalFormRenderer
+              key={rendererKey}
+              accountCode={PREVIEW_ACCOUNT_CODE}
+              slug={PREVIEW_SLUG}
+              name={input.name}
+              config={input.config as unknown as PublicFormConfig}
+              locale={input.locale}
+            />
+          ) : (
+            <FormRenderer
+              key={rendererKey}
+              accountCode={PREVIEW_ACCOUNT_CODE}
+              slug={PREVIEW_SLUG}
+              name={input.name}
+              config={input.config as unknown as PublicFormConfig}
+              locale={input.locale}
+              startAt={input.screen}
+            />
+          )
         ) : null}
       </div>
     </>
@@ -81,6 +97,10 @@ const SCROLLBAR_RESET = `
   html, body { scrollbar-width: none !important; -ms-overflow-style: none !important; }
   * { scrollbar-width: none !important; }
   *::-webkit-scrollbar { width: 0 !important; height: 0 !important; display: none !important; }
+  /* Next's dev-only indicator (<nextjs-portal>) floats over the form being
+     previewed — it sat on the attribution badge. Hidden here only: this rule
+     lives in the preview DOCUMENT, so the admin and public pages keep theirs. */
+  nextjs-portal { display: none !important; }
 `;
 
 /* ── Inertness ─────────────────────────────────────────────────────────────

@@ -62,12 +62,20 @@ export function FormRenderer({
   name,
   config,
   locale = 'en',
+  startAt,
 }: {
   accountCode: string;
   slug: string;
   name: string;
   config: FormConfig;
   locale?: string;
+  /**
+   * Start-position hint: a runtime step index, or `'cover'` for the default
+   * entry (cover when it exists, else the first step). The builder preview
+   * navigates by remounting with this — it is read ONLY at mount, and the
+   * renderer stays preview-agnostic otherwise. Absent = today's behavior.
+   */
+  startAt?: number | 'cover';
 }) {
   const m = getMessages(locale).renderer;
   const sessionId = useSessionId(`quill-form-${accountCode}-${slug}`);
@@ -86,9 +94,14 @@ export function FormRenderer({
   // builder preview (which reads `config.cover` directly).
   const chrome = config.cover ?? null;
 
-  const [phase, setPhase] = useState<Phase>(coverScreen ? 'cover' : 'steps');
+  // `startAt` feeds the INITIALIZERS only — no effect reacts to it changing
+  // (the preview remounts by key instead). An out-of-range index is caught by
+  // the existing clamp effect below.
+  const [phase, setPhase] = useState<Phase>(
+    typeof startAt === 'number' ? 'steps' : coverScreen ? 'cover' : 'steps',
+  );
   const [answers, setAnswers] = useState<Answers>({});
-  const [index, setIndex] = useState(0);
+  const [index, setIndex] = useState(typeof startAt === 'number' ? startAt : 0);
   const [animKey, setAnimKey] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<{ score: number; outcome: string | null } | null>(null);

@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useToast } from '@/components/toast';
-import { ProviderLogo } from '@/components/ui/provider-logo';
+import { GoogleSheetsLogo, ProviderLogo } from '@/components/ui/provider-logo';
 import { connectIntegrationAction, disconnectIntegrationAction } from './actions';
 
 type Msgs = FormsMessages['admin']['connections'];
@@ -77,6 +77,9 @@ export function ConnectionsPanel({
             locale={locale}
           />
         ))}
+        {/* Announced, not connectable yet — rendered OUTSIDE the providers map
+            so it shows even when the status fetch fails or the list changes. */}
+        <GoogleSheetsCard m={m} />
       </div>
 
       <p className="text-sm text-muted-foreground">{m.perFormNote}</p>
@@ -207,6 +210,39 @@ function ProviderCard({
         )}
       </div>
       {dialog}
+    </section>
+  );
+}
+
+/**
+ * Google Sheets — announced, not shipped. Inert by design: no connect flow, no
+ * focus target, and it is not in `providers`, so no status is ever fetched or
+ * stored for it. Drop this card once the real adapter lands.
+ */
+function GoogleSheetsCard({ m }: { m: Msgs }) {
+  return (
+    <section
+      data-testid="integration-gsheets"
+      aria-disabled="true"
+      className="flex cursor-default flex-col rounded-lg border border-border bg-card p-5 opacity-60"
+    >
+      <header className="flex items-start justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-3">
+          <span
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-muted"
+            aria-hidden
+          >
+            <GoogleSheetsLogo size={20} />
+          </span>
+          <div className="min-w-0">
+            <h2 className="font-semibold tracking-tight">{m.gsheetsName}</h2>
+            <p className="mt-0.5 text-sm text-muted-foreground">{m.gsheetsDesc}</p>
+          </div>
+        </div>
+        <span className="shrink-0 rounded border border-border bg-muted px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+          {m.comingSoon}
+        </span>
+      </header>
     </section>
   );
 }

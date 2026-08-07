@@ -104,6 +104,30 @@ describe('readPreviewMessage — the three gates', () => {
     expect(out?.type).toBe('config');
   });
 
+  it('accepts a screen hint: a non-negative integer or the literal cover', () => {
+    expect(
+      readPreviewMessage(msg({ data: { ...(msg({}).data as object), screen: 2 } }), parentWindow, ORIGIN),
+    ).toMatchObject({ screen: 2 });
+    expect(
+      readPreviewMessage(msg({ data: { ...(msg({}).data as object), screen: 0 } }), parentWindow, ORIGIN),
+    ).toMatchObject({ screen: 0 });
+    expect(
+      readPreviewMessage(msg({ data: { ...(msg({}).data as object), screen: 'cover' } }), parentWindow, ORIGIN),
+    ).toMatchObject({ screen: 'cover' });
+  });
+
+  it('degrades a malformed screen hint to absent WITHOUT rejecting the message', () => {
+    for (const junk of [-1, 1.5, 'nope', null, {}, NaN, Infinity]) {
+      const out = readPreviewMessage(
+        msg({ data: { ...(msg({}).data as object), screen: junk } }),
+        parentWindow,
+        ORIGIN,
+      );
+      expect(out?.type).toBe('config');
+      expect(out && 'screen' in out ? out.screen : undefined).toBeUndefined();
+    }
+  });
+
   it('normalises the envelope fields rather than trusting them', () => {
     const out = readPreviewMessage(
       msg({

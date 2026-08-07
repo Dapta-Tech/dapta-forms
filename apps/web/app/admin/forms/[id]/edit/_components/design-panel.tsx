@@ -520,8 +520,8 @@ export function DesignPanel({
           something that lied about mobile — every "mobile" measurement it
           showed was the desktop rendering in a 390px box. It is the same
           `PreviewFrame` the Preview modal uses, so both surfaces are honest or
-          neither is. The frame runs the real renderer and walks itself; there is
-          no screen picker any more because there is nothing to fake. */}
+          neither is. The frame runs the real renderer and walks itself; its
+          prev/next only choose which screen the renderer STARTS on. */}
       <div className="min-w-0 lg:sticky lg:top-0 lg:h-full lg:min-h-0">
         <PreviewFrame
           device={device}

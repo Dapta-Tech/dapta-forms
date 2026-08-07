@@ -26,10 +26,11 @@ import type { EditorMessages } from './messages';
  * and no publish. Both reasons are satisfied at once, and the 310 lines of
  * markup that `live-preview.tsx` duplicated from the real renderer are gone.
  *
- * The screens are no longer stepped through from out here: the frame runs the
- * REAL renderer, so it walks itself exactly as a respondent would (and reaches
- * the server at no point — see the fence in `preview-document.tsx`). Restart
- * lives on the frame's toolbar.
+ * The screens are not stepped through from out here: the frame runs the REAL
+ * renderer, so it walks itself exactly as a respondent would (and reaches the
+ * server at no point — see the fence in `preview-document.tsx`). Prev/next and
+ * Restart live on the frame's own toolbar, which also hosts this modal's Close
+ * via `endSlot`.
  */
 export function DevicePreviewModal({
   open,
@@ -76,13 +77,9 @@ export function DevicePreviewModal({
         aria-label={m.device}
         className="relative flex h-[92vh] w-full max-w-5xl flex-col gap-3 rounded-xl border border-border bg-popover p-3 shadow-lg"
       >
-        <div className="flex items-center justify-end gap-3">
-          <Button variant="ghost" size="sm" onClick={onClose} aria-label={m.close}>
-            <i aria-hidden className="pi pi-times" style={{ fontSize: 13 }} /> {m.close}
-          </Button>
-        </div>
-
         <div className="min-h-0 flex-1">
+          {/* Close lives on the frame's own toolbar (its `endSlot`) rather than
+              in a row of its own — the modal has exactly one row of chrome. */}
           <PreviewFrame
             device={device}
             onDeviceChange={setDevice}
@@ -93,6 +90,11 @@ export function DevicePreviewModal({
             layout={layout}
             m={m}
             hideAddressBar
+            endSlot={
+              <Button variant="ghost" size="sm" onClick={onClose} aria-label={m.close} className="h-8">
+                <i aria-hidden className="pi pi-times" style={{ fontSize: 13 }} /> {m.close}
+              </Button>
+            }
           />
         </div>
       </div>

@@ -1113,6 +1113,10 @@ export interface FormsMessages {
       webhookEventsHelp: string;
       eventPartial: string;
       eventComplete: string;
+      // Google Sheets — announced, not shipped; the card is inert
+      gsheetsTitle: string;
+      gsheetsDesc: string;
+      comingSoon: string;
     };
     /** Account-level provider connections (paste-token) surfaced on /admin/integrations. */
     connections: {
@@ -1122,6 +1126,10 @@ export interface FormsMessages {
       hubspotDesc: string;
       calendlyName: string;
       calendlyDesc: string;
+      /** Google Sheets — coming-soon card only, not a connectable provider yet. */
+      gsheetsName: string;
+      gsheetsDesc: string;
+      comingSoon: string;
       connected: string;
       notConnected: string;
       connect: string;
@@ -2284,6 +2292,9 @@ export const en: FormsMessages = {
       webhookEventsHelp: 'Choose which submissions are sent to this webhook. Both are sent by default.',
       eventPartial: 'Partial submissions',
       eventComplete: 'Complete submissions',
+      gsheetsTitle: 'Google Sheets',
+      gsheetsDesc: 'Append each response as a new row in a spreadsheet.',
+      comingSoon: 'Coming soon',
     },
     connections: {
       title: 'Connections',
@@ -2293,6 +2304,9 @@ export const en: FormsMessages = {
       hubspotDesc: 'Sync respondents to HubSpot contacts and map questions to contact properties.',
       calendlyName: 'Calendly',
       calendlyDesc: 'Let respondents book meetings from your form outcomes.',
+      gsheetsName: 'Google Sheets',
+      gsheetsDesc: 'Append each response as a new row in a spreadsheet.',
+      comingSoon: 'Coming soon',
       connected: 'Connected',
       notConnected: 'Not connected',
       connect: 'Connect',
@@ -3469,6 +3483,9 @@ export const es: FormsMessages = {
       webhookEventsHelp: 'Elige qué respuestas se envían a este webhook. Por defecto se envían ambas.',
       eventPartial: 'Respuestas parciales',
       eventComplete: 'Respuestas completas',
+      gsheetsTitle: 'Google Sheets',
+      gsheetsDesc: 'Añade cada respuesta como una fila nueva en una hoja de cálculo.',
+      comingSoon: 'Muy pronto',
     },
     connections: {
       title: 'Conexiones',
@@ -3478,6 +3495,9 @@ export const es: FormsMessages = {
       hubspotDesc: 'Sincroniza respuestas con contactos de HubSpot y asigna preguntas a propiedades de contacto.',
       calendlyName: 'Calendly',
       calendlyDesc: 'Permite reservar reuniones desde los resultados de tu formulario.',
+      gsheetsName: 'Google Sheets',
+      gsheetsDesc: 'Añade cada respuesta como una fila nueva en una hoja de cálculo.',
+      comingSoon: 'Muy pronto',
       connected: 'Conectado',
       notConnected: 'Sin conectar',
       connect: 'Conectar',

@@ -57,6 +57,13 @@ export interface PreviewConfigMessage {
   name: string;
   locale: string;
   layout: FormLayout;
+  /**
+   * Where the renderer should START: a runtime step index, or `'cover'` for the
+   * renderer's own default entry. Absent = default entry too. This is how the
+   * builder's prev/next navigation works — the frame remounts the renderer at
+   * the requested screen rather than puppeting its internal state.
+   */
+  screen?: number | 'cover';
 }
 
 export type PreviewMessage = PreviewReadyMessage | PreviewConfigMessage;
@@ -98,6 +105,15 @@ export function readPreviewMessage(
     const config = body.config;
     if (!config || typeof config !== 'object') return null;
     if (!Array.isArray((config as { steps?: unknown }).steps)) return null;
+    // A malformed `screen` degrades to "absent" rather than rejecting the whole
+    // message — same policy as the other envelope fields: the config is a
+    // mid-edit draft, and blanking the preview over a bad hint would be worse
+    // than opening at the default screen.
+    const screen =
+      body.screen === 'cover' ||
+      (typeof body.screen === 'number' && Number.isInteger(body.screen) && body.screen >= 0)
+        ? (body.screen as number | 'cover')
+        : undefined;
     return {
       channel: PREVIEW_CHANNEL,
       type: 'config',
@@ -106,6 +122,7 @@ export function readPreviewMessage(
       name: typeof body.name === 'string' ? body.name : '',
       locale: typeof body.locale === 'string' ? body.locale : 'en',
       layout: body.layout === 'vertical' ? 'vertical' : 'slides',
+      screen,
     };
   }
 

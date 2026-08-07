@@ -1,8 +1,8 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { FormConfig, FormLayout } from '@quill/engine';
-import { publicTitle } from '@quill/engine';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import type { Answers, FormConfig, FormLayout } from '@quill/engine';
+import { publicTitle, runtimeSteps } from '@quill/engine';
 import { t } from '@quill/shared';
 import { cn } from '@/lib/cn';
 import {
@@ -80,6 +80,7 @@ export function PreviewFrame({
   locale,
   layout,
   hideAddressBar = false,
+  endSlot,
   m,
 }: {
   device: PreviewDevice;
@@ -98,12 +99,17 @@ export function PreviewFrame({
    * would be chrome about chrome.
    */
   hideAddressBar?: boolean;
+  /** Rendered at the toolbar's right end — the modal parks its Close here. */
+  endSlot?: ReactNode;
   m: EditorMessages['preview'];
 }) {
   const x = getPreviewExtras(locale);
   const [copied, setCopied] = useState(false);
   const [origin, setOrigin] = useState('');
   const [revision, setRevision] = useState(0);
+  // The screen the frame is asked to START on. Survives a device switch on
+  // purpose — comparing widths mid-form is the whole point of the presets.
+  const [screen, setScreen] = useState<number | 'cover'>('cover');
   // Counts DOCUMENT loads, not booleans: a frame that reloads (dev HMR, a
   // navigation) re-announces itself, and the config has to be posted again.
   const [readyTick, setReadyTick] = useState(0);
@@ -116,9 +122,38 @@ export function PreviewFrame({
   const { width, height } = PREVIEW_VIEWPORTS[device];
   const { stageRef, scale } = useFitScale(width, height);
 
+  // Same gate as the renderer's `coverScreen` (`config.cover && enabled !==
+  // false`): an ABSENT cover object means no cover screen — `?.` alone would
+  // read absence as `true` and the toolbar would announce a "Cover" position
+  // the renderer never shows (every fresh form starts with no cover object).
+  const hasCover = config.cover != null && config.cover.enabled !== false;
+  // Empty answers: the navigation walks the default branch — the path a
+  // respondent who has answered nothing yet would see. Same call the old
+  // modal's stepper made.
+  const steps = useMemo(
+    () => runtimeSteps(config as unknown as Parameters<typeof runtimeSteps>[0], {} as Answers),
+    [config],
+  );
+
+  // Clamp DERIVED, never in an effect: deleting steps (or switching the cover
+  // off) mid-preview must correct the very render that observes it, and the
+  // stored state may legitimately point past the new end until the next click.
+  const effectiveScreen: number | 'cover' =
+    screen === 'cover'
+      ? hasCover
+        ? 'cover'
+        : 0
+      : screen >= steps.length
+        ? steps.length > 0
+          ? steps.length - 1
+          : hasCover
+            ? 'cover'
+            : 0
+        : screen;
+
   const payload = useMemo<Omit<PreviewConfigMessage, 'channel' | 'type'>>(
-    () => ({ revision, config, name: publicTitle(config, name), locale, layout }),
-    [revision, config, name, locale, layout],
+    () => ({ revision, config, name: publicTitle(config, name), locale, layout, screen: effectiveScreen }),
+    [revision, config, name, locale, layout, effectiveScreen],
   );
 
   useEffect(() => {
@@ -165,13 +200,73 @@ export function PreviewFrame({
     }
   }
 
+  const total = steps.length;
+  const position = effectiveScreen === 'cover' ? -1 : effectiveScreen;
+  const canPrev = position > (hasCover ? -1 : 0);
+  const canNext = position < total - 1;
+
+  // Stepping is over `effectiveScreen`, not the raw state: after steps shrink,
+  // "next from here" must mean next from the screen actually shown.
+  function go(delta: number) {
+    const next = position + delta;
+    if (next < 0) setScreen(hasCover ? 'cover' : 0);
+    else setScreen(Math.min(next, total - 1));
+  }
+
+  function restart() {
+    setScreen(hasCover ? 'cover' : 0);
+    setRevision((n) => n + 1);
+  }
+
   return (
     <div className="flex h-full min-h-0 flex-col gap-2">
-      <div className="flex items-center justify-between gap-2">
+      {/* One row, three zones. The outer 1fr columns keep the device switch
+          truly centred whatever the side clusters weigh; every control shares
+          the same 32px height so nothing sits visually off the line. */}
+      <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
+        <div className="flex min-w-0 items-center gap-2">
+          {layout === 'vertical' || (total === 0 && !hasCover) ? (
+            /* One page has no screens to step through, and an empty slides
+               form has nothing to count ("Step 1 of 0") — the note gets the
+               space the nav cluster would have used. */
+            <p className="truncate text-[11px] text-muted-foreground">{m.inert}</p>
+          ) : (
+            <>
+              <button
+                type="button"
+                onClick={() => go(-1)}
+                disabled={!canPrev}
+                title={m.previous}
+                aria-label={m.previous}
+                data-testid="preview-prev"
+                className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <i aria-hidden className="pi pi-chevron-left" style={{ fontSize: 11 }} />
+              </button>
+              <span
+                className="inline-flex h-8 min-w-0 items-center truncate text-xs tabular-nums text-muted-foreground"
+                data-testid="preview-position"
+              >
+                {effectiveScreen === 'cover' ? m.coverTitle : `${m.step} ${position + 1} ${m.of} ${total}`}
+              </span>
+              <button
+                type="button"
+                onClick={() => go(1)}
+                disabled={!canNext}
+                title={m.next}
+                aria-label={m.next}
+                data-testid="preview-next"
+                className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <i aria-hidden className="pi pi-chevron-right" style={{ fontSize: 11 }} />
+              </button>
+            </>
+          )}
+        </div>
         <div
           role="radiogroup"
           aria-label={m.device}
-          className="inline-flex items-center gap-0.5 rounded-lg border border-border bg-card p-0.5"
+          className="inline-flex h-8 items-center gap-0.5 rounded-lg border border-border bg-card p-0.5"
         >
           {DEVICES.map((d) => (
             <button
@@ -182,7 +277,7 @@ export function PreviewFrame({
               onClick={() => onDeviceChange(d)}
               data-testid={`preview-device-${d}`}
               className={cn(
-                'inline-flex items-center gap-1.5 whitespace-nowrap rounded-md px-2.5 py-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                'inline-flex h-full items-center gap-1.5 whitespace-nowrap rounded-md px-2.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                 device === d ? 'bg-muted text-foreground' : 'text-muted-foreground hover:text-foreground',
               )}
             >
@@ -191,29 +286,42 @@ export function PreviewFrame({
             </button>
           ))}
         </div>
-        <div className="flex min-w-0 items-center gap-2">
+        <div className="flex items-center gap-2 justify-self-end">
           {/* The real numbers, so "scaled to fit" can never be mistaken for
               "rendered narrower" — the viewport is 1280 either way. */}
           <span
             title={viewportLabel}
             aria-label={viewportLabel}
             data-testid="preview-viewport"
-            className="shrink-0 whitespace-nowrap font-mono text-[11px] tabular-nums text-muted-foreground"
+            className="inline-flex h-8 shrink-0 items-center whitespace-nowrap font-mono text-[10px] tabular-nums text-muted-foreground/70"
           >
             {width} × {height}
             {percent < 100 ? ` · ${percent}%` : ''}
           </span>
           <button
             type="button"
-            onClick={() => setRevision((n) => n + 1)}
+            onClick={restart}
             title={x.restart}
             aria-label={x.restart}
             data-testid="preview-restart"
-            className="shrink-0 rounded p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             <i aria-hidden className="pi pi-replay" style={{ fontSize: 12 }} />
           </button>
-          <p className="truncate text-[11px] text-muted-foreground">{m.inert}</p>
+          {layout === 'vertical' ? null : (
+            /* The "nothing is submitted" note, folded behind an icon — as a
+               sentence it dominated the row without earning the space. */
+            <button
+              type="button"
+              title={m.inert}
+              aria-label={m.inert}
+              data-testid="preview-inert"
+              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <i aria-hidden className="pi pi-info-circle" style={{ fontSize: 12 }} />
+            </button>
+          )}
+          {endSlot}
         </div>
       </div>
 
