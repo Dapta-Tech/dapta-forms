@@ -247,7 +247,7 @@ export class AdminCrudController {
       throw new BadRequestException({ error: 'INVALID_TEMPLATE', message: 'Unknown template.' });
     }
 
-    const result = await this.admin.completeOnboarding(p, parsed.data.template);
+    const result = await this.admin.completeOnboarding(p, parsed.data);
     if (result.completed && this.productAnalytics?.enabled) {
       // Emitted server-side, from the CLAIM's winner, so the completion count is
       // the count of accounts that finished — not of browsers that reached the

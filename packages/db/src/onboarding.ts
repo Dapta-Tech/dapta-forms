@@ -23,6 +23,7 @@ import type { Db } from './client';
 import { jsonParam, parseJsonColumn } from './forms';
 import {
   accountOnboardingSchema,
+  ONBOARDING_STEPS,
   type AccountOnboarding,
   type FormTemplateId,
   type OnboardingProgressInput,
@@ -62,6 +63,48 @@ function withStepSeen(seen: readonly OnboardingStep[], step: OnboardingStep | nu
   return [...seen, step];
 }
 
+/**
+ * The furthest of two steps, in wizard order.
+ *
+ * `lastStep` documents itself as "the furthest screen REACHED — the drop-off
+ * bucket", and a bucket that can move BACKWARDS is not a bucket. The wizard is
+ * pure client state, so a refresh or a return visit remounts at index 0 and its
+ * arrival patch would write `role` over a stored `template` — recording someone
+ * who reached the template picker as having quit on question one. That does not
+ * lose a breadcrumb, it inverts the metric the whole feature was built to
+ * produce, and it does it hardest for the people who came back to try again.
+ *
+ * Advancing only is also what makes an out-of-order PATCH harmless: two writes
+ * racing can no longer disagree about which is later.
+ */
+function furthestStep(
+  a: OnboardingStep | null | undefined,
+  b: OnboardingStep | null | undefined,
+): OnboardingStep | null | undefined {
+  if (!a) return b;
+  if (!b) return a;
+  return ONBOARDING_STEPS.indexOf(b) > ONBOARDING_STEPS.indexOf(a) ? b : a;
+}
+
+/**
+ * Merge one patch of answers into a blob.
+ *
+ * `!= null`, not `!== undefined`. Every answer field is `.nullable().optional()`
+ * in `onboardingProgressSchema`, so `{"role": null}` is a VALID body that used to
+ * pass an `undefined` check and blank an answer already given. Nothing in the
+ * product ever needs to un-answer a question — the wizard has no clear button —
+ * so "absent" and "explicitly null" mean the same thing here: do not write.
+ */
+function mergeAnswers(base: AccountOnboarding, patch: OnboardingProgressInput): AccountOnboarding {
+  return {
+    ...base,
+    ...(patch.role != null ? { role: patch.role } : {}),
+    ...(patch.industry != null ? { industry: patch.industry } : {}),
+    ...(patch.useCase != null ? { useCase: patch.useCase } : {}),
+    ...(patch.template != null ? { template: patch.template } : {}),
+  };
+}
+
 /** The onboarding state for one account, or null when the account does not exist. */
 export async function getAccountOnboarding(
   db: Db,
@@ -89,11 +132,17 @@ export async function getAccountOnboarding(
  *
  * Read-modify-write rather than a SQL-side merge, because there is no jsonb
  * concatenation SQLite also understands and the dual-dialect rule is not
- * negotiable. The lost-update window is real but bounded to a SINGLE person
- * advancing their OWN wizard one screen at a time: two overlapping PATCHes can
- * drop one entry from `stepsSeen`. The answers themselves survive — each screen
- * patches a different field — and `lastStep` self-heals on the next advance. A
- * missing breadcrumb is an acceptable price; a non-portable write is not.
+ * negotiable. What makes that safe is that the merge is MONOTONIC in every
+ * field: an answer is never blanked (see `mergeAnswers`), `lastStep` only ever
+ * advances (see `furthestStep`), `stepsSeen` only grows, and `startedAt` keeps
+ * the earliest. Two writes can therefore arrive in either order and settle on
+ * the same result, so the ordering the network happens to pick stops mattering.
+ *
+ * The callers close the rest: the wizard sends its FULL accumulated answers on
+ * every advance rather than a one-field delta — so a patch that never landed is
+ * repaired by the next one — and it serializes them, so its own two writers
+ * cannot interleave. The final answers do not depend on any of this at all:
+ * `claimOnboardingComplete` writes them itself, in one statement.
  */
 export async function saveOnboardingProgress(
   db: Db,
@@ -105,17 +154,11 @@ export async function saveOnboardingProgress(
   if (!current || current.completedAt != null) return null;
 
   const base = current.onboarding ?? emptyOnboarding(now);
+  const lastStep = furthestStep(base.lastStep, patch.lastStep);
   const next: AccountOnboarding = {
-    ...base,
+    ...mergeAnswers(base, patch),
     version: 1,
-    // Only fields the client actually sent overwrite. Spreading `patch` wholesale
-    // would let an omitted key arrive as `undefined` and blank an earlier answer,
-    // so a back-navigation that re-patches only `lastStep` would erase the role.
-    ...(patch.role !== undefined ? { role: patch.role } : {}),
-    ...(patch.industry !== undefined ? { industry: patch.industry } : {}),
-    ...(patch.useCase !== undefined ? { useCase: patch.useCase } : {}),
-    ...(patch.template !== undefined ? { template: patch.template } : {}),
-    ...(patch.lastStep !== undefined ? { lastStep: patch.lastStep } : {}),
+    ...(lastStep != null ? { lastStep } : {}),
     stepsSeen: withStepSeen(base.stepsSeen ?? [], patch.lastStep),
     startedAt: base.startedAt ?? now,
   };
@@ -140,11 +183,20 @@ export async function saveOnboardingProgress(
  * Writes the answers and the timestamp in ONE statement so the two can never
  * disagree: an account is never left marked complete with no record of what was
  * chosen, nor with a template recorded and no completion.
+ *
+ * `answers` comes from the wizard's own state, not from what happened to reach
+ * the database first. The template screen arms its CTA as soon as question three
+ * is answered, so that answer's PATCH and this claim are routinely in flight
+ * together — and whichever read the row first would have written a blob without
+ * the other's field. Taking the answers here removes the dependency: the winning
+ * statement writes the complete set, and a PATCH that lands afterwards is
+ * correctly refused by the `IS NULL` guard.
  */
 export async function claimOnboardingComplete(
   db: Db,
   accountId: string,
   template: FormTemplateId,
+  answers: OnboardingProgressInput = {},
   now: number = Date.now(),
 ): Promise<boolean> {
   const current = await getAccountOnboarding(db, accountId);
@@ -152,7 +204,7 @@ export async function claimOnboardingComplete(
 
   const base = current.onboarding ?? emptyOnboarding(now);
   const next: AccountOnboarding = {
-    ...base,
+    ...mergeAnswers(base, answers),
     version: 1,
     template,
     lastStep: 'template',
@@ -170,4 +222,30 @@ export async function claimOnboardingComplete(
         RETURNING id`,
   );
   return Boolean(claimed);
+}
+
+/**
+ * Record the form the winning claim created, so a LOSING claim can be sent to
+ * that exact form.
+ *
+ * A second write rather than part of the claim, because the ordering is not
+ * negotiable: only the claim's winner may create anything, so the form does not
+ * exist yet when the claim is made. It is uncontended all the same —
+ * `onboarding_completed_at` is set by the time this runs, which is precisely the
+ * condition under which `saveOnboardingProgress` refuses to write.
+ *
+ * Guarded on the field still being empty so a retry cannot repoint a workspace's
+ * recorded first form at something built later.
+ */
+export async function recordOnboardingFormId(
+  db: Db,
+  accountId: string,
+  formId: string,
+): Promise<void> {
+  const current = await getAccountOnboarding(db, accountId);
+  if (!current?.onboarding || current.onboarding.formId) return;
+  const next: AccountOnboarding = { ...current.onboarding, formId };
+  await db.run(
+    sql`UPDATE account SET onboarding = ${jsonParam(next)} WHERE id = ${accountId}`,
+  );
 }

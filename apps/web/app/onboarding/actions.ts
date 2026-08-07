@@ -1,30 +1,10 @@
 'use server';
 
-import { redirect } from 'next/navigation';
+import { redirect, unstable_rethrow } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
-import { adminApi, type OnboardingProgress } from '@/lib/admin-api';
-
-/**
- * Is this the control-flow exception `redirect()` throws?
- *
- * `adminApi` redirects to /login from inside the request helper when the API
- * answers 401, and it does that by THROWING — Next's redirect is an exception,
- * not a return. A bare `catch {}` around an api call therefore swallows the
- * sign-out and the person silently continues in a dead session. Every catch in
- * this file has to let it through.
- *
- * Identified by the `digest` string rather than an instanceof, because the error
- * class lives behind a `next/dist/...` internal path that is not part of the
- * public API and moves between releases.
- */
-function isRedirect(error: unknown): boolean {
-  return (
-    typeof error === 'object' &&
-    error !== null &&
-    typeof (error as { digest?: unknown }).digest === 'string' &&
-    (error as { digest: string }).digest.startsWith('NEXT_REDIRECT')
-  );
-}
+import { cookies } from 'next/headers';
+import { adminApi, type OnboardingComplete, type OnboardingProgress } from '@/lib/admin-api';
+import { LOCALE_COOKIE } from '@/lib/locale';
 
 /**
  * Persist one screen's worth of answers.
@@ -34,15 +14,31 @@ function isRedirect(error: unknown): boolean {
  * regardless and the API simply never hears about that step. Losing one
  * breadcrumb of telemetry is strictly better than trapping someone on question
  * two because the network blipped.
+ *
+ * `unstable_rethrow` first, always. `adminApi` signs a dead session out by
+ * THROWING Next's redirect — the framework's control flow is an exception, not
+ * a return — and the same is true of `notFound()`, dynamic-usage bailouts and
+ * postpone errors. A catch that does not re-throw those swallows the sign-out
+ * and leaves the person clicking through a wizard nobody is authenticated for.
  */
 export async function saveOnboardingStepAction(patch: OnboardingProgress): Promise<void> {
   try {
     await adminApi.saveOnboarding(patch);
   } catch (e) {
-    // An expired session must still sign them out — see `isRedirect`.
-    if (isRedirect(e)) throw e;
+    unstable_rethrow(e);
     /* progress is an observer of the wizard, never a participant */
   }
+}
+
+/**
+ * What the wizard gets back when the completion did NOT go through.
+ *
+ * There is no success variant, and that is not an oversight: every path where
+ * the API answered ends in a `redirect`, which throws. The only way this
+ * function returns a value is a failure the wizard has to show.
+ */
+export interface CompleteOnboardingFailure {
+  ok: false;
 }
 
 /**
@@ -59,21 +55,48 @@ export async function saveOnboardingStepAction(patch: OnboardingProgress): Promi
  * When the claim was already spent (a double-submit, a second tab) the API hands
  * back the WINNER's form id and this still lands there — both tabs end up on the
  * same form instead of one of them on an error page.
+ *
+ * ONLY an answering API redirects. A thrown failure returns `{ ok: false }` and
+ * the wizard shows it, because `/admin` is not a reachable fallback while the
+ * claim is unwritten: the layout's first-run gate reads the same NULL column
+ * this request failed to set, so it would bounce them straight back here — into
+ * a wizard that remounts at question one with none of their answers, since the
+ * component's state died with the navigation. A redirect loop that silently
+ * erases the work is worse than an error with a retry button.
+ *
+ * `/admin` IS the right target when the API answers without a form id, which is
+ * a different case: the claim is written by then (by this caller or by the one
+ * that beat it), so the gate lets them through to an empty dashboard where "New
+ * form" is the obvious next click.
  */
-export async function completeOnboardingAction(template: string): Promise<void> {
-  let target = '/admin';
+export async function completeOnboardingAction(
+  input: OnboardingComplete,
+): Promise<CompleteOnboardingFailure> {
+  let target: string;
   try {
-    const result = await adminApi.completeOnboarding({ template });
-    if (result.formId) target = `/admin/forms/${result.formId}/edit?tour=1`;
+    const result = await adminApi.completeOnboarding(input);
+    target = result.formId ? `/admin/forms/${result.formId}/edit?tour=1` : '/admin';
   } catch (e) {
-    if (isRedirect(e)) throw e;
-    // The answers are already stored and the completion may well have been
-    // claimed. Sending them back through the wizard would ask them to redo work
-    // that is done; the dashboard is the honest fallback.
+    unstable_rethrow(e);
+    return { ok: false };
   }
+
+  // The wizard resolved its language from `Accept-Language`, because nobody
+  // arriving at it has ever seen the switcher — but everything past this
+  // redirect reads the COOKIE and answers English without one. Persisting it
+  // here is what stops a Spanish signup finishing the wizard in Spanish and
+  // landing in an English builder, with the three coach marks in English on top.
+  if (input.locale === 'es' || input.locale === 'en') {
+    (await cookies()).set(LOCALE_COOKIE, input.locale, {
+      path: '/',
+      maxAge: 60 * 60 * 24 * 365,
+      sameSite: 'lax',
+    });
+  }
+
   revalidatePath('/admin', 'layout');
   // OUTSIDE the try: `redirect` throws, so calling it inside would hand the
-  // catch above its own control-flow exception and this action would fall
-  // through to no navigation at all.
+  // catch above its own control-flow exception. `unstable_rethrow` would let it
+  // back out correctly, but keeping it out here says the intent plainly.
   redirect(target);
 }

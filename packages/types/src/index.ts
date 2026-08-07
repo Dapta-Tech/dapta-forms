@@ -1437,6 +1437,16 @@ export const accountOnboardingSchema = z.object({
   stepsSeen: z.array(z.enum(ONBOARDING_STEPS)).max(ONBOARDING_STEPS.length).optional(),
   /** Epoch-ms the wizard was first opened, for time-to-complete. */
   startedAt: z.number().int().nonnegative().nullable().optional(),
+  /**
+   * The form the winning claim created, recorded so a LOSING claim (a
+   * double-submit, a second tab) can be sent to that exact form.
+   *
+   * Written after the create, because the claim has to run first — only its
+   * winner may create anything. Guessing instead, by taking the account's
+   * oldest form, sends the loser to an unrelated pre-existing form with the
+   * first-run tour armed on it.
+   */
+  formId: z.string().nullable().optional(),
 });
 export type AccountOnboarding = z.infer<typeof accountOnboardingSchema>;
 
@@ -1457,8 +1467,29 @@ export const onboardingProgressSchema = z.object({
 });
 export type OnboardingProgressInput = z.infer<typeof onboardingProgressSchema>;
 
-/** The complete body: which starting point to create the first form from. */
+/**
+ * The complete body: which starting point to create the first form from, plus
+ * the answers the wizard is holding.
+ *
+ * The answers ride along rather than being left to the last PATCH, and that is
+ * what closes the race between them. The template screen arms its CTA the moment
+ * question three is answered, so the completion can be in flight ~300ms behind
+ * that answer's PATCH — and both write the same JSON column by
+ * read-modify-write. If the claim's read wins, `useCase` is written by nobody:
+ * the exact field the template recommendation and every "why this template"
+ * query are built on. Carrying it here means the claim's single guarded
+ * statement writes the complete answer set itself, and nothing is left to
+ * arrive in time.
+ *
+ * `locale` is what the wizard rendered in, so the form gets the same name as the
+ * card that was clicked. Optional: a caller that omits it gets the registry's
+ * English default rather than a 400.
+ */
 export const onboardingCompleteSchema = z.object({
   template: z.enum(FORM_TEMPLATE_IDS),
+  role: z.enum(ONBOARDING_ROLES).nullable().optional(),
+  industry: z.enum(ONBOARDING_INDUSTRIES).nullable().optional(),
+  useCase: z.enum(ONBOARDING_USE_CASES).nullable().optional(),
+  locale: z.enum(['en', 'es']).optional(),
 });
 export type OnboardingCompleteInput = z.infer<typeof onboardingCompleteSchema>;

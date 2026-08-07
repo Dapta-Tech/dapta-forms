@@ -4,16 +4,24 @@ import {
   cacheEntitlement,
   claimOnboardingComplete,
   createForm,
+  getAccountOnboarding,
   getFormTemplate,
   getMe,
+  recordOnboardingFormId,
   saveOnboardingProgress,
   setVanitySlug,
   sql,
   type VanityOutcome,
 } from '@quill/db';
 import { canClaimVanitySlug } from '@quill/engine';
-import type { FormTemplateId, OnboardingProgressInput } from '@quill/types';
+import { getMessages } from '@quill/shared';
+import type {
+  FormTemplateId,
+  OnboardingCompleteInput,
+  OnboardingProgressInput,
+} from '@quill/types';
 import type { HostPrincipal } from './auth.service';
+import { isAdmin } from './permissions';
 import { DisabledEntitlementsProvider, type EntitlementsProvider } from './entitlements.provider';
 import { DB, ENTITLEMENTS, ONBOARDING_ENABLED, PREMIUM_MODE } from './tokens';
 
@@ -45,13 +53,23 @@ export class AdminService {
    * environment with the flag on in the web and off in the API would bounce
    * every user into a wizard whose endpoints refuse to serve it — a login loop
    * with no way out. One authority, one answer.
+   *
+   * ROLE is part of that answer, and leaving it out was a lockout. The wizard
+   * describes the WORKSPACE, so both its endpoints are admin-gated; an
+   * account-scoped flag would therefore send a plain `member` — a colleague who
+   * joined an org whose owner abandoned the wizard — to a screen where every
+   * write 403s, the completion 403s, and the fallback lands back under the gate
+   * that sent them. No sidebar, no sign-out, no way out. Answering `false` for
+   * anyone who cannot complete it puts them on the dashboard of a workspace
+   * whose owner has not finished setting up, which is a normal state.
    */
   async me(p: HostPrincipal) {
     const view = await getMe(this.db, p.accountId, p.memberId);
     if (!view) return view;
     return {
       ...view,
-      onboardingRequired: this.onboardingEnabled && view.onboardingCompletedAt == null,
+      onboardingRequired:
+        this.onboardingEnabled && view.onboardingCompletedAt == null && isAdmin(p.role),
     };
   }
 
@@ -81,38 +99,62 @@ export class AdminService {
    *
    * The template id is resolved to a config HERE, from a server-side registry, so
    * the request body can only ever name a starting point — never supply one.
+   *
+   * The NAME comes from the same i18n catalog the wizard rendered its cards
+   * from, so the form is called what the card said. The registry's own `name` is
+   * the fallback for a caller that names no locale — it is English, and having
+   * two places that both answer "what is this template called" is how a Spanish
+   * signup ended up clicking "Calificador de leads" and getting "Lead qualifier".
    */
   async completeOnboarding(
     p: HostPrincipal,
-    templateId: FormTemplateId,
+    input: OnboardingCompleteInput,
   ): Promise<{ completed: boolean; formId: string | null }> {
     if (!this.onboardingEnabled) return { completed: false, formId: null };
 
+    const templateId = input.template;
     const template = getFormTemplate(templateId);
     if (!template) return { completed: false, formId: null };
 
-    const won = await claimOnboardingComplete(this.db, p.accountId, templateId);
+    const won = await claimOnboardingComplete(this.db, p.accountId, templateId, {
+      role: input.role,
+      industry: input.industry,
+      useCase: input.useCase,
+    });
     if (!won) {
       // A loser must not create a second form. It still needs somewhere to send
-      // the person, so hand back the form the WINNER made (the account's first).
-      const existing = await this.db.get<{ id: string }>(
-        sql`SELECT id FROM form WHERE account_id = ${p.accountId}
-            ORDER BY created_at ASC LIMIT 1`,
-      );
-      return { completed: false, formId: existing?.id ?? null };
+      // the person, so hand back the form the WINNER made — read from the blob
+      // the winner recorded it in, never guessed from the account's oldest form.
+      // On an account that already had one (a re-gated workspace, a fork that
+      // toggled the flag) the oldest form is an unrelated one, and the loser
+      // would land in it with the first-run tour armed.
+      const state = await getAccountOnboarding(this.db, p.accountId);
+      return { completed: false, formId: state?.onboarding?.formId ?? null };
     }
 
     const created = await createForm(
       this.db,
       p.accountId,
-      { name: template.name, ...(template.config ? { config: template.config } : {}) },
+      {
+        name: this.templateFormName(templateId, template.name, input.locale),
+        ...(template.config ? { config: template.config } : {}),
+      },
       p.memberId,
     );
     // A failed create must NOT un-claim the completion: the person answered the
     // questions and those answers are stored. Sending them back through the
     // wizard to re-answer would lose the thing we actually wanted. They land on
     // an empty dashboard instead, where "New form" is the obvious next click.
-    return { completed: true, formId: created.ok ? created.value.id : null };
+    if (!created.ok) return { completed: true, formId: null };
+
+    await recordOnboardingFormId(this.db, p.accountId, created.value.id);
+    return { completed: true, formId: created.value.id };
+  }
+
+  /** The created form's name in the locale the wizard rendered its cards in. */
+  private templateFormName(id: FormTemplateId, fallback: string, locale?: 'en' | 'es'): string {
+    if (!locale) return fallback;
+    return getMessages(locale).admin.onboarding.templates.options[id].formName;
   }
 
   // --- Vanity slug (premium — included with the Dapta AI subscription) ------
