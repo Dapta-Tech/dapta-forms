@@ -120,14 +120,32 @@ Steps with `triggersReveal: true` show the reveal after completing that step. `p
   render inside `logic-dialog`, opened by `question-logic-edit`. Close it with
   `logic-dialog-close` before driving the topbar (save status / Publish).
 - **The public API rate limit will bite any spec that walks several forms.**
-  Per-IP token bucket, 60 burst / 1-per-second refill (`RATE_LIMIT_CAPACITY`,
-  `RATE_LIMIT_REFILL_PER_SEC`), shared by every suite. A 429 on the page's
-  server-side config fetch throws in `getJson`, so the public subtree renders its
-  error boundary — **"This page didn't load"**, with no `.pf__*` markup at all —
-  and a naive `expect(input).toBeVisible()` just times out. Load public pages via
-  a goto-retry with a ~5s refill pause (see `gotoPublic` in
-  `builder-gaps.spec.ts`, `openFirstStep` in `v6-scheduler-booking.spec.ts`,
-  `openForm` in `v5-reveal-positions.spec.ts`).
+  Per-IP token bucket, **60 burst / 1-per-second refill**
+  (`RATE_LIMIT_CAPACITY`, `RATE_LIMIT_REFILL_PER_SEC`; 429 carries
+  `Retry-After: 1`). Every spec drains the SAME bucket, because public traffic
+  reaches the API from the **Next server**, not the browser — a `page.on('request')`
+  listener sees zero `/v1/public/*` calls, so the drain is invisible from the
+  page. Reproduce it deterministically with
+  `for i in $(seq 1 70); do curl -s -o /dev/null http://localhost:4400/v1/public/forms/<code>/nope-$i; done`
+  (the guard runs before the handler, so even 404s spend tokens).
+  Three symptoms and their fixes:
+  - **Page LOAD throttled** → `getJson` throws → the public subtree renders its
+    error boundary, **"This page didn't load"**, with no `.pf__*` markup at all,
+    and a naive `expect(input).toBeVisible()` just times out. Fix: goto-retry with
+    a ~5s refill pause (`gotoPublic` in `builder-gaps.spec.ts`, `openFirstStep` in
+    `v6-scheduler-booking.spec.ts`, `openForm` in `v5-reveal-positions.spec.ts`).
+  - **Final SUBMIT throttled** → `finalize` sets the error and puts the phase back
+    to `steps`, so the last question returns with `.pf__error` and its Continue
+    button. Fix: retry the click like a respondent (`runToCompletion` in
+    `v5-reveal-positions.spec.ts`, the terminal test in `builder-gaps.spec.ts`).
+    Walking mid-form steps is pure client work — only the submit crosses the wire.
+  - **A submit you cannot re-trigger** (a scheduler booking: `handleSchedulerBooked`
+    marks the step booked *before* it posts and never runs twice, so re-dispatching
+    the Calendly message is ignored and the run strands on the scheduler step).
+    Fix: put the bucket in a KNOWN state before walking — spend it to empty, then
+    wait a fixed refill (`awaitPublicApiHeadroom` in `v6-scheduler-booking.spec.ts`,
+    ~20s buys one whole walk). A single probe cannot distinguish "full" from
+    "one token left", so probing alone is not enough.
 - **Do not scroll the settings COLUMN to assert a row is reachable.** The HubSpot
   "Map to" section renders *below* the Advanced group, so the column's maximum
   scrollTop puts the HubSpot card in frame and the last advanced row off the top.

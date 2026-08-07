@@ -81,6 +81,18 @@ async function openEditor(page: Page, id: string) {
   });
 }
 
+/**
+ * Open the question panel's ADVANCED group (advanced-settings.tsx). It
+ * auto-opens when the step already has a badge-worthy setting, so toggle only
+ * when it is closed — a blind click would collapse it.
+ */
+async function openAdvanced(page: Page) {
+  const header = page.getByTestId('advanced-settings').getByRole('button', { name: /Advanced/ });
+  await expect(header).toBeVisible({ timeout: 15_000 });
+  if ((await header.getAttribute('aria-expanded')) !== 'true') await header.click();
+  await expect(header).toHaveAttribute('aria-expanded', 'true');
+}
+
 /** Wait for the autosaved draft to land, then publish it and wait for the toast. */
 async function saveAndPublish(page: Page) {
   // "Unpublished changes" appears after the first successful autosave; the
@@ -135,18 +147,30 @@ test.describe('builder gaps: newly-exposed engine features via the builder UI', 
     await openEditor(page, form.id);
     // Select the "details" step in the left spine.
     await page.getByRole('button', { name: /A few details/ }).click();
+    // The condition editors moved out of the settings panel: the Build panel now
+    // SUMMARISES this question's logic and `question-logic-edit` opens the shared
+    // dialog that edits it. Same editors, same testids, one dialog around them.
+    await page.getByTestId('question-logic-edit').click();
+    const dialog = page.getByTestId('logic-dialog');
+    await expect(dialog).toBeVisible();
     // Visibility section → "Show when" source field = pick. The field picker is
     // the branded combobox (components/ui/select.tsx): a trigger button opening
     // a listbox of the prior questions. Picking a choice field seeds the
     // condition with its FIRST option value ("a").
     const showWhenField = page.getByRole('button', { name: 'Show when — Field', exact: true });
     await showWhenField.click();
-    await page.getByRole('option', { name: 'Pick one', exact: true }).click();
+    await page
+      .getByRole('listbox', { name: 'Show when — Field' })
+      .getByRole('option', { name: 'Pick one', exact: true })
+      .click();
     await expect(showWhenField).toContainText('Pick one');
     const chip = page
       .getByRole('group', { name: 'Matches any of' })
       .getByRole('button', { name: 'Alpha', exact: true });
     await expect(chip).toHaveAttribute('aria-pressed', 'true');
+    // Close the dialog so the topbar (save status, Publish) is reachable again.
+    await page.getByTestId('logic-dialog-close').click();
+    await expect(dialog).toBeHidden();
 
     await saveAndPublish(page);
 
@@ -184,7 +208,7 @@ test.describe('builder gaps: newly-exposed engine features via the builder UI', 
     await openEditor(page, form.id);
     await page.getByRole('button', { name: /Not a fit/ }).click();
     // "Ends the form" is in the Behavior section, inside the collapsed Advanced group.
-    await page.getByRole('button', { name: /Advanced/ }).click();
+    await openAdvanced(page);
     const terminal = page.getByRole('switch', { name: 'Ends the form' });
     await terminal.click();
     await expect(terminal).toHaveAttribute('aria-checked', 'true');
@@ -247,11 +271,17 @@ test.describe('builder gaps: newly-exposed engine features via the builder UI', 
 
     await openEditor(page, form.id);
     // The topbar's contextual row now carries its own "Design" shortcut, so the
-  // role+name lookup resolves to two buttons — target the TAB by testid.
-  await page.getByTestId('editor-tab-design').click();
-    // Cover screen → Badge (Field labels are not htmlFor-associated; target the
-    // adjacent input).
-    await page.locator('label:text-is("Badge") + input').fill(badgeText);
+    // role+name lookup resolves to two buttons — target the TAB by testid.
+    await page.getByTestId('editor-tab-design').click();
+    // Cover screen → Badge. `Field` (fields.tsx) renders
+    // <div><span><label>Badge</label></span><input/></div> — the label is NOT
+    // htmlFor-associated AND the input is a sibling of the label's SPAN, not of
+    // the label, so reach the control through the Field wrapper.
+    await page
+      .locator('label:text-is("Badge")')
+      .locator('xpath=ancestor::div[1]')
+      .locator('input')
+      .fill(badgeText);
     // Client logos → Add logo → Image URL.
     await page.getByRole('button', { name: 'Add logo', exact: true }).click();
     await page.getByLabel('Image URL').fill(logoUrl);
@@ -282,6 +312,8 @@ test.describe('builder gaps: newly-exposed engine features via the builder UI', 
     // INSERTS a reveal card after this question; there is no Design-tab reveal
     // to enable separately, which is the whole point of the single model.
     await page.getByRole('button', { name: /Pick one/ }).click();
+    // Behavior lives inside the collapsed Advanced group (advanced-settings.tsx).
+    await openAdvanced(page);
     const trigger = page.getByRole('switch', { name: 'Show reveal screen after' });
     await trigger.click();
     await expect(trigger).toHaveAttribute('aria-checked', 'true');

@@ -91,9 +91,14 @@ function settingsPanel(page: Page): Locator {
 
 /** The branded Select's root (`.relative` div) that follows a builder `Field`
  *  label. Field labels are not htmlFor-associated with the branded combobox, so
- *  proximity to the label is the exact selector (see fields.tsx `Field`). */
+ *  proximity to the label is the exact selector — but `Field` (fields.tsx)
+ *  renders `<div><span><label>…</label></span><SelectRoot/></div>`, so the label
+ *  lives one level deep inside a wrapper SPAN and the Select is the SPAN's
+ *  sibling, not the label's. Step up before taking the sibling. */
 function selectRootAfterLabel(scope: Locator, labelText: string): Locator {
-  return scope.getByText(labelText, { exact: true }).locator('xpath=following-sibling::div[1]');
+  return scope
+    .locator('label', { hasText: new RegExp(`^\\s*${labelText}\\s*$`) })
+    .locator('xpath=../following-sibling::div[1]');
 }
 
 /** Click-open a branded Select, retrying the toggle so a pre-hydration click
@@ -178,8 +183,8 @@ test.describe('N2 — branded admin dropdowns (custom combobox, not native <sele
     const form = await createForm(request, uniqueName('partial', testInfo.workerIndex));
     await openEditor(page, form.id);
     // The topbar's contextual row now carries its own "Design" shortcut, so the
-  // role+name lookup resolves to two buttons — target the TAB by testid.
-  await page.getByTestId('editor-tab-design').click();
+    // role+name lookup resolves to two buttons — target the TAB by testid.
+    await page.getByTestId('editor-tab-design').click();
 
     // The section survives with its pointer note…
     await expect(page.getByText('Partial submissions', { exact: true })).toBeVisible();
