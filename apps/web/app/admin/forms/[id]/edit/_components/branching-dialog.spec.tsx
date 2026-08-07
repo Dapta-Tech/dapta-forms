@@ -1,8 +1,8 @@
 /**
- * Unit tests for the form-wide branching overview: that it lists EVERY step in
- * order, spells the rules out with the same describer the Logic map uses, says
- * so plainly when a step carries no logic, and hands editing to the parent
- * instead of mounting a second copy of the per-question dialog.
+ * Unit tests for the form-wide branching EDITOR (R7): every step in order, each
+ * block an inline editor — the universal "Always go to" select, the shared
+ * value-rule rows on option types, the shared visibility editors — and no
+ * capability lectures anywhere: what a type cannot configure is simply absent.
  *
  * The web app's vitest runs in plain node (no jsdom), so these assert on the
  * React element TREE the component returns rather than on rendered markup —
@@ -11,19 +11,23 @@
 import { describe, expect, it, vi } from 'vitest';
 import { isValidElement, type ReactElement, type ReactNode } from 'react';
 import type { FormStep } from '@quill/engine';
+import { getMessages } from '@quill/shared';
 import { LogicDialog } from './logic-dialog';
+import { LogicRules } from './logic-rules';
+import { LogicConditions } from './logic-conditions';
 import { BranchingDialog } from './branching-dialog';
 import { getBuilderMessages, tb } from './builder-messages';
 
 type AnyProps = Record<string, unknown> & { children?: ReactNode };
 
 const bm = getBuilderMessages('en');
+const em = getMessages('en').admin.editor;
 
 /**
  * Depth-first flatten. Function components declared in THIS file's module (all
  * of which take a `bm` prop) are invoked so their markup is reachable; shared
- * leaves like `Button` or `Modal` are left as elements. None of the invoked
- * components use hooks, so calling them directly is safe.
+ * leaves like `LogicRules`, `LogicConditions`, `Button` or `Modal` are left as
+ * elements. None of the invoked components use hooks, so calling them is safe.
  */
 function collect(node: ReactNode, out: ReactElement[] = []): ReactElement[] {
   if (Array.isArray(node)) {
@@ -33,7 +37,12 @@ function collect(node: ReactNode, out: ReactElement[] = []): ReactElement[] {
   if (!isValidElement(node)) return out;
   out.push(node);
   const props = node.props as AnyProps;
-  if (typeof node.type === 'function' && 'bm' in props) {
+  if (
+    typeof node.type === 'function' &&
+    'bm' in props &&
+    node.type !== (LogicRules as unknown) &&
+    node.type !== (LogicConditions as unknown)
+  ) {
     collect((node.type as (p: AnyProps) => ReactNode)(props), out);
   }
   collect(props.children, out);
@@ -47,17 +56,6 @@ function allByTestId(els: ReactElement[], id: string): ReactElement[] {
   return els.filter((el) => (el.props as AnyProps)['data-testid'] === id);
 }
 
-/** Every string rendered anywhere in the tree (children only, joined). */
-function text(els: ReactElement[]): string {
-  return els
-    .flatMap((el) => {
-      const kids = (el.props as AnyProps).children;
-      return Array.isArray(kids) ? kids : [kids];
-    })
-    .filter((c): c is string => typeof c === 'string')
-    .join(' | ');
-}
-
 const choice = (key: string, question: string): FormStep => ({
   key,
   type: 'multiple_choice',
@@ -69,14 +67,19 @@ const choice = (key: string, question: string): FormStep => ({
   ],
 });
 
-function render(over: { steps: FormStep[]; onEditStep?: (i: number) => void }): ReactElement[] {
+function render(over: {
+  steps: FormStep[];
+  onUpdateStep?: (i: number, patch: Partial<FormStep>) => void;
+}): ReactElement[] {
   return collect(
     BranchingDialog({
       open: true,
       onClose: () => {},
       steps: over.steps,
-      onEditStep: over.onEditStep ?? (() => {}),
+      scoringEnabled: true,
+      onUpdateStep: over.onUpdateStep ?? (() => {}),
       bm,
+      em,
     }),
   );
 }
@@ -91,12 +94,6 @@ describe('BranchingDialog — the whole form, in order', () => {
     const blocks = allByTestId(els, 'branching-step');
     expect(blocks.map((el) => (el.props as AnyProps)['data-step-key'])).toEqual(['budget', 'why', 'team']);
     expect(allByTestId(els, 'branching-step-number').map((el) => (el.props as AnyProps).children)).toEqual([1, 2, 3]);
-  });
-
-  it('says a step has no logic in words instead of showing an empty editor', () => {
-    const els = render({ steps: [choice('budget', 'Budget?')] });
-    expect(byTestId(els, 'branching-step-empty')).toBeDefined();
-    expect(text(els)).toContain(bm.logicDialog.empty);
   });
 
   it('counts only the steps that actually carry a rule', () => {
@@ -117,33 +114,95 @@ describe('BranchingDialog — the whole form, in order', () => {
   });
 });
 
-describe('BranchingDialog — rules in plain language', () => {
-  it('resolves a condition to the QUESTION TITLE and the OPTION LABELS, like the map', () => {
-    const budget = choice('budget', 'What is your budget?');
-    const gated: FormStep = {
-      key: 'demo',
-      type: 'message',
-      question: 'Book a demo',
-      showWhen: { field: 'budget', values: ['budget_ent'] },
-    };
-    const t = text(render({ steps: [budget, gated] }));
-
-    expect(t).toContain('What is your budget?'); // not the stored key `budget`
-    expect(t).toContain('Enterprise'); // not the stored value `budget_ent`
-    expect(t).toContain(bm.map.condIn);
-    expect(t).toContain(bm.map.condShowIf);
+describe('BranchingDialog — every block is the editor (R7)', () => {
+  it('gives EVERY question the Always-go-to select, free text included', () => {
+    const els = render({
+      steps: [choice('budget', 'Budget?'), { key: 'why', type: 'textarea', question: 'Why?' }],
+    });
+    expect(allByTestId(els, 'branching-always')).toHaveLength(2);
   });
 
-  it('flags a condition pointing at a question that no longer exists', () => {
-    const gated: FormStep = {
-      key: 'demo',
-      type: 'message',
-      showWhen: { field: 'deleted_key', values: ['x'] },
-    };
-    expect(byTestId(render({ steps: [gated] }), 'branching-cond-dangling')).toBeDefined();
+  /** The SelectField element inside an Always wrapper (the testid is on a
+   *  wrapper div — SelectField forwards a fixed prop set and drops testids). */
+  function selectAt(els: ReactElement[], i: number): ReactElement {
+    const wrapper = allByTestId(els, 'branching-always')[i]!;
+    const inner = collect((wrapper.props as AnyProps).children as ReactNode);
+    return inner.find((el) => typeof (el.props as AnyProps).onChange === 'function')!;
+  }
+
+  it('offers only later questions plus End as targets', () => {
+    const els = render({ steps: [choice('a', 'A'), choice('b', 'B'), choice('c', 'C')] });
+    const options = collect((selectAt(els, 0).props as AnyProps).children as ReactNode)
+      .filter((el) => el.type === 'option')
+      .map((el) => (el.props as AnyProps).value);
+    // "" = next in order, then the two LATER steps, then the end sentinel.
+    expect(options).toEqual(['', 'b', 'c', '__end__']);
   });
 
-  it('calls out a step whose own rules mean it never appears', () => {
+  it('reads an existing catch-all back into the select', () => {
+    const routed: FormStep = { ...choice('a', 'A'), goto: [{ values: ['*'], target: null }] };
+    const els = render({ steps: [routed, choice('b', 'B')] });
+    expect((selectAt(els, 0).props as AnyProps).value).toBe('__end__');
+  });
+
+  it('writes the catch-all LAST so it can never swallow the value rules', () => {
+    const onUpdateStep = vi.fn();
+    const routed: FormStep = {
+      ...choice('a', 'A'),
+      goto: [{ values: ['a_ent'], target: 'b' }],
+    };
+    const els = render({ steps: [routed, choice('b', 'B')], onUpdateStep });
+    const select = selectAt(els, 0);
+    ((select.props as AnyProps).onChange as (e: { target: { value: string } }) => void)({
+      target: { value: '__end__' },
+    });
+    expect(onUpdateStep).toHaveBeenCalledWith(0, {
+      goto: [
+        { values: ['a_ent'], target: 'b' },
+        { values: ['*'], target: null },
+      ],
+    });
+  });
+
+  it('mounts the SHARED value-rule editor on option types, minus the catch-all row', () => {
+    const routed: FormStep = {
+      ...choice('a', 'A'),
+      goto: [
+        { values: ['a_ent'], target: 'b' },
+        { values: ['*'], target: null },
+      ],
+    };
+    const els = render({ steps: [routed, choice('b', 'B')] });
+    const rules = els.find((el) => el.type === (LogicRules as unknown));
+    expect(rules).toBeDefined();
+    // The catch-all is the Always-select's business; LogicRules must only see
+    // the real value rules or it renders "*" as a broken-looking row.
+    expect(((rules!.props as AnyProps).step as FormStep).goto).toEqual([{ values: ['a_ent'], target: 'b' }]);
+  });
+
+  it('mounts the SHARED visibility editors from the second step on', () => {
+    const els = render({ steps: [choice('a', 'A'), choice('b', 'B')] });
+    const conditions = els.filter((el) => el.type === (LogicConditions as unknown));
+    expect(conditions).toHaveLength(1); // step 2 only
+    expect((conditions[0]!.props as AnyProps).m).toBe(em.logic);
+  });
+
+  it('LECTURES NOTHING: a text question shows no rule editor and no explanation why', () => {
+    const els = render({ steps: [{ key: 'why', type: 'textarea', question: 'Why?' }] });
+    expect(els.find((el) => el.type === (LogicRules as unknown))).toBeUndefined();
+    expect(byTestId(els, 'branching-visibility')).toBeUndefined(); // first step: nothing precedes it
+    // No "no logic yet" sentence either — the visible controls ARE the state.
+    const strings = els
+      .flatMap((el) => {
+        const kids = (el.props as AnyProps).children;
+        return Array.isArray(kids) ? kids : [kids];
+      })
+      .filter((c): c is string => typeof c === 'string');
+    expect(strings).not.toContain(bm.logicDialog.empty);
+    expect(strings).not.toContain(em.logic.noPriorFields);
+  });
+
+  it('still audits: a step whose rules cancel out is called out', () => {
     const budget = choice('budget', 'Budget?');
     const impossible: FormStep = {
       key: 'demo',
@@ -151,61 +210,24 @@ describe('BranchingDialog — rules in plain language', () => {
       showWhen: { field: 'budget', values: ['budget_ent'] },
       hideWhen: { field: 'budget', values: ['budget_ent'] },
     };
-    const els = render({ steps: [budget, impossible] });
-    expect(byTestId(els, 'branching-never-appears')).toBeDefined();
-    expect(text(els)).toContain(bm.map.neverAppears);
+    expect(byTestId(render({ steps: [budget, impossible] }), 'branching-never-appears')).toBeDefined();
   });
 
-  it('reads a forward jump with its target question title, and a skip as skip-to-end', () => {
-    const budget: FormStep = { ...choice('budget', 'Budget?'), goto: [{ values: ['budget_ent'], target: 'demo' }] };
-    const demo: FormStep = { key: 'demo', type: 'message', question: 'Book a demo' };
-    expect(text(render({ steps: [budget, demo] }))).toContain(
-      tb(bm.map.jumpEdge, { value: 'Enterprise', target: 'Book a demo' }),
-    );
-
-    const skip: FormStep = { ...choice('budget', 'Budget?'), goto: [{ values: ['budget_sta'], target: null }] };
-    expect(text(render({ steps: [skip] }))).toContain(tb(bm.map.skipEdge, { value: 'Startup' }));
+  it('labels a scheduler’s row as after-booking, not Always-go-to', () => {
+    const scheduler: FormStep = { key: 'book', type: 'scheduler', question: 'Book a call' };
+    const els = render({ steps: [choice('a', 'A'), scheduler] });
+    const strings = els
+      .flatMap((el) => {
+        const kids = (el.props as AnyProps).children;
+        return Array.isArray(kids) ? kids : [kids];
+      })
+      .filter((c): c is string => typeof c === 'string');
+    expect(strings).toContain(bm.logicDialog.booking);
   });
 
-  it('never prints the raw catch-all "*" as if it were an answer', () => {
-    const scheduler: FormStep = {
-      key: 'book',
-      type: 'scheduler',
-      question: 'Book a call',
-      goto: [{ values: ['*'], target: null }],
-    };
-    const t = text(render({ steps: [scheduler] }));
-    expect(t).toContain(tb(bm.map.skipEdge, { value: bm.branching.anyBooking }));
-    expect(t).not.toContain('*');
-  });
-
-  it('flags a jump whose target step was deleted', () => {
-    const orphan: FormStep = { ...choice('budget', 'Budget?'), goto: [{ values: ['budget_ent'], target: 'gone' }] };
-    expect(byTestId(render({ steps: [orphan] }), 'branching-branch-dangling')).toBeDefined();
-  });
-});
-
-describe('BranchingDialog — editing belongs to the parent', () => {
-  it('asks the parent to open the per-question dialog, by index', () => {
-    const onEditStep = vi.fn();
-    const steps = [choice('a', 'A'), choice('b', 'B'), choice('c', 'C')];
-    const els = render({ steps, onEditStep });
-
-    const buttons = allByTestId(els, 'branching-edit');
-    expect(buttons).toHaveLength(3);
-    ((buttons[2]!.props as AnyProps).onClick as () => void)();
-    expect(onEditStep).toHaveBeenCalledWith(2);
-  });
-
-  it('never mounts LogicDialog itself — two copies would be two editors of one rule', () => {
+  it('never mounts LogicDialog — the blocks edit in place now', () => {
     const els = render({ steps: [choice('a', 'A')] });
     expect(els.some((el) => el.type === LogicDialog)).toBe(false);
-  });
-
-  it('names the step in the edit control so the button is not just "Edit" to a screen reader', () => {
-    const els = render({ steps: [choice('budget', 'What is your budget?')] });
-    expect((byTestId(els, 'branching-edit')!.props as AnyProps)['aria-label']).toBe(
-      tb(bm.branching.editAria, { question: 'What is your budget?' }),
-    );
+    expect(byTestId(els, 'branching-edit')).toBeUndefined();
   });
 });

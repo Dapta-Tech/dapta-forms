@@ -885,18 +885,17 @@ export function FormEditor({
         // create a card the renderer ignores, so it's offered exactly once.
         disabled={layout === 'vertical' && hasReveal ? { reveal: bm.gallery.revealVerticalTaken } : undefined}
       />
-      {/* The three form-wide views. Branching hands a step back to the SAME
-          per-question dialog below rather than mounting its own, so one rule is
-          never open in two editors that can disagree on screen. */}
+      {/* The three form-wide views. Branching edits INLINE (R7) — same
+          LogicRules/LogicConditions the per-question dialog hosts, same
+          patchStep write path, so the two surfaces can never disagree. */}
       <BranchingDialog
         open={logicView === 'branching'}
         onClose={() => setLogicView(null)}
         steps={config.steps}
-        onEditStep={(index) => {
-          setLogicView(null);
-          setLogicStep(index);
-        }}
+        scoringEnabled={scoringEnabled}
+        onUpdateStep={patchStep}
         bm={bm}
+        em={m}
       />
       <ScoringDialog
         open={logicView === 'scoring'}

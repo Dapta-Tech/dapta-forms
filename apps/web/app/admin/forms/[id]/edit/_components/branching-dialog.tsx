@@ -1,56 +1,69 @@
 'use client';
 
-import type { FormStep } from '@quill/engine';
+import type { FormStep, GotoRule } from '@quill/engine';
 import { conditionNeverHolds, conditionsContradict } from '@quill/engine';
 import { Modal } from '@/components/modal';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/cn';
-import { iconForStep } from './question-types';
-import { describeCondition, optionLabel, ruleCount } from './logic-util';
+import { SelectField } from './fields';
+import { iconForStep, hasOptions } from './question-types';
+import { jumpTargetsAfter, ruleCount } from './logic-util';
+import { LogicRules } from './logic-rules';
+import { LogicConditions } from './logic-conditions';
 import { tb } from './builder-messages';
 import type { BuilderMessages } from './builder-messages';
+import type { EditorMessages } from './messages';
 
 /**
- * The FORM-WIDE branching overview (F3b).
+ * The FORM-WIDE branching editor (F3b, reworked by R7).
  *
- * The builder can only ever show logic ONE question at a time — the Build
- * panel's settings, the canvas hover button, the per-question `LogicDialog`.
- * Nothing answered "what does this form's branching actually do?" without
- * clicking through every question and holding the answer in your head. This is
- * that missing screen: every step in order, its rules spelled out in plain
- * language, and a control per step that opens the real editor.
+ * The first version listed each step's rules as sentences and sent you to an
+ * Edit button — a second dialog, two hops from the thing you wanted to change.
+ * The feedback was direct: the rules should be EDITABLE HERE, with dropdowns,
+ * the way Typeform's Branching panel works. So every block now IS the editor:
  *
- * Two deliberate non-features:
- *  - It does NOT render `LogicDialog` itself. The same dialog opens from the
- *    Build panel and the Logic canvas; mounting a second copy here would be two
- *    editors of one rule, each with its own focus trap and its own idea of which
- *    step is being edited. `onEditStep(index)` hands that decision to the
- *    orchestrator, which already owns it.
- *  - It does NOT re-describe conditions. `describeCondition` (shared with the
- *    Logic map) resolves a stored key + raw values back to the QUESTION TITLE
- *    and the OPTION LABELS the author typed; a second describer here would drift
- *    from the map's wording the first time either was touched.
+ *  - **"Always go to"** — one select per question, on EVERY question type. It
+ *    reads and writes the catch-all `goto` rule (`values: ['*']`, which the
+ *    engine resolves as "any answer at all" for every step type, scheduler
+ *    included). Empty = continue in order, i.e. no rule stored.
+ *  - **Value rules** — the same `LogicRules` rows the per-question dialog uses,
+ *    inline, only on types with discrete answer values.
+ *  - **Visibility** — the same `LogicConditions` editors, inline.
+ *
+ * And a deliberate silence: no capability lectures. A free-text question simply
+ * shows no value-rule editor — it does not explain that it has no answer values
+ * to branch on; the first question simply shows no visibility section — it does
+ * not explain that nothing precedes it. What CAN be configured is offered;
+ * what cannot is absent. Warnings remain only where a CONFIGURED rule is broken
+ * (contradiction, never-holds, dangling target) — that is audit, not lecture.
+ *
+ * Ordering is load-bearing: the engine walks `goto` rules in order and the
+ * first match wins, and the catch-all matches ANY answer — so it is always
+ * written LAST, or it would swallow every value rule above it.
  */
 export function BranchingDialog({
   open,
   onClose,
   steps,
-  onEditStep,
+  scoringEnabled,
+  onUpdateStep,
   bm,
+  em,
 }: {
   open: boolean;
   onClose: () => void;
   /** Every step in the form, in order — the whole point of the view. */
   steps: FormStep[];
-  /**
-   * Ask the parent to open the per-question `LogicDialog` for this step. The
-   * ONLY editing path: this dialog reads config, it never writes it.
-   */
-  onEditStep: (index: number) => void;
+  /** Form-level scoring switch, threaded to the visibility editors. */
+  scoringEnabled: boolean;
+  /** Patch ONE step — maps 1:1 onto the editor's `patchStep`. */
+  onUpdateStep: (index: number, patch: Partial<FormStep>) => void;
   bm: BuilderMessages;
+  em: EditorMessages;
 }) {
   const b = bm.branching;
-  const titleOf = (step: FormStep, i: number) => step.question?.trim() || tb(bm.canvas.questionN, { n: i + 1 });
+  const titleOf = (step: FormStep, i: number) =>
+    step.question?.trim() || tb(bm.canvas.questionN, { n: i + 1 });
   const withLogic = steps.filter((s) => ruleCount(s) > 0).length;
 
   return (
@@ -78,9 +91,11 @@ export function BranchingDialog({
                 step={step}
                 index={index}
                 steps={steps}
+                scoringEnabled={scoringEnabled}
                 title={titleOf(step, index)}
-                onEdit={() => onEditStep(index)}
+                onUpdate={(patch) => onUpdateStep(index, patch)}
                 bm={bm}
+                em={em}
               />
             ))}
           </div>
@@ -96,34 +111,53 @@ export function BranchingDialog({
   );
 }
 
+/** Sentinel select value for "end the form" (a `target: null` catch-all). */
+const END = '__end__';
+/** Sentinel select value for "no catch-all rule" (continue in order). */
+const NEXT = '';
+
 /**
- * One step as a block: number, type icon, title, rule count, and its rules read
- * back as sentences. A step with NO logic says so in words rather than showing
- * an empty rule editor — an empty editor reads as broken, a sentence reads as
- * "nothing to see here, and that is fine".
+ * One step as an inline editor block: header, then the Always-go-to select,
+ * then whatever else this TYPE can configure. The block never explains an
+ * absent control — absence is the explanation.
  */
 function StepBlock({
   step,
   index,
   steps,
+  scoringEnabled,
   title,
-  onEdit,
+  onUpdate,
   bm,
+  em,
 }: {
   step: FormStep;
   index: number;
   steps: FormStep[];
+  scoringEnabled: boolean;
   title: string;
-  onEdit: () => void;
+  onUpdate: (patch: Partial<FormStep>) => void;
   bm: BuilderMessages;
+  em: EditorMessages;
 }) {
+  const b = bm.branching;
   const rules = ruleCount(step);
-  const branches = step.goto ?? [];
-  // Same audit the Logic map runs: rules that cancel out (or an operand still
-  // "(not set)") mean the step can never be shown. Staying silent here would
-  // send the author back to the Build panel to discover it one question at a
-  // time — exactly the walk this dialog exists to remove.
+  const routable = hasOptions(step.type);
+  const targets = jumpTargetsAfter(steps, index, bm.canvas.questionN.replace(' {n}', ''));
+  // Same audit the Logic map runs — a step whose rules cancel out never shows.
   const never = conditionsContradict(step.showWhen, step.hideWhen) || conditionNeverHolds(step.showWhen);
+
+  const catchAll = (step.goto ?? []).find((r) => r.values.includes('*'));
+  const valueRules = (step.goto ?? []).filter((r) => !r.values.includes('*'));
+  const alwaysValue = !catchAll ? NEXT : (catchAll.target ?? END);
+
+  /** Rebuild `goto` from parts — value rules first, catch-all LAST (it matches
+   *  any answer, so anywhere earlier it would swallow the rules above it). */
+  function writeGoto(nextValueRules: GotoRule[], nextAlways: string) {
+    const all: GotoRule[] = [...nextValueRules];
+    if (nextAlways !== NEXT) all.push({ values: ['*'], target: nextAlways === END ? null : nextAlways });
+    onUpdate({ goto: all.length ? all : undefined });
+  }
 
   return (
     <div
@@ -158,158 +192,77 @@ function StepBlock({
             {rules === 1 ? bm.badges.ruleOne : tb(bm.badges.rules, { n: rules })}
           </span>
         ) : null}
-        <Button
-          variant="outline"
-          size="sm"
-          data-testid="branching-edit"
-          aria-label={tb(bm.branching.editAria, { question: title })}
-          onClick={onEdit}
-          className="shrink-0"
-        >
-          <i aria-hidden className="pi pi-pencil" style={{ fontSize: 10 }} />
-          {bm.branching.edit}
-        </Button>
       </div>
 
-      {rules === 0 ? (
-        <p data-testid="branching-step-empty" className="mt-2 pl-[calc(1.5rem+0.75rem)] text-[11px] text-muted-foreground">
-          {bm.logicDialog.empty}
-        </p>
-      ) : (
-        <div className="mt-2.5 flex flex-col gap-1.5 border-t border-border/60 pt-2.5">
-          {never ? (
-            <p
-              data-testid="branching-never-appears"
-              className="flex items-start gap-1.5 rounded-md bg-destructive/10 px-2 py-1 text-[11px] font-medium leading-relaxed text-destructive"
+      <div className="mt-2.5 flex flex-col gap-2.5 border-t border-border/60 pt-2.5">
+        {never ? (
+          <p
+            data-testid="branching-never-appears"
+            className="flex items-start gap-1.5 rounded-md bg-destructive/10 px-2 py-1 text-[11px] font-medium leading-relaxed text-destructive"
+          >
+            <i aria-hidden className="pi pi-exclamation-triangle mt-0.5 shrink-0" style={{ fontSize: 10 }} />
+            {bm.map.neverAppears}
+          </p>
+        ) : null}
+
+        {/* Always go to — the universal row. `*` is "any answer" to the engine
+            on every type, so every question gets it, scheduler included (there
+            it reads as "after the booking"). */}
+        <div className="flex items-center gap-2">
+          <span className="shrink-0 text-xs text-muted-foreground">
+            {step.type === 'scheduler' ? bm.logicDialog.booking : b.alwaysGoTo}
+          </span>
+          {/* The testid lives on a wrapper: SelectField renders the branded
+              combobox and forwards only a fixed prop set — a testid handed to
+              it would silently vanish. */}
+          <div data-testid="branching-always" className="w-full max-w-[340px]">
+            <SelectField
+              aria-label={`${b.alwaysGoTo} — ${title}`}
+              value={alwaysValue}
+              onChange={(e) => writeGoto(valueRules, e.target.value)}
+              className="h-8 py-1 text-xs"
             >
-              <i aria-hidden className="pi pi-exclamation-triangle mt-0.5 shrink-0" style={{ fontSize: 10 }} />
-              {bm.map.neverAppears}
-            </p>
-          ) : null}
-          {step.showWhen ? <ConditionLine kind="show" cond={step.showWhen} steps={steps} bm={bm} /> : null}
-          {step.hideWhen ? <ConditionLine kind="hide" cond={step.hideWhen} steps={steps} bm={bm} /> : null}
-          {branches.map((rule, ri) => (
-            <BranchLine key={ri} step={step} rule={rule} steps={steps} bm={bm} />
-          ))}
+              <option value={NEXT}>{b.nextInOrder}</option>
+              {targets.map((t) => (
+                <option key={t.key} value={t.key}>
+                  {t.label}
+                </option>
+              ))}
+              <option value={END}>{b.endOfForm}</option>
+            </SelectField>
+          </div>
         </div>
-      )}
+
+        {/* Value rules — only where the type HAS discrete values. The catch-all
+            is split out above, so LogicRules sees (and edits) only real value
+            rules; its writes are re-merged with the catch-all kept last. */}
+        {routable ? (
+          <div data-testid="branching-rules">
+            <LogicRules
+              step={{ ...step, goto: valueRules.length ? valueRules : undefined }}
+              index={index}
+              steps={steps}
+              onUpdate={(patch) => writeGoto(patch.goto ?? [], alwaysValue)}
+              m={bm}
+            />
+          </div>
+        ) : null}
+
+        {/* Visibility — absent on the first step (nothing precedes it), never
+            explained away with a sentence. */}
+        {index > 0 ? (
+          <div data-testid="branching-visibility" className="border-t border-border/60 pt-2.5">
+            <LogicConditions
+              step={step}
+              index={index}
+              steps={steps}
+              scoringEnabled={scoringEnabled}
+              onUpdate={onUpdate}
+              m={em.logic}
+            />
+          </div>
+        ) : null}
+      </div>
     </div>
-  );
-}
-
-/**
- * A `showWhen`/`hideWhen` rule as a sentence, worded exactly like the Logic map
- * (same `describeCondition`, same operator strings) so the two surfaces never
- * disagree about what a rule says.
- */
-function ConditionLine({
-  kind,
-  cond,
-  steps,
-  bm,
-}: {
-  kind: 'show' | 'hide';
-  cond: NonNullable<FormStep['showWhen']>;
-  steps: FormStep[];
-  bm: BuilderMessages;
-}) {
-  const d = describeCondition(cond, steps, {
-    fallbackQuestion: (i) => tb(bm.canvas.questionN, { n: i + 1 }),
-    opIn: bm.map.condIn,
-    opEq: bm.map.condEq,
-    opGt: bm.map.condGt,
-    opLt: bm.map.condLt,
-    opBetween: bm.map.condBetween,
-    and: bm.map.condAnd,
-    blank: bm.map.condBlank,
-    score: bm.map.condScore,
-  });
-  const show = kind === 'show';
-  return (
-    <p
-      data-testid={`branching-cond-${kind}`}
-      className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 text-[11px] leading-relaxed"
-    >
-      <span
-        className={cn(
-          'shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide',
-          show ? 'bg-secondary/15 text-secondary' : 'bg-destructive/15 text-destructive',
-        )}
-      >
-        {show ? bm.map.condShowIf : bm.map.condHideIf}
-      </span>
-      <span className="font-semibold text-foreground">{d.field}</span>
-      <span className="text-muted-foreground">{d.operator}</span>
-      <span className="font-medium text-foreground">{d.operand}</span>
-      {d.dangling ? (
-        <span
-          data-testid="branching-cond-dangling"
-          className="rounded bg-destructive/15 px-1.5 py-0.5 text-[10px] font-semibold text-destructive"
-        >
-          {bm.map.condMissingField}
-        </span>
-      ) : null}
-    </p>
-  );
-}
-
-/**
- * A forward `goto` rule as a sentence, reusing the map's own edge phrasing
- * ("If {value} → skip to end" / "If {value} → {target}"). Values resolve to
- * OPTION LABELS: the stored config holds raw values, which is not what the
- * author typed or recognizes.
- */
-function BranchLine({
-  step,
-  rule,
-  steps,
-  bm,
-}: {
-  step: FormStep;
-  rule: NonNullable<FormStep['goto']>[number];
-  steps: FormStep[];
-  bm: BuilderMessages;
-}) {
-  // A scheduler routes on the catch-all `*` — there is no option to label, and
-  // printing a literal "*" as if it were an answer the respondent could give
-  // would be a lie (a scheduler's rule fires on a booking, not an answer).
-  const catchAll = rule.values.includes('*');
-  const value = catchAll
-    ? step.type === 'scheduler'
-      ? bm.branching.anyBooking
-      : bm.branching.anyAnswer
-    : rule.values.map((v) => optionLabel(step, v)).join(', ') || bm.map.condBlank;
-  const targetIndex = rule.target == null ? -1 : steps.findIndex((s) => s.key === rule.target);
-  const targetStep = targetIndex >= 0 ? steps[targetIndex] : undefined;
-  const label =
-    rule.target == null
-      ? tb(bm.map.skipEdge, { value })
-      : tb(bm.map.jumpEdge, {
-          value,
-          target: targetStep
-            ? targetStep.question?.trim() || tb(bm.canvas.questionN, { n: targetIndex + 1 })
-            : rule.target,
-        });
-  return (
-    <p
-      data-testid="branching-branch"
-      className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 text-[11px] leading-relaxed"
-    >
-      <span className="shrink-0 rounded bg-secondary/15 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-secondary">
-        <i aria-hidden className="pi pi-bolt" style={{ fontSize: 9 }} />
-      </span>
-      <span className="font-medium text-foreground">{label}</span>
-      {/* A jump whose target no longer exists never fires — the same dangling
-          failure `describeCondition` flags for conditions, which nothing was
-          checking on the routing side. */}
-      {rule.target != null && !targetStep ? (
-        <span
-          data-testid="branching-branch-dangling"
-          className="rounded bg-destructive/15 px-1.5 py-0.5 text-[10px] font-semibold text-destructive"
-        >
-          {bm.map.condMissingField}
-        </span>
-      ) : null}
-    </p>
   );
 }

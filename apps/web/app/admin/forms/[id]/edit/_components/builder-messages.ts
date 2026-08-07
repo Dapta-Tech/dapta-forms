@@ -102,6 +102,14 @@ export interface BuilderMessages {
      */
     anyAnswer: string;
     anyBooking: string;
+    /**
+     * R7 — the inline "Always go to" row every question carries. It edits the
+     * catch-all rule; "next in order" means NO rule stored, which is the
+     * engine's default walk.
+     */
+    alwaysGoTo: string;
+    nextInOrder: string;
+    endOfForm: string;
   };
   scoring: {
     open: string;
@@ -489,7 +497,7 @@ const en: BuilderMessages = {
   branching: {
     open: 'Branching',
     title: 'Branching',
-    subtitle: 'Every question in order, with the rules that route it. Open one to change it.',
+    subtitle: 'Every question in order. Change where each one leads, right here.',
     summary: '{n} of {total} questions carry logic.',
     summaryNone: 'No question carries logic yet — everyone walks the same path.',
     edit: 'Edit',
@@ -497,6 +505,9 @@ const en: BuilderMessages = {
     empty: 'Add a question first — there is nothing to route yet.',
     anyAnswer: 'any answer',
     anyBooking: 'any booking',
+    alwaysGoTo: 'Always go to',
+    nextInOrder: 'Next question in order',
+    endOfForm: 'End of the form',
   },
   scoring: {
     open: 'Scoring',
@@ -839,7 +850,7 @@ const es: BuilderMessages = {
   branching: {
     open: 'Ramificación',
     title: 'Ramificación',
-    subtitle: 'Todas las preguntas en orden, con las reglas que las enrutan. Abre una para cambiarla.',
+    subtitle: 'Todas las preguntas en orden. Cambia a dónde lleva cada una, aquí mismo.',
     summary: '{n} de {total} preguntas tienen lógica.',
     summaryNone: 'Ninguna pregunta tiene lógica todavía — todos recorren el mismo camino.',
     edit: 'Editar',
@@ -847,6 +858,9 @@ const es: BuilderMessages = {
     empty: 'Añade una pregunta primero — todavía no hay nada que enrutar.',
     anyAnswer: 'cualquier respuesta',
     anyBooking: 'cualquier reserva',
+    alwaysGoTo: 'Siempre va a',
+    nextInOrder: 'Siguiente pregunta en orden',
+    endOfForm: 'Fin del formulario',
   },
   scoring: {
     open: 'Puntaje',
