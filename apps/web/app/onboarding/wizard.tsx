@@ -4,9 +4,17 @@
  * The first-run wizard: three questions, then the template the first form is
  * built from.
  *
- * One screen at a time, and all three stages named from the very first paint.
- * Seeing that there are three is what stops the second question feeling like the
- * fifth — the same reason a progress bar beats a spinner.
+ * It IS a Dapta form, not a page that resembles one. The chrome is the public
+ * renderer's own — `.pf` shell, centred topbar with the mark, `pf__body` /
+ * `pf__inner` rhythm — and the questions render through `StepInput`, the same
+ * component a respondent meets. Two things follow from that, both of them the
+ * reason for it: the first screen a new user sees demonstrates the product
+ * they just signed up for, and it cannot drift away from the real thing,
+ * because a change to how forms render changes this screen too.
+ *
+ * The stage bar takes `FormProgress`'s slot under the topbar. All three stages
+ * are named from the first paint — seeing that there are three is what stops
+ * the second question feeling like the fifth.
  *
  * There is NO skip on the questions. They are three taps, and an answer that can
  * be skipped is an answer most people skip, which would leave the column this
@@ -20,12 +28,16 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import type { FormsMessages, Locale } from '@quill/shared';
-import { SearchableDropdown } from '@/components/public/searchable-dropdown';
+import { StepInput } from '@/components/public/step-input';
 import { FormsLockup, FormsMark } from '@/components/brand/forms-logo';
 import { captureEvent } from '@/lib/product-analytics';
 import { fill, wizardQuestions, wizardTemplates } from '@/lib/onboarding';
 import { USE_CASE_TEMPLATE, type OnboardingUseCase } from '@quill/types';
 import { saveOnboardingStepAction, completeOnboardingAction } from './actions';
+// The renderer's own stylesheet. Every rule in it is scoped under `.pf`, so
+// importing it here cannot leak into the dashboard — and it is what makes this
+// screen identical to a real form rather than a careful imitation.
+import '../[accountCode]/[handle]/[slug]/public-form.css';
 import './onboarding.css';
 
 type Messages = FormsMessages['admin']['onboarding'];
@@ -93,8 +105,7 @@ export function OnboardingWizard({ messages: m, locale }: { messages: Messages; 
   const answer = useCallback(
     (value: string) => {
       if (!current) return;
-      const next = { ...answers, [current.field]: value };
-      setAnswers(next);
+      setAnswers((a) => ({ ...a, [current.field]: value }));
       // Changing the use case invalidates an explicit template pick made on a
       // later screen. Without this, going back and choosing a different purpose
       // leaves the OLD card selected while the "Recommended for you" badge moves
@@ -113,7 +124,7 @@ export function OnboardingWizard({ messages: m, locale }: { messages: Messages; 
       void saveOnboardingStepAction({ [current.field]: value, lastStep: reached });
       setIndex(advancing);
     },
-    [answers, current, index, questions],
+    [current, index, questions],
   );
 
   const back = useCallback(() => setIndex((i) => Math.max(0, i - 1)), []);
@@ -125,8 +136,6 @@ export function OnboardingWizard({ messages: m, locale }: { messages: Messages; 
         recommended: id === recommended,
         use_case: answers.useCase ?? null,
       });
-      // The server action redirects; the transition keeps the button disabled
-      // and the copy honest until the navigation actually happens.
       startSubmit(() => void completeOnboardingAction(id));
     },
     [answers.useCase, recommended],
@@ -134,140 +143,128 @@ export function OnboardingWizard({ messages: m, locale }: { messages: Messages; 
 
   const stage = onTemplates ? TEMPLATE_STAGE : QUESTION_STAGE;
 
-  // The form is being created and a redirect is on its way. Nothing on this
-  // screen is actionable any more, so it becomes an interstitial rather than a
-  // disabled copy of itself — the wait is a second of real work, and a frozen
-  // page with a greyed-out button reads as a hang.
+  // The form is being created and a redirect is on its way. Nothing here is
+  // actionable any more, so the screen becomes an interstitial rather than a
+  // disabled copy of itself — a frozen page with a greyed-out button reads as a
+  // hang, and this is the last thing before a screen they have never seen.
   if (submitting) return <CreatingScreen m={m} />;
 
   return (
-    <main className="ob">
-      {/* Three columns, so the stage bar is centred against the VIEWPORT rather
-          than against the space the logo leaves over. A flex row with
-          space-between put it visually left of centre. The empty third column
-          is what balances the logo. */}
-      <header className="ob__top">
-        {/* Two marks, one shown per breakpoint. At phone width the full lockup
-            is ~110px of a 390px header, which squeezed the stage bar out of the
-            centre and left it hard against the logo; the F alone is ~24px and
-            keeps the brand present without taking the room. Only one is exposed
-            to assistive tech — the hidden one is `aria-hidden` via its own CSS. */}
-        <div className="ob__brand">
-          <FormsLockup className="ob__logo ob__logo--wide" title="Dapta Forms" />
-          <FormsMark className="ob__logo ob__logo--compact" title="Dapta Forms" />
+    <div className="pf ob">
+      {/* The renderer's topbar: back · logo · spacer, on a `40px 1fr 40px` grid
+          that centres the mark against the bar rather than against whatever
+          space the back button leaves over. */}
+      <header className="pf__topbar">
+        <div className="pf__topbar-inner">
+          {index > 0 ? (
+            <button type="button" className="pf__back" onClick={back} aria-label={m.back}>
+              ←
+            </button>
+          ) : (
+            <span className="pf__back pf__back--placeholder" />
+          )}
+          <span className="ob__brand">
+            <FormsLockup className="ob__logo ob__logo--wide" title="Dapta Forms" />
+            <FormsMark className="ob__logo ob__logo--compact" title="Dapta Forms" />
+          </span>
+          <span className="pf__back pf__back--placeholder" />
         </div>
+        {/* Where a real form puts `FormProgress`. Same slot, same job. */}
         <StageBar m={m} stage={stage} />
-        <div aria-hidden="true" />
       </header>
 
-      <div className="ob__body">
-        {current ? (
-          <section className="ob__screen" key={current.key}>
-            <p className="ob__eyebrow">{fill(m.progress, { current: index + 1, total: questions.length })}</p>
-            <h1 className="ob__question">{current.question}</h1>
-            <p className="ob__helper">{current.helper}</p>
+      <div className="pf__body">
+        <div className="pf__inner">
+          {current ? (
+            <div className="pf__content pf-animate" key={current.key}>
+              <div className="pf__question-wrap">
+                <p className="ob__eyebrow">
+                  {fill(m.progress, { current: index + 1, total: questions.length })}
+                </p>
+                <h1 className="pf__question">{current.step.question}</h1>
+                {current.step.helper ? <p className="pf__helper">{current.step.helper}</p> : null}
+              </div>
 
-            {current.layout === 'search' ? (
-              <div className="ob__search">
-                <SearchableDropdown
-                  options={current.options.map((o) => ({ label: o.label, value: o.value }))}
+              <div className="pf__fields">
+                <StepInput
+                  step={current.step}
                   value={answers[current.field] ?? ''}
+                  answers={answers}
+                  // Only single-select choices and the dropdown are used here,
+                  // and both report through `onSelect`. The other two are
+                  // required by the shared component's contract and are wired to
+                  // no-ops rather than to `answer`: routing them there would
+                  // make a future step type (a slider, a text field) advance the
+                  // wizard on every keystroke.
                   onSelect={answer}
-                  placeholder={m.industry.placeholder}
-                  emptyLabel={m.industry.empty}
+                  onChange={() => {}}
+                  onFieldChange={() => {}}
+                  dropdownPlaceholder={m.industry.placeholder}
+                  dropdownEmpty={m.industry.empty}
+                  locale={locale}
                 />
               </div>
-            ) : (
-              // Same markup for both option layouts — only the list class
-              // differs, so the grid-vs-rows decision lives entirely in CSS and
-              // a third layout costs one rule rather than a second branch here.
-              <ul className={current.layout === 'list' ? 'ob__list' : 'ob__cards'}>
-                {current.options.map((o) => (
-                  <li key={o.value}>
-                    <button
-                      type="button"
-                      className={current.layout === 'list' ? 'ob__row' : 'ob__card'}
-                      aria-pressed={answers[current.field] === o.value}
-                      data-selected={answers[current.field] === o.value || undefined}
-                      onClick={() => answer(o.value)}
-                    >
-                      {o.icon && (
-                        <span className="ob__card-icon" aria-hidden="true">
-                          {o.icon}
-                        </span>
-                      )}
-                      <span className="ob__card-label">{o.label}</span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-
-            {index > 0 && (
-              <button type="button" className="ob__back" onClick={back}>
-                {m.back}
-              </button>
-            )}
-          </section>
-        ) : (
-          <section className="ob__screen" key="template">
-            <h1 className="ob__question">{m.templates.question}</h1>
-            <p className="ob__helper">{m.templates.helper}</p>
-
-            <ul className="ob__templates">
-              {templates.map((t) => {
-                const isRecommended = t.id === recommended;
-                const selected = (template ?? recommended) === t.id;
-                return (
-                  // `blank` spans the full row: it is the last card and an odd
-                  // one out in a two-column grid, so left alone it sat as a
-                  // half-width orphan under the four real templates.
-                  <li key={t.id} className={t.id === 'blank' ? 'ob__templates-wide' : undefined}>
-                    <button
-                      type="button"
-                      className="ob__template"
-                      aria-pressed={selected}
-                      data-selected={selected || undefined}
-                      disabled={submitting}
-                      onClick={() => setTemplate(t.id)}
-                    >
-                      {isRecommended && <span className="ob__badge">{m.templates.recommended}</span>}
-                      <span className="ob__template-head">
-                        <span className="ob__template-icon" aria-hidden="true">
-                          {t.icon}
-                        </span>
-                        <span className="ob__template-name">{t.name}</span>
-                      </span>
-                      <span className="ob__template-desc">{t.description}</span>
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
-
-            <div className="ob__actions">
-              <button type="button" className="ob__back" onClick={back} disabled={submitting}>
-                {m.back}
-              </button>
-              <button
-                type="button"
-                className="ob__cta"
-                // `?? recommended` so the pre-selected card is genuinely armed:
-                // requiring a redundant click on the option we already
-                // highlighted would make the recommendation a lie.
-                disabled={submitting || !(template ?? recommended)}
-                onClick={() => {
-                  const pick = template ?? recommended;
-                  if (pick) finish(pick);
-                }}
-              >
-                {m.templates.cta}
-              </button>
             </div>
-          </section>
-        )}
+          ) : (
+            <div className="pf__content pf-animate" key="template">
+              <div className="pf__question-wrap">
+                <h1 className="pf__question">{m.templates.question}</h1>
+                <p className="pf__helper">{m.templates.helper}</p>
+              </div>
+
+              <div className="pf__fields">
+                <ul className="ob__templates">
+                  {templates.map((t) => {
+                    const isRecommended = t.id === recommended;
+                    const selected = (template ?? recommended) === t.id;
+                    return (
+                      // `blank` spans the full row: it is the last card and an
+                      // odd one out in a two-column grid, so left alone it sat
+                      // as a half-width orphan under the four real templates.
+                      <li key={t.id} className={t.id === 'blank' ? 'ob__templates-wide' : undefined}>
+                        <button
+                          type="button"
+                          className="ob__template"
+                          aria-pressed={selected}
+                          data-selected={selected || undefined}
+                          onClick={() => setTemplate(t.id)}
+                        >
+                          {isRecommended && (
+                            <span className="ob__badge">{m.templates.recommended}</span>
+                          )}
+                          <span className="ob__template-head">
+                            <span className="ob__template-icon" aria-hidden="true">
+                              {t.icon}
+                            </span>
+                            <span className="ob__template-name">{t.name}</span>
+                          </span>
+                          <span className="ob__template-desc">{t.description}</span>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+
+                <button
+                  type="button"
+                  className="pf__btn ob__cta"
+                  // `?? recommended` so the pre-selected card is genuinely
+                  // armed: requiring a redundant click on the option we already
+                  // highlighted would make the recommendation a lie.
+                  disabled={!(template ?? recommended)}
+                  onClick={() => {
+                    const pick = template ?? recommended;
+                    if (pick) finish(pick);
+                  }}
+                >
+                  {m.templates.cta}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
-    </main>
+    </div>
   );
 }
 
@@ -276,18 +273,14 @@ export function OnboardingWizard({ messages: m, locale }: { messages: Messages; 
  *
  * The wait is real work — the API claims completion, builds the config from the
  * template registry, and creates the form — and it is the last thing that
- * happens before the person sees a screen they have never seen before. A
- * determinate bar reads as progress where a spinner reads as a stall, and the
- * same pattern is already what a respondent gets on a form's reveal step, so
- * this is the product's own loading language rather than a new one.
- *
- * The bar is CSS-driven and does not report real progress; it cannot, because
- * the work is a single round trip. It runs slightly longer than the request
- * usually takes so it is never seen to finish and then sit there.
+ * happens before the person sees a screen they have never seen before. A moving
+ * bar reads as progress where a spinner reads as a stall, and the same pattern
+ * is already what a respondent gets on a form's reveal step, so this is the
+ * product's own loading language rather than a new one.
  */
 function CreatingScreen({ m }: { m: Messages }) {
   return (
-    <main className="ob ob--creating">
+    <div className="pf ob ob--creating">
       <div className="ob__creating">
         <FormsMark className="ob__creating-mark" title="Dapta Forms" />
         <h1 className="ob__creating-headline">{m.creating}</h1>
@@ -298,7 +291,7 @@ function CreatingScreen({ m }: { m: Messages }) {
           <div className="ob__creating-fill" />
         </div>
       </div>
-    </main>
+    </div>
   );
 }
 

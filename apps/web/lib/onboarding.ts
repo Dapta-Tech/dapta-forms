@@ -1,5 +1,11 @@
 /**
- * The onboarding wizard's question bank — SHAPE only.
+ * The onboarding wizard's question bank.
+ *
+ * Each question is a real `FormStep` — the same shape a form author's questions
+ * have — so the wizard renders through `StepInput`, the product's own renderer,
+ * rather than a lookalike built beside it. That is the point: the first thing a
+ * new user sees IS a Dapta form, and it cannot drift away from one, because a
+ * change to how forms render changes this screen too.
  *
  * Values are the enums the API validates against (@quill/types); labels come
  * from the i18n catalog at render time. Keeping copy out of here is what lets
@@ -7,6 +13,7 @@
  * could silently drift out of step with the English one.
  */
 import type { FormsMessages } from '@quill/shared';
+import type { FormStep } from '@quill/engine';
 import {
   ONBOARDING_INDUSTRIES,
   ONBOARDING_ROLES,
@@ -18,28 +25,12 @@ import {
 
 type OnboardingMessages = FormsMessages['admin']['onboarding'];
 
-export interface WizardOption {
-  value: string;
-  label: string;
-  /** Emoji glyph for the option card; absent on the searchable dropdown. */
-  icon?: string;
-}
-
 export interface WizardQuestion {
   key: Extract<OnboardingStep, 'role' | 'industry' | 'use_case'>;
   /** Which `OnboardingProgress` field this question's answer patches. */
   field: 'role' | 'industry' | 'useCase';
-  /**
-   * `list` stacks full-width rows, `cards` renders a tile grid, `search`
-   * renders the searchable dropdown. Nine roles as tiles read as a wall of
-   * cards next to the five-tile use-case screen two questions later — a list
-   * scans top-to-bottom in one pass and keeps the card treatment meaningful
-   * where it is actually used.
-   */
-  layout: 'list' | 'cards' | 'search';
-  question: string;
-  helper: string;
-  options: WizardOption[];
+  /** The step `StepInput` renders — a real form question, not a lookalike. */
+  step: FormStep;
 }
 
 /**
@@ -74,41 +65,57 @@ export function wizardQuestions(m: OnboardingMessages): WizardQuestion[] {
     {
       key: 'role',
       field: 'role',
-      layout: 'list',
-      question: m.role.question,
-      helper: m.role.helper,
-      options: ONBOARDING_ROLES.map((value) => ({
-        value,
-        label: m.role.options[value],
-        icon: ROLE_ICONS[value],
-      })),
+      step: {
+        key: 'role',
+        type: 'multiple_choice',
+        question: m.role.question,
+        helper: m.role.helper,
+        // LIST, not cards. Nine roles as tiles read as a wall next to the
+        // five-tile use-case screen two questions later; rows scan in one pass
+        // and keep the card treatment meaningful where it is actually used.
+        optionLayout: 'list',
+        options: ONBOARDING_ROLES.map((value) => ({
+          value,
+          label: m.role.options[value],
+          icon: ROLE_ICONS[value],
+        })),
+      },
     },
     {
       // Second, deliberately. It is the most "for us" of the three, and the
       // middle is where an unglamorous question costs the least.
       key: 'industry',
       field: 'industry',
-      layout: 'search',
-      question: m.industry.question,
-      helper: m.industry.helper,
-      options: ONBOARDING_INDUSTRIES.map((value) => ({
-        value,
-        label: m.industry.options[value],
-      })),
+      step: {
+        key: 'industry',
+        type: 'dropdown',
+        question: m.industry.question,
+        helper: m.industry.helper,
+        placeholder: m.industry.placeholder,
+        options: ONBOARDING_INDUSTRIES.map((value) => ({
+          value,
+          label: m.industry.options[value],
+        })),
+      },
     },
     {
       // Last, and adjacent to the template picker on purpose: this answer
       // pre-selects a card on the very next screen, so the momentum carries.
       key: 'use_case',
       field: 'useCase',
-      layout: 'cards',
-      question: m.useCase.question,
-      helper: m.useCase.helper,
-      options: ONBOARDING_USE_CASES.map((value) => ({
-        value,
-        label: m.useCase.options[value],
-        icon: USE_CASE_ICONS[value],
-      })),
+      step: {
+        key: 'use_case',
+        type: 'multiple_choice',
+        question: m.useCase.question,
+        helper: m.useCase.helper,
+        optionLayout: 'cards',
+        showIcons: true,
+        options: ONBOARDING_USE_CASES.map((value) => ({
+          value,
+          label: m.useCase.options[value],
+          icon: USE_CASE_ICONS[value],
+        })),
+      },
     },
   ];
 }
