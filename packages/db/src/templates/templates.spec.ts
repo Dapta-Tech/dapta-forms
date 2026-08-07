@@ -50,6 +50,30 @@ describe('FORM_TEMPLATES', () => {
     },
   );
 
+  it.each(FORM_TEMPLATE_IDS.filter((id) => id !== 'blank'))(
+    '%s only submits a partial once it can contact the person',
+    (id) => {
+      // `partialSubmitAfterStep` is 1-based over `steps`. A partial that fires
+      // BEFORE the email step saves a half-answered form with no way to reach
+      // whoever left it — which is the entire value a partial is supposed to
+      // capture. lead-qualifier shipped at step 4 with its email at step 6.
+      const config = FORM_TEMPLATES[id].config;
+      const after = config?.partialSubmitAfterStep;
+      if (after == null) return;
+
+      const steps = config?.steps ?? [];
+      const lastContact = steps.reduce(
+        (acc, s, i) => (s.type === 'email' || s.type === 'phone' ? i + 1 : acc),
+        0,
+      );
+      if (lastContact === 0) return; // no contact step to be early relative to
+      expect(after, `${id} submits its partial before collecting contact details`).toBeGreaterThanOrEqual(
+        lastContact,
+      );
+      expect(after, `${id} partialSubmitAfterStep is past the end`).toBeLessThanOrEqual(steps.length);
+    },
+  );
+
   it('only declares outcomes on the template that enables scoring', () => {
     // An outcome bucket without scoring never resolves past the first range, so
     // the author sees dead config they did not write.

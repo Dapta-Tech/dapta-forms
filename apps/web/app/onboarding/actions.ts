@@ -5,6 +5,28 @@ import { revalidatePath } from 'next/cache';
 import { adminApi, type OnboardingProgress } from '@/lib/admin-api';
 
 /**
+ * Is this the control-flow exception `redirect()` throws?
+ *
+ * `adminApi` redirects to /login from inside the request helper when the API
+ * answers 401, and it does that by THROWING — Next's redirect is an exception,
+ * not a return. A bare `catch {}` around an api call therefore swallows the
+ * sign-out and the person silently continues in a dead session. Every catch in
+ * this file has to let it through.
+ *
+ * Identified by the `digest` string rather than an instanceof, because the error
+ * class lives behind a `next/dist/...` internal path that is not part of the
+ * public API and moves between releases.
+ */
+function isRedirect(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    typeof (error as { digest?: unknown }).digest === 'string' &&
+    (error as { digest: string }).digest.startsWith('NEXT_REDIRECT')
+  );
+}
+
+/**
  * Persist one screen's worth of answers.
  *
  * Never throws into the wizard. This runs behind a screen the person cannot
@@ -16,7 +38,9 @@ import { adminApi, type OnboardingProgress } from '@/lib/admin-api';
 export async function saveOnboardingStepAction(patch: OnboardingProgress): Promise<void> {
   try {
     await adminApi.saveOnboarding(patch);
-  } catch {
+  } catch (e) {
+    // An expired session must still sign them out — see `isRedirect`.
+    if (isRedirect(e)) throw e;
     /* progress is an observer of the wizard, never a participant */
   }
 }
@@ -41,11 +65,15 @@ export async function completeOnboardingAction(template: string): Promise<void> 
   try {
     const result = await adminApi.completeOnboarding({ template });
     if (result.formId) target = `/admin/forms/${result.formId}/edit?tour=1`;
-  } catch {
+  } catch (e) {
+    if (isRedirect(e)) throw e;
     // The answers are already stored and the completion may well have been
     // claimed. Sending them back through the wizard would ask them to redo work
     // that is done; the dashboard is the honest fallback.
   }
   revalidatePath('/admin', 'layout');
+  // OUTSIDE the try: `redirect` throws, so calling it inside would hand the
+  // catch above its own control-flow exception and this action would fall
+  // through to no navigation at all.
   redirect(target);
 }

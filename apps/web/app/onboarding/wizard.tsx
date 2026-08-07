@@ -95,6 +95,12 @@ export function OnboardingWizard({ messages: m, locale }: { messages: Messages; 
       if (!current) return;
       const next = { ...answers, [current.field]: value };
       setAnswers(next);
+      // Changing the use case invalidates an explicit template pick made on a
+      // later screen. Without this, going back and choosing a different purpose
+      // leaves the OLD card selected while the "Recommended for you" badge moves
+      // to the new one — two highlighted cards saying different things, and the
+      // button builds the one the person no longer asked for.
+      if (current.field === 'useCase') setTemplate(null);
       captureEvent('onboarding_step_answered', {
         step_key: current.key,
         step_index: index,
@@ -133,7 +139,10 @@ export function OnboardingWizard({ messages: m, locale }: { messages: Messages; 
       <header className="ob__top">
         <StageBar m={m} stage={stage} />
         <div className="ob__lang">
-          <LanguageSwitcher locale={locale} label="" />
+          {/* A real label, not `""`. The switcher renders it into the select's
+              `aria-label`, so an empty string leaves a combobox with no
+              accessible name — the CSS hides it visually, screen readers keep it. */}
+          <LanguageSwitcher locale={locale} label={m.language} />
         </div>
       </header>
 

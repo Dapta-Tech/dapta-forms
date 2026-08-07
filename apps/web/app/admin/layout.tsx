@@ -59,6 +59,12 @@ export default async function AdminLayout({ children }: { children: ReactNode })
           accountId: me.accountId,
           accountCode: me.accountCode,
           role: me.role,
+          // The campaign tags belong on the `forms_account` GROUP, and this is
+          // where nearly every product event is emitted from — the wizard is a
+          // handful of screens, the dashboard is the rest of the product.
+          // Passing them only on the wizard would leave every funnel that starts
+          // after onboarding un-sliceable by campaign, which is most of them.
+          attribution: me.attribution,
         }}
       />
       <AdminShell

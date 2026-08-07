@@ -139,30 +139,53 @@ export function BuilderTour({ locale }: { locale: Locale }) {
    * Measure the anchor. `useLayoutEffect` so the card is positioned before paint
    * — with a plain effect it flashes at the top-left corner for one frame.
    *
-   * The anchor may not exist yet (the editor streams in), so this retries on the
-   * next frame rather than giving up and showing a card pinned to nothing.
+   * Two ways an anchor is unusable, and they need opposite handling:
+   *
+   *  - NOT THERE YET. The editor streams in, so the element can be missing for a
+   *    few frames. Retry, bounded — an unbounded rAF loop would spin forever on
+   *    a step whose anchor was renamed.
+   *  - THERE BUT HIDDEN. The question spine is `hidden lg:block`, so below
+   *    1024px it is in the DOM with a 0×0 rect. `querySelector` finds it and
+   *    `getBoundingClientRect()` returns all zeros, which used to draw the ring
+   *    around nothing in the top-left corner. Retrying cannot help — the anchor
+   *    is genuinely not on this screen — so the step is SKIPPED.
    */
   useLayoutEffect(() => {
     if (!armed || done || !step) return;
     let frame = 0;
+    let tries = 0;
     const measure = () => {
       const el = document.querySelector(`[data-tour="${step}"]`);
-      if (!el) {
+      const rect = el?.getBoundingClientRect();
+      if (rect && (rect.width > 0 || rect.height > 0)) {
+        setPlacement(place(el as Element, cardHeight));
+        return;
+      }
+      // ~2s at 60fps. Past that, either the anchor does not exist or this
+      // viewport does not render it; move on rather than sit on a blank step.
+      if (tries++ < 120) {
         frame = requestAnimationFrame(measure);
         return;
       }
-      setPlacement(place(el, cardHeight));
+      setPlacement(null);
+      advance();
     };
     measure();
     return () => cancelAnimationFrame(frame);
-  }, [armed, done, step, cardHeight]);
+  }, [armed, done, step, cardHeight, advance]);
 
   /** Keep the card glued to its anchor while the page moves under it. */
   useEffect(() => {
     if (!armed || done || !step) return;
     const reposition = () => {
       const el = document.querySelector(`[data-tour="${step}"]`);
-      if (el) setPlacement(place(el, cardHeight));
+      const rect = el?.getBoundingClientRect();
+      // Same visibility guard: a resize can HIDE the anchor (dragging a window
+      // below the lg breakpoint), and re-placing against a 0×0 rect would snap
+      // the ring to the corner mid-tour.
+      if (el && rect && (rect.width > 0 || rect.height > 0)) {
+        setPlacement(place(el, cardHeight));
+      }
     };
     window.addEventListener('resize', reposition);
     window.addEventListener('scroll', reposition, true);

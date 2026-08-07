@@ -108,5 +108,12 @@ export const LEAD_QUALIFIER_CONFIG: FormConfig = {
       message: 'Keep an eye on your inbox — someone from the team will reach out today.',
     },
   ],
-  partialSubmitAfterStep: 4,
+  // AFTER the email (step 6), not before it. `partialSubmitAfterStep` is 1-based
+  // over `steps`, and a partial submission exists to keep a lead who abandons
+  // mid-form. Firing it at step 4 — which this template did — saved the
+  // qualifying answers with no name and no email, i.e. a lead nobody can
+  // contact, on the one template whose entire job is producing contactable
+  // leads. Matches the customer-feedback template, which also fires on its
+  // contact step.
+  partialSubmitAfterStep: 6,
 };
