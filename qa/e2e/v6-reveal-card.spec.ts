@@ -99,7 +99,9 @@ test.describe('V6 — the reveal screen is a card, and only a card', () => {
   }) => {
     const { id } = await createForm(request, [textStep('q1', 'First question')]);
     await openEditor(page, id);
-    await page.getByRole('button', { name: 'Design', exact: true }).click();
+    // The topbar's contextual row now carries its own "Design" shortcut, so the
+  // role+name lookup resolves to two buttons — target the TAB by testid.
+  await page.getByTestId('editor-tab-design').click();
 
     // Everything else Design owns is untouched…
     await expect(page.getByTestId('flow-panel')).toBeVisible();
@@ -175,6 +177,8 @@ test.describe('V6 — the reveal screen is a card, and only a card', () => {
     const spine = page.getByTestId('question-spine');
     await spine.getByText('First question', { exact: true }).click();
 
+    // The reveal-after switch is in the Behavior section, inside Advanced.
+    await page.getByRole('button', { name: /Advanced/ }).click();
     const toggle = page.getByTestId('behavior-reveal-after');
     await expect(toggle).toHaveAttribute('aria-checked', 'false');
     await toggle.click();

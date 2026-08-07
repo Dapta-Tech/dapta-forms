@@ -343,7 +343,17 @@ export function TokenTextarea({
   const open = menu != null;
 
   return (
-    <div className="relative">
+    <div>
+      {/* The `relative` box holds ONLY the textarea and its two overlays (the
+          highlight mirror and the picker). The hint and the warnings used to
+          live inside it too — and the mirror is `inset-0`, so it stretched over
+          textarea + hint and drew the caller's border (and, with `resize-y` in
+          the caller's class, a second resize grip) around the taller box: two
+          nested frames where the author saw one field, reported as "there is
+          one on top of the other". Scoping the relative box to the control is
+          the fix; it also anchors the picker directly under the textarea
+          instead of under the hint. */}
+      <div className="relative">
       {/* Highlight mirror — the same text under the (transparent) textarea, with
           tokens tinted. `aria-hidden` + no pointer events: it is pure decoration,
           the textarea remains the sole interactive/announced control. It carries
@@ -354,8 +364,10 @@ export function TokenTextarea({
         data-testid={testId ? `${testId}-highlight` : undefined}
         className={cn(
           'pointer-events-none absolute inset-0 select-none overflow-hidden',
-          autoGrow && 'resize-none',
           className,
+          // LAST so it beats a `resize-y` in the caller's class: the mirror is
+          // decoration, and a grip on it reads as a second, broken control.
+          'resize-none',
         )}
       >
         <div ref={highlightRef} className="whitespace-pre-wrap break-words">
@@ -407,7 +419,10 @@ export function TokenTextarea({
         // bg-background), which would otherwise hide the highlight layer.
         style={{ backgroundColor: 'transparent', color: 'transparent', caretColor: 'var(--foreground)' }}
         className={cn(
-          'relative w-full bg-transparent outline-none placeholder:text-muted-foreground/50',
+          // `block`: inline-block leaves a baseline gap below the textarea, so
+          // the wrapper (and the inset-0 mirror with it) ran ~7px taller than
+          // the control — a second border edge peeking out under the field.
+          'relative block w-full bg-transparent outline-none placeholder:text-muted-foreground/50',
           autoGrow && 'resize-none overflow-hidden',
           className,
         )}
@@ -454,6 +469,7 @@ export function TokenTextarea({
           </ul>
         </div>
       ) : null}
+      </div>
 
       {hint && tokens.length > 0 ? (
         <p data-testid="token-hint" className="mt-1 flex items-center gap-1.5 text-[11px] text-muted-foreground/80">

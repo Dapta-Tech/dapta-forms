@@ -183,6 +183,8 @@ test.describe('builder gaps: newly-exposed engine features via the builder UI', 
 
     await openEditor(page, form.id);
     await page.getByRole('button', { name: /Not a fit/ }).click();
+    // "Ends the form" is in the Behavior section, inside the collapsed Advanced group.
+    await page.getByRole('button', { name: /Advanced/ }).click();
     const terminal = page.getByRole('switch', { name: 'Ends the form' });
     await terminal.click();
     await expect(terminal).toHaveAttribute('aria-checked', 'true');
@@ -244,7 +246,9 @@ test.describe('builder gaps: newly-exposed engine features via the builder UI', 
     });
 
     await openEditor(page, form.id);
-    await page.getByRole('button', { name: 'Design', exact: true }).click();
+    // The topbar's contextual row now carries its own "Design" shortcut, so the
+  // role+name lookup resolves to two buttons — target the TAB by testid.
+  await page.getByTestId('editor-tab-design').click();
     // Cover screen → Badge (Field labels are not htmlFor-associated; target the
     // adjacent input).
     await page.locator('label:text-is("Badge") + input').fill(badgeText);
