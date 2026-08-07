@@ -298,3 +298,57 @@ describe('migrateRevealToStep', () => {
     expect(next.steps).toEqual([]);
   });
 });
+
+describe('normalizeConfig — logicLayout (builder-only node positions)', () => {
+  const at = (x: number, y: number) => ({ x, y });
+
+  it('keeps a position whose step still exists', () => {
+    const next = normalizeConfig({
+      version: 1,
+      steps: [{ key: 'budget', type: 'text', question: 'Budget?' }],
+      logicLayout: { budget: at(120, 40) },
+    });
+    expect(next.logicLayout).toEqual({ budget: at(120, 40) });
+  });
+
+  it('drops a position whose step is gone, so no node is pinned to nothing', () => {
+    const next = normalizeConfig({
+      version: 1,
+      steps: [{ key: 'budget', type: 'text', question: 'Budget?' }],
+      logicLayout: { budget: at(120, 40), deleted_step: at(999, 999) },
+    });
+    expect(next.logicLayout).toEqual({ budget: at(120, 40) });
+  });
+
+  it('follows the same rename map the goto targets follow', () => {
+    // Two steps want the key `budget`; the second is suffixed, and its stored
+    // position has to move with it or it lands on the FIRST step's node.
+    const next = normalizeConfig({
+      version: 1,
+      steps: [
+        { key: 'budget', type: 'text', question: 'A' },
+        { key: 'budget', type: 'text', question: 'B' },
+      ],
+      logicLayout: { budget: at(10, 10) },
+    });
+    const keys = next.steps.map((s) => s.key);
+    expect(new Set(Object.keys(next.logicLayout ?? {}))).toEqual(new Set([keys[0]!]));
+  });
+
+  it('drops the field entirely when nothing survives, rather than storing {}', () => {
+    const next = normalizeConfig({
+      version: 1,
+      steps: [{ key: 'budget', type: 'text', question: 'Budget?' }],
+      logicLayout: { gone: at(1, 2) },
+    });
+    expect('logicLayout' in next).toBe(false);
+  });
+
+  it('leaves a config without positions untouched — every legacy form', () => {
+    const next = normalizeConfig({
+      version: 1,
+      steps: [{ key: 'budget', type: 'text', question: 'Budget?' }],
+    });
+    expect('logicLayout' in next).toBe(false);
+  });
+});

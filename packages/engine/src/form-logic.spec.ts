@@ -2045,3 +2045,28 @@ describe('score-sourced conditions (SCORE_FIELD)', () => {
     expect(visibleSteps(band, {}).map((s) => s.key)).toEqual(['q1']);
   });
 });
+
+describe('renameStepKey — logicLayout follows the key', () => {
+  const cfg = {
+    version: 1 as const,
+    steps: [
+      { key: 'budget', type: 'text' as const, question: 'Budget?' },
+      { key: 'email', type: 'email' as const, question: 'Email?' },
+    ],
+    logicLayout: { budget: { x: 120, y: 40 }, email: { x: 300, y: 40 } },
+  };
+
+  it('moves the renamed step position and leaves the others alone', () => {
+    const next = renameStepKey(cfg, 'budget', 'annual_budget');
+    expect(next.logicLayout).toEqual({
+      annual_budget: { x: 120, y: 40 },
+      email: { x: 300, y: 40 },
+    });
+  });
+
+  it('does not invent the field on a config that has no positions', () => {
+    const { logicLayout: _dropped, ...bare } = cfg;
+    const next = renameStepKey(bare, 'budget', 'annual_budget');
+    expect('logicLayout' in next).toBe(false);
+  });
+});

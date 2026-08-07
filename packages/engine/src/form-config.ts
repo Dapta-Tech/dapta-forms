@@ -280,6 +280,21 @@ export function normalizeConfig(config: FormConfig): FormConfig {
     ...passthrough
   } = config as FormConfig & Record<string, unknown>;
 
+  // The Logic canvas's stored node positions are keyed by STEP KEY, which makes
+  // them pointers like `goto[].target` and `showWhen.field` — so they follow the
+  // same rename map, and an entry whose step is gone is dropped. A stale entry
+  // would pin a node at coordinates its step no longer occupies, which is the
+  // precise kind of lie the canvas exists to remove. Purely presentational, so
+  // it is rebuilt rather than passed through untouched.
+  const layout = (config as FormConfig).logicLayout;
+  const logicLayout = layout
+    ? Object.fromEntries(
+        Object.entries(layout)
+          .map(([key, pos]) => [remap(key), pos] as const)
+          .filter(([key]) => taken.has(key)),
+      )
+    : undefined;
+
   const next: FormConfig = {
     ...passthrough,
     version: 1,
@@ -287,7 +302,11 @@ export function normalizeConfig(config: FormConfig): FormConfig {
     ...(cover != null ? { cover } : {}),
     ...(branding != null ? { branding } : {}),
     ...(outcomes.length ? { outcomes } : {}),
+    // An emptied map is dropped entirely rather than stored as `{}` — absent is
+    // what "no manual positions" already means everywhere else.
+    ...(logicLayout && Object.keys(logicLayout).length ? { logicLayout } : { logicLayout: undefined }),
   };
+  if (next.logicLayout == null) delete next.logicLayout;
 
   // Derive scoring only when the author never spoke to it.
   if (config.scoring != null) {
