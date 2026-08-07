@@ -76,6 +76,52 @@ export interface BuilderMessages {
     empty: string;
     done: string;
   };
+  /**
+   * F3b — the three FORM-WIDE logic editors, opened from the Logic tab's
+   * contextual toolbar. The builder can otherwise only show logic ONE question
+   * at a time; these three answer "what does this whole form do?" in one scroll.
+   * Copy that already exists under `results.*` is reused rather than restated,
+   * so the Results tab and these dialogs can never drift apart.
+   */
+  branching: {
+    /** Trigger label in the Logic tab's contextual toolbar. */
+    open: string;
+    title: string;
+    subtitle: string;
+    /** "{n} of {total} questions carry logic." */
+    summary: string;
+    /** Shown instead when nothing routes yet. */
+    summaryNone: string;
+    /** Per-step control that hands off to the per-question logic dialog. */
+    edit: string;
+    /** aria-label for that control — `{question}` names which step it opens. */
+    editAria: string;
+    /** The form has no questions at all, so there is nothing to route. */
+    empty: string;
+    /**
+     * Operand for a catch-all `goto` (stored as the value `*`). Printing the
+     * raw `*` as if it were an answer the respondent could give is a lie; a
+     * scheduler's catch-all fires on a booking, not on an answer at all.
+     */
+    anyAnswer: string;
+    anyBooking: string;
+  };
+  scoring: {
+    open: string;
+    title: string;
+    subtitle: string;
+    /** "Max {n}" — the ceiling this ONE question can contribute. */
+    stepMax: string;
+    /** A choice question with no options yet: nothing to attach points to. */
+    noOptions: string;
+    /** Why the points are shown but frozen while form-level scoring is off. */
+    inert: string;
+  };
+  outcomes: {
+    open: string;
+    title: string;
+    subtitle: string;
+  };
   badges: {
     /** V5-QA — marks a step respondents never see. */
     hidden: string;
@@ -328,6 +374,17 @@ export interface BuilderMessages {
     neverAppears: string;
     /** Small kicker above a scored outcome node. */
     outcomeKicker: string;
+    /**
+     * The Logic canvas viewport controls (F3a). They live under `map.*` with the
+     * rest of the flow-view copy so the read-only map and the interactive canvas
+     * keep one vocabulary.
+     */
+    zoomIn: string;
+    zoomOut: string;
+    zoomFit: string;
+    autoArrange: string;
+    /** Muted footer hint: how to move a node / pan the canvas. */
+    dragHint: string;
   };
   results: {
     pointsTitle: string;
@@ -435,6 +492,32 @@ const en: BuilderMessages = {
     noRouting: 'This question type has no answer values to branch on. Use the visibility rules above.',
     empty: 'No logic yet — this question always appears and continues in order.',
     done: 'Done',
+  },
+  branching: {
+    open: 'Branching',
+    title: 'Branching',
+    subtitle: 'Every question in order, with the rules that route it. Open one to change it.',
+    summary: '{n} of {total} questions carry logic.',
+    summaryNone: 'No question carries logic yet — everyone walks the same path.',
+    edit: 'Edit',
+    editAria: 'Edit the logic for {question}',
+    empty: 'Add a question first — there is nothing to route yet.',
+    anyAnswer: 'any answer',
+    anyBooking: 'any booking',
+  },
+  scoring: {
+    open: 'Scoring',
+    title: 'Scoring',
+    subtitle: 'Every point value in the form, editable here. A negative number subtracts.',
+    stepMax: 'Max {n}',
+    noOptions: 'No options yet — add some to award points.',
+    inert:
+      'Scoring is off, so none of these points are awarded. They are kept exactly as they are — turn scoring on to use them again.',
+  },
+  outcomes: {
+    open: 'Outcomes',
+    title: 'Outcomes',
+    subtitle: 'Score ranges mapped to what a respondent sees at the end. The first matching range wins.',
   },
   badges: {
     hidden: 'Hidden',
@@ -654,6 +737,11 @@ const en: BuilderMessages = {
     condMissingField: 'question deleted',
     neverAppears: 'These rules mean this question never appears.',
     outcomeKicker: 'Ending',
+    zoomIn: 'Zoom in',
+    zoomOut: 'Zoom out',
+    zoomFit: 'Fit to screen',
+    autoArrange: 'Auto-arrange',
+    dragHint: 'Drag a card to move it · drag the canvas to pan',
   },
   results: {
     pointsTitle: 'Points',
@@ -758,6 +846,32 @@ const es: BuilderMessages = {
     noRouting: 'Este tipo de pregunta no tiene valores de respuesta para ramificar. Usa las reglas de visibilidad de arriba.',
     empty: 'Sin lógica — esta pregunta siempre aparece y continúa en orden.',
     done: 'Listo',
+  },
+  branching: {
+    open: 'Ramificación',
+    title: 'Ramificación',
+    subtitle: 'Todas las preguntas en orden, con las reglas que las enrutan. Abre una para cambiarla.',
+    summary: '{n} de {total} preguntas tienen lógica.',
+    summaryNone: 'Ninguna pregunta tiene lógica todavía — todos recorren el mismo camino.',
+    edit: 'Editar',
+    editAria: 'Editar la lógica de {question}',
+    empty: 'Añade una pregunta primero — todavía no hay nada que enrutar.',
+    anyAnswer: 'cualquier respuesta',
+    anyBooking: 'cualquier reserva',
+  },
+  scoring: {
+    open: 'Puntaje',
+    title: 'Puntaje',
+    subtitle: 'Todos los puntos del formulario, editables aquí. Un número negativo resta.',
+    stepMax: 'Máx {n}',
+    noOptions: 'Sin opciones todavía — añade algunas para asignar puntos.',
+    inert:
+      'El puntaje está apagado, así que estos puntos no se otorgan. Se conservan tal cual — actívalo para volver a usarlos.',
+  },
+  outcomes: {
+    open: 'Resultados',
+    title: 'Resultados',
+    subtitle: 'Rangos de puntaje asignados a lo que ve quien responde al final. Gana el primer rango que coincida.',
   },
   badges: {
     hidden: 'Oculta',
@@ -979,6 +1093,11 @@ const es: BuilderMessages = {
     condMissingField: 'pregunta eliminada',
     neverAppears: 'Con estas reglas, esta pregunta nunca aparece.',
     outcomeKicker: 'Final',
+    zoomIn: 'Acercar',
+    zoomOut: 'Alejar',
+    zoomFit: 'Ajustar a la pantalla',
+    autoArrange: 'Ordenar automáticamente',
+    dragHint: 'Arrastra una tarjeta para moverla · arrastra el lienzo para desplazarlo',
   },
   results: {
     pointsTitle: 'Puntos',
