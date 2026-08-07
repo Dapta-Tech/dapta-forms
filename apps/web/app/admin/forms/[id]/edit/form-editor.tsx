@@ -38,7 +38,6 @@ import { BranchingDialog } from './_components/branching-dialog';
 import { ScoringDialog } from './_components/scoring-dialog';
 import { OutcomesDialog } from './_components/outcomes-dialog';
 import { useIsDesktop } from '@/lib/use-media-query';
-import { ResultsView } from './_components/results-view';
 import { EmptyState } from './_components/empty-state';
 import { DesignPanel } from './_components/design-panel';
 import { FlowPanel } from './_components/flow-panel';
@@ -68,7 +67,10 @@ const RETRY_MS = 1500;
 /** Same admin API base the server-side admin-api client uses (client-exposed). */
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 
-const TAB_IDS: readonly Tab[] = ['build', 'logic', 'connect', 'results', 'design'];
+// `results` is deliberately still parsed: a bookmark or an old link carrying
+// `?tab=results` resolves to Build rather than 404-ing on a tab that no longer
+// exists. Its two panels now live behind Logic → Scoring and Logic → Outcomes.
+const TAB_IDS: readonly Tab[] = ['build', 'logic', 'connect', 'design'];
 /** Unknown/absent `?tab` → build (the default view). */
 const parseTab = (value: string | null): Tab =>
   TAB_IDS.includes(value as Tab) ? (value as Tab) : 'build';
@@ -527,7 +529,6 @@ export function FormEditor({
     { id: 'build', label: bm.shell.tabBuild, icon: 'pi-th-large' },
     { id: 'logic', label: bm.shell.tabLogic, icon: 'pi-sitemap' },
     { id: 'connect', label: m.connect.tab, icon: 'pi-link' },
-    { id: 'results', label: bm.shell.tabResults, icon: 'pi-chart-line' },
     { id: 'design', label: bm.shell.tabDesign, icon: 'pi-palette' },
   ];
 
@@ -847,17 +848,6 @@ export function FormEditor({
               onTrackingChange={setTracking}
               m={m}
               locale={locale}
-            />
-          </div>
-        ) : tab === 'results' ? (
-          <div className="h-full overflow-y-auto">
-            <ResultsView
-              config={config}
-              onScoringChange={setScoring}
-              onOutcomesChange={setOutcomes}
-              onStepScoringChange={(index, on) => patchStep(index, { scoringEnabled: on ? undefined : false })}
-              m={bm}
-              rm={m.resultsHelp}
             />
           </div>
         ) : (

@@ -136,12 +136,35 @@ async function openEditor(page: Page, id: string, tab: string): Promise<void> {
   await expect(page.getByTestId('editor-save-status')).toBeVisible();
 }
 
+/**
+ * Open the score-range editor.
+ *
+ * The Results TAB is gone: its two panels were absorbed into the Logic tab's
+ * contextual toolbar (Scoring for the points, Outcomes for the ranges), so
+ * there is one form-wide view of each axis instead of a tab that mixed them.
+ * Every outcome testid below is unchanged — only the door moved.
+ */
+async function openLogicDialog(page: Page, id: string, which: 'outcomes' | 'scoring'): Promise<void> {
+  await openEditor(page, id, 'logic');
+  const trigger = page.getByTestId(`toolbar-${which}`);
+  const dialog = page.getByTestId(`${which}-dialog`);
+  await expect(trigger).toBeVisible({ timeout: 20_000 });
+  // Retried as a unit: the toolbar is a client island, so a click landing
+  // before hydration is swallowed while the button looks perfectly ready.
+  await expect(async () => {
+    if (!(await dialog.isVisible())) await trigger.click();
+    await expect(dialog).toBeVisible({ timeout: 1_000 });
+  }).toPass({ timeout: 15_000 });
+}
+const openOutcomes = (page: Page, id: string) => openLogicDialog(page, id, 'outcomes');
+const openScoring = (page: Page, id: string) => openLogicDialog(page, id, 'scoring');
+
 test('(a) adding a score range autosaves — the empty-label outcome persists, no error', async ({
   page,
   request,
 }) => {
   const id = await createForm(request, 'add-range', scoredConfig());
-  await openEditor(page, id, 'results');
+  await openOutcomes(page, id);
 
   await expect(page.getByTestId('outcome-row')).toHaveCount(1); // the seeded "Base"
   await page.getByTestId('results-add-range').click();
@@ -166,7 +189,7 @@ test('(b) outcome heading + schemeless redirect saves — redirect normalized to
   request,
 }) => {
   const id = await createForm(request, 'redirect', scoredConfig());
-  await openEditor(page, id, 'results');
+  await openOutcomes(page, id);
 
   // The label is the heading respondents see for this range.
   await page.getByTestId('outcome-label').first().fill('Hot lead — thanks!');
@@ -197,7 +220,7 @@ test('(c) Results numbering: a slider at question 5 shows "5", not its filtered 
   request,
 }) => {
   const id = await createForm(request, 'numbering', numberingConfig());
-  await openEditor(page, id, 'results');
+  await openScoring(page, id);
 
   // Two Points cards render (the scored choice at Q2, then the scored slider at
   // Q5) — in step order. Their number chips must be the REAL positions.
@@ -212,10 +235,16 @@ test('(d) leave-while-dirty: mutate then click Back fast — the change is still
   request,
 }) => {
   const id = await createForm(request, 'leave', scoredConfig());
-  await openEditor(page, id, 'results');
+  await openOutcomes(page, id);
 
   // Mutate an outcome, then navigate away BEFORE the ~900ms debounce fires.
   await page.getByTestId('outcome-label').first().fill('LeaveSaved');
+  // Escape rather than a click on Done: the ranges live in a dialog now, which
+  // aria-hides the page behind it, so Back is genuinely unreachable while it is
+  // open. Escape closes synchronously and — crucially — writes nothing, so the
+  // race this test exists for is intact: the edit is still only in memory when
+  // the navigation starts.
+  await page.keyboard.press('Escape');
   await page.locator('a[href="/admin/forms"]').first().click(); // Back — SPA nav unmounts the editor
 
   // The flush-on-leave (effect cleanup → server action) still persisted it.

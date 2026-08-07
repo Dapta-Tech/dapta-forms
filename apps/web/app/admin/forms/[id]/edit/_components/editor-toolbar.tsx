@@ -4,8 +4,15 @@ import type { ReactNode } from 'react';
 import { cn } from '@/lib/cn';
 import type { BuilderMessages } from './builder-messages';
 
-/** The editor's top-level sections. Lives here because both the topbar's tab
- *  row and this contextual toolbar key off it. */
+/**
+ * The editor's top-level sections. Lives here because both the topbar's tab row
+ * and this contextual toolbar key off it.
+ *
+ * `results` is retained as a PARSEABLE value with no tab of its own: the
+ * section was absorbed into Logic → Scoring and Logic → Outcomes, and keeping
+ * the id lets an old `?tab=results` link resolve to the default rather than
+ * dead-end.
+ */
 export type Tab = 'build' | 'logic' | 'connect' | 'results' | 'design';
 
 /**
