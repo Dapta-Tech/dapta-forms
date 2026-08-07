@@ -21,7 +21,7 @@ export const APPLICATION_CONFIG: FormConfig = {
     enabled: true,
     eyebrow: 'We are reading every one',
     headline: 'Tell us what you need',
-    subheadline: 'Five questions. No account, no login — just the details so we can get moving.',
+    subheadline: 'Six questions. No account, no login — just the details so we can get moving.',
     ctaText: 'Start my request',
   },
   steps: [

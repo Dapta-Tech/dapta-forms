@@ -8,25 +8,36 @@ up. This documents the wizard shipped behind `ONBOARDING_WIZARD` (default
 The short version:
 
 ```
-signup → /admin → (onboarding owed?) → /onboarding
-           ↑                               │
-           │            Q1 role → Q2 industry → Q3 use case → template picker
-           │                               │ (every advance PATCHes progress)
-           │                               ▼
-           └──────── redirect ←── POST complete (claim, once)
+signup → /admin → (owed AND admin/owner?) → /onboarding
+           ↑                                    │
+           │           Q1 role → Q2 industry → Q3 use case → template picker
+           │                                    │ (every advance PATCHes progress)
+           │                                    ▼
+           └──────── redirect ←── POST complete (claim, once; carries the answers)
                        to /admin/forms/<id>/edit?tour=1
 ```
 
 ## 1. The gate
 
-An account **owes onboarding** when both are true:
+A person **owes onboarding** when all three are true:
 
-- `ONBOARDING_WIZARD` is on (`packages/config/src/env.ts`), and
-- `account.onboarding_completed_at` is `NULL`.
+- `ONBOARDING_WIZARD` is on (`packages/config/src/env.ts`),
+- `account.onboarding_completed_at` is `NULL`, and
+- the caller is an **admin or owner** of that account.
 
-The API folds both into one field — `onboardingRequired` on `GET /v1/me`
+The API folds all three into one field — `onboardingRequired` on `GET /v1/me`
 (`apps/api/src/admin.service.ts`) — and the web app **never re-derives it**;
 there is exactly one copy of the rule.
+
+The role clause is not a nicety. Onboarding describes the **workspace**, so both
+its endpoints are admin-gated (`assertAdmin`) — an invited member must not be
+able to rewrite the owner's answers. Without the same clause on the gate, a
+plain member of an account whose owner abandoned the wizard was sent to
+`/onboarding`, silently 403'd on every step, 403'd on the completion, and
+bounced back by the same gate when the action fell through to `/admin`. The
+wizard renders no sidebar and no sign-out, so that loop had no exit. A member
+now lands on the dashboard of a workspace whose owner has not finished setting
+up, which is an ordinary state.
 
 Routing runs in both directions, which is what makes every URL safe to hit
 directly, bookmarked or back-buttoned:
@@ -45,6 +56,15 @@ exists.
 only genuinely new accounts are gated. (Using `created_at` rather than `now()`
 also keeps "completed before the feature shipped" legible in the data instead
 of inventing a spike of completions on deploy day.)
+
+**The seeded demo account is stamped by the seed itself**, not by that backfill.
+`db:setup` is `db:migrate && db:seed`, in that order, so the backfill sweeps the
+table before the demo row exists and can never reach it — which left the one
+account in a fresh database still owed a wizard. `pnpm dev` landed on
+`/onboarding` instead of the dashboard, the demo form was invisible behind the
+gate, and every Playwright spec that opens `/admin/...` followed the same
+redirect. `packages/db/src/seed.ts` writes the column directly; the demo account
+is onboarded by definition, since it ships with a form.
 
 ## 2. The wizard
 
@@ -96,13 +116,24 @@ template is a compile error).
 resolves it against this registry (`getFormTemplate`), so the onboarding path
 cannot be used to inject an arbitrary form config.
 
+**The form's NAME is localized, the QUESTIONS are not.** The completion request
+carries the locale the wizard rendered in, and the API resolves the name from
+`admin.onboarding.templates.options[id].formName` — the same catalog the card
+came from, so the form cannot be called something other than what was clicked.
+(`formName` is separate from the card's `name` because they are separate jobs:
+the blank card says "Start from scratch" and the form it makes is an "Untitled
+form".) The registry's own `name` is the English fallback for a caller that
+names no locale. The template **configs** are English only, so a Spanish signup
+gets a Spanish-named form asking English questions — a known gap, tracked
+separately.
+
 ## 4. Persistence — two writes, different jobs
 
 `packages/db/src/onboarding.ts`. Both live on the `account` row (migration
 `0011_onboarding.sql`, both dialects, additive):
 
 - `account.onboarding` (JSON) — `{ version, role, industry, useCase, template,
-  lastStep, stepsSeen[], startedAt }` (`accountOnboardingSchema`).
+  lastStep, stepsSeen[], startedAt, formId }` (`accountOnboardingSchema`).
 - `account.onboarding_completed_at` (epoch-ms) — the completion claim, indexed.
 
 **Write 1: `saveOnboardingProgress` — on EVERY advance.** This is what makes an
@@ -113,6 +144,24 @@ the role question and quit on industry. The wizard also claims the very first
 screen on arrival (`lastStep: 'role'`), otherwise "opened and quit immediately"
 is indistinguishable from "never arrived".
 
+The merge is **monotonic in every field**, and that is what makes two writes
+racing harmless:
+
+- an answer is never blanked — a patch field that is absent *or explicitly
+  `null`* is ignored (the schema is `.nullable()`, so `{"role": null}` is a
+  valid body, and an `!== undefined` guard used to let it erase a stored answer);
+- `lastStep` only ever **advances**. The wizard is pure client state, so a
+  refresh or a return visit remounts at question one and re-announces
+  `lastStep: 'role'`; letting that overwrite a stored `'template'` would file a
+  finisher as a first-question quitter and invert the metric this whole feature
+  exists to produce;
+- `stepsSeen` only grows, and `startedAt` keeps the earliest.
+
+The wizard also sends its **full accumulated answers** on every advance rather
+than a one-field delta — a patch that never landed is repaired by the next one —
+and **serializes** them, so its two writers (the arrival effect and each answer)
+cannot interleave on the row.
+
 The client action (`apps/web/app/onboarding/actions.ts`) **never throws into
 the wizard**: a failed save advances anyway. Losing one breadcrumb of telemetry
 beats trapping a person on question two because the network blipped.
@@ -120,16 +169,32 @@ beats trapping a person on question two because the network blipped.
 **Write 2: `claimOnboardingComplete` — once.** `UPDATE … WHERE
 onboarding_completed_at IS NULL`: exactly one caller wins, so the first form is
 created once and `forms_onboarding_completed` fires once even on a double-click or a
-second tab. A loser is handed the winner's form id and lands on the same form.
-Both writes guard on the claim, so a stale PATCH after completion can never
-rewrite a finished onboarding's answers.
+second tab. Both writes guard on the claim, so a stale PATCH after completion can
+never rewrite a finished onboarding's answers.
+
+The completion request **carries the answers** (`onboardingCompleteSchema`), not
+just the template. The template screen arms its CTA the moment question three is
+answered, so that answer's PATCH and this claim are routinely in flight
+together — and whichever read the row first would have written a blob missing
+the other's field. Carrying them means the winning statement writes the complete
+set and nothing has to arrive in time.
 
 After the claim wins, the API creates the form from the template
-(`apps/api/src/admin.service.ts#completeOnboarding`) and the web redirects to
+(`apps/api/src/admin.service.ts#completeOnboarding`), records its id on the blob
+(`recordOnboardingFormId`), and the web redirects to
 `/admin/forms/<id>/edit?tour=1` — the query param (never a cookie) arms the
-builder's coach marks exactly once. A failed form-create does **not** un-claim
-completion: the answers are stored, and the person lands on the dashboard where
-"New form" is the obvious next click.
+builder's coach marks exactly once. A **losing** claim reads that recorded id and
+lands on the same form. It used to guess with `ORDER BY created_at ASC LIMIT 1`,
+which on an account that already had a form handed the second tab an unrelated
+one with the first-run tour armed on it.
+
+A failed form-create does **not** un-claim completion: the answers are stored,
+and the person lands on the dashboard where "New form" is the obvious next click.
+A failed **completion** — a 500, a timeout, the API down — is different: the
+claim is unwritten, so `/admin` is not reachable (the gate reads the same NULL
+column and bounces them back into a wizard remounted at question one, with their
+answers gone). The action returns `{ ok: false }` and the wizard shows an error
+with a retry instead of navigating anywhere.
 
 ## 5. Interaction with the demo seed
 
@@ -180,6 +245,15 @@ source of a first form, so this is the whole cohort, not an edge case.
 The builder tour that follows emits `forms_onboarding_tour_step` (per coach
 mark) and `forms_onboarding_tour_finished`, so the funnel can run past the
 wizard into the first minute of the builder.
+
+`forms_onboarding_tour_step` fires only for a step whose **anchor actually
+resolved**, and `total_steps` counts only those. The tour probes for its three
+`[data-tour]` anchors once before it starts, because two of them can legitimately
+be absent: `edit` sits on a `hidden lg:block` aside inside the editor's
+`hasQuestions` branch, so it is missing under 1024px and missing for the `blank`
+template. Walking the list blind logged an impression for a card that never
+rendered and told the person "1 of 3" while showing two — and `blank` is both the
+template most in need of the tour and the one guaranteed to lose its first step.
 
 **The server event carries no `account_code`.** Client events are enriched by
 the browser SDK's registered identity (`account_code`, `account_id`,
@@ -234,7 +308,13 @@ as a string through node-postgres — the DB layer coerces at the read site.)
   answers stay on the row (`completed_at` stays NULL). If the flag comes back
   on later, those accounts resume being gated and the wizard restarts.
 - **Forks / self-hosters:** `ONBOARDING_WIZARD=false` + `SEED_DEMO_FORM=true`
-  restores the pre-wizard behaviour exactly.
+  restores the pre-wizard behaviour exactly. Note that `SEED_DEMO_FORM=true`
+  **alone** does nothing while the wizard is on — the wizard suppresses it, so
+  that the two can never both write a "first" form into the same account.
+- **A workspace stuck mid-wizard is not a support incident.** Only its
+  admins/owners are gated; everyone else works normally. An owner who wants out
+  can finish the wizard (any template, including blank), or an operator can
+  stamp `account.onboarding_completed_at` directly.
 
 ## 9. File map
 
@@ -250,7 +330,8 @@ as a string through node-postgres — the DB layer coerces at the read site.)
 | Persistence | `packages/db/src/onboarding.ts`, migration `0011_onboarding` (pg + sqlite) |
 | Templates | `packages/db/src/templates/` |
 | Seed suppression | `apps/api/src/auth.provider.ts` (`maybeSeedDemoForm`) |
+| Demo account's completion stamp | `packages/db/src/seed.ts` |
 | Enums + schemas | `packages/types/src/index.ts` (`ONBOARDING_*`, `accountOnboardingSchema`, `USE_CASE_TEMPLATE`) |
 | Copy (EN/ES) | `packages/shared/src/i18n/index.ts` (`admin.onboarding`) |
 | Builder tour | `apps/web/app/admin/forms/[id]/edit/_components/builder-tour.tsx` (`?tour=1`) |
-| Tests | `packages/db/src/onboarding.spec.ts`, `packages/db/src/templates/templates.spec.ts`, `apps/api/src/onboarding.controller.spec.ts` |
+| Tests | `packages/db/src/onboarding.spec.ts`, `packages/db/src/seed.spec.ts`, `packages/db/src/templates/templates.spec.ts`, `apps/api/src/onboarding.controller.spec.ts`, `qa/e2e/v10-onboarding-gate.spec.ts` |
