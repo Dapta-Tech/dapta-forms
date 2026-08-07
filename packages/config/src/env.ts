@@ -117,10 +117,13 @@ export const serverEnvSchema = z.object({
   // ship empty workspaces.
   SEED_DEMO_FORM: boolish.default('true'),
 
-  // Onboarding WIZARD: gate the whole first-run experience — three qualifying
+  // Onboarding WIZARD: the whole first-run experience — three qualifying
   // questions, then the person picks the template their first form is built
-  // from. OFF by default so a fork (and this product, until the flag is flipped
-  // per environment) behaves exactly as before.
+  // from. ON by default: the deploy pipeline is the rollout gate (dev
+  // auto-releases first, prd is a manual promotion), so a config-side default
+  // of off would only re-create that gate in a file a second team owns. The
+  // flag stays as an emergency kill switch and a fork's opt-out, not as a
+  // step of the rollout.
   //
   // It also SUPPRESSES the auto-seed above, and must: `seedDemoFormForAccount`
   // only writes when the account has zero forms, so a demo seeded at first login
@@ -131,7 +134,7 @@ export const serverEnvSchema = z.object({
   // Suppressing the seed is also what makes abandonment MEASURABLE: with it off,
   // someone who quits mid-wizard is left with zero forms, which is a fact the
   // funnel can see. With a demo seeded for everyone, that state is invisible.
-  ONBOARDING_WIZARD: boolish.default('false'),
+  ONBOARDING_WIZARD: boolish.default('true'),
 
   // Auth — unset selects the local dev stub.
   AUTH_PROVIDER: z.enum(['local', 'workos']).default('local'),
