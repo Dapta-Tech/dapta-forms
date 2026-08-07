@@ -162,11 +162,20 @@ Client events (`apps/web/app/onboarding/wizard.tsx` via `captureEvent`):
 | `forms_onboarding_step_answered` | each answer | `step_key`, `step_index`, `value` |
 | `forms_onboarding_template_picked` | template card chosen | `template`, `recommended`, `use_case` |
 
-Server event (`apps/api/src/admin-crud.controller.ts`):
+Server events (`apps/api/src/admin-crud.controller.ts`):
 
 | Event | When | Properties |
 |-------|------|------------|
 | `forms_onboarding_completed` | the claim's **winner** only | `template`, `form_id` |
+| `forms_form_created` | same place, when the form was really built | `form_id`, `from_onboarding: true`, `template` |
+
+`forms_form_created` is emitted here **because the wizard is the third way a
+form is born**, alongside `createForm` and `duplicateForm`. It is the activation
+funnel's second stage, that funnel is `ordered`, and a stage that never fires
+makes every later stage unreachable — so without it the entire wizard cohort
+reads as "signed up, never made a form" forever, while holding a form the
+wizard built for them. Suppressing the demo seed made the wizard the only
+source of a first form, so this is the whole cohort, not an edge case.
 
 The builder tour that follows emits `forms_onboarding_tour_step` (per coach
 mark) and `forms_onboarding_tour_finished`, so the funnel can run past the
