@@ -171,6 +171,13 @@ test.describe('V4 question settings', () => {
 
     // Select q2 (index 1) so a prior field exists and the toggle is enabled.
     await page.getByRole('button', { name: /Tell us more/ }).first().click();
+
+    // The dynamic-question switch lives inside the Advanced group, which opens
+    // itself only when a badge says something in there is configured. This step
+    // has nothing configured, so the group is closed and the switch is not in
+    // the DOM at all — the assertion below was unreachable without this click.
+    await page.getByRole('button', { name: /Advanced/ }).click();
+
     const enable = page.getByRole('switch', { name: 'Vary the question by a field' });
     await expect(enable).toBeEnabled();
 
