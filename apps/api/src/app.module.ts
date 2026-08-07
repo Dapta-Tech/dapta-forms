@@ -2,7 +2,17 @@ import { Module } from '@nestjs/common';
 import { createDb } from '@quill/db';
 import { createEmailProvider, SubmissionNotifier, type EmailProvider } from '@quill/notifications';
 import { loadServerEnv, type ServerEnv } from '@quill/config/env';
-import { AUTH_PROVIDER, DB, EMAIL, ENTITLEMENTS, ENV, NOTIFIER, PREMIUM_MODE, RATE_LIMITER } from './tokens';
+import {
+  AUTH_PROVIDER,
+  DB,
+  EMAIL,
+  ENTITLEMENTS,
+  ENV,
+  NOTIFIER,
+  ONBOARDING_ENABLED,
+  PREMIUM_MODE,
+  RATE_LIMITER,
+} from './tokens';
 import { SubmissionService } from './submission.service';
 import { AdminService } from './admin.service';
 import { AuthService } from './auth.service';
@@ -80,6 +90,15 @@ import {
     // disabled provider + PREMIUM_FEATURES=open (everything unlocked).
     { provide: ENTITLEMENTS, useFactory: (env: ServerEnv) => resolveEntitlementsProvider(env), inject: [ENV] },
     { provide: PREMIUM_MODE, useFactory: (env: ServerEnv) => env.PREMIUM_FEATURES, inject: [ENV] },
+    // The first-run wizard's switch, resolved ONCE and injected, so the API is
+    // the single authority on whether onboarding is required. The web app reads
+    // the answer off `/v1/me` rather than keeping its own copy of the flag —
+    // two copies that disagree would strand every user in a redirect loop.
+    {
+      provide: ONBOARDING_ENABLED,
+      useFactory: (env: ServerEnv) => env.ONBOARDING_WIZARD,
+      inject: [ENV],
+    },
     // Host auth backend selected by AUTH_PROVIDER (local stub / WorkOS overlay).
     {
       provide: AUTH_PROVIDER,

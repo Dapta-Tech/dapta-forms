@@ -56,7 +56,7 @@ export function PublishButton({
   }
 
   return (
-    <div className="flex shrink-0 items-center gap-2">
+    <div className="flex shrink-0 items-center gap-2" data-tour="publish">
       {hasDraft && !publishing ? (
         // The full label only fits once the topbar is wide (`2xl`); below that
         // it collapses to the dot — still announced, via `sr-only`, and titled

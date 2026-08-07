@@ -41,6 +41,7 @@ const LOCAL_ENV = {
   DEV_LOGIN_EMAIL: undefined,
   AUTH_LOCAL_STRICT: undefined,
   SEED_DEMO_FORM: false,
+  ONBOARDING_WIZARD: false,
 } as never;
 
 /** Same env, cast once so the provider factory's ServerEnv shape is satisfied. */
