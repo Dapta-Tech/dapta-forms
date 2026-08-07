@@ -41,6 +41,40 @@ export interface BuilderMessages {
     embedCopied: string;
     copied: string;
     openForm: string;
+    /** The topbar's link popover, which now holds copy/embed/open (F1). */
+    share: string;
+    /** Accessible name for the per-tab contextual toolbar (topbar row 2). */
+    toolbar: string;
+    /** Third preview width — the 481–768px band has its own layout (F5). */
+    tablet: string;
+  };
+  /**
+   * The per-question logic dialog (F0): ONE place holding a step's whole
+   * routing — when it appears, where it goes next, and (for a scheduler) where
+   * a booking leads. Opened from the Build panel, the Logic canvas, and the
+   * form-wide Branching dialog, so all three edit the same thing.
+   */
+  logicDialog: {
+    /** Trigger label in the Build panel / canvas hover buttons. */
+    open: string;
+    /** "Logic — {question}" */
+    title: string;
+    subtitle: string;
+    visibility: string;
+    visibilityHint: string;
+    routing: string;
+    routingHint: string;
+    booking: string;
+    bookingHint: string;
+    /** "Highest possible score before this question: {n}" */
+    scoreContext: string;
+    /** Shown instead when nothing above this step awards points. */
+    scoreContextNone: string;
+    /** A step type with no forward-rule surface (free text, message, …). */
+    noRouting: string;
+    /** Plain-language summary line when the step carries no logic at all. */
+    empty: string;
+    done: string;
   };
   badges: {
     /** V5-QA — marks a step respondents never see. */
@@ -382,6 +416,25 @@ const en: BuilderMessages = {
     embedCopied: 'Copied',
     copied: 'Copied',
     openForm: 'Open form',
+    share: 'Share',
+    toolbar: 'Tools',
+    tablet: 'Tablet',
+  },
+  logicDialog: {
+    open: 'Edit logic',
+    title: 'Logic — {question}',
+    subtitle: 'Decide when this question appears and where it leads next.',
+    visibility: 'When this question appears',
+    visibilityHint: 'Leave both empty and it always appears.',
+    routing: 'Where the answer leads',
+    routingHint: 'The first matching rule wins; anything else continues in order.',
+    booking: 'After a booking',
+    bookingHint: 'Where a respondent lands once they book a slot.',
+    scoreContext: 'Highest possible score before this question: {n}',
+    scoreContextNone: 'No question above this one awards points, so a score rule would always read 0.',
+    noRouting: 'This question type has no answer values to branch on. Use the visibility rules above.',
+    empty: 'No logic yet — this question always appears and continues in order.',
+    done: 'Done',
   },
   badges: {
     hidden: 'Hidden',
@@ -686,6 +739,25 @@ const es: BuilderMessages = {
     embedCopied: 'Copiado',
     copied: 'Copiado',
     openForm: 'Abrir formulario',
+    share: 'Compartir',
+    toolbar: 'Herramientas',
+    tablet: 'Tablet',
+  },
+  logicDialog: {
+    open: 'Editar lógica',
+    title: 'Lógica — {question}',
+    subtitle: 'Define cuándo aparece esta pregunta y a dónde lleva después.',
+    visibility: 'Cuándo aparece esta pregunta',
+    visibilityHint: 'Si dejas las dos vacías, aparece siempre.',
+    routing: 'A dónde lleva la respuesta',
+    routingHint: 'Gana la primera regla que coincida; el resto sigue en orden.',
+    booking: 'Después de agendar',
+    bookingHint: 'A dónde llega quien reserva un espacio.',
+    scoreContext: 'Puntaje máximo posible antes de esta pregunta: {n}',
+    scoreContextNone: 'Ninguna pregunta anterior suma puntos, así que una regla por puntaje siempre leería 0.',
+    noRouting: 'Este tipo de pregunta no tiene valores de respuesta para ramificar. Usa las reglas de visibilidad de arriba.',
+    empty: 'Sin lógica — esta pregunta siempre aparece y continúa en orden.',
+    done: 'Listo',
   },
   badges: {
     hidden: 'Oculta',
