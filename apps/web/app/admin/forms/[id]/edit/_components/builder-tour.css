@@ -9,7 +9,14 @@
 .bt {
   position: fixed;
   inset: 0;
-  z-index: 60;
+  /* The app's scale (documented in components/ui/anchored-menu.tsx): 50 for
+     popovers and modals inside <main>, 55 for anchored menus, 60 for the toast
+     stack, 70 for the confirm dialog. The coach marks sit above the builder's
+     own chrome and BELOW the toasts — at a tie the later-painted element wins,
+     which made "Changes published" land underneath the card pointing at the
+     publish button. A toast answers something the person just did; a tip does
+     not. */
+  z-index: 58;
   /* The layer never eats clicks: the card and the ring opt back in below. The
      builder has to stay usable while the tip is on screen, or the tour becomes
      a series of modals. */
