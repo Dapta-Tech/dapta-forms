@@ -18,6 +18,48 @@
  * wrong in a light fork.
  */
 
+/* --- Shell: give the desktop card its missing centring ---------------------
+ *
+ * On desktop the renderer composes topbar + body into ONE framed card — but it
+ * centres that card (and pads the canvas around it) on `.pf__main`, a wrapper
+ * a real form has and this wizard's markup does not. Without a stand-in the
+ * card sits glued to the viewport top with zero margin. `.ob` itself takes the
+ * job: canvas padding on the root, and the pair centred with auto margins
+ * (top-auto on the bar, bottom-auto on the body) rather than
+ * `justify-content` — auto margins collapse to zero when the card is taller
+ * than the window, so a short viewport degrades to a normal scroll instead of
+ * clipping the question off the top.
+ *
+ * The `:not()` chains repeat the renderer's own card selectors on purpose:
+ * they tie on specificity, and this sheet importing after `public-form.css`
+ * is what lets these win. The card is also widened past the renderer's 560px —
+ * the role question packs nine options into two columns, and they need the
+ * room to hold one line each.
+ */
+
+@media (min-width: 769px) {
+  .ob {
+    padding: 24px;
+  }
+  .ob:not(.pf--cover):not(.pf--reveal):not(.pf--done) .pf__topbar {
+    max-width: 680px;
+    margin: auto auto 0;
+    padding: 22px 24px 16px;
+  }
+  /* The renderer's 40px card padding, trimmed vertically: the template screen
+     is the tallest of the five and 40-top + 36-bottom is exactly what pushed
+     its CTA twelve pixels past a 720px viewport. */
+  .ob:not(.pf--cover):not(.pf--reveal):not(.pf--done) .pf__body {
+    max-width: 680px;
+    margin: 0 auto auto;
+    padding: 32px 40px;
+  }
+}
+
+.ob .pf__inner {
+  max-width: 620px;
+}
+
 /* --- The product mark, in the topbar slot a form gives its own logo -------- */
 
 .ob__brand {
@@ -27,9 +69,11 @@
   min-width: 0;
 }
 
-/* `currentColor` ink — the mark follows the theme with no second asset. */
+/* `currentColor` ink — the mark follows the theme with no second asset. A
+   touch larger than a form's 24px logo band: with the bar transparent the mark
+   is the header, not a tenant of it. */
 .ob__logo {
-  height: 24px;
+  height: 26px;
   width: auto;
   color: var(--foreground);
 }
@@ -115,13 +159,79 @@
 
 /* The step counter above the question. The renderer has no equivalent — a form
    shows a progress bar, not "Question 1 of 3" — but a count alongside three
-   named stages is what keeps a wizard feeling short. */
+   named stages is what keeps a wizard feeling short. Set as a micro-label
+   (uppercase, tracked out) so it reads as a caption to the question rather
+   than a smaller sentence above it. */
 .ob__eyebrow {
   text-align: center;
-  font-size: 13px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
   color: var(--muted-foreground);
-  margin: 0 0 10px;
-  letter-spacing: 0.02em;
+  margin: 0 0 12px;
+  letter-spacing: 0.1em;
+}
+
+/* --- The question screens, packed to one viewport --------------------------
+ *
+ * The renderer stacks single-select options as full-width rows — right for a
+ * respondent's phone, but the role question has NINE of them, and nine 56px
+ * rows push the last options (and any sense of "three quick taps") below the
+ * fold. On the wizard they pack into two columns of shorter rows, so the
+ * whole question fits one desktop viewport. Scoped to `.ob`: real forms keep
+ * the renderer's own layout.
+ */
+
+.ob .pf-choices--list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+/* An odd count leaves the last row half-empty; the catch-all ("Other") spans
+   it instead — the same treatment "start from scratch" gets among the
+   templates, and it reads the same way: the alternative to the grid above it,
+   not a ninth sibling. */
+.ob .pf-choices--list > :last-child:nth-child(odd) {
+  grid-column: 1 / -1;
+}
+
+.ob .pf-choice-list {
+  min-height: 52px;
+  padding: 8px 14px;
+  gap: 11px;
+  font-size: 14px;
+  border-radius: 12px;
+}
+
+.ob .pf-choice-list__icon,
+.ob .pf-choice-list__circle {
+  width: 32px;
+  height: 32px;
+  font-size: 16px;
+}
+
+/* The industry dropdown at the grid's 640px reads as a search bar; cap it at
+   the question's own measure so it reads as a field under it. */
+.ob .pf-dropdown {
+  max-width: 480px;
+  margin: 0 auto;
+}
+
+.ob .pf__fields {
+  margin-top: 28px;
+}
+
+@media (max-width: 40rem) {
+  /* One column again on a phone — two 160px columns would wrap every label to
+     three lines. Vertical scroll is the natural gesture there; the one-screen
+     promise is a desktop promise. */
+  .ob .pf-choices--list {
+    grid-template-columns: 1fr;
+  }
+  .ob .pf-choices--list > :last-child:nth-child(odd) {
+    grid-column: auto;
+  }
 }
 
 /* The label is the part that has to give way first on a phone — the numbered
@@ -160,8 +270,8 @@
 .ob__templates {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
-  gap: var(--pf-gap);
-  margin: 0 0 24px;
+  gap: 10px;
+  margin: 0 0 18px;
   padding: 0;
   list-style: none;
 }
@@ -180,9 +290,9 @@
   height: 100%;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 5px;
   text-align: left;
-  padding: 16px;
+  padding: 14px 16px;
   font-family: inherit;
   border: 1px solid var(--border);
   border-radius: var(--pf-radius);
@@ -226,9 +336,9 @@
 }
 
 .ob__template-desc {
-  font-size: 13px;
+  font-size: 12.5px;
   color: var(--muted-foreground);
-  line-height: 1.45;
+  line-height: 1.4;
 }
 
 .ob__badge {
