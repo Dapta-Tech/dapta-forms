@@ -3,7 +3,7 @@ import { greetingName, isEmailAddress, personName } from './person';
 
 describe('isEmailAddress', () => {
   it('recognises an address and nothing else', () => {
-    expect(isEmailAddress('you@daptatech.com')).toBe(true);
+    expect(isEmailAddress('you@example.com')).toBe(true);
     expect(isEmailAddress('Josue Hernandez')).toBe(false);
     expect(isEmailAddress('Jean-Luc')).toBe(false);
     expect(isEmailAddress(null)).toBe(false);
@@ -19,15 +19,15 @@ describe('personName', () => {
   it('rejects a full address even with no email to compare against', () => {
     // The local-signup path: `display_name = ${email}`. This is the floor for the
     // public profile page, which must never publish an address but cannot see one.
-    expect(personName('you@daptatech.com')).toBeNull();
+    expect(personName('you@example.com')).toBeNull();
   });
 
   it('rejects the local part when the email is supplied', () => {
     // The invite path: `EMAIL_LOCAL(email)`. Indistinguishable from a name without
     // the address, which is why callers that have it must pass it.
     expect(personName('josue.hernandez04', 'josue.hernandez04@gmail.com')).toBeNull();
-    expect(personName('You', 'you@daptatech.com')).toBeNull();
-    expect(personName('you@daptatech.com', 'you@daptatech.com')).toBeNull();
+    expect(personName('You', 'you@example.com')).toBeNull();
+    expect(personName('you@example.com', 'you@example.com')).toBeNull();
   });
 
   it('keeps a real name that merely shares a prefix with nothing', () => {
@@ -52,7 +52,7 @@ describe('greetingName', () => {
   });
 
   it('inherits every rejection from personName', () => {
-    expect(greetingName('you@daptatech.com')).toBeNull();
+    expect(greetingName('you@example.com')).toBeNull();
     expect(greetingName('josue.hernandez04', 'josue.hernandez04@gmail.com')).toBeNull();
     expect(greetingName(null)).toBeNull();
   });

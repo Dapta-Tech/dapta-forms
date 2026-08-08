@@ -3,7 +3,7 @@
  * always a person's name. Two paths in this repo put an address in it:
  *
  *   - local JIT signup stores the FULL address (`auth.provider.ts` — `display_name
- *     = ${email}`), so the dashboard greeted people as "you@daptatech.com";
+ *     = ${email}`), so the dashboard greeted people as "you@example.com";
  *   - member invites store the LOCAL PART (`members.ts` — `EMAIL_LOCAL(email)`),
  *     and the WorkOS adapter only fills `display_name` when it is null, so the
  *     IdP's real name never replaces it. That one greets people as
