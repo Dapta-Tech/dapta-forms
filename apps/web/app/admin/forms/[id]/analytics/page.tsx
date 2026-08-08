@@ -142,7 +142,7 @@ async function AnalyticsData({
     // form…" because they picked last week is simply wrong.
     const filtered = range.from != null || range.to != null;
     return (
-      <div className="rounded-lg border border-dashed border-border bg-card/40 p-12 text-center">
+      <div className="rounded-xl border border-dashed border-border bg-card/40 p-12 text-center">
         <p className="text-lg font-medium">{filtered ? m.emptyRangeTitle : m.emptyTitle}</p>
         <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
           {filtered ? m.emptyRangeBody : m.emptyBody}
@@ -182,8 +182,14 @@ async function AnalyticsData({
         }`}
       >
         {cards.map((c) => (
-          <div key={c.label} className="rounded-lg border border-border bg-card p-4">
-            <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{c.label}</div>
+          <div key={c.label} className="rounded-xl border border-border bg-card p-4">
+            {/* Both halves in the sans, matching the dashboard's stat cards — the
+                two surfaces show the same kind of figure and must not disagree
+                about what a number looks like. The mono was tried here and read as
+                code rather than as measurement; `tabular-nums` is what the value
+                actually needed, and the label earns its separation from size, case
+                and `text-faint` instead of from a second typeface. */}
+            <div className="text-2xs font-medium uppercase tracking-wide text-faint">{c.label}</div>
             <div className="mt-2 text-2xl font-semibold tabular-nums">{c.value}</div>
           </div>
         ))}
@@ -216,7 +222,7 @@ async function AnalyticsData({
         <div className="overflow-hidden rounded-lg border border-border bg-card">
           <table className="w-full border-collapse text-sm">
             <thead>
-              <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
+              <tr className="border-b border-border text-left text-2xs uppercase tracking-wide text-faint">
                 <th className="px-4 py-3 font-medium">{m.colStep}</th>
                 <th className="w-[45%] px-4 py-3 font-medium">
                   {a.dropoffMode === 'answered' ? m.colAnswered : m.colViews}
@@ -231,14 +237,17 @@ async function AnalyticsData({
                     <span className="font-medium">
                       {row.isCover ? (row.question ? m.coverRow : m.landingRow) : row.question}
                     </span>
+                    {/* The step number is the row's address, not its content — the
+                        quietest tier, so the question text beside it stays the
+                        thing you read. */}
                     {!row.isCover ? (
-                      <span className="ml-2 text-xs text-muted-foreground">#{row.stepIndex + 1}</span>
+                      <span className="ml-2 text-xs text-faint">#{row.stepIndex + 1}</span>
                     ) : null}
                   </td>
                   <td className="px-4 py-3">
-                    <div className="relative h-6 w-full overflow-hidden rounded bg-muted">
+                    <div className="relative h-6 w-full overflow-hidden rounded-sm bg-muted">
                       <div
-                        className="absolute inset-y-0 left-0 rounded bg-primary/25"
+                        className="absolute inset-y-0 left-0 rounded-sm bg-primary/25"
                         style={{ width: `${Math.round((row.views / maxViews) * 100)}%` }}
                       />
                       <span className="absolute inset-0 flex items-center px-2 text-xs font-medium tabular-nums">

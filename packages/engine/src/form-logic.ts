@@ -497,6 +497,22 @@ export interface FormConfig {
   steps: FormStep[];
   scoring?: { enabled?: boolean } | null;
   outcomes?: FormOutcome[];
+  /**
+   * BUILDER-ONLY node positions for the Logic canvas, keyed by step key.
+   *
+   * The engine never reads this — it is presentation state, and nothing about
+   * how a form RUNS may depend on where its author dragged a box. It lives on
+   * the config rather than in browser storage so an arrangement survives a
+   * different machine and reaches a teammate opening the same form.
+   *
+   * An absent entry is the normal case: the canvas auto-lays-out from step
+   * order, and a stored position is only ever an OVERRIDE of that. Because the
+   * key is a step key, it is a pointer like any other and moves with a rename
+   * (see {@link renameStepKey}) and is pruned for deleted steps (see
+   * `normalizeConfig`) — a stale entry would pin a node where its step no
+   * longer belongs, which is the exact lie the canvas exists to remove.
+   */
+  logicLayout?: Record<string, { x: number; y: number }>;
   /** Form-level ending, overridable per outcome (V5-B1). */
   ending?: FormEnding | null;
   reveal?: FormReveal | null;
@@ -1334,12 +1350,23 @@ export function renameStepKey(config: FormConfig, oldKey: string, newKey: string
       }
     : config.ending;
 
+  // The Logic canvas's node positions are keyed by step key, so they are
+  // pointers too — without this a rename orphans the entry and the node snaps
+  // back to its auto-layout slot, silently discarding an arrangement the author
+  // made on purpose.
+  const logicLayout = config.logicLayout
+    ? Object.fromEntries(
+        Object.entries(config.logicLayout).map(([key, pos]) => [repoint(key) as string, pos]),
+      )
+    : config.logicLayout;
+
   return {
     ...config,
     steps,
     ...(outcomes ? { outcomes } : {}),
     ...(reveal ? { reveal } : {}),
     ...(ending ? { ending } : {}),
+    ...(logicLayout ? { logicLayout } : {}),
   };
 }
 

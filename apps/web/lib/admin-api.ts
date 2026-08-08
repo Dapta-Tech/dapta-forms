@@ -124,6 +124,48 @@ export interface Me {
   email: string | null;
   role: AccountRole;
   status: MemberStatus;
+  /**
+   * Whether this person still owes the first-run wizard. Computed by the API —
+   * the dashboard deliberately does NOT read the feature flag itself. Two copies
+   * of the switch that disagreed would bounce every user into a wizard whose
+   * endpoints refuse to serve it, with no way out.
+   */
+  onboardingRequired: boolean;
+  /** Epoch-ms the wizard was finished; null while still owed. */
+  onboardingCompletedAt: number | null;
+  /**
+   * First-touch acquisition tags, so the browser can attach them as analytics
+   * GROUP properties. Without them the onboarding funnel cannot be sliced by
+   * campaign, which is most of the reason to measure it.
+   */
+  attribution: Record<string, string | number | null | undefined> | null;
+}
+
+/**
+ * One screen's worth of onboarding answers. Every field optional because this is
+ * PATCHed as the person advances — a half-filled body is the normal case, not a
+ * degenerate one.
+ */
+export interface OnboardingProgress {
+  role?: string | null;
+  industry?: string | null;
+  useCase?: string | null;
+  template?: string | null;
+  lastStep?: string | null;
+}
+
+/**
+ * The completion body. The answers ride along with the template rather than
+ * being left to the last PATCH to deliver in time — see `onboardingCompleteSchema`
+ * in @quill/types, which is the contract this mirrors.
+ */
+export interface OnboardingComplete {
+  template: string;
+  role?: string | null;
+  industry?: string | null;
+  useCase?: string | null;
+  /** What the wizard rendered in, so the created form is named to match. */
+  locale?: string;
 }
 
 export interface FormSummary {
@@ -343,6 +385,21 @@ export interface FormNotificationsResponse {
 
 export const adminApi = {
   me: () => req<Me>('GET', '/v1/me'),
+
+  // Onboarding (first-run wizard)
+  saveOnboarding: (b: OnboardingProgress) =>
+    req<{ saved: boolean; onboarding: OnboardingProgress | null }>(
+      'PATCH',
+      '/v1/account/onboarding',
+      b,
+    ),
+  completeOnboarding: (b: OnboardingComplete) =>
+    req<{ completed: boolean; formId: string | null }>(
+      'POST',
+      '/v1/account/onboarding/complete',
+      b,
+    ),
+
   vanityStatus: () =>
     req<{ vanitySlug: string | null; shortCode: string; canClaim: boolean }>('GET', '/v1/vanity'),
 

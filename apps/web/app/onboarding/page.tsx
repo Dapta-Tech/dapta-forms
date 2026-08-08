@@ -1,0 +1,56 @@
+import { redirect } from 'next/navigation';
+import { getMessages } from '@quill/shared';
+import { adminApi, ApiError } from '@/lib/admin-api';
+import { preferredLocale } from '@/lib/locale';
+import { resolveProductAnalytics } from '@/lib/product-analytics';
+import { ProductAnalytics } from '@/components/analytics/product-analytics';
+import { OnboardingWizard } from './wizard';
+
+/**
+ * The first-run wizard.
+ *
+ * Lives OUTSIDE `/admin` on purpose. The admin layout redirects here when the
+ * API says onboarding is owed, so a route nested under it would re-enter that
+ * layout, be redirected again, and loop forever. It also wants none of the admin
+ * chrome — no sidebar to wander into before a first form exists.
+ *
+ * The guard runs in both directions: the layout sends people here, and this page
+ * sends them back the moment the API says the wizard is done. That second half
+ * is what makes the URL safe to hit directly, on a bookmark or a back button,
+ * without re-running an onboarding that already happened.
+ */
+export default async function OnboardingPage() {
+  let me: Awaited<ReturnType<typeof adminApi.me>>;
+  try {
+    me = await adminApi.me();
+  } catch (e) {
+    // `req` already redirects to /login on a 401; anything else is a real
+    // outage and belongs on the error boundary rather than silently swallowed.
+    if (e instanceof ApiError && e.status === 401) redirect('/login');
+    throw e;
+  }
+
+  if (!me.onboardingRequired) redirect('/admin');
+
+  // Their browser's language, not the cookie's default — nobody arriving here
+  // has ever seen the switcher.
+  const locale = await preferredLocale();
+  const messages = getMessages(locale).admin.onboarding;
+
+  return (
+    <>
+      <ProductAnalytics
+        analytics={resolveProductAnalytics()}
+        identity={{
+          email: me.email,
+          memberId: me.memberId,
+          accountId: me.accountId,
+          accountCode: me.accountCode,
+          role: me.role,
+          attribution: me.attribution,
+        }}
+      />
+      <OnboardingWizard messages={messages} locale={locale} />
+    </>
+  );
+}

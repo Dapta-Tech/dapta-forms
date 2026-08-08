@@ -110,9 +110,9 @@ docker build -f apps/web/Dockerfile -t dapta-forms-web \
   - `NEXT_PUBLIC_API_URL` (default `http://localhost:4000`) — where the browser and
     SSR reach the API. **Set this to your public API URL at build time.**
   - `NEXT_PUBLIC_PRODUCT_NAME` (default `Forms`) — UI product name.
-  - `NEXT_PUBLIC_PLATFORM_URL`, `NEXT_PUBLIC_SIGNUP_URL`, `NEXT_PUBLIC_HIDE_BADGE`,
-    `NEXT_PUBLIC_CALENDARS_URL` — optional branding / growth-loop links (empty =
-    nothing rendered).
+  - `NEXT_PUBLIC_PLATFORM_URL`, `NEXT_PUBLIC_SIGNUP_URL`, `NEXT_PUBLIC_LANDING_URL`,
+    `NEXT_PUBLIC_HIDE_BADGE`, `NEXT_PUBLIC_CALENDARS_URL` — optional branding /
+    growth-loop links (no signup URL = nothing rendered).
 
 ## Database
 
@@ -158,7 +158,15 @@ loud** on a bad value. Copy [`.env.example`](.env.example) to `.env` to override
 | `OUTBOX_WORKER_ENABLED` | `true` | set `false` only if a separate worker drains the outbox | no |
 | `OUTBOX_POLL_MS` | `5000` | — | no |
 | `OUTBOX_MAX_ATTEMPTS` | `5` | — | no |
-| `SEED_DEMO_FORM` | `true` | set `false` to ship empty new workspaces | no |
+| `ONBOARDING_WIZARD` | `true` | set `false` to skip the first-run wizard (and get `SEED_DEMO_FORM` back) | no |
+| `SEED_DEMO_FORM` | `true` | **inert while `ONBOARDING_WIZARD` is on**; set `false` to ship empty new workspaces | no |
+
+The two form-seeding knobs are mutually exclusive by construction. A new
+workspace gets exactly one of: the wizard's chosen template (`ONBOARDING_WIZARD`
+on, the default), the seeded demo form (`ONBOARDING_WIZARD=false` +
+`SEED_DEMO_FORM=true`), or nothing (both off). `SEED_DEMO_FORM=true` alone does
+**not** seed a form — the wizard suppresses it, so that the two can never both
+write a "first" form into the same account.
 
 ### Auth
 
@@ -216,7 +224,8 @@ are runtime server env for the web container.
 | `NEXT_PUBLIC_API_URL` | `http://localhost:4000` | any real deploy (build arg) | no |
 | `NEXT_PUBLIC_PRODUCT_NAME` | `Forms` | branding (build arg) | no |
 | `NEXT_PUBLIC_PLATFORM_URL` | _(empty)_ | app-switcher link (build arg) | no |
-| `NEXT_PUBLIC_SIGNUP_URL` | _(empty)_ | growth-loop badge target (build arg) | no |
+| `NEXT_PUBLIC_SIGNUP_URL` | _(empty)_ | growth-loop opt-in — unset renders no badge/CTA (build arg) | no |
+| `NEXT_PUBLIC_LANDING_URL` | product landing | where the badge/CTA point; falls back to the signup URL (build arg) | no |
 | `NEXT_PUBLIC_HIDE_BADGE` | _(empty)_ | set truthy to hide the badge (build arg) | no |
 | `NEXT_PUBLIC_CALENDARS_URL` | _(empty)_ | app-switcher link (build arg) | no |
 | `AUTH_PROVIDER` | `local` | mirror the API value so the web picks the right login UX | no |

@@ -53,6 +53,8 @@ WORKOS-STATUS.md
 AUTH-WEB-CONTRACT.md
 *-STATUS.md
 .design-out/
+# Critique snapshots from the `impeccable` skill — tool output, not source.
+.impeccable/
 .shots/
 
 # e2e QA artifacts

@@ -34,7 +34,10 @@ import {
 } from './auth.provider';
 import { verifyJwtHs256, JwtError, type JwtClaims } from './jwt';
 
-type WorkOsEnv = Pick<ServerEnv, 'JWT_SECRET' | 'JWT_ISSUER' | 'JWT_AUDIENCE' | 'SEED_DEMO_FORM'>;
+type WorkOsEnv = Pick<
+  ServerEnv,
+  'JWT_SECRET' | 'JWT_ISSUER' | 'JWT_AUDIENCE' | 'SEED_DEMO_FORM' | 'ONBOARDING_WIZARD'
+>;
 
 function unauthenticated(message: string): UnauthorizedException {
   return new UnauthorizedException({ error: 'UNAUTHENTICATED', message });
@@ -187,7 +190,7 @@ export class WorkOsAuthProvider implements AuthProvider {
     // A fresh account (its first member is the owner) gets the polished demo form
     // so the dashboard is never empty. Idempotent + best-effort (never blocks login).
     if (role === 'owner') {
-      await maybeSeedDemoForm(this.db, accountId, this.env.SEED_DEMO_FORM, this.log);
+      await maybeSeedDemoForm(this.db, accountId, this.env, this.log);
     }
     // Fires only here, after the INSERT won: every earlier return in this method
     // is an existing member signing in again, which is not a signup. `row.id`

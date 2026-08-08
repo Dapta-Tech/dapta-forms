@@ -101,7 +101,7 @@ export function LogicRules({
       </Button>
 
       {rules.length > 0 ? (
-        <p className="flex items-start gap-1.5 text-[11px] leading-relaxed text-muted-foreground">
+        <p className="flex items-start gap-1.5 text-xs leading-relaxed text-muted-foreground">
           <i aria-hidden className="pi pi-info-circle mt-0.5" style={{ fontSize: 10 }} />
           {m.rules.firstMatchWins}
         </p>

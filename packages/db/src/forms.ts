@@ -6,7 +6,7 @@
  * so the identical code runs on SQLite (clone-and-run) and Postgres (prod).
  */
 import { randomUUID } from 'node:crypto';
-import { mergeWebhookSecrets } from '@quill/types';
+import { attributionSchema, mergeWebhookSecrets, type Attribution } from '@quill/types';
 import { sql, type Db } from './client';
 import { canonicalPublicCode } from './short-links';
 import type { CrudResult } from './crud';
@@ -85,6 +85,19 @@ export interface MeView {
   email: string | null;
   role: string;
   status: string;
+  /**
+   * Onboarding completion (0011): epoch-ms, or null when the wizard is still
+   * owed. Read on EVERY dashboard request — the layout's redirect gate is the
+   * one consumer — so it rides along on this query rather than costing a second
+   * round trip per page load.
+   */
+  onboardingCompletedAt: number | null;
+  /**
+   * First-touch acquisition tags (0010), so the browser can attach them as
+   * analytics GROUP properties. Without them every onboarding funnel is
+   * un-sliceable by campaign, which is most of the reason to measure it.
+   */
+  attribution: Attribution | null;
 }
 
 /** The authenticated host's identity for the dashboard header + settings. */
@@ -97,8 +110,11 @@ export async function getMe(db: Db, accountId: string, memberId: string): Promis
     email: string | null;
     role: string;
     status: string;
+    onboarding_completed_at: number | null;
+    attribution: unknown;
   }>(
-    sql`SELECT a.code, a.vanity_slug, m.handle, m.display_name, m.email, m.role, m.status
+    sql`SELECT a.code, a.vanity_slug, a.onboarding_completed_at, a.attribution,
+               m.handle, m.display_name, m.email, m.role, m.status
         FROM account a JOIN member m ON m.account_id = a.id
         WHERE a.id = ${accountId} AND m.id = ${memberId} LIMIT 1`,
   );
@@ -114,7 +130,22 @@ export async function getMe(db: Db, accountId: string, memberId: string): Promis
     email: row.email,
     role: row.role,
     status: row.status,
+    // BIGINT — node-postgres returns it as a STRING, SQLite as a number. Coerce
+    // here or `/v1/me` ships a string behind a `number | null` contract.
+    onboardingCompletedAt:
+      row.onboarding_completed_at == null ? null : Number(row.onboarding_completed_at),
+    // `safeParse`, not a cast: this column predates several shapes of writer and
+    // a stale blob must not throw inside the request that renders every
+    // dashboard page. Unreadable tags degrade to "not known", never to a 500.
+    attribution: parseAttributionColumn(row.attribution),
   };
+}
+
+/** Read `account.attribution` defensively — an unparseable blob reads as absent. */
+function parseAttributionColumn(raw: unknown): Attribution | null {
+  if (raw == null) return null;
+  const parsed = attributionSchema.safeParse(parseJsonColumn(raw, null));
+  return parsed.success ? parsed.data : null;
 }
 
 // --- Forms -------------------------------------------------------------------

@@ -61,8 +61,10 @@ describe('isLightColor / readableOn / resolveThemeMode', () => {
   });
 
   it('suggests a readable text color for a ground', () => {
-    expect(readableOn('#ffffff')).toBe('#1a1a1c');
-    expect(readableOn('#111111')).toBe('#fafafa');
+    // Both ends are the palette's own text colors, not #000/#fff — a custom
+    // background should still land the author inside the system.
+    expect(readableOn('#ffffff')).toBe('#0d1013');
+    expect(readableOn('#111111')).toBe('#e8edf2');
     expect(contrastRatio(readableOn('#f7f2e9'), '#f7f2e9')).toBeGreaterThan(7);
   });
 
@@ -137,6 +139,28 @@ describe('formThemeVars', () => {
     expect(vars['--pf-primary-ink']).toBeUndefined();
   });
 
+  it('guarantees an AA button label on a mid-luminance accent, not a best-of-two', () => {
+    // The regression this exists for: the seeded demo form's indigo put the fixed
+    // Lime Ink at 4.35:1, and the other fixed end (near-white) lands at 4.56 — so
+    // "pick the better constant" was a coin flip between a fail and a near-fail.
+    const indigo = '#6366f1';
+    expect(contrastRatio('#0c0e07', indigo)).toBeLessThan(4.5); // the old answer
+    expect(contrastRatio(onAccent(indigo), indigo)).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it('keeps the palette’s own ink verbatim whenever it already clears AA', () => {
+    // The walk is a fallback, not a filter: the house lime must still return the
+    // exact Lime Ink constant, or every default button label shifts hue slightly.
+    expect(onAccent(DEFAULT_ACCENT)).toBe('#0c0e07');
+    expect(onAccent('#cbe84f')).toBe('#0c0e07');
+  });
+
+  it('reaches AA on every accent a preset can ship', () => {
+    for (const accent of ['#cbe84f', '#d3e750', '#2b6e4f', '#e0b64f', '#1f6feb', '#f2704a', '#6dd39a', '#b5533a', '#a78bfa', '#6366f1']) {
+      expect(contrastRatio(onAccent(accent), accent), accent).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+
   it('derives the supporting tokens from the author’s own two colors', () => {
     const vars = formThemeVars({ background: '#f7f2e9', foreground: '#2a241d' });
     expect(vars['--background']).toBe('#f7f2e9');
@@ -148,8 +172,8 @@ describe('formThemeVars', () => {
   });
 
   it('infers a readable foreground when only a background is set', () => {
-    expect(formThemeVars({ background: '#ffffff' })['--foreground']).toBe('#1a1a1c');
-    expect(formThemeVars({ background: '#0d0d0f' })['--foreground']).toBe('#fafafa');
+    expect(formThemeVars({ background: '#ffffff' })['--foreground']).toBe('#0d1013');
+    expect(formThemeVars({ background: '#0d0d0f' })['--foreground']).toBe('#e8edf2');
   });
 
   it('passes even an unreadable accent straight through', () => {

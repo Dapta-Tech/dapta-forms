@@ -32,7 +32,13 @@ export const DEMO_FORM_NAME = 'Customer feedback';
  */
 export const DEMO_FORM_CONFIG: FormConfig = {
   version: 1,
-  branding: { primaryColor: '#6366f1' },
+  // A deliberate colour, not `#6366f1`. The demo's whole job is to show that a
+  // form carries its OWNER's brand, and stock Tailwind indigo reads as the colour
+  // nobody picked — it made the largest saturated object on the builder screen
+  // look like an unstyled default sitting next to our own lime Publish. Forest
+  // green is unmistakably a choice, fits the warm feedback copy, and is one of the
+  // accents `branding.spec.ts` already exercises end to end.
+  branding: { primaryColor: '#2b6e4f' },
   cover: {
     enabled: true,
     bannerText: 'Demo form — edit or delete it anytime from your dashboard',

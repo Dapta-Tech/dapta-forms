@@ -157,9 +157,68 @@ async function simulateBooking(page: Page): Promise<void> {
   );
 }
 
+/** Seconds of refill to bank when the bucket is found empty — one walk (page
+ *  render, per-step events, the booking record, the submit) costs about this. */
+const BANK_MS = 20_000;
+
+/**
+ * Wait for the shared public-API bucket to have room for a whole walk.
+ *
+ * The public controller is rate-limited per IP — a token bucket of 60 with a
+ * 1/s refill (`RATE_LIMIT_CAPACITY` / `RATE_LIMIT_REFILL_PER_SEC`) — and every
+ * QA spec drains the SAME bucket, because all public traffic reaches the API
+ * from the Next server, not the browser. A spec that walks several forms
+ * (v5-reveal-positions walks nine) leaves it at zero, and the next spec starts
+ * throttled.
+ *
+ * A throttled page LOAD is recoverable (`openFirstStep` reloads). A throttled
+ * SUBMIT is not: `handleSchedulerBooked` marks the step booked before it posts
+ * and never runs twice, so re-dispatching the Calendly message is ignored and
+ * the run strands on the scheduler step with no `.pf-done__title` — exactly the
+ * ~20s timeout this spec kept showing in full-suite runs (reproducible by
+ * draining the bucket with 60 requests first). So check BEFORE walking, and
+ * bank enough refill to finish, rather than discovering it at the submit.
+ */
+async function awaitPublicApiHeadroom(page: Page, url: string): Promise<void> {
+  const [, code, , slug] = url.split('/');
+  const probe = `${API}/v1/public/forms/${encodeURIComponent(code)}/${encodeURIComponent(slug)}`;
+  // A single probe cannot tell "full" from "one token left", so put the bucket
+  // in a KNOWN state instead of guessing: spend it down to empty, then wait a
+  // fixed refill. The walk then starts with a budget this spec chose rather than
+  // whatever the previous spec happened to leave behind.
+  for (let i = 0; i < 80; i += 1) {
+    const res = await page.request.get(probe);
+    if (res.status() === 429) break;
+  }
+  await page.waitForTimeout(BANK_MS);
+}
+
+/**
+ * Open the public form's FIRST step.
+ *
+ * Even with the headroom check above, a 429 on the page's server-side config
+ * fetch renders the Not-found page with no `.pf__fields` at all, so a naive
+ * assertion just times out. Reload after a refill pause instead of failing on an
+ * environmental throttle (same pattern as builder-gaps' `gotoPublic`).
+ */
+async function openFirstStep(page: Page, url: string): Promise<void> {
+  const input = page.locator('.pf__fields input, .pf__fields textarea').first();
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    await page.goto(url);
+    try {
+      await expect(input).toBeVisible({ timeout: 5_000 });
+      return;
+    } catch {
+      await page.waitForTimeout(5_000); // let the rate-limit bucket refill
+    }
+  }
+  await expect(input).toBeVisible({ timeout: 20_000 });
+}
+
 /** Walk the three lead questions and land on the scheduler step. */
 async function reachScheduler(page: Page, url: string): Promise<void> {
-  await page.goto(url);
+  await awaitPublicApiHeadroom(page, url);
+  await openFirstStep(page, url);
   for (const value of ['Ada Lovelace', 'ada@acme.io', '+13105551234']) {
     const input = page.locator('.pf__fields input, .pf__fields textarea').first();
     await expect(input).toBeVisible({ timeout: 20_000 });

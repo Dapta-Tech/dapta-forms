@@ -1,0 +1,479 @@
+/**
+ * First-run wizard — the DELTA on top of the public renderer.
+ *
+ * The wizard renders as a real `.pf` surface and imports `public-form.css`, so
+ * the shell, the topbar, the body rhythm, the question type scale and every
+ * option control already come from the form renderer itself. What is left here
+ * is only what a real form has no equivalent for: the three-stage bar in
+ * `FormProgress`'s slot, the template picker, and the "building your form"
+ * interstitial.
+ *
+ * An earlier version of this file hand-copied the renderer's styles. That is
+ * exactly what made the wizard look almost-but-not-quite like a Dapta form, and
+ * it let the two drift apart — hence the import, and hence this file's job being
+ * subtraction rather than imitation.
+ *
+ * Every rule is scoped under `.ob` (which always sits alongside `.pf`), and every
+ * colour is a token — a hardcoded hex would look right in the dark default and
+ * wrong in a light fork.
+ */
+
+/* --- Shell: give the desktop card its missing centring ---------------------
+ *
+ * On desktop the renderer composes topbar + body into ONE framed card — but it
+ * centres that card (and pads the canvas around it) on `.pf__main`, a wrapper
+ * a real form has and this wizard's markup does not. Without a stand-in the
+ * card sits glued to the viewport top with zero margin. `.ob` itself takes the
+ * job: canvas padding on the root, and the pair centred with auto margins
+ * (top-auto on the bar, bottom-auto on the body) rather than
+ * `justify-content` — auto margins collapse to zero when the card is taller
+ * than the window, so a short viewport degrades to a normal scroll instead of
+ * clipping the question off the top.
+ *
+ * The `:not()` chains repeat the renderer's own card selectors on purpose:
+ * they tie on specificity, and this sheet importing after `public-form.css`
+ * is what lets these win. The card is also widened past the renderer's 560px —
+ * the role question packs nine options into two columns, and they need the
+ * room to hold one line each.
+ */
+
+@media (min-width: 769px) {
+  .ob {
+    padding: 24px;
+  }
+  .ob:not(.pf--cover):not(.pf--reveal):not(.pf--done) .pf__topbar {
+    max-width: 680px;
+    margin: auto auto 0;
+    padding: 22px 24px 16px;
+  }
+  /* The renderer's 40px card padding, trimmed vertically: the template screen
+     is the tallest of the five and 40-top + 36-bottom is exactly what pushed
+     its CTA twelve pixels past a 720px viewport. */
+  .ob:not(.pf--cover):not(.pf--reveal):not(.pf--done) .pf__body {
+    max-width: 680px;
+    margin: 0 auto auto;
+    padding: 32px 40px;
+  }
+}
+
+.ob .pf__inner {
+  max-width: 620px;
+}
+
+/* --- The product mark, in the topbar slot a form gives its own logo -------- */
+
+.ob__brand {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+}
+
+/* `currentColor` ink — the mark follows the theme with no second asset. A
+   touch larger than a form's 24px logo band: with the bar transparent the mark
+   is the header, not a tenant of it. */
+.ob__logo {
+  height: 26px;
+  width: auto;
+  color: var(--foreground);
+}
+
+/* Wide by default, the F alone on a phone. `display: none` (rather than
+   visibility or opacity) is what keeps the hidden one out of the accessibility
+   tree, so a screen reader never announces the brand twice. */
+.ob__logo--compact {
+  display: none;
+}
+
+/* --- The three stages, where a form puts its progress bar ------------------ */
+
+.ob__stages {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin: 0 auto;
+  padding: 0;
+  max-width: 480px;
+  list-style: none;
+  /* NEVER wrap. Wrapping put each stage on its own line at phone width and ate
+     a third of the screen before the question was even visible — the opposite
+     of what a compact progress indicator is for. It stays one line and the
+     current label truncates instead. */
+  flex-wrap: nowrap;
+  min-width: 0;
+}
+
+.ob__stage {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--muted-foreground);
+  min-width: 0;
+}
+
+.ob__stage-label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The connector between stages. A pseudo-element so the markup stays a plain
+   ordered list and screen readers announce three items, not five. */
+.ob__stage + .ob__stage::before {
+  content: '';
+  width: 20px;
+  height: 1px;
+  background: var(--border);
+  margin-right: 4px;
+}
+
+.ob__stage-mark {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  font-size: 11px;
+  font-weight: 600;
+  flex: 0 0 auto;
+}
+
+.ob__stage[data-state='done'] .ob__stage-mark {
+  background: var(--pf-primary);
+  border-color: var(--pf-primary);
+  color: var(--pf-primary-contrast);
+}
+
+.ob__stage[data-state='current'] {
+  color: var(--foreground);
+  font-weight: 600;
+}
+
+/* The `done` marker above can use the raw accent because it also carries a solid
+   fill, so its SHAPE is what you see. This one is a ring around digits and
+   nothing else — the accent purely as a line and as letters — which is exactly
+   where the raw token fails: on the light theme it drew a 1.27:1 ring around
+   1.3:1 numerals, so a brand-new user could not tell which of the three stages
+   they were on. `--pf-primary-edge` is the same colour clamped only as far as
+   legibility (see `formThemeVars`). */
+.ob__stage[data-state='current'] .ob__stage-mark {
+  border-color: var(--pf-primary-edge);
+  color: var(--pf-primary-edge);
+}
+
+/* The step counter above the question. The renderer has no equivalent — a form
+   shows a progress bar, not "Question 1 of 3" — but a count alongside three
+   named stages is what keeps a wizard feeling short. Set as a micro-label
+   (uppercase, tracked out) so it reads as a caption to the question rather
+   than a smaller sentence above it. */
+.ob__eyebrow {
+  text-align: center;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+  margin: 0 0 12px;
+  letter-spacing: 0.1em;
+}
+
+/* --- The question screens, packed to one viewport --------------------------
+ *
+ * The renderer stacks single-select options as full-width rows — right for a
+ * respondent's phone, but the role question has NINE of them, and nine 56px
+ * rows push the last options (and any sense of "three quick taps") below the
+ * fold. On the wizard they pack into two columns of shorter rows, so the
+ * whole question fits one desktop viewport. Scoped to `.ob`: real forms keep
+ * the renderer's own layout.
+ */
+
+.ob .pf-choices--list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+/* An odd count leaves the last row half-empty; the catch-all ("Other") spans
+   it instead — the same treatment "start from scratch" gets among the
+   templates, and it reads the same way: the alternative to the grid above it,
+   not a ninth sibling. */
+.ob .pf-choices--list > :last-child:nth-child(odd) {
+  grid-column: 1 / -1;
+}
+
+.ob .pf-choice-list {
+  min-height: 52px;
+  padding: 8px 14px;
+  gap: 11px;
+  font-size: 14px;
+  border-radius: 12px;
+}
+
+.ob .pf-choice-list__icon,
+.ob .pf-choice-list__circle {
+  width: 32px;
+  height: 32px;
+  font-size: 16px;
+}
+
+/* The industry dropdown at the grid's 640px reads as a search bar; cap it at
+   the question's own measure so it reads as a field under it. */
+.ob .pf-dropdown {
+  max-width: 480px;
+  margin: 0 auto;
+}
+
+.ob .pf__fields {
+  margin-top: 28px;
+}
+
+@media (max-width: 40rem) {
+  /* One column again on a phone — two 160px columns would wrap every label to
+     three lines. Vertical scroll is the natural gesture there; the one-screen
+     promise is a desktop promise. */
+  .ob .pf-choices--list {
+    grid-template-columns: 1fr;
+  }
+  .ob .pf-choices--list > :last-child:nth-child(odd) {
+    grid-column: auto;
+  }
+}
+
+/* The label is the part that has to give way first on a phone — the numbered
+   marks alone still communicate "three steps, you are on the second". */
+@media (max-width: 40rem) {
+  .ob__stage-label {
+    display: none;
+  }
+  .ob__stage[data-state='current'] .ob__stage-label {
+    display: inline;
+  }
+  /* The connectors are the first thing to go: with the labels already hidden
+     they connect nothing a reader can name, and every pixel here is one the
+     question above the fold does not get. */
+  .ob__stage + .ob__stage::before {
+    width: 12px;
+    margin-right: 0;
+  }
+  .ob__logo--wide {
+    display: none;
+  }
+  .ob__logo--compact {
+    display: block;
+    height: 20px;
+  }
+}
+
+/* --- The template picker --------------------------------------------------
+ *
+ * The one screen with no form-renderer equivalent: a choice option carries a
+ * label, these carry a name, a description and a recommendation badge. Built on
+ * the renderer's own card tokens (`--pf-radius`, `--pf-gap`, `--pf-primary`) so
+ * it still reads as the same surface.
+ */
+
+.ob__templates {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: 10px;
+  margin: 0 0 18px;
+  padding: 0;
+  list-style: none;
+}
+
+/* "Start from scratch" is the fifth card in a two-column grid, so on its own it
+   sat as a half-width orphan below the four real templates. Spanning the row
+   makes it read as what it is: the alternative to all of them, not a fifth
+   sibling. */
+.ob__templates-wide {
+  grid-column: 1 / -1;
+}
+
+.ob__template {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  text-align: left;
+  padding: 14px 16px;
+  font-family: inherit;
+  border: 1px solid var(--border);
+  border-radius: var(--pf-radius);
+  background: var(--card);
+  color: var(--card-foreground);
+  cursor: pointer;
+  transition:
+    border-color 0.12s var(--pf-ease),
+    background 0.12s var(--pf-ease),
+    transform 0.08s var(--pf-ease);
+}
+
+.ob__template:hover {
+  border-color: var(--pf-primary-edge);
+}
+
+.ob__template:active {
+  transform: scale(0.995);
+}
+
+/* The border carries the selection; the wash only tints. A 12% wash is ~1.05:1
+   against the card, so with a raw-accent border this card's selected state was
+   invisible on light — the wash cannot carry it alone. */
+.ob__template[data-selected] {
+  border-color: var(--pf-primary-edge);
+  background: color-mix(in oklab, var(--pf-primary) 12%, var(--card));
+}
+
+.ob__template-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ob__template-icon {
+  font-size: 18px;
+  line-height: 1;
+  flex: 0 0 auto;
+}
+
+.ob__template-name {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.ob__template-desc {
+  font-size: 12.5px;
+  color: var(--muted-foreground);
+  line-height: 1.4;
+}
+
+.ob__badge {
+  align-self: flex-start;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--pf-primary);
+  color: var(--pf-primary-contrast);
+  margin-bottom: 2px;
+}
+
+/* --- The "building your form" interstitial --------------------------------
+ *
+ * Shown between "Create my form" and the builder. The wait is a real round trip
+ * — claim the completion, resolve the template, create the form — and it ends on
+ * a screen the person has never seen. Leaving the picker up with a greyed-out
+ * button reads as a hang; an interstitial reads as work happening.
+ *
+ * Mirrors the reveal step a respondent already gets mid-form (`.pf-reveal__*`),
+ * so this is the product's existing loading language rather than a new one.
+ */
+
+.ob--creating {
+  align-items: center;
+  justify-content: center;
+}
+
+.ob__creating {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 40px 24px;
+  max-width: 420px;
+  animation: ob-enter 220ms ease-out;
+}
+
+.ob__creating-mark {
+  height: 44px;
+  width: auto;
+  color: var(--foreground);
+  margin-bottom: 28px;
+  animation: ob-pulse 1.6s ease-in-out infinite;
+}
+
+.ob__creating-headline {
+  font-size: clamp(21px, 5vw, 28px);
+  font-weight: 700;
+  line-height: 1.22;
+  letter-spacing: -0.015em;
+  margin: 0 0 12px;
+  text-wrap: balance;
+}
+
+.ob__creating-sub {
+  font-size: 15px;
+  color: var(--muted-foreground);
+  margin: 0 0 24px;
+  line-height: 1.5;
+  text-wrap: balance;
+}
+
+.ob__creating-track {
+  width: 260px;
+  max-width: 100%;
+  height: 8px;
+  background: var(--muted);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+/* Indeterminate: the bar sweeps rather than reporting a percentage, because
+   there is ONE round trip and no measurable steps to report. A determinate bar
+   filling to a made-up number is a lie the person can feel when it stalls. */
+.ob__creating-fill {
+  width: 40%;
+  height: 100%;
+  background: var(--pf-primary);
+  border-radius: 999px;
+  animation: ob-sweep 1.25s ease-in-out infinite;
+}
+
+@keyframes ob-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes ob-sweep {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(250%);
+  }
+}
+
+@keyframes ob-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+/* Motion here is decoration on a screen that lasts about a second. Someone with
+   vestibular sensitivity gets a static bar and the same information. */
+@media (prefers-reduced-motion: reduce) {
+  .ob__creating,
+  .ob__creating-mark,
+  .ob__creating-fill {
+    animation: none;
+  }
+  .ob__creating-fill {
+    width: 100%;
+  }
+}

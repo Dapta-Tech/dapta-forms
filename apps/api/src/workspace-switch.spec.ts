@@ -55,6 +55,7 @@ describe('workspace switch', () => {
       DEV_LOGIN_EMAIL: undefined,
       AUTH_LOCAL_STRICT: undefined,
       SEED_DEMO_FORM: false,
+      ONBOARDING_WIZARD: false,
     });
     auth = new AuthService(db, provider);
   });

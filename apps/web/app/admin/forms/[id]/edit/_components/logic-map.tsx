@@ -4,7 +4,7 @@ import type { FormConfig, FormOutcome, FormStep } from '@quill/engine';
 import { cn } from '@/lib/cn';
 import { iconForStep } from './question-types';
 import { conditionNeverHolds, conditionsContradict } from '@quill/engine';
-import { describeCondition, optionLabel } from './logic-util';
+import { describeCondition, liveGotoRules, optionLabel } from './logic-util';
 import type { BuilderMessages, GalleryItemId } from './builder-messages';
 import { tb } from './builder-messages';
 
@@ -57,15 +57,18 @@ export function LogicMap({ config, m }: { config: FormConfig; m: BuilderMessages
             read-only map it read as a "run the form" button nobody could press.
             A plain dot marks the entry point without promising an action. */}
         <div className="flex flex-col items-center" data-testid="logic-start">
-          <span className="inline-flex items-center gap-2 rounded-full border border-primary/40 bg-primary/[0.08] px-4 py-2 shadow-sm">
-            <span aria-hidden className="inline-block h-2 w-2 shrink-0 rounded-full bg-primary" />
+          <span className="inline-flex items-center gap-2 rounded-full border border-primary-edge/40 bg-primary/[0.08] px-4 py-2 shadow-sm">
+            <span aria-hidden className="inline-block h-2 w-2 shrink-0 rounded-full bg-primary-edge" />
             <span className="text-sm font-semibold uppercase tracking-wide text-primary">{m.map.start}</span>
           </span>
-          <span className="mt-1.5 text-[11px] text-muted-foreground">{m.map.startHint}</span>
+          <span className="mt-1.5 text-xs text-muted-foreground">{m.map.startHint}</span>
         </div>
 
         {steps.map((step, i) => {
-          const branches = step.goto ?? [];
+          // Only the rules that can fire — a message/reveal records no
+          // answer, so a `goto` saved on one is dead config (see
+          // `liveGotoRules`) and must not read as routing here either.
+          const branches = liveGotoRules(step);
           const hasCond = !!(step.showWhen || step.hideWhen);
           const isLast = i === steps.length - 1;
           const hasLogic = branches.length > 0 || hasCond;
@@ -105,12 +108,12 @@ export function LogicMap({ config, m }: { config: FormConfig; m: BuilderMessages
                         {titleOf(step, i)}
                       </span>
                     </div>
-                    <span className="mt-0.5 flex items-center gap-1.5 truncate text-[11px] text-muted-foreground">
+                    <span className="mt-0.5 flex items-center gap-1.5 truncate text-xs text-muted-foreground">
                       {kindLabel(step, m)}
                       {step.hidden ? (
                         <span
                           data-testid="logic-hidden-badge"
-                          className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground"
+                          className="rounded-sm bg-muted px-1.5 py-0.5 text-2xs font-semibold uppercase tracking-wide text-faint"
                         >
                           {m.badges.hidden}
                         </span>
@@ -138,7 +141,7 @@ export function LogicMap({ config, m }: { config: FormConfig; m: BuilderMessages
                     {conditionsContradict(step.showWhen, step.hideWhen) || conditionNeverHolds(step.showWhen) ? (
                       <p
                         data-testid="logic-never-appears"
-                        className="flex items-start gap-1.5 rounded-md bg-destructive/10 px-2 py-1 text-[11px] font-medium leading-relaxed text-destructive"
+                        className="flex items-start gap-1.5 rounded-md bg-destructive/10 px-2 py-1 text-xs font-medium leading-relaxed text-destructive"
                       >
                         <i aria-hidden className="pi pi-exclamation-triangle mt-0.5 shrink-0" style={{ fontSize: 10 }} />
                         {m.map.neverAppears}
@@ -158,20 +161,29 @@ export function LogicMap({ config, m }: { config: FormConfig; m: BuilderMessages
               {branches.length ? (
                 <div className="mt-2 flex flex-col gap-2">
                   {branches.map((rule, ri) => {
-                    const value = rule.values.map((v) => optionLabel(step, v)).join(', ');
+                    // A scheduler routes from a CATCH-ALL rule whose value is
+                    // the literal `*` — it has no options to name, its answer is
+                    // a booking. `optionLabel` falls back to the raw value, so
+                    // this used to read "If * → Thank you".
+                    const catchAll = rule.values.includes('*');
+                    const value = catchAll
+                      ? step.type === 'scheduler'
+                        ? m.branching.anyBooking
+                        : m.branching.anyAnswer
+                      : rule.values.map((v) => optionLabel(step, v)).join(', ');
                     if (rule.target == null) {
                       return (
                         <BranchEdge key={ri} label={tb(m.map.skipEdge, { value })}>
                           <div
                             data-testid="logic-end"
-                            className="rounded-lg border border-primary/50 bg-primary/[0.07] px-3 py-2"
+                            className="rounded-lg border border-primary-edge/50 bg-primary/[0.07] px-3 py-2"
                           >
                             <div className="flex items-center gap-2">
                               <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-primary/20">
                                 <i aria-hidden className="pi pi-flag-fill text-primary" style={{ fontSize: 9 }} />
                               </span>
                               <span className="text-sm font-semibold text-foreground">{m.map.thankYou}</span>
-                              <span className="ml-auto rounded bg-primary/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary">
+                              <span className="ml-auto rounded-sm bg-primary/15 px-1.5 py-0.5 text-2xs font-semibold uppercase tracking-wide text-primary">
                                 {m.map.end}
                               </span>
                             </div>
@@ -199,7 +211,7 @@ export function LogicMap({ config, m }: { config: FormConfig; m: BuilderMessages
                               </span>
                             ) : null}
                             {ti != null ? (
-                              <span className="inline-flex h-4 shrink-0 items-center rounded bg-muted px-1 text-[10px] font-bold tabular-nums text-muted-foreground">
+                              <span className="inline-flex h-4 shrink-0 items-center rounded-sm bg-muted px-1 text-2xs font-bold tabular-nums text-faint">
                                 {ti + 1}
                               </span>
                             ) : null}
@@ -216,7 +228,7 @@ export function LogicMap({ config, m }: { config: FormConfig; m: BuilderMessages
                   {/* The default path: if no rule matched, the flow continues in order */}
                   {!isLast ? (
                     <div className="flex justify-center pt-0.5" data-testid="logic-otherwise">
-                      <span className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-border bg-muted/60 px-2.5 py-0.5 text-[11px] text-muted-foreground">
+                      <span className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-border bg-muted/60 px-2.5 py-0.5 text-xs text-muted-foreground">
                         <i aria-hidden className="pi pi-arrow-down shrink-0" style={{ fontSize: 9 }} />
                         <span className="font-semibold text-foreground/80">{m.map.otherwise}</span>
                         <span className="truncate text-muted-foreground/80">· {m.map.otherwiseHint}</span>
@@ -278,9 +290,9 @@ function OutcomeNode({ outcome, m }: { outcome: FormOutcome; m: BuilderMessages 
   return (
     <div
       data-testid="logic-outcome"
-      className="relative w-full overflow-hidden rounded-xl border border-primary/50 bg-primary/[0.06] px-3.5 py-3 shadow-sm"
+      className="relative w-full overflow-hidden rounded-xl border border-primary-edge/50 bg-primary/[0.06] px-3.5 py-3 shadow-sm"
     >
-      <span aria-hidden className="absolute inset-y-0 left-0 w-1 bg-primary/70" />
+      <span aria-hidden className="absolute inset-y-0 left-0 w-1 bg-primary-edge" />
       <div className="flex items-center gap-3">
         <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/20">
           <i
@@ -290,7 +302,7 @@ function OutcomeNode({ outcome, m }: { outcome: FormOutcome; m: BuilderMessages 
           />
         </span>
         <div className="min-w-0 flex-1">
-          <span className="block text-[10px] font-semibold uppercase tracking-wide text-primary">
+          <span className="block text-2xs font-semibold uppercase tracking-wide text-primary">
             {m.map.outcomeKicker}
           </span>
           <span className="block truncate text-sm font-semibold text-foreground">{outcome.label}</span>
@@ -338,11 +350,11 @@ function ConditionLine({
   return (
     <p
       data-testid={`logic-cond-${kind}`}
-      className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 text-[11px] leading-relaxed"
+      className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 text-xs leading-relaxed"
     >
       <span
         className={cn(
-          'shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide',
+          'shrink-0 rounded-sm px-1.5 py-0.5 text-2xs font-bold uppercase tracking-wide',
           show ? 'bg-secondary/15 text-secondary' : 'bg-destructive/15 text-destructive',
         )}
       >
@@ -354,7 +366,7 @@ function ConditionLine({
       {d.dangling ? (
         <span
           data-testid="logic-cond-dangling"
-          className="rounded bg-destructive/15 px-1.5 py-0.5 text-[10px] font-semibold text-destructive"
+          className="rounded-sm bg-destructive/15 px-1.5 py-0.5 text-2xs font-semibold text-destructive"
         >
           {m.map.condMissingField}
         </span>
@@ -376,7 +388,7 @@ function LegendSwatch({ className, label }: { className: string; label: string }
 /** The small purple pill on a question that carries logic. */
 function LogicPill({ children }: { children: React.ReactNode }) {
   return (
-    <span className="inline-flex shrink-0 items-center gap-1 rounded-md border border-secondary/40 bg-secondary/10 px-1.5 py-0.5 text-[11px] font-semibold text-secondary">
+    <span className="inline-flex shrink-0 items-center gap-1 rounded-md border border-secondary/40 bg-secondary/10 px-1.5 py-0.5 text-xs font-semibold text-secondary">
       <i aria-hidden className="pi pi-directions" style={{ fontSize: 9 }} />
       {children}
     </span>
@@ -413,7 +425,7 @@ function BranchEdge({ label, children }: { label: string; children: React.ReactN
         className="relative mt-3 h-px w-6 shrink-0 self-start bg-secondary/50 before:absolute before:-top-3 before:left-0 before:h-3 before:w-px before:bg-secondary/50"
       />
       <div className="min-w-0 flex-1">
-        <span className="mb-1 inline-flex items-center gap-1 rounded-md border border-secondary/40 bg-secondary/10 px-2 py-0.5 text-[11px] font-semibold text-secondary">
+        <span className="mb-1 inline-flex items-center gap-1 rounded-md border border-secondary/40 bg-secondary/10 px-2 py-0.5 text-xs font-semibold text-secondary">
           <i aria-hidden className="pi pi-bolt" style={{ fontSize: 9 }} />
           {label}
         </span>

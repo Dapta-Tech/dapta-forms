@@ -105,6 +105,15 @@ export interface FormsMessages {
       collapse: string;
       expand: string;
       openNav: string;
+      /** The colour-scheme toggle. `next` names what one more click will do, so an
+       *  icon-only control still announces its effect rather than only its state. */
+      theme: {
+        label: string;
+        dark: string;
+        light: string;
+        system: string;
+        next: string;
+      };
       /** Left-nav item labels (icon + label). */
       nav: {
         home: string;
@@ -222,6 +231,9 @@ export interface FormsMessages {
     settings: {
       title: string;
       subtitle: string;
+      /** The colour-scheme preference section. */
+      appearanceHeading: string;
+      appearanceSubtitle: string;
       workspaceHeading: string;
       workspaceSubtitle: string;
       displayName: string;
@@ -1113,6 +1125,10 @@ export interface FormsMessages {
       webhookEventsHelp: string;
       eventPartial: string;
       eventComplete: string;
+      // Google Sheets — announced, not shipped; the card is inert
+      gsheetsTitle: string;
+      gsheetsDesc: string;
+      comingSoon: string;
     };
     /** Account-level provider connections (paste-token) surfaced on /admin/integrations. */
     connections: {
@@ -1122,6 +1138,10 @@ export interface FormsMessages {
       hubspotDesc: string;
       calendlyName: string;
       calendlyDesc: string;
+      /** Google Sheets — coming-soon card only, not a connectable provider yet. */
+      gsheetsName: string;
+      gsheetsDesc: string;
+      comingSoon: string;
       connected: string;
       notConnected: string;
       connect: string;
@@ -1158,6 +1178,102 @@ export interface FormsMessages {
       publishError: string;
       unpublishedChanges: string;
       noChanges: string;
+    };
+    /**
+     * First-run wizard: three questions, then the template the first form is
+     * built from. Keys are spelled out rather than derived from the @quill/types
+     * enums on purpose — this package is dependency-free by design, and the
+     * compiler still enforces EN/ES parity and a complete option set either way.
+     */
+    onboarding: {
+      /** The three stages, all visible from the first screen so the end is never a surprise. */
+      stages: { account: string; profile: string; firstForm: string };
+      next: string;
+      back: string;
+      /** Headline of the interstitial shown while the first form is created. */
+      creating: string;
+      creatingSubtitle: string;
+      /** Shown in place of the interstitial when the form could not be created. */
+      error: { headline: string; body: string; retry: string };
+      /** Announced to assistive tech as the wizard advances. */
+      progress: string; // {current} {total}
+      role: {
+        question: string;
+        helper: string;
+        options: {
+          sales: string;
+          marketing: string;
+          support: string;
+          product: string;
+          founder: string;
+          engineering: string;
+          hr: string;
+          operations: string;
+          other: string;
+        };
+      };
+      industry: {
+        question: string;
+        helper: string;
+        placeholder: string;
+        search: string;
+        empty: string;
+        options: {
+          software: string;
+          ecommerce: string;
+          services: string;
+          agency: string;
+          health: string;
+          finance: string;
+          education: string;
+          realestate: string;
+          manufacturing: string;
+          nonprofit: string;
+          other: string;
+        };
+      };
+      useCase: {
+        question: string;
+        helper: string;
+        options: {
+          leads: string;
+          feedback: string;
+          event: string;
+          application: string;
+          other: string;
+        };
+      };
+      templates: {
+        question: string;
+        helper: string;
+        /** Badge on the card the previous answer pre-selected. */
+        recommended: string;
+        cta: string;
+        /**
+         * `name`/`description` are the CARD; `formName` is what the created form
+         * is actually called. They are two strings because they are two jobs —
+         * the blank card invites you to "Start from scratch" and the form it
+         * makes is an "Untitled form" — and they live together so the name the
+         * API writes cannot drift from the card that was clicked.
+         */
+        options: {
+          'lead-qualifier': { name: string; description: string; formName: string };
+          'customer-feedback': { name: string; description: string; formName: string };
+          'event-registration': { name: string; description: string; formName: string };
+          application: { name: string; description: string; formName: string };
+          blank: { name: string; description: string; formName: string };
+        };
+      };
+      /** The three coach marks shown in the builder right after the form is made. */
+      tour: {
+        next: string;
+        done: string;
+        dismiss: string;
+        step: string; // {current} {total}
+        edit: { title: string; body: string };
+        preview: { title: string; body: string };
+        publish: { title: string; body: string };
+      };
     };
   };
   /** Branded confirm dialog that replaces native browser confirm() prompts. */
@@ -1249,6 +1365,13 @@ export const en: FormsMessages = {
       collapse: 'Collapse sidebar',
       expand: 'Expand sidebar',
       openNav: 'Open navigation',
+      theme: {
+        label: 'Theme',
+        dark: 'Dark',
+        light: 'Light',
+        system: 'System',
+        next: 'Switch to',
+      },
       nav: {
         home: 'Home',
         forms: 'Forms',
@@ -1357,6 +1480,8 @@ export const en: FormsMessages = {
     settings: {
       title: 'Settings',
       subtitle: 'Your workspace and team.',
+      appearanceHeading: 'Appearance',
+      appearanceSubtitle: 'Choose how Dapta Forms looks on this device.',
       workspaceHeading: 'Workspace',
       workspaceSubtitle: 'Your identity and public link.',
       displayName: 'Name',
@@ -2197,6 +2322,9 @@ export const en: FormsMessages = {
       webhookEventsHelp: 'Choose which submissions are sent to this webhook. Both are sent by default.',
       eventPartial: 'Partial submissions',
       eventComplete: 'Complete submissions',
+      gsheetsTitle: 'Google Sheets',
+      gsheetsDesc: 'Append each response as a new row in a spreadsheet.',
+      comingSoon: 'Coming soon',
     },
     connections: {
       title: 'Connections',
@@ -2206,6 +2334,9 @@ export const en: FormsMessages = {
       hubspotDesc: 'Sync respondents to HubSpot contacts and map questions to contact properties.',
       calendlyName: 'Calendly',
       calendlyDesc: 'Let respondents book meetings from your form outcomes.',
+      gsheetsName: 'Google Sheets',
+      gsheetsDesc: 'Append each response as a new row in a spreadsheet.',
+      comingSoon: 'Coming soon',
       connected: 'Connected',
       notConnected: 'Not connected',
       connect: 'Connect',
@@ -2242,6 +2373,116 @@ export const en: FormsMessages = {
       publishError: 'Could not publish — please try again.',
       unpublishedChanges: 'Unpublished changes',
       noChanges: 'All changes are published',
+    },
+    onboarding: {
+      stages: { account: 'Your account', profile: 'Get to know you', firstForm: 'Your first form' },
+      next: 'Continue',
+      back: 'Back',
+      creating: 'Building your form…',
+      creatingSubtitle: 'Setting up your questions. This only takes a second.',
+      error: {
+        headline: 'We could not create your form',
+        body: 'Your answers are saved. Try again — it is usually a passing connection problem.',
+        retry: 'Try again',
+      },
+      progress: 'Question {current} of {total}',
+      role: {
+        question: 'What best describes your role?',
+        helper: 'Pick the closest one. It changes what we put in front of you first.',
+        options: {
+          sales: 'Sales',
+          marketing: 'Marketing',
+          support: 'Customer success or support',
+          product: 'Product, design or research',
+          founder: 'Founder or CEO',
+          engineering: 'Engineering or IT',
+          hr: 'People or HR',
+          operations: 'Operations',
+          other: 'Something else',
+        },
+      },
+      industry: {
+        question: 'What industry are you in?',
+        helper: 'Start typing to find yours.',
+        placeholder: 'Search industries',
+        search: 'Search',
+        empty: 'Nothing matches — pick Other.',
+        options: {
+          software: 'Software and technology',
+          ecommerce: 'Ecommerce and retail',
+          services: 'Professional services',
+          agency: 'Agency or marketing',
+          health: 'Healthcare',
+          finance: 'Finance and insurance',
+          education: 'Education',
+          realestate: 'Real estate',
+          manufacturing: 'Manufacturing and logistics',
+          nonprofit: 'Nonprofit',
+          other: 'Other',
+        },
+      },
+      useCase: {
+        question: 'What do you want to use Forms for?',
+        helper: 'We will set your first form up for exactly that.',
+        options: {
+          leads: 'Get more customers and leads',
+          feedback: 'Collect feedback',
+          event: 'Register people for an event',
+          application: 'Take applications or requests',
+          other: 'Something else',
+        },
+      },
+      templates: {
+        question: 'Here is your first form',
+        helper: 'Start from one of these — every question is yours to change.',
+        recommended: 'Recommended for you',
+        cta: 'Create my form',
+        options: {
+          'lead-qualifier': {
+            name: 'Lead qualifier',
+            description: 'Scores each answer and splits the results into hot and warm.',
+            formName: 'Lead qualifier',
+          },
+          'customer-feedback': {
+            name: 'Customer feedback',
+            description: 'A short satisfaction survey with an NPS question.',
+            formName: 'Customer feedback',
+          },
+          'event-registration': {
+            name: 'Event registration',
+            description: 'Collect who is coming, how, and what they need.',
+            formName: 'Event registration',
+          },
+          application: {
+            name: 'Applications and requests',
+            description: 'For job applications and inbound work requests alike.',
+            formName: 'Applications and requests',
+          },
+          blank: {
+            name: 'Start from scratch',
+            description: 'An empty form. You write every question.',
+            formName: 'Untitled form',
+          },
+        },
+      },
+      tour: {
+        next: 'Next',
+        done: 'Got it',
+        dismiss: 'Dismiss',
+        step: '{current} of {total}',
+        edit: {
+          title: 'Edit any question',
+          body: 'Click a question to change its wording, its options, or what it asks for.',
+        },
+        preview: {
+          title: 'See what they see',
+          body: 'Preview opens the form exactly as the person answering it will find it.',
+        },
+        publish: {
+          title: 'Publish when you are ready',
+          body: 'Nothing is live until you publish. Then you get a link to share.',
+        },
+      },
     },
   },
   dialog: {
@@ -2330,6 +2571,13 @@ export const es: FormsMessages = {
       collapse: 'Contraer barra lateral',
       expand: 'Expandir barra lateral',
       openNav: 'Abrir navegación',
+      theme: {
+        label: 'Tema',
+        dark: 'Oscuro',
+        light: 'Claro',
+        system: 'Sistema',
+        next: 'Cambiar a',
+      },
       nav: {
         home: 'Inicio',
         forms: 'Formularios',
@@ -2439,6 +2687,8 @@ export const es: FormsMessages = {
     settings: {
       title: 'Ajustes',
       subtitle: 'Tu espacio de trabajo y tu equipo.',
+      appearanceHeading: 'Apariencia',
+      appearanceSubtitle: 'Elige cómo se ve Dapta Forms en este dispositivo.',
       workspaceHeading: 'Espacio de trabajo',
       workspaceSubtitle: 'Tu identidad y tu enlace público.',
       displayName: 'Nombre',
@@ -3282,6 +3532,9 @@ export const es: FormsMessages = {
       webhookEventsHelp: 'Elige qué respuestas se envían a este webhook. Por defecto se envían ambas.',
       eventPartial: 'Respuestas parciales',
       eventComplete: 'Respuestas completas',
+      gsheetsTitle: 'Google Sheets',
+      gsheetsDesc: 'Añade cada respuesta como una fila nueva en una hoja de cálculo.',
+      comingSoon: 'Muy pronto',
     },
     connections: {
       title: 'Conexiones',
@@ -3291,6 +3544,9 @@ export const es: FormsMessages = {
       hubspotDesc: 'Sincroniza respuestas con contactos de HubSpot y asigna preguntas a propiedades de contacto.',
       calendlyName: 'Calendly',
       calendlyDesc: 'Permite reservar reuniones desde los resultados de tu formulario.',
+      gsheetsName: 'Google Sheets',
+      gsheetsDesc: 'Añade cada respuesta como una fila nueva en una hoja de cálculo.',
+      comingSoon: 'Muy pronto',
       connected: 'Conectado',
       notConnected: 'Sin conectar',
       connect: 'Conectar',
@@ -3327,6 +3583,116 @@ export const es: FormsMessages = {
       publishError: 'No se pudo publicar. Inténtalo de nuevo.',
       unpublishedChanges: 'Cambios sin publicar',
       noChanges: 'Todos los cambios están publicados',
+    },
+    onboarding: {
+      stages: { account: 'Tu cuenta', profile: 'Conocerte', firstForm: 'Tu primer formulario' },
+      next: 'Continuar',
+      back: 'Atrás',
+      creating: 'Creando tu formulario…',
+      creatingSubtitle: 'Preparando tus preguntas. Solo toma un segundo.',
+      error: {
+        headline: 'No pudimos crear tu formulario',
+        body: 'Tus respuestas están guardadas. Inténtalo de nuevo: casi siempre es la conexión.',
+        retry: 'Reintentar',
+      },
+      progress: 'Pregunta {current} de {total}',
+      role: {
+        question: '¿Cuál es tu rol?',
+        helper: 'Elige el más cercano. Cambia lo que te mostramos primero.',
+        options: {
+          sales: 'Ventas',
+          marketing: 'Marketing',
+          support: 'Atención al cliente o soporte',
+          product: 'Producto, diseño o research',
+          founder: 'Fundador o CEO',
+          engineering: 'Tecnología o desarrollo',
+          hr: 'Recursos humanos',
+          operations: 'Operaciones',
+          other: 'Otro',
+        },
+      },
+      industry: {
+        question: '¿En qué industria estás?',
+        helper: 'Empieza a escribir para encontrar la tuya.',
+        placeholder: 'Buscar industrias',
+        search: 'Buscar',
+        empty: 'No hay coincidencias. Elige Otra.',
+        options: {
+          software: 'Software y tecnología',
+          ecommerce: 'Ecommerce y retail',
+          services: 'Servicios profesionales',
+          agency: 'Agencia o marketing',
+          health: 'Salud',
+          finance: 'Finanzas y seguros',
+          education: 'Educación',
+          realestate: 'Inmobiliaria',
+          manufacturing: 'Manufactura y logística',
+          nonprofit: 'ONG o sin fines de lucro',
+          other: 'Otra',
+        },
+      },
+      useCase: {
+        question: '¿Para qué quieres usar Forms?',
+        helper: 'Dejamos tu primer formulario listo para eso.',
+        options: {
+          leads: 'Captar clientes o leads',
+          feedback: 'Recibir feedback',
+          event: 'Registrar gente a un evento',
+          application: 'Recibir postulaciones o solicitudes',
+          other: 'Otra cosa',
+        },
+      },
+      templates: {
+        question: 'Aquí está tu primer formulario',
+        helper: 'Empieza con uno de estos. Cada pregunta es tuya para cambiarla.',
+        recommended: 'Recomendado para ti',
+        cta: 'Crear mi formulario',
+        options: {
+          'lead-qualifier': {
+            name: 'Calificador de leads',
+            description: 'Puntúa cada respuesta y separa los resultados en calientes y tibios.',
+            formName: 'Calificador de leads',
+          },
+          'customer-feedback': {
+            name: 'Opiniones de clientes',
+            description: 'Una encuesta corta de satisfacción con una pregunta NPS.',
+            formName: 'Opiniones de clientes',
+          },
+          'event-registration': {
+            name: 'Registro a evento',
+            description: 'Recoge quién viene, cómo y qué necesita.',
+            formName: 'Registro a evento',
+          },
+          application: {
+            name: 'Postulaciones y solicitudes',
+            description: 'Sirve igual para vacantes que para pedidos de trabajo.',
+            formName: 'Postulaciones y solicitudes',
+          },
+          blank: {
+            name: 'Empezar desde cero',
+            description: 'Un formulario vacío. Tú escribes cada pregunta.',
+            formName: 'Formulario sin título',
+          },
+        },
+      },
+      tour: {
+        next: 'Siguiente',
+        done: 'Entendido',
+        dismiss: 'Cerrar',
+        step: '{current} de {total}',
+        edit: {
+          title: 'Edita cualquier pregunta',
+          body: 'Haz clic en una pregunta para cambiar su texto, sus opciones o lo que pide.',
+        },
+        preview: {
+          title: 'Mira lo que ellos ven',
+          body: 'La vista previa abre el formulario tal como lo encontrará quien lo responda.',
+        },
+        publish: {
+          title: 'Publica cuando estés listo',
+          body: 'Nada está en línea hasta que publiques. Ahí obtienes el enlace para compartir.',
+        },
+      },
     },
   },
   dialog: {

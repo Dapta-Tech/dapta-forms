@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_FORM_FONT,
+  FORM_FONTS,
   FORM_THEME_PRESETS,
   LEGACY_FORM_DESIGN,
   designAttributes,
@@ -18,9 +19,28 @@ describe('resolveDesign — legacy defaults', () => {
     expect(resolveDesign({})).toEqual(LEGACY_FORM_DESIGN);
   });
 
-  it('keeps Poppins as the default face', () => {
-    expect(resolveDesign({}).font).toBe('poppins');
-    expect(DEFAULT_FORM_FONT).toBe('poppins');
+  it('uses Figtree as the default face', () => {
+    expect(resolveDesign({}).font).toBe('figtree');
+    expect(DEFAULT_FORM_FONT).toBe('figtree');
+  });
+
+  // Every curated face is baked into the build by `next/font` and therefore into
+  // this repository, so the list may only ever hold freely-redistributable faces.
+  // This asserts the rule the same way a reader would check it: by name.
+  it('curates no commercially-licensed face', () => {
+    expect(FORM_FONTS).not.toContain('visby');
+  });
+
+  it('still accepts Poppins, the previous default, from a stored config', () => {
+    // Dropping a retired face from the union would fail an already-published
+    // form's config at parse time (invariant #4).
+    expect(resolveDesign({ fontFamily: 'poppins' }).font).toBe('poppins');
+  });
+
+  it('keeps soft corners as the default', () => {
+    // `sharp` was tried as the default to match the marketing site and reverted:
+    // hard corners read as harsh at form density. It stays an author choice.
+    expect(resolveDesign({}).radius).toBe('soft');
   });
 
   it('leaves untouched axes at their legacy value when one axis is set', () => {
@@ -195,12 +215,26 @@ describe('theme presets', () => {
     expect(darks.length).toBeLessThan(FORM_THEME_PRESETS.length);
   });
 
-  it('midnight reproduces the pre-design look', () => {
+  it('control-room reproduces the house look and leads the list', () => {
+    // The first card is what a new form already looks like, so an author who
+    // wanders can get back to the default without hand-typing four values.
+    expect(FORM_THEME_PRESETS[0]?.id).toBe('control-room');
+    const house = findThemePreset('control-room');
+    expect(house?.background).toBe('#0a0c0e');
+    expect(house?.foreground).toBe('#e8edf2');
+    expect(house?.primaryColor).toBe('#d3e750');
+    expect(house?.font).toBe(DEFAULT_FORM_FONT);
+    expect(house?.radius).toBe(LEGACY_FORM_DESIGN.radius);
+  });
+
+  it('keeps midnight, the previous house look, under its original id', () => {
+    // A form that stored `themePreset: 'midnight'` must still show its card as
+    // selected — the id is data, not a label.
     const midnight = findThemePreset('midnight');
     expect(midnight).not.toBeNull();
     expect(midnight?.background).toBe('#222222');
     expect(midnight?.primaryColor).toBe('#cbe84f');
-    expect(midnight?.font).toBe(DEFAULT_FORM_FONT);
+    expect(midnight?.font).toBe('poppins');
   });
 
   it('findThemePreset returns null for unknown or absent ids', () => {

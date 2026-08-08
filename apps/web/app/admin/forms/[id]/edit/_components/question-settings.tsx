@@ -21,8 +21,8 @@ import { Field, NumberField, SelectField, InlineField, TextField, SegmentedToggl
 import { OptionsEditor } from './options-editor';
 import { SliderScoringEditor } from './slider-scoring-editor';
 import { maxScoreForSteps } from './scoring-util';
-import { LogicRules } from './logic-rules';
-import { LogicConditions } from './logic-conditions';
+import { LogicDialog } from './logic-dialog';
+import { describeCondition, liveGotoRules, liveRuleCount, optionLabel, splitGoto } from './logic-util';
 import { QuestionHubspotSection } from './question-hubspot';
 import { QuestionVariants } from './question-variants';
 import { SchedulerPanel } from './scheduler-panel';
@@ -38,6 +38,7 @@ import {
 } from './question-types';
 import type { EditorMessages } from './messages';
 import { AdvancedSettings, PrefillRow } from './advanced-settings';
+import { tb } from './builder-messages';
 import type { BuilderMessages } from './builder-messages';
 
 const ALL_ITEMS: GalleryItem[] = GALLERY_GROUPS.flatMap((g) => GALLERY[g]);
@@ -49,7 +50,7 @@ const MAX_REVEAL_MS = 30_000;
 
 /** Shared look for the inline slider-bounds warnings (V5-A2). */
 const sliderWarnClass =
-  'flex items-start gap-1.5 rounded-md bg-destructive/10 px-2 py-1 text-[11px] leading-relaxed text-destructive';
+  'flex items-start gap-1.5 rounded-md bg-destructive/10 px-2 py-1 text-xs leading-relaxed text-destructive';
 
 /** Match a step to its gallery item id (so the type <select> reflects single vs multiple). */
 function currentItemId(step: FormStep): string {
@@ -59,9 +60,10 @@ function currentItemId(step: FormStep): string {
 
 /**
  * The right contextual pane: type (swap), Required, type-specific options
- * (choices+points, slider bounds+scoring, email/phone rules), then
- * progressive-disclosure Logic (forward rules) and Scoring. Contact fields show
- * the "doesn't affect the score" hint instead of scoring.
+ * (choices+points, slider bounds+scoring, email/phone rules), then the
+ * always-visible {@link LogicCard} — what this question's rules SAY, with the
+ * shared dialog one click away — and the collapsed Advanced group. Contact
+ * fields show the "doesn't affect the score" hint instead of scoring.
  */
 export function QuestionSettings({
   formId,
@@ -160,9 +162,15 @@ export function QuestionSettings({
   }
 
   // What the collapsed header says. Same vocabulary the left spine already uses,
-  // so "Conditional" means the same thing in both places.
+  // so a badge means the same thing in both places.
+  //
+  // No "Conditional" badge here any more, and its absence is the point: the
+  // show/hide conditions it announced now live in the always-visible Logic card
+  // above, together with the personal-email gate. A collapsed group is only safe
+  // while its badges describe what is INSIDE it — a badge for content that moved
+  // out would send an author digging through the accordion for an editor that is
+  // no longer there.
   const advancedBadges = [
-    step.showWhen || step.hideWhen || step.showForPersonalEmailOnly ? bm.settings.badgeConditional : null,
     Object.keys(step.questionVariants ?? {}).length > 0 ? bm.settings.badgeDynamic : null,
     step.terminal ? bm.settings.badgeEndsForm : null,
     step.hidden ? bm.settings.badgeHidden : null,
@@ -221,7 +229,7 @@ export function QuestionSettings({
           explanation of what turns it on. Options → their scoring, together. */}
       {hasOptions(step.type) ? (
         <section className="flex flex-col gap-3 border-t border-border pt-4">
-          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          <p className="text-2xs font-semibold uppercase tracking-wide text-faint">
             {bm.settings.options}
           </p>
           {step.type === 'multiple_choice' ? (
@@ -259,7 +267,7 @@ export function QuestionSettings({
 
       {step.type === 'reveal' ? (
         <section className="flex flex-col gap-3 border-t border-border pt-4">
-          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          <p className="text-2xs font-semibold uppercase tracking-wide text-faint">
             {bm.settings.revealSection}
           </p>
           <p className="text-xs text-muted-foreground">{bm.settings.revealHint}</p>
@@ -335,7 +343,7 @@ export function QuestionSettings({
 
       {step.type === 'slider' ? (
         <section className="flex flex-col gap-3 border-t border-border pt-4">
-          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{em.types.slider}</p>
+          <p className="text-2xs font-semibold uppercase tracking-wide text-faint">{em.types.slider}</p>
           <div className="grid grid-cols-2 gap-2.5">
             <Field label={em.props.sliderMin}>
               <NumberField
@@ -441,7 +449,7 @@ export function QuestionSettings({
       {/* Name step: the two collected fields + their placeholders */}
       {step.type === 'name' ? (
         <section className="flex flex-col gap-3 border-t border-border pt-4">
-          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          <p className="text-2xs font-semibold uppercase tracking-wide text-faint">
             {em.nameStep.title}
           </p>
           <p className="text-xs text-muted-foreground">{em.nameStep.hint}</p>
@@ -454,27 +462,26 @@ export function QuestionSettings({
         </section>
       ) : null}
 
-      {/* Logic — forward rules (choice/dropdown only) */}
-      {hasOptions(step.type) ? (
-        <section className="flex flex-col gap-3 border-t border-border pt-4">
-          <div className="flex items-center justify-between">
-            <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              <i aria-hidden className="pi pi-sitemap text-secondary" style={{ fontSize: 11 }} />
-              {bm.settings.logic}
-            </p>
-          </div>
-          {(step.goto?.length ?? 0) === 0 ? (
-            <p className="text-xs text-muted-foreground">{bm.settings.noRules}</p>
-          ) : null}
-          <LogicRules step={step} index={index} steps={steps} onUpdate={onUpdate} m={bm} />
-        </section>
-      ) : null}
+      {/* Logic — this question's whole routing story, stated in plain language
+          and ALWAYS visible, for every step type. */}
+      <LogicCard
+        step={step}
+        index={index}
+        steps={steps}
+        scoringEnabled={scoringEnabled}
+        onUpdate={onUpdate}
+        bm={bm}
+        em={em}
+      />
 
-      {/* Everything below is ADVANCED: conditional visibility, dynamic copy,
-          behaviour flags, the answer key, and scoring. Collapsed by default, but
-          the header names whatever is configured inside — hiding that a question
-          is conditional or terminal would be worse than the flat list this
-          replaces. */}
+      {/* Everything below is ADVANCED: dynamic copy, behaviour flags, the answer
+          key, and scoring. Collapsed by default, but the header names whatever
+          is configured inside — hiding that a question is terminal or hidden
+          would be worse than the flat list this replaces.
+          Conditional visibility is deliberately NOT in here any more: it moved
+          into the always-visible Logic card above (F3a), because the one control
+          that routes a lead to a booking screen cannot be the one behind a
+          chevron. The badges follow it out — see `advancedBadges`. */}
       <AdvancedSettings badges={advancedBadges} m={bm.settings}>
         {/* What parameter prefills this answer. The runtime already supports it;
             nothing ever said so, which is why it went unused. */}
@@ -499,35 +506,6 @@ export function QuestionSettings({
           </Field>
         ) : null}
 
-      {/* Visibility — declarative show/hide conditions + personal-email branch */}
-      <section className="flex flex-col gap-3 border-t border-border pt-4">
-        <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          <i aria-hidden className="pi pi-eye text-secondary" style={{ fontSize: 11 }} />
-          {em.logic.title}
-        </p>
-        <LogicConditions
-          step={step}
-          index={index}
-          steps={steps}
-          scoringEnabled={scoringEnabled}
-          onUpdate={onUpdate}
-          m={em.logic}
-        />
-        {/* Personal-email branch needs an earlier email answer — impossible on
-            the first question, so hide it there. A reveal is skipped or played
-            by the plain conditions above; a second, narrower visibility rule on
-            an interstitial was a control that looked meaningful and wasn't. */}
-        {step.type !== 'email' && step.type !== 'reveal' && index > 0 ? (
-          <InlineField label={em.logic.personalEmailOnly} hint={em.logic.personalEmailHint}>
-            <Switch
-              checked={!!step.showForPersonalEmailOnly}
-              onCheckedChange={(v) => onUpdate({ showForPersonalEmailOnly: v || undefined })}
-              aria-label={em.logic.personalEmailOnly}
-            />
-          </InlineField>
-        ) : null}
-      </section>
-
       {/* Dynamic question — vary the text by an earlier answer. Variants swap the
           step's `question`, which a reveal never renders: it shows its own
           headline and subtitle, and BOTH already interpolate `[key]` tokens. So
@@ -535,7 +513,7 @@ export function QuestionSettings({
           will never see. */}
       {step.type === 'reveal' ? null : (
         <section className="flex flex-col gap-3 border-t border-border pt-4">
-          <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          <p className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wide text-faint">
             <i aria-hidden className="pi pi-sync text-secondary" style={{ fontSize: 11 }} />
             {em.variants.title}
           </p>
@@ -545,7 +523,7 @@ export function QuestionSettings({
 
       {/* Behavior — terminal (disqualify) + reveal position (V4-04/V4-12) */}
       <section className="flex flex-col gap-1 border-t border-border pt-4">
-        <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        <p className="mb-1 text-2xs font-semibold uppercase tracking-wide text-faint">
           {em.behavior.title}
         </p>
         {/* "Ends the form" means DISQUALIFICATION here, which is the opposite of
@@ -673,6 +651,261 @@ export function QuestionSettings({
 }
 
 /**
+ * The Logic card — what this question's rules SAY, always on screen (F3a).
+ *
+ * The `showWhen`/`hideWhen` conditions are the only mechanism for score-gated
+ * branching — the thing that routes a lead to one of three booking screens — and
+ * they used to live inside the collapsed Advanced group, while the forward
+ * `goto` rules sat in their own always-visible section above. One question's
+ * logic was split across a visible surface and a hidden one, and the closed
+ * accordion said no more than "Conditional": a rule exists, nothing about what
+ * it says.
+ *
+ * So this card STATES the rules instead of hiding an editor behind a chevron. It
+ * reuses `describeCondition` — the same describer the Logic map reads from, so
+ * the panel and the map can never word the same rule differently — and hands
+ * every edit to the shared {@link LogicDialog}, which is now the single editor
+ * for visibility, routing and the after-booking jump. Nothing here writes config
+ * except the personal-email switch (see below).
+ *
+ * It renders for EVERY step type, not just the routable ones: a free-text or
+ * message step has no `goto` surface but can still be gated by a condition, and
+ * the old section's `hasOptions` guard meant those steps showed no logic at all.
+ */
+function LogicCard({
+  step,
+  index,
+  steps,
+  scoringEnabled,
+  onUpdate,
+  bm,
+  em,
+}: {
+  step: FormStep;
+  index: number;
+  steps: FormStep[];
+  scoringEnabled: boolean;
+  onUpdate: (patch: Partial<FormStep>) => void;
+  bm: BuilderMessages;
+  em: EditorMessages;
+}) {
+  const [open, setOpen] = useState(false);
+  // The settings panel is not keyed by step, so selecting another question keeps
+  // this component mounted — an open dialog would silently re-target the new
+  // step, editing rules the author never opened.
+  useEffect(() => setOpen(false), [step.key]);
+
+  // A catch-all that can never fire (a stale `*` on a message or a reveal) is
+  // not logic: it is not counted, not bordered and not spelled out below.
+  const count = liveRuleCount(step);
+  const titleOf = (s: FormStep, i: number): string => s.question?.trim() || tb(bm.canvas.questionN, { n: i + 1 });
+  const targetLabel = (target: string): string => {
+    const ti = steps.findIndex((s) => s.key === target);
+    const t = ti >= 0 ? steps[ti] : undefined;
+    return t ? titleOf(t, ti) : target;
+  };
+
+  // A catch-all `goto` on `*` is writable on EVERY step type, not just a
+  // scheduler — the Branching dialog's "Always go to" writes exactly this rule.
+  // So it is detected everywhere; only the WORDING is per type. A scheduler
+  // gets the After-booking line (its answer is a booking, and that line names
+  // the target on its own); every other type reads as a sentence below, where
+  // `*` must never print raw — "If * → Q4" is the config, not an answer anyone
+  // could give.
+  // …and only rules that can RUN are drawn. A step that records no answer (a
+  // message, a reveal) can never match a `goto` of any shape, so a rule saved
+  // on one is dead config — it stays in the config, but it is not a sentence
+  // this card is willing to print.
+  const { valueRules, catchAll } = splitGoto(step);
+  const live = liveGotoRules(step).length > 0;
+  const scheduler = step.type === 'scheduler';
+  const bookingLabel =
+    !scheduler || !catchAll
+      ? null
+      : catchAll.target == null
+        ? bm.settings.schedulerAfterSubmit
+        : targetLabel(catchAll.target);
+  // Last, the order the engine walks: the catch-all matches any answer, so
+  // every value rule above it is tried first.
+  const routed = !live ? [] : catchAll && !bookingLabel ? [...valueRules, catchAll] : valueRules;
+
+  // The personal-email gate is a visibility rule too — it just is not one of the
+  // declarative conditions the dialog edits, so it keeps its own switch and
+  // stays HERE rather than back in the accordion: leaving one third of "when
+  // does this question appear" behind a chevron would rebuild the exact split
+  // this card removes. It needs an earlier email answer, which is impossible on
+  // the first question; a reveal is played or skipped by the plain conditions
+  // instead, so a second, narrower rule there looked meaningful and wasn't.
+  const personalEmail = step.type !== 'email' && step.type !== 'reveal' && index > 0;
+  const gated = personalEmail && !!step.showForPersonalEmailOnly;
+  const lines = (step.showWhen ? 1 : 0) + (step.hideWhen ? 1 : 0) + (bookingLabel ? 1 : 0) + routed.length;
+
+  return (
+    // `shrink-0` and NO `overflow` — see the paragraph in `advanced-settings.tsx`:
+    // any overflow other than `visible` resolves `min-height: auto` to 0 on a
+    // flex child of this scrolling column, and the box collapses to a couple of
+    // pixels with its content laid out, clipped, inside it.
+    <section data-testid="question-logic" className="flex shrink-0 flex-col gap-3 border-t border-border pt-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wide text-faint">
+          <i aria-hidden className="pi pi-sitemap text-secondary" style={{ fontSize: 11 }} />
+          {bm.settings.logic}
+          {count > 0 ? (
+            // The same count the left spine puts on the question, so the two
+            // surfaces agree on how many rules there are.
+            <span
+              data-testid="question-logic-count"
+              className="rounded-sm bg-secondary/15 px-1.5 py-0.5 text-2xs font-semibold normal-case tracking-normal text-secondary"
+            >
+              {count === 1 ? bm.badges.ruleOne : tb(bm.badges.rules, { n: count })}
+            </span>
+          ) : null}
+        </p>
+        <Button
+          variant="outline"
+          size="sm"
+          data-testid="question-logic-edit"
+          onClick={() => setOpen(true)}
+        >
+          <i aria-hidden className="pi pi-pencil" style={{ fontSize: 11 }} /> {bm.logicDialog.open}
+        </Button>
+      </div>
+
+      {lines > 0 ? (
+        <div className="flex flex-col gap-1.5 rounded-lg border border-border bg-background p-2.5">
+          {step.showWhen ? <ConditionSentence kind="show" cond={step.showWhen} steps={steps} bm={bm} /> : null}
+          {step.hideWhen ? <ConditionSentence kind="hide" cond={step.hideWhen} steps={steps} bm={bm} /> : null}
+          {bookingLabel ? (
+            <p
+              data-testid="question-logic-booking"
+              className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 text-xs leading-relaxed"
+            >
+              <span className="shrink-0 rounded-sm bg-secondary/15 px-1.5 py-0.5 text-2xs font-bold uppercase tracking-wide text-secondary">
+                {bm.settings.schedulerAfter}
+              </span>
+              <span className="font-medium text-foreground">{bookingLabel}</span>
+            </p>
+          ) : null}
+          {routed.map((rule, i) => {
+            // Same expression the Logic map reads from, so the panel and the map
+            // can never word one rule two ways. `optionLabel` falls back to the
+            // raw value, which on a catch-all is the literal `*`.
+            const value = rule.values.includes('*')
+              ? scheduler
+                ? bm.branching.anyBooking
+                : bm.branching.anyAnswer
+              : rule.values.map((v) => optionLabel(step, v)).join(', ');
+            return (
+              <p
+                key={i}
+                data-testid="question-logic-goto"
+                className="flex items-start gap-1.5 text-xs leading-relaxed text-foreground"
+              >
+                <i aria-hidden className="pi pi-directions mt-0.5 shrink-0 text-secondary" style={{ fontSize: 10 }} />
+                <span className="min-w-0 break-words">
+                  {rule.target == null
+                    ? tb(bm.map.skipEdge, { value })
+                    : tb(bm.map.jumpEdge, { value, target: targetLabel(rule.target) })}
+                </span>
+              </p>
+            );
+          })}
+        </div>
+      ) : gated ? null : (
+        // No rules at all. Say that in a sentence — an empty editor (which is
+        // what the old panel showed) reads as broken rather than as "this
+        // question always appears". Suppressed when the personal-email switch
+        // below is ON, since then the question does NOT always appear.
+        <p data-testid="question-logic-empty" className="text-xs leading-relaxed text-muted-foreground">
+          {bm.logicDialog.empty}
+        </p>
+      )}
+
+      {personalEmail ? (
+        <InlineField label={em.logic.personalEmailOnly} hint={em.logic.personalEmailHint}>
+          <Switch
+            checked={!!step.showForPersonalEmailOnly}
+            onCheckedChange={(v) => onUpdate({ showForPersonalEmailOnly: v || undefined })}
+            aria-label={em.logic.personalEmailOnly}
+          />
+        </InlineField>
+      ) : null}
+
+      <LogicDialog
+        open={open}
+        onClose={() => setOpen(false)}
+        step={step}
+        index={index}
+        steps={steps}
+        scoringEnabled={scoringEnabled}
+        onUpdate={onUpdate}
+        bm={bm}
+        em={em}
+      />
+    </section>
+  );
+}
+
+/**
+ * One show/hide rule as a readable sentence — "SHOW IF «Budget» is greater than
+ * 500" — in the same grammar and the same colours the Logic map uses, because it
+ * is the same describer: `describeCondition` resolves the stored field KEY to
+ * its question title and raw values to their option LABELS, which is the whole
+ * difference between a sentence an author recognizes and the config as stored.
+ * A rule pointing at a deleted question is called out: it can never hold, so it
+ * hides the question forever.
+ */
+function ConditionSentence({
+  kind,
+  cond,
+  steps,
+  bm,
+}: {
+  kind: 'show' | 'hide';
+  cond: NonNullable<FormStep['showWhen']>;
+  steps: FormStep[];
+  bm: BuilderMessages;
+}) {
+  const d = describeCondition(cond, steps, {
+    fallbackQuestion: (i) => tb(bm.canvas.questionN, { n: i + 1 }),
+    opIn: bm.map.condIn,
+    opEq: bm.map.condEq,
+    opGt: bm.map.condGt,
+    opLt: bm.map.condLt,
+    opBetween: bm.map.condBetween,
+    and: bm.map.condAnd,
+    blank: bm.map.condBlank,
+    score: bm.map.condScore,
+  });
+  const show = kind === 'show';
+  return (
+    <p
+      data-testid={`question-logic-${kind}`}
+      className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 text-xs leading-relaxed"
+    >
+      <span
+        className={`shrink-0 rounded-sm px-1.5 py-0.5 text-2xs font-bold uppercase tracking-wide ${
+          show ? 'bg-secondary/15 text-secondary' : 'bg-destructive/15 text-destructive'
+        }`}
+      >
+        {show ? bm.map.condShowIf : bm.map.condHideIf}
+      </span>
+      <span className="font-semibold text-foreground">{d.field}</span>
+      <span className="text-muted-foreground">{d.operator}</span>
+      <span className="font-medium text-foreground">{d.operand}</span>
+      {d.dangling ? (
+        <span
+          data-testid="question-logic-dangling"
+          className="rounded-sm bg-destructive/15 px-1.5 py-0.5 text-2xs font-semibold text-destructive"
+        >
+          {bm.map.condMissingField}
+        </span>
+      ) : null}
+    </p>
+  );
+}
+
+/**
  * This question's scoring switch (V5-B2), rendered next to whatever it governs —
  * the option Points column for a choice step, the range table for a slider.
  *
@@ -775,7 +1008,7 @@ function FieldKeyEditor({
 
   return (
     <div className="mt-2 flex flex-col gap-1">
-      <span className="text-[11px] font-medium text-muted-foreground">{m.fieldKey}</span>
+      <span className="text-xs font-medium text-muted-foreground">{m.fieldKey}</span>
       <TextField
         value={text}
         data-testid="step-field-key"
@@ -801,11 +1034,11 @@ function FieldKeyEditor({
         className="h-8 py-1 font-mono text-xs"
       />
       {collides || refused ? (
-        <p role="alert" data-testid="step-field-key-taken" className="text-[11px] text-destructive">
+        <p role="alert" data-testid="step-field-key-taken" className="text-xs text-destructive">
           {collides || refused === 'taken' ? m.fieldKeyTaken : m.fieldKeyInvalid}
         </p>
       ) : (
-        <p className="text-[10px] leading-relaxed text-muted-foreground">
+        <p className="text-2xs leading-relaxed text-faint">
           {m.fieldKeyHint} <span className="font-mono">{m.fieldKeyUrlExample.replace('{key}', stepKey)}</span>
         </p>
       )}
@@ -864,11 +1097,11 @@ function NameFieldsEditor({
     <div className="flex flex-col gap-2.5">
       {fields.map((field, i) => (
         <div key={i} className="flex flex-col gap-2 rounded-lg border border-border bg-background p-2.5">
-          <span className="text-[11px] font-medium text-muted-foreground">
+          <span className="text-xs font-medium text-muted-foreground">
             {i === 0 ? m.first : m.second}
           </span>
           <label className="flex flex-col gap-1">
-            <span className="text-[11px] font-medium text-muted-foreground">{m.fieldKey}</span>
+            <span className="text-xs font-medium text-muted-foreground">{m.fieldKey}</span>
             <TextField
               value={field}
               onChange={(e) => setFieldKey(i, e.target.value)}
@@ -876,7 +1109,7 @@ function NameFieldsEditor({
             />
           </label>
           <label className="flex flex-col gap-1">
-            <span className="text-[11px] font-medium text-muted-foreground">{m.placeholder}</span>
+            <span className="text-xs font-medium text-muted-foreground">{m.placeholder}</span>
             <TextField
               value={placeholders[field] ?? ''}
               onChange={(e) => setPlaceholder(field, e.target.value)}
@@ -887,7 +1120,7 @@ function NameFieldsEditor({
           </label>
         </div>
       ))}
-      <p className="text-[10px] leading-relaxed text-muted-foreground" data-testid="name-fieldkey-hint">
+      <p className="text-2xs leading-relaxed text-faint" data-testid="name-fieldkey-hint">
         {m.fieldKeyHint}
       </p>
     </div>

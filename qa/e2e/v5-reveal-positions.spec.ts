@@ -91,6 +91,30 @@ async function answerStep(page: Page, value: string): Promise<void> {
 }
 
 /**
+ * Load the public form and wait for its first question.
+ *
+ * The public API is a per-IP token bucket (60 burst, 1/s refill) shared by every
+ * QA spec, and this test alone walks five whole forms back to back. When the
+ * bucket empties, the page's server-side config fetch 429s, `getJson` throws,
+ * and the subtree's error boundary renders "This page didn't load" — no
+ * `.pf__fields` at all. That is the harness throttling itself, not the reveal
+ * regression this spec exists to catch, so pause for a refill and reload.
+ */
+async function openForm(page: Page, url: string): Promise<void> {
+  const firstInput = page.locator('.pf__fields input, .pf__fields textarea').first();
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    await page.goto(url);
+    const up = await firstInput
+      .waitFor({ state: 'visible', timeout: 5_000 })
+      .then(() => true)
+      .catch(() => false);
+    if (up) return;
+    await page.waitForTimeout(5_000); // let the rate-limit bucket refill
+  }
+  await expect(firstInput).toBeVisible({ timeout: 10_000 });
+}
+
+/**
  * Run the whole form. Returns the reveal headlines observed and whether the
  * done screen was reached — a reveal that plays but strands the respondent is
  * just as broken as one that never plays.
@@ -99,7 +123,7 @@ async function runToCompletion(
   page: Page,
   url: string,
 ): Promise<{ reveals: string[]; finished: boolean }> {
-  await page.goto(url);
+  await openForm(page, url);
   await watchForReveal(page);
   for (const value of ['one', 'two', 'three']) {
     // A mid-form reveal replaces the question while it plays; wait for the next
@@ -109,11 +133,29 @@ async function runToCompletion(
     });
     await answerStep(page, value);
   }
+  // Walking the steps is pure client work — only the FINAL submit crosses the
+  // network — so this is the one place the shared rate-limit bucket can bite
+  // mid-run. A throttled submit is not a dead end: `finalize` puts the phase
+  // back to `steps` with the message in `.pf__error`, so the respondent still
+  // has their Continue button. Retry it like they would, instead of reporting a
+  // reveal regression that isn't one.
   const done = page.locator('.pf-done__title');
-  const finished = await done
-    .waitFor({ state: 'visible', timeout: 15_000 })
-    .then(() => true)
-    .catch(() => false);
+  let finished = false;
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    finished = await done
+      .waitFor({ state: 'visible', timeout: 15_000 })
+      .then(() => true)
+      .catch(() => false);
+    if (finished) break;
+    const errored = await page
+      .locator('.pf__error')
+      .first()
+      .isVisible()
+      .catch(() => false);
+    if (!errored) break; // not a throttle — report the miss as the real signal
+    await page.waitForTimeout(5_000); // let the rate-limit bucket refill
+    await page.locator('.pf__btn--inline, .pf__btn').first().click();
+  }
   return { reveals: await revealsSeen(page), finished };
 }
 

@@ -238,8 +238,14 @@ export function Select({
                         ? 'cursor-not-allowed opacity-40'
                         : isSelected
                           ? 'bg-primary text-primary-foreground'
-                          : i === active
-                            ? 'bg-muted'
+                          : // The keyboard cursor — the row Enter commits. A bare
+                            // `bg-muted` wash is 1.14:1 on dark and 1.17:1 on light
+                            // against the popover, so the one thing telling you what
+                            // you are about to choose was the least visible thing in
+                            // the list. Same accent rim every other selected state
+                            // in the app uses.
+                            i === active
+                            ? 'bg-muted shadow-[inset_0_0_0_1px_var(--primary-edge)]'
                             : 'hover:bg-muted',
                     )}
                   >

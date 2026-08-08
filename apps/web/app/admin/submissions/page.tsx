@@ -25,7 +25,7 @@ export default async function SubmissionsPicker() {
             <li key={f.id}>
               <Link
                 href={`/admin/forms/${f.id}/submissions`}
-                className="flex items-center justify-between gap-4 rounded-md border border-border bg-card p-5 transition-transform hover:border-primary active:scale-[0.99]"
+                className="flex items-center justify-between gap-4 rounded-xl border border-border bg-card p-5 transition-transform hover:border-primary-edge active:scale-[0.99]"
               >
                 <div className="min-w-0">
                   <span className="block truncate font-semibold tracking-tight">{f.name}</span>
@@ -48,7 +48,7 @@ export default async function SubmissionsPicker() {
 
 function EmptyState({ title, body }: { title: string; body: string }) {
   return (
-    <div className="flex flex-col items-center gap-2 rounded-md border border-dashed border-border bg-card/40 p-12 text-center">
+    <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-border bg-card/40 p-12 text-center">
       <div className="mb-1 flex h-12 w-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
         <i aria-hidden className="pi pi-inbox" style={{ fontSize: 20 }} />
       </div>

@@ -100,16 +100,20 @@ function rowFor(page: Page, id: string) {
 }
 
 // ---------------------------------------------------------------------------
-// 2 · v3-forms-list — FIRST so the list holds only the user's three forms.
+// 2 · v3-forms-list — FIRST so no temp form of this file's own making shows up.
 // ---------------------------------------------------------------------------
 test('shot · forms list action rows', async ({ page }) => {
   test.setTimeout(60_000);
   await page.goto('/admin/forms');
 
+  // What this shot is ABOUT is the single-column row and its action set, not
+  // which rows exist. It used to gate on three form NAMES ("Pilot Lead
+  // Qualifier", "Test", "Customer feedback") that came from a hand-imported
+  // pilot form — `qa/import-pilot-form.ts`, not the seed — so any QA DB built
+  // by `dev-sqlite.sh` alone has none of them and the shot failed before it
+  // reached a single UI assertion. Gate on a row EXISTING instead.
   const rows = page.getByTestId('form-row');
-  for (const name of ['Pilot Lead Qualifier', 'Test', 'Customer feedback']) {
-    await expect(rows.filter({ hasText: name }).first()).toBeVisible({ timeout: 25_000 });
-  }
+  await expect(rows.first()).toBeVisible({ timeout: 25_000 });
   // Action set present on a row: Edit/Submissions/Analytics/Connect + icons.
   const first = rows.first();
   for (const tid of [

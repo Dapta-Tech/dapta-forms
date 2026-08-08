@@ -5,6 +5,7 @@ import { getMessages } from '@quill/shared';
 import { adminApi, ApiError } from '@/lib/admin-api';
 import { AdminShell } from '@/components/admin-shell';
 import { getLocale } from '@/lib/locale';
+import { getThemePref } from '@/lib/theme.server';
 import { ToastProvider } from '@/components/toast';
 import { resolveProductAnalytics } from '@/lib/product-analytics';
 import { ProductAnalytics } from '@/components/analytics/product-analytics';
@@ -22,6 +23,17 @@ export default async function AdminLayout({ children }: { children: ReactNode })
     if (e instanceof ApiError && e.status === 401) redirect('/login');
     throw e;
   }
+
+  // The first-run gate. The API decides — `onboardingRequired` already folds in
+  // the feature flag — so the dashboard never carries a second copy of the
+  // switch that could disagree with it.
+  //
+  // The wizard lives at `/onboarding`, NOT under `/admin`, and that is what
+  // keeps this from looping: a child of this route would re-enter this layout,
+  // be redirected again, and the person would never reach a page. It also wants
+  // none of the chrome below — no sidebar to wander off into before the first
+  // form exists.
+  if (me.onboardingRequired) redirect('/onboarding');
 
   // Server-read the collapse pref so the sidebar renders at the right width on
   // first paint (no rail FOUC).
@@ -48,10 +60,17 @@ export default async function AdminLayout({ children }: { children: ReactNode })
           accountId: me.accountId,
           accountCode: me.accountCode,
           role: me.role,
+          // The campaign tags belong on the `forms_account` GROUP, and this is
+          // where nearly every product event is emitted from — the wizard is a
+          // handful of screens, the dashboard is the rest of the product.
+          // Passing them only on the wizard would leave every funnel that starts
+          // after onboarding un-sliceable by campaign, which is most of them.
+          attribution: me.attribution,
         }}
       />
       <AdminShell
         initialCollapsed={initialCollapsed}
+        themePref={await getThemePref()}
         messages={chrome}
         workspaces={workspaces}
         currentAccountId={me.accountId}

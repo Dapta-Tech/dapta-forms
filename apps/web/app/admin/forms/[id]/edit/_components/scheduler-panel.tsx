@@ -5,6 +5,7 @@ import Link from 'next/link';
 import type { FormStep } from '@quill/engine';
 import type { CalendlyEventType } from '@/lib/admin-api';
 import { Select } from '@/components/ui/select';
+import { GOTO_END, GOTO_NEXT, buildGoto } from './logic-util';
 import { Switch } from '@/components/ui/switch';
 import { buttonVariants } from '@/components/ui/button';
 import { ProviderLogo } from '@/components/ui/provider-logo';
@@ -97,7 +98,7 @@ export function SchedulerPanel({
       {/* The mark, not a generic calendar glyph: this section books through
           Calendly specifically, and every other surface that says so now shows
           the same logo. */}
-      <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+      <p className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wide text-faint">
         <ProviderLogo provider="calendly" size={13} />
         {s.schedulerSection}
       </p>
@@ -156,7 +157,7 @@ export function SchedulerPanel({
           catch-all rule ("any booking") that either ends the form or jumps. */}
       <div className="flex flex-col gap-1.5 border-t border-border pt-3">
         <p className="text-xs font-medium text-foreground">{s.schedulerAfter}</p>
-        <p className="text-[11px] text-muted-foreground">{s.schedulerAfterHint}</p>
+        <p className="text-xs text-muted-foreground">{s.schedulerAfterHint}</p>
         <div data-testid="scheduler-after">
           <Select
             ariaLabel={s.schedulerAfter}
@@ -167,8 +168,12 @@ export function SchedulerPanel({
               ...laterSteps.map((st) => ({ value: st.key, label: st.label })),
             ]}
             onChange={(v) => {
-              if (!v) return onGotoChange(undefined);
-              onGotoChange([{ values: ['*'], target: v === AFTER_SUBMIT ? null : v }]);
+              // Through the shared builder, not a whole-array replacement:
+              // this picker owns the catch-all ONLY, and a scheduler can carry
+              // value rules too (a jump authored in Branching). Replacing the
+              // array here used to drop them.
+              const valueRules = (goto ?? []).filter((r) => !r.values.includes('*'));
+              onGotoChange(buildGoto(valueRules, !v ? GOTO_NEXT : v === AFTER_SUBMIT ? GOTO_END : v));
             }}
           />
         </div>
@@ -180,7 +185,7 @@ export function SchedulerPanel({
           phone field is filled by the id Calendly actually gave it. */}
       <div className="flex flex-col gap-2 border-t border-border pt-3" data-testid="scheduler-map">
         <p className="text-xs font-medium text-foreground">{s.schedulerMapTitle}</p>
-        <p className="text-[11px] text-muted-foreground">
+        <p className="text-xs text-muted-foreground">
           {selected ? s.schedulerMapHint : s.schedulerMapPickFirst}
         </p>
         {bookingFields.map((bf) => (

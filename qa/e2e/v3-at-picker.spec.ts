@@ -93,12 +93,17 @@ test('@ on q2 lists ONLY the earlier name subfields, filters, and Enter inserts 
   await expect(title(page)).toHaveValue(Q2);
 
   // Discoverability: the permanent muted hint under the title.
-  await expect(page.getByTestId('token-hint')).toContainText('Type @ to insert a previous answer');
+  // The catalog copy gained the "[field]" mention after this spec was written
+  // (identical on develop) — assert the durable part, not the exact sentence.
+  await expect(page.getByTestId('token-hint')).toContainText('to insert a previous answer');
 
-  // Type `@` at the end of the title → the anchored listbox opens.
+  // Type ` @` at the end of the title → the anchored listbox opens. The space
+  // matters since #34: an `@` typed straight after a word character is treated
+  // as an email address being written and deliberately does NOT trigger the
+  // picker (Tab/Enter used to rewrite "bob@company.com" into "bob[company]").
   await title(page).click();
   await page.keyboard.press('End');
-  await title(page).pressSequentially('@');
+  await title(page).pressSequentially(' @');
   await expect(page.getByTestId('token-picker')).toBeVisible();
 
   // Exactly the fields captured BEFORE q2: the name step's two subfields —
@@ -118,7 +123,7 @@ test('@ on q2 lists ONLY the earlier name subfields, filters, and Enter inserts 
   // Enter replaces the typed `@fir` with the literal engine token.
   await page.keyboard.press('Enter');
   await expect(page.getByTestId('token-picker')).toHaveCount(0);
-  await expect(title(page)).toHaveValue(`${Q2}[firstname]`);
+  await expect(title(page)).toHaveValue(`${Q2} [firstname]`);
 
   // The token renders no warning — firstname IS captured before this step.
   await expect(page.getByTestId('token-warning')).toHaveCount(0);
@@ -153,10 +158,11 @@ test('q1 warnings: unknown token vs later-step token (non-blocking authoring gui
   await title(page).fill('Hello');
   await expect(warning).toHaveCount(0);
 
-  // `@` on the first question opens the empty state (nothing earlier).
+  // ` @` on the first question opens the empty state (nothing earlier). The
+  // leading space dodges the #34 email guard, same as above.
   await title(page).click();
   await page.keyboard.press('End');
-  await title(page).pressSequentially('@');
+  await title(page).pressSequentially(' @');
   await expect(page.getByTestId('token-picker')).toBeVisible();
   await expect(page.getByTestId('token-picker')).toContainText('No earlier answers yet');
   await expect(page.getByTestId('token-option')).toHaveCount(0);
@@ -205,6 +211,9 @@ test('variants "Ask instead" textarea gets the same @ picker (tokens = fields be
   await expect(title(page)).toHaveValue(Q2);
 
   // Enable "Dynamic question" and add a variant row in the settings panel.
+  // The dynamic-question switch lives inside the Advanced group, which only
+  // auto-opens when something in it is configured — this step has nothing.
+  await page.getByRole('button', { name: /Advanced/ }).click();
   await page.getByRole('switch', { name: 'Vary the question by a field' }).click();
   await page.getByRole('button', { name: 'Add variant' }).click();
 

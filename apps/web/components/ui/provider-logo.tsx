@@ -71,3 +71,32 @@ export function ProviderLogo({
     </svg>
   );
 }
+
+/**
+ * Google Sheets, deliberately OUTSIDE `LogoProvider`: it is not a connectable
+ * provider yet — only the inert "coming soon" cards render it — and the mark
+ * is several stacked shapes (sheet, fold, grid), so it cannot ride the
+ * one-path-per-provider Record above. Always decoration beside the product's
+ * own name, hence unconditionally aria-hidden.
+ */
+export function GoogleSheetsLogo({ size = 18, className }: { size?: number; className?: string }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      className={className}
+      aria-hidden
+      focusable="false"
+      data-provider-logo="gsheets"
+    >
+      {/* Sheet body, top-right corner cut away for the fold */}
+      <path d="M6 2h9l5 5v13a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Z" fill="#0F9D58" />
+      {/* Folded corner */}
+      <path d="M15 2v5h5Z" fill="#87CEAC" />
+      {/* Table: white block divided into 2×3 cells by sheet-coloured rules */}
+      <rect x="7.5" y="11" width="9" height="8" rx="0.75" fill="#FFFFFF" />
+      <path d="M12 11v8M7.5 13.667h9M7.5 16.333h9" stroke="#0F9D58" strokeWidth="1" />
+    </svg>
+  );
+}

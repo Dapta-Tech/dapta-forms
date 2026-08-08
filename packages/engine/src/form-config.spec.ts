@@ -298,3 +298,91 @@ describe('migrateRevealToStep', () => {
     expect(next.steps).toEqual([]);
   });
 });
+
+describe('normalizeConfig — logicLayout (builder-only node positions)', () => {
+  const at = (x: number, y: number) => ({ x, y });
+
+  it('keeps a position whose step still exists', () => {
+    const next = normalizeConfig({
+      version: 1,
+      steps: [{ key: 'budget', type: 'text', question: 'Budget?' }],
+      logicLayout: { budget: at(120, 40) },
+    });
+    expect(next.logicLayout).toEqual({ budget: at(120, 40) });
+  });
+
+  it('drops a position whose step is gone, so no node is pinned to nothing', () => {
+    const next = normalizeConfig({
+      version: 1,
+      steps: [{ key: 'budget', type: 'text', question: 'Budget?' }],
+      logicLayout: { budget: at(120, 40), deleted_step: at(999, 999) },
+    });
+    expect(next.logicLayout).toEqual({ budget: at(120, 40) });
+  });
+
+  it('follows the same rename map the goto targets follow', () => {
+    // Two steps want the key `budget`; the second is suffixed, and its stored
+    // position has to move with it or it lands on the FIRST step's node.
+    const next = normalizeConfig({
+      version: 1,
+      steps: [
+        { key: 'budget', type: 'text', question: 'A' },
+        { key: 'budget', type: 'text', question: 'B' },
+      ],
+      logicLayout: { budget: at(10, 10) },
+    });
+    const keys = next.steps.map((s) => s.key);
+    expect(new Set(Object.keys(next.logicLayout ?? {}))).toEqual(new Set([keys[0]!]));
+  });
+
+  it('drops the field entirely when nothing survives, rather than storing {}', () => {
+    const next = normalizeConfig({
+      version: 1,
+      steps: [{ key: 'budget', type: 'text', question: 'Budget?' }],
+      logicLayout: { gone: at(1, 2) },
+    });
+    expect('logicLayout' in next).toBe(false);
+  });
+
+  it('leaves a config without positions untouched — every legacy form', () => {
+    const next = normalizeConfig({
+      version: 1,
+      steps: [{ key: 'budget', type: 'text', question: 'Budget?' }],
+    });
+    expect('logicLayout' in next).toBe(false);
+  });
+});
+
+describe('normalizeConfig — logicLayout outcome-node pins', () => {
+  const at = (x: number, y: number) => ({ x, y });
+  const base = {
+    version: 1 as const,
+    steps: [{ key: 'q1', type: 'text' as const, question: 'Q?' }],
+    outcomes: [{ id: 'hot', label: 'Hot', minScore: 5 }],
+  };
+
+  it('keeps a pin on an outcome that still exists — dragging a terminal node must survive autosave', () => {
+    const next = normalizeConfig({ ...base, logicLayout: { 'outcome:hot': at(900, -40) } });
+    expect(next.logicLayout).toEqual({ 'outcome:hot': at(900, -40) });
+  });
+
+  it('prunes a pin whose outcome was deleted', () => {
+    const next = normalizeConfig({ ...base, logicLayout: { 'outcome:gone': at(1, 1) } });
+    expect('logicLayout' in next).toBe(false);
+  });
+
+  it('never confuses an outcome key with a step key under the rename map', () => {
+    // Two steps colliding on `q1` triggers the rename path; the outcome pin
+    // must pass through it untouched — outcome ids are not step keys.
+    const next = normalizeConfig({
+      version: 1,
+      steps: [
+        { key: 'q1', type: 'text', question: 'A' },
+        { key: 'q1', type: 'text', question: 'B' },
+      ],
+      outcomes: [{ id: 'hot', label: 'Hot', minScore: 5 }],
+      logicLayout: { q1: at(10, 10), 'outcome:hot': at(700, 0) },
+    });
+    expect(next.logicLayout?.['outcome:hot']).toEqual(at(700, 0));
+  });
+});

@@ -132,7 +132,7 @@ export function NotificationEmailFields({
               type="button"
               onClick={() => insertToken(t)}
               disabled={!value.enabled}
-              className="rounded-md border border-border bg-card px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:border-primary/50 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+              className="rounded-md border border-border bg-card px-2 py-1 text-xs text-muted-foreground transition-colors hover:border-primary-edge/50 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
               title={`{{${t}}}`}
             >
               {labels.tokenLabels[t] ?? t}

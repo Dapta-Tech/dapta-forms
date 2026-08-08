@@ -96,8 +96,21 @@ export async function seed(db: Db): Promise<SeedResult> {
   }
 
   const accountId = randomUUID();
+  // `onboarding_completed_at` is stamped, not left NULL, and that is what keeps
+  // the zero-infra path in CLAUDE.md true. Migration 0011 backfills every
+  // pre-existing account, but `db:setup` runs migrate BEFORE seed, so this row
+  // does not exist yet when the backfill sweeps — it would be the one account in
+  // the database still owed a wizard. With `ONBOARDING_WIZARD` on by default
+  // that means `pnpm dev` lands on `/onboarding` instead of the dashboard, the
+  // demo form the seed just wrote is invisible behind the gate, and finishing
+  // the wizard adds a SECOND "first" form. Every Playwright spec that navigates
+  // to `/admin/...` redirects into the wizard too.
+  //
+  // The demo account has already been onboarded by definition: it ships with a
+  // form.
   await db.run(
-    sql`INSERT INTO account (id, code, name, created_at) VALUES (${accountId}, ${accountCode}, ${'Acme Inc.'}, ${now})`,
+    sql`INSERT INTO account (id, code, name, created_at, onboarding_completed_at)
+        VALUES (${accountId}, ${accountCode}, ${'Acme Inc.'}, ${now}, ${now})`,
   );
   await db.run(
     sql`INSERT INTO member (id, account_id, handle, display_name, email, role, status, created_at)

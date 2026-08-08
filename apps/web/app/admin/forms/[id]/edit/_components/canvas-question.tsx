@@ -113,10 +113,24 @@ export function CanvasQuestion({
   // than the author's. The real appearance lives in the preview beside it and in
   // the Preview modal, both of which render the form exactly as published.
   const design = resolveDesign(config.branding);
+  // Mirrors `public-form.css`'s `data-pf-radius` block EXACTLY — card is
+  // `--pf-radius`, button is `--pf-radius-btn`. Written as arbitrary values on
+  // purpose: the admin's `rounded-*` ladder is the CHROME's scale and retuning it
+  // must not silently move what the canvas claims a published form looks like.
+  // These drifted (card soft showed 20px against the renderer's 16, button soft
+  // 16px against 8) — a preview that rounds differently than the page is the one
+  // thing this component exists to prevent.
+  //
+  // The same holds for this file's `text-[Npx]` values, and for the same reason:
+  // 15px body, 28px headline, 26px reveal title and the 23px emoji are the
+  // RENDERER's sizes (grep `font-size` in `public-form.css` — 15px appears nine
+  // times), not the admin's. A sweep that pulls them onto the chrome's pinned
+  // ladder makes the canvas lie about the published page. They are deliberately
+  // off-ladder; leave them there.
   const cardRadius =
-    design.radius === 'sharp' ? 'rounded-sm' : design.radius === 'round' ? 'rounded-[28px]' : 'rounded-2xl';
+    design.radius === 'sharp' ? 'rounded-[2px]' : design.radius === 'round' ? 'rounded-[24px]' : 'rounded-[16px]';
   const btnRadius =
-    design.radius === 'sharp' ? 'rounded-sm' : design.radius === 'round' ? 'rounded-full' : 'rounded-xl';
+    design.radius === 'sharp' ? 'rounded-[2px]' : design.radius === 'round' ? 'rounded-full' : 'rounded-[8px]';
   const canvasWidth =
     device === 'mobile' ? 'max-w-[380px]' : design.contentWidth === 'wide' ? 'max-w-[760px]' : 'max-w-[640px]';
   const centred = design.contentAlign === 'center';
@@ -237,8 +251,9 @@ function QuestionEditableBody({
   // page canvas both pick up the shape axes from the one place that renders a
   // question. Colour and typeface are deliberately NOT taken — see CanvasQuestion.
   const design = resolveDesign(config.branding);
+  // `.pf-choice-list` (the option row) reads `--pf-radius-sm`: 2 / 8 / 14px.
   const optionRadius =
-    design.radius === 'sharp' ? 'rounded-sm' : design.radius === 'round' ? 'rounded-2xl' : 'rounded-xl';
+    design.radius === 'sharp' ? 'rounded-[2px]' : design.radius === 'round' ? 'rounded-[14px]' : 'rounded-[8px]';
   const centred = design.contentAlign === 'center';
 
   function updateOption(i: number, patch: Partial<FormOption>) {
@@ -319,7 +334,7 @@ function QuestionEditableBody({
                 <div
                   key={i}
                   className={cn(
-                    'group relative flex min-h-[104px] w-[calc((100%-1.25rem)/3)] min-w-[132px] max-w-[220px] flex-col items-center gap-2 border border-border bg-background px-2 py-4 transition-colors focus-within:border-primary/60 hover:border-muted-foreground/60',
+                    'group relative flex min-h-[104px] w-[calc((100%-1.25rem)/3)] min-w-[132px] max-w-[220px] flex-col items-center gap-2 border border-border bg-background px-2 py-4 transition-colors focus-within:border-primary-edge/60 hover:border-muted-foreground/60',
                     optionRadius,
                   )}
                 >
@@ -359,7 +374,7 @@ function QuestionEditableBody({
                 <div
                   key={i}
                   className={cn(
-                    'group flex items-center gap-3 border border-border bg-background px-4 py-3.5 transition-colors focus-within:border-primary/60 hover:border-muted-foreground/60',
+                    'group flex items-center gap-3 border border-border bg-background px-4 py-3.5 transition-colors focus-within:border-primary-edge/60 hover:border-muted-foreground/60',
                     optionRadius,
                   )}
                 >
@@ -398,8 +413,8 @@ function QuestionEditableBody({
               onClick={addOption}
               className={
                 cardLayout
-                  ? 'flex min-h-[104px] w-[calc((100%-1.25rem)/3)] min-w-[132px] max-w-[220px] flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border px-2 py-4 text-sm text-muted-foreground transition-colors hover:border-primary/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
-                  : 'flex items-center gap-3 rounded-xl border border-dashed border-border px-4 py-3.5 text-left text-[15px] text-muted-foreground transition-colors hover:border-primary/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
+                  ? 'flex min-h-[104px] w-[calc((100%-1.25rem)/3)] min-w-[132px] max-w-[220px] flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border px-2 py-4 text-sm text-muted-foreground transition-colors hover:border-primary-edge/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
+                  : 'flex items-center gap-3 rounded-xl border border-dashed border-border px-4 py-3.5 text-left text-[15px] text-muted-foreground transition-colors hover:border-primary-edge/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
               }
             >
               <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-dashed border-border">
@@ -513,7 +528,14 @@ export function CanvasPage({
               onFocusCapture={() => onSelect(i)}
               className={cn(
                 'scroll-my-16 px-6 py-6 transition-colors sm:px-8',
-                i === selected ? 'bg-primary/5 ring-1 ring-inset ring-primary/40' : 'hover:bg-muted/40',
+                // The accent EDGE at full alpha, not `ring-primary/40`: this is the
+                // canvas's ONLY answer to "which question is the settings panel
+                // describing", and the raw accent at 40% alpha flattened to well
+                // under 3:1 over paper — the block you were editing looked exactly
+                // like the ones you weren't. Full alpha on the edge token so the
+                // mark clears 1.4.11 in both themes; the `bg-primary/5` wash keeps
+                // the soft fill it always had.
+                i === selected ? 'bg-primary/5 shadow-[inset_0_0_0_1px_var(--primary-edge)]' : 'hover:bg-muted/40',
               )}
             >
               {step.type === 'reveal' ? (

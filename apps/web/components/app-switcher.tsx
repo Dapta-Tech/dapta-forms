@@ -79,7 +79,7 @@ export function AppSwitcher({ messages: m }: { messages: SwitcherMessages }) {
         className="p-1.5"
         testId="app-switcher-menu"
       >
-        <p className="px-2 py-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        <p className="px-2 py-1 text-2xs font-semibold uppercase tracking-wide text-faint">
           {m.eyebrow}
         </p>
 
@@ -94,13 +94,24 @@ export function AppSwitcher({ messages: m }: { messages: SwitcherMessages }) {
             onClick={close}
             className="flex items-center gap-2.5 rounded-sm px-2 py-2 text-sm transition-colors hover:bg-accent hover:text-accent-foreground"
           >
-            <img
-              src="/dapta-mark.png"
-              alt=""
-              width={24}
-              height={24}
-              className="h-6 w-6 shrink-0 rounded-md object-contain"
-            />
+            {/* Tiled, not bare. `dapta-mark.png` is fixed white artwork, so on the
+                light popover it was white-on-white — the row read as a label with
+                no logo. `bg-brand-ink` is the one ground that does not flip with
+                the theme (see `--brand-ink`), which is what a mark that cannot
+                change colour requires.
+                Every row in this menu uses the SAME tile. Once one mark needs a
+                constant dark ground they all do: a menu that mixes a black tile
+                and a white one reads as two design systems sharing a popover, and
+                the odd one out looks like a bug rather than a brand. */}
+            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-brand-ink">
+              <img
+                src="/dapta-mark.png"
+                alt=""
+                width={18}
+                height={18}
+                className="h-[18px] w-[18px] object-contain"
+              />
+            </span>
             <span className="flex-1 truncate">{m.dapta}</span>
             <i aria-hidden className="pi pi-external-link text-muted-foreground" style={{ fontSize: 13 }} />
             <span className="sr-only">{m.opensNewTab}</span>
@@ -119,7 +130,7 @@ export function AppSwitcher({ messages: m }: { messages: SwitcherMessages }) {
             className="flex items-center gap-2.5 rounded-sm px-2 py-2 text-sm transition-colors hover:bg-accent hover:text-accent-foreground"
           >
             <span
-              className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-secondary text-xs font-semibold text-secondary-foreground"
+              className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-brand-ink text-xs font-semibold text-brand-ink-foreground"
               aria-hidden
             >
               <i className="pi pi-calendar" style={{ fontSize: 13 }} />
@@ -137,11 +148,15 @@ export function AppSwitcher({ messages: m }: { messages: SwitcherMessages }) {
           aria-current="true"
           className="flex items-center gap-2.5 rounded-sm bg-muted px-2 py-2 text-sm font-medium"
         >
-          {/* A 24px tile, matching the two sibling rows above — the row already
-              carries bg-muted as the current-item highlight, so the tile takes
-              the plain background to stay legible against it. */}
-          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-background">
-            <BrandMark className="h-3.5 w-auto text-foreground" />
+          {/* The same 24px `bg-brand-ink` tile as the rows above. It used to be
+              `bg-background`, which on the light theme made this the one pale tile
+              in a menu of dark ones.
+              The mark takes `text-brand-ink-foreground`, NOT `text-foreground`:
+              only its stem is `currentColor` (the arms are a fixed lime), so on a
+              constant dark tile a theme-following foreground would erase the stem
+              in light mode and leave the arms floating. */}
+          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-brand-ink">
+            <BrandMark className="h-3.5 w-auto text-brand-ink-foreground" />
           </span>
           <span className="flex-1 truncate">{PRODUCT_NAME}</span>
           <i aria-hidden className="pi pi-check text-primary" style={{ fontSize: 14 }} />

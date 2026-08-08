@@ -12,6 +12,15 @@ loadDotenv({ cwd: join(here, '..', '..') });
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  // The dev-only overlay badge sits in the bottom-left corner, which is exactly
+  // where the sidebar footer's icon row lands when the rail is EXPANDED — a hit
+  // test at the theme toggle's centre returned `NEXTJS-PORTAL`, so the control was
+  // unclickable and read as missing. Collapsed, the icons stack vertically and
+  // clear it, which is why the bug looked like "the toggle disappears when I open
+  // the menu". Reordering the row would only move the problem onto sign-out.
+  // Production never renders this element, so turning it off costs nothing and
+  // makes local dev match what ships.
+  devIndicators: false,
   // Next 16 allows only ONE dev server per build directory, which broke the
   // repo's own documented "second instance on :3400" workflow (see the
   // local-dev skill) — a second `next dev` in this folder exits with "Another

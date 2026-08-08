@@ -3,11 +3,13 @@ import type { ReactNode } from 'react';
 import { getMessages } from '@quill/shared';
 import { adminApi, isAdminRole, type AccountMember, type AccountRole, type MemberStatus } from '@/lib/admin-api';
 import { getLocale } from '@/lib/locale';
+import { getThemePref } from '@/lib/theme.server';
 import { PageHeader } from '@/components/ui/page-header';
 import { InviteMember } from './invite-member';
 import { MemberRowActions } from './member-row-actions';
 import { NotificationSettings } from './notification-settings';
 import { PublicPageSettings } from './public-page';
+import { ThemeSettings } from './theme-settings';
 
 export const dynamic = 'force-dynamic';
 
@@ -44,7 +46,9 @@ export default async function SettingsPage() {
 
       <PublicPageSettings publicPath={publicPath} initial={myProfile?.profile ?? null} m={s} />
 
-      <section className="mb-8 rounded-md border border-border bg-card p-6">
+      <ThemeSettings pref={await getThemePref()} s={s} m={getMessages(locale).admin.chrome.theme} />
+
+      <section className="mb-8 rounded-xl border border-border bg-card p-6">
         <h2 className="text-lg font-semibold tracking-tight">{s.workspaceHeading}</h2>
         <p className="mt-0.5 text-sm text-muted-foreground">{s.workspaceSubtitle}</p>
         <dl className="mt-5 grid grid-cols-1 gap-x-8 gap-y-4 sm:grid-cols-2">
@@ -71,7 +75,7 @@ export default async function SettingsPage() {
       </section>
 
       {isAdminRole(me.role) ? (
-        <section className="rounded-md border border-border bg-card p-6">
+        <section className="rounded-xl border border-border bg-card p-6">
           <div className="flex items-start justify-between gap-4">
             <div>
               <h2 className="text-lg font-semibold tracking-tight">{s.membersHeading}</h2>
@@ -120,7 +124,7 @@ export default async function SettingsPage() {
                       <span className="flex items-center gap-2 truncate text-sm font-medium">
                         {mem.displayName ?? mem.email ?? '—'}
                         {isYou ? (
-                          <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                          <span className="rounded-full bg-muted px-1.5 py-0.5 text-2xs font-medium uppercase tracking-wide text-faint">
                             {s.you}
                           </span>
                         ) : null}
@@ -171,7 +175,7 @@ export default async function SettingsPage() {
 function Field({ label, value, mono }: { label: string; value: string; mono?: boolean }): ReactNode {
   return (
     <div className="flex flex-col gap-1">
-      <dt className="text-xs uppercase tracking-wide text-muted-foreground">{label}</dt>
+      <dt className="text-2xs uppercase tracking-wide text-faint">{label}</dt>
       <dd className={`truncate text-sm text-foreground ${mono ? 'font-mono' : ''}`} title={value}>
         {value}
       </dd>

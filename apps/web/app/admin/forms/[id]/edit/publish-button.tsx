@@ -56,7 +56,7 @@ export function PublishButton({
   }
 
   return (
-    <div className="flex shrink-0 items-center gap-2">
+    <div className="flex shrink-0 items-center gap-2" data-tour="publish">
       {hasDraft && !publishing ? (
         // The full label only fits once the topbar is wide (`2xl`); below that
         // it collapses to the dot — still announced, via `sr-only`, and titled
@@ -66,7 +66,7 @@ export function PublishButton({
           title={m.unpublishedChanges}
           className="hidden h-9 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-border bg-muted px-2.5 text-xs font-medium text-muted-foreground sm:inline-flex 2xl:px-3"
         >
-          <span aria-hidden className="h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
+          <span aria-hidden className="h-1.5 w-1.5 shrink-0 rounded-full bg-primary-edge" />
           <span className="sr-only 2xl:not-sr-only">{m.unpublishedChanges}</span>
         </span>
       ) : null}

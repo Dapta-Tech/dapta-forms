@@ -58,7 +58,7 @@ export function PublicPageSettings({
   return (
     <section
       data-testid="public-page-settings"
-      className="mb-8 rounded-md border border-border bg-card p-6"
+      className="mb-8 rounded-xl border border-border bg-card p-6"
     >
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0">

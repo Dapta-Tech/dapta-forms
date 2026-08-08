@@ -18,10 +18,37 @@
   /* Accent defaults to the theme primary; branding.primaryColor overrides inline. */
   --pf-primary: var(--primary);
   --pf-primary-contrast: var(--primary-foreground);
+  /* The accent as a LINE. Separate from the fill because a colour bright enough
+     to BE a button is rarely legible as a 2px outline on the same page: the raw
+     accent measures 1.27:1 on paper, which made every focus stop on this surface
+     an indicator nobody could see. `formThemeVars` overrides this with the
+     author's own colour, clamped only when it would have been invisible. */
+  --pf-primary-edge: var(--primary-edge);
 
-  /* Radii derived from the token scale (8px control / 16px card). */
-  --pf-radius: calc(var(--radius) * 2); /* 16px — cards & prominent controls */
-  --pf-radius-sm: var(--radius); /* 8px — inputs */
+  /* Radii are OWNED here rather than derived from the app's `--radius`.
+     They used to be `calc(var(--radius) * 2)` / `var(--radius)`, which silently
+     coupled every author's corner choice to whatever the CHROME's control radius
+     happened to be — retune the app's scale and published forms move with it. The
+     three `data-pf-radius` values are a closed union with fixed meanings, so they
+     own their numbers. These are `soft`, the default: the same 16px/8px pair it
+     has always meant. */
+  --pf-radius: 16px; /* cards & prominent controls */
+  --pf-radius-sm: 8px; /* inputs */
+  /* Two more corner roles, so the `radius` axis actually reaches everything that
+     has a corner. They used to be literals scattered through this file (6px on
+     small controls, 999px on bars and badges), which meant a form set to `sharp`
+     still rendered pill progress bars and a rounded eyebrow badge — the axis
+     stopped at the elements that happened to read from it. `soft` keeps these at
+     their historical values, so no form that chose it changes. */
+  --pf-radius-chip: 6px; /* small controls: option rows, chips, checkmarks */
+  --pf-radius-pill: 999px; /* rails & badges: progress tracks, eyebrow badges */
+  /* The client-logo tile is its own role because it is its own SIZE class: a
+     46px-tall plate, not a 6px-cornered option row. It was a literal 10px, and
+     folding it into `--pf-radius-chip` re-cornered it to 6 for every already
+     published `soft` form — which is exactly the change the paragraph above
+     promises does not happen. So it keeps its historical 10px and still tracks
+     the axis through the two blocks at the end of this file. */
+  --pf-radius-logo: 10px; /* client-logo plates */
   --pf-gap: 12px;
   --pf-ease: cubic-bezier(0.22, 1, 0.36, 1);
 
@@ -42,7 +69,7 @@
 /* Scrollbars are themed globally (globals.css, tokens); no native track appears.
    Lime focus ring, everywhere on this surface. */
 .pf :focus-visible {
-  outline: 2px solid var(--pf-primary);
+  outline: 2px solid var(--pf-primary-edge);
   outline-offset: 2px;
 }
 
@@ -158,13 +185,13 @@
   height: 4px;
   width: 100%;
   background: var(--muted);
-  border-radius: 999px;
+  border-radius: var(--pf-radius-pill);
   overflow: hidden;
 }
 .pf-progress__fill {
   height: 100%;
   background: var(--pf-primary);
-  border-radius: 999px;
+  border-radius: var(--pf-radius-pill);
   transition: width 0.35s var(--pf-ease);
 }
 
@@ -340,7 +367,7 @@
   position: relative;
   width: 20px;
   height: 20px;
-  border-radius: 6px;
+  border-radius: var(--pf-radius-chip);
   border: 2px solid var(--border);
   background: var(--background);
   flex-shrink: 0;
@@ -497,7 +524,7 @@
   color: var(--popover-foreground);
   background: none;
   border: none;
-  border-radius: 6px;
+  border-radius: var(--pf-radius-chip);
   cursor: pointer;
   transition: background 0.1s;
 }
@@ -629,7 +656,7 @@
   color: var(--popover-foreground);
   background: none;
   border: none;
-  border-radius: 6px;
+  border-radius: var(--pf-radius-chip);
   cursor: pointer;
   transition: background 0.1s;
 }
@@ -667,7 +694,7 @@
   margin: 0 auto 24px;
   background: var(--muted);
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: var(--pf-radius-pill);
   padding: 14px 36px;
   white-space: nowrap;
 }
@@ -698,7 +725,7 @@
 }
 .pf-slider__input::-webkit-slider-runnable-track {
   height: 10px;
-  border-radius: 999px;
+  border-radius: var(--pf-radius-pill);
   background: linear-gradient(
     to right,
     var(--pf-primary) 0%,
@@ -734,12 +761,12 @@
 }
 .pf-slider__input::-moz-range-track {
   height: 10px;
-  border-radius: 999px;
+  border-radius: var(--pf-radius-pill);
   background: var(--muted);
 }
 .pf-slider__input::-moz-range-progress {
   height: 10px;
-  border-radius: 999px;
+  border-radius: var(--pf-radius-pill);
   background: var(--pf-primary);
 }
 .pf-slider__scale {
@@ -831,7 +858,7 @@
   color: var(--foreground);
   background: color-mix(in srgb, var(--pf-primary) 16%, transparent);
   border: 1px solid color-mix(in srgb, var(--pf-primary) 32%, transparent);
-  border-radius: 999px;
+  border-radius: var(--pf-radius-pill);
   padding: 6px 14px;
   margin: 0 0 18px;
 }
@@ -863,6 +890,76 @@
   max-width: 460px;
   margin: 0 auto;
   padding: 0 24px calc(36px + env(safe-area-inset-bottom));
+}
+
+/* ── "Made with Dapta Forms" attribution ──
+   Form CHROME, not a document footer. It is rendered INSIDE `.pf` by the
+   renderers — under the cover CTA, as the last child of `.pf__main` on slides,
+   at the end of the page on vertical — so it participates in this layout.
+   Rendered after the renderer (as it was) it began exactly where the first
+   `100dvh` viewport ended: below the fold on slides, past the entire scroll on
+   vertical. Nobody ever saw it.
+
+   Discreet but PRESENT: a solid `--card` pill with a soft shadow so it detaches
+   from any form ground — including a photographic background — at the same 14px
+   the rest of the secondary copy uses, on the full foreground rather than
+   `--muted-foreground` (12px muted type on an arbitrary background is a
+   whisper). Semantic tokens only, so it follows the host's theme and branding.
+
+   Never sticky, never `position: fixed`: on a phone a floating pill fights the
+   inline Continue button and the on-screen keyboard. In flow it moves with the
+   layout, and on an `?embed=1` render (where document height IS content height)
+   it is visible for free.
+
+   NOTE `.pf__badge` is the cover EYEBROW — hence `.pf__attribution` here. */
+.pf__attribution {
+  display: flex;
+  justify-content: center;
+  flex-shrink: 0;
+  padding: 20px 16px calc(20px + env(safe-area-inset-bottom));
+}
+.pf__attribution-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.2;
+  color: var(--foreground);
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  text-decoration: none;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18);
+  transition: border-color 0.12s var(--pf-ease), box-shadow 0.12s var(--pf-ease),
+    transform 0.08s var(--pf-ease);
+}
+.pf__attribution-link:hover {
+  border-color: var(--pf-primary);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.24);
+}
+.pf__attribution-link:active {
+  transform: scale(0.99);
+}
+.pf__attribution-mark {
+  height: 16px;
+  width: auto;
+  flex-shrink: 0;
+}
+
+/* Cover: directly under the CTA, inside the footer's own bottom padding. Every
+   respondent passes this screen, so it is the highest-value slot on the form
+   and it costs nothing — the footer already sits below the fold-safe CTA. */
+.pf__cover-footer .pf__attribution {
+  padding: 16px 0 0;
+}
+
+/* Vertical: an in-flow page footer at the end of the document (deliberately NOT
+   sticky — this layout reads as a page, and a pinned pill would follow the
+   respondent down every question). */
+.pf--vertical .pf__attribution {
+  padding: 32px 0 0;
 }
 
 /* ── Client-logos marquee ── */
@@ -917,7 +1014,7 @@
   justify-content: center;
   background: var(--muted);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--pf-radius-logo);
   padding: 8px 16px;
   height: 46px;
   min-width: 88px;
@@ -990,13 +1087,13 @@
   max-width: 100%;
   height: 8px;
   background: var(--muted);
-  border-radius: 999px;
+  border-radius: var(--pf-radius-pill);
   overflow: hidden;
 }
 .pf-reveal__fill {
   height: 100%;
   background: var(--pf-primary);
-  border-radius: 999px;
+  border-radius: var(--pf-radius-pill);
   transition: width 0.08s linear;
 }
 
@@ -1117,6 +1214,15 @@
     background: var(--background);
   }
 
+  /* The attribution is the last child of `.pf__main`, so on this band it rides
+     the centered card group and reads as ATTACHED beneath the card, in the same
+     centered column, inside the stage's own air. Below 769px `.pf__main` is
+     fluid and top-aligned — there is no card to attach to — so the base padding
+     just ends the column instead. */
+  .pf__main > .pf__attribution {
+    padding: 16px 0 0;
+  }
+
   /* Cover: logo + hero card + CTA as one vertically-centered group (inside
      the main area, below the pinned banner). */
   .pf--cover .pf__main {
@@ -1189,13 +1295,17 @@
  * ═════════════════════════════════════════════════════════════════════════ */
 
 /* ── Corner radius (B2) ─────────────────────────────────────────────────── */
-/* `soft` is the original 16/8 pair and is therefore the legacy default. Round
-   stops well short of a pill for inputs: a 999px text field reads as a search
-   box, not a form field. */
+/* `soft` is the original 16/8 pair and the default. `sharp` squares the chip and
+   pill roles too — a form whose buttons are hard-cornered but whose progress bar
+   is a lozenge is not sharp, it is inconsistent. Round stops well short of a pill
+   for inputs: a 999px text field reads as a search box, not a form field. */
 .pf[data-pf-radius='sharp'] {
   --pf-radius: 2px;
   --pf-radius-sm: 2px;
   --pf-radius-btn: 2px;
+  --pf-radius-chip: 2px;
+  --pf-radius-pill: 2px;
+  --pf-radius-logo: 2px;
 }
 .pf[data-pf-radius='soft'] {
   --pf-radius-btn: var(--pf-radius-sm);
@@ -1204,6 +1314,12 @@
   --pf-radius: 24px;
   --pf-radius-sm: 14px;
   --pf-radius-btn: 999px;
+  /* Both of these were missing, so a `round` form rendered 14px option rows
+     containing 6px checkmark boxes and 10px logo plates — the same "buttons hard,
+     progress bar a lozenge" inconsistency the roles were introduced to end, just
+     pointing the other way. */
+  --pf-radius-chip: 10px;
+  --pf-radius-logo: 16px;
 }
 .pf__btn {
   border-radius: var(--pf-radius-btn, var(--pf-radius-sm));
@@ -1445,30 +1561,13 @@
   }
 }
 
-/* ── Embedded preview ───────────────────────────────────────────────────── */
-/* The builder renders the REAL `.pf` markup with the REAL stylesheet, inside a
-   device frame, instead of re-implementing the form in admin Tailwind classes.
-   That is what stops the preview and the public page drifting apart — but two
-   rules assume the form owns the viewport and have to be re-scoped to the frame:
-   the `100dvh` floor, and the `position: fixed` background layer, which would
-   otherwise paint over the whole builder. */
-.pf--embedded {
-  min-height: 100%;
-  height: 100%;
-  overflow-y: auto;
-}
-.pf--embedded[data-pf-bg]:not([data-pf-bg='solid'])::before {
-  position: absolute;
-}
-/* A sticky banner inside a scrolling frame sticks to the frame, which is right. */
-.pf--embedded .pf__banner {
-  position: static;
-}
-/* The preview is a picture of the form, not the form: nothing inside it should
-   look focusable or clickable-through to a real submission. */
-.pf--embedded [aria-hidden='true'] {
-  pointer-events: none;
-}
+/* NOTE: there is no `.pf--embedded` block any more. The builder used to render
+   this markup as a SUBTREE of the admin document, which needed preview-only
+   rules here to re-scope the `100dvh` floor, the fixed background layer and the
+   sticky banner to the device frame — and those rules were a rendering the
+   public page never has. The preview is now a same-origin iframe with its own
+   viewport (`app/preview/`), so every rule below applies to it unmodified and
+   the stylesheet describes exactly one form again. */
 
 /* ── Vertical layout (config.layout = 'vertical') ─────────────────────────────
    One page, natural document flow. Deliberately NO viewport-height tricks

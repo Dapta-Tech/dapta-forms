@@ -14,6 +14,8 @@ export * from './analytics';
 export * from './milestones';
 export * from './members';
 export * from './demo-form';
+export * from './onboarding';
+export * from './templates';
 export * from './short-links';
 export * from './outbox';
 export * from './notification-settings';

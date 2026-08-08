@@ -62,6 +62,8 @@ import {
   memberPatchSchema,
   notificationSettingPatchSchema,
   memberProfileSchema,
+  onboardingCompleteSchema,
+  onboardingProgressSchema,
 } from '@quill/types';
 import { ZodError } from 'zod';
 import { AdminService } from './admin.service';
@@ -191,6 +193,93 @@ export class AdminCrudController {
       );
     }
     return { recorded: first };
+  }
+
+  // --- Onboarding (first-run wizard) ---------------------------------------
+
+  /**
+   * Record one screen's worth of onboarding progress.
+   *
+   * Called on EVERY advance, not just at the end, because a person who quits
+   * halfway is the one the funnel is actually about — and they never reach the
+   * end to be recorded. `accountId` comes from the principal, never the body.
+   *
+   * Admin-gated like every workspace-level write here: onboarding describes the
+   * WORKSPACE, so an invited member must not be able to rewrite the owner's
+   * answers. The intended caller is a brand-new account whose only member IS the
+   * owner, so the happy path is untouched.
+   *
+   * Never throws on a bad payload. This runs behind a wizard the person cannot
+   * skip; a 400 there is a dead end with no recovery, and losing one screen's
+   * telemetry is strictly better than that. An unparseable body is reported as
+   * `{ saved: false }` and the wizard carries on.
+   */
+  @Patch('account/onboarding')
+  async saveOnboarding(@Req() req: ReqLike, @Body() body: unknown) {
+    const p = await this.auth.resolveHost(req);
+    assertAdmin(p);
+    const parsed = onboardingProgressSchema.safeParse(body ?? {});
+    if (!parsed.success) return { saved: false, onboarding: null };
+    const onboarding = await this.admin.saveOnboarding(p, parsed.data);
+    return { saved: onboarding != null, onboarding };
+  }
+
+  /**
+   * Finish the wizard: claim completion and create the first form from the
+   * chosen template.
+   *
+   * `completed` is true ONLY for the caller whose claim won. A double-click or a
+   * retried request gets `completed: false` with the winner's `formId`, so both
+   * land on the same form and the account never ends up with two "first" ones.
+   * Anything counting onboarding conversions must read this flag, not infer it
+   * from a 200.
+   *
+   * A bad template id is a 400 here rather than a silent fallback: the person
+   * PICKED something, and quietly building them a different form than the one
+   * they chose is worse than telling them to pick again.
+   */
+  @Post('account/onboarding/complete')
+  async completeOnboarding(@Req() req: ReqLike, @Body() body: unknown) {
+    const p = await this.auth.resolveHost(req);
+    assertAdmin(p);
+    const parsed = onboardingCompleteSchema.safeParse(body ?? {});
+    if (!parsed.success) {
+      throw new BadRequestException({ error: 'INVALID_TEMPLATE', message: 'Unknown template.' });
+    }
+
+    const result = await this.admin.completeOnboarding(p, parsed.data);
+    if (result.completed && this.productAnalytics?.enabled) {
+      // Emitted server-side, from the CLAIM's winner, so the completion count is
+      // the count of accounts that finished — not of browsers that reached the
+      // last screen, which double-counts a retry and misses a closed tab.
+      await this.productAnalytics.captureForMember('onboarding_completed', p, {
+        template: parsed.data.template,
+        form_id: result.formId,
+      });
+      // The wizard is the THIRD way a form is born, alongside `createForm` and
+      // `duplicateForm`, and it has to announce itself the same way they do.
+      //
+      // Without this the activation funnel breaks for every account the wizard
+      // creates: `form_created` is its second stage, the funnel is `ordered`,
+      // and a stage that never fires makes every LATER stage unreachable. The
+      // account would read as "signed up, never made a form" forever — while
+      // holding a form the wizard built for it — and publishing or receiving a
+      // response would not move it. Suppressing the demo seed made the wizard
+      // the ONLY source of a first form, so this is the whole cohort, not an
+      // edge case.
+      //
+      // Guarded on `formId` because a failed create still leaves the completion
+      // claimed (see `completeOnboarding`), and announcing a form that does not
+      // exist would put a phantom into the funnel.
+      if (result.formId) {
+        await this.productAnalytics.captureForMember('form_created', p, {
+          form_id: result.formId,
+          from_onboarding: true,
+          template: parsed.data.template,
+        });
+      }
+    }
+    return result;
   }
 
   /**
