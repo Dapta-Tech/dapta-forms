@@ -35,6 +35,15 @@ ARG NEXT_PUBLIC_PLATFORM_URL=
 ENV NEXT_PUBLIC_PLATFORM_URL=$NEXT_PUBLIC_PLATFORM_URL
 ARG NEXT_PUBLIC_SIGNUP_URL=
 ENV NEXT_PUBLIC_SIGNUP_URL=$NEXT_PUBLIC_SIGNUP_URL
+# Where the badge and the post-submission CTA point. Unlike the two above this
+# one carries a real default, because it is a fact about the PRODUCT rather than
+# about a deployment: the badge reads "Made with Dapta Forms", so the page it
+# opens is Dapta Forms' own. Nothing changes for a fork — the loop stays gated on
+# NEXT_PUBLIC_SIGNUP_URL, so with that unset neither surface renders at all.
+# The `www.` is load-bearing: the apex 301s and DROPS the query string, which
+# would strip the very UTM tags the loop is built to carry.
+ARG NEXT_PUBLIC_LANDING_URL=https://www.daptaforms.ai
+ENV NEXT_PUBLIC_LANDING_URL=$NEXT_PUBLIC_LANDING_URL
 ARG NEXT_PUBLIC_HIDE_BADGE=
 ENV NEXT_PUBLIC_HIDE_BADGE=$NEXT_PUBLIC_HIDE_BADGE
 # Deployment's OWN product telemetry (PostHog) — also NEXT_PUBLIC (inlined at
@@ -64,6 +73,8 @@ ARG NEXT_PUBLIC_PLATFORM_URL=
 ENV NEXT_PUBLIC_PLATFORM_URL=$NEXT_PUBLIC_PLATFORM_URL
 ARG NEXT_PUBLIC_SIGNUP_URL=
 ENV NEXT_PUBLIC_SIGNUP_URL=$NEXT_PUBLIC_SIGNUP_URL
+ARG NEXT_PUBLIC_LANDING_URL=https://www.daptaforms.ai
+ENV NEXT_PUBLIC_LANDING_URL=$NEXT_PUBLIC_LANDING_URL
 ARG NEXT_PUBLIC_HIDE_BADGE=
 ENV NEXT_PUBLIC_HIDE_BADGE=$NEXT_PUBLIC_HIDE_BADGE
 ARG NEXT_PUBLIC_PRODUCT_ANALYTICS_KEY=

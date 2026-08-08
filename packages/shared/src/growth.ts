@@ -45,6 +45,32 @@ export function buildSignupUrl(opts: {
 }
 
 /**
+ * Where the growth loop actually sends someone, given both configured URLs.
+ *
+ * Two different questions, deliberately kept apart:
+ *  - **Is the loop on?** Answered by `signupUrl` alone. Unset → null → no badge
+ *    and no CTA. That is the open-core opt-in and it does not move: a bare fork
+ *    still carries no Dapta branding and no dead link.
+ *  - **Where does it point?** `landingUrl` when the deployment has one,
+ *    `signupUrl` otherwise.
+ *
+ * They were the same value once, and that was the bug: both surfaces greet a
+ * STRANGER — the badge says "Made with Dapta Forms", the CTA asks "Want your
+ * own form?" — and both were dropping that person on the app's login screen for
+ * a product they had never heard of. A landing page is written for exactly that
+ * reader; a login screen is written for someone who already decided.
+ */
+export function growthTarget(opts: {
+  signupUrl?: string | null;
+  landingUrl?: string | null;
+}): string | null {
+  const signup = (opts.signupUrl ?? '').trim();
+  if (!/^https?:\/\/\S+$/i.test(signup)) return null;
+  const landing = (opts.landingUrl ?? '').trim();
+  return /^https?:\/\/\S+$/i.test(landing) ? landing : signup;
+}
+
+/**
  * Parse the badge kill-switch (NEXT_PUBLIC_HIDE_BADGE). Truthy spellings
  * ("1", "true", "yes", any case) hide it; everything else keeps it on —
  * shown-by-default is the open-core contract.
