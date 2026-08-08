@@ -755,7 +755,7 @@ function LogicCard({
             // surfaces agree on how many rules there are.
             <span
               data-testid="question-logic-count"
-              className="rounded-sm bg-secondary/15 px-1.5 py-0.5 text-[10px] font-semibold normal-case tracking-normal text-secondary"
+              className="rounded-sm bg-secondary/15 px-1.5 py-0.5 text-2xs font-semibold normal-case tracking-normal text-secondary"
             >
               {count === 1 ? bm.badges.ruleOne : tb(bm.badges.rules, { n: count })}
             </span>
@@ -778,9 +778,9 @@ function LogicCard({
           {bookingLabel ? (
             <p
               data-testid="question-logic-booking"
-              className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 text-[11px] leading-relaxed"
+              className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 text-xs leading-relaxed"
             >
-              <span className="shrink-0 rounded bg-secondary/15 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-secondary">
+              <span className="shrink-0 rounded-sm bg-secondary/15 px-1.5 py-0.5 text-2xs font-bold uppercase tracking-wide text-secondary">
                 {bm.settings.schedulerAfter}
               </span>
               <span className="font-medium text-foreground">{bookingLabel}</span>
@@ -799,7 +799,7 @@ function LogicCard({
               <p
                 key={i}
                 data-testid="question-logic-goto"
-                className="flex items-start gap-1.5 text-[11px] leading-relaxed text-foreground"
+                className="flex items-start gap-1.5 text-xs leading-relaxed text-foreground"
               >
                 <i aria-hidden className="pi pi-directions mt-0.5 shrink-0 text-secondary" style={{ fontSize: 10 }} />
                 <span className="min-w-0 break-words">
@@ -881,10 +881,10 @@ function ConditionSentence({
   return (
     <p
       data-testid={`question-logic-${kind}`}
-      className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 text-[11px] leading-relaxed"
+      className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 text-xs leading-relaxed"
     >
       <span
-        className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
+        className={`shrink-0 rounded-sm px-1.5 py-0.5 text-2xs font-bold uppercase tracking-wide ${
           show ? 'bg-secondary/15 text-secondary' : 'bg-destructive/15 text-destructive'
         }`}
       >
@@ -896,7 +896,7 @@ function ConditionSentence({
       {d.dangling ? (
         <span
           data-testid="question-logic-dangling"
-          className="rounded bg-destructive/15 px-1.5 py-0.5 text-[10px] font-semibold text-destructive"
+          className="rounded-sm bg-destructive/15 px-1.5 py-0.5 text-2xs font-semibold text-destructive"
         >
           {bm.map.condMissingField}
         </span>

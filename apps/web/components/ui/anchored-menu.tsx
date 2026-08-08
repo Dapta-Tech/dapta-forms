@@ -266,7 +266,7 @@ export function AnchoredMenu({
         // `fixed` means no ancestor scroll can ever bring an overflowing panel
         // back — whatever does not fit has to scroll in place. Inline so it
         // wins over an `overflow-hidden` in the caller's className, which stays
-        // in force on the x axis and keeps the rounded-sm corners clipping.
+        // in force on the x axis and keeps the rounded corners clipping.
         overflowY: 'auto',
         // The first paint measures the panel to decide top/left; showing it at
         // 0,0 for that frame would read as a flicker in the corner.

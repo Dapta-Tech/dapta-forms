@@ -30,7 +30,16 @@
  * landing's runtime tweaks contract). Never hardcode the lime.
  */
 
-:root {
+/* `:root` AND `[data-theme='dark']`, one declaration, no second copy.
+   The selector list is what makes the dark palette re-establishable on a SUBTREE
+   rather than only on the document: `:root` alone means a nested
+   `data-theme="dark"` element inherits whatever the root resolved to, so there is
+   no way to say "this region is dark" inside a light document. The public form
+   needs exactly that — see `formDesignProps`, which pins an unbranded form to the
+   product default so the builder's preview shows what a respondent sees rather
+   than what the AUTHOR happens to have picked for their own dashboard. */
+:root,
+[data-theme='dark'] {
   /* Accent channels — retune the lime here, never at a call site. */
   --acc-h: 68;
   --acc-s: 76%;

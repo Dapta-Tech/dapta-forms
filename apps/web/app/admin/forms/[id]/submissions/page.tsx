@@ -159,7 +159,7 @@ async function SubmissionsData({
                     >
                       <span
                         aria-hidden
-                        className={`h-1.5 w-1.5 rounded-full ${completed ? 'bg-primary' : 'bg-secondary'}`}
+                        className={`h-1.5 w-1.5 rounded-full ${completed ? 'bg-primary-edge' : 'bg-secondary'}`}
                       />
                       {completed ? m.submissions.badgeCompleted : m.submissions.badgePartial}
                     </span>

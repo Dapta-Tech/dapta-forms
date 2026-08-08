@@ -27,7 +27,10 @@
    would hide the very thing the copy is pointing at. */
 .bt__ring {
   position: fixed;
-  border: 2px solid var(--primary);
+  /* The accent as a LINE → `--primary-edge`. This ring is the ONLY thing pointing
+     at the control the coach mark is talking about, and at the raw accent it
+     vanished on the light theme — leaving a caption anchored to nothing. */
+  border: 2px solid var(--primary-edge);
   border-radius: calc(var(--radius) + 2px);
   box-shadow: 0 0 0 9999px color-mix(in oklab, var(--background) 55%, transparent);
   transition:

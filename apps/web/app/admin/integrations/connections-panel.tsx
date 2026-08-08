@@ -239,7 +239,7 @@ function GoogleSheetsCard({ m }: { m: Msgs }) {
             <p className="mt-0.5 text-sm text-muted-foreground">{m.gsheetsDesc}</p>
           </div>
         </div>
-        <span className="shrink-0 rounded border border-border bg-muted px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-faint">
+        <span className="shrink-0 rounded-sm border border-border bg-muted px-1.5 py-0.5 text-2xs font-medium uppercase tracking-wide text-faint">
           {m.comingSoon}
         </span>
       </header>

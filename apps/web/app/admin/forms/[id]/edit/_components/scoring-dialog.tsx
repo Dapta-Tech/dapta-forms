@@ -202,7 +202,7 @@ function PointsCard({
             slider that is question 5 reads "5" (not its filtered index). */}
         <span
           data-testid="points-question-number"
-          className="inline-flex h-5 min-w-[1.25rem] shrink-0 items-center justify-center rounded bg-muted px-1 text-xs font-bold tabular-nums text-muted-foreground"
+          className="inline-flex h-5 min-w-[1.25rem] shrink-0 items-center justify-center rounded-sm bg-muted px-1 text-xs font-bold tabular-nums text-muted-foreground"
         >
           {index + 1}
         </span>
@@ -212,7 +212,7 @@ function PointsCard({
             the rows that produce it rather than being a number to take on faith. */}
         <span
           data-testid="points-card-max"
-          className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-muted-foreground"
+          className="shrink-0 rounded-sm bg-muted px-1.5 py-0.5 text-2xs font-semibold tabular-nums text-muted-foreground"
         >
           {tb(bm.scoring.stepMax, { n: maxStepPoints(step) })}
         </span>
@@ -262,7 +262,7 @@ function PointsCard({
               </div>
             </div>
           ))}
-          <p className="text-[11px] leading-relaxed text-muted-foreground">{em.options.pointsHint}</p>
+          <p className="text-xs leading-relaxed text-muted-foreground">{em.options.pointsHint}</p>
         </div>
       )}
     </div>

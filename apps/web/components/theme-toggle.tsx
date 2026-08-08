@@ -3,16 +3,9 @@
 import { useTransition } from 'react';
 import type { FormsMessages } from '@quill/shared';
 import { setThemeAction } from '@/app/admin/theme-actions';
-import { THEME_PREFS, type ThemePref } from '@/lib/theme';
+import { THEME_ICON, THEME_PREFS, type ThemePref } from '@/lib/theme';
 
 type ThemeMessages = FormsMessages['admin']['chrome']['theme'];
-
-/** PrimeIcons — the app's icon set everywhere else in the shell. */
-const PI_BY_PREF: Record<ThemePref, string> = {
-  system: 'pi-desktop',
-  light: 'pi-sun',
-  dark: 'pi-moon',
-};
 
 /**
  * The colour-scheme toggle: one icon button that cycles system → light → dark.
@@ -45,7 +38,7 @@ export function ThemeToggle({ pref, m }: { pref: ThemePref; m: ThemeMessages }) 
       onClick={() => start(() => void setThemeAction(next))}
       className="flex h-11 w-11 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground active:scale-[0.98] disabled:opacity-60"
     >
-      <i aria-hidden className={`pi ${PI_BY_PREF[pref]}`} style={{ fontSize: 16 }} />
+      <i aria-hidden className={`pi ${THEME_ICON[pref]}`} style={{ fontSize: 16 }} />
     </button>
   );
 }

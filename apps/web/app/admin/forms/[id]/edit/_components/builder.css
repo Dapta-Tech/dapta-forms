@@ -1,12 +1,18 @@
 /* Builder-only chrome. The Typeform-style dashed focus underline on the inline
-   canvas title, and a caret color that reads on the dark canvas. Tokens only. */
+   canvas title, and a caret color that reads on the canvas. Tokens only.
+
+   `--primary-edge`, not `--primary`: both of these are the accent used as a LINE,
+   which is the one job the raw token cannot do — on the light theme it measures
+   1.27:1 against the canvas, so the caret marking where you are typing and the
+   underline marking that the title has focus were both invisible. Same rule the
+   `.tsx` call sites follow; this file was written before it existed. */
 .canvas-title {
   border-bottom: 2px dashed transparent;
-  caret-color: var(--primary);
+  caret-color: var(--primary-edge);
   transition: border-color 0.12s ease;
 }
 .canvas-title:focus {
-  border-bottom-color: var(--primary);
+  border-bottom-color: var(--primary-edge);
 }
 
 /* Reveal-card preview — the same spinner + filling bar the respondent sees

@@ -23,6 +23,18 @@ export type ThemePref = 'dark' | 'light' | 'system';
 /** Cycle order for the toggle. */
 export const THEME_PREFS: readonly ThemePref[] = ['system', 'light', 'dark'];
 
+/**
+ * The PrimeIcon naming each preference. Here rather than in a component because
+ * two of them render it — the sidebar's cycle button and the Settings picker —
+ * and they had byte-identical copies, so a fourth preference meant remembering to
+ * edit both.
+ */
+export const THEME_ICON: Record<ThemePref, string> = {
+  system: 'pi-desktop',
+  light: 'pi-sun',
+  dark: 'pi-moon',
+};
+
 export function isThemePref(value: string | undefined): value is ThemePref {
   return value === 'dark' || value === 'light' || value === 'system';
 }

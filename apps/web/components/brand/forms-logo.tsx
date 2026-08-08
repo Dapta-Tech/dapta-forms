@@ -4,7 +4,7 @@ import type { SVGProps } from 'react';
  * The Dapta Forms marks.
  *
  * A custom logotype, not a typeface: heavy italic geometric letterforms with
- * softly rounded-sm outer terminals and a hooked foot where a stem lands on the
+ * softly rounded outer terminals and a hooked foot where a stem lands on the
  * baseline. The F carries the two lime arms; the full stop is the lime square
  * the family uses, matching Orbit's.
  *

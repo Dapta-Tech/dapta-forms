@@ -120,6 +120,13 @@ export function CanvasQuestion({
   // These drifted (card soft showed 20px against the renderer's 16, button soft
   // 16px against 8) — a preview that rounds differently than the page is the one
   // thing this component exists to prevent.
+  //
+  // The same holds for this file's `text-[Npx]` values, and for the same reason:
+  // 15px body, 28px headline, 26px reveal title and the 23px emoji are the
+  // RENDERER's sizes (grep `font-size` in `public-form.css` — 15px appears nine
+  // times), not the admin's. A sweep that pulls them onto the chrome's pinned
+  // ladder makes the canvas lie about the published page. They are deliberately
+  // off-ladder; leave them there.
   const cardRadius =
     design.radius === 'sharp' ? 'rounded-[2px]' : design.radius === 'round' ? 'rounded-[24px]' : 'rounded-[16px]';
   const btnRadius =

@@ -543,7 +543,7 @@ export function FormEditor({
           ? bm.shell.saved
           : bm.shell.draft;
   const statusDot =
-    status === 'error' ? 'bg-destructive' : status === 'saving' ? 'bg-muted-foreground' : 'bg-primary';
+    status === 'error' ? 'bg-destructive' : status === 'saving' ? 'bg-muted-foreground' : 'bg-primary-edge';
 
   return (
     <div className="flex h-[100dvh] flex-col overflow-hidden bg-background">

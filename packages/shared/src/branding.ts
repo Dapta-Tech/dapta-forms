@@ -297,6 +297,17 @@ export function formThemeVars(colors: FormThemeColors): Record<string, string> {
     // renderer's own decision rather than an override of the author's — nobody
     // picks the color of button text.
     vars['--pf-primary-contrast'] = onAccent(raw);
+    // The accent as a LINE — the focus ring, a selected outline — is the same
+    // category as the label above, for the same reason: nobody picks the colour
+    // of a focus indicator, and an outline that cannot be seen against the page
+    // is not a brand decision, it is a missing indicator (WCAG 1.4.11).
+    //
+    // `clampAccent` leaves an accent that already clears 3:1 completely alone, so
+    // an author whose colour reads keeps their exact hex here too — it only moves
+    // the ones that would have been invisible, and only as far as legibility.
+    // Measured against the form's OWN ground when the author fixed one, because a
+    // colour that reads on paper can vanish on their dark canvas and vice versa.
+    vars['--pf-primary-edge'] = clampAccent(raw, background ?? undefined);
     vars['--ring'] = `color-mix(in srgb, ${raw} 45%, transparent)`;
   }
 

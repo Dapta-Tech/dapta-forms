@@ -178,7 +178,7 @@ function StepBlock({
         <span
           data-testid="branching-step-number"
           className={cn(
-            'inline-flex h-6 min-w-[1.5rem] shrink-0 items-center justify-center rounded px-1 text-xs font-bold tabular-nums',
+            'inline-flex h-6 min-w-[1.5rem] shrink-0 items-center justify-center rounded-sm px-1 text-xs font-bold tabular-nums',
             rules > 0 ? 'bg-secondary/15 text-secondary' : 'bg-muted text-muted-foreground',
           )}
         >
@@ -187,12 +187,12 @@ function StepBlock({
         <i aria-hidden className={`pi ${iconForStep(step)} shrink-0 text-muted-foreground`} style={{ fontSize: 12 }} />
         <span className="min-w-0 flex-1 truncate text-sm font-semibold text-foreground">{title}</span>
         {step.hidden ? (
-          <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-faint">
+          <span className="shrink-0 rounded-sm bg-muted px-1.5 py-0.5 text-2xs font-semibold uppercase tracking-wide text-faint">
             {bm.badges.hidden}
           </span>
         ) : null}
         {rules > 0 ? (
-          <span className="inline-flex shrink-0 items-center gap-1 rounded-md border border-secondary/40 bg-secondary/10 px-1.5 py-0.5 text-[11px] font-semibold text-secondary">
+          <span className="inline-flex shrink-0 items-center gap-1 rounded-md border border-secondary/40 bg-secondary/10 px-1.5 py-0.5 text-xs font-semibold text-secondary">
             <i aria-hidden className="pi pi-directions" style={{ fontSize: 9 }} />
             {rules === 1 ? bm.badges.ruleOne : tb(bm.badges.rules, { n: rules })}
           </span>
@@ -204,7 +204,7 @@ function StepBlock({
           {never ? (
             <p
               data-testid="branching-never-appears"
-              className="flex items-start gap-1.5 rounded-md bg-destructive/10 px-2 py-1 text-[11px] font-medium leading-relaxed text-destructive"
+              className="flex items-start gap-1.5 rounded-md bg-destructive/10 px-2 py-1 text-xs font-medium leading-relaxed text-destructive"
             >
               <i aria-hidden className="pi pi-exclamation-triangle mt-0.5 shrink-0" style={{ fontSize: 10 }} />
               {bm.map.neverAppears}

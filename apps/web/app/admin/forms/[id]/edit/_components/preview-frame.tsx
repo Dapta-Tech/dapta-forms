@@ -229,7 +229,7 @@ export function PreviewFrame({
             /* One page has no screens to step through, and an empty slides
                form has nothing to count ("Step 1 of 0") — the note gets the
                space the nav cluster would have used. */
-            <p className="truncate text-[11px] text-muted-foreground">{m.inert}</p>
+            <p className="truncate text-xs text-muted-foreground">{m.inert}</p>
           ) : (
             <>
               <button
@@ -296,7 +296,7 @@ export function PreviewFrame({
             title={viewportLabel}
             aria-label={viewportLabel}
             data-testid="preview-viewport"
-            className="inline-flex h-8 shrink-0 items-center whitespace-nowrap font-mono text-[10px] tabular-nums text-muted-foreground/70"
+            className="inline-flex h-8 shrink-0 items-center whitespace-nowrap font-mono text-2xs tabular-nums text-muted-foreground/70"
           >
             {width} × {height}
             {percent < 100 ? ` · ${percent}%` : ''}

@@ -34,10 +34,12 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
   // the viewer's persisted choice, resolved on the server so the first response
   // already carries it — see lib/theme.ts for why that matters.
   //
-  // This reaches PUBLIC FORM pages too, which is the behaviour the renderer was
-  // built for: `formDesignProps` returns `themeMode: null` for a form whose author
-  // fixed no background, meaning "inherit the viewer's preference". A form that
-  // DID choose colours pins them inline and is unaffected either way.
+  // This is ADMIN chrome only, despite being the root. A public form does not
+  // take the scheme from here: `formDesignProps` pins an unbranded form to the
+  // product default and a branded one to its own colours, precisely so the
+  // builder's preview cannot show the author's dashboard preference and call it
+  // the published page. Read that comment before widening this one — "the viewer's
+  // preference" is not what a respondent gets, because a respondent has no cookie.
   const theme = themeAttribute(await getThemePref());
   return (
     // Every curated face is declared here so a public form can switch typeface

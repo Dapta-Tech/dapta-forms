@@ -58,7 +58,7 @@ export function LogicMap({ config, m }: { config: FormConfig; m: BuilderMessages
             A plain dot marks the entry point without promising an action. */}
         <div className="flex flex-col items-center" data-testid="logic-start">
           <span className="inline-flex items-center gap-2 rounded-full border border-primary-edge/40 bg-primary/[0.08] px-4 py-2 shadow-sm">
-            <span aria-hidden className="inline-block h-2 w-2 shrink-0 rounded-full bg-primary" />
+            <span aria-hidden className="inline-block h-2 w-2 shrink-0 rounded-full bg-primary-edge" />
             <span className="text-sm font-semibold uppercase tracking-wide text-primary">{m.map.start}</span>
           </span>
           <span className="mt-1.5 text-xs text-muted-foreground">{m.map.startHint}</span>
@@ -292,7 +292,7 @@ function OutcomeNode({ outcome, m }: { outcome: FormOutcome; m: BuilderMessages 
       data-testid="logic-outcome"
       className="relative w-full overflow-hidden rounded-xl border border-primary-edge/50 bg-primary/[0.06] px-3.5 py-3 shadow-sm"
     >
-      <span aria-hidden className="absolute inset-y-0 left-0 w-1 bg-primary/70" />
+      <span aria-hidden className="absolute inset-y-0 left-0 w-1 bg-primary-edge" />
       <div className="flex items-center gap-3">
         <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/20">
           <i

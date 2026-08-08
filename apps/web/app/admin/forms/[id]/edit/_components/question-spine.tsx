@@ -155,7 +155,7 @@ export function QuestionSpine({
                   )}
                 >
                   {active ? (
-                    <span aria-hidden className="absolute inset-y-1.5 left-0 w-1 rounded-full bg-primary" />
+                    <span aria-hidden className="absolute inset-y-1.5 left-0 w-1 rounded-full bg-primary-edge" />
                   ) : null}
                   <button
                     type="button"

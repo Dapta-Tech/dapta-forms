@@ -18,6 +18,12 @@
   /* Accent defaults to the theme primary; branding.primaryColor overrides inline. */
   --pf-primary: var(--primary);
   --pf-primary-contrast: var(--primary-foreground);
+  /* The accent as a LINE. Separate from the fill because a colour bright enough
+     to BE a button is rarely legible as a 2px outline on the same page: the raw
+     accent measures 1.27:1 on paper, which made every focus stop on this surface
+     an indicator nobody could see. `formThemeVars` overrides this with the
+     author's own colour, clamped only when it would have been invisible. */
+  --pf-primary-edge: var(--primary-edge);
 
   /* Radii are OWNED here rather than derived from the app's `--radius`.
      They used to be `calc(var(--radius) * 2)` / `var(--radius)`, which silently
@@ -36,6 +42,13 @@
      their historical values, so no form that chose it changes. */
   --pf-radius-chip: 6px; /* small controls: option rows, chips, checkmarks */
   --pf-radius-pill: 999px; /* rails & badges: progress tracks, eyebrow badges */
+  /* The client-logo tile is its own role because it is its own SIZE class: a
+     46px-tall plate, not a 6px-cornered option row. It was a literal 10px, and
+     folding it into `--pf-radius-chip` re-cornered it to 6 for every already
+     published `soft` form — which is exactly the change the paragraph above
+     promises does not happen. So it keeps its historical 10px and still tracks
+     the axis through the two blocks at the end of this file. */
+  --pf-radius-logo: 10px; /* client-logo plates */
   --pf-gap: 12px;
   --pf-ease: cubic-bezier(0.22, 1, 0.36, 1);
 
@@ -56,7 +69,7 @@
 /* Scrollbars are themed globally (globals.css, tokens); no native track appears.
    Lime focus ring, everywhere on this surface. */
 .pf :focus-visible {
-  outline: 2px solid var(--pf-primary);
+  outline: 2px solid var(--pf-primary-edge);
   outline-offset: 2px;
 }
 
@@ -1001,7 +1014,7 @@
   justify-content: center;
   background: var(--muted);
   border: 1px solid var(--border);
-  border-radius: var(--pf-radius-chip);
+  border-radius: var(--pf-radius-logo);
   padding: 8px 16px;
   height: 46px;
   min-width: 88px;
@@ -1292,6 +1305,7 @@
   --pf-radius-btn: 2px;
   --pf-radius-chip: 2px;
   --pf-radius-pill: 2px;
+  --pf-radius-logo: 2px;
 }
 .pf[data-pf-radius='soft'] {
   --pf-radius-btn: var(--pf-radius-sm);
@@ -1300,6 +1314,12 @@
   --pf-radius: 24px;
   --pf-radius-sm: 14px;
   --pf-radius-btn: 999px;
+  /* Both of these were missing, so a `round` form rendered 14px option rows
+     containing 6px checkmark boxes and 10px logo plates — the same "buttons hard,
+     progress bar a lozenge" inconsistency the roles were introduced to end, just
+     pointing the other way. */
+  --pf-radius-chip: 10px;
+  --pf-radius-logo: 16px;
 }
 .pf__btn {
   border-radius: var(--pf-radius-btn, var(--pf-radius-sm));

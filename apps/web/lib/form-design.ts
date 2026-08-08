@@ -57,6 +57,25 @@ export function formDesignProps(branding: FormBranding | null | undefined): Form
 
   const attrs = designAttributes(design);
   if (themeMode) attrs['data-pf-theme'] = themeMode;
+  else {
+    // The form fixed no colours, so it takes the PRODUCT default rather than the
+    // current document's scheme.
+    //
+    // The root layout stamps `data-theme` from the viewer's cookie on every route,
+    // and the note there reads that as "an unbranded form inherits the viewer's
+    // preference". A respondent has no such cookie — `getThemePref` falls back to
+    // `'dark'`, not to `'system'` — so in practice every respondent already saw
+    // dark. The only person whose cookie ever applied was the AUTHOR, inside their
+    // own builder: pick Light in the sidebar and the preview showed the form on
+    // paper while every visitor got it dark. That is the preview lying about the
+    // published page, which is the one thing it exists not to do.
+    //
+    // Pinning it here rather than at the route keeps the rule where the answer
+    // already lives — `themeMode` is exactly "did the author decide this?" — and
+    // covers the preview iframe, the real public page and the profile page in one
+    // place. A branded form is untouched: it pins its own colours inline.
+    attrs['data-theme'] = 'dark';
+  }
 
   return {
     style,

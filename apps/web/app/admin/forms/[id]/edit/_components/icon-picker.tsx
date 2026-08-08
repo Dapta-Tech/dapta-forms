@@ -107,7 +107,7 @@ export function IconPicker({
             logo does not — same reasoning as the card icon. */}
         <span
           className={cn(
-            'flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden text-[13px] leading-none',
+            'flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden text-sm leading-none',
             showImagePreview ? '' : 'rounded-md bg-muted',
           )}
         >

@@ -240,7 +240,7 @@ export function LogicCanvas({
                       x={(a.x + b.x) / 2}
                       y={(a.y + b.y) / 2 - 6}
                       textAnchor="middle"
-                      className="fill-secondary text-[10px] font-semibold"
+                      className="fill-secondary text-2xs font-semibold"
                     >
                       {label}
                     </text>
@@ -303,7 +303,7 @@ export function LogicCanvas({
           <i aria-hidden className="pi pi-sparkles" style={{ fontSize: 11 }} />
           {m.map.autoArrange}
         </button>
-        <span className="ml-auto text-[11px] text-muted-foreground">{m.map.dragHint}</span>
+        <span className="ml-auto text-xs text-muted-foreground">{m.map.dragHint}</span>
       </div>
     </div>
   );
@@ -340,7 +340,7 @@ function StartNode({ label }: { label: string }) {
       data-testid="logic-start"
       className="inline-flex h-full items-center gap-2 rounded-full border border-primary-edge/40 bg-primary/[0.08] px-4"
     >
-      <span aria-hidden className="inline-block h-2 w-2 shrink-0 rounded-full bg-primary" />
+      <span aria-hidden className="inline-block h-2 w-2 shrink-0 rounded-full bg-primary-edge" />
       <span className="text-xs font-semibold uppercase tracking-wide text-primary">{label}</span>
     </span>
   );
@@ -397,13 +397,19 @@ function StepNode({
       className={cn(
         'group relative flex h-full w-full select-none flex-col justify-center gap-0.5 rounded-xl border bg-card px-3 shadow-sm',
         broken ? 'border-destructive/60' : rules > 0 ? 'border-secondary/50' : 'border-border',
-        node.pinned && 'ring-1 ring-secondary/40',
+        // Full alpha, not `/40`. `--secondary` was a saturated purple when this
+        // was written, where 40% still read as a distinct ring; on this branch it
+        // became slate, and slate at 40% over the card lands under 1.5:1 against
+        // the hairline beside it — pinning a node produced no visible change at
+        // all. Slate rather than the accent is right: pinned is a structural fact
+        // about the layout, not a selection, and the accent is spoken for.
+        node.pinned && 'ring-1 ring-secondary',
       )}
     >
       <div className="flex items-center gap-2">
         <span
           className={cn(
-            'inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold tabular-nums',
+            'inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-bold tabular-nums',
             rules > 0 ? 'bg-secondary/15 text-secondary' : 'bg-muted text-muted-foreground',
           )}
         >
@@ -416,7 +422,7 @@ function StepNode({
         {step.hidden ? (
           <span
             data-testid="logic-hidden-badge"
-            className="shrink-0 rounded bg-muted px-1 py-0.5 text-[9px] font-semibold uppercase text-muted-foreground"
+            className="shrink-0 rounded-sm bg-muted px-1 py-0.5 text-2xs font-semibold uppercase text-muted-foreground"
           >
             {m.badges.hidden}
           </span>
@@ -430,7 +436,7 @@ function StepNode({
       {broken ? (
         <span
           data-testid="logic-never-appears"
-          className="truncate text-[10px] font-medium text-destructive"
+          className="truncate text-2xs font-medium text-destructive"
         >
           {m.map.neverAppears}
         </span>
@@ -494,7 +500,7 @@ function ConditionLine({ step, steps, m }: { step: FormStep; steps: FormStep[]; 
   return (
     <span
       data-testid={`logic-cond-${show ? 'show' : 'hide'}`}
-      className="truncate text-[10px] leading-tight text-muted-foreground"
+      className="truncate text-2xs leading-tight text-muted-foreground"
     >
       <span className={cn('font-semibold', show ? 'text-secondary' : 'text-destructive')}>
         {show ? m.map.condShowIf : m.map.condHideIf}
@@ -523,7 +529,13 @@ function OutcomeNode({
       data-testid="logic-outcome"
       className={cn(
         'group flex h-full w-full select-none flex-col justify-center gap-0.5 rounded-xl border border-primary-edge/50 bg-primary/[0.06] px-3 shadow-sm',
-        node.pinned && 'ring-1 ring-secondary/40',
+        // Full alpha, not `/40`. `--secondary` was a saturated purple when this
+        // was written, where 40% still read as a distinct ring; on this branch it
+        // became slate, and slate at 40% over the card lands under 1.5:1 against
+        // the hairline beside it — pinning a node produced no visible change at
+        // all. Slate rather than the accent is right: pinned is a structural fact
+        // about the layout, not a selection, and the accent is spoken for.
+        node.pinned && 'ring-1 ring-secondary',
       )}
     >
       <div className="flex items-center gap-2">
@@ -537,12 +549,12 @@ function OutcomeNode({
             {outcome.label || m.map.outcomeKicker}
           </span>
         ) : null}
-        <span className="shrink-0 rounded bg-primary/15 px-1 py-0.5 text-[9px] font-bold tabular-nums text-primary">
+        <span className="shrink-0 rounded-sm bg-primary/15 px-1 py-0.5 text-2xs font-bold tabular-nums text-primary">
           {outcome.minScore ?? 0}+
         </span>
       </div>
       {zoom >= LOD_DETAIL && redirects ? (
-        <span className="truncate text-[10px] text-muted-foreground">
+        <span className="truncate text-2xs text-muted-foreground">
           {tb(m.map.redirect, { url: (outcome.redirectUrl ?? '').replace(/^https?:\/\//, '') })}
         </span>
       ) : null}
