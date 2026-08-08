@@ -77,7 +77,7 @@ export function WorkspaceSwitcher({
       >
         <span
           aria-hidden
-          className="flex h-5 w-5 shrink-0 items-center justify-center rounded bg-primary/15 text-[10px] font-semibold text-foreground"
+          className="flex h-5 w-5 shrink-0 items-center justify-center rounded-sm bg-primary/15 text-2xs font-semibold text-foreground"
         >
           {label.slice(0, 1).toUpperCase()}
         </span>
@@ -108,7 +108,7 @@ export function WorkspaceSwitcher({
         className="flex flex-col overflow-hidden py-1"
         testId="workspace-switcher-menu"
       >
-        <p className="px-2.5 py-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+        <p className="px-2.5 py-1 text-2xs font-medium uppercase tracking-wide text-faint">
           {m.eyebrow}
         </p>
         {workspaces.map((w) => {
@@ -131,7 +131,7 @@ export function WorkspaceSwitcher({
                   difference between "why are there two?" and "ah, that one is
                   waiting for me." */}
               {w.status === 'invited' ? (
-                <span className="shrink-0 rounded-sm bg-secondary/15 px-1.5 py-0.5 text-[10px] font-medium text-secondary">
+                <span className="shrink-0 rounded-sm bg-secondary/15 px-1.5 py-0.5 text-2xs font-medium text-secondary">
                   {m.invited}
                 </span>
               ) : null}

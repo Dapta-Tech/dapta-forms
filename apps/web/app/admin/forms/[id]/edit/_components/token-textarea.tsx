@@ -381,6 +381,11 @@ export function TokenTextarea({
                 data-kind={s.kind}
                 style={{ boxDecorationBreak: 'clone', WebkitBoxDecorationBreak: 'clone' }}
                 className={cn(
+                  // Below the radius ladder's 6px floor on purpose. This is an
+                  // inline highlight sitting on a 20px line, not a box on the
+                  // page: at `rounded-sm` the corners eat into the glyphs and the
+                  // chip reads as a pill interrupting the sentence instead of a
+                  // mark on top of it. The ladder governs surfaces, not text runs.
                   'rounded-[3px]',
                   s.kind === 'valid' ? 'bg-primary/20 text-primary' : 'bg-destructive/15 text-destructive',
                 )}
@@ -434,7 +439,7 @@ export function TokenTextarea({
           onMouseDown={(e) => e.preventDefault()} // keep textarea focus through option clicks
           className="absolute left-0 right-0 top-full z-50 mt-1 flex flex-col overflow-hidden rounded-md border border-border bg-popover text-popover-foreground shadow-lg"
         >
-          <p className="border-b border-border px-2.5 py-1.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+          <p className="border-b border-border px-2.5 py-1.5 text-2xs font-medium uppercase tracking-wide text-faint">
             {m.pickerLabel}
           </p>
           <ul ref={listRef} role="listbox" id={listId} aria-label={m.pickerLabel} className="max-h-56 overflow-y-auto p-1">
@@ -450,12 +455,17 @@ export function TokenTextarea({
                   onMouseEnter={() => setActive(i)}
                   className={cn(
                     'flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left',
-                    i === activeIdx ? 'bg-muted' : 'hover:bg-muted',
+                    // The keyboard cursor, marked like every other one (see
+                    // `ui/select.tsx`): the wash alone could not say which token
+                    // Enter would insert.
+                    i === activeIdx
+                      ? 'bg-muted shadow-[inset_0_0_0_1px_var(--primary-edge)]'
+                      : 'hover:bg-muted',
                   )}
                 >
                   <i aria-hidden className={`pi ${t.icon} shrink-0 text-muted-foreground`} style={{ fontSize: 11 }} />
                   <span className="min-w-0 flex-1 truncate text-xs text-foreground">{t.label}</span>
-                  <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+                  <span className="shrink-0 rounded-sm bg-muted px-1.5 py-0.5 font-mono text-2xs text-faint">
                     {t.key}
                   </span>
                 </button>
@@ -472,7 +482,7 @@ export function TokenTextarea({
       </div>
 
       {hint && tokens.length > 0 ? (
-        <p data-testid="token-hint" className="mt-1 flex items-center gap-1.5 text-[11px] text-muted-foreground/80">
+        <p data-testid="token-hint" className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground/80">
           <i aria-hidden className="pi pi-at" style={{ fontSize: 10 }} />
           {hint}
         </p>
@@ -485,7 +495,7 @@ export function TokenTextarea({
           data-testid="token-warning"
           data-kind={w.kind}
           data-form={w.form}
-          className="mt-1 flex items-start gap-1.5 rounded-md bg-destructive/10 px-2 py-1 text-[11px] leading-relaxed text-destructive"
+          className="mt-1 flex items-start gap-1.5 rounded-md bg-destructive/10 px-2 py-1 text-xs leading-relaxed text-destructive"
         >
           <i aria-hidden className="pi pi-exclamation-triangle mt-0.5 shrink-0" style={{ fontSize: 10 }} />
           <span>

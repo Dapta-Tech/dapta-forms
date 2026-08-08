@@ -112,7 +112,7 @@ export function BrandKitPanel({
     <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,40%)]">
       <div className="flex min-w-0 flex-col gap-4">
         {!canEdit ? (
-          <p className="rounded-md border border-border bg-card px-4 py-3 text-sm text-muted-foreground">
+          <p className="rounded-xl border border-border bg-card px-4 py-3 text-sm text-muted-foreground">
             {bk.adminOnly}
           </p>
         ) : null}
@@ -167,7 +167,7 @@ export function BrandKitPanel({
               type="button"
               disabled={disabled || clientLogos.length >= 24}
               onClick={() => patch({ clientLogos: [...clientLogos, { name: '' }] })}
-              className="self-start rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:border-primary"
+              className="self-start rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:border-primary-edge"
               data-testid="brand-client-logo-add"
             >
               {bk.clientLogosAdd}
@@ -380,7 +380,7 @@ export function BrandKitPanel({
                     <span className="min-w-0 flex-1 truncate text-sm">{f.name}</span>
                     {applied[f.id] ? (
                       <>
-                        <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">
+                        <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
                           {bk.appliedBadge}
                         </span>
                         <button

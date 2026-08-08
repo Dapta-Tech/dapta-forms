@@ -543,7 +543,7 @@ export function FormEditor({
           ? bm.shell.saved
           : bm.shell.draft;
   const statusDot =
-    status === 'error' ? 'bg-destructive' : status === 'saving' ? 'bg-muted-foreground' : 'bg-primary';
+    status === 'error' ? 'bg-destructive' : status === 'saving' ? 'bg-muted-foreground' : 'bg-primary-edge';
 
   return (
     <div className="flex h-[100dvh] flex-col overflow-hidden bg-background">
@@ -603,7 +603,14 @@ export function FormEditor({
               title={t.label}
               className={cn(
                 'inline-flex items-center gap-1.5 whitespace-nowrap rounded-md px-2.5 py-1.5 text-sm font-medium transition-colors',
-                tab === t.id ? 'bg-muted text-foreground' : 'text-muted-foreground hover:text-foreground',
+                // Below `md` these chips are icon-only, which makes the selected
+                // state the ONLY thing saying which section you are in — and a
+                // bare `bg-muted` wash is 1.14:1 dark / 1.17:1 light against the
+                // bar. The rim carries the 3:1; the wash keeps doing the
+                // scanning. Same mark as every other segmented pill in the app.
+                tab === t.id
+                  ? 'bg-muted text-foreground shadow-[inset_0_0_0_1px_var(--primary-edge)]'
+                  : 'text-muted-foreground hover:text-foreground',
               )}
             >
               <i aria-hidden className={`pi ${t.icon}`} style={{ fontSize: 12 }} />
@@ -793,7 +800,7 @@ export function FormEditor({
                       onClick={() => setSelected(i)}
                       className={cn(
                         'inline-flex shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs',
-                        i === selected ? 'border-primary bg-primary/10 text-foreground' : 'border-border text-muted-foreground',
+                        i === selected ? 'border-primary-edge bg-primary/10 text-foreground' : 'border-border text-muted-foreground',
                       )}
                     >
                       <span className="font-bold tabular-nums">{i + 1}</span>

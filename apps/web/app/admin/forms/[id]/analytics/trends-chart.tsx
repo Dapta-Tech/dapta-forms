@@ -204,7 +204,7 @@ export function TrendsChart({
         </div>
       </div>
 
-      <div className="rounded-lg border border-border bg-card p-4">
+      <div className="rounded-xl border border-border bg-card p-4">
         {points.length === 0 ? (
           <p className="py-10 text-center text-sm text-muted-foreground">{labels.empty}</p>
         ) : (
@@ -233,8 +233,8 @@ export function TrendsChart({
               x={PAD.left - 8}
               y={yAt(0) + 4}
               textAnchor="end"
-              fontSize={11}
-              fill="var(--muted-foreground)"
+              fontSize={10}
+              fill="var(--faint)"
             >
               {formatValue(metric, 0, labels.seconds)}
             </text>
@@ -252,8 +252,8 @@ export function TrendsChart({
                   x={PAD.left - 8}
                   y={yAt(max) + 4}
                   textAnchor="end"
-                  fontSize={11}
-                  fill="var(--muted-foreground)"
+                  fontSize={10}
+                  fill="var(--faint)"
                 >
                   {formatValue(metric, max, labels.seconds)}
                 </text>
@@ -294,8 +294,8 @@ export function TrendsChart({
                 x={xAt(i)}
                 y={H - 8}
                 textAnchor={i === 0 ? 'start' : i === points.length - 1 ? 'end' : 'middle'}
-                fontSize={11}
-                fill="var(--muted-foreground)"
+                fontSize={10}
+                fill="var(--faint)"
               >
                 {fmtDate.format(new Date(points[i]!.t))}
               </text>

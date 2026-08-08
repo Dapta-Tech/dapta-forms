@@ -145,17 +145,17 @@ export function LogicDialog({
           {/* Visibility — showWhen / hideWhen, reusing the editor that already
               knows the @score source, the per-type operators, and every guard. */}
           <section className="flex flex-col gap-2.5">
-            <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            <p className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wide text-faint">
               <i aria-hidden className="pi pi-eye text-secondary" style={{ fontSize: 11 }} />
               {d.visibility}
             </p>
-            <p className="text-[11px] leading-relaxed text-muted-foreground">{d.visibilityHint}</p>
+            <p className="text-xs leading-relaxed text-muted-foreground">{d.visibilityHint}</p>
             {/* The score ceiling sits WITH the rules that read it, not in a
                 separate panel — it is the only thing that makes a threshold
                 writable instead of guessed. */}
             <p
               data-testid="logic-dialog-score-context"
-              className="rounded-md border border-border bg-muted/40 px-2.5 py-2 text-[11px] leading-relaxed tabular-nums text-muted-foreground"
+              className="rounded-md border border-border bg-muted/40 px-2.5 py-2 text-xs leading-relaxed tabular-nums text-muted-foreground"
             >
               {priorMax > 0 ? tb(d.scoreContext, { n: priorMax }) : d.scoreContextNone}
             </p>
@@ -174,11 +174,11 @@ export function LogicDialog({
                `goto` shape the settings panel writes ("any booking" → end the
                form, or jump), so both surfaces edit one rule, not two. */
             <section className="flex flex-col gap-2.5" data-testid="logic-dialog-booking">
-              <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              <p className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wide text-faint">
                 <i aria-hidden className="pi pi-calendar-plus text-secondary" style={{ fontSize: 11 }} />
                 {d.booking}
               </p>
-              <p className="text-[11px] leading-relaxed text-muted-foreground">{d.bookingHint}</p>
+              <p className="text-xs leading-relaxed text-muted-foreground">{d.bookingHint}</p>
               <div data-testid="logic-dialog-booking-target">
                 <Select
                   ariaLabel={d.booking}
@@ -195,7 +195,7 @@ export function LogicDialog({
           ) : (
             /* Routing — value-based forward rules. */
             <section className="flex flex-col gap-2.5" data-testid="logic-dialog-routing">
-              <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              <p className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wide text-faint">
                 <i aria-hidden className="pi pi-sitemap text-secondary" style={{ fontSize: 11 }} />
                 {d.routing}
               </p>
@@ -230,7 +230,7 @@ export function LogicDialog({
 
               {routable ? (
                 <>
-                  <p className="text-[11px] leading-relaxed text-muted-foreground">{d.routingHint}</p>
+                  <p className="text-xs leading-relaxed text-muted-foreground">{d.routingHint}</p>
                   {/* Value rules only — the catch-all is the select's business
                       above. Its writes are re-merged with the catch-all kept
                       last, the order the engine walks. */}

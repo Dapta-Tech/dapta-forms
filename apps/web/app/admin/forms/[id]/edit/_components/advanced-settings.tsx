@@ -81,7 +81,7 @@ export function AdvancedSettings({
           <span
             key={b}
             data-testid="advanced-badge"
-            className="rounded-sm bg-secondary/15 px-1.5 py-0.5 text-[11px] font-medium text-secondary"
+            className="rounded-sm bg-secondary/15 px-1.5 py-0.5 text-xs font-medium text-secondary"
           >
             {b}
           </span>
@@ -152,10 +152,10 @@ export function PrefillRow({
   return (
     <div className="flex flex-col gap-1.5" data-testid="prefill-row">
       <div className="flex items-baseline justify-between gap-3">
-        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        <p className="text-2xs font-semibold uppercase tracking-wide text-faint">
           {m.prefillTitle}
         </p>
-        <span className="text-[11px] text-muted-foreground">{m.prefillReadOnly}</span>
+        <span className="text-xs text-muted-foreground">{m.prefillReadOnly}</span>
       </div>
       <p className="text-xs text-muted-foreground">{m.prefillHint}</p>
       {reserved.length > 0 ? (
@@ -167,14 +167,14 @@ export function PrefillRow({
         </p>
       ) : (
         <div className="flex items-center gap-2 rounded-md bg-muted/50 px-2 py-1.5">
-          <code className="min-w-0 flex-1 overflow-x-auto whitespace-nowrap font-mono text-[11px] text-foreground">
+          <code className="min-w-0 flex-1 overflow-x-auto whitespace-nowrap font-mono text-xs text-foreground">
             {example}
           </code>
           <button
             type="button"
             onClick={copy}
             aria-label={m.prefillCopy}
-            className="shrink-0 rounded-sm px-1.5 py-0.5 text-[11px] text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="shrink-0 rounded-sm px-1.5 py-0.5 text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             {copied ? m.prefillCopied : m.prefillCopy}
           </button>

@@ -195,7 +195,7 @@ export function OutcomesDialog({
                     </div>
                     {/* The label above IS the heading respondents see on the
                         thank-you screen when their score lands in this range. */}
-                    <p className="mt-1.5 pl-[64px] text-[11px] text-muted-foreground">{rm.outcomeHeadingHelp}</p>
+                    <p className="mt-1.5 pl-[64px] text-xs text-muted-foreground">{rm.outcomeHeadingHelp}</p>
                     {/* Per-outcome thank-you BODY: the editable "page" shown for
                         this range; empty falls back to the shared thank-you
                         body. Interpolation of [field] tokens happens in the
@@ -220,7 +220,7 @@ export function OutcomesDialog({
                         testId="outcome-message"
                         className={OUTCOME_TEXTAREA_CLASS}
                       />
-                      <p className="text-[11px] text-muted-foreground">{rm.messageHelp}</p>
+                      <p className="text-xs text-muted-foreground">{rm.messageHelp}</p>
                     </div>
                     {/* Redirect is a clearly-separate, optional URL — normalized
                         to https:// on blur so a schemeless entry never 400s the
@@ -238,7 +238,7 @@ export function OutcomesDialog({
                         placeholder={bm.results.redirectPlaceholder}
                         onCommit={(url) => update(index, { redirectUrl: url })}
                       />
-                      <p className="text-[11px] text-muted-foreground">{rm.redirectHelp}</p>
+                      <p className="text-xs text-muted-foreground">{rm.redirectHelp}</p>
                     </div>
                     {/* How long the thank-you shows before the redirect. Stored
                         with no control anywhere for a release, so a form could
@@ -268,7 +268,7 @@ export function OutcomesDialog({
                             });
                           }}
                         />
-                        <p className="text-[11px] text-muted-foreground">{rm.redirectDelayHint}</p>
+                        <p className="text-xs text-muted-foreground">{rm.redirectDelayHint}</p>
                       </div>
                     ) : null}
                     {/* Answer-forced overrides. These beat the score outright, so
@@ -286,7 +286,7 @@ export function OutcomesDialog({
                             data-testid="outcome-override"
                             className="flex items-center justify-between gap-2 rounded-md border border-border bg-muted/30 px-2.5 py-1.5"
                           >
-                            <code className="min-w-0 truncate text-[11px] text-muted-foreground">
+                            <code className="min-w-0 truncate text-xs text-muted-foreground">
                               {describeOverride(rule, rm)}
                             </code>
                             <Button
@@ -303,7 +303,7 @@ export function OutcomesDialog({
                             </Button>
                           </div>
                         ))}
-                        <p className="text-[11px] text-muted-foreground">{rm.overridesHelp}</p>
+                        <p className="text-xs text-muted-foreground">{rm.overridesHelp}</p>
                       </div>
                     ) : null}
                   </div>
@@ -314,7 +314,7 @@ export function OutcomesDialog({
                 type="button"
                 onClick={addRange}
                 data-testid="results-add-range"
-                className="flex items-center justify-center gap-2 rounded-xl border border-dashed border-border py-3 text-sm font-medium text-muted-foreground transition-colors hover:border-primary/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="flex items-center justify-center gap-2 rounded-xl border border-dashed border-border py-3 text-sm font-medium text-muted-foreground transition-colors hover:border-primary-edge/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 <i aria-hidden className="pi pi-plus" style={{ fontSize: 12 }} />
                 {bm.results.addRange}
@@ -385,7 +385,7 @@ function ScoreBar({ outcomes, top }: { outcomes: FormOutcome[]; top: number }) {
           );
         })}
       </div>
-      <div className="mt-1 flex justify-between text-[11px] text-muted-foreground">
+      <div className="mt-1 flex justify-between text-xs text-muted-foreground">
         <span>0</span>
         <span>{top}</span>
       </div>

@@ -140,13 +140,13 @@ function FailedDeliveriesSection({
           >
             <div className="flex items-center justify-between gap-3">
               <span className="text-xs font-medium text-foreground">{d.kind}</span>
-              <span className="text-[11px] text-muted-foreground">
+              <span className="text-xs text-muted-foreground">
                 {new Date(d.updatedAt).toLocaleString()}
               </span>
             </div>
             {/* The worker's own reason, verbatim. Paraphrasing it here would
                 lose the one detail that says what to fix. */}
-            <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+            <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
               {d.lastError ?? mc.deliveriesNoReason}
             </p>
           </li>
@@ -232,7 +232,7 @@ function IntegrationsSection({
           <div className="h-36 animate-pulse rounded-lg border border-border bg-muted" />
         </div>
       ) : state.status === 'error' ? (
-        <div className="flex flex-col items-start gap-3 rounded-lg border border-border bg-card p-5">
+        <div className="flex flex-col items-start gap-3 rounded-xl border border-border bg-card p-5">
           <p className="text-sm text-muted-foreground" role="alert">
             {state.message || mc.integrationsLoadError}
           </p>

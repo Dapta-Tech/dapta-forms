@@ -195,7 +195,18 @@ export function SelectField({
 /**
  * A two-or-more-way segmented picker, for settings where a bare on/off switch
  * would hide what each state means (e.g. "banner on every screen" vs "cover
- * only"). Renders as a radio group so arrow keys and screen readers work.
+ * only").
+ *
+ * It declares `role="radiogroup"` over `role="radio"` buttons, and that ARIA
+ * contract has to be paid for in behaviour: a radiogroup is ONE tab stop whose
+ * members are reached with arrow keys. Native buttons are each focusable, so the
+ * markup alone announced "radio, 1 of 3" while Tab walked past all three and the
+ * arrows did nothing — the opposite of what it promised. The roving tabindex and
+ * the key handler below are what make the role true.
+ *
+ * Arrow keys MOVE and SELECT together, per the APG radiogroup pattern: in a group
+ * where every option is visible and switching is instant, a separate "commit"
+ * step is a keystroke that buys nothing.
  */
 export function SegmentedToggle<T extends string>({
   value,
@@ -203,33 +214,121 @@ export function SegmentedToggle<T extends string>({
   options,
   ariaLabel,
   disabled = false,
+  size = 'sm',
+  className,
 }: {
   value: T;
   onChange: (value: T) => void;
-  options: { value: T; label: string }[];
+  /** `icon` is a PrimeIcon class (`pi-sun`); omit it for a text-only chip. */
+  options: { value: T; label: string; icon?: string }[];
   ariaLabel: string;
   /** Read-only mode: options render but cannot be chosen. */
   disabled?: boolean;
+  /** `md` for a setting that stands on its own; `sm` for a row inside a panel. */
+  size?: 'sm' | 'md';
+  /** Container overrides — mainly the surface this sits ON, which decides whether
+   *  the shell reads as `bg-card` or `bg-background`. */
+  className?: string;
 }) {
+  const refs = useRef<(HTMLButtonElement | null)[]>([]);
+  const index = options.findIndex((o) => o.value === value);
+  // Whether this group has ever held focus. Only that lets the effect below tell
+  // "the user was operating me and something took focus away" from "the page just
+  // loaded" — and stealing focus in the second case would be a worse bug than the
+  // one it fixes.
+  const hadFocus = useRef(false);
+
+  // Put focus back when a re-render drops it. Some owners write through a server
+  // action: the Appearance picker calls `setThemeAction`, which revalidates the
+  // ROOT layout because `data-theme` lives on `<html>`. That re-render lands
+  // focus on `document.body`, so the FIRST arrow key moved the selection and
+  // every one after it went nowhere — the control answered once and then went
+  // deaf, which is worse than never having had arrow keys.
+  //
+  // Guarded twice: only if this group held focus, and only if focus is now
+  // nowhere. A user who clicked away keeps their click.
+  useEffect(() => {
+    if (!hadFocus.current || index < 0) return;
+    const active = document.activeElement;
+    if (active && active !== document.body) return;
+    refs.current[index]?.focus();
+  }, [value, index]);
+
+  function move(delta: number | 'first' | 'last') {
+    if (disabled || options.length === 0) return;
+    const from = index < 0 ? 0 : index;
+    const next =
+      delta === 'first'
+        ? 0
+        : delta === 'last'
+          ? options.length - 1
+          : // Wraps, because a radiogroup is a ring: arrowing right off the end
+            // of three visible options and stopping dead reads as a broken key.
+            (from + delta + options.length) % options.length;
+    const option = options[next];
+    if (!option) return;
+    refs.current[next]?.focus();
+    // Home on the first option, or End on the last, is a no-op for the VALUE —
+    // so it must not write. Firing `onChange` with the value already selected
+    // still runs the owner's handler, and for a server-action owner that means a
+    // pointless revalidation whose re-render drops the focus this line just set.
+    if (option.value === value) return;
+    onChange(option.value);
+  }
+
   return (
     <div
       role="radiogroup"
       aria-label={ariaLabel}
-      className="inline-flex items-center gap-0.5 rounded-lg border border-border bg-card p-0.5"
+      onFocus={() => {
+        hadFocus.current = true;
+      }}
+      onKeyDown={(e) => {
+        const delta =
+          e.key === 'ArrowLeft' || e.key === 'ArrowUp'
+            ? -1
+            : e.key === 'ArrowRight' || e.key === 'ArrowDown'
+              ? 1
+              : e.key === 'Home'
+                ? ('first' as const)
+                : e.key === 'End'
+                  ? ('last' as const)
+                  : null;
+        if (delta === null) return;
+        e.preventDefault();
+        move(delta);
+      }}
+      className={cn(
+        'inline-flex items-center gap-0.5 rounded-lg border border-border bg-card p-0.5',
+        className,
+      )}
     >
-      {options.map((o) => (
+      {options.map((o, i) => (
         <button
           key={o.value}
+          ref={(el) => {
+            refs.current[i] = el;
+          }}
           type="button"
           role="radio"
           aria-checked={value === o.value}
           disabled={disabled}
+          // The roving tabindex: the group is one stop, and it is the CHECKED
+          // option that owns it — so tabbing in lands on the current answer
+          // rather than on whichever option happens to be first. Nothing checked
+          // (a value outside the option list) falls back to the first, because a
+          // group where every member is -1 cannot be reached by keyboard at all.
+          tabIndex={value === o.value || (index < 0 && i === 0) ? 0 : -1}
           onClick={() => onChange(o.value)}
           className={cn(
-            'whitespace-nowrap rounded-md px-3 py-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-            value === o.value ? 'bg-muted text-foreground' : 'text-muted-foreground hover:text-foreground',
+            'inline-flex items-center gap-2 whitespace-nowrap rounded-md font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60',
+            size === 'md' ? 'px-3 py-2 text-sm' : 'px-3 py-1 text-xs',
+            value === o.value
+              ? 'bg-muted text-foreground shadow-[inset_0_0_0_1px_var(--primary-edge)]'
+              : 'text-muted-foreground hover:text-foreground',
           )}
         >
+          {o.icon ? <i aria-hidden className={`pi ${o.icon}`} style={{ fontSize: 13 }} /> : null}
           {o.label}
         </button>
       ))}
@@ -271,7 +370,7 @@ export function PanelSection({
   children: ReactNode;
 }) {
   return (
-    <section className="flex flex-col gap-4 rounded-lg border border-border bg-card p-4">
+    <section className="flex flex-col gap-4 rounded-xl border border-border bg-card p-4">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <h3 className="text-sm font-semibold text-foreground">{title}</h3>

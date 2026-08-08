@@ -13,8 +13,14 @@ export interface PublicBranding {
   brandColor: string | null;
 }
 
-/** DS primary lime — the default accent when a host hasn't chosen one. */
-export const DEFAULT_ACCENT = '#cbe84f';
+/**
+ * Program Lime — the default accent when a host hasn't chosen one.
+ *
+ * The hex form of the token scale's `hsl(68 76% 61%)`. It is written out rather
+ * than computed because every helper in this file is hex-in/hex-out contrast
+ * math; the channels live in `tokens.css`, and these two must be kept in step.
+ */
+export const DEFAULT_ACCENT = '#d3e750';
 
 /**
  * The token ground (`--background`) a form renders on when its author has not
@@ -22,12 +28,12 @@ export const DEFAULT_ACCENT = '#cbe84f';
  * used to be correct without taking a background at all — the public form was
  * dark, always.
  */
-export const DEFAULT_CANVAS = '#222222';
+export const DEFAULT_CANVAS = '#0a0c0e';
 
-/** The foreground that pairs with `DEFAULT_CANVAS`. */
-export const DEFAULT_CANVAS_FOREGROUND = '#eeeeee';
+/** The foreground that pairs with `DEFAULT_CANVAS` — Signal White, never pure. */
+export const DEFAULT_CANVAS_FOREGROUND = '#e8edf2';
 
-const DARK_CANVAS_RGB: Rgb = { r: 0x22, g: 0x22, b: 0x22 };
+const DARK_CANVAS_RGB: Rgb = { r: 0x0a, g: 0x0c, b: 0x0e };
 const MIN_ACCENT_CONTRAST = 3;
 /** WCAG AA for normal-size body text. */
 export const AA_CONTRAST = 4.5;
@@ -124,9 +130,16 @@ export function contrastGrade(ratio: number): 'AAA' | 'AA' | 'fail' {
   return 'fail';
 }
 
-/** The near-black or near-white text that reads on an arbitrary ground. */
+/**
+ * The near-black or near-white text that reads on an arbitrary ground.
+ *
+ * Both ends are the token scale's own text colors rather than `#000`/`#fff`:
+ * Bezel Graphite on light, Signal White on dark. Pure white on a dark ground is
+ * the glare this palette exists to avoid, and an author's custom background
+ * should still land them inside the system.
+ */
 export function readableOn(background: string): string {
-  return isLightColor(background) ? '#1a1a1c' : '#fafafa';
+  return isLightColor(background) ? '#0d1013' : '#e8edf2';
 }
 
 /**
@@ -163,10 +176,40 @@ export function clampAccent(hex: string, background: string = DEFAULT_CANVAS): s
   return toHex(nudgeUntilReadable(rgb, ground, MIN_ACCENT_CONTRAST, 0.12));
 }
 
-/** The label color that reads on top of the accent (black or white). */
+/**
+ * The label color that reads on top of the accent.
+ *
+ * Picks the better END first — Lime Ink, the one text color the palette permits on
+ * Program Lime, or Signal White — and then WALKS IT until it clears AA.
+ *
+ * The walk is the point. Choosing between two fixed constants silently ships
+ * failing pairs for any accent of middling luminance: the seeded demo form's
+ * `#6366f1` put Lime Ink at 4.35:1, under the 4.5:1 its 14px/600 label needs, and
+ * neither constant could have cleared it (white lands at 4.56:1 on that same
+ * indigo — a coin flip, not a solution). Nobody picks the color of button text, so
+ * the renderer owes it a guarantee rather than a best-of-two.
+ */
 export function onAccent(hex: string): string {
   const rgb = parseHex(hex) ?? parseHex(DEFAULT_ACCENT)!;
-  return contrast(rgb, BLACK) >= contrast(rgb, WHITE) ? '#1a1a1c' : '#fafafa';
+  const wantsDarkInk = contrast(rgb, BLACK) >= contrast(rgb, WHITE);
+  const ink = wantsDarkInk ? '#0c0e07' : '#e8edf2';
+  let current = parseHex(ink)!;
+  if (contrast(current, rgb) >= AA_CONTRAST) return ink;
+
+  // Push the ink toward the extreme of the end already chosen — a dark ink toward
+  // black, a light one toward white — in the fine steps `suggestReadable` uses, so
+  // the result stays as close to the palette's own ink as it can.
+  //
+  // NOT `nudgeUntilReadable`: that helper derives its direction from the GROUND
+  // (toward white on a dark ground), which is right when the thing being moved is
+  // an accent on a page. Here the thing being moved is the ink and the ground is
+  // the accent, so on a mid-dark accent it would walk the near-black ink up through
+  // the greys — straight through the lowest-contrast region — before improving.
+  const target = wantsDarkInk ? BLACK : WHITE;
+  for (let i = 0; i < 24 && contrast(current, rgb) < AA_CONTRAST; i++) {
+    current = mix(current, target, 0.12);
+  }
+  return toHex(current);
 }
 
 export function accentLabelContrast(hex: string, background: string = DEFAULT_CANVAS): number {
@@ -254,6 +297,17 @@ export function formThemeVars(colors: FormThemeColors): Record<string, string> {
     // renderer's own decision rather than an override of the author's — nobody
     // picks the color of button text.
     vars['--pf-primary-contrast'] = onAccent(raw);
+    // The accent as a LINE — the focus ring, a selected outline — is the same
+    // category as the label above, for the same reason: nobody picks the colour
+    // of a focus indicator, and an outline that cannot be seen against the page
+    // is not a brand decision, it is a missing indicator (WCAG 1.4.11).
+    //
+    // `clampAccent` leaves an accent that already clears 3:1 completely alone, so
+    // an author whose colour reads keeps their exact hex here too — it only moves
+    // the ones that would have been invisible, and only as far as legibility.
+    // Measured against the form's OWN ground when the author fixed one, because a
+    // colour that reads on paper can vanish on their dark canvas and vice versa.
+    vars['--pf-primary-edge'] = clampAccent(raw, background ?? undefined);
     vars['--ring'] = `color-mix(in srgb, ${raw} 45%, transparent)`;
   }
 

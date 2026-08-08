@@ -50,7 +50,7 @@ const MAX_REVEAL_MS = 30_000;
 
 /** Shared look for the inline slider-bounds warnings (V5-A2). */
 const sliderWarnClass =
-  'flex items-start gap-1.5 rounded-md bg-destructive/10 px-2 py-1 text-[11px] leading-relaxed text-destructive';
+  'flex items-start gap-1.5 rounded-md bg-destructive/10 px-2 py-1 text-xs leading-relaxed text-destructive';
 
 /** Match a step to its gallery item id (so the type <select> reflects single vs multiple). */
 function currentItemId(step: FormStep): string {
@@ -229,7 +229,7 @@ export function QuestionSettings({
           explanation of what turns it on. Options → their scoring, together. */}
       {hasOptions(step.type) ? (
         <section className="flex flex-col gap-3 border-t border-border pt-4">
-          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          <p className="text-2xs font-semibold uppercase tracking-wide text-faint">
             {bm.settings.options}
           </p>
           {step.type === 'multiple_choice' ? (
@@ -267,7 +267,7 @@ export function QuestionSettings({
 
       {step.type === 'reveal' ? (
         <section className="flex flex-col gap-3 border-t border-border pt-4">
-          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          <p className="text-2xs font-semibold uppercase tracking-wide text-faint">
             {bm.settings.revealSection}
           </p>
           <p className="text-xs text-muted-foreground">{bm.settings.revealHint}</p>
@@ -343,7 +343,7 @@ export function QuestionSettings({
 
       {step.type === 'slider' ? (
         <section className="flex flex-col gap-3 border-t border-border pt-4">
-          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{em.types.slider}</p>
+          <p className="text-2xs font-semibold uppercase tracking-wide text-faint">{em.types.slider}</p>
           <div className="grid grid-cols-2 gap-2.5">
             <Field label={em.props.sliderMin}>
               <NumberField
@@ -449,7 +449,7 @@ export function QuestionSettings({
       {/* Name step: the two collected fields + their placeholders */}
       {step.type === 'name' ? (
         <section className="flex flex-col gap-3 border-t border-border pt-4">
-          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          <p className="text-2xs font-semibold uppercase tracking-wide text-faint">
             {em.nameStep.title}
           </p>
           <p className="text-xs text-muted-foreground">{em.nameStep.hint}</p>
@@ -513,7 +513,7 @@ export function QuestionSettings({
           will never see. */}
       {step.type === 'reveal' ? null : (
         <section className="flex flex-col gap-3 border-t border-border pt-4">
-          <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          <p className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wide text-faint">
             <i aria-hidden className="pi pi-sync text-secondary" style={{ fontSize: 11 }} />
             {em.variants.title}
           </p>
@@ -523,7 +523,7 @@ export function QuestionSettings({
 
       {/* Behavior — terminal (disqualify) + reveal position (V4-04/V4-12) */}
       <section className="flex flex-col gap-1 border-t border-border pt-4">
-        <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        <p className="mb-1 text-2xs font-semibold uppercase tracking-wide text-faint">
           {em.behavior.title}
         </p>
         {/* "Ends the form" means DISQUALIFICATION here, which is the opposite of
@@ -747,7 +747,7 @@ function LogicCard({
     // pixels with its content laid out, clipped, inside it.
     <section data-testid="question-logic" className="flex shrink-0 flex-col gap-3 border-t border-border pt-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        <p className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wide text-faint">
           <i aria-hidden className="pi pi-sitemap text-secondary" style={{ fontSize: 11 }} />
           {bm.settings.logic}
           {count > 0 ? (
@@ -755,7 +755,7 @@ function LogicCard({
             // surfaces agree on how many rules there are.
             <span
               data-testid="question-logic-count"
-              className="rounded-sm bg-secondary/15 px-1.5 py-0.5 text-[10px] font-semibold normal-case tracking-normal text-secondary"
+              className="rounded-sm bg-secondary/15 px-1.5 py-0.5 text-2xs font-semibold normal-case tracking-normal text-secondary"
             >
               {count === 1 ? bm.badges.ruleOne : tb(bm.badges.rules, { n: count })}
             </span>
@@ -778,9 +778,9 @@ function LogicCard({
           {bookingLabel ? (
             <p
               data-testid="question-logic-booking"
-              className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 text-[11px] leading-relaxed"
+              className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 text-xs leading-relaxed"
             >
-              <span className="shrink-0 rounded bg-secondary/15 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-secondary">
+              <span className="shrink-0 rounded-sm bg-secondary/15 px-1.5 py-0.5 text-2xs font-bold uppercase tracking-wide text-secondary">
                 {bm.settings.schedulerAfter}
               </span>
               <span className="font-medium text-foreground">{bookingLabel}</span>
@@ -799,7 +799,7 @@ function LogicCard({
               <p
                 key={i}
                 data-testid="question-logic-goto"
-                className="flex items-start gap-1.5 text-[11px] leading-relaxed text-foreground"
+                className="flex items-start gap-1.5 text-xs leading-relaxed text-foreground"
               >
                 <i aria-hidden className="pi pi-directions mt-0.5 shrink-0 text-secondary" style={{ fontSize: 10 }} />
                 <span className="min-w-0 break-words">
@@ -881,10 +881,10 @@ function ConditionSentence({
   return (
     <p
       data-testid={`question-logic-${kind}`}
-      className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 text-[11px] leading-relaxed"
+      className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 text-xs leading-relaxed"
     >
       <span
-        className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
+        className={`shrink-0 rounded-sm px-1.5 py-0.5 text-2xs font-bold uppercase tracking-wide ${
           show ? 'bg-secondary/15 text-secondary' : 'bg-destructive/15 text-destructive'
         }`}
       >
@@ -896,7 +896,7 @@ function ConditionSentence({
       {d.dangling ? (
         <span
           data-testid="question-logic-dangling"
-          className="rounded bg-destructive/15 px-1.5 py-0.5 text-[10px] font-semibold text-destructive"
+          className="rounded-sm bg-destructive/15 px-1.5 py-0.5 text-2xs font-semibold text-destructive"
         >
           {bm.map.condMissingField}
         </span>
@@ -1008,7 +1008,7 @@ function FieldKeyEditor({
 
   return (
     <div className="mt-2 flex flex-col gap-1">
-      <span className="text-[11px] font-medium text-muted-foreground">{m.fieldKey}</span>
+      <span className="text-xs font-medium text-muted-foreground">{m.fieldKey}</span>
       <TextField
         value={text}
         data-testid="step-field-key"
@@ -1034,11 +1034,11 @@ function FieldKeyEditor({
         className="h-8 py-1 font-mono text-xs"
       />
       {collides || refused ? (
-        <p role="alert" data-testid="step-field-key-taken" className="text-[11px] text-destructive">
+        <p role="alert" data-testid="step-field-key-taken" className="text-xs text-destructive">
           {collides || refused === 'taken' ? m.fieldKeyTaken : m.fieldKeyInvalid}
         </p>
       ) : (
-        <p className="text-[10px] leading-relaxed text-muted-foreground">
+        <p className="text-2xs leading-relaxed text-faint">
           {m.fieldKeyHint} <span className="font-mono">{m.fieldKeyUrlExample.replace('{key}', stepKey)}</span>
         </p>
       )}
@@ -1097,11 +1097,11 @@ function NameFieldsEditor({
     <div className="flex flex-col gap-2.5">
       {fields.map((field, i) => (
         <div key={i} className="flex flex-col gap-2 rounded-lg border border-border bg-background p-2.5">
-          <span className="text-[11px] font-medium text-muted-foreground">
+          <span className="text-xs font-medium text-muted-foreground">
             {i === 0 ? m.first : m.second}
           </span>
           <label className="flex flex-col gap-1">
-            <span className="text-[11px] font-medium text-muted-foreground">{m.fieldKey}</span>
+            <span className="text-xs font-medium text-muted-foreground">{m.fieldKey}</span>
             <TextField
               value={field}
               onChange={(e) => setFieldKey(i, e.target.value)}
@@ -1109,7 +1109,7 @@ function NameFieldsEditor({
             />
           </label>
           <label className="flex flex-col gap-1">
-            <span className="text-[11px] font-medium text-muted-foreground">{m.placeholder}</span>
+            <span className="text-xs font-medium text-muted-foreground">{m.placeholder}</span>
             <TextField
               value={placeholders[field] ?? ''}
               onChange={(e) => setPlaceholder(field, e.target.value)}
@@ -1120,7 +1120,7 @@ function NameFieldsEditor({
           </label>
         </div>
       ))}
-      <p className="text-[10px] leading-relaxed text-muted-foreground" data-testid="name-fieldkey-hint">
+      <p className="text-2xs leading-relaxed text-faint" data-testid="name-fieldkey-hint">
         {m.fieldKeyHint}
       </p>
     </div>

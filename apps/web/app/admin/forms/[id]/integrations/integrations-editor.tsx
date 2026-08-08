@@ -533,7 +533,7 @@ export function IntegrationsEditor({
             <div className="flex items-center gap-2">
               <GoogleSheetsLogo size={20} />
               <h2 className="text-lg font-semibold">{m.gsheetsTitle}</h2>
-              <span className="rounded border border-border bg-muted px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+              <span className="rounded-sm border border-border bg-muted px-1.5 py-0.5 text-2xs font-medium uppercase tracking-wide text-faint">
                 {m.comingSoon}
               </span>
             </div>
@@ -785,15 +785,15 @@ function Card({
   children: React.ReactNode;
 }) {
   return (
-    <section className="rounded-lg border border-border bg-card p-5">
+    <section className="rounded-xl border border-border bg-card p-5">
       <div className="flex items-start justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
             {logo ? <ProviderLogo provider={logo} size={20} /> : null}
             <h2 className="text-lg font-semibold">{title}</h2>
             {badge ? (
-              <span className="inline-flex items-center gap-1 rounded-full border border-primary/40 bg-primary/10 px-2 py-0.5 text-xs font-medium text-foreground">
-                <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-primary" />
+              <span className="inline-flex items-center gap-1 rounded-full border border-primary-edge/40 bg-primary/10 px-2 py-0.5 text-xs font-medium text-foreground">
+                <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-primary-edge" />
                 {badge}
               </span>
             ) : null}
@@ -1058,7 +1058,7 @@ function HubspotCard({
   // with HubSpot ready still cannot sync a form that asks for no address.
   if (!emailSource) {
     return (
-      <section data-testid="hubspot-card" className="rounded-lg border border-border bg-card p-5">
+      <section data-testid="hubspot-card" className="rounded-xl border border-border bg-card p-5">
         <div className="flex items-center gap-2">
           <ProviderLogo provider="hubspot" size={20} />
           <h2 className="text-lg font-semibold">{m.hubspotTitle}</h2>
@@ -1078,7 +1078,7 @@ function HubspotCard({
   // Not usable at all → prompt the user to connect HubSpot for their account.
   if (!showMapping) {
     return (
-      <section className="rounded-lg border border-border bg-card p-5">
+      <section className="rounded-xl border border-border bg-card p-5">
         <div className="flex items-center gap-2">
           <ProviderLogo provider="hubspot" size={20} />
           <h2 className="text-lg font-semibold">{m.hubspotTitle}</h2>

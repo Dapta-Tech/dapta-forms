@@ -105,6 +105,15 @@ export interface FormsMessages {
       collapse: string;
       expand: string;
       openNav: string;
+      /** The colour-scheme toggle. `next` names what one more click will do, so an
+       *  icon-only control still announces its effect rather than only its state. */
+      theme: {
+        label: string;
+        dark: string;
+        light: string;
+        system: string;
+        next: string;
+      };
       /** Left-nav item labels (icon + label). */
       nav: {
         home: string;
@@ -222,6 +231,9 @@ export interface FormsMessages {
     settings: {
       title: string;
       subtitle: string;
+      /** The colour-scheme preference section. */
+      appearanceHeading: string;
+      appearanceSubtitle: string;
       workspaceHeading: string;
       workspaceSubtitle: string;
       displayName: string;
@@ -1353,6 +1365,13 @@ export const en: FormsMessages = {
       collapse: 'Collapse sidebar',
       expand: 'Expand sidebar',
       openNav: 'Open navigation',
+      theme: {
+        label: 'Theme',
+        dark: 'Dark',
+        light: 'Light',
+        system: 'System',
+        next: 'Switch to',
+      },
       nav: {
         home: 'Home',
         forms: 'Forms',
@@ -1461,6 +1480,8 @@ export const en: FormsMessages = {
     settings: {
       title: 'Settings',
       subtitle: 'Your workspace and team.',
+      appearanceHeading: 'Appearance',
+      appearanceSubtitle: 'Choose how Dapta Forms looks on this device.',
       workspaceHeading: 'Workspace',
       workspaceSubtitle: 'Your identity and public link.',
       displayName: 'Name',
@@ -2550,6 +2571,13 @@ export const es: FormsMessages = {
       collapse: 'Contraer barra lateral',
       expand: 'Expandir barra lateral',
       openNav: 'Abrir navegación',
+      theme: {
+        label: 'Tema',
+        dark: 'Oscuro',
+        light: 'Claro',
+        system: 'Sistema',
+        next: 'Cambiar a',
+      },
       nav: {
         home: 'Inicio',
         forms: 'Formularios',
@@ -2659,6 +2687,8 @@ export const es: FormsMessages = {
     settings: {
       title: 'Ajustes',
       subtitle: 'Tu espacio de trabajo y tu equipo.',
+      appearanceHeading: 'Apariencia',
+      appearanceSubtitle: 'Elige cómo se ve Dapta Forms en este dispositivo.',
       workspaceHeading: 'Espacio de trabajo',
       workspaceSubtitle: 'Tu identidad y tu enlace público.',
       displayName: 'Nombre',

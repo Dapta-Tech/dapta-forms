@@ -142,7 +142,7 @@ export function DesignPanel({
                 className={cn(
                   'flex flex-col gap-1 rounded-md border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                   layout === opt.id
-                    ? 'border-primary bg-primary/10 text-foreground'
+                    ? 'border-primary-edge bg-primary/10 text-foreground'
                     : 'border-border text-muted-foreground hover:border-muted-foreground hover:text-foreground',
                 )}
               >
@@ -565,7 +565,7 @@ function Warning({
       <button
         type="button"
         onClick={onApply}
-        className="inline-flex shrink-0 items-center gap-1.5 rounded border border-border bg-background px-2 py-0.5 font-medium transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="inline-flex shrink-0 items-center gap-1.5 rounded-sm border border-border bg-background px-2 py-0.5 font-medium transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         <span aria-hidden className="h-3 w-3 rounded-sm border border-border" style={{ background: suggestion }} />
         {applyLabel}
@@ -597,7 +597,7 @@ function ContrastRow({
       <span className="text-muted-foreground">{label}</span>
       <span
         className={cn(
-          'rounded px-1.5 py-0.5 font-mono text-[10px] font-semibold tabular-nums',
+          'rounded-sm px-1.5 py-0.5 font-mono text-2xs font-semibold tabular-nums',
           grade === 'fail' ? 'bg-destructive/15 text-destructive' : 'bg-muted text-muted-foreground',
         )}
       >
@@ -716,7 +716,7 @@ function ClientLogosSection({
             <div key={i} className="flex flex-col gap-2 rounded-md border border-border bg-background p-2">
               <div className="flex items-end gap-2">
                 <label className="flex min-w-0 flex-1 flex-col gap-1">
-                  <span className="text-[11px] font-medium text-muted-foreground">{m.cover.clientLogoName}</span>
+                  <span className="text-xs font-medium text-muted-foreground">{m.cover.clientLogoName}</span>
                   <TextField
                     value={logo.name}
                     onChange={(e) => update(i, { name: e.target.value })}
@@ -724,7 +724,7 @@ function ClientLogosSection({
                   />
                 </label>
                 <label className="flex min-w-0 flex-[2] flex-col gap-1">
-                  <span className="text-[11px] font-medium text-muted-foreground">{m.cover.clientLogoSrc}</span>
+                  <span className="text-xs font-medium text-muted-foreground">{m.cover.clientLogoSrc}</span>
                   <TextField
                     value={logo.src ?? ''}
                     placeholder="https://…"
@@ -736,7 +736,7 @@ function ClientLogosSection({
                   type="button"
                   aria-label={m.cover.removeClientLogo}
                   onClick={() => onCoverChange({ clientLogos: logos.filter((_, li) => li !== i) })}
-                  className="mb-0.5 shrink-0 rounded p-2 text-muted-foreground transition-colors hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  className="mb-0.5 shrink-0 rounded-sm p-2 text-muted-foreground transition-colors hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
                   <i aria-hidden className="pi pi-trash" style={{ fontSize: 13 }} />
                 </button>
@@ -802,7 +802,7 @@ function SharePreview({
         )}
       </div>
       <div className="flex flex-col gap-0.5 px-3 py-2">
-        <span className="truncate text-[11px] uppercase tracking-wide text-muted-foreground">
+        <span className="truncate text-2xs uppercase tracking-wide text-faint">
           {publicPath.split('/')[1] ?? ''}
         </span>
         <span className="truncate text-xs font-medium">{headline}</span>

@@ -105,7 +105,7 @@ export function ColorPicker({
         >
           <span
             aria-hidden
-            className="h-5 w-5 shrink-0 rounded border border-border"
+            className="h-5 w-5 shrink-0 rounded-sm border border-border"
             style={{
               background: valid ? current : 'transparent',
               // An unset color reads as a checker-ish neutral rather than as
@@ -126,7 +126,7 @@ export function ColorPicker({
             data-testid="contrast-badge"
             title={`${againstLabel ?? ''} ${ratio}:1`}
             className={cn(
-              'shrink-0 rounded px-1.5 py-0.5 font-mono text-[10px] font-semibold tabular-nums',
+              'shrink-0 rounded-sm px-1.5 py-0.5 font-mono text-2xs font-semibold tabular-nums',
               grade === 'fail'
                 ? 'bg-destructive/15 text-destructive'
                 : 'bg-muted text-muted-foreground',
@@ -138,7 +138,7 @@ export function ColorPicker({
       </div>
 
       {grade === 'fail' ? (
-        <p className="text-[11px] text-destructive" role="alert">
+        <p className="text-xs text-destructive" role="alert">
           {m.contrastFail}
         </p>
       ) : null}
@@ -149,7 +149,7 @@ export function ColorPicker({
           aria-label={label}
           className="absolute left-0 top-11 z-50 w-[17rem] rounded-lg border border-border bg-popover p-2.5 shadow-lg"
         >
-          <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+          <p className="mb-1.5 text-2xs font-semibold uppercase tracking-wide text-faint">
             {m.colorSwatches}
           </p>
           <div className="flex flex-col gap-1">
@@ -168,7 +168,7 @@ export function ColorPicker({
                     }}
                     style={{ background: c }}
                     className={cn(
-                      'h-6 w-full rounded border border-border/60 transition-transform hover:scale-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                      'h-6 w-full rounded-sm border border-border/60 transition-transform hover:scale-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                       current.toLowerCase() === c && 'ring-2 ring-ring',
                     )}
                   />
@@ -186,7 +186,7 @@ export function ColorPicker({
                 setDraft(null);
                 onChange(e.target.value);
               }}
-              className="h-8 w-9 shrink-0 cursor-pointer rounded border border-input bg-background p-0.5"
+              className="h-8 w-9 shrink-0 cursor-pointer rounded-sm border border-input bg-background p-0.5"
             />
             <TextField
               aria-label={m.colorHex}
@@ -205,14 +205,14 @@ export function ColorPicker({
                   onChange(null);
                   setOpen(false);
                 }}
-                className="shrink-0 rounded px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:text-destructive"
+                className="shrink-0 rounded-sm px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:text-destructive"
               >
                 {m.reset}
               </button>
             ) : null}
           </div>
           {shown && !HEX.test(shown) ? (
-            <p className="mt-1.5 text-[11px] text-destructive" role="alert">
+            <p className="mt-1.5 text-xs text-destructive" role="alert">
               {m.colorInvalid}
             </p>
           ) : null}

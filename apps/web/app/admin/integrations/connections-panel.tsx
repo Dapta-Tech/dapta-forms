@@ -151,7 +151,7 @@ function ProviderCard({
   }
 
   return (
-    <section className="flex flex-col rounded-lg border border-border bg-card p-5">
+    <section className="flex flex-col rounded-xl border border-border bg-card p-5">
       <header className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
           <span
@@ -239,7 +239,7 @@ function GoogleSheetsCard({ m }: { m: Msgs }) {
             <p className="mt-0.5 text-sm text-muted-foreground">{m.gsheetsDesc}</p>
           </div>
         </div>
-        <span className="shrink-0 rounded border border-border bg-muted px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+        <span className="shrink-0 rounded-sm border border-border bg-muted px-1.5 py-0.5 text-2xs font-medium uppercase tracking-wide text-faint">
           {m.comingSoon}
         </span>
       </header>
@@ -281,7 +281,7 @@ function StatusBadge({
   const state = connected ? 'account' : serverProvided ? 'server' : 'none';
   const tone =
     state === 'account'
-      ? 'border-primary/40 bg-primary/10 text-foreground'
+      ? 'border-primary-edge/40 bg-primary/10 text-foreground'
       : state === 'server'
         ? 'border-border bg-muted/60 text-foreground'
         : 'border-border bg-muted/40 text-muted-foreground';

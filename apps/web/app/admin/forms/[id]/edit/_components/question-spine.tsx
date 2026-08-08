@@ -150,17 +150,17 @@ export function QuestionSpine({
                   className={cn(
                     'relative flex items-center gap-2 overflow-hidden rounded-xl border py-2.5 pl-2 pr-2.5 transition-colors',
                     active
-                      ? 'border-primary bg-primary/[0.07]'
+                      ? 'border-primary-edge bg-primary/[0.07]'
                       : 'border-border bg-card hover:border-muted-foreground/60',
                   )}
                 >
                   {active ? (
-                    <span aria-hidden className="absolute inset-y-1.5 left-0 w-1 rounded-full bg-primary" />
+                    <span aria-hidden className="absolute inset-y-1.5 left-0 w-1 rounded-full bg-primary-edge" />
                   ) : null}
                   <button
                     type="button"
                     aria-label={m.shell.addQuestion}
-                    className="shrink-0 cursor-grab touch-none rounded p-1 text-muted-foreground/70 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:cursor-grabbing"
+                    className="shrink-0 cursor-grab touch-none rounded-sm p-1 text-muted-foreground/70 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:cursor-grabbing"
                     {...handleProps}
                   >
                     <i aria-hidden className="pi pi-bars" style={{ fontSize: 12 }} />
@@ -173,7 +173,7 @@ export function QuestionSpine({
                   >
                     <span
                       className={cn(
-                        'inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-[11px] font-bold tabular-nums',
+                        'inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-xs font-bold tabular-nums',
                         active ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground',
                       )}
                     >
@@ -197,18 +197,18 @@ export function QuestionSpine({
                         {step.hidden ? (
                           <span
                             data-testid="spine-hidden-badge"
-                            className="inline-flex shrink-0 items-center rounded-md bg-muted px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground"
+                            className="inline-flex shrink-0 items-center rounded-md bg-muted px-1.5 py-0.5 text-2xs font-semibold uppercase tracking-wide text-faint"
                           >
                             {m.badges.hidden}
                           </span>
                         ) : null}
                         {rules > 0 ? (
-                          <span className="inline-flex items-center gap-1 rounded-md bg-secondary/15 px-1.5 py-0.5 text-[10px] font-semibold text-secondary">
+                          <span className="inline-flex items-center gap-1 rounded-md bg-secondary/15 px-1.5 py-0.5 text-2xs font-semibold text-secondary">
                             <i aria-hidden className="pi pi-sitemap" style={{ fontSize: 9 }} />
                             {rules === 1 ? m.badges.ruleOne : tb(m.badges.rules, { n: rules })}
                           </span>
                         ) : contact ? (
-                          <span className="inline-flex items-center rounded-md bg-muted px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground">
+                          <span className="inline-flex items-center rounded-md bg-muted px-1.5 py-0.5 text-2xs font-semibold text-faint">
                             {m.badges.contact}
                           </span>
                         ) : null}
@@ -230,7 +230,7 @@ export function QuestionSpine({
       <button
         type="button"
         onClick={onAdd}
-        className="mt-1 flex items-center justify-center gap-2 rounded-xl border border-dashed border-border py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:border-primary/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="mt-1 flex items-center justify-center gap-2 rounded-xl border border-dashed border-border py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:border-primary-edge/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         <i aria-hidden className="pi pi-plus" style={{ fontSize: 12 }} />
         {m.shell.addQuestion}
@@ -356,13 +356,13 @@ function SpineMarker({
           type="button"
           data-testid={`${testidPrefix}-handle`}
           aria-label={moveLabel}
-          className="shrink-0 cursor-grab touch-none rounded p-1 text-secondary/70 hover:text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:cursor-grabbing"
+          className="shrink-0 cursor-grab touch-none rounded-sm p-1 text-secondary/70 hover:text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:cursor-grabbing"
           {...handleProps}
         >
           <i aria-hidden className="pi pi-bars" style={{ fontSize: 12 }} />
         </button>
         <i aria-hidden className={cn('pi shrink-0 text-secondary', icon)} style={{ fontSize: 12 }} />
-        <span className="min-w-0 flex-1 text-[11px] font-semibold leading-tight text-secondary">
+        <span className="min-w-0 flex-1 text-xs font-semibold leading-tight text-secondary">
           {label}
         </span>
         <button
@@ -371,7 +371,7 @@ function SpineMarker({
           aria-label={infoLabel}
           aria-expanded={infoOpen}
           onClick={() => setInfoOpen((v) => !v)}
-          className="shrink-0 rounded p-1 text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="shrink-0 rounded-sm p-1 text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           <i aria-hidden className="pi pi-info-circle" style={{ fontSize: 12 }} />
         </button>
@@ -383,13 +383,13 @@ function SpineMarker({
             setInfoOpen(false);
             onRemove();
           }}
-          className="shrink-0 rounded p-1 text-muted-foreground hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="shrink-0 rounded-sm p-1 text-muted-foreground hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           <i aria-hidden className="pi pi-times" style={{ fontSize: 12 }} />
         </button>
       </div>
       {infoOpen ? (
-        <div className="mt-2 flex flex-col gap-1.5 rounded-lg bg-card/80 p-2 text-[11px] leading-snug text-muted-foreground">
+        <div className="mt-2 flex flex-col gap-1.5 rounded-lg bg-card/80 p-2 text-xs leading-snug text-muted-foreground">
           {tips}
         </div>
       ) : null}

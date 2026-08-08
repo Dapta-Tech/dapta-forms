@@ -70,6 +70,7 @@ export type FormLogoPosition = (typeof FORM_LOGO_POSITIONS)[number];
  * flag so the renderer has exactly one question to ask.
  */
 export const FORM_FONTS = [
+  'figtree',
   'poppins',
   'inter',
   'dm-sans',
@@ -82,8 +83,21 @@ export const FORM_FONTS = [
 ] as const;
 export type FormFont = (typeof FORM_FONTS)[number];
 
-/** Poppins is the Dapta brand typeface and stays the default (A6). */
-export const DEFAULT_FORM_FONT: FormFont = 'poppins';
+/**
+ * Figtree is the Dapta brand typeface and the default face.
+ *
+ * It replaced Poppins (the previous default, A6) when the product adopted the
+ * marketing site's type system. Poppins stays in the list above rather than being
+ * removed: it is a value a published form may already carry, and dropping it from
+ * the union would fail that form's config at parse time (invariant #4 — extend
+ * v1, never break it).
+ *
+ * The face itself must stay freely redistributable. Every curated font is baked
+ * into the build by `next/font` and therefore into the repository, so a licensed
+ * commercial face cannot be a value of this union no matter how well it reads —
+ * shipping it here would redistribute it to everyone who clones this project.
+ */
+export const DEFAULT_FORM_FONT: FormFont = 'figtree';
 
 /** Which of the curated faces are serifs — the editor groups the picker by this. */
 export const FORM_SERIF_FONTS: readonly FormFont[] = ['fraunces', 'playfair'];
@@ -147,10 +161,25 @@ export interface ResolvedFormDesign {
 }
 
 /**
- * The pre-design look, kept as an explicit table rather than inline `??`s so
- * "what does a legacy form render as" is one thing to read and one thing to
- * test. Changing a value here restyles every form that never set that axis, so
- * these are effectively frozen.
+ * What a form renders as when it never set an axis, kept as an explicit table
+ * rather than inline `??`s so "what does an unstyled form look like" is one thing
+ * to read and one thing to test.
+ *
+ * Changing a value here restyles every form that never set that axis — including
+ * already-published ones. That is normally the reason not to touch it, and it is
+ * why exactly ONE axis moved in the Master Control Room migration:
+ *
+ *  - `font` follows `DEFAULT_FORM_FONT`, so it became Figtree with the brand.
+ *
+ * `radius` briefly became `sharp` to match the marketing site's strictly square
+ * world, and went back to `soft`: on a dense form surface hard corners read as
+ * harsh rather than deliberate. `sharp` is still a real choice — and now a
+ * complete one, since the `data-pf-radius` block in `public-form.css` squares the
+ * chip and pill roles too instead of leaving lozenge progress bars behind.
+ *
+ * Every LAYOUT axis below is untouched on purpose. Colors and type were the
+ * migration's scope; re-aligning or re-flowing live forms was not, and an axis
+ * like `contentAlign` would silently re-compose every form ever published.
  */
 export const LEGACY_FORM_DESIGN: ResolvedFormDesign = {
   radius: 'soft',
@@ -288,6 +317,27 @@ export interface FormThemePreset {
 }
 
 export const FORM_THEME_PRESETS: readonly FormThemePreset[] = [
+  /**
+   * The house look — the same Master Control Room palette and type the app chrome
+   * and the marketing site wear, offered as a preset so an author can get back to
+   * it after wandering. It leads the list because it is what a new form already
+   * looks like before anyone opens the design tab.
+   */
+  {
+    id: 'control-room',
+    label: 'Control Room',
+    background: '#0a0c0e',
+    foreground: '#e8edf2',
+    primaryColor: '#d3e750',
+    font: 'figtree',
+    radius: 'soft',
+    buttonStyle: 'solid',
+  },
+  /**
+   * The previous house look. Kept — with its id intact, so a form that stored
+   * `themePreset: 'midnight'` still shows its card as selected — because it is a
+   * perfectly good dark theme and someone chose it on purpose.
+   */
   {
     id: 'midnight',
     label: 'Midnight',

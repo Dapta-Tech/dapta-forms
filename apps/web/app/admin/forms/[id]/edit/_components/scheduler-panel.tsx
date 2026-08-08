@@ -98,7 +98,7 @@ export function SchedulerPanel({
       {/* The mark, not a generic calendar glyph: this section books through
           Calendly specifically, and every other surface that says so now shows
           the same logo. */}
-      <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+      <p className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wide text-faint">
         <ProviderLogo provider="calendly" size={13} />
         {s.schedulerSection}
       </p>
@@ -157,7 +157,7 @@ export function SchedulerPanel({
           catch-all rule ("any booking") that either ends the form or jumps. */}
       <div className="flex flex-col gap-1.5 border-t border-border pt-3">
         <p className="text-xs font-medium text-foreground">{s.schedulerAfter}</p>
-        <p className="text-[11px] text-muted-foreground">{s.schedulerAfterHint}</p>
+        <p className="text-xs text-muted-foreground">{s.schedulerAfterHint}</p>
         <div data-testid="scheduler-after">
           <Select
             ariaLabel={s.schedulerAfter}
@@ -185,7 +185,7 @@ export function SchedulerPanel({
           phone field is filled by the id Calendly actually gave it. */}
       <div className="flex flex-col gap-2 border-t border-border pt-3" data-testid="scheduler-map">
         <p className="text-xs font-medium text-foreground">{s.schedulerMapTitle}</p>
-        <p className="text-[11px] text-muted-foreground">
+        <p className="text-xs text-muted-foreground">
           {selected ? s.schedulerMapHint : s.schedulerMapPickFirst}
         </p>
         {bookingFields.map((bf) => (

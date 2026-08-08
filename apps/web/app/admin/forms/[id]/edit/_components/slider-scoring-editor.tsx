@@ -36,7 +36,7 @@ export function SliderScoringEditor({
   }
   return (
     <div className="flex flex-col gap-2">
-      <p className="text-[11px] leading-relaxed text-muted-foreground">{m.hint}</p>
+      <p className="text-xs leading-relaxed text-muted-foreground">{m.hint}</p>
       {ranges.length === 0 ? (
         <p className="text-xs text-muted-foreground">{m.empty}</p>
       ) : (
@@ -52,15 +52,15 @@ export function SliderScoringEditor({
                 )}
               >
                 <label className="flex flex-1 flex-col gap-1">
-                  <span className="text-[11px] font-medium text-muted-foreground">{m.min}</span>
+                  <span className="text-xs font-medium text-muted-foreground">{m.min}</span>
                   <NumberField value={r.min} onChange={(e) => update(index, { min: Number(e.target.value) || 0 })} />
                 </label>
                 <label className="flex flex-1 flex-col gap-1">
-                  <span className="text-[11px] font-medium text-muted-foreground">{m.max}</span>
+                  <span className="text-xs font-medium text-muted-foreground">{m.max}</span>
                   <NumberField value={r.max} onChange={(e) => update(index, { max: Number(e.target.value) || 0 })} />
                 </label>
                 <label className="flex w-16 shrink-0 flex-col gap-1">
-                  <span className="text-[11px] font-medium text-muted-foreground">{m.points}</span>
+                  <span className="text-xs font-medium text-muted-foreground">{m.points}</span>
                   <NumberField value={r.points} onChange={(e) => update(index, { points: Number(e.target.value) || 0 })} />
                 </label>
                 <Button
@@ -76,7 +76,7 @@ export function SliderScoringEditor({
               {shadowed ? (
                 <p
                   data-testid="slider-range-overlapped"
-                  className="flex items-start gap-1.5 text-[11px] leading-relaxed text-muted-foreground"
+                  className="flex items-start gap-1.5 text-xs leading-relaxed text-muted-foreground"
                 >
                   <i aria-hidden className="pi pi-info-circle mt-0.5 shrink-0 text-secondary" style={{ fontSize: 10 }} />
                   {m.overlapped}
@@ -86,7 +86,7 @@ export function SliderScoringEditor({
                 <p
                   role="alert"
                   data-testid="slider-range-unreachable"
-                  className="flex items-start gap-1.5 text-[11px] leading-relaxed text-destructive"
+                  className="flex items-start gap-1.5 text-xs leading-relaxed text-destructive"
                 >
                   <i aria-hidden className="pi pi-exclamation-triangle mt-0.5 shrink-0" style={{ fontSize: 10 }} />
                   {m.unreachable.replace('{min}', String(min)).replace('{max}', String(max))}

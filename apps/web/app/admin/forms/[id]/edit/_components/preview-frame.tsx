@@ -229,7 +229,7 @@ export function PreviewFrame({
             /* One page has no screens to step through, and an empty slides
                form has nothing to count ("Step 1 of 0") — the note gets the
                space the nav cluster would have used. */
-            <p className="truncate text-[11px] text-muted-foreground">{m.inert}</p>
+            <p className="truncate text-xs text-muted-foreground">{m.inert}</p>
           ) : (
             <>
               <button
@@ -278,7 +278,10 @@ export function PreviewFrame({
               data-testid={`preview-device-${d}`}
               className={cn(
                 'inline-flex h-full items-center gap-1.5 whitespace-nowrap rounded-md px-2.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                device === d ? 'bg-muted text-foreground' : 'text-muted-foreground hover:text-foreground',
+                // Same rim as the toolbar's own device toggle (editor-toolbar.tsx).
+                device === d
+                  ? 'bg-muted text-foreground shadow-[inset_0_0_0_1px_var(--primary-edge)]'
+                  : 'text-muted-foreground hover:text-foreground',
               )}
             >
               <i aria-hidden className={DEVICE_ICON[d]} style={{ fontSize: 12 }} />
@@ -293,7 +296,7 @@ export function PreviewFrame({
             title={viewportLabel}
             aria-label={viewportLabel}
             data-testid="preview-viewport"
-            className="inline-flex h-8 shrink-0 items-center whitespace-nowrap font-mono text-[10px] tabular-nums text-muted-foreground/70"
+            className="inline-flex h-8 shrink-0 items-center whitespace-nowrap font-mono text-2xs tabular-nums text-muted-foreground/70"
           >
             {width} × {height}
             {percent < 100 ? ` · ${percent}%` : ''}
@@ -349,7 +352,7 @@ export function PreviewFrame({
             title={fullUrl}
           >
             <i aria-hidden className="pi pi-lock shrink-0 text-muted-foreground" style={{ fontSize: 9 }} />
-            <span className="truncate font-mono text-[11px] text-muted-foreground">
+            <span className="truncate font-mono text-xs text-muted-foreground">
               <span className="sr-only">{m.urlLabel}: </span>
               {displayUrl}
             </span>
@@ -360,7 +363,7 @@ export function PreviewFrame({
             title={copied ? m.copied : m.copyLink}
             aria-label={copied ? m.copied : m.copyLink}
             data-testid="preview-copy-link"
-            className="shrink-0 rounded p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="shrink-0 rounded-sm p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             <i aria-hidden className={`pi ${copied ? 'pi-check' : 'pi-copy'}`} style={{ fontSize: 12 }} />
           </button>
@@ -370,7 +373,7 @@ export function PreviewFrame({
             rel="noreferrer"
             title={m.openForm}
             aria-label={m.openForm}
-            className="shrink-0 rounded p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="shrink-0 rounded-sm p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             <i aria-hidden className="pi pi-external-link" style={{ fontSize: 12 }} />
           </a>

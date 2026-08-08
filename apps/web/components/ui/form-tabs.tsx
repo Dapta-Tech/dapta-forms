@@ -42,7 +42,7 @@ export function FormTabs({
               aria-current={isActive ? 'page' : undefined}
               className={
                 isActive
-                  ? 'relative -mb-px border-b-2 border-primary px-3 py-2 text-sm font-semibold text-foreground'
+                  ? 'relative -mb-px border-b-2 border-primary-edge px-3 py-2 text-sm font-semibold text-foreground'
                   : 'relative -mb-px border-b-2 border-transparent px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground'
               }
             >

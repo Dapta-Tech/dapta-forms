@@ -127,7 +127,7 @@ export function OptionsImportModal({
           <div className="max-h-56 overflow-y-auto rounded-md border border-border">
             <table className="w-full border-collapse text-xs" data-testid="options-import-preview">
               <thead className="sticky top-0 bg-card">
-                <tr className="border-b border-border text-left text-[10px] uppercase tracking-wide text-muted-foreground">
+                <tr className="border-b border-border text-left text-2xs uppercase tracking-wide text-faint">
                   <th className="px-3 py-2 font-medium">{m.colOption}</th>
                   <th className="w-16 px-3 py-2 font-medium">{m.colScore}</th>
                   <th className="w-28 px-3 py-2 font-medium">{m.colStatus}</th>
@@ -141,7 +141,7 @@ export function OptionsImportModal({
                       <td className="px-3 py-1.5">{r.label}</td>
                       <td className="px-3 py-1.5 font-mono tabular-nums">{r.points ?? '—'}</td>
                       <td className="px-3 py-1.5">
-                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${toneClass[st.tone]}`}>
+                        <span className={`rounded-full px-2 py-0.5 text-2xs font-semibold ${toneClass[st.tone]}`}>
                           {st.text}
                         </span>
                       </td>

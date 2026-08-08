@@ -7,9 +7,11 @@ import { isNavItemActive, type FormsMessages } from '@quill/shared';
 import { signOutAction } from '@/app/login/actions';
 import { AppSwitcher } from '@/components/app-switcher';
 import { BrandMark, BrandWordmark } from '@/components/brand/brand';
+import { ThemeToggle } from '@/components/theme-toggle';
 import { WorkspaceSwitcher } from '@/components/workspace-switcher';
 import type { Workspace } from '@/lib/admin-api';
 import { resetAnalytics } from '@/lib/product-analytics';
+import type { ThemePref } from '@/lib/theme';
 
 type ChromeMessages = FormsMessages['admin']['chrome'];
 
@@ -89,12 +91,22 @@ function NavLinks({
               title={collapsed ? label : undefined}
               aria-current={active ? 'page' : undefined}
               className={[
-                'flex items-center gap-3 rounded-md text-sm transition-colors active:scale-[0.99]',
+                'relative flex items-center gap-3 rounded-md text-sm transition-colors active:scale-[0.99]',
                 collapsed ? 'mx-auto h-11 w-11 justify-center gap-0 px-0' : 'min-h-[44px] px-3 py-2.5',
                 active
                   ? 'bg-muted font-medium text-foreground'
                   : 'text-muted-foreground hover:bg-muted hover:text-foreground',
-              ].join(' ')}
+                // The `bg-muted` wash alone cannot mark "you are here": on paper it
+                // is 1.18:1 against the card behind it, well under the 3:1 WCAG
+                // 1.4.11 asks of a state indicator, and a grey chip on white can
+                // never reach it. The wash still does the scanning work; this 2px
+                // accent bar does the identifying, at 3.3:1 on light and 14:1 on
+                // dark. Two signals, so neither has to carry the whole job.
+                active &&
+                  'before:absolute before:inset-y-1.5 before:left-0 before:w-0.5 before:rounded-full before:bg-primary-edge before:content-[""]',
+              ]
+                .filter(Boolean)
+                .join(' ')}
             >
               <Icon name={item.icon} />
               {/* Label stays in the a11y tree when collapsed (sr-only) so the
@@ -118,6 +130,7 @@ export function AdminShell({
   user,
   messages,
   initialCollapsed = false,
+  themePref = 'dark',
   workspaces = [],
   currentAccountId,
   children,
@@ -127,6 +140,8 @@ export function AdminShell({
   messages: ChromeMessages;
   /** Server-read cookie value → no collapse-rail FOUC on reload. */
   initialCollapsed?: boolean;
+  /** Server-read colour-scheme choice, so the toggle's icon matches the paint. */
+  themePref?: ThemePref;
   /** Every account the caller can enter. Fewer than two renders no switcher. */
   workspaces?: Workspace[];
   /** The account these pages are currently scoped to. */
@@ -240,22 +255,33 @@ export function AdminShell({
     </form>
   );
 
+  // Identity and actions are stacked rather than sharing one row. They used to be
+  // a single `30px 1fr auto` grid, which worked while there were two 44px icon
+  // buttons: a third (the theme toggle) pushed the `auto` track to 136px and
+  // squeezed the email's `1fr` to 25px — an address ellipsised to "y…". Shrinking
+  // the buttons was the other option and it is the wrong one; 44px is the hit
+  // target (R28). A 240px rail does not fit an address and three targets on one
+  // line, so the address gets the full width and the targets get their own row.
+  // The collapsed rail is unaffected — it was already a single centred column.
   const renderFooter = (footerCollapsed: boolean) => (
     <div
-      className={`mt-auto grid items-center gap-2 border-t border-border pt-3 ${
-        footerCollapsed ? 'grid-cols-1 justify-items-center' : 'grid-cols-[30px_1fr_auto]'
+      className={`mt-auto flex border-t border-border pt-3 ${
+        footerCollapsed ? 'flex-col items-center gap-1' : 'flex-col gap-2'
       }`}
     >
-      <span className="flex h-[30px] w-[30px] items-center justify-center rounded-full border border-border bg-card text-xs font-semibold text-muted-foreground">
-        {initial}
-      </span>
-      {!footerCollapsed ? (
-        <span className="truncate text-sm text-foreground" title={userLabel}>
-          {userLabel}
+      <div className={footerCollapsed ? '' : 'grid grid-cols-[30px_1fr] items-center gap-2'}>
+        <span className="flex h-[30px] w-[30px] items-center justify-center rounded-full border border-border bg-card text-xs font-semibold text-muted-foreground">
+          {initial}
         </span>
-      ) : null}
+        {!footerCollapsed ? (
+          <span className="truncate text-sm text-foreground" title={userLabel}>
+            {userLabel}
+          </span>
+        ) : null}
+      </div>
       {/* Icon actions stay reachable in the collapsed rail too. */}
       <span className={`flex items-center ${footerCollapsed ? 'flex-col gap-1' : 'gap-0.5'}`}>
+        <ThemeToggle pref={themePref} m={messages.theme} />
         {viewPublic}
         {signOut}
       </span>

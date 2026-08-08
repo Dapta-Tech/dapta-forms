@@ -5,6 +5,7 @@ import { getMessages } from '@quill/shared';
 import { adminApi, ApiError } from '@/lib/admin-api';
 import { AdminShell } from '@/components/admin-shell';
 import { getLocale } from '@/lib/locale';
+import { getThemePref } from '@/lib/theme.server';
 import { ToastProvider } from '@/components/toast';
 import { resolveProductAnalytics } from '@/lib/product-analytics';
 import { ProductAnalytics } from '@/components/analytics/product-analytics';
@@ -69,6 +70,7 @@ export default async function AdminLayout({ children }: { children: ReactNode })
       />
       <AdminShell
         initialCollapsed={initialCollapsed}
+        themePref={await getThemePref()}
         messages={chrome}
         workspaces={workspaces}
         currentAccountId={me.accountId}

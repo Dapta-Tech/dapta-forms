@@ -389,7 +389,7 @@ export function QuestionHubspotSection({
       data-testid="qs-hubspot-section"
       className="flex flex-col gap-3 border-t border-border pt-4"
     >
-      <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+      <p className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wide text-faint">
         <i aria-hidden className="pi pi-link text-secondary" style={{ fontSize: 11 }} />
         {m.title}
       </p>
@@ -437,7 +437,7 @@ function MappingRow({
         <label className="text-sm font-medium text-foreground">{label}</label>
         <span
           aria-live="polite"
-          className={cn('text-[11px]', saved ? 'text-primary' : 'text-muted-foreground')}
+          className={cn('text-xs', saved ? 'text-primary' : 'text-muted-foreground')}
         >
           {saving ? m.saving : saved ? <span data-testid="qs-hubspot-saved">{m.saved}</span> : null}
         </span>

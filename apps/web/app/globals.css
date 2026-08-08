@@ -26,10 +26,91 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
-  --radius-md: var(--radius);
-  /* Poppins is the brand font, self-hosted via next/font (--font-poppins);
-     falls back to a system stack if the variable is ever absent. */
-  --font-sans: var(--font-poppins), 'Poppins', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  /* Faint Slate — the quietest legible voice (telemetry labels, hints, inactive
+     states). A fourth text step the old two-tone scale had no room for. */
+  --color-faint: var(--faint);
+  /* The constant dark tile that every brand mark in the app switcher sits on, and
+     its foreground. Same values in both themes on purpose — see `--brand-ink` in
+     tokens.css. */
+  --color-brand-ink: var(--brand-ink);
+  --color-brand-ink-foreground: var(--brand-ink-foreground);
+
+  /* The accent at a lightness that reads against this theme's page — the rim on an
+     accent fill, the focus outline, and the mark on a selected control.
+
+     THE RULE, in one line: the accent has three jobs and three tokens.
+       FILL    `bg-primary`          — `--primary`, the brand lime, rimmed below
+       LETTERS `text-primary`        — `--primary-ink`, overridden below
+       LINES   `border-primary-edge` — this token, used directly at the call site
+     A border is the one job that is NOT overridden here, because `border-primary`
+     is nine different classes once you count `/40 /50 /60`, `hover:`, `checked:`
+     and `focus-within:` — overriding the bare one would have silently left the
+     other eight on the raw lime, which in light mode is a 1.27:1 line. So the call
+     sites name this token themselves and every opacity variant follows for free.
+     On dark `--primary-edge` IS `--primary`, so none of this changes that theme. */
+  --color-primary-edge: var(--primary-edge);
+
+  /* The WHOLE radius scale is pinned here, not just `md`: overriding one step
+     leaves `rounded-lg/xl/2xl` on Tailwind's defaults, so the scale contradicts
+     itself — a `rounded-lg` chip ends up sharper than the `rounded-md` button next
+     to it. One ladder, softest at the card step. `rounded-full` is left alone: it
+     is avatars and status dots, not a corner decision. */
+  --radius-sm: 6px;
+  --radius-md: var(--radius); /* 10px */
+  --radius-lg: 12px;
+  --radius-xl: var(--radius-monitor); /* 16px */
+  --radius-2xl: 20px;
+
+  /* Two voices, no third font. Figtree does all the talking; IBM Plex Mono is
+     reserved for strings you COPY rather than read — links, slugs, hex, keys —
+     where a fixed advance and an unambiguous l/1/O/0 do real work. Numbers are
+     NOT one of those: a stat is glanced at, and monospacing it only made it read
+     as code. Both self-hosted via next/font (`--font-figtree`, `--font-plex-mono`)
+     and both OFL, which is what lets next/font bake the files into the build and
+     into every clone of this repo. Each falls back to a system stack if its
+     variable is ever absent. */
+  --font-sans: var(--font-figtree), Figtree, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: var(--font-plex-mono), 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* The type scale, pinned end to end.
+     It had drifted to ELEVEN sizes — 10 · 11 · 12 · 13 · 14 · 15 · 16 · 18 · 23 ·
+     28 · 30 — with four of them crammed inside 10–14px where they cannot be told
+     apart, and nothing in regular use between 18 and 14 where the eye needs the
+     resolution. That is why every page read "title, then grey flatland": the scale
+     spent its steps where they do not show and had none where they would.
+     Seven steps, each a role:
+       30  page title
+       24  metric value — deliberately BELOW the title so the title still wins
+       20  section heading
+       16  card heading
+       14  body
+       12  label / metadata
+       10  telemetry (uppercase, tracked)
+     The telemetry step is a PAIR: `text-2xs` always travels with `text-faint`.
+     Half the app's eyebrow labels were drawn at `text-xs` + `text-muted-foreground`
+     instead, which is why the four-tone text ladder measured as a two-tone one —
+     the tier built to be quietest had 18 call sites against 395. Same object, same
+     two classes, everywhere.
+     `lg` and `xl` are the same 20px on purpose: `lg` was 18px and carried the
+     section headings, and moving it up merges a near-duplicate step rather than
+     rewriting 17 call sites. Line heights are pinned with the sizes — 11px alone
+     had three different ones, which is what made small text look ragged. */
+  --text-2xs: 10px;
+  --text-2xs--line-height: 14px;
+  --text-xs: 12px;
+  --text-xs--line-height: 16px;
+  --text-sm: 14px;
+  --text-sm--line-height: 20px;
+  --text-base: 16px;
+  --text-base--line-height: 24px;
+  --text-lg: 20px;
+  --text-lg--line-height: 26px;
+  --text-xl: 20px;
+  --text-xl--line-height: 26px;
+  --text-2xl: 24px;
+  --text-2xl--line-height: 30px;
+  --text-3xl: 30px;
+  --text-3xl--line-height: 36px;
 }
 
 /* Default every element's border-color to the token, the shadcn contract. This
@@ -45,6 +126,41 @@
   }
 }
 
+/* Point the accent-as-TEXT utility at `--primary-ink` instead of `--primary`.
+   Done here rather than in ~50 components: the accent needs one lightness as a
+   fill and a darker one as letters (see `--primary-ink` in tokens.css), and
+   `text-primary`/`bg-primary` both read `--color-primary`. Overriding the single
+   utility keeps every call site untouched and cannot drift. In `@layer utilities`
+   so it still loses to an explicit color utility on the same element, and the
+   `hover:` variant is listed because its pseudo-class outranks a bare class. */
+@layer utilities {
+  .text-primary,
+  .hover\:text-primary:hover {
+    color: var(--primary-ink);
+  }
+
+  /* Rim every accent fill with `--primary-edge`, so the fill's SHAPE clears 3:1
+     against the page it sits on (WCAG 1.4.11). On dark the edge equals the fill and
+     this paints nothing; on light it is the difference between Publish being a
+     recognisable control and being a pale smear at 1.27:1.
+     An `inset` box-shadow rather than a border because a border would add 2px to
+     every one of ~60 accent fills and reflow all of them. Opacity-modified variants
+     (`bg-primary/10`, `bg-primary/[0.06]`) are different classes and untouched — they
+     are washes, not fills, and two of them carry their own `shadow-sm`.
+
+     THE SIZE RULE this implies: `bg-primary` is for fills big enough to HAVE an
+     interior — buttons, chips, badges. A 1px rim on a 6px dot leaves 4px of fill
+     and reads as a donut, and on a 4px bar it takes half the shape. Below about
+     10px the accent is a MARK, not a fill, and it takes `bg-primary-edge`
+     instead: the edge colour carrying the whole shape, which is identical on dark
+     and a legible dark-olive on light. Every such indicator (the save-status dot,
+     the unpublished-changes dot, the spine's active bar, the Logic start dots)
+     uses that, and a new one should too. */
+  .bg-primary {
+    box-shadow: inset 0 0 0 1px var(--primary-edge);
+  }
+}
+
 html,
 body {
   background: var(--background);
@@ -53,9 +169,13 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* Lime focus ring (WCAG) honored everywhere. */
+/* Lime focus ring (WCAG) honored everywhere.
+   Uses `--primary-edge`, not `--primary`: the outline is the one thing that must be
+   findable on every surface, and the raw accent flattened to 1.27:1 over paper —
+   the focus indicator was the least visible thing on a focused control in light
+   mode. On dark the edge IS the accent, so nothing changes there. */
 :focus-visible {
-  outline: 2px solid var(--primary);
+  outline: 2px solid var(--primary-edge);
   outline-offset: 2px;
 }
 
