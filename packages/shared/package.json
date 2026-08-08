@@ -1,6 +1,6 @@
 {
   "name": "@quill/shared",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "description": "Framework-free shared utilities: handle validation, branding/accent, growth badge, i18n, and design tokens.",
@@ -8,7 +8,10 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
-    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" },
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
     "./tokens.css": "./src/tokens.css"
   },
   "scripts": {
