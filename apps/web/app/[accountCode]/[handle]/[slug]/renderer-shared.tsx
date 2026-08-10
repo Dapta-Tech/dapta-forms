@@ -127,6 +127,31 @@ export function schedulerToBooking(
 }
 
 /**
+ * The banner strip's authored look, as inline custom properties.
+ *
+ * Exported and pure so BOTH renderers and the builder preview stamp identical
+ * markup — a banner that reads as loud in the builder and washed out on the
+ * public page is the exact bug this feature exists to fix.
+ *
+ * An unset axis emits NO variable, which is what keeps every stored config
+ * pixel-identical: the stylesheet's own `var(…, <legacy fallback>)` answers
+ * instead. The size is a `data-` attribute rather than a variable because it
+ * moves two values (padding and type) that the CSS should keep together.
+ */
+export function bannerChromeProps(cover: FormCover | null | undefined): {
+  style: React.CSSProperties;
+  'data-pf-banner-size'?: string;
+} {
+  const vars: Record<string, string> = {};
+  if (cover?.bannerColor) vars['--pf-banner-bg'] = cover.bannerColor;
+  if (cover?.bannerTextColor) vars['--pf-banner-fg'] = cover.bannerTextColor;
+  return {
+    style: vars as React.CSSProperties,
+    ...(cover?.bannerSize ? { 'data-pf-banner-size': cover.bannerSize } : {}),
+  };
+}
+
+/**
  * Per-phase page shell. The promo banner (`cover.bannerText`) renders ONCE here
  * as the first child of `.pf`, so it is a full-width strip pinned to the top of
  * the viewport; everything else lives in `.pf__main`, which owns the remaining
@@ -136,6 +161,7 @@ export function schedulerToBooking(
  *
  * WHICH phases show it is `cover.bannerScope` (see `showBanner`): every phase by
  * default, or the cover alone — hence `isCover`, set only by the cover phase.
+ * WHAT it looks like is `bannerChromeProps`.
  */
 export function PhaseShell({
   cover,
@@ -165,7 +191,11 @@ export function PhaseShell({
       {/* An author-supplied face has to be declared in the document; there is no
           build step that could have hoisted it into the stylesheet. */}
       {design?.fontFace ? <style>{design.fontFace}</style> : null}
-      {banner ? <div className="pf__banner">{banner}</div> : null}
+      {banner ? (
+        <div className="pf__banner" {...bannerChromeProps(cover)}>
+          {banner}
+        </div>
+      ) : null}
       <div className="pf__main">{children}</div>
     </div>
   );

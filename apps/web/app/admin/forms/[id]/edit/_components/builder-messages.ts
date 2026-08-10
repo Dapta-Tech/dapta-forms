@@ -202,6 +202,24 @@ export interface BuilderMessages {
     revealHint: string;
     revealPrewarm: string;
     revealPrewarmHint: string;
+    /** How the interstitial is drawn — loader style, scales, accent flood. */
+    revealLook: string;
+    revealLoader: string;
+    revealLoaderHint: string;
+    revealLoaderSpinner: string;
+    revealLoaderBar: string;
+    revealLoaderVersus: string;
+    revealLoaderNone: string;
+    revealLoaderSize: string;
+    revealTextSize: string;
+    revealSizeSm: string;
+    revealSizeMd: string;
+    revealSizeLg: string;
+    revealAccentBackground: string;
+    revealAccentBackgroundHint: string;
+    revealVersusYou: string;
+    revealVersusMatch: string;
+    revealVersusHint: string;
     /** V6 — the scheduler STEP picks a Calendly event type here. */
     schedulerSection: string;
     schedulerHint: string;
@@ -588,6 +606,24 @@ const en: BuilderMessages = {
       'Plays here, then the form continues on its own. Drag the card in the list to move it. Both lines accept [field] tokens.',
     revealPrewarm: 'Pre-warm the booking embed',
     revealPrewarmHint: 'Loads the outcome’s booking calendar while this screen plays.',
+    revealLook: 'Look',
+    revealLoader: 'Loader',
+    revealLoaderHint: 'What animates while the screen plays.',
+    revealLoaderSpinner: 'Spinner',
+    revealLoaderBar: 'Bar only',
+    revealLoaderVersus: 'You vs. match',
+    revealLoaderNone: 'No animation',
+    revealLoaderSize: 'Loader size',
+    revealTextSize: 'Text size',
+    revealSizeSm: 'Small',
+    revealSizeMd: 'Medium',
+    revealSizeLg: 'Large',
+    revealAccentBackground: 'Flood with the accent',
+    revealAccentBackgroundHint:
+      'Paints the whole screen in the form’s accent color, so the interstitial reads as a moment of its own.',
+    revealVersusYou: 'Your side’s label',
+    revealVersusMatch: 'The match’s label',
+    revealVersusHint: 'Both accept [field] tokens. Empty uses the default wording.',
     schedulerSection: 'Scheduler',
     schedulerHint: 'Pick a Calendly event type. When someone books, it counts as their answer.',
     schedulerEventType: 'Event type',
@@ -941,6 +977,24 @@ const es: BuilderMessages = {
       'Se muestra aquí y el formulario continúa solo. Arrastra la tarjeta en la lista para moverla. Ambas líneas aceptan tokens [campo].',
     revealPrewarm: 'Precargar el calendario',
     revealPrewarmHint: 'Carga el calendario de agendamiento del resultado mientras se muestra esta pantalla.',
+    revealLook: 'Aspecto',
+    revealLoader: 'Cargador',
+    revealLoaderHint: 'Qué se anima mientras se muestra la pantalla.',
+    revealLoaderSpinner: 'Ruedita',
+    revealLoaderBar: 'Solo la barra',
+    revealLoaderVersus: 'Tú vs. el match',
+    revealLoaderNone: 'Sin animación',
+    revealLoaderSize: 'Tamaño del cargador',
+    revealTextSize: 'Tamaño del texto',
+    revealSizeSm: 'Pequeño',
+    revealSizeMd: 'Mediano',
+    revealSizeLg: 'Grande',
+    revealAccentBackground: 'Fondo con el color de acento',
+    revealAccentBackgroundHint:
+      'Pinta toda la pantalla con el color de acento del formulario, para que la espera se sienta como un momento aparte.',
+    revealVersusYou: 'Etiqueta de tu lado',
+    revealVersusMatch: 'Etiqueta del match',
+    revealVersusHint: 'Ambas aceptan tokens [campo]. Vacías usan el texto por defecto.',
     schedulerSection: 'Agendador',
     schedulerHint: 'Elige un tipo de evento de Calendly. Cuando alguien agenda, cuenta como su respuesta.',
     schedulerEventType: 'Tipo de evento',

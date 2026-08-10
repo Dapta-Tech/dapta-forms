@@ -634,18 +634,58 @@ function CoverSection({
           onChange={(e) => onCoverChange({ bannerText: e.target.value || null })}
         />
       </Field>
+      {/* Everything about the strip's look hangs off there BEING a strip. With
+          no text there is no banner on the page, so a color picker for it would
+          be a control with nothing to change. */}
       {cover.bannerText ? (
-        <InlineField label={m.cover.bannerScope}>
-          <SegmentedToggle
-            value={cover.bannerScope ?? 'form'}
-            onChange={(bannerScope) => onCoverChange({ bannerScope })}
-            options={[
-              { value: 'form' as const, label: m.cover.bannerScopeForm },
-              { value: 'cover' as const, label: m.cover.bannerScopeCover },
-            ]}
-            ariaLabel={m.cover.bannerScope}
-          />
-        </InlineField>
+        <>
+          <InlineField label={m.cover.bannerScope}>
+            <SegmentedToggle
+              value={cover.bannerScope ?? 'form'}
+              onChange={(bannerScope) => onCoverChange({ bannerScope })}
+              options={[
+                { value: 'form' as const, label: m.cover.bannerScopeForm },
+                { value: 'cover' as const, label: m.cover.bannerScopeCover },
+              ]}
+              ariaLabel={m.cover.bannerScope}
+            />
+          </InlineField>
+          <Field label={m.cover.bannerColor} hint={m.cover.bannerColorHint}>
+            <ColorPicker
+              value={cover.bannerColor}
+              onChange={(bannerColor) => onCoverChange({ bannerColor })}
+              label={m.cover.bannerColor}
+              allowEmpty
+              m={m.design}
+            />
+          </Field>
+          <Field label={m.cover.bannerTextColor}>
+            {/* `against` is the strip's own fill, so the contrast readout judges
+                the pair that actually renders — not the text against the form
+                ground, which is a different surface entirely. */}
+            <ColorPicker
+              value={cover.bannerTextColor}
+              onChange={(bannerTextColor) => onCoverChange({ bannerTextColor })}
+              label={m.cover.bannerTextColor}
+              against={cover.bannerColor ?? undefined}
+              againstLabel={m.cover.bannerColor}
+              allowEmpty
+              m={m.design}
+            />
+          </Field>
+          <InlineField label={m.cover.bannerSize}>
+            <SegmentedToggle
+              value={cover.bannerSize ?? 'md'}
+              onChange={(bannerSize) => onCoverChange({ bannerSize })}
+              options={[
+                { value: 'sm' as const, label: m.cover.bannerSizeSm },
+                { value: 'md' as const, label: m.cover.bannerSizeMd },
+                { value: 'lg' as const, label: m.cover.bannerSizeLg },
+              ]}
+              ariaLabel={m.cover.bannerSize}
+            />
+          </InlineField>
+        </>
       ) : null}
       <Field label={m.cover.eyebrow}>
         <TextField value={cover.eyebrow ?? ''} onChange={(e) => onCoverChange({ eyebrow: e.target.value || null })} />
@@ -708,6 +748,22 @@ function ClientLogosSection({
           aria-label={m.cover.showClientLogos}
         />
       </InlineField>
+      {/* Only reachable while the marquee is on: picking WHERE something shows
+          is meaningless once it shows nowhere. */}
+      {cover.showClientLogos !== false ? (
+        <InlineField label={m.cover.clientLogosScope}>
+          <SegmentedToggle
+            value={cover.clientLogosScope ?? 'cover'}
+            onChange={(clientLogosScope) => onCoverChange({ clientLogosScope })}
+            options={[
+              { value: 'cover' as const, label: m.cover.clientLogosScopeCover },
+              { value: 'reveal' as const, label: m.cover.clientLogosScopeReveal },
+              { value: 'both' as const, label: m.cover.clientLogosScopeBoth },
+            ]}
+            ariaLabel={m.cover.clientLogosScope}
+          />
+        </InlineField>
+      ) : null}
       <div className="flex flex-col gap-2">
         {logos.length === 0 ? (
           <p className="text-xs text-muted-foreground">{m.cover.clientLogosEmpty}</p>

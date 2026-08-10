@@ -6,7 +6,12 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_REVEAL_MS, resolveRevealCopy } from './reveal-screen';
 
-const messages = { headline: 'Reviewing your answers…', subtitle: 'One moment.' };
+const messages = {
+  headline: 'Reviewing your answers…',
+  subtitle: 'One moment.',
+  versusYou: 'You',
+  versusMatch: 'Your match',
+};
 
 describe('resolveRevealCopy', () => {
   it('falls back to the localized messages when the config has no copy', () => {
@@ -14,8 +19,20 @@ describe('resolveRevealCopy', () => {
       headline: messages.headline,
       subtitle: messages.subtitle,
       durationMs: DEFAULT_REVEAL_MS,
+      versusYou: messages.versusYou,
+      versusMatch: messages.versusMatch,
     });
     expect(resolveRevealCopy({}, {}, messages).headline).toBe(messages.headline);
+  });
+
+  it('uses the configured versus labels and interpolates them', () => {
+    const out = resolveRevealCopy(
+      { versusYouLabel: '[firstname]', versusMatchLabel: 'Your [role]' },
+      { firstname: 'Ana', role: 'advisor' },
+      messages,
+    );
+    expect(out.versusYou).toBe('Ana');
+    expect(out.versusMatch).toBe('Your advisor');
   });
 
   it('uses the configured headline/subtitle when present', () => {

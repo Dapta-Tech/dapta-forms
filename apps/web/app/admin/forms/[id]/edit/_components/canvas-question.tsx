@@ -9,8 +9,10 @@ import {
   resolveOptionLayout,
   resolveOptionIcon,
   resolveDesign,
+  resolveRevealPresentation,
 } from '@quill/engine';
-import { onAccent, DEFAULT_ACCENT } from '@quill/shared';
+import { onAccent, DEFAULT_ACCENT, getMessages } from '@quill/shared';
+import { clientLocale } from '@/lib/client-locale';
 import { cn } from '@/lib/cn';
 import { iconForStep, hasOptions } from './question-types';
 import { maxStepPoints } from './scoring-util';
@@ -28,6 +30,7 @@ function AutoTextarea({
   onChange,
   placeholder,
   className,
+  style,
   ariaLabel,
   autoFocus,
   rows = 1,
@@ -36,17 +39,23 @@ function AutoTextarea({
   onChange: (v: string) => void;
   placeholder: string;
   className?: string;
+  /** Inline overrides for values the canvas computes — the reveal's type scale. */
+  style?: React.CSSProperties;
   ariaLabel: string;
   autoFocus?: boolean;
   rows?: number;
 }) {
   const ref = useRef<HTMLTextAreaElement>(null);
+  // Re-measure on the TYPE SCALE too, not just the text. The box is
+  // `overflow-hidden`, so a font-size change with a stale height silently clips
+  // the line — which is exactly what picking the reveal's "Large" text size did
+  // to its headline.
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
     el.style.height = 'auto';
     el.style.height = `${el.scrollHeight}px`;
-  }, [value]);
+  }, [value, style?.fontSize, style?.lineHeight]);
   useEffect(() => {
     if (autoFocus && ref.current) {
       const el = ref.current;
@@ -62,6 +71,7 @@ function AutoTextarea({
       onChange={(e) => onChange(e.target.value)}
       placeholder={placeholder}
       aria-label={ariaLabel}
+      style={style}
       className={cn(
         'w-full resize-none overflow-hidden bg-transparent outline-none placeholder:text-muted-foreground/50',
         className,
@@ -613,16 +623,28 @@ function RevealPageBlock({
   );
 }
 
+/** The canvas mirror of the public `--pf-reveal-mark` scale. */
+const REVEAL_MARK_PX = { sm: 36, md: 52, lg: 76 } as const;
+/** The canvas mirror of the public `--pf-reveal-headline` / `-subtitle` scales. */
+const REVEAL_TEXT_PX = {
+  sm: { headline: 22, subtitle: 14 },
+  md: { headline: 26, subtitle: 15 },
+  lg: { headline: 36, subtitle: 18 },
+} as const;
+
 /**
- * The reveal card, rendered as the respondent will see it: the accent spinner,
- * the headline and subtitle, and the progress bar filling over the configured
- * duration — looping, so the author can feel how long `durationMs` actually is.
+ * The reveal card, rendered as the respondent will see it: the configured
+ * loader, the headline and subtitle at their configured scale, and the progress
+ * bar filling over the configured duration — looping, so the author can feel how
+ * long `durationMs` actually is.
  *
  * The copy is edited IN PLACE (same inline-textarea idiom as a question title),
  * which is why this mirrors the public `.pf-reveal__*` markup by hand instead of
  * mounting `<RevealScreen>`: that component owns its own timer and renders the
  * copy as static text, so it could preview the screen or let you edit it, not
- * both. Duration and pre-warm stay in the settings panel.
+ * both. The cost of that choice is this file having to track the public scales —
+ * hence the two tables above, which mirror `public-form.css` value for value.
+ * Duration and pre-warm stay in the settings panel.
  */
 function RevealCanvas({
   step,
@@ -638,27 +660,47 @@ function RevealCanvas({
   m: BuilderMessages;
 }) {
   const durationMs = step.reveal?.durationMs ?? DEFAULT_REVEAL_MS;
+  const { loader, loaderSize, textSize, accentBackground } = resolveRevealPresentation(step.reveal);
+  // The RESPONDENT's fallbacks, not the editor's field labels. The canvas is a
+  // preview of the published screen, so an unnamed side has to read the way it
+  // will publish ("You"), never the way the input beside it is captioned
+  // ("Your side's label") — that is the preview lying about the page.
+  const r = getMessages(clientLocale()).renderer;
+  const mark = REVEAL_MARK_PX[loaderSize];
+  const text = REVEAL_TEXT_PX[textSize];
+  // The accent flood makes the card its own surface, so the copy has to flip
+  // with it — the same pairing the public stylesheet makes with
+  // `--pf-primary-contrast`.
+  const onAccentColor = onAccent(accent);
+  const bar = accentBackground ? onAccentColor : accent;
+  const bodyColor = accentBackground ? onAccentColor : undefined;
   return (
     <div className="flex justify-center">
       <div
         data-testid="canvas-reveal-preview"
+        data-pf-reveal-loader={loader}
         className={cn(
-          'flex w-full flex-col items-center rounded-2xl border border-border bg-card px-6 py-14 shadow-xl sm:px-8',
+          'flex w-full flex-col items-center rounded-2xl border border-border px-6 py-14 shadow-xl sm:px-8',
+          accentBackground ? '' : 'bg-card',
           device === 'mobile' ? 'max-w-[380px]' : 'max-w-[640px]',
         )}
+        style={accentBackground ? { background: accent, color: onAccentColor } : undefined}
       >
-        <div
-          aria-hidden
-          data-testid="canvas-reveal-spinner"
-          className="qb-reveal__spinner mb-7 h-[52px] w-[52px] rounded-full border-4 border-muted"
-          style={{ borderTopColor: accent }}
-        />
+        {loader === 'spinner' ? (
+          <div
+            aria-hidden
+            data-testid="canvas-reveal-spinner"
+            className="qb-reveal__spinner mb-7 rounded-full border-4 border-muted"
+            style={{ width: mark, height: mark, borderTopColor: bar }}
+          />
+        ) : null}
         <AutoTextarea
           value={step.reveal?.headline ?? ''}
           onChange={(v) => onUpdate({ reveal: { ...step.reveal, headline: v || null } })}
           placeholder={m.canvas.revealHeadlinePlaceholder}
           ariaLabel={m.canvas.revealHeadlinePlaceholder}
-          className="canvas-title max-w-[420px] text-center text-[26px] font-extrabold leading-tight tracking-tight text-foreground"
+          className="canvas-title max-w-[420px] text-center font-extrabold leading-tight tracking-tight text-foreground"
+          style={{ fontSize: text.headline, color: bodyColor }}
         />
         <div className="mt-2 w-full max-w-[420px]">
           <AutoTextarea
@@ -667,16 +709,65 @@ function RevealCanvas({
             placeholder={m.canvas.revealSubtitlePlaceholder}
             ariaLabel={m.canvas.revealSubtitlePlaceholder}
             rows={2}
-            className="text-center text-[15px] leading-relaxed text-muted-foreground"
+            className="text-center leading-relaxed text-muted-foreground"
+            style={{ fontSize: text.subtitle, color: bodyColor }}
           />
         </div>
-        <div className="mt-6 h-2 w-[260px] max-w-full overflow-hidden rounded-full bg-muted">
+        {loader === 'spinner' || loader === 'bar' ? (
+          <div className="mt-6 h-2 w-[260px] max-w-full overflow-hidden rounded-full bg-muted">
+            <div
+              className="qb-reveal__fill h-full rounded-full"
+              style={{ background: bar, animationDuration: `${durationMs}ms` }}
+            />
+          </div>
+        ) : null}
+        {loader === 'versus' ? (
           <div
-            className="qb-reveal__fill h-full rounded-full"
-            style={{ background: accent, animationDuration: `${durationMs}ms` }}
-          />
-        </div>
-        <p className="mt-5 text-xs text-muted-foreground">
+            aria-hidden
+            data-testid="canvas-reveal-versus"
+            className="mt-6 flex w-full items-start justify-center gap-5"
+          >
+            <div className="flex flex-col items-center gap-2.5">
+              <div
+                className="rounded-full"
+                style={{
+                  width: mark,
+                  height: mark,
+                  background: accentBackground ? onAccentColor : 'var(--foreground)',
+                }}
+              />
+              <span className="max-w-[12ch] text-center text-[13px] font-semibold">
+                {step.reveal?.versusYouLabel || r.revealVersusYou}
+              </span>
+            </div>
+            <div className="flex max-w-[200px] flex-1 flex-col items-center gap-2 pt-3">
+              <span className="text-[19px] font-extrabold leading-none tracking-tight">100%</span>
+              <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+                <div
+                  className="qb-reveal__fill h-full rounded-full"
+                  style={{ background: bar, animationDuration: `${durationMs}ms` }}
+                />
+              </div>
+            </div>
+            <div className="flex flex-col items-center gap-2.5">
+              <div
+                className="flex items-center justify-center rounded-full border-2 font-bold"
+                style={{
+                  width: mark,
+                  height: mark,
+                  fontSize: mark * 0.42,
+                  borderColor: 'color-mix(in srgb, currentColor 35%, transparent)',
+                }}
+              >
+                ?
+              </div>
+              <span className="max-w-[12ch] text-center text-[13px] font-semibold">
+                {step.reveal?.versusMatchLabel || r.revealVersusMatch}
+              </span>
+            </div>
+          </div>
+        ) : null}
+        <p className="mt-5 text-xs text-muted-foreground" style={{ color: bodyColor }}>
           {tb(m.canvas.revealPlays, { ms: durationMs })}
         </p>
       </div>

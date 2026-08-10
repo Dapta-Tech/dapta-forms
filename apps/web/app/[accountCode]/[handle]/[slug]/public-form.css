@@ -81,18 +81,42 @@
    illegible here, so text uses the form foreground and the accent shows only as
    the tint + hairline bottom border. Mixes against `--background` (the `.pf`
    ground), so it stays correct in both the dark and light themes. */
+/* The promo strip. Every axis is a variable with the pre-feature value as its
+   own fallback, so a config that sets none of them renders byte-identical: the
+   fill is still 12% of the accent over the ground, and the padding/type still
+   come from `--pf-banner-pad` / `--pf-banner-size`, which only the size
+   attribute below ever changes. An authored `--pf-banner-bg` also takes over
+   the border, because a saturated strip with a 45%-accent hairline under it
+   reads as two competing bands rather than one. */
 .pf__banner {
   position: sticky;
   top: 0;
   z-index: 30;
-  background: color-mix(in srgb, var(--pf-primary) 12%, var(--background));
-  color: var(--foreground);
-  border-bottom: 1px solid color-mix(in srgb, var(--pf-primary) 45%, transparent);
-  font-size: 14px;
+  --pf-banner-pad: 12px 20px;
+  --pf-banner-size: 14px;
+  background: var(--pf-banner-bg, color-mix(in srgb, var(--pf-primary) 12%, var(--background)));
+  color: var(--pf-banner-fg, var(--foreground));
+  border-bottom: 1px solid
+    var(--pf-banner-bg, color-mix(in srgb, var(--pf-primary) 45%, transparent));
+  font-size: var(--pf-banner-size);
   font-weight: 600;
   text-align: center;
-  padding: 12px 20px;
+  padding: var(--pf-banner-pad);
   flex-shrink: 0;
+}
+/* Height presets. `md` is the default the rule above already sets, so it is
+   named here only to keep the three legible together. */
+.pf__banner[data-pf-banner-size='sm'] {
+  --pf-banner-pad: 7px 20px;
+  --pf-banner-size: 13px;
+}
+.pf__banner[data-pf-banner-size='md'] {
+  --pf-banner-pad: 12px 20px;
+  --pf-banner-size: 14px;
+}
+.pf__banner[data-pf-banner-size='lg'] {
+  --pf-banner-pad: 18px 24px;
+  --pf-banner-size: 17px;
 }
 
 /* ── Main area — everything below the banner ── */
@@ -1037,7 +1061,11 @@
   }
 }
 
-/* ── Reveal / processing interstitial (generic, templated) ── */
+/* ── Reveal / processing interstitial (generic, templated) ──
+   Sized off two variables so the three scales below move the mark and the copy
+   without any rule needing to know which scale is active. The values declared
+   here are the `md` ones — i.e. exactly what this screen has always rendered —
+   so a reveal with no presentation configured is unchanged. */
 .pf--reveal {
   text-align: center;
 }
@@ -1051,10 +1079,33 @@
   align-items: center;
   justify-content: center;
   padding: 40px 24px;
+  --pf-reveal-mark: 52px;
+  --pf-reveal-headline: clamp(22px, 5vw, 28px);
+  --pf-reveal-subtitle: 15px;
+}
+.pf-reveal__inner[data-pf-reveal-mark='sm'] {
+  --pf-reveal-mark: 36px;
+}
+.pf-reveal__inner[data-pf-reveal-mark='lg'] {
+  --pf-reveal-mark: 76px;
+}
+.pf-reveal__inner[data-pf-reveal-text='sm'] {
+  --pf-reveal-headline: clamp(18px, 4vw, 22px);
+  --pf-reveal-subtitle: 14px;
+}
+.pf-reveal__inner[data-pf-reveal-text='lg'] {
+  --pf-reveal-headline: clamp(28px, 6.4vw, 40px);
+  --pf-reveal-subtitle: 18px;
+}
+/* The copy carries the screen on its own once there is no mark, so it gets the
+   width the loader would have taken. */
+.pf-reveal__inner[data-pf-reveal-loader='versus'],
+.pf-reveal__inner[data-pf-reveal-loader='none'] {
+  max-width: 560px;
 }
 .pf-reveal__spinner {
-  width: 52px;
-  height: 52px;
+  width: var(--pf-reveal-mark);
+  height: var(--pf-reveal-mark);
   border-radius: 50%;
   border: 4px solid var(--muted);
   border-top-color: var(--pf-primary);
@@ -1067,7 +1118,7 @@
   }
 }
 .pf-reveal__headline {
-  font-size: clamp(22px, 5vw, 28px);
+  font-size: var(--pf-reveal-headline);
   font-weight: 800;
   line-height: 1.2;
   letter-spacing: -0.02em;
@@ -1076,7 +1127,7 @@
   text-wrap: balance;
 }
 .pf-reveal__subtitle {
-  font-size: 15px;
+  font-size: var(--pf-reveal-subtitle);
   color: var(--muted-foreground);
   margin: 0 0 24px;
   line-height: 1.5;
@@ -1095,6 +1146,136 @@
   background: var(--pf-primary);
   border-radius: var(--pf-radius-pill);
   transition: width 0.08s linear;
+}
+
+/* ── Reveal: `versus` loader ──
+   The respondent on one side, the thing being matched on the other, progress
+   between them. Its own track is narrower than the standalone one because it
+   shares the row with two marks. */
+.pf-reveal__versus {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  gap: clamp(12px, 4vw, 28px);
+  width: 100%;
+  margin-top: 4px;
+}
+.pf-reveal__mark {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  flex-shrink: 0;
+}
+.pf-reveal__mark-dot {
+  width: var(--pf-reveal-mark);
+  height: var(--pf-reveal-mark);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: calc(var(--pf-reveal-mark) * 0.42);
+  font-weight: 700;
+  line-height: 1;
+}
+.pf-reveal__mark-dot--you {
+  background: var(--foreground);
+  color: var(--background);
+}
+/* The unknown side reads as an outline, not a second filled mark — the point of
+   the layout is that one of the two is not resolved yet. */
+.pf-reveal__mark-dot--match {
+  background: var(--background);
+  color: var(--foreground);
+  border: 2px solid color-mix(in srgb, var(--foreground) 35%, transparent);
+}
+.pf-reveal__mark-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--foreground);
+  max-width: 12ch;
+  text-wrap: balance;
+}
+.pf-reveal__versus-mid {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  /* Centred against the marks' DOTS, not their captions: the labels wrap to
+     different heights, and a percentage that drifts with the longer label
+     looks like a layout bug. */
+  min-width: 0;
+  flex: 1;
+  max-width: 200px;
+  padding-top: calc(var(--pf-reveal-mark) * 0.22);
+}
+.pf-reveal__pct {
+  font-size: calc(var(--pf-reveal-headline) * 0.72);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1;
+  color: var(--foreground);
+}
+.pf-reveal__versus .pf-reveal__track {
+  width: 100%;
+}
+
+/* ── Reveal: accent flood ──
+   `accentBackground` paints the whole screen, so the copy has to flip to the
+   accent's contrast colour with it — otherwise a dark headline lands on a dark
+   brand colour and the screen is unreadable. `--pf-primary-contrast` is the
+   token the solid button already uses for exactly this pairing. */
+.pf--reveal[data-pf-reveal-bg='accent'] {
+  background: var(--pf-primary);
+}
+.pf--reveal[data-pf-reveal-bg='accent'] .pf-reveal__headline,
+.pf--reveal[data-pf-reveal-bg='accent'] .pf-reveal__subtitle,
+.pf--reveal[data-pf-reveal-bg='accent'] .pf-reveal__pct,
+.pf--reveal[data-pf-reveal-bg='accent'] .pf-reveal__mark-label {
+  color: var(--pf-primary-contrast);
+}
+.pf--reveal[data-pf-reveal-bg='accent'] .pf-reveal__track {
+  background: color-mix(in srgb, var(--pf-primary-contrast) 22%, transparent);
+}
+.pf--reveal[data-pf-reveal-bg='accent'] .pf-reveal__fill,
+.pf--reveal[data-pf-reveal-bg='accent'] .pf-reveal__mark-dot--you {
+  background: var(--pf-primary-contrast);
+  color: var(--pf-primary);
+}
+.pf--reveal[data-pf-reveal-bg='accent'] .pf-reveal__spinner {
+  border-color: color-mix(in srgb, var(--pf-primary-contrast) 25%, transparent);
+  border-top-color: var(--pf-primary-contrast);
+}
+.pf--reveal[data-pf-reveal-bg='accent'] .pf-reveal__mark-dot--match {
+  background: transparent;
+  color: var(--pf-primary-contrast);
+  border-color: color-mix(in srgb, var(--pf-primary-contrast) 45%, transparent);
+}
+
+/* The bar is a real progress signal, so it keeps moving; only the decorative
+   infinite spin stops. */
+@media (prefers-reduced-motion: reduce) {
+  .pf-reveal__spinner {
+    animation: none;
+  }
+}
+
+@media (max-width: 480px) {
+  /* Two marks plus a percentage do not fit a phone at the large scale, and
+     shrinking the type to force it would defeat picking `lg` in the first
+     place. The row wraps into a column instead: marks side by side, progress
+     under them. */
+  .pf-reveal__versus {
+    flex-wrap: wrap;
+    gap: 16px;
+  }
+  .pf-reveal__versus-mid {
+    order: 3;
+    flex-basis: 100%;
+    max-width: 100%;
+    padding-top: 0;
+  }
 }
 
 /* ── Thank-you / outcome screen ── */
@@ -1255,9 +1436,26 @@
 }
 
 @media (max-width: 480px) {
+  /* Narrow shrinks the strip by re-declaring the VARIABLES, not the properties.
+     Setting `font-size`/`padding` directly here would out-specify nothing and
+     be out-specified by the `[data-pf-banner-size]` presets above — so `md`
+     (the value the default silently is) would shrink on a phone while an
+     explicitly-chosen `md` would not. Same knob, same layer, three sizes. */
   .pf__banner {
-    font-size: 12px;
-    padding: 10px 14px;
+    --pf-banner-pad: 10px 14px;
+    --pf-banner-size: 12px;
+  }
+  .pf__banner[data-pf-banner-size='sm'] {
+    --pf-banner-pad: 6px 14px;
+    --pf-banner-size: 11px;
+  }
+  .pf__banner[data-pf-banner-size='md'] {
+    --pf-banner-pad: 10px 14px;
+    --pf-banner-size: 12px;
+  }
+  .pf__banner[data-pf-banner-size='lg'] {
+    --pf-banner-pad: 14px 16px;
+    --pf-banner-size: 15px;
   }
   .pf__body {
     padding: 24px 16px;

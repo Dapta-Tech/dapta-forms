@@ -40,6 +40,9 @@ export interface FormsMessages {
     verticalErrors: string;
     revealHeadline: string;
     revealSubtitle: string;
+    /** `versus` interstitial: the two marks' labels when the config sets none. */
+    revealVersusYou: string;
+    revealVersusMatch: string;
     noSteps: string;
     dropdownPlaceholder: string;
     dropdownEmpty: string;
@@ -710,6 +713,13 @@ export interface FormsMessages {
         bannerScope: string;
         bannerScopeForm: string;
         bannerScopeCover: string;
+        bannerColor: string;
+        bannerColorHint: string;
+        bannerTextColor: string;
+        bannerSize: string;
+        bannerSizeSm: string;
+        bannerSizeMd: string;
+        bannerSizeLg: string;
         eyebrow: string;
         badge: string;
         headline: string;
@@ -725,6 +735,10 @@ export interface FormsMessages {
         clientLogos: string;
         clientLogosHint: string;
         showClientLogos: string;
+        clientLogosScope: string;
+        clientLogosScopeCover: string;
+        clientLogosScopeReveal: string;
+        clientLogosScopeBoth: string;
         clientLogoName: string;
         clientLogoSrc: string;
         addClientLogo: string;
@@ -1313,6 +1327,8 @@ export const en: FormsMessages = {
     verticalErrors: 'Check the highlighted questions above.',
     revealHeadline: 'Reviewing your answers…',
     revealSubtitle: 'One moment while we match you with the best next step.',
+    revealVersusYou: 'You',
+    revealVersusMatch: 'Your match',
     noSteps: 'This form has no steps yet.',
     dropdownPlaceholder: 'Type to search…',
     dropdownEmpty: 'No results found',
@@ -1916,6 +1932,13 @@ export const en: FormsMessages = {
         bannerScope: 'Show the banner on',
         bannerScopeForm: 'Every screen',
         bannerScopeCover: 'Cover only',
+        bannerColor: 'Banner color',
+        bannerColorHint: 'Empty uses a soft tint of the accent — set a color to make the strip carry.',
+        bannerTextColor: 'Banner text color',
+        bannerSize: 'Banner height',
+        bannerSizeSm: 'Slim',
+        bannerSizeMd: 'Standard',
+        bannerSizeLg: 'Tall',
         eyebrow: 'Eyebrow',
         badge: 'Badge',
         headline: 'Headline',
@@ -1929,8 +1952,12 @@ export const en: FormsMessages = {
         logoHint: 'Shown on the cover screen only. Leave empty for no logo there.',
         logoInvalid: 'This URL protocol is not allowed for images.',
         clientLogos: 'Client logos',
-        clientLogosHint: 'A “trusted by” marquee on the cover. The name shows when no image is set.',
+        clientLogosHint: 'A “trusted by” marquee. The name shows when no image is set.',
         showClientLogos: 'Show the marquee',
+        clientLogosScope: 'Show the marquee on',
+        clientLogosScopeCover: 'Cover',
+        clientLogosScopeReveal: 'Reveal screen',
+        clientLogosScopeBoth: 'Both',
         clientLogoName: 'Name',
         clientLogoSrc: 'Image URL',
         addClientLogo: 'Add logo',
@@ -2519,6 +2546,8 @@ export const es: FormsMessages = {
     verticalErrors: 'Revisa las preguntas marcadas arriba.',
     revealHeadline: 'Revisando tus respuestas…',
     revealSubtitle: 'Un momento mientras encontramos el mejor siguiente paso para ti.',
+    revealVersusYou: 'Tú',
+    revealVersusMatch: 'Tu match',
     noSteps: 'Este formulario aún no tiene pasos.',
     dropdownPlaceholder: 'Escribe para buscar…',
     dropdownEmpty: 'No se encontraron resultados',
@@ -3124,6 +3153,13 @@ export const es: FormsMessages = {
         bannerScope: 'Mostrar el banner en',
         bannerScopeForm: 'Todas las pantallas',
         bannerScopeCover: 'Solo la portada',
+        bannerColor: 'Color del banner',
+        bannerColorHint: 'Vacío usa un tinte suave del acento; elegí un color para que la franja se note.',
+        bannerTextColor: 'Color del texto del banner',
+        bannerSize: 'Alto del banner',
+        bannerSizeSm: 'Fina',
+        bannerSizeMd: 'Normal',
+        bannerSizeLg: 'Alta',
         eyebrow: 'Antetítulo',
         badge: 'Insignia',
         headline: 'Titular',
@@ -3137,8 +3173,12 @@ export const es: FormsMessages = {
         logoHint: 'Solo en la portada. Vacío = sin logo ahí.',
         logoInvalid: 'Este protocolo de URL no está permitido para imágenes.',
         clientLogos: 'Logos de clientes',
-        clientLogosHint: 'Una marquesina de «confían en nosotros» en la portada. El nombre se muestra si no hay imagen.',
+        clientLogosHint: 'Una marquesina de «confían en nosotros». El nombre se muestra si no hay imagen.',
         showClientLogos: 'Mostrar la marquesina',
+        clientLogosScope: 'Mostrar la marquesina en',
+        clientLogosScopeCover: 'Portada',
+        clientLogosScopeReveal: 'Pantalla de carga',
+        clientLogosScopeBoth: 'Ambas',
         clientLogoName: 'Nombre',
         clientLogoSrc: 'URL de la imagen',
         addClientLogo: 'Añadir logo',
