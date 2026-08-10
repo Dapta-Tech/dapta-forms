@@ -795,25 +795,101 @@ describe('booking date semantics', () => {
   });
 
   // Rows enqueued before `bookedAt` existed are still in the queue at deploy.
-  it('a pre-fix row with no bookedAt falls back to the submission timestamp', async () => {
+  // The booking_event row this sync is anchored to carries the same moment, so
+  // a pre-fix row is exact rather than approximated.
+  it('a pre-fix row with no bookedAt reads the booking_event it is anchored to', async () => {
     await setHubspotDestination(BOOKING_SYNC_CONFIG);
     await svc.submit('acme', 'lead-qualifier', {
       sessionId: 'sess-legacy',
       data: { role: 'founder', team_size: 20, email: 'lead@acme.io' },
     });
-    // Backdate the submission so the fallback is distinguishable from "now".
-    const submittedAt = Date.parse('2026-06-05T09:00:00Z');
-    await db.run(
-      sql`UPDATE submission SET completed_at = ${submittedAt} WHERE session_id = 'sess-legacy'`,
-    );
     await svc.booking('acme', 'lead-qualifier', {
       sessionId: 'sess-legacy',
       provider: 'hubspot_meetings',
       startTime: '2026-08-11T17:30:00Z',
     });
+    // Backdate the event, and the submission to a DIFFERENT day, so the two
+    // candidate fallbacks are distinguishable from each other and from "now".
+    const bookedAt = Date.parse('2026-06-05T09:00:00Z');
+    await db.run(
+      sql`UPDATE booking_event SET created_at = ${bookedAt} WHERE session_id = 'sess-legacy'`,
+    );
+    await db.run(
+      sql`UPDATE submission SET completed_at = ${Date.parse('2026-04-01T09:00:00Z')}
+          WHERE session_id = 'sess-legacy'`,
+    );
     await patchPayload((p) => delete p.bookedAt);
 
     const props = await bookingProps();
     expect(props.sales_date_booked).toBe(String(Date.UTC(2026, 5, 5)));
+  });
+
+  // Belt and braces: if the event row is gone, the submission still dates it.
+  it('falls back to the submission when even the booking_event is missing', async () => {
+    await setHubspotDestination(BOOKING_SYNC_CONFIG);
+    await svc.submit('acme', 'lead-qualifier', {
+      sessionId: 'sess-noevent',
+      data: { role: 'founder', team_size: 20, email: 'lead@acme.io' },
+    });
+    await svc.booking('acme', 'lead-qualifier', {
+      sessionId: 'sess-noevent',
+      provider: 'hubspot_meetings',
+      startTime: '2026-08-11T17:30:00Z',
+    });
+    await db.run(
+      sql`UPDATE submission SET completed_at = ${Date.parse('2026-04-01T09:00:00Z')}
+          WHERE session_id = 'sess-noevent'`,
+    );
+    await patchPayload((p) => delete p.bookedAt);
+    await db.run(sql`DELETE FROM booking_event WHERE session_id = 'sess-noevent'`);
+
+    const props = await bookingProps();
+    expect(props.sales_date_booked).toBe(String(Date.UTC(2026, 3, 1)));
+  });
+
+  // The fallback must not re-read the clock: two attempts of the SAME row have
+  // to agree, or a retry straddling midnight rewrites the booking's day.
+  it('is stable across retries — the same row delivers the same day twice', async () => {
+    await setHubspotDestination(BOOKING_SYNC_CONFIG);
+    await svc.booking('acme', 'lead-qualifier', {
+      sessionId: 'sess-retry',
+      provider: 'calendly',
+      eventUri: EVENT_URI,
+      inviteeUri: INVITEE_URI,
+    });
+    // No submission at all for this session, and no bookedAt — the case that
+    // used to reach `Date.now()` on every single attempt.
+    await patchPayload((p) => delete p.bookedAt);
+    const bookedAt = Date.parse('2026-07-04T22:00:00Z');
+    await db.run(
+      sql`UPDATE booking_event SET created_at = ${bookedAt} WHERE session_id = 'sess-retry'`,
+    );
+
+    const days: string[] = [];
+    // Each attempt is drained at a LATER clock: a failed attempt schedules its
+    // retry off the clock the worker was GIVEN, so a fixed offset would never
+    // find the row due a second time. The 60s stride is 60x `backoffMs(1)` (1s,
+    // `packages/db/src/outbox.ts`) — if this ever fails with "expected 1,
+    // received 0", the backoff base grew and the stride has to follow.
+    for (const [i, status] of [500, 200].entries()) {
+      const calls: RecordedCall[] = [];
+      bookingSync.fetchImpl = recordingFetch(calls, {
+        [EVENT_URI]: () => jsonResponse({ resource: { start_time: '2026-08-02T10:00:00Z' } }),
+        [INVITEE_URI]: () => jsonResponse({ resource: { email: 'retry@corp.io' } }),
+        // The first attempt fails AFTER the properties are built, so the row
+        // retries and has to recompute the day from scratch.
+        [HUBSPOT_UPSERT_URL]: () =>
+          status === 500 ? jsonResponse({}, 500) : jsonResponse({ results: [{ id: '1' }] }),
+      });
+      const at = Date.now() + BOOKING_SYNC_DELAY_MS + (i + 1) * 60_000;
+      expect(await newWorker().drainOnce(at)).toBe(1);
+      const upsert = calls.find((c) => c.url === HUBSPOT_UPSERT_URL)!;
+      days.push(
+        (upsert.body as { inputs: Array<{ properties: Record<string, string> }> }).inputs[0]!
+          .properties.sales_date_booked!,
+      );
+    }
+    expect(days[0]).toBe(String(Date.UTC(2026, 6, 4)));
+    expect(days[1]).toBe(days[0]);
   });
 });

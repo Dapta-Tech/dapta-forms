@@ -29,8 +29,15 @@ HubSpot destination. A second one was invisible in the Connect screen and in the
 booking flow — both resolve the FIRST HubSpot destination — so it ran at submit
 time and silently did nothing when a meeting was booked. It was a workaround
 from when a field mapping was one question → one property; a mapping now fans
-out to several, so the case is covered. Enforced on the two write paths that can
-persist a destinations array (`PUT /v1/forms/:id/destinations` and
-`POST /v1/forms`), deliberately NOT in `formConfigSchema` — a form that already
-stores two must keep parsing and stay editable, which is how it gets fixed.
-Multiple webhooks are unaffected.
+out to several, so the case is covered. Enforced on the two paths that AUTHOR a
+destinations array (`PUT /v1/forms/:id/destinations` and `POST /v1/forms`);
+`PUT /v1/forms/:id` stages a draft, and drafts strip the key. Deliberately NOT
+in `formConfigSchema` — a form that already stores two must keep parsing and
+stay editable, which is how it gets fixed — and deliberately not on duplicate,
+which copies stored state rather than authoring it, so the copy inherits the
+violation instead of becoming uncopyable. Multiple webhooks are unaffected.
+
+The Connect screen now says so: a form storing more than one HubSpot destination
+shows a notice on the HubSpot card that the extra one is invisible, is not
+running at booking time, and will be dropped when the tab next saves — the
+collapse was already the behaviour, silently.

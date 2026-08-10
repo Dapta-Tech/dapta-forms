@@ -358,10 +358,11 @@ export class AdminCrudController {
   async createForm(@Req() req: ReqLike, @Body() body: unknown) {
     const p = await this.auth.resolveHost(req);
     const input = parse(formInputSchema, body);
-    // Create is the OTHER path a `destinations` array can be persisted through
-    // (PUT /forms/:id stages a draft, and drafts strip the key). Same one-HubSpot
-    // rule as PUT /forms/:id/destinations — enforced here rather than in the
-    // schema so stored configs that already carry two keep parsing.
+    // The other path that AUTHORS a `destinations` array (PUT /forms/:id stages
+    // a draft, and drafts strip the key; duplicate copies stored state and is
+    // exempt — see `hasExtraHubspotDestination`). Same one-HubSpot rule as
+    // PUT /forms/:id/destinations — enforced here rather than in the schema so
+    // stored configs that already carry two keep parsing.
     if (hasExtraHubspotDestination((input.config as { destinations?: unknown } | undefined)?.destinations)) {
       throw new BadRequestException({
         error: 'BAD_REQUEST',

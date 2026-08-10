@@ -685,20 +685,29 @@ export const ONE_HUBSPOT_DESTINATION_MESSAGE =
 
 /**
  * True when a proposed destination list carries more than one HubSpot entry,
- * which no form may be WRITTEN with.
+ * which no form may be AUTHORED with.
  *
  * A second HubSpot destination is a trap rather than a feature. The Connect
  * screen only ever renders the first one (`destinations.find(type === 'hubspot')`),
- * so the second is invisible; and the booking flow resolves the same way, so it
- * runs at submit time but silently does nothing when a meeting is booked. Forms
- * carrying two were a workaround from when a field mapping was one question →
- * one property; a mapping now fans out to several, so the workaround has no
- * remaining use case.
+ * so the second is invisible; the booking flow resolves the first ENABLED one,
+ * so a second runs at submit time but silently does nothing when a meeting is
+ * booked. (The two resolutions differ on `enabled`, which is what makes a
+ * disabled-first pair the sharpest version of the trap — hence a guard that
+ * ignores `enabled` entirely.) Forms carrying two were a workaround from when a
+ * field mapping was one question → one property; a mapping now fans out to
+ * several, so the workaround has no remaining use case.
  *
- * Deliberately NOT a `formConfigSchema` refinement: this is a WRITE rule, and
- * folding it into the parse would make the stored configs of forms that already
- * carry two stop loading — breaking reads and deliveries for exactly the forms
- * that need fixing. Write paths call this; readers stay tolerant.
+ * Deliberately NOT a `formConfigSchema` refinement: this is an AUTHORING rule,
+ * and folding it into the parse would make the stored configs of forms that
+ * already carry two stop loading — breaking reads and deliveries for exactly
+ * the forms that need fixing. Write paths call this; readers stay tolerant.
+ *
+ * Duplicating a form deliberately does NOT call this. A duplicate copies stored
+ * state rather than authoring new state, and refusing to copy a form would take
+ * the legacy forms hostage instead of fixing them — while silently dropping the
+ * extra destination would delete a delivery that IS still running at submit
+ * time. The copy therefore inherits the violation, and gets fixed the same way
+ * the original does: by opening Connect.
  */
 export function hasExtraHubspotDestination(destinations: unknown): boolean {
   if (!Array.isArray(destinations)) return false;

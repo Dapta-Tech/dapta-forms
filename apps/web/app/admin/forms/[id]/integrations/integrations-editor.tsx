@@ -546,6 +546,12 @@ export function IntegrationsEditor({
           pickerEnabled={pickerEnabled}
           accountConnected={hubspotConnected}
           showMapping={showMapping}
+          // Legacy shape: this screen edits the FIRST HubSpot destination and
+          // saves exactly one, so a stored second silently disappears on the
+          // next save. Say so rather than letting it vanish (`buildDestinations`).
+          extraHubspotStored={
+            initialDestinations.filter((d) => d.type === 'hubspot').length > 1
+          }
           readiness={readiness}
           questions={questions}
           m={m}
@@ -1026,6 +1032,7 @@ function HubspotCard({
   pickerEnabled,
   accountConnected,
   showMapping,
+  extraHubspotStored,
   readiness,
   questions,
   m,
@@ -1036,6 +1043,8 @@ function HubspotCard({
   pickerEnabled: boolean;
   accountConnected: boolean;
   showMapping: boolean;
+  /** The stored config carries a second HubSpot destination this tab will drop. */
+  extraHubspotStored: boolean;
   readiness: ContactKeyReadiness;
   questions: QuestionMeta[];
   m: Msgs;
@@ -1227,6 +1236,23 @@ function HubspotCard({
           </p>
         ) : null}
       </div>
+
+      {/* A stored SECOND HubSpot destination. It is invisible here (this card
+          edits the first) and dead at booking time (the booking flow resolves
+          the first enabled one), yet it still runs at submit — so its removal
+          on the next save is a real loss, and the author has to be told before
+          it happens rather than after. New configs cannot reach this state:
+          both authoring write-paths refuse a second one. */}
+      {extraHubspotStored ? (
+        <div
+          data-testid="hubspot-extra-destination"
+          role="alert"
+          className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3"
+        >
+          <p className="text-xs font-medium text-foreground">{m.extraHubspotTitle}</p>
+          <p className="mt-1 text-xs text-muted-foreground">{m.extraHubspotBody}</p>
+        </div>
+      ) : null}
 
       {/* The mapping the old help text INSTRUCTED, which switches the sync off.
           Named per question so it can be found, not just described. */}

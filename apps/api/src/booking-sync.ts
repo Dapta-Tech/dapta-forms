@@ -192,7 +192,7 @@ export class BookingSyncEffects {
     // NOT gated on `startMs`: a provider that reports no start time still tells us
     // a booking happened, and that is the whole fact this property records.
     if (sync?.dateProperty?.trim()) {
-      const bookedAtMs = payload.bookedAt ?? submission?.submittedAt ?? Date.now();
+      const bookedAtMs = payload.bookedAt ?? (await this.bookedAtFallback(payload, submission));
       properties[sync.dateProperty.trim()] = String(
         dayMidnightMs(bookedAtMs, sync.dateTimezone, this.log),
       );
@@ -253,8 +253,10 @@ export class BookingSyncEffects {
         : false;
 
     if (!wroteBooking && !syncedAnswers) {
+      // "writable", not "configured": an hoursProperty with no resolvable start
+      // time is configured and still contributes nothing.
       throw new OutboxSkipError(
-        'booking sync: nothing to write (no booking properties configured and no answers to sync)',
+        'booking sync: nothing to write (no booking properties writable and no answers to sync)',
       );
     }
     this.log.log(
@@ -262,6 +264,40 @@ export class BookingSyncEffects {
         `${wroteBooking ? `contact updated [${Object.keys(properties).join(', ')}]` : 'no booking properties configured'}` +
         `${syncedAnswers ? ' + submission answers' : ''}`,
     );
+  }
+
+  /**
+   * When the booking happened, for a row enqueued BEFORE the payload carried
+   * `bookedAt` (in-flight at deploy). The `booking_event` row this sync is for
+   * is stamped with exactly that moment, so read it — the same value a fresh
+   * payload would have carried, and a stable one under retry.
+   *
+   * The delivery clock is the last resort and must stay unreachable in practice:
+   * the outbox row is anchored to this booking event, so the row exists unless
+   * someone deleted it, and re-reading the clock on every attempt would let two
+   * retries straddling midnight record two different days for one booking.
+   */
+  private async bookedAtFallback(
+    payload: BookingSyncPayload,
+    submission: SubmissionRow | null,
+  ): Promise<number> {
+    // Scoped by `form_id` as well as the id, so every read in this file narrows
+    // to the form the account gate above already resolved — and it rides the
+    // existing (form_id, session_id) index rather than adding a lookup path.
+    // A DB error is left to THROW: the outbox contract says a transport failure
+    // retries, and swallowing it here would quietly stamp a different, entirely
+    // plausible day instead.
+    const row = await this.db.get<{ created_at: number }>(
+      sql`SELECT created_at FROM booking_event
+          WHERE id = ${payload.bookingEventId} AND form_id = ${payload.formId} LIMIT 1`,
+    );
+    const createdAt = row == null ? null : Number(row.created_at);
+    if (createdAt != null && Number.isFinite(createdAt)) return createdAt;
+    if (submission) return submission.submittedAt;
+    this.log.warn(
+      `booking sync: no booked-at for booking ${payload.bookingEventId} — booking day taken from the delivery clock`,
+    );
+    return Date.now();
   }
 
   /**
@@ -491,21 +527,27 @@ export function dayMidnightMs(epochMs: number, timezone?: string, log?: Logger):
   const zone = timezone?.trim();
   if (zone) {
     try {
-      // `en-CA` formats as YYYY-MM-DD, so the parts come out already ordered.
-      const day = new Intl.DateTimeFormat('en-CA', {
+      // `formatToParts` and not a formatted string: reading the parts BY TYPE is
+      // locale-independent, where parsing "YYYY-MM-DD" assumes an ICU build that
+      // renders `en-CA` in ISO order. On a small-icu Node it does not, and every
+      // zone would degrade to UTC without anything looking wrong.
+      const parts = new Intl.DateTimeFormat('en-CA', {
         timeZone: zone,
         year: 'numeric',
         month: '2-digit',
         day: '2-digit',
-      }).format(new Date(epochMs));
-      const [y, m, d] = day.split('-').map(Number);
+      }).formatToParts(new Date(epochMs));
+      const at = (type: string) => Number(parts.find((p) => p.type === type)?.value);
+      const [y, m, d] = [at('year'), at('month'), at('day')];
       if (Number.isFinite(y) && Number.isFinite(m) && Number.isFinite(d)) {
-        return Date.UTC(y!, m! - 1, d!);
+        return Date.UTC(y, m - 1, d);
       }
     } catch {
       // Fall through to UTC.
     }
-    log?.warn(`booking sync: unusable dateTimezone — booking day computed in UTC instead`);
+    // The zone is author-entered config, never PII — naming it is what makes the
+    // warning actionable for whoever has to go fix the form.
+    log?.warn(`booking sync: unusable dateTimezone "${zone}" — booking day computed in UTC instead`);
   }
   return utcMidnightMs(epochMs);
 }

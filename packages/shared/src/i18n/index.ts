@@ -1074,6 +1074,9 @@ export interface FormsMessages {
       bookingDateTimezoneHelp: string;
       /** Shown under the field when the browser cannot resolve the zone typed. */
       bookingDateTimezoneInvalid: string;
+      /** Legacy configs only: a stored second HubSpot destination this tab will drop. */
+      extraHubspotTitle: string;
+      extraHubspotBody: string;
       // Account-connection gating + Typeform-style mapping (per-form)
       connectPromptTitle: string;
       connectPromptBody: string;
@@ -2295,6 +2298,9 @@ export const en: FormsMessages = {
       bookingDateTimezoneHelp:
         'IANA timezone the booking day is computed in (e.g. America/Bogota). Blank = UTC.',
       bookingDateTimezoneInvalid: 'Not a timezone name we recognise — the day will be computed in UTC.',
+      extraHubspotTitle: 'This form has a second HubSpot connection',
+      extraHubspotBody:
+        'Only the settings below are used: the second one never runs when someone books a meeting, and it cannot be edited here. Saving this tab removes it. To send one answer to several properties, add the properties to the same question above.',
       connectPromptTitle: 'Connect HubSpot to map this form',
       connectPromptBody:
         'HubSpot isn’t connected for your account yet. Connect it once, then come back to map each question to a contact property.',
@@ -3530,6 +3536,9 @@ export const es: FormsMessages = {
         'Zona horaria IANA para calcular el día de agendado (ej. America/Bogota). Vacío = UTC.',
       bookingDateTimezoneInvalid:
         'No reconocemos ese nombre de zona horaria — el día se calculará en UTC.',
+      extraHubspotTitle: 'Este formulario tiene una segunda conexión con HubSpot',
+      extraHubspotBody:
+        'Solo se usa la configuración de abajo: la segunda nunca se ejecuta cuando alguien agenda una reunión y no se puede editar acá. Al guardar esta pestaña se elimina. Para enviar una respuesta a varias propiedades, agregá las propiedades a la misma pregunta de arriba.',
       connectPromptTitle: 'Conecta HubSpot para asignar este formulario',
       connectPromptBody:
         'HubSpot aún no está conectado en tu cuenta. Conéctalo una vez y luego vuelve para asignar cada pregunta a una propiedad de contacto.',
