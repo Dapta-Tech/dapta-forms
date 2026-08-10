@@ -471,9 +471,13 @@ export class FormDestinationsController {
       throw err;
     }
     // At most one HubSpot destination — see `hasExtraHubspotDestination`. Not in
-    // the schema above, so a form that already stores two still READS fine; only
-    // writing a second one is refused. Webhooks are unaffected.
-    if (hasExtraHubspotDestination(destinations)) {
+    // the schema above, so a form that already stores two still READS fine.
+    // Compared against what is STORED, not against 1: the builder's per-question
+    // picker writes the whole array back on every pick, so a count-only guard
+    // would 400 an edit that adds nothing. Webhooks are unaffected.
+    const before = await getFormById(this.db, p.accountId, id);
+    const stored = (before?.config as { destinations?: unknown } | null)?.destinations;
+    if (hasExtraHubspotDestination(destinations, stored)) {
       throw new BadRequestException({
         error: 'BAD_REQUEST',
         message: ONE_HUBSPOT_DESTINATION_MESSAGE,

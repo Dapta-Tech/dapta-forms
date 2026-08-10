@@ -37,6 +37,14 @@ stay editable, which is how it gets fixed — and deliberately not on duplicate,
 which copies stored state rather than authoring it, so the copy inherits the
 violation instead of becoming uncopyable. Multiple webhooks are unaffected.
 
+The rule is "never go UP", not "never hold two": `hasExtraHubspotDestination`
+takes the STORED array as its second argument and refuses only an increase.
+Several screens edit one field and write the whole array back — the builder's
+per-question property picker and its field-key rename both do — so a form that
+already carries two round-trips two on every unrelated save, and a count-only
+guard would refuse those writes and make the picker unusable on precisely the
+forms this rule exists to clean up.
+
 The Connect screen now says so: a form storing more than one HubSpot destination
 shows a notice on the HubSpot card that the extra one is invisible, is not
 running at booking time, and will be dropped when the tab next saves — the

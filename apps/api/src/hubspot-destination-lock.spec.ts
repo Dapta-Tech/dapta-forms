@@ -49,6 +49,8 @@ import { LocalAuthProvider, type ReqLike } from './auth.provider';
 const asOwner = (): ReqLike => ({ headers: {} });
 
 const HUBSPOT = { type: 'hubspot', enabled: true, settings: {} };
+/** The invisible one: the July-migration workaround, one question → one property. */
+const SECOND_HUBSPOT = { type: 'hubspot', enabled: true, settings: {}, fieldMappings: { problem: 'goal_ai_agent' } };
 const webhook = (url: string) => ({ type: 'webhook', enabled: true, settings: { url } });
 
 describe('one HubSpot destination per form', () => {
@@ -89,6 +91,13 @@ describe('one HubSpot destination per form', () => {
   afterEach(async () => {
     await db.close();
   });
+
+  /** Put the form in the legacy shape, below the controller (which now refuses). */
+  async function storeTwo() {
+    await updateForm(db, accountId, formId, {
+      config: { version: 1, steps: [], destinations: [HUBSPOT, SECOND_HUBSPOT] },
+    });
+  }
 
   // --- PUT /v1/forms/:id/destinations ---------------------------------------
 
@@ -171,9 +180,7 @@ describe('one HubSpot destination per form', () => {
   // The rule exists to fix forms that already have two. If enforcing it broke
   // their parse, it would take the admin screen and every delivery down with it.
   it('a form that already stores two keeps parsing and stays editable', async () => {
-    await updateForm(db, accountId, formId, {
-      config: { version: 1, steps: [], destinations: [HUBSPOT, HUBSPOT] },
-    });
+    await storeTwo();
 
     const stored = await getFormById(db, accountId, formId);
     expect(formConfigSchema.safeParse(stored!.config).success).toBe(true);
@@ -183,5 +190,69 @@ describe('one HubSpot destination per form', () => {
       destinations: [{ ...HUBSPOT, fieldMappings: { problem: ['a', 'b'] } }],
     });
     expect((out.config as { destinations: unknown[] }).destinations).toHaveLength(1);
+  });
+
+  /**
+   * The rule is "never go UP", not "never hold two" — and the difference is the
+   * whole difference between a guard and a regression.
+   *
+   * The builder's per-question property picker and its field-key rename both
+   * read the destinations array, change one mapping, and PUT the WHOLE thing
+   * back (`question-hubspot-actions.ts`). On a form storing two, that array
+   * still contains two. A count-only guard 400s it, so picking a property in
+   * the Build tab becomes impossible on exactly the forms this rule exists to
+   * clean up — and the refusal tells the author to map several properties from
+   * the same question, which is what they were trying to do.
+   */
+  it('lets a legacy form round-trip its two while editing something else', async () => {
+    await storeTwo();
+
+    // What the per-question picker sends: same two destinations, one new mapping.
+    const out = await destinations.putDestinations(asOwner(), formId, {
+      destinations: [{ ...HUBSPOT, fieldMappings: { role: 'jobtitle' } }, SECOND_HUBSPOT],
+    });
+    const stored = (out.config as { destinations: Array<{ type: string }> }).destinations;
+    expect(stored).toHaveLength(2);
+    expect(stored.filter((d) => d.type === 'hubspot')).toHaveLength(2);
+  });
+
+  it('still refuses to go from two to three', async () => {
+    await storeTwo();
+    await expect(
+      destinations.putDestinations(asOwner(), formId, {
+        destinations: [HUBSPOT, SECOND_HUBSPOT, { ...HUBSPOT, fieldMappings: { x: 'y' } }],
+      }),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('still refuses to go from one to two', async () => {
+    await destinations.putDestinations(asOwner(), formId, { destinations: [HUBSPOT] });
+    await expect(
+      destinations.putDestinations(asOwner(), formId, { destinations: [HUBSPOT, SECOND_HUBSPOT] }),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  // --- The exempt paths, pinned so the exemption can't rot -------------------
+
+  // Refusing would make the legacy form uncopyable; stripping would delete a
+  // destination that is still delivering at submit. The copy inherits it.
+  it('duplicate copies a legacy form whole, violation included', async () => {
+    await storeTwo();
+    const copy = await forms.duplicateForm(asOwner(), formId);
+    const copied = (copy.config as { destinations: Array<{ type: string }> }).destinations;
+    expect(copied.filter((d) => d.type === 'hubspot')).toHaveLength(2);
+  });
+
+  // Publish carries the LIVE destinations over the draft, so it must not trip
+  // the guard either — a legacy form has to stay publishable.
+  it('publish leaves a legacy form publishable, with both destinations intact', async () => {
+    await storeTwo();
+    // Stage a draft the way the builder does (drafts strip `destinations`).
+    await forms.updateForm(asOwner(), formId, {
+      config: { version: 1, steps: [{ key: 'q1', type: 'text', question: 'Hi?' }] },
+    });
+    const published = await forms.publishForm(asOwner(), formId);
+    const live = (published.config as { destinations: Array<{ type: string }> }).destinations;
+    expect(live.filter((d) => d.type === 'hubspot')).toHaveLength(2);
   });
 });

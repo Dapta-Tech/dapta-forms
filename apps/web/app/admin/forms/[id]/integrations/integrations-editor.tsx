@@ -1090,6 +1090,28 @@ function HubspotCard({
     [emailSource, state.fieldMappings],
   );
 
+  // A stored SECOND HubSpot destination. It is invisible here (this card edits
+  // the first) and dead at booking time (the booking flow resolves the first
+  // ENABLED one), yet it is still delivering its own mappings at submit — so
+  // its removal on the next save is a real loss the author has to hear about
+  // BEFORE it happens. New configs cannot reach this state: the authoring
+  // write-paths refuse to raise the count.
+  //
+  // Rendered in every branch below, not just the full card. The two early
+  // returns are exactly the states where an author would not expect an
+  // integration to exist at all — and the webhook card next door still
+  // autosaves this whole array, which is what performs the collapse.
+  const extraHubspotNotice = extraHubspotStored ? (
+    <div
+      data-testid="hubspot-extra-destination"
+      role="alert"
+      className="mt-4 rounded-md border border-amber-500/40 bg-amber-500/10 p-3"
+    >
+      <p className="text-xs font-medium text-foreground">{m.extraHubspotTitle}</p>
+      <p className="mt-1 text-xs text-muted-foreground">{m.extraHubspotBody}</p>
+    </div>
+  ) : null;
+
   // Nothing to key a contact on → mapping is pointless and, worse, silently
   // lossy: HubSpot's upsert is BY EMAIL, so a submission with no address
   // resolves as a permanent no-op and that lead is never synced. Say so here,
@@ -1104,6 +1126,7 @@ function HubspotCard({
           <h2 className="text-lg font-semibold">{m.hubspotTitle}</h2>
         </div>
         <p className="mt-0.5 text-sm text-muted-foreground">{m.hubspotDesc}</p>
+        {extraHubspotNotice}
         <div
           data-testid="hubspot-needs-email"
           className="mt-4 rounded-md border border-dashed border-border bg-muted/40 p-4"
@@ -1124,6 +1147,7 @@ function HubspotCard({
           <h2 className="text-lg font-semibold">{m.hubspotTitle}</h2>
         </div>
         <p className="mt-0.5 text-sm text-muted-foreground">{m.hubspotDesc}</p>
+        {extraHubspotNotice}
         <div className="mt-4 rounded-md border border-dashed border-border bg-muted/40 p-4">
           <p className="text-sm font-medium text-foreground">{m.connectPromptTitle}</p>
           <p className="mt-1 text-sm text-muted-foreground">{m.connectPromptBody}</p>
@@ -1237,22 +1261,7 @@ function HubspotCard({
         ) : null}
       </div>
 
-      {/* A stored SECOND HubSpot destination. It is invisible here (this card
-          edits the first) and dead at booking time (the booking flow resolves
-          the first enabled one), yet it still runs at submit — so its removal
-          on the next save is a real loss, and the author has to be told before
-          it happens rather than after. New configs cannot reach this state:
-          both authoring write-paths refuse a second one. */}
-      {extraHubspotStored ? (
-        <div
-          data-testid="hubspot-extra-destination"
-          role="alert"
-          className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3"
-        >
-          <p className="text-xs font-medium text-foreground">{m.extraHubspotTitle}</p>
-          <p className="mt-1 text-xs text-muted-foreground">{m.extraHubspotBody}</p>
-        </div>
-      ) : null}
+      {extraHubspotNotice}
 
       {/* The mapping the old help text INSTRUCTED, which switches the sync off.
           Named per question so it can be found, not just described. */}
@@ -1691,7 +1700,7 @@ function HubspotCard({
               value={state.bookingSync.dateTimezone}
               aria-label={m.bookingDateTimezone}
               // A real zone name, so the format is legible without reading the help.
-              placeholder="America/Bogota"
+              placeholder={m.bookingDateTimezonePlaceholder}
               aria-invalid={!isKnownTimezone(state.bookingSync.dateTimezone)}
               onChange={(e) =>
                 onChange({

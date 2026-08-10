@@ -1072,6 +1072,8 @@ export interface FormsMessages {
       bookingHoursPropertyHelp: string;
       bookingDateTimezone: string;
       bookingDateTimezoneHelp: string;
+      /** A sample IANA zone — the same in both locales, but authored not hardcoded. */
+      bookingDateTimezonePlaceholder: string;
       /** Shown under the field when the browser cannot resolve the zone typed. */
       bookingDateTimezoneInvalid: string;
       /** Legacy configs only: a stored second HubSpot destination this tab will drop. */
@@ -2297,10 +2299,11 @@ export const en: FormsMessages = {
       bookingDateTimezone: 'Day timezone',
       bookingDateTimezoneHelp:
         'IANA timezone the booking day is computed in (e.g. America/Bogota). Blank = UTC.',
+      bookingDateTimezonePlaceholder: 'America/Bogota',
       bookingDateTimezoneInvalid: 'Not a timezone name we recognise — the day will be computed in UTC.',
       extraHubspotTitle: 'This form has a second HubSpot connection',
       extraHubspotBody:
-        'Only the settings below are used: the second one never runs when someone books a meeting, and it cannot be edited here. Saving this tab removes it. To send one answer to several properties, add the properties to the same question above.',
+        'It is still sending its own answers to HubSpot on submit, but it never runs when someone books a meeting, and it cannot be edited here — only the settings below can. Any edit on this tab saves right away and removes it, and those extra answers stop being sent. To send one answer to several properties, add the properties to the same question above instead.',
       connectPromptTitle: 'Connect HubSpot to map this form',
       connectPromptBody:
         'HubSpot isn’t connected for your account yet. Connect it once, then come back to map each question to a contact property.',
@@ -3534,11 +3537,12 @@ export const es: FormsMessages = {
       bookingDateTimezone: 'Zona horaria del día',
       bookingDateTimezoneHelp:
         'Zona horaria IANA para calcular el día de agendado (ej. America/Bogota). Vacío = UTC.',
+      bookingDateTimezonePlaceholder: 'America/Bogota',
       bookingDateTimezoneInvalid:
         'No reconocemos ese nombre de zona horaria — el día se calculará en UTC.',
       extraHubspotTitle: 'Este formulario tiene una segunda conexión con HubSpot',
       extraHubspotBody:
-        'Solo se usa la configuración de abajo: la segunda nunca se ejecuta cuando alguien agenda una reunión y no se puede editar acá. Al guardar esta pestaña se elimina. Para enviar una respuesta a varias propiedades, agregá las propiedades a la misma pregunta de arriba.',
+        'Todavía está enviando sus propias respuestas a HubSpot al enviar el formulario, pero nunca se ejecuta cuando alguien agenda una reunión y no se puede editar acá — solo la configuración de abajo. Cualquier cambio en esta pestaña se guarda al instante y la elimina, y esas respuestas dejan de enviarse. Para mandar una respuesta a varias propiedades, agregá las propiedades a la misma pregunta de arriba.',
       connectPromptTitle: 'Conecta HubSpot para asignar este formulario',
       connectPromptBody:
         'HubSpot aún no está conectado en tu cuenta. Conéctalo una vez y luego vuelve para asignar cada pregunta a una propiedad de contacto.',

@@ -683,9 +683,27 @@ export type FormDestination = z.infer<typeof formDestinationSchema>;
 export const ONE_HUBSPOT_DESTINATION_MESSAGE =
   'Only one HubSpot destination per form — map several properties from the same question instead.';
 
+/** How many HubSpot entries a (loosely typed) destinations array carries. */
+function hubspotCount(destinations: unknown): number {
+  if (!Array.isArray(destinations)) return 0;
+  let n = 0;
+  for (const d of destinations) if (isRecord(d) && d.type === 'hubspot') n += 1;
+  return n;
+}
+
 /**
- * True when a proposed destination list carries more than one HubSpot entry,
- * which no form may be AUTHORED with.
+ * True when a proposed destination list would ADD a HubSpot entry beyond the
+ * first — the thing no form may be authored with.
+ *
+ * The comparison against `stored` is load-bearing, not defensive. Several
+ * screens edit one field and write the WHOLE array back (the builder's
+ * per-question property picker and its field-key rename both do), so a form
+ * that already carries two round-trips two on every unrelated save. A guard on
+ * the count alone would reject those writes and make the per-question picker
+ * unusable on precisely the forms this rule exists to clean up — while telling
+ * the author to "map several properties from the same question", which is what
+ * they were doing. So the rule is: never go UP. Staying at two is allowed;
+ * Connect still collapses to one when it saves.
  *
  * A second HubSpot destination is a trap rather than a feature. The Connect
  * screen only ever renders the first one (`destinations.find(type === 'hubspot')`),
@@ -709,13 +727,12 @@ export const ONE_HUBSPOT_DESTINATION_MESSAGE =
  * time. The copy therefore inherits the violation, and gets fixed the same way
  * the original does: by opening Connect.
  */
-export function hasExtraHubspotDestination(destinations: unknown): boolean {
-  if (!Array.isArray(destinations)) return false;
-  let seen = 0;
-  for (const d of destinations) {
-    if (isRecord(d) && d.type === 'hubspot' && ++seen > 1) return true;
-  }
-  return false;
+export function hasExtraHubspotDestination(destinations: unknown, stored?: unknown): boolean {
+  const next = hubspotCount(destinations);
+  if (next <= 1) return false;
+  // Absent `stored` = nothing is being replaced (a create), so anything past
+  // the first is new. Otherwise only an INCREASE is refused.
+  return next > Math.max(1, hubspotCount(stored));
 }
 
 /**

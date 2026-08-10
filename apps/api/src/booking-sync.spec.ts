@@ -824,6 +824,39 @@ describe('booking date semantics', () => {
     expect(props.sales_date_booked).toBe(String(Date.UTC(2026, 5, 5)));
   });
 
+  // Both records gone: there is no honest answer, and the delivery clock is the
+  // one answer that must never be given — it looks right and differs between
+  // retries. The date is skipped; everything else still goes out.
+  it('writes no date at all when neither the event nor a submission survives', async () => {
+    await setHubspotDestination(BOOKING_SYNC_CONFIG);
+    await svc.booking('acme', 'lead-qualifier', {
+      sessionId: 'sess-orphan',
+      provider: 'calendly',
+      eventUri: EVENT_URI,
+      inviteeUri: INVITEE_URI,
+      startTime: '2026-08-11T17:30:00Z',
+    });
+    await patchPayload((p) => delete p.bookedAt);
+    await db.run(sql`DELETE FROM booking_event WHERE session_id = 'sess-orphan'`);
+
+    const calls: RecordedCall[] = [];
+    bookingSync.fetchImpl = recordingFetch(calls, {
+      [EVENT_URI]: () => jsonResponse({ resource: { start_time: '2026-08-11T17:30:00Z' } }),
+      [INVITEE_URI]: () => jsonResponse({ resource: { email: 'orphan@corp.io' } }),
+      [HUBSPOT_UPSERT_URL]: () => jsonResponse({ results: [{ id: '1' }] }),
+    });
+    await drainDue();
+
+    const props = (
+      calls.find((c) => c.url === HUBSPOT_UPSERT_URL)!.body as {
+        inputs: Array<{ properties: Record<string, string> }>;
+      }
+    ).inputs[0]!.properties;
+    expect(props).not.toHaveProperty('sales_date_booked'); // absent, not fabricated
+    expect(props.sales_stage).toBe('demo_booked');
+    expect(props.hours_booking).toBe(String(Date.parse('2026-08-11T17:30:00Z')));
+  });
+
   // Belt and braces: if the event row is gone, the submission still dates it.
   it('falls back to the submission when even the booking_event is missing', async () => {
     await setHubspotDestination(BOOKING_SYNC_CONFIG);

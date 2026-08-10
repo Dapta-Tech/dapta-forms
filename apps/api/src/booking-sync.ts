@@ -193,9 +193,11 @@ export class BookingSyncEffects {
     // a booking happened, and that is the whole fact this property records.
     if (sync?.dateProperty?.trim()) {
       const bookedAtMs = payload.bookedAt ?? (await this.bookedAtFallback(payload, submission));
-      properties[sync.dateProperty.trim()] = String(
-        dayMidnightMs(bookedAtMs, sync.dateTimezone, this.log),
-      );
+      if (bookedAtMs != null) {
+        properties[sync.dateProperty.trim()] = String(
+          dayMidnightMs(bookedAtMs, sync.dateTimezone, this.log),
+        );
+      }
     }
     // The meeting START — only knowable once a start time resolved.
     if (sync?.hoursProperty?.trim() && startMs != null && Number.isFinite(startMs)) {
@@ -280,11 +282,10 @@ export class BookingSyncEffects {
   private async bookedAtFallback(
     payload: BookingSyncPayload,
     submission: SubmissionRow | null,
-  ): Promise<number> {
-    // Scoped by `form_id` as well as the id, so every read in this file narrows
-    // to the form the account gate above already resolved — and it rides the
-    // existing (form_id, session_id) index rather than adding a lookup path.
-    // A DB error is left to THROW: the outbox contract says a transport failure
+  ): Promise<number | null> {
+    // A primary-key lookup, narrowed by `form_id` as well so every read in this
+    // file stays inside the form the account gate above already resolved. A DB
+    // error is left to THROW: the outbox contract says a transport failure
     // retries, and swallowing it here would quietly stamp a different, entirely
     // plausible day instead.
     const row = await this.db.get<{ created_at: number }>(
@@ -294,10 +295,15 @@ export class BookingSyncEffects {
     const createdAt = row == null ? null : Number(row.created_at);
     if (createdAt != null && Number.isFinite(createdAt)) return createdAt;
     if (submission) return submission.submittedAt;
+    // Both records gone — only manual DB surgery gets here. There is no honest
+    // answer left, and the delivery clock is the one answer that must never be
+    // given: it would look right, and it would differ between retries. Skip the
+    // property; the stage stamp and the meeting time still go out, and an
+    // absent date is something a human can see and correct.
     this.log.warn(
-      `booking sync: no booked-at for booking ${payload.bookingEventId} — booking day taken from the delivery clock`,
+      `booking sync: booking ${payload.bookingEventId} has no booked-at and no submission — booking day not written`,
     );
-    return Date.now();
+    return null;
   }
 
   /**
