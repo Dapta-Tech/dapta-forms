@@ -414,23 +414,42 @@ export function QuestionSettings({
                   }
                 />
               </Field>
-              {/* Unlike the two labels above, an EMPTY status is meaningful —
-                  it removes the line — so it is stored as `''`, not as the
-                  `null` that means "use the localized default". */}
+              {/* Three reachable states, unlike the two labels above:
+                    null -> the localized default (empty field, shown as the
+                            placeholder — so a Spanish respondent still reads
+                            "Buscando…" even though the author edits in English);
+                    ''   -> no status line at all;
+                    text -> the author's line.
+                  Seeding the INPUT with the localized default would collapse two
+                  of those: the first keystroke freezes the admin's locale into
+                  the config, and `null` becomes unreachable forever after. */}
               <Field
                 label={bm.settings.revealVersusStatus}
                 hint={bm.settings.revealVersusStatusHint}
               >
-                <TextField
-                  value={
-                    step.reveal?.versusStatusLabel ??
-                    getMessages(clientLocale()).renderer.revealVersusStatus
-                  }
-                  data-testid="step-reveal-versus-status"
-                  onChange={(e) =>
-                    onUpdate({ reveal: { ...step.reveal, versusStatusLabel: e.target.value } })
-                  }
-                />
+                <div className="flex items-center gap-2">
+                  <TextField
+                    value={step.reveal?.versusStatusLabel ?? ''}
+                    placeholder={getMessages(clientLocale()).renderer.revealVersusStatus}
+                    data-testid="step-reveal-versus-status"
+                    onChange={(e) =>
+                      onUpdate({ reveal: { ...step.reveal, versusStatusLabel: e.target.value } })
+                    }
+                  />
+                  {step.reveal?.versusStatusLabel != null ? (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        onUpdate({ reveal: { ...step.reveal, versusStatusLabel: null } })
+                      }
+                      className="shrink-0 rounded-sm p-1.5 text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      aria-label={bm.settings.revealVersusStatusReset}
+                      title={bm.settings.revealVersusStatusReset}
+                    >
+                      <i aria-hidden className="pi pi-refresh" style={{ fontSize: 12 }} />
+                    </button>
+                  ) : null}
+                </div>
               </Field>
             </>
           ) : null}

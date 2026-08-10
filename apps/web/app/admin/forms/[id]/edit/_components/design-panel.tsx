@@ -14,6 +14,7 @@ import {
   AA_CONTRAST,
   DEFAULT_ACCENT,
   DEFAULT_CANVAS,
+  blendHex,
   DEFAULT_CANVAS_FOREGROUND,
   contrastGrade,
   contrastRatio,
@@ -619,6 +620,16 @@ function CoverSection({
   m: EditorMessages;
 }) {
   const cover = config.cover ?? {};
+  // What the strip renders when `bannerColor` is unset — `.pf__banner`'s own
+  // fallback, 12% of the accent over the form ground. Resolved here so the text
+  // colour's contrast readout has a real surface to judge against. The two
+  // inputs fall back exactly as the section above resolves them.
+  const branding = config.branding ?? {};
+  const bannerTint = blendHex(
+    branding.background?.trim() || DEFAULT_CANVAS,
+    branding.primaryColor?.trim() || DEFAULT_ACCENT,
+    0.12,
+  );
   return (
     <PanelSection title={m.cover.title} subtitle={m.cover.subtitle}>
       <InlineField label={m.cover.enabled}>
@@ -662,12 +673,17 @@ function CoverSection({
           <Field label={m.cover.bannerTextColor}>
             {/* `against` is the strip's own fill, so the contrast readout judges
                 the pair that actually renders — not the text against the form
-                ground, which is a different surface entirely. */}
+                ground, which is a different surface entirely.
+                It falls back to the DERIVED tint rather than to `undefined`,
+                which switches the badge off: the likeliest bad pair is pale text
+                on the default 12%-accent wash, so leaving the colour unset was
+                exactly the case that got no warning. Mirrors the stylesheet's
+                own fallback in `.pf__banner`. */}
             <ColorPicker
               value={cover.bannerTextColor}
               onChange={(bannerTextColor) => onCoverChange({ bannerTextColor })}
               label={m.cover.bannerTextColor}
-              against={cover.bannerColor ?? undefined}
+              against={cover.bannerColor ?? bannerTint}
               againstLabel={m.cover.bannerColor}
               allowEmpty
               m={m.design}

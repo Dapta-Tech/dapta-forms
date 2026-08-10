@@ -633,16 +633,17 @@ function RevealPageBlock({
  * one matching the device toggle — the desktop ceiling, or the phone floor.
  */
 const REVEAL_MARK_PX = {
-  sm: { desktop: 64, mobile: 44 },
-  md: { desktop: 88, mobile: 56 },
-  lg: { desktop: 128, mobile: 72 },
-  xl: { desktop: 176, mobile: 88 },
+  sm: { desktop: 40, mobile: 34 },
+  // Flat in the stylesheet — the pinned historical default — so both ends match.
+  md: { desktop: 52, mobile: 52 },
+  lg: { desktop: 104, mobile: 64 },
+  xl: { desktop: 168, mobile: 84 },
 } as const;
 const REVEAL_TEXT_PX = {
-  sm: { headline: 22, subtitle: 14 },
-  md: { headline: 28, subtitle: 15 },
-  lg: { headline: 40, subtitle: 18 },
-  xl: { headline: 54, subtitle: 20 },
+  sm: { desktop: { headline: 22, subtitle: 14 }, mobile: { headline: 18, subtitle: 14 } },
+  md: { desktop: { headline: 28, subtitle: 15 }, mobile: { headline: 22, subtitle: 15 } },
+  lg: { desktop: { headline: 40, subtitle: 18 }, mobile: { headline: 28, subtitle: 18 } },
+  xl: { desktop: { headline: 54, subtitle: 20 }, mobile: { headline: 34, subtitle: 20 } },
 } as const;
 
 /**
@@ -687,7 +688,10 @@ function RevealCanvas({
   // Clamped exactly as the stylesheet clamps it, so the biggest marks do not
   // preview with a halo the published page will not draw.
   const ring = Math.min(4, Math.max(1.5, mark * 0.025));
-  const text = REVEAL_TEXT_PX[textSize];
+  const text = REVEAL_TEXT_PX[textSize][device];
+  // `.pf-reveal__pct` is `calc(headline * 0.72)`; hardcoding it drifted from the
+  // headline the moment the type scale gained a step.
+  const pctPx = Math.round(text.headline * 0.72);
   // The accent flood makes the card its own surface, so the copy has to flip
   // with it — the same pairing the public stylesheet makes with
   // `--pf-primary-contrast`.
@@ -698,7 +702,6 @@ function RevealCanvas({
     <div className="flex justify-center">
       <div
         data-testid="canvas-reveal-preview"
-        data-pf-reveal-loader={loader}
         className={cn(
           'flex w-full flex-col items-center rounded-2xl border border-border px-6 py-14 shadow-xl sm:px-8',
           accentBackground ? '' : 'bg-card',
@@ -785,7 +788,10 @@ function RevealCanvas({
               className="flex max-w-[200px] flex-1 flex-col items-center gap-2.5"
               style={{ paddingTop: mark * 0.24 }}
             >
-              <span className="text-[19px] font-extrabold leading-none tracking-tight">
+              <span
+                className="font-extrabold leading-none tracking-tight"
+                style={{ fontSize: pctPx }}
+              >
                 100<span className="align-[0.12em] text-[0.55em] font-bold">%</span>
               </span>
               <div

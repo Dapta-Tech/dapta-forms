@@ -473,9 +473,13 @@ export type FormRevealLoader = (typeof FORM_REVEAL_LOADERS)[number];
  * Four steps rather than three because this screen is a full-page moment, not a
  * component: the top of a three-step scale landed around what a normal `md`
  * should be, so the sizes an author actually reached for were all at the
- * ceiling. Each step resolves to a `clamp()` in the stylesheet, so a size is a
- * RANGE across viewports, not one number — that is what keeps the largest marks
- * from colliding on a phone.
+ * ceiling. The larger steps resolve to a `clamp()` in the stylesheet, so a size
+ * is a RANGE across viewports rather than one number — that is what keeps the
+ * biggest marks from colliding on a phone.
+ *
+ * `md` is the value an absent `loaderSize` resolves to, and it is pinned to the
+ * mark this screen has always drawn. Growing the DEFAULT would resize every
+ * published reveal, so the new headroom lives on `lg`/`xl` only.
  */
 export const FORM_REVEAL_SIZES = ['sm', 'md', 'lg', 'xl'] as const;
 export type FormRevealSize = (typeof FORM_REVEAL_SIZES)[number];

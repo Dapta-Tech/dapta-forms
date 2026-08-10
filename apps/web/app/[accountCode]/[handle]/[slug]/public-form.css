@@ -1079,22 +1079,34 @@
   align-items: center;
   justify-content: center;
   padding: 40px 24px;
-  /* Every size is a RANGE, not a number. A fixed px mark that looks right on a
-     laptop is either lost on a wide screen or colliding with its twin on a
-     phone — and this row has to hold two marks AND the meter between them at
-     375px. The `md` values here are the default an unconfigured reveal gets. */
-  --pf-reveal-mark: clamp(56px, 11vw, 88px);
+  /* The larger sizes are RANGES, not numbers: a fixed px mark that looks right
+     on a laptop is either lost on a wide screen or colliding with its twin on a
+     phone, and the versus row has to hold two marks AND the meter between them
+     at 375px.
+     `md` is the exception and is deliberately the flat, historical 52px. It is
+     the value an ABSENT `loaderSize` resolves to, so anything else here would
+     resize the mark on every reveal already published — and, worse, on every
+     form's `submitting` screen, which renders this same spinner with no reveal
+     config at all and so has no way to opt out. Growing the default is a real
+     product decision; it does not get to happen as a side effect of adding a
+     scale. */
+  --pf-reveal-mark: 52px;
   --pf-reveal-headline: clamp(22px, 5vw, 28px);
   --pf-reveal-subtitle: 15px;
 }
+/* Spread around the pinned `md`. `sm` has to sit clearly BELOW 52px or the two
+   smallest steps are 4px apart on a laptop and read as the same choice. */
 .pf-reveal__inner[data-pf-reveal-mark='sm'] {
-  --pf-reveal-mark: clamp(44px, 8vw, 64px);
+  --pf-reveal-mark: clamp(34px, 6vw, 40px);
+}
+.pf-reveal__inner[data-pf-reveal-mark='md'] {
+  --pf-reveal-mark: 52px;
 }
 .pf-reveal__inner[data-pf-reveal-mark='lg'] {
-  --pf-reveal-mark: clamp(72px, 15vw, 128px);
+  --pf-reveal-mark: clamp(64px, 13vw, 104px);
 }
 .pf-reveal__inner[data-pf-reveal-mark='xl'] {
-  --pf-reveal-mark: clamp(88px, 20vw, 176px);
+  --pf-reveal-mark: clamp(84px, 19vw, 168px);
 }
 .pf-reveal__inner[data-pf-reveal-text='sm'] {
   --pf-reveal-headline: clamp(18px, 4vw, 22px);
@@ -1326,6 +1338,13 @@
 }
 .pf--reveal[data-pf-reveal-bg='accent'] .pf-reveal__versus .pf-reveal__track {
   background: color-mix(in srgb, var(--pf-mark-ink) 18%, transparent);
+}
+/* The versus meter keeps its ink -> paper gradient under the flood. It has to be
+   restated: the flood's generic `.pf-reveal__fill` rule above is 0,3,0 and sits
+   later in the file, so it out-specified the 0,2,0 versus rule and flattened the
+   gradient to a solid — while the builder canvas went on drawing it. */
+.pf--reveal[data-pf-reveal-bg='accent'] .pf-reveal__versus .pf-reveal__fill {
+  background: linear-gradient(90deg, var(--pf-mark-ink), var(--pf-mark-paper));
 }
 /* The marquee chips take the paper tone here too. Their default `--card` fill is
    a near-black panel meant to sit on the form's own dark ground; left alone on a

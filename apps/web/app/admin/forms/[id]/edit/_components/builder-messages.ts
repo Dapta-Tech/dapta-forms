@@ -222,6 +222,7 @@ export interface BuilderMessages {
     revealVersusMatch: string;
     revealVersusStatus: string;
     revealVersusStatusHint: string;
+    revealVersusStatusReset: string;
     revealVersusHint: string;
     /** V6 — the scheduler STEP picks a Calendly event type here. */
     schedulerSection: string;
@@ -629,6 +630,7 @@ const en: BuilderMessages = {
     revealVersusMatch: 'The match’s label',
     revealVersusStatus: 'Status line',
     revealVersusStatusHint: 'Shown under the match while it plays. Clear it to drop the line.',
+    revealVersusStatusReset: 'Use the default wording',
     revealVersusHint: 'Both accept [field] tokens. Empty uses the default wording.',
     schedulerSection: 'Scheduler',
     schedulerHint: 'Pick a Calendly event type. When someone books, it counts as their answer.',
@@ -1003,6 +1005,7 @@ const es: BuilderMessages = {
     revealVersusMatch: 'Etiqueta del match',
     revealVersusStatus: 'Línea de estado',
     revealVersusStatusHint: 'Se muestra bajo el match mientras corre. Vacíala para quitar la línea.',
+    revealVersusStatusReset: 'Usar el texto por defecto',
     revealVersusHint: 'Ambas aceptan tokens [campo]. Vacías usan el texto por defecto.',
     schedulerSection: 'Agendador',
     schedulerHint: 'Elige un tipo de evento de Calendly. Cuando alguien agenda, cuenta como su respuesta.',

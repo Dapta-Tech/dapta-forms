@@ -165,7 +165,10 @@ export function RevealScreen({
   reveal?: FormReveal | null;
   answers: Answers;
   messages: RevealScreenMessages;
-  /** Rendered under the interstitial — the "trusted by" marquee, when scoped here. */
+  /**
+   * Rendered under the interstitial — the "trusted by" marquee, when scoped
+   * here. Presented to assistive tech as decoration; see the wrapper below.
+   */
   children?: React.ReactNode;
   onComplete?: () => void;
 }) {
@@ -219,7 +222,12 @@ export function RevealScreen({
           statusLabel={versusStatus}
         />
       ) : null}
-      {children}
+      {/* The caller's slot is decoration — the client-logo marquee. Hidden from
+          assistive tech because this whole screen is an `aria-live="polite"`
+          status: without it the announcement of "we are working on it" ends by
+          reciting the trusted-by label and every logo name, which the cover
+          already announced and which says nothing about the wait. */}
+      {children ? <div aria-hidden="true">{children}</div> : null}
     </div>
   );
 }
