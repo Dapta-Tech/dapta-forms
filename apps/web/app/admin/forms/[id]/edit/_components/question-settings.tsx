@@ -1,8 +1,9 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import type { FormStep, FormLayout } from '@quill/engine';
+import type { FormStep, FormLayout, FormRevealSize } from '@quill/engine';
 import {
+  FORM_REVEAL_SIZES,
   clampSliderValue,
   defaultFlowGroup,
   nameFields,
@@ -47,6 +48,20 @@ const ALL_ITEMS: GalleryItem[] = GALLERY_GROUPS.flatMap((g) => GALLERY[g]);
 const DEFAULT_REVEAL_MS = 2200;
 const MIN_REVEAL_MS = 500;
 const MAX_REVEAL_MS = 30_000;
+
+/**
+ * The reveal's size scale, built from the engine's enum so a step added there
+ * cannot go missing from one of the two rows that use it (the loader mark and
+ * the copy). Labels stay hand-written — "Huge" is a product word, not `xl`.
+ */
+const REVEAL_SIZE_LABELS: Record<FormRevealSize, keyof BuilderMessages['settings']> = {
+  sm: 'revealSizeSm',
+  md: 'revealSizeMd',
+  lg: 'revealSizeLg',
+  xl: 'revealSizeXl',
+};
+const REVEAL_SIZE_OPTIONS = (bm: BuilderMessages) =>
+  FORM_REVEAL_SIZES.map((value) => ({ value, label: bm.settings[REVEAL_SIZE_LABELS[value]] }));
 
 /** Shared look for the inline slider-bounds warnings (V5-A2). */
 const sliderWarnClass =
@@ -342,32 +357,26 @@ export function QuestionSettings({
           {/* `none` draws no mark, so a size for it would be a control with
               nothing to scale — the combination is unreachable rather than
               merely ignored. */}
+          {/* Stacked like the loader row above, and for the same reason: at four
+              options a side-by-side label column is one word wide. */}
           {(step.reveal?.loader ?? 'spinner') !== 'none' ? (
-            <InlineField label={bm.settings.revealLoaderSize}>
+            <Field label={bm.settings.revealLoaderSize}>
               <SegmentedToggle
                 value={step.reveal?.loaderSize ?? 'md'}
                 onChange={(loaderSize) => onUpdate({ reveal: { ...step.reveal, loaderSize } })}
-                options={[
-                  { value: 'sm' as const, label: bm.settings.revealSizeSm },
-                  { value: 'md' as const, label: bm.settings.revealSizeMd },
-                  { value: 'lg' as const, label: bm.settings.revealSizeLg },
-                ]}
+                options={REVEAL_SIZE_OPTIONS(bm)}
                 ariaLabel={bm.settings.revealLoaderSize}
               />
-            </InlineField>
+            </Field>
           ) : null}
-          <InlineField label={bm.settings.revealTextSize}>
+          <Field label={bm.settings.revealTextSize}>
             <SegmentedToggle
               value={step.reveal?.textSize ?? 'md'}
               onChange={(textSize) => onUpdate({ reveal: { ...step.reveal, textSize } })}
-              options={[
-                { value: 'sm' as const, label: bm.settings.revealSizeSm },
-                { value: 'md' as const, label: bm.settings.revealSizeMd },
-                { value: 'lg' as const, label: bm.settings.revealSizeLg },
-              ]}
+              options={REVEAL_SIZE_OPTIONS(bm)}
               ariaLabel={bm.settings.revealTextSize}
             />
-          </InlineField>
+          </Field>
           <InlineField
             label={bm.settings.revealAccentBackground}
             hint={bm.settings.revealAccentBackgroundHint}

@@ -1079,15 +1079,22 @@
   align-items: center;
   justify-content: center;
   padding: 40px 24px;
-  --pf-reveal-mark: 52px;
+  /* Every size is a RANGE, not a number. A fixed px mark that looks right on a
+     laptop is either lost on a wide screen or colliding with its twin on a
+     phone — and this row has to hold two marks AND the meter between them at
+     375px. The `md` values here are the default an unconfigured reveal gets. */
+  --pf-reveal-mark: clamp(56px, 11vw, 88px);
   --pf-reveal-headline: clamp(22px, 5vw, 28px);
   --pf-reveal-subtitle: 15px;
 }
 .pf-reveal__inner[data-pf-reveal-mark='sm'] {
-  --pf-reveal-mark: 36px;
+  --pf-reveal-mark: clamp(44px, 8vw, 64px);
 }
 .pf-reveal__inner[data-pf-reveal-mark='lg'] {
-  --pf-reveal-mark: 76px;
+  --pf-reveal-mark: clamp(72px, 15vw, 128px);
+}
+.pf-reveal__inner[data-pf-reveal-mark='xl'] {
+  --pf-reveal-mark: clamp(88px, 20vw, 176px);
 }
 .pf-reveal__inner[data-pf-reveal-text='sm'] {
   --pf-reveal-headline: clamp(18px, 4vw, 22px);
@@ -1096,6 +1103,10 @@
 .pf-reveal__inner[data-pf-reveal-text='lg'] {
   --pf-reveal-headline: clamp(28px, 6.4vw, 40px);
   --pf-reveal-subtitle: 18px;
+}
+.pf-reveal__inner[data-pf-reveal-text='xl'] {
+  --pf-reveal-headline: clamp(34px, 8vw, 54px);
+  --pf-reveal-subtitle: 20px;
 }
 /* The copy carries the screen on its own once there is no mark, so it gets the
    width the loader would have taken. */
@@ -1165,7 +1176,7 @@
   display: flex;
   align-items: flex-start;
   justify-content: center;
-  gap: clamp(12px, 4vw, 28px);
+  gap: clamp(14px, 4vw, 32px);
   width: 100%;
   margin-top: 8px;
 }
@@ -1190,9 +1201,13 @@
   font-size: calc(var(--pf-reveal-mark) * 0.44);
   font-weight: 700;
   line-height: 1;
+  /* The ring is a HAIRLINE that separates the disc from the page, not a second
+     shape competing with it — at the largest sizes a proportional stroke read
+     as a grey donut around the mark. The bloom is capped for the same reason:
+     left proportional the two marks' glows met in the middle of the meter. */
   box-shadow:
-    0 0 0 calc(var(--pf-reveal-mark) * 0.075) var(--pf-mark-halo),
-    0 0 calc(var(--pf-reveal-mark) * 0.5) calc(var(--pf-reveal-mark) * 0.1)
+    0 0 0 clamp(1.5px, calc(var(--pf-reveal-mark) * 0.025), 4px) var(--pf-mark-halo),
+    0 0 clamp(14px, calc(var(--pf-reveal-mark) * 0.4), 40px) 0
       color-mix(in srgb, var(--pf-mark-paper) 30%, transparent);
 }
 .pf-reveal__mark-dot svg {
@@ -1231,7 +1246,10 @@
   /* Centred against the marks' DOTS, not their captions: the labels wrap to
      different heights, and a percentage that drifts with the longer label
      looks like a layout bug. */
-  min-width: 0;
+  /* `min-width` over `min-width: 0`: this column has to keep a readable meter
+     between two marks that never shrink, so it claims its floor first and the
+     row's `gap` gives way instead. */
+  min-width: 76px;
   flex: 1;
   max-width: 200px;
   padding-top: calc(var(--pf-reveal-mark) * 0.24);
@@ -1252,16 +1270,6 @@
   font-weight: 700;
   vertical-align: 0.12em;
   margin-left: 0.06em;
-}
-.pf-reveal__pulse {
-  display: inline-block;
-  width: 0.17em;
-  height: 0.17em;
-  border-radius: 50%;
-  margin-left: 0.5em;
-  vertical-align: 0.35em;
-  background: currentColor;
-  animation: pf-reveal-breathe 1.2s ease-in-out infinite;
 }
 @keyframes pf-reveal-breathe {
   50% {
@@ -1335,26 +1343,23 @@
    infinite loops — the spin, and the two things that only breathe — stop. */
 @media (prefers-reduced-motion: reduce) {
   .pf-reveal__spinner,
-  .pf-reveal__pulse,
   .pf-reveal__mark-status {
     animation: none;
   }
 }
 
 @media (max-width: 480px) {
-  /* Two marks plus a percentage do not fit a phone at the large scale, and
-     shrinking the type to force it would defeat picking `lg` in the first
-     place. The row wraps into a column instead: marks side by side, progress
-     under them. */
+  /* The row does NOT wrap. It used to, which dropped the meter to its own line
+     and left the two marks sitting against each other — the pairing reads as
+     "you versus the match" only while something separates them, and two
+     touching discs read as one blob. The marks shrink instead (their `clamp()`
+     minimums are sized for exactly this width) and the meter keeps its place
+     between them. */
   .pf-reveal__versus {
-    flex-wrap: wrap;
-    gap: 16px;
+    gap: 14px;
   }
   .pf-reveal__versus-mid {
-    order: 3;
-    flex-basis: 100%;
-    max-width: 100%;
-    padding-top: 0;
+    max-width: none;
   }
 }
 

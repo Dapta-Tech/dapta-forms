@@ -623,13 +623,26 @@ function RevealPageBlock({
   );
 }
 
-/** The canvas mirror of the public `--pf-reveal-mark` scale. */
-const REVEAL_MARK_PX = { sm: 36, md: 52, lg: 76 } as const;
-/** The canvas mirror of the public `--pf-reveal-headline` / `-subtitle` scales. */
+/**
+ * The canvas mirror of the public `--pf-reveal-*` scales.
+ *
+ * Those are `clamp()` ranges keyed off the VIEWPORT, which is the one thing the
+ * canvas cannot reuse: this card is ~640px wide inside a much wider admin
+ * window, so a `vw` unit here would resolve against the browser rather than the
+ * form. Each step is therefore stored as its two ends, and the preview picks the
+ * one matching the device toggle — the desktop ceiling, or the phone floor.
+ */
+const REVEAL_MARK_PX = {
+  sm: { desktop: 64, mobile: 44 },
+  md: { desktop: 88, mobile: 56 },
+  lg: { desktop: 128, mobile: 72 },
+  xl: { desktop: 176, mobile: 88 },
+} as const;
 const REVEAL_TEXT_PX = {
   sm: { headline: 22, subtitle: 14 },
-  md: { headline: 26, subtitle: 15 },
-  lg: { headline: 36, subtitle: 18 },
+  md: { headline: 28, subtitle: 15 },
+  lg: { headline: 40, subtitle: 18 },
+  xl: { headline: 54, subtitle: 20 },
 } as const;
 
 /**
@@ -670,7 +683,10 @@ function RevealCanvas({
   // clearing the field previews the line actually disappearing.
   const versusStatus =
     step.reveal?.versusStatusLabel == null ? r.revealVersusStatus : step.reveal.versusStatusLabel;
-  const mark = REVEAL_MARK_PX[loaderSize];
+  const mark = REVEAL_MARK_PX[loaderSize][device];
+  // Clamped exactly as the stylesheet clamps it, so the biggest marks do not
+  // preview with a halo the published page will not draw.
+  const ring = Math.min(4, Math.max(1.5, mark * 0.025));
   const text = REVEAL_TEXT_PX[textSize];
   // The accent flood makes the card its own surface, so the copy has to flip
   // with it — the same pairing the public stylesheet makes with
@@ -748,7 +764,7 @@ function RevealCanvas({
                   height: mark,
                   background: 'var(--pf-mark-ink)',
                   color: 'var(--pf-mark-paper)',
-                  boxShadow: `0 0 0 ${mark * 0.075}px color-mix(in srgb, var(--pf-mark-paper) 55%, transparent)`,
+                  boxShadow: `0 0 0 ${ring}px color-mix(in srgb, var(--pf-mark-paper) 55%, transparent)`,
                 }}
               >
                 <svg
@@ -794,7 +810,7 @@ function RevealCanvas({
                   fontSize: mark * 0.44,
                   background: 'var(--pf-mark-paper)',
                   color: 'var(--pf-mark-ink)',
-                  boxShadow: `0 0 0 ${mark * 0.075}px color-mix(in srgb, var(--pf-mark-paper) 55%, transparent)`,
+                  boxShadow: `0 0 0 ${ring}px color-mix(in srgb, var(--pf-mark-paper) 55%, transparent)`,
                 }}
               >
                 ?

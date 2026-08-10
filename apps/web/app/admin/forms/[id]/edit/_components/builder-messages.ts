@@ -215,6 +215,7 @@ export interface BuilderMessages {
     revealSizeSm: string;
     revealSizeMd: string;
     revealSizeLg: string;
+    revealSizeXl: string;
     revealAccentBackground: string;
     revealAccentBackgroundHint: string;
     revealVersusYou: string;
@@ -620,6 +621,7 @@ const en: BuilderMessages = {
     revealSizeSm: 'Small',
     revealSizeMd: 'Medium',
     revealSizeLg: 'Large',
+    revealSizeXl: 'Huge',
     revealAccentBackground: 'Flood with the accent',
     revealAccentBackgroundHint:
       'Paints the whole screen in the form’s accent color, so the interstitial reads as a moment of its own.',
@@ -993,6 +995,7 @@ const es: BuilderMessages = {
     revealSizeSm: 'Pequeño',
     revealSizeMd: 'Mediano',
     revealSizeLg: 'Grande',
+    revealSizeXl: 'Enorme',
     revealAccentBackground: 'Fondo con el color de acento',
     revealAccentBackgroundHint:
       'Pinta toda la pantalla con el color de acento del formulario, para que la espera se sienta como un momento aparte.',

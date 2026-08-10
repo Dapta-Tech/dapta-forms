@@ -467,8 +467,17 @@ export interface FormScheduler {
 export const FORM_REVEAL_LOADERS = ['spinner', 'bar', 'versus', 'none'] as const;
 export type FormRevealLoader = (typeof FORM_REVEAL_LOADERS)[number];
 
-/** The scale shared by the interstitial's loader mark and its copy. */
-export const FORM_REVEAL_SIZES = ['sm', 'md', 'lg'] as const;
+/**
+ * The scale shared by the interstitial's loader mark and its copy.
+ *
+ * Four steps rather than three because this screen is a full-page moment, not a
+ * component: the top of a three-step scale landed around what a normal `md`
+ * should be, so the sizes an author actually reached for were all at the
+ * ceiling. Each step resolves to a `clamp()` in the stylesheet, so a size is a
+ * RANGE across viewports, not one number — that is what keeps the largest marks
+ * from colliding on a phone.
+ */
+export const FORM_REVEAL_SIZES = ['sm', 'md', 'lg', 'xl'] as const;
 export type FormRevealSize = (typeof FORM_REVEAL_SIZES)[number];
 
 export interface FormReveal {

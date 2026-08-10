@@ -124,7 +124,6 @@ function VersusMarks({
         <p className="pf-reveal__pct">
           {pct}
           <span className="pf-reveal__pct-sign">%</span>
-          <span className="pf-reveal__pulse" />
         </p>
         <div className="pf-reveal__track">
           <div className="pf-reveal__fill" style={{ width: `${pct}%` }} />
