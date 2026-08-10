@@ -11,6 +11,7 @@ const messages = {
   subtitle: 'One moment.',
   versusYou: 'You',
   versusMatch: 'Your match',
+  versusStatus: 'Searching…',
 };
 
 describe('resolveRevealCopy', () => {
@@ -21,8 +22,29 @@ describe('resolveRevealCopy', () => {
       durationMs: DEFAULT_REVEAL_MS,
       versusYou: messages.versusYou,
       versusMatch: messages.versusMatch,
+      versusStatus: messages.versusStatus,
     });
     expect(resolveRevealCopy({}, {}, messages).headline).toBe(messages.headline);
+  });
+
+  it('an EMPTY status survives, because clearing it means "no status line"', () => {
+    // The two labels fall back on any falsy value — a blank label is just an
+    // unnamed side. The status is different: the line exists or it does not, so
+    // only an ABSENT value may take the localized default.
+    expect(resolveRevealCopy({ versusStatusLabel: '' }, {}, messages).versusStatus).toBe('');
+    expect(resolveRevealCopy({ versusStatusLabel: null }, {}, messages).versusStatus).toBe(
+      messages.versusStatus,
+    );
+    expect(resolveRevealCopy({}, {}, messages).versusStatus).toBe(messages.versusStatus);
+  });
+
+  it('interpolates the status line', () => {
+    const out = resolveRevealCopy(
+      { versusStatusLabel: 'Searching in [industry]…' },
+      { industry: 'fintech' },
+      messages,
+    );
+    expect(out.versusStatus).toBe('Searching in fintech…');
   });
 
   it('uses the configured versus labels and interpolates them', () => {

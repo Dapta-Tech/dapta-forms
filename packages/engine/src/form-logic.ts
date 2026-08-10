@@ -494,6 +494,11 @@ export interface FormReveal {
   versusYouLabel?: string | null;
   /** `versus` only — the label under the match's mark. */
   versusMatchLabel?: string | null;
+  /**
+   * `versus` only — the live status under the match's label ("Searching…").
+   * Absent falls back to localized copy; an empty string removes the line.
+   */
+  versusStatusLabel?: string | null;
 }
 
 /**

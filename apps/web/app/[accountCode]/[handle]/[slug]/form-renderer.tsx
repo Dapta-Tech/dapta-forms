@@ -107,6 +107,7 @@ export function FormRenderer({
     subtitle: m.revealSubtitle,
     versusYou: m.revealVersusYou,
     versusMatch: m.revealVersusMatch,
+    versusStatus: m.revealVersusStatus,
   };
 
   // `startAt` feeds the INITIALIZERS only — no effect reacts to it changing

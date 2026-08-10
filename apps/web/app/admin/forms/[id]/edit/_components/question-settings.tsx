@@ -405,6 +405,24 @@ export function QuestionSettings({
                   }
                 />
               </Field>
+              {/* Unlike the two labels above, an EMPTY status is meaningful —
+                  it removes the line — so it is stored as `''`, not as the
+                  `null` that means "use the localized default". */}
+              <Field
+                label={bm.settings.revealVersusStatus}
+                hint={bm.settings.revealVersusStatusHint}
+              >
+                <TextField
+                  value={
+                    step.reveal?.versusStatusLabel ??
+                    getMessages(clientLocale()).renderer.revealVersusStatus
+                  }
+                  data-testid="step-reveal-versus-status"
+                  onChange={(e) =>
+                    onUpdate({ reveal: { ...step.reveal, versusStatusLabel: e.target.value } })
+                  }
+                />
+              </Field>
             </>
           ) : null}
         </section>

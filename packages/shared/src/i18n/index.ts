@@ -43,6 +43,8 @@ export interface FormsMessages {
     /** `versus` interstitial: the two marks' labels when the config sets none. */
     revealVersusYou: string;
     revealVersusMatch: string;
+    /** The live status under the match's label while the screen plays. */
+    revealVersusStatus: string;
     noSteps: string;
     dropdownPlaceholder: string;
     dropdownEmpty: string;
@@ -1329,6 +1331,7 @@ export const en: FormsMessages = {
     revealSubtitle: 'One moment while we match you with the best next step.',
     revealVersusYou: 'You',
     revealVersusMatch: 'Your match',
+    revealVersusStatus: 'Searching…',
     noSteps: 'This form has no steps yet.',
     dropdownPlaceholder: 'Type to search…',
     dropdownEmpty: 'No results found',
@@ -2548,6 +2551,7 @@ export const es: FormsMessages = {
     revealSubtitle: 'Un momento mientras encontramos el mejor siguiente paso para ti.',
     revealVersusYou: 'Tú',
     revealVersusMatch: 'Tu match',
+    revealVersusStatus: 'Buscando…',
     noSteps: 'Este formulario aún no tiene pasos.',
     dropdownPlaceholder: 'Escribe para buscar…',
     dropdownEmpty: 'No se encontraron resultados',

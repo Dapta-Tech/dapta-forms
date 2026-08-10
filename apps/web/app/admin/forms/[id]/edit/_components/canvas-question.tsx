@@ -666,6 +666,10 @@ function RevealCanvas({
   // will publish ("You"), never the way the input beside it is captioned
   // ("Your side's label") — that is the preview lying about the page.
   const r = getMessages(clientLocale()).renderer;
+  // Same precedence as `resolveRevealCopy`: only an ABSENT value falls back, so
+  // clearing the field previews the line actually disappearing.
+  const versusStatus =
+    step.reveal?.versusStatusLabel == null ? r.revealVersusStatus : step.reveal.versusStatusLabel;
   const mark = REVEAL_MARK_PX[loaderSize];
   const text = REVEAL_TEXT_PX[textSize];
   // The accent flood makes the card its own surface, so the copy has to flip
@@ -726,44 +730,86 @@ function RevealCanvas({
             aria-hidden
             data-testid="canvas-reveal-versus"
             className="mt-6 flex w-full items-start justify-center gap-5"
+            // The same ink/paper poles the public stylesheet derives, so the
+            // card previews the pairing that will publish rather than a
+            // grey-on-grey approximation of it.
+            style={
+              {
+                '--pf-mark-ink': `color-mix(in srgb, ${accent} 12%, #05070a)`,
+                '--pf-mark-paper': `color-mix(in srgb, ${accent} 8%, #ffffff)`,
+              } as React.CSSProperties
+            }
           >
-            <div className="flex flex-col items-center gap-2.5">
+            <div className="flex flex-col items-center gap-3">
               <div
-                className="rounded-full"
+                className="flex items-center justify-center rounded-full"
                 style={{
                   width: mark,
                   height: mark,
-                  background: accentBackground ? onAccentColor : 'var(--foreground)',
+                  background: 'var(--pf-mark-ink)',
+                  color: 'var(--pf-mark-paper)',
+                  boxShadow: `0 0 0 ${mark * 0.075}px color-mix(in srgb, var(--pf-mark-paper) 55%, transparent)`,
                 }}
-              />
-              <span className="max-w-[12ch] text-center text-[13px] font-semibold">
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="currentColor"
+                  style={{ width: '62%', height: '62%' }}
+                  aria-hidden
+                >
+                  <circle cx="12" cy="8" r="3.6" />
+                  <path d="M12 13.2c-3.6 0-6.4 2.1-6.4 4.7v1.3h12.8v-1.3c0-2.6-2.8-4.7-6.4-4.7Z" />
+                </svg>
+              </div>
+              <span className="max-w-[12ch] text-center text-[14px] font-bold">
                 {step.reveal?.versusYouLabel || r.revealVersusYou}
               </span>
             </div>
-            <div className="flex max-w-[200px] flex-1 flex-col items-center gap-2 pt-3">
-              <span className="text-[19px] font-extrabold leading-none tracking-tight">100%</span>
-              <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+            <div
+              className="flex max-w-[200px] flex-1 flex-col items-center gap-2.5"
+              style={{ paddingTop: mark * 0.24 }}
+            >
+              <span className="text-[19px] font-extrabold leading-none tracking-tight">
+                100<span className="align-[0.12em] text-[0.55em] font-bold">%</span>
+              </span>
+              <div
+                className="h-2.5 w-full overflow-hidden rounded-full"
+                style={{ background: 'color-mix(in srgb, var(--pf-mark-ink) 22%, transparent)' }}
+              >
                 <div
                   className="qb-reveal__fill h-full rounded-full"
-                  style={{ background: bar, animationDuration: `${durationMs}ms` }}
+                  style={{
+                    background: `linear-gradient(90deg, var(--pf-mark-ink), ${bar})`,
+                    animationDuration: `${durationMs}ms`,
+                  }}
                 />
               </div>
             </div>
-            <div className="flex flex-col items-center gap-2.5">
+            <div className="flex flex-col items-center gap-3">
               <div
-                className="flex items-center justify-center rounded-full border-2 font-bold"
+                className="flex items-center justify-center rounded-full font-bold"
                 style={{
                   width: mark,
                   height: mark,
-                  fontSize: mark * 0.42,
-                  borderColor: 'color-mix(in srgb, currentColor 35%, transparent)',
+                  fontSize: mark * 0.44,
+                  background: 'var(--pf-mark-paper)',
+                  color: 'var(--pf-mark-ink)',
+                  boxShadow: `0 0 0 ${mark * 0.075}px color-mix(in srgb, var(--pf-mark-paper) 55%, transparent)`,
                 }}
               >
                 ?
               </div>
-              <span className="max-w-[12ch] text-center text-[13px] font-semibold">
+              <span className="max-w-[12ch] text-center text-[14px] font-bold">
                 {step.reveal?.versusMatchLabel || r.revealVersusMatch}
               </span>
+              {versusStatus ? (
+                <span
+                  className="-mt-1.5 max-w-[14ch] text-center text-[13px]"
+                  style={{ color: 'color-mix(in srgb, currentColor 55%, transparent)' }}
+                >
+                  {versusStatus}
+                </span>
+              ) : null}
             </div>
           </div>
         ) : null}

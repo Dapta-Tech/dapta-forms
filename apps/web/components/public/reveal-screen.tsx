@@ -18,6 +18,8 @@ export interface RevealScreenMessages {
   /** `versus` loader: the two marks' labels when the config names neither. */
   versusYou: string;
   versusMatch: string;
+  /** The live status under the match's label. */
+  versusStatus: string;
 }
 
 /**
@@ -36,6 +38,7 @@ export function resolveRevealCopy(
   durationMs: number;
   versusYou: string;
   versusMatch: string;
+  versusStatus: string;
 } {
   const template = reveal?.subtitleTemplate;
   // Every configured line interpolates. `subtitleTemplate` always did, but the
@@ -57,6 +60,13 @@ export function resolveRevealCopy(
     versusMatch: reveal?.versusMatchLabel
       ? interpolate(reveal.versusMatchLabel, answers)
       : messages.versusMatch,
+    // `?? messages` rather than the truthiness the labels use: an author who
+    // clears this line means "no status line", and that empty string has to
+    // survive instead of falling back to the localized default.
+    versusStatus:
+      reveal?.versusStatusLabel == null
+        ? messages.versusStatus
+        : interpolate(reveal.versusStatusLabel, answers),
   };
 }
 
@@ -88,19 +98,34 @@ function VersusMarks({
   pct,
   youLabel,
   matchLabel,
+  statusLabel,
 }: {
   pct: number;
   youLabel: string;
   matchLabel: string;
+  statusLabel: string;
 }) {
   return (
     <div className="pf-reveal__versus" aria-hidden="true">
       <figure className="pf-reveal__mark">
-        <div className="pf-reveal__mark-dot pf-reveal__mark-dot--you" />
+        <div className="pf-reveal__mark-dot pf-reveal__mark-dot--you">
+          {/* The respondent is a KNOWN person and the match is not — the whole
+              point of the pairing — so this side gets a figure and the other
+              side a question mark. Inline because the renderer ships no icon
+              set and a lone glyph is not worth a font. */}
+          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <circle cx="12" cy="8" r="3.6" />
+            <path d="M12 13.2c-3.6 0-6.4 2.1-6.4 4.7v1.3h12.8v-1.3c0-2.6-2.8-4.7-6.4-4.7Z" />
+          </svg>
+        </div>
         <figcaption className="pf-reveal__mark-label">{youLabel}</figcaption>
       </figure>
       <div className="pf-reveal__versus-mid">
-        <span className="pf-reveal__pct">{pct}%</span>
+        <p className="pf-reveal__pct">
+          {pct}
+          <span className="pf-reveal__pct-sign">%</span>
+          <span className="pf-reveal__pulse" />
+        </p>
         <div className="pf-reveal__track">
           <div className="pf-reveal__fill" style={{ width: `${pct}%` }} />
         </div>
@@ -108,6 +133,7 @@ function VersusMarks({
       <figure className="pf-reveal__mark">
         <div className="pf-reveal__mark-dot pf-reveal__mark-dot--match">?</div>
         <figcaption className="pf-reveal__mark-label">{matchLabel}</figcaption>
+        {statusLabel ? <p className="pf-reveal__mark-status">{statusLabel}</p> : null}
       </figure>
     </div>
   );
@@ -144,11 +170,8 @@ export function RevealScreen({
   children?: React.ReactNode;
   onComplete?: () => void;
 }) {
-  const { headline, subtitle, durationMs, versusYou, versusMatch } = resolveRevealCopy(
-    reveal,
-    answers,
-    messages,
-  );
+  const { headline, subtitle, durationMs, versusYou, versusMatch, versusStatus } =
+    resolveRevealCopy(reveal, answers, messages);
   const { loader, loaderSize, textSize } = resolveRevealPresentation(reveal);
 
   const [pct, setPct] = useState(4);
@@ -190,7 +213,12 @@ export function RevealScreen({
         </div>
       ) : null}
       {loader === 'versus' ? (
-        <VersusMarks pct={pct} youLabel={versusYou} matchLabel={versusMatch} />
+        <VersusMarks
+          pct={pct}
+          youLabel={versusYou}
+          matchLabel={versusMatch}
+          statusLabel={versusStatus}
+        />
       ) : null}
       {children}
     </div>

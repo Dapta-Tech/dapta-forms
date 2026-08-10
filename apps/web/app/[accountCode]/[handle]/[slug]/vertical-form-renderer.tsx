@@ -183,6 +183,7 @@ export function VerticalFormRenderer({
     subtitle: m.revealSubtitle,
     versusYou: m.revealVersusYou,
     versusMatch: m.revealVersusMatch,
+    versusStatus: m.revealVersusStatus,
   };
 
   const [phase, setPhase] = useState<Phase>('form');

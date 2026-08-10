@@ -219,6 +219,8 @@ export interface BuilderMessages {
     revealAccentBackgroundHint: string;
     revealVersusYou: string;
     revealVersusMatch: string;
+    revealVersusStatus: string;
+    revealVersusStatusHint: string;
     revealVersusHint: string;
     /** V6 — the scheduler STEP picks a Calendly event type here. */
     schedulerSection: string;
@@ -623,6 +625,8 @@ const en: BuilderMessages = {
       'Paints the whole screen in the form’s accent color, so the interstitial reads as a moment of its own.',
     revealVersusYou: 'Your side’s label',
     revealVersusMatch: 'The match’s label',
+    revealVersusStatus: 'Status line',
+    revealVersusStatusHint: 'Shown under the match while it plays. Clear it to drop the line.',
     revealVersusHint: 'Both accept [field] tokens. Empty uses the default wording.',
     schedulerSection: 'Scheduler',
     schedulerHint: 'Pick a Calendly event type. When someone books, it counts as their answer.',
@@ -994,6 +998,8 @@ const es: BuilderMessages = {
       'Pinta toda la pantalla con el color de acento del formulario, para que la espera se sienta como un momento aparte.',
     revealVersusYou: 'Etiqueta de tu lado',
     revealVersusMatch: 'Etiqueta del match',
+    revealVersusStatus: 'Línea de estado',
+    revealVersusStatusHint: 'Se muestra bajo el match mientras corre. Vacíala para quitar la línea.',
     revealVersusHint: 'Ambas aceptan tokens [campo]. Vacías usan el texto por defecto.',
     schedulerSection: 'Agendador',
     schedulerHint: 'Elige un tipo de evento de Calendly. Cuando alguien agenda, cuenta como su respuesta.',

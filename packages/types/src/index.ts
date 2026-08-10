@@ -176,6 +176,8 @@ export const formRevealSchema = z.object({
   /** `versus` only — the two marks' labels. Absent falls back to localized copy. */
   versusYouLabel: z.string().max(40).nullable().optional(),
   versusMatchLabel: z.string().max(40).nullable().optional(),
+  /** `versus` only — the live status line under the match. `''` removes it. */
+  versusStatusLabel: z.string().max(40).nullable().optional(),
 });
 
 /**

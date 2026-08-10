@@ -1150,24 +1150,36 @@
 
 /* ── Reveal: `versus` loader ──
    The respondent on one side, the thing being matched on the other, progress
-   between them. Its own track is narrower than the standalone one because it
-   shares the row with two marks. */
+   between them.
+
+   The two marks are deliberately the same INK/PAPER poles whatever the form's
+   colours are — a known person against an unresolved one only reads if the pair
+   is maximally opposed. Both poles are mixed out of the accent rather than
+   hardcoded, so they stay faintly branded and, crucially, stay a near-black and
+   a near-white on ANY accent: under a lime flood the paper mark must not come
+   out lime, or the "unknown" side disappears into the background. */
 .pf-reveal__versus {
+  --pf-mark-ink: color-mix(in srgb, var(--pf-primary) 12%, #05070a);
+  --pf-mark-paper: color-mix(in srgb, var(--pf-primary) 8%, #ffffff);
+  --pf-mark-halo: color-mix(in srgb, var(--pf-mark-paper) 55%, transparent);
   display: flex;
   align-items: flex-start;
   justify-content: center;
   gap: clamp(12px, 4vw, 28px);
   width: 100%;
-  margin-top: 4px;
+  margin-top: 8px;
 }
 .pf-reveal__mark {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   margin: 0;
   flex-shrink: 0;
 }
+/* The halo is two shadows: a tight ring hugging the circle, then a wide soft
+   bloom. One shadow cannot do both — a single large spread reads as a blur, and
+   a single tight one as a plain border. */
 .pf-reveal__mark-dot {
   width: var(--pf-reveal-mark);
   height: var(--pf-reveal-mark);
@@ -1175,50 +1187,99 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: calc(var(--pf-reveal-mark) * 0.42);
+  font-size: calc(var(--pf-reveal-mark) * 0.44);
   font-weight: 700;
   line-height: 1;
+  box-shadow:
+    0 0 0 calc(var(--pf-reveal-mark) * 0.075) var(--pf-mark-halo),
+    0 0 calc(var(--pf-reveal-mark) * 0.5) calc(var(--pf-reveal-mark) * 0.1)
+      color-mix(in srgb, var(--pf-mark-paper) 30%, transparent);
+}
+.pf-reveal__mark-dot svg {
+  width: 62%;
+  height: 62%;
 }
 .pf-reveal__mark-dot--you {
-  background: var(--foreground);
-  color: var(--background);
+  background: var(--pf-mark-ink);
+  color: var(--pf-mark-paper);
 }
-/* The unknown side reads as an outline, not a second filled mark — the point of
-   the layout is that one of the two is not resolved yet. */
 .pf-reveal__mark-dot--match {
-  background: var(--background);
-  color: var(--foreground);
-  border: 2px solid color-mix(in srgb, var(--foreground) 35%, transparent);
+  background: var(--pf-mark-paper);
+  color: var(--pf-mark-ink);
 }
 .pf-reveal__mark-label {
-  font-size: 13px;
-  font-weight: 600;
+  font-size: 14px;
+  font-weight: 700;
   color: var(--foreground);
   max-width: 12ch;
   text-wrap: balance;
+}
+.pf-reveal__mark-status {
+  margin: -6px 0 0;
+  font-size: 13px;
+  font-weight: 500;
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+  max-width: 14ch;
+  text-wrap: balance;
+  animation: pf-reveal-breathe 1.6s ease-in-out infinite;
 }
 .pf-reveal__versus-mid {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   /* Centred against the marks' DOTS, not their captions: the labels wrap to
      different heights, and a percentage that drifts with the longer label
      looks like a layout bug. */
   min-width: 0;
   flex: 1;
   max-width: 200px;
-  padding-top: calc(var(--pf-reveal-mark) * 0.22);
+  padding-top: calc(var(--pf-reveal-mark) * 0.24);
 }
 .pf-reveal__pct {
+  position: relative;
+  margin: 0;
   font-size: calc(var(--pf-reveal-headline) * 0.72);
   font-weight: 800;
   letter-spacing: -0.02em;
   line-height: 1;
   color: var(--foreground);
 }
+/* The sign is set smaller and raised: at the headline's weight a full-size `%`
+   competes with the number it is qualifying. */
+.pf-reveal__pct-sign {
+  font-size: 0.55em;
+  font-weight: 700;
+  vertical-align: 0.12em;
+  margin-left: 0.06em;
+}
+.pf-reveal__pulse {
+  display: inline-block;
+  width: 0.17em;
+  height: 0.17em;
+  border-radius: 50%;
+  margin-left: 0.5em;
+  vertical-align: 0.35em;
+  background: currentColor;
+  animation: pf-reveal-breathe 1.2s ease-in-out infinite;
+}
+@keyframes pf-reveal-breathe {
+  50% {
+    opacity: 0.35;
+  }
+}
 .pf-reveal__versus .pf-reveal__track {
   width: 100%;
+  height: 10px;
+  background: color-mix(in srgb, var(--pf-mark-ink) 22%, transparent);
+}
+/* A flat fill made the bar read as a second progress bar rather than the meter
+   BETWEEN the two marks. The gradient runs from the ink mark's colour to the
+   paper one's, so the bar is literally travelling from the respondent toward
+   the match — and it lands on the same two values the marks do, in every
+   colour mode, which is why the flood below does not need to restate it. */
+.pf-reveal__versus .pf-reveal__fill {
+  background: linear-gradient(90deg, var(--pf-mark-ink), var(--pf-mark-paper));
 }
 
 /* ── Reveal: accent flood ──
@@ -1238,25 +1299,44 @@
 .pf--reveal[data-pf-reveal-bg='accent'] .pf-reveal__track {
   background: color-mix(in srgb, var(--pf-primary-contrast) 22%, transparent);
 }
-.pf--reveal[data-pf-reveal-bg='accent'] .pf-reveal__fill,
-.pf--reveal[data-pf-reveal-bg='accent'] .pf-reveal__mark-dot--you {
+.pf--reveal[data-pf-reveal-bg='accent'] .pf-reveal__fill {
   background: var(--pf-primary-contrast);
-  color: var(--pf-primary);
 }
 .pf--reveal[data-pf-reveal-bg='accent'] .pf-reveal__spinner {
   border-color: color-mix(in srgb, var(--pf-primary-contrast) 25%, transparent);
   border-top-color: var(--pf-primary-contrast);
 }
-.pf--reveal[data-pf-reveal-bg='accent'] .pf-reveal__mark-dot--match {
-  background: transparent;
-  color: var(--pf-primary-contrast);
-  border-color: color-mix(in srgb, var(--pf-primary-contrast) 45%, transparent);
+/* The MARKS are deliberately NOT re-coloured here. They are an ink/paper pair
+   mixed out of the accent already (see `.pf-reveal__versus`), and that pair is
+   what the flood needs: over a lime page the known side stays near-black and
+   the unknown side stays near-white. Repainting them in the accent's own
+   contrast colour — which the rest of this block does to the copy — would
+   collapse the two marks onto the same value. Only their status line and the
+   meter follow the flood. */
+.pf--reveal[data-pf-reveal-bg='accent'] .pf-reveal__mark-status {
+  color: color-mix(in srgb, var(--pf-primary-contrast) 55%, transparent);
+}
+.pf--reveal[data-pf-reveal-bg='accent'] .pf-reveal__versus .pf-reveal__track {
+  background: color-mix(in srgb, var(--pf-mark-ink) 18%, transparent);
+}
+/* The marquee chips take the paper tone here too. Their default `--card` fill is
+   a near-black panel meant to sit on the form's own dark ground; left alone on a
+   flooded page it reads as a row of holes punched in the colour. */
+.pf--reveal[data-pf-reveal-bg='accent'] .pf-logos__chip {
+  background: color-mix(in srgb, var(--pf-primary) 8%, #ffffff);
+  color: color-mix(in srgb, var(--pf-primary) 12%, #05070a);
+  border-color: transparent;
+}
+.pf--reveal[data-pf-reveal-bg='accent'] .pf-logos__label {
+  color: color-mix(in srgb, var(--pf-primary-contrast) 65%, transparent);
 }
 
-/* The bar is a real progress signal, so it keeps moving; only the decorative
-   infinite spin stops. */
+/* The bar is a real progress signal, so it keeps moving; the decorative
+   infinite loops — the spin, and the two things that only breathe — stop. */
 @media (prefers-reduced-motion: reduce) {
-  .pf-reveal__spinner {
+  .pf-reveal__spinner,
+  .pf-reveal__pulse,
+  .pf-reveal__mark-status {
     animation: none;
   }
 }
