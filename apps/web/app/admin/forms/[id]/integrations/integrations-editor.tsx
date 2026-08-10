@@ -125,6 +125,24 @@ interface BookingSyncState {
   stageValue: string;
   dateProperty: string;
   hoursProperty: string;
+  /** IANA zone the booking DAY is computed in. Blank = UTC (server default). */
+  dateTimezone: string;
+}
+
+/**
+ * Whether the browser can resolve this IANA zone name. Advisory only: it warns
+ * the author at the moment they mistype, but the value still saves — the SERVER
+ * decides, and its ICU data is the one that matters. Blank is always fine (UTC).
+ */
+function isKnownTimezone(value: string): boolean {
+  const zone = value.trim();
+  if (!zone) return true;
+  try {
+    new Intl.DateTimeFormat('en-CA', { timeZone: zone });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function initialWebhook(destinations: FormDestination[]): WebhookState {
@@ -176,6 +194,7 @@ function initialHubspot(destinations: FormDestination[]): HubspotState {
         stageValue: h.bookingSync?.stageValue ?? '',
         dateProperty: h.bookingSync?.dateProperty ?? '',
         hoursProperty: h.bookingSync?.hoursProperty ?? '',
+        dateTimezone: h.bookingSync?.dateTimezone ?? '',
       },
     };
   }
@@ -190,7 +209,13 @@ function initialHubspot(destinations: FormDestination[]): HubspotState {
     outcomeProperty: '',
     staticProperties: [],
     inferCompanyFromEmail: false,
-    bookingSync: { stageProperty: '', stageValue: '', dateProperty: '', hoursProperty: '' },
+    bookingSync: {
+      stageProperty: '',
+      stageValue: '',
+      dateProperty: '',
+      hoursProperty: '',
+      dateTimezone: '',
+    },
   };
 }
 
@@ -347,7 +372,13 @@ export function IntegrationsEditor({
       if (p.key.trim() && p.value.trim()) staticProperties[p.key.trim()] = p.value.trim();
     }
     const bookingSync: Record<string, string> = {};
-    for (const k of ['stageProperty', 'stageValue', 'dateProperty', 'hoursProperty'] as const) {
+    for (const k of [
+      'stageProperty',
+      'stageValue',
+      'dateProperty',
+      'hoursProperty',
+      'dateTimezone',
+    ] as const) {
       if (hs.bookingSync[k].trim()) bookingSync[k] = hs.bookingSync[k].trim();
     }
     const hasHubspotConfig =
@@ -1578,10 +1609,12 @@ function HubspotCard({
         </div>
       </Field>
 
-      {/* Booking sync: contact properties stamped when a meeting is booked */}
+      {/* Booking sync: contact properties stamped when a meeting is booked.
+          Paired by meaning, not by type: the two date controls sit together
+          because the timezone only qualifies the day above it. */}
       <Field label={m.bookingSync} help={m.bookingSyncHelp}>
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label={m.bookingStageProperty}>
+          <Field label={m.bookingStageProperty} help={m.bookingStagePropertyHelp}>
             <PropertyField
               value={state.bookingSync.stageProperty}
               ariaLabel={m.bookingStageProperty}
@@ -1607,7 +1640,7 @@ function HubspotCard({
               }
             />
           </Field>
-          <Field label={m.bookingDateProperty}>
+          <Field label={m.bookingDateProperty} help={m.bookingDatePropertyHelp}>
             <PropertyField
               value={state.bookingSync.dateProperty}
               ariaLabel={m.bookingDateProperty}
@@ -1620,7 +1653,29 @@ function HubspotCard({
               }
             />
           </Field>
-          <Field label={m.bookingHoursProperty}>
+          <Field
+            label={m.bookingDateTimezone}
+            help={
+              isKnownTimezone(state.bookingSync.dateTimezone)
+                ? m.bookingDateTimezoneHelp
+                : m.bookingDateTimezoneInvalid
+            }
+          >
+            <Input
+              value={state.bookingSync.dateTimezone}
+              aria-label={m.bookingDateTimezone}
+              // A real zone name, so the format is legible without reading the help.
+              placeholder="America/Bogota"
+              aria-invalid={!isKnownTimezone(state.bookingSync.dateTimezone)}
+              onChange={(e) =>
+                onChange({
+                  ...state,
+                  bookingSync: { ...state.bookingSync, dateTimezone: e.target.value },
+                })
+              }
+            />
+          </Field>
+          <Field label={m.bookingHoursProperty} help={m.bookingHoursPropertyHelp}>
             <PropertyField
               value={state.bookingSync.hoursProperty}
               ariaLabel={m.bookingHoursProperty}

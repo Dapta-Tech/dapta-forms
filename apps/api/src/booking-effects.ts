@@ -22,6 +22,16 @@ export interface BookingSyncPayload {
   inviteeUri: string | null;
   /** Scheduled start reported by the callback, epoch-ms (null = unknown). */
   startTime: number | null;
+  /**
+   * When the booking actually happened — the `booking_event` row's `createdAt`,
+   * epoch-ms. This, not `startTime`, is what `bookingSync.dateProperty` stamps:
+   * the day the lead BOOKED, which is the day monthly reporting counts them in.
+   *
+   * Optional because rows enqueued before this field existed are still in the
+   * outbox; the handler falls back to the submission's own timestamp for those.
+   * Never the delivery clock — retries run minutes to hours later.
+   */
+  bookedAt?: number;
 }
 
 /**

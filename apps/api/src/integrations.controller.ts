@@ -26,7 +26,13 @@ import {
   updateFormDestinations,
   upsertIntegration,
 } from '@quill/db';
-import { formDestinationSchema, maskConfigSecrets, type FormDestination } from '@quill/types';
+import {
+  formDestinationSchema,
+  hasExtraHubspotDestination,
+  maskConfigSecrets,
+  ONE_HUBSPOT_DESTINATION_MESSAGE,
+  type FormDestination,
+} from '@quill/types';
 import { WebhookDestination, WebhookHttpError } from '@quill/destinations';
 import type { ServerEnv } from '@quill/config/env';
 import { AuthService, type ReqLike } from './auth.service';
@@ -463,6 +469,15 @@ export class FormDestinationsController {
       if (err instanceof ZodError)
         throw new BadRequestException({ error: 'BAD_REQUEST', message: err.issues[0]?.message });
       throw err;
+    }
+    // At most one HubSpot destination — see `hasExtraHubspotDestination`. Not in
+    // the schema above, so a form that already stores two still READS fine; only
+    // writing a second one is refused. Webhooks are unaffected.
+    if (hasExtraHubspotDestination(destinations)) {
+      throw new BadRequestException({
+        error: 'BAD_REQUEST',
+        message: ONE_HUBSPOT_DESTINATION_MESSAGE,
+      });
     }
     const out = await updateFormDestinations(this.db, p.accountId, id, destinations);
     if (!out.ok) throw new NotFoundException({ error: 'NOT_FOUND', message: 'Not found.' });

@@ -644,13 +644,19 @@ export const hubspotDestinationSchema = z.object({
   inferCompanyFromEmail: z.boolean().optional(),
   /**
    * Booking sync — which contact properties receive the booking facts when a
-   * visitor books a meeting through an outcome's scheduling handoff (the
-   * `booking_sync` outbox flow). All optional; absent = booking sync is a
-   * no-op for this destination.
+   * visitor books a meeting through a `scheduler` step (the `booking_sync`
+   * outbox flow). All optional; absent = booking sync is a no-op for this
+   * destination.
    *  - `stageProperty` is set to `stageValue` verbatim (e.g. a sales-stage
    *    enum internal value) — the "demo booked" stage stamp.
-   *  - `dateProperty` receives the meeting-start CALENDAR DAY as UTC-midnight
-   *    epoch-ms (HubSpot `date`-type properties require midnight UTC).
+   *  - `dateProperty` receives the CALENDAR DAY THE LEAD BOOKED ON as
+   *    UTC-midnight epoch-ms (HubSpot `date`-type properties require midnight
+   *    UTC). The day the booking happened, NOT the day of the meeting — the
+   *    two differ whenever someone books ahead, and this property is what
+   *    monthly "meetings booked" reporting counts by.
+   *  - `dateTimezone` is the IANA zone that day is computed in. Blank/absent =
+   *    UTC, the platform default. A portal reporting in `America/Bogota` needs
+   *    it set, or every booking from 19:00 local onwards lands on tomorrow.
    *  - `hoursProperty` receives the exact meeting start as epoch-ms (a
    *    HubSpot `datetime`-type property).
    */
@@ -660,6 +666,8 @@ export const hubspotDestinationSchema = z.object({
       stageValue: z.string().max(200).optional(),
       dateProperty: z.string().max(200).optional(),
       hoursProperty: z.string().max(200).optional(),
+      /** IANA zone the booking DAY is computed in (`dateProperty`). Blank = UTC. */
+      dateTimezone: z.string().max(64).optional(),
     })
     .optional(),
 });
@@ -670,6 +678,36 @@ export const formDestinationSchema = z.discriminatedUnion('type', [
   hubspotDestinationSchema,
 ]);
 export type FormDestination = z.infer<typeof formDestinationSchema>;
+
+/** Rejection message for a second HubSpot destination (see `hasExtraHubspotDestination`). */
+export const ONE_HUBSPOT_DESTINATION_MESSAGE =
+  'Only one HubSpot destination per form — map several properties from the same question instead.';
+
+/**
+ * True when a proposed destination list carries more than one HubSpot entry,
+ * which no form may be WRITTEN with.
+ *
+ * A second HubSpot destination is a trap rather than a feature. The Connect
+ * screen only ever renders the first one (`destinations.find(type === 'hubspot')`),
+ * so the second is invisible; and the booking flow resolves the same way, so it
+ * runs at submit time but silently does nothing when a meeting is booked. Forms
+ * carrying two were a workaround from when a field mapping was one question →
+ * one property; a mapping now fans out to several, so the workaround has no
+ * remaining use case.
+ *
+ * Deliberately NOT a `formConfigSchema` refinement: this is a WRITE rule, and
+ * folding it into the parse would make the stored configs of forms that already
+ * carry two stop loading — breaking reads and deliveries for exactly the forms
+ * that need fixing. Write paths call this; readers stay tolerant.
+ */
+export function hasExtraHubspotDestination(destinations: unknown): boolean {
+  if (!Array.isArray(destinations)) return false;
+  let seen = 0;
+  for (const d of destinations) {
+    if (isRecord(d) && d.type === 'hubspot' && ++seen > 1) return true;
+  }
+  return false;
+}
 
 /**
  * Sentinel returned in place of a stored webhook signing secret on every ADMIN

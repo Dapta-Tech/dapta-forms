@@ -83,8 +83,15 @@ function inviteeAnswers(details: InviteeDetails): Record<string, string> {
  *      answers for the session),
  *   4. builds the configured booking properties — `stageProperty` = stageValue,
  *      `hoursProperty` = meeting start epoch-ms, `dateProperty` = UTC-midnight
- *      epoch-ms of the meeting-start day (HubSpot `date` properties require
- *      midnight UTC) — and upserts the contact by email.
+ *      epoch-ms of the day the lead BOOKED, in `dateTimezone` (HubSpot `date`
+ *      properties require midnight UTC) — and upserts the contact by email.
+ *
+ * The two time properties answer different questions and are gated
+ * differently. `hoursProperty` is *when the meeting is*, so it needs a start
+ * time and is skipped without one. `dateProperty` is *when the booking
+ * happened*, which is known unconditionally — it is what monthly "meetings
+ * booked" reporting counts by, and stamping it with the meeting's day would
+ * push a booking made on the 31st into next month.
  *
  * Failure semantics match the outbox contract: a RETRYABLE transport failure
  * (network, HTTP 429/5xx) THROWS so the worker retries with backoff; a
@@ -181,11 +188,18 @@ export class BookingSyncEffects {
     // --- Build the configured booking properties ------------------------------
     const properties: Record<string, string> = {};
     if (hasStage && sync) properties[sync.stageProperty!.trim()] = sync.stageValue!.trim();
-    if (sync && startMs != null && Number.isFinite(startMs)) {
-      if (sync.hoursProperty?.trim()) properties[sync.hoursProperty.trim()] = String(startMs);
-      if (sync.dateProperty?.trim()) {
-        properties[sync.dateProperty.trim()] = String(utcMidnightMs(startMs));
-      }
+    // The booking DAY — when the lead booked, not when the meeting is. Deliberately
+    // NOT gated on `startMs`: a provider that reports no start time still tells us
+    // a booking happened, and that is the whole fact this property records.
+    if (sync?.dateProperty?.trim()) {
+      const bookedAtMs = payload.bookedAt ?? submission?.submittedAt ?? Date.now();
+      properties[sync.dateProperty.trim()] = String(
+        dayMidnightMs(bookedAtMs, sync.dateTimezone, this.log),
+      );
+    }
+    // The meeting START — only knowable once a start time resolved.
+    if (sync?.hoursProperty?.trim() && startMs != null && Number.isFinite(startMs)) {
+      properties[sync.hoursProperty.trim()] = String(startMs);
     }
 
     // Per-account HubSpot token (connected → decrypted), else the env fallback.
@@ -240,7 +254,7 @@ export class BookingSyncEffects {
 
     if (!wroteBooking && !syncedAnswers) {
       throw new OutboxSkipError(
-        'booking sync: nothing to write (no meeting start time resolvable and no stage configured)',
+        'booking sync: nothing to write (no booking properties configured and no answers to sync)',
       );
     }
     this.log.log(
@@ -461,6 +475,39 @@ function adapterResolvableEmail(
 export function utcMidnightMs(epochMs: number): number {
   const d = new Date(epochMs);
   return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+}
+
+/**
+ * UTC-midnight epoch-ms of the calendar day `epochMs` falls on **in `timezone`**
+ * — the value a HubSpot `date` property takes, for the day a human in that zone
+ * would name. Blank/absent zone = UTC (the platform default; this product is
+ * self-hosted and has no business assuming anyone's office).
+ *
+ * An unrecognised zone WARNS and falls back to UTC rather than throwing: a typo
+ * in a config field must not turn a delivery into a retry loop, and a day that
+ * is off by hours beats no booking record at all.
+ */
+export function dayMidnightMs(epochMs: number, timezone?: string, log?: Logger): number {
+  const zone = timezone?.trim();
+  if (zone) {
+    try {
+      // `en-CA` formats as YYYY-MM-DD, so the parts come out already ordered.
+      const day = new Intl.DateTimeFormat('en-CA', {
+        timeZone: zone,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      }).format(new Date(epochMs));
+      const [y, m, d] = day.split('-').map(Number);
+      if (Number.isFinite(y) && Number.isFinite(m) && Number.isFinite(d)) {
+        return Date.UTC(y!, m! - 1, d!);
+      }
+    } catch {
+      // Fall through to UTC.
+    }
+    log?.warn(`booking sync: unusable dateTimezone — booking day computed in UTC instead`);
+  }
+  return utcMidnightMs(epochMs);
 }
 
 /** True only for https URLs on the Calendly API host (bearer-token guard). */
