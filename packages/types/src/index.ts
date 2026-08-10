@@ -729,10 +729,9 @@ function hubspotCount(destinations: unknown): number {
  */
 export function hasExtraHubspotDestination(destinations: unknown, stored?: unknown): boolean {
   const next = hubspotCount(destinations);
-  if (next <= 1) return false;
-  // Absent `stored` = nothing is being replaced (a create), so anything past
-  // the first is new. Otherwise only an INCREASE is refused.
-  return next > Math.max(1, hubspotCount(stored));
+  // One is always fine. Past that, only an INCREASE is refused — and an absent
+  // or unreadable `stored` counts as zero, so a create refuses anything over one.
+  return next > 1 && next > hubspotCount(stored);
 }
 
 /**

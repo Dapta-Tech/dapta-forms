@@ -26,6 +26,7 @@ import type {
 } from '@/lib/admin-api';
 import { trackDestinationWrite } from '@/lib/connect-sync';
 import { propertyLookup, suggestProperty, type QuestionMeta } from './auto-map';
+import { Card } from './integrations-card';
 import { pingWebhookAction, saveIntegrationsAction } from './actions';
 
 type Msgs = FormsMessages['admin']['integrations'];
@@ -801,52 +802,6 @@ export function explainPingFailure(res: WebhookPingResult, m: Msgs): string {
   return parts.join(' ');
 }
 
-function Card({
-  title,
-  desc,
-  enabled,
-  onToggle,
-  m,
-  badge,
-  logo,
-  children,
-}: {
-  title: string;
-  desc: string;
-  enabled: boolean;
-  onToggle: (v: boolean) => void;
-  m: Msgs;
-  badge?: string;
-  /** The provider this card configures, when it is a named third party. */
-  logo?: LogoProvider;
-  children: React.ReactNode;
-}) {
-  return (
-    <section className="rounded-xl border border-border bg-card p-5">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2">
-            {logo ? <ProviderLogo provider={logo} size={20} /> : null}
-            <h2 className="text-lg font-semibold">{title}</h2>
-            {badge ? (
-              <span className="inline-flex items-center gap-1 rounded-full border border-primary-edge/40 bg-primary/10 px-2 py-0.5 text-xs font-medium text-foreground">
-                <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-primary-edge" />
-                {badge}
-              </span>
-            ) : null}
-          </div>
-          <p className="mt-0.5 text-sm text-muted-foreground">{desc}</p>
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          <span className="text-xs text-muted-foreground">{enabled ? m.enabled : m.disabled}</span>
-          <Switch checked={enabled} onCheckedChange={onToggle} aria-label={title} />
-        </div>
-      </div>
-      {enabled ? <div className="mt-5 flex flex-col gap-4">{children}</div> : null}
-    </section>
-  );
-}
-
 /** A grouped panel (Typeform-style) with a header, optional help, and an action slot. */
 function Section({
   title,
@@ -1231,6 +1186,11 @@ function HubspotCard({
       onToggle={(enabled) => onChange({ ...state, enabled })}
       m={m}
       badge={accountConnected ? m.connectedBadge : undefined}
+      // Under the header, NOT among the children: `Card` hides children when the
+      // toggle is off, and a card toggled off is the state where this warning
+      // matters most — flipping the switch is itself an edit, and the autosave
+      // it triggers is what performs the collapse.
+      notice={extraHubspotNotice}
     >
       {!pickerEnabled ? (
         <div className="rounded-md border border-dashed border-border bg-muted/40 p-3 text-xs text-muted-foreground">
@@ -1260,8 +1220,6 @@ function HubspotCard({
           </p>
         ) : null}
       </div>
-
-      {extraHubspotNotice}
 
       {/* The mapping the old help text INSTRUCTED, which switches the sync off.
           Named per question so it can be found, not just described. */}

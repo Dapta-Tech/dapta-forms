@@ -552,8 +552,11 @@ export function dayMidnightMs(epochMs: number, timezone?: string, log?: Logger):
       // Fall through to UTC.
     }
     // The zone is author-entered config, never PII — naming it is what makes the
-    // warning actionable for whoever has to go fix the form.
-    log?.warn(`booking sync: unusable dateTimezone "${zone}" — booking day computed in UTC instead`);
+    // warning actionable. Quoted through JSON so an author cannot smuggle a
+    // newline into the log and forge a line of their own.
+    log?.warn(
+      `booking sync: unusable dateTimezone ${JSON.stringify(zone)} — booking day computed in UTC instead`,
+    );
   }
   return utcMidnightMs(epochMs);
 }

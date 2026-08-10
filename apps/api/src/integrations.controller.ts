@@ -475,8 +475,11 @@ export class FormDestinationsController {
     // Compared against what is STORED, not against 1: the builder's per-question
     // picker writes the whole array back on every pick, so a count-only guard
     // would 400 an edit that adds nothing. Webhooks are unaffected.
+    // Account-scoped, so a foreign or missing id is a 404 here — BEFORE the
+    // guard, or a bad body would answer 400 for a form the caller cannot see.
     const before = await getFormById(this.db, p.accountId, id);
-    const stored = (before?.config as { destinations?: unknown } | null)?.destinations;
+    if (!before) throw new NotFoundException({ error: 'NOT_FOUND', message: 'Not found.' });
+    const stored = (before.config as { destinations?: unknown } | null)?.destinations;
     if (hasExtraHubspotDestination(destinations, stored)) {
       throw new BadRequestException({
         error: 'BAD_REQUEST',

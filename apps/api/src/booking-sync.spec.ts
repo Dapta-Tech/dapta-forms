@@ -734,7 +734,9 @@ describe('booking date semantics', () => {
 
     const props = await bookingProps();
     expect(props.sales_date_booked).toBe(bookedDay(bookedAt));
-    expect(props.sales_date_booked).not.toBe(String(Date.UTC(2027, 2, 15)));
+    // Derived from the meeting instant, not a literal: a hardcoded 2027-03-15
+    // would start failing on 2027-03-15, when the booking day IS the meeting day.
+    expect(props.sales_date_booked).not.toBe(bookedDay(Date.parse(startIso)));
     expect(props.hours_booking).toBe(String(Date.parse(startIso))); // meeting, unchanged
   });
 
