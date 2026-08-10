@@ -14,6 +14,7 @@ import {
   AA_CONTRAST,
   DEFAULT_ACCENT,
   DEFAULT_CANVAS,
+  blendHex,
   DEFAULT_CANVAS_FOREGROUND,
   contrastGrade,
   contrastRatio,
@@ -619,6 +620,16 @@ function CoverSection({
   m: EditorMessages;
 }) {
   const cover = config.cover ?? {};
+  // What the strip renders when `bannerColor` is unset — `.pf__banner`'s own
+  // fallback, 12% of the accent over the form ground. Resolved here so the text
+  // colour's contrast readout has a real surface to judge against. The two
+  // inputs fall back exactly as the section above resolves them.
+  const branding = config.branding ?? {};
+  const bannerTint = blendHex(
+    branding.background?.trim() || DEFAULT_CANVAS,
+    branding.primaryColor?.trim() || DEFAULT_ACCENT,
+    0.12,
+  );
   return (
     <PanelSection title={m.cover.title} subtitle={m.cover.subtitle}>
       <InlineField label={m.cover.enabled}>
@@ -634,18 +645,63 @@ function CoverSection({
           onChange={(e) => onCoverChange({ bannerText: e.target.value || null })}
         />
       </Field>
+      {/* Everything about the strip's look hangs off there BEING a strip. With
+          no text there is no banner on the page, so a color picker for it would
+          be a control with nothing to change. */}
       {cover.bannerText ? (
-        <InlineField label={m.cover.bannerScope}>
-          <SegmentedToggle
-            value={cover.bannerScope ?? 'form'}
-            onChange={(bannerScope) => onCoverChange({ bannerScope })}
-            options={[
-              { value: 'form' as const, label: m.cover.bannerScopeForm },
-              { value: 'cover' as const, label: m.cover.bannerScopeCover },
-            ]}
-            ariaLabel={m.cover.bannerScope}
-          />
-        </InlineField>
+        <>
+          <InlineField label={m.cover.bannerScope}>
+            <SegmentedToggle
+              value={cover.bannerScope ?? 'form'}
+              onChange={(bannerScope) => onCoverChange({ bannerScope })}
+              options={[
+                { value: 'form' as const, label: m.cover.bannerScopeForm },
+                { value: 'cover' as const, label: m.cover.bannerScopeCover },
+              ]}
+              ariaLabel={m.cover.bannerScope}
+            />
+          </InlineField>
+          <Field label={m.cover.bannerColor} hint={m.cover.bannerColorHint}>
+            <ColorPicker
+              value={cover.bannerColor}
+              onChange={(bannerColor) => onCoverChange({ bannerColor })}
+              label={m.cover.bannerColor}
+              allowEmpty
+              m={m.design}
+            />
+          </Field>
+          <Field label={m.cover.bannerTextColor}>
+            {/* `against` is the strip's own fill, so the contrast readout judges
+                the pair that actually renders — not the text against the form
+                ground, which is a different surface entirely.
+                It falls back to the DERIVED tint rather than to `undefined`,
+                which switches the badge off: the likeliest bad pair is pale text
+                on the default 12%-accent wash, so leaving the colour unset was
+                exactly the case that got no warning. Mirrors the stylesheet's
+                own fallback in `.pf__banner`. */}
+            <ColorPicker
+              value={cover.bannerTextColor}
+              onChange={(bannerTextColor) => onCoverChange({ bannerTextColor })}
+              label={m.cover.bannerTextColor}
+              against={cover.bannerColor ?? bannerTint}
+              againstLabel={m.cover.bannerColor}
+              allowEmpty
+              m={m.design}
+            />
+          </Field>
+          <InlineField label={m.cover.bannerSize}>
+            <SegmentedToggle
+              value={cover.bannerSize ?? 'md'}
+              onChange={(bannerSize) => onCoverChange({ bannerSize })}
+              options={[
+                { value: 'sm' as const, label: m.cover.bannerSizeSm },
+                { value: 'md' as const, label: m.cover.bannerSizeMd },
+                { value: 'lg' as const, label: m.cover.bannerSizeLg },
+              ]}
+              ariaLabel={m.cover.bannerSize}
+            />
+          </InlineField>
+        </>
       ) : null}
       <Field label={m.cover.eyebrow}>
         <TextField value={cover.eyebrow ?? ''} onChange={(e) => onCoverChange({ eyebrow: e.target.value || null })} />
@@ -708,6 +764,22 @@ function ClientLogosSection({
           aria-label={m.cover.showClientLogos}
         />
       </InlineField>
+      {/* Only reachable while the marquee is on: picking WHERE something shows
+          is meaningless once it shows nowhere. */}
+      {cover.showClientLogos !== false ? (
+        <InlineField label={m.cover.clientLogosScope}>
+          <SegmentedToggle
+            value={cover.clientLogosScope ?? 'cover'}
+            onChange={(clientLogosScope) => onCoverChange({ clientLogosScope })}
+            options={[
+              { value: 'cover' as const, label: m.cover.clientLogosScopeCover },
+              { value: 'reveal' as const, label: m.cover.clientLogosScopeReveal },
+              { value: 'both' as const, label: m.cover.clientLogosScopeBoth },
+            ]}
+            ariaLabel={m.cover.clientLogosScope}
+          />
+        </InlineField>
+      ) : null}
       <div className="flex flex-col gap-2">
         {logos.length === 0 ? (
           <p className="text-xs text-muted-foreground">{m.cover.clientLogosEmpty}</p>

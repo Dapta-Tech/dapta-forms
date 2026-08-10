@@ -9,7 +9,9 @@ import {
   CONDITION_OPS,
   FORM_BACKGROUND_STYLES,
   FORM_BANNER_SCOPES,
+  FORM_BANNER_SIZES,
   FORM_BUTTON_STYLES,
+  FORM_CLIENT_LOGO_SCOPES,
   FORM_CONTENT_ALIGNS,
   FORM_CONTENT_WIDTHS,
   FORM_FIELD_TYPES,
@@ -20,6 +22,8 @@ import {
   FORM_OPTION_LAYOUTS,
   FORM_PROGRESS_STYLES,
   FORM_RADII,
+  FORM_REVEAL_LOADERS,
+  FORM_REVEAL_SIZES,
   FORM_TRANSITIONS,
   isImageIcon,
   isSafeHttpUrl,
@@ -127,6 +131,28 @@ const clientLogoSchema = z.object({
   src: safeImageUrl.nullable().optional(),
 });
 
+/**
+ * A CSS color value flowing into an inline custom property (`--pf-primary`,
+ * `--pf-banner-bg`, …) on the public renderer. Constrain the format (hex /
+ * rgb(a) / hsl(a) / named) so a value like `red;} body{...` can't break out of
+ * the color context — CSS-injection defense-in-depth on top of the 32-char cap
+ * (L2).
+ *
+ * Declared here, above the first schema that uses it: these are plain `const`
+ * bindings evaluated top-to-bottom at module load, so a schema built before
+ * this line would hit the temporal dead zone.
+ */
+const cssColor = z
+  .string()
+  .max(32)
+  .refine(
+    (v) =>
+      /^#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/.test(v) ||
+      /^(?:rgb|rgba|hsl|hsla)\([0-9.,%\s/-]+\)$/.test(v) ||
+      /^[a-zA-Z]+$/.test(v),
+    { message: 'Color must be a hex, rgb(a)/hsl(a), or named CSS color.' },
+  );
+
 export const formRevealSchema = z.object({
   enabled: z.boolean().optional(),
   headline: z.string().max(300).nullable().optional(),
@@ -138,6 +164,20 @@ export const formRevealSchema = z.object({
   subtitleTemplate: z.string().max(200).nullable().optional(),
   /** Pre-warm the booking embed while the interstitial plays. */
   prewarm: z.boolean().optional(),
+  /**
+   * Presentation (ADDITIVE — all optional). Absent on every axis resolves to
+   * the historical spinner-over-a-bar look, so a stored reveal keeps rendering
+   * exactly as it does today. See `resolveRevealPresentation` in @quill/engine.
+   */
+  loader: z.enum(FORM_REVEAL_LOADERS).optional(),
+  loaderSize: z.enum(FORM_REVEAL_SIZES).optional(),
+  textSize: z.enum(FORM_REVEAL_SIZES).optional(),
+  accentBackground: z.boolean().optional(),
+  /** `versus` only — the two marks' labels. Absent falls back to localized copy. */
+  versusYouLabel: z.string().max(40).nullable().optional(),
+  versusMatchLabel: z.string().max(40).nullable().optional(),
+  /** `versus` only — the live status line under the match. `''` removes it. */
+  versusStatusLabel: z.string().max(40).nullable().optional(),
 });
 
 /**
@@ -261,6 +301,14 @@ export const formCoverSchema = z.object({
    * screen; absent — every legacy config — keeps it above every screen.
    */
   bannerScope: z.enum(FORM_BANNER_SCOPES).optional(),
+  /**
+   * The banner strip's own look (ADDITIVE). Absent on any axis keeps the
+   * derived tint + padding the stylesheet has always applied, so no published
+   * form's banner changes by upgrading.
+   */
+  bannerColor: cssColor.nullable().optional(),
+  bannerTextColor: cssColor.nullable().optional(),
+  bannerSize: z.enum(FORM_BANNER_SIZES).optional(),
   eyebrow: z.string().max(200).nullable().optional(),
   badge: z.string().max(200).nullable().optional(),
   headline: z.string().max(300).nullable().optional(),
@@ -274,24 +322,13 @@ export const formCoverSchema = z.object({
    * config — means shown, so switching it off never deletes the logos.
    */
   showClientLogos: z.boolean().optional(),
+  /**
+   * WHICH surfaces the marquee renders on (ADDITIVE): the cover alone (absent —
+   * every legacy config, and where it has always rendered), the reveal
+   * interstitial alone, or both.
+   */
+  clientLogosScope: z.enum(FORM_CLIENT_LOGO_SCOPES).optional(),
 });
-
-/**
- * A CSS color value flowing into an inline custom property (`--pf-primary`) on
- * the public renderer. Constrain the format (hex / rgb(a) / hsl(a) / named) so a
- * value like `red;} body{...` can't break out of the color context — CSS-
- * injection defense-in-depth on top of the 32-char cap (L2).
- */
-const cssColor = z
-  .string()
-  .max(32)
-  .refine(
-    (v) =>
-      /^#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/.test(v) ||
-      /^(?:rgb|rgba|hsl|hsla)\([0-9.,%\s/-]+\)$/.test(v) ||
-      /^[a-zA-Z]+$/.test(v),
-    { message: 'primaryColor must be a hex, rgb(a)/hsl(a), or named CSS color.' },
-  );
 
 /**
  * An author-supplied typeface. This repo has no asset storage, so the source is

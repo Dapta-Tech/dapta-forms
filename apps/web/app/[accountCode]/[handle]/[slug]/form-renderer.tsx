@@ -23,7 +23,7 @@ import {
   nameFields,
   isMultiSelect,
   isSafeHttpUrl,
-  showClientLogos,
+  showClientLogosOn,
   resolveFormLogos,
   type Answers,
   type AnswerValue,
@@ -38,7 +38,7 @@ import { FormProgress } from '@/components/public/form-progress';
 import { ClientLogosMarquee } from '@/components/public/client-logos-marquee';
 import { StepInput } from '@/components/public/step-input';
 import { BookingScreen } from '@/components/public/booking-screen';
-import { RevealScreen } from '@/components/public/reveal-screen';
+import { RevealScreen, revealShellProps } from '@/components/public/reveal-screen';
 import { MadeWithBadge } from '@/components/made-with-badge';
 import { warmBookingEmbed, type BookingScheduledDetails } from '@/lib/booking-embed';
 import { resolveSchedulerPrefill } from '@/lib/booking-prefill';
@@ -93,6 +93,22 @@ export function FormRenderer({
   // even though `showBanner` handles that case, and it disagreed with the
   // builder preview (which reads `config.cover` directly).
   const chrome = config.cover ?? null;
+  // The marquee's logos, and the two surfaces that may show them. Resolved off
+  // `chrome` rather than the gated cover for the same reason the banner is: a
+  // form with no cover screen can still scope its logos to the reveal, and
+  // reading the gated value would silently drop them there.
+  const marqueeLogos = chrome?.clientLogos ?? config.branding?.clientLogos ?? [];
+  const coverLogos = showClientLogosOn(chrome, 'cover') ? marqueeLogos : [];
+  const revealLogos = showClientLogosOn(chrome, 'reveal') ? marqueeLogos : [];
+  // The interstitial's copy fallbacks, identical at both call sites below — the
+  // legacy form-level reveal and a `reveal` STEP render the same screen.
+  const revealMessages = {
+    headline: m.revealHeadline,
+    subtitle: m.revealSubtitle,
+    versusYou: m.revealVersusYou,
+    versusMatch: m.revealVersusMatch,
+    versusStatus: m.revealVersusStatus,
+  };
 
   // `startAt` feeds the INITIALIZERS only — no effect reacts to it changing
   // (the preview remounts by key instead). An out-of-range index is caught by
@@ -538,13 +554,16 @@ export function FormRenderer({
         role="status"
         aria-live="polite"
         cover={chrome}
+        {...revealShellProps(config.reveal)}
       >
         <RevealScreen
           reveal={config.reveal}
           answers={answers}
-          messages={{ headline: m.revealHeadline, subtitle: m.revealSubtitle }}
+          messages={revealMessages}
           onComplete={onRevealComplete}
-        />
+        >
+          <ClientLogosMarquee logos={revealLogos} label={m.trustedBy} />
+        </RevealScreen>
       </PhaseShell>
     );
   }
@@ -567,9 +586,6 @@ export function FormRenderer({
   }
 
   if (phase === 'cover' && coverScreen) {
-    const clientLogos = showClientLogos(coverScreen)
-      ? (coverScreen.clientLogos ?? config.branding?.clientLogos ?? [])
-      : [];
     return (
       <PhaseShell
         className="pf pf--cover"
@@ -591,7 +607,7 @@ export function FormRenderer({
             {coverScreen.subheadline ? <p className="pf__subheadline">{coverScreen.subheadline}</p> : null}
             {coverScreen.trustBadge ? <p className="pf__trust">{coverScreen.trustBadge}</p> : null}
           </div>
-          <ClientLogosMarquee logos={clientLogos} label={m.trustedBy} />
+          <ClientLogosMarquee logos={coverLogos} label={m.trustedBy} />
         </div>
         <div className="pf__cover-footer">
           <button type="button" className="pf__btn" onClick={start}>
@@ -629,18 +645,21 @@ export function FormRenderer({
         role="status"
         aria-live="polite"
         cover={chrome}
+        {...revealShellProps(step.reveal)}
       >
         <RevealScreen
           reveal={step.reveal ?? { enabled: true }}
           answers={answers}
-          messages={{ headline: m.revealHeadline, subtitle: m.revealSubtitle }}
+          messages={revealMessages}
           onComplete={() => {
             // Completing an interstitial is completing a step: reuse `advance`
             // so the partial-submit threshold, forward jumps and the finalize
             // path all behave exactly as they do after a real question.
             void advance(answersRef.current, step);
           }}
-        />
+        >
+          <ClientLogosMarquee logos={revealLogos} label={m.trustedBy} />
+        </RevealScreen>
       </PhaseShell>
     );
   }

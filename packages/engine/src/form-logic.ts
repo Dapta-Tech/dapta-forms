@@ -310,6 +310,25 @@ export interface FormClientLogo {
 export const FORM_BANNER_SCOPES = ['form', 'cover'] as const;
 export type FormBannerScope = (typeof FORM_BANNER_SCOPES)[number];
 
+/**
+ * How loud the promo banner strip is. Absent is the legacy look, which the
+ * stylesheet still owns — the sizes only scale padding and type off it, so a
+ * config saved before this existed renders byte-identical.
+ */
+export const FORM_BANNER_SIZES = ['sm', 'md', 'lg'] as const;
+export type FormBannerSize = (typeof FORM_BANNER_SIZES)[number];
+
+/**
+ * Which surfaces the "trusted by" marquee is allowed to render on. Absent means
+ * `'cover'` — where it has always rendered — so no stored config moves its
+ * logos by upgrading.
+ */
+export const FORM_CLIENT_LOGO_SCOPES = ['cover', 'reveal', 'both'] as const;
+export type FormClientLogoScope = (typeof FORM_CLIENT_LOGO_SCOPES)[number];
+
+/** A surface the marquee can be asked about. */
+export type ClientLogoSurface = 'cover' | 'reveal';
+
 export interface FormCover {
   enabled?: boolean;
   /** A sticky banner line (promo strip) shown above the form — see `bannerScope`. */
@@ -319,6 +338,16 @@ export interface FormCover {
    * behaviour, and the default when absent), `'cover'` limits it to the cover.
    */
   bannerScope?: FormBannerScope;
+  /**
+   * The banner strip's own fill. Absent keeps the derived tint the stylesheet
+   * has always used (12% of the accent over the form ground) — deliberately
+   * soft, which is exactly why an author needs to be able to override it.
+   */
+  bannerColor?: string | null;
+  /** The banner's text color. Absent inherits the form's foreground. */
+  bannerTextColor?: string | null;
+  /** The banner's height/type scale. Absent = the legacy `md` strip. */
+  bannerSize?: FormBannerSize;
   eyebrow?: string | null;
   /** Alias for eyebrow (pilot `badge`); eyebrow wins when both are set. */
   badge?: string | null;
@@ -331,13 +360,18 @@ export interface FormCover {
    * absent inherits the form's own (`branding.logo`).
    */
   logo?: string | null;
-  /** Optional "trusted by" marquee shown on the cover. */
+  /** Optional "trusted by" marquee — see `clientLogosScope` for where it shows. */
   clientLogos?: FormClientLogo[];
   /**
    * Whether the "trusted by" marquee renders. Absent means shown (the legacy
    * behaviour), so the logos can be switched off without deleting them.
    */
   showClientLogos?: boolean;
+  /**
+   * WHICH surfaces the marquee renders on. Absent means `'cover'` — the only
+   * place it has ever rendered — so upgrading never moves an author's logos.
+   */
+  clientLogosScope?: FormClientLogoScope;
 }
 
 /** Per-form branding — the accent color threads the banner/CTA/selected states. */
@@ -421,6 +455,35 @@ export interface FormScheduler {
 }
 
 /** Optional processing/result-reveal interstitial (generic, templated copy). */
+/**
+ * How the interstitial animates while it plays.
+ *
+ * `spinner` is the historical look (a ring above a determinate bar) and stays
+ * the default for every stored config. `bar` drops the ring for the bar alone;
+ * `versus` is the "you vs. the match" layout — two marks with the percentage
+ * between them — and `none` shows the copy with no motion at all, which is the
+ * honest option for an author who does not want a fake progress signal.
+ */
+export const FORM_REVEAL_LOADERS = ['spinner', 'bar', 'versus', 'none'] as const;
+export type FormRevealLoader = (typeof FORM_REVEAL_LOADERS)[number];
+
+/**
+ * The scale shared by the interstitial's loader mark and its copy.
+ *
+ * Four steps rather than three because this screen is a full-page moment, not a
+ * component: the top of a three-step scale landed around what a normal `md`
+ * should be, so the sizes an author actually reached for were all at the
+ * ceiling. The larger steps resolve to a `clamp()` in the stylesheet, so a size
+ * is a RANGE across viewports rather than one number — that is what keeps the
+ * biggest marks from colliding on a phone.
+ *
+ * `md` is the value an absent `loaderSize` resolves to, and it is pinned to the
+ * mark this screen has always drawn. Growing the DEFAULT would resize every
+ * published reveal, so the new headroom lives on `lg`/`xl` only.
+ */
+export const FORM_REVEAL_SIZES = ['sm', 'md', 'lg', 'xl'] as const;
+export type FormRevealSize = (typeof FORM_REVEAL_SIZES)[number];
+
 export interface FormReveal {
   enabled?: boolean;
   headline?: string | null;
@@ -431,6 +494,24 @@ export interface FormReveal {
   subtitleTemplate?: string | null;
   /** Pre-warm the booking embed while the interstitial plays. */
   prewarm?: boolean;
+  // --- Presentation (all optional; absent = the historical spinner look) -----
+  /** Which animation plays. Absent = `'spinner'`. */
+  loader?: FormRevealLoader;
+  /** The loader mark's scale. Absent = `'md'`. */
+  loaderSize?: FormRevealSize;
+  /** The headline/subtitle scale. Absent = `'md'`. */
+  textSize?: FormRevealSize;
+  /** Flood the screen with the form's accent instead of its ground. */
+  accentBackground?: boolean;
+  /** `versus` only — the label under the respondent's mark. */
+  versusYouLabel?: string | null;
+  /** `versus` only — the label under the match's mark. */
+  versusMatchLabel?: string | null;
+  /**
+   * `versus` only — the live status under the match's label ("Searching…").
+   * Absent falls back to localized copy; an empty string removes the line.
+   */
+  versusStatusLabel?: string | null;
 }
 
 /**
@@ -1936,6 +2017,40 @@ export function showBanner(cover: FormCover | null | undefined, isCover: boolean
  */
 export function showClientLogos(cover: FormCover | null | undefined): boolean {
   return cover?.showClientLogos !== false;
+}
+
+/**
+ * Whether the marquee renders on a GIVEN surface. The master switch above still
+ * decides first — off means off everywhere — and then `clientLogosScope` picks
+ * the surfaces. Absent scope answers `true` for the cover and `false` for the
+ * reveal, which is where every config saved before this existed already stood.
+ */
+export function showClientLogosOn(
+  cover: FormCover | null | undefined,
+  surface: ClientLogoSurface,
+): boolean {
+  if (!showClientLogos(cover)) return false;
+  const scope = cover?.clientLogosScope ?? 'cover';
+  return scope === 'both' || scope === surface;
+}
+
+/**
+ * The interstitial's resolved presentation. Split out from the component so the
+ * defaults are one tested decision rather than a chain of `??` in JSX — and so
+ * the builder preview and the public renderer can never disagree about them.
+ */
+export function resolveRevealPresentation(reveal: FormReveal | null | undefined): {
+  loader: FormRevealLoader;
+  loaderSize: FormRevealSize;
+  textSize: FormRevealSize;
+  accentBackground: boolean;
+} {
+  return {
+    loader: reveal?.loader ?? 'spinner',
+    loaderSize: reveal?.loaderSize ?? 'md',
+    textSize: reveal?.textSize ?? 'md',
+    accentBackground: reveal?.accentBackground === true,
+  };
 }
 
 /** The logo each surface of a form shows. `null` on either axis means "none". */

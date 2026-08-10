@@ -37,6 +37,7 @@ import {
   nameFields,
   isSafeHttpUrl,
   showBanner,
+  showClientLogosOn,
   resolveFormLogos,
   type Answers,
   type AnswerValue,
@@ -50,7 +51,7 @@ import { FormLogo } from '@/components/public/form-logo';
 import { ClientLogosMarquee } from '@/components/public/client-logos-marquee';
 import { StepInput } from '@/components/public/step-input';
 import { BookingScreen } from '@/components/public/booking-screen';
-import { RevealScreen } from '@/components/public/reveal-screen';
+import { RevealScreen, revealShellProps } from '@/components/public/reveal-screen';
 import { MadeWithBadge } from '@/components/made-with-badge';
 import { formDesignProps } from '@/lib/form-design';
 import { warmBookingEmbed, type BookingScheduledDetails } from '@/lib/booking-embed';
@@ -62,6 +63,7 @@ import {
   captureDefaults,
   capturePrefill,
   schedulerToBooking,
+  bannerChromeProps,
   PhaseShell,
   DoneScreen,
 } from './renderer-shared';
@@ -168,6 +170,21 @@ export function VerticalFormRenderer({
   // `form-renderer.tsx`. `showBanner` already handles a disabled cover; reading
   // it off the gated value above is what made it unreachable.
   const chrome = config.cover ?? null;
+  // The marquee, scoped exactly as in the slides layout. This used to read the
+  // logos with no regard for `showClientLogos`, so switching the marquee OFF hid
+  // it on slides and did nothing at all on a one-page form — one toggle, two
+  // answers. Read off `chrome`, not the gated cover, so a form with the hero
+  // switched off can still show its logos on the interstitial.
+  const marqueeLogos = chrome?.clientLogos ?? config.branding?.clientLogos ?? [];
+  const heroLogos = showClientLogosOn(chrome, 'cover') ? marqueeLogos : [];
+  const revealLogos = showClientLogosOn(chrome, 'reveal') ? marqueeLogos : [];
+  const revealMessages = {
+    headline: m.revealHeadline,
+    subtitle: m.revealSubtitle,
+    versusYou: m.revealVersusYou,
+    versusMatch: m.revealVersusMatch,
+    versusStatus: m.revealVersusStatus,
+  };
 
   const [phase, setPhase] = useState<Phase>('form');
   const [answers, setAnswers] = useState<Answers>({});
@@ -534,13 +551,16 @@ export function VerticalFormRenderer({
         role="status"
         aria-live="polite"
         cover={chrome}
+        {...revealShellProps(pendingReveal)}
       >
         <RevealScreen
           reveal={pendingReveal ?? { enabled: true }}
           answers={answers}
-          messages={{ headline: m.revealHeadline, subtitle: m.revealSubtitle }}
+          messages={revealMessages}
           onComplete={onRevealComplete}
-        />
+        >
+          <ClientLogosMarquee logos={revealLogos} label={m.trustedBy} />
+        </RevealScreen>
       </PhaseShell>
     );
   }
@@ -567,7 +587,6 @@ export function VerticalFormRenderer({
   // when the cover is off. Either can be cleared to nothing independently.
   const logos = resolveFormLogos(config);
   const headerLogo = coverScreen ? logos.cover : logos.form;
-  const clientLogos = coverScreen?.clientLogos ?? config.branding?.clientLogos ?? [];
   const total = answerable.length;
 
   return (
@@ -585,7 +604,9 @@ export function VerticalFormRenderer({
             shows, exactly as in the slides layout. The post-submit phases defer
             to the scope via the shared shell. */}
         {showBanner(chrome, coverScreen != null) ? (
-          <div className="pf__banner">{chrome?.bannerText}</div>
+          <div className="pf__banner" {...bannerChromeProps(chrome)}>
+            {chrome?.bannerText}
+          </div>
         ) : null}
         {total > 0 ? (
           <div className="pf-v__progressbar">
@@ -618,7 +639,7 @@ export function VerticalFormRenderer({
               <h1 className="pf__title">{coverScreen.headline ?? name}</h1>
               {coverScreen.subheadline ? <p className="pf__subheadline">{coverScreen.subheadline}</p> : null}
               {coverScreen.trustBadge ? <p className="pf__trust">{coverScreen.trustBadge}</p> : null}
-              <ClientLogosMarquee logos={clientLogos} label={m.trustedBy} />
+              <ClientLogosMarquee logos={heroLogos} label={m.trustedBy} />
             </section>
           ) : null}
 

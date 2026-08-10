@@ -24,6 +24,9 @@ import {
   resolveOptionLayout,
   showBanner,
   showClientLogos,
+  showClientLogosOn,
+  resolveRevealPresentation,
+  type FormClientLogoScope,
   resolveFormLogos,
   operatorsForFieldType,
   conditionsContradict,
@@ -797,6 +800,61 @@ describe('cover presentation toggles', () => {
     const cover = { clientLogos: [{ name: 'Acme' }], showClientLogos: false };
     expect(showClientLogos(cover)).toBe(false);
     expect(cover.clientLogos).toHaveLength(1);
+  });
+
+  it('showClientLogosOn defaults to the cover — a legacy config never moves its logos', () => {
+    const legacy = { clientLogos: [{ name: 'Acme' }] };
+    expect(showClientLogosOn(legacy, 'cover')).toBe(true);
+    expect(showClientLogosOn(legacy, 'reveal')).toBe(false);
+    expect(showClientLogosOn(undefined, 'cover')).toBe(true);
+    expect(showClientLogosOn(null, 'reveal')).toBe(false);
+  });
+
+  it('showClientLogosOn honors each scope', () => {
+    const at = (clientLogosScope: FormClientLogoScope) => ({ clientLogosScope });
+    expect(showClientLogosOn(at('cover'), 'cover')).toBe(true);
+    expect(showClientLogosOn(at('cover'), 'reveal')).toBe(false);
+    expect(showClientLogosOn(at('reveal'), 'cover')).toBe(false);
+    expect(showClientLogosOn(at('reveal'), 'reveal')).toBe(true);
+    expect(showClientLogosOn(at('both'), 'cover')).toBe(true);
+    expect(showClientLogosOn(at('both'), 'reveal')).toBe(true);
+  });
+
+  it('the master switch beats the scope — off means off on every surface', () => {
+    const off = { showClientLogos: false, clientLogosScope: 'both' as const };
+    expect(showClientLogosOn(off, 'cover')).toBe(false);
+    expect(showClientLogosOn(off, 'reveal')).toBe(false);
+  });
+});
+
+describe('resolveRevealPresentation', () => {
+  it('an unconfigured reveal resolves to the historical spinner look', () => {
+    for (const reveal of [undefined, null, {}, { headline: 'Hold on' }]) {
+      expect(resolveRevealPresentation(reveal)).toEqual({
+        loader: 'spinner',
+        loaderSize: 'md',
+        textSize: 'md',
+        accentBackground: false,
+      });
+    }
+  });
+
+  it('carries every configured axis through', () => {
+    expect(
+      resolveRevealPresentation({
+        loader: 'versus',
+        loaderSize: 'lg',
+        textSize: 'sm',
+        accentBackground: true,
+      }),
+    ).toEqual({ loader: 'versus', loaderSize: 'lg', textSize: 'sm', accentBackground: true });
+  });
+
+  it('only an explicit true floods the screen', () => {
+    // `accentBackground` paints over the form's own ground, so anything short of
+    // the author saying yes has to resolve to the ground they already chose.
+    expect(resolveRevealPresentation({ accentBackground: false }).accentBackground).toBe(false);
+    expect(resolveRevealPresentation({}).accentBackground).toBe(false);
   });
 });
 
