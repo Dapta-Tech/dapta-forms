@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation';
 import { getMessages } from '@quill/shared';
 import { adminApi, ApiError } from '@/lib/admin-api';
 import { preferredLocale } from '@/lib/locale';
+import { currentOnboardingCohort } from '@/lib/dapta-onboarding';
 import { resolveProductAnalytics } from '@/lib/product-analytics';
 import { ProductAnalytics } from '@/components/analytics/product-analytics';
 import { OnboardingWizard } from './wizard';
@@ -37,6 +38,14 @@ export default async function OnboardingPage() {
   const locale = await preferredLocale();
   const messages = getMessages(locale).admin.onboarding;
 
+  // Which questions this person gets. Resolved HERE, before the first paint,
+  // because it decides the FIRST screen — a client-side probe would render the
+  // cold wizard and then yank three screens out from under someone who came
+  // from Dapta. Bounded and failure-tolerant by construction: see
+  // `resolveOnboardingCohort`, which answers "dapta" (the shorter path) for any
+  // failure rather than asking a Dapta customer what Dapta already knows.
+  const cohort = await currentOnboardingCohort();
+
   return (
     <>
       <ProductAnalytics
@@ -50,7 +59,7 @@ export default async function OnboardingPage() {
           attribution: me.attribution,
         }}
       />
-      <OnboardingWizard messages={messages} locale={locale} />
+      <OnboardingWizard messages={messages} locale={locale} cohort={cohort} />
     </>
   );
 }

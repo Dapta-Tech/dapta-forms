@@ -150,6 +150,10 @@ export interface OnboardingProgress {
   role?: string | null;
   industry?: string | null;
   useCase?: string | null;
+  crm?: string | null;
+  leadVolume?: string | null;
+  leadSource?: string | null;
+  phone?: string | null;
   template?: string | null;
   lastStep?: string | null;
 }
@@ -164,6 +168,16 @@ export interface OnboardingComplete {
   role?: string | null;
   industry?: string | null;
   useCase?: string | null;
+  crm?: string | null;
+  leadVolume?: string | null;
+  leadSource?: string | null;
+  phone?: string | null;
+  /**
+   * Which screens this person was shown. The server needs it to record WHY the
+   * unasked ones are empty — a Dapta account's null industry is a pointer at
+   * Dapta, not a gap in our data.
+   */
+  cohort?: string;
   /** What the wizard rendered in, so the created form is named to match. */
   locale?: string;
 }
