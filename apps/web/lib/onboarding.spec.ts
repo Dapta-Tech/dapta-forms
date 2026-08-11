@@ -10,7 +10,12 @@
 import { describe, it, expect } from 'vitest';
 import { getMessages } from '@quill/shared';
 import { ONBOARDING_CRMS, ONBOARDING_INDUSTRIES, ONBOARDING_STEPS } from '@quill/types';
-import { skippedQuestions, wizardQuestions } from './onboarding';
+import {
+  LEAD_VOLUME_SLIDER,
+  leadVolumeBucket,
+  skippedQuestions,
+  wizardQuestions,
+} from './onboarding';
 
 const m = getMessages('en').admin.onboarding;
 const keys = (cohort: 'cold' | 'dapta') => wizardQuestions(m, cohort).map((q) => q.key);
@@ -58,11 +63,13 @@ describe('wizardQuestions — who is asked what', () => {
     }
   });
 
-  it('lets ONLY the phone screen be skipped', () => {
-    const skippable = wizardQuestions(m, 'cold')
-      .filter((q) => q.skippable)
-      .map((q) => q.key);
-    expect(skippable).toEqual(['phone']);
+  it('lets NOTHING be skipped — the phone included', () => {
+    // Decided 11-ago: the phone number is what the Dapta pipeline creates the
+    // HubSpot contact from, so a skippable phone is a contact that never
+    // exists. The flag is gone from the type; this pins that it stays gone.
+    for (const q of wizardQuestions(m, 'cold')) {
+      expect(q, q.key).not.toHaveProperty('skippable');
+    }
   });
 
   it('names the steps a cohort never sees, so the blob can say why they are empty', () => {
@@ -99,5 +106,47 @@ describe('wizardQuestions — who is asked what', () => {
     // The bank ships `none` AND `no_crm` for the same answer. Offering both would
     // split the one segment that matters most across two values.
     expect(ONBOARDING_CRMS).not.toContain('no_crm');
+  });
+
+  it('reorders the CRM cards for display without gaining or losing a value', () => {
+    // Display puts the products first and the escape hatches last; the API and
+    // the IAM sync still speak the enum. A value dropped here would be silently
+    // unpickable; one invented here would be unsyncable.
+    const crm = wizardQuestions(m, 'cold').find((q) => q.key === 'crm');
+    const values = (crm?.step.options ?? []).map((o) => o.value);
+    expect([...values].sort()).toEqual([...ONBOARDING_CRMS].sort());
+    expect(values[values.length - 1]).toBe('none');
+  });
+
+  it('gives every card an icon — cards without one degrade to bare initials', () => {
+    for (const key of ['crm', 'lead_source', 'use_case'] as const) {
+      const q = wizardQuestions(m, 'cold').find((x) => x.key === key);
+      expect(q?.step.optionLayout, key).toBe('cards');
+      for (const opt of q?.step.options ?? []) {
+        expect(opt.icon, `${key}:${opt.value}`).toBeTruthy();
+      }
+    }
+  });
+});
+
+describe('leadVolumeBucket — the slider folds into the IAM histogram', () => {
+  it('maps every boundary to the bucket the IAM means by it', () => {
+    expect(leadVolumeBucket(0)).toBe('0_50');
+    expect(leadVolumeBucket(50)).toBe('0_50');
+    expect(leadVolumeBucket(75)).toBe('51_200');
+    expect(leadVolumeBucket(200)).toBe('51_200');
+    expect(leadVolumeBucket(500)).toBe('201_500');
+    expect(leadVolumeBucket(1000)).toBe('501_1000');
+    expect(leadVolumeBucket(4975)).toBe('1001_5000');
+  });
+
+  it('reads the top of the rail as "this many or more"', () => {
+    // A capped slider could otherwise never produce `5000_plus` — and the
+    // person with 20,000 leads can only express it by dragging to the end.
+    expect(leadVolumeBucket(LEAD_VOLUME_SLIDER.max)).toBe('5000_plus');
+  });
+
+  it('mirrors the rail of the Dapta sales quiz', () => {
+    expect(LEAD_VOLUME_SLIDER).toEqual({ min: 0, max: 5000, step: 25, default: 0 });
   });
 });

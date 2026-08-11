@@ -16,11 +16,13 @@
  * are named from the first paint — seeing that there are three is what stops
  * the second question feeling like the fifth.
  *
- * ONE question can be skipped, and only one: the phone number. The rest are a
- * tap each, and an answer that can be skipped is an answer most people skip,
- * which would leave the column this whole feature exists to fill mostly empty.
- * A phone number is the single real keyboard in the flow, so refusing it has to
- * stay possible — and "asked and declined" is itself a fact worth storing.
+ * NO question can be skipped — decided 11-ago, phone included: the phone number
+ * is what the Dapta pipeline births the HubSpot contact from, so a skippable
+ * phone is a contact that never exists. Screens advance three ways: cards
+ * advance on the tap (choosing IS continuing), the industry dropdown arms an
+ * explicit Next (picking from a filtered list wants a confirmation beat), and
+ * the phone/slider screens have a Continue because typing and dragging have no
+ * natural "done" signal.
  *
  * HOW MANY questions there are depends on who is asking. Someone arriving from
  * Dapta AI already gave Dapta their industry, CRM, lead volume and phone number,
@@ -37,7 +39,13 @@ import type { FormsMessages, Locale } from '@quill/shared';
 import { StepInput } from '@/components/public/step-input';
 import { FormsLockup, FormsMark } from '@/components/brand/forms-logo';
 import { captureEvent } from '@/lib/product-analytics';
-import { fill, wizardQuestions, wizardTemplates } from '@/lib/onboarding';
+import {
+  fill,
+  leadVolumeBucket,
+  LEAD_VOLUME_SLIDER,
+  wizardQuestions,
+  wizardTemplates,
+} from '@/lib/onboarding';
 import {
   USE_CASE_TEMPLATE,
   type OnboardingCohort,
@@ -94,6 +102,22 @@ export function OnboardingWizard({
    * a bare country code.
    */
   const phoneUsable = draft.replace(/\D/g, '').length >= 8;
+  /**
+   * The slider as it is being dragged. Same reasoning as `draft`: a drag emits
+   * a value per pixel, and `answers` must only ever see the decision. Survives
+   * leaving and returning to the screen, so going back shows the number that
+   * was picked rather than snapping to the default — the STORED answer is a
+   * bucket and cannot reconstruct it.
+   */
+  const [sliderDraft, setSliderDraft] = useState<number>(LEAD_VOLUME_SLIDER.default);
+  /**
+   * A dropdown pick waiting for its Next. The dropdown is the one input where
+   * choosing does NOT continue: the pick collapses a filtered list, and
+   * advancing on it yanks the screen away mid-confirmation. Armed per screen —
+   * cleared on every index move — and seeded from the stored answer when
+   * returning, so Back shows the earlier pick already armed.
+   */
+  const [pending, setPending] = useState<string | null>(null);
 
   /** Past the last question is the template screen. */
   const onTemplates = index >= questions.length;
@@ -195,25 +219,13 @@ export function OnboardingWizard({
     [questions, save],
   );
 
-  /**
-   * Pass over a question that allows it — the phone screen, and only it.
-   *
-   * The skip is recorded as `null` rather than left absent, because "asked and
-   * declined" and "never asked" are different facts about a person and only one
-   * of them says anything about the question.
-   */
-  const skip = useCallback(() => {
-    if (!current?.skippable) return;
-    captureEvent('onboarding_step_skipped', { step_key: current.key, step_index: index, cohort });
-    advanceTo(index, { ...answers, [current.field]: null });
-  }, [advanceTo, answers, cohort, current, index]);
-
   /** Answer the current question and advance. Choosing IS continuing — one tap. */
   const answer = useCallback(
     (value: string) => {
       if (!current) return;
       const next = { ...answers, [current.field]: value };
       setAnswers(next);
+      setPending(null);
       // Changing the use case invalidates an explicit template pick made on a
       // later screen. Without this, going back and choosing a different purpose
       // leaves the OLD card selected while the "Recommended for you" badge moves
@@ -238,7 +250,10 @@ export function OnboardingWizard({
     [advanceTo, answers, cohort, current, index],
   );
 
-  const back = useCallback(() => setIndex((i) => Math.max(0, i - 1)), []);
+  const back = useCallback(() => {
+    setPending(null);
+    setIndex((i) => Math.max(0, i - 1));
+  }, []);
 
   const finish = useCallback(
     (id: string) => {
@@ -338,39 +353,71 @@ export function OnboardingWizard({
                 <StepInput
                   step={current.step}
                   value={
-                    current.step.type === 'phone' ? draft : (answers[current.field] ?? '')
+                    current.step.type === 'phone'
+                      ? draft
+                      : current.step.type === 'slider'
+                        ? sliderDraft
+                        : current.step.type === 'dropdown'
+                          ? (pending ?? answers[current.field] ?? '')
+                          : (answers[current.field] ?? '')
                   }
                   answers={answers}
-                  // Choices and the dropdown report through `onSelect`, and for
-                  // them choosing IS continuing. `onChange` is wired ONLY for the
-                  // phone step, which cannot auto-advance: a number is typed a
-                  // digit at a time, so advancing on change would leave on the
-                  // first keystroke. `onFieldChange` stays a no-op — no step type
+                  // Cards report through `onSelect`, and for them choosing IS
+                  // continuing. The dropdown also reports through `onSelect`,
+                  // but its pick only ARMS the Next button below — a pick that
+                  // collapses a filtered list should not also yank the screen.
+                  // `onChange` carries the two continuous inputs: phone digits
+                  // and the slider's drag, neither of which has a "done" signal
+                  // of its own. `onFieldChange` stays a no-op — no step type
                   // here is multi-field.
-                  onSelect={answer}
-                  onChange={(v) => setDraft(String(v ?? ''))}
+                  onSelect={current.step.type === 'dropdown' ? setPending : answer}
+                  onChange={(v) =>
+                    current.step.type === 'slider'
+                      ? setSliderDraft(Number(v ?? LEAD_VOLUME_SLIDER.default))
+                      : setDraft(String(v ?? ''))
+                  }
                   onFieldChange={() => {}}
                   dropdownPlaceholder={m.industry.placeholder}
                   dropdownEmpty={m.industry.empty}
                   locale={locale}
                 />
 
-                {/* The phone screen is the only one with buttons, because it is
-                    the only one that cannot know when the person is done. */}
+                {/* The screens that cannot know when the person is done get a
+                    button: typing (phone), dragging (slider), and the dropdown,
+                    whose pick arms this Next instead of advancing. */}
                 {current.step.type === 'phone' ? (
-                  <>
-                    <button
-                      type="button"
-                      className="pf__btn ob__cta"
-                      disabled={!phoneUsable}
-                      onClick={() => answer(draft.trim())}
-                    >
-                      {m.next}
-                    </button>
-                    <button type="button" className="ob__skip" onClick={skip}>
-                      {m.phone.skip}
-                    </button>
-                  </>
+                  <button
+                    type="button"
+                    className="pf__btn ob__cta"
+                    disabled={!phoneUsable}
+                    onClick={() => answer(draft.trim())}
+                  >
+                    {m.next}
+                  </button>
+                ) : null}
+                {current.step.type === 'dropdown' ? (
+                  <button
+                    type="button"
+                    className="pf__btn ob__cta"
+                    disabled={!(pending ?? answers[current.field])}
+                    onClick={() => {
+                      const chosen = pending ?? answers[current.field];
+                      if (chosen) answer(chosen);
+                    }}
+                  >
+                    {m.next}
+                  </button>
+                ) : null}
+                {current.step.type === 'slider' ? (
+                  <button
+                    type="button"
+                    className="pf__btn ob__cta"
+                    // Never disabled: the default (0) is a real answer — "no
+                    // leads yet" — not a missing one.
+                    onClick={() => answer(leadVolumeBucket(sliderDraft))}
+                  >
+                    {m.next}
+                  </button>
                 ) : null}
               </div>
             </div>

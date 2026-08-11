@@ -19,12 +19,12 @@ import {
   ONBOARDING_CRMS,
   ONBOARDING_INDUSTRIES,
   ONBOARDING_LEAD_SOURCES,
-  ONBOARDING_LEAD_VOLUMES,
   ONBOARDING_STEPS,
   ONBOARDING_USE_CASES,
   FORM_TEMPLATE_IDS,
   type FormTemplateId,
   type OnboardingCohort,
+  type OnboardingLeadVolume,
   type OnboardingStep,
 } from '@quill/types';
 
@@ -39,30 +39,89 @@ export interface WizardQuestion {
   field: 'role' | 'industry' | 'useCase' | 'crm' | 'phone' | 'leadVolume' | 'leadSource';
   /** The step `StepInput` renders — a real form question, not a lookalike. */
   step: FormStep;
-  /**
-   * May this one be passed over? Only the phone screen can be. Every other
-   * question is three taps, and an answer that can be skipped is an answer most
-   * people skip — which would leave the column this whole feature exists to fill
-   * mostly empty. A phone number is the one real keyboard in the flow, so
-   * refusing it has to stay an option, and "asked and declined" is itself a fact
-   * worth storing.
-   */
-  skippable?: boolean;
 }
 
 /**
- * One glyph per lead source, keyed by the enum so a new source cannot ship
- * without one. `none` gets the empty-state mark rather than a channel logo —
- * "no leads yet" is an answer, not a channel.
+ * One icon per lead source, keyed by the enum so a new source cannot ship
+ * without one. The ad channels get their real logos (vendored under
+ * `/onboarding/` — never a third-party CDN on the product's first screen); the
+ * rest are the marks Dapta's own sales quiz uses for the same options, so the
+ * two products ask this question with the same face.
  */
 const LEAD_SOURCE_ICONS: Readonly<Record<(typeof ONBOARDING_LEAD_SOURCES)[number], string>> = {
-  none: '\u{1F331}',
-  facebook_ads: '\u{1F4D8}',
-  google_ads: '\u{1F50E}',
-  outbound: '\u{1F4E4}',
-  internal_lists: '\u{1F4C7}',
-  other: '\u{2728}',
+  none: '\u{1F6AB}',
+  facebook_ads: '/onboarding/facebook.svg',
+  google_ads: '/onboarding/google-ads.svg',
+  outbound: '\u{1F4DE}',
+  internal_lists: '\u{1F4CB}',
+  other: '\u{2795}',
 };
+
+/**
+ * One icon per CRM. Real logos for real products; `other`/`none` are answers
+ * about the person, not products, so they keep glyphs. All vendored — a broken
+ * CDN must never be able to blank the wizard's icons.
+ */
+const CRM_ICONS: Readonly<Record<(typeof ONBOARDING_CRMS)[number], string>> = {
+  hubspot: '/onboarding/hubspot.svg',
+  salesforce: '/onboarding/salesforce.svg',
+  zoho_crm: '/onboarding/zoho.svg',
+  clientify: '/onboarding/clientify.png',
+  ghl: '/onboarding/ghl.png',
+  odoo: '/onboarding/odoo.svg',
+  bitrix24: '/onboarding/bitrix24.png',
+  activecampaign: '/onboarding/activecampaign.svg',
+  pipedrive: '/onboarding/pipedrive.svg',
+  escala: '/onboarding/escala.png',
+  other: '\u{2795}',
+  none: '\u{1F6AB}',
+};
+
+/**
+ * The CRM cards in DISPLAY order — products first, the escape hatches last.
+ * The enum starts with `none` (it is the first thing the API should think of),
+ * but a card wall that leads with "None" reads as an invitation to bail before
+ * HubSpot has even been offered. Same order Dapta's sales quiz shows.
+ */
+const CRM_DISPLAY_ORDER: readonly (typeof ONBOARDING_CRMS)[number][] = [
+  'hubspot',
+  'salesforce',
+  'zoho_crm',
+  'clientify',
+  'ghl',
+  'odoo',
+  'bitrix24',
+  'activecampaign',
+  'pipedrive',
+  'escala',
+  'other',
+  'none',
+];
+
+/**
+ * The slider's bounds — Dapta's sales quiz asks the same question with the same
+ * rail (0–5000, steps of 25), so the two products feel like one hand.
+ */
+export const LEAD_VOLUME_SLIDER = { min: 0, max: 5000, step: 25, default: 0 } as const;
+
+/**
+ * Fold the slider's number into the IAM's `contacts_per_month` bucket — the
+ * stored value stays the enum, so the blob, the API contract and the IAM sync
+ * are untouched by the slider being a slider.
+ *
+ * The top of the rail maps to `5000_plus`: someone with 20,000 leads can only
+ * express it by dragging to the end, so the end has to mean "this many or
+ * more" rather than exactly 5000 — the one bucket a capped rail could
+ * otherwise never produce.
+ */
+export function leadVolumeBucket(n: number): OnboardingLeadVolume {
+  if (n >= LEAD_VOLUME_SLIDER.max) return '5000_plus';
+  if (n > 1000) return '1001_5000';
+  if (n > 500) return '501_1000';
+  if (n > 200) return '201_500';
+  if (n > 50) return '51_200';
+  return '0_50';
+}
 
 const USE_CASE_ICONS: Readonly<Record<(typeof ONBOARDING_USE_CASES)[number], string>> = {
   leads: '\u{1F3AF}',
@@ -86,9 +145,12 @@ function allQuestions(m: OnboardingMessages): WizardQuestion[] {
       // a neutral field label under "tell us about you", never a verb. "What
       // number should we call you on?" announces a sales call, and the honest
       // answer to that is no — so it is not what either product asks.
+      //
+      // No question here can be skipped, this one included — decided 11-ago:
+      // the phone number is what the Dapta pipeline creates the HubSpot contact
+      // from, so a skippable phone is a contact that never exists.
       key: 'phone',
       field: 'phone',
-      skippable: true,
       // The field LABEL ("Your phone number") is not on the step: `FormStep` has
       // no such field, and inventing one would put a wizard-only concept into
       // the form config contract. The wizard renders it beside the input.
@@ -122,42 +184,52 @@ function allQuestions(m: OnboardingMessages): WizardQuestion[] {
       // IAM's own `crm_usage` question. It is also the one answer here that is
       // an ACTION rather than a segment: Forms already syncs to HubSpot, so
       // "hubspot" is a connection to offer on day one.
+      //
+      // Cards with the products' real logos, not a searchable dropdown: a dozen
+      // brands are recognized faster than they are typed, and it is how Dapta's
+      // own sales quiz asks the identical question.
       key: 'crm',
       field: 'crm',
       step: {
         key: 'crm',
-        type: 'dropdown',
+        type: 'multiple_choice',
         question: m.crm.question,
         helper: m.crm.helper,
-        placeholder: m.industry.placeholder,
-        options: ONBOARDING_CRMS.map((value) => ({
+        optionLayout: 'cards',
+        showIcons: true,
+        options: CRM_DISPLAY_ORDER.map((value) => ({
           value,
           label: m.crm.options[value],
+          icon: CRM_ICONS[value],
         })),
       },
     },
     {
       // Cold cohort only — someone arriving from Dapta answered this in the
-      // IAM's own `contacts_per_month` question, and the buckets here are that
-      // question's, verbatim, so the two products' answers can be added up.
+      // IAM's own `contacts_per_month` question. A slider rather than bucket
+      // cards — same rail as Dapta's sales quiz — but the STORED value is still
+      // the IAM's bucket, folded from the number at answer time
+      // (`leadVolumeBucket`), so the two products' answers can be added up.
       key: 'lead_volume',
       field: 'leadVolume',
       step: {
         key: 'lead_volume',
-        type: 'multiple_choice',
+        type: 'slider',
         question: m.leadVolume.question,
         helper: m.leadVolume.helper,
-        optionLayout: 'list',
-        options: ONBOARDING_LEAD_VOLUMES.map((value) => ({
-          value,
-          label: m.leadVolume.options[value],
-        })),
+        min: LEAD_VOLUME_SLIDER.min,
+        max: LEAD_VOLUME_SLIDER.max,
+        step: LEAD_VOLUME_SLIDER.step,
+        default: LEAD_VOLUME_SLIDER.default,
+        sliderUnitLabel: m.leadVolume.unit,
       },
     },
     {
       // Asked of EVERYONE, including people from Dapta — the IAM has no
       // equivalent, so it is the only thing here nobody can answer on their
-      // behalf, and the only genuinely new signal Forms sends back.
+      // behalf, and the only genuinely new signal Forms sends back. Cards, so
+      // the two channels with logos actually show them (a list row degrades an
+      // image to initials by design).
       key: 'lead_source',
       field: 'leadSource',
       step: {
@@ -165,7 +237,8 @@ function allQuestions(m: OnboardingMessages): WizardQuestion[] {
         type: 'multiple_choice',
         question: m.leadSource.question,
         helper: m.leadSource.helper,
-        optionLayout: 'list',
+        optionLayout: 'cards',
+        showIcons: true,
         options: ONBOARDING_LEAD_SOURCES.map((value) => ({
           value,
           label: m.leadSource.options[value],
