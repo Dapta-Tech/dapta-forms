@@ -1,7 +1,12 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { interpolate, type Answers, type FormReveal } from '@quill/engine';
+import {
+  interpolate,
+  resolveRevealPresentation,
+  type Answers,
+  type FormReveal,
+} from '@quill/engine';
 
 /** The interstitial's default play time when the config sets none. */
 export const DEFAULT_REVEAL_MS = 2200;
@@ -10,6 +15,11 @@ export const DEFAULT_REVEAL_MS = 2200;
 export interface RevealScreenMessages {
   headline: string;
   subtitle: string;
+  /** `versus` loader: the two marks' labels when the config names neither. */
+  versusYou: string;
+  versusMatch: string;
+  /** The live status under the match's label. */
+  versusStatus: string;
 }
 
 /**
@@ -22,11 +32,20 @@ export function resolveRevealCopy(
   reveal: FormReveal | null | undefined,
   answers: Answers,
   messages: RevealScreenMessages,
-): { headline: string; subtitle: string; durationMs: number } {
+): {
+  headline: string;
+  subtitle: string;
+  durationMs: number;
+  versusYou: string;
+  versusMatch: string;
+  versusStatus: string;
+} {
   const template = reveal?.subtitleTemplate;
   // Every configured line interpolates. `subtitleTemplate` always did, but the
   // headline and the plain subtitle did not — so "Matching [firstname]…" reached
   // the respondent as literal text on the very screen meant to feel personal.
+  // The versus labels join that rule: they are authored copy on the same screen,
+  // so "[company]" in one of them has to resolve too.
   return {
     headline: reveal?.headline ? interpolate(reveal.headline, answers) : messages.headline,
     subtitle: template
@@ -35,7 +54,88 @@ export function resolveRevealCopy(
         ? interpolate(reveal.subtitle, answers)
         : messages.subtitle,
     durationMs: reveal?.durationMs ?? DEFAULT_REVEAL_MS,
+    versusYou: reveal?.versusYouLabel
+      ? interpolate(reveal.versusYouLabel, answers)
+      : messages.versusYou,
+    versusMatch: reveal?.versusMatchLabel
+      ? interpolate(reveal.versusMatchLabel, answers)
+      : messages.versusMatch,
+    // `?? messages` rather than the truthiness the labels use: an author who
+    // clears this line means "no status line", and that empty string has to
+    // survive instead of falling back to the localized default.
+    versusStatus:
+      reveal?.versusStatusLabel == null
+        ? messages.versusStatus
+        : interpolate(reveal.versusStatusLabel, answers),
   };
+}
+
+/**
+ * What the `.pf` ROOT needs for this interstitial, spread by the caller.
+ *
+ * `accentBackground` floods the whole screen, not the content column, so it
+ * cannot be a class on `.pf-reveal__inner` — it has to reach the element that
+ * owns the page. Returning it from here keeps the decision in one place: the
+ * three call sites spread it and never re-derive the rule.
+ */
+export function revealShellProps(
+  reveal: FormReveal | null | undefined,
+): { 'data-pf-reveal-bg'?: 'accent' } {
+  return resolveRevealPresentation(reveal).accentBackground ? { 'data-pf-reveal-bg': 'accent' } : {};
+}
+
+/**
+ * The two marks of the `versus` layout — the respondent on one side, whatever
+ * they are being matched with on the other, the progress between them.
+ *
+ * `aria-hidden` on the whole group is deliberate. The interstitial's shell is an
+ * `aria-live="polite"` region (it is a status), and the percentage re-renders
+ * every 60ms — announcing it would read a new number to a screen-reader user
+ * dozens of times for a screen that lasts two seconds and says nothing the
+ * headline above has not already said.
+ */
+function VersusMarks({
+  pct,
+  youLabel,
+  matchLabel,
+  statusLabel,
+}: {
+  pct: number;
+  youLabel: string;
+  matchLabel: string;
+  statusLabel: string;
+}) {
+  return (
+    <div className="pf-reveal__versus" aria-hidden="true">
+      <figure className="pf-reveal__mark">
+        <div className="pf-reveal__mark-dot pf-reveal__mark-dot--you">
+          {/* The respondent is a KNOWN person and the match is not — the whole
+              point of the pairing — so this side gets a figure and the other
+              side a question mark. Inline because the renderer ships no icon
+              set and a lone glyph is not worth a font. */}
+          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <circle cx="12" cy="8" r="3.6" />
+            <path d="M12 13.2c-3.6 0-6.4 2.1-6.4 4.7v1.3h12.8v-1.3c0-2.6-2.8-4.7-6.4-4.7Z" />
+          </svg>
+        </div>
+        <figcaption className="pf-reveal__mark-label">{youLabel}</figcaption>
+      </figure>
+      <div className="pf-reveal__versus-mid">
+        <p className="pf-reveal__pct">
+          {pct}
+          <span className="pf-reveal__pct-sign">%</span>
+        </p>
+        <div className="pf-reveal__track">
+          <div className="pf-reveal__fill" style={{ width: `${pct}%` }} />
+        </div>
+      </div>
+      <figure className="pf-reveal__mark">
+        <div className="pf-reveal__mark-dot pf-reveal__mark-dot--match">?</div>
+        <figcaption className="pf-reveal__mark-label">{matchLabel}</figcaption>
+        {statusLabel ? <p className="pf-reveal__mark-status">{statusLabel}</p> : null}
+      </figure>
+    </div>
+  );
 }
 
 /**
@@ -43,23 +143,38 @@ export function resolveRevealCopy(
  * plays for `reveal.durationMs` (default 2200ms), renders the configured
  * headline + subtitle — `subtitleTemplate` wins over `subtitle` and gets its
  * `[key]` tokens interpolated from the answers via the engine's `interpolate`,
- * so e.g. "Finding the best advisor for [industry]…" personalizes live — above
- * an animated determinate progress bar (existing `.pf-reveal__*` styles).
- * Fires `onComplete` exactly once when the bar fills; the caller owns the
- * page chrome (accent vars, banner) and what happens next.
+ * so e.g. "Finding the best advisor for [industry]…" personalizes live.
+ *
+ * HOW it animates is `reveal.loader` (see `resolveRevealPresentation`), and the
+ * order of the parts follows from it: the `spinner` mark sits above the copy the
+ * way it always has, while `bar` and `versus` put the copy first and the
+ * progress under it. `none` is copy alone — the honest choice when the wait is
+ * not really a computation. Every variant runs the SAME timer, so the screen's
+ * duration never depends on how it is drawn.
+ *
+ * Fires `onComplete` exactly once when the bar fills; the caller owns the page
+ * chrome (accent vars, banner, `revealShellProps`) and what happens next.
  */
 export function RevealScreen({
   reveal,
   answers,
   messages,
+  children,
   onComplete,
 }: {
   reveal?: FormReveal | null;
   answers: Answers;
   messages: RevealScreenMessages;
+  /**
+   * Rendered under the interstitial — the "trusted by" marquee, when scoped
+   * here. Presented to assistive tech as decoration; see the wrapper below.
+   */
+  children?: React.ReactNode;
   onComplete?: () => void;
 }) {
-  const { headline, subtitle, durationMs } = resolveRevealCopy(reveal, answers, messages);
+  const { headline, subtitle, durationMs, versusYou, versusMatch, versusStatus } =
+    resolveRevealCopy(reveal, answers, messages);
+  const { loader, loaderSize, textSize } = resolveRevealPresentation(reveal);
 
   const [pct, setPct] = useState(4);
   const completedRef = useRef(false);
@@ -85,13 +200,34 @@ export function RevealScreen({
   }, [durationMs]);
 
   return (
-    <div className="pf-reveal__inner">
-      <div className="pf-reveal__spinner" aria-hidden="true" />
+    <div
+      className="pf-reveal__inner"
+      data-pf-reveal-loader={loader}
+      data-pf-reveal-mark={loaderSize}
+      data-pf-reveal-text={textSize}
+    >
+      {loader === 'spinner' ? <div className="pf-reveal__spinner" aria-hidden="true" /> : null}
       <h1 className="pf-reveal__headline">{headline}</h1>
       <p className="pf-reveal__subtitle">{subtitle}</p>
-      <div className="pf-reveal__track">
-        <div className="pf-reveal__fill" style={{ width: `${pct}%` }} />
-      </div>
+      {loader === 'spinner' || loader === 'bar' ? (
+        <div className="pf-reveal__track" aria-hidden="true">
+          <div className="pf-reveal__fill" style={{ width: `${pct}%` }} />
+        </div>
+      ) : null}
+      {loader === 'versus' ? (
+        <VersusMarks
+          pct={pct}
+          youLabel={versusYou}
+          matchLabel={versusMatch}
+          statusLabel={versusStatus}
+        />
+      ) : null}
+      {/* The caller's slot is decoration — the client-logo marquee. Hidden from
+          assistive tech because this whole screen is an `aria-live="polite"`
+          status: without it the announcement of "we are working on it" ends by
+          reciting the trusted-by label and every logo name, which the cover
+          already announced and which says nothing about the wait. */}
+      {children ? <div aria-hidden="true">{children}</div> : null}
     </div>
   );
 }

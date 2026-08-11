@@ -9,7 +9,9 @@ import {
   CONDITION_OPS,
   FORM_BACKGROUND_STYLES,
   FORM_BANNER_SCOPES,
+  FORM_BANNER_SIZES,
   FORM_BUTTON_STYLES,
+  FORM_CLIENT_LOGO_SCOPES,
   FORM_CONTENT_ALIGNS,
   FORM_CONTENT_WIDTHS,
   FORM_FIELD_TYPES,
@@ -20,6 +22,8 @@ import {
   FORM_OPTION_LAYOUTS,
   FORM_PROGRESS_STYLES,
   FORM_RADII,
+  FORM_REVEAL_LOADERS,
+  FORM_REVEAL_SIZES,
   FORM_TRANSITIONS,
   isImageIcon,
   isSafeHttpUrl,
@@ -127,6 +131,28 @@ const clientLogoSchema = z.object({
   src: safeImageUrl.nullable().optional(),
 });
 
+/**
+ * A CSS color value flowing into an inline custom property (`--pf-primary`,
+ * `--pf-banner-bg`, …) on the public renderer. Constrain the format (hex /
+ * rgb(a) / hsl(a) / named) so a value like `red;} body{...` can't break out of
+ * the color context — CSS-injection defense-in-depth on top of the 32-char cap
+ * (L2).
+ *
+ * Declared here, above the first schema that uses it: these are plain `const`
+ * bindings evaluated top-to-bottom at module load, so a schema built before
+ * this line would hit the temporal dead zone.
+ */
+const cssColor = z
+  .string()
+  .max(32)
+  .refine(
+    (v) =>
+      /^#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/.test(v) ||
+      /^(?:rgb|rgba|hsl|hsla)\([0-9.,%\s/-]+\)$/.test(v) ||
+      /^[a-zA-Z]+$/.test(v),
+    { message: 'Color must be a hex, rgb(a)/hsl(a), or named CSS color.' },
+  );
+
 export const formRevealSchema = z.object({
   enabled: z.boolean().optional(),
   headline: z.string().max(300).nullable().optional(),
@@ -138,6 +164,20 @@ export const formRevealSchema = z.object({
   subtitleTemplate: z.string().max(200).nullable().optional(),
   /** Pre-warm the booking embed while the interstitial plays. */
   prewarm: z.boolean().optional(),
+  /**
+   * Presentation (ADDITIVE — all optional). Absent on every axis resolves to
+   * the historical spinner-over-a-bar look, so a stored reveal keeps rendering
+   * exactly as it does today. See `resolveRevealPresentation` in @quill/engine.
+   */
+  loader: z.enum(FORM_REVEAL_LOADERS).optional(),
+  loaderSize: z.enum(FORM_REVEAL_SIZES).optional(),
+  textSize: z.enum(FORM_REVEAL_SIZES).optional(),
+  accentBackground: z.boolean().optional(),
+  /** `versus` only — the two marks' labels. Absent falls back to localized copy. */
+  versusYouLabel: z.string().max(40).nullable().optional(),
+  versusMatchLabel: z.string().max(40).nullable().optional(),
+  /** `versus` only — the live status line under the match. `''` removes it. */
+  versusStatusLabel: z.string().max(40).nullable().optional(),
 });
 
 /**
@@ -261,6 +301,14 @@ export const formCoverSchema = z.object({
    * screen; absent — every legacy config — keeps it above every screen.
    */
   bannerScope: z.enum(FORM_BANNER_SCOPES).optional(),
+  /**
+   * The banner strip's own look (ADDITIVE). Absent on any axis keeps the
+   * derived tint + padding the stylesheet has always applied, so no published
+   * form's banner changes by upgrading.
+   */
+  bannerColor: cssColor.nullable().optional(),
+  bannerTextColor: cssColor.nullable().optional(),
+  bannerSize: z.enum(FORM_BANNER_SIZES).optional(),
   eyebrow: z.string().max(200).nullable().optional(),
   badge: z.string().max(200).nullable().optional(),
   headline: z.string().max(300).nullable().optional(),
@@ -274,24 +322,13 @@ export const formCoverSchema = z.object({
    * config — means shown, so switching it off never deletes the logos.
    */
   showClientLogos: z.boolean().optional(),
+  /**
+   * WHICH surfaces the marquee renders on (ADDITIVE): the cover alone (absent —
+   * every legacy config, and where it has always rendered), the reveal
+   * interstitial alone, or both.
+   */
+  clientLogosScope: z.enum(FORM_CLIENT_LOGO_SCOPES).optional(),
 });
-
-/**
- * A CSS color value flowing into an inline custom property (`--pf-primary`) on
- * the public renderer. Constrain the format (hex / rgb(a) / hsl(a) / named) so a
- * value like `red;} body{...` can't break out of the color context — CSS-
- * injection defense-in-depth on top of the 32-char cap (L2).
- */
-const cssColor = z
-  .string()
-  .max(32)
-  .refine(
-    (v) =>
-      /^#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/.test(v) ||
-      /^(?:rgb|rgba|hsl|hsla)\([0-9.,%\s/-]+\)$/.test(v) ||
-      /^[a-zA-Z]+$/.test(v),
-    { message: 'primaryColor must be a hex, rgb(a)/hsl(a), or named CSS color.' },
-  );
 
 /**
  * An author-supplied typeface. This repo has no asset storage, so the source is
@@ -607,13 +644,19 @@ export const hubspotDestinationSchema = z.object({
   inferCompanyFromEmail: z.boolean().optional(),
   /**
    * Booking sync — which contact properties receive the booking facts when a
-   * visitor books a meeting through an outcome's scheduling handoff (the
-   * `booking_sync` outbox flow). All optional; absent = booking sync is a
-   * no-op for this destination.
+   * visitor books a meeting through a `scheduler` step (the `booking_sync`
+   * outbox flow). All optional; absent = booking sync is a no-op for this
+   * destination.
    *  - `stageProperty` is set to `stageValue` verbatim (e.g. a sales-stage
    *    enum internal value) — the "demo booked" stage stamp.
-   *  - `dateProperty` receives the meeting-start CALENDAR DAY as UTC-midnight
-   *    epoch-ms (HubSpot `date`-type properties require midnight UTC).
+   *  - `dateProperty` receives the CALENDAR DAY THE LEAD BOOKED ON as
+   *    UTC-midnight epoch-ms (HubSpot `date`-type properties require midnight
+   *    UTC). The day the booking happened, NOT the day of the meeting — the
+   *    two differ whenever someone books ahead, and this property is what
+   *    monthly "meetings booked" reporting counts by.
+   *  - `dateTimezone` is the IANA zone that day is computed in. Blank/absent =
+   *    UTC, the platform default. A portal reporting in `America/Bogota` needs
+   *    it set, or every booking from 19:00 local onwards lands on tomorrow.
    *  - `hoursProperty` receives the exact meeting start as epoch-ms (a
    *    HubSpot `datetime`-type property).
    */
@@ -623,6 +666,8 @@ export const hubspotDestinationSchema = z.object({
       stageValue: z.string().max(200).optional(),
       dateProperty: z.string().max(200).optional(),
       hoursProperty: z.string().max(200).optional(),
+      /** IANA zone the booking DAY is computed in (`dateProperty`). Blank = UTC. */
+      dateTimezone: z.string().max(64).optional(),
     })
     .optional(),
 });
@@ -633,6 +678,65 @@ export const formDestinationSchema = z.discriminatedUnion('type', [
   hubspotDestinationSchema,
 ]);
 export type FormDestination = z.infer<typeof formDestinationSchema>;
+
+/** Rejection message for a second HubSpot destination (see `hasExtraHubspotDestination`). */
+export const ONE_HUBSPOT_DESTINATION_MESSAGE =
+  'Only one HubSpot destination per form — map several properties from the same question instead.';
+
+/** How many HubSpot entries a (loosely typed) destinations array carries. */
+function hubspotCount(destinations: unknown): number {
+  if (!Array.isArray(destinations)) return 0;
+  let n = 0;
+  for (const d of destinations) if (isRecord(d) && d.type === 'hubspot') n += 1;
+  return n;
+}
+
+/**
+ * True when a proposed destination list would ADD a HubSpot entry beyond the
+ * first — the thing no form may be authored with.
+ *
+ * The comparison against `stored` is load-bearing, not defensive. Several
+ * screens edit one field and write the WHOLE array back (the builder's
+ * per-question property picker and its field-key rename both do), so a form
+ * that already carries two round-trips two on every unrelated save. A guard on
+ * the count alone would reject those writes and make the per-question picker
+ * unusable on precisely the forms this rule exists to clean up — while telling
+ * the author to "map several properties from the same question", which is what
+ * they were doing. So the rule is: never go UP. Staying at two is allowed;
+ * Connect still collapses to one when it saves.
+ *
+ * A second HubSpot destination is a trap rather than a feature, because the
+ * three readers resolve the pair three different ways:
+ *
+ *   - the Connect screen edits the FIRST, regardless of `enabled`;
+ *   - submit delivers EVERY destination whose `enabled !== false`;
+ *   - booking resolves the FIRST ENABLED one.
+ *
+ * So the second is always invisible in the admin, and which of the two is doing
+ * anything depends on flags that screen never shows — on a disabled-first pair
+ * it is the second that runs bookings. That disagreement is why the guard below
+ * ignores `enabled` entirely. Forms carrying two were a workaround from when a
+ * field mapping was one question → one property; a mapping now fans out to
+ * several, so the workaround has no remaining use case.
+ *
+ * Deliberately NOT a `formConfigSchema` refinement: this is an AUTHORING rule,
+ * and folding it into the parse would make the stored configs of forms that
+ * already carry two stop loading — breaking reads and deliveries for exactly
+ * the forms that need fixing. Write paths call this; readers stay tolerant.
+ *
+ * Duplicating a form deliberately does NOT call this. A duplicate copies stored
+ * state rather than authoring new state, and refusing to copy a form would take
+ * the legacy forms hostage instead of fixing them — while silently dropping the
+ * extra destination would delete a delivery that IS still running at submit
+ * time. The copy therefore inherits the violation, and gets fixed the same way
+ * the original does: by opening Connect.
+ */
+export function hasExtraHubspotDestination(destinations: unknown, stored?: unknown): boolean {
+  const next = hubspotCount(destinations);
+  // One is always fine. Past that, only an INCREASE is refused — and an absent
+  // or unreadable `stored` counts as zero, so a create refuses anything over one.
+  return next > 1 && next > hubspotCount(stored);
+}
 
 /**
  * Sentinel returned in place of a stored webhook signing secret on every ADMIN
@@ -1348,26 +1452,151 @@ export const ONBOARDING_ROLES = [
 export type OnboardingRole = (typeof ONBOARDING_ROLES)[number];
 
 /**
- * Question 2 — "what industry are you in?".
+ * The industry question — the Dapta IAM's own bank, verbatim.
  *
- * Eleven buckets, not the 52 the Dapta IAM's `pre_signup` bank carries. Fifty-two
- * options in a three-screen wizard is noise; these group the same space, and a
- * 52 -> 11 mapping is a lookup table if the two ever need to be joined.
+ * Fifty-two values, and every one of them is an `option_value` from the IAM's
+ * `pre_signup` stage. Forms used to carry eleven buckets of its own invention,
+ * which read fine on the screen and made the two products' data impossible to
+ * join: the same company was `software` here and `computer_software` there, and
+ * no report could span both. Matching the values is what lets a Forms account be
+ * segmented with the lead score Dapta has already computed for it.
+ *
+ * Fifty-two is not too many BECAUSE the screen is a searchable dropdown — that
+ * component exists precisely for a list nobody scans. Two of the old buckets have
+ * no equivalent in the bank (`ecommerce`, `manufacturing`); migration 0012
+ * records where they went.
+ *
+ * Ordered as the IAM orders them, so a diff against the bank stays readable.
  */
 export const ONBOARDING_INDUSTRIES = [
-  'software',
-  'ecommerce',
-  'services',
-  'agency',
-  'health',
-  'finance',
-  'education',
-  'realestate',
-  'manufacturing',
+  'accounting',
+  'airlines_aviation',
+  'alternative_dispute_resolution',
+  'alternative_medicine',
+  'animation',
+  'apparel_fashion',
+  'architecture_planning',
+  'arts_crafts',
+  'automotive',
+  'aviation_aerospace',
+  'banking',
+  'biotechnology',
+  'broadcast_media',
+  'building_materials',
+  'business_supplies',
+  'capital_markets',
+  'chemicals',
+  'civic_social',
+  'civil_engineering',
+  'commercial_real_estate',
+  'computer_security',
+  'computer_games',
+  'computer_hardware',
+  'computer_networking',
+  'computer_software',
+  'construction',
+  'consumer_electronics',
+  'consumer_goods',
+  'consumer_services',
+  'education_management',
+  'financial_services',
+  'health_wellness',
+  'hospital_healthcare',
+  'hospitality',
+  'it_services',
+  'insurance',
+  'internet',
+  'law_practice',
+  'legal_services',
+  'marketing_advertising',
+  'medical_practice',
   'nonprofit',
+  'real_estate',
+  'restaurants',
+  'retail',
+  'telecommunications',
   'other',
+  'events_services',
+  'higher_education',
+  'human_resources',
+  'information_services',
+  'professional_training_coaching',
 ] as const;
 export type OnboardingIndustry = (typeof ONBOARDING_INDUSTRIES)[number];
+
+/**
+ * The CRM question — the IAM's `crm_usage` bank, minus one duplicate.
+ *
+ * The bank ships `none` ("Ninguno/None") AND `no_crm` ("I don't use CRM"): the
+ * same answer twice, with the same score. Offering both would split the one
+ * segment that matters most — the people with nowhere to send a lead — across two
+ * values, so only `none` survives here.
+ *
+ * Asked ONLY of someone who did not arrive from Dapta, and it is the one answer
+ * that is immediately actionable rather than descriptive: Forms already syncs to
+ * HubSpot, so "hubspot" on day one is a connection to offer, not a segment to
+ * file away.
+ */
+/**
+ * "How many leads do you get a month?" — the IAM's `contacts_per_month` bank,
+ * values verbatim.
+ *
+ * Forms asked nothing like this before, on the grounds that a form can be for
+ * anything and lead volume is a lead-gen question. It is here now because the
+ * cold cohort is being qualified, not just profiled — and taking the IAM's own
+ * buckets means a Forms answer and a Dapta answer land in the same histogram
+ * instead of two that cannot be added together.
+ *
+ * Skipped for anyone arriving from Dapta: they answered it at signup.
+ */
+export const ONBOARDING_LEAD_VOLUMES = [
+  '0_50',
+  '51_200',
+  '201_500',
+  '501_1000',
+  '1001_5000',
+  '5000_plus',
+] as const;
+export type OnboardingLeadVolume = (typeof ONBOARDING_LEAD_VOLUMES)[number];
+
+/**
+ * "Where do your leads come from?" — Forms' own question. The IAM has no
+ * equivalent.
+ *
+ * That absence is the interesting part: it is the ONE question here that Dapta
+ * cannot answer on someone's behalf, so it is asked of BOTH cohorts. Everything
+ * else the wizard collects is either already in the IAM's bank or specific to
+ * building a form; this is the only genuinely new signal Forms contributes back.
+ *
+ * `none` sits first rather than last, unlike the `other` escape hatch elsewhere:
+ * "I don't have leads yet" is a real and common answer for a brand-new account,
+ * not a fallback for people whose answer is missing from the list.
+ */
+export const ONBOARDING_LEAD_SOURCES = [
+  'none',
+  'facebook_ads',
+  'google_ads',
+  'outbound',
+  'internal_lists',
+  'other',
+] as const;
+export type OnboardingLeadSource = (typeof ONBOARDING_LEAD_SOURCES)[number];
+
+export const ONBOARDING_CRMS = [
+  'none',
+  'hubspot',
+  'odoo',
+  'clientify',
+  'ghl',
+  'bitrix24',
+  'salesforce',
+  'activecampaign',
+  'pipedrive',
+  'zoho_crm',
+  'escala',
+  'other',
+] as const;
+export type OnboardingCrm = (typeof ONBOARDING_CRMS)[number];
 
 /**
  * Question 3 — "what do you want to use Forms for?".
@@ -1408,9 +1637,76 @@ export const USE_CASE_TEMPLATE: Readonly<Record<OnboardingUseCase, FormTemplateI
 /**
  * The wizard's screens, in order. `lastStep` names the furthest one REACHED, so
  * these are the buckets a drop-off report groups by.
+ *
+ * ORDER IS LOAD-BEARING, twice over: `lastStep` is only ever allowed to advance
+ * along this array (see `furthestStep` in @quill/db), and the cohorts below are
+ * both subsequences of it. Reordering this list silently re-buckets every
+ * drop-off report ever run.
+ *
+ * Not every person sees every screen — see `ONBOARDING_COHORTS`.
  */
-export const ONBOARDING_STEPS = ['role', 'industry', 'use_case', 'template'] as const;
+export const ONBOARDING_STEPS = [
+  'phone',
+  // NO LONGER ASKED, and deliberately still here. Accounts onboarded before this
+  // release carry `lastStep: 'role'` and a stored `role`, and the whole blob is
+  // validated with one `safeParse` — dropping the value from this union would
+  // make those rows unreadable and take `industry`, `useCase` and every
+  // drop-off breadcrumb down with it. It costs one array entry to keep them.
+  'role',
+  'industry',
+  'crm',
+  'lead_volume',
+  'lead_source',
+  'use_case',
+  'template',
+] as const;
 export type OnboardingStep = (typeof ONBOARDING_STEPS)[number];
+
+/**
+ * Who is asked what.
+ *
+ * The rule is one line: never ask for something Dapta AI already holds. Its
+ * `pre_signup` bank covers industry, CRM and lead volume, and its signup takes a
+ * phone number — so a customer arriving from the platform is asked none of those
+ * four. Re-asking them is the clearest possible way to tell someone that the two
+ * products do not talk to each other.
+ *
+ * Two questions survive for everyone, for opposite reasons:
+ *
+ *  - `lead_source` — the IAM has NO equivalent, so nobody can answer it on the
+ *    person's behalf. It is the only genuinely new signal Forms contributes back.
+ *  - `use_case` — Dapta's `dapta_goals` asks about voice and text agents, not
+ *    about what someone wants a FORM for, and this answer is what preselects a
+ *    template on the very next screen.
+ *
+ * The cold cohort answers six. That is a deliberate trade of raw signups for
+ * qualified ones, and it is measurable rather than arguable: `lastStep` is
+ * written on every advance, so `lastStep: 'phone'` with no completion is exactly
+ * the number that says what the first screen costs.
+ *
+ * `role` is in neither list — no longer asked, kept in the union above so
+ * already-stored answers still parse.
+ */
+export const ONBOARDING_COHORTS = {
+  /** No Dapta account behind this signup — nothing is known, so everything is asked. */
+  cold: ['phone', 'industry', 'crm', 'lead_volume', 'lead_source', 'use_case'],
+  /** Came from Dapta AI. Only what Dapta cannot answer for them. */
+  dapta: ['lead_source', 'use_case'],
+} as const satisfies Readonly<Record<string, readonly OnboardingStep[]>>;
+export type OnboardingCohort = keyof typeof ONBOARDING_COHORTS;
+
+/**
+ * Why an answer is missing.
+ *
+ * `null` alone cannot tell "we never asked" from "we asked and they skipped" from
+ * "Dapta holds it". The third is the one that matters: the IAM has no endpoint
+ * that returns a person's answers yet (`GET /onboarding/responses/:userId` is a
+ * 404 today), so skipping those screens leaves the column empty for the entire
+ * Dapta cohort. Recording the REASON keeps that hole legible and turns the
+ * eventual fix into a backfill query instead of a re-survey.
+ */
+export const ONBOARDING_ANSWER_SOURCES = ['asked', 'skipped', 'dapta'] as const;
+export type OnboardingAnswerSource = (typeof ONBOARDING_ANSWER_SOURCES)[number];
 
 /**
  * `account.onboarding` (migration 0011) — the wizard's working state AND result.
@@ -1435,7 +1731,31 @@ export const accountOnboardingSchema = z.object({
   role: z.enum(ONBOARDING_ROLES).nullable().optional(),
   industry: z.enum(ONBOARDING_INDUSTRIES).nullable().optional(),
   useCase: z.enum(ONBOARDING_USE_CASES).nullable().optional(),
+  crm: z.enum(ONBOARDING_CRMS).nullable().optional(),
+  leadVolume: z.enum(ONBOARDING_LEAD_VOLUMES).nullable().optional(),
+  leadSource: z.enum(ONBOARDING_LEAD_SOURCES).nullable().optional(),
+  /**
+   * E.164, as the phone input produces it. Stored on the ACCOUNT rather than the
+   * member because that is where every other wizard answer lives and the wizard's
+   * only member IS the owner; a per-person number belongs on `member` the day a
+   * second person can answer this.
+   *
+   * Never rendered on a public surface — `member.profile` is the public page and
+   * this is deliberately not in it.
+   */
+  phone: z.string().trim().max(32).nullable().optional(),
   template: z.enum(FORM_TEMPLATE_IDS).nullable().optional(),
+  /** Which set of screens this person was shown — cold, or arriving from Dapta. */
+  cohort: z.enum(['cold', 'dapta']).nullable().optional(),
+  /**
+   * Why each unasked answer is unasked. Absent means "asked and answered".
+   * See `ONBOARDING_ANSWER_SOURCES` — the point is that a NULL industry on a
+   * Dapta account is a pointer, not a gap.
+   */
+  sources: z
+    .record(z.enum(ONBOARDING_STEPS), z.enum(ONBOARDING_ANSWER_SOURCES))
+    .nullable()
+    .optional(),
   /** The furthest screen REACHED — the drop-off bucket. */
   lastStep: z.enum(ONBOARDING_STEPS).nullable().optional(),
   /**
@@ -1472,6 +1792,10 @@ export const onboardingProgressSchema = z.object({
   role: z.enum(ONBOARDING_ROLES).nullable().optional(),
   industry: z.enum(ONBOARDING_INDUSTRIES).nullable().optional(),
   useCase: z.enum(ONBOARDING_USE_CASES).nullable().optional(),
+  crm: z.enum(ONBOARDING_CRMS).nullable().optional(),
+  leadVolume: z.enum(ONBOARDING_LEAD_VOLUMES).nullable().optional(),
+  leadSource: z.enum(ONBOARDING_LEAD_SOURCES).nullable().optional(),
+  phone: z.string().trim().max(32).nullable().optional(),
   template: z.enum(FORM_TEMPLATE_IDS).nullable().optional(),
   lastStep: z.enum(ONBOARDING_STEPS).nullable().optional(),
 });
@@ -1500,6 +1824,17 @@ export const onboardingCompleteSchema = z.object({
   role: z.enum(ONBOARDING_ROLES).nullable().optional(),
   industry: z.enum(ONBOARDING_INDUSTRIES).nullable().optional(),
   useCase: z.enum(ONBOARDING_USE_CASES).nullable().optional(),
+  crm: z.enum(ONBOARDING_CRMS).nullable().optional(),
+  leadVolume: z.enum(ONBOARDING_LEAD_VOLUMES).nullable().optional(),
+  leadSource: z.enum(ONBOARDING_LEAD_SOURCES).nullable().optional(),
+  phone: z.string().trim().max(32).nullable().optional(),
+  /**
+   * Which screens this person was shown, and why the unasked ones were unasked.
+   * Sent from the wizard because the wizard is what resolved the cohort — the API
+   * never probes the IAM itself (that would need `IAM_BASE_URL` in its configmap,
+   * which the web already has).
+   */
+  cohort: z.enum(['cold', 'dapta']).optional(),
   locale: z.enum(['en', 'es']).optional(),
 });
 export type OnboardingCompleteInput = z.infer<typeof onboardingCompleteSchema>;

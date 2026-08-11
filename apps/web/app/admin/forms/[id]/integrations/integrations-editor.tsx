@@ -15,7 +15,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Select, type SelectOption } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
-import { GoogleSheetsLogo, ProviderLogo, type LogoProvider } from '@/components/ui/provider-logo';
+import { GoogleSheetsLogo, ProviderLogo } from '@/components/ui/provider-logo';
 import { useToast } from '@/components/toast';
 import { cn } from '@/lib/cn';
 import { bookingLabel } from '@/lib/booking-fields';
@@ -26,6 +26,7 @@ import type {
 } from '@/lib/admin-api';
 import { trackDestinationWrite } from '@/lib/connect-sync';
 import { propertyLookup, suggestProperty, type QuestionMeta } from './auto-map';
+import { Card } from './integrations-card';
 import { pingWebhookAction, saveIntegrationsAction } from './actions';
 
 type Msgs = FormsMessages['admin']['integrations'];
@@ -125,6 +126,24 @@ interface BookingSyncState {
   stageValue: string;
   dateProperty: string;
   hoursProperty: string;
+  /** IANA zone the booking DAY is computed in. Blank = UTC (server default). */
+  dateTimezone: string;
+}
+
+/**
+ * Whether the browser can resolve this IANA zone name. Advisory only: it warns
+ * the author at the moment they mistype, but the value still saves — the SERVER
+ * decides, and its ICU data is the one that matters. Blank is always fine (UTC).
+ */
+function isKnownTimezone(value: string): boolean {
+  const zone = value.trim();
+  if (!zone) return true;
+  try {
+    new Intl.DateTimeFormat('en-CA', { timeZone: zone });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function initialWebhook(destinations: FormDestination[]): WebhookState {
@@ -176,6 +195,7 @@ function initialHubspot(destinations: FormDestination[]): HubspotState {
         stageValue: h.bookingSync?.stageValue ?? '',
         dateProperty: h.bookingSync?.dateProperty ?? '',
         hoursProperty: h.bookingSync?.hoursProperty ?? '',
+        dateTimezone: h.bookingSync?.dateTimezone ?? '',
       },
     };
   }
@@ -190,7 +210,13 @@ function initialHubspot(destinations: FormDestination[]): HubspotState {
     outcomeProperty: '',
     staticProperties: [],
     inferCompanyFromEmail: false,
-    bookingSync: { stageProperty: '', stageValue: '', dateProperty: '', hoursProperty: '' },
+    bookingSync: {
+      stageProperty: '',
+      stageValue: '',
+      dateProperty: '',
+      hoursProperty: '',
+      dateTimezone: '',
+    },
   };
 }
 
@@ -347,7 +373,13 @@ export function IntegrationsEditor({
       if (p.key.trim() && p.value.trim()) staticProperties[p.key.trim()] = p.value.trim();
     }
     const bookingSync: Record<string, string> = {};
-    for (const k of ['stageProperty', 'stageValue', 'dateProperty', 'hoursProperty'] as const) {
+    for (const k of [
+      'stageProperty',
+      'stageValue',
+      'dateProperty',
+      'hoursProperty',
+      'dateTimezone',
+    ] as const) {
       if (hs.bookingSync[k].trim()) bookingSync[k] = hs.bookingSync[k].trim();
     }
     const hasHubspotConfig =
@@ -515,6 +547,12 @@ export function IntegrationsEditor({
           pickerEnabled={pickerEnabled}
           accountConnected={hubspotConnected}
           showMapping={showMapping}
+          // Legacy shape: this screen edits the FIRST HubSpot destination and
+          // saves exactly one, so a stored second silently disappears on the
+          // next save. Say so rather than letting it vanish (`buildDestinations`).
+          extraHubspotStored={
+            initialDestinations.filter((d) => d.type === 'hubspot').length > 1
+          }
           readiness={readiness}
           questions={questions}
           m={m}
@@ -764,52 +802,6 @@ export function explainPingFailure(res: WebhookPingResult, m: Msgs): string {
   return parts.join(' ');
 }
 
-function Card({
-  title,
-  desc,
-  enabled,
-  onToggle,
-  m,
-  badge,
-  logo,
-  children,
-}: {
-  title: string;
-  desc: string;
-  enabled: boolean;
-  onToggle: (v: boolean) => void;
-  m: Msgs;
-  badge?: string;
-  /** The provider this card configures, when it is a named third party. */
-  logo?: LogoProvider;
-  children: React.ReactNode;
-}) {
-  return (
-    <section className="rounded-xl border border-border bg-card p-5">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2">
-            {logo ? <ProviderLogo provider={logo} size={20} /> : null}
-            <h2 className="text-lg font-semibold">{title}</h2>
-            {badge ? (
-              <span className="inline-flex items-center gap-1 rounded-full border border-primary-edge/40 bg-primary/10 px-2 py-0.5 text-xs font-medium text-foreground">
-                <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-primary-edge" />
-                {badge}
-              </span>
-            ) : null}
-          </div>
-          <p className="mt-0.5 text-sm text-muted-foreground">{desc}</p>
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          <span className="text-xs text-muted-foreground">{enabled ? m.enabled : m.disabled}</span>
-          <Switch checked={enabled} onCheckedChange={onToggle} aria-label={title} />
-        </div>
-      </div>
-      {enabled ? <div className="mt-5 flex flex-col gap-4">{children}</div> : null}
-    </section>
-  );
-}
-
 /** A grouped panel (Typeform-style) with a header, optional help, and an action slot. */
 function Section({
   title,
@@ -988,13 +980,15 @@ function WebhookCard({
   );
 }
 
-function HubspotCard({
+/** Exported for `integrations-card.spec.tsx` — see the notice-slot cases there. */
+export function HubspotCard({
   state,
   onChange,
   properties,
   pickerEnabled,
   accountConnected,
   showMapping,
+  extraHubspotStored,
   readiness,
   questions,
   m,
@@ -1005,6 +999,8 @@ function HubspotCard({
   pickerEnabled: boolean;
   accountConnected: boolean;
   showMapping: boolean;
+  /** The stored config carries a second HubSpot destination this tab will drop. */
+  extraHubspotStored: boolean;
   readiness: ContactKeyReadiness;
   questions: QuestionMeta[];
   m: Msgs;
@@ -1050,6 +1046,32 @@ function HubspotCard({
     [emailSource, state.fieldMappings],
   );
 
+  // A stored SECOND HubSpot destination, which the next save deletes.
+  //
+  // Its removal is a real loss whichever way the pair is arranged, because the
+  // three readers resolve it three different ways. This card edits the FIRST
+  // regardless of `enabled` (`initialHubspot`); submit delivers EVERY enabled
+  // destination (`destination-effects`); booking resolves the first ENABLED one
+  // (`findHubspotDestination`). So on a disabled-first pair the second is the
+  // one running bookings, and on an enabled pair it is delivering its own
+  // mappings at submit — the copy therefore promises neither, only that
+  // something invisible here is about to be deleted with it. New configs cannot
+  // reach this state: the authoring write-paths refuse to raise the count.
+  //
+  // Goes in `Card`'s `notice` slot, not among its children — children are
+  // hidden when the toggle is off, and a card toggled off is where this matters
+  // most: flipping the switch is itself an edit, and the autosave it triggers
+  // is what performs the collapse.
+  const extraHubspotNotice = extraHubspotStored ? (
+    <div
+      data-testid="hubspot-extra-destination"
+      className="mt-4 rounded-md border border-amber-500/40 bg-amber-500/10 p-3"
+    >
+      <p className="text-xs font-medium text-foreground">{m.extraHubspotTitle}</p>
+      <p className="mt-1 text-xs text-muted-foreground">{m.extraHubspotBody}</p>
+    </div>
+  ) : null;
+
   // Nothing to key a contact on → mapping is pointless and, worse, silently
   // lossy: HubSpot's upsert is BY EMAIL, so a submission with no address
   // resolves as a permanent no-op and that lead is never synced. Say so here,
@@ -1064,6 +1086,7 @@ function HubspotCard({
           <h2 className="text-lg font-semibold">{m.hubspotTitle}</h2>
         </div>
         <p className="mt-0.5 text-sm text-muted-foreground">{m.hubspotDesc}</p>
+        {extraHubspotNotice}
         <div
           data-testid="hubspot-needs-email"
           className="mt-4 rounded-md border border-dashed border-border bg-muted/40 p-4"
@@ -1084,6 +1107,7 @@ function HubspotCard({
           <h2 className="text-lg font-semibold">{m.hubspotTitle}</h2>
         </div>
         <p className="mt-0.5 text-sm text-muted-foreground">{m.hubspotDesc}</p>
+        {extraHubspotNotice}
         <div className="mt-4 rounded-md border border-dashed border-border bg-muted/40 p-4">
           <p className="text-sm font-medium text-foreground">{m.connectPromptTitle}</p>
           <p className="mt-1 text-sm text-muted-foreground">{m.connectPromptBody}</p>
@@ -1135,6 +1159,10 @@ function HubspotCard({
     ...questions.filter((q) => !CHOICE_TYPES.has(q.type)),
   ];
 
+  // Once per render, not once per attribute: the check builds an
+  // `Intl.DateTimeFormat` (and throws, on a bad zone) every time it is called.
+  const tzKnown = isKnownTimezone(state.bookingSync.dateTimezone);
+
   function autoMap() {
     const byLower = propertyLookup(properties);
     const alreadyMapped = new Set(
@@ -1167,6 +1195,11 @@ function HubspotCard({
       onToggle={(enabled) => onChange({ ...state, enabled })}
       m={m}
       badge={accountConnected ? m.connectedBadge : undefined}
+      // Under the header, NOT among the children: `Card` hides children when the
+      // toggle is off, and a card toggled off is the state where this warning
+      // matters most — flipping the switch is itself an edit, and the autosave
+      // it triggers is what performs the collapse.
+      notice={extraHubspotNotice}
     >
       {!pickerEnabled ? (
         <div className="rounded-md border border-dashed border-border bg-muted/40 p-3 text-xs text-muted-foreground">
@@ -1578,10 +1611,12 @@ function HubspotCard({
         </div>
       </Field>
 
-      {/* Booking sync: contact properties stamped when a meeting is booked */}
+      {/* Booking sync: contact properties stamped when a meeting is booked.
+          Paired by meaning, not by type: the two date controls sit together
+          because the timezone only qualifies the day above it. */}
       <Field label={m.bookingSync} help={m.bookingSyncHelp}>
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label={m.bookingStageProperty}>
+          <Field label={m.bookingStageProperty} help={m.bookingStagePropertyHelp}>
             <PropertyField
               value={state.bookingSync.stageProperty}
               ariaLabel={m.bookingStageProperty}
@@ -1607,7 +1642,7 @@ function HubspotCard({
               }
             />
           </Field>
-          <Field label={m.bookingDateProperty}>
+          <Field label={m.bookingDateProperty} help={m.bookingDatePropertyHelp}>
             <PropertyField
               value={state.bookingSync.dateProperty}
               ariaLabel={m.bookingDateProperty}
@@ -1620,7 +1655,34 @@ function HubspotCard({
               }
             />
           </Field>
-          <Field label={m.bookingHoursProperty}>
+          {/* The zone check is advisory — the value still saves, and the SERVER's
+              ICU data is what decides. So the message sits ALONGSIDE the help
+              rather than replacing it: the help carries the format, and a person
+              who has just mistyped a zone is exactly who still needs to read it.
+              The message carries an id because `aria-invalid` with nothing
+              pointed at announces "invalid" and no reason. */}
+          <Field label={m.bookingDateTimezone} help={m.bookingDateTimezoneHelp}>
+            <Input
+              value={state.bookingSync.dateTimezone}
+              aria-label={m.bookingDateTimezone}
+              // A real zone name, so the format is legible without reading the help.
+              placeholder={m.bookingDateTimezonePlaceholder}
+              aria-invalid={tzKnown ? undefined : true}
+              aria-describedby={tzKnown ? undefined : 'booking-tz-error'}
+              onChange={(e) =>
+                onChange({
+                  ...state,
+                  bookingSync: { ...state.bookingSync, dateTimezone: e.target.value },
+                })
+              }
+            />
+            {tzKnown ? null : (
+              <p id="booking-tz-error" role="alert" className="text-xs text-destructive">
+                {m.bookingDateTimezoneInvalid}
+              </p>
+            )}
+          </Field>
+          <Field label={m.bookingHoursProperty} help={m.bookingHoursPropertyHelp}>
             <PropertyField
               value={state.bookingSync.hoursProperty}
               ariaLabel={m.bookingHoursProperty}

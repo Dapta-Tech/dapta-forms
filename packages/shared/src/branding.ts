@@ -91,6 +91,24 @@ function mix(rgb: Rgb, target: Rgb, amount: number): Rgb {
 const WHITE: Rgb = { r: 255, g: 255, b: 255 };
 const BLACK: Rgb = { r: 0, g: 0, b: 0 };
 
+/**
+ * `amount` of `target` blended over `base`, both hex — the TS twin of CSS's
+ * `color-mix(in srgb, target <amount>%, base)`.
+ *
+ * Exists so the editor can judge a surface the stylesheet DERIVES rather than
+ * stores. The promo banner's default fill is 12% of the accent over the form
+ * ground and lives only in CSS, so a contrast readout for the text sitting on it
+ * had nothing to measure against and silently switched itself off — in exactly
+ * the case most likely to be unreadable. Returns `base` unchanged if either
+ * color fails to parse.
+ */
+export function blendHex(base: string, target: string, amount: number): string {
+  const a = parseHex(base);
+  const b = parseHex(target);
+  if (!a || !b) return base;
+  return toHex(mix(a, b, Math.max(0, Math.min(1, amount))));
+}
+
 /** True when a color is light enough that dark text belongs on top of it. */
 export function isLightColor(hex: string): boolean {
   const rgb = parseHex(hex);

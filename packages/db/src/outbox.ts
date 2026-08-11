@@ -36,11 +36,14 @@ import type { Db } from './client';
  * `booking_sync` = CRM sync of a scheduling callback (booking_event → HubSpot
  * contact update, enriched via Calendly); `analytics` = a first-party product
  * analytics event about OUR OWN users (signup, publish, activation), which is a
- * network call and therefore never fired inline from a request handler. Adding
- * a kind here is all the queue needs — the delivery logic lives in the API
- * (DestinationEffects / BookingSyncEffects / AnalyticsCapture).
+ * network call and therefore never fired inline from a request handler;
+ * `dapta_sync` = pushing a new account's onboarding answers into the Dapta
+ * estate (IAM responses + the HubSpot contact-sync flow), same never-inline
+ * rule. Adding a kind here is all the queue needs — the delivery logic lives in
+ * the API (DestinationEffects / BookingSyncEffects / AnalyticsCapture /
+ * DaptaSyncDelivery).
  */
-export type OutboxKind = 'webhook' | 'email' | 'hubspot' | 'booking_sync' | 'analytics';
+export type OutboxKind = 'webhook' | 'email' | 'hubspot' | 'booking_sync' | 'analytics' | 'dapta_sync';
 /**
  * `skipped` = deliberately not performed (e.g. an email row whose tenant
  * context is unrecoverable on a transport that requires it) — recorded ONCE

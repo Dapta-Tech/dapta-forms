@@ -339,13 +339,13 @@ describe('POST /v1/account/onboarding/complete', () => {
   it('preserves the answers gathered on the way', async () => {
     const c = controllerWith(true);
     await c.saveOnboarding(asOwner(), { role: 'marketing', lastStep: 'role' });
-    await c.saveOnboarding(asOwner(), { industry: 'agency', lastStep: 'industry' });
+    await c.saveOnboarding(asOwner(), { industry: 'marketing_advertising', lastStep: 'industry' });
     await c.saveOnboarding(asOwner(), { useCase: 'feedback', lastStep: 'use_case' });
     await c.completeOnboarding(asOwner(), { template: 'customer-feedback' });
 
     expect((await getAccountOnboarding(db, accountId))?.onboarding).toMatchObject({
       role: 'marketing',
-      industry: 'agency',
+      industry: 'marketing_advertising',
       useCase: 'feedback',
       template: 'customer-feedback',
       lastStep: 'template',
@@ -363,13 +363,13 @@ describe('POST /v1/account/onboarding/complete', () => {
     await c.completeOnboarding(asOwner(), {
       template: 'lead-qualifier',
       role: 'founder',
-      industry: 'software',
+      industry: 'computer_software',
       useCase: 'leads',
     });
 
     expect((await getAccountOnboarding(db, accountId))?.onboarding).toMatchObject({
       role: 'founder',
-      industry: 'software',
+      industry: 'computer_software',
       useCase: 'leads',
       template: 'lead-qualifier',
     });

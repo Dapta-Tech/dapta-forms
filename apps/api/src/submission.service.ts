@@ -324,6 +324,10 @@ export class SubmissionService {
       eventUri: input.eventUri ?? null,
       inviteeUri: input.inviteeUri ?? null,
       startTime: row.startTime,
+      // The persisted row's own stamp, not a second `Date.now()` — the booking
+      // day the CRM records must be the day this callback landed, and the row
+      // is the durable record of when that was.
+      bookedAt: row.createdAt,
     });
     return { ok: true };
   }

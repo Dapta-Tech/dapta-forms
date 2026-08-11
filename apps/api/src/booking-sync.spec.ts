@@ -2,7 +2,7 @@
  * Booking → CRM sync, end to end on in-memory SQLite: a scheduling callback
  * enqueues a durable `booking_sync` outbox row (never inline HTTP), and the
  * worker-side handler enriches via the Calendly API and updates the HubSpot
- * contact with the configured booking properties — asserting the UTC-midnight
+ * contact with the configured booking properties — asserting the midnight
  * date math, the epoch-ms hours value, log-only degradation when tokens are
  * absent, and retryable vs permanent failure semantics.
  */
@@ -23,7 +23,7 @@ import { SubmissionService } from './submission.service';
 import { EmailEffects } from './email-effects';
 import { DestinationEffects } from './destination-effects';
 import { BookingEffects, BOOKING_SYNC_DELAY_MS } from './booking-effects';
-import { BookingSyncEffects } from './booking-sync';
+import { BookingSyncEffects, dayMidnightMs, utcMidnightMs } from './booking-sync';
 import { OutboxWorker } from './outbox.worker';
 
 const EVENT_URI = 'https://api.calendly.com/scheduled_events/abc';
@@ -106,6 +106,17 @@ const BOOKING_SYNC_CONFIG = {
   hoursProperty: 'hours_booking',
 };
 
+/**
+ * What `dateProperty` should hold for a booking made at `bookedAt`: the day the
+ * BOOKING happened, not the day of the meeting. The tests run on the real clock
+ * (no fake timers anywhere in this repo), so they capture the moment around the
+ * callback and floor it the same way the delivery does — while separately
+ * asserting the value is NOT the meeting's day, which is the actual regression.
+ */
+function bookedDay(bookedAt: number, timezone?: string): string {
+  return String(dayMidnightMs(bookedAt, timezone));
+}
+
 beforeEach(async () => {
   db = await createDb('file::memory:');
   await migrate(db);
@@ -182,6 +193,7 @@ describe('booking callback enqueue', () => {
 describe('booking_sync delivery', () => {
   it('Calendly happy path: fetches event + invitee, writes stage + UTC-midnight date + epoch-ms hours', async () => {
     await setHubspotDestination(BOOKING_SYNC_CONFIG);
+    const bookedAt = Date.now();
     await svc.booking('acme', 'lead-qualifier', {
       sessionId: 'sess-cal',
       provider: 'calendly',
@@ -222,8 +234,13 @@ describe('booking_sync delivery', () => {
     expect(input.properties).toEqual({
       sales_stage: 'demo_booked',
       hours_booking: String(Date.parse(startIso)), // exact meeting start, epoch-ms
-      sales_date_booked: String(Date.UTC(2026, 7, 2)), // UTC midnight of Aug 2
+      sales_date_booked: bookedDay(bookedAt), // the day of the BOOKING, not the meeting
     });
+    // The regression this replaced: the meeting's day used to be written here.
+    expect(input.properties).not.toHaveProperty(
+      'sales_date_booked',
+      String(Date.UTC(2026, 7, 2)),
+    );
   });
 
   it('startTime provided directly (hubspot_meetings): no Calendly fetch, date/hours still written', async () => {
@@ -234,6 +251,7 @@ describe('booking_sync delivery', () => {
       data: { role: 'founder', team_size: 20, email: 'Booked@Acme.IO' },
     });
     const startIso = '2026-09-10T14:00:00-05:00'; // 19:00 UTC → UTC day Sep 10
+    const bookedAt = Date.now();
     await svc.booking('acme', 'lead-qualifier', {
       sessionId: 'sess-hs',
       provider: 'hubspot_meetings',
@@ -256,7 +274,7 @@ describe('booking_sync delivery', () => {
     expect(input.properties).toEqual({
       sales_stage: 'demo_booked',
       hours_booking: String(Date.parse(startIso)),
-      sales_date_booked: String(Date.UTC(2026, 8, 10)),
+      sales_date_booked: bookedDay(bookedAt),
     });
   });
 
@@ -346,6 +364,7 @@ describe('booking_sync delivery', () => {
       sessionId: 'sess-sched',
       data: { role: 'founder', team_size: 20 }, // no email anywhere
     });
+    const bookedAt = Date.now();
     await svc.booking('acme', 'lead-qualifier', {
       sessionId: 'sess-sched',
       provider: 'calendly',
@@ -378,7 +397,7 @@ describe('booking_sync delivery', () => {
     expect(inputs[0]!.properties).toEqual({
       sales_stage: 'demo_booked',
       hours_booking: String(Date.parse(startIso)),
-      sales_date_booked: String(Date.UTC(2026, 7, 2)),
+      sales_date_booked: bookedDay(bookedAt),
     });
     const answerProps = inputs[1]!.properties as Record<string, string>;
     expect(answerProps.email).toBe('invitee@corp.io');
@@ -602,5 +621,310 @@ describe('booking_sync delivery', () => {
     const props = (hubspot[0]!.body as { inputs: Array<{ properties: Record<string, string> }> })
       .inputs[0]!.properties;
     expect(props.contact_role).toBe('founder'); // no value map on this destination
+  });
+});
+
+/**
+ * The booking DAY.
+ *
+ * `dateProperty` is what monthly "meetings booked" reporting counts by, so it
+ * has to be the day the lead BOOKED. It used to be the day of the MEETING,
+ * which moved every booking made near a month boundary into the wrong month —
+ * a demo booked Aug 31 for Sep 3 was attributed to September.
+ *
+ * The day is floored in a per-form IANA zone (`dateTimezone`), because a portal
+ * reporting in Bogota calls 20:00 local "today" while UTC already calls it
+ * tomorrow. The zone MATH is unit-tested here against fixed instants; the
+ * integration cases below prove the config reaches it and that the value is the
+ * booking's day rather than the meeting's.
+ */
+describe('dayMidnightMs', () => {
+  it('floors to the calendar day in the given zone, not the UTC day', () => {
+    // 2026-08-11 00:30 UTC — still Aug 10, 19:30 in Bogota.
+    const at = Date.parse('2026-08-11T00:30:00Z');
+    expect(dayMidnightMs(at, 'America/Bogota')).toBe(Date.UTC(2026, 7, 10));
+    expect(dayMidnightMs(at)).toBe(Date.UTC(2026, 7, 11)); // UTC disagrees, correctly
+  });
+
+  it('handles a zone AHEAD of UTC too (the day can be tomorrow)', () => {
+    // 2026-08-10 23:00 UTC — already Aug 11, 08:00 in Tokyo.
+    const at = Date.parse('2026-08-10T23:00:00Z');
+    expect(dayMidnightMs(at, 'Asia/Tokyo')).toBe(Date.UTC(2026, 7, 11));
+  });
+
+  it('absent or blank zone = UTC (the platform default)', () => {
+    const at = Date.parse('2026-08-11T00:30:00Z');
+    expect(dayMidnightMs(at)).toBe(utcMidnightMs(at));
+    expect(dayMidnightMs(at, '')).toBe(utcMidnightMs(at));
+    expect(dayMidnightMs(at, '   ')).toBe(utcMidnightMs(at));
+  });
+
+  // A typo in a config field must never turn a delivery into a retry loop.
+  it('an unusable zone falls back to UTC instead of throwing', () => {
+    const at = Date.parse('2026-08-11T00:30:00Z');
+    expect(() => dayMidnightMs(at, 'Bogota')).not.toThrow();
+    expect(dayMidnightMs(at, 'Bogota')).toBe(utcMidnightMs(at));
+    expect(dayMidnightMs(at, 'Not/AZone')).toBe(utcMidnightMs(at));
+  });
+
+  it('always lands on midnight UTC, which is what a HubSpot date property takes', () => {
+    const at = Date.parse('2026-08-11T00:30:00Z');
+    for (const zone of [undefined, 'America/Bogota', 'Asia/Tokyo', 'Australia/Eucla']) {
+      expect(dayMidnightMs(at, zone) % 86_400_000).toBe(0);
+    }
+  });
+});
+
+describe('booking date semantics', () => {
+  /** Overwrite the enqueued payload — the only way to forge a pre-fix row. */
+  async function patchPayload(mutate: (p: Record<string, unknown>) => void) {
+    const [row] = await listOutbox(db, { kind: 'booking_sync' });
+    const payload = JSON.parse(row!.payload!) as Record<string, unknown>;
+    mutate(payload);
+    await db.run(
+      sql`UPDATE outbox SET payload = ${JSON.stringify(payload)} WHERE id = ${row!.id}`,
+    );
+  }
+
+  async function bookingProps(): Promise<Record<string, string>> {
+    const calls: RecordedCall[] = [];
+    bookingSync.fetchImpl = recordingFetch(calls, {
+      [HUBSPOT_UPSERT_URL]: () => jsonResponse({ results: [{ id: '1' }] }),
+    });
+    await drainDue();
+    expect((await listOutbox(db, { kind: 'booking_sync' }))[0]!.status).toBe('done');
+    return (
+      calls.find((c) => c.url === HUBSPOT_UPSERT_URL)!.body as {
+        inputs: Array<{ properties: Record<string, string> }>;
+      }
+    ).inputs[0]!.properties;
+  }
+
+  it('the enqueue carries bookedAt, stamped from the persisted booking_event', async () => {
+    await setHubspotDestination(BOOKING_SYNC_CONFIG);
+    await svc.booking('acme', 'lead-qualifier', {
+      sessionId: 'sess-bookedat',
+      provider: 'hubspot_meetings',
+      startTime: '2026-12-24T15:00:00Z',
+    });
+
+    const [row] = await listOutbox(db, { kind: 'booking_sync' });
+    const payload = JSON.parse(row!.payload!) as { bookedAt?: number };
+    const event = await db.get<{ created_at: number }>(
+      sql`SELECT created_at FROM booking_event WHERE session_id = 'sess-bookedat' LIMIT 1`,
+    );
+    // The ROW's stamp, not a second clock read taken on the way to the queue.
+    expect(payload.bookedAt).toBe(Number(event!.created_at));
+  });
+
+  // The bug, stated as a test: booking today for a meeting months out.
+  it('records the day of the booking, never the day of the meeting', async () => {
+    await setHubspotDestination(BOOKING_SYNC_CONFIG);
+    await svc.submit('acme', 'lead-qualifier', {
+      sessionId: 'sess-day',
+      data: { role: 'founder', team_size: 20, email: 'lead@acme.io' },
+    });
+    const bookedAt = Date.now();
+    const startIso = '2027-03-15T18:00:00Z'; // a meeting far in the future
+    await svc.booking('acme', 'lead-qualifier', {
+      sessionId: 'sess-day',
+      provider: 'hubspot_meetings',
+      startTime: startIso,
+    });
+
+    const props = await bookingProps();
+    expect(props.sales_date_booked).toBe(bookedDay(bookedAt));
+    // Derived from the meeting instant, not a literal: a hardcoded 2027-03-15
+    // would start failing on 2027-03-15, when the booking day IS the meeting day.
+    expect(props.sales_date_booked).not.toBe(bookedDay(Date.parse(startIso)));
+    expect(props.hours_booking).toBe(String(Date.parse(startIso))); // meeting, unchanged
+  });
+
+  it('computes the day in the destination\'s dateTimezone', async () => {
+    await setHubspotDestination({ ...BOOKING_SYNC_CONFIG, dateTimezone: 'Pacific/Kiritimati' });
+    await svc.submit('acme', 'lead-qualifier', {
+      sessionId: 'sess-tz',
+      data: { role: 'founder', team_size: 20, email: 'lead@acme.io' },
+    });
+    const bookedAt = Date.now();
+    await svc.booking('acme', 'lead-qualifier', {
+      sessionId: 'sess-tz',
+      provider: 'hubspot_meetings',
+      startTime: '2026-08-11T17:30:00Z',
+    });
+
+    const props = await bookingProps();
+    // UTC+14 — the configured zone is honoured, not the process default.
+    expect(props.sales_date_booked).toBe(bookedDay(bookedAt, 'Pacific/Kiritimati'));
+  });
+
+  it('an unusable dateTimezone degrades to UTC rather than failing the row', async () => {
+    await setHubspotDestination({ ...BOOKING_SYNC_CONFIG, dateTimezone: 'Bogota' });
+    await svc.submit('acme', 'lead-qualifier', {
+      sessionId: 'sess-badtz',
+      data: { role: 'founder', team_size: 20, email: 'lead@acme.io' },
+    });
+    const bookedAt = Date.now();
+    await svc.booking('acme', 'lead-qualifier', {
+      sessionId: 'sess-badtz',
+      provider: 'hubspot_meetings',
+      startTime: '2026-08-11T17:30:00Z',
+    });
+
+    const props = await bookingProps(); // asserts the row reached `done`
+    expect(props.sales_date_booked).toBe(String(utcMidnightMs(bookedAt)));
+  });
+
+  // Legacy parity: the pilot logged "startTime unavailable — hours_booking
+  // skipped; sales___date_booked_demo still set". A provider that reports no
+  // start time still tells us a booking happened.
+  it('writes the date with no start time at all, and skips only the hours', async () => {
+    await setHubspotDestination(BOOKING_SYNC_CONFIG);
+    await svc.submit('acme', 'lead-qualifier', {
+      sessionId: 'sess-nostart',
+      data: { role: 'founder', team_size: 20, email: 'lead@acme.io' },
+    });
+    const bookedAt = Date.now();
+    await svc.booking('acme', 'lead-qualifier', {
+      sessionId: 'sess-nostart',
+      provider: 'hubspot_meetings', // no startTime, no Calendly URIs to enrich from
+    });
+
+    const props = await bookingProps();
+    expect(props.sales_date_booked).toBe(bookedDay(bookedAt));
+    expect(props.sales_stage).toBe('demo_booked');
+    expect(props).not.toHaveProperty('hours_booking');
+  });
+
+  // Rows enqueued before `bookedAt` existed are still in the queue at deploy.
+  // The booking_event row this sync is anchored to carries the same moment, so
+  // a pre-fix row is exact rather than approximated.
+  it('a pre-fix row with no bookedAt reads the booking_event it is anchored to', async () => {
+    await setHubspotDestination(BOOKING_SYNC_CONFIG);
+    await svc.submit('acme', 'lead-qualifier', {
+      sessionId: 'sess-legacy',
+      data: { role: 'founder', team_size: 20, email: 'lead@acme.io' },
+    });
+    await svc.booking('acme', 'lead-qualifier', {
+      sessionId: 'sess-legacy',
+      provider: 'hubspot_meetings',
+      startTime: '2026-08-11T17:30:00Z',
+    });
+    // Backdate the event, and the submission to a DIFFERENT day, so the two
+    // candidate fallbacks are distinguishable from each other and from "now".
+    const bookedAt = Date.parse('2026-06-05T09:00:00Z');
+    await db.run(
+      sql`UPDATE booking_event SET created_at = ${bookedAt} WHERE session_id = 'sess-legacy'`,
+    );
+    await db.run(
+      sql`UPDATE submission SET completed_at = ${Date.parse('2026-04-01T09:00:00Z')}
+          WHERE session_id = 'sess-legacy'`,
+    );
+    await patchPayload((p) => delete p.bookedAt);
+
+    const props = await bookingProps();
+    expect(props.sales_date_booked).toBe(String(Date.UTC(2026, 5, 5)));
+  });
+
+  // Both records gone: there is no honest answer, and the delivery clock is the
+  // one answer that must never be given — it looks right and differs between
+  // retries. The date is skipped; everything else still goes out.
+  it('writes no date at all when neither the event nor a submission survives', async () => {
+    await setHubspotDestination(BOOKING_SYNC_CONFIG);
+    await svc.booking('acme', 'lead-qualifier', {
+      sessionId: 'sess-orphan',
+      provider: 'calendly',
+      eventUri: EVENT_URI,
+      inviteeUri: INVITEE_URI,
+      startTime: '2026-08-11T17:30:00Z',
+    });
+    await patchPayload((p) => delete p.bookedAt);
+    await db.run(sql`DELETE FROM booking_event WHERE session_id = 'sess-orphan'`);
+
+    const calls: RecordedCall[] = [];
+    bookingSync.fetchImpl = recordingFetch(calls, {
+      [EVENT_URI]: () => jsonResponse({ resource: { start_time: '2026-08-11T17:30:00Z' } }),
+      [INVITEE_URI]: () => jsonResponse({ resource: { email: 'orphan@corp.io' } }),
+      [HUBSPOT_UPSERT_URL]: () => jsonResponse({ results: [{ id: '1' }] }),
+    });
+    await drainDue();
+
+    const props = (
+      calls.find((c) => c.url === HUBSPOT_UPSERT_URL)!.body as {
+        inputs: Array<{ properties: Record<string, string> }>;
+      }
+    ).inputs[0]!.properties;
+    expect(props).not.toHaveProperty('sales_date_booked'); // absent, not fabricated
+    expect(props.sales_stage).toBe('demo_booked');
+    expect(props.hours_booking).toBe(String(Date.parse('2026-08-11T17:30:00Z')));
+  });
+
+  // Belt and braces: if the event row is gone, the submission still dates it.
+  it('falls back to the submission when even the booking_event is missing', async () => {
+    await setHubspotDestination(BOOKING_SYNC_CONFIG);
+    await svc.submit('acme', 'lead-qualifier', {
+      sessionId: 'sess-noevent',
+      data: { role: 'founder', team_size: 20, email: 'lead@acme.io' },
+    });
+    await svc.booking('acme', 'lead-qualifier', {
+      sessionId: 'sess-noevent',
+      provider: 'hubspot_meetings',
+      startTime: '2026-08-11T17:30:00Z',
+    });
+    await db.run(
+      sql`UPDATE submission SET completed_at = ${Date.parse('2026-04-01T09:00:00Z')}
+          WHERE session_id = 'sess-noevent'`,
+    );
+    await patchPayload((p) => delete p.bookedAt);
+    await db.run(sql`DELETE FROM booking_event WHERE session_id = 'sess-noevent'`);
+
+    const props = await bookingProps();
+    expect(props.sales_date_booked).toBe(String(Date.UTC(2026, 3, 1)));
+  });
+
+  // The fallback must not re-read the clock: two attempts of the SAME row have
+  // to agree, or a retry straddling midnight rewrites the booking's day.
+  it('is stable across retries — the same row delivers the same day twice', async () => {
+    await setHubspotDestination(BOOKING_SYNC_CONFIG);
+    await svc.booking('acme', 'lead-qualifier', {
+      sessionId: 'sess-retry',
+      provider: 'calendly',
+      eventUri: EVENT_URI,
+      inviteeUri: INVITEE_URI,
+    });
+    // No submission at all for this session, and no bookedAt — the case that
+    // used to reach `Date.now()` on every single attempt.
+    await patchPayload((p) => delete p.bookedAt);
+    const bookedAt = Date.parse('2026-07-04T22:00:00Z');
+    await db.run(
+      sql`UPDATE booking_event SET created_at = ${bookedAt} WHERE session_id = 'sess-retry'`,
+    );
+
+    const days: string[] = [];
+    // Each attempt is drained at a LATER clock: a failed attempt schedules its
+    // retry off the clock the worker was GIVEN, so a fixed offset would never
+    // find the row due a second time. The 60s stride is 60x `backoffMs(1)` (1s,
+    // `packages/db/src/outbox.ts`) — if this ever fails with "expected 1,
+    // received 0", the backoff base grew and the stride has to follow.
+    for (const [i, status] of [500, 200].entries()) {
+      const calls: RecordedCall[] = [];
+      bookingSync.fetchImpl = recordingFetch(calls, {
+        [EVENT_URI]: () => jsonResponse({ resource: { start_time: '2026-08-02T10:00:00Z' } }),
+        [INVITEE_URI]: () => jsonResponse({ resource: { email: 'retry@corp.io' } }),
+        // The first attempt fails AFTER the properties are built, so the row
+        // retries and has to recompute the day from scratch.
+        [HUBSPOT_UPSERT_URL]: () =>
+          status === 500 ? jsonResponse({}, 500) : jsonResponse({ results: [{ id: '1' }] }),
+      });
+      const at = Date.now() + BOOKING_SYNC_DELAY_MS + (i + 1) * 60_000;
+      expect(await newWorker().drainOnce(at)).toBe(1);
+      const upsert = calls.find((c) => c.url === HUBSPOT_UPSERT_URL)!;
+      days.push(
+        (upsert.body as { inputs: Array<{ properties: Record<string, string> }> }).inputs[0]!
+          .properties.sales_date_booked!,
+      );
+    }
+    expect(days[0]).toBe(String(Date.UTC(2026, 6, 4)));
+    expect(days[1]).toBe(days[0]);
   });
 });

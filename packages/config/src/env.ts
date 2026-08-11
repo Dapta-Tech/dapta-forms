@@ -202,6 +202,24 @@ export const serverEnvSchema = z.object({
   // requests. This is a write-only ingestion key, never a personal API key.
   PRODUCT_ANALYTICS_KEY: z.string().optional(),
   PRODUCT_ANALYTICS_HOST: z.string().url().default('https://us.i.posthog.com'),
+
+  // Dapta-estate onboarding sync (cloud only) — the `dapta_sync` outbox kind.
+  // On the wizard's first answer and on completion, the API pushes the new
+  // account into the rest of the Dapta estate: mappable answers to the IAM's
+  // onboarding endpoints, then a call to the FlowStudio contact-sync flow that
+  // upserts the HubSpot contact.
+  //
+  // IAM_BASE_URL here is a DELIBERATE REVERSAL of "the API has no IAM_BASE_URL"
+  // (see completeOnboarding): the cohort *probe* still runs in the web, but the
+  // sync is a durable outbox side-effect and those run in the API. The same
+  // IAM_API_KEY value is ALSO read by the web (the probe's `x-api-key`).
+  //
+  // All four unset (the default, and every bare fork) = the feature does not
+  // exist: nothing is enqueued, no third-party request is ever made.
+  IAM_BASE_URL: z.string().url().optional(),
+  IAM_API_KEY: z.string().optional(),
+  DAPTA_SYNC_FLOW_URL: z.string().url().optional(),
+  DAPTA_SYNC_FLOW_KEY: z.string().optional(),
 });
 
 export type ServerEnv = z.infer<typeof serverEnvSchema>;

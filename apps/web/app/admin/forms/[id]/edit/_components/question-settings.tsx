@@ -1,8 +1,9 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import type { FormStep, FormLayout } from '@quill/engine';
+import type { FormStep, FormLayout, FormRevealSize } from '@quill/engine';
 import {
+  FORM_REVEAL_SIZES,
   clampSliderValue,
   defaultFlowGroup,
   nameFields,
@@ -47,6 +48,20 @@ const ALL_ITEMS: GalleryItem[] = GALLERY_GROUPS.flatMap((g) => GALLERY[g]);
 const DEFAULT_REVEAL_MS = 2200;
 const MIN_REVEAL_MS = 500;
 const MAX_REVEAL_MS = 30_000;
+
+/**
+ * The reveal's size scale, built from the engine's enum so a step added there
+ * cannot go missing from one of the two rows that use it (the loader mark and
+ * the copy). Labels stay hand-written — "Huge" is a product word, not `xl`.
+ */
+const REVEAL_SIZE_LABELS: Record<FormRevealSize, keyof BuilderMessages['settings']> = {
+  sm: 'revealSizeSm',
+  md: 'revealSizeMd',
+  lg: 'revealSizeLg',
+  xl: 'revealSizeXl',
+};
+const REVEAL_SIZE_OPTIONS = (bm: BuilderMessages) =>
+  FORM_REVEAL_SIZES.map((value) => ({ value, label: bm.settings[REVEAL_SIZE_LABELS[value]] }));
 
 /** Shared look for the inline slider-bounds warnings (V5-A2). */
 const sliderWarnClass =
@@ -319,6 +334,125 @@ export function QuestionSettings({
               aria-label={bm.settings.revealPrewarm}
             />
           </InlineField>
+
+          <p className="text-2xs font-semibold uppercase tracking-wide text-faint">
+            {bm.settings.revealLook}
+          </p>
+          {/* A stacked Field, not an InlineField: four options leave the label
+              column about one word wide, so a side-by-side row wraps the hint to
+              a single word per line. The three-option rows below still fit. */}
+          <Field label={bm.settings.revealLoader} hint={bm.settings.revealLoaderHint}>
+            <SegmentedToggle
+              value={step.reveal?.loader ?? 'spinner'}
+              onChange={(loader) => onUpdate({ reveal: { ...step.reveal, loader } })}
+              options={[
+                { value: 'spinner' as const, label: bm.settings.revealLoaderSpinner },
+                { value: 'bar' as const, label: bm.settings.revealLoaderBar },
+                { value: 'versus' as const, label: bm.settings.revealLoaderVersus },
+                { value: 'none' as const, label: bm.settings.revealLoaderNone },
+              ]}
+              ariaLabel={bm.settings.revealLoader}
+            />
+          </Field>
+          {/* `none` draws no mark, so a size for it would be a control with
+              nothing to scale — the combination is unreachable rather than
+              merely ignored. */}
+          {/* Stacked like the loader row above, and for the same reason: at four
+              options a side-by-side label column is one word wide. */}
+          {(step.reveal?.loader ?? 'spinner') !== 'none' ? (
+            <Field label={bm.settings.revealLoaderSize}>
+              <SegmentedToggle
+                value={step.reveal?.loaderSize ?? 'md'}
+                onChange={(loaderSize) => onUpdate({ reveal: { ...step.reveal, loaderSize } })}
+                options={REVEAL_SIZE_OPTIONS(bm)}
+                ariaLabel={bm.settings.revealLoaderSize}
+              />
+            </Field>
+          ) : null}
+          <Field label={bm.settings.revealTextSize}>
+            <SegmentedToggle
+              value={step.reveal?.textSize ?? 'md'}
+              onChange={(textSize) => onUpdate({ reveal: { ...step.reveal, textSize } })}
+              options={REVEAL_SIZE_OPTIONS(bm)}
+              ariaLabel={bm.settings.revealTextSize}
+            />
+          </Field>
+          <InlineField
+            label={bm.settings.revealAccentBackground}
+            hint={bm.settings.revealAccentBackgroundHint}
+          >
+            <Switch
+              checked={!!step.reveal?.accentBackground}
+              onCheckedChange={(v) =>
+                onUpdate({ reveal: { ...step.reveal, accentBackground: v || undefined } })
+              }
+              aria-label={bm.settings.revealAccentBackground}
+            />
+          </InlineField>
+          {/* Only the versus layout has two sides to name. */}
+          {step.reveal?.loader === 'versus' ? (
+            <>
+              <Field label={bm.settings.revealVersusYou} hint={bm.settings.revealVersusHint}>
+                <TextField
+                  value={step.reveal?.versusYouLabel ?? ''}
+                  data-testid="step-reveal-versus-you"
+                  onChange={(e) =>
+                    onUpdate({
+                      reveal: { ...step.reveal, versusYouLabel: e.target.value || null },
+                    })
+                  }
+                />
+              </Field>
+              <Field label={bm.settings.revealVersusMatch}>
+                <TextField
+                  value={step.reveal?.versusMatchLabel ?? ''}
+                  data-testid="step-reveal-versus-match"
+                  onChange={(e) =>
+                    onUpdate({
+                      reveal: { ...step.reveal, versusMatchLabel: e.target.value || null },
+                    })
+                  }
+                />
+              </Field>
+              {/* Three reachable states, unlike the two labels above:
+                    null -> the localized default (empty field, shown as the
+                            placeholder — so a Spanish respondent still reads
+                            "Buscando…" even though the author edits in English);
+                    ''   -> no status line at all;
+                    text -> the author's line.
+                  Seeding the INPUT with the localized default would collapse two
+                  of those: the first keystroke freezes the admin's locale into
+                  the config, and `null` becomes unreachable forever after. */}
+              <Field
+                label={bm.settings.revealVersusStatus}
+                hint={bm.settings.revealVersusStatusHint}
+              >
+                <div className="flex items-center gap-2">
+                  <TextField
+                    value={step.reveal?.versusStatusLabel ?? ''}
+                    placeholder={getMessages(clientLocale()).renderer.revealVersusStatus}
+                    data-testid="step-reveal-versus-status"
+                    onChange={(e) =>
+                      onUpdate({ reveal: { ...step.reveal, versusStatusLabel: e.target.value } })
+                    }
+                  />
+                  {step.reveal?.versusStatusLabel != null ? (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        onUpdate({ reveal: { ...step.reveal, versusStatusLabel: null } })
+                      }
+                      className="shrink-0 rounded-sm p-1.5 text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      aria-label={bm.settings.revealVersusStatusReset}
+                      title={bm.settings.revealVersusStatusReset}
+                    >
+                      <i aria-hidden className="pi pi-refresh" style={{ fontSize: 12 }} />
+                    </button>
+                  ) : null}
+                </div>
+              </Field>
+            </>
+          ) : null}
         </section>
       ) : null}
 

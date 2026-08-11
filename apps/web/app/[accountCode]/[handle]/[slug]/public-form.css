@@ -81,18 +81,42 @@
    illegible here, so text uses the form foreground and the accent shows only as
    the tint + hairline bottom border. Mixes against `--background` (the `.pf`
    ground), so it stays correct in both the dark and light themes. */
+/* The promo strip. Every axis is a variable with the pre-feature value as its
+   own fallback, so a config that sets none of them renders byte-identical: the
+   fill is still 12% of the accent over the ground, and the padding/type still
+   come from `--pf-banner-pad` / `--pf-banner-size`, which only the size
+   attribute below ever changes. An authored `--pf-banner-bg` also takes over
+   the border, because a saturated strip with a 45%-accent hairline under it
+   reads as two competing bands rather than one. */
 .pf__banner {
   position: sticky;
   top: 0;
   z-index: 30;
-  background: color-mix(in srgb, var(--pf-primary) 12%, var(--background));
-  color: var(--foreground);
-  border-bottom: 1px solid color-mix(in srgb, var(--pf-primary) 45%, transparent);
-  font-size: 14px;
+  --pf-banner-pad: 12px 20px;
+  --pf-banner-size: 14px;
+  background: var(--pf-banner-bg, color-mix(in srgb, var(--pf-primary) 12%, var(--background)));
+  color: var(--pf-banner-fg, var(--foreground));
+  border-bottom: 1px solid
+    var(--pf-banner-bg, color-mix(in srgb, var(--pf-primary) 45%, transparent));
+  font-size: var(--pf-banner-size);
   font-weight: 600;
   text-align: center;
-  padding: 12px 20px;
+  padding: var(--pf-banner-pad);
   flex-shrink: 0;
+}
+/* Height presets. `md` is the default the rule above already sets, so it is
+   named here only to keep the three legible together. */
+.pf__banner[data-pf-banner-size='sm'] {
+  --pf-banner-pad: 7px 20px;
+  --pf-banner-size: 13px;
+}
+.pf__banner[data-pf-banner-size='md'] {
+  --pf-banner-pad: 12px 20px;
+  --pf-banner-size: 14px;
+}
+.pf__banner[data-pf-banner-size='lg'] {
+  --pf-banner-pad: 18px 24px;
+  --pf-banner-size: 17px;
 }
 
 /* ── Main area — everything below the banner ── */
@@ -1037,7 +1061,11 @@
   }
 }
 
-/* ── Reveal / processing interstitial (generic, templated) ── */
+/* ── Reveal / processing interstitial (generic, templated) ──
+   Sized off two variables so the three scales below move the mark and the copy
+   without any rule needing to know which scale is active. The values declared
+   here are the `md` ones — i.e. exactly what this screen has always rendered —
+   so a reveal with no presentation configured is unchanged. */
 .pf--reveal {
   text-align: center;
 }
@@ -1051,10 +1079,56 @@
   align-items: center;
   justify-content: center;
   padding: 40px 24px;
+  /* The larger sizes are RANGES, not numbers: a fixed px mark that looks right
+     on a laptop is either lost on a wide screen or colliding with its twin on a
+     phone, and the versus row has to hold two marks AND the meter between them
+     at 375px.
+     `md` is the exception and is deliberately the flat, historical 52px. It is
+     the value an ABSENT `loaderSize` resolves to, so anything else here would
+     resize the mark on every reveal already published — and, worse, on every
+     form's `submitting` screen, which renders this same spinner with no reveal
+     config at all and so has no way to opt out. Growing the default is a real
+     product decision; it does not get to happen as a side effect of adding a
+     scale. */
+  --pf-reveal-mark: 52px;
+  --pf-reveal-headline: clamp(22px, 5vw, 28px);
+  --pf-reveal-subtitle: 15px;
+}
+/* Spread around the pinned `md`. `sm` has to sit clearly BELOW 52px or the two
+   smallest steps are 4px apart on a laptop and read as the same choice. */
+.pf-reveal__inner[data-pf-reveal-mark='sm'] {
+  --pf-reveal-mark: clamp(34px, 6vw, 40px);
+}
+.pf-reveal__inner[data-pf-reveal-mark='md'] {
+  --pf-reveal-mark: 52px;
+}
+.pf-reveal__inner[data-pf-reveal-mark='lg'] {
+  --pf-reveal-mark: clamp(64px, 13vw, 104px);
+}
+.pf-reveal__inner[data-pf-reveal-mark='xl'] {
+  --pf-reveal-mark: clamp(84px, 19vw, 168px);
+}
+.pf-reveal__inner[data-pf-reveal-text='sm'] {
+  --pf-reveal-headline: clamp(18px, 4vw, 22px);
+  --pf-reveal-subtitle: 14px;
+}
+.pf-reveal__inner[data-pf-reveal-text='lg'] {
+  --pf-reveal-headline: clamp(28px, 6.4vw, 40px);
+  --pf-reveal-subtitle: 18px;
+}
+.pf-reveal__inner[data-pf-reveal-text='xl'] {
+  --pf-reveal-headline: clamp(34px, 8vw, 54px);
+  --pf-reveal-subtitle: 20px;
+}
+/* The copy carries the screen on its own once there is no mark, so it gets the
+   width the loader would have taken. */
+.pf-reveal__inner[data-pf-reveal-loader='versus'],
+.pf-reveal__inner[data-pf-reveal-loader='none'] {
+  max-width: 560px;
 }
 .pf-reveal__spinner {
-  width: 52px;
-  height: 52px;
+  width: var(--pf-reveal-mark);
+  height: var(--pf-reveal-mark);
   border-radius: 50%;
   border: 4px solid var(--muted);
   border-top-color: var(--pf-primary);
@@ -1067,7 +1141,7 @@
   }
 }
 .pf-reveal__headline {
-  font-size: clamp(22px, 5vw, 28px);
+  font-size: var(--pf-reveal-headline);
   font-weight: 800;
   line-height: 1.2;
   letter-spacing: -0.02em;
@@ -1076,7 +1150,7 @@
   text-wrap: balance;
 }
 .pf-reveal__subtitle {
-  font-size: 15px;
+  font-size: var(--pf-reveal-subtitle);
   color: var(--muted-foreground);
   margin: 0 0 24px;
   line-height: 1.5;
@@ -1095,6 +1169,217 @@
   background: var(--pf-primary);
   border-radius: var(--pf-radius-pill);
   transition: width 0.08s linear;
+}
+
+/* ── Reveal: `versus` loader ──
+   The respondent on one side, the thing being matched on the other, progress
+   between them.
+
+   The two marks are deliberately the same INK/PAPER poles whatever the form's
+   colours are — a known person against an unresolved one only reads if the pair
+   is maximally opposed. Both poles are mixed out of the accent rather than
+   hardcoded, so they stay faintly branded and, crucially, stay a near-black and
+   a near-white on ANY accent: under a lime flood the paper mark must not come
+   out lime, or the "unknown" side disappears into the background. */
+.pf-reveal__versus {
+  --pf-mark-ink: color-mix(in srgb, var(--pf-primary) 12%, #05070a);
+  --pf-mark-paper: color-mix(in srgb, var(--pf-primary) 8%, #ffffff);
+  --pf-mark-halo: color-mix(in srgb, var(--pf-mark-paper) 55%, transparent);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  gap: clamp(14px, 4vw, 32px);
+  width: 100%;
+  margin-top: 8px;
+}
+.pf-reveal__mark {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  margin: 0;
+  flex-shrink: 0;
+}
+/* The halo is two shadows: a tight ring hugging the circle, then a wide soft
+   bloom. One shadow cannot do both — a single large spread reads as a blur, and
+   a single tight one as a plain border. */
+.pf-reveal__mark-dot {
+  width: var(--pf-reveal-mark);
+  height: var(--pf-reveal-mark);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: calc(var(--pf-reveal-mark) * 0.44);
+  font-weight: 700;
+  line-height: 1;
+  /* The ring is a HAIRLINE that separates the disc from the page, not a second
+     shape competing with it — at the largest sizes a proportional stroke read
+     as a grey donut around the mark. The bloom is capped for the same reason:
+     left proportional the two marks' glows met in the middle of the meter. */
+  box-shadow:
+    0 0 0 clamp(1.5px, calc(var(--pf-reveal-mark) * 0.025), 4px) var(--pf-mark-halo),
+    0 0 clamp(14px, calc(var(--pf-reveal-mark) * 0.4), 40px) 0
+      color-mix(in srgb, var(--pf-mark-paper) 30%, transparent);
+}
+.pf-reveal__mark-dot svg {
+  width: 62%;
+  height: 62%;
+}
+.pf-reveal__mark-dot--you {
+  background: var(--pf-mark-ink);
+  color: var(--pf-mark-paper);
+}
+.pf-reveal__mark-dot--match {
+  background: var(--pf-mark-paper);
+  color: var(--pf-mark-ink);
+}
+.pf-reveal__mark-label {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--foreground);
+  max-width: 12ch;
+  text-wrap: balance;
+}
+.pf-reveal__mark-status {
+  margin: -6px 0 0;
+  font-size: 13px;
+  font-weight: 500;
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+  max-width: 14ch;
+  text-wrap: balance;
+  animation: pf-reveal-breathe 1.6s ease-in-out infinite;
+}
+.pf-reveal__versus-mid {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  /* Centred against the marks' DOTS, not their captions: the labels wrap to
+     different heights, and a percentage that drifts with the longer label
+     looks like a layout bug. */
+  /* `min-width` over `min-width: 0`: this column has to keep a readable meter
+     between two marks that never shrink, so it claims its floor first and the
+     row's `gap` gives way instead. */
+  min-width: 76px;
+  flex: 1;
+  max-width: 200px;
+  padding-top: calc(var(--pf-reveal-mark) * 0.24);
+}
+.pf-reveal__pct {
+  position: relative;
+  margin: 0;
+  font-size: calc(var(--pf-reveal-headline) * 0.72);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1;
+  color: var(--foreground);
+}
+/* The sign is set smaller and raised: at the headline's weight a full-size `%`
+   competes with the number it is qualifying. */
+.pf-reveal__pct-sign {
+  font-size: 0.55em;
+  font-weight: 700;
+  vertical-align: 0.12em;
+  margin-left: 0.06em;
+}
+@keyframes pf-reveal-breathe {
+  50% {
+    opacity: 0.35;
+  }
+}
+.pf-reveal__versus .pf-reveal__track {
+  width: 100%;
+  height: 10px;
+  background: color-mix(in srgb, var(--pf-mark-ink) 22%, transparent);
+}
+/* A flat fill made the bar read as a second progress bar rather than the meter
+   BETWEEN the two marks. The gradient runs from the ink mark's colour to the
+   paper one's, so the bar is literally travelling from the respondent toward
+   the match — and it lands on the same two values the marks do, in every
+   colour mode, which is why the flood below does not need to restate it. */
+.pf-reveal__versus .pf-reveal__fill {
+  background: linear-gradient(90deg, var(--pf-mark-ink), var(--pf-mark-paper));
+}
+
+/* ── Reveal: accent flood ──
+   `accentBackground` paints the whole screen, so the copy has to flip to the
+   accent's contrast colour with it — otherwise a dark headline lands on a dark
+   brand colour and the screen is unreadable. `--pf-primary-contrast` is the
+   token the solid button already uses for exactly this pairing. */
+.pf--reveal[data-pf-reveal-bg='accent'] {
+  background: var(--pf-primary);
+}
+.pf--reveal[data-pf-reveal-bg='accent'] .pf-reveal__headline,
+.pf--reveal[data-pf-reveal-bg='accent'] .pf-reveal__subtitle,
+.pf--reveal[data-pf-reveal-bg='accent'] .pf-reveal__pct,
+.pf--reveal[data-pf-reveal-bg='accent'] .pf-reveal__mark-label {
+  color: var(--pf-primary-contrast);
+}
+.pf--reveal[data-pf-reveal-bg='accent'] .pf-reveal__track {
+  background: color-mix(in srgb, var(--pf-primary-contrast) 22%, transparent);
+}
+.pf--reveal[data-pf-reveal-bg='accent'] .pf-reveal__fill {
+  background: var(--pf-primary-contrast);
+}
+.pf--reveal[data-pf-reveal-bg='accent'] .pf-reveal__spinner {
+  border-color: color-mix(in srgb, var(--pf-primary-contrast) 25%, transparent);
+  border-top-color: var(--pf-primary-contrast);
+}
+/* The MARKS are deliberately NOT re-coloured here. They are an ink/paper pair
+   mixed out of the accent already (see `.pf-reveal__versus`), and that pair is
+   what the flood needs: over a lime page the known side stays near-black and
+   the unknown side stays near-white. Repainting them in the accent's own
+   contrast colour — which the rest of this block does to the copy — would
+   collapse the two marks onto the same value. Only their status line and the
+   meter follow the flood. */
+.pf--reveal[data-pf-reveal-bg='accent'] .pf-reveal__mark-status {
+  color: color-mix(in srgb, var(--pf-primary-contrast) 55%, transparent);
+}
+.pf--reveal[data-pf-reveal-bg='accent'] .pf-reveal__versus .pf-reveal__track {
+  background: color-mix(in srgb, var(--pf-mark-ink) 18%, transparent);
+}
+/* The versus meter keeps its ink -> paper gradient under the flood. It has to be
+   restated: the flood's generic `.pf-reveal__fill` rule above is 0,3,0 and sits
+   later in the file, so it out-specified the 0,2,0 versus rule and flattened the
+   gradient to a solid — while the builder canvas went on drawing it. */
+.pf--reveal[data-pf-reveal-bg='accent'] .pf-reveal__versus .pf-reveal__fill {
+  background: linear-gradient(90deg, var(--pf-mark-ink), var(--pf-mark-paper));
+}
+/* The marquee chips take the paper tone here too. Their default `--card` fill is
+   a near-black panel meant to sit on the form's own dark ground; left alone on a
+   flooded page it reads as a row of holes punched in the colour. */
+.pf--reveal[data-pf-reveal-bg='accent'] .pf-logos__chip {
+  background: color-mix(in srgb, var(--pf-primary) 8%, #ffffff);
+  color: color-mix(in srgb, var(--pf-primary) 12%, #05070a);
+  border-color: transparent;
+}
+.pf--reveal[data-pf-reveal-bg='accent'] .pf-logos__label {
+  color: color-mix(in srgb, var(--pf-primary-contrast) 65%, transparent);
+}
+
+/* The bar is a real progress signal, so it keeps moving; the decorative
+   infinite loops — the spin, and the two things that only breathe — stop. */
+@media (prefers-reduced-motion: reduce) {
+  .pf-reveal__spinner,
+  .pf-reveal__mark-status {
+    animation: none;
+  }
+}
+
+@media (max-width: 480px) {
+  /* The row does NOT wrap. It used to, which dropped the meter to its own line
+     and left the two marks sitting against each other — the pairing reads as
+     "you versus the match" only while something separates them, and two
+     touching discs read as one blob. The marks shrink instead (their `clamp()`
+     minimums are sized for exactly this width) and the meter keeps its place
+     between them. */
+  .pf-reveal__versus {
+    gap: 14px;
+  }
+  .pf-reveal__versus-mid {
+    max-width: none;
+  }
 }
 
 /* ── Thank-you / outcome screen ── */
@@ -1255,9 +1540,26 @@
 }
 
 @media (max-width: 480px) {
+  /* Narrow shrinks the strip by re-declaring the VARIABLES, not the properties.
+     Setting `font-size`/`padding` directly here would out-specify nothing and
+     be out-specified by the `[data-pf-banner-size]` presets above — so `md`
+     (the value the default silently is) would shrink on a phone while an
+     explicitly-chosen `md` would not. Same knob, same layer, three sizes. */
   .pf__banner {
-    font-size: 12px;
-    padding: 10px 14px;
+    --pf-banner-pad: 10px 14px;
+    --pf-banner-size: 12px;
+  }
+  .pf__banner[data-pf-banner-size='sm'] {
+    --pf-banner-pad: 6px 14px;
+    --pf-banner-size: 11px;
+  }
+  .pf__banner[data-pf-banner-size='md'] {
+    --pf-banner-pad: 10px 14px;
+    --pf-banner-size: 12px;
+  }
+  .pf__banner[data-pf-banner-size='lg'] {
+    --pf-banner-pad: 14px 16px;
+    --pf-banner-size: 15px;
   }
   .pf__body {
     padding: 24px 16px;
