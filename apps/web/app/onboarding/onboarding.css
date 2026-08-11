@@ -179,6 +179,47 @@
   letter-spacing: 0.1em;
 }
 
+/* --- The phone screen ------------------------------------------------------
+ *
+ * The only screen with buttons. Every other question advances on the choice
+ * itself, but a number is typed a digit at a time and cannot know when the
+ * person is finished.
+ *
+ * The label sits ABOVE the input rather than inside the question, because that
+ * is how Dapta's own signup words it: the heading asks nothing ("Tell us about
+ * you") and the field is labelled plainly. A phrasing with a verb in it —
+ * "what number should we call you on?" — announces a sales call, and the honest
+ * answer to that is no.
+ */
+.ob__label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted-foreground);
+  margin: 0 0 8px;
+}
+
+/* Quiet by design: a skip that competes with the CTA turns a considered choice
+   into a coin flip, and one that hides is a dark pattern. This reads as an
+   available option and not as the recommended one. */
+.ob__skip {
+  display: block;
+  width: 100%;
+  margin-top: 12px;
+  padding: 10px;
+  background: none;
+  border: none;
+  font: inherit;
+  font-size: 14px;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  border-radius: var(--pf-radius-sm);
+  transition: color 0.12s;
+}
+
+.ob__skip:hover {
+  color: var(--foreground);
+}
+
 /* --- The question screens, packed to one viewport --------------------------
  *
  * The renderer stacks single-select options as full-width rows — right for a

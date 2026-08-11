@@ -4,7 +4,9 @@
  * cover SQLite and Postgres.
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { createDb, migrate, sql, type Db } from './index';
+import { jsonParam } from './forms';
 import {
   getAccountOnboarding,
   saveOnboardingProgress,
@@ -79,14 +81,14 @@ describe('saveOnboardingProgress', () => {
 
   it('keeps the ORIGINAL startedAt across later writes', async () => {
     await saveOnboardingProgress(db, ACCOUNT, { role: 'sales', lastStep: 'role' }, 5000);
-    const saved = await saveOnboardingProgress(db, ACCOUNT, { industry: 'software', lastStep: 'industry' }, 9000);
+    const saved = await saveOnboardingProgress(db, ACCOUNT, { industry: 'computer_software', lastStep: 'industry' }, 9000);
     expect(saved?.startedAt).toBe(5000);
   });
 
   it('merges answers instead of replacing them', async () => {
     await saveOnboardingProgress(db, ACCOUNT, { role: 'sales', lastStep: 'role' }, 5000);
-    const saved = await saveOnboardingProgress(db, ACCOUNT, { industry: 'software', lastStep: 'industry' }, 6000);
-    expect(saved).toMatchObject({ role: 'sales', industry: 'software' });
+    const saved = await saveOnboardingProgress(db, ACCOUNT, { industry: 'computer_software', lastStep: 'industry' }, 6000);
+    expect(saved).toMatchObject({ role: 'sales', industry: 'computer_software' });
   });
 
   it('does NOT blank an earlier answer when a later patch omits it', async () => {
@@ -107,11 +109,11 @@ describe('saveOnboardingProgress', () => {
     const saved = await saveOnboardingProgress(
       db,
       ACCOUNT,
-      { role: null, industry: 'software', lastStep: 'industry' },
+      { role: null, industry: 'computer_software', lastStep: 'industry' },
       6000,
     );
     expect(saved?.role).toBe('founder');
-    expect(saved?.industry).toBe('software');
+    expect(saved?.industry).toBe('computer_software');
   });
 
   it('never moves lastStep BACKWARDS', async () => {
@@ -163,7 +165,7 @@ describe('saveOnboardingProgress', () => {
   it('refuses to write once onboarding is COMPLETE', async () => {
     // A stale tab or a retried request must not rewrite the answers of a
     // finished onboarding — the record of what was actually chosen is the point.
-    await claimOnboardingComplete(db, ACCOUNT, 'lead-qualifier', {}, 7000);
+    await claimOnboardingComplete(db, ACCOUNT, 'lead-qualifier', {}, undefined, 7000);
     expect(await saveOnboardingProgress(db, ACCOUNT, { role: 'hr', lastStep: 'role' }, 8000)).toBeNull();
     const state = await getAccountOnboarding(db, ACCOUNT);
     expect(state?.onboarding?.template).toBe('lead-qualifier');
@@ -177,20 +179,20 @@ describe('saveOnboardingProgress', () => {
 
 describe('claimOnboardingComplete — exactly once, ever', () => {
   it('the first caller wins', async () => {
-    expect(await claimOnboardingComplete(db, ACCOUNT, 'customer-feedback', {}, 7000)).toBe(true);
+    expect(await claimOnboardingComplete(db, ACCOUNT, 'customer-feedback', {}, undefined, 7000)).toBe(true);
   });
 
   it('every later caller loses', async () => {
-    await claimOnboardingComplete(db, ACCOUNT, 'customer-feedback', {}, 7000);
-    expect(await claimOnboardingComplete(db, ACCOUNT, 'blank', {}, 8000)).toBe(false);
-    expect(await claimOnboardingComplete(db, ACCOUNT, 'blank', {}, 9000)).toBe(false);
+    await claimOnboardingComplete(db, ACCOUNT, 'customer-feedback', {}, undefined, 7000);
+    expect(await claimOnboardingComplete(db, ACCOUNT, 'blank', {}, undefined, 8000)).toBe(false);
+    expect(await claimOnboardingComplete(db, ACCOUNT, 'blank', {}, undefined, 9000)).toBe(false);
   });
 
   it('the LOSER does not overwrite the winner’s template', async () => {
     // Losing must be inert. If the second call still wrote, the account would
     // report a template it never created a form from.
-    await claimOnboardingComplete(db, ACCOUNT, 'customer-feedback', {}, 7000);
-    await claimOnboardingComplete(db, ACCOUNT, 'blank', {}, 8000);
+    await claimOnboardingComplete(db, ACCOUNT, 'customer-feedback', {}, undefined, 7000);
+    await claimOnboardingComplete(db, ACCOUNT, 'blank', {}, undefined, 8000);
     const state = await getAccountOnboarding(db, ACCOUNT);
     expect(state?.onboarding?.template).toBe('customer-feedback');
     expect(state?.completedAt).toBe(7000);
@@ -201,23 +203,23 @@ describe('claimOnboardingComplete — exactly once, ever', () => {
     // so the two calls serialize there regardless. It is the guarded UPDATE, not
     // the read before it, that makes this single-winner.
     const results = await Promise.all([
-      claimOnboardingComplete(db, ACCOUNT, 'lead-qualifier', {}, 7000),
-      claimOnboardingComplete(db, ACCOUNT, 'application', {}, 7000),
+      claimOnboardingComplete(db, ACCOUNT, 'lead-qualifier', {}, undefined, 7000),
+      claimOnboardingComplete(db, ACCOUNT, 'application', {}, undefined, 7000),
     ]);
     expect(results.filter(Boolean)).toHaveLength(1);
   });
 
   it('preserves the answers gathered along the way', async () => {
     await saveOnboardingProgress(db, ACCOUNT, { role: 'founder', lastStep: 'role' }, 1000);
-    await saveOnboardingProgress(db, ACCOUNT, { industry: 'ecommerce', lastStep: 'industry' }, 2000);
+    await saveOnboardingProgress(db, ACCOUNT, { industry: 'retail', lastStep: 'industry' }, 2000);
     await saveOnboardingProgress(db, ACCOUNT, { useCase: 'leads', lastStep: 'use_case' }, 3000);
-    await claimOnboardingComplete(db, ACCOUNT, 'lead-qualifier', {}, 4000);
+    await claimOnboardingComplete(db, ACCOUNT, 'lead-qualifier', {}, undefined, 4000);
 
     const state = await getAccountOnboarding(db, ACCOUNT);
     expect(state?.onboarding).toMatchObject({
       version: 1,
       role: 'founder',
-      industry: 'ecommerce',
+      industry: 'retail',
       useCase: 'leads',
       template: 'lead-qualifier',
       lastStep: 'template',
@@ -230,13 +232,13 @@ describe('claimOnboardingComplete — exactly once, ever', () => {
   it('completes even when the wizard was never patched', async () => {
     // Someone who lands on the last screen via a restored session still has to
     // be able to finish; a missing blob is not an error state.
-    expect(await claimOnboardingComplete(db, ACCOUNT, 'blank', {}, 7000)).toBe(true);
+    expect(await claimOnboardingComplete(db, ACCOUNT, 'blank', {}, undefined, 7000)).toBe(true);
     const state = await getAccountOnboarding(db, ACCOUNT);
     expect(state?.onboarding).toMatchObject({ version: 1, template: 'blank', startedAt: 7000 });
   });
 
   it('returns false for an account that does not exist', async () => {
-    expect(await claimOnboardingComplete(db, 'acc_nope', 'blank', {}, 1)).toBe(false);
+    expect(await claimOnboardingComplete(db, 'acc_nope', 'blank', {}, undefined, 1)).toBe(false);
   });
 
   /**
@@ -251,12 +253,13 @@ describe('claimOnboardingComplete — exactly once, ever', () => {
       db,
       ACCOUNT,
       'lead-qualifier',
-      { role: 'founder', industry: 'software', useCase: 'leads' },
+      { role: 'founder', industry: 'computer_software', useCase: 'leads' },
+      undefined,
       7000,
     );
     expect((await getAccountOnboarding(db, ACCOUNT))?.onboarding).toMatchObject({
       role: 'founder',
-      industry: 'software',
+      industry: 'computer_software',
       useCase: 'leads',
       template: 'lead-qualifier',
     });
@@ -264,7 +267,7 @@ describe('claimOnboardingComplete — exactly once, ever', () => {
 
   it('keeps a PATCHed answer the completion did not carry', async () => {
     await saveOnboardingProgress(db, ACCOUNT, { role: 'marketing', lastStep: 'role' }, 1000);
-    await claimOnboardingComplete(db, ACCOUNT, 'blank', { useCase: 'other' }, 7000);
+    await claimOnboardingComplete(db, ACCOUNT, 'blank', { useCase: 'other' }, undefined, 7000);
     expect((await getAccountOnboarding(db, ACCOUNT))?.onboarding).toMatchObject({
       role: 'marketing',
       useCase: 'other',
@@ -272,9 +275,81 @@ describe('claimOnboardingComplete — exactly once, ever', () => {
   });
 });
 
+describe('the cohort record — why an answer is missing', () => {
+  it('marks what Dapta holds as a POINTER, not a gap', async () => {
+    // The whole reason this field exists. The IAM has no endpoint that returns a
+    // person's answers yet, so skipping industry and CRM leaves them null for the
+    // entire Dapta cohort. Without a reason recorded beside them, "Dapta has it"
+    // and "we never collected it" are the same null, and in three months nobody
+    // remembers which. With it, the eventual fix is a backfill query.
+    await claimOnboardingComplete(
+      db,
+      ACCOUNT,
+      'blank',
+      { leadSource: 'google_ads', useCase: 'leads' },
+      'dapta',
+      7000,
+    );
+    const blob = (await getAccountOnboarding(db, ACCOUNT))?.onboarding;
+    expect(blob?.cohort).toBe('dapta');
+    expect(blob?.sources).toMatchObject({
+      industry: 'dapta',
+      crm: 'dapta',
+      lead_volume: 'dapta',
+      phone: 'dapta',
+      // The two Dapta cannot answer: no equivalent in its bank, and the one that
+      // preselects a template.
+      lead_source: 'asked',
+      use_case: 'asked',
+    });
+  });
+
+  it('tells a declined answer apart from one never asked', async () => {
+    // A cold signup is SHOWN the phone screen. Passing over it is a fact about a
+    // person; being from Dapta is a fact about where the data lives.
+    await claimOnboardingComplete(
+      db,
+      ACCOUNT,
+      'blank',
+      {
+        industry: 'retail',
+        crm: 'hubspot',
+        leadVolume: '201_500',
+        leadSource: 'outbound',
+        useCase: 'leads',
+      },
+      'cold',
+      7000,
+    );
+    const blob = (await getAccountOnboarding(db, ACCOUNT))?.onboarding;
+    expect(blob?.sources).toMatchObject({
+      phone: 'skipped',
+      industry: 'asked',
+      crm: 'asked',
+      lead_volume: 'asked',
+      lead_source: 'asked',
+    });
+  });
+
+  it('completes without a cohort, recording nothing rather than guessing', async () => {
+    // A caller from before this shipped, or a fork. Metadata is not worth
+    // failing a completion over.
+    expect(await claimOnboardingComplete(db, ACCOUNT, 'blank', {}, undefined, 7000)).toBe(true);
+    const blob = (await getAccountOnboarding(db, ACCOUNT))?.onboarding;
+    expect(blob?.cohort).toBeUndefined();
+    expect(blob?.sources).toBeUndefined();
+  });
+
+  it('does not fail a claim over a cohort it does not recognise', async () => {
+    expect(
+      await claimOnboardingComplete(db, ACCOUNT, 'blank', {}, 'from-the-future' as never, 7000),
+    ).toBe(true);
+  });
+});
+
 describe('recordOnboardingFormId', () => {
   it('records the form the winner built', async () => {
-    await claimOnboardingComplete(db, ACCOUNT, 'blank', {}, 7000);
+    await claimOnboardingComplete(db, ACCOUNT, 'blank', {}, undefined, 7000);
     await recordOnboardingFormId(db, ACCOUNT, 'form_created_by_winner');
     expect((await getAccountOnboarding(db, ACCOUNT))?.onboarding?.formId).toBe(
       'form_created_by_winner',
@@ -282,7 +357,7 @@ describe('recordOnboardingFormId', () => {
   });
 
   it('is write-once — a retry cannot repoint it at a form built later', async () => {
-    await claimOnboardingComplete(db, ACCOUNT, 'blank', {}, 7000);
+    await claimOnboardingComplete(db, ACCOUNT, 'blank', {}, undefined, 7000);
     await recordOnboardingFormId(db, ACCOUNT, 'form_first');
     await recordOnboardingFormId(db, ACCOUNT, 'form_second');
     expect((await getAccountOnboarding(db, ACCOUNT))?.onboarding?.formId).toBe('form_first');
@@ -290,7 +365,7 @@ describe('recordOnboardingFormId', () => {
 
   it('leaves the rest of the blob alone', async () => {
     await saveOnboardingProgress(db, ACCOUNT, { role: 'sales', lastStep: 'role' }, 1000);
-    await claimOnboardingComplete(db, ACCOUNT, 'lead-qualifier', {}, 7000);
+    await claimOnboardingComplete(db, ACCOUNT, 'lead-qualifier', {}, undefined, 7000);
     await recordOnboardingFormId(db, ACCOUNT, 'form_x');
     expect((await getAccountOnboarding(db, ACCOUNT))?.onboarding).toMatchObject({
       role: 'sales',
@@ -325,5 +400,92 @@ describe('the 0011 backfill statement', () => {
     );
     const state = await getAccountOnboarding(db, id);
     expect(state?.completedAt).toBe(4242);
+  });
+});
+
+describe('the 0012 industry rewrite', () => {
+  /**
+   * Run migration 0012 exactly as it ships.
+   *
+   * `migrate()` has already applied it in `beforeEach`, before these rows exist,
+   * so the statement has to be replayed — and it is replayed from the FILE, per
+   * dialect, rather than from a copy pasted into this spec. A copy would pass
+   * forever while the real migration rotted.
+   */
+  async function migrateIndustry(): Promise<void> {
+    const file = new URL(
+      `../migrations/${db.dialect}/0012_onboarding_iam_industries.sql`,
+      import.meta.url,
+    );
+    await db.run(sql.raw(readFileSync(file, 'utf8')));
+  }
+
+  /** A row written by the PREVIOUS build, with one of the eleven old buckets. */
+  async function legacyRow(industry: string): Promise<string> {
+    const run = `${Date.now()}_${n++}`;
+    const id = `acc_ob_ind_${run}`;
+    await db.run(
+      sql`INSERT INTO account (id, code, name, created_at)
+          VALUES (${id}, ${`oi${run}`.slice(0, 20)}, ${'legacy'}, 1000)`,
+    );
+    await db.run(
+      sql`UPDATE account SET onboarding = ${jsonParam({
+        version: 1,
+        role: 'founder',
+        industry,
+        useCase: 'leads',
+        lastStep: 'use_case',
+        stepsSeen: ['role', 'industry', 'use_case'],
+        startedAt: 1000,
+      })} WHERE id = ${id}`,
+    );
+    return id;
+  }
+
+  it('a stale value takes the WHOLE blob down, not just the industry', async () => {
+    // The reason the migration is not optional. `readOnboarding` safeParses the
+    // blob and treats a failure as absent — so one unmigrated enum value loses
+    // the role, the use case and the drop-off bucket with it, silently, on every
+    // read. This is the state the migration exists to prevent.
+    const id = await legacyRow('software');
+    const state = await getAccountOnboarding(db, id);
+    expect(state?.onboarding).toBeNull();
+  });
+
+  it('rewrites every old bucket to a value the schema accepts', async () => {
+    const expected: Record<string, string> = {
+      software: 'computer_software',
+      ecommerce: 'retail',
+      services: 'consumer_services',
+      agency: 'marketing_advertising',
+      health: 'hospital_healthcare',
+      finance: 'financial_services',
+      education: 'education_management',
+      realestate: 'real_estate',
+      // No manufacturing OR logistics entry exists in the IAM bank. Anything
+      // narrower would invent a specificity nobody stated.
+      manufacturing: 'other',
+    };
+    for (const [old, want] of Object.entries(expected)) {
+      const id = await legacyRow(old);
+      await migrateIndustry();
+      const state = await getAccountOnboarding(db, id);
+      expect(state?.onboarding?.industry, `${old} -> ${want}`).toBe(want);
+      // The rest of the blob survives — that is the half `jsonb_set`/`json_set`
+      // buy over rewriting the column.
+      expect(state?.onboarding).toMatchObject({
+        role: 'founder',
+        useCase: 'leads',
+        lastStep: 'use_case',
+        startedAt: 1000,
+      });
+    }
+  });
+
+  it('leaves a value that is already legal alone, and re-runs as a no-op', async () => {
+    const id = await legacyRow('nonprofit');
+    await migrateIndustry();
+    await migrateIndustry();
+    expect((await getAccountOnboarding(db, id))?.onboarding?.industry).toBe('nonprofit');
   });
 });

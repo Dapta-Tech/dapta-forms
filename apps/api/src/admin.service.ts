@@ -16,6 +16,7 @@ import {
 import { canClaimVanitySlug } from '@quill/engine';
 import { getMessages } from '@quill/shared';
 import type {
+  AccountOnboarding,
   FormTemplateId,
   OnboardingCompleteInput,
   OnboardingProgressInput,
@@ -23,10 +24,30 @@ import type {
 import type { HostPrincipal } from './auth.service';
 import { isAdmin } from './permissions';
 import { DisabledEntitlementsProvider, type EntitlementsProvider } from './entitlements.provider';
+import { DaptaSyncEffects } from './dapta-sync-effects';
 import { DB, ENTITLEMENTS, ONBOARDING_ENABLED, PREMIUM_MODE } from './tokens';
 
 /** How long a cached Dapta AI entitlement verdict stays fresh before re-asking upstream. */
 const ENTITLEMENT_TTL_MS = 6 * 3600_000;
+
+/**
+ * The wizard's answer fields, for the early-sync trigger. `role` is absent on
+ * purpose — it is no longer asked, and counting a legacy blob's role would
+ * stop the first NEW answer from reading as first.
+ */
+const ANSWER_FIELDS = [
+  'phone',
+  'industry',
+  'crm',
+  'leadVolume',
+  'leadSource',
+  'useCase',
+] as const satisfies ReadonlyArray<keyof AccountOnboarding>;
+
+/** How many wizard questions this blob has a stored answer for. */
+function answerCount(blob: AccountOnboarding): number {
+  return ANSWER_FIELDS.reduce((n, field) => (blob[field] != null ? n + 1 : n), 0);
+}
 
 /** Authed host/dashboard operations. All are scoped to the caller's account. */
 @Injectable()
@@ -43,6 +64,9 @@ export class AdminService {
     // + default false so every direct construction (tests, forks) behaves as it
     // did before the feature existed.
     @Optional() @Inject(ONBOARDING_ENABLED) private readonly onboardingEnabled: boolean = false,
+    // Explicit class token (esbuild elides type-only imports); optional so a
+    // deployment without the Dapta pipeline — every fork — simply has no sync.
+    @Optional() @Inject(DaptaSyncEffects) private readonly daptaSync?: DaptaSyncEffects,
   ) {}
 
   /**
@@ -85,7 +109,18 @@ export class AdminService {
    */
   async saveOnboarding(p: HostPrincipal, patch: OnboardingProgressInput) {
     if (!this.onboardingEnabled) return null;
-    return saveOnboardingProgress(this.db, p.accountId, patch);
+    const merged = await saveOnboardingProgress(this.db, p.accountId, patch);
+    // The FIRST answer just landed → make the person exist in the CRM now,
+    // not only if they finish. Exactly-one on the MERGED blob: deterministic
+    // without knowing the cohort (the PATCH does not carry it), no extra
+    // query, and a repeat — a refresh re-sending the same answer — at worst
+    // re-enqueues a call that upserts by email anyway. Awaited, not voided:
+    // the enqueue is a LOCAL outbox insert that never rejects, so this costs
+    // one write — the network delivery stays in the worker (invariant 5).
+    if (merged && answerCount(merged) === 1) {
+      await this.daptaSync?.enqueueEarly(p.accountId, p.memberId);
+    }
+    return merged;
   }
 
   /**
@@ -116,11 +151,24 @@ export class AdminService {
     const template = getFormTemplate(templateId);
     if (!template) return { completed: false, formId: null };
 
-    const won = await claimOnboardingComplete(this.db, p.accountId, templateId, {
-      role: input.role,
-      industry: input.industry,
-      useCase: input.useCase,
-    });
+    const won = await claimOnboardingComplete(
+      this.db,
+      p.accountId,
+      templateId,
+      {
+        role: input.role,
+        industry: input.industry,
+        useCase: input.useCase,
+        crm: input.crm,
+        leadVolume: input.leadVolume,
+        leadSource: input.leadSource,
+        phone: input.phone,
+      },
+      // The cohort comes from the WIZARD, which is where the IAM probe runs —
+      // the API has no `IAM_BASE_URL` and giving it one would mean a configmap
+      // owned by another team, for a lookup the web already made.
+      input.cohort,
+    );
     if (!won) {
       // A loser must not create a second form. It still needs somewhere to send
       // the person, so hand back the form the WINNER made — read from the blob
@@ -131,6 +179,12 @@ export class AdminService {
       const state = await getAccountOnboarding(this.db, p.accountId);
       return { completed: false, formId: state?.onboarding?.formId ?? null };
     }
+
+    // The claim is won — the answers are stored — so the estate sync fires
+    // HERE, not after form creation: a failed create keeps the completion
+    // (see below), and it must keep the sync too. Awaited for the same reason
+    // as the early hook: a local never-rejecting insert, not a network call.
+    await this.daptaSync?.enqueueComplete(p.accountId, p.memberId);
 
     // Not guarded by `hasExtraHubspotDestination`, unlike POST /v1/forms: the
     // config here is a static server-authored template from the registry, never

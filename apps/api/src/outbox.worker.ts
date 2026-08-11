@@ -22,6 +22,7 @@ import { EmailEffects, OutboxSkipError } from './email-effects';
 import { DestinationEffects } from './destination-effects';
 import { BookingSyncEffects } from './booking-sync';
 import { AnalyticsCapture } from './analytics-capture';
+import { DaptaSyncDelivery } from './dapta-sync';
 import { DB, ENV } from './tokens';
 
 /**
@@ -61,6 +62,7 @@ export class OutboxWorker implements OnModuleInit, OnModuleDestroy {
     // Optional so existing direct constructions (tests) keep working.
     @Optional() @Inject(BookingSyncEffects) private readonly bookingSync?: BookingSyncEffects,
     @Optional() @Inject(AnalyticsCapture) private readonly analytics?: AnalyticsCapture,
+    @Optional() @Inject(DaptaSyncDelivery) private readonly daptaSync?: DaptaSyncDelivery,
   ) {}
 
   onModuleInit(): void {
@@ -156,6 +158,14 @@ export class OutboxWorker implements OnModuleInit, OnModuleDestroy {
       // failures in a queue shared with emails and CRM deliveries.
       if (!this.analytics) throw new OutboxSkipError('analytics handler not wired');
       await this.analytics.deliver(row.action, row.payload);
+      return;
+    }
+    if (row.kind === 'dapta_sync') {
+      if (row.payload == null) throw new Error('dapta_sync outbox row missing payload');
+      // Same reasoning as analytics: an unwired handler is a deployment that
+      // does not sync into the Dapta estate, never a delivery failure.
+      if (!this.daptaSync) throw new OutboxSkipError('dapta_sync handler not wired');
+      await this.daptaSync.deliver(row.action, row.payload);
       return;
     }
     throw new Error(`unknown outbox kind: ${String(row.kind)}`);

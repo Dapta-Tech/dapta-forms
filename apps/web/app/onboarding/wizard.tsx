@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * The first-run wizard: three questions, then the template the first form is
+ * The first-run wizard: a few questions, then the template the first form is
  * built from.
  *
  * It IS a Dapta form, not a page that resembles one. The chrome is the public
@@ -16,10 +16,16 @@
  * are named from the first paint — seeing that there are three is what stops
  * the second question feeling like the fifth.
  *
- * There is NO skip on the questions. They are three taps, and an answer that can
- * be skipped is an answer most people skip, which would leave the column this
- * whole feature exists to fill mostly empty. The template screen offers "start
- * from scratch" instead, which is an honest choice rather than a way out.
+ * ONE question can be skipped, and only one: the phone number. The rest are a
+ * tap each, and an answer that can be skipped is an answer most people skip,
+ * which would leave the column this whole feature exists to fill mostly empty.
+ * A phone number is the single real keyboard in the flow, so refusing it has to
+ * stay possible — and "asked and declined" is itself a fact worth storing.
+ *
+ * HOW MANY questions there are depends on who is asking. Someone arriving from
+ * Dapta AI already gave Dapta their industry, CRM, lead volume and phone number,
+ * so they see two screens where a cold signup sees six. Nothing here hardcodes a
+ * count — see `cohort`.
  *
  * Every advance patches the server. That is deliberate and is the difference
  * between a funnel and a completion count: the person who quits on question two
@@ -32,7 +38,11 @@ import { StepInput } from '@/components/public/step-input';
 import { FormsLockup, FormsMark } from '@/components/brand/forms-logo';
 import { captureEvent } from '@/lib/product-analytics';
 import { fill, wizardQuestions, wizardTemplates } from '@/lib/onboarding';
-import { USE_CASE_TEMPLATE, type OnboardingUseCase } from '@quill/types';
+import {
+  USE_CASE_TEMPLATE,
+  type OnboardingCohort,
+  type OnboardingUseCase,
+} from '@quill/types';
 import { saveOnboardingStepAction, completeOnboardingAction } from './actions';
 // The renderer's own stylesheet. Every rule in it is scoped under `.pf`, so
 // importing it here cannot leak into the dashboard — and it is what makes this
@@ -46,8 +56,21 @@ type Messages = FormsMessages['admin']['onboarding'];
 const QUESTION_STAGE = 2;
 const TEMPLATE_STAGE = 3;
 
-export function OnboardingWizard({ messages: m, locale }: { messages: Messages; locale: Locale }) {
-  const questions = useMemo(() => wizardQuestions(m), [m]);
+export function OnboardingWizard({
+  messages: m,
+  locale,
+  cohort,
+}: {
+  messages: Messages;
+  locale: Locale;
+  /**
+   * Which set of screens this person gets, resolved server-side against the
+   * Dapta IAM. Passed in rather than fetched here: it decides the FIRST screen,
+   * so it has to be known before the first paint.
+   */
+  cohort: OnboardingCohort;
+}) {
+  const questions = useMemo(() => wizardQuestions(m, cohort), [m, cohort]);
   const templates = useMemo(() => wizardTemplates(m), [m]);
 
   const [index, setIndex] = useState(0);
@@ -56,11 +79,26 @@ export function OnboardingWizard({ messages: m, locale }: { messages: Messages; 
   const [submitting, startSubmit] = useTransition();
   /** Set when the completion could not be made — see `finish`. */
   const [failed, setFailed] = useState(false);
+  /**
+   * The phone field as it is being typed.
+   *
+   * Kept apart from `answers` on purpose: `answers` is what gets PATCHed, and
+   * every other screen writes to it once, at the moment of a decision. A phone
+   * number arrives a digit at a time, so writing it there would send a patch per
+   * keystroke and store half-typed numbers.
+   */
+  const [draft, setDraft] = useState('');
+  /**
+   * Enough digits to be a number at all. Not validation — the input already
+   * builds E.164 and refuses letters — just a guard so the button cannot submit
+   * a bare country code.
+   */
+  const phoneUsable = draft.replace(/\D/g, '').length >= 8;
 
   /** Past the last question is the template screen. */
   const onTemplates = index >= questions.length;
   const current = onTemplates ? null : questions[index];
-  const stepKey = onTemplates ? 'template' : (current?.key ?? 'role');
+  const stepKey = onTemplates ? 'template' : (current?.key ?? questions[0]?.key ?? 'role');
 
   /**
    * The card the previous answer pre-selects. Recomputed rather than stored so
@@ -112,10 +150,14 @@ export function OnboardingWizard({ messages: m, locale }: { messages: Messages; 
     captureEvent('onboarding_step_viewed', {
       step_key: stepKey,
       step_index: index,
+      // The real length, not a constant. The two cohorts run different-length
+      // wizards, so a fixed total would count one against the other's
+      // denominator and make both drop-off rates meaningless.
       total_steps: questions.length + 1,
+      cohort,
     });
     if (index !== 0) return;
-    captureEvent('onboarding_started', { locale });
+    captureEvent('onboarding_started', { locale, cohort });
     // Claim the FIRST screen on arrival. Every later screen has its `lastStep`
     // written by the answer that led to it, but nothing precedes this one — so
     // without this patch, someone who opens the wizard and quits on question one
@@ -125,9 +167,46 @@ export function OnboardingWizard({ messages: m, locale }: { messages: Messages; 
     //
     // Harmless on a RETURN visit even though it re-announces step one: the
     // server only ever advances `lastStep`, so it cannot drag a stored
-    // `template` back to `role` and misfile a finisher as a first-question quit.
-    save({ lastStep: 'role' });
-  }, [stepKey, index, questions.length, locale, save]);
+    // `template` back and misfile a finisher as a first-question quit.
+    //
+    // Names the cohort's OWN first screen, which is `phone` for a cold signup
+    // and `role` for someone from Dapta — hardcoding `role` would have recorded
+    // every cold arrival as having already cleared the phone question.
+    const first = questions[0]?.key;
+    if (first) save({ lastStep: first });
+  }, [stepKey, index, questions, locale, cohort, save]);
+
+  /**
+   * Move to the screen after `from`, recording the one being REACHED.
+   *
+   * Shared by answering and by skipping, so the two can never disagree about
+   * what `lastStep` should say — the bug that would follow is silent and only
+   * shows up as a drop-off bucket that does not add up.
+   */
+  const advanceTo = useCallback(
+    (from: number, patch: Record<string, string | null>) => {
+      const advancing = from + 1;
+      // `lastStep` names the screen being REACHED, which is what makes the
+      // stored value a drop-off bucket rather than a record of the last answer.
+      const reached = questions[advancing]?.key ?? 'template';
+      save({ ...patch, lastStep: reached });
+      setIndex(advancing);
+    },
+    [questions, save],
+  );
+
+  /**
+   * Pass over a question that allows it — the phone screen, and only it.
+   *
+   * The skip is recorded as `null` rather than left absent, because "asked and
+   * declined" and "never asked" are different facts about a person and only one
+   * of them says anything about the question.
+   */
+  const skip = useCallback(() => {
+    if (!current?.skippable) return;
+    captureEvent('onboarding_step_skipped', { step_key: current.key, step_index: index, cohort });
+    advanceTo(index, { ...answers, [current.field]: null });
+  }, [advanceTo, answers, cohort, current, index]);
 
   /** Answer the current question and advance. Choosing IS continuing — one tap. */
   const answer = useCallback(
@@ -144,20 +223,19 @@ export function OnboardingWizard({ messages: m, locale }: { messages: Messages; 
       captureEvent('onboarding_step_answered', {
         step_key: current.key,
         step_index: index,
-        value,
+        // A phone number is PII and this event goes to a shared analytics
+        // project. Every other answer is an enum from a fixed list, so the value
+        // is the whole point; this one says only that it was given.
+        value: current.field === 'phone' ? '<provided>' : value,
+        cohort,
       });
-      const advancing = index + 1;
-      // `lastStep` names the screen being REACHED, which is what makes the
-      // stored value a drop-off bucket rather than a record of the last answer.
-      const reached = questions[advancing]?.key ?? 'template';
       // Every answer so far, not just this one. A patch that never landed — the
       // action swallows its failures by design — is repaired by the next advance
       // instead of leaving a permanent hole in the column, and the merge ignores
       // fields it already has, so re-sending them costs nothing.
-      save({ ...next, lastStep: reached });
-      setIndex(advancing);
+      advanceTo(index, next);
     },
-    [answers, current, index, questions, save],
+    [advanceTo, answers, cohort, current, index],
   );
 
   const back = useCallback(() => setIndex((i) => Math.max(0, i - 1)), []);
@@ -168,6 +246,7 @@ export function OnboardingWizard({ messages: m, locale }: { messages: Messages; 
         template: id,
         recommended: id === recommended,
         use_case: answers.useCase ?? null,
+        cohort,
       });
       setFailed(false);
       // `async` so the scope returns a PROMISE. A non-thenable body ends the
@@ -183,6 +262,14 @@ export function OnboardingWizard({ messages: m, locale }: { messages: Messages; 
           role: answers.role ?? null,
           industry: answers.industry ?? null,
           useCase: answers.useCase ?? null,
+          crm: answers.crm ?? null,
+          leadVolume: answers.leadVolume ?? null,
+          leadSource: answers.leadSource ?? null,
+          phone: answers.phone ?? null,
+          // The cohort travels too, so the server can record WHY the questions
+          // this person never saw are empty. Without it a Dapta account's null
+          // industry is indistinguishable from a gap in our own data.
+          cohort,
           locale,
         });
         // Only a FAILURE returns: every path where the API answered ends in a
@@ -193,7 +280,7 @@ export function OnboardingWizard({ messages: m, locale }: { messages: Messages; 
         if (result && !result.ok) setFailed(true);
       });
     },
-    [answers, locale, recommended],
+    [answers, cohort, locale, recommended],
   );
 
   const stage = onTemplates ? TEMPLATE_STAGE : QUESTION_STAGE;
@@ -247,23 +334,44 @@ export function OnboardingWizard({ messages: m, locale }: { messages: Messages; 
               </div>
 
               <div className="pf__fields">
+                {current.step.type === 'phone' ? <p className="ob__label">{m.phone.label}</p> : null}
                 <StepInput
                   step={current.step}
-                  value={answers[current.field] ?? ''}
+                  value={
+                    current.step.type === 'phone' ? draft : (answers[current.field] ?? '')
+                  }
                   answers={answers}
-                  // Only single-select choices and the dropdown are used here,
-                  // and both report through `onSelect`. The other two are
-                  // required by the shared component's contract and are wired to
-                  // no-ops rather than to `answer`: routing them there would
-                  // make a future step type (a slider, a text field) advance the
-                  // wizard on every keystroke.
+                  // Choices and the dropdown report through `onSelect`, and for
+                  // them choosing IS continuing. `onChange` is wired ONLY for the
+                  // phone step, which cannot auto-advance: a number is typed a
+                  // digit at a time, so advancing on change would leave on the
+                  // first keystroke. `onFieldChange` stays a no-op — no step type
+                  // here is multi-field.
                   onSelect={answer}
-                  onChange={() => {}}
+                  onChange={(v) => setDraft(String(v ?? ''))}
                   onFieldChange={() => {}}
                   dropdownPlaceholder={m.industry.placeholder}
                   dropdownEmpty={m.industry.empty}
                   locale={locale}
                 />
+
+                {/* The phone screen is the only one with buttons, because it is
+                    the only one that cannot know when the person is done. */}
+                {current.step.type === 'phone' ? (
+                  <>
+                    <button
+                      type="button"
+                      className="pf__btn ob__cta"
+                      disabled={!phoneUsable}
+                      onClick={() => answer(draft.trim())}
+                    >
+                      {m.next}
+                    </button>
+                    <button type="button" className="ob__skip" onClick={skip}>
+                      {m.phone.skip}
+                    </button>
+                  </>
+                ) : null}
               </div>
             </div>
           ) : (
