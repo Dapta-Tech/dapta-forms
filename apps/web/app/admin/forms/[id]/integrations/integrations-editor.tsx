@@ -15,7 +15,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Select, type SelectOption } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
-import { GoogleSheetsLogo, ProviderLogo, type LogoProvider } from '@/components/ui/provider-logo';
+import { GoogleSheetsLogo, ProviderLogo } from '@/components/ui/provider-logo';
 import { useToast } from '@/components/toast';
 import { cn } from '@/lib/cn';
 import { bookingLabel } from '@/lib/booking-fields';
@@ -980,7 +980,8 @@ function WebhookCard({
   );
 }
 
-function HubspotCard({
+/** Exported for `integrations-card.spec.tsx` — see the notice-slot cases there. */
+export function HubspotCard({
   state,
   onChange,
   properties,
@@ -1045,21 +1046,25 @@ function HubspotCard({
     [emailSource, state.fieldMappings],
   );
 
-  // A stored SECOND HubSpot destination. It is invisible here (this card edits
-  // the first) and dead at booking time (the booking flow resolves the first
-  // ENABLED one), yet it is still delivering its own mappings at submit — so
-  // its removal on the next save is a real loss the author has to hear about
-  // BEFORE it happens. New configs cannot reach this state: the authoring
-  // write-paths refuse to raise the count.
+  // A stored SECOND HubSpot destination, which the next save deletes.
   //
-  // Rendered in every branch below, not just the full card. The two early
-  // returns are exactly the states where an author would not expect an
-  // integration to exist at all — and the webhook card next door still
-  // autosaves this whole array, which is what performs the collapse.
+  // Its removal is a real loss whichever way the pair is arranged, because the
+  // three readers resolve it three different ways. This card edits the FIRST
+  // regardless of `enabled` (`initialHubspot`); submit delivers EVERY enabled
+  // destination (`destination-effects`); booking resolves the first ENABLED one
+  // (`findHubspotDestination`). So on a disabled-first pair the second is the
+  // one running bookings, and on an enabled pair it is delivering its own
+  // mappings at submit — the copy therefore promises neither, only that
+  // something invisible here is about to be deleted with it. New configs cannot
+  // reach this state: the authoring write-paths refuse to raise the count.
+  //
+  // Goes in `Card`'s `notice` slot, not among its children — children are
+  // hidden when the toggle is off, and a card toggled off is where this matters
+  // most: flipping the switch is itself an edit, and the autosave it triggers
+  // is what performs the collapse.
   const extraHubspotNotice = extraHubspotStored ? (
     <div
       data-testid="hubspot-extra-destination"
-      role="alert"
       className="mt-4 rounded-md border border-amber-500/40 bg-amber-500/10 p-3"
     >
       <p className="text-xs font-medium text-foreground">{m.extraHubspotTitle}</p>
@@ -1646,12 +1651,17 @@ function HubspotCard({
               }
             />
           </Field>
+          {/* The zone check is advisory — the value still saves, and the SERVER's
+              ICU data is what decides. So the message swaps in place of the help
+              rather than blocking, and it carries an id: `aria-invalid` with
+              nothing pointed at announces "invalid" and no reason. Same shape as
+              the webhook URL error above. */}
           <Field
             label={m.bookingDateTimezone}
             help={
               isKnownTimezone(state.bookingSync.dateTimezone)
                 ? m.bookingDateTimezoneHelp
-                : m.bookingDateTimezoneInvalid
+                : undefined
             }
           >
             <Input
@@ -1659,7 +1669,10 @@ function HubspotCard({
               aria-label={m.bookingDateTimezone}
               // A real zone name, so the format is legible without reading the help.
               placeholder={m.bookingDateTimezonePlaceholder}
-              aria-invalid={!isKnownTimezone(state.bookingSync.dateTimezone)}
+              aria-invalid={isKnownTimezone(state.bookingSync.dateTimezone) ? undefined : true}
+              aria-describedby={
+                isKnownTimezone(state.bookingSync.dateTimezone) ? undefined : 'booking-tz-error'
+              }
               onChange={(e) =>
                 onChange({
                   ...state,
@@ -1667,6 +1680,11 @@ function HubspotCard({
                 })
               }
             />
+            {isKnownTimezone(state.bookingSync.dateTimezone) ? null : (
+              <p id="booking-tz-error" role="alert" className="text-xs text-muted-foreground">
+                {m.bookingDateTimezoneInvalid}
+              </p>
+            )}
           </Field>
           <Field label={m.bookingHoursProperty} help={m.bookingHoursPropertyHelp}>
             <PropertyField

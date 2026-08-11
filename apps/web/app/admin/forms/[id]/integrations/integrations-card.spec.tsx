@@ -15,8 +15,11 @@
  */
 import { describe, expect, it } from 'vitest';
 import { isValidElement, type ReactElement, type ReactNode } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import type { ContactKeyReadiness } from '@quill/engine';
 import { getMessages } from '@quill/shared';
 import { Card } from './integrations-card';
+import { HubspotCard } from './integrations-editor';
 
 type AnyProps = Record<string, unknown> & { children?: ReactNode };
 
@@ -68,6 +71,82 @@ describe('integrations Card — the notice slot', () => {
   it('renders nothing extra when there is no notice', () => {
     for (const enabled of [true, false]) {
       expect(byTestId(render(enabled, false), 'a-notice')).toBeUndefined();
+    }
+  });
+});
+
+/**
+ * And the call site. The slot above is only half the fix — the bug was passing
+ * the warning as a CHILD, which the slot cannot prevent on its own. These render
+ * `HubspotCard` for real (it has hooks, so the shallow walker above cannot reach
+ * it) and check the warning survives a switched-off card, which is the shape
+ * that hid it: the tab reads `enabled` off the FIRST stored destination, while
+ * booking resolves the first ENABLED one — so on a disabled-first pair the
+ * invisible second destination is the one running bookings.
+ */
+describe('HubspotCard — where the extra-destination notice goes', () => {
+  const im = getMessages('en').admin.integrations;
+  const ready: ContactKeyReadiness = {
+    ok: true,
+    blocker: null,
+    source: { kind: 'question', key: 'email' },
+  } as ContactKeyReadiness;
+
+  function markup(over: { enabled: boolean; extraHubspotStored: boolean }): string {
+    return renderToStaticMarkup(
+      <HubspotCard
+        state={{
+          enabled: over.enabled,
+          fieldMappings: [],
+          utmMappings: {},
+          scoreProperty: '',
+          dateProperty: '',
+          note: true,
+          valueMaps: [],
+          outcomeProperty: '',
+          staticProperties: [],
+          inferCompanyFromEmail: false,
+          bookingSync: {
+            stageProperty: '',
+            stageValue: '',
+            dateProperty: '',
+            hoursProperty: '',
+            dateTimezone: '',
+          },
+        }}
+        onChange={() => {}}
+        properties={[]}
+        pickerEnabled
+        accountConnected
+        showMapping
+        extraHubspotStored={over.extraHubspotStored}
+        readiness={ready}
+        questions={[{ key: 'email', type: 'email', label: 'Email' }]}
+        m={im}
+      />,
+    );
+  }
+
+  const NOTICE = 'data-testid="hubspot-extra-destination"';
+
+  // The regression, exactly: as a child this vanished with the settings.
+  it('shows the notice on a card that is switched OFF', () => {
+    const html = markup({ enabled: false, extraHubspotStored: true });
+    expect(html).toContain(NOTICE);
+    expect(html).toContain(im.extraHubspotTitle);
+    // The settings really are hidden — otherwise the assertion above is trivial.
+    expect(html).not.toContain('data-testid="hubspot-how"');
+  });
+
+  it('shows the notice on a card that is switched ON', () => {
+    const html = markup({ enabled: true, extraHubspotStored: true });
+    expect(html).toContain(NOTICE);
+    expect(html).toContain('data-testid="hubspot-how"');
+  });
+
+  it('shows nothing on a normal form, switched either way', () => {
+    for (const enabled of [true, false]) {
+      expect(markup({ enabled, extraHubspotStored: false })).not.toContain(NOTICE);
     }
   });
 });
