@@ -2303,7 +2303,7 @@ export const en: FormsMessages = {
       bookingDateTimezoneInvalid: 'Not a timezone name we recognise — the day will be computed in UTC.',
       extraHubspotTitle: 'This form has a second HubSpot connection',
       extraHubspotBody:
-        'This screen only edits the first one, so the other is invisible here — and any edit on this tab saves right away and deletes it, along with any mappings it holds. Check what it maps before you change anything here. To send one answer to several properties, add the properties to the same question above instead.',
+        'This screen only edits the first one, so the other is invisible here — and any edit on this tab saves right away and deletes it, along with any mappings it holds. To send one answer to several properties, add the properties to the same question above instead.',
       connectPromptTitle: 'Connect HubSpot to map this form',
       connectPromptBody:
         'HubSpot isn’t connected for your account yet. Connect it once, then come back to map each question to a contact property.',
@@ -3542,7 +3542,7 @@ export const es: FormsMessages = {
         'No reconocemos ese nombre de zona horaria — el día se calculará en UTC.',
       extraHubspotTitle: 'Este formulario tiene una segunda conexión con HubSpot',
       extraHubspotBody:
-        'Esta pantalla solo edita la primera, así que la otra es invisible acá — y cualquier cambio en esta pestaña se guarda al instante y la elimina, junto con las asignaciones que tenga. Revisa qué asigna antes de cambiar algo acá. Para mandar una respuesta a varias propiedades, agrega las propiedades a la misma pregunta de arriba.',
+        'Esta pantalla solo edita la primera, así que la otra es invisible acá — y cualquier cambio en esta pestaña se guarda al instante y la elimina, junto con las asignaciones que tenga. Para mandar una respuesta a varias propiedades, agrega las propiedades a la misma pregunta de arriba.',
       connectPromptTitle: 'Conecta HubSpot para asignar este formulario',
       connectPromptBody:
         'HubSpot aún no está conectado en tu cuenta. Conéctalo una vez y luego vuelve para asignar cada pregunta a una propiedad de contacto.',

@@ -25,9 +25,12 @@ falls back to UTC rather than failing the delivery.
 
 `@quill/types` also exports `hasExtraHubspotDestination` and
 `ONE_HUBSPOT_DESTINATION_MESSAGE`: a form may be written with at most one
-HubSpot destination. A second one was invisible in the Connect screen and in the
-booking flow — both resolve the FIRST HubSpot destination — so it ran at submit
-time and silently did nothing when a meeting was booked. It was a workaround
+HubSpot destination. A second one is a trap because the three readers resolve
+the pair three different ways: the Connect screen edits the FIRST regardless of
+`enabled`, submit delivers EVERY enabled destination, and booking resolves the
+first ENABLED one. The second is therefore always invisible in the admin, and
+which of the two is doing anything depends on flags that screen never shows —
+on a disabled-first pair it is the second that runs bookings. It was a workaround
 from when a field mapping was one question → one property; a mapping now fans
 out to several, so the case is covered. Enforced on the two paths that AUTHOR a
 destinations array (`PUT /v1/forms/:id/destinations` and `POST /v1/forms`);

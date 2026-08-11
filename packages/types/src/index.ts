@@ -705,13 +705,17 @@ function hubspotCount(destinations: unknown): number {
  * they were doing. So the rule is: never go UP. Staying at two is allowed;
  * Connect still collapses to one when it saves.
  *
- * A second HubSpot destination is a trap rather than a feature. The Connect
- * screen only ever renders the first one (`destinations.find(type === 'hubspot')`),
- * so the second is invisible; the booking flow resolves the first ENABLED one,
- * so a second runs at submit time but silently does nothing when a meeting is
- * booked. (The two resolutions differ on `enabled`, which is what makes a
- * disabled-first pair the sharpest version of the trap — hence a guard that
- * ignores `enabled` entirely.) Forms carrying two were a workaround from when a
+ * A second HubSpot destination is a trap rather than a feature, because the
+ * three readers resolve the pair three different ways:
+ *
+ *   - the Connect screen edits the FIRST, regardless of `enabled`;
+ *   - submit delivers EVERY destination whose `enabled !== false`;
+ *   - booking resolves the FIRST ENABLED one.
+ *
+ * So the second is always invisible in the admin, and which of the two is doing
+ * anything depends on flags that screen never shows — on a disabled-first pair
+ * it is the second that runs bookings. That disagreement is why the guard below
+ * ignores `enabled` entirely. Forms carrying two were a workaround from when a
  * field mapping was one question → one property; a mapping now fans out to
  * several, so the workaround has no remaining use case.
  *

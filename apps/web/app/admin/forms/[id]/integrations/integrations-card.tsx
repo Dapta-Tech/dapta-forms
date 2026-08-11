@@ -1,3 +1,5 @@
+'use client';
+
 import type React from 'react';
 import type { FormsMessages } from '@quill/shared';
 import { Switch } from '@/components/ui/switch';
@@ -9,9 +11,9 @@ type Msgs = FormsMessages['admin']['integrations'];
  * The shell every integration on the Connect tab is drawn in: header, optional
  * provider logo and badge, an on/off switch, and the settings below it.
  *
- * Lives apart from `integrations-editor` so it can be tested on its own — the
- * editor reaches server actions, and importing it pulls `server-only` into a
- * unit test. This file is presentational and has no hooks.
+ * Lives apart from `integrations-editor` because it is presentational and
+ * hook-free, so a test can call it as a plain function and walk the element
+ * tree — the editor's own components use hooks and need a real renderer.
  */
 export function Card({
   title,

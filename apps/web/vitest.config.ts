@@ -13,7 +13,7 @@ export default defineConfig({
       // component that transitively imports a server action pulls it in, and
       // resolution fails before any test runs. Stub it so those components can
       // be unit-tested at all.
-      'server-only': fileURLToPath(new URL('./test/server-only-stub.ts', import.meta.url)),
+      'server-only': fileURLToPath(new URL('./lib/test/server-only-stub.ts', import.meta.url)),
     },
   },
   test: {

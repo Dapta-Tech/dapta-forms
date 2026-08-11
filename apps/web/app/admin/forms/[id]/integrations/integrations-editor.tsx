@@ -1159,6 +1159,10 @@ export function HubspotCard({
     ...questions.filter((q) => !CHOICE_TYPES.has(q.type)),
   ];
 
+  // Once per render, not once per attribute: the check builds an
+  // `Intl.DateTimeFormat` (and throws, on a bad zone) every time it is called.
+  const tzKnown = isKnownTimezone(state.bookingSync.dateTimezone);
+
   function autoMap() {
     const byLower = propertyLookup(properties);
     const alreadyMapped = new Set(
@@ -1652,27 +1656,19 @@ export function HubspotCard({
             />
           </Field>
           {/* The zone check is advisory — the value still saves, and the SERVER's
-              ICU data is what decides. So the message swaps in place of the help
-              rather than blocking, and it carries an id: `aria-invalid` with
-              nothing pointed at announces "invalid" and no reason. Same shape as
-              the webhook URL error above. */}
-          <Field
-            label={m.bookingDateTimezone}
-            help={
-              isKnownTimezone(state.bookingSync.dateTimezone)
-                ? m.bookingDateTimezoneHelp
-                : undefined
-            }
-          >
+              ICU data is what decides. So the message sits ALONGSIDE the help
+              rather than replacing it: the help carries the format, and a person
+              who has just mistyped a zone is exactly who still needs to read it.
+              The message carries an id because `aria-invalid` with nothing
+              pointed at announces "invalid" and no reason. */}
+          <Field label={m.bookingDateTimezone} help={m.bookingDateTimezoneHelp}>
             <Input
               value={state.bookingSync.dateTimezone}
               aria-label={m.bookingDateTimezone}
               // A real zone name, so the format is legible without reading the help.
               placeholder={m.bookingDateTimezonePlaceholder}
-              aria-invalid={isKnownTimezone(state.bookingSync.dateTimezone) ? undefined : true}
-              aria-describedby={
-                isKnownTimezone(state.bookingSync.dateTimezone) ? undefined : 'booking-tz-error'
-              }
+              aria-invalid={tzKnown ? undefined : true}
+              aria-describedby={tzKnown ? undefined : 'booking-tz-error'}
               onChange={(e) =>
                 onChange({
                   ...state,
@@ -1680,8 +1676,8 @@ export function HubspotCard({
                 })
               }
             />
-            {isKnownTimezone(state.bookingSync.dateTimezone) ? null : (
-              <p id="booking-tz-error" role="alert" className="text-xs text-muted-foreground">
+            {tzKnown ? null : (
+              <p id="booking-tz-error" role="alert" className="text-xs text-destructive">
                 {m.bookingDateTimezoneInvalid}
               </p>
             )}

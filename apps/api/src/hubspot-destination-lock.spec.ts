@@ -3,12 +3,15 @@
  * destinations array, end to end on in-memory SQLite through the real
  * controllers → AuthService → db.
  *
- * A second HubSpot destination is a trap, not a feature: the Connect screen and
- * the booking flow both resolve `destinations.find(type === 'hubspot')`, so the
- * second one is invisible in the admin AND silently does nothing when a meeting
- * is booked — while still running at submit time. Forms carrying two came from
- * the era when a field mapping was one question → one property; a mapping now
- * fans out, so the workaround has no remaining use case.
+ * A second HubSpot destination is a trap, not a feature, because the three
+ * readers resolve the pair three different ways: the Connect screen edits the
+ * FIRST regardless of `enabled`, submit delivers EVERY enabled destination, and
+ * booking resolves the first ENABLED one. So the second is always invisible in
+ * the admin, and which of the two is actually doing anything depends on flags
+ * nobody can see from that screen — on a disabled-first pair it is the second
+ * that runs bookings. Forms carrying two came from the era when a field mapping
+ * was one question → one property; a mapping now fans out, so the workaround
+ * has no remaining use case.
  *
  * What this locks down:
  *
@@ -138,6 +141,13 @@ describe('one HubSpot destination per form', () => {
     });
   });
 
+  // The rule is HubSpot-only: the API accepts any number of webhooks, and
+  // `DestinationEffects` delivers all of them. Note this is the SERVER's
+  // contract, not the Connect tab's — that screen authors one webhook
+  // (`initialWebhook` takes the first, `buildDestinations` emits one), so it
+  // collapses a multi-webhook config the same way it collapses a HubSpot pair,
+  // and without the notice the HubSpot case now gets. Out of scope here; a
+  // multi-webhook form is API-authored today.
   it('accepts one HubSpot alongside several webhooks — the rule is HubSpot-only', async () => {
     const out = await destinations.putDestinations(asOwner(), formId, {
       destinations: [

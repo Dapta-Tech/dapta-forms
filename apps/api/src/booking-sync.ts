@@ -294,7 +294,13 @@ export class BookingSyncEffects {
     );
     const createdAt = row == null ? null : Number(row.created_at);
     if (createdAt != null && Number.isFinite(createdAt)) return createdAt;
-    if (submission) return submission.submittedAt;
+    // `submittedAt` ends in its own `|| Date.now()` (see `loadSubmission`) —
+    // harmless there, but here it would smuggle the delivery clock past the
+    // guarantee this method exists to make. Take it only when it is a real
+    // stored timestamp.
+    if (submission && Number.isFinite(submission.submittedAt) && submission.submittedAt > 0) {
+      return submission.submittedAt;
+    }
     // Both records gone — only manual DB surgery gets here. There is no honest
     // answer left, and the delivery clock is the one answer that must never be
     // given: it would look right, and it would differ between retries. Skip the
