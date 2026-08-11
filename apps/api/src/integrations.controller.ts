@@ -26,7 +26,13 @@ import {
   updateFormDestinations,
   upsertIntegration,
 } from '@quill/db';
-import { formDestinationSchema, maskConfigSecrets, type FormDestination } from '@quill/types';
+import {
+  formDestinationSchema,
+  hasExtraHubspotDestination,
+  maskConfigSecrets,
+  ONE_HUBSPOT_DESTINATION_MESSAGE,
+  type FormDestination,
+} from '@quill/types';
 import { WebhookDestination, WebhookHttpError } from '@quill/destinations';
 import type { ServerEnv } from '@quill/config/env';
 import { AuthService, type ReqLike } from './auth.service';
@@ -463,6 +469,22 @@ export class FormDestinationsController {
       if (err instanceof ZodError)
         throw new BadRequestException({ error: 'BAD_REQUEST', message: err.issues[0]?.message });
       throw err;
+    }
+    // At most one HubSpot destination — see `hasExtraHubspotDestination`. Not in
+    // the schema above, so a form that already stores two still READS fine.
+    // Compared against what is STORED, not against 1: the builder's per-question
+    // picker writes the whole array back on every pick, so a count-only guard
+    // would 400 an edit that adds nothing. Webhooks are unaffected.
+    // Account-scoped, so a foreign or missing id is a 404 here — BEFORE the
+    // guard, or a bad body would answer 400 for a form the caller cannot see.
+    const before = await getFormById(this.db, p.accountId, id);
+    if (!before) throw new NotFoundException({ error: 'NOT_FOUND', message: 'Not found.' });
+    const stored = (before.config as { destinations?: unknown } | null)?.destinations;
+    if (hasExtraHubspotDestination(destinations, stored)) {
+      throw new BadRequestException({
+        error: 'BAD_REQUEST',
+        message: ONE_HUBSPOT_DESTINATION_MESSAGE,
+      });
     }
     const out = await updateFormDestinations(this.db, p.accountId, id, destinations);
     if (!out.ok) throw new NotFoundException({ error: 'NOT_FOUND', message: 'Not found.' });

@@ -83,8 +83,15 @@ function inviteeAnswers(details: InviteeDetails): Record<string, string> {
  *      answers for the session),
  *   4. builds the configured booking properties — `stageProperty` = stageValue,
  *      `hoursProperty` = meeting start epoch-ms, `dateProperty` = UTC-midnight
- *      epoch-ms of the meeting-start day (HubSpot `date` properties require
- *      midnight UTC) — and upserts the contact by email.
+ *      epoch-ms of the day the lead BOOKED, in `dateTimezone` (HubSpot `date`
+ *      properties require midnight UTC) — and upserts the contact by email.
+ *
+ * The two time properties answer different questions and are gated
+ * differently. `hoursProperty` is *when the meeting is*, so it needs a start
+ * time and is skipped without one. `dateProperty` is *when the booking
+ * happened*, which is known unconditionally — it is what monthly "meetings
+ * booked" reporting counts by, and stamping it with the meeting's day would
+ * push a booking made on the 31st into next month.
  *
  * Failure semantics match the outbox contract: a RETRYABLE transport failure
  * (network, HTTP 429/5xx) THROWS so the worker retries with backoff; a
@@ -181,11 +188,20 @@ export class BookingSyncEffects {
     // --- Build the configured booking properties ------------------------------
     const properties: Record<string, string> = {};
     if (hasStage && sync) properties[sync.stageProperty!.trim()] = sync.stageValue!.trim();
-    if (sync && startMs != null && Number.isFinite(startMs)) {
-      if (sync.hoursProperty?.trim()) properties[sync.hoursProperty.trim()] = String(startMs);
-      if (sync.dateProperty?.trim()) {
-        properties[sync.dateProperty.trim()] = String(utcMidnightMs(startMs));
+    // The booking DAY — when the lead booked, not when the meeting is. Deliberately
+    // NOT gated on `startMs`: a provider that reports no start time still tells us
+    // a booking happened, and that is the whole fact this property records.
+    if (sync?.dateProperty?.trim()) {
+      const bookedAtMs = payload.bookedAt ?? (await this.bookedAtFallback(payload, submission));
+      if (bookedAtMs != null) {
+        properties[sync.dateProperty.trim()] = String(
+          dayMidnightMs(bookedAtMs, sync.dateTimezone, this.log),
+        );
       }
+    }
+    // The meeting START — only knowable once a start time resolved.
+    if (sync?.hoursProperty?.trim() && startMs != null && Number.isFinite(startMs)) {
+      properties[sync.hoursProperty.trim()] = String(startMs);
     }
 
     // Per-account HubSpot token (connected → decrypted), else the env fallback.
@@ -239,8 +255,10 @@ export class BookingSyncEffects {
         : false;
 
     if (!wroteBooking && !syncedAnswers) {
+      // "writable", not "configured": an hoursProperty with no resolvable start
+      // time is configured and still contributes nothing.
       throw new OutboxSkipError(
-        'booking sync: nothing to write (no meeting start time resolvable and no stage configured)',
+        'booking sync: nothing to write (no booking properties writable and no answers to sync)',
       );
     }
     this.log.log(
@@ -248,6 +266,50 @@ export class BookingSyncEffects {
         `${wroteBooking ? `contact updated [${Object.keys(properties).join(', ')}]` : 'no booking properties configured'}` +
         `${syncedAnswers ? ' + submission answers' : ''}`,
     );
+  }
+
+  /**
+   * When the booking happened, for a row enqueued BEFORE the payload carried
+   * `bookedAt` (in-flight at deploy). The `booking_event` row this sync is for
+   * is stamped with exactly that moment, so read it — the same value a fresh
+   * payload would have carried, and a stable one under retry.
+   *
+   * The delivery clock is the last resort and must stay unreachable in practice:
+   * the outbox row is anchored to this booking event, so the row exists unless
+   * someone deleted it, and re-reading the clock on every attempt would let two
+   * retries straddling midnight record two different days for one booking.
+   */
+  private async bookedAtFallback(
+    payload: BookingSyncPayload,
+    submission: SubmissionRow | null,
+  ): Promise<number | null> {
+    // A primary-key lookup, narrowed by `form_id` as well so every read in this
+    // file stays inside the form the account gate above already resolved. A DB
+    // error is left to THROW: the outbox contract says a transport failure
+    // retries, and swallowing it here would quietly stamp a different, entirely
+    // plausible day instead.
+    const row = await this.db.get<{ created_at: number }>(
+      sql`SELECT created_at FROM booking_event
+          WHERE id = ${payload.bookingEventId} AND form_id = ${payload.formId} LIMIT 1`,
+    );
+    const createdAt = row == null ? null : Number(row.created_at);
+    if (createdAt != null && Number.isFinite(createdAt)) return createdAt;
+    // `submittedAt` ends in its own `|| Date.now()` (see `loadSubmission`) —
+    // harmless there, but here it would smuggle the delivery clock past the
+    // guarantee this method exists to make. Take it only when it is a real
+    // stored timestamp.
+    if (submission && Number.isFinite(submission.submittedAt) && submission.submittedAt > 0) {
+      return submission.submittedAt;
+    }
+    // Both records gone — only manual DB surgery gets here. There is no honest
+    // answer left, and the delivery clock is the one answer that must never be
+    // given: it would look right, and it would differ between retries. Skip the
+    // property; the stage stamp and the meeting time still go out, and an
+    // absent date is something a human can see and correct.
+    this.log.warn(
+      `booking sync: booking ${payload.bookingEventId} has no booked-at and no submission — booking day not written`,
+    );
+    return null;
   }
 
   /**
@@ -461,6 +523,48 @@ function adapterResolvableEmail(
 export function utcMidnightMs(epochMs: number): number {
   const d = new Date(epochMs);
   return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+}
+
+/**
+ * UTC-midnight epoch-ms of the calendar day `epochMs` falls on **in `timezone`**
+ * — the value a HubSpot `date` property takes, for the day a human in that zone
+ * would name. Blank/absent zone = UTC (the platform default; this product is
+ * self-hosted and has no business assuming anyone's office).
+ *
+ * An unrecognised zone WARNS and falls back to UTC rather than throwing: a typo
+ * in a config field must not turn a delivery into a retry loop, and a day that
+ * is off by hours beats no booking record at all.
+ */
+export function dayMidnightMs(epochMs: number, timezone?: string, log?: Logger): number {
+  const zone = timezone?.trim();
+  if (zone) {
+    try {
+      // `formatToParts` and not a formatted string: reading the parts BY TYPE is
+      // locale-independent, where parsing "YYYY-MM-DD" assumes an ICU build that
+      // renders `en-CA` in ISO order. On a small-icu Node it does not, and every
+      // zone would degrade to UTC without anything looking wrong.
+      const parts = new Intl.DateTimeFormat('en-CA', {
+        timeZone: zone,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      }).formatToParts(new Date(epochMs));
+      const at = (type: string) => Number(parts.find((p) => p.type === type)?.value);
+      const [y, m, d] = [at('year'), at('month'), at('day')];
+      if (Number.isFinite(y) && Number.isFinite(m) && Number.isFinite(d)) {
+        return Date.UTC(y, m - 1, d);
+      }
+    } catch {
+      // Fall through to UTC.
+    }
+    // The zone is author-entered config, never PII — naming it is what makes the
+    // warning actionable. Quoted through JSON so an author cannot smuggle a
+    // newline into the log and forge a line of their own.
+    log?.warn(
+      `booking sync: unusable dateTimezone ${JSON.stringify(zone)} — booking day computed in UTC instead`,
+    );
+  }
+  return utcMidnightMs(epochMs);
 }
 
 /** True only for https URLs on the Calendly API host (bearer-token guard). */

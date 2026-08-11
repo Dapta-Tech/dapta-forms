@@ -9,7 +9,7 @@
  * has somewhere obvious to prove the same thing.
  */
 import { describe, expect, it } from 'vitest';
-import { formConfigSchema } from './index';
+import { formConfigSchema, hasExtraHubspotDestination } from './index';
 
 /** The smallest config the schema accepts — one step, nothing configured. */
 function baseConfig() {
@@ -118,5 +118,82 @@ describe('formConfigSchema — reveal presentation (additive)', () => {
     expect(
       formConfigSchema.safeParse({ ...baseConfig(), reveal: { durationMs: 30_001 } }).success,
     ).toBe(false);
+  });
+});
+
+/**
+ * The one-HubSpot rule is a WRITE-path predicate, not a schema refinement, so
+ * it gets tested where it lives. What matters most here is the false cases: it
+ * is called on request bodies, so anything that is not a well-formed array of
+ * destination objects must answer "no extra" rather than throw and turn a bad
+ * request into a 500.
+ */
+describe('hasExtraHubspotDestination', () => {
+  const hubspot = { type: 'hubspot', enabled: true, settings: {} };
+  const webhook = { type: 'webhook', enabled: true, settings: { url: 'https://x.test/h' } };
+
+  it('is true only from the second HubSpot entry onwards', () => {
+    expect(hasExtraHubspotDestination([])).toBe(false);
+    expect(hasExtraHubspotDestination([hubspot])).toBe(false);
+    expect(hasExtraHubspotDestination([hubspot, hubspot])).toBe(true);
+    expect(hasExtraHubspotDestination([hubspot, hubspot, hubspot])).toBe(true);
+  });
+
+  it('counts HubSpot entries wherever they sit, and ignores webhooks', () => {
+    expect(hasExtraHubspotDestination([webhook, webhook, webhook])).toBe(false);
+    expect(hasExtraHubspotDestination([webhook, hubspot, webhook])).toBe(false);
+    expect(hasExtraHubspotDestination([webhook, hubspot, webhook, hubspot])).toBe(true);
+  });
+
+  // `enabled` is deliberately not consulted: a disabled first + enabled second
+  // is the sharpest form of the trap, since the two readers disagree on it.
+  it('ignores `enabled` entirely', () => {
+    expect(hasExtraHubspotDestination([{ ...hubspot, enabled: false }, hubspot])).toBe(true);
+  });
+
+  it('never throws on input that is not a destinations array', () => {
+    for (const junk of [undefined, null, {}, 'hubspot', 42, [null], [undefined], ['hubspot']]) {
+      expect(hasExtraHubspotDestination(junk)).toBe(false);
+    }
+    // Two junk entries next to two real ones must still be caught.
+    expect(hasExtraHubspotDestination([null, hubspot, 'x', hubspot])).toBe(true);
+  });
+
+  /**
+   * The rule is "never go UP", because screens that edit ONE field write the
+   * whole array back. Without the comparison, a legacy form's every unrelated
+   * save is a 400 and its Build tab stops working.
+   */
+  describe('compared against what is stored', () => {
+    it('allows a legacy pair to round-trip unchanged', () => {
+      expect(hasExtraHubspotDestination([hubspot, hubspot], [hubspot, hubspot])).toBe(false);
+    });
+
+    it('allows a legacy form to collapse toward one', () => {
+      expect(hasExtraHubspotDestination([hubspot], [hubspot, hubspot])).toBe(false);
+    });
+
+    it('refuses any increase', () => {
+      expect(hasExtraHubspotDestination([hubspot, hubspot], [hubspot])).toBe(true);
+      expect(hasExtraHubspotDestination([hubspot, hubspot], [])).toBe(true);
+      expect(hasExtraHubspotDestination([hubspot, hubspot, hubspot], [hubspot, hubspot])).toBe(true);
+    });
+
+    it('never lets a stored violation authorise a bigger one', () => {
+      // Three is refused even though two are already stored.
+      expect(hasExtraHubspotDestination([hubspot, hubspot, hubspot], [hubspot, hubspot])).toBe(true);
+    });
+
+    it('treats an absent or unreadable stored value as nothing stored', () => {
+      expect(hasExtraHubspotDestination([hubspot, hubspot], undefined)).toBe(true);
+      expect(hasExtraHubspotDestination([hubspot, hubspot], null)).toBe(true);
+      expect(hasExtraHubspotDestination([hubspot, hubspot], 'nonsense')).toBe(true);
+      // One is always fine, whatever is stored.
+      expect(hasExtraHubspotDestination([hubspot], undefined)).toBe(false);
+    });
+
+    it('still ignores webhooks on both sides', () => {
+      expect(hasExtraHubspotDestination([webhook, webhook, hubspot], [hubspot])).toBe(false);
+    });
   });
 });

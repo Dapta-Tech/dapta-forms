@@ -132,6 +132,10 @@ export class AdminService {
       return { completed: false, formId: state?.onboarding?.formId ?? null };
     }
 
+    // Not guarded by `hasExtraHubspotDestination`, unlike POST /v1/forms: the
+    // config here is a static server-authored template from the registry, never
+    // caller input, and no template declares `destinations` at all. If one ever
+    // does, this is the third authoring path and it needs the same check.
     const created = await createForm(
       this.db,
       p.accountId,

@@ -1062,9 +1062,23 @@ export interface FormsMessages {
       bookingSync: string;
       bookingSyncHelp: string;
       bookingStageProperty: string;
+      /** What the fixed stage value is FOR — the card's least obvious control. */
+      bookingStagePropertyHelp: string;
       bookingStageValue: string;
       bookingDateProperty: string;
+      /** The distinction the whole property turns on: booked day, not meeting day. */
+      bookingDatePropertyHelp: string;
       bookingHoursProperty: string;
+      bookingHoursPropertyHelp: string;
+      bookingDateTimezone: string;
+      bookingDateTimezoneHelp: string;
+      /** A sample IANA zone — the same in both locales, but authored not hardcoded. */
+      bookingDateTimezonePlaceholder: string;
+      /** Shown under the field when the browser cannot resolve the zone typed. */
+      bookingDateTimezoneInvalid: string;
+      /** Legacy configs only: a stored second HubSpot destination this tab will drop. */
+      extraHubspotTitle: string;
+      extraHubspotBody: string;
       // Account-connection gating + Typeform-style mapping (per-form)
       connectPromptTitle: string;
       connectPromptBody: string;
@@ -2273,11 +2287,23 @@ export const en: FormsMessages = {
         'When the respondent uses a work email, fill the company and website properties from its domain — free-mail domains (gmail, outlook…) are skipped, and mapped values are never overwritten.',
       bookingSync: 'Booking sync',
       bookingSyncHelp:
-        'When a respondent books a meeting from an outcome page, stamp these contact properties with the booking facts. Leave a field blank to skip it.',
+        'When a respondent books a meeting from a scheduler step, stamp these contact properties with the booking facts. Leave a field blank to skip it.',
       bookingStageProperty: 'Stage property',
+      bookingStagePropertyHelp:
+        'Optional: stamp this fixed value on the chosen property every time someone books (e.g. Lead Status → Demo booked).',
       bookingStageValue: 'Stage value',
       bookingDateProperty: 'Booking date property',
+      bookingDatePropertyHelp: 'Calendar day the lead booked (not the meeting day).',
       bookingHoursProperty: 'Meeting time property',
+      bookingHoursPropertyHelp: 'Date and time the meeting starts, from the scheduler.',
+      bookingDateTimezone: 'Day timezone',
+      bookingDateTimezoneHelp:
+        'IANA timezone the booking day is computed in (e.g. America/Bogota). Blank = UTC.',
+      bookingDateTimezonePlaceholder: 'America/Bogota',
+      bookingDateTimezoneInvalid: 'Not a timezone name we recognise — the day will be computed in UTC.',
+      extraHubspotTitle: 'This form has a second HubSpot connection',
+      extraHubspotBody:
+        'This screen only edits the first one, so the other is invisible here — and any edit on this tab saves right away and deletes it, along with any mappings it holds. To send one answer to several properties, add the properties to the same question above instead.',
       connectPromptTitle: 'Connect HubSpot to map this form',
       connectPromptBody:
         'HubSpot isn’t connected for your account yet. Connect it once, then come back to map each question to a contact property.',
@@ -3497,11 +3523,26 @@ export const es: FormsMessages = {
         'Cuando la persona usa un email de trabajo, rellena las propiedades de empresa y sitio web a partir de su dominio — los dominios gratuitos (gmail, outlook…) se omiten y los valores mapeados nunca se sobrescriben.',
       bookingSync: 'Sincronización de reservas',
       bookingSyncHelp:
-        'Cuando la persona reserva una reunión desde una página de resultado, estampa estas propiedades del contacto con los datos de la reserva. Deja un campo en blanco para omitirlo.',
+        'Cuando la persona agenda una reunión desde un paso de calendario, estampa estas propiedades del contacto con los datos de la reserva. Deja un campo en blanco para omitirlo.',
       bookingStageProperty: 'Propiedad de etapa',
+      bookingStagePropertyHelp:
+        'Opcional: escribe este valor fijo en la propiedad elegida cada vez que alguien agenda (ej. Lead Status → Demo agendada).',
       bookingStageValue: 'Valor de etapa',
       bookingDateProperty: 'Propiedad de fecha de reserva',
+      bookingDatePropertyHelp:
+        'Día calendario en que el lead agendó (no el día de la reunión).',
       bookingHoursProperty: 'Propiedad de hora de la reunión',
+      bookingHoursPropertyHelp:
+        'Fecha y hora de inicio de la reunión, según el calendario.',
+      bookingDateTimezone: 'Zona horaria del día',
+      bookingDateTimezoneHelp:
+        'Zona horaria IANA para calcular el día de agendado (ej. America/Bogota). Vacío = UTC.',
+      bookingDateTimezonePlaceholder: 'America/Bogota',
+      bookingDateTimezoneInvalid:
+        'No reconocemos ese nombre de zona horaria — el día se calculará en UTC.',
+      extraHubspotTitle: 'Este formulario tiene una segunda conexión con HubSpot',
+      extraHubspotBody:
+        'Esta pantalla solo edita la primera, así que la otra es invisible acá — y cualquier cambio en esta pestaña se guarda al instante y la elimina, junto con las asignaciones que tenga. Para mandar una respuesta a varias propiedades, agrega las propiedades a la misma pregunta de arriba.',
       connectPromptTitle: 'Conecta HubSpot para asignar este formulario',
       connectPromptBody:
         'HubSpot aún no está conectado en tu cuenta. Conéctalo una vez y luego vuelve para asignar cada pregunta a una propiedad de contacto.',

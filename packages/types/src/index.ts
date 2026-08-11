@@ -644,13 +644,19 @@ export const hubspotDestinationSchema = z.object({
   inferCompanyFromEmail: z.boolean().optional(),
   /**
    * Booking sync — which contact properties receive the booking facts when a
-   * visitor books a meeting through an outcome's scheduling handoff (the
-   * `booking_sync` outbox flow). All optional; absent = booking sync is a
-   * no-op for this destination.
+   * visitor books a meeting through a `scheduler` step (the `booking_sync`
+   * outbox flow). All optional; absent = booking sync is a no-op for this
+   * destination.
    *  - `stageProperty` is set to `stageValue` verbatim (e.g. a sales-stage
    *    enum internal value) — the "demo booked" stage stamp.
-   *  - `dateProperty` receives the meeting-start CALENDAR DAY as UTC-midnight
-   *    epoch-ms (HubSpot `date`-type properties require midnight UTC).
+   *  - `dateProperty` receives the CALENDAR DAY THE LEAD BOOKED ON as
+   *    UTC-midnight epoch-ms (HubSpot `date`-type properties require midnight
+   *    UTC). The day the booking happened, NOT the day of the meeting — the
+   *    two differ whenever someone books ahead, and this property is what
+   *    monthly "meetings booked" reporting counts by.
+   *  - `dateTimezone` is the IANA zone that day is computed in. Blank/absent =
+   *    UTC, the platform default. A portal reporting in `America/Bogota` needs
+   *    it set, or every booking from 19:00 local onwards lands on tomorrow.
    *  - `hoursProperty` receives the exact meeting start as epoch-ms (a
    *    HubSpot `datetime`-type property).
    */
@@ -660,6 +666,8 @@ export const hubspotDestinationSchema = z.object({
       stageValue: z.string().max(200).optional(),
       dateProperty: z.string().max(200).optional(),
       hoursProperty: z.string().max(200).optional(),
+      /** IANA zone the booking DAY is computed in (`dateProperty`). Blank = UTC. */
+      dateTimezone: z.string().max(64).optional(),
     })
     .optional(),
 });
@@ -670,6 +678,65 @@ export const formDestinationSchema = z.discriminatedUnion('type', [
   hubspotDestinationSchema,
 ]);
 export type FormDestination = z.infer<typeof formDestinationSchema>;
+
+/** Rejection message for a second HubSpot destination (see `hasExtraHubspotDestination`). */
+export const ONE_HUBSPOT_DESTINATION_MESSAGE =
+  'Only one HubSpot destination per form — map several properties from the same question instead.';
+
+/** How many HubSpot entries a (loosely typed) destinations array carries. */
+function hubspotCount(destinations: unknown): number {
+  if (!Array.isArray(destinations)) return 0;
+  let n = 0;
+  for (const d of destinations) if (isRecord(d) && d.type === 'hubspot') n += 1;
+  return n;
+}
+
+/**
+ * True when a proposed destination list would ADD a HubSpot entry beyond the
+ * first — the thing no form may be authored with.
+ *
+ * The comparison against `stored` is load-bearing, not defensive. Several
+ * screens edit one field and write the WHOLE array back (the builder's
+ * per-question property picker and its field-key rename both do), so a form
+ * that already carries two round-trips two on every unrelated save. A guard on
+ * the count alone would reject those writes and make the per-question picker
+ * unusable on precisely the forms this rule exists to clean up — while telling
+ * the author to "map several properties from the same question", which is what
+ * they were doing. So the rule is: never go UP. Staying at two is allowed;
+ * Connect still collapses to one when it saves.
+ *
+ * A second HubSpot destination is a trap rather than a feature, because the
+ * three readers resolve the pair three different ways:
+ *
+ *   - the Connect screen edits the FIRST, regardless of `enabled`;
+ *   - submit delivers EVERY destination whose `enabled !== false`;
+ *   - booking resolves the FIRST ENABLED one.
+ *
+ * So the second is always invisible in the admin, and which of the two is doing
+ * anything depends on flags that screen never shows — on a disabled-first pair
+ * it is the second that runs bookings. That disagreement is why the guard below
+ * ignores `enabled` entirely. Forms carrying two were a workaround from when a
+ * field mapping was one question → one property; a mapping now fans out to
+ * several, so the workaround has no remaining use case.
+ *
+ * Deliberately NOT a `formConfigSchema` refinement: this is an AUTHORING rule,
+ * and folding it into the parse would make the stored configs of forms that
+ * already carry two stop loading — breaking reads and deliveries for exactly
+ * the forms that need fixing. Write paths call this; readers stay tolerant.
+ *
+ * Duplicating a form deliberately does NOT call this. A duplicate copies stored
+ * state rather than authoring new state, and refusing to copy a form would take
+ * the legacy forms hostage instead of fixing them — while silently dropping the
+ * extra destination would delete a delivery that IS still running at submit
+ * time. The copy therefore inherits the violation, and gets fixed the same way
+ * the original does: by opening Connect.
+ */
+export function hasExtraHubspotDestination(destinations: unknown, stored?: unknown): boolean {
+  const next = hubspotCount(destinations);
+  // One is always fine. Past that, only an INCREASE is refused — and an absent
+  // or unreadable `stored` counts as zero, so a create refuses anything over one.
+  return next > 1 && next > hubspotCount(stored);
+}
 
 /**
  * Sentinel returned in place of a stored webhook signing secret on every ADMIN
