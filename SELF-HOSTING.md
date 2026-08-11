@@ -213,6 +213,19 @@ HMAC secret) — no environment variable.
 | `ENTITLEMENTS_API_URL` | _(unset)_ | when `PREMIUM_FEATURES=locked` | no |
 | `ENTITLEMENTS_API_KEY` | _(unset)_ | when `PREMIUM_FEATURES=locked` | yes |
 
+### Dapta pipeline (optional; cloud only)
+
+Pushes a new account's onboarding into the Dapta estate (IAM answers + the
+HubSpot contact-sync flow) via the `dapta_sync` outbox kind. All four unset —
+the fork default — disables the feature entirely: nothing is enqueued.
+
+| Var | Default | Required when | Secret |
+|---|---|---|---|
+| `IAM_BASE_URL` | _(unset)_ | syncing onboarding answers to the IAM (API; the web already uses it for login) | no |
+| `IAM_API_KEY` | _(unset)_ | same — also read by the **web** for the cohort probe | yes |
+| `DAPTA_SYNC_FLOW_URL` | _(unset)_ | calling the contact-sync flow | no |
+| `DAPTA_SYNC_FLOW_KEY` | _(unset)_ | calling the contact-sync flow | yes |
+
 ### Web app
 
 `NEXT_PUBLIC_*` are **build-time** (inlined into the client bundle — pass as
@@ -231,6 +244,7 @@ are runtime server env for the web container.
 | `AUTH_PROVIDER` | `local` | mirror the API value so the web picks the right login UX | no |
 | `WEB_SESSION_SECRET` | _(empty)_ | **required** unless `AUTH_PROVIDER=local` — signs the httpOnly session cookie | yes |
 | `IAM_BASE_URL` | _(unset)_ | **required** when `AUTH_PROVIDER=workos` — upstream identity service the web calls for the login URL / logout | no |
+| `IAM_API_KEY` | _(unset)_ | the onboarding cohort probe (key-gated IAM status endpoint); unset probes fail closed to the short wizard | yes |
 | `PUBLIC_APP_URL` | _(empty)_ | trusted origin for OAuth redirects (same as API) | no |
 
 ## Reverse proxy + TLS
