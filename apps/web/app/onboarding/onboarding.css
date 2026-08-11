@@ -207,17 +207,12 @@
   margin: 0 auto;
 }
 
-/* Logo cards sit on the wizard's dark canvas, and half the vendored logos are
-   dark-on-transparent wordmarks (Pipedrive's is near-black). A light chip under
-   every image keeps each brand on the background it was drawn for — the same
-   effect the sales quiz gets from its white cards. Scoped to `.ob`: a real
-   form's author picked their own theme and their own icons. */
-.ob .pf-choice-icon__img-wrap {
-  background: #fff;
-  border-radius: var(--pf-radius-sm);
-  padding: 8px 10px;
-  height: 52px;
-  max-width: 104px;
+/* The screens that end in a button (phone, dropdown, slider) need air between
+   the input and the CTA — the renderer's public layout provides it around its
+   own actions bar, but the wizard renders the button inside `pf__fields`,
+   where it otherwise sits flush against the field above it. */
+.ob .pf__fields > .ob__cta {
+  margin-top: 22px;
 }
 
 .ob .pf__fields {
