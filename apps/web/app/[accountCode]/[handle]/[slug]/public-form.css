@@ -576,13 +576,17 @@
   gap: var(--pf-gap);
 }
 /* The country trigger mirrors .pf-input's box so the two controls read as one
-   field: same border, radius, background, and height. */
+   field: same border, radius, background, and height. Roomy on purpose — a
+   flag, a dial code and a chevron crammed shoulder-to-shoulder read as one
+   unlabelled glyph, and this is the first control a cold signup ever touches. */
 .pf-phone__country {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   flex-shrink: 0;
-  padding: 0 14px;
+  min-width: 112px;
+  justify-content: center;
+  padding: 0 16px;
   font-family: inherit;
   font-size: 16px;
   color: var(--foreground);
@@ -596,11 +600,12 @@
   border-color: var(--muted-foreground);
 }
 .pf-phone__flag {
-  font-size: 18px;
+  font-size: 22px;
   line-height: 1;
 }
 .pf-phone__dial {
-  color: var(--muted-foreground);
+  color: var(--foreground);
+  font-weight: 500;
   font-variant-numeric: tabular-nums;
 }
 .pf-phone__chevron {

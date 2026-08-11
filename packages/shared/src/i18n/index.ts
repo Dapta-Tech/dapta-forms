@@ -1333,24 +1333,20 @@ export interface FormsMessages {
         helper: string;
         label: string;
         placeholder: string;
-        skip: string;
         invalid: string;
       };
       /**
-       * Lead volume — the IAM's `contacts_per_month` buckets, so a Forms answer
-       * and a Dapta answer land in the same histogram.
+       * Lead volume — asked with a slider (0–5000), so the copy is a unit label
+       * beside the number rather than a set of bucket options. The buckets still
+       * exist, but as the STORED value: the slider's number is folded into the
+       * IAM's `contacts_per_month` buckets at answer time, so a Forms answer and
+       * a Dapta answer land in the same histogram.
        */
       leadVolume: {
         question: string;
         helper: string;
-        options: {
-          '0_50': string;
-          '51_200': string;
-          '201_500': string;
-          '501_1000': string;
-          '1001_5000': string;
-          '5000_plus': string;
-        };
+        /** Sits beside the slider's number, e.g. "leads / month". */
+        unit: string;
       };
       /**
        * Where the leads come from. The one question the IAM has no equivalent
@@ -2647,20 +2643,12 @@ export const en: FormsMessages = {
         helper: 'So we can tailor your experience.',
         label: 'Your phone number',
         placeholder: '000 000 0000',
-        skip: 'Skip for now',
         invalid: 'That phone number does not look right. Check it and try again.',
       },
       leadVolume: {
         question: 'How many leads do you get a month?',
         helper: 'A rough number is fine.',
-        options: {
-          '0_50': '0-50',
-          '51_200': '51-200',
-          '201_500': '201-500',
-          '501_1000': '501-1000',
-          '1001_5000': '1001-5000',
-          '5000_plus': '5000+',
-        },
+        unit: 'leads / month',
       },
       leadSource: {
         question: 'Where do your leads come from?',
@@ -3977,20 +3965,12 @@ export const es: FormsMessages = {
         helper: 'Para que podamos adaptar tu experiencia.',
         label: 'Tu número de teléfono',
         placeholder: '000 000 0000',
-        skip: 'Ahora no',
         invalid: 'Ese número no parece válido. Verifícalo e inténtalo de nuevo.',
       },
       leadVolume: {
         question: '¿Cuántos leads recibes al mes?',
         helper: 'Un número aproximado está bien.',
-        options: {
-          '0_50': '0-50',
-          '51_200': '51-200',
-          '201_500': '201-500',
-          '501_1000': '501-1000',
-          '1001_5000': '1001-5000',
-          '5000_plus': '5000+',
-        },
+        unit: 'leads / mes',
       },
       leadSource: {
         question: '¿De dónde vienen tus leads?',
