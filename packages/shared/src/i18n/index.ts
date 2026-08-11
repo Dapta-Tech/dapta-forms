@@ -1249,16 +1249,122 @@ export interface FormsMessages {
         search: string;
         empty: string;
         options: {
-          software: string;
-          ecommerce: string;
-          services: string;
-          agency: string;
-          health: string;
-          finance: string;
-          education: string;
-          realestate: string;
-          manufacturing: string;
+          accounting: string;
+          airlines_aviation: string;
+          alternative_dispute_resolution: string;
+          alternative_medicine: string;
+          animation: string;
+          apparel_fashion: string;
+          architecture_planning: string;
+          arts_crafts: string;
+          automotive: string;
+          aviation_aerospace: string;
+          banking: string;
+          biotechnology: string;
+          broadcast_media: string;
+          building_materials: string;
+          business_supplies: string;
+          capital_markets: string;
+          chemicals: string;
+          civic_social: string;
+          civil_engineering: string;
+          commercial_real_estate: string;
+          computer_security: string;
+          computer_games: string;
+          computer_hardware: string;
+          computer_networking: string;
+          computer_software: string;
+          construction: string;
+          consumer_electronics: string;
+          consumer_goods: string;
+          consumer_services: string;
+          education_management: string;
+          financial_services: string;
+          health_wellness: string;
+          hospital_healthcare: string;
+          hospitality: string;
+          it_services: string;
+          insurance: string;
+          internet: string;
+          law_practice: string;
+          legal_services: string;
+          marketing_advertising: string;
+          medical_practice: string;
           nonprofit: string;
+          real_estate: string;
+          restaurants: string;
+          retail: string;
+          telecommunications: string;
+          other: string;
+          events_services: string;
+          higher_education: string;
+          human_resources: string;
+          information_services: string;
+          professional_training_coaching: string;
+        };
+      };
+      /** Asked only of a cold signup — someone arriving from Dapta answered it there. */
+      crm: {
+        question: string;
+        helper: string;
+        options: {
+          none: string;
+          hubspot: string;
+          odoo: string;
+          clientify: string;
+          ghl: string;
+          bitrix24: string;
+          salesforce: string;
+          activecampaign: string;
+          pipedrive: string;
+          zoho_crm: string;
+          escala: string;
+          other: string;
+        };
+      };
+      /**
+       * The phone screen, first and cold-cohort only. Worded exactly as Dapta's
+       * own signup words it — a neutral field label, never a verb. "What number
+       * should we call you on?" tells someone they are about to be called, and
+       * the answer to that is no.
+       */
+      phone: {
+        question: string;
+        helper: string;
+        label: string;
+        placeholder: string;
+        skip: string;
+        invalid: string;
+      };
+      /**
+       * Lead volume — the IAM's `contacts_per_month` buckets, so a Forms answer
+       * and a Dapta answer land in the same histogram.
+       */
+      leadVolume: {
+        question: string;
+        helper: string;
+        options: {
+          '0_50': string;
+          '51_200': string;
+          '201_500': string;
+          '501_1000': string;
+          '1001_5000': string;
+          '5000_plus': string;
+        };
+      };
+      /**
+       * Where the leads come from. The one question the IAM has no equivalent
+       * for, so it is asked of BOTH cohorts.
+       */
+      leadSource: {
+        question: string;
+        helper: string;
+        options: {
+          none: string;
+          facebook_ads: string;
+          google_ads: string;
+          outbound: string;
+          internal_lists: string;
           other: string;
         };
       };
@@ -2464,17 +2570,108 @@ export const en: FormsMessages = {
         search: 'Search',
         empty: 'Nothing matches — pick Other.',
         options: {
-          software: 'Software and technology',
-          ecommerce: 'Ecommerce and retail',
-          services: 'Professional services',
-          agency: 'Agency or marketing',
-          health: 'Healthcare',
-          finance: 'Finance and insurance',
-          education: 'Education',
-          realestate: 'Real estate',
-          manufacturing: 'Manufacturing and logistics',
-          nonprofit: 'Nonprofit',
+          accounting: 'Accounting',
+          airlines_aviation: 'Airlines/Aviation',
+          alternative_dispute_resolution: 'Alternative Dispute Resolution',
+          alternative_medicine: 'Alternative Medicine',
+          animation: 'Animation',
+          apparel_fashion: 'Apparel & Fashion',
+          architecture_planning: 'Architecture & Planning',
+          arts_crafts: 'Arts and Crafts',
+          automotive: 'Automotive',
+          aviation_aerospace: 'Aviation & Aerospace',
+          banking: 'Banking',
+          biotechnology: 'Biotechnology',
+          broadcast_media: 'Broadcast Media',
+          building_materials: 'Building Materials',
+          business_supplies: 'Business Supplies and Equipment',
+          capital_markets: 'Capital Markets',
+          chemicals: 'Chemicals',
+          civic_social: 'Civic & Social Organization',
+          civil_engineering: 'Civil Engineering',
+          commercial_real_estate: 'Commercial Real Estate',
+          computer_security: 'Computer & Network Security',
+          computer_games: 'Computer Games',
+          computer_hardware: 'Computer Hardware',
+          computer_networking: 'Computer Networking',
+          computer_software: 'Computer Software',
+          construction: 'Construction',
+          consumer_electronics: 'Consumer Electronics',
+          consumer_goods: 'Consumer Goods',
+          consumer_services: 'Consumer Services',
+          education_management: 'Education Management',
+          financial_services: 'Financial Services',
+          health_wellness: 'Health, Wellness and Fitness',
+          hospital_healthcare: 'Hospital & Health Care',
+          hospitality: 'Hospitality',
+          it_services: 'Information Technology and Services',
+          insurance: 'Insurance',
+          internet: 'Internet',
+          law_practice: 'Law Practice',
+          legal_services: 'Legal Services',
+          marketing_advertising: 'Marketing and Advertising',
+          medical_practice: 'Medical Practice',
+          nonprofit: 'Non-profit Organization Management',
+          real_estate: 'Real Estate',
+          restaurants: 'Restaurants',
+          retail: 'Retail',
+          telecommunications: 'Telecommunications',
+          other: 'Other Industry',
+          events_services: 'Events Services',
+          higher_education: 'Higher Education',
+          human_resources: 'Human Resources',
+          information_services: 'Information Services',
+          professional_training_coaching: 'Professional Training & Coaching',
+        },
+      },
+      crm: {
+        question: 'Which CRM do you use?',
+        helper: 'We can send your responses straight there.',
+        options: {
+          none: 'None',
+          hubspot: 'HubSpot',
+          odoo: 'Odoo',
+          clientify: 'Clientify',
+          ghl: 'GoHighLevel',
+          bitrix24: 'Bitrix24',
+          salesforce: 'Salesforce',
+          activecampaign: 'ActiveCampaign',
+          pipedrive: 'Pipedrive',
+          zoho_crm: 'Zoho CRM',
+          escala: 'Escala',
           other: 'Other',
+        },
+      },
+      phone: {
+        question: 'Tell us about you',
+        helper: 'So we can tailor your experience.',
+        label: 'Your phone number',
+        placeholder: '000 000 0000',
+        skip: 'Skip for now',
+        invalid: 'That phone number does not look right. Check it and try again.',
+      },
+      leadVolume: {
+        question: 'How many leads do you get a month?',
+        helper: 'A rough number is fine.',
+        options: {
+          '0_50': '0-50',
+          '51_200': '51-200',
+          '201_500': '201-500',
+          '501_1000': '501-1000',
+          '1001_5000': '1001-5000',
+          '5000_plus': '5000+',
+        },
+      },
+      leadSource: {
+        question: 'Where do your leads come from?',
+        helper: 'Pick the main one.',
+        options: {
+          none: 'I do not have leads yet',
+          facebook_ads: 'Facebook ads',
+          google_ads: 'Google ads',
+          outbound: 'Outbound',
+          internal_lists: 'Internal lists',
+          other: 'Somewhere else',
         },
       },
       useCase: {
@@ -3703,17 +3900,108 @@ export const es: FormsMessages = {
         search: 'Buscar',
         empty: 'No hay coincidencias. Elige Otra.',
         options: {
-          software: 'Software y tecnología',
-          ecommerce: 'Ecommerce y retail',
-          services: 'Servicios profesionales',
-          agency: 'Agencia o marketing',
-          health: 'Salud',
-          finance: 'Finanzas y seguros',
-          education: 'Educación',
-          realestate: 'Inmobiliaria',
-          manufacturing: 'Manufactura y logística',
-          nonprofit: 'ONG o sin fines de lucro',
-          other: 'Otra',
+          accounting: 'Contabilidad',
+          airlines_aviation: 'Aerolíneas y aviación',
+          alternative_dispute_resolution: 'Resolución alternativa de conflictos',
+          alternative_medicine: 'Medicina alternativa',
+          animation: 'Animación',
+          apparel_fashion: 'Ropa y moda',
+          architecture_planning: 'Arquitectura y urbanismo',
+          arts_crafts: 'Arte y artesanía',
+          automotive: 'Automotriz',
+          aviation_aerospace: 'Aviación y aeroespacial',
+          banking: 'Banca',
+          biotechnology: 'Biotecnología',
+          broadcast_media: 'Medios de comunicación',
+          building_materials: 'Materiales de construcción',
+          business_supplies: 'Suministros y equipos de oficina',
+          capital_markets: 'Mercados de capitales',
+          chemicals: 'Química',
+          civic_social: 'Organizaciones cívicas y sociales',
+          civil_engineering: 'Ingeniería civil',
+          commercial_real_estate: 'Inmobiliaria comercial',
+          computer_security: 'Seguridad informática y de redes',
+          computer_games: 'Videojuegos',
+          computer_hardware: 'Hardware',
+          computer_networking: 'Redes informáticas',
+          computer_software: 'Software',
+          construction: 'Construcción',
+          consumer_electronics: 'Electrónica de consumo',
+          consumer_goods: 'Bienes de consumo',
+          consumer_services: 'Servicios al consumidor',
+          education_management: 'Gestión educativa',
+          financial_services: 'Servicios financieros',
+          health_wellness: 'Salud, bienestar y fitness',
+          hospital_healthcare: 'Hospitales y salud',
+          hospitality: 'Hotelería',
+          it_services: 'Tecnología y servicios de TI',
+          insurance: 'Seguros',
+          internet: 'Internet',
+          law_practice: 'Despachos de abogados',
+          legal_services: 'Servicios legales',
+          marketing_advertising: 'Marketing y publicidad',
+          medical_practice: 'Consultorios médicos',
+          nonprofit: 'Organizaciones sin fines de lucro',
+          real_estate: 'Inmobiliaria',
+          restaurants: 'Restaurantes',
+          retail: 'Comercio minorista',
+          telecommunications: 'Telecomunicaciones',
+          other: 'Otra industria',
+          events_services: 'Servicios para eventos',
+          higher_education: 'Educación superior',
+          human_resources: 'Recursos humanos',
+          information_services: 'Servicios de información',
+          professional_training_coaching: 'Formación profesional y coaching',
+        },
+      },
+      crm: {
+        question: '¿Qué CRM usas?',
+        helper: 'Podemos enviar tus respuestas directo ahí.',
+        options: {
+          none: 'Ninguno',
+          hubspot: 'HubSpot',
+          odoo: 'Odoo',
+          clientify: 'Clientify',
+          ghl: 'GoHighLevel',
+          bitrix24: 'Bitrix24',
+          salesforce: 'Salesforce',
+          activecampaign: 'ActiveCampaign',
+          pipedrive: 'Pipedrive',
+          zoho_crm: 'Zoho CRM',
+          escala: 'Escala',
+          other: 'Otro',
+        },
+      },
+      phone: {
+        question: 'Cuéntanos sobre ti',
+        helper: 'Para que podamos adaptar tu experiencia.',
+        label: 'Tu número de teléfono',
+        placeholder: '000 000 0000',
+        skip: 'Ahora no',
+        invalid: 'Ese número no parece válido. Verifícalo e inténtalo de nuevo.',
+      },
+      leadVolume: {
+        question: '¿Cuántos leads recibes al mes?',
+        helper: 'Un número aproximado está bien.',
+        options: {
+          '0_50': '0-50',
+          '51_200': '51-200',
+          '201_500': '201-500',
+          '501_1000': '501-1000',
+          '1001_5000': '1001-5000',
+          '5000_plus': '5000+',
+        },
+      },
+      leadSource: {
+        question: '¿De dónde vienen tus leads?',
+        helper: 'Elige el principal.',
+        options: {
+          none: 'Todavía no tengo leads',
+          facebook_ads: 'Anuncios de Facebook',
+          google_ads: 'Anuncios de Google',
+          outbound: 'Outbound',
+          internal_lists: 'Listas internas',
+          other: 'De otro lado',
         },
       },
       useCase: {

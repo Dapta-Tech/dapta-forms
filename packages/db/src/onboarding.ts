@@ -23,9 +23,12 @@ import type { Db } from './client';
 import { jsonParam, parseJsonColumn } from './forms';
 import {
   accountOnboardingSchema,
+  ONBOARDING_COHORTS,
   ONBOARDING_STEPS,
   type AccountOnboarding,
   type FormTemplateId,
+  type OnboardingAnswerSource,
+  type OnboardingCohort,
   type OnboardingProgressInput,
   type OnboardingStep,
 } from '@quill/types';
@@ -101,8 +104,59 @@ function mergeAnswers(base: AccountOnboarding, patch: OnboardingProgressInput): 
     ...(patch.role != null ? { role: patch.role } : {}),
     ...(patch.industry != null ? { industry: patch.industry } : {}),
     ...(patch.useCase != null ? { useCase: patch.useCase } : {}),
+    ...(patch.crm != null ? { crm: patch.crm } : {}),
+    ...(patch.leadVolume != null ? { leadVolume: patch.leadVolume } : {}),
+    ...(patch.leadSource != null ? { leadSource: patch.leadSource } : {}),
+    ...(patch.phone ? { phone: patch.phone } : {}),
     ...(patch.template != null ? { template: patch.template } : {}),
   };
+}
+
+/** Which stored field each question writes into. */
+const STEP_FIELD = {
+  phone: 'phone',
+  industry: 'industry',
+  crm: 'crm',
+  lead_volume: 'leadVolume',
+  lead_source: 'leadSource',
+  use_case: 'useCase',
+} as const;
+
+/**
+ * Why each unasked answer is unasked — computed here rather than sent by the
+ * client, so it always agrees with what was actually stored.
+ *
+ * Three states, and the third is the reason this exists at all:
+ *
+ *  - `asked`   — we asked and got an answer.
+ *  - `skipped` — we asked and they declined. Only the phone screen allows it,
+ *                and "declined" is a fact about a person, not a gap in the data.
+ *  - `dapta`   — never shown, because Dapta AI already holds it. The IAM has no
+ *                endpoint that returns a person's answers yet
+ *                (`GET /onboarding/responses/:userId` is a 404 today), so this
+ *                marks a POINTER rather than an absence. When that endpoint
+ *                ships, every row carrying it is a backfill query instead of a
+ *                re-survey; without it, half the accounts would just have a null
+ *                industry and nobody would remember why.
+ */
+function answerSources(
+  answers: AccountOnboarding,
+  cohort: OnboardingCohort,
+): Partial<Record<OnboardingStep, OnboardingAnswerSource>> | null {
+  // A cohort this build does not know about is metadata, not a reason to fail a
+  // completion. The person answered the questions; recording why the OTHERS are
+  // empty is strictly less important than letting them finish.
+  const shown: readonly OnboardingStep[] | undefined = ONBOARDING_COHORTS[cohort];
+  if (!shown) return null;
+  const out: Partial<Record<OnboardingStep, OnboardingAnswerSource>> = {};
+  for (const [step, field] of Object.entries(STEP_FIELD) as [
+    OnboardingStep,
+    (typeof STEP_FIELD)[keyof typeof STEP_FIELD],
+  ][]) {
+    if (!shown.includes(step)) out[step] = 'dapta';
+    else out[step] = answers[field] == null ? 'skipped' : 'asked';
+  }
+  return out;
 }
 
 /** The onboarding state for one account, or null when the account does not exist. */
@@ -197,19 +251,24 @@ export async function claimOnboardingComplete(
   accountId: string,
   template: FormTemplateId,
   answers: OnboardingProgressInput = {},
+  cohort?: OnboardingCohort,
   now: number = Date.now(),
 ): Promise<boolean> {
   const current = await getAccountOnboarding(db, accountId);
   if (!current) return false;
 
   const base = current.onboarding ?? emptyOnboarding(now);
+  const merged = mergeAnswers(base, answers);
   const next: AccountOnboarding = {
-    ...mergeAnswers(base, answers),
+    ...merged,
     version: 1,
     template,
     lastStep: 'template',
     stepsSeen: withStepSeen(base.stepsSeen ?? [], 'template'),
     startedAt: base.startedAt ?? now,
+    ...(cohort && ONBOARDING_COHORTS[cohort]
+      ? { cohort, sources: answerSources(merged, cohort) ?? undefined }
+      : {}),
   };
 
   // The guard, not the read above, is what makes this single-winner: a caller
