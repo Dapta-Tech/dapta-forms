@@ -4,7 +4,8 @@
  * the engine's `interpolate`, and the 2200ms default duration.
  */
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_REVEAL_MS, resolveRevealCopy } from './reveal-screen';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { DEFAULT_REVEAL_MS, RevealScreen, resolveRevealCopy } from './reveal-screen';
 
 const messages = {
   headline: 'Reviewing your answers…',
@@ -89,5 +90,51 @@ describe('resolveRevealCopy', () => {
     expect(resolveRevealCopy({ durationMs: 5000 }, {}, messages).durationMs).toBe(5000);
     expect(resolveRevealCopy({}, {}, messages).durationMs).toBe(DEFAULT_REVEAL_MS);
     expect(DEFAULT_REVEAL_MS).toBe(2200);
+  });
+});
+
+/**
+ * The brand logo on the interstitial.
+ *
+ * Two guarantees worth a test rather than an eyeball. The first is the absent
+ * case: a form with no logo has to render byte-identical to what it rendered
+ * before this prop existed, and "byte-identical" is exactly the kind of claim
+ * that rots silently. The second is that a broken image prints NOTHING — the
+ * `name` here is the author's internal name for the form, and it must never
+ * reach a respondent because a URL 404'd.
+ */
+describe('RevealScreen — the brand logo', () => {
+  const base = { answers: {}, messages, name: 'Q3 paid-ads lead gen v2' };
+
+  it('renders no brand block, and no name, when there is no logo', () => {
+    const html = renderToStaticMarkup(<RevealScreen {...base} />);
+    expect(html).not.toContain('pf-reveal__brand');
+    // The whole reason for `fallback="none"`.
+    expect(html).not.toContain('Q3 paid-ads lead gen v2');
+  });
+
+  it('a null logo is the same as no logo', () => {
+    expect(renderToStaticMarkup(<RevealScreen {...base} logo={null} />)).toBe(
+      renderToStaticMarkup(<RevealScreen {...base} />),
+    );
+  });
+
+  it('renders the logo above the copy when there is one', () => {
+    const html = renderToStaticMarkup(<RevealScreen {...base} logo="https://cdn.test/logo.svg" />);
+    expect(html).toContain('pf-reveal__brand');
+    expect(html).toContain('https://cdn.test/logo.svg');
+    // Above the headline, not merely present.
+    expect(html.indexOf('pf-reveal__brand')).toBeLessThan(html.indexOf('pf-reveal__headline'));
+    // The name rides as the alt only — never as visible text.
+    expect(html).toContain('alt="Q3 paid-ads lead gen v2"');
+  });
+
+  it('sits above every loader variant', () => {
+    for (const loader of ['spinner', 'bar', 'versus', 'none'] as const) {
+      const html = renderToStaticMarkup(
+        <RevealScreen {...base} reveal={{ enabled: true, loader }} logo="https://cdn.test/l.svg" />,
+      );
+      expect(html).toContain('pf-reveal__brand');
+    }
   });
 });

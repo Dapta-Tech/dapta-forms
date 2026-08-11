@@ -40,11 +40,31 @@ import { assertAdmin } from './permissions';
 import { RateLimitGuard } from './rate-limit';
 import { DB, ENV } from './tokens';
 
+/**
+ * One allowed value of an enumeration property, as HubSpot defines it.
+ *
+ * `value` is what an integration must WRITE; `label` is what a human sees in
+ * HubSpot's own UI. They are routinely different (`value: "2"` /
+ * `label: "11-50 employees"`), which is precisely why typing the value by hand
+ * is error-prone enough to be worth a picker.
+ */
+export interface HubSpotPropertyOptionDto {
+  value: string;
+  label: string;
+}
+
 /** A HubSpot contact property surfaced to the mapping UI. */
 export interface HubSpotPropertyDto {
   name: string;
   label: string;
   type: string;
+  /**
+   * The allowed values, for enumeration properties only — absent (not `[]`) on
+   * the text/number/date majority, so the response doesn't carry ~400 empty
+   * arrays. Order is HubSpot's own and is deliberately NOT sorted: a picklist's
+   * order carries meaning (deal stages, seniority levels, sizes).
+   */
+  options?: HubSpotPropertyOptionDto[];
 }
 
 /** The property-picker response: disabled (no token) or the cached property list. */
@@ -92,8 +112,37 @@ const HUBSPOT_PROPERTIES_URL = 'https://api.hubapi.com/crm/v3/properties/contact
 const CALENDLY_ME_URL = 'https://api.calendly.com/users/me';
 const CALENDLY_EVENT_TYPES_URL = 'https://api.calendly.com/event_types';
 
+interface HubSpotPropertyOptionApi {
+  value?: string;
+  label?: string;
+  hidden?: boolean;
+}
 interface HubSpotPropertiesApiResponse {
-  results?: Array<{ name: string; label?: string; type?: string }>;
+  results?: Array<{
+    name: string;
+    label?: string;
+    type?: string;
+    options?: HubSpotPropertyOptionApi[];
+  }>;
+}
+
+/**
+ * The values a mapping may legally write to one property, or `undefined` when
+ * the property is not an enumeration.
+ *
+ * Hidden options are dropped: HubSpot hides them from its own pickers (retired
+ * values kept for historical records), so offering one would let an author
+ * configure a write that HubSpot then rejects. An option with no `value` is
+ * dropped for the same reason — there is nothing to write.
+ */
+function toPropertyOptions(
+  options: HubSpotPropertyOptionApi[] | undefined,
+): HubSpotPropertyOptionDto[] | undefined {
+  if (!Array.isArray(options)) return undefined;
+  const usable = options
+    .filter((o) => o && o.hidden !== true && typeof o.value === 'string' && o.value !== '')
+    .map((o) => ({ value: o.value as string, label: o.label?.trim() || (o.value as string) }));
+  return usable.length ? usable : undefined;
 }
 
 /**
@@ -108,6 +157,11 @@ export class HubspotPropertiesService {
   // account's connected token must never surface another account's list. Keyed
   // by accountId (accounts sharing the env fallback cache separately — a minor
   // duplication, never a cross-account leak).
+  //
+  // The keying carries MORE weight now that entries include enumeration options:
+  // a global cache would leak not just property names but their values — a
+  // portal's internal sales taxonomy (deal stages, lead grades, account tiers).
+  // Do not "optimize" this into a single shared map.
   private readonly cache = new Map<string, { data: HubSpotPropertyDto[]; expires: number }>();
 
   constructor(
@@ -154,7 +208,18 @@ export class HubspotPropertiesService {
     }
     const body = (await res.json().catch(() => ({}))) as HubSpotPropertiesApiResponse;
     const properties = (body.results ?? [])
-      .map((prop) => ({ name: prop.name, label: prop.label || prop.name, type: prop.type ?? 'string' }))
+      .map((prop) => {
+        const options = toPropertyOptions(prop.options);
+        const dto: HubSpotPropertyDto = {
+          name: prop.name,
+          label: prop.label || prop.name,
+          type: prop.type ?? 'string',
+        };
+        // Omitted, not empty — see the DTO. Sorting PROPERTIES by label is right
+        // (an author scans them alphabetically); sorting their options is not.
+        if (options) dto.options = options;
+        return dto;
+      })
       .sort((a, b) => a.label.localeCompare(b.label));
     this.cache.set(accountId, { data: properties, expires: now + CACHE_TTL_MS });
     return { enabled: true, cached: false, properties };

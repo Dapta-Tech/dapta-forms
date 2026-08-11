@@ -1151,6 +1151,18 @@ export interface FormsMessages {
       bookingStart: string;
       keyCustomBack: string;
       selectKeyPlaceholder: string;
+      // Value pickers — choosing a HubSpot value instead of typing it exactly
+      selectValue: string;
+      valueCustomOption: string;
+      valueCustomBack: string;
+      /** Which properties a value map writes to. `{properties}` = a comma list. */
+      valueMapTargets: string;
+      /** Why a value map has no picker: nothing is mapped, so nothing constrains it. */
+      valueMapNoTarget: string;
+      /** Rows inside a collapsed value-map group. `{n}` = the row count. */
+      valueMapRowCount: string;
+      expandGroup: string;
+      collapseGroup: string;
       webhookEvents: string;
       webhookEventsHelp: string;
       eventPartial: string;
@@ -1429,7 +1441,7 @@ export interface FormsMessages {
 
 export const en: FormsMessages = {
   growth: {
-    madeWith: 'Made with Dapta Forms',
+    madeWith: 'Powered by Dapta',
     ctaQuestion: 'Want your own form?',
     ctaAction: 'Get Dapta Forms — free',
     seoForm: 'Fill out {name} online.',
@@ -2480,6 +2492,14 @@ export const en: FormsMessages = {
       bookingStart: 'Booking — meeting time',
       keyCustomBack: 'Back to list',
       selectKeyPlaceholder: 'Select a field…',
+      selectValue: 'Select a value…',
+      valueCustomOption: 'Custom value…',
+      valueCustomBack: 'Back to list',
+      valueMapTargets: 'Values are written to: {properties}',
+      valueMapNoTarget: 'Map this question to a property above to pick from its values.',
+      valueMapRowCount: '{n} value(s)',
+      expandGroup: 'Expand',
+      collapseGroup: 'Collapse',
       webhookEvents: 'Trigger on',
       webhookEventsHelp: 'Choose which submissions are sent to this webhook. Both are sent by default.',
       eventPartial: 'Partial submissions',
@@ -2752,7 +2772,7 @@ export const en: FormsMessages = {
 
 export const es: FormsMessages = {
   growth: {
-    madeWith: 'Hecho con Dapta Forms',
+    madeWith: 'Con tecnología de Dapta',
     ctaQuestion: '¿Quieres tu propio formulario?',
     ctaAction: 'Consigue Dapta Forms — gratis',
     seoForm: 'Completa {name} en línea.',
@@ -3810,6 +3830,14 @@ export const es: FormsMessages = {
       bookingStart: 'Agenda — hora de la reunión',
       keyCustomBack: 'Volver a la lista',
       selectKeyPlaceholder: 'Selecciona un campo…',
+      selectValue: 'Selecciona un valor…',
+      valueCustomOption: 'Valor personalizado…',
+      valueCustomBack: 'Volver a la lista',
+      valueMapTargets: 'Los valores se escriben en: {properties}',
+      valueMapNoTarget: 'Asigna esta pregunta a una propiedad arriba para elegir entre sus valores.',
+      valueMapRowCount: '{n} valor(es)',
+      expandGroup: 'Desplegar',
+      collapseGroup: 'Plegar',
       webhookEvents: 'Disparar en',
       webhookEventsHelp: 'Elige qué respuestas se envían a este webhook. Por defecto se envían ambas.',
       eventPartial: 'Respuestas parciales',

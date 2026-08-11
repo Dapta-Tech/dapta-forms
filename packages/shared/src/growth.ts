@@ -1,5 +1,5 @@
 /**
- * Growth loop — the "Made with Dapta Forms" attribution on public pages.
+ * Growth loop — the "Powered by Dapta" attribution on public pages.
  *
  * Open-core rule: like the app-switcher's platform URL, the signup destination
  * comes ONLY from the deployment (NEXT_PUBLIC_SIGNUP_URL) — no internal host
@@ -55,9 +55,9 @@ export function buildSignupUrl(opts: {
  *    `signupUrl` otherwise.
  *
  * They were the same value once, and that was the bug: both surfaces greet a
- * STRANGER — the badge says "Made with Dapta Forms", the CTA asks "Want your
- * own form?" — and both were dropping that person on the app's login screen for
- * a product they had never heard of. A landing page is written for exactly that
+ * STRANGER — the badge says "Powered by Dapta", the CTA asks "Want your own
+ * form?" — and both were dropping that person on the app's login screen for a
+ * product they had never heard of. A landing page is written for exactly that
  * reader; a login screen is written for someone who already decided.
  */
 export function growthTarget(opts: {

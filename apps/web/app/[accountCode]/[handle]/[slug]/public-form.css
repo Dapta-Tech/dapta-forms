@@ -1094,6 +1094,15 @@
   --pf-reveal-headline: clamp(22px, 5vw, 28px);
   --pf-reveal-subtitle: 15px;
 }
+/* The form's logo, above everything else on the screen. Margin only — the image
+   itself is already sized by `.pf__logo-img`, and the `data-pf-logo-size` presets
+   ride on the `.pf` root, so the reveal inherits whatever size the form is
+   configured for without this rule knowing about any of it. */
+.pf-reveal__brand {
+  margin: 0 0 28px;
+  display: flex;
+  justify-content: center;
+}
 /* Spread around the pinned `md`. `sm` has to sit clearly BELOW 52px or the two
    smallest steps are 4px apart on a laptop and read as the same choice. */
 .pf-reveal__inner[data-pf-reveal-mark='sm'] {
