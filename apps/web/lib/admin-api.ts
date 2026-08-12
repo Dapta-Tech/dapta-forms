@@ -259,11 +259,27 @@ function qs(params: Record<string, string | number | undefined | null>): string 
 
 export const isAdminRole = (role: AccountRole): boolean => role === 'owner' || role === 'admin';
 
+/**
+ * One allowed value of an enumeration property. `value` is what gets WRITTEN to
+ * HubSpot, `label` is what HubSpot shows a human — routinely different, which
+ * is why these are worth a picker instead of a text box.
+ */
+export interface HubSpotPropertyOption {
+  value: string;
+  label: string;
+}
+
 /** A HubSpot contact property surfaced to the mapping UI. */
 export interface HubSpotProperty {
   name: string;
   label: string;
   type: string;
+  /**
+   * Allowed values, for enumeration properties only — ABSENT on text/number/date
+   * ones (never `[]`), so `options?.length` is the whole "is this a picklist?"
+   * test. Order is HubSpot's own; never re-sort it.
+   */
+  options?: HubSpotPropertyOption[];
 }
 
 /** The property-picker response: disabled (no server token) or the property list. */

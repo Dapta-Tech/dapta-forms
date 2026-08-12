@@ -9,6 +9,7 @@ import {
   resolveOptionLayout,
   resolveOptionIcon,
   resolveDesign,
+  resolveFormLogos,
   resolveRevealPresentation,
 } from '@quill/engine';
 import { onAccent, DEFAULT_ACCENT, getMessages } from '@quill/shared';
@@ -168,6 +169,7 @@ export function CanvasQuestion({
         step={step}
         accent={accent}
         device={device}
+        logo={resolveFormLogos(config).form}
         onUpdate={onUpdate}
         m={m}
       />
@@ -664,12 +666,15 @@ function RevealCanvas({
   step,
   accent,
   device,
+  logo,
   onUpdate,
   m,
 }: {
   step: FormStep;
   accent: string;
   device: 'desktop' | 'mobile';
+  /** The form's logo, mirrored from the published screen. Absent renders nothing. */
+  logo?: string | null;
   onUpdate: (patch: Partial<FormStep>) => void;
   m: BuilderMessages;
 }) {
@@ -709,6 +714,18 @@ function RevealCanvas({
         )}
         style={accentBackground ? { background: accent, color: onAccentColor } : undefined}
       >
+        {/* Above the mark, as the published screen draws it. Plain `img` and not
+            `FormLogo`: the canvas mirrors the public markup by hand (see the note
+            on this component), and a broken URL should just leave a gap here
+            rather than print the form's internal name to its author. */}
+        {logo ? (
+          <img
+            src={logo}
+            alt=""
+            data-testid="canvas-reveal-logo"
+            className="mb-7 block h-[30px] w-auto max-w-[160px] object-contain"
+          />
+        ) : null}
         {loader === 'spinner' ? (
           <div
             aria-hidden

@@ -3,8 +3,12 @@ import { BrandMark } from '@/components/brand/brand';
 import { signupHref } from '@/lib/growth';
 
 /**
- * "Made with Dapta Forms" — the growth-loop attribution on every public
- * surface (R11).
+ * "Powered by Dapta" — the growth-loop attribution on every public surface (R11).
+ *
+ * The copy names the PLATFORM, not the product: a respondent who has just filled
+ * a form is a warmer lead for Dapta than for Dapta Forms, and the badge's whole
+ * job is to send them somewhere. Where it sends them is `NEXT_PUBLIC_SIGNUP_URL`
+ * — never a domain in this file (see `signupHref`).
  *
  * It is FORM CHROME, not a document footer. It used to render as a `<footer>`
  * AFTER the renderer in `page.tsx`, and `.pf` carries `min-height: 100dvh` —
@@ -41,9 +45,8 @@ export function MadeWithBadge({
         target="_blank"
         rel="noopener noreferrer"
       >
-        {/* The product's own mark, not the parent Dapta D — the copy next to it
-            reads "Made with Dapta Forms". Ink is currentColor, so it picks up
-            the pill's foreground and stays legible on any host background. */}
+        {/* Ink is currentColor, so the mark picks up the pill's foreground and
+            stays legible on any host background. */}
         <BrandMark className="pf__attribution-mark" />
         <span>{m.growth.madeWith}</span>
         {/* Localized, like every other string on this surface — this used to be
