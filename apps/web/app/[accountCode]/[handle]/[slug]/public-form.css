@@ -576,13 +576,17 @@
   gap: var(--pf-gap);
 }
 /* The country trigger mirrors .pf-input's box so the two controls read as one
-   field: same border, radius, background, and height. */
+   field: same border, radius, background, and height. Roomy on purpose — a
+   flag, a dial code and a chevron crammed shoulder-to-shoulder read as one
+   unlabelled glyph, and this is the first control a cold signup ever touches. */
 .pf-phone__country {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   flex-shrink: 0;
-  padding: 0 14px;
+  min-width: 112px;
+  justify-content: center;
+  padding: 0 16px;
   font-family: inherit;
   font-size: 16px;
   color: var(--foreground);
@@ -596,11 +600,12 @@
   border-color: var(--muted-foreground);
 }
 .pf-phone__flag {
-  font-size: 18px;
+  font-size: 22px;
   line-height: 1;
 }
 .pf-phone__dial {
-  color: var(--muted-foreground);
+  color: var(--foreground);
+  font-weight: 500;
   font-variant-numeric: tabular-nums;
 }
 .pf-phone__chevron {
@@ -841,6 +846,64 @@
 }
 .pf__btn--inline {
   margin-top: 28px;
+}
+
+/* ── Skip (optional scheduler step) ── */
+/* Deliberately NOT a `.pf__btn`. It was one, and that made "Skip for now" a
+   full-width 54px accent bar sitting right under the calendar — the most
+   prominent control on the screen, telling the respondent that leaving was the
+   intended move. An escape hatch has to be findable, not louder than the thing
+   it escapes, so this is the quiet-control idiom `.pf__back` already uses:
+   no fill, muted ink, a wash of `--muted` on hover.
+
+   Every colour here is derived from the form's OWN two colours, which is what
+   makes it follow the form's contrast: `formThemeVars` builds the palette by
+   mixing the ground toward the text, so this control lightens on a dark form and
+   darkens on a light one with no branch and no second rule. It deliberately
+   never takes `--pf-primary` — the brand kit paints that exactly as chosen with
+   no contrast correction, and a label is the one place that is not safe (see the
+   B3 note below). Measured on a cream form whose accent is lime, `--pf-primary`
+   against the ground is **1.14:1**.
+
+   Not scoped under `.pf[data-pf-button=…]` either, and that is the point: the
+   solid/outline/soft styles describe the PRIMARY action. A form whose buttons
+   are outlined should not also outline its skip. */
+.pf__skip {
+  display: block;
+  margin: 20px auto 0;
+  padding: 8px 16px;
+  background: none;
+  border: none;
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1.2;
+  /* NOT `--muted-foreground`, and the 12 points are the whole reason. That token
+     is a 62% mix tuned for helper text, and at 15px it lands at 3.97:1 on a cream
+     form — under the 4.5:1 AA floor for text this size. Measured against the
+     composited ground, 74% gives:
+
+           form            skip    helper(62%)   body    accent
+           default dark    8.75       7.00       15.70   13.49
+           cream + lime    5.71       3.97       12.81    1.15
+
+     Quiet against the body text it must not compete with, readable everywhere,
+     and the accent column is the argument for never colouring a label with it.
+
+     Two traps if you re-measure: composite the translucent card over the page
+     first, and let the entry transition settle — CSS interpolates colour in
+     oklab, so an early sample reads a mid-flight frame, not what ships. */
+  color: color-mix(in srgb, var(--foreground) 74%, var(--background));
+  /* The quiet controls follow the form's radius scale like everything else, but
+     via `--pf-radius-btn`'s own fallback rather than the button role: on a
+     `round` form a pill-shaped hover wash is right, on a sharp one it is not. */
+  border-radius: var(--pf-radius-btn, var(--pf-radius-sm));
+  cursor: pointer;
+  transition: background 0.12s var(--pf-ease), color 0.12s var(--pf-ease);
+}
+.pf__skip:hover {
+  background: var(--muted);
+  color: var(--foreground);
 }
 
 /* ── Cover ── */
@@ -1093,6 +1156,15 @@
   --pf-reveal-mark: 52px;
   --pf-reveal-headline: clamp(22px, 5vw, 28px);
   --pf-reveal-subtitle: 15px;
+}
+/* The form's logo, above everything else on the screen. Margin only — the image
+   itself is already sized by `.pf__logo-img`, and the `data-pf-logo-size` presets
+   ride on the `.pf` root, so the reveal inherits whatever size the form is
+   configured for without this rule knowing about any of it. */
+.pf-reveal__brand {
+  margin: 0 0 28px;
+  display: flex;
+  justify-content: center;
 }
 /* Spread around the pinned `md`. `sm` has to sit clearly BELOW 52px or the two
    smallest steps are 4px apart on a laptop and read as the same choice. */

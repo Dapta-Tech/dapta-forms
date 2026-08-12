@@ -116,7 +116,6 @@ export interface FormsMessages {
         label: string;
         dark: string;
         light: string;
-        system: string;
         next: string;
       };
       /** Left-nav item labels (icon + label). */
@@ -1151,6 +1150,18 @@ export interface FormsMessages {
       bookingStart: string;
       keyCustomBack: string;
       selectKeyPlaceholder: string;
+      // Value pickers — choosing a HubSpot value instead of typing it exactly
+      selectValue: string;
+      valueCustomOption: string;
+      valueCustomBack: string;
+      /** Which properties a value map writes to. `{properties}` = a comma list. */
+      valueMapTargets: string;
+      /** Why a value map has no picker: nothing is mapped, so nothing constrains it. */
+      valueMapNoTarget: string;
+      /** Rows inside a collapsed value-map group. `{n}` = the row count. */
+      valueMapRowCount: string;
+      expandGroup: string;
+      collapseGroup: string;
       webhookEvents: string;
       webhookEventsHelp: string;
       eventPartial: string;
@@ -1333,24 +1344,20 @@ export interface FormsMessages {
         helper: string;
         label: string;
         placeholder: string;
-        skip: string;
         invalid: string;
       };
       /**
-       * Lead volume — the IAM's `contacts_per_month` buckets, so a Forms answer
-       * and a Dapta answer land in the same histogram.
+       * Lead volume — asked with a slider (0–5000), so the copy is a unit label
+       * beside the number rather than a set of bucket options. The buckets still
+       * exist, but as the STORED value: the slider's number is folded into the
+       * IAM's `contacts_per_month` buckets at answer time, so a Forms answer and
+       * a Dapta answer land in the same histogram.
        */
       leadVolume: {
         question: string;
         helper: string;
-        options: {
-          '0_50': string;
-          '51_200': string;
-          '201_500': string;
-          '501_1000': string;
-          '1001_5000': string;
-          '5000_plus': string;
-        };
+        /** Sits beside the slider's number, e.g. "leads / month". */
+        unit: string;
       };
       /**
        * Where the leads come from. The one question the IAM has no equivalent
@@ -1429,7 +1436,7 @@ export interface FormsMessages {
 
 export const en: FormsMessages = {
   growth: {
-    madeWith: 'Made with Dapta Forms',
+    madeWith: 'Powered by Dapta',
     ctaQuestion: 'Want your own form?',
     ctaAction: 'Get Dapta Forms — free',
     seoForm: 'Fill out {name} online.',
@@ -1508,7 +1515,6 @@ export const en: FormsMessages = {
         label: 'Theme',
         dark: 'Dark',
         light: 'Light',
-        system: 'System',
         next: 'Switch to',
       },
       nav: {
@@ -2480,6 +2486,14 @@ export const en: FormsMessages = {
       bookingStart: 'Booking — meeting time',
       keyCustomBack: 'Back to list',
       selectKeyPlaceholder: 'Select a field…',
+      selectValue: 'Select a value…',
+      valueCustomOption: 'Custom value…',
+      valueCustomBack: 'Back to list',
+      valueMapTargets: 'Values are written to: {properties}',
+      valueMapNoTarget: 'Map this question to a property above to pick from its values.',
+      valueMapRowCount: '{n} value(s)',
+      expandGroup: 'Expand',
+      collapseGroup: 'Collapse',
       webhookEvents: 'Trigger on',
       webhookEventsHelp: 'Choose which submissions are sent to this webhook. Both are sent by default.',
       eventPartial: 'Partial submissions',
@@ -2647,20 +2661,12 @@ export const en: FormsMessages = {
         helper: 'So we can tailor your experience.',
         label: 'Your phone number',
         placeholder: '000 000 0000',
-        skip: 'Skip for now',
         invalid: 'That phone number does not look right. Check it and try again.',
       },
       leadVolume: {
         question: 'How many leads do you get a month?',
         helper: 'A rough number is fine.',
-        options: {
-          '0_50': '0-50',
-          '51_200': '51-200',
-          '201_500': '201-500',
-          '501_1000': '501-1000',
-          '1001_5000': '1001-5000',
-          '5000_plus': '5000+',
-        },
+        unit: 'leads / month',
       },
       leadSource: {
         question: 'Where do your leads come from?',
@@ -2752,7 +2758,7 @@ export const en: FormsMessages = {
 
 export const es: FormsMessages = {
   growth: {
-    madeWith: 'Hecho con Dapta Forms',
+    madeWith: 'Con tecnología de Dapta',
     ctaQuestion: '¿Quieres tu propio formulario?',
     ctaAction: 'Consigue Dapta Forms — gratis',
     seoForm: 'Completa {name} en línea.',
@@ -2831,7 +2837,6 @@ export const es: FormsMessages = {
         label: 'Tema',
         dark: 'Oscuro',
         light: 'Claro',
-        system: 'Sistema',
         next: 'Cambiar a',
       },
       nav: {
@@ -3810,6 +3815,14 @@ export const es: FormsMessages = {
       bookingStart: 'Agenda — hora de la reunión',
       keyCustomBack: 'Volver a la lista',
       selectKeyPlaceholder: 'Selecciona un campo…',
+      selectValue: 'Selecciona un valor…',
+      valueCustomOption: 'Valor personalizado…',
+      valueCustomBack: 'Volver a la lista',
+      valueMapTargets: 'Los valores se escriben en: {properties}',
+      valueMapNoTarget: 'Asigna esta pregunta a una propiedad arriba para elegir entre sus valores.',
+      valueMapRowCount: '{n} valor(es)',
+      expandGroup: 'Desplegar',
+      collapseGroup: 'Plegar',
       webhookEvents: 'Disparar en',
       webhookEventsHelp: 'Elige qué respuestas se envían a este webhook. Por defecto se envían ambas.',
       eventPartial: 'Respuestas parciales',
@@ -3977,20 +3990,12 @@ export const es: FormsMessages = {
         helper: 'Para que podamos adaptar tu experiencia.',
         label: 'Tu número de teléfono',
         placeholder: '000 000 0000',
-        skip: 'Ahora no',
         invalid: 'Ese número no parece válido. Verifícalo e inténtalo de nuevo.',
       },
       leadVolume: {
         question: '¿Cuántos leads recibes al mes?',
         helper: 'Un número aproximado está bien.',
-        options: {
-          '0_50': '0-50',
-          '51_200': '51-200',
-          '201_500': '201-500',
-          '501_1000': '501-1000',
-          '1001_5000': '1001-5000',
-          '5000_plus': '5000+',
-        },
+        unit: 'leads / mes',
       },
       leadSource: {
         question: '¿De dónde vienen tus leads?',

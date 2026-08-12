@@ -49,12 +49,18 @@ async function req<T>(method: string, path: string, body?: unknown): Promise<T> 
     cache: 'no-store',
   });
   if (res.status === 401) {
+    // Workos: leave the cookie alone. /api/auth/logout reads the session id off
+    // it to revoke upstream and then clears it itself — deleting it here first
+    // hands that route a null session and silently skips the single-logout (see
+    // `signOutAction`). This path only appeared to work because `delete()` throws
+    // during a Server Component render; from a Server Action it lands and breaks.
+    if (authProvider() === 'workos') redirect('/api/auth/logout');
     try {
       await clearSession();
     } catch {
       /* cookies are immutable during render — the redirect still fires */
     }
-    redirect(authProvider() === 'workos' ? '/api/auth/logout' : '/login');
+    redirect('/login');
   }
   // The stored workspace is no longer ours — the membership was revoked, or the
   // account is gone. Self-heal rather than leaving every page 403ing with no way
@@ -259,11 +265,27 @@ function qs(params: Record<string, string | number | undefined | null>): string 
 
 export const isAdminRole = (role: AccountRole): boolean => role === 'owner' || role === 'admin';
 
+/**
+ * One allowed value of an enumeration property. `value` is what gets WRITTEN to
+ * HubSpot, `label` is what HubSpot shows a human — routinely different, which
+ * is why these are worth a picker instead of a text box.
+ */
+export interface HubSpotPropertyOption {
+  value: string;
+  label: string;
+}
+
 /** A HubSpot contact property surfaced to the mapping UI. */
 export interface HubSpotProperty {
   name: string;
   label: string;
   type: string;
+  /**
+   * Allowed values, for enumeration properties only — ABSENT on text/number/date
+   * ones (never `[]`), so `options?.length` is the whole "is this a picklist?"
+   * test. Order is HubSpot's own; never re-sort it.
+   */
+  options?: HubSpotPropertyOption[];
 }
 
 /** The property-picker response: disabled (no server token) or the property list. */

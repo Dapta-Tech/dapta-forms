@@ -322,6 +322,77 @@ describe('HubSpot property picker token resolution', () => {
     const res = await controller.hubspotProperties(asOwner());
     expect(res.enabled).toBe(false);
   });
+
+  it('passes enumeration options through — hidden dropped, order kept, text omitted', async () => {
+    build(
+      makeEnv({ HUBSPOT_PRIVATE_APP_TOKEN: 'env-fallback-token' }),
+      recordingFetch([], {
+        [HUBSPOT_PROPERTIES_URL]: () =>
+          jsonResponse({
+            results: [
+              // Deliberately NOT alphabetical, and with the retired value in the
+              // middle: the mapping must keep HubSpot's order and drop `hidden`.
+              {
+                name: 'company_size',
+                label: 'Company size',
+                type: 'enumeration',
+                options: [
+                  { value: '2', label: '11-50 employees' },
+                  { value: 'legacy', label: 'Retired bucket', hidden: true },
+                  { value: '1', label: '1-10 employees' },
+                  // No `value` — nothing to write, so nothing to offer.
+                  { label: 'Malformed' },
+                ],
+              },
+              { name: 'email', label: 'Email', type: 'string' },
+              // An enumeration whose options are ALL hidden is not a picklist an
+              // author can use — it must come back like a text property.
+              {
+                name: 'dead_enum',
+                label: 'Dead enum',
+                type: 'enumeration',
+                options: [{ value: 'x', label: 'X', hidden: true }],
+              },
+            ],
+          }),
+      }),
+    );
+    const res = await controller.hubspotProperties(asOwner());
+    expect(res.enabled).toBe(true);
+    if (!res.enabled) return;
+    const by = (name: string) => res.properties.find((p) => p.name === name)!;
+
+    expect(by('company_size').options).toEqual([
+      { value: '2', label: '11-50 employees' },
+      { value: '1', label: '1-10 employees' },
+    ]);
+    // Absent, never `[]` — `options?.length` is the whole picklist test in the UI.
+    expect(by('email')).not.toHaveProperty('options');
+    expect(by('dead_enum')).not.toHaveProperty('options');
+
+    // Properties themselves stay sorted by label, as before.
+    expect(res.properties.map((p) => p.label)).toEqual(['Company size', 'Dead enum', 'Email']);
+  });
+
+  it('serves options from the per-account cache on the second call', async () => {
+    const calls: RecordedCall[] = [];
+    build(
+      makeEnv({ HUBSPOT_PRIVATE_APP_TOKEN: 'env-fallback-token' }),
+      recordingFetch(calls, {
+        [HUBSPOT_PROPERTIES_URL]: () =>
+          jsonResponse({
+            results: [
+              { name: 'tier', label: 'Tier', type: 'enumeration', options: [{ value: 'a', label: 'A' }] },
+            ],
+          }),
+      }),
+    );
+    const first = await controller.hubspotProperties(asOwner());
+    const second = await controller.hubspotProperties(asOwner());
+    expect(calls).toHaveLength(1);
+    expect(second.enabled && second.cached).toBe(true);
+    expect(second.enabled && second.properties).toEqual(first.enabled && first.properties);
+  });
 });
 
 describe('Calendly event-type picker token resolution', () => {

@@ -7,6 +7,7 @@ import {
   type Answers,
   type FormReveal,
 } from '@quill/engine';
+import { FormLogo } from '@/components/public/form-logo';
 
 /** The interstitial's default play time when the config sets none. */
 export const DEFAULT_REVEAL_MS = 2200;
@@ -159,12 +160,22 @@ export function RevealScreen({
   reveal,
   answers,
   messages,
+  logo,
+  name,
   children,
   onComplete,
 }: {
   reveal?: FormReveal | null;
   answers: Answers;
   messages: RevealScreenMessages;
+  /**
+   * The form's logo (`resolveFormLogos(...).form`), shown above the copy. The
+   * FORM's logo and not the cover's: this is a phase inside the form, not the
+   * front door. Absent/null renders nothing, so a form without one is unchanged.
+   */
+  logo?: string | null;
+  /** Only the image's `alt`; never printed — see `fallback="none"` below. */
+  name: string;
   /**
    * Rendered under the interstitial — the "trusted by" marquee, when scoped
    * here. Presented to assistive tech as decoration; see the wrapper below.
@@ -206,6 +217,15 @@ export function RevealScreen({
       data-pf-reveal-mark={loaderSize}
       data-pf-reveal-text={textSize}
     >
+      {/* Above everything, including the spinner: this is the brand the
+          respondent came for, and the wait is the one screen where nothing else
+          is competing for the space. `fallback="none"` because a broken image
+          must render nothing here — the name is the author's internal one. */}
+      {logo ? (
+        <div className="pf-reveal__brand">
+          <FormLogo src={logo} name={name} fallback="none" />
+        </div>
+      ) : null}
       {loader === 'spinner' ? <div className="pf-reveal__spinner" aria-hidden="true" /> : null}
       <h1 className="pf-reveal__headline">{headline}</h1>
       <p className="pf-reveal__subtitle">{subtitle}</p>

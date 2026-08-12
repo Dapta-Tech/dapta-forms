@@ -21,12 +21,19 @@ import { cn } from '@/lib/cn';
 import { bookingLabel } from '@/lib/booking-fields';
 import type {
   HubSpotPropertiesResponse,
+  HubSpotPropertyOption,
   WebhookPingReason,
   WebhookPingResult,
 } from '@/lib/admin-api';
 import { trackDestinationWrite } from '@/lib/connect-sync';
 import { propertyLookup, suggestProperty, type QuestionMeta } from './auto-map';
 import { Card } from './integrations-card';
+import {
+  isCustomValue,
+  optionsForProperty,
+  sharedOptionsFor,
+  targetPropertiesFor,
+} from './property-options';
 import { pingWebhookAction, saveIntegrationsAction } from './actions';
 
 type Msgs = FormsMessages['admin']['integrations'];
@@ -63,6 +70,8 @@ const NOT_READY: ContactKeyReadiness = { ok: false, blocker: 'no_source', source
 const CUSTOM_KEY_OPTION = '__custom_key__';
 const KEY_GROUP_QUESTIONS = '__group_questions__';
 const KEY_GROUP_SYSTEM = '__group_system__';
+/** Same idea for the value pickers — never a valid HubSpot picklist value. */
+const CUSTOM_VALUE_OPTION = '__custom_value__';
 
 /** Question types whose answers come from a fixed option list — the typical
  *  "translate this answer" case, so they lead the value-map key picker. */
@@ -665,6 +674,267 @@ function PropertyField({
 }
 
 /**
+ * A VALUE picker: the same free-text `Input` as before when nothing constrains
+ * the value, or a searchable Select of the property's own picklist when
+ * something does — plus a "Custom value…" escape hatch back to text.
+ *
+ * Deliberately NOT folded into `PropertyField` or `KeySelect`. Their branches
+ * turn on different questions (is the picker connected at all? / is this key one
+ * of the form's questions?), and `KeySelect`'s markup is asserted by two
+ * Playwright suites. ~25 duplicated lines is the cheaper side of that trade.
+ *
+ * `options === undefined` is the whole "no picklist" test — the API omits the
+ * key rather than sending `[]` (see `HubSpotProperty`).
+ */
+function OptionValueField({
+  value,
+  onChange,
+  options,
+  m,
+  ariaLabel,
+  placeholder,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  /** The values this may legally be, or undefined for free text. */
+  options: HubSpotPropertyOption[] | undefined;
+  m: Msgs;
+  ariaLabel: string;
+  placeholder: string;
+}) {
+  const locale = useContext(LocaleContext);
+  // A value the list can't show opens in text mode with the value VISIBLE. In a
+  // Select it would render as an empty box — configured, still written to
+  // HubSpot, and looking unset. Initial state only: switching modes later is
+  // the author's choice, made through the two buttons below.
+  const [customMode, setCustomMode] = useState(() => isCustomValue(options, value));
+
+  if (!options || customMode) {
+    return (
+      <div className="flex flex-1 items-center gap-2">
+        <Input
+          value={value}
+          aria-label={ariaLabel}
+          placeholder={placeholder}
+          className="flex-1"
+          onChange={(e) => onChange(e.target.value)}
+        />
+        {/* Only offered when there IS a list to go back to. */}
+        {options ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              // Never destroy a typed value on a mis-click — but a value the
+              // list cannot show would look unselected, so clear that one.
+              if (isCustomValue(options, value)) onChange('');
+              setCustomMode(false);
+            }}
+          >
+            {m.valueCustomBack}
+          </Button>
+        ) : null}
+      </div>
+    );
+  }
+
+  const selectOptions: SelectOption[] = [
+    { value: '', label: m.selectValue },
+    // HubSpot's own order, never re-sorted — a picklist's order means something.
+    // The internal value is shown next to the label because it is what actually
+    // gets written, and the two routinely differ ("1-10 employees" → `1`).
+    ...options.map((o) => ({ value: o.value, label: `${o.label} (${o.value})` })),
+    { value: CUSTOM_VALUE_OPTION, label: m.valueCustomOption },
+  ];
+  return (
+    <div className="min-w-0 flex-1">
+      <Select
+        ariaLabel={ariaLabel}
+        value={value}
+        options={selectOptions}
+        searchable
+        locale={locale}
+        onChange={(v) => {
+          if (v === CUSTOM_VALUE_OPTION) {
+            setCustomMode(true);
+            return;
+          }
+          onChange(v);
+        }}
+      />
+    </div>
+  );
+}
+
+/**
+ * One value-map group: a question, and the answer→HubSpot-value rows for it.
+ *
+ * **Collapsed by default**, unlike `AdvancedSettings`, and for the opposite
+ * reason. There a closed group could hide behaviour someone didn't configure,
+ * so it opens when anything is set. Here the long group IS the complaint — an
+ * industry question with fifty values turns this panel into a scroll with no
+ * landmarks — and nothing is hidden by closing it: the header carries the
+ * question and the row count. A group with no question and no filled rows is
+ * brand new, so it opens; there is nothing to summarise yet.
+ *
+ * The header is a ROW of controls, not one big `<button>` like
+ * `AdvancedSettings`. It contains the key picker (itself a button) and Remove;
+ * nesting those inside a button is invalid HTML and the clicks fight. So the
+ * chevron is its own button and owns `aria-expanded`.
+ *
+ * No `overflow-hidden` on the wrapper — same flex `min-height:auto` trap
+ * documented at length in `advanced-settings.tsx`. Corners round on the header.
+ */
+function ValueMapGroupCard({
+  group,
+  questionOptions,
+  targets,
+  properties,
+  pickerEnabled,
+  m,
+  onGroupChange,
+  onRemove,
+}: {
+  group: ValueMapGroup;
+  questionOptions: QuestionMeta[];
+  /** Contact properties this question's answer is written to (0, 1, or many). */
+  targets: string[];
+  properties: { name: string; label: string; options?: HubSpotPropertyOption[] }[];
+  pickerEnabled: boolean;
+  m: Msgs;
+  onGroupChange: (next: ValueMapGroup) => void;
+  onRemove: () => void;
+}) {
+  // Nothing filled in yet = nothing for a collapsed header to summarise, so it
+  // opens. That covers a brand-new group AND the moment right after picking the
+  // question — collapsing the rows out from under someone who just chose one
+  // would be worse than the long scroll this is fixing.
+  const filled = group.rows.filter((r) => r.from.trim() || r.to.trim()).length;
+  const [open, setOpen] = useState(filled === 0);
+
+  // INTERSECTION, not union: the HubSpot adapter writes the one translated
+  // value to every target property, so a value only one of them accepts is a
+  // guaranteed partial write. `undefined` → the rows keep their text boxes.
+  const options = pickerEnabled ? sharedOptionsFor(properties, targets) : undefined;
+
+  const setRows = (rows: ValueMapRow[]) => onGroupChange({ ...group, rows });
+
+  return (
+    <div className="flex flex-col rounded-md border border-border" data-testid="valuemap-group">
+      <div
+        className={cn(
+          'flex items-center gap-2 p-3',
+          open && 'border-b border-border',
+        )}
+      >
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          aria-expanded={open}
+          aria-label={open ? m.collapseGroup : m.expandGroup}
+          data-testid="valuemap-toggle"
+          className="shrink-0 rounded-sm p-1 text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <i
+            aria-hidden
+            className={`pi ${open ? 'pi-chevron-down' : 'pi-chevron-right'}`}
+            style={{ fontSize: 11 }}
+          />
+        </button>
+        <KeySelect
+          value={group.stepKey}
+          questionOptions={questionOptions}
+          systemKeys={[]}
+          m={m}
+          testId="valuemap-key-select"
+          customTestId="valuemap-key-custom"
+          onChange={(v) => onGroupChange({ ...group, stepKey: v })}
+        />
+        {/* What a closed group would otherwise hide. Counts filled rows only —
+            a trailing blank row is scaffolding, not a configured translation. */}
+        <span className="shrink-0 whitespace-nowrap text-xs text-muted-foreground">
+          {fill(m.valueMapRowCount, { n: String(filled) })}
+        </span>
+        <Button variant="ghost" size="sm" aria-label={m.remove} onClick={onRemove}>
+          {m.remove}
+        </Button>
+      </div>
+
+      {open ? (
+        <div className="flex flex-col gap-2 p-3">
+          {/* Why the right-hand side looks the way it does. Without this, a text
+              box on a fanned-out question reads as the picker being broken. */}
+          {pickerEnabled ? (
+            <p className="pl-4 text-xs text-muted-foreground" data-testid="valuemap-targets-hint">
+              {targets.length === 0
+                ? m.valueMapNoTarget
+                : fill(m.valueMapTargets, { properties: targets.join(', ') })}
+            </p>
+          ) : null}
+          {group.rows.map((row, ri) => (
+            <div key={ri} className="flex items-center gap-2 pl-4">
+              {/* The LEFT side stays free text: it is the answer as the form
+                  stores it, and `QuestionMeta` is built without the question's
+                  own options — surfacing those is a separate change. */}
+              <Input
+                value={row.from}
+                aria-label={m.valueMapAnswer}
+                placeholder={m.valueMapAnswer}
+                className="flex-1"
+                onChange={(e) => {
+                  const rows = [...group.rows];
+                  rows[ri] = { ...row, from: e.target.value };
+                  setRows(rows);
+                }}
+              />
+              <span aria-hidden className="text-muted-foreground">
+                →
+              </span>
+              {/* Keyed by the constraint, not the row: `OptionValueField`
+                  decides text-vs-dropdown once, on mount. Re-pointing the group
+                  at another question changes which values are legal, so the
+                  control has to re-derive — otherwise a stored value that the
+                  NEW picklist doesn't contain would render as an empty Select
+                  (configured, still saved, looking unset). */}
+              <OptionValueField
+                key={targets.join('|')}
+                value={row.to}
+                ariaLabel={m.valueMapCrmValue}
+                placeholder={m.valueMapCrmValue}
+                options={options}
+                m={m}
+                onChange={(v) => {
+                  const rows = [...group.rows];
+                  rows[ri] = { ...row, to: v };
+                  setRows(rows);
+                }}
+              />
+              <Button
+                variant="ghost"
+                size="sm"
+                aria-label={m.remove}
+                onClick={() => setRows(group.rows.filter((_, j) => j !== ri))}
+              >
+                {m.remove}
+              </Button>
+            </div>
+          ))}
+          <div className="pl-4">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setRows([...group.rows, { from: '', to: '' }])}
+            >
+              {m.addValueMapRow}
+            </Button>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/**
  * Step-key picker for "Custom field mappings" rows and "Value maps" groups: a
  * branded searchable Select over the form's own question keys (grouped, with
  * the UTM system fields where relevant) plus a "Custom key…" escape hatch that
@@ -995,7 +1265,8 @@ export function HubspotCard({
 }: {
   state: HubspotState;
   onChange: (s: HubspotState) => void;
-  properties: { name: string; label: string }[];
+  /** `options` rides along for the value pickers; absent = not an enumeration. */
+  properties: { name: string; label: string; options?: HubSpotPropertyOption[] }[];
   pickerEnabled: boolean;
   accountConnected: boolean;
   showMapping: boolean;
@@ -1375,91 +1646,25 @@ export function HubspotCard({
             <p className="text-xs text-muted-foreground">{m.emptyValueMaps}</p>
           ) : (
             state.valueMaps.map((group, gi) => (
-              <div key={gi} className="flex flex-col gap-2 rounded-md border border-border p-3">
-                <div className="flex items-center gap-2">
-                  <KeySelect
-                    value={group.stepKey}
-                    questionOptions={valueMapQuestions}
-                    systemKeys={[]}
-                    m={m}
-                    testId="valuemap-key-select"
-                    customTestId="valuemap-key-custom"
-                    onChange={(v) => {
-                      const next = [...state.valueMaps];
-                      next[gi] = { ...group, stepKey: v };
-                      onChange({ ...state, valueMaps: next });
-                    }}
-                  />
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    aria-label={m.remove}
-                    onClick={() =>
-                      onChange({ ...state, valueMaps: state.valueMaps.filter((_, j) => j !== gi) })
-                    }
-                  >
-                    {m.remove}
-                  </Button>
-                </div>
-                {group.rows.map((row, ri) => (
-                  <div key={ri} className="flex items-center gap-2 pl-4">
-                    <Input
-                      value={row.from}
-                      aria-label={m.valueMapAnswer}
-                      placeholder={m.valueMapAnswer}
-                      className="flex-1"
-                      onChange={(e) => {
-                        const next = [...state.valueMaps];
-                        const rows = [...group.rows];
-                        rows[ri] = { ...row, from: e.target.value };
-                        next[gi] = { ...group, rows };
-                        onChange({ ...state, valueMaps: next });
-                      }}
-                    />
-                    <span aria-hidden className="text-muted-foreground">
-                      →
-                    </span>
-                    <Input
-                      value={row.to}
-                      aria-label={m.valueMapCrmValue}
-                      placeholder={m.valueMapCrmValue}
-                      className="flex-1"
-                      onChange={(e) => {
-                        const next = [...state.valueMaps];
-                        const rows = [...group.rows];
-                        rows[ri] = { ...row, to: e.target.value };
-                        next[gi] = { ...group, rows };
-                        onChange({ ...state, valueMaps: next });
-                      }}
-                    />
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      aria-label={m.remove}
-                      onClick={() => {
-                        const next = [...state.valueMaps];
-                        next[gi] = { ...group, rows: group.rows.filter((_, j) => j !== ri) };
-                        onChange({ ...state, valueMaps: next });
-                      }}
-                    >
-                      {m.remove}
-                    </Button>
-                  </div>
-                ))}
-                <div className="pl-4">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      const next = [...state.valueMaps];
-                      next[gi] = { ...group, rows: [...group.rows, { from: '', to: '' }] };
-                      onChange({ ...state, valueMaps: next });
-                    }}
-                  >
-                    {m.addValueMapRow}
-                  </Button>
-                </div>
-              </div>
+              <ValueMapGroupCard
+                key={gi}
+                group={group}
+                questionOptions={valueMapQuestions}
+                // Which properties this question's answer is written to — the
+                // whole reason the right-hand side can offer a picklist at all.
+                targets={targetPropertiesFor(state.fieldMappings, group.stepKey)}
+                properties={properties}
+                pickerEnabled={pickerEnabled}
+                m={m}
+                onGroupChange={(next) => {
+                  const all = [...state.valueMaps];
+                  all[gi] = next;
+                  onChange({ ...state, valueMaps: all });
+                }}
+                onRemove={() =>
+                  onChange({ ...state, valueMaps: state.valueMaps.filter((_, j) => j !== gi) })
+                }
+              />
             ))
           )}
           <div>
@@ -1567,14 +1772,21 @@ export function HubspotCard({
                 <span aria-hidden className="text-muted-foreground">
                   →
                 </span>
-                <Input
+                {/* The property is picked right here, so its allowed values are
+                    known — no reason to make anyone retype an internal value.
+                    Keyed by the property so switching it re-reads the picklist,
+                    while the VALUE itself is deliberately left alone: a
+                    mis-click on the property must not destroy typed work. */}
+                <OptionValueField
+                  key={row.key}
                   value={row.value}
-                  aria-label={m.staticValue}
+                  ariaLabel={m.staticValue}
                   placeholder={m.staticValue}
-                  className="flex-1"
-                  onChange={(e) => {
+                  options={pickerEnabled ? optionsForProperty(properties, row.key) : undefined}
+                  m={m}
+                  onChange={(v) => {
                     const next = [...state.staticProperties];
-                    next[i] = { ...row, value: e.target.value };
+                    next[i] = { ...row, value: v };
                     onChange({ ...state, staticProperties: next });
                   }}
                 />

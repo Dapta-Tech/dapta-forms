@@ -560,6 +560,8 @@ export function FormRenderer({
           reveal={config.reveal}
           answers={answers}
           messages={revealMessages}
+          logo={logos.form}
+          name={name}
           onComplete={onRevealComplete}
         >
           <ClientLogosMarquee logos={revealLogos} label={m.trustedBy} />
@@ -577,7 +579,16 @@ export function FormRenderer({
         aria-live="polite"
         cover={chrome}
       >
+        {/* Hand-built rather than a `RevealScreen` — this screen has no timer and
+            no configurable copy. It shares the reveal's markup, so it has to
+            share the logo too: the two render back to back, and a logo that
+            vanished at the handover would read as a flicker on every submit. */}
         <div className="pf-reveal__inner">
+          {logos.form ? (
+            <div className="pf-reveal__brand">
+              <FormLogo src={logos.form} name={name} fallback="none" />
+            </div>
+          ) : null}
           <div className="pf-reveal__spinner" aria-hidden="true" />
           <p className="pf-reveal__subtitle">{m.submitting}</p>
         </div>
@@ -651,6 +662,8 @@ export function FormRenderer({
           reveal={step.reveal ?? { enabled: true }}
           answers={answers}
           messages={revealMessages}
+          logo={logos.form}
+          name={name}
           onComplete={() => {
             // Completing an interstitial is completing a step: reuse `advance`
             // so the partial-submit threshold, forward jumps and the finalize
@@ -722,10 +735,15 @@ export function FormRenderer({
                     {m.schedulerUnconfigured}
                   </p>
                 )}
+                {/* An escape hatch, so it is styled as one — `.pf__skip`, NOT
+                    `.pf__btn`. As a primary button it rendered full-width and
+                    accent-filled directly under the calendar, which made the way
+                    OUT of the step the loudest thing on it and left the booking
+                    itself looking optional. */}
                 {!step.required ? (
                   <button
                     type="button"
-                    className="pf__btn pf__btn--inline"
+                    className="pf__skip"
                     onClick={() => void advance(answers, step)}
                   >
                     {m.schedulerSkip}

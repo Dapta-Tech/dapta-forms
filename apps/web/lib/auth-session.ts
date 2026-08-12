@@ -137,8 +137,13 @@ export async function hostFetch(path: string, init?: RequestInit): Promise<Respo
     cache: 'no-store',
   });
   if (res.status === 401) {
+    // Workos goes through /api/auth/logout, which needs the cookie STILL PRESENT
+    // to read the session id and revoke upstream — clearing it here would land a
+    // Set-Cookie on this response and hand that route a null session (see
+    // `signOutAction`). The route clears it itself, unconditionally.
+    if (authProvider() === 'workos') redirect('/api/auth/logout');
     await clearSession();
-    redirect(authProvider() === 'workos' ? '/api/auth/logout' : '/login');
+    redirect('/login');
   }
   return res;
 }

@@ -178,6 +178,12 @@ export function VerticalFormRenderer({
   const marqueeLogos = chrome?.clientLogos ?? config.branding?.clientLogos ?? [];
   const heroLogos = showClientLogosOn(chrome, 'cover') ? marqueeLogos : [];
   const revealLogos = showClientLogosOn(chrome, 'reveal') ? marqueeLogos : [];
+  // Resolved up here, not next to the header that consumes it: the reveal and
+  // submitting phases return BEFORE that point, and they need the logo too. One
+  // page, one header — and the hero right under it IS the cover screen when one
+  // is on, so the header carries the cover's logo there and the form's own when
+  // the cover is off. Either can be cleared to nothing independently.
+  const logos = resolveFormLogos(config);
   const revealMessages = {
     headline: m.revealHeadline,
     subtitle: m.revealSubtitle,
@@ -557,6 +563,8 @@ export function VerticalFormRenderer({
           reveal={pendingReveal ?? { enabled: true }}
           answers={answers}
           messages={revealMessages}
+          logo={logos.form}
+          name={name}
           onComplete={onRevealComplete}
         >
           <ClientLogosMarquee logos={revealLogos} label={m.trustedBy} />
@@ -574,7 +582,15 @@ export function VerticalFormRenderer({
         aria-live="polite"
         cover={chrome}
       >
+        {/* Same markup as the reveal, by hand — see the note on the slides
+            layout's copy of this screen. The logo has to be here too or it
+            blinks out at the reveal → submitting handover. */}
         <div className="pf-reveal__inner">
+          {logos.form ? (
+            <div className="pf-reveal__brand">
+              <FormLogo src={logos.form} name={name} fallback="none" />
+            </div>
+          ) : null}
           <div className="pf-reveal__spinner" aria-hidden="true" />
           <p className="pf-reveal__subtitle">{m.submitting}</p>
         </div>
@@ -582,10 +598,6 @@ export function VerticalFormRenderer({
     );
   }
 
-  // One page, one header — and the hero right under it IS the cover screen when
-  // one is on, so the header carries the cover's logo there and the form's own
-  // when the cover is off. Either can be cleared to nothing independently.
-  const logos = resolveFormLogos(config);
   const headerLogo = coverScreen ? logos.cover : logos.form;
   const total = answerable.length;
 

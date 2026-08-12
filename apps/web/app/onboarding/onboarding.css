@@ -181,9 +181,11 @@
 
 /* --- The phone screen ------------------------------------------------------
  *
- * The only screen with buttons. Every other question advances on the choice
- * itself, but a number is typed a digit at a time and cannot know when the
- * person is finished.
+ * Cards advance on the tap; the phone, the slider and the industry dropdown
+ * end in a button instead, because typing, dragging and picking from a
+ * filtered list have no natural "done" signal. There is no skip anywhere —
+ * the phone number is what the Dapta pipeline creates the HubSpot contact
+ * from, so a skippable phone is a contact that never exists.
  *
  * The label sits ABOVE the input rather than inside the question, because that
  * is how Dapta's own signup words it: the heading asks nothing ("Tell us about
@@ -198,72 +200,19 @@
   margin: 0 0 8px;
 }
 
-/* Quiet by design: a skip that competes with the CTA turns a considered choice
-   into a coin flip, and one that hides is a dark pattern. This reads as an
-   available option and not as the recommended one. */
-.ob__skip {
-  display: block;
-  width: 100%;
-  margin-top: 12px;
-  padding: 10px;
-  background: none;
-  border: none;
-  font: inherit;
-  font-size: 14px;
-  color: var(--muted-foreground);
-  cursor: pointer;
-  border-radius: var(--pf-radius-sm);
-  transition: color 0.12s;
-}
-
-.ob__skip:hover {
-  color: var(--foreground);
-}
-
-/* --- The question screens, packed to one viewport --------------------------
- *
- * The renderer stacks single-select options as full-width rows — right for a
- * respondent's phone, but the role question has NINE of them, and nine 56px
- * rows push the last options (and any sense of "three quick taps") below the
- * fold. On the wizard they pack into two columns of shorter rows, so the
- * whole question fits one desktop viewport. Scoped to `.ob`: real forms keep
- * the renderer's own layout.
- */
-
-.ob .pf-choices--list {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-}
-
-/* An odd count leaves the last row half-empty; the catch-all ("Other") spans
-   it instead — the same treatment "start from scratch" gets among the
-   templates, and it reads the same way: the alternative to the grid above it,
-   not a ninth sibling. */
-.ob .pf-choices--list > :last-child:nth-child(odd) {
-  grid-column: 1 / -1;
-}
-
-.ob .pf-choice-list {
-  min-height: 52px;
-  padding: 8px 14px;
-  gap: 11px;
-  font-size: 14px;
-  border-radius: 12px;
-}
-
-.ob .pf-choice-list__icon,
-.ob .pf-choice-list__circle {
-  width: 32px;
-  height: 32px;
-  font-size: 16px;
-}
-
 /* The industry dropdown at the grid's 640px reads as a search bar; cap it at
    the question's own measure so it reads as a field under it. */
 .ob .pf-dropdown {
   max-width: 480px;
   margin: 0 auto;
+}
+
+/* The screens that end in a button (phone, dropdown, slider) need air between
+   the input and the CTA — the renderer's public layout provides it around its
+   own actions bar, but the wizard renders the button inside `pf__fields`,
+   where it otherwise sits flush against the field above it. */
+.ob .pf__fields > .ob__cta {
+  margin-top: 22px;
 }
 
 .ob .pf__fields {
