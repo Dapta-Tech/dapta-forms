@@ -14,6 +14,8 @@ import {
   LEAD_VOLUME_SLIDER,
   leadVolumeBucket,
   skippedQuestions,
+  stepIndexFromSearch,
+  stepParam,
   wizardQuestions,
 } from './onboarding';
 
@@ -148,5 +150,42 @@ describe('leadVolumeBucket — the slider folds into the IAM histogram', () => {
 
   it('mirrors the rail of the Dapta sales quiz', () => {
     expect(LEAD_VOLUME_SLIDER).toEqual({ min: 0, max: 5000, step: 25, default: 0 });
+  });
+});
+
+describe('stepParam / stepIndexFromSearch — the URL mirror of the wizard', () => {
+  it('counts exactly like the on-screen "Pregunta 1 de N"', () => {
+    // 1-based: "?step=0" would put every funnel chart off by one from the copy.
+    expect(stepParam(0)).toBe('?step=1');
+    expect(stepParam(1)).toBe('?step=2');
+  });
+
+  it('gives the template picker the step after the cohort\'s LAST question', () => {
+    // Derived, not hardcoded: the two cohorts run different-length wizards, and
+    // the URL has to follow the same denominator the counter does.
+    for (const cohort of ['cold', 'dapta'] as const) {
+      const screens = wizardQuestions(m, cohort).length + 1;
+      expect(stepParam(screens - 1), cohort).toBe(`?step=${screens}`);
+    }
+  });
+
+  it('round-trips its own output', () => {
+    for (const index of [0, 1, 5]) {
+      expect(stepIndexFromSearch(stepParam(index), 7)).toBe(index);
+    }
+  });
+
+  it('clamps a URL pointing past the wizard onto the last real screen', () => {
+    // The URL is user-editable input. Past the end lands on the template
+    // picker, never on an index the wizard has no screen for.
+    expect(stepIndexFromSearch('?step=99', 7)).toBe(6);
+  });
+
+  it('reads garbage, absence and sub-one steps as the first screen', () => {
+    expect(stepIndexFromSearch('?step=0', 7)).toBe(0);
+    expect(stepIndexFromSearch('?step=-3', 7)).toBe(0);
+    expect(stepIndexFromSearch('?step=banana', 7)).toBe(0);
+    expect(stepIndexFromSearch('', 7)).toBe(0);
+    expect(stepIndexFromSearch('?utm_source=landing', 7)).toBe(0);
   });
 });
