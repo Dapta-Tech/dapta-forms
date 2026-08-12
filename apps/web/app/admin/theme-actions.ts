@@ -18,6 +18,10 @@ export async function setThemeAction(pref: ThemePref): Promise<void> {
   // anything unknown to `dark` — a stale client bundle after a rename, or a typo,
   // silently flipped someone's pinned Light and revalidated the whole app with no
   // error anywhere to explain it. Ignoring the write leaves their choice intact.
+  //
+  // This is also what retires the removed `system` value with no migration: a
+  // stale tab still posting it is ignored, and the cookie it already wrote reads
+  // back as unrecognised, so `getThemePref` hands out the `dark` default.
   if (!isThemePref(pref)) return;
   const value: ThemePref = pref;
   const jar = await cookies();

@@ -25,10 +25,18 @@ export async function signInAction(
  * Logout (AUTH-WEB-CONTRACT §2/§3.5). Clearing the cookie is what makes logout
  * real in AUTH_LOCAL_STRICT mode (the next /v1/me is a 401 → /login). For workos
  * a cookie-only clear leaves the WorkOS session alive, so we must also redirect
- * through the IAM/WorkOS logout — handled by /api/auth/logout (scaffolded).
+ * through the IAM/WorkOS logout — handled by /api/auth/logout.
+ *
+ * On workos we must NOT clear the cookie here. `delete()` lands as a Set-Cookie
+ * on THIS response, so the browser drops the session before it navigates to
+ * /api/auth/logout — which then reads a null session, finds no `sessionId`, and
+ * skips the IAM single-logout entirely. That left the upstream WorkOS session
+ * alive: sign out looked like it worked, and the next "sign in" silently
+ * re-authenticated the same person straight back into /admin. The route reads
+ * the session id and then clears the cookie itself, in that order.
  */
 export async function signOutAction(): Promise<void> {
-  await clearSession();
   if (authProvider() === 'workos') redirect('/api/auth/logout');
+  await clearSession();
   redirect('/login');
 }

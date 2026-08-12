@@ -116,7 +116,6 @@ export interface FormsMessages {
         label: string;
         dark: string;
         light: string;
-        system: string;
         next: string;
       };
       /** Left-nav item labels (icon + label). */
@@ -1516,7 +1515,6 @@ export const en: FormsMessages = {
         label: 'Theme',
         dark: 'Dark',
         light: 'Light',
-        system: 'System',
         next: 'Switch to',
       },
       nav: {
@@ -2839,7 +2837,6 @@ export const es: FormsMessages = {
         label: 'Tema',
         dark: 'Oscuro',
         light: 'Claro',
-        system: 'Sistema',
         next: 'Cambiar a',
       },
       nav: {

@@ -8,13 +8,12 @@ import { THEME_ICON, THEME_PREFS, type ThemePref } from '@/lib/theme';
 type ThemeMessages = FormsMessages['admin']['chrome']['theme'];
 
 /**
- * The colour-scheme toggle: one icon button that cycles system → light → dark.
+ * The colour-scheme toggle: one icon button that flips dark ↔ light.
  *
- * A cycle rather than a select because it lives in the sidebar's icon row beside
- * "view public page" and "sign out", and because switching is the whole point —
- * the fast path matters more than naming all three states at once. `system` is in
- * the cycle rather than hidden behind a menu so a viewer who pinned a scheme can
- * hand the decision back to their OS.
+ * A flip rather than a select because it lives in the sidebar's icon row beside
+ * "view public page" and "sign out", and because switching is the whole point.
+ * There is no `system` state to return to — the product is dark by default and
+ * light is an opt-in (see lib/theme.ts), so two states name themselves.
  *
  * The icon shows the CURRENT state and the tooltip names the NEXT one, so the
  * control is readable without a label: an icon-only button whose tooltip repeats
