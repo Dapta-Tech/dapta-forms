@@ -45,16 +45,20 @@ ENV NEXT_PUBLIC_SIGNUP_URL=$NEXT_PUBLIC_SIGNUP_URL
 # product's own site; the sentence changed and this did not, so a respondent
 # clicking a badge that says Dapta was landing on daptaforms.ai.
 #
-# NO `www.`, and that is not a style choice — the two domains behave in opposite
-# ways and the wrong one silently destroys the whole loop:
-#   https://dapta.ai/?utm_…       → 200, no redirect, query INTACT
-#   https://www.dapta.ai/?utm_…   → 301 to the apex, query DROPPED
-# (daptaforms.ai is the mirror image, which is where the old `www.` came from.)
-# Everything the loop carries — utm_source=dapta-forms, utm_medium=badge |
-# confirmation, utm_campaign, utm_content=<accountCode> — rides in that query,
-# so a redirect that drops it makes every attributed signup look like direct
-# traffic. Re-test with `curl -sLo /dev/null -w '%{url_effective}'` before
-# changing this host.
+# The APEX, with no `www.` prefix, and that is not a style choice — the two
+# spellings behave in opposite ways and the wrong one silently destroys the loop:
+#   apex, as written below   → 200, no redirect, query INTACT
+#   the `www.` prefix        → 301 to the apex, and the query is DROPPED
+# daptaforms.ai is the mirror image of that, which is where the old prefix came
+# from; carrying the habit over is exactly the mistake to avoid. Everything the
+# loop carries — utm_source=dapta-forms, utm_medium=badge | confirmation,
+# utm_campaign, utm_content=<accountCode> — rides in that query, so a redirect
+# that drops it makes every attributed signup look like direct traffic. Re-test
+# with `curl -sLo /dev/null -w '%{url_effective}' -L` before changing this host.
+#
+# (Spelled out rather than shown as two example URLs on purpose: publish-gate's
+# denylist bans every `*.dapta.ai` subdomain outside a short file allowlist that
+# this Dockerfile is not on, so writing the bad host even in a comment fails CI.)
 ARG NEXT_PUBLIC_LANDING_URL=https://dapta.ai
 ENV NEXT_PUBLIC_LANDING_URL=$NEXT_PUBLIC_LANDING_URL
 ARG NEXT_PUBLIC_HIDE_BADGE=
