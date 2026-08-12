@@ -735,10 +735,15 @@ export function FormRenderer({
                     {m.schedulerUnconfigured}
                   </p>
                 )}
+                {/* An escape hatch, so it is styled as one — `.pf__skip`, NOT
+                    `.pf__btn`. As a primary button it rendered full-width and
+                    accent-filled directly under the calendar, which made the way
+                    OUT of the step the loudest thing on it and left the booking
+                    itself looking optional. */}
                 {!step.required ? (
                   <button
                     type="button"
-                    className="pf__btn pf__btn--inline"
+                    className="pf__skip"
                     onClick={() => void advance(answers, step)}
                   >
                     {m.schedulerSkip}

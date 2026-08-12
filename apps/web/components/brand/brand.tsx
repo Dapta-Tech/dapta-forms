@@ -1,3 +1,4 @@
+import { DaptaMark } from './dapta-logo';
 import { FormsLockup, FormsMark, FormsWordmark } from './forms-logo';
 
 /**
@@ -9,14 +10,21 @@ import { FormsLockup, FormsMark, FormsWordmark } from './forms-logo';
  * from whatever it called the product. That is the same principle as
  * `MadeWithBadge`: a fork is never forced to carry Dapta branding.
  *
- * Call sites use `<BrandLockup>` / `<BrandMark>` and never the raw marks, so the
- * gate cannot be forgotten on a new surface.
+ * Call sites use `<BrandLockup>` / `<BrandMark>` / `<PlatformMark>` and never the
+ * raw marks, so the gate cannot be forgotten on a new surface.
  */
 
 export const PRODUCT_NAME = process.env.NEXT_PUBLIC_PRODUCT_NAME || 'Forms';
 
 /** True only on a build that identifies itself as Dapta's own. */
 export const IS_DAPTA_BRAND = PRODUCT_NAME === 'Dapta Forms';
+
+/**
+ * The company behind the product. Constant, not env-driven: unlike
+ * `PRODUCT_NAME` there is nothing here for a deployment to rename — on a fork
+ * the gate above means this string is never reached.
+ */
+const PLATFORM_NAME = 'Dapta';
 
 /**
  * Full wordmark. Roughly 6:1 — size it with a height class and let width follow
@@ -62,6 +70,25 @@ export function BrandWordmark({ className, labelled }: { className?: string; lab
 export function BrandMark({ className, labelled }: { className?: string; labelled?: boolean }) {
   if (IS_DAPTA_BRAND) {
     return <FormsMark className={className} title={labelled ? PRODUCT_NAME : undefined} />;
+  }
+  return <FallbackChip />;
+}
+
+/**
+ * The PLATFORM's mark — Dapta's `d`, not the product's `F`.
+ *
+ * Distinct from `BrandMark` on purpose, and the two are not interchangeable: a
+ * surface signs itself with the mark that matches the name written next to it.
+ * In-product chrome says "Forms" and takes `BrandMark`; the attribution badge on
+ * a public form says "Powered by Dapta" and takes this one. Pairing either mark
+ * with the other name is the bug this split exists to prevent.
+ *
+ * Same open-core gate as every other surface here — a fork gets its own initial,
+ * never Dapta's `d`.
+ */
+export function PlatformMark({ className, labelled }: { className?: string; labelled?: boolean }) {
+  if (IS_DAPTA_BRAND) {
+    return <DaptaMark className={className} title={labelled ? PLATFORM_NAME : undefined} />;
   }
   return <FallbackChip />;
 }
