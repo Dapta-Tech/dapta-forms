@@ -1,5 +1,5 @@
 import { getMessages } from '@quill/shared';
-import { BrandMark } from '@/components/brand/brand';
+import { PlatformMark } from '@/components/brand/brand';
 import { signupHref } from '@/lib/growth';
 
 /**
@@ -9,6 +9,11 @@ import { signupHref } from '@/lib/growth';
  * a form is a warmer lead for Dapta than for Dapta Forms, and the badge's whole
  * job is to send them somewhere. Where it sends them is `NEXT_PUBLIC_SIGNUP_URL`
  * — never a domain in this file (see `signupHref`).
+ *
+ * The MARK follows the copy, which is why this is the one surface taking
+ * `PlatformMark` and not `BrandMark`: the badge used to set the product's `F`
+ * beside a sentence naming the company, so the two halves of the pill argued
+ * with each other about who the reader was being sent to.
  *
  * It is FORM CHROME, not a document footer. It used to render as a `<footer>`
  * AFTER the renderer in `page.tsx`, and `.pf` carries `min-height: 100dvh` —
@@ -45,9 +50,11 @@ export function MadeWithBadge({
         target="_blank"
         rel="noopener noreferrer"
       >
-        {/* Ink is currentColor, so the mark picks up the pill's foreground and
-            stays legible on any host background. */}
-        <BrandMark className="pf__attribution-mark" />
+        {/* The bowl is currentColor, so it picks up the pill's foreground and
+            stays legible on any host background; only the lime tick is literal.
+            Unlabelled on purpose — the visible text right beside it already
+            names the destination, so a title here would read it out twice. */}
+        <PlatformMark className="pf__attribution-mark" />
         <span>{m.growth.madeWith}</span>
         {/* Localized, like every other string on this surface — this used to be
             a hardcoded English "(opens in a new tab)". Same catalog key the
