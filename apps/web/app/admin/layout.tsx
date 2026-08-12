@@ -9,6 +9,7 @@ import { getThemePref } from '@/lib/theme.server';
 import { ToastProvider } from '@/components/toast';
 import { resolveProductAnalytics } from '@/lib/product-analytics';
 import { ProductAnalytics } from '@/components/analytics/product-analytics';
+import { PlatformGtm, resolvePlatformGtmId } from '@/components/analytics/platform-gtm';
 
 export default async function AdminLayout({ children }: { children: ReactNode }) {
   const jar = await cookies();
@@ -52,6 +53,7 @@ export default async function AdminLayout({ children }: { children: ReactNode })
 
   return (
     <ToastProvider>
+      <PlatformGtm gtmId={resolvePlatformGtmId()} />
       <ProductAnalytics
         analytics={analytics}
         identity={{

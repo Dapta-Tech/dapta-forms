@@ -5,6 +5,7 @@ import { preferredLocale } from '@/lib/locale';
 import { currentOnboardingCohort } from '@/lib/dapta-onboarding';
 import { resolveProductAnalytics } from '@/lib/product-analytics';
 import { ProductAnalytics } from '@/components/analytics/product-analytics';
+import { PlatformGtm, resolvePlatformGtmId } from '@/components/analytics/platform-gtm';
 import { OnboardingWizard } from './wizard';
 
 /**
@@ -48,6 +49,7 @@ export default async function OnboardingPage() {
 
   return (
     <>
+      <PlatformGtm gtmId={resolvePlatformGtmId()} />
       <ProductAnalytics
         analytics={resolveProductAnalytics()}
         identity={{
