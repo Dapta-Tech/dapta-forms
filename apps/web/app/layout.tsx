@@ -3,7 +3,6 @@ import type { ReactNode } from 'react';
 import 'primeicons/primeicons.css';
 import './globals.css';
 import { fontVariables } from '@/lib/fonts';
-import { themeAttribute } from '@/lib/theme';
 import { getThemePref } from '@/lib/theme.server';
 
 // Customer-facing name comes from the deployment (NEXT_PUBLIC_PRODUCT_NAME,
@@ -29,10 +28,10 @@ export const metadata: Metadata = {
 };
 
 export default async function RootLayout({ children }: { children: ReactNode }) {
-  // The scheme used to be the literal `data-theme="dark"`, which pinned the whole
-  // product to dark and made the token sheet's light theme unreachable. It is now
-  // the viewer's persisted choice, resolved on the server so the first response
-  // already carries it — see lib/theme.ts for why that matters.
+  // The viewer's persisted choice, resolved on the server so the first response
+  // already carries it — see lib/theme.server.ts for why that matters. Dark
+  // unless they opted into light; the attribute is ALWAYS stamped, so the token
+  // sheet's `prefers-color-scheme` fallback never decides for us.
   //
   // This is ADMIN chrome only, despite being the root. A public form does not
   // take the scheme from here: `formDesignProps` pins an unbranded form to the
@@ -40,7 +39,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
   // builder's preview cannot show the author's dashboard preference and call it
   // the published page. Read that comment before widening this one — "the viewer's
   // preference" is not what a respondent gets, because a respondent has no cookie.
-  const theme = themeAttribute(await getThemePref());
+  const theme = await getThemePref();
   return (
     // Every curated face is declared here so a public form can switch typeface
     // without a rebuild; only the brand face is preloaded (see lib/fonts.ts).

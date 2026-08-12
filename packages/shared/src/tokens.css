@@ -211,10 +211,16 @@
   --ring: hsl(var(--acc-h) var(--acc-s) 28%);
 }
 
-/* The `system` preference: no `data-theme` is stamped, so this decides. Must stay
-   value-for-value identical to the `[data-theme='light']` block above — a token
-   that lands in only one of the two makes the OS-following path silently different
-   from the pinned one, which is the hardest kind of theme bug to notice. */
+/* The no-attribute fallback: whoever renders this sheet stamped no `data-theme`,
+   so the OS decides. Dapta Forms no longer reaches it — the retired `system`
+   preference was the only way to omit the attribute, and the root layout now
+   always stamps `dark` or `light`. It stays for a self-host that embeds these
+   tokens without our layout, which would otherwise get the dark base on a
+   light-mode machine with no way to opt out.
+
+   Must stay value-for-value identical to the `[data-theme='light']` block above:
+   both apply at once when light is pinned, and a token that lands in only one of
+   them is the hardest kind of theme bug to notice. */
 @media (prefers-color-scheme: light) {
   :root:not([data-theme='dark']) {
     --background: #f4f6f8;

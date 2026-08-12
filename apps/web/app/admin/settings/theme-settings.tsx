@@ -12,11 +12,10 @@ type ThemeMessages = FormsMessages['admin']['chrome']['theme'];
 /**
  * The colour-scheme preference, named and explained.
  *
- * The sidebar already has a one-click cycle for switching fast; this is the other
- * half of the same setting — the place where all three choices are visible at once
- * and `System` says in words that it follows the OS. A cycle button is the wrong
- * control to *learn* a setting from: you cannot see what the options are without
- * pressing it repeatedly.
+ * The sidebar already has a one-click flip for switching fast; this is the other
+ * half of the same setting — the place where both choices are named at once. An
+ * icon-only button is the wrong control to *learn* a setting from: you cannot see
+ * what the options are without pressing it.
  *
  * Rendered with the builder's own `SegmentedToggle` rather than a second copy of
  * it. This used to re-implement the same radiogroup shell, the same selected-chip

@@ -11,9 +11,10 @@ import { isThemePref, THEME_COOKIE, type ThemePref } from './theme';
  * judged by. Reading it here means there is nothing to correct after hydration
  * and no blocking inline script in `<head>`.
  *
- * Defaults to `dark`, which is what the app rendered when the scheme was pinned
- * in the root layout — a viewer with no cookie sees exactly what they saw before
- * the toggle existed.
+ * Defaults to `dark`. That covers three cases with one line: never chose, cleared
+ * their cookies, or still carries the retired `system` value — `isThemePref` no
+ * longer recognises it, so it reads as "no choice" and lands on the default
+ * instead of on a scheme nobody can select any more.
  */
 export async function getThemePref(): Promise<ThemePref> {
   const value = (await cookies()).get(THEME_COOKIE)?.value;
