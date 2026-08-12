@@ -5,6 +5,7 @@ import { preferredLocale } from '@/lib/locale';
 import { currentOnboardingCohort } from '@/lib/dapta-onboarding';
 import { resolveProductAnalytics } from '@/lib/product-analytics';
 import { ProductAnalytics } from '@/components/analytics/product-analytics';
+import { PlatformGtm, resolvePlatformGtmId } from '@/components/analytics/platform-gtm';
 import { OnboardingWizard } from './wizard';
 
 /**
@@ -20,7 +21,11 @@ import { OnboardingWizard } from './wizard';
  * is what makes the URL safe to hit directly, on a bookmark or a back button,
  * without re-running an onboarding that already happened.
  */
-export default async function OnboardingPage() {
+export default async function OnboardingPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ step?: string }>;
+}) {
   let me: Awaited<ReturnType<typeof adminApi.me>>;
   try {
     me = await adminApi.me();
@@ -32,6 +37,16 @@ export default async function OnboardingPage() {
   }
 
   if (!me.onboardingRequired) redirect('/admin');
+
+  // The wizard mirrors its screen into `?step=N` as it moves, but the answers
+  // live only in client state — a reload or deep link restarts at question one
+  // regardless, so honoring a stale `?step=5` here would only make the URL lie
+  // to analytics. Normalize to the bare path; the wizard re-stamps `?step=1`
+  // itself. AFTER the gates above, so a stale step URL from someone already
+  // onboarded still exits to /admin in one hop. No loop: the target carries no
+  // `step`.
+  const { step } = await searchParams;
+  if (step !== undefined) redirect('/onboarding');
 
   // Their browser's language, not the cookie's default — nobody arriving here
   // has ever seen the switcher.
@@ -48,6 +63,7 @@ export default async function OnboardingPage() {
 
   return (
     <>
+      <PlatformGtm gtmId={resolvePlatformGtmId()} />
       <ProductAnalytics
         analytics={resolveProductAnalytics()}
         identity={{

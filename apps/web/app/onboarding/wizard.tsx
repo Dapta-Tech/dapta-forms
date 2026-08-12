@@ -43,6 +43,8 @@ import {
   fill,
   leadVolumeBucket,
   LEAD_VOLUME_SLIDER,
+  stepIndexFromSearch,
+  stepParam,
   wizardQuestions,
   wizardTemplates,
 } from '@/lib/onboarding';
@@ -160,6 +162,43 @@ export function OnboardingWizard({
   }, []);
 
   /**
+   * Mirror every screen move into the URL — `/onboarding?step=N`, the same
+   * shape the Dapta adminpanel uses — so GTM's history trigger sees one
+   * pageview per step without a single custom event.
+   *
+   * Native `history.pushState`, never `router.push`: the router would re-run
+   * the server component — `me()` plus the IAM cohort probe — on every answer,
+   * for a page whose state lives entirely in this client component. A PUSH per
+   * move (matching the adminpanel) is what makes the browser's own back/forward
+   * walk the steps; the popstate listener below is what makes the wizard follow.
+   */
+  const syncStepUrl = useCallback((nextIndex: number) => {
+    window.history.pushState(null, '', stepParam(nextIndex));
+  }, []);
+
+  // Stamp the FIRST screen on arrival — replace, not push, so question one and
+  // the bare `/onboarding` are one history entry and browser-back from it still
+  // EXITS the wizard instead of stepping to itself. Idempotent under
+  // StrictMode's double mount: same URL both times. The server page redirects
+  // any direct `?step=N` load back to bare `/onboarding` first, so this is the
+  // only writer of the first entry.
+  useEffect(() => {
+    window.history.replaceState(null, '', stepParam(0));
+  }, []);
+
+  // The browser's back/forward buttons move the wizard, not just the URL — the
+  // half the adminpanel is missing. Clamped to the screens that exist, and
+  // `pending` is cleared like every other index move (see `back`).
+  useEffect(() => {
+    const onPop = () => {
+      setPending(null);
+      setIndex(stepIndexFromSearch(window.location.search, questions.length + 1));
+    };
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, [questions]);
+
+  /**
    * Emit `step_viewed` once per screen ARRIVAL, not once per render.
    *
    * Without the ref this fires on every state change — a keystroke in the
@@ -215,8 +254,9 @@ export function OnboardingWizard({
       const reached = questions[advancing]?.key ?? 'template';
       save({ ...patch, lastStep: reached });
       setIndex(advancing);
+      syncStepUrl(advancing);
     },
-    [questions, save],
+    [questions, save, syncStepUrl],
   );
 
   /** Answer the current question and advance. Choosing IS continuing — one tap. */
@@ -252,8 +292,11 @@ export function OnboardingWizard({
 
   const back = useCallback(() => {
     setPending(null);
-    setIndex((i) => Math.max(0, i - 1));
-  }, []);
+    // Computed rather than a functional update: the URL mirror needs the value.
+    const next = Math.max(0, index - 1);
+    setIndex(next);
+    syncStepUrl(next);
+  }, [index, syncStepUrl]);
 
   const finish = useCallback(
     (id: string) => {

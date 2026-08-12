@@ -347,3 +347,30 @@ export function fill(template: string, values: Record<string, string | number>):
     key in values ? String(values[key]) : match,
   );
 }
+
+/**
+ * The wizard's screen index as a URL search string — `?step=1` for the first
+ * question, counting exactly like the on-screen "Pregunta 1 de N", with the
+ * template picker as the final step. The same URL shape the Dapta adminpanel
+ * gives ITS onboarding, so one GTM history trigger reads both products' funnels
+ * the same way.
+ *
+ * 1-based on purpose: the URL is read by people and by marketing tooling, and
+ * "?step=0" would make every funnel chart look off by one from the copy.
+ */
+export function stepParam(index: number): string {
+  return `?step=${index + 1}`;
+}
+
+/**
+ * The inverse: a `?step=` search string back to a screen index, clamped to the
+ * screens that exist. Garbage, absence, and out-of-range values all land on a
+ * REAL screen rather than throwing or rendering past the template picker —
+ * the URL is user-editable input, not state we control.
+ */
+export function stepIndexFromSearch(search: string, totalScreens: number): number {
+  const raw = new URLSearchParams(search).get('step');
+  const step = Number.parseInt(raw ?? '', 10);
+  if (!Number.isFinite(step)) return 0;
+  return Math.min(Math.max(step, 1), Math.max(totalScreens, 1)) - 1;
+}

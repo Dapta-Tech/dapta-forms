@@ -235,6 +235,15 @@ export const clientEnvSchema = z.object({
   // admin loads no analytics script at all.
   NEXT_PUBLIC_PRODUCT_ANALYTICS_KEY: z.string().optional(),
   NEXT_PUBLIC_PRODUCT_ANALYTICS_HOST: z.string().url().default('https://us.i.posthog.com'),
+
+  // The deployment's own GTM container for PLATFORM pages (login, onboarding,
+  // admin) — the marketing half of the telemetry above. NOT to be confused
+  // with NEXT_PUBLIC_GTM_ID, which is the form OWNER's container on their
+  // PUBLIC form pages; the two must never share a variable or a page (see
+  // apps/web/components/analytics/platform-gtm.tsx). Unset on a Dapta (workos)
+  // build falls back to Dapta's own container in code; unset on a bare fork =
+  // no platform GTM at all.
+  NEXT_PUBLIC_PLATFORM_GTM_ID: z.string().optional(),
 });
 
 export type ClientEnv = z.infer<typeof clientEnvSchema>;
