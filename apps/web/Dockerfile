@@ -37,12 +37,25 @@ ARG NEXT_PUBLIC_SIGNUP_URL=
 ENV NEXT_PUBLIC_SIGNUP_URL=$NEXT_PUBLIC_SIGNUP_URL
 # Where the badge and the post-submission CTA point. Unlike the two above this
 # one carries a real default, because it is a fact about the PRODUCT rather than
-# about a deployment: the badge reads "Made with Dapta Forms", so the page it
-# opens is Dapta Forms' own. Nothing changes for a fork — the loop stays gated on
+# about a deployment. Nothing changes for a fork — the loop stays gated on
 # NEXT_PUBLIC_SIGNUP_URL, so with that unset neither surface renders at all.
-# The `www.` is load-bearing: the apex 301s and DROPS the query string, which
-# would strip the very UTM tags the loop is built to carry.
-ARG NEXT_PUBLIC_LANDING_URL=https://www.daptaforms.ai
+#
+# It follows the badge's COPY, and the copy now reads "Powered by Dapta". This
+# default was written when it read "Made with Dapta Forms" and pointed at the
+# product's own site; the sentence changed and this did not, so a respondent
+# clicking a badge that says Dapta was landing on daptaforms.ai.
+#
+# NO `www.`, and that is not a style choice — the two domains behave in opposite
+# ways and the wrong one silently destroys the whole loop:
+#   https://dapta.ai/?utm_…       → 200, no redirect, query INTACT
+#   https://www.dapta.ai/?utm_…   → 301 to the apex, query DROPPED
+# (daptaforms.ai is the mirror image, which is where the old `www.` came from.)
+# Everything the loop carries — utm_source=dapta-forms, utm_medium=badge |
+# confirmation, utm_campaign, utm_content=<accountCode> — rides in that query,
+# so a redirect that drops it makes every attributed signup look like direct
+# traffic. Re-test with `curl -sLo /dev/null -w '%{url_effective}'` before
+# changing this host.
+ARG NEXT_PUBLIC_LANDING_URL=https://dapta.ai
 ENV NEXT_PUBLIC_LANDING_URL=$NEXT_PUBLIC_LANDING_URL
 ARG NEXT_PUBLIC_HIDE_BADGE=
 ENV NEXT_PUBLIC_HIDE_BADGE=$NEXT_PUBLIC_HIDE_BADGE
@@ -73,7 +86,11 @@ ARG NEXT_PUBLIC_PLATFORM_URL=
 ENV NEXT_PUBLIC_PLATFORM_URL=$NEXT_PUBLIC_PLATFORM_URL
 ARG NEXT_PUBLIC_SIGNUP_URL=
 ENV NEXT_PUBLIC_SIGNUP_URL=$NEXT_PUBLIC_SIGNUP_URL
-ARG NEXT_PUBLIC_LANDING_URL=https://www.daptaforms.ai
+# Apex, no `www.` — see the note on the build stage's copy of this ARG. The two
+# stages must not drift: the client bundle takes the BUILD stage's value and SSR
+# takes this one, so a mismatch means the badge in the HTML and the badge after
+# hydration point at different hosts.
+ARG NEXT_PUBLIC_LANDING_URL=https://dapta.ai
 ENV NEXT_PUBLIC_LANDING_URL=$NEXT_PUBLIC_LANDING_URL
 ARG NEXT_PUBLIC_HIDE_BADGE=
 ENV NEXT_PUBLIC_HIDE_BADGE=$NEXT_PUBLIC_HIDE_BADGE
