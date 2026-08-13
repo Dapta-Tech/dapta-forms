@@ -2994,6 +2994,7 @@ export const es: FormsMessages = {
       save: 'Guardar kit de marca',
       saving: 'Guardando…',
       saved: 'Kit de marca guardado.',
+      saveOffline: 'No se pudo contactar al servidor — revisa tu conexión e inténtalo de nuevo.',
       adminOnly: 'Solo un admin o el owner puede editar el kit de marca.',
       logoTitle: 'Logo',
       logoSubtitle: 'Se muestra en portadas y encabezados salvo que un formulario tenga el suyo.',
