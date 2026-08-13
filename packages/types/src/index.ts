@@ -651,6 +651,22 @@ export const hubspotDestinationSchema = z.object({
        * not have. Absent = no activity, and nothing else changes.
        */
       formGuid: z.string().max(64).nullable().optional(),
+      /**
+       * Whether to record the activity at all — the author's intent, as opposed
+       * to `formGuid`, which is what the API made for them.
+       *
+       * Kept apart so turning the switch off STOPS posting without destroying
+       * the form: its past submissions are activities on real contacts, and
+       * deleting it to represent "off" would erase history the author never
+       * asked to lose. Turning it back on reuses the same form.
+       */
+      formActivity: z.boolean().optional(),
+      /**
+       * What the mirror form was built from, so a save can tell whether it is
+       * stale without asking HubSpot. The Connect tab autosaves, and rebuilding
+       * on every keystroke would hammer the portal for nothing.
+       */
+      formSignature: z.string().max(4000).optional(),
     })
     .default({}),
   /** stepKey -> contact property, or several (one SHOULD be `email` unless a

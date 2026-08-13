@@ -122,6 +122,12 @@ interface HubspotState {
   scoreProperty: string;
   dateProperty: string;
   note: boolean;
+  /**
+   * Whether completed submissions are recorded as a HubSpot FORM SUBMISSION
+   * activity, not just a note. The mirror form the API builds for it is stored
+   * beside this flag and is not the author's to edit — see `settings.formGuid`.
+   */
+  formActivity: boolean;
   valueMaps: ValueMapGroup[];
   outcomeProperty: string;
   staticProperties: StaticPropertyRow[];
@@ -175,6 +181,24 @@ function isKnownTimezone(value: string): boolean {
  *
  * Exported for the spec beside this file.
  */
+/**
+ * The HubSpot settings to store: what this screen edits, MERGED onto what it
+ * does not.
+ *
+ * `settings` also carries `formGuid` and `formSignature`, which the API writes
+ * when it builds the mirror form in the customer's portal. This screen has no
+ * control for either and no business rewriting them — but it saves the whole
+ * destination, so replacing the object wholesale (as `settings: { note }` did)
+ * would drop the guid on the very next keystroke and strand a form in their
+ * portal that nothing points at. The next save would then make another one.
+ */
+export function mergeHubspotSettings(
+  stored: Record<string, unknown> | undefined,
+  edited: { note: boolean; formActivity: boolean },
+): Record<string, unknown> {
+  return { ...(stored ?? {}), ...edited };
+}
+
 export function carriedWebhooks(destinations: FormDestination[]): FormDestination[] {
   return destinations.filter((d) => d.type === 'webhook').slice(1);
 }
@@ -216,6 +240,10 @@ function initialHubspot(destinations: FormDestination[]): HubspotState {
       scoreProperty: h.scoreProperty ?? '',
       dateProperty: h.dateProperty ?? '',
       note: h.settings?.note !== false,
+      // Opt-in: the mirror form creates an object in the customer's portal and
+      // needs scopes their token may not carry, so an existing form never
+      // starts doing it by surprise.
+      formActivity: h.settings?.formActivity === true,
       valueMaps: Object.entries(h.valueMaps ?? {}).map(([stepKey, map]) => ({
         stepKey,
         rows: Object.entries(map).map(([from, to]) => ({ from, to })),
@@ -239,6 +267,7 @@ function initialHubspot(destinations: FormDestination[]): HubspotState {
     scoreProperty: '',
     dateProperty: '',
     note: true,
+    formActivity: false,
     valueMaps: [],
     outcomeProperty: '',
     staticProperties: [],
@@ -300,6 +329,7 @@ export function IntegrationsEditor({
   errorRef.current = error;
   const [webhook, setWebhook] = useState<WebhookState>(() => initialWebhook(initialDestinations));
   const [hs, setHs] = useState<HubspotState>(() => initialHubspot(initialDestinations));
+  const [formActivityError, setFormActivityError] = useState<string | null>(null);
   const [webhookError, setWebhookError] = useState<string | null>(null);
   // The destinations as the server last accepted them. Seeded from the freshly
   // fetched mount props and advanced on every successful save, so the "protect
@@ -445,7 +475,10 @@ export function IntegrationsEditor({
         ...(stored && stored.type === 'hubspot' ? stored : {}),
         type: 'hubspot',
         enabled: hs.enabled,
-        settings: { note: hs.note },
+        settings: mergeHubspotSettings(
+          stored && stored.type === 'hubspot' ? stored.settings : undefined,
+          { note: hs.note, formActivity: hs.formActivity },
+        ),
         fieldMappings,
         utmMappings,
         scoreProperty: hs.scoreProperty.trim() || null,
@@ -489,6 +522,11 @@ export function IntegrationsEditor({
         errorRef.current(res.message ?? m.saveError);
         return false;
       }
+      // HubSpot refused to build the mirror form. The save itself went through,
+      // so this is a NOTICE on the card and not a save error — losing the
+      // author's mappings because a portal is missing a scope would be worse
+      // than the missing activity.
+      setFormActivityError(res.formActivityError ?? null);
       dirty.current = false;
       // This array is now the server truth — the malformed-URL fallback carries
       // it forward instead of the stale mount snapshot.
@@ -601,6 +639,7 @@ export function IntegrationsEditor({
           extraHubspotStored={
             initialDestinations.filter((d) => d.type === 'hubspot').length > 1
           }
+          formActivityError={formActivityError}
           readiness={readiness}
           questions={questions}
           m={m}
@@ -1322,12 +1361,15 @@ export function HubspotCard({
   accountConnected,
   showMapping,
   extraHubspotStored,
+  formActivityError,
   readiness,
   questions,
   m,
 }: {
   state: HubspotState;
   onChange: (s: HubspotState) => void;
+  /** Why HubSpot refused to build the mirror form on the last save, if it did. */
+  formActivityError?: string | null;
   /** `options` rides along for the value pickers; absent = not an enumeration. */
   properties: { name: string; label: string; options?: HubSpotPropertyOption[] }[];
   pickerEnabled: boolean;
@@ -1996,6 +2038,38 @@ export function HubspotCard({
           aria-label={m.createNote}
         />
       </div>
+
+      {/* The form-submission activity. Sits below the note because it is the
+          better version of the same idea: a note says something happened, this
+          says WHAT the submission set, on an activity the CRM already knows how
+          to read. Both can be on; neither disables the other. */}
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <label className="text-sm font-medium">{m.formActivity}</label>
+          <p className="text-xs text-muted-foreground">{m.formActivityHelp}</p>
+        </div>
+        <Switch
+          checked={state.formActivity}
+          data-testid="hubspot-form-activity"
+          onCheckedChange={(formActivity) => onChange({ ...state, formActivity })}
+          aria-label={m.formActivity}
+        />
+      </div>
+
+      {/* The save went through; only the portal side did not. Said here, next to
+          the switch that caused it, rather than as a save error — losing an
+          author's mappings because their token is missing a scope would be a
+          far worse trade than the missing activity. */}
+      {state.formActivity && formActivityError ? (
+        <p
+          role="alert"
+          data-testid="hubspot-form-activity-error"
+          className="flex items-start gap-1.5 rounded-md border border-destructive/40 bg-destructive/10 px-2.5 py-2 text-xs leading-relaxed text-destructive"
+        >
+          <i aria-hidden className="pi pi-exclamation-triangle mt-0.5 shrink-0" style={{ fontSize: 11 }} />
+          {fill(m.formActivityError, { reason: formActivityError })}
+        </p>
+      ) : null}
     </Card>
   );
 }

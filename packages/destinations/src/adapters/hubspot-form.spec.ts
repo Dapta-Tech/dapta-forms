@@ -182,11 +182,11 @@ describe('buildMirrorSubmission', () => {
   it('carries a page context when there is one, and omits the key when not', () => {
     expect(buildMirrorSubmission({ email: 'a@b.com' }, ['email'])).not.toHaveProperty('context');
     const withContext = buildMirrorSubmission({ email: 'a@b.com' }, ['email'], {
-      pageUri: 'https://forms.dapta.ai/x',
+      pageUri: 'https://forms.example.com/x',
       pageName: 'Lead qualifier',
     });
     expect(withContext.context).toEqual({
-      pageUri: 'https://forms.dapta.ai/x',
+      pageUri: 'https://forms.example.com/x',
       pageName: 'Lead qualifier',
     });
   });

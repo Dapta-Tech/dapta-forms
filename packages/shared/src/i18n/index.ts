@@ -1037,6 +1037,11 @@ export interface FormsMessages {
       dateProperty: string;
       createNote: string;
       createNoteHelp: string;
+      /** The mirror-form switch: a real HubSpot form-submission activity. */
+      formActivity: string;
+      formActivityHelp: string;
+      /** Shown when HubSpot refused to build the mirror form. `{reason}` */
+      formActivityError: string;
       selectProperty: string;
       noProperty: string;
       addMapping: string;
@@ -2416,6 +2421,10 @@ export const en: FormsMessages = {
       dateProperty: 'Submitted-date property',
       createNote: 'Create a note on completed submissions',
       createNoteHelp: 'Attaches a note with the form name and score to the contact.',
+      formActivity: 'Record a form submission in HubSpot',
+      formActivityHelp:
+        'Creates a matching form in your portal, so each completed submission shows on the contact as a form submission activity listing the properties it set — not just a note. Needs the forms and form-submissions-write scopes on your private app.',
+      formActivityError: 'HubSpot could not set this up: {reason}',
       selectProperty: 'Select a property…',
       noProperty: '— none —',
       addMapping: 'Add mapping',
@@ -3773,6 +3782,10 @@ export const es: FormsMessages = {
       dateProperty: 'Propiedad de fecha de envío',
       createNote: 'Crear una nota en respuestas completadas',
       createNoteHelp: 'Adjunta al contacto una nota con el nombre del formulario y la puntuación.',
+      formActivity: 'Registrar la respuesta como form submission en HubSpot',
+      formActivityHelp:
+        'Crea un formulario espejo en tu portal, para que cada respuesta completada aparezca en el contacto como una actividad de form submission con las propiedades que escribió — y no solo como una nota. Necesita los permisos forms y form-submissions-write en tu private app.',
+      formActivityError: 'HubSpot no pudo configurarlo: {reason}',
       selectProperty: 'Selecciona una propiedad…',
       noProperty: '— ninguna —',
       addMapping: 'Añadir mapeo',

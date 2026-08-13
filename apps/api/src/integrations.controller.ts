@@ -8,6 +8,7 @@ import {
   Inject,
   Injectable,
   NotFoundException,
+  Optional,
   Param,
   Post,
   Put,
@@ -38,6 +39,7 @@ import {
   type FormDestination,
 } from '@quill/types';
 import { WebhookDestination, WebhookHttpError } from '@quill/destinations';
+import { syncMirrorForm } from './hubspot-mirror';
 import type { ServerEnv } from '@quill/config/env';
 import { AuthService, type ReqLike } from './auth.service';
 import { assertAdmin } from './permissions';
@@ -612,6 +614,7 @@ export class FormDestinationsController {
   constructor(
     @Inject(DB) private readonly db: Db,
     @Inject(AuthService) private readonly auth: AuthService,
+    @Optional() @Inject(ENV) private readonly env?: ServerEnv,
   ) {}
 
   @Put('forms/:id/destinations')
@@ -641,10 +644,71 @@ export class FormDestinationsController {
         message: ONE_HUBSPOT_DESTINATION_MESSAGE,
       });
     }
-    const out = await updateFormDestinations(this.db, p.accountId, id, destinations);
+    // Bring the HubSpot mirror form in line BEFORE storing, so the guid it
+    // returns is written in the same request that created it — no window where
+    // a form exists in the portal that nothing points at. A HubSpot failure
+    // never fails the save: an author must be able to edit their mappings while
+    // a portal is unreachable or has not granted the scopes.
+    const mirror = await this.syncMirror(p.accountId, before.name, destinations);
+    const out = await updateFormDestinations(this.db, p.accountId, id, mirror.destinations);
     if (!out.ok) throw new NotFoundException({ error: 'NOT_FOUND', message: 'Not found.' });
     // Never echo the stored webhook secret back to the client (mask on READ).
-    return { ...out.value, config: maskConfigSecrets(out.value.config) };
+    return {
+      ...out.value,
+      config: maskConfigSecrets(out.value.config),
+      ...(mirror.error ? { formActivityError: mirror.error } : {}),
+    };
+  }
+
+  /**
+   * Bring every HubSpot destination's mirror form in line with what this form
+   * writes, returning the destinations to store.
+   *
+   * The array is rewritten rather than patched in place because the mirror's
+   * guid belongs to the destination that owns it, and the caller stores the
+   * whole array in one write. Only the HubSpot entries can change; everything
+   * else passes through by reference.
+   */
+  private async syncMirror(
+    accountId: string,
+    formName: string,
+    destinations: unknown[],
+  ): Promise<{ destinations: unknown[]; error?: string }> {
+    if (!destinations.some((d) => (d as { type?: string })?.type === 'hubspot')) {
+      return { destinations };
+    }
+    // Resolved once, and only for a form that actually has a HubSpot entry.
+    let token: string | null = null;
+    try {
+      token = await resolveProviderToken(
+        this.db,
+        accountId,
+        'hubspot',
+        this.env?.FORMS_ENCRYPTION_KEY,
+        this.env?.HUBSPOT_PRIVATE_APP_TOKEN,
+      );
+    } catch {
+      token = null;
+    }
+
+    let error: string | undefined;
+    const out = await Promise.all(
+      destinations.map(async (raw) => {
+        const parsed = formDestinationSchema.safeParse(raw);
+        if (!parsed.success || parsed.data.type !== 'hubspot') return raw;
+        const result = await syncMirrorForm(parsed.data, formName, {
+          fetchImpl: this.fetchImpl,
+          token,
+        });
+        if (result.error && !error) error = result.error;
+        if (result.action === 'noop' || result.action === 'unchanged') return raw;
+        // Merge onto the RAW entry, not the parsed one: parsing applies schema
+        // defaults, and writing those back would rewrite fields this request
+        // never touched.
+        return { ...(raw as object), settings: result.settings };
+      }),
+    );
+    return { destinations: out, error };
   }
 
   /**

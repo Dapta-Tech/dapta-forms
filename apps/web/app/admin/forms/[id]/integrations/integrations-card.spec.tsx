@@ -102,6 +102,7 @@ describe('HubspotCard — where the extra-destination notice goes', () => {
           scoreProperty: '',
           dateProperty: '',
           note: true,
+          formActivity: false,
           valueMaps: [],
           outcomeProperty: '',
           staticProperties: [],

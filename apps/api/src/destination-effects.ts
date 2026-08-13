@@ -194,6 +194,8 @@ export class DestinationEffects {
       this.env?.FORMS_ENCRYPTION_KEY,
       this.env?.HUBSPOT_PRIVATE_APP_TOKEN,
     );
+    const mirrorGuid =
+      destination.settings?.formActivity === true ? (destination.settings?.formGuid ?? null) : null;
     return {
       type: 'hubspot',
       hubspot: {
@@ -208,12 +210,17 @@ export class DestinationEffects {
         outcomeProperty: destination.outcomeProperty ?? undefined,
         staticProperties: destination.staticProperties,
         inferCompanyFromEmail: destination.inferCompanyFromEmail,
-        // The mirror form: set only once one has been created for this form.
+        // The mirror form. Gated on the author's switch as well as the guid:
+        // the guid SURVIVES the switch being turned off, so that turning it back
+        // on reuses the same form instead of orphaning the activities already
+        // attached to it. Policy lives here rather than in the adapter, which
+        // simply posts when it is given somewhere to post to.
+        //
         // The portal is resolved lazily — nothing else in the product needs it,
         // so it is not worth a column, and a form with no mirror never pays for
         // the lookup at all.
-        formGuid: destination.settings?.formGuid ?? undefined,
-        portalId: destination.settings?.formGuid
+        formGuid: mirrorGuid ?? undefined,
+        portalId: mirrorGuid
           ? ((await this.resolvePortalId(accountId, token ?? '')) ?? undefined)
           : undefined,
       },
