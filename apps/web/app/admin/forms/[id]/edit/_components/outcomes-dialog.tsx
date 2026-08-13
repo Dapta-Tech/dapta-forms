@@ -116,7 +116,12 @@ export function OutcomesDialog({
           >
             <ScoreBar outcomes={outcomes} top={top} />
 
-            <div className="flex max-h-[58vh] flex-col gap-3 overflow-y-auto pr-1">
+            {/* The scroll container. Named so the regression spec can read its
+                `scrollTop` — editing a score used to throw this back to 0. */}
+            <div
+              data-testid="outcomes-scroller"
+              className="flex max-h-[58vh] flex-col gap-3 overflow-y-auto pr-1"
+            >
               {outcomes.map((o, index) => {
                 const lower = o.minScore ?? 0;
                 const upper = outcomes[index + 1]?.minScore;
