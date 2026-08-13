@@ -26,9 +26,61 @@ import { backgroundScrim, resolveCardStyle } from '@/lib/og-card';
  * their URL instead of this route.
  */
 export const runtime = 'nodejs';
-export const alt = 'Form';
 export const size = { width: 1200, height: 630 };
 export const contentType = 'image/png';
+
+/**
+ * Required, and not redundant with the uncached fetch below.
+ *
+ * Exporting `generateImageMetadata` makes Next treat this route as one it can
+ * enumerate — the build re-labels it static — and a statically rendered route
+ * that then performs a `no-store` fetch throws `DYNAMIC_SERVER_USAGE` at
+ * request time. The build stays green and every single card 500s, which is how
+ * this was found: the route rendered fine until the alt text was made dynamic.
+ * The card is per-form and reads the request host, so dynamic is simply true.
+ */
+export const dynamic = 'force-dynamic';
+
+/**
+ * How long a rendered card may be reused.
+ *
+ * The route stays dynamic — it reads the request's host — so this is a hint to
+ * whatever sits in front of it and to the crawlers themselves, not a Next cache
+ * entry. Ten minutes is set by the one thing it can get wrong: an author who
+ * fixes a typo and re-shares the link expects the new card. Social platforms
+ * hold their own copy far longer than that anyway, so the window costs nothing
+ * they were not already going to do, and it keeps a link pasted into a busy
+ * channel from re-rendering per reader.
+ */
+const CACHE_CONTROL = 'public, max-age=0, s-maxage=600, stale-while-revalidate=86400';
+
+/**
+ * The card's alt text — the form's own public title.
+ *
+ * This is a function rather than the `alt` const the metadata convention starts
+ * you with, because a const cannot see `params`: every card on the platform
+ * described itself as "Form" to anyone reading with a screen reader, which is
+ * the same failure the image itself had. `getPublicForm` is `cache()`d per
+ * request and `generateMetadata` on the sibling page has already called it, so
+ * this costs no extra fetch.
+ */
+export async function generateImageMetadata({
+  params,
+}: {
+  params: Promise<{ accountCode: string; slug: string }>;
+}) {
+  const { accountCode, slug } = await params;
+  const form = await getPublicForm(accountCode, slug);
+  const title =
+    form?.config.cover?.headline?.trim() ||
+    (form ? publicTitle(form.config, form.name) : null) ||
+    // Not `publicLocale()`: this function is treated as `generateStaticParams`
+    // for the image route and may run at BUILD time, where there is no request
+    // to read a language from. The fallback only describes a form that could not
+    // be loaded, so it takes the default locale rather than a header.
+    getMessages('en').growth.shareCardUntitled;
+  return [{ id: 'card', alt: title, size, contentType }];
+}
 
 /**
  * Truncate on a WORD boundary.
@@ -62,6 +114,14 @@ export default async function OgImage({
   const config = form?.config;
   const cover = config?.cover;
   const style = resolveCardStyle(config?.branding);
+  // The same locale rule the page uses, which for a social crawler means English:
+  // they send no `Accept-Language`, and neither does a respondent with no
+  // preference — who would land on the English page too. So the card agrees with
+  // the page it opens, which is the property worth holding. It is NOT the same as
+  // being right: a Spanish form shared into a Spanish channel still says "Start".
+  // Fixing that needs a language ON THE FORM. The account has none, and the
+  // owner's `member.locale` is their dashboard language rather than their
+  // audience's, so guessing from it would trade one wrong answer for another.
   const messages = getMessages(await publicLocale());
 
   const headline =
@@ -228,7 +288,7 @@ export default async function OgImage({
         </div>
       </div>
     ),
-    { ...size, fonts: cardFonts(style.font) },
+    { ...size, fonts: cardFonts(style.font), headers: { 'cache-control': CACHE_CONTROL } },
   );
 }
 

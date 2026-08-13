@@ -23,12 +23,15 @@ makes it answer with `format('truetype')` instead of WOFF2:
 
 ```bash
 curl -H "User-Agent: Mozilla/4.0" \
-  "https://fonts.googleapis.com/css?family=Figtree:400&subset=latin,latin-ext"
+  "https://fonts.googleapis.com/css?family=Figtree:400&subset=latin"
 ```
 
-`latin,latin-ext` rather than `latin`: an author's own name in the headline is
-the likeliest place a missing glyph would show, and a form's title is not
-restricted to the languages the product interface speaks.
+`latin`, the same subset `apps/web/lib/fonts.ts` asks `next/font` for. Matching it
+is the point: the card is supposed to be the form at a glance, so it should have
+exactly the glyph coverage the form has. A wider subset here would let a card
+render a name the page it advertises renders as tofu, which is a stranger failure
+than both of them missing the same glyph. (It was briefly `latin,latin-ext`, which
+cost 364 KB to be *less* faithful.)
 
 Two weights per family — 400 and 700. A share card has exactly two voices, and
 every extra weight is bytes read on a request a social crawler is waiting on.

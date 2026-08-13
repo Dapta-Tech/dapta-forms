@@ -38,5 +38,13 @@ around a fetch that is now server-side. And it needs font binaries in a format
 `next/font` does not emit, so the nine curated faces are vendored as TrueType
 under the same OFL that already lets the build redistribute them.
 
+The card also describes itself now: `og:image:alt` was the literal string "Form"
+for every form on the platform, because a route file's `alt` export is a
+constant and cannot see which form it is rendering. It comes from
+`generateImageMetadata` instead, which moves the image's URL from
+`…/opengraph-image` to `…/opengraph-image/card`. Responses carry a ten-minute
+shared-cache window so a link pasted into a busy channel is not re-rendered per
+reader.
+
 Adds `growth.shareCardSteps` and `growth.shareCardUntitled` to the message
 catalog in both locales.
