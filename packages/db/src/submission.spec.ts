@@ -80,6 +80,24 @@ describe('submission upsert', () => {
     expect(rows[0]!.completedAt).not.toBeNull();
   });
 
+  it('reports whether the row was already completed, so effects fire exactly once', async () => {
+    // The row is idempotent per session; its downstream effects (emails, CRM
+    // deliveries) are not. `wasCompletedBefore` is what lets the service tell a
+    // first completion from a transport-retry re-landing of the same one.
+    const session = 'effects-once';
+    const first = await upsertSubmission(db, { formId, sessionId: session, data: { a: 1 }, score: 3, partial: true });
+    expect(first.wasCompletedBefore).toBe(false); // fresh insert
+
+    const completed = await upsertSubmission(db, { formId, sessionId: session, data: { a: 1, b: 2 }, score: 7 });
+    expect(completed.wasCompletedBefore).toBe(false); // partial→complete: FIRST completion
+
+    const retried = await upsertSubmission(db, { formId, sessionId: session, data: { a: 1, b: 2 }, score: 7 });
+    expect(retried.wasCompletedBefore).toBe(true); // re-landed complete: effects already owed
+
+    const latePartial = await upsertSubmission(db, { formId, sessionId: session, data: { a: 1 }, score: 3, partial: true });
+    expect(latePartial.wasCompletedBefore).toBe(true); // reorder-guarded no-op
+  });
+
   it('creates distinct rows for distinct sessions', async () => {
     await upsertSubmission(db, { formId, sessionId: 'a', data: {}, score: 0 });
     await upsertSubmission(db, { formId, sessionId: 'b', data: {}, score: 0 });

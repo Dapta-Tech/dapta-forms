@@ -598,6 +598,13 @@ function mapSubmission(r: Record<string, unknown>): SubmissionRow {
  * Upsert THE submission for a session (one row per session). A partial save sets
  * `partial_at`; a final submit sets `completed_at`. Re-submitting the same
  * session updates the same row (idempotent per session) rather than duplicating.
+ *
+ * `wasCompletedBefore` reports whether the row was ALREADY completed when this
+ * write arrived. The row itself is safely idempotent; its downstream EFFECTS
+ * (emails, CRM deliveries) are not — a client-side transport retry whose first
+ * attempt actually landed re-runs the service, and only this flag lets it tell
+ * a first completion (fire the effects) from a re-landed one (row refreshed,
+ * effects already owed by the first landing).
  */
 export async function upsertSubmission(
   db: Db,
@@ -609,7 +616,7 @@ export async function upsertSubmission(
     partial?: boolean;
     now?: number;
   },
-): Promise<SubmissionRow> {
+): Promise<SubmissionRow & { wasCompletedBefore: boolean }> {
   const now = input.now ?? Date.now();
   const completedAt = input.partial ? null : now;
   const partialAt = input.partial ? now : null;
@@ -621,12 +628,13 @@ export async function upsertSubmission(
           WHERE form_id = ${input.formId} AND session_id = ${input.sessionId} LIMIT 1`,
     );
 
-  const applyUpdate = async (existing: ExistingRow): Promise<SubmissionRow> => {
+  const applyUpdate = async (existing: ExistingRow): Promise<SubmissionRow & { wasCompletedBefore: boolean }> => {
+    const wasCompletedBefore = existing.completed_at != null;
     // Reorder guard: a fire-and-forget partial can land AFTER the complete
     // submit. Once a row is completed, only a complete submit may update it —
     // a late partial must NOT overwrite the finalized data/score.
-    if (input.partial && existing.completed_at != null) {
-      return (await getSubmissionById(db, existing.id))!;
+    if (input.partial && wasCompletedBefore) {
+      return { ...(await getSubmissionById(db, existing.id))!, wasCompletedBefore };
     }
     await db.run(
       sql`UPDATE submission
@@ -635,7 +643,7 @@ export async function upsertSubmission(
               partial_at = COALESCE(${partialAt}, partial_at)
           WHERE id = ${existing.id}`,
     );
-    return (await getSubmissionById(db, existing.id))!;
+    return { ...(await getSubmissionById(db, existing.id))!, wasCompletedBefore };
   };
 
   const existing = await selectExisting();
@@ -653,7 +661,7 @@ export async function upsertSubmission(
           VALUES (${id}, ${input.formId}, ${input.sessionId}, ${jsonParam(input.data)}, ${input.score},
             ${now}, ${completedAt}, ${partialAt})`,
     );
-    return (await getSubmissionById(db, id))!;
+    return { ...(await getSubmissionById(db, id))!, wasCompletedBefore: false };
   } catch (err) {
     const raced = await selectExisting();
     if (raced) return applyUpdate(raced);
