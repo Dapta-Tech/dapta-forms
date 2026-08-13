@@ -1086,6 +1086,13 @@ export interface FormsMessages {
       /** Legacy configs only: a stored second HubSpot destination this tab will drop. */
       extraHubspotTitle: string;
       extraHubspotBody: string;
+      /**
+       * The form stores more webhooks than this card edits. Unlike the HubSpot
+       * pair above, they are KEPT — several webhooks is a legal configuration.
+       * `{count}` is how many ride along untouched.
+       */
+      carriedWebhooksTitle: string;
+      carriedWebhooksBody: string;
       // Account-connection gating + Typeform-style mapping (per-form)
       connectPromptTitle: string;
       connectPromptBody: string;
@@ -2460,6 +2467,9 @@ export const en: FormsMessages = {
       extraHubspotTitle: 'This form has a second HubSpot connection',
       extraHubspotBody:
         'This screen only edits the first one, so the other is invisible here — and any edit on this tab saves right away and deletes it, along with any mappings it holds. To send one answer to several properties, add the properties to the same question above instead.',
+      carriedWebhooksTitle: 'This form has {count} more webhook(s)',
+      carriedWebhooksBody:
+        'This card edits the first one. The rest keep running exactly as they are and are saved untouched — they are just not editable from here. You can see all of them under Integrations.',
       connectPromptTitle: 'Connect HubSpot to map this form',
       connectPromptBody:
         'HubSpot isn’t connected for your account yet. Connect it once, then come back to map each question to a contact property.',
@@ -3817,6 +3827,9 @@ export const es: FormsMessages = {
       extraHubspotTitle: 'Este formulario tiene una segunda conexión con HubSpot',
       extraHubspotBody:
         'Esta pantalla solo edita la primera, así que la otra es invisible acá — y cualquier cambio en esta pestaña se guarda al instante y la elimina, junto con las asignaciones que tenga. Para mandar una respuesta a varias propiedades, agrega las propiedades a la misma pregunta de arriba.',
+      carriedWebhooksTitle: 'Este formulario tiene {count} webhook(s) más',
+      carriedWebhooksBody:
+        'Esta tarjeta edita el primero. Los demás siguen funcionando igual y se guardan sin tocarlos — solo que no se editan desde acá. Los ves todos en Integraciones.',
       connectPromptTitle: 'Conecta HubSpot para asignar este formulario',
       connectPromptBody:
         'HubSpot aún no está conectado en tu cuenta. Conéctalo una vez y luego vuelve para asignar cada pregunta a una propiedad de contacto.',

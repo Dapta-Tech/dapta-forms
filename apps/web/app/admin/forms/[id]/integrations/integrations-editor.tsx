@@ -155,6 +155,30 @@ function isKnownTimezone(value: string): boolean {
   }
 }
 
+/**
+ * The webhooks this screen does NOT edit, to be written back untouched.
+ *
+ * The card edits the FIRST stored webhook (`initialWebhook` below) and used to
+ * be the only one `buildDestinations` emitted — so a form legitimately storing
+ * two lost the second the moment anything on this tab was touched, including a
+ * HubSpot toggle, because autosave rewrites the whole array. Silently, and with
+ * no way to notice: the deleted one was never rendered here in the first place.
+ *
+ * Several webhooks is a legal configuration — only HubSpot is capped at one —
+ * so the answer is to carry them rather than to warn about destroying them,
+ * which is what the HubSpot notice has to do for a shape the API refuses.
+ *
+ * Identity is positional, matching how the card picks its own: the first
+ * webhook is edited, the rest ride along in their stored order. Matching by
+ * `id` would look tidier and be wrong, since a config written before ids
+ * existed has none and the server mints them on write.
+ *
+ * Exported for the spec beside this file.
+ */
+export function carriedWebhooks(destinations: FormDestination[]): FormDestination[] {
+  return destinations.filter((d) => d.type === 'webhook').slice(1);
+}
+
 function initialWebhook(destinations: FormDestination[]): WebhookState {
   const w = destinations.find((d) => d.type === 'webhook');
   if (w && w.type === 'webhook') {
@@ -348,6 +372,17 @@ export function IntegrationsEditor({
     }
     // else: empty url (switch on or off) → no webhook persisted. An enabled
     // webhook with no URL is incomplete, not stored; clearing the URL removes it.
+
+    // Every webhook this screen does not edit rides along, in all three cases
+    // above — including the empty-URL one, where clearing the field removes the
+    // FIRST webhook and must not take its siblings with it.
+    //
+    // They sit here, next to the edited one and before HubSpot, rather than at
+    // the end: `enqueueSubmissionDeliveries` builds its idempotency key from a
+    // destination's index in this array, so keeping the webhooks contiguous and
+    // in their stored order is the arrangement that moves the fewest of them.
+    out.push(...carriedWebhooks(savedDestinations.current));
+
     // Rows GROUP by key rather than overwriting. The old flatten was
     // last-one-wins and silent: two rows on the same question — the escape
     // hatch the UI itself offers via "Custom key…" — quietly discarded the
@@ -546,6 +581,10 @@ export function IntegrationsEditor({
         urlError={webhookError}
         clearUrlError={() => setWebhookError(null)}
         formId={id}
+        // From the mount props, like HubSpot's own count: the Connect tab
+        // refetches the live config every time it is opened, so this is as
+        // fresh as the array the card was seeded from.
+        carriedCount={carriedWebhooks(initialDestinations).length}
         m={m}
       />
       <LocaleContext.Provider value={locale}>
@@ -1128,12 +1167,14 @@ function Field({
   );
 }
 
-function WebhookCard({
+/** Exported for `integrations-card.spec.tsx` — see the notice-slot cases there. */
+export function WebhookCard({
   state,
   onChange,
   urlError,
   clearUrlError,
   formId,
+  carriedCount,
   m,
 }: {
   state: WebhookState;
@@ -1142,6 +1183,8 @@ function WebhookCard({
   clearUrlError: () => void;
   /** Needed for the test delivery — the API resolves the saved webhook by form. */
   formId: string;
+  /** Webhooks stored on this form that the card does not edit. */
+  carriedCount: number;
   m: Msgs;
 }) {
   const { success, error: toastError } = useToast();
@@ -1176,12 +1219,32 @@ function WebhookCard({
     onChange({ ...state, firePartial: nextPartial, fireComplete: nextComplete });
   }
 
+  // Goes in the `notice` slot rather than among the children, for the same
+  // reason HubSpot's does: children are hidden when the toggle is off, and a
+  // card toggled off is where a statement about the OTHER stored webhooks
+  // matters most — flipping the switch is itself an edit that rewrites the
+  // whole array. Unlike HubSpot's, this one reports something kept rather than
+  // something about to be lost: `buildDestinations` carries them through.
+  const carriedNotice =
+    carriedCount > 0 ? (
+      <div
+        data-testid="webhook-carried"
+        className="mt-4 rounded-md border border-border bg-muted/40 p-3"
+      >
+        <p className="text-xs font-medium text-foreground">
+          {fill(m.carriedWebhooksTitle, { count: String(carriedCount) })}
+        </p>
+        <p className="mt-1 text-xs text-muted-foreground">{m.carriedWebhooksBody}</p>
+      </div>
+    ) : null;
+
   return (
     <Card
       title={m.webhookTitle}
       desc={m.webhookDesc}
       enabled={state.enabled}
       onToggle={(enabled) => onChange({ ...state, enabled })}
+      notice={carriedNotice}
       m={m}
     >
       <Field label={m.webhookUrl}>
