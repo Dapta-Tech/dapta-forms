@@ -23,8 +23,13 @@ describe('resolveCardStyle — the unbranded card', () => {
     expect(resolveCardStyle(null).backgroundImage).toContain('radial-gradient');
   });
 
-  it('plates the logo, since a dark ground WE chose can swallow a dark mark', () => {
-    expect(resolveCardStyle(null).logo.plate).toBe('#ffffff');
+  it('does not draw the author logo on a ground the author never saw', () => {
+    // Its colour is fixed and unknowable from a URL, so on a ground WE chose it
+    // is a coin flip. The Dapta Forms mark takes the rail instead.
+    expect(resolveCardStyle(null).logo.drawAuthorLogo).toBe(false);
+    expect(resolveCardStyle({ primaryColor: '#cbe84f', logo: 'https://cdn.example.com/a.png' }).logo.drawAuthorLogo).toBe(
+      false,
+    );
   });
 });
 
@@ -48,10 +53,11 @@ describe('resolveCardStyle — the authored card', () => {
     expect(style.quiet).not.toBe(style.faint);
   });
 
-  it('leaves an author-chosen dark background to carry its own logo', () => {
-    // They picked that ground while looking at their own mark on it; plating it
-    // would repaint a form that is already correct.
-    expect(resolveCardStyle({ background: '#101010' }).logo.plate).toBeNull();
+  it('draws the author logo once the author has chosen the ground under it', () => {
+    // Light or dark, they picked that background while looking at their own mark
+    // on it, so the pairing is known to work.
+    expect(resolveCardStyle({ background: '#101010' }).logo.drawAuthorLogo).toBe(true);
+    expect(resolveCardStyle({ background: '#ffffff' }).logo.drawAuthorLogo).toBe(true);
   });
 
   it('honours a solid background by painting no gradient at all', () => {
@@ -83,7 +89,7 @@ describe('resolveCardStyle — the authored card', () => {
 describe('resolveCardStyle — the shape axes', () => {
   it('squares every role for a sharp form, the pill included', () => {
     const { radii } = resolveCardStyle({ radius: 'sharp' });
-    expect(Object.values(radii)).toEqual([2, 2, 2, 2, 2]);
+    expect(radii).toEqual({ chip: 2, button: 2, pill: 2 });
   });
 
   it('gives a round form a pill button', () => {
@@ -92,7 +98,8 @@ describe('resolveCardStyle — the shape axes', () => {
 
   it('scales soft corners with the card without inventing a new scale', () => {
     const { radii } = resolveCardStyle({ radius: 'soft' });
-    expect(radii.card).toBe(24); // 16px at the card's 1.5× zoom
+    expect(radii.button).toBe(12); // --pf-radius-sm, 8px, at the card's 1.5× zoom
+    expect(radii.chip).toBe(9); // --pf-radius-chip, 6px
     expect(radii.pill).toBe(999);
   });
 });

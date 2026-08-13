@@ -37,13 +37,16 @@ import {
  * the respondent will see on the page a click later.
  */
 
-/** Corner radii, in px, for the roles the card draws. */
+/**
+ * Corner radii, in px, for the roles the card actually draws — the banner chip,
+ * the call to action, and the progress rail. `--pf-radius` and `--pf-radius-logo`
+ * have no counterpart here on purpose: the card frames no panel and plates no
+ * logo, and a resolved value nothing reads is a value that silently goes wrong.
+ */
 export interface OgRadii {
-  card: number;
   chip: number;
   button: number;
   pill: number;
-  logo: number;
 }
 
 export interface OgCardStyle {
@@ -76,7 +79,7 @@ export interface OgCardStyle {
   radii: OgRadii;
   button: { background: string; color: string; border: string | null };
   align: 'flex-start' | 'center';
-  logo: { height: number; centered: boolean; plate: string | null };
+  logo: { height: number; centered: boolean; drawAuthorLogo: boolean };
   progress: FormProgressStyle;
   font: FormFont;
   /** Which artwork the Dapta Forms mark should use. */
@@ -94,9 +97,9 @@ const RADIUS_ZOOM = 1.5;
 const z = (n: number): number => Math.round(n * RADIUS_ZOOM);
 
 const RADII: Record<'sharp' | 'soft' | 'round', OgRadii> = {
-  sharp: { card: 2, chip: 2, button: 2, pill: 2, logo: 2 },
-  soft: { card: z(16), chip: z(6), button: z(8), pill: 999, logo: z(10) },
-  round: { card: z(24), chip: z(10), button: 999, pill: 999, logo: z(16) },
+  sharp: { chip: 2, button: 2, pill: 2 },
+  soft: { chip: z(6), button: z(8), pill: 999 },
+  round: { chip: z(10), button: 999, pill: 999 },
 };
 
 /** Logo heights, the form's `--pf-logo` scale at card zoom. */
@@ -199,12 +202,25 @@ export function resolveCardStyle(branding: FormBranding | null | undefined): OgC
     logo: {
       height: LOGO_HEIGHTS[design.logoSize],
       centered: design.logoPosition === 'center',
-      // Only an UNBRANDED form gets a plate behind its logo. The console ground
-      // is our choice, so a dark logo vanishing into it is our bug to fix; an
-      // author who picked their own dark background picked it while looking at
-      // their own logo on it, and second-guessing that would repaint a form that
-      // is already correct.
-      plate: !branded ? '#ffffff' : null,
+      // The author's logo is drawn only on a ground the AUTHOR chose.
+      //
+      // A logo is artwork with a fixed colour and no idea what is behind it. An
+      // author who picked their own background picked it while looking at their
+      // own mark on it, so that pairing is known to work. On the console ground
+      // — which we choose for them — it is a coin flip, and there is nothing in
+      // a URL that says which way the coin landed.
+      //
+      // Plating it white was the first answer and it is worse than not drawing
+      // it: `dapta-mark.png` is white artwork (mean luminance of its opaque
+      // pixels, measured: 236/255), so the plate meant to rescue a dark logo
+      // erased a light one completely. `tokens.css` hits the mirror image of
+      // this and solves it with `--brand-ink`, a fixed DARK tile — which only
+      // works there because that one asset's colour is known. Here it is not.
+      //
+      // So the card omits it and the Dapta Forms mark takes the rail. A missing
+      // logo reads as a design decision; a logo dissolved into its own backing
+      // plate reads as a broken image.
+      drawAuthorLogo: branded,
     },
     progress: design.progressStyle,
     font: design.font,

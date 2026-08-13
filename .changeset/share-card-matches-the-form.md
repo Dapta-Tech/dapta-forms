@@ -23,6 +23,14 @@ gets a square card. A form that set no branding is drawn on the product's own
 console palette, the same call `formDesignProps` already makes when it pins an
 unbranded form to the dark theme.
 
+The author's logo is drawn only when the author also chose the background. A logo
+is artwork with a fixed colour and no idea what is behind it; on a ground the
+author picked, that pairing is one they have seen, and on the product console it
+is a coin flip a URL cannot settle. Backing it with a white plate was worse than
+omitting it — `dapta-mark.png` is white artwork (mean luminance of its opaque
+pixels: 236/255), so the plate meant to rescue a dark logo erased a light one.
+Without one the Dapta Forms mark takes the rail instead.
+
 Two things Satori cannot do are handled rather than hoped for. It reads no WebP —
 the format most CMSs now serve — so an author's logo is fetched, type-checked and
 dropped when undecodable, with a timeout, a size cap and a private-address refusal

@@ -77,7 +77,10 @@ export default async function OgImage({
   // Both remote assets are optional and independent: a logo that cannot be drawn
   // must not cost the card its photograph, and vice versa.
   const [logo, backdrop] = await Promise.all([
-    remoteImageDataUri(config?.branding?.logo ?? cover?.logo),
+    // Not fetched at all when the card will not draw it — see `logo.drawAuthorLogo`.
+    style.logo.drawAuthorLogo
+      ? remoteImageDataUri(config?.branding?.logo ?? cover?.logo)
+      : Promise.resolve(null),
     remoteImageDataUri(style.backdropUrl),
   ]);
 
@@ -146,23 +149,9 @@ export default async function OgImage({
           }}
         >
           {logo ? (
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                ...(style.logo.plate
-                  ? {
-                      background: style.logo.plate,
-                      borderRadius: style.radii.logo,
-                      padding: '10px 16px',
-                    }
-                  : {}),
-              }}
-            >
-              {/* Width is left to Satori, which reads it off the file: the author's
-                  logo has no fixed proportion and forcing one would squash it. */}
-              <img src={logo} height={style.logo.height} alt="" />
-            </div>
+            // Width is left to Satori, which reads it off the file: the author's
+            // logo has no fixed proportion and forcing one would squash it.
+            <img src={logo} height={style.logo.height} alt="" />
           ) : (
             productMark
           )}
