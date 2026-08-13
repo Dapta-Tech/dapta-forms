@@ -30,14 +30,13 @@ export const size = { width: 1200, height: 630 };
 export const contentType = 'image/png';
 
 /**
- * Required, and not redundant with the uncached fetch below.
- *
- * Exporting `generateImageMetadata` makes Next treat this route as one it can
- * enumerate — the build re-labels it static — and a statically rendered route
- * that then performs a `no-store` fetch throws `DYNAMIC_SERVER_USAGE` at
- * request time. The build stays green and every single card 500s, which is how
- * this was found: the route rendered fine until the alt text was made dynamic.
  * The card is per-form and reads the request host, so dynamic is simply true.
+ *
+ * Kept explicit after `generateImageMetadata` was removed: the route no longer
+ * gets re-labelled static by it, but a `no-store` fetch in a statically rendered
+ * route throws `DYNAMIC_SERVER_USAGE` at request time — the build stays green
+ * and every card 500s. That is how it was found the first time, and one word
+ * here is cheaper than finding it again.
  */
 export const dynamic = 'force-dynamic';
 
@@ -55,32 +54,24 @@ export const dynamic = 'force-dynamic';
 const CACHE_CONTROL = 'public, max-age=0, s-maxage=600, stale-while-revalidate=86400';
 
 /**
- * The card's alt text — the form's own public title.
+ * Alt text, as a CONST and not `generateImageMetadata`.
  *
- * This is a function rather than the `alt` const the metadata convention starts
- * you with, because a const cannot see `params`: every card on the platform
- * described itself as "Form" to anyone reading with a screen reader, which is
- * the same failure the image itself had. `getPublicForm` is `cache()`d per
- * request and `generateMetadata` on the sibling page has already called it, so
- * this costs no extra fetch.
+ * The dynamic version read the form so a screen reader heard the headline
+ * instead of "Form" — the same failure the image itself had. It cost the build:
+ * Next treats `generateImageMetadata` as this route's `generateStaticParams` and
+ * CALLS IT while collecting page data, where no API is running. Every build
+ * without a live API died on `ECONNREFUSED`, which local builds hide because a
+ * dev server is usually up. The comment in that function even said it might run
+ * at build time.
+ *
+ * It was also the reason `dynamic = 'force-dynamic'` had to be declared at all,
+ * and it moved the card's URL from `/opengraph-image` to `/opengraph-image/card`,
+ * breaking every link already scraped by a crawler. Three costs for one string.
+ *
+ * The generic alt loses a little; the card carries the headline in pixels for
+ * everyone who can see it, and no build can fail over a const.
  */
-export async function generateImageMetadata({
-  params,
-}: {
-  params: Promise<{ accountCode: string; slug: string }>;
-}) {
-  const { accountCode, slug } = await params;
-  const form = await getPublicForm(accountCode, slug);
-  const title =
-    form?.config.cover?.headline?.trim() ||
-    (form ? publicTitle(form.config, form.name) : null) ||
-    // Not `publicLocale()`: this function is treated as `generateStaticParams`
-    // for the image route and may run at BUILD time, where there is no request
-    // to read a language from. The fallback only describes a form that could not
-    // be loaded, so it takes the default locale rather than a header.
-    getMessages('en').growth.shareCardUntitled;
-  return [{ id: 'card', alt: title, size, contentType }];
-}
+export const alt = 'Form';
 
 /**
  * Truncate on a WORD boundary.
