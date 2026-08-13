@@ -615,6 +615,10 @@ export class FormDestinationsController {
     @Inject(DB) private readonly db: Db,
     @Inject(AuthService) private readonly auth: AuthService,
     @Optional() @Inject(ENV) private readonly env?: ServerEnv,
+    /** Reused for its per-account cache — the mirror needs the same list. */
+    @Optional()
+    @Inject(HubspotPropertiesService)
+    private readonly hubspotProperties?: HubspotPropertiesService,
   ) {}
 
   @Put('forms/:id/destinations')
@@ -691,6 +695,19 @@ export class FormDestinationsController {
       token = null;
     }
 
+    // Which contact properties the portal actually has. A form field naming one
+    // it does not makes the CREATE fail with `400 internal error`, so a single
+    // stale mapping among many would cost the whole activity. Cached per
+    // account by the same service the property picker uses, so this is normally
+    // free. A failure here leaves it unknown and nothing is filtered.
+    let knownProperties: Set<string> | null = null;
+    try {
+      const listed = await this.hubspotProperties?.listProperties(accountId);
+      if (listed?.enabled) knownProperties = new Set(listed.properties.map((p) => p.name));
+    } catch {
+      knownProperties = null;
+    }
+
     let error: string | undefined;
     const out = await Promise.all(
       destinations.map(async (raw) => {
@@ -699,6 +716,7 @@ export class FormDestinationsController {
         const result = await syncMirrorForm(parsed.data, formName, {
           fetchImpl: this.fetchImpl,
           token,
+          knownProperties,
         });
         if (result.error && !error) error = result.error;
         if (result.action === 'noop' || result.action === 'unchanged') return raw;
