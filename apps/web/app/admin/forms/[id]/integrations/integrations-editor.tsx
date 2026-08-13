@@ -6,7 +6,7 @@ import {
   emailMappingsConflictingWithScheduler,
   type ContactKeyReadiness,
 } from '@quill/engine';
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import type { FormsMessages, Locale } from '@quill/shared';
 import { WEBHOOK_SECRET_MASK, type DestinationEvent, type FormDestination } from '@quill/types';
@@ -17,6 +17,8 @@ import { Select, type SelectOption } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { GoogleSheetsLogo, ProviderLogo } from '@/components/ui/provider-logo';
 import { useToast } from '@/components/toast';
+import { callAction, isTransportError } from '@/lib/call-action';
+import { useAutosave } from '@/lib/use-autosave';
 import { cn } from '@/lib/cn';
 import { bookingLabel } from '@/lib/booking-fields';
 import type {
@@ -40,11 +42,8 @@ import { pingWebhookAction, saveIntegrationsAction } from './actions';
 
 type Msgs = FormsMessages['admin']['integrations'];
 
-type SaveStatus = 'saved' | 'saving' | 'error' | 'partial';
 /** Same debounce as the builder's autosave, so both tabs feel identical. */
 const AUTOSAVE_MS = 900;
-/** Same admin API base the server-side admin-api client uses (client-exposed). */
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 
 /** Module constants, not literals in JSX: the history's fetch keys off these. */
 const WEBHOOK_HISTORY_KINDS: DeliveryKind[] = ['webhook'];
@@ -70,7 +69,11 @@ interface SystemKey {
 }
 
 /** No config supplied → nothing can key a contact. Never claims readiness. */
-const NOT_READY: ContactKeyReadiness = { ok: false, blocker: 'no_source', source: null };
+const NOT_READY: ContactKeyReadiness = {
+  ok: false,
+  blocker: 'no_source',
+  source: null,
+};
 
 /** Sentinel option values for the key pickers — never valid step keys. */
 const CUSTOM_KEY_OPTION = '__custom_key__';
@@ -228,7 +231,14 @@ function initialWebhook(destinations: FormDestination[]): WebhookState {
       fireComplete: both || ev!.includes('complete'),
     };
   }
-  return { enabled: false, url: '', secret: '', hasSecret: false, firePartial: true, fireComplete: true };
+  return {
+    enabled: false,
+    url: '',
+    secret: '',
+    hasSecret: false,
+    firePartial: true,
+    fireComplete: true,
+  };
 }
 
 function initialHubspot(destinations: FormDestination[]): HubspotState {
@@ -255,7 +265,10 @@ function initialHubspot(destinations: FormDestination[]): HubspotState {
         rows: Object.entries(map).map(([from, to]) => ({ from, to })),
       })),
       outcomeProperty: h.outcomeProperty ?? '',
-      staticProperties: Object.entries(h.staticProperties ?? {}).map(([key, value]) => ({ key, value })),
+      staticProperties: Object.entries(h.staticProperties ?? {}).map(([key, value]) => ({
+        key,
+        value,
+      })),
       inferCompanyFromEmail: h.inferCompanyFromEmail === true,
       bookingSync: {
         stageProperty: h.bookingSync?.stageProperty ?? '',
@@ -373,7 +386,10 @@ export function IntegrationsEditor({
    *    the last successful save.
    *  - valid url → persist it with the current enabled flag.
    */
-  function buildDestinations(): { destinations: FormDestination[]; webhookError: string | null } {
+  function buildDestinations(): {
+    destinations: FormDestination[];
+    webhookError: string | null;
+  } {
     const out: FormDestination[] = [];
     let webhookError: string | null = null;
     const url = webhook.url.trim();
@@ -509,42 +525,70 @@ export function IntegrationsEditor({
   // and a status line that says which state you are in.
   const buildRef = useRef(buildDestinations);
   buildRef.current = buildDestinations;
-  const dirty = useRef(false);
-  const [status, setStatus] = useState<SaveStatus>('saved');
-  /** What exactly was not saved — shown next to the status, never just a colour. */
-  const [statusDetail, setStatusDetail] = useState<string | null>(null);
+  /** Webhook half saved AROUND, not saved — renders as "partial" once saved. */
+  const [partialBlocked, setPartialBlocked] = useState<string | null>(null);
 
-  const persist = useCallback(
-    async (built: FormDestination[], blocked: string | null = null): Promise<boolean> => {
-      setStatus('saving');
-      const write = saveIntegrationsAction(id, built);
+  // The debounce/serialize/retry machinery is `useAutosave`, shared with the
+  // builder — including the beforeunload guard and the same-origin keepalive
+  // flush (the old direct-to-API beacon sent cookies to a host that only
+  // accepts identity headers, so it never authenticated).
+  const autosave = useAutosave<{
+    destinations: FormDestination[];
+    webhookError: string | null;
+  }>({
+    getSnapshot: () => buildRef.current(),
+    // `buildDestinations` already quarantines the only invalid input (a bad
+    // webhook URL) onto its own card, so a snapshot is always sendable.
+    validate: useCallback(() => ({ ok: true as const }), []),
+    save: async (built) => {
+      // A bad webhook URL is reported on its own card and blocks only itself —
+      // the rest of the tab still persists.
+      setWebhookError(built.webhookError);
+      const write = callAction(() => saveIntegrationsAction(id, built.destinations));
       // Register the write so a Connect-tab remount reads it back, not the state
       // it is about to overwrite (V4-05 race).
       trackDestinationWrite(id, write);
       const res = await write;
-      if (!res.ok) {
-        setStatus('error');
-        setStatusDetail(res.message ?? m.saveError);
-        errorRef.current(res.message ?? m.saveError);
-        return false;
-      }
+      if (isTransportError(res)) return res;
+      if (!res.ok) return { ok: false, message: res.message ?? m.saveError };
       // HubSpot refused to build the mirror form. The save itself went through,
       // so this is a NOTICE on the card and not a save error — losing the
       // author's mappings because a portal is missing a scope would be worse
       // than the missing activity.
       setFormActivityError(res.formActivityError ?? null);
-      dirty.current = false;
       // This array is now the server truth — the malformed-URL fallback carries
       // it forward instead of the stale mount snapshot.
-      savedDestinations.current = built;
+      savedDestinations.current = built.destinations;
       // Saved, but one card was left out — say WHICH, instead of a green check
       // that implies the webhook edit went through too.
-      setStatus(blocked ? 'partial' : 'saved');
-      setStatusDetail(blocked);
-      return true;
+      setPartialBlocked(built.webhookError);
+      return { ok: true };
     },
-    [id, m.saveError],
-  );
+    beacon: (built) => {
+      try {
+        void fetch(`/admin/forms/${id}/flush`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            kind: 'destinations',
+            destinations: built.destinations,
+          }),
+          keepalive: true,
+        });
+      } catch {
+        /* best-effort on the unload path */
+      }
+    },
+    onFailure: (message, kind) => errorRef.current(kind === 'transport' ? m.saveOffline : message),
+    debounceMs: AUTOSAVE_MS,
+  });
+  const { markDirty } = autosave;
+  const status: 'saved' | 'saving' | 'retrying' | 'error' | 'partial' =
+    autosave.status === 'saved' && partialBlocked ? 'partial' : autosave.status;
+  const statusDetail =
+    autosave.status === 'error' || autosave.status === 'retrying'
+      ? autosave.detail
+      : partialBlocked;
 
   /**
    * Every card edit funnels through these so an edit is marked dirty at the
@@ -552,70 +596,20 @@ export function IntegrationsEditor({
    * effect) keeps the initial render from counting as an edit and autosaving
    * a form nobody touched.
    */
-  const editWebhook = useCallback((next: WebhookState) => {
-    dirty.current = true;
-    setStatus('saving');
-    setWebhook(next);
-  }, []);
-  const editHubspot = useCallback((next: HubspotState) => {
-    dirty.current = true;
-    setStatus('saving');
-    setHs(next);
-  }, []);
-
-  useEffect(() => {
-    if (!dirty.current) return;
-    const t = setTimeout(() => {
-      const built = buildRef.current();
-      // A bad webhook URL is reported on its own card and blocks only itself —
-      // the rest of the tab still persists.
-      setWebhookError(built.webhookError);
-      void persist(built.destinations, built.webhookError);
-    }, AUTOSAVE_MS);
-    return () => clearTimeout(t);
-  }, [webhook, hs, persist]);
-
-  // Leaving with an edit still in the debounce window: flush it. A hard tab
-  // close cannot await a server action, so that path uses a `keepalive` PUT to
-  // the same endpoint the action wraps; SPA nav and tab-hide use the
-  // cookie-authed action while the component is still alive. Mirrors the
-  // builder's flush exactly, so both tabs lose work in the same (zero) cases.
-  useEffect(() => {
-    function flush(beacon: boolean) {
-      if (!dirty.current) return;
-      const built = buildRef.current();
-      if (beacon) {
-        try {
-          void fetch(`${API_BASE}/v1/forms/${id}/destinations`, {
-            method: 'PUT',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ destinations: built.destinations }),
-            keepalive: true,
-            credentials: 'include',
-          });
-        } catch {
-          /* best-effort on the unload path — nothing to recover to */
-        }
-      } else {
-        // SPA nav / unmount: fire-and-forget, but register it so the tab's next
-        // remount waits for this write before it re-reads (V4-05 race).
-        const write = saveIntegrationsAction(id, built.destinations);
-        trackDestinationWrite(id, write);
-        void write;
-      }
-    }
-    const onVisibility = () => {
-      if (document.visibilityState === 'hidden') flush(false);
-    };
-    const onBeforeUnload = () => flush(true);
-    document.addEventListener('visibilitychange', onVisibility);
-    window.addEventListener('beforeunload', onBeforeUnload);
-    return () => {
-      document.removeEventListener('visibilitychange', onVisibility);
-      window.removeEventListener('beforeunload', onBeforeUnload);
-      flush(false); // SPA nav / unmount → reliable server-action flush
-    };
-  }, [id]);
+  const editWebhook = useCallback(
+    (next: WebhookState) => {
+      setWebhook(next);
+      markDirty();
+    },
+    [markDirty],
+  );
+  const editHubspot = useCallback(
+    (next: HubspotState) => {
+      setHs(next);
+      markDirty();
+    },
+    [markDirty],
+  );
 
   return (
     <div className="flex flex-col gap-6">
@@ -643,9 +637,7 @@ export function IntegrationsEditor({
           // Legacy shape: this screen edits the FIRST HubSpot destination and
           // saves exactly one, so a stored second silently disappears on the
           // next save. Say so rather than letting it vanish (`buildDestinations`).
-          extraHubspotStored={
-            initialDestinations.filter((d) => d.type === 'hubspot').length > 1
-          }
+          extraHubspotStored={initialDestinations.filter((d) => d.type === 'hubspot').length > 1}
           formActivityError={formActivityError}
           readiness={readiness}
           questions={questions}
@@ -704,7 +696,9 @@ export function IntegrationsEditor({
               ? (statusDetail ?? m.saveError)
               : status === 'partial'
                 ? `${m.autosavedPartial} ${statusDetail ?? ''}`.trim()
-                : m.saving}
+                : status === 'retrying'
+                  ? m.saveRetrying
+                  : m.saving}
         </span>
       </div>
     </div>
@@ -745,7 +739,10 @@ function PropertyField({
   // empty option preserves the native "(no property)" / "Select…" prompt row.
   const options: SelectOption[] = [
     { value: '', label: allowNone ? m.noProperty : m.selectProperty },
-    ...properties.map((p) => ({ value: p.name, label: `${p.label} (${p.name})` })),
+    ...properties.map((p) => ({
+      value: p.name,
+      label: `${p.label} (${p.name})`,
+    })),
   ];
   return (
     <Select
@@ -829,7 +826,10 @@ function OptionValueField({
     // HubSpot's own order, never re-sorted — a picklist's order means something.
     // The internal value is shown next to the label because it is what actually
     // gets written, and the two routinely differ ("1-10 employees" → `1`).
-    ...options.map((o) => ({ value: o.value, label: `${o.label} (${o.value})` })),
+    ...options.map((o) => ({
+      value: o.value,
+      label: `${o.label} (${o.value})`,
+    })),
     { value: CUSTOM_VALUE_OPTION, label: m.valueCustomOption },
   ];
   return (
@@ -885,7 +885,11 @@ function ValueMapGroupCard({
   questionOptions: QuestionMeta[];
   /** Contact properties this question's answer is written to (0, 1, or many). */
   targets: string[];
-  properties: { name: string; label: string; options?: HubSpotPropertyOption[] }[];
+  properties: {
+    name: string;
+    label: string;
+    options?: HubSpotPropertyOption[];
+  }[];
   pickerEnabled: boolean;
   m: Msgs;
   onGroupChange: (next: ValueMapGroup) => void;
@@ -907,12 +911,7 @@ function ValueMapGroupCard({
 
   return (
     <div className="flex flex-col rounded-md border border-border" data-testid="valuemap-group">
-      <div
-        className={cn(
-          'flex items-center gap-2 p-3',
-          open && 'border-b border-border',
-        )}
-      >
+      <div className={cn('flex items-center gap-2 p-3', open && 'border-b border-border')}>
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
@@ -1089,11 +1088,24 @@ function KeySelect({
 
   const options: SelectOption[] = [];
   if (questionOptions.length > 0) {
-    options.push({ value: KEY_GROUP_QUESTIONS, label: m.keyGroupQuestions, disabled: true });
-    options.push(...questionOptions.map((q) => ({ value: q.key, label: `${q.label} (${q.key})` })));
+    options.push({
+      value: KEY_GROUP_QUESTIONS,
+      label: m.keyGroupQuestions,
+      disabled: true,
+    });
+    options.push(
+      ...questionOptions.map((q) => ({
+        value: q.key,
+        label: `${q.label} (${q.key})`,
+      })),
+    );
   }
   if (systemKeys.length > 0) {
-    options.push({ value: KEY_GROUP_SYSTEM, label: m.keyGroupSystem, disabled: true });
+    options.push({
+      value: KEY_GROUP_SYSTEM,
+      label: m.keyGroupSystem,
+      disabled: true,
+    });
     options.push(...systemKeys.map((k) => ({ value: k.key, label: k.label })));
   }
   options.push({ value: CUSTOM_KEY_OPTION, label: m.keyCustomOption });
@@ -1253,8 +1265,9 @@ export function WebhookCard({
     }
     setPinging(true);
     try {
-      const res = await pingWebhookAction(formId);
-      if (res.ok) success(m.pingOk);
+      const res = await callAction(() => pingWebhookAction(formId));
+      if (isTransportError(res)) toastError(m.saveOffline);
+      else if (res.ok) success(m.pingOk);
       else toastError(explainPingFailure(res, m));
     } finally {
       setPinging(false);
@@ -1266,7 +1279,11 @@ export function WebhookCard({
     const nextPartial = which === 'partial' ? checked : state.firePartial;
     const nextComplete = which === 'complete' ? checked : state.fireComplete;
     if (!nextPartial && !nextComplete) return;
-    onChange({ ...state, firePartial: nextPartial, fireComplete: nextComplete });
+    onChange({
+      ...state,
+      firePartial: nextPartial,
+      fireComplete: nextComplete,
+    });
   }
 
   // Goes in the `notice` slot rather than among the children, for the same
@@ -1396,7 +1413,11 @@ export function HubspotCard({
   /** Why HubSpot refused to build the mirror form on the last save, if it did. */
   formActivityError?: string | null;
   /** `options` rides along for the value pickers; absent = not an enumeration. */
-  properties: { name: string; label: string; options?: HubSpotPropertyOption[] }[];
+  properties: {
+    name: string;
+    label: string;
+    options?: HubSpotPropertyOption[];
+  }[];
   pickerEnabled: boolean;
   accountConnected: boolean;
   showMapping: boolean;
@@ -1617,10 +1638,7 @@ export function HubspotCard({
           copy ends "a form that never asks for an email cannot be synced",
           which is FALSE for a form whose address comes from the booking — and
           it sat directly above the note saying the opposite. */}
-      <div
-        data-testid="hubspot-how"
-        className="rounded-md border border-border bg-muted/30 p-3"
-      >
+      <div data-testid="hubspot-how" className="rounded-md border border-border bg-muted/30 p-3">
         <p className="text-xs font-medium text-foreground">{m.hubspotHowTitle}</p>
         <p className="mt-1 text-xs text-muted-foreground">
           {emailSource?.kind === 'scheduler' ? m.hubspotHowBodyScheduler : m.hubspotHowBody}
@@ -1642,7 +1660,9 @@ export function HubspotCard({
         >
           <p className="text-xs font-medium text-foreground">{m.emailMappingConflictTitle}</p>
           <p className="mt-1 text-xs text-muted-foreground">
-            {fill(m.emailMappingConflictBody, { keys: emailConflicts.join(', ') })}
+            {fill(m.emailMappingConflictBody, {
+              keys: emailConflicts.join(', '),
+            })}
           </p>
         </div>
       ) : null}
@@ -1650,9 +1670,7 @@ export function HubspotCard({
       {/* Map questions — each form question → a HubSpot contact property */}
       <Section
         title={m.mapQuestions}
-        help={
-          emailSource?.kind === 'scheduler' ? m.mapQuestionsHelpScheduler : m.mapQuestionsHelp
-        }
+        help={emailSource?.kind === 'scheduler' ? m.mapQuestionsHelpScheduler : m.mapQuestionsHelp}
         action={
           <Button variant="outline" size="sm" onClick={autoMap} disabled={questions.length === 0}>
             <i aria-hidden className="pi pi-bolt" style={{ fontSize: 12 }} />
@@ -1753,7 +1771,10 @@ export function HubspotCard({
               variant="outline"
               size="sm"
               onClick={() =>
-                onChange({ ...state, fieldMappings: [...state.fieldMappings, { key: '', property: '' }] })
+                onChange({
+                  ...state,
+                  fieldMappings: [...state.fieldMappings, { key: '', property: '' }],
+                })
               }
             >
               {m.addMapping}
@@ -1793,7 +1814,10 @@ export function HubspotCard({
                   onChange({ ...state, valueMaps: all });
                 }}
                 onRemove={() =>
-                  onChange({ ...state, valueMaps: state.valueMaps.filter((_, j) => j !== gi) })
+                  onChange({
+                    ...state,
+                    valueMaps: state.valueMaps.filter((_, j) => j !== gi),
+                  })
                 }
               />
             ))
@@ -1833,7 +1857,12 @@ export function HubspotCard({
                     enabled={pickerEnabled}
                     allowNone
                     m={m}
-                    onChange={(v) => onChange({ ...state, utmMappings: { ...state.utmMappings, [k]: v } })}
+                    onChange={(v) =>
+                      onChange({
+                        ...state,
+                        utmMappings: { ...state.utmMappings, [k]: v },
+                      })
+                    }
                   />
                 </div>
               </div>
@@ -1968,7 +1997,10 @@ export function HubspotCard({
               allowNone
               m={m}
               onChange={(v) =>
-                onChange({ ...state, bookingSync: { ...state.bookingSync, stageProperty: v } })
+                onChange({
+                  ...state,
+                  bookingSync: { ...state.bookingSync, stageProperty: v },
+                })
               }
             />
           </Field>
@@ -1980,7 +2012,10 @@ export function HubspotCard({
               onChange={(e) =>
                 onChange({
                   ...state,
-                  bookingSync: { ...state.bookingSync, stageValue: e.target.value },
+                  bookingSync: {
+                    ...state.bookingSync,
+                    stageValue: e.target.value,
+                  },
                 })
               }
             />
@@ -1994,7 +2029,10 @@ export function HubspotCard({
               allowNone
               m={m}
               onChange={(v) =>
-                onChange({ ...state, bookingSync: { ...state.bookingSync, dateProperty: v } })
+                onChange({
+                  ...state,
+                  bookingSync: { ...state.bookingSync, dateProperty: v },
+                })
               }
             />
           </Field>
@@ -2015,7 +2053,10 @@ export function HubspotCard({
               onChange={(e) =>
                 onChange({
                   ...state,
-                  bookingSync: { ...state.bookingSync, dateTimezone: e.target.value },
+                  bookingSync: {
+                    ...state.bookingSync,
+                    dateTimezone: e.target.value,
+                  },
                 })
               }
             />
@@ -2034,7 +2075,10 @@ export function HubspotCard({
               allowNone
               m={m}
               onChange={(v) =>
-                onChange({ ...state, bookingSync: { ...state.bookingSync, hoursProperty: v } })
+                onChange({
+                  ...state,
+                  bookingSync: { ...state.bookingSync, hoursProperty: v },
+                })
               }
             />
           </Field>
@@ -2092,7 +2136,11 @@ export function HubspotCard({
           data-testid="hubspot-form-activity-error"
           className="flex items-start gap-1.5 rounded-md border border-destructive/40 bg-destructive/10 px-2.5 py-2 text-xs leading-relaxed text-destructive"
         >
-          <i aria-hidden className="pi pi-exclamation-triangle mt-0.5 shrink-0" style={{ fontSize: 11 }} />
+          <i
+            aria-hidden
+            className="pi pi-exclamation-triangle mt-0.5 shrink-0"
+            style={{ fontSize: 11 }}
+          />
           {fill(m.formActivityError, { reason: formActivityError })}
         </p>
       ) : null}

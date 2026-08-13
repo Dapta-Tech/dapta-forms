@@ -42,7 +42,7 @@ import {
   type FormDestination,
 } from '@quill/types';
 import { transcriptOfError, WebhookDestination, WebhookHttpError } from '@quill/destinations';
-import { syncMirrorForm } from './hubspot-mirror';
+import { syncMirrorForm, type MirrorSyncResult } from './hubspot-mirror';
 import type { ServerEnv } from '@quill/config/env';
 import { AuthService, type ReqLike } from './auth.service';
 import { assertAdmin } from './permissions';
@@ -603,6 +603,68 @@ export class IntegrationsController {
 const destinationsBodySchema = z.object({ destinations: z.array(formDestinationSchema) });
 
 /**
+ * The mirror-form bookkeeping the API writes for itself, as opposed to the
+ * settings an author edits. Kept apart because they are sourced from the stored
+ * row on every save and a caller's copy is never trusted — see `syncMirror`.
+ */
+interface OwnedMirrorState {
+  formGuid?: string | null;
+  formSignature?: string;
+}
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+/**
+ * Read the owned mirror state off a form's STORED destinations.
+ *
+ * Deliberately duck-typed rather than parsed: a config that no longer satisfies
+ * `formDestinationSchema` (an older shape, a hand-edited row) must still yield
+ * its guid, because failing to find one is precisely what makes the next save
+ * create a duplicate form in the portal. There is at most one HubSpot
+ * destination per form, so the first match is the answer.
+ */
+function storedMirrorState(stored: unknown): OwnedMirrorState {
+  if (!Array.isArray(stored)) return {};
+  for (const entry of stored) {
+    if (!isRecord(entry) || entry.type !== 'hubspot') continue;
+    const settings = isRecord(entry.settings) ? entry.settings : {};
+    const owned: OwnedMirrorState = {};
+    // `null` is meaningful — `syncMirrorForm` writes it to say "the portal no
+    // longer has this form, make a new one on the next save".
+    if (typeof settings.formGuid === 'string' || settings.formGuid === null) {
+      owned.formGuid = settings.formGuid;
+    }
+    if (typeof settings.formSignature === 'string') owned.formSignature = settings.formSignature;
+    return owned;
+  }
+  return {};
+}
+
+/**
+ * The settings to store: the caller's, with the owned keys stripped and then set
+ * from the sync's result.
+ *
+ * Strip-then-set rather than a spread, so a caller that INVENTS a `formGuid` for
+ * a form that has none cannot have it survive. Pointing one account's form at
+ * another's mirror is the failure worth being explicit about; a stale guid is
+ * merely the common one.
+ */
+function mirrorSettingsFor(
+  raw: unknown,
+  settings: MirrorSyncResult['settings'],
+): Record<string, unknown> {
+  const fromCaller = isRecord(raw) && isRecord(raw.settings) ? raw.settings : {};
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(fromCaller)) {
+    if (key !== 'formGuid' && key !== 'formSignature') out[key] = value;
+  }
+  if (settings.formGuid !== undefined) out.formGuid = settings.formGuid;
+  if (settings.formSignature !== undefined) out.formSignature = settings.formSignature;
+  return out;
+}
+
+/**
  * Auth-gated PARTIAL config write for the integrations screen: replaces ONLY the
  * `destinations` key, merged against the row's fresh config server-side in one
  * request — the web tier no longer reads the whole config and writes it back
@@ -657,7 +719,7 @@ export class FormDestinationsController {
     // a form exists in the portal that nothing points at. A HubSpot failure
     // never fails the save: an author must be able to edit their mappings while
     // a portal is unreachable or has not granted the scopes.
-    const mirror = await this.syncMirror(p.accountId, before.name, destinations);
+    const mirror = await this.syncMirror(p.accountId, before.name, destinations, stored);
     const out = await updateFormDestinations(this.db, p.accountId, id, mirror.destinations);
     if (!out.ok) throw new NotFoundException({ error: 'NOT_FOUND', message: 'Not found.' });
     // Never echo the stored webhook secret back to the client (mask on READ).
@@ -676,11 +738,24 @@ export class FormDestinationsController {
    * guid belongs to the destination that owns it, and the caller stores the
    * whole array in one write. Only the HubSpot entries can change; everything
    * else passes through by reference.
+   *
+   * `formGuid` and `formSignature` are read from what is STORED and the caller's
+   * values are discarded — they are this method's own bookkeeping, not settings
+   * an author edits. Trusting the request body meant any client that did not
+   * echo them back created a SECOND form in the portal on the very next save:
+   * with no guid there is no form to PATCH and no signature to compare, so every
+   * write POSTed a new one and abandoned the old — which still holds the
+   * activities already attached to real contacts. The Connect tab autosaves per
+   * keystroke and never learns the guid (the save action returns only
+   * `{ok, formActivityError}`), so one editing session with the switch on was
+   * one new form per debounce. Sourcing them here fixes it for every caller at
+   * once, including the ones that have not been written yet.
    */
   private async syncMirror(
     accountId: string,
     formName: string,
     destinations: unknown[],
+    stored: unknown,
   ): Promise<{ destinations: unknown[]; error?: string }> {
     if (!destinations.some((d) => (d as { type?: string })?.type === 'hubspot')) {
       return { destinations };
@@ -712,22 +787,35 @@ export class FormDestinationsController {
       knownProperties = null;
     }
 
+    // At most one HubSpot destination per form (`hasExtraHubspotDestination`,
+    // enforced by the caller), so the stored mirror state is a single value
+    // rather than something to match up entry by entry.
+    const owned = storedMirrorState(stored);
+
     let error: string | undefined;
     const out = await Promise.all(
       destinations.map(async (raw) => {
         const parsed = formDestinationSchema.safeParse(raw);
         if (!parsed.success || parsed.data.type !== 'hubspot') return raw;
-        const result = await syncMirrorForm(parsed.data, formName, {
-          fetchImpl: this.fetchImpl,
-          token,
-          knownProperties,
-        });
+        // Discarded before the sync ever sees them: a spread would let an
+        // INVENTED guid through whenever nothing is stored, and the sync would
+        // dutifully PATCH whatever form it named.
+        const settings = { ...parsed.data.settings };
+        delete settings.formGuid;
+        delete settings.formSignature;
+        const result = await syncMirrorForm(
+          { ...parsed.data, settings: { ...settings, ...owned } },
+          formName,
+          { fetchImpl: this.fetchImpl, token, knownProperties },
+        );
         if (result.error && !error) error = result.error;
-        if (result.action === 'noop' || result.action === 'unchanged') return raw;
         // Merge onto the RAW entry, not the parsed one: parsing applies schema
         // defaults, and writing those back would rewrite fields this request
-        // never touched.
-        return { ...(raw as object), settings: result.settings };
+        // never touched. The two owned keys are set from the RESULT on every
+        // path — including `noop` and `unchanged`, where returning the caller's
+        // entry unchanged used to drop a stored guid on the floor, so switching
+        // the activity off orphaned the form it was meant to keep.
+        return { ...(raw as object), settings: mirrorSettingsFor(raw, result.settings) };
       }),
     );
     return { destinations: out, error };

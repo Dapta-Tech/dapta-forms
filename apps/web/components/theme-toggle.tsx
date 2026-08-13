@@ -4,6 +4,7 @@ import { useTransition } from 'react';
 import type { FormsMessages } from '@quill/shared';
 import { setThemeAction } from '@/app/admin/theme-actions';
 import { THEME_ICON, THEME_PREFS, type ThemePref } from '@/lib/theme';
+import { callAction } from '@/lib/call-action';
 
 type ThemeMessages = FormsMessages['admin']['chrome']['theme'];
 
@@ -34,7 +35,7 @@ export function ThemeToggle({ pref, m }: { pref: ThemePref; m: ThemeMessages }) 
       title={label}
       aria-label={label}
       disabled={pending}
-      onClick={() => start(() => void setThemeAction(next))}
+      onClick={() => start(() => void callAction(() => setThemeAction(next)))}
       className="flex h-11 w-11 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground active:scale-[0.98] disabled:opacity-60"
     >
       <i aria-hidden className={`pi ${THEME_ICON[pref]}`} style={{ fontSize: 16 }} />

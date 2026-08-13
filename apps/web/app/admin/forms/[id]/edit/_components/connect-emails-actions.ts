@@ -1,5 +1,7 @@
 'use server';
 
+import { unstable_rethrow } from 'next/navigation';
+
 import {
   adminApi,
   ApiError,
@@ -42,6 +44,7 @@ export async function loadFormNotificationsAction(
     const res = await adminApi.getFormNotifications(formId);
     return { ok: true, settings: res.settings };
   } catch (e) {
+    unstable_rethrow(e);
     return failure(e);
   }
 }
@@ -58,6 +61,7 @@ export async function saveFormNotificationAction(
     const setting = await adminApi.updateFormNotification(formId, emailKey, patch);
     return { ok: true, setting };
   } catch (e) {
+    unstable_rethrow(e);
     return failure(e);
   }
 }
@@ -73,6 +77,7 @@ export async function resetFormNotificationAction(
     const setting = await adminApi.resetFormNotification(formId, emailKey);
     return { ok: true, setting };
   } catch (e) {
+    unstable_rethrow(e);
     return failure(e);
   }
 }

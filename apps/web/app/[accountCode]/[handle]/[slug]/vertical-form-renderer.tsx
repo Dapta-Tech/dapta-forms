@@ -56,6 +56,7 @@ import { MadeWithBadge } from '@/components/made-with-badge';
 import { formDesignProps } from '@/lib/form-design';
 import { warmBookingEmbed, type BookingScheduledDetails } from '@/lib/booking-embed';
 import { resolveSchedulerPrefill } from '@/lib/booking-prefill';
+import { callAction, callActionWithRetry, isTransportError } from '@/lib/call-action';
 import { submitFormAction, recordEventAction, recordBookingAction } from './actions';
 import {
   useSessionId,
@@ -259,12 +260,16 @@ export function VerticalFormRenderer({
   const track = useCallback(
     (type: string, stepIndex?: number, stepKey?: string) => {
       if (!sessionId) return;
-      void recordEventAction(accountCode, slug, {
-        sessionId,
-        type,
-        stepIndex: stepIndex ?? null,
-        stepKey: stepKey ?? null,
-      });
+      // Transport-safe fire-and-forget: a rejected invocation must never
+      // surface as an unhandled rejection mid-walk (funnel events are best-effort).
+      void callAction(() =>
+        recordEventAction(accountCode, slug, {
+          sessionId,
+          type,
+          stepIndex: stepIndex ?? null,
+          stepKey: stepKey ?? null,
+        }),
+      );
     },
     [accountCode, slug, sessionId],
   );
@@ -296,12 +301,23 @@ export function VerticalFormRenderer({
   const finalize = useCallback(
     async (finalAnswers: Answers) => {
       setPhase('submitting');
-      const res = await submitFormAction(accountCode, slug, {
-        sessionId,
-        data: withData(finalAnswers),
-      });
+      // Transport-safe with retries: a submit whose INVOCATION fails (network
+      // drop, deploy-rotated action id) used to reject unhandled, stranding the
+      // visitor on the "submitting" spinner with the submission silently lost.
+      // Retrying is safe — the server dedupes submissions by session.
+      // 8s per attempt: worst case ~27s on the spinner, not the old forever.
+      const res = await callActionWithRetry(
+        () =>
+          submitFormAction(accountCode, slug, {
+            sessionId,
+            data: withData(finalAnswers),
+          }),
+        { timeoutMs: 8_000 },
+      );
       if (!res.ok) {
-        setSubmitError(res.message ?? err('submit'));
+        // Back to the page with every answer intact; transport messages are
+        // technical noise, so those show the localized submit error instead.
+        setSubmitError((isTransportError(res) ? null : res.message) ?? err('submit'));
         setPhase('form');
         return;
       }
@@ -309,11 +325,13 @@ export function VerticalFormRenderer({
       // redirect — a fire-and-forget request would be aborted by the immediate
       // window.location navigation (same pattern as the slides layout).
       if (sessionId) {
-        await recordEventAction(accountCode, slug, {
-          sessionId,
-          type: 'submit',
-          stepIndex: null,
-        }).catch(() => {});
+        await callAction(() =>
+          recordEventAction(accountCode, slug, {
+            sessionId,
+            type: 'submit',
+            stepIndex: null,
+          }),
+        );
       }
       const score = res.score ?? 0;
       const outcome = resolveOutcome(engineConfig, score, finalAnswers);
@@ -387,11 +405,13 @@ export function VerticalFormRenderer({
       if (thresholdKey && step.key === thresholdKey && !partialSent.current) {
         partialSent.current = true;
         track('partial_submit', idx >= 0 ? idx : undefined, step.key);
-        void submitFormAction(accountCode, slug, {
-          sessionId,
-          data: withData(nextAnswers),
-          partial: true,
-        });
+        void callActionWithRetry(() =>
+          submitFormAction(accountCode, slug, {
+            sessionId,
+            data: withData(nextAnswers),
+            partial: true,
+          }),
+        );
       }
     },
     [engineConfig, thresholdKey, accountCode, slug, sessionId, track],
@@ -447,13 +467,21 @@ export function VerticalFormRenderer({
     async (schedStep: FormStep, details: BookingScheduledDetails) => {
       if (schedulerBooked.current.has(schedStep.key)) return;
       schedulerBooked.current.add(schedStep.key);
-      await recordBookingAction(accountCode, slug, {
-        sessionId,
-        provider: details.provider,
-        ...(details.eventUri ? { eventUri: details.eventUri } : {}),
-        ...(details.inviteeUri ? { inviteeUri: details.inviteeUri } : {}),
-        ...(details.startTime ? { startTime: details.startTime } : {}),
-      }).catch(() => {});
+      // ONE transport-safe attempt, fire-and-forget (see handleBooked: the
+      // record INSERT is not idempotent). No navigation to protect here — the
+      // submission is the respondent's explicit Submit later — so the answer
+      // lands immediately instead of blocking the page on the round-trip.
+      void callAction(() =>
+        recordBookingAction(accountCode, slug, {
+          sessionId,
+          provider: details.provider,
+          ...(details.eventUri ? { eventUri: details.eventUri } : {}),
+          ...(details.inviteeUri ? { inviteeUri: details.inviteeUri } : {}),
+          ...(details.startTime ? { startTime: details.startTime } : {}),
+        }),
+      ).then((rec) => {
+        if (isTransportError(rec)) console.warn('[forms] scheduler booking record failed');
+      });
       setAnswer(schedStep, schedStep.key, details.startTime ?? 'booked', true);
     },
     [accountCode, slug, sessionId],
@@ -465,13 +493,21 @@ export function VerticalFormRenderer({
       if (bookedRef.current) return;
       bookedRef.current = true;
       const outcome = booking?.outcome ?? null;
-      await recordBookingAction(accountCode, slug, {
-        sessionId,
-        provider: details.provider,
-        ...(details.eventUri ? { eventUri: details.eventUri } : {}),
-        ...(details.inviteeUri ? { inviteeUri: details.inviteeUri } : {}),
-        ...(details.startTime ? { startTime: details.startTime } : {}),
-      });
+      // ONE transport-safe attempt, no retries: recording a booking is a plain
+      // INSERT server-side (no session dedupe like submissions have), and a
+      // timed-out attempt may still land — a retry would then write duplicate
+      // booking_events and duplicate CRM notes. A failure no longer strands the
+      // visitor: they continue to the done screen/redirect regardless.
+      const rec = await callAction(() =>
+        recordBookingAction(accountCode, slug, {
+          sessionId,
+          provider: details.provider,
+          ...(details.eventUri ? { eventUri: details.eventUri } : {}),
+          ...(details.inviteeUri ? { inviteeUri: details.inviteeUri } : {}),
+          ...(details.startTime ? { startTime: details.startTime } : {}),
+        }),
+      );
+      if (isTransportError(rec)) console.warn('[forms] post-submit booking record failed');
       if (outcome?.redirectUrl && isSafeHttpUrl(outcome.redirectUrl)) {
         window.location.href = outcome.redirectUrl;
         return;

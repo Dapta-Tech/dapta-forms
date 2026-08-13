@@ -15,6 +15,7 @@ import { bookingLabel } from '@/lib/booking-fields';
 import { loadConnectIntegrationsAction, type ConnectIntegrationsData } from './connect-actions';
 import { saveQuestionMappingAction } from './question-hubspot-actions';
 import type { BuilderMessages } from './builder-messages';
+import { callAction, isTransportError } from '@/lib/call-action';
 
 /**
  * QuestionHubspotSection — the Build tab's per-question "HubSpot / Map to"
@@ -173,7 +174,10 @@ export function QuestionHubspotSection({
   const options = useMemo<SelectOption[]>(
     () => [
       { value: '', label: m.none },
-      ...properties.map((p) => ({ value: p.name, label: `${p.label} (${p.name})` })),
+      ...properties.map((p) => ({
+        value: p.name,
+        label: `${p.label} (${p.name})`,
+      })),
     ],
     [properties, m.none],
   );
@@ -216,10 +220,15 @@ export function QuestionHubspotSection({
 
     const seq = (saveSeq.current.get(key) ?? 0) + 1;
     saveSeq.current.set(key, seq);
-    void saveQuestionMappingAction(formId, key, nextValue || null)
+    void callAction(() => saveQuestionMappingAction(formId, key, nextValue || null))
       .then((res) => {
         if (seq !== saveSeq.current.get(key)) return; // superseded by a newer pick
         setSaving((k) => (k === key ? null : k));
+        if (isTransportError(res)) {
+          setState({ status: 'ready', data: before });
+          toastError(m.saveError);
+          return;
+        }
         if (res.ok) {
           const confirmed: ConnectIntegrationsData = {
             ...optimistic,

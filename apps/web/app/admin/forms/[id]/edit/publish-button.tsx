@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { getMessages } from '@quill/shared';
 import { publishFormAction } from '@/app/admin/actions';
 import { useToast } from '@/components/toast';
+import { callAction, isTransportError } from '@/lib/call-action';
 import { cn } from '@/lib/cn';
 
 /**
@@ -45,13 +46,18 @@ export function PublishButton({
     // Snapshot BEFORE the round-trip: a save landing mid-publish wrote a draft
     // the publish may not have carried, so the badge must come back for it.
     const snapshot = saveCount;
-    const res = await publishFormAction(formId);
-    setPublishing(false);
-    if (res.ok) {
-      setPublishedAtCount(snapshot);
-      toast.success(m.published);
-    } else {
-      toast.error(res.message ?? m.publishError);
+    try {
+      // Transport-safe: a rejected invocation (network drop, deploy-rotated
+      // action id) must re-enable the button, not strand it on "Publishing…".
+      const res = await callAction(() => publishFormAction(formId));
+      if (res.ok) {
+        setPublishedAtCount(snapshot);
+        toast.success(m.published);
+      } else {
+        toast.error((isTransportError(res) ? null : res.message) ?? m.publishError);
+      }
+    } finally {
+      setPublishing(false);
     }
   }
 

@@ -5,6 +5,7 @@ import type { FormsMessages, Locale } from '@quill/shared';
 import { Button } from '@/components/ui/button';
 import { Modal } from '@/components/modal';
 import { cn } from '@/lib/cn';
+import { callAction, isTransportError } from '@/lib/call-action';
 import { WEBHOOK_PING_ACTION } from '@quill/types';
 import type { DeliveryKind, DeliveryStatus, FormDelivery } from '@/lib/admin-api';
 import { loadDeliveryHistoryAction } from './actions';
@@ -61,9 +62,17 @@ export function DeliveryHistory({
   useEffect(() => {
     let cancelled = false;
     setState({ status: 'loading' });
-    loadDeliveryHistoryAction(formId, kinds)
-      .then((items) => {
-        if (!cancelled) setState({ status: 'ready', items });
+    // Through `callAction`: a bare invocation rejects when the call never
+    // reaches the server — a dropped network, or a deploy rotating the compiled
+    // action ids while this tab sits open. Unguarded, that rejection skips the
+    // state update and the panel stays on its skeleton forever.
+    callAction(() => loadDeliveryHistoryAction(formId, kinds))
+      .then((res) => {
+        if (cancelled) return;
+        // A transport failure is retryable and Refresh is right there, so it
+        // reads as an error rather than as "this form has no deliveries" — a
+        // claim that would be worse than saying nothing.
+        setState(isTransportError(res) ? { status: 'error' } : { status: 'ready', items: res });
       })
       .catch(() => {
         // A diagnostic panel must never break the thing it diagnoses.

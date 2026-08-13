@@ -9,6 +9,7 @@ import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useToast } from '@/components/toast';
 import { GoogleSheetsLogo, ProviderLogo } from '@/components/ui/provider-logo';
 import { connectIntegrationAction, disconnectIntegrationAction } from './actions';
+import { callAction } from '@/lib/call-action';
 
 type Msgs = FormsMessages['admin']['connections'];
 
@@ -51,7 +52,10 @@ export function ConnectionsPanel({
   ];
 
   const [statuses, setStatuses] = useState<Record<string, IntegrationStatus | null>>(() => {
-    const map: Record<string, IntegrationStatus | null> = { hubspot: null, calendly: null };
+    const map: Record<string, IntegrationStatus | null> = {
+      hubspot: null,
+      calendly: null,
+    };
     for (const s of initialProviders) if (s.connected) map[s.provider] = s;
     return map;
   });
@@ -118,7 +122,7 @@ function ProviderCard({
       return;
     }
     start(async () => {
-      const res = await connectIntegrationAction(meta.id, trimmed);
+      const res = await callAction(() => connectIntegrationAction(meta.id, trimmed));
       if (res.ok) {
         onStatusChange(res.status);
         setToken('');
@@ -132,7 +136,9 @@ function ProviderCard({
 
   async function disconnect() {
     const ok = await confirmDialog({
-      title: fill(getMessages(locale).dialog.disconnectIntegrationTitle, { provider: meta.name }),
+      title: fill(getMessages(locale).dialog.disconnectIntegrationTitle, {
+        provider: meta.name,
+      }),
       message: fill(m.disconnectConfirm, { provider: meta.name }),
       confirmLabel: m.disconnect,
       cancelLabel: m.cancel,
@@ -140,7 +146,7 @@ function ProviderCard({
     });
     if (!ok) return;
     start(async () => {
-      const res = await disconnectIntegrationAction(meta.id);
+      const res = await callAction(() => disconnectIntegrationAction(meta.id));
       if (res.ok) {
         onStatusChange(null);
         success(fill(m.disconnectSuccess, { provider: meta.name }));

@@ -33,6 +33,7 @@ export default async function EditFormPage({ params }: { params: Promise<{ id: s
         // draft, and the explicit Publish action makes it live.
         initialConfig={form.draftConfig ?? form.config}
         initialHasDraft={form.draftConfig != null}
+        updatedAt={form.updatedAt}
         publicPath={publicPath}
         locale={locale}
         m={m}

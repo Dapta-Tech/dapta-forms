@@ -5,6 +5,7 @@ import type { FormsMessages } from '@quill/shared';
 import type { Workspace } from '@/lib/admin-api';
 import { switchWorkspaceAction } from '@/app/admin/workspace-actions';
 import { AnchoredMenu } from '@/components/ui/anchored-menu';
+import { callAction } from '@/lib/call-action';
 
 type Messages = FormsMessages['admin']['chrome']['workspaces'];
 
@@ -56,7 +57,7 @@ export function WorkspaceSwitcher({
       return;
     }
     start(async () => {
-      await switchWorkspaceAction(accountId);
+      await callAction(() => switchWorkspaceAction(accountId));
     });
   }
 

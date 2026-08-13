@@ -1,5 +1,7 @@
 'use server';
 
+import { unstable_rethrow } from 'next/navigation';
+
 import { revalidatePath } from 'next/cache';
 import {
   adminApi,
@@ -34,7 +36,11 @@ export async function saveIntegrationsAction(
     const reason = (saved as { formActivityError?: string }).formActivityError;
     return reason ? { ok: true, formActivityError: reason } : { ok: true };
   } catch (e) {
-    return { ok: false, message: e instanceof Error ? e.message : 'Failed to save.' };
+    unstable_rethrow(e);
+    return {
+      ok: false,
+      message: e instanceof Error ? e.message : 'Failed to save.',
+    };
   }
 }
 
@@ -49,6 +55,7 @@ export async function pingWebhookAction(id: string): Promise<WebhookPingResult> 
   try {
     return await adminApi.pingWebhook(id);
   } catch (e) {
+    unstable_rethrow(e);
     return {
       ok: false,
       reason: 'unknown',
@@ -68,8 +75,11 @@ const HISTORY_LIMIT = 25;
  * backoff is the most useful thing to see right after wiring an endpoint up, and
  * leaving it out would show a submission that produced no delivery at all.
  *
- * Throws nothing. A lookup failure yields an empty list, because this is a
- * diagnostic panel and it must never make the thing it diagnoses look broken.
+ * A lookup failure yields an empty list, because this is a diagnostic panel and
+ * it must never make the thing it diagnoses look broken — but `unstable_rethrow`
+ * runs FIRST. Next signals `redirect()` and `notFound()` by throwing, and the
+ * admin API client redirects to /login on a 401; swallowing that here would turn
+ * an expired session into a permanently empty history instead of a sign-in.
  */
 export async function loadDeliveryHistoryAction(
   id: string,
@@ -82,7 +92,8 @@ export async function loadDeliveryHistoryAction(
       limit: HISTORY_LIMIT,
     });
     return res.items;
-  } catch {
+  } catch (e) {
+    unstable_rethrow(e);
     return [];
   }
 }

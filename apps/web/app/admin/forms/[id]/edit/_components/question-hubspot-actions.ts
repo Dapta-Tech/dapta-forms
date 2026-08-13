@@ -1,5 +1,7 @@
 'use server';
 
+import { unstable_rethrow } from 'next/navigation';
+
 import { adminApi, ApiError } from '@/lib/admin-api';
 import { propertiesFor, type FormDestination } from '@quill/types';
 
@@ -74,9 +76,17 @@ export async function renameQuestionMappingAction(
           : d,
       ),
     );
-    return { ok: true, destinations: (updated.config.destinations ?? []) as FormDestination[] };
+    return {
+      ok: true,
+      destinations: (updated.config.destinations ?? []) as FormDestination[],
+    };
   } catch (e) {
-    return { ok: false, code: 'error', message: e instanceof ApiError ? e.message : undefined };
+    unstable_rethrow(e);
+    return {
+      ok: false,
+      code: 'error',
+      message: e instanceof ApiError ? e.message : undefined,
+    };
   }
 }
 
@@ -112,8 +122,16 @@ export async function saveQuestionMappingAction(
       id,
       destinations.map((d) => (d === current ? { ...current, fieldMappings } : d)),
     );
-    return { ok: true, destinations: (updated.config.destinations ?? []) as FormDestination[] };
+    return {
+      ok: true,
+      destinations: (updated.config.destinations ?? []) as FormDestination[],
+    };
   } catch (e) {
-    return { ok: false, code: 'error', message: e instanceof ApiError ? e.message : undefined };
+    unstable_rethrow(e);
+    return {
+      ok: false,
+      code: 'error',
+      message: e instanceof ApiError ? e.message : undefined,
+    };
   }
 }
