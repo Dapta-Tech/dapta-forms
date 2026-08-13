@@ -183,6 +183,8 @@ export interface FormsMessages {
       save: string;
       saving: string;
       saved: string;
+      /** V5: the save request never reached the server (kept, retry manually). */
+      saveOffline: string;
       /** Read-only banner for non-admin members. */
       adminOnly: string;
       logoTitle: string;
@@ -1629,6 +1631,7 @@ export const en: FormsMessages = {
       save: 'Save brand kit',
       saving: 'Saving…',
       saved: 'Brand kit saved.',
+      saveOffline: 'Can’t reach the server — check your connection and try again.',
       adminOnly: 'Only an admin or owner can edit the brand kit.',
       logoTitle: 'Logo',
       logoSubtitle: 'Shown on covers and headers unless a form sets its own.',

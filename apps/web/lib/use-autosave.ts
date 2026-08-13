@@ -21,11 +21,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   AutosaveController,
+  type AutosaveFailureKind,
   type AutosaveStatus,
   type SaveOutcome,
 } from './autosave-controller';
 
-export type { AutosaveStatus } from './autosave-controller';
+export type { AutosaveFailureKind, AutosaveStatus } from './autosave-controller';
 
 export interface UseAutosaveOptions<T> {
   getSnapshot: () => T;
@@ -36,7 +37,7 @@ export interface UseAutosaveOptions<T> {
   /** Crash-safety copy of the snapshot (localStorage), taken before saves and
    *  on the way out — even for a snapshot that fails validation. */
   backup?: { write: (snapshot: T) => void; clear: () => void };
-  onFailure?: (message: string, transport: boolean) => void;
+  onFailure?: (message: string, kind: AutosaveFailureKind) => void;
   onSaved?: () => void;
   /** Start with unsaved changes (e.g. a config migrated on open). */
   initiallyDirty?: boolean;
@@ -75,7 +76,7 @@ export function useAutosave<T>(options: UseAutosaveOptions<T>): Autosave {
           setStatus(next);
           setDetail(d);
         },
-        onFailure: (m, t) => optsRef.current.onFailure?.(m, t),
+        onFailure: (m, k) => optsRef.current.onFailure?.(m, k),
         onSaved: () => {
           optsRef.current.backup?.clear();
           optsRef.current.onSaved?.();
@@ -115,7 +116,9 @@ export function useAutosave<T>(options: UseAutosaveOptions<T>): Autosave {
     return () => {
       document.removeEventListener('visibilitychange', onVisibility);
       window.removeEventListener('beforeunload', onBeforeUnload);
-      controller.flush(); // SPA nav / unmount — last chance on the action path
+      // SPA nav / unmount: back up the LATEST snapshot (an in-flight save may
+      // carry an older one), then dispose — which fires the terminal save.
+      if (controller.dirty) optsRef.current.backup?.write(optsRef.current.getSnapshot());
       controller.dispose();
     };
     // Subscribe once per mounted life; all state flows through optsRef.

@@ -573,7 +573,7 @@ export function IntegrationsEditor({
         /* best-effort on the unload path */
       }
     },
-    onFailure: (message, transport) => errorRef.current(transport ? m.saveOffline : message),
+    onFailure: (message, kind) => errorRef.current(kind === 'transport' ? m.saveOffline : message),
     debounceMs: AUTOSAVE_MS,
   });
   const { markDirty } = autosave;

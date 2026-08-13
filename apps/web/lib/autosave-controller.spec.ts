@@ -8,7 +8,7 @@ function harness(overrides?: {
   validate?: (s: string) => { ok: true } | { ok: false; reason: string };
 }) {
   const statuses: Array<{ status: AutosaveStatus; detail: string | null }> = [];
-  const failures: Array<{ message: string; transport: boolean }> = [];
+  const failures: Array<{ message: string; kind: string }> = [];
   let savedCount = 0;
   const state = { snapshot: 'v1' };
   const saves: string[] = [];
@@ -22,7 +22,7 @@ function harness(overrides?: {
         return { ok: true };
       }),
     onStatus: (status, detail) => statuses.push({ status, detail }),
-    onFailure: (message, transport) => failures.push({ message, transport }),
+    onFailure: (message, kind) => failures.push({ message, kind }),
     onSaved: () => savedCount++,
     debounceMs: 100,
     initialBackoffMs: 1000,
@@ -78,7 +78,7 @@ describe('AutosaveController', () => {
     expect(h.controller.dirty).toBe(false);
     // The user was told once, not once per retry.
     expect(h.failures).toHaveLength(1);
-    expect(h.failures[0]).toEqual({ message: 'offline', transport: true });
+    expect(h.failures[0]).toEqual({ message: 'offline', kind: 'transport' });
   });
 
   it('a server rejection surfaces as error but still retries', async () => {
@@ -184,7 +184,7 @@ describe('AutosaveController', () => {
     expect(h.statuses).toEqual([]);
   });
 
-  it('dispose stops pending retries', async () => {
+  it('dispose stops the retry loop after one terminal attempt', async () => {
     let attempts = 0;
     const h = harness({
       save: async () => {
@@ -196,8 +196,45 @@ describe('AutosaveController', () => {
     await vi.advanceTimersByTimeAsync(100);
     expect(attempts).toBe(1);
     h.controller.dispose();
+    await settle(); // still dirty → dispose owes ONE fire-and-forget attempt
+    expect(attempts).toBe(2);
+    await vi.advanceTimersByTimeAsync(60_000); // …and never retries again
+    expect(attempts).toBe(2);
+  });
+
+  it('dispose while CLEAN fires nothing', async () => {
+    const h = harness();
+    h.controller.markDirty();
+    await vi.advanceTimersByTimeAsync(100); // saved
+    h.controller.dispose();
     await vi.advanceTimersByTimeAsync(60_000);
-    expect(attempts).toBe(1);
+    expect(h.saves).toEqual(['v1']); // just the one debounced save
+  });
+
+  it('unmount during an in-flight save does NOT lose edits made mid-flight (terminal save)', async () => {
+    let release!: (o: SaveOutcome) => void;
+    const gate = new Promise<SaveOutcome>((r) => (release = r));
+    let attempts = 0;
+    const h = harness({
+      save: async (s) => {
+        attempts++;
+        if (attempts === 1) return gate; // gen-1 save hangs in flight
+        h.saves.push(s);
+        return { ok: true };
+      },
+    });
+    h.controller.markDirty();
+    await vi.advanceTimersByTimeAsync(100); // save of v1 in flight
+    h.state.snapshot = 'v2';
+    h.controller.markDirty(); // edit lands mid-flight
+    // SPA nav: cleanup runs flush (no-ops: in flight) then dispose.
+    h.controller.flush();
+    h.controller.dispose();
+    await settle();
+    // The terminal save carried the LATEST snapshot despite the in-flight save.
+    expect(h.saves).toContain('v2');
+    release({ ok: true });
+    await settle(); // late resolution is inert — no status after disposal
   });
 
   it('a fresh edit resets the pending retry (debounce path takes over)', async () => {

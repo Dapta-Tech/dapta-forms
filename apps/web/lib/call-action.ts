@@ -31,7 +31,10 @@ export const isTransportError = (r: unknown): r is TransportError =>
   typeof r === 'object' && r !== null && (r as TransportError).transport === true;
 
 /** Per-attempt ceiling. Server actions from one tab run serially, so a hung
- *  call would otherwise queue every later action (publish included) forever. */
+ *  call would otherwise queue every later action (publish included) forever.
+ *  NOTE: the timeout does not ABORT the underlying request — a timed-out call
+ *  may still land server-side while a retry also lands. Only wrap retries
+ *  around idempotent writes (all current callers are last-write-wins PUTs). */
 const DEFAULT_TIMEOUT_MS = 15_000;
 
 export async function callAction<T>(

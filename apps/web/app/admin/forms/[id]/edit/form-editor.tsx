@@ -286,10 +286,14 @@ export function FormEditor({
 
   function mutate(updater: (c: FormConfig) => FormConfig) {
     setConfig(updater);
+    // A fresh edit outdates the crash backup — restoring it now would clobber
+    // what was just typed, so the offer leaves with the first real edit.
+    setRecovery(null);
     autosave.markDirty();
   }
   function rename(next: string) {
     setName(next);
+    setRecovery(null);
     autosave.markDirty();
   }
 

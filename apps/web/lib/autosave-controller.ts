@@ -18,6 +18,8 @@ import { isTransportError, type TransportError } from './call-action';
 
 export type AutosaveStatus = 'saved' | 'saving' | 'retrying' | 'error';
 
+export type AutosaveFailureKind = 'invalid' | 'server' | 'transport';
+
 /** What a save attempt produced, as the controller sees it. `ok` is a plain
  *  boolean (not a discriminant) because server actions type it that way. */
 export type SaveOutcome = { ok: boolean; message?: string } | TransportError;
@@ -33,9 +35,11 @@ export interface AutosaveOptions<T> {
   onStatus: (status: AutosaveStatus, detail: string | null) => void;
   /**
    * First failure after a healthy stretch — the "toast once" hook. Retries of
-   * the same outage stay quiet; a later recovery re-arms it.
+   * the same outage stay quiet; a later recovery re-arms it. `kind` picks the
+   * copy: `invalid` (client validation), `server` (the API said no), or
+   * `transport` (never reached the server; quietly retrying).
    */
-  onFailure?: (message: string, transport: boolean) => void;
+  onFailure?: (message: string, kind: AutosaveFailureKind) => void;
   /** Fired on every save that left the server holding the LATEST edits. */
   onSaved?: () => void;
   debounceMs?: number;
@@ -96,11 +100,30 @@ export class AutosaveController<T> {
     void this.run();
   }
 
-  /** Stop timers. In-flight saves settle harmlessly (status is not touched). */
+  /**
+   * Stop timers and fire one TERMINAL save if edits are still unsaved.
+   *
+   * The terminal attempt is unconditional on `inFlight` — that is the point.
+   * `flush()` no-ops while a save is in flight, so "gen-1 save in flight, user
+   * edits gen-2, user navigates away" would otherwise lose gen-2 forever: the
+   * in-flight save resolves after disposal and its dirty-recheck never runs.
+   * Server actions from one client run serially, so this write queues behind
+   * any in-flight save and lands carrying the LATEST snapshot (last write
+   * wins). In-flight saves otherwise settle harmlessly (status not touched).
+   */
   dispose(): void {
+    if (this.disposed) return;
     this.disposed = true;
     if (this.debounceTimer) clearTimeout(this.debounceTimer);
     this.clearRetry();
+    if (!this.dirty) return;
+    const snapshot = this.opts.getSnapshot();
+    if (!this.opts.validate(snapshot).ok) return; // backup (hook cleanup) still holds it
+    void Promise.resolve()
+      .then(() => this.opts.save(snapshot))
+      .catch(() => {
+        /* fire-and-forget: past disposal there is no state left to update */
+      });
   }
 
   private clearRetry(): void {
@@ -129,7 +152,7 @@ export class AutosaveController<T> {
       this.opts.onStatus('error', valid.reason);
       if (!this.failureNotified) {
         this.failureNotified = true;
-        this.opts.onFailure?.(valid.reason, false);
+        this.opts.onFailure?.(valid.reason, 'invalid');
       }
       return;
     }
@@ -172,7 +195,7 @@ export class AutosaveController<T> {
     this.opts.onStatus(transport ? 'retrying' : 'error', message);
     if (!this.failureNotified) {
       this.failureNotified = true;
-      this.opts.onFailure?.(message, transport);
+      this.opts.onFailure?.(message, transport ? 'transport' : 'server');
     }
     this.scheduleRetry();
   }

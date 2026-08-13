@@ -28,6 +28,9 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   }
 
   const { id } = await ctx.params;
+  // The id rides into the upstream path — reject anything that is not a plain
+  // opaque token so an encoded `../` can never re-aim the identity-carrying PUT.
+  if (!/^[A-Za-z0-9_-]+$/.test(id)) return Response.json({ ok: false }, { status: 400 });
   let body: {
     kind?: string;
     name?: string;

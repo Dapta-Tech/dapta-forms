@@ -6,7 +6,7 @@ import { DEFAULT_FORM_FONT } from '@quill/engine';
 import { DEFAULT_ACCENT, DEFAULT_CANVAS, onAccent, readableOn, t, type FormsMessages } from '@quill/shared';
 import type { BrandKit, FormSummary } from '@/lib/admin-api';
 import { formDesignProps } from '@/lib/form-design';
-import { callAction } from '@/lib/call-action';
+import { callAction, isTransportError } from '@/lib/call-action';
 import { cn } from '@/lib/cn';
 import { Field, PanelSection, SegmentedToggle, TextField } from '../forms/[id]/edit/_components/fields';
 import { ColorPicker } from '../forms/[id]/edit/_components/color-picker';
@@ -66,7 +66,7 @@ export function BrandKitPanel({
       if (res.ok) {
         setSavedAt(res.value.updatedAt);
         flash(bk.saved);
-      } else setError(res.message ?? bk.saved);
+      } else setError(isTransportError(res) ? bk.saveOffline : (res.message ?? bk.saved));
     });
 
   const apply = () => {
@@ -74,6 +74,10 @@ export function BrandKitPanel({
     if (!ids.length) return;
     startApplying(async () => {
       const res = await callAction(() => applyBrandKitAction(ids));
+      if (isTransportError(res)) {
+        setError(bk.saveOffline);
+        return;
+      }
       if (res.ok) {
         setApplied((a) => ({ ...a, ...Object.fromEntries(res.value.applied.map((id) => [id, true])) }));
         setSelected(new Set());
@@ -86,6 +90,10 @@ export function BrandKitPanel({
     setRevertingId(id);
     try {
       const res = await callAction(() => revertBrandKitAction([id]));
+      if (isTransportError(res)) {
+        setError(bk.saveOffline);
+        return;
+      }
       if (res.ok && res.value.reverted.includes(id)) {
         setApplied((a) => ({ ...a, [id]: false }));
         flash(bk.revertedToast);
