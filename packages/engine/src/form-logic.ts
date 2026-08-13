@@ -281,6 +281,11 @@ export interface FormOutcome {
   label: string;
   /** Inclusive lower score bound for this bucket (highest matching wins). */
   minScore?: number;
+  /**
+   * Inclusive UPPER score bound (additive; back-compat). Absent = open-ended
+   * upwards, which is how every range behaved before this field existed.
+   */
+  maxScore?: number;
   redirectUrl?: string | null;
   /**
    * The body copy shown on the thank-you screen for this outcome (additive;
@@ -1617,6 +1622,100 @@ function overrideRuleMatches(rule: OutcomeOverrideRule, answers: Answers): boole
   return hasClause;
 }
 
+/** A resolved outcome span. `max: null` means the range runs open-ended upwards. */
+export interface OutcomeRange {
+  min: number;
+  max: number | null;
+}
+
+/**
+ * The span each outcome actually covers — the single place that answers "what
+ * range is this?", for every screen that draws one.
+ *
+ * Ranges used to be implicit: an outcome stored only where it STARTED, and the
+ * end was read off whichever neighbour started next. Three surfaces derived that
+ * independently (the outcomes dialog's badge, its score bar, and the outcome
+ * chips on the Logic canvas), which is three chances to disagree. `maxScore`
+ * makes the span explicit; this function still fills it in for the configs that
+ * predate the field, so both kinds read the same.
+ *
+ * Order-independent on purpose: the implicit end is the SMALLEST start above
+ * this one, not "the next array element". Callers sort for display, and a helper
+ * that quietly depended on that sort would be wrong exactly when it mattered.
+ */
+export function outcomeRanges(outcomes: FormOutcome[]): OutcomeRange[] {
+  return outcomes.map((o) => {
+    const min = o.minScore ?? 0;
+    if (o.maxScore != null) return { min, max: o.maxScore };
+    let nextMin: number | null = null;
+    for (const other of outcomes) {
+      const m = other.minScore ?? 0;
+      if (m > min && (nextMin == null || m < nextMin)) nextMin = m;
+    }
+    return { min, max: nextMin == null ? null : nextMin - 1 };
+  });
+}
+
+/** Do two spans share any score? `max: null` extends forever. */
+function rangesIntersect(a: OutcomeRange, b: OutcomeRange): boolean {
+  const aEndsBeforeB = a.max != null && a.max < b.min;
+  const bEndsBeforeA = b.max != null && b.max < a.min;
+  return !aEndsBeforeB && !bEndsBeforeA;
+}
+
+/**
+ * Indexes of outcomes whose span collides with an EARLIER one.
+ *
+ * Unlike a gap, an overlap is never a legitimate state to store: two ranges
+ * claiming the same score means one of them is dead, since `resolveOutcome`
+ * returns exactly one. The editor refuses to commit a bound that would create
+ * one, and this is what it asks. An INVERTED span (min > max) is left out — it
+ * intersects nothing, and it is reported on its own terms.
+ */
+export function overlappingOutcomes(outcomes: FormOutcome[]): number[] {
+  const ranges = outcomeRanges(outcomes);
+  const live = (r: OutcomeRange) => r.max == null || r.min <= r.max;
+  const out: number[] = [];
+  for (let i = 0; i < ranges.length; i++) {
+    const r = ranges[i]!;
+    if (!live(r)) continue;
+    for (let j = 0; j < i; j++) {
+      const prev = ranges[j]!;
+      if (!live(prev)) continue;
+      if (rangesIntersect(r, prev)) {
+        out.push(i);
+        break;
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * Scores that fall BETWEEN the ranges and so match no outcome.
+ *
+ * Reported, never blocked. A gap is a real choice — those respondents see the
+ * form's own ending — and while ranges are being typed almost every intermediate
+ * state has one. Only the space between ranges counts: nothing here invents a
+ * floor below the lowest range, because scores are legitimately negative and the
+ * bottom of the scale is not this function's to guess.
+ */
+export function outcomeGaps(outcomes: FormOutcome[]): OutcomeRange[] {
+  const ranges = outcomeRanges(outcomes)
+    .filter((r) => r.max == null || r.min <= r.max)
+    .sort((a, b) => a.min - b.min);
+  const gaps: OutcomeRange[] = [];
+  let covered: number | null = null;
+  for (const r of ranges) {
+    if (covered != null && r.min > covered + 1) gaps.push({ min: covered + 1, max: r.min - 1 });
+    // An open-ended range swallows everything above it, so nothing after it can
+    // be uncovered — and its own `max` is not a number to keep counting from.
+    if (r.max == null) return gaps;
+    covered = covered == null ? r.max : Math.max(covered, r.max);
+  }
+  return gaps;
+}
+
 /**
  * The outcome for a score: the highest `minScore` bucket the score clears.
  * When `answers` are supplied (additive; back-compat), answer-forced `overrides`
@@ -1643,8 +1742,13 @@ export function resolveOutcome(
       if (outcome.overrides?.some((rule) => overrideRuleMatches(rule, answers))) return outcome;
     }
   }
+  // The STORED `maxScore` gates the bucket, never the derived one from
+  // `outcomeRanges`. For a config with no upper bounds the two differ in exactly
+  // one case — outcomes sharing a `minScore` — and picking the derived span
+  // there would change which of them wins on configs that are already live.
+  // Absent bound = open-ended, which is how every range behaved before.
   const buckets = outcomes
-    .filter((o) => (o.minScore ?? 0) <= score)
+    .filter((o) => (o.minScore ?? 0) <= score && (o.maxScore == null || score <= o.maxScore))
     .sort((a, b) => (b.minScore ?? 0) - (a.minScore ?? 0));
   return buckets[0] ?? null;
 }

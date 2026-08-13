@@ -480,6 +480,20 @@ export const formOutcomeSchema = z.object({
   // the moment "Add a range" is clicked.
   label: z.string().max(200),
   minScore: z.number().int().optional(),
+  /**
+   * Upper bound of this range, INCLUSIVE (ADDITIVE). Absent = the range runs
+   * open-ended upwards, which is what every stored config does today: ranges
+   * used to be implicit, each one ending wherever the next one began, so a
+   * config could only be read by looking at its neighbours. Authors could not
+   * type a range, only the number it started at, and the span they actually got
+   * was printed back at them from somewhere else on the row.
+   *
+   * `resolveOutcome` reads this bound and NOT a derived one, so a config
+   * carrying no `maxScore` resolves exactly as it did before this field existed.
+   * The last range is meant to stay absent — a score above every bound must
+   * still land somewhere.
+   */
+  maxScore: z.number().int().optional(),
   // http(s) only: the renderer navigates here (`window.location`), so a
   // `javascript:`/`data:` URL — which `.url()` alone would accept — is a stored
   // XSS vector. Guarded again at the sink in the renderer (belt-and-braces).

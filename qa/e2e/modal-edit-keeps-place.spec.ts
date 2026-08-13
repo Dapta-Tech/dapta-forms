@@ -83,9 +83,12 @@ test.describe('a dialog keeps its place while you edit it', () => {
 
     const scroller = page.getByTestId('outcomes-scroller');
     // The 5th range: far enough down that the top of the list is off-screen.
-    const target = page.getByTestId('outcome-row').nth(4);
-    const score = target.getByTestId('outcome-minscore');
-    await score.scrollIntoViewIfNeeded();
+    // Its NAME, deliberately — that field writes through to the editor on every
+    // keystroke, which is exactly the re-render that used to re-run the modal's
+    // setup effect. The two score bounds commit on blur, so typing in one of
+    // those would not re-render the parent and the test would pass either way.
+    const name = page.getByTestId('outcome-row').nth(4).getByTestId('outcome-label');
+    await name.scrollIntoViewIfNeeded();
 
     const scrolledTo = await scroller.evaluate((el) => el.scrollTop);
     expect(scrolledTo, 'the list must actually be scrolled, or this proves nothing').toBeGreaterThan(
@@ -93,9 +96,9 @@ test.describe('a dialog keeps its place while you edit it', () => {
     );
 
     // A real edit through the real control, committed the way a user commits it.
-    await score.click();
-    await score.fill('11');
-    await expect(score).toHaveValue('11');
+    await name.click();
+    await name.fill('Renamed deep in the list');
+    await expect(name).toHaveValue('Renamed deep in the list');
 
     // Symptom 1: the list stayed where the author left it. Some drift is fine
     // (the row above may reflow); a reset to the top is the bug.
@@ -107,7 +110,9 @@ test.describe('a dialog keeps its place while you edit it', () => {
     const focusedValue = await page.evaluate(
       () => (document.activeElement as HTMLInputElement | null)?.value ?? null,
     );
-    expect(focusedValue, 'focus was stolen away from the score being edited').toBe('11');
+    expect(focusedValue, 'focus was stolen away from the field being edited').toBe(
+      'Renamed deep in the list',
+    );
   });
 
   test('Escape still closes the dialog after edits', async ({ page, request }) => {
@@ -117,9 +122,9 @@ test.describe('a dialog keeps its place while you edit it', () => {
     const formId = await createForm(request);
     await openOutcomes(page, formId);
 
-    const score = page.getByTestId('outcome-row').nth(1).getByTestId('outcome-minscore');
-    await score.fill('1');
-    await expect(score).toHaveValue('1');
+    const name = page.getByTestId('outcome-row').nth(1).getByTestId('outcome-label');
+    await name.fill('Edited');
+    await expect(name).toHaveValue('Edited');
 
     await page.keyboard.press('Escape');
     await expect(page.getByTestId('outcomes-dialog')).toBeHidden();

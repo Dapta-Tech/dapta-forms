@@ -1,8 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import type { FormConfig, FormOutcome } from '@quill/engine';
-import { createEmptyOutcome } from '@quill/engine';
+import type { FormConfig, FormOutcome, OutcomeRange } from '@quill/engine';
+import { createEmptyOutcome, outcomeGaps, outcomeRanges, overlappingOutcomes } from '@quill/engine';
 import { Modal } from '@/components/modal';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -20,11 +20,20 @@ import type { EditorMessages } from './messages';
  * sees at the end.
  *
  * This is the Results tab's right-hand section, moved behind the Logic tab where
- * the rest of the form-wide routing now lives. Every behaviour it already
- * encoded is a bug fix and is carried over verbatim:
+ * the rest of the form-wide routing now lives.
  *
- *  - a range whose SUCCESSOR starts at or below it is unreachable and says so,
- *    instead of printing an inverted span ("0–-1") as if it were legitimate;
+ * A range is now something the author TYPES — both ends of it, in the row it
+ * belongs to. It used to be something they inferred: an outcome stored only
+ * where it started, so widening a range meant editing a different row, and the
+ * span itself was printed back at them from a badge on the far side of the one
+ * they were in. Everything below follows from making the span explicit —
+ * `outcomeRanges` fills it in for the configs that predate `maxScore`, so old
+ * and new forms read the same.
+ *
+ * Every behaviour it already encoded is a bug fix and is carried over:
+ *
+ *  - two ranges may never claim the same score, and the bound that would do it
+ *    is REFUSED at the point of entry rather than stored and flagged;
  *  - `minScore` is forced to an INTEGER in bounds — a float or an exponent used
  *    to be committed, fail schema validation, and take every LATER edit down
  *    with it, so the whole form stopped autosaving over one keystroke;
@@ -36,7 +45,9 @@ import type { EditorMessages } from './messages';
  *    still be wrong.
  *
  * The `outcome-*` / `results-*` testids are the ones the `v4-save` and
- * `v4-reveal` Playwright specs drive; they are preserved exactly.
+ * `v4-reveal` Playwright specs drive; they are preserved. `outcome-minscore`
+ * now names the range's lower bound rather than its only number, and
+ * `outcome-maxscore` (or `outcome-maxscore-open` on the top range) is its pair.
  */
 
 /** `fields.tsx` `controlBase`, compact — the shell `TokenTextarea` renders into. */
@@ -78,14 +89,60 @@ export function OutcomesDialog({
     warnRaw: bmTokens.warnRaw,
   };
 
+  // The spans every row draws, plus the two things that can be wrong with them.
+  // One source for all three — the badge, the bar, and the Logic canvas chips
+  // each used to derive the range on their own, which is three chances to
+  // disagree about the same numbers.
+  const spans = outcomeRanges(outcomes);
+  const overlapping = new Set(overlappingOutcomes(outcomes));
+  const gaps = outcomeGaps(outcomes);
+
   function update(index: number, patch: Partial<FormOutcome>) {
     onOutcomesChange(outcomes.map((o, i) => (i === index ? { ...o, ...patch } : o)));
   }
   function addRange() {
     const taken = new Set(outcomes.map((o) => o.id));
     const next = createEmptyOutcome(taken);
-    next.minScore = outcomes.length ? (outcomes[outcomes.length - 1]?.minScore ?? 0) + 5 : 0;
-    onOutcomesChange([...outcomes, next]);
+    const last = outcomes[outcomes.length - 1];
+    if (last) {
+      const lastSpan = spans[spans.length - 1];
+      next.minScore = (lastSpan?.max ?? last.minScore ?? 0) + 1;
+      // The new range takes over the open top, so the one below it has to close
+      // — otherwise the two overlap the moment the row appears.
+      const closed = outcomes.map((o, i) =>
+        i === outcomes.length - 1 && o.maxScore == null
+          ? { ...o, maxScore: (next.minScore ?? 0) - 1 }
+          : o,
+      );
+      onOutcomesChange([...closed, next]);
+      return;
+    }
+    next.minScore = 0;
+    onOutcomesChange([next]);
+  }
+
+  /**
+   * Commit a bound, or say why not.
+   *
+   * Two ranges claiming the same score is never a state worth storing: only one
+   * of them can ever win, so the other is dead and the panel is lying about it.
+   * The bound is refused here, at entry, and the field reverts on its own —
+   * `NumberField` re-reads its display from the prop, and the prop never moved.
+   *
+   * Scoped to the row being edited. A collision this edit causes BETWEEN two
+   * OTHER rows (possible when a threshold shift moves someone's implicit end)
+   * is still stored and still flagged on the row it lands on — refusing an edit
+   * over a conflict elsewhere on screen would be unexplainable.
+   */
+  function commitBound(index: number, patch: Partial<FormOutcome>): string | null {
+    const candidate = outcomes.map((o, i) => (i === index ? { ...o, ...patch } : o));
+    const span = outcomeRanges(candidate)[index];
+    if (!span) return null;
+    if (span.max != null && span.max < span.min) return bm.results.rangeInverted;
+    const clash = firstClash(candidate, index);
+    if (clash) return tb(bm.results.rangeOverlap, clash);
+    onOutcomesChange(candidate);
+    return null;
   }
 
   return (
@@ -123,89 +180,64 @@ export function OutcomesDialog({
               className="flex max-h-[58vh] flex-col gap-3 overflow-y-auto pr-1"
             >
               {outcomes.map((o, index) => {
-                const lower = o.minScore ?? 0;
-                const upper = outcomes[index + 1]?.minScore;
-                // Two ranges claiming the same threshold made this print an
-                // inverted bucket ("0–-1") as if it were legitimate. When the
-                // next range starts at or below this one, this range is
-                // unreachable — say so instead of drawing a nonsense span.
-                const shadowed = upper != null && upper <= lower;
-                const range = shadowed
-                  ? bm.results.rangeUnreachable
-                  : upper != null
-                    ? `${lower}–${upper - 1}`
-                    : `${lower}+`;
+                const span = spans[index] ?? { min: o.minScore ?? 0, max: null };
+                // The top range is deliberately left open: something has to
+                // catch a score above every bound, and a form whose best lead
+                // falls through to the generic ending is the worst possible
+                // place to discover that.
+                const openEnded = span.max == null;
+                const collides = overlapping.has(index);
                 return (
                   <div
                     key={o.id}
                     data-testid="outcome-row"
-                    data-unreachable={shadowed || undefined}
+                    data-overlap={collides || undefined}
                     className={cn(
                       'rounded-xl border bg-background p-3.5',
-                      shadowed ? 'border-destructive/50' : 'border-border',
+                      collides ? 'border-destructive/50' : 'border-border',
                     )}
                   >
-                    <div className="flex items-center gap-3">
-                      <span
-                        className={cn(
-                          'inline-flex min-w-[52px] shrink-0 items-center justify-center rounded-lg px-2 py-1.5 text-sm font-bold tabular-nums',
-                          shadowed
-                            ? 'bg-destructive/15 text-destructive'
-                            : index === outcomes.length - 1
-                              ? 'bg-primary text-primary-foreground'
-                              : 'bg-muted text-muted-foreground',
-                        )}
-                      >
-                        {range}
-                      </span>
-                      <span className="relative flex flex-1 items-center gap-1.5">
-                        <TextField
-                          value={o.label}
-                          placeholder={bm.results.rangeLabelPlaceholder}
-                          onChange={(e) => update(index, { label: e.target.value })}
-                          className="flex-1 font-medium"
-                          data-testid="outcome-label"
-                        />
-                        <HelpTip text={rm.outcomeHeadingHelp2} label={rm.messageLabel} />
-                      </span>
-                      <div className="w-20 shrink-0">
-                        <NumberField
-                          aria-label={bm.results.rangeLabel}
-                          value={lower}
-                          step={1}
-                          onChange={(e) => {
-                            // The schema requires an integer. A float ("7.5") or
-                            // an exponent ("1e35") used to be committed, fail
-                            // validation, and take every LATER edit down with
-                            // it — the whole form stopped autosaving over one
-                            // keystroke in this box. Constrain it here instead.
-                            const n = Number(e.target.value);
-                            if (!Number.isFinite(n)) return update(index, { minScore: 0 });
-                            update(index, {
-                              minScore: Math.trunc(Math.max(-1_000_000, Math.min(1_000_000, n))),
-                            });
-                          }}
-                          data-testid="outcome-minscore"
-                        />
+                    <div className="flex flex-wrap items-end gap-3">
+                      <div className="flex min-w-[180px] flex-1 flex-col gap-1">
+                        <span className="text-xs font-medium text-muted-foreground">
+                          {bm.results.rangeLabel}
+                        </span>
+                        <span className="relative flex items-center gap-1.5">
+                          <TextField
+                            value={o.label}
+                            placeholder={bm.results.rangeLabelPlaceholder}
+                            onChange={(e) => update(index, { label: e.target.value })}
+                            className="flex-1 font-medium"
+                            data-testid="outcome-label"
+                          />
+                          <HelpTip text={rm.outcomeHeadingHelp2} label={rm.messageLabel} />
+                        </span>
                       </div>
+                      <RangeBounds
+                        min={span.min}
+                        max={span.max}
+                        openEnded={openEnded}
+                        onCommit={(patch) => commitBound(index, patch)}
+                        m={bm.results}
+                      />
                       <Button
                         variant="ghost"
                         size="icon"
                         aria-label={bm.results.remove}
                         onClick={() => onOutcomesChange(outcomes.filter((_, i) => i !== index))}
-                        className="shrink-0 text-muted-foreground hover:text-destructive"
+                        className="mb-0.5 shrink-0 text-muted-foreground hover:text-destructive"
                       >
                         <i aria-hidden className="pi pi-trash" style={{ fontSize: 13 }} />
                       </Button>
                     </div>
                     {/* The label above IS the heading respondents see on the
                         thank-you screen when their score lands in this range. */}
-                    <p className="mt-1.5 pl-[64px] text-xs text-muted-foreground">{rm.outcomeHeadingHelp}</p>
+                    <p className="mt-1.5 text-xs text-muted-foreground">{rm.outcomeHeadingHelp}</p>
                     {/* Per-outcome thank-you BODY: the editable "page" shown for
                         this range; empty falls back to the shared thank-you
                         body. Interpolation of [field] tokens happens in the
                         renderer. */}
-                    <div className="mt-2.5 flex flex-col gap-1 pl-[64px]">
+                    <div className="mt-2.5 flex flex-col gap-1">
                       <span className="text-xs font-medium text-foreground">{rm.messageLabel}</span>
                       {/* The recall picker, same as everywhere else in the
                           editor. This was a plain textarea, so typing `@` here
@@ -230,7 +262,7 @@ export function OutcomesDialog({
                     {/* Redirect is a clearly-separate, optional URL — normalized
                         to https:// on blur so a schemeless entry never 400s the
                         save. */}
-                    <div className="mt-2.5 flex flex-col gap-1 pl-[64px]">
+                    <div className="mt-2.5 flex flex-col gap-1">
                       <span className="flex items-center gap-1.5">
                         <label htmlFor={`outcome-redirect-${o.id}`} className="text-xs font-medium text-foreground">
                           {rm.redirectLabel}
@@ -251,7 +283,7 @@ export function OutcomesDialog({
                         relevant with a destination — without one there is
                         nothing to delay. */}
                     {o.redirectUrl?.trim() ? (
-                      <div className="mt-2.5 flex flex-col gap-1 pl-[64px]">
+                      <div className="mt-2.5 flex flex-col gap-1">
                         <span className="flex items-center gap-1.5">
                           <label htmlFor={`outcome-delay-${o.id}`} className="text-xs font-medium text-foreground">
                             {rm.redirectDelayLabel}
@@ -283,7 +315,7 @@ export function OutcomesDialog({
                         one needs a field+bound picker, and being able to SEE it
                         is what was actually missing. */}
                     {o.overrides?.length ? (
-                      <div className="mt-2.5 flex flex-col gap-1 pl-[64px]">
+                      <div className="mt-2.5 flex flex-col gap-1">
                         <span className="text-xs font-medium text-foreground">{rm.overridesLabel}</span>
                         {o.overrides.map((rule, ri) => (
                           <div
@@ -325,6 +357,21 @@ export function OutcomesDialog({
                 {bm.results.addRange}
               </button>
             </div>
+
+            {/* Scores no range covers. Reported, never blocked: a gap is a real
+                choice — those respondents see the form's own ending — and it is
+                also the state almost every half-typed set of ranges passes
+                through. It sits OUTSIDE the scroller so it stays readable
+                whichever row is on screen. */}
+            {gaps.length > 0 ? (
+              <p
+                data-testid="outcome-gap-note"
+                className="flex items-start gap-2 rounded-md border border-secondary/40 bg-secondary/10 px-3 py-2 text-xs leading-relaxed text-muted-foreground"
+              >
+                <i aria-hidden className="pi pi-info-circle mt-0.5 shrink-0 text-secondary" style={{ fontSize: 11 }} />
+                {tb(bm.results.rangeGapNote, { ranges: gaps.map(spanText).join(', ') })}
+              </p>
+            ) : null}
           </fieldset>
         </section>
 
@@ -335,6 +382,153 @@ export function OutcomesDialog({
         </div>
       </div>
     </Modal>
+  );
+}
+
+/**
+ * A span as the author reads it: `0–2`, `6+` for the open top one, and a bare
+ * `2` for a range of one score — "no range covers 2–2" is not how anyone says it.
+ */
+export function spanText(span: OutcomeRange): string {
+  if (span.max == null) return `${span.min}+`;
+  return span.max === span.min ? `${span.min}` : `${span.min}–${span.max}`;
+}
+
+/**
+ * The first range the one at `index` would collide with, named so the refusal
+ * can point at it. An unlabelled range answers to `#n`, the same fallback the
+ * score bar uses, because "that would overlap ''" is not a sentence.
+ */
+export function firstClash(
+  outcomes: FormOutcome[],
+  index: number,
+): { label: string; range: string } | null {
+  const spans = outcomeRanges(outcomes);
+  const mine = spans[index];
+  if (!mine) return null;
+  for (let i = 0; i < outcomes.length; i++) {
+    if (i === index) continue;
+    const other = spans[i];
+    if (!other) continue;
+    const mineEndsFirst = mine.max != null && mine.max < other.min;
+    const otherEndsFirst = other.max != null && other.max < mine.min;
+    if (mineEndsFirst || otherEndsFirst) continue;
+    return { label: outcomes[i]!.label || `#${i + 1}`, range: spanText(other) };
+  }
+  return null;
+}
+
+/** An integer the config schema will accept: `minScore`/`maxScore` are `int()`. */
+export function toStoredInt(raw: string): number {
+  const n = Number(raw);
+  // A float ("7.5") or an exponent ("1e35") used to be committed, fail schema
+  // validation, and take every LATER edit down with it — the whole form stopped
+  // autosaving over one keystroke in this box. Constrain it here instead.
+  if (!Number.isFinite(n)) return 0;
+  return Math.trunc(Math.max(-1_000_000, Math.min(1_000_000, n)));
+}
+
+/**
+ * The two ends of one range.
+ *
+ * An outcome used to store only where it STARTED. The span was printed back at
+ * the author from a badge on the other side of the row, derived from a
+ * neighbour's number — so to widen a range you edited a different row, and to
+ * read one you looked somewhere other than the fields you typed in.
+ *
+ * Both ends commit on BLUR, not per keystroke. That is what makes a refusal
+ * possible at all: an overlap has to be judged against a finished number, and
+ * "10" passes through "1" on the way in. It also stops the list re-sorting under
+ * the pointer while a threshold is half-typed.
+ *
+ * `onCommit` returns the reason it refused, or null once it has written. On a
+ * refusal nothing is written, so `NumberField` re-reads its display from the
+ * unchanged prop and the field puts itself back.
+ */
+function RangeBounds({
+  min,
+  max,
+  openEnded,
+  onCommit,
+  m,
+}: {
+  min: number;
+  /** The effective upper bound — explicit, derived, or null when open-ended. */
+  max: number | null;
+  openEnded: boolean;
+  onCommit: (patch: Partial<FormOutcome>) => string | null;
+  m: BuilderMessages['results'];
+}) {
+  const [error, setError] = useState<string | null>(null);
+  // A refusal is about the numbers as they now stand; once they move, it is
+  // stale. Clearing on the committed value (not on keystrokes) keeps the reason
+  // on screen while the author reads it.
+  useEffect(() => {
+    setError(null);
+  }, [min, max]);
+
+  function commit(patch: Partial<FormOutcome>) {
+    setError(onCommit(patch));
+  }
+
+  return (
+    <>
+      <div className="flex w-20 shrink-0 flex-col gap-1">
+        <span className="text-xs font-medium text-muted-foreground">{m.rangeFrom}</span>
+        <NumberField
+          aria-label={m.rangeFrom}
+          value={min}
+          step={1}
+          data-testid="outcome-minscore"
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') e.currentTarget.blur();
+          }}
+          onBlur={(e) => commit({ minScore: toStoredInt(e.target.value) })}
+        />
+      </div>
+      <div className="flex w-20 shrink-0 flex-col gap-1">
+        <span className="text-xs font-medium text-muted-foreground">{m.rangeTo}</span>
+        {openEnded ? (
+          // Not a disabled number box: there is no number here to disable. The
+          // top range is open on purpose, and saying so is the point.
+          <Input
+            readOnly
+            aria-label={m.rangeTo}
+            title={m.rangeOpenEndedHelp}
+            value={m.rangeOpenEnded}
+            data-testid="outcome-maxscore-open"
+            className="cursor-default text-center text-xs text-muted-foreground"
+          />
+        ) : (
+          <NumberField
+            aria-label={m.rangeTo}
+            value={max ?? ''}
+            step={1}
+            data-testid="outcome-maxscore"
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') e.currentTarget.blur();
+            }}
+            onBlur={(e) => {
+              // Cleared = "wherever the next range starts", the implicit end
+              // every config had before this field existed. Storing 0 here
+              // instead would silently kill the range.
+              const raw = e.target.value.trim();
+              commit({ maxScore: raw === '' ? undefined : toStoredInt(raw) });
+            }}
+          />
+        )}
+      </div>
+      {error ? (
+        <p
+          role="alert"
+          data-testid="outcome-range-error"
+          className="order-last flex w-full items-start gap-1.5 text-xs leading-relaxed text-destructive"
+        >
+          <i aria-hidden className="pi pi-exclamation-triangle mt-0.5 shrink-0" style={{ fontSize: 10 }} />
+          {error}
+        </p>
+      ) : null}
+    </>
   );
 }
 
@@ -363,32 +557,61 @@ function describeOverride(
   return rule.field;
 }
 
-/** A segmented bar of the score ranges, from cold (muted) to hot (lime). */
-function ScoreBar({ outcomes, top }: { outcomes: FormOutcome[]; top: number }) {
+/**
+ * A segmented bar of the score ranges, from cold (muted) to hot (lime).
+ *
+ * Widths come from `outcomeRanges`, the same helper the rows and the Logic
+ * canvas read, rather than from this component's own re-derivation of where the
+ * next range starts. It also draws the GAPS: a bar that tiles edge to edge over
+ * ranges that do not is the exact picture the author is trying to check here.
+ */
+export function ScoreBar({ outcomes, top }: { outcomes: FormOutcome[]; top: number }) {
   if (outcomes.length === 0) return null;
-  const bounds = outcomes.map((o) => o.minScore ?? 0);
+  const spans = outcomeRanges(outcomes);
+  // Segments in score order, gaps interleaved. The open top range is measured
+  // to the form's highest possible score, or one point if it starts above it.
+  const segments: { key: string; width: number; label: string | null; hot: number }[] = [];
+  let previousEnd: number | null = null;
+  outcomes.forEach((o, i) => {
+    const span = spans[i] ?? { min: o.minScore ?? 0, max: null };
+    if (previousEnd != null && span.min > previousEnd + 1) {
+      segments.push({ key: `gap-${o.id}`, width: span.min - previousEnd - 1, label: null, hot: 0 });
+    }
+    const end = span.max ?? Math.max(top, span.min);
+    segments.push({
+      key: o.id,
+      width: Math.max(1, end - span.min + 1),
+      label: o.label || `#${i + 1}`,
+      hot: i / Math.max(1, outcomes.length - 1),
+    });
+    previousEnd = end;
+  });
   return (
     <div data-testid="outcomes-score-bar">
       <div className="flex h-9 overflow-hidden rounded-lg">
-        {outcomes.map((o, i) => {
-          const lower = bounds[i] ?? 0;
-          const upper = (i + 1 < bounds.length ? bounds[i + 1] : top) ?? top;
-          const span = Math.max(1, upper - lower);
-          const hot = i / Math.max(1, outcomes.length - 1);
-          return (
+        {segments.map((s) =>
+          s.label == null ? (
             <div
-              key={o.id}
-              className="flex items-center justify-center text-xs font-semibold"
+              key={s.key}
+              data-testid="outcomes-score-gap"
+              aria-hidden
+              className="border-x border-dashed border-border bg-muted/20"
+              style={{ flex: s.width }}
+            />
+          ) : (
+            <div
+              key={s.key}
+              className="flex items-center justify-center overflow-hidden text-xs font-semibold"
               style={{
-                flex: span,
-                background: `color-mix(in srgb, var(--primary) ${Math.round(20 + hot * 80)}%, var(--muted))`,
-                color: hot > 0.6 ? 'var(--primary-foreground)' : 'var(--muted-foreground)',
+                flex: s.width,
+                background: `color-mix(in srgb, var(--primary) ${Math.round(20 + s.hot * 80)}%, var(--muted))`,
+                color: s.hot > 0.6 ? 'var(--primary-foreground)' : 'var(--muted-foreground)',
               }}
             >
-              {o.label || `#${i + 1}`}
+              {s.label}
             </div>
-          );
-        })}
+          ),
+        )}
       </div>
       <div className="mt-1 flex justify-between text-xs text-muted-foreground">
         <span>0</span>
