@@ -17,6 +17,7 @@ import {
   type Db,
   type OutboxRow,
 } from '@quill/db';
+import { transcriptOfError, type DeliveryTranscript } from '@quill/destinations';
 import type { ServerEnv } from '@quill/config/env';
 import { EmailEffects, OutboxSkipError } from './email-effects';
 import { DestinationEffects } from './destination-effects';
@@ -107,8 +108,8 @@ export class OutboxWorker implements OnModuleInit, OnModuleDestroy {
 
   private async process(row: OutboxRow, now: number): Promise<void> {
     try {
-      await this.execute(row);
-      await markOutboxDone(this.db, row.id, now);
+      const transcript = await this.execute(row);
+      await markOutboxDone(this.db, row.id, now, transcript);
     } catch (err) {
       if (err instanceof OutboxSkipError) {
         // A decision, not a failure: record the reason ONCE and stop — waiting
@@ -119,13 +120,16 @@ export class OutboxWorker implements OnModuleInit, OnModuleDestroy {
       }
       const attempts = row.attempts + 1;
       const message = err instanceof Error ? err.message : String(err);
+      // A failure is the transcript anyone actually needs to read back, and it
+      // arrives on the thrown error rather than a returned value.
+      const transcript = transcriptOfError(err);
       if (attempts >= row.maxAttempts) {
-        await markOutboxFailed(this.db, row.id, { attempts, error: message, now });
+        await markOutboxFailed(this.db, row.id, { attempts, error: message, now, transcript });
         this.log.error(
           `outbox ${row.kind}:${row.action} (${row.id}) gave up after ${attempts} attempts: ${message}`,
         );
       } else {
-        await markOutboxRetry(this.db, row.id, { attempts, error: message, now });
+        await markOutboxRetry(this.db, row.id, { attempts, error: message, now, transcript });
         this.log.warn(
           `outbox ${row.kind}:${row.action} (${row.id}) failed (attempt ${attempts}/${row.maxAttempts}), will retry: ${message}`,
         );
@@ -133,23 +137,25 @@ export class OutboxWorker implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  /** Perform the row's side-effect. Throws on failure so `process` can retry. */
-  private async execute(row: OutboxRow): Promise<void> {
+  /**
+   * Perform the row's side-effect, reporting what crossed the wire when the
+   * handler can say. Throws on failure so `process` can retry.
+   */
+  private async execute(row: OutboxRow): Promise<DeliveryTranscript | undefined> {
     if (row.kind === 'email') {
       if (row.payload == null) throw new Error('email outbox row missing payload');
       await this.email.deliver(row.action, row.payload, row.accountId);
-      return;
+      return undefined;
     }
     if (row.kind === 'webhook' || row.kind === 'hubspot') {
       if (row.payload == null) throw new Error(`${row.kind} outbox row missing payload`);
-      await this.destinations.deliver(row.action, row.payload);
-      return;
+      return await this.destinations.deliver(row.action, row.payload);
     }
     if (row.kind === 'booking_sync') {
       if (row.payload == null) throw new Error('booking_sync outbox row missing payload');
       if (!this.bookingSync) throw new Error('booking_sync handler not wired');
       await this.bookingSync.deliver(row.action, row.payload);
-      return;
+      return undefined;
     }
     if (row.kind === 'analytics') {
       if (row.payload == null) throw new Error('analytics outbox row missing payload');
@@ -158,7 +164,7 @@ export class OutboxWorker implements OnModuleInit, OnModuleDestroy {
       // failures in a queue shared with emails and CRM deliveries.
       if (!this.analytics) throw new OutboxSkipError('analytics handler not wired');
       await this.analytics.deliver(row.action, row.payload);
-      return;
+      return undefined;
     }
     if (row.kind === 'dapta_sync') {
       if (row.payload == null) throw new Error('dapta_sync outbox row missing payload');
@@ -166,7 +172,7 @@ export class OutboxWorker implements OnModuleInit, OnModuleDestroy {
       // does not sync into the Dapta estate, never a delivery failure.
       if (!this.daptaSync) throw new OutboxSkipError('dapta_sync handler not wired');
       await this.daptaSync.deliver(row.action, row.payload);
-      return;
+      return undefined;
     }
     throw new Error(`unknown outbox kind: ${String(row.kind)}`);
   }

@@ -9,6 +9,7 @@ import {
 import {
   createDestination,
   HUBSPOT_API_BASE,
+  type DeliveryTranscript,
   type DestinationContext,
   type DestinationSpec,
   type DnsResolver,
@@ -148,7 +149,8 @@ export class DestinationEffects {
    * error propagates so the worker retries; a permanent no-op (delivered:false)
    * resolves so the row is marked done.
    */
-  async deliver(action: string, payloadJson: string): Promise<void> {
+  /** Returns what crossed the wire, for the queue to record. */
+  async deliver(action: string, payloadJson: string): Promise<DeliveryTranscript> {
     const { destination, ctx } = JSON.parse(payloadJson) as DestinationOutboxPayload;
     // ctx.accountId is the form's account — resolve that account's HubSpot token
     // (else the env fallback) at delivery time.
@@ -166,6 +168,11 @@ export class DestinationEffects {
           (result.detail ? `: ${result.detail}` : ''),
       );
     }
+    return {
+      requestBody: result.requestBody,
+      responseStatus: result.responseStatus,
+      responseBody: result.responseBody,
+    };
   }
 
   /** Resolve a stored destination config into a delivery spec (inject secrets). */

@@ -99,6 +99,29 @@ export const outbox = pgTable('outbox', {
   // Worker claim/lease (H2): set atomically when a row is claimed for delivery.
   claimedAt: bigint('claimed_at', { mode: 'number' }),
   claimedBy: text('claimed_by'),
+  /**
+   * The delivery transcript: the request body we actually sent, and the status
+   * and body that came back.
+   *
+   * `payload` above is the ENQUEUED snapshot — the destination config plus the
+   * captured context — not the bytes that went over the wire. The two are not
+   * the same thing, and only the second one answers "what did my endpoint
+   * actually receive", which is the question every webhook debugging session
+   * starts with. Reconstructing it from `payload` would be a guess that drifts
+   * the moment an adapter changes shape.
+   *
+   * NULL on every row written before this shipped, and on kinds whose adapter
+   * reports no transcript (HubSpot is several API calls, not one request). NULL
+   * therefore means "not recorded", never "empty".
+   *
+   * These carry submission answers, so they are as sensitive as the submission
+   * itself — same account scope, and both are truncated on write (see
+   * MAX_REQUEST_BODY / MAX_RESPONSE_BODY) so one endpoint answering with an HTML
+   * error page cannot bloat the queue.
+   */
+  requestBody: text('request_body'),
+  responseStatus: integer('response_status'),
+  responseBody: text('response_body'),
 });
 
 export const notificationSetting = pgTable(

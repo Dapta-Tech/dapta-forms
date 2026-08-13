@@ -7,6 +7,7 @@ import {
   HttpCode,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
   Optional,
   Param,
@@ -25,6 +26,8 @@ import {
   listIntegrationStatuses,
   resolveProviderToken,
   getFormById,
+  recordSettledDelivery,
+  WEBHOOK_PING_ACTION,
   summarizeFailedDeliveriesByForm,
   updateFormDestinations,
   upsertIntegration,
@@ -38,7 +41,7 @@ import {
   type DestinationEvent,
   type FormDestination,
 } from '@quill/types';
-import { WebhookDestination, WebhookHttpError } from '@quill/destinations';
+import { transcriptOfError, WebhookDestination, WebhookHttpError } from '@quill/destinations';
 import { syncMirrorForm } from './hubspot-mirror';
 import type { ServerEnv } from '@quill/config/env';
 import { AuthService, type ReqLike } from './auth.service';
@@ -608,6 +611,7 @@ const destinationsBodySchema = z.object({ destinations: z.array(formDestinationS
  */
 @Controller('v1')
 export class FormDestinationsController {
+  private readonly log = new Logger('FormDestinations');
   /** Injectable for tests; defaults to global fetch for the webhook ping. */
   fetchImpl: typeof fetch = fetch;
 
@@ -788,23 +792,71 @@ export class FormDestinationsController {
     );
 
     const now = Date.now();
+    const ctx = {
+      idempotencyKey: `ping:${id}:${now}`,
+      submissionId: 'test-submission',
+      formId: form.id,
+      formName: form.name,
+      accountId: p.accountId,
+      sessionId: 'test-session',
+      score: 0,
+      outcomeLabel: null,
+      phase: 'partial' as const,
+      submittedAt: now,
+      data: { ...sampleAnswers(config.steps ?? []), test: true },
+      utm: {},
+    };
+
+    /**
+     * Log the test delivery beside the real ones.
+     *
+     * A ping is synchronous — the author clicks and waits for the verdict — so
+     * it never passes through the outbox. That is a fact about HOW it is
+     * dispatched, and it was letting the delivery history stay empty during
+     * exactly the session it exists to help: wiring up an endpoint, when the
+     * test delivery is often the only one that has ever run. It IS a real signed
+     * POST to the real URL, so it belongs in the log, labelled by its `ping`
+     * action. Recorded terminal so the worker can never pick it up and send it a
+     * second time.
+     *
+     * Best-effort throughout: the author's answer is the ping result, and
+     * failing to write the log entry must not turn a successful test delivery
+     * into an error on screen.
+     */
+    const record = async (status: 'done' | 'failed', error: string | null, transcript: object) => {
+      try {
+        await recordSettledDelivery(this.db, {
+          kind: 'webhook',
+          action: WEBHOOK_PING_ACTION,
+          accountId: p.accountId,
+          subjectUid: ctx.submissionId,
+          // Same shape every destination row carries, so the per-form read finds
+          // it by `ctx.formId` like any other.
+          payload: JSON.stringify({ destination: { type: 'webhook' }, ctx }),
+          status,
+          error,
+          transcript,
+          now,
+        });
+      } catch (e) {
+        this.log.warn(`could not record the webhook test delivery: ${String(e)}`);
+      }
+    };
+
     try {
-      await dest.deliver({
-        idempotencyKey: `ping:${id}:${now}`,
-        submissionId: 'test-submission',
-        formId: form.id,
-        formName: form.name,
-        accountId: p.accountId,
-        sessionId: 'test-session',
-        score: 0,
-        outcomeLabel: null,
-        phase: 'partial',
-        submittedAt: now,
-        data: { ...sampleAnswers(config.steps ?? []), test: true },
-        utm: {},
+      const result = await dest.deliver(ctx);
+      await record('done', null, {
+        requestBody: result.requestBody,
+        responseStatus: result.responseStatus,
+        responseBody: result.responseBody,
       });
       return { ok: true };
     } catch (err) {
+      await record(
+        'failed',
+        err instanceof Error ? err.message : String(err),
+        transcriptOfError(err),
+      );
       // "HTTP 400" alone sends the author looking in the wrong place. Classify
       // it into something the UI can explain, and pass along the endpoint's own
       // response — which names the real reason far more often than the status

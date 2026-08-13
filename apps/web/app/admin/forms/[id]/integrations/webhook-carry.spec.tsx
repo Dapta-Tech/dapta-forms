@@ -72,6 +72,7 @@ describe('WebhookCard — the carried-webhooks notice', () => {
         clearUrlError={() => {}}
         formId="form-1"
         carriedCount={over.carriedCount}
+        locale="en"
         m={m}
       />,
     );

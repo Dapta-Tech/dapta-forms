@@ -20,6 +20,7 @@ import { useToast } from '@/components/toast';
 import { cn } from '@/lib/cn';
 import { bookingLabel } from '@/lib/booking-fields';
 import type {
+  DeliveryKind,
   HubSpotPropertiesResponse,
   HubSpotPropertyOption,
   WebhookPingReason,
@@ -27,6 +28,7 @@ import type {
 } from '@/lib/admin-api';
 import { trackDestinationWrite } from '@/lib/connect-sync';
 import { propertyLookup, suggestProperty, type QuestionMeta } from './auto-map';
+import { DeliveryHistory } from './delivery-history';
 import { Card } from './integrations-card';
 import {
   isCustomValue,
@@ -43,6 +45,10 @@ type SaveStatus = 'saved' | 'saving' | 'error' | 'partial';
 const AUTOSAVE_MS = 900;
 /** Same admin API base the server-side admin-api client uses (client-exposed). */
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
+
+/** Module constants, not literals in JSX: the history's fetch keys off these. */
+const WEBHOOK_HISTORY_KINDS: DeliveryKind[] = ['webhook'];
+const HUBSPOT_HISTORY_KINDS: DeliveryKind[] = ['hubspot', 'booking_sync'];
 
 export type { QuestionMeta } from './auto-map';
 
@@ -623,6 +629,7 @@ export function IntegrationsEditor({
         // refetches the live config every time it is opened, so this is as
         // fresh as the array the card was seeded from.
         carriedCount={carriedWebhooks(initialDestinations).length}
+        locale={locale}
         m={m}
       />
       <LocaleContext.Provider value={locale}>
@@ -642,6 +649,7 @@ export function IntegrationsEditor({
           formActivityError={formActivityError}
           readiness={readiness}
           questions={questions}
+          formId={id}
           m={m}
         />
       </LocaleContext.Provider>
@@ -1214,6 +1222,7 @@ export function WebhookCard({
   clearUrlError,
   formId,
   carriedCount,
+  locale,
   m,
 }: {
   state: WebhookState;
@@ -1224,6 +1233,8 @@ export function WebhookCard({
   formId: string;
   /** Webhooks stored on this form that the card does not edit. */
   carriedCount: number;
+  /** Formats the delivery-history timestamps. */
+  locale: Locale;
   m: Msgs;
 }) {
   const { success, error: toastError } = useToast();
@@ -1348,6 +1359,17 @@ export function WebhookCard({
           </label>
         </div>
       </Field>
+      {/* Inside the card body, so it hides with the enable switch: a webhook
+          that is off has no deliveries to explain, and the settings it belongs
+          to are hidden alongside it. */}
+      <DeliveryHistory
+        formId={formId}
+        kinds={WEBHOOK_HISTORY_KINDS}
+        title={m.historyWebhookTitle}
+        locale={locale}
+        m={m}
+        testId="webhook-history"
+      />
     </Card>
   );
 }
@@ -1364,10 +1386,13 @@ export function HubspotCard({
   formActivityError,
   readiness,
   questions,
+  formId,
   m,
 }: {
   state: HubspotState;
   onChange: (s: HubspotState) => void;
+  /** Which form's delivery history the card reads. */
+  formId: string;
   /** Why HubSpot refused to build the mirror form on the last save, if it did. */
   formActivityError?: string | null;
   /** `options` rides along for the value pickers; absent = not an enumeration. */
@@ -1382,6 +1407,7 @@ export function HubspotCard({
   m: Msgs;
 }) {
   const { success, toast } = useToast();
+  const locale = useContext(LocaleContext);
   const emailSource = readiness.source;
   const utmValues = useMemo(() => state.utmMappings, [state.utmMappings]);
   const questionKeys = useMemo(() => new Set(questions.map((q) => q.key)), [questions]);
@@ -2070,6 +2096,19 @@ export function HubspotCard({
           {fill(m.formActivityError, { reason: formActivityError })}
         </p>
       ) : null}
+
+      {/* `booking_sync` rides along with `hubspot`: it IS a HubSpot write — the
+          contact update a scheduling callback triggers — so its failures belong
+          next to the mapping that decides what it writes, not in a section of
+          their own. */}
+      <DeliveryHistory
+        formId={formId}
+        kinds={HUBSPOT_HISTORY_KINDS}
+        title={m.historyHubspotTitle}
+        locale={locale}
+        m={m}
+        testId="hubspot-history"
+      />
     </Card>
   );
 }

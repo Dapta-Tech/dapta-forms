@@ -32,7 +32,7 @@ import {
   getFormById,
   getNotificationSettings,
   inviteMember,
-  listFailedDeliveries,
+  listFormDeliveries,
   listForms,
   listMembers,
   publishForm,
@@ -75,7 +75,7 @@ import { AuthService, type ReqLike } from './auth.service';
 import { EmailEffects } from './email-effects';
 import { AnalyticsEffects } from './analytics-effects';
 import { assertAdmin, assertCanManageTarget, assertNotSelf } from './permissions';
-import { parseBound, parseIntParam, parseStatus } from './query-params';
+import { parseBound, parseIntParam, parseKinds, parseOutboxStatuses, parseStatus } from './query-params';
 import { DB } from './tokens';
 
 function parse<T>(schema: { parse: (v: unknown) => T }, body: unknown): T {
@@ -496,21 +496,37 @@ export class AdminCrudController {
   }
 
   /**
-   * Deliveries for this form that ended without landing.
+   * This form's deliveries, newest first.
    *
    * A side-effect that died — an expired CRM token, a disconnected scheduling
    * provider, a form with no resolvable respondent email — used to exist only in
    * server logs, so a form could stop syncing leads while every visible signal
    * said it was working.
+   *
+   * `?kind=` and `?status=` narrow it (comma-separated). Both are optional and
+   * the defaults are the ORIGINAL behaviour — every kind, failures only — so a
+   * caller written before the per-integration history keeps getting exactly what
+   * it got. `?status=done,failed,…` is what turns this from a failure list into
+   * a history.
    */
   @Get('forms/:id/deliveries')
-  async formDeliveries(@Req() req: ReqLike, @Param('id') id: string, @Query('limit') limit?: string) {
+  async formDeliveries(
+    @Req() req: ReqLike,
+    @Param('id') id: string,
+    @Query('limit') limit?: string,
+    @Query('kind') kind?: string,
+    @Query('status') status?: string,
+  ) {
     const p = await this.auth.resolveHost(req);
     // Account scoping twice on purpose: the form lookup proves this caller owns
     // the form, and the query itself is filtered by account_id in SQL.
     const f = await getFormById(this.db, p.accountId, id);
     if (!f) throw new NotFoundException({ error: 'NOT_FOUND', message: 'Not found.' });
-    const items = await listFailedDeliveries(this.db, p.accountId, id, parseIntParam(limit) ?? 50);
+    const items = await listFormDeliveries(this.db, p.accountId, id, {
+      kinds: parseKinds(kind),
+      statuses: parseOutboxStatuses(status),
+      limit: parseIntParam(limit) ?? 50,
+    });
     return { items };
   }
 

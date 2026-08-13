@@ -4,7 +4,7 @@
  * string; a status narrows the submissions filter. Kept dialect- and
  * framework-agnostic so both controllers parse identically.
  */
-import type { SubmissionStatus } from '@quill/db';
+import { OUTBOX_KINDS, OUTBOX_STATUSES, type OutboxKind, type OutboxStatus, type SubmissionStatus } from '@quill/db';
 
 /** Parse a date bound: epoch-ms passthrough, or a YYYY-MM-DD / ISO string. */
 export function parseBound(v: string | undefined, endOfDay: boolean): number | null {
@@ -35,4 +35,31 @@ export function parseIntParam(v: string | undefined): number | undefined {
   if (!v) return undefined;
   const n = Number(v);
   return Number.isFinite(n) ? Math.trunc(n) : undefined;
+}
+
+/**
+ * Narrow a comma-separated query param to a fixed vocabulary.
+ *
+ * Unknown tokens are DROPPED rather than rejected: these params name outbox
+ * kinds and statuses, which a future release may add to, and an older API
+ * answering "webhook,carrier_pigeon" with a 400 would break a newer client over
+ * a value it did not need. An absent param yields `undefined` (the caller's
+ * default); a param that names ONLY unknown tokens yields an empty list, and the
+ * caller is expected to answer with nothing rather than silently widen back to
+ * everything — asking for a kind that does not exist must not return every kind.
+ */
+function parseEnumList<T extends string>(v: string | undefined, allowed: readonly T[]): T[] | undefined {
+  if (v === undefined) return undefined;
+  const wanted = new Set(v.split(',').map((s) => s.trim()));
+  return allowed.filter((a) => wanted.has(a));
+}
+
+/** Narrow `?kind=webhook,hubspot` to real outbox kinds. */
+export function parseKinds(v: string | undefined): OutboxKind[] | undefined {
+  return parseEnumList(v, OUTBOX_KINDS);
+}
+
+/** Narrow `?status=done,failed` to real outbox statuses. */
+export function parseOutboxStatuses(v: string | undefined): OutboxStatus[] | undefined {
+  return parseEnumList(v, OUTBOX_STATUSES);
 }
