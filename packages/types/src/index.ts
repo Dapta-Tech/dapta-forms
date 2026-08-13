@@ -635,7 +635,24 @@ export function destinationFiresForPhase(
 export const hubspotDestinationSchema = z.object({
   type: z.literal('hubspot'),
   enabled: z.boolean().default(false),
-  settings: z.object({ note: z.boolean().optional() }).default({}),
+  settings: z
+    .object({
+      note: z.boolean().optional(),
+      /**
+       * The MIRROR FORM in the portal that represents this Dapta form
+       * (ADDITIVE). Set = every completed submission is also posted there,
+       * which is what produces a "Form submission" activity on the contact —
+       * the one that names the form and lists the properties it set. A Note,
+       * which is all this destination could make before, does neither.
+       *
+       * Written by the API when the destination is saved, not by the author and
+       * not by the adapter: creating the form needs a HubSpot call, and
+       * recording its guid needs the database, which `@quill/destinations` does
+       * not have. Absent = no activity, and nothing else changes.
+       */
+      formGuid: z.string().max(64).nullable().optional(),
+    })
+    .default({}),
   /** stepKey -> contact property, or several (one SHOULD be `email` unless a
    *  scheduler supplies the address). */
   fieldMappings: fieldMapSchema.default({}),

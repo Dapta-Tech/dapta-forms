@@ -4,6 +4,12 @@ import type {
   DestinationResult,
   SubmissionDestination,
 } from '../destination.port';
+import {
+  HUBSPOT_FORMS_SUBMIT_BASE,
+  buildMirrorSubmission,
+  mirrorFormProperties,
+  mirrorSubmitUrl,
+} from './hubspot-form';
 
 /** HubSpot public API base (overridable in tests). */
 export const HUBSPOT_API_BASE = 'https://api.hubapi.com';
@@ -48,6 +54,23 @@ export interface HubspotDestinationOptions {
    * by mappings/static properties (pilot's `enrichAnswersForSubmit`).
    */
   inferCompanyFromEmail?: boolean;
+  /**
+   * The portal this token belongs to. Required to post a mirror-form submission
+   * — the submit URL carries it — and resolved by the API from
+   * `/account-info/v3/details`, since nothing else in the product needs it.
+   */
+  portalId?: string;
+  /**
+   * The mirror form in the portal that represents THIS Dapta form. Present =
+   * every completed submission is also posted there, which is what produces the
+   * "Form submission" activity on the contact (a Note cannot: it names no form
+   * and lists no properties).
+   *
+   * Created by the API when the destination is saved, never here — this package
+   * has no database, so an adapter that created it would have nowhere to record
+   * the guid and would make a new form on every delivery.
+   */
+  formGuid?: string;
 }
 
 interface HubSpotUpsertResponse {
@@ -86,6 +109,12 @@ export class HubspotDestination implements SubmissionDestination {
     private readonly fetchImpl: typeof fetch = fetch,
     private readonly baseUrl: string = HUBSPOT_API_BASE,
     private readonly logger: Pick<Console, 'warn'> = console,
+    /**
+     * Form submissions live on a DIFFERENT host to the CRM API
+     * (`api.hsforms.com`, not `api.hubapi.com`), so it takes its own override —
+     * `baseUrl` would point the mirror submit at the wrong service.
+     */
+    private readonly formsBase: string = HUBSPOT_FORMS_SUBMIT_BASE,
   ) {}
 
   /**
@@ -189,6 +218,16 @@ export class HubspotDestination implements SubmissionDestination {
     const upsert = await this.upsertContact(properties);
     const contactId = upsert.contactId;
 
+    // Both tail effects are non-throwing by design. Neither is idempotent, so a
+    // thrown error here would be retried by the outbox into a duplicate
+    // activity — and neither is worth failing a delivery whose contact already
+    // synced. That is also why nothing retryable may be added after them.
+    let formDetail = '';
+    if (ctx.phase === 'complete') {
+      const outcome = await this.submitMirrorForm(ctx, properties);
+      if (outcome) formDetail = outcome === 'ok' ? ' +form' : ` (form ${outcome})`;
+    }
+
     let noteDetail = '';
     if (ctx.phase === 'complete' && this.opts.note !== false && contactId) {
       const noteOk = await this.createNote(contactId, ctx, properties);
@@ -201,7 +240,7 @@ export class HubspotDestination implements SubmissionDestination {
     return {
       delivered: true,
       driver: 'hubspot',
-      detail: `contact=${contactId ?? '?'}${noteDetail}${skipped}`,
+      detail: `contact=${contactId ?? '?'}${formDetail}${noteDetail}${skipped}`,
     };
   }
 
@@ -253,6 +292,50 @@ export class HubspotDestination implements SubmissionDestination {
       throw new Error(`hubspot upsert failed: HTTP ${res.status} ${errorText.slice(0, 300)}`);
     }
     throw new Error('hubspot upsert failed: too many invalid-property retries');
+  }
+
+  /**
+   * Post the submission to this form's mirror form, producing the "Form
+   * submission" activity on the contact. Never throws.
+   *
+   * Returns `null` when there is nothing to do (no mirror configured, or no
+   * portal resolved), so the delivery detail stays quiet about a feature that
+   * is simply off rather than reporting a failure on every submission.
+   *
+   * A missing SCOPE lands here as a 403 and is reported, not retried: it is a
+   * capability the portal has not granted, and no number of attempts changes
+   * that. The contact has already synced by this point, which is the part that
+   * must not be lost to a permission the mirror needs and the upsert does not.
+   */
+  private async submitMirrorForm(
+    ctx: DestinationContext,
+    properties: Record<string, string>,
+  ): Promise<'ok' | 'failed' | 'skipped' | null> {
+    const { portalId, formGuid } = this.opts;
+    if (!formGuid || !portalId) return null;
+    const body = buildMirrorSubmission(properties, mirrorFormProperties(this.opts), {
+      pageName: ctx.formName,
+    });
+    if (body.fields.length === 0) return 'skipped';
+    try {
+      const res = await this.fetchImpl(mirrorSubmitUrl(portalId, formGuid, this.formsBase), {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${this.opts.token}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify(body),
+      });
+      if (res.ok) return 'ok';
+      const detail = await res.text().catch(() => '');
+      this.logger.warn(
+        `[destination:hubspot] mirror form submit failed: HTTP ${res.status} ${detail.slice(0, 200)}`,
+      );
+      return 'failed';
+    } catch (err) {
+      this.logger.warn(`[destination:hubspot] mirror form submit error: ${String(err)}`);
+      return 'failed';
+    }
   }
 
   /** Attach a Note engagement (v3, falling back to legacy v1). Never throws. */
