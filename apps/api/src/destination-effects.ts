@@ -8,6 +8,7 @@ import {
 } from '@quill/db';
 import {
   createDestination,
+  HUBSPOT_API_BASE,
   type DestinationContext,
   type DestinationSpec,
   type DnsResolver,
@@ -59,6 +60,12 @@ export class DestinationEffects {
   fetchImpl: typeof fetch = fetch;
   /** Injectable DNS resolver for tests (webhook SSRF guard); default = Node DNS. */
   resolveDns?: DnsResolver;
+  /**
+   * accountId -> the portal its HubSpot token belongs to. The pair is stored
+   * together so a rotated token misses the cache instead of serving the
+   * previous portal's id.
+   */
+  private readonly portalIds = new Map<string, { token: string; portalId: string }>();
 
   constructor(
     @Inject(DB) private readonly db: Db,
@@ -187,6 +194,8 @@ export class DestinationEffects {
       this.env?.FORMS_ENCRYPTION_KEY,
       this.env?.HUBSPOT_PRIVATE_APP_TOKEN,
     );
+    const mirrorGuid =
+      destination.settings?.formActivity === true ? (destination.settings?.formGuid ?? null) : null;
     return {
       type: 'hubspot',
       hubspot: {
@@ -201,8 +210,51 @@ export class DestinationEffects {
         outcomeProperty: destination.outcomeProperty ?? undefined,
         staticProperties: destination.staticProperties,
         inferCompanyFromEmail: destination.inferCompanyFromEmail,
+        // The mirror form. Gated on the author's switch as well as the guid:
+        // the guid SURVIVES the switch being turned off, so that turning it back
+        // on reuses the same form instead of orphaning the activities already
+        // attached to it. Policy lives here rather than in the adapter, which
+        // simply posts when it is given somewhere to post to.
+        //
+        // The portal is resolved lazily — nothing else in the product needs it,
+        // so it is not worth a column, and a form with no mirror never pays for
+        // the lookup at all.
+        formGuid: mirrorGuid ?? undefined,
+        portalId: mirrorGuid
+          ? ((await this.resolvePortalId(accountId, token ?? '')) ?? undefined)
+          : undefined,
       },
     };
+  }
+
+  /**
+   * The portal a token belongs to, cached per account.
+   *
+   * Keyed on the token as well as the account so a rotated credential cannot
+   * keep serving the previous portal's id — which would post one customer's
+   * submissions at another customer's forms. A failure returns null and the
+   * mirror submission is simply skipped; the contact still syncs.
+   */
+  private async resolvePortalId(accountId: string, token: string): Promise<string | null> {
+    if (!token) return null;
+    const cached = this.portalIds.get(accountId);
+    if (cached && cached.token === token) return cached.portalId;
+    try {
+      const res = await this.fetchImpl(`${HUBSPOT_API_BASE}/account-info/v3/details`, {
+        headers: { authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        this.log.warn(`[destinations] could not resolve HubSpot portal: HTTP ${res.status}`);
+        return null;
+      }
+      const body = (await res.json().catch(() => ({}))) as { portalId?: number | string };
+      const portalId = body.portalId == null ? null : String(body.portalId);
+      if (portalId) this.portalIds.set(accountId, { token, portalId });
+      return portalId;
+    } catch (err) {
+      this.log.warn(`[destinations] could not resolve HubSpot portal: ${String(err)}`);
+      return null;
+    }
   }
 }
 

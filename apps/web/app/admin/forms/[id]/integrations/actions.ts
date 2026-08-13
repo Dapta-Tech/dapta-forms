@@ -19,11 +19,15 @@ import type { FormDestination } from '@quill/types';
 export async function saveIntegrationsAction(
   id: string,
   destinations: FormDestination[],
-): Promise<{ ok: boolean; message?: string }> {
+): Promise<{ ok: boolean; message?: string; formActivityError?: string }> {
   try {
-    await adminApi.updateFormDestinations(id, destinations);
+    // The API builds the HubSpot mirror form as part of this write and reports
+    // a refusal without failing the save — an author must be able to edit their
+    // mappings while a portal is unreachable or has not granted the scopes.
+    const saved = await adminApi.updateFormDestinations(id, destinations);
     revalidatePath(`/admin/forms/${id}/integrations`);
-    return { ok: true };
+    const reason = (saved as { formActivityError?: string }).formActivityError;
+    return reason ? { ok: true, formActivityError: reason } : { ok: true };
   } catch (e) {
     return { ok: false, message: e instanceof Error ? e.message : 'Failed to save.' };
   }

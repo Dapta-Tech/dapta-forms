@@ -6,6 +6,7 @@ import { conditionNeverHolds, conditionsContradict } from '@quill/engine';
 import { cn } from '@/lib/cn';
 import { iconForStep } from './question-types';
 import { describeCondition, liveRuleCount } from './logic-util';
+import { spanText } from './outcomes-dialog';
 import {
   anchorIn,
   anchorOut,
@@ -549,8 +550,11 @@ function OutcomeNode({
             {outcome.label || m.map.outcomeKicker}
           </span>
         ) : null}
-        <span className="shrink-0 rounded-sm bg-primary/15 px-1 py-0.5 text-2xs font-bold tabular-nums text-primary">
-          {outcome.minScore ?? 0}+
+        <span
+          data-testid="logic-outcome-range"
+          className="shrink-0 rounded-sm bg-primary/15 px-1 py-0.5 text-2xs font-bold tabular-nums text-primary"
+        >
+          {spanText(node.outcomeSpan ?? { min: outcome.minScore ?? 0, max: null })}
         </span>
       </div>
       {zoom >= LOD_DETAIL && redirects ? (

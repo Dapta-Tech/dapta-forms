@@ -480,6 +480,20 @@ export const formOutcomeSchema = z.object({
   // the moment "Add a range" is clicked.
   label: z.string().max(200),
   minScore: z.number().int().optional(),
+  /**
+   * Upper bound of this range, INCLUSIVE (ADDITIVE). Absent = the range runs
+   * open-ended upwards, which is what every stored config does today: ranges
+   * used to be implicit, each one ending wherever the next one began, so a
+   * config could only be read by looking at its neighbours. Authors could not
+   * type a range, only the number it started at, and the span they actually got
+   * was printed back at them from somewhere else on the row.
+   *
+   * `resolveOutcome` reads this bound and NOT a derived one, so a config
+   * carrying no `maxScore` resolves exactly as it did before this field existed.
+   * The last range is meant to stay absent — a score above every bound must
+   * still land somewhere.
+   */
+  maxScore: z.number().int().optional(),
   // http(s) only: the renderer navigates here (`window.location`), so a
   // `javascript:`/`data:` URL — which `.url()` alone would accept — is a stored
   // XSS vector. Guarded again at the sink in the renderer (belt-and-braces).
@@ -621,7 +635,40 @@ export function destinationFiresForPhase(
 export const hubspotDestinationSchema = z.object({
   type: z.literal('hubspot'),
   enabled: z.boolean().default(false),
-  settings: z.object({ note: z.boolean().optional() }).default({}),
+  settings: z
+    .object({
+      note: z.boolean().optional(),
+      /**
+       * The MIRROR FORM in the portal that represents this Dapta form
+       * (ADDITIVE). Set = every completed submission is also posted there,
+       * which is what produces a "Form submission" activity on the contact —
+       * the one that names the form and lists the properties it set. A Note,
+       * which is all this destination could make before, does neither.
+       *
+       * Written by the API when the destination is saved, not by the author and
+       * not by the adapter: creating the form needs a HubSpot call, and
+       * recording its guid needs the database, which `@quill/destinations` does
+       * not have. Absent = no activity, and nothing else changes.
+       */
+      formGuid: z.string().max(64).nullable().optional(),
+      /**
+       * Whether to record the activity at all — the author's intent, as opposed
+       * to `formGuid`, which is what the API made for them.
+       *
+       * Kept apart so turning the switch off STOPS posting without destroying
+       * the form: its past submissions are activities on real contacts, and
+       * deleting it to represent "off" would erase history the author never
+       * asked to lose. Turning it back on reuses the same form.
+       */
+      formActivity: z.boolean().optional(),
+      /**
+       * What the mirror form was built from, so a save can tell whether it is
+       * stale without asking HubSpot. The Connect tab autosaves, and rebuilding
+       * on every keystroke would hammer the portal for nothing.
+       */
+      formSignature: z.string().max(4000).optional(),
+    })
+    .default({}),
   /** stepKey -> contact property, or several (one SHOULD be `email` unless a
    *  scheduler supplies the address). */
   fieldMappings: fieldMapSchema.default({}),

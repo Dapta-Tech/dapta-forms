@@ -15,6 +15,14 @@ export interface FormsMessages {
     ctaAction: string;
     /** SEO/OG meta description for a public form page. */
     seoForm: string;
+    /** Step count on the generated share card. `{count}` is a number. */
+    shareCardSteps: string;
+    /**
+     * Headline on a share card for a form that could not be loaded. The card is
+     * rendered by a social crawler, so this is the one string here a RESPONDENT
+     * may never see and a stranger's timeline might.
+     */
+    shareCardUntitled: string;
   };
   /** Public form-renderer chrome (all user content comes from the form config). */
   renderer: {
@@ -1029,6 +1037,11 @@ export interface FormsMessages {
       dateProperty: string;
       createNote: string;
       createNoteHelp: string;
+      /** The mirror-form switch: a real HubSpot form-submission activity. */
+      formActivity: string;
+      formActivityHelp: string;
+      /** Shown when HubSpot refused to build the mirror form. `{reason}` */
+      formActivityError: string;
       selectProperty: string;
       noProperty: string;
       addMapping: string;
@@ -1078,6 +1091,13 @@ export interface FormsMessages {
       /** Legacy configs only: a stored second HubSpot destination this tab will drop. */
       extraHubspotTitle: string;
       extraHubspotBody: string;
+      /**
+       * The form stores more webhooks than this card edits. Unlike the HubSpot
+       * pair above, they are KEPT — several webhooks is a legal configuration.
+       * `{count}` is how many ride along untouched.
+       */
+      carriedWebhooksTitle: string;
+      carriedWebhooksBody: string;
       // Account-connection gating + Typeform-style mapping (per-form)
       connectPromptTitle: string;
       connectPromptBody: string;
@@ -1210,6 +1230,40 @@ export interface FormsMessages {
       serverProvided: string;
       serverProvidedTitle: string;
       serverProvidedBody: string;
+      /**
+       * The account-level webhook INVENTORY, below the connections grid.
+       *
+       * Read-only by design: a webhook belongs to one form and is edited there.
+       * This exists because "which of my forms send data out, and where?" was a
+       * question you could only answer by opening every form in turn.
+       */
+      webhooks: {
+        title: string;
+        subtitle: string;
+        colForm: string;
+        colEndpoint: string;
+        colEvents: string;
+        colStatus: string;
+        colHealth: string;
+        on: string;
+        off: string;
+        eventsBoth: string;
+        eventsPartial: string;
+        eventsComplete: string;
+        /** A signing secret is configured. The value itself is never shown. */
+        signed: string;
+        edit: string;
+        /** Failure pill. `{n}` = deliveries that ended without landing. */
+        failedCount: string;
+        /** Tooltip head above the worker's verbatim reason. `{date}` = last one. */
+        lastFailure: string;
+        /** Why the count is per FORM even when a form has two webhooks. */
+        failuresScopeNote: string;
+        emptyTitle: string;
+        emptyBody: string;
+        emptyCta: string;
+        loadError: string;
+      };
     };
     /** Draft → publish controls in the form editor (publish button + badge). */
     publish: {
@@ -1440,6 +1494,8 @@ export const en: FormsMessages = {
     ctaQuestion: 'Want your own form?',
     ctaAction: 'Get Dapta Forms — free',
     seoForm: 'Fill out {name} online.',
+    shareCardSteps: '{count} questions',
+    shareCardUntitled: 'Form',
   },
   renderer: {
     start: 'Start',
@@ -2365,6 +2421,10 @@ export const en: FormsMessages = {
       dateProperty: 'Submitted-date property',
       createNote: 'Create a note on completed submissions',
       createNoteHelp: 'Attaches a note with the form name and score to the contact.',
+      formActivity: 'Record a form submission in HubSpot',
+      formActivityHelp:
+        'Creates a matching form in your portal, so each completed submission shows on the contact as a form submission activity listing the properties it set — not just a note. Needs the forms and form-submissions-write scopes on your private app.',
+      formActivityError: 'HubSpot could not set this up: {reason}',
       selectProperty: 'Select a property…',
       noProperty: '— none —',
       addMapping: 'Add mapping',
@@ -2416,6 +2476,9 @@ export const en: FormsMessages = {
       extraHubspotTitle: 'This form has a second HubSpot connection',
       extraHubspotBody:
         'This screen only edits the first one, so the other is invisible here — and any edit on this tab saves right away and deletes it, along with any mappings it holds. To send one answer to several properties, add the properties to the same question above instead.',
+      carriedWebhooksTitle: 'This form has {count} more webhook(s)',
+      carriedWebhooksBody:
+        'This card edits the first one. The rest keep running exactly as they are and are saved untouched — they are just not editable from here. You can see all of them under Integrations.',
       connectPromptTitle: 'Connect HubSpot to map this form',
       connectPromptBody:
         'HubSpot isn’t connected for your account yet. Connect it once, then come back to map each question to a contact property.',
@@ -2541,6 +2604,32 @@ export const en: FormsMessages = {
       serverProvidedTitle: 'Already working, using the server’s token',
       serverProvidedBody:
         'This deployment supplies a token for {provider}, so every account here can already sync. Connecting your own replaces it for this account only.',
+      webhooks: {
+        title: 'Webhooks',
+        subtitle:
+          'Every form that POSTs its submissions to an endpoint you control. Add or change one from that form’s Connect tab.',
+        colForm: 'Form',
+        colEndpoint: 'Endpoint',
+        colEvents: 'Events',
+        colStatus: 'Status',
+        colHealth: 'Delivery',
+        on: 'On',
+        off: 'Off',
+        eventsBoth: 'Partial + complete',
+        eventsPartial: 'Partial submissions',
+        eventsComplete: 'Complete submissions',
+        signed: 'Signed with a secret',
+        edit: 'Edit',
+        failedCount: '{n} failed',
+        lastFailure: 'Last failure {date}',
+        failuresScopeNote:
+          'Failures are counted per form, so a form with two webhooks shows the same count on both.',
+        emptyTitle: 'No webhooks yet',
+        emptyBody:
+          'Open any form’s Connect tab and add a webhook URL to send every submission to your own endpoint.',
+        emptyCta: 'Go to forms',
+        loadError: 'Could not load your webhooks.',
+      },
     },
     publish: {
       publish: 'Publish',
@@ -2762,6 +2851,8 @@ export const es: FormsMessages = {
     ctaQuestion: '¿Quieres tu propio formulario?',
     ctaAction: 'Consigue Dapta Forms — gratis',
     seoForm: 'Completa {name} en línea.',
+    shareCardSteps: '{count} preguntas',
+    shareCardUntitled: 'Formulario',
   },
   renderer: {
     start: 'Comenzar',
@@ -3691,6 +3782,10 @@ export const es: FormsMessages = {
       dateProperty: 'Propiedad de fecha de envío',
       createNote: 'Crear una nota en respuestas completadas',
       createNoteHelp: 'Adjunta al contacto una nota con el nombre del formulario y la puntuación.',
+      formActivity: 'Registrar la respuesta como form submission en HubSpot',
+      formActivityHelp:
+        'Crea un formulario espejo en tu portal, para que cada respuesta completada aparezca en el contacto como una actividad de form submission con las propiedades que escribió — y no solo como una nota. Necesita los permisos forms y form-submissions-write en tu private app.',
+      formActivityError: 'HubSpot no pudo configurarlo: {reason}',
       selectProperty: 'Selecciona una propiedad…',
       noProperty: '— ninguna —',
       addMapping: 'Añadir mapeo',
@@ -3745,6 +3840,9 @@ export const es: FormsMessages = {
       extraHubspotTitle: 'Este formulario tiene una segunda conexión con HubSpot',
       extraHubspotBody:
         'Esta pantalla solo edita la primera, así que la otra es invisible acá — y cualquier cambio en esta pestaña se guarda al instante y la elimina, junto con las asignaciones que tenga. Para mandar una respuesta a varias propiedades, agrega las propiedades a la misma pregunta de arriba.',
+      carriedWebhooksTitle: 'Este formulario tiene {count} webhook(s) más',
+      carriedWebhooksBody:
+        'Esta tarjeta edita el primero. Los demás siguen funcionando igual y se guardan sin tocarlos — solo que no se editan desde acá. Los ves todos en Integraciones.',
       connectPromptTitle: 'Conecta HubSpot para asignar este formulario',
       connectPromptBody:
         'HubSpot aún no está conectado en tu cuenta. Conéctalo una vez y luego vuelve para asignar cada pregunta a una propiedad de contacto.',
@@ -3870,6 +3968,34 @@ export const es: FormsMessages = {
       serverProvidedTitle: 'Ya funciona, con el token del servidor',
       serverProvidedBody:
         'Este despliegue trae un token para {provider}, así que todas las cuentas de aquí ya pueden sincronizar. Si conectas el tuyo, lo reemplaza solo para esta cuenta.',
+      webhooks: {
+        title: 'Webhooks',
+        subtitle:
+          'Todos los formularios que envían sus respuestas (POST) a un endpoint que tú controlas. Añade o cambia uno desde la pestaña Conectar de ese formulario.',
+        colForm: 'Formulario',
+        colEndpoint: 'Endpoint',
+        colEvents: 'Eventos',
+        colStatus: 'Estado',
+        colHealth: 'Entrega',
+        on: 'Activo',
+        off: 'Inactivo',
+        eventsBoth: 'Parciales y completas',
+        eventsPartial: 'Respuestas parciales',
+        eventsComplete: 'Respuestas completas',
+        signed: 'Firmado con un secreto',
+        edit: 'Editar',
+        // Sin concordancia de número a propósito: `t()` no pluraliza, y "1
+        // fallidas" es peor que una frase que sirve para cualquier cifra.
+        failedCount: '{n} sin entregar',
+        lastFailure: 'Último fallo: {date}',
+        failuresScopeNote:
+          'Los fallos se cuentan por formulario, así que un formulario con dos webhooks muestra el mismo número en ambos.',
+        emptyTitle: 'Aún no hay webhooks',
+        emptyBody:
+          'Abre la pestaña Conectar de cualquier formulario y añade una URL de webhook para enviar cada respuesta a tu propio endpoint.',
+        emptyCta: 'Ir a formularios',
+        loadError: 'No se pudieron cargar tus webhooks.',
+      },
     },
     publish: {
       publish: 'Publicar',

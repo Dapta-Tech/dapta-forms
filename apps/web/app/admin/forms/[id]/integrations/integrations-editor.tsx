@@ -122,6 +122,12 @@ interface HubspotState {
   scoreProperty: string;
   dateProperty: string;
   note: boolean;
+  /**
+   * Whether completed submissions are recorded as a HubSpot FORM SUBMISSION
+   * activity, not just a note. The mirror form the API builds for it is stored
+   * beside this flag and is not the author's to edit — see `settings.formGuid`.
+   */
+  formActivity: boolean;
   valueMaps: ValueMapGroup[];
   outcomeProperty: string;
   staticProperties: StaticPropertyRow[];
@@ -153,6 +159,48 @@ function isKnownTimezone(value: string): boolean {
   } catch {
     return false;
   }
+}
+
+/**
+ * The webhooks this screen does NOT edit, to be written back untouched.
+ *
+ * The card edits the FIRST stored webhook (`initialWebhook` below) and used to
+ * be the only one `buildDestinations` emitted — so a form legitimately storing
+ * two lost the second the moment anything on this tab was touched, including a
+ * HubSpot toggle, because autosave rewrites the whole array. Silently, and with
+ * no way to notice: the deleted one was never rendered here in the first place.
+ *
+ * Several webhooks is a legal configuration — only HubSpot is capped at one —
+ * so the answer is to carry them rather than to warn about destroying them,
+ * which is what the HubSpot notice has to do for a shape the API refuses.
+ *
+ * Identity is positional, matching how the card picks its own: the first
+ * webhook is edited, the rest ride along in their stored order. Matching by
+ * `id` would look tidier and be wrong, since a config written before ids
+ * existed has none and the server mints them on write.
+ *
+ * Exported for the spec beside this file.
+ */
+/**
+ * The HubSpot settings to store: what this screen edits, MERGED onto what it
+ * does not.
+ *
+ * `settings` also carries `formGuid` and `formSignature`, which the API writes
+ * when it builds the mirror form in the customer's portal. This screen has no
+ * control for either and no business rewriting them — but it saves the whole
+ * destination, so replacing the object wholesale (as `settings: { note }` did)
+ * would drop the guid on the very next keystroke and strand a form in their
+ * portal that nothing points at. The next save would then make another one.
+ */
+export function mergeHubspotSettings(
+  stored: Record<string, unknown> | undefined,
+  edited: { note: boolean; formActivity: boolean },
+): Record<string, unknown> {
+  return { ...(stored ?? {}), ...edited };
+}
+
+export function carriedWebhooks(destinations: FormDestination[]): FormDestination[] {
+  return destinations.filter((d) => d.type === 'webhook').slice(1);
 }
 
 function initialWebhook(destinations: FormDestination[]): WebhookState {
@@ -192,6 +240,10 @@ function initialHubspot(destinations: FormDestination[]): HubspotState {
       scoreProperty: h.scoreProperty ?? '',
       dateProperty: h.dateProperty ?? '',
       note: h.settings?.note !== false,
+      // Opt-in: the mirror form creates an object in the customer's portal and
+      // needs scopes their token may not carry, so an existing form never
+      // starts doing it by surprise.
+      formActivity: h.settings?.formActivity === true,
       valueMaps: Object.entries(h.valueMaps ?? {}).map(([stepKey, map]) => ({
         stepKey,
         rows: Object.entries(map).map(([from, to]) => ({ from, to })),
@@ -215,6 +267,7 @@ function initialHubspot(destinations: FormDestination[]): HubspotState {
     scoreProperty: '',
     dateProperty: '',
     note: true,
+    formActivity: false,
     valueMaps: [],
     outcomeProperty: '',
     staticProperties: [],
@@ -276,6 +329,7 @@ export function IntegrationsEditor({
   errorRef.current = error;
   const [webhook, setWebhook] = useState<WebhookState>(() => initialWebhook(initialDestinations));
   const [hs, setHs] = useState<HubspotState>(() => initialHubspot(initialDestinations));
+  const [formActivityError, setFormActivityError] = useState<string | null>(null);
   const [webhookError, setWebhookError] = useState<string | null>(null);
   // The destinations as the server last accepted them. Seeded from the freshly
   // fetched mount props and advanced on every successful save, so the "protect
@@ -348,6 +402,17 @@ export function IntegrationsEditor({
     }
     // else: empty url (switch on or off) → no webhook persisted. An enabled
     // webhook with no URL is incomplete, not stored; clearing the URL removes it.
+
+    // Every webhook this screen does not edit rides along, in all three cases
+    // above — including the empty-URL one, where clearing the field removes the
+    // FIRST webhook and must not take its siblings with it.
+    //
+    // They sit here, next to the edited one and before HubSpot, rather than at
+    // the end: `enqueueSubmissionDeliveries` builds its idempotency key from a
+    // destination's index in this array, so keeping the webhooks contiguous and
+    // in their stored order is the arrangement that moves the fewest of them.
+    out.push(...carriedWebhooks(savedDestinations.current));
+
     // Rows GROUP by key rather than overwriting. The old flatten was
     // last-one-wins and silent: two rows on the same question — the escape
     // hatch the UI itself offers via "Custom key…" — quietly discarded the
@@ -410,7 +475,10 @@ export function IntegrationsEditor({
         ...(stored && stored.type === 'hubspot' ? stored : {}),
         type: 'hubspot',
         enabled: hs.enabled,
-        settings: { note: hs.note },
+        settings: mergeHubspotSettings(
+          stored && stored.type === 'hubspot' ? stored.settings : undefined,
+          { note: hs.note, formActivity: hs.formActivity },
+        ),
         fieldMappings,
         utmMappings,
         scoreProperty: hs.scoreProperty.trim() || null,
@@ -454,6 +522,11 @@ export function IntegrationsEditor({
         errorRef.current(res.message ?? m.saveError);
         return false;
       }
+      // HubSpot refused to build the mirror form. The save itself went through,
+      // so this is a NOTICE on the card and not a save error — losing the
+      // author's mappings because a portal is missing a scope would be worse
+      // than the missing activity.
+      setFormActivityError(res.formActivityError ?? null);
       dirty.current = false;
       // This array is now the server truth — the malformed-URL fallback carries
       // it forward instead of the stale mount snapshot.
@@ -546,6 +619,10 @@ export function IntegrationsEditor({
         urlError={webhookError}
         clearUrlError={() => setWebhookError(null)}
         formId={id}
+        // From the mount props, like HubSpot's own count: the Connect tab
+        // refetches the live config every time it is opened, so this is as
+        // fresh as the array the card was seeded from.
+        carriedCount={carriedWebhooks(initialDestinations).length}
         m={m}
       />
       <LocaleContext.Provider value={locale}>
@@ -562,6 +639,7 @@ export function IntegrationsEditor({
           extraHubspotStored={
             initialDestinations.filter((d) => d.type === 'hubspot').length > 1
           }
+          formActivityError={formActivityError}
           readiness={readiness}
           questions={questions}
           m={m}
@@ -1128,12 +1206,14 @@ function Field({
   );
 }
 
-function WebhookCard({
+/** Exported for `integrations-card.spec.tsx` — see the notice-slot cases there. */
+export function WebhookCard({
   state,
   onChange,
   urlError,
   clearUrlError,
   formId,
+  carriedCount,
   m,
 }: {
   state: WebhookState;
@@ -1142,6 +1222,8 @@ function WebhookCard({
   clearUrlError: () => void;
   /** Needed for the test delivery — the API resolves the saved webhook by form. */
   formId: string;
+  /** Webhooks stored on this form that the card does not edit. */
+  carriedCount: number;
   m: Msgs;
 }) {
   const { success, error: toastError } = useToast();
@@ -1176,12 +1258,32 @@ function WebhookCard({
     onChange({ ...state, firePartial: nextPartial, fireComplete: nextComplete });
   }
 
+  // Goes in the `notice` slot rather than among the children, for the same
+  // reason HubSpot's does: children are hidden when the toggle is off, and a
+  // card toggled off is where a statement about the OTHER stored webhooks
+  // matters most — flipping the switch is itself an edit that rewrites the
+  // whole array. Unlike HubSpot's, this one reports something kept rather than
+  // something about to be lost: `buildDestinations` carries them through.
+  const carriedNotice =
+    carriedCount > 0 ? (
+      <div
+        data-testid="webhook-carried"
+        className="mt-4 rounded-md border border-border bg-muted/40 p-3"
+      >
+        <p className="text-xs font-medium text-foreground">
+          {fill(m.carriedWebhooksTitle, { count: String(carriedCount) })}
+        </p>
+        <p className="mt-1 text-xs text-muted-foreground">{m.carriedWebhooksBody}</p>
+      </div>
+    ) : null;
+
   return (
     <Card
       title={m.webhookTitle}
       desc={m.webhookDesc}
       enabled={state.enabled}
       onToggle={(enabled) => onChange({ ...state, enabled })}
+      notice={carriedNotice}
       m={m}
     >
       <Field label={m.webhookUrl}>
@@ -1259,12 +1361,15 @@ export function HubspotCard({
   accountConnected,
   showMapping,
   extraHubspotStored,
+  formActivityError,
   readiness,
   questions,
   m,
 }: {
   state: HubspotState;
   onChange: (s: HubspotState) => void;
+  /** Why HubSpot refused to build the mirror form on the last save, if it did. */
+  formActivityError?: string | null;
   /** `options` rides along for the value pickers; absent = not an enumeration. */
   properties: { name: string; label: string; options?: HubSpotPropertyOption[] }[];
   pickerEnabled: boolean;
@@ -1933,6 +2038,38 @@ export function HubspotCard({
           aria-label={m.createNote}
         />
       </div>
+
+      {/* The form-submission activity. Sits below the note because it is the
+          better version of the same idea: a note says something happened, this
+          says WHAT the submission set, on an activity the CRM already knows how
+          to read. Both can be on; neither disables the other. */}
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <label className="text-sm font-medium">{m.formActivity}</label>
+          <p className="text-xs text-muted-foreground">{m.formActivityHelp}</p>
+        </div>
+        <Switch
+          checked={state.formActivity}
+          data-testid="hubspot-form-activity"
+          onCheckedChange={(formActivity) => onChange({ ...state, formActivity })}
+          aria-label={m.formActivity}
+        />
+      </div>
+
+      {/* The save went through; only the portal side did not. Said here, next to
+          the switch that caused it, rather than as a save error — losing an
+          author's mappings because their token is missing a scope would be a
+          far worse trade than the missing activity. */}
+      {state.formActivity && formActivityError ? (
+        <p
+          role="alert"
+          data-testid="hubspot-form-activity-error"
+          className="flex items-start gap-1.5 rounded-md border border-destructive/40 bg-destructive/10 px-2.5 py-2 text-xs leading-relaxed text-destructive"
+        >
+          <i aria-hidden className="pi pi-exclamation-triangle mt-0.5 shrink-0" style={{ fontSize: 11 }} />
+          {fill(m.formActivityError, { reason: formActivityError })}
+        </p>
+      ) : null}
     </Card>
   );
 }

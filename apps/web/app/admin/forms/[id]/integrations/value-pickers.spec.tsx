@@ -72,6 +72,7 @@ function markup(over: Over = {}): string {
         scoreProperty: '',
         dateProperty: '',
         note: true,
+        formActivity: false,
         valueMaps: over.valueMaps ?? [],
         outcomeProperty: '',
         staticProperties: over.staticProperties ?? [],

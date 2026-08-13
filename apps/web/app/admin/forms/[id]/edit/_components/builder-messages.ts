@@ -420,8 +420,20 @@ export interface BuilderMessages {
     addRange: string;
     rangeLabel: string;
     rangeLabelPlaceholder: string;
-    /** V5-QA — a range another range starts at or below: nothing lands here. */
-    rangeUnreachable: string;
+    /** Caption over the range's lower bound. */
+    rangeFrom: string;
+    /** Caption over the range's upper bound. */
+    rangeTo: string;
+    /** Shown in place of the top range's upper bound, which is deliberately open. */
+    rangeOpenEnded: string;
+    /** Why that top bound cannot be typed. */
+    rangeOpenEndedHelp: string;
+    /** Refusal when a bound would make two ranges share a score. `{label}` `{range}` */
+    rangeOverlap: string;
+    /** Refusal when a range would end below where it starts. */
+    rangeInverted: string;
+    /** Scores no range covers — allowed, but said out loud. `{ranges}` */
+    rangeGapNote: string;
     thankYouMessage: string;
     redirect: string;
     redirectPlaceholder: string;
@@ -795,7 +807,13 @@ const en: BuilderMessages = {
     addRange: 'Add a range',
     rangeLabel: 'Label',
     rangeLabelPlaceholder: 'e.g. You’re a great fit',
-    rangeUnreachable: 'never',
+    rangeFrom: 'From',
+    rangeTo: 'To',
+    rangeOpenEnded: 'and up',
+    rangeOpenEndedHelp: 'The highest range has no upper bound, so no score is ever left without an outcome.',
+    rangeOverlap: '“{label}” already covers {range}. Two ranges can’t claim the same score.',
+    rangeInverted: 'A range can’t end below where it starts.',
+    rangeGapNote: 'No range covers {ranges}. Those scores see the form’s own ending.',
     thankYouMessage: 'Thank-you message',
     redirect: 'Redirect',
     redirectPlaceholder: 'https://…',
@@ -1171,7 +1189,13 @@ const es: BuilderMessages = {
     addRange: 'Añadir un rango',
     rangeLabel: 'Etiqueta',
     rangeLabelPlaceholder: 'p. ej. Eres un buen fit',
-    rangeUnreachable: 'nunca',
+    rangeFrom: 'Desde',
+    rangeTo: 'Hasta',
+    rangeOpenEnded: 'y más',
+    rangeOpenEndedHelp: 'El rango más alto no tiene tope, así que ningún puntaje se queda sin resultado.',
+    rangeOverlap: '«{label}» ya cubre {range}. Dos rangos no pueden reclamar el mismo puntaje.',
+    rangeInverted: 'Un rango no puede terminar antes de donde empieza.',
+    rangeGapNote: 'Ningún rango cubre {ranges}. Esos puntajes ven el final propio del formulario.',
     thankYouMessage: 'Mensaje de agradecimiento',
     redirect: 'Redirigir',
     redirectPlaceholder: 'https://…',

@@ -335,7 +335,8 @@ export async function listFailedDeliveries(
   const rows = await db.all<Record<string, unknown>>(
     sql`SELECT * FROM outbox
         WHERE account_id = ${accountId} AND status IN ('failed', 'skipped')
-        ORDER BY updated_at DESC`,
+        ORDER BY updated_at DESC
+        LIMIT ${DEFAULT_FAILURE_SCAN_LIMIT}`,
   );
   const out: FailedDelivery[] = [];
   for (const raw of rows) {
@@ -355,15 +356,109 @@ export async function listFailedDeliveries(
   return out;
 }
 
+/**
+ * How many failed/skipped rows a single read will look at.
+ *
+ * The form is matched in JS, so the SELECT cannot narrow to it and an account
+ * with a long-broken destination would otherwise drag its entire failure history
+ * into memory on every page load. Deliberately larger than any caller's `limit`:
+ * this bounds the SCAN, the caller bounds the ANSWER, and the two must not be the
+ * same number or a caller asking for 50 would stop looking after 50 rows of which
+ * only some match.
+ */
+const DEFAULT_FAILURE_SCAN_LIMIT = 500;
+
+/**
+ * The form a row's payload names, across the two shapes the queue carries.
+ *
+ *  - TOP-LEVEL `formId` — `booking_sync` rows (`BookingSyncPayload`).
+ *  - `ctx.formId` — destination rows (`webhook`/`hubspot`), whose payload is
+ *    `{ destination, ctx }` because the delivery needs both halves on retry.
+ *
+ * Reading only the top level is what made every webhook and HubSpot failure
+ * invisible in the admin — including in the per-form panel built to show them.
+ * `booking_sync` was the only kind that matched, so the tests passed and the hole
+ * stayed hidden.
+ *
+ * Widening this cannot cross a tenant boundary: the SQL above already restricts
+ * to one `account_id`, so this narrows WITHIN rows the caller already owns.
+ *
+ * Malformed payloads simply yield null.
+ */
+function payloadFormId(payload: string | null): string | null {
+  if (!payload) return null;
+  try {
+    const parsed = JSON.parse(payload) as { formId?: unknown; ctx?: { formId?: unknown } };
+    if (typeof parsed.formId === 'string') return parsed.formId;
+    if (typeof parsed.ctx?.formId === 'string') return parsed.ctx.formId;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 /** Does this row's payload name the form? Malformed payloads simply do not match. */
 function payloadTargetsForm(payload: string | null, formId: string): boolean {
-  if (!payload) return false;
-  try {
-    const parsed = JSON.parse(payload) as { formId?: unknown };
-    return typeof parsed.formId === 'string' && parsed.formId === formId;
-  } catch {
-    return false;
+  return payloadFormId(payload) === formId;
+}
+
+/** One form's failed deliveries of a single kind, rolled up. */
+export interface FormDeliveryFailures {
+  formId: string;
+  /** How many rows ended without landing, within the scanned window. */
+  count: number;
+  /** The reason on the most recent of them — the worker's own words. */
+  lastError: string | null;
+  /** When that most recent failure was last touched. */
+  lastAt: number;
+}
+
+/**
+ * Failed deliveries of one kind, grouped by form, for an entire account.
+ *
+ * The per-form view answers "what went wrong with THIS form"; an account-level
+ * inventory needs the same answer for every form at once, and asking it one form
+ * at a time would be N queries to render one table. Same rows, same account
+ * scope in SQL, grouped in JS because the form lives in a serialized payload
+ * rather than a column (see {@link payloadFormId}).
+ *
+ * Attribution is per FORM, not per destination: `ctx` carries `formId`, not the
+ * destination's id, so a form with two webhooks reports the same figure for
+ * both. That is a property of what the queue records, and the caller should say
+ * so rather than imply otherwise.
+ */
+export async function summarizeFailedDeliveriesByForm(
+  db: Db,
+  accountId: string,
+  kind: OutboxKind,
+  scanLimit = DEFAULT_FAILURE_SCAN_LIMIT,
+): Promise<FormDeliveryFailures[]> {
+  const rows = await db.all<Record<string, unknown>>(
+    sql`SELECT * FROM outbox
+        WHERE account_id = ${accountId} AND kind = ${kind} AND status IN ('failed', 'skipped')
+        ORDER BY updated_at DESC
+        LIMIT ${scanLimit}`,
+  );
+  const byForm = new Map<string, FormDeliveryFailures>();
+  for (const raw of rows) {
+    const row = mapRow(raw);
+    const formId = payloadFormId(row.payload);
+    if (!formId) continue;
+    const hit = byForm.get(formId);
+    if (hit) {
+      hit.count += 1;
+      continue;
+    }
+    // Rows arrive newest-first, so the first one seen for a form is the one whose
+    // error and timestamp describe the failure the reader cares about.
+    byForm.set(formId, {
+      formId,
+      count: 1,
+      lastError: row.lastError,
+      lastAt: row.updatedAt,
+    });
   }
+  return [...byForm.values()];
 }
 
 /** Count rows in a status (readiness/backlog reporting). */
