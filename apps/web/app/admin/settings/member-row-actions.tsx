@@ -6,6 +6,7 @@ import { useToast } from '@/components/toast';
 import { clientLocale } from '@/lib/client-locale';
 import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import type { AccountRole } from '@/lib/admin-api';
+import { callAction, isTransportError, type TransportError } from '@/lib/call-action';
 import {
   removeMemberAction,
   updateMemberRoleAction,
@@ -70,7 +71,11 @@ export function MemberRowActions({
   }, [open]);
 
   /** Turn a failure code into its localized toast; success carries its own message. */
-  const handle = (result: ManageMemberState, successMessage: string) => {
+  const handle = (result: ManageMemberState | TransportError, successMessage: string) => {
+    if (isTransportError(result)) {
+      toast.error(labels.manageErrorFailed);
+      return;
+    }
     if (result.ok) {
       toast.success(successMessage);
       return;
@@ -86,7 +91,9 @@ export function MemberRowActions({
 
   const changeRole = (next: 'admin' | 'member') => {
     setOpen(false);
-    start(async () => handle(await updateMemberRoleAction(memberId, next), labels.roleChangeSuccess));
+    start(async () =>
+      handle(await callAction(() => updateMemberRoleAction(memberId, next)), labels.roleChangeSuccess),
+    );
   };
 
   const remove = () => {
@@ -97,7 +104,10 @@ export function MemberRowActions({
       confirmLabel: labels.removeMember,
       destructive: true,
     }).then((ok) => {
-      if (ok) start(async () => handle(await removeMemberAction(memberId), labels.removeSuccess));
+      if (ok)
+        start(async () =>
+          handle(await callAction(() => removeMemberAction(memberId)), labels.removeSuccess),
+        );
     });
   };
 

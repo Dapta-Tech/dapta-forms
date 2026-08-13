@@ -95,6 +95,11 @@ export class EmailEffects {
       const payload: SubmissionNotification = {
         ...n,
         accountId,
+        // Stamped into the payload, not merely used to resolve the template
+        // above: `outbox` has no form column, so a row that does not NAME its
+        // form cannot be attributed to one, and every email this queue has ever
+        // carried was invisible to the per-form delivery history for that reason.
+        formId: formId ?? null,
         to,
         locale: n.locale ?? owner?.locale ?? null,
         subjectTemplate: setting.subject,
@@ -134,6 +139,9 @@ export class EmailEffects {
       const payload: SubmissionNotification = {
         ...n,
         accountId,
+        // See `enqueueSubmissionReceived` — the payload has to name the form or
+        // the admin cannot tell whose send this was.
+        formId: formId ?? null,
         to: [n.respondentEmail],
         locale: n.locale ?? null,
         subjectTemplate: setting.subject,

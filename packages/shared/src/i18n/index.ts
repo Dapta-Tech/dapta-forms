@@ -15,6 +15,14 @@ export interface FormsMessages {
     ctaAction: string;
     /** SEO/OG meta description for a public form page. */
     seoForm: string;
+    /** Step count on the generated share card. `{count}` is a number. */
+    shareCardSteps: string;
+    /**
+     * Headline on a share card for a form that could not be loaded. The card is
+     * rendered by a social crawler, so this is the one string here a RESPONDENT
+     * may never see and a stranger's timeline might.
+     */
+    shareCardUntitled: string;
   };
   /** Public form-renderer chrome (all user content comes from the form config). */
   renderer: {
@@ -175,6 +183,8 @@ export interface FormsMessages {
       save: string;
       saving: string;
       saved: string;
+      /** V5: the save request never reached the server (kept, retry manually). */
+      saveOffline: string;
       /** Read-only banner for non-admin members. */
       adminOnly: string;
       logoTitle: string;
@@ -383,6 +393,8 @@ export interface FormsMessages {
       /** V4 autosave hardening: surface WHY a save failed + client pre-validation. */
       saveErrorReason: string;
       saveInvalid: string;
+      /** V5: the save request never reached the server; autosave keeps retrying. */
+      saveOffline: string;
       /** Results tab clarity (V4-16 outcome heading + message + redirect field). */
       resultsHelp: {
         outcomeHeadingHelp: string;
@@ -881,10 +893,6 @@ export interface FormsMessages {
         integrationsSubtitle: string;
         integrationsLoadError: string;
         retry: string;
-        /** Deliveries that ended without landing — hidden when there are none. */
-        deliveriesTitle: string;
-        deliveriesSubtitle: string;
-        deliveriesNoReason: string;
         trackingTitle: string;
         trackingSubtitle: string;
         /** V5-QA — these ride the draft, unlike the integrations above them. */
@@ -1004,6 +1012,9 @@ export interface FormsMessages {
       /** V5-QA — saved, except one card that has a problem of its own. */
       autosavedPartial: string;
       saveError: string;
+      /** V5: the save never reached the server; autosave is retrying on its own. */
+      saveOffline: string;
+      saveRetrying: string;
       loadError: string;
       enabled: string;
       disabled: string;
@@ -1029,6 +1040,11 @@ export interface FormsMessages {
       dateProperty: string;
       createNote: string;
       createNoteHelp: string;
+      /** The mirror-form switch: a real HubSpot form-submission activity. */
+      formActivity: string;
+      formActivityHelp: string;
+      /** Shown when HubSpot refused to build the mirror form. `{reason}` */
+      formActivityError: string;
       selectProperty: string;
       noProperty: string;
       addMapping: string;
@@ -1078,6 +1094,13 @@ export interface FormsMessages {
       /** Legacy configs only: a stored second HubSpot destination this tab will drop. */
       extraHubspotTitle: string;
       extraHubspotBody: string;
+      /**
+       * The form stores more webhooks than this card edits. Unlike the HubSpot
+       * pair above, they are KEPT — several webhooks is a legal configuration.
+       * `{count}` is how many ride along untouched.
+       */
+      carriedWebhooksTitle: string;
+      carriedWebhooksBody: string;
       // Account-connection gating + Typeform-style mapping (per-form)
       connectPromptTitle: string;
       connectPromptBody: string;
@@ -1166,6 +1189,40 @@ export interface FormsMessages {
       webhookEventsHelp: string;
       eventPartial: string;
       eventComplete: string;
+      // Delivery history — the collapsible log inside each integration card.
+      /** Per-card headings; the shared panel takes them as props. */
+      historyWebhookTitle: string;
+      historyHubspotTitle: string;
+      historyEmailTitle: string;
+      historyHelp: string;
+      /** How a test delivery differs from a real one, since both are listed. */
+      historyPingNote: string;
+      /** Marks a row the "Send test" button produced. */
+      historyTestBadge: string;
+      // The transcript — what we sent, what came back.
+      historyRequest: string;
+      historyResponse: string;
+      /** No transcript stored: an older delivery, or a kind that reports none. */
+      historyBodyNotRecorded: string;
+      /** The endpoint answered with no body at all. */
+      historyBodyEmpty: string;
+      historyEmpty: string;
+      historyLoadError: string;
+      historyRefresh: string;
+      /** Opens the log in a dialog — a card is a settings form, not a log view. */
+      historyOpen: string;
+      historyClose: string;
+      /** Header chips. `{n}` = a row count within the window that was read. */
+      historyCount: string;
+      historyFailedCount: string;
+      // Row status labels.
+      historyDelivered: string;
+      historyRetrying: string;
+      historyFailed: string;
+      historySkipped: string;
+      /** `{n}` = delivery attempts, shown only past the first. */
+      historyAttempts: string;
+      historyNoReason: string;
       // Google Sheets — announced, not shipped; the card is inert
       gsheetsTitle: string;
       gsheetsDesc: string;
@@ -1210,6 +1267,40 @@ export interface FormsMessages {
       serverProvided: string;
       serverProvidedTitle: string;
       serverProvidedBody: string;
+      /**
+       * The account-level webhook INVENTORY, below the connections grid.
+       *
+       * Read-only by design: a webhook belongs to one form and is edited there.
+       * This exists because "which of my forms send data out, and where?" was a
+       * question you could only answer by opening every form in turn.
+       */
+      webhooks: {
+        title: string;
+        subtitle: string;
+        colForm: string;
+        colEndpoint: string;
+        colEvents: string;
+        colStatus: string;
+        colHealth: string;
+        on: string;
+        off: string;
+        eventsBoth: string;
+        eventsPartial: string;
+        eventsComplete: string;
+        /** A signing secret is configured. The value itself is never shown. */
+        signed: string;
+        edit: string;
+        /** Failure pill. `{n}` = deliveries that ended without landing. */
+        failedCount: string;
+        /** Tooltip head above the worker's verbatim reason. `{date}` = last one. */
+        lastFailure: string;
+        /** Why the count is per FORM even when a form has two webhooks. */
+        failuresScopeNote: string;
+        emptyTitle: string;
+        emptyBody: string;
+        emptyCta: string;
+        loadError: string;
+      };
     };
     /** Draft → publish controls in the form editor (publish button + badge). */
     publish: {
@@ -1440,6 +1531,8 @@ export const en: FormsMessages = {
     ctaQuestion: 'Want your own form?',
     ctaAction: 'Get Dapta Forms — free',
     seoForm: 'Fill out {name} online.',
+    shareCardSteps: '{count} questions',
+    shareCardUntitled: 'Form',
   },
   renderer: {
     start: 'Start',
@@ -1568,6 +1661,7 @@ export const en: FormsMessages = {
       save: 'Save brand kit',
       saving: 'Saving…',
       saved: 'Brand kit saved.',
+      saveOffline: 'Can’t reach the server — check your connection and try again.',
       adminOnly: 'Only an admin or owner can edit the brand kit.',
       logoTitle: 'Logo',
       logoSubtitle: 'Shown on covers and headers unless a form sets its own.',
@@ -1766,6 +1860,8 @@ export const en: FormsMessages = {
       saveError: 'Could not save — please try again.',
       saveErrorReason: 'Couldn’t save: {reason}',
       saveInvalid: 'Can’t save yet — {reason}',
+      saveOffline:
+        'Can’t reach the server — your changes are kept and saving will retry automatically.',
       resultsHelp: {
         outcomeHeadingHelp:
           'Shown to respondents as the heading on the thank-you screen when their score lands in this range.',
@@ -2225,10 +2321,6 @@ export const en: FormsMessages = {
           'Send each submission to your CRM or a webhook. Delivery is durable and retried.',
         integrationsLoadError: 'Could not load integrations.',
         retry: 'Retry',
-        deliveriesTitle: 'Deliveries that did not land',
-        deliveriesSubtitle:
-          'Submissions reached this form, but these deliveries never completed. The respondent saw nothing wrong, so this is the only place it shows.',
-        deliveriesNoReason: 'No reason was recorded.',
         trackingTitle: 'Tracking & pixels',
         trackingSubtitle:
           'Measure visits and conversions on this form’s public page. Each tag loads only when its ID is set.',
@@ -2340,6 +2432,9 @@ export const en: FormsMessages = {
       autosaved: 'Changes saved automatically',
       autosavedPartial: 'Saved everything except the webhook —',
       saveError: 'Could not save integrations.',
+      saveOffline:
+        'Can’t reach the server — your changes are kept and saving will retry automatically.',
+      saveRetrying: 'Connection lost — retrying…',
       loadError: 'Could not load integrations.',
       enabled: 'Enabled',
       disabled: 'Disabled',
@@ -2365,6 +2460,10 @@ export const en: FormsMessages = {
       dateProperty: 'Submitted-date property',
       createNote: 'Create a note on completed submissions',
       createNoteHelp: 'Attaches a note with the form name and score to the contact.',
+      formActivity: 'Record a form submission in HubSpot',
+      formActivityHelp:
+        'Creates a matching form in your portal, so each completed submission shows on the contact as a form submission activity listing the properties it set — not just a note. Needs the forms and form-submissions-write scopes on your private app.',
+      formActivityError: 'HubSpot could not set this up: {reason}',
       selectProperty: 'Select a property…',
       noProperty: '— none —',
       addMapping: 'Add mapping',
@@ -2416,6 +2515,9 @@ export const en: FormsMessages = {
       extraHubspotTitle: 'This form has a second HubSpot connection',
       extraHubspotBody:
         'This screen only edits the first one, so the other is invisible here — and any edit on this tab saves right away and deletes it, along with any mappings it holds. To send one answer to several properties, add the properties to the same question above instead.',
+      carriedWebhooksTitle: 'This form has {count} more webhook(s)',
+      carriedWebhooksBody:
+        'This card edits the first one. The rest keep running exactly as they are and are saved untouched — they are just not editable from here. You can see all of them under Integrations.',
       connectPromptTitle: 'Connect HubSpot to map this form',
       connectPromptBody:
         'HubSpot isn’t connected for your account yet. Connect it once, then come back to map each question to a contact property.',
@@ -2498,6 +2600,30 @@ export const en: FormsMessages = {
       webhookEventsHelp: 'Choose which submissions are sent to this webhook. Both are sent by default.',
       eventPartial: 'Partial submissions',
       eventComplete: 'Complete submissions',
+      historyWebhookTitle: 'Webhook history',
+      historyHubspotTitle: 'HubSpot history',
+      historyEmailTitle: 'Email history',
+      historyHelp: 'The last deliveries this form made, newest first. Open one to see what was sent.',
+      historyPingNote:
+        'Test deliveries are listed too, marked as tests: they reach your endpoint for real, but carry sample answers instead of a respondent’s.',
+      historyTestBadge: 'Test',
+      historyRequest: 'What we sent',
+      historyResponse: 'What came back',
+      historyBodyNotRecorded: 'Not recorded for this delivery.',
+      historyBodyEmpty: 'Your endpoint answered with no body.',
+      historyEmpty: 'Nothing has been delivered yet.',
+      historyLoadError: 'Could not load the delivery history.',
+      historyRefresh: 'Refresh',
+      historyOpen: 'View history',
+      historyClose: 'Close',
+      historyCount: '{n} deliveries',
+      historyFailedCount: '{n} failed',
+      historyDelivered: 'Delivered',
+      historyRetrying: 'In progress',
+      historyFailed: 'Failed',
+      historySkipped: 'Skipped',
+      historyAttempts: '{n} attempts',
+      historyNoReason: 'No reason was recorded.',
       gsheetsTitle: 'Google Sheets',
       gsheetsDesc: 'Append each response as a new row in a spreadsheet.',
       comingSoon: 'Coming soon',
@@ -2541,6 +2667,32 @@ export const en: FormsMessages = {
       serverProvidedTitle: 'Already working, using the server’s token',
       serverProvidedBody:
         'This deployment supplies a token for {provider}, so every account here can already sync. Connecting your own replaces it for this account only.',
+      webhooks: {
+        title: 'Webhooks',
+        subtitle:
+          'Every form that POSTs its submissions to an endpoint you control. Add or change one from that form’s Connect tab.',
+        colForm: 'Form',
+        colEndpoint: 'Endpoint',
+        colEvents: 'Events',
+        colStatus: 'Status',
+        colHealth: 'Delivery',
+        on: 'On',
+        off: 'Off',
+        eventsBoth: 'Partial + complete',
+        eventsPartial: 'Partial submissions',
+        eventsComplete: 'Complete submissions',
+        signed: 'Signed with a secret',
+        edit: 'Edit',
+        failedCount: '{n} failed',
+        lastFailure: 'Last failure {date}',
+        failuresScopeNote:
+          'Failures are counted per form, so a form with two webhooks shows the same count on both.',
+        emptyTitle: 'No webhooks yet',
+        emptyBody:
+          'Open any form’s Connect tab and add a webhook URL to send every submission to your own endpoint.',
+        emptyCta: 'Go to forms',
+        loadError: 'Could not load your webhooks.',
+      },
     },
     publish: {
       publish: 'Publish',
@@ -2762,6 +2914,8 @@ export const es: FormsMessages = {
     ctaQuestion: '¿Quieres tu propio formulario?',
     ctaAction: 'Consigue Dapta Forms — gratis',
     seoForm: 'Completa {name} en línea.',
+    shareCardSteps: '{count} preguntas',
+    shareCardUntitled: 'Formulario',
   },
   renderer: {
     start: 'Comenzar',
@@ -2890,6 +3044,7 @@ export const es: FormsMessages = {
       save: 'Guardar kit de marca',
       saving: 'Guardando…',
       saved: 'Kit de marca guardado.',
+      saveOffline: 'No se pudo contactar al servidor — revisa tu conexión e inténtalo de nuevo.',
       adminOnly: 'Solo un admin o el owner puede editar el kit de marca.',
       logoTitle: 'Logo',
       logoSubtitle: 'Se muestra en portadas y encabezados salvo que un formulario tenga el suyo.',
@@ -3090,6 +3245,8 @@ export const es: FormsMessages = {
       saveError: 'No se pudo guardar — inténtalo de nuevo.',
       saveErrorReason: 'No se pudo guardar: {reason}',
       saveInvalid: 'Aún no se puede guardar — {reason}',
+      saveOffline:
+        'No se pudo contactar al servidor — tus cambios se conservan y el guardado se reintentará automáticamente.',
       resultsHelp: {
         outcomeHeadingHelp:
           'Se muestra a los respondientes como el encabezado de la pantalla de agradecimiento cuando su puntaje cae en este rango.',
@@ -3550,10 +3707,6 @@ export const es: FormsMessages = {
           'Envía cada respuesta a tu CRM o a un webhook. La entrega es duradera y con reintentos.',
         integrationsLoadError: 'No se pudieron cargar las integraciones.',
         retry: 'Reintentar',
-        deliveriesTitle: 'Entregas que no llegaron',
-        deliveriesSubtitle:
-          'Las respuestas llegaron al formulario, pero estas entregas nunca se completaron. Quien respondió no vio ningún problema, así que este es el único lugar donde aparece.',
-        deliveriesNoReason: 'No se registró un motivo.',
         trackingTitle: 'Seguimiento y píxeles',
         trackingSubtitle:
           'Mide visitas y conversiones en la página pública de este formulario. Cada etiqueta se carga solo cuando su ID está configurado.',
@@ -3666,6 +3819,9 @@ export const es: FormsMessages = {
       autosaved: 'Cambios guardados automáticamente',
       autosavedPartial: 'Se guardó todo menos el webhook —',
       saveError: 'No se pudieron guardar las integraciones.',
+      saveOffline:
+        'No se pudo contactar al servidor — tus cambios se conservan y el guardado se reintentará automáticamente.',
+      saveRetrying: 'Se perdió la conexión — reintentando…',
       loadError: 'No se pudieron cargar las integraciones.',
       enabled: 'Activado',
       disabled: 'Desactivado',
@@ -3691,6 +3847,10 @@ export const es: FormsMessages = {
       dateProperty: 'Propiedad de fecha de envío',
       createNote: 'Crear una nota en respuestas completadas',
       createNoteHelp: 'Adjunta al contacto una nota con el nombre del formulario y la puntuación.',
+      formActivity: 'Registrar la respuesta como form submission en HubSpot',
+      formActivityHelp:
+        'Crea un formulario espejo en tu portal, para que cada respuesta completada aparezca en el contacto como una actividad de form submission con las propiedades que escribió — y no solo como una nota. Necesita los permisos forms y form-submissions-write en tu private app.',
+      formActivityError: 'HubSpot no pudo configurarlo: {reason}',
       selectProperty: 'Selecciona una propiedad…',
       noProperty: '— ninguna —',
       addMapping: 'Añadir mapeo',
@@ -3745,6 +3905,9 @@ export const es: FormsMessages = {
       extraHubspotTitle: 'Este formulario tiene una segunda conexión con HubSpot',
       extraHubspotBody:
         'Esta pantalla solo edita la primera, así que la otra es invisible acá — y cualquier cambio en esta pestaña se guarda al instante y la elimina, junto con las asignaciones que tenga. Para mandar una respuesta a varias propiedades, agrega las propiedades a la misma pregunta de arriba.',
+      carriedWebhooksTitle: 'Este formulario tiene {count} webhook(s) más',
+      carriedWebhooksBody:
+        'Esta tarjeta edita el primero. Los demás siguen funcionando igual y se guardan sin tocarlos — solo que no se editan desde acá. Los ves todos en Integraciones.',
       connectPromptTitle: 'Conecta HubSpot para asignar este formulario',
       connectPromptBody:
         'HubSpot aún no está conectado en tu cuenta. Conéctalo una vez y luego vuelve para asignar cada pregunta a una propiedad de contacto.',
@@ -3827,6 +3990,31 @@ export const es: FormsMessages = {
       webhookEventsHelp: 'Elige qué respuestas se envían a este webhook. Por defecto se envían ambas.',
       eventPartial: 'Respuestas parciales',
       eventComplete: 'Respuestas completas',
+      historyWebhookTitle: 'Historial del webhook',
+      historyHubspotTitle: 'Historial de HubSpot',
+      historyEmailTitle: 'Historial de correos',
+      historyHelp:
+        'Las últimas entregas que hizo este formulario, de la más reciente a la más antigua. Abrí una para ver qué se envió.',
+      historyPingNote:
+        'Las entregas de prueba también aparecen, marcadas como tales: llegan de verdad a tu endpoint, pero llevan respuestas de ejemplo en lugar de las de una persona.',
+      historyTestBadge: 'Prueba',
+      historyRequest: 'Lo que enviamos',
+      historyResponse: 'Lo que respondió',
+      historyBodyNotRecorded: 'No se registró para esta entrega.',
+      historyBodyEmpty: 'Tu endpoint respondió sin cuerpo.',
+      historyEmpty: 'Todavía no se ha entregado nada.',
+      historyLoadError: 'No se pudo cargar el historial de entregas.',
+      historyRefresh: 'Actualizar',
+      historyOpen: 'Ver historial',
+      historyClose: 'Cerrar',
+      historyCount: '{n} entregas',
+      historyFailedCount: '{n} con error',
+      historyDelivered: 'Entregada',
+      historyRetrying: 'En curso',
+      historyFailed: 'Falló',
+      historySkipped: 'Omitida',
+      historyAttempts: '{n} intentos',
+      historyNoReason: 'No se registró un motivo.',
       gsheetsTitle: 'Google Sheets',
       gsheetsDesc: 'Añade cada respuesta como una fila nueva en una hoja de cálculo.',
       comingSoon: 'Muy pronto',
@@ -3870,6 +4058,34 @@ export const es: FormsMessages = {
       serverProvidedTitle: 'Ya funciona, con el token del servidor',
       serverProvidedBody:
         'Este despliegue trae un token para {provider}, así que todas las cuentas de aquí ya pueden sincronizar. Si conectas el tuyo, lo reemplaza solo para esta cuenta.',
+      webhooks: {
+        title: 'Webhooks',
+        subtitle:
+          'Todos los formularios que envían sus respuestas (POST) a un endpoint que tú controlas. Añade o cambia uno desde la pestaña Conectar de ese formulario.',
+        colForm: 'Formulario',
+        colEndpoint: 'Endpoint',
+        colEvents: 'Eventos',
+        colStatus: 'Estado',
+        colHealth: 'Entrega',
+        on: 'Activo',
+        off: 'Inactivo',
+        eventsBoth: 'Parciales y completas',
+        eventsPartial: 'Respuestas parciales',
+        eventsComplete: 'Respuestas completas',
+        signed: 'Firmado con un secreto',
+        edit: 'Editar',
+        // Sin concordancia de número a propósito: `t()` no pluraliza, y "1
+        // fallidas" es peor que una frase que sirve para cualquier cifra.
+        failedCount: '{n} sin entregar',
+        lastFailure: 'Último fallo: {date}',
+        failuresScopeNote:
+          'Los fallos se cuentan por formulario, así que un formulario con dos webhooks muestra el mismo número en ambos.',
+        emptyTitle: 'Aún no hay webhooks',
+        emptyBody:
+          'Abre la pestaña Conectar de cualquier formulario y añade una URL de webhook para enviar cada respuesta a tu propio endpoint.',
+        emptyCta: 'Ir a formularios',
+        loadError: 'No se pudieron cargar tus webhooks.',
+      },
     },
     publish: {
       publish: 'Publicar',

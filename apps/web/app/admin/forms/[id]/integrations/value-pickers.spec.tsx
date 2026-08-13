@@ -72,6 +72,7 @@ function markup(over: Over = {}): string {
         scoreProperty: '',
         dateProperty: '',
         note: true,
+        formActivity: false,
         valueMaps: over.valueMaps ?? [],
         outcomeProperty: '',
         staticProperties: over.staticProperties ?? [],
@@ -95,6 +96,7 @@ function markup(over: Over = {}): string {
         { key: 'email', type: 'email', label: 'Email' },
         { key: 'role', type: 'dropdown', label: 'Your role' },
       ]}
+      formId="form-1"
       m={m}
     />,
   );

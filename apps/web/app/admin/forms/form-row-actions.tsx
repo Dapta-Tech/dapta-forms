@@ -5,6 +5,7 @@ import { getMessages } from '@quill/shared';
 import { duplicateFormAction, deleteFormAction } from '@/app/admin/actions';
 import { clientLocale } from '@/lib/client-locale';
 import { useConfirmDialog } from '@/components/ui/confirm-dialog';
+import { callAction } from '@/lib/call-action';
 
 /**
  * Overflow menu for a form row (WAI-ARIA menu-button). The cross-links
@@ -81,7 +82,7 @@ export function FormRowActions({
             disabled={pending}
             onClick={() => {
               setOpen(false);
-              start(() => void duplicateFormAction(id));
+              start(() => void callAction(() => duplicateFormAction(id)));
             }}
             className={`${itemClass} disabled:opacity-50`}
           >
@@ -101,7 +102,7 @@ export function FormRowActions({
                 confirmLabel: labels.delete,
                 destructive: true,
               }).then((ok) => {
-                if (ok) start(() => void deleteFormAction(id));
+                if (ok) start(() => void callAction(() => deleteFormAction(id)));
               });
             }}
             className="flex w-full items-center gap-2.5 rounded-sm px-2 py-2 text-left text-sm text-destructive transition-colors hover:bg-destructive/10 focus-visible:bg-destructive/10 focus-visible:outline-none disabled:opacity-50"

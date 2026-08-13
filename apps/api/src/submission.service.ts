@@ -126,7 +126,16 @@ export class SubmissionService {
       partial: input.partial,
     });
 
-    if (!input.partial) {
+    // A transport retry whose first attempt actually landed re-runs this whole
+    // method (`callActionWithRetry` cannot abort an in-flight request, so a
+    // slow-but-successful complete IS retried). The submission row dedupes
+    // itself; its effects do not — without this gate the owner and respondent
+    // each get a second email, and a drained CRM delivery duplicates (the
+    // HubSpot mirror activity has no idempotency key). The first landing
+    // already owes every effect, so a re-landed complete enqueues nothing.
+    const reCompleted = !input.partial && row.wasCompletedBefore;
+
+    if (!input.partial && !reCompleted) {
       const respondentEmail = pickEmail(input.data);
       // form.id lets the effect apply any per-form template override
       // (precedence form → account → stock, resolved inside the effect).
@@ -162,7 +171,11 @@ export class SubmissionService {
     // internally guarded so it cannot throw) — the actual delivery happens later
     // in the worker, so the submission is never blocked or failed by a slow/failing
     // destination. Enqueued for BOTH phases; adapters decide phase behavior.
-    await this.destinations?.enqueueSubmissionDeliveries({
+    // Skipped on a re-landed complete (same reasoning as the emails above):
+    // enqueue cancels only PENDING rows, so once the worker drained the first
+    // delivery a second enqueue is a duplicate webhook/CRM activity, not a retry.
+    if (!reCompleted)
+      await this.destinations?.enqueueSubmissionDeliveries({
       formId: form.id,
       formName: form.name,
       accountId: form.accountId,

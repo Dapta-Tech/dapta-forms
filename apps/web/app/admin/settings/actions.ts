@@ -1,5 +1,7 @@
 'use server';
 
+import { unstable_rethrow } from 'next/navigation';
+
 import { revalidatePath } from 'next/cache';
 import type { MemberProfile } from '@quill/types';
 import {
@@ -48,6 +50,7 @@ export async function inviteMemberAction(
     revalidatePath('/admin/settings');
     return { ok: true };
   } catch (e) {
+    unstable_rethrow(e);
     if (e instanceof ApiError) {
       if (e.code === 'EMAIL_TAKEN') return { ok: false, code: 'TAKEN' };
       if (e.status === 400) return { ok: false, code: 'INVALID' };
@@ -93,6 +96,7 @@ export async function updateMemberRoleAction(
     revalidatePath('/admin/settings');
     return { ok: true };
   } catch (e) {
+    unstable_rethrow(e);
     return manageError(e);
   }
 }
@@ -112,6 +116,7 @@ export async function removeMemberAction(id: string): Promise<ManageMemberState>
     revalidatePath('/admin/settings');
     return { ok: true };
   } catch (e) {
+    unstable_rethrow(e);
     return manageError(e);
   }
 }
@@ -138,6 +143,7 @@ export async function saveNotificationAction(
     revalidatePath('/admin/settings');
     return { ok: true, setting };
   } catch (e) {
+    unstable_rethrow(e);
     if (e instanceof ApiError && (e.status === 403 || e.code === 'FORBIDDEN')) {
       return { ok: false, code: 'FORBIDDEN' };
     }
@@ -156,6 +162,7 @@ export async function resetNotificationAction(
     revalidatePath('/admin/settings');
     return { ok: true, setting };
   } catch (e) {
+    unstable_rethrow(e);
     if (e instanceof ApiError && (e.status === 403 || e.code === 'FORBIDDEN')) {
       return { ok: false, code: 'FORBIDDEN' };
     }
@@ -175,6 +182,10 @@ export async function saveMyProfileAction(
     revalidatePath('/admin/settings');
     return { ok: true };
   } catch (e) {
-    return { ok: false, message: e instanceof Error ? e.message : 'Could not save.' };
+    unstable_rethrow(e);
+    return {
+      ok: false,
+      message: e instanceof Error ? e.message : 'Could not save.',
+    };
   }
 }

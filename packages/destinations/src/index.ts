@@ -31,3 +31,18 @@ export {
   toHubSpotDateMs,
   HUBSPOT_API_BASE,
 } from './adapters/hubspot';
+// The mirror form: what turns a submission into a "Form submission" activity on
+// the contact rather than a Note. The API creates the form (it owns the database
+// the guid is recorded in); the adapter only posts to it.
+export {
+  HUBSPOT_FORMS_SUBMIT_BASE,
+  MIRROR_FORM_SUFFIX,
+  type HubSpotFormField,
+  type HubSpotFormPayload,
+  buildMirrorFormPayload,
+  buildMirrorSubmission,
+  labelForProperty,
+  mirrorFormName,
+  mirrorFormProperties,
+  mirrorSubmitUrl,
+} from './adapters/hubspot-form';

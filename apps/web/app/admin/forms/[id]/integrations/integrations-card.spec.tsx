@@ -102,6 +102,7 @@ describe('HubspotCard — where the extra-destination notice goes', () => {
           scoreProperty: '',
           dateProperty: '',
           note: true,
+          formActivity: false,
           valueMaps: [],
           outcomeProperty: '',
           staticProperties: [],
@@ -122,6 +123,7 @@ describe('HubspotCard — where the extra-destination notice goes', () => {
         extraHubspotStored={over.extraHubspotStored}
         readiness={ready}
         questions={[{ key: 'email', type: 'email', label: 'Email' }]}
+        formId="form-1"
         m={im}
       />,
     );

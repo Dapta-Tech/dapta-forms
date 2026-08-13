@@ -32,6 +32,13 @@ export interface SubmissionNotification {
   accountId: string;
   /** The submission id (used as the idempotency anchor). */
   submissionId: string;
+  /**
+   * Which form this is about. The notifier itself never reads it — it is here so
+   * the enqueued payload NAMES the form, which is the only way an admin reading
+   * the outbox can attribute a send to one. Optional because rows enqueued
+   * before this existed carry no form and cannot be given one retroactively.
+   */
+  formId?: string | null;
   formName: string;
   /** Where to send it — the account/team inbox and/or the respondent. */
   to: string[];

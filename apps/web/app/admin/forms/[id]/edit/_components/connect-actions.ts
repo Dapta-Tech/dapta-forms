@@ -1,6 +1,7 @@
 'use server';
 
-import { adminApi, ApiError, type FailedDelivery, type HubSpotPropertiesResponse } from '@/lib/admin-api';
+import { unstable_rethrow } from 'next/navigation';
+import { adminApi, ApiError, type HubSpotPropertiesResponse } from '@/lib/admin-api';
 import { getMessages } from '@quill/shared';
 import type { FormDestination } from '@quill/types';
 
@@ -37,6 +38,7 @@ export async function loadConnectIntegrationsAction(
   try {
     form = await adminApi.getForm(id);
   } catch (e) {
+    unstable_rethrow(e);
     if (e instanceof ApiError) return { ok: false, message: e.message };
     throw e;
   }
@@ -46,7 +48,8 @@ export async function loadConnectIntegrationsAction(
   let hubspot: HubSpotPropertiesResponse;
   try {
     hubspot = await adminApi.hubspotProperties();
-  } catch {
+  } catch (e) {
+    unstable_rethrow(e); // a 401 must bounce to /login, not fake "disabled"
     hubspot = { enabled: false, reason: m.loadError };
   }
 
@@ -61,7 +64,8 @@ export async function loadConnectIntegrationsAction(
     calendlyConnected = integrations.providers.some(
       (p) => p.provider === 'calendly' && p.connected,
     );
-  } catch {
+  } catch (e) {
+    unstable_rethrow(e);
     hubspotConnected = false;
     calendlyConnected = false;
   }
@@ -77,17 +81,7 @@ export async function loadConnectIntegrationsAction(
   };
 }
 
-/**
- * Deliveries for this form that ended without landing.
- *
- * Degrades to an empty list rather than surfacing an error: this is a diagnostic
- * panel, and a lookup failure must never make the Connect tab look broken.
- */
-export async function loadFailedDeliveriesAction(id: string): Promise<FailedDelivery[]> {
-  try {
-    const res = await adminApi.formDeliveries(id);
-    return res.items;
-  } catch {
-    return [];
-  }
-}
+// `loadFailedDeliveriesAction` lived here and fed the flat failure block this
+// branch removed from the Connect tab. Its replacement is
+// `loadDeliveryHistoryAction` in ../../integrations/actions.ts, next to the
+// panel that reads it.

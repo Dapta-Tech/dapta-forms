@@ -11,6 +11,7 @@ import {
 } from '@/components/notification-email-fields';
 import type { NotificationSettingView } from '@/lib/admin-api';
 import { saveNotificationAction, resetNotificationAction } from './actions';
+import { callAction } from '@/lib/call-action';
 
 export interface NotificationLabels {
   heading: string;
@@ -138,11 +139,13 @@ function NotificationEmailCard({
     startTransition(async () => {
       // Fields equal to the shipped default persist as `null` (stay on default),
       // so editing back to the default cleanly reverts "Customized".
-      const res = await saveNotificationAction(setting.emailKey, {
-        enabled: value.enabled,
-        subject: value.subject === def.subject ? null : value.subject,
-        body: value.body === def.body ? null : value.body,
-      });
+      const res = await callAction(() =>
+        saveNotificationAction(setting.emailKey, {
+          enabled: value.enabled,
+          subject: value.subject === def.subject ? null : value.subject,
+          body: value.body === def.body ? null : value.body,
+        }),
+      );
       if (res.ok) {
         applyPersisted(res.setting);
         toast.success(labels.saveSuccess);
@@ -161,7 +164,7 @@ function NotificationEmailCard({
     });
     if (!ok) return;
     startTransition(async () => {
-      const res = await resetNotificationAction(setting.emailKey);
+      const res = await callAction(() => resetNotificationAction(setting.emailKey));
       if (res.ok) {
         applyPersisted(res.setting);
         toast.success(labels.resetSuccess);

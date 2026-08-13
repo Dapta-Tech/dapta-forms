@@ -55,7 +55,45 @@ export interface DestinationContext {
   utm: Record<string, string>;
 }
 
-export interface DestinationResult {
+/**
+ * What actually crossed the wire, for the admin's delivery history.
+ *
+ * Deliberately separate from the outbox `payload` (the enqueued snapshot): only
+ * this answers "what did my endpoint receive, and what did it say back", which
+ * is where every webhook debugging session starts. An adapter that cannot report
+ * a single request — HubSpot is a sequence of API calls — simply omits it, and
+ * the absence is rendered as "not recorded", never as an empty body.
+ *
+ * Never carries a credential: the signing secret lives in a header, not the
+ * body, and headers are not recorded.
+ */
+export interface DeliveryTranscript {
+  /** The exact request body sent, verbatim. */
+  requestBody?: string;
+  responseStatus?: number;
+  /** The receiver's own body, trimmed and truncated by the adapter. */
+  responseBody?: string | null;
+}
+
+/**
+ * The transcript a FAILED delivery left on its error.
+ *
+ * A failure is the only delivery anyone ever needs to read back, and it arrives
+ * as a thrown error rather than a returned result. Adapters attach what they
+ * have — the webhook one carries the request body even when nothing answered —
+ * and this reads it without the caller having to know any adapter's error class.
+ */
+export function transcriptOfError(err: unknown): DeliveryTranscript {
+  if (typeof err !== 'object' || err === null) return {};
+  const e = err as { requestBody?: unknown; status?: unknown; detail?: unknown };
+  return {
+    requestBody: typeof e.requestBody === 'string' ? e.requestBody : undefined,
+    responseStatus: typeof e.status === 'number' ? e.status : undefined,
+    responseBody: typeof e.detail === 'string' ? e.detail : undefined,
+  };
+}
+
+export interface DestinationResult extends DeliveryTranscript {
   /** True when actually dispatched; false for log-only / a permanent no-op. */
   delivered: boolean;
   driver: DestinationDriver;

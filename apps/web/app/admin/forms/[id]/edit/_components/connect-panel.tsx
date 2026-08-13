@@ -7,12 +7,7 @@ import { getMessages, type Locale } from '@quill/shared';
 import { Button } from '@/components/ui/button';
 import { awaitPendingDestinationWrite } from '@/lib/connect-sync';
 import { IntegrationsEditor, type QuestionMeta } from '../../integrations/integrations-editor';
-import {
-  loadConnectIntegrationsAction,
-  loadFailedDeliveriesAction,
-  type ConnectIntegrationsData,
-} from './connect-actions';
-import type { FailedDelivery } from '@/lib/admin-api';
+import { loadConnectIntegrationsAction, type ConnectIntegrationsData } from './connect-actions';
 import { ConnectEmailsSection } from './connect-emails-section';
 import { Field, PanelSection, TextField } from './fields';
 import type { EditorMessages } from './messages';
@@ -79,82 +74,18 @@ export function ConnectPanel({
         im={im}
         locale={loc}
       />
-      <FailedDeliveriesSection formId={formId} mc={mc} />
       <TrackingSection config={config} onTrackingChange={onTrackingChange} mc={mc} />
       <ConnectEmailsSection formId={formId} m={mc} locale={locale} />
     </div>
   );
 }
 
-// --- Failed deliveries -------------------------------------------------------
-
-/**
- * Deliveries for this form that ended without landing.
- *
- * Nothing in the admin ever surfaced the outbox, so a delivery that died — an
- * expired CRM token, a disconnected scheduling provider, a form with no
- * resolvable respondent email — existed only in server logs. From the outside
- * everything looked fine: the respondent submitted, the booking succeeded, the
- * confirmation arrived. The lead simply never reached the CRM.
- *
- * Renders nothing when there is nothing wrong: an empty panel here would be
- * noise on the overwhelming majority of forms.
- */
-function FailedDeliveriesSection({
-  formId,
-  mc,
-}: {
-  formId: string;
-  mc: EditorMessages['connect'];
-}) {
-  const [items, setItems] = useState<FailedDelivery[]>([]);
-
-  useEffect(() => {
-    let cancelled = false;
-    loadFailedDeliveriesAction(formId)
-      .then((rows) => {
-        if (!cancelled) setItems(rows);
-      })
-      .catch(() => {
-        // Diagnostics must never break the tab they diagnose.
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [formId]);
-
-  if (items.length === 0) return null;
-
-  return (
-    <section data-testid="connect-failed-deliveries" className="flex flex-col gap-2">
-      <div className="min-w-0">
-        <h3 className="text-sm font-semibold text-foreground">{mc.deliveriesTitle}</h3>
-        <p className="mt-0.5 text-xs text-muted-foreground">{mc.deliveriesSubtitle}</p>
-      </div>
-      <ul className="flex flex-col gap-1.5">
-        {items.map((d) => (
-          <li
-            key={d.id}
-            data-testid="failed-delivery"
-            className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2"
-          >
-            <div className="flex items-center justify-between gap-3">
-              <span className="text-xs font-medium text-foreground">{d.kind}</span>
-              <span className="text-xs text-muted-foreground">
-                {new Date(d.updatedAt).toLocaleString()}
-              </span>
-            </div>
-            {/* The worker's own reason, verbatim. Paraphrasing it here would
-                lose the one detail that says what to fix. */}
-            <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-              {d.lastError ?? mc.deliveriesNoReason}
-            </p>
-          </li>
-        ))}
-      </ul>
-    </section>
-  );
-}
+// A flat "Deliveries that did not land" list used to sit here, between the
+// integrations and Tracking. It mixed every outbox kind and, on a form with a
+// broken endpoint, its retries pushed the rest of the tab off the screen — the
+// diagnosis was louder than everything it was diagnosing. Each integration card
+// now carries its own collapsible history instead (`DeliveryHistory`), so a
+// webhook's failures are read next to the URL that produced them.
 
 // --- Integrations (embeds the existing IntegrationsEditor) -------------------
 

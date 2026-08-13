@@ -289,17 +289,37 @@ export interface HubSpotProperty {
 }
 
 /** The property-picker response: disabled (no server token) or the property list. */
-/** One side-effect that never landed, as the admin surfaces it. */
-export interface FailedDelivery {
+/** What was being delivered. Mirrors `OutboxKind` in @quill/db. */
+export type DeliveryKind = 'webhook' | 'email' | 'hubspot' | 'booking_sync' | 'analytics' | 'dapta_sync';
+
+/**
+ * How a delivery ended. `pending` covers both "not attempted yet" and "waiting
+ * out a backoff between retries" — the queue does not distinguish them, and the
+ * UI should not pretend it does.
+ */
+export type DeliveryStatus = 'pending' | 'done' | 'failed' | 'skipped';
+
+/** One side-effect this form enqueued, as the admin surfaces it. */
+export interface FormDelivery {
   id: string;
-  kind: string;
-  /** `failed` = retries exhausted; `skipped` = a permanent gap, never retried. */
-  status: 'failed' | 'skipped';
+  kind: DeliveryKind;
+  status: DeliveryStatus;
+  /** The lifecycle moment that enqueued it (`complete`, `crm_update`, `ping`…). */
+  action: string;
   lastError: string | null;
   attempts: number;
   createdAt: number;
   updatedAt: number;
+  /**
+   * What actually crossed the wire. `null` = NOT RECORDED — a delivery from
+   * before this was captured, or a kind whose adapter has no single request to
+   * report. Never "an empty body was sent", and the UI must not imply otherwise.
+   */
+  requestBody: string | null;
+  responseStatus: number | null;
+  responseBody: string | null;
 }
+
 
 export type HubSpotPropertiesResponse =
   | { enabled: false; reason: string }
@@ -331,6 +351,42 @@ export interface IntegrationsResponse {
    * integration that is actively syncing.
    */
   serverProvided?: IntegrationProvider[];
+}
+
+/**
+ * One webhook in the account's inventory (GET /v1/integrations/webhooks).
+ *
+ * Webhooks are the destination that is configured per FORM rather than connected
+ * once per account, so this list is read-only: it says which form owns each one
+ * and links there to change it.
+ *
+ * The signing secret has no field here because the server never selects it —
+ * `hasSecret` is the whole of what crosses the wire, and the mask sentinel the
+ * form endpoints use on read never appears.
+ */
+export interface AccountWebhook {
+  formId: string;
+  formName: string;
+  /** Null on configs written before destinations carried stable ids. */
+  webhookId: string | null;
+  url: string;
+  enabled: boolean;
+  /** Already resolved server-side: absent triggers mean both phases fire. */
+  firesPartial: boolean;
+  firesComplete: boolean;
+  hasSecret: boolean;
+  /**
+   * Deliveries that ended without landing, rolled up per FORM — the queue records
+   * the form, not the destination, so two webhooks on one form share a figure.
+   * Null when nothing failed; there is deliberately no "healthy" counterpart,
+   * since a queue with no failures cannot be told from one that never ran.
+   */
+  failures: { count: number; lastError: string | null; lastAt: number } | null;
+}
+
+/** GET /v1/integrations/webhooks — one entry per webhook, across every form. */
+export interface AccountWebhooksResponse {
+  items: AccountWebhook[];
 }
 
 /**
@@ -471,9 +527,21 @@ export const adminApi = {
   // Integrations
   hubspotProperties: () =>
     req<HubSpotPropertiesResponse>('GET', '/v1/integrations/hubspot/properties'),
-  /** Deliveries for this form that ended without landing (the failure log). */
-  formDeliveries: (id: string) =>
-    req<{ items: FailedDelivery[] }>('GET', `/v1/forms/${id}/deliveries`),
+  /**
+   * This form's deliveries, newest first. With no options the API answers with
+   * failures across every kind — the same list it has always answered with.
+   */
+  formDeliveries: (
+    id: string,
+    opts: { kinds?: DeliveryKind[]; statuses?: DeliveryStatus[]; limit?: number } = {},
+  ) => {
+    const qs = new URLSearchParams();
+    if (opts.kinds?.length) qs.set('kind', opts.kinds.join(','));
+    if (opts.statuses?.length) qs.set('status', opts.statuses.join(','));
+    if (opts.limit !== undefined) qs.set('limit', String(opts.limit));
+    const q = qs.toString();
+    return req<{ items: FormDelivery[] }>('GET', `/v1/forms/${id}/deliveries${q ? `?${q}` : ''}`);
+  },
   /** Calendly event types for the scheduler step's picker (per-account token). */
   calendlyEventTypes: () =>
     req<CalendlyEventTypesResponse>('GET', '/v1/integrations/calendly/event-types'),
@@ -484,6 +552,8 @@ export const adminApi = {
   // Account-level integration connections (paste-token model; admin/owner writes)
   /** This account's connections (token-free) + whether server encryption is available. */
   listIntegrations: () => req<IntegrationsResponse>('GET', '/v1/integrations'),
+  /** Every webhook across this account's forms, read-only (secrets never selected). */
+  listAccountWebhooks: () => req<AccountWebhooksResponse>('GET', '/v1/integrations/webhooks'),
   /** The caller's own public page config (raw blob or null). */
   myProfile: () => req<{ handle: string | null; profile: MemberProfile | null }>('GET', '/v1/me/profile'),
   /** Replace the caller's own public page; null removes it. */

@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/components/toast';
 import { saveMyProfileAction } from './actions';
+import { callAction, isTransportError } from '@/lib/call-action';
 
 type Msgs = FormsMessages['admin']['settings'];
 
@@ -49,9 +50,9 @@ export function PublicPageSettings({
         formSlugs: initial?.formSlugs,
         branding: initial?.branding,
       };
-      const res = await saveMyProfileAction(profile);
+      const res = await callAction(() => saveMyProfileAction(profile));
       if (res.ok) success(m.publicPageSaved);
-      else error(res.message ?? m.publicPageError);
+      else error((isTransportError(res) ? null : res.message) ?? m.publicPageError);
     });
   }
 

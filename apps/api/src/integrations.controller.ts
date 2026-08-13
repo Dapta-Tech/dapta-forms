@@ -7,7 +7,9 @@ import {
   HttpCode,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
+  Optional,
   Param,
   Post,
   Put,
@@ -20,20 +22,27 @@ import {
   deleteIntegration,
   hasEncryptionKey,
   integrationProviders,
+  listAccountWebhooks,
   listIntegrationStatuses,
   resolveProviderToken,
   getFormById,
+  recordSettledDelivery,
+  WEBHOOK_PING_ACTION,
+  summarizeFailedDeliveriesByForm,
   updateFormDestinations,
   upsertIntegration,
 } from '@quill/db';
 import {
+  destinationFiresForPhase,
   formDestinationSchema,
   hasExtraHubspotDestination,
   maskConfigSecrets,
   ONE_HUBSPOT_DESTINATION_MESSAGE,
+  type DestinationEvent,
   type FormDestination,
 } from '@quill/types';
-import { WebhookDestination, WebhookHttpError } from '@quill/destinations';
+import { transcriptOfError, WebhookDestination, WebhookHttpError } from '@quill/destinations';
+import { syncMirrorForm, type MirrorSyncResult } from './hubspot-mirror';
 import type { ServerEnv } from '@quill/config/env';
 import { AuthService, type ReqLike } from './auth.service';
 import { assertAdmin } from './permissions';
@@ -355,6 +364,34 @@ function parseProvider(raw: string): IntegrationProvider {
  * and is NEVER echoed back — the status view is token-free (last4 + label only),
  * and a provider error body is never surfaced.
  */
+/**
+ * One row of the account's webhook inventory.
+ *
+ * Built field by field from the repository's projection rather than spread from
+ * a destination object, so there is no field a signing secret could ride in and
+ * no masking pass to forget. `WEBHOOK_SECRET_MASK` never appears here either —
+ * the sentinel is a read artefact of the form endpoints, and surfacing it in a
+ * list would read as a value.
+ */
+export interface AccountWebhookDto {
+  formId: string;
+  formName: string;
+  /** Null on configs written before destinations carried stable ids. */
+  webhookId: string | null;
+  url: string;
+  enabled: boolean;
+  /** Resolved, not stored: absent `events` means both phases fire. */
+  firesPartial: boolean;
+  firesComplete: boolean;
+  hasSecret: boolean;
+  /** Null when nothing has failed — never a claim that anything succeeded. */
+  failures: { count: number; lastError: string | null; lastAt: number } | null;
+}
+
+export interface AccountWebhooksResponse {
+  items: AccountWebhookDto[];
+}
+
 @Controller('v1/integrations')
 export class IntegrationsController {
   /** Injectable for tests; defaults to global fetch for provider validation. */
@@ -396,6 +433,64 @@ export class IntegrationsController {
       encryptionAvailable: hasEncryptionKey(this.env.FORMS_ENCRYPTION_KEY),
       providers,
       serverProvided,
+    };
+  }
+
+  /**
+   * Every webhook this account's forms POST to, as an inventory.
+   *
+   * Webhooks are the one destination configured PER FORM rather than connected
+   * once per account, so until now the only way to answer "which of my forms
+   * send data out, and where?" was to open each form's Connect tab in turn. The
+   * account page can now answer it; editing still belongs to the form.
+   *
+   * Declared ahead of `:provider/connect` so a future `@Get(':provider')` cannot
+   * capture `webhooks` as a provider name.
+   *
+   * Not admin-gated, matching the sibling `@Get()`: this is a read, and it
+   * discloses nothing a member cannot reach already — `PUT /forms/:id/destinations`
+   * is itself open to members, so anyone who can open a form's Connect tab can
+   * already see these URLs.
+   *
+   * `events` is resolved here rather than in the client. Absent or empty means
+   * BOTH phases, a back-compat rule whose only home is `destinationFiresForPhase`
+   * — the repository returns what is stored, this returns what it means.
+   */
+  @Get('webhooks')
+  async webhooks(@Req() req: ReqLike): Promise<AccountWebhooksResponse> {
+    const p = await this.auth.resolveHost(req);
+    const [webhooks, failures] = await Promise.all([
+      listAccountWebhooks(this.db, p.accountId),
+      // Only webhook rows: a HubSpot delivery that died belongs to the HubSpot
+      // card, not to a webhook's row.
+      summarizeFailedDeliveriesByForm(this.db, p.accountId, 'webhook'),
+    ]);
+    const byForm = new Map(failures.map((f) => [f.formId, f]));
+
+    return {
+      items: webhooks.map((w) => {
+        const events = w.events as DestinationEvent[] | null;
+        const hit = byForm.get(w.formId);
+        return {
+          formId: w.formId,
+          formName: w.formName,
+          webhookId: w.webhookId,
+          url: w.url,
+          enabled: w.enabled,
+          firesPartial: destinationFiresForPhase(
+            { type: 'webhook', events: events ?? undefined },
+            'partial',
+          ),
+          firesComplete: destinationFiresForPhase(
+            { type: 'webhook', events: events ?? undefined },
+            'complete',
+          ),
+          hasSecret: w.hasSecret,
+          // Per FORM, not per webhook — the queue records `ctx.formId`, never the
+          // destination id, so two webhooks on one form share one figure.
+          failures: hit ? { count: hit.count, lastError: hit.lastError, lastAt: hit.lastAt } : null,
+        };
+      }),
     };
   }
 
@@ -508,6 +603,68 @@ export class IntegrationsController {
 const destinationsBodySchema = z.object({ destinations: z.array(formDestinationSchema) });
 
 /**
+ * The mirror-form bookkeeping the API writes for itself, as opposed to the
+ * settings an author edits. Kept apart because they are sourced from the stored
+ * row on every save and a caller's copy is never trusted — see `syncMirror`.
+ */
+interface OwnedMirrorState {
+  formGuid?: string | null;
+  formSignature?: string;
+}
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+/**
+ * Read the owned mirror state off a form's STORED destinations.
+ *
+ * Deliberately duck-typed rather than parsed: a config that no longer satisfies
+ * `formDestinationSchema` (an older shape, a hand-edited row) must still yield
+ * its guid, because failing to find one is precisely what makes the next save
+ * create a duplicate form in the portal. There is at most one HubSpot
+ * destination per form, so the first match is the answer.
+ */
+function storedMirrorState(stored: unknown): OwnedMirrorState {
+  if (!Array.isArray(stored)) return {};
+  for (const entry of stored) {
+    if (!isRecord(entry) || entry.type !== 'hubspot') continue;
+    const settings = isRecord(entry.settings) ? entry.settings : {};
+    const owned: OwnedMirrorState = {};
+    // `null` is meaningful — `syncMirrorForm` writes it to say "the portal no
+    // longer has this form, make a new one on the next save".
+    if (typeof settings.formGuid === 'string' || settings.formGuid === null) {
+      owned.formGuid = settings.formGuid;
+    }
+    if (typeof settings.formSignature === 'string') owned.formSignature = settings.formSignature;
+    return owned;
+  }
+  return {};
+}
+
+/**
+ * The settings to store: the caller's, with the owned keys stripped and then set
+ * from the sync's result.
+ *
+ * Strip-then-set rather than a spread, so a caller that INVENTS a `formGuid` for
+ * a form that has none cannot have it survive. Pointing one account's form at
+ * another's mirror is the failure worth being explicit about; a stale guid is
+ * merely the common one.
+ */
+function mirrorSettingsFor(
+  raw: unknown,
+  settings: MirrorSyncResult['settings'],
+): Record<string, unknown> {
+  const fromCaller = isRecord(raw) && isRecord(raw.settings) ? raw.settings : {};
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(fromCaller)) {
+    if (key !== 'formGuid' && key !== 'formSignature') out[key] = value;
+  }
+  if (settings.formGuid !== undefined) out.formGuid = settings.formGuid;
+  if (settings.formSignature !== undefined) out.formSignature = settings.formSignature;
+  return out;
+}
+
+/**
  * Auth-gated PARTIAL config write for the integrations screen: replaces ONLY the
  * `destinations` key, merged against the row's fresh config server-side in one
  * request — the web tier no longer reads the whole config and writes it back
@@ -516,12 +673,18 @@ const destinationsBodySchema = z.object({ destinations: z.array(formDestinationS
  */
 @Controller('v1')
 export class FormDestinationsController {
+  private readonly log = new Logger('FormDestinations');
   /** Injectable for tests; defaults to global fetch for the webhook ping. */
   fetchImpl: typeof fetch = fetch;
 
   constructor(
     @Inject(DB) private readonly db: Db,
     @Inject(AuthService) private readonly auth: AuthService,
+    @Optional() @Inject(ENV) private readonly env?: ServerEnv,
+    /** Reused for its per-account cache — the mirror needs the same list. */
+    @Optional()
+    @Inject(HubspotPropertiesService)
+    private readonly hubspotProperties?: HubspotPropertiesService,
   ) {}
 
   @Put('forms/:id/destinations')
@@ -551,10 +714,111 @@ export class FormDestinationsController {
         message: ONE_HUBSPOT_DESTINATION_MESSAGE,
       });
     }
-    const out = await updateFormDestinations(this.db, p.accountId, id, destinations);
+    // Bring the HubSpot mirror form in line BEFORE storing, so the guid it
+    // returns is written in the same request that created it — no window where
+    // a form exists in the portal that nothing points at. A HubSpot failure
+    // never fails the save: an author must be able to edit their mappings while
+    // a portal is unreachable or has not granted the scopes.
+    const mirror = await this.syncMirror(p.accountId, before.name, destinations, stored);
+    const out = await updateFormDestinations(this.db, p.accountId, id, mirror.destinations);
     if (!out.ok) throw new NotFoundException({ error: 'NOT_FOUND', message: 'Not found.' });
     // Never echo the stored webhook secret back to the client (mask on READ).
-    return { ...out.value, config: maskConfigSecrets(out.value.config) };
+    return {
+      ...out.value,
+      config: maskConfigSecrets(out.value.config),
+      ...(mirror.error ? { formActivityError: mirror.error } : {}),
+    };
+  }
+
+  /**
+   * Bring every HubSpot destination's mirror form in line with what this form
+   * writes, returning the destinations to store.
+   *
+   * The array is rewritten rather than patched in place because the mirror's
+   * guid belongs to the destination that owns it, and the caller stores the
+   * whole array in one write. Only the HubSpot entries can change; everything
+   * else passes through by reference.
+   *
+   * `formGuid` and `formSignature` are read from what is STORED and the caller's
+   * values are discarded — they are this method's own bookkeeping, not settings
+   * an author edits. Trusting the request body meant any client that did not
+   * echo them back created a SECOND form in the portal on the very next save:
+   * with no guid there is no form to PATCH and no signature to compare, so every
+   * write POSTed a new one and abandoned the old — which still holds the
+   * activities already attached to real contacts. The Connect tab autosaves per
+   * keystroke and never learns the guid (the save action returns only
+   * `{ok, formActivityError}`), so one editing session with the switch on was
+   * one new form per debounce. Sourcing them here fixes it for every caller at
+   * once, including the ones that have not been written yet.
+   */
+  private async syncMirror(
+    accountId: string,
+    formName: string,
+    destinations: unknown[],
+    stored: unknown,
+  ): Promise<{ destinations: unknown[]; error?: string }> {
+    if (!destinations.some((d) => (d as { type?: string })?.type === 'hubspot')) {
+      return { destinations };
+    }
+    // Resolved once, and only for a form that actually has a HubSpot entry.
+    let token: string | null = null;
+    try {
+      token = await resolveProviderToken(
+        this.db,
+        accountId,
+        'hubspot',
+        this.env?.FORMS_ENCRYPTION_KEY,
+        this.env?.HUBSPOT_PRIVATE_APP_TOKEN,
+      );
+    } catch {
+      token = null;
+    }
+
+    // Which contact properties the portal actually has. A form field naming one
+    // it does not makes the CREATE fail with `400 internal error`, so a single
+    // stale mapping among many would cost the whole activity. Cached per
+    // account by the same service the property picker uses, so this is normally
+    // free. A failure here leaves it unknown and nothing is filtered.
+    let knownProperties: Set<string> | null = null;
+    try {
+      const listed = await this.hubspotProperties?.listProperties(accountId);
+      if (listed?.enabled) knownProperties = new Set(listed.properties.map((p) => p.name));
+    } catch {
+      knownProperties = null;
+    }
+
+    // At most one HubSpot destination per form (`hasExtraHubspotDestination`,
+    // enforced by the caller), so the stored mirror state is a single value
+    // rather than something to match up entry by entry.
+    const owned = storedMirrorState(stored);
+
+    let error: string | undefined;
+    const out = await Promise.all(
+      destinations.map(async (raw) => {
+        const parsed = formDestinationSchema.safeParse(raw);
+        if (!parsed.success || parsed.data.type !== 'hubspot') return raw;
+        // Discarded before the sync ever sees them: a spread would let an
+        // INVENTED guid through whenever nothing is stored, and the sync would
+        // dutifully PATCH whatever form it named.
+        const settings = { ...parsed.data.settings };
+        delete settings.formGuid;
+        delete settings.formSignature;
+        const result = await syncMirrorForm(
+          { ...parsed.data, settings: { ...settings, ...owned } },
+          formName,
+          { fetchImpl: this.fetchImpl, token, knownProperties },
+        );
+        if (result.error && !error) error = result.error;
+        // Merge onto the RAW entry, not the parsed one: parsing applies schema
+        // defaults, and writing those back would rewrite fields this request
+        // never touched. The two owned keys are set from the RESULT on every
+        // path — including `noop` and `unchanged`, where returning the caller's
+        // entry unchanged used to drop a stored guid on the floor, so switching
+        // the activity off orphaned the form it was meant to keep.
+        return { ...(raw as object), settings: mirrorSettingsFor(raw, result.settings) };
+      }),
+    );
+    return { destinations: out, error };
   }
 
   /**
@@ -616,23 +880,71 @@ export class FormDestinationsController {
     );
 
     const now = Date.now();
+    const ctx = {
+      idempotencyKey: `ping:${id}:${now}`,
+      submissionId: 'test-submission',
+      formId: form.id,
+      formName: form.name,
+      accountId: p.accountId,
+      sessionId: 'test-session',
+      score: 0,
+      outcomeLabel: null,
+      phase: 'partial' as const,
+      submittedAt: now,
+      data: { ...sampleAnswers(config.steps ?? []), test: true },
+      utm: {},
+    };
+
+    /**
+     * Log the test delivery beside the real ones.
+     *
+     * A ping is synchronous — the author clicks and waits for the verdict — so
+     * it never passes through the outbox. That is a fact about HOW it is
+     * dispatched, and it was letting the delivery history stay empty during
+     * exactly the session it exists to help: wiring up an endpoint, when the
+     * test delivery is often the only one that has ever run. It IS a real signed
+     * POST to the real URL, so it belongs in the log, labelled by its `ping`
+     * action. Recorded terminal so the worker can never pick it up and send it a
+     * second time.
+     *
+     * Best-effort throughout: the author's answer is the ping result, and
+     * failing to write the log entry must not turn a successful test delivery
+     * into an error on screen.
+     */
+    const record = async (status: 'done' | 'failed', error: string | null, transcript: object) => {
+      try {
+        await recordSettledDelivery(this.db, {
+          kind: 'webhook',
+          action: WEBHOOK_PING_ACTION,
+          accountId: p.accountId,
+          subjectUid: ctx.submissionId,
+          // Same shape every destination row carries, so the per-form read finds
+          // it by `ctx.formId` like any other.
+          payload: JSON.stringify({ destination: { type: 'webhook' }, ctx }),
+          status,
+          error,
+          transcript,
+          now,
+        });
+      } catch (e) {
+        this.log.warn(`could not record the webhook test delivery: ${String(e)}`);
+      }
+    };
+
     try {
-      await dest.deliver({
-        idempotencyKey: `ping:${id}:${now}`,
-        submissionId: 'test-submission',
-        formId: form.id,
-        formName: form.name,
-        accountId: p.accountId,
-        sessionId: 'test-session',
-        score: 0,
-        outcomeLabel: null,
-        phase: 'partial',
-        submittedAt: now,
-        data: { ...sampleAnswers(config.steps ?? []), test: true },
-        utm: {},
+      const result = await dest.deliver(ctx);
+      await record('done', null, {
+        requestBody: result.requestBody,
+        responseStatus: result.responseStatus,
+        responseBody: result.responseBody,
       });
       return { ok: true };
     } catch (err) {
+      await record(
+        'failed',
+        err instanceof Error ? err.message : String(err),
+        transcriptOfError(err),
+      );
       // "HTTP 400" alone sends the author looking in the wrong place. Classify
       // it into something the UI can explain, and pass along the endpoint's own
       // response — which names the real reason far more often than the status

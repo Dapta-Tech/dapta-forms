@@ -1,5 +1,5 @@
-import type { FormConfig, FormOutcome, FormStep } from '@quill/engine';
-import { isScoreCondition } from '@quill/engine';
+import type { FormConfig, FormOutcome, FormStep, OutcomeRange } from '@quill/engine';
+import { isScoreCondition, outcomeRanges } from '@quill/engine';
 import { liveGotoRules } from './logic-util';
 
 /**
@@ -44,6 +44,14 @@ export interface LayoutNode {
   stepIndex?: number;
   step?: FormStep;
   outcome?: FormOutcome;
+  /**
+   * The span that outcome covers. Resolved here because it is a property of the
+   * outcome LIST, not of one outcome: a range with no `maxScore` ends wherever
+   * the next one starts. The node carries it so the chip on the canvas cannot
+   * re-derive it and disagree with the dialog — which is what it did while it
+   * printed every range as `{minScore}+`, including the ones with a ceiling.
+   */
+  outcomeSpan?: OutcomeRange;
   /** True when the node sits in a parallel branch row rather than the spine. */
   branch: boolean;
   /** True when the author pinned it by dragging (a `logicLayout` override). */
@@ -231,6 +239,7 @@ export function computeLayout(config: FormConfig): Layout {
   const outcomes = config.outcomes ?? [];
   if (outcomes.length) {
     const offsets = rowOffsets(outcomes.length);
+    const spans = outcomeRanges(outcomes);
     outcomes.forEach((outcome, row) => {
       const id = `outcome:${outcome.id}`;
       const pin = overrides[id];
@@ -242,6 +251,7 @@ export function computeLayout(config: FormConfig): Layout {
         w: NODE_W,
         h: NODE_H,
         outcome,
+        outcomeSpan: spans[row],
         branch: outcomes.length > 1,
         pinned: pin != null,
       });

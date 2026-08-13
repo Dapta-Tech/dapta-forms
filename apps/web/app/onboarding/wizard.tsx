@@ -39,6 +39,7 @@ import type { FormsMessages, Locale } from '@quill/shared';
 import { StepInput } from '@/components/public/step-input';
 import { FormsLockup, FormsMark } from '@/components/brand/forms-logo';
 import { captureEvent } from '@/lib/product-analytics';
+import { callAction } from '@/lib/call-action';
 import {
   fill,
   leadVolumeBucket,
@@ -315,21 +316,28 @@ export function OnboardingWizard({
         // The answers travel WITH the completion, so the claim writes them in
         // its own single statement and cannot lose the last one to a PATCH still
         // in flight. `locale` so the created form is named like the card.
-        const result = await completeOnboardingAction({
-          template: id,
-          role: answers.role ?? null,
-          industry: answers.industry ?? null,
-          useCase: answers.useCase ?? null,
-          crm: answers.crm ?? null,
-          leadVolume: answers.leadVolume ?? null,
-          leadSource: answers.leadSource ?? null,
-          phone: answers.phone ?? null,
-          // The cohort travels too, so the server can record WHY the questions
-          // this person never saw are empty. Without it a Dapta account's null
-          // industry is indistinguishable from a gap in our own data.
-          cohort,
-          locale,
-        });
+        // Transport-safe (30s: this one call creates the account's first form):
+        // a rejected invocation lands on the Failed screen with a retry, not on
+        // an unhandled rejection that silently drops them back into the wizard.
+        const result = await callAction(
+          () =>
+            completeOnboardingAction({
+              template: id,
+              role: answers.role ?? null,
+              industry: answers.industry ?? null,
+              useCase: answers.useCase ?? null,
+              crm: answers.crm ?? null,
+              leadVolume: answers.leadVolume ?? null,
+              leadSource: answers.leadSource ?? null,
+              phone: answers.phone ?? null,
+              // The cohort travels too, so the server can record WHY the questions
+              // this person never saw are empty. Without it a Dapta account's null
+              // industry is indistinguishable from a gap in our own data.
+              cohort,
+              locale,
+            }),
+          { timeoutMs: 30_000 },
+        );
         // Only a FAILURE returns: every path where the API answered ends in a
         // redirect, which throws. `/admin` is not a fallback while the claim is
         // unwritten — the first-run gate reads the same column this request

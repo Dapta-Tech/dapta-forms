@@ -9,14 +9,19 @@ import {
   NotificationEmailFields,
   type NotificationEmailValue,
 } from '@/components/notification-email-fields';
-import type { FormNotificationView, NotificationEmailKey } from '@/lib/admin-api';
+import type { DeliveryKind, FormNotificationView, NotificationEmailKey } from '@/lib/admin-api';
 import { interpolate, NOTIFICATION_SAMPLE as SAMPLE } from '@/lib/notification-preview';
+import { DeliveryHistory } from '../../integrations/delivery-history';
 import {
   loadFormNotificationsAction,
   resetFormNotificationAction,
   saveFormNotificationAction,
 } from './connect-emails-actions';
 import type { EditorMessages } from './messages';
+import { callAction } from '@/lib/call-action';
+
+/** Stable identity so the history's fetch effect does not re-fire each render. */
+const EMAIL_HISTORY_KINDS: DeliveryKind[] = ['email'];
 
 /**
  * Emails on the Connect tab — PER-FORM template overrides (Typeform's per-form
@@ -47,6 +52,9 @@ export function ConnectEmailsSection({
   // The shared catalog is a plain typed object (same pattern as ConnectPanel's
   // integrations subtree) — safe to resolve in the browser.
   const nm = useMemo(() => getMessages(loc).admin.notifications, [loc]);
+  // The delivery-history copy lives with the integrations it was written for;
+  // this section reuses the same panel and therefore the same strings.
+  const im = useMemo(() => getMessages(loc).admin.integrations, [loc]);
 
   type LoadState =
     | { status: 'loading' }
@@ -103,6 +111,19 @@ export function ConnectEmailsSection({
           <FormEmailCard key={s.emailKey} formId={formId} setting={s} locale={loc} mc={m} nm={nm} />
         ))
       )}
+
+      {/* Only rows enqueued since this section shipped can be attributed to a
+          form — the email payload did not carry `formId` before. Older sends are
+          not missing, they are unattributable, and the panel cannot tell the
+          difference, so it says nothing about them. */}
+      <DeliveryHistory
+        formId={formId}
+        kinds={EMAIL_HISTORY_KINDS}
+        title={im.historyEmailTitle}
+        locale={loc}
+        m={im}
+        testId="email-history"
+      />
 
       <p className="text-xs text-muted-foreground">
         <i aria-hidden className="pi pi-info-circle" style={{ fontSize: 11 }} /> {m.emailsGlobalNote}
@@ -181,11 +202,13 @@ function FormEmailCard({
       // The override PINS this form's copy verbatim (subject/body/enabled) —
       // unlike the account editor there is no "equals default → null" collapse:
       // customizing means "keep this exact copy even if the account changes".
-      const res = await saveFormNotificationAction(formId, key, {
-        enabled: value.enabled,
-        subject: value.subject,
-        body: value.body,
-      });
+      const res = await callAction(() =>
+        saveFormNotificationAction(formId, key, {
+          enabled: value.enabled,
+          subject: value.subject,
+          body: value.body,
+        }),
+      );
       if (res.ok) {
         setOverride(res.setting.override);
         toast.success(nm.saveSuccess);
@@ -209,7 +232,7 @@ function FormEmailCard({
     });
     if (!ok) return;
     startTransition(async () => {
-      const res = await resetFormNotificationAction(formId, key);
+      const res = await callAction(() => resetFormNotificationAction(formId, key));
       if (res.ok) {
         setOverride(null);
         setEditing(false);

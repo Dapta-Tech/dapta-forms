@@ -1,14 +1,20 @@
 /**
- * Unit tests for the ported outcome table. These pin the BEHAVIOURS the Results
- * tab's version encoded as bug fixes — the unreachable range, the integer
- * `minScore` clamp, and the inert-not-hidden treatment — plus the testids the
- * `v4-save` / `v4-reveal` Playwright specs drive.
+ * Unit tests for the outcome table. These pin the BEHAVIOURS it encodes as bug
+ * fixes — the refused overlap, the announced gap, the integer bound clamp, and
+ * the inert-not-hidden treatment — plus the testids the `v4-save` / `v4-reveal`
+ * Playwright specs drive.
+ *
+ * The two bounds live in `RangeBounds`, a child that holds a typing draft in
+ * state and so cannot be invoked from here — same as `RedirectField`. What CAN
+ * be reached is its `onCommit` prop, which is the whole veto: it either writes
+ * and returns null, or refuses and returns the reason. That is the contract
+ * tested below; Playwright drives the inputs themselves.
  */
 import { describe, expect, it, vi } from 'vitest';
 import { isValidElement, type ReactElement, type ReactNode } from 'react';
 import type { FormConfig, FormOutcome, FormStep } from '@quill/engine';
 import { getMessages } from '@quill/shared';
-import { OutcomesDialog } from './outcomes-dialog';
+import { OutcomesDialog, ScoreBar, firstClash, spanText, toStoredInt } from './outcomes-dialog';
 import { getBuilderMessages } from './builder-messages';
 
 type AnyProps = Record<string, unknown> & { children?: ReactNode };
@@ -63,46 +69,157 @@ function render(over: { config: FormConfig; onOutcomesChange?: (n: FormOutcome[]
   );
 }
 
-describe('OutcomesDialog — ranges', () => {
-  it('sorts by threshold and prints an open-ended top range', () => {
-    const els = render({ config: cfg([outcome('hot', 10), outcome('cold', 0)]) });
-    const rows = allByTestId(els, 'outcome-row');
-    expect(rows).toHaveLength(2);
-    // Chip text lives on the span immediately inside each row.
-    const chips = rows.map((r) => collect((r.props as AnyProps).children).find((el) => el.type === 'span'));
-    expect((chips[0]!.props as AnyProps).children).toBe('0–9');
-    expect((chips[1]!.props as AnyProps).children).toBe('10+');
+/** The `RangeBounds` elements, in row order — the bounds live inside them. */
+function bounds(els: ReactElement[]): AnyProps[] {
+  return els.filter((el) => 'openEnded' in (el.props as object)).map((el) => el.props as AnyProps);
+}
+/** Commit a bound on row `index` the way the field does, and report the refusal. */
+function commit(els: ReactElement[], index: number, patch: Partial<FormOutcome>): string | null {
+  const onCommit = bounds(els)[index]!.onCommit as (p: Partial<FormOutcome>) => string | null;
+  return onCommit(patch);
+}
+
+describe('spanText / firstClash / toStoredInt', () => {
+  it('reads a span the way the author typed it, and the open one as open', () => {
+    expect(spanText({ min: -8, max: -1 })).toBe('-8–-1');
+    expect(spanText({ min: 6, max: null })).toBe('6+');
+    // One score wide reads as that score — "no range covers 2–2" is not English.
+    expect(spanText({ min: 2, max: 2 })).toBe('2');
   });
 
-  it('calls a shadowed range UNREACHABLE instead of drawing an inverted span', () => {
-    // Two ranges claiming the same threshold used to print "0–-1" as if it were
-    // a legitimate bucket.
-    const els = render({ config: cfg([outcome('a', 5), outcome('b', 5)]) });
-    const rows = allByTestId(els, 'outcome-row');
-    expect((rows[0]!.props as AnyProps)['data-unreachable']).toBe(true);
-    const chip = collect((rows[0]!.props as AnyProps).children).find((el) => el.type === 'span')!;
-    expect((chip.props as AnyProps).children).toBe(bm.results.rangeUnreachable);
-    expect((rows[1]!.props as AnyProps)['data-unreachable']).toBeUndefined();
+  it('names the range a span would collide with', () => {
+    const clash = firstClash([outcome('a', 0, { maxScore: 5, label: 'Nurture' }), outcome('b', 4, { maxScore: 9 })], 1);
+    expect(clash).toEqual({ label: 'Nurture', range: '0–5' });
   });
 
-  it('forces minScore to an integer in bounds — a float or exponent broke the whole form’s autosave', () => {
-    const onOutcomesChange = vi.fn();
-    const els = render({ config: cfg([outcome('a', 0)]), onOutcomesChange });
-    const onChange = (byTestId(els, 'outcome-minscore')!.props as AnyProps).onChange as (e: {
-      target: { value: string };
-    }) => void;
+  it('falls back to #n so the refusal is still a sentence for an unnamed range', () => {
+    const els = [outcome('a', 0, { maxScore: 5, label: '' }), outcome('b', 4, { maxScore: 9 })];
+    expect(firstClash(els, 1)?.label).toBe('#1');
+  });
 
-    onChange({ target: { value: '7.5' } });
-    expect(onOutcomesChange).toHaveBeenLastCalledWith([expect.objectContaining({ minScore: 7 })]);
-    onChange({ target: { value: '1e35' } });
-    expect(onOutcomesChange).toHaveBeenLastCalledWith([expect.objectContaining({ minScore: 1_000_000 })]);
-    onChange({ target: { value: '' } }); // Number('') is 0, but '-' / 'abc' are NaN
-    expect(onOutcomesChange).toHaveBeenLastCalledWith([expect.objectContaining({ minScore: 0 })]);
-    onChange({ target: { value: '-' } });
-    expect(onOutcomesChange).toHaveBeenLastCalledWith([expect.objectContaining({ minScore: 0 })]);
+  it('finds no clash between ranges that merely touch', () => {
+    expect(firstClash([outcome('a', 0, { maxScore: 5 }), outcome('b', 6, { maxScore: 9 })], 1)).toBeNull();
+  });
+
+  it('forces a bound to an integer in range — a float or exponent broke the whole form’s autosave', () => {
+    expect(toStoredInt('7.5')).toBe(7);
+    expect(toStoredInt('1e35')).toBe(1_000_000);
+    expect(toStoredInt('')).toBe(0); // Number('') is 0, but '-' / 'abc' are NaN
+    expect(toStoredInt('-')).toBe(0);
+    expect(toStoredInt('abc')).toBe(0);
     // A negative threshold is legitimate — negative points exist.
-    onChange({ target: { value: '-3' } });
-    expect(onOutcomesChange).toHaveBeenLastCalledWith([expect.objectContaining({ minScore: -3 })]);
+    expect(toStoredInt('-3')).toBe(-3);
+  });
+});
+
+describe('OutcomesDialog — ranges', () => {
+  it('gives every row two bounds and leaves the top one open', () => {
+    const els = render({ config: cfg([outcome('hot', 10), outcome('cold', 0)]) });
+    expect(allByTestId(els, 'outcome-row')).toHaveLength(2);
+    // Sorted by threshold, so the top range is last — and it is the open one.
+    expect(bounds(els).map((b) => [b.min, b.max, b.openEnded])).toEqual([
+      [0, 9, false],
+      [10, null, true],
+    ]);
+  });
+
+  it('shows the span a legacy config implies, without it having been stored', () => {
+    // Every form saved before `maxScore` existed carries only thresholds. The
+    // author must still see a range, or the field is blank on forms that work.
+    const els = render({ config: cfg([outcome('a', 0), outcome('b', 3), outcome('c', 6)]) });
+    expect(bounds(els).map((b) => [b.min, b.max])).toEqual([
+      [0, 2],
+      [3, 5],
+      [6, null],
+    ]);
+  });
+
+  it('writes a bound that fits', () => {
+    const onOutcomesChange = vi.fn();
+    const els = render({
+      config: cfg([outcome('a', 0, { maxScore: 2 }), outcome('b', 3)]),
+      onOutcomesChange,
+    });
+    expect(commit(els, 0, { maxScore: 1 })).toBeNull();
+    expect(onOutcomesChange).toHaveBeenCalledWith([
+      expect.objectContaining({ id: 'a', maxScore: 1 }),
+      expect.objectContaining({ id: 'b' }),
+    ]);
+  });
+
+  it('REFUSES a bound that would make two ranges claim the same score', () => {
+    const onOutcomesChange = vi.fn();
+    const els = render({
+      config: cfg([outcome('a', 0, { maxScore: 2 }), outcome('b', 3, { label: 'Book a call' })]),
+      onOutcomesChange,
+    });
+    // Stretching the first range to 5 reaches into the second, which starts at 3.
+    // The refusal names the range it would have hit, not the one being edited.
+    const error = commit(els, 0, { maxScore: 5 });
+    expect(error).toContain('Book a call');
+    expect(error).toContain('3+');
+    // The refusal is the whole point: nothing is written, so the field reverts.
+    expect(onOutcomesChange).not.toHaveBeenCalled();
+  });
+
+  it('REFUSES a range that would end below where it starts', () => {
+    const onOutcomesChange = vi.fn();
+    const els = render({ config: cfg([outcome('a', 0, { maxScore: 5 })]), onOutcomesChange });
+    expect(commit(els, 0, { maxScore: -4 })).toBe(bm.results.rangeInverted);
+    expect(onOutcomesChange).not.toHaveBeenCalled();
+  });
+
+  it('accepts a cleared upper bound, handing the range back to the next threshold', () => {
+    const onOutcomesChange = vi.fn();
+    const els = render({
+      config: cfg([outcome('a', 0, { maxScore: 1 }), outcome('b', 3)]),
+      onOutcomesChange,
+    });
+    expect(commit(els, 0, { maxScore: undefined })).toBeNull();
+    expect(onOutcomesChange).toHaveBeenCalledWith([
+      expect.objectContaining({ id: 'a', maxScore: undefined }),
+      expect.objectContaining({ id: 'b' }),
+    ]);
+  });
+
+  it('marks a row whose span already collides, for configs written elsewhere', () => {
+    // The veto only guards this screen. The API can still store an overlap, and
+    // a row that can never win has to say so rather than look ordinary.
+    const els = render({ config: cfg([outcome('a', 0, { maxScore: 9 }), outcome('b', 5, { maxScore: 9 })]) });
+    const rows = allByTestId(els, 'outcome-row');
+    expect((rows[0]!.props as AnyProps)['data-overlap']).toBeUndefined();
+    expect((rows[1]!.props as AnyProps)['data-overlap']).toBe(true);
+  });
+
+  it('says which scores no range covers, and stays quiet when they all do', () => {
+    const withGap = render({ config: cfg([outcome('a', 0, { maxScore: 2 }), outcome('b', 8)]) });
+    const note = byTestId(withGap, 'outcome-gap-note')!;
+    expect(note).toBeDefined();
+    expect(String((note.props as AnyProps).children)).toContain('3–7');
+
+    const tiled = render({ config: cfg([outcome('a', 0, { maxScore: 2 }), outcome('b', 3)]) });
+    expect(byTestId(tiled, 'outcome-gap-note')).toBeUndefined();
+  });
+
+  it('draws the gap on the score bar too, so the picture matches the note', () => {
+    // ScoreBar is a child element of the dialog's tree, so it has to be invoked
+    // on its own to see inside it — it holds no state, which is why it can be.
+    const withGap = collect(ScoreBar({ outcomes: [outcome('a', 0, { maxScore: 2 }), outcome('b', 8)], top: 10 }));
+    expect(allByTestId(withGap, 'outcomes-score-gap')).toHaveLength(1);
+    const tiled = collect(ScoreBar({ outcomes: [outcome('a', 0, { maxScore: 2 }), outcome('b', 3)], top: 10 }));
+    expect(allByTestId(tiled, 'outcomes-score-gap')).toHaveLength(0);
+  });
+
+  it('closes the range below when a new one takes over the open top', () => {
+    const onOutcomesChange = vi.fn();
+    const els = render({ config: cfg([outcome('a', 0, { maxScore: 2 }), outcome('b', 3)]), onOutcomesChange });
+    const add = byTestId(els, 'results-add-range')!;
+    ((add.props as AnyProps).onClick as () => void)();
+    const next = onOutcomesChange.mock.calls[0]![0] as FormOutcome[];
+    // 'b' was open; it now ends where the new range begins, so the two do not
+    // overlap the instant the row appears.
+    expect(next[1]).toEqual(expect.objectContaining({ id: 'b', maxScore: 3 }));
+    expect(next[2]!.minScore).toBe(4);
   });
 
   it('removes a range through the same single callback', () => {
@@ -148,18 +265,28 @@ describe('OutcomesDialog — the fields the Playwright specs drive', () => {
       'results-add-range',
       'outcome-row',
       'outcome-label',
-      'outcome-minscore',
       'outcome-redirect-delay',
       'outcome-override',
     ]) {
       expect(byTestId(els, id), id).toBeDefined();
     }
+    // `outcome-minscore` / `outcome-maxscore` sit on the inputs INSIDE
+    // `RangeBounds`, which holds a typing draft in state and so cannot be
+    // invoked here — assert the component is mounted and wired with the span it
+    // is meant to show; Playwright drives the attributes themselves.
+    expect(bounds(els)[0]).toMatchObject({ min: 0, max: null, openEnded: true });
     // `outcome-message` is a `testId` PROP on TokenTextarea, not a DOM attr.
     expect(els.some((el) => (el.props as AnyProps).testId === 'outcome-message')).toBe(true);
     // `outcome-redirect` sits on the input INSIDE RedirectField, which holds a
     // typing draft in state and so cannot be invoked here — assert the field is
     // mounted and wired; Playwright drives the attribute itself.
-    const redirect = els.find((el) => typeof el.type === 'function' && 'onCommit' in (el.props as object))!;
+    // `onCommit` alone no longer identifies it — `RangeBounds` carries one too.
+    const redirect = els.find(
+      (el) =>
+        typeof el.type === 'function' &&
+        'onCommit' in (el.props as object) &&
+        !('openEnded' in (el.props as object)),
+    )!;
     expect(redirect).toBeDefined();
     expect((redirect.props as AnyProps).value).toBe('https://example.com');
   });

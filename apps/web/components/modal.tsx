@@ -43,6 +43,22 @@ export function Modal({
   /** The whole overlay — used to spare it (and its subtree) from aria-hidden. */
   const rootRef = useRef<HTMLDivElement>(null);
   const restoreRef = useRef<HTMLElement | null>(null);
+  /**
+   * `onClose` behind a ref so the setup effect below can depend on `open` ALONE.
+   *
+   * Every call site passes an inline arrow (`onClose={() => setLogicView(null)}`),
+   * so `onClose` gets a new identity on each render of the parent. With it in the
+   * dep array the whole effect tore down and set up again on every keystroke the
+   * dialog fed back to the editor — and its last setup line focuses the FIRST
+   * control in the dialog. Editing a score in the outcomes list therefore moved
+   * focus to the top row, and the browser scrolled that row into view, throwing
+   * the author back to the top of a list they were working halfway down.
+   * The handler reads through the ref, so Esc still calls the current `onClose`.
+   */
+  const onCloseRef = useRef(onClose);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  });
 
   useEffect(() => {
     if (!open) return;
@@ -57,7 +73,7 @@ export function Modal({
 
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        onClose();
+        onCloseRef.current();
         return;
       }
       // Trap Tab inside the dialog. Without this, the third Tab left the modal
@@ -102,7 +118,7 @@ export function Modal({
       });
       restoreRef.current?.focus?.();
     };
-  }, [open, onClose]);
+  }, [open]);
 
   if (!open) return null;
   return (

@@ -239,6 +239,85 @@ export async function listForms(db: Db, accountId: string): Promise<FormSummary[
   }));
 }
 
+/** One webhook destination, located in the form that owns it. */
+export interface AccountWebhook {
+  formId: string;
+  formName: string;
+  /** The destination's stable id; null on configs written before ids existed. */
+  webhookId: string | null;
+  url: string;
+  enabled: boolean;
+  /** Stored verbatim. Null when absent or empty — the back-compat "both phases". */
+  events: string[] | null;
+  /** Whether a signing secret is configured. The secret itself is never read out. */
+  hasSecret: boolean;
+}
+
+/**
+ * Every webhook destination in an account, as an inventory rather than as config.
+ *
+ * Destinations live inside each form's config JSON, so "which of my forms POST
+ * somewhere, and where?" was a question only answerable by opening every form one
+ * at a time. This answers it in one query, and returns a PROJECTION rather than
+ * the configs themselves: the account page needs a URL and two booleans, not
+ * every step, rule and field map of every form.
+ *
+ * One entry per webhook, not per form. Several webhooks on one form is a legal
+ * configuration (only HubSpot is capped at one), so collapsing them here would
+ * make the inventory disagree with what is actually stored.
+ *
+ * **The secret never leaves this function.** It is read only inside the
+ * expression that decides `hasSecret`, and `AccountWebhook` has no field it could
+ * occupy — so unlike the form-returning endpoints there is no masking step that
+ * could be forgotten, and `WEBHOOK_SECRET_MASK` never appears either.
+ */
+export async function listAccountWebhooks(db: Db, accountId: string): Promise<AccountWebhook[]> {
+  const rows = await db.all<Record<string, unknown>>(
+    sql`SELECT id, name, config FROM form
+        WHERE account_id = ${accountId} ORDER BY updated_at DESC, created_at DESC`,
+  );
+
+  const out: AccountWebhook[] = [];
+  for (const r of rows) {
+    const config = parseJsonColumn<{ destinations?: unknown }>(r.config, {});
+    const destinations = Array.isArray(config.destinations) ? config.destinations : [];
+    for (const entry of destinations) {
+      // Duck-typed on purpose, the same way the delivery path and the masker read
+      // this array. Parsing with `webhookDestinationSchema` would drop a stored
+      // webhook whose URL fails the https refinement — which is precisely the
+      // misconfiguration an inventory exists to reveal, not to hide.
+      if (!entry || typeof entry !== 'object') continue;
+      const d = entry as {
+        type?: unknown;
+        id?: unknown;
+        enabled?: unknown;
+        events?: unknown;
+        settings?: { url?: unknown; secret?: unknown };
+      };
+      if (d.type !== 'webhook') continue;
+      const url = d.settings?.url;
+      if (typeof url !== 'string' || url === '') continue;
+
+      const events = Array.isArray(d.events)
+        ? d.events.filter((e): e is string => typeof e === 'string')
+        : [];
+      const secret = d.settings?.secret;
+
+      out.push({
+        formId: String(r.id),
+        formName: String(r.name),
+        webhookId: typeof d.id === 'string' ? d.id : null,
+        url,
+        // `enabled` defaults to false in the schema, so an absent value is off.
+        enabled: d.enabled === true,
+        events: events.length ? events : null,
+        hasSecret: typeof secret === 'string' && secret.length > 0,
+      });
+    }
+  }
+  return out;
+}
+
 export async function getFormById(db: Db, accountId: string, id: string): Promise<FormRow | null> {
   const r = await db.get<Record<string, unknown>>(
     sql`SELECT * FROM form WHERE account_id = ${accountId} AND id = ${id} LIMIT 1`,
@@ -519,6 +598,13 @@ function mapSubmission(r: Record<string, unknown>): SubmissionRow {
  * Upsert THE submission for a session (one row per session). A partial save sets
  * `partial_at`; a final submit sets `completed_at`. Re-submitting the same
  * session updates the same row (idempotent per session) rather than duplicating.
+ *
+ * `wasCompletedBefore` reports whether the row was ALREADY completed when this
+ * write arrived. The row itself is safely idempotent; its downstream EFFECTS
+ * (emails, CRM deliveries) are not — a client-side transport retry whose first
+ * attempt actually landed re-runs the service, and only this flag lets it tell
+ * a first completion (fire the effects) from a re-landed one (row refreshed,
+ * effects already owed by the first landing).
  */
 export async function upsertSubmission(
   db: Db,
@@ -530,7 +616,7 @@ export async function upsertSubmission(
     partial?: boolean;
     now?: number;
   },
-): Promise<SubmissionRow> {
+): Promise<SubmissionRow & { wasCompletedBefore: boolean }> {
   const now = input.now ?? Date.now();
   const completedAt = input.partial ? null : now;
   const partialAt = input.partial ? now : null;
@@ -542,12 +628,13 @@ export async function upsertSubmission(
           WHERE form_id = ${input.formId} AND session_id = ${input.sessionId} LIMIT 1`,
     );
 
-  const applyUpdate = async (existing: ExistingRow): Promise<SubmissionRow> => {
+  const applyUpdate = async (existing: ExistingRow): Promise<SubmissionRow & { wasCompletedBefore: boolean }> => {
+    const wasCompletedBefore = existing.completed_at != null;
     // Reorder guard: a fire-and-forget partial can land AFTER the complete
     // submit. Once a row is completed, only a complete submit may update it —
     // a late partial must NOT overwrite the finalized data/score.
-    if (input.partial && existing.completed_at != null) {
-      return (await getSubmissionById(db, existing.id))!;
+    if (input.partial && wasCompletedBefore) {
+      return { ...(await getSubmissionById(db, existing.id))!, wasCompletedBefore };
     }
     await db.run(
       sql`UPDATE submission
@@ -556,7 +643,7 @@ export async function upsertSubmission(
               partial_at = COALESCE(${partialAt}, partial_at)
           WHERE id = ${existing.id}`,
     );
-    return (await getSubmissionById(db, existing.id))!;
+    return { ...(await getSubmissionById(db, existing.id))!, wasCompletedBefore };
   };
 
   const existing = await selectExisting();
@@ -574,7 +661,7 @@ export async function upsertSubmission(
           VALUES (${id}, ${input.formId}, ${input.sessionId}, ${jsonParam(input.data)}, ${input.score},
             ${now}, ${completedAt}, ${partialAt})`,
     );
-    return (await getSubmissionById(db, id))!;
+    return { ...(await getSubmissionById(db, id))!, wasCompletedBefore: false };
   } catch (err) {
     const raced = await selectExisting();
     if (raced) return applyUpdate(raced);
