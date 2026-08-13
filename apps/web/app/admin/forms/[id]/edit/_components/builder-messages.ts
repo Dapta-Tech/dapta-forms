@@ -278,6 +278,10 @@ export interface BuilderMessages {
     prefillCopy: string;
     prefillCopied: string;
     prefillUtmWarning: string;
+    /** Ghost text inside an empty input (text/email/textarea/dropdown). */
+    placeholder: string;
+    placeholderHint: string;
+    placeholderEmpty: string;
     /** A value the answer starts with; anything in the URL wins over it. */
     defaultAnswer: string;
     defaultAnswerHint: string;
@@ -682,6 +686,9 @@ const en: BuilderMessages = {
     prefillCopied: 'Copied',
     prefillUtmWarning:
       'A key starting with utm_ is never read from the URL — those are captured separately as campaign data. Rename the key to make prefill work.',
+    placeholder: 'Placeholder',
+    placeholderHint: 'Ghost text shown inside the input while it is empty.',
+    placeholderEmpty: 'Leave empty for none',
     defaultAnswer: 'Default answer',
     defaultAnswerHint: 'Used when the link carries no value. Anything in the URL wins over this.',
     defaultAnswerPlaceholder: 'Leave empty for none',
@@ -1064,6 +1071,9 @@ const es: BuilderMessages = {
     prefillCopied: 'Copiado',
     prefillUtmWarning:
       'Una clave que empieza con utm_ nunca se lee de la URL: esas se capturan aparte como datos de campaña. Renombra la clave para que el prellenado funcione.',
+    placeholder: 'Placeholder',
+    placeholderHint: 'Texto guía que se muestra dentro del campo mientras está vacío.',
+    placeholderEmpty: 'Vacío para ninguno',
     defaultAnswer: 'Respuesta por defecto',
     defaultAnswerHint: 'Se usa cuando el link no trae valor. Lo que venga en la URL gana sobre esto.',
     defaultAnswerPlaceholder: 'Vacío para ninguna',

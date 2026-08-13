@@ -44,6 +44,14 @@ import type { BuilderMessages } from './builder-messages';
 
 const ALL_ITEMS: GalleryItem[] = GALLERY_GROUPS.flatMap((g) => GALLERY[g]);
 
+/** Types whose public input renders `step.placeholder` (see step-input.tsx). */
+const PLACEHOLDER_TYPES: ReadonlySet<FormStep['type']> = new Set([
+  'text',
+  'email',
+  'textarea',
+  'dropdown',
+]);
+
 /** The reveal card's play-time bounds — mirrors `formRevealSchema`. */
 const DEFAULT_REVEAL_MS = 2200;
 const MIN_REVEAL_MS = 500;
@@ -235,6 +243,26 @@ export function QuestionSettings({
             aria-label={bm.settings.required}
           />
         </InlineField>
+      ) : null}
+
+      {/* Only the types whose public input actually renders `step.placeholder`
+          (step-input.tsx) get the control — phone brings its own placeholder,
+          name edits per-field placeholders below, choices have none. The first
+          builder had this field; the WYSIWYG rewrite dropped it silently, which
+          left API-authored placeholders visible on the canvas but uneditable. */}
+      {PLACEHOLDER_TYPES.has(step.type) ? (
+        <Field label={bm.settings.placeholder} hint={bm.settings.placeholderHint}>
+          <TextField
+            value={step.placeholder ?? ''}
+            maxLength={200}
+            placeholder={bm.settings.placeholderEmpty}
+            data-testid="step-placeholder"
+            aria-label={bm.settings.placeholder}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+              onUpdate({ placeholder: e.target.value || null })
+            }
+          />
+        </Field>
       ) : null}
 
       {/* Type-specific: options, then the scoring switch that controls whether
