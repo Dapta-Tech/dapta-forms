@@ -11,9 +11,6 @@ import base from '@quill/config/eslint';
  */
 const requireCallAction = {
   files: ['app/**/*.tsx', 'components/**/*.tsx'],
-  // The public renderers migrate in their own PR — their submit/booking paths
-  // need visible error states designed alongside the wrapping, not a blind fix.
-  ignores: ['app/\\[accountCode\\]/**'],
   rules: {
     'no-restricted-syntax': [
       'error',
