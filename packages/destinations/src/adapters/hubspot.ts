@@ -215,19 +215,55 @@ export class HubspotDestination implements SubmissionDestination {
     const properties = this.buildProperties(ctx);
     properties.email = email;
 
-    const upsert = await this.upsertContact(properties);
-    const contactId = upsert.contactId;
+    // Whether this delivery will actually post to the mirror. Everything below
+    // branches on it so a form WITHOUT the activity behaves exactly as it always
+    // did: one upsert carrying every property, then the note.
+    const mirroring =
+      ctx.phase === 'complete' && Boolean(this.opts.formGuid) && Boolean(this.opts.portalId);
 
-    // Both tail effects are non-throwing by design. Neither is idempotent, so a
-    // thrown error here would be retried by the outbox into a duplicate
-    // activity — and neither is worth failing a delivery whose contact already
-    // synced. That is also why nothing retryable may be added after them.
+    let upsert: { contactId?: string; skippedProperties?: string[] };
     let formDetail = '';
-    if (ctx.phase === 'complete') {
+
+    if (mirroring) {
+      // Anchor the contact on its KEY ALONE, and let the submission carry the
+      // values.
+      //
+      // HubSpot's "Form submission" activity reports the properties THAT
+      // SUBMISSION changed. Upserting the mapped values first left the post
+      // nothing to change, so every activity read "Updated 0 properties" — the
+      // card appeared, named the form, and listed nothing, which is the one
+      // thing it exists to do. Typeform's integration does not hit the CRM API
+      // at all; the submission is the write, which is why its cards list fields.
+      //
+      // The upsert still runs, and still runs FIRST: it is the retryable half of
+      // the delivery, it guarantees the contact exists even if the portal
+      // refuses the post, and the note needs its id.
+      upsert = await this.upsertContact({ email });
       const outcome = await this.submitMirrorForm(ctx, properties);
-      if (outcome) formDetail = outcome === 'ok' ? ' +form' : ` (form ${outcome})`;
+      formDetail = outcome === 'ok' ? ' +form' : outcome ? ` (form ${outcome})` : '';
+
+      if (outcome === 'ok') {
+        // The mirror declares what it declares; anything else this destination
+        // computes — company/website inferred from the email domain — is not on
+        // that form and would otherwise never be written. Best effort, because
+        // the post is not idempotent and nothing retryable may follow it.
+        await this.upsertResidualProperties(properties, email);
+      } else {
+        // No activity was created, so no retry of this delivery can duplicate
+        // one: it is safe for this write to throw and be retried, and it must,
+        // or a portal that refuses the post silently costs the author every
+        // mapped property.
+        upsert = await this.upsertContact(properties);
+      }
+    } else {
+      upsert = await this.upsertContact(properties);
     }
 
+    const contactId = upsert.contactId;
+
+    // The note is the LAST side effect of the delivery, and non-throwing. It is
+    // not idempotent, so anything retryable after it would be retried into a
+    // duplicate note — the same rule the mirror post above is written around.
     let noteDetail = '';
     if (ctx.phase === 'complete' && this.opts.note !== false && contactId) {
       const noteOk = await this.createNote(contactId, ctx, properties);
@@ -242,6 +278,40 @@ export class HubspotDestination implements SubmissionDestination {
       driver: 'hubspot',
       detail: `contact=${contactId ?? '?'}${formDetail}${noteDetail}${skipped}`,
     };
+  }
+
+  /**
+   * Write the properties the MIRROR FORM does not declare, after a submission
+   * that succeeded. Never throws.
+   *
+   * `mirrorFormProperties` deliberately leaves out the values inferred from the
+   * email domain (`company`/`website`), because they are filled for some
+   * respondents and not others and a form field most submissions leave empty is
+   * worse than no field. That exclusion is what makes this call necessary: the
+   * post covered everything else, and without this those two would silently stop
+   * being written the moment an author turned the activity on.
+   *
+   * Silent on failure, and that is the trade: the post already happened and is
+   * not idempotent, so throwing here would have the outbox retry the delivery
+   * into a second activity. Losing an inferred company beats duplicating the
+   * card the whole feature exists to produce.
+   */
+  private async upsertResidualProperties(
+    properties: Record<string, string>,
+    email: string,
+  ): Promise<void> {
+    const declared = new Set(mirrorFormProperties(this.opts));
+    const residual: Record<string, string> = {};
+    for (const [name, value] of Object.entries(properties)) {
+      if (name !== 'email' && !declared.has(name)) residual[name] = value;
+    }
+    if (Object.keys(residual).length === 0) return;
+    residual.email = email;
+    try {
+      await this.upsertContact(residual);
+    } catch (err) {
+      this.logger.warn(`[destination:hubspot] residual property upsert failed: ${String(err)}`);
+    }
   }
 
   /**

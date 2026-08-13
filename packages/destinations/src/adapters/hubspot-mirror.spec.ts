@@ -7,6 +7,11 @@
  * it targets a different host, and it is not idempotent, so it must never throw:
  * a thrown error would send the outbox round again and duplicate an activity for
  * a contact that already synced.
+ *
+ * WHICH of the two writes carries the mapped values is a separate question, and
+ * the answer changed: see `hubspot-mirror-attribution.spec.ts`. This file is
+ * about the post itself — where it goes, what it carries, and what it does when
+ * the portal says no.
  */
 import { describe, it, expect } from 'vitest';
 import { HubspotDestination } from './hubspot';
@@ -92,7 +97,7 @@ describe('HubspotDestination — the mirror form submission', () => {
     expect(result.detail).toContain('+form');
   });
 
-  it('sends the properties it just wrote to the contact, and the form name as context', async () => {
+  it('sends every mapped property, and the form name as context', async () => {
     const { calls, fetchImpl } = harness();
     const dest = new HubspotDestination(OPTS, fetchImpl, API_BASE, silent, FORMS_BASE);
     await dest.deliver(ctx());
