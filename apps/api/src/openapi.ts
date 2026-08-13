@@ -240,6 +240,15 @@ export const openapiSpec = {
         responses: { '200': { description: '{ encryptionAvailable, providers[] }' } },
       },
     },
+    '/v1/integrations/webhooks': {
+      get: {
+        summary: "Inventory of every webhook destination across this account's forms (host)",
+        description:
+          'A read-only projection, one entry per webhook: which form owns it, the endpoint, whether it is enabled, which submission phases it fires on (absent triggers mean both), whether a signing secret is set, and a per-form rollup of deliveries that ended without landing. The secret itself is never selected, so no masking applies. Editing stays on the form.',
+        security: [{ hostSession: [] }],
+        responses: { '200': { description: '{ items[] }' } },
+      },
+    },
     '/v1/integrations/{provider}/connect': {
       post: {
         summary: 'Connect a provider by pasted token (host, admin/owner)',

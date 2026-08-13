@@ -1218,6 +1218,40 @@ export interface FormsMessages {
       serverProvided: string;
       serverProvidedTitle: string;
       serverProvidedBody: string;
+      /**
+       * The account-level webhook INVENTORY, below the connections grid.
+       *
+       * Read-only by design: a webhook belongs to one form and is edited there.
+       * This exists because "which of my forms send data out, and where?" was a
+       * question you could only answer by opening every form in turn.
+       */
+      webhooks: {
+        title: string;
+        subtitle: string;
+        colForm: string;
+        colEndpoint: string;
+        colEvents: string;
+        colStatus: string;
+        colHealth: string;
+        on: string;
+        off: string;
+        eventsBoth: string;
+        eventsPartial: string;
+        eventsComplete: string;
+        /** A signing secret is configured. The value itself is never shown. */
+        signed: string;
+        edit: string;
+        /** Failure pill. `{n}` = deliveries that ended without landing. */
+        failedCount: string;
+        /** Tooltip head above the worker's verbatim reason. `{date}` = last one. */
+        lastFailure: string;
+        /** Why the count is per FORM even when a form has two webhooks. */
+        failuresScopeNote: string;
+        emptyTitle: string;
+        emptyBody: string;
+        emptyCta: string;
+        loadError: string;
+      };
     };
     /** Draft → publish controls in the form editor (publish button + badge). */
     publish: {
@@ -2551,6 +2585,32 @@ export const en: FormsMessages = {
       serverProvidedTitle: 'Already working, using the server’s token',
       serverProvidedBody:
         'This deployment supplies a token for {provider}, so every account here can already sync. Connecting your own replaces it for this account only.',
+      webhooks: {
+        title: 'Webhooks',
+        subtitle:
+          'Every form that POSTs its submissions to an endpoint you control. Add or change one from that form’s Connect tab.',
+        colForm: 'Form',
+        colEndpoint: 'Endpoint',
+        colEvents: 'Events',
+        colStatus: 'Status',
+        colHealth: 'Delivery',
+        on: 'On',
+        off: 'Off',
+        eventsBoth: 'Partial + complete',
+        eventsPartial: 'Partial submissions',
+        eventsComplete: 'Complete submissions',
+        signed: 'Signed with a secret',
+        edit: 'Edit',
+        failedCount: '{n} failed',
+        lastFailure: 'Last failure {date}',
+        failuresScopeNote:
+          'Failures are counted per form, so a form with two webhooks shows the same count on both.',
+        emptyTitle: 'No webhooks yet',
+        emptyBody:
+          'Open any form’s Connect tab and add a webhook URL to send every submission to your own endpoint.',
+        emptyCta: 'Go to forms',
+        loadError: 'Could not load your webhooks.',
+      },
     },
     publish: {
       publish: 'Publish',
@@ -3882,6 +3942,34 @@ export const es: FormsMessages = {
       serverProvidedTitle: 'Ya funciona, con el token del servidor',
       serverProvidedBody:
         'Este despliegue trae un token para {provider}, así que todas las cuentas de aquí ya pueden sincronizar. Si conectas el tuyo, lo reemplaza solo para esta cuenta.',
+      webhooks: {
+        title: 'Webhooks',
+        subtitle:
+          'Todos los formularios que envían sus respuestas (POST) a un endpoint que tú controlas. Añade o cambia uno desde la pestaña Conectar de ese formulario.',
+        colForm: 'Formulario',
+        colEndpoint: 'Endpoint',
+        colEvents: 'Eventos',
+        colStatus: 'Estado',
+        colHealth: 'Entrega',
+        on: 'Activo',
+        off: 'Inactivo',
+        eventsBoth: 'Parciales y completas',
+        eventsPartial: 'Respuestas parciales',
+        eventsComplete: 'Respuestas completas',
+        signed: 'Firmado con un secreto',
+        edit: 'Editar',
+        // Sin concordancia de número a propósito: `t()` no pluraliza, y "1
+        // fallidas" es peor que una frase que sirve para cualquier cifra.
+        failedCount: '{n} sin entregar',
+        lastFailure: 'Último fallo: {date}',
+        failuresScopeNote:
+          'Los fallos se cuentan por formulario, así que un formulario con dos webhooks muestra el mismo número en ambos.',
+        emptyTitle: 'Aún no hay webhooks',
+        emptyBody:
+          'Abre la pestaña Conectar de cualquier formulario y añade una URL de webhook para enviar cada respuesta a tu propio endpoint.',
+        emptyCta: 'Ir a formularios',
+        loadError: 'No se pudieron cargar tus webhooks.',
+      },
     },
     publish: {
       publish: 'Publicar',

@@ -13,6 +13,7 @@ import {
   markOutboxRetry,
   markOutboxDone,
   listFailedDeliveries,
+  summarizeFailedDeliveriesByForm,
 } from './outbox';
 
 let db: Db;
@@ -152,5 +153,128 @@ describe('listFailedDeliveries', () => {
 
     expect(await listFailedDeliveries(db, ACC, FORM)).toHaveLength(3);
     expect(await listFailedDeliveries(db, ACC, FORM, 2)).toHaveLength(2);
+  });
+
+  /**
+   * Destination rows nest the form one level down, in `ctx`, because a retry
+   * needs the destination and the captured context together. Matching only the
+   * TOP level meant no webhook or HubSpot failure had ever reached the admin —
+   * including the per-form panel built to show them. `booking_sync` was the only
+   * kind that matched, which is why every test above passed over the hole.
+   */
+  describe('destination rows, whose form lives at ctx.formId', () => {
+    async function seedDestinationRow(
+      accountId: string,
+      formId: string,
+      kind: 'webhook' | 'hubspot',
+      lastError: string,
+      updatedAt = 2_000,
+    ) {
+      const id = await enqueueOutbox(db, {
+        kind,
+        action: 'complete',
+        accountId,
+        payload: JSON.stringify({
+          destination: { type: kind, enabled: true, settings: { url: 'https://x.test/hook' } },
+          ctx: { formId, submissionId: 'sub-1', accountId },
+        }),
+        now: 1_000,
+      });
+      await db.run(
+        sql`UPDATE outbox SET status = 'failed', last_error = ${lastError}, updated_at = ${updatedAt} WHERE id = ${id}`,
+      );
+      return id;
+    }
+
+    it('surfaces a webhook failure for its form', async () => {
+      const id = await seedDestinationRow(ACC, FORM, 'webhook', 'HTTP 502 from https://x.test/hook');
+      const rows = await listFailedDeliveries(db, ACC, FORM);
+      expect(rows.map((r) => r.id)).toEqual([id]);
+      expect(rows[0]?.kind).toBe('webhook');
+    });
+
+    it('does not leak a destination failure into another FORM', async () => {
+      await seedDestinationRow(ACC, 'form-2', 'webhook', 'not this form');
+      expect(await listFailedDeliveries(db, ACC, FORM)).toEqual([]);
+    });
+
+    it('does not leak a destination failure into another ACCOUNT', async () => {
+      // The whole safety argument for widening the matcher: the tenant filter is
+      // in SQL, so a looser payload match can only ever reveal more of the
+      // caller's OWN rows.
+      await seedDestinationRow(OTHER, FORM, 'webhook', 'another tenant');
+      expect(await listFailedDeliveries(db, ACC, FORM)).toEqual([]);
+    });
+
+    it('still matches the top-level shape booking_sync writes', async () => {
+      const booking = await seedRow(ACC, FORM, 'failed', 'calendly 500');
+      const webhook = await seedDestinationRow(ACC, FORM, 'webhook', 'HTTP 500');
+      const rows = await listFailedDeliveries(db, ACC, FORM);
+      expect(rows.map((r) => r.id).sort()).toEqual([booking, webhook].sort());
+    });
+  });
+});
+
+/**
+ * The account-wide rollup behind the integrations page's webhook inventory.
+ * Same rows and same SQL-level tenant scope as the per-form view; grouped in JS
+ * because the form lives in a serialized payload rather than a column.
+ */
+describe('summarizeFailedDeliveriesByForm', () => {
+  const ACC = 'acc-1';
+  const OTHER = 'acc-2';
+
+  async function seedWebhookRow(
+    accountId: string,
+    formId: string,
+    lastError: string,
+    updatedAt: number,
+    kind: 'webhook' | 'hubspot' = 'webhook',
+  ) {
+    const id = await enqueueOutbox(db, {
+      kind,
+      action: 'complete',
+      accountId,
+      payload: JSON.stringify({ destination: { type: kind }, ctx: { formId, accountId } }),
+      now: 1_000,
+    });
+    await db.run(
+      sql`UPDATE outbox SET status = 'failed', last_error = ${lastError}, updated_at = ${updatedAt} WHERE id = ${id}`,
+    );
+    return id;
+  }
+
+  it('counts per form and reports the most recent reason', async () => {
+    await seedWebhookRow(ACC, 'form-1', 'older', 1_000);
+    await seedWebhookRow(ACC, 'form-1', 'newest', 3_000);
+    await seedWebhookRow(ACC, 'form-2', 'other form', 2_000);
+
+    const rows = await summarizeFailedDeliveriesByForm(db, ACC, 'webhook');
+    const one = rows.find((r) => r.formId === 'form-1');
+    expect(one).toEqual({ formId: 'form-1', count: 2, lastError: 'newest', lastAt: 3_000 });
+    expect(rows.find((r) => r.formId === 'form-2')?.count).toBe(1);
+  });
+
+  it('answers for one kind only', async () => {
+    await seedWebhookRow(ACC, 'form-1', 'hubspot token expired', 2_000, 'hubspot');
+    expect(await summarizeFailedDeliveriesByForm(db, ACC, 'webhook')).toEqual([]);
+    expect(await summarizeFailedDeliveriesByForm(db, ACC, 'hubspot')).toHaveLength(1);
+  });
+
+  it('never reports another account', async () => {
+    await seedWebhookRow(OTHER, 'form-1', 'another tenant', 2_000);
+    expect(await summarizeFailedDeliveriesByForm(db, ACC, 'webhook')).toEqual([]);
+  });
+
+  it('ignores rows whose payload names no form', async () => {
+    const id = await enqueueOutbox(db, {
+      kind: 'webhook',
+      action: 'complete',
+      accountId: ACC,
+      payload: 'not json',
+      now: 1_000,
+    });
+    await db.run(sql`UPDATE outbox SET status = 'failed' WHERE id = ${id}`);
+    expect(await summarizeFailedDeliveriesByForm(db, ACC, 'webhook')).toEqual([]);
   });
 });

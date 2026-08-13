@@ -334,6 +334,42 @@ export interface IntegrationsResponse {
 }
 
 /**
+ * One webhook in the account's inventory (GET /v1/integrations/webhooks).
+ *
+ * Webhooks are the destination that is configured per FORM rather than connected
+ * once per account, so this list is read-only: it says which form owns each one
+ * and links there to change it.
+ *
+ * The signing secret has no field here because the server never selects it —
+ * `hasSecret` is the whole of what crosses the wire, and the mask sentinel the
+ * form endpoints use on read never appears.
+ */
+export interface AccountWebhook {
+  formId: string;
+  formName: string;
+  /** Null on configs written before destinations carried stable ids. */
+  webhookId: string | null;
+  url: string;
+  enabled: boolean;
+  /** Already resolved server-side: absent triggers mean both phases fire. */
+  firesPartial: boolean;
+  firesComplete: boolean;
+  hasSecret: boolean;
+  /**
+   * Deliveries that ended without landing, rolled up per FORM — the queue records
+   * the form, not the destination, so two webhooks on one form share a figure.
+   * Null when nothing failed; there is deliberately no "healthy" counterpart,
+   * since a queue with no failures cannot be told from one that never ran.
+   */
+  failures: { count: number; lastError: string | null; lastAt: number } | null;
+}
+
+/** GET /v1/integrations/webhooks — one entry per webhook, across every form. */
+export interface AccountWebhooksResponse {
+  items: AccountWebhook[];
+}
+
+/**
  * One extra field an event type's booking form asks for beyond name + email.
  * `id` is Calendly's positional prefill parameter (`a1`, `a2`, …).
  */
@@ -484,6 +520,8 @@ export const adminApi = {
   // Account-level integration connections (paste-token model; admin/owner writes)
   /** This account's connections (token-free) + whether server encryption is available. */
   listIntegrations: () => req<IntegrationsResponse>('GET', '/v1/integrations'),
+  /** Every webhook across this account's forms, read-only (secrets never selected). */
+  listAccountWebhooks: () => req<AccountWebhooksResponse>('GET', '/v1/integrations/webhooks'),
   /** The caller's own public page config (raw blob or null). */
   myProfile: () => req<{ handle: string | null; profile: MemberProfile | null }>('GET', '/v1/me/profile'),
   /** Replace the caller's own public page; null removes it. */
