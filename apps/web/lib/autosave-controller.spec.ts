@@ -251,6 +251,56 @@ describe('AutosaveController', () => {
   });
 });
 
+describe('callActionWithRetry', () => {
+  it('retries transport failures with doubling delay until one lands', async () => {
+    const { callActionWithRetry } = await import('./call-action');
+    let attempts = 0;
+    const p = callActionWithRetry(
+      async () => {
+        attempts++;
+        if (attempts < 3) throw new Error('network down');
+        return { ok: true as const };
+      },
+      { attempts: 3, baseDelayMs: 100 },
+    );
+    await settle(); // attempt 1 fails
+    expect(attempts).toBe(1);
+    await vi.advanceTimersByTimeAsync(100); // delay 1 → attempt 2 fails
+    expect(attempts).toBe(2);
+    await vi.advanceTimersByTimeAsync(200); // delay doubled → attempt 3 lands
+    expect(await p).toEqual({ ok: true });
+  });
+
+  it('a server verdict — ok or not — returns immediately, no retry', async () => {
+    const { callActionWithRetry } = await import('./call-action');
+    let attempts = 0;
+    const res = await callActionWithRetry(async () => {
+      attempts++;
+      return { ok: false as const, message: 'validation failed' };
+    });
+    expect(attempts).toBe(1); // the server answered; retrying cannot change it
+    expect(res).toEqual({ ok: false, message: 'validation failed' });
+  });
+
+  it('returns the last TransportError once attempts are exhausted', async () => {
+    const { callActionWithRetry } = await import('./call-action');
+    let attempts = 0;
+    const p = callActionWithRetry(
+      async () => {
+        attempts++;
+        throw new Error('still down');
+      },
+      { attempts: 2, baseDelayMs: 50 },
+    );
+    await settle();
+    await vi.advanceTimersByTimeAsync(50);
+    const res = await p;
+    expect(attempts).toBe(2);
+    expect(isTransportError(res)).toBe(true);
+    if (isTransportError(res)) expect(res.message).toBe('still down');
+  });
+});
+
 describe('callAction', () => {
   it('passes a resolved value through untouched', async () => {
     const res = await callAction(async () => ({ ok: true as const }));

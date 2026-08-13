@@ -60,3 +60,33 @@ export async function callAction<T>(
     if (timer) clearTimeout(timer);
   }
 }
+
+/**
+ * `callAction` plus a few in-place retries with doubling delay, for ONE-SHOT
+ * calls that have no autosave loop behind them to try again later — the public
+ * renderer's submit. ONLY wrap idempotent writes: a timed-out attempt may have
+ * landed (see the timeout note above), so the retry can double-apply.
+ * Submissions qualify (deduped by session server-side); booking records do NOT
+ * (plain INSERT — they use single-attempt `callAction`). A server verdict —
+ * ok or not — returns immediately; only transport failures retry.
+ */
+export async function callActionWithRetry<T>(
+  fn: () => Promise<T>,
+  opts?: { attempts?: number; baseDelayMs?: number; timeoutMs?: number },
+): Promise<T | TransportError> {
+  const attempts = Math.max(1, opts?.attempts ?? 3);
+  const baseDelayMs = opts?.baseDelayMs ?? 1_000;
+  let last: T | TransportError = {
+    ok: false,
+    transport: true,
+    message: 'not attempted',
+  };
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    last = await callAction(fn, { timeoutMs: opts?.timeoutMs });
+    if (!isTransportError(last)) return last;
+    if (attempt < attempts - 1) {
+      await new Promise((resolve) => setTimeout(resolve, baseDelayMs * 2 ** attempt));
+    }
+  }
+  return last;
+}
