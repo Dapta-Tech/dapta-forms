@@ -87,6 +87,48 @@ describe('submit', () => {
     expect(payload.respondentEmail).toBe('lead@acme.io');
   });
 
+  it('a re-landed complete enqueues NO second round of effects', async () => {
+    // `callActionWithRetry` cannot abort an in-flight request, so a complete
+    // that landed slowly IS retried and this method runs twice for one real
+    // submission. The row dedupes itself; the effects must too — without the
+    // gate, owner and respondent each got a duplicate email and a drained CRM
+    // delivery duplicated its activity.
+    const payload = {
+      sessionId: 'sess-retry',
+      data: { role: 'founder', team_size: 20, company: 'Acme', email: 'lead@acme.io' },
+    };
+    const first = await svc.submit('acme', 'lead-qualifier', payload);
+    const retried = await svc.submit('acme', 'lead-qualifier', payload);
+    await flushEffects();
+
+    // Same verdict both times — the retry is invisible to the visitor.
+    expect('error' in first || 'error' in retried).toBe(false);
+    if ('error' in first || 'error' in retried) return;
+    expect(retried.id).toBe(first.id);
+    expect(retried.score).toBe(first.score);
+
+    // Exactly ONE owner notice and ONE respondent receipt, not two of each.
+    const outbox = await listOutbox(db, { kind: 'email' });
+    expect(outbox.map((r) => r.action).sort()).toEqual(['submission_confirmed', 'submission_received']);
+  });
+
+  it('a partial→complete transition still fires the complete effects once', async () => {
+    // The gate must key on "was ALREADY completed", not "row existed" — the
+    // normal partial-then-final flow reuses the row and must still notify.
+    await svc.submit('acme', 'lead-qualifier', {
+      sessionId: 'sess-partial-then-final',
+      partial: true,
+      data: { role: 'founder' },
+    });
+    await svc.submit('acme', 'lead-qualifier', {
+      sessionId: 'sess-partial-then-final',
+      data: { role: 'founder', team_size: 20, email: 'lead@acme.io' },
+    });
+    await flushEffects();
+    const outbox = await listOutbox(db, { kind: 'email' });
+    expect(outbox.map((r) => r.action).sort()).toEqual(['submission_confirmed', 'submission_received']);
+  });
+
   it('a completed submission WITHOUT an email enqueues only the owner notice', async () => {
     await svc.submit('acme', 'lead-qualifier', {
       sessionId: 'sess-noemail',
