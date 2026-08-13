@@ -1,5 +1,7 @@
 'use server';
 
+import { unstable_rethrow } from 'next/navigation';
+
 import { adminApi, ApiError, type CalendlyEventTypesResponse } from '@/lib/admin-api';
 
 /**
@@ -12,6 +14,7 @@ export async function loadCalendlyEventTypesAction(): Promise<CalendlyEventTypes
   try {
     return await adminApi.calendlyEventTypes();
   } catch (e) {
+    unstable_rethrow(e);
     const reason = e instanceof ApiError ? e.message : 'Could not reach Calendly.';
     return { enabled: false, reason };
   }

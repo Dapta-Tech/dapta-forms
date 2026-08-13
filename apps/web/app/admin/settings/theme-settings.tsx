@@ -5,6 +5,7 @@ import type { FormsMessages } from '@quill/shared';
 import { setThemeAction } from '@/app/admin/theme-actions';
 import { SegmentedToggle } from '@/app/admin/forms/[id]/edit/_components/fields';
 import { THEME_ICON, THEME_PREFS, type ThemePref } from '@/lib/theme';
+import { callAction } from '@/lib/call-action';
 
 type SettingsMessages = FormsMessages['admin']['settings'];
 type ThemeMessages = FormsMessages['admin']['chrome']['theme'];
@@ -42,7 +43,7 @@ export function ThemeSettings({ pref, s, m }: { pref: ThemePref; s: SettingsMess
           label: m[option],
           icon: THEME_ICON[option],
         }))}
-        onChange={(next) => start(() => void setThemeAction(next))}
+        onChange={(next) => start(() => void callAction(() => setThemeAction(next)))}
       />
     </section>
   );

@@ -1,5 +1,7 @@
 'use server';
 
+import { unstable_rethrow } from 'next/navigation';
+
 import { revalidatePath } from 'next/cache';
 import { adminApi, type WebhookPingResult } from '@/lib/admin-api';
 import type { FormDestination } from '@quill/types';
@@ -29,7 +31,11 @@ export async function saveIntegrationsAction(
     const reason = (saved as { formActivityError?: string }).formActivityError;
     return reason ? { ok: true, formActivityError: reason } : { ok: true };
   } catch (e) {
-    return { ok: false, message: e instanceof Error ? e.message : 'Failed to save.' };
+    unstable_rethrow(e);
+    return {
+      ok: false,
+      message: e instanceof Error ? e.message : 'Failed to save.',
+    };
   }
 }
 
@@ -44,6 +50,7 @@ export async function pingWebhookAction(id: string): Promise<WebhookPingResult> 
   try {
     return await adminApi.pingWebhook(id);
   } catch (e) {
+    unstable_rethrow(e);
     return {
       ok: false,
       reason: 'unknown',

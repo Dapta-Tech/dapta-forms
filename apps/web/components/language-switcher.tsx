@@ -4,6 +4,7 @@ import { useTransition } from 'react';
 import type { Locale } from '@quill/shared';
 import { setLocaleAction } from '@/app/admin/locale-actions';
 import { Select } from '@/components/ui/select';
+import { callAction } from '@/lib/call-action';
 
 /** F8 language toggle — persists the choice via a cookie (server action) and
  *  re-renders the admin in EN/ES. Mirrors the old app's language selector. */
@@ -18,7 +19,7 @@ export function LanguageSwitcher({ locale, label }: { locale: Locale; label: str
           locale={locale}
           value={locale}
           disabled={pending}
-          onChange={(next) => start(() => void setLocaleAction(next))}
+          onChange={(next) => start(() => void callAction(() => setLocaleAction(next)))}
           options={[
             { value: 'en', label: 'English' },
             { value: 'es', label: 'Español' },
