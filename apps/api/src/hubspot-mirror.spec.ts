@@ -255,3 +255,164 @@ describe('the whole point', () => {
     expect('validation' in other).toBe(false);
   });
 });
+
+describe('properties the portal does not have', () => {
+  // Measured: a form field naming a missing property makes the create fail with
+  // `400 internal error` — no property named, nothing to act on. One stale
+  // mapping among many would cost the whole activity.
+  const KNOWN = new Set(['email', 'jobtitle', 'lifecyclestage']);
+
+  it('drops a mapped property the portal lacks, and builds the rest', async () => {
+    const { calls, fetchImpl } = harness();
+    const out = await syncMirrorForm(
+      hubspot({
+        fieldMappings: { work_email: 'email', role: 'jobtitle' },
+        scoreProperty: 'lead_score_that_does_not_exist',
+        staticProperties: { lifecyclestage: 'lead' },
+      }),
+      'Lead qualifier',
+      { ...deps(fetchImpl), knownProperties: KNOWN },
+    );
+    expect(out.action).toBe('created');
+    const names = (calls[0]!.body.fieldGroups as { fields: { name: string }[] }[]).flatMap((g) =>
+      g.fields.map((f) => f.name),
+    );
+    expect(names).toEqual(['email', 'jobtitle', 'lifecyclestage']);
+  });
+
+  it('keeps email even if the lookup somehow omits it', async () => {
+    // The form's key. A mirror without it is not a contact form.
+    const { calls, fetchImpl } = harness();
+    await syncMirrorForm(hubspot({ fieldMappings: { work_email: 'email' } }), 'F', {
+      ...deps(fetchImpl),
+      knownProperties: new Set<string>(),
+    });
+    const names = (calls[0]!.body.fieldGroups as { fields: { name: string }[] }[]).flatMap((g) =>
+      g.fields.map((f) => f.name),
+    );
+    expect(names).toEqual(['email']);
+  });
+
+  it('filters nothing when the portal list could not be read', async () => {
+    // Unknown is not the same as empty — filtering on a failed lookup would
+    // silently strip every field.
+    const { calls, fetchImpl } = harness();
+    await syncMirrorForm(hubspot(), 'F', { ...deps(fetchImpl), knownProperties: null });
+    const names = (calls[0]!.body.fieldGroups as { fields: { name: string }[] }[]).flatMap((g) =>
+      g.fields.map((f) => f.name),
+    );
+    expect(names).toEqual(['email', 'jobtitle']);
+  });
+
+  it('does not rebuild when only a DROPPED property changed', async () => {
+    // The signature is built from what the mirror will actually declare, so
+    // editing a mapping the portal cannot accept is not a reason to touch it.
+    const { calls, fetchImpl } = harness();
+    const out = await syncMirrorForm(
+      hubspot({
+        fieldMappings: { work_email: 'email', role: 'jobtitle' },
+        scoreProperty: 'ghost_property',
+        settings: {
+          formActivity: true,
+          formGuid: 'guid-1',
+          formSignature: mirrorSignature('F', ['email', 'jobtitle']),
+        },
+      }),
+      'F',
+      { ...deps(fetchImpl), knownProperties: KNOWN },
+    );
+    expect(out.action).toBe('unchanged');
+    expect(calls).toHaveLength(0);
+  });
+});
+
+describe('properties HubSpot refuses as form fields', () => {
+  /**
+   * Measured: a portal's `lifecyclestage` exists, is not calculated, and its own
+   * metadata says `formField: true` — and a form declaring it is rejected with
+   * `400 internal error`, naming nothing. Nothing predicts it, so the mirror
+   * degrades instead of guessing.
+   */
+  function rejecting(badProperty: string) {
+    const calls: { body: Record<string, unknown> }[] = [];
+    const fetchImpl = (async (_url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body));
+      calls.push({ body });
+      const names = (body.fieldGroups as { fields: { name: string }[] }[]).flatMap((g) =>
+        g.fields.map((f) => f.name),
+      );
+      const bad = names.includes(badProperty);
+      return {
+        ok: !bad,
+        status: bad ? 400 : 200,
+        json: async () => ({ id: 'guid-new' }),
+        text: async () => JSON.stringify({ message: 'internal error' }),
+      };
+    }) as unknown as typeof fetch;
+    return { calls, fetchImpl };
+  }
+
+  const rich = () =>
+    hubspot({
+      fieldMappings: { work_email: 'email', role: 'jobtitle' },
+      utmMappings: { utm_source: 'dapta_source' },
+      dateProperty: 'date_booking',
+      staticProperties: { lifecyclestage: 'lead' },
+    });
+
+  const declared = (body: Record<string, unknown>) =>
+    (body.fieldGroups as { fields: { name: string }[] }[])
+      .flatMap((g) => g.fields.map((f) => f.name))
+      .sort();
+
+  it('retries WITHOUT the fixed stamps, keeping every other property', async () => {
+    // One bad property must not cost three good ones.
+    const { calls, fetchImpl } = rejecting('lifecyclestage');
+    const out = await syncMirrorForm(rich(), 'F', deps(fetchImpl));
+    expect(out.action).toBe('created');
+    expect(calls).toHaveLength(2);
+    expect(declared(calls[0]!.body)).toContain('lifecyclestage');
+    expect(declared(calls[1]!.body)).toEqual(['dapta_source', 'date_booking', 'email', 'jobtitle']);
+  });
+
+  it('falls back to the answers when a mapped property is the one refused', async () => {
+    const { calls, fetchImpl } = rejecting('dapta_source');
+    const out = await syncMirrorForm(rich(), 'F', deps(fetchImpl));
+    expect(out.action).toBe('created');
+    expect(declared(calls[calls.length - 1]!.body)).toEqual(['email', 'jobtitle']);
+  });
+
+  it('falls back to the email alone rather than losing the activity', async () => {
+    const { calls, fetchImpl } = rejecting('jobtitle');
+    const out = await syncMirrorForm(rich(), 'F', deps(fetchImpl));
+    expect(out.action).toBe('created');
+    expect(declared(calls[calls.length - 1]!.body)).toEqual(['email']);
+  });
+
+  it('records what was ACCEPTED, so the next save does not think it is in step', async () => {
+    // Storing the full set after a degraded create would mean never trying the
+    // fuller mirror again.
+    const { fetchImpl } = rejecting('lifecyclestage');
+    const out = await syncMirrorForm(rich(), 'F', deps(fetchImpl));
+    expect(out.settings.formSignature).toBe(
+      mirrorSignature('F', ['dapta_source', 'date_booking', 'email', 'jobtitle']),
+    );
+  });
+
+  it('does NOT retry smaller on a token or server problem', async () => {
+    // Neither gets better with fewer fields; retrying would just be noise.
+    for (const status of [401, 403, 500]) {
+      const { calls, fetchImpl } = harness({ status, body: { message: 'nope' } });
+      const out = await syncMirrorForm(rich(), 'F', deps(fetchImpl));
+      expect(out.action, `status ${status}`).toBe('failed');
+      expect(calls, `status ${status}`).toHaveLength(1);
+    }
+  });
+
+  it('gives up with the reason when even the email is refused', async () => {
+    const { fetchImpl } = harness({ status: 400, body: { message: 'internal error' } });
+    const out = await syncMirrorForm(rich(), 'F', deps(fetchImpl));
+    expect(out.action).toBe('failed');
+    expect(out.error).toContain('internal error');
+  });
+});
