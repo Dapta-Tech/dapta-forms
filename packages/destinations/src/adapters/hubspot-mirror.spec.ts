@@ -14,6 +14,24 @@ import type { DestinationContext } from '../destination.port';
 
 const FORMS_BASE = 'https://forms.test';
 const API_BASE = 'https://api.test';
+
+/**
+ * Is this call aimed at the forms host?
+ *
+ * Compares the ORIGIN rather than testing a prefix. `startsWith` would also
+ * match `https://forms.test.example.com`, which is the same reasoning that makes
+ * prefix checks a real vulnerability in routing code — CodeQL flags it here for
+ * exactly that pattern. In a test harness it is not a security hole, but it is
+ * still a sloppy matcher: the whole point of these tests is that the mirror goes
+ * to a DIFFERENT host from the CRM API, so the check should say host.
+ */
+const isFormsHost = (url: string): boolean => {
+  try {
+    return new URL(url).origin === FORMS_BASE;
+  } catch {
+    return false;
+  }
+};
 const silent = { warn: () => {} };
 
 function ctx(over: Partial<DestinationContext> = {}): DestinationContext {
@@ -48,7 +66,7 @@ function harness(mirror: { status?: number; throws?: boolean } = {}) {
   const fetchImpl = (async (url: string, init?: RequestInit) => {
     const body = init?.body ? JSON.parse(String(init.body)) : undefined;
     calls.push({ url, body });
-    if (url.startsWith(FORMS_BASE)) {
+    if (isFormsHost(url)) {
       if (mirror.throws) throw new Error('network down');
       const status = mirror.status ?? 200;
       return { ok: status < 400, status, text: async () => 'nope', json: async () => ({}) };
@@ -58,7 +76,7 @@ function harness(mirror: { status?: number; throws?: boolean } = {}) {
   return { calls, fetchImpl };
 }
 
-const mirrorCalls = (calls: { url: string }[]) => calls.filter((c) => c.url.startsWith(FORMS_BASE));
+const mirrorCalls = (calls: { url: string }[]) => calls.filter((c) => isFormsHost(c.url));
 
 describe('HubspotDestination — the mirror form submission', () => {
   it('posts to the SECURE submit URL for the configured portal and form', async () => {
