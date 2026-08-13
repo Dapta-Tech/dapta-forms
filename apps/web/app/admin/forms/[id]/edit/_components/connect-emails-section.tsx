@@ -17,6 +17,7 @@ import {
   saveFormNotificationAction,
 } from './connect-emails-actions';
 import type { EditorMessages } from './messages';
+import { callAction } from '@/lib/call-action';
 
 /**
  * Emails on the Connect tab — PER-FORM template overrides (Typeform's per-form
@@ -181,11 +182,13 @@ function FormEmailCard({
       // The override PINS this form's copy verbatim (subject/body/enabled) —
       // unlike the account editor there is no "equals default → null" collapse:
       // customizing means "keep this exact copy even if the account changes".
-      const res = await saveFormNotificationAction(formId, key, {
-        enabled: value.enabled,
-        subject: value.subject,
-        body: value.body,
-      });
+      const res = await callAction(() =>
+        saveFormNotificationAction(formId, key, {
+          enabled: value.enabled,
+          subject: value.subject,
+          body: value.body,
+        }),
+      );
       if (res.ok) {
         setOverride(res.setting.override);
         toast.success(nm.saveSuccess);
@@ -209,7 +212,7 @@ function FormEmailCard({
     });
     if (!ok) return;
     startTransition(async () => {
-      const res = await resetFormNotificationAction(formId, key);
+      const res = await callAction(() => resetFormNotificationAction(formId, key));
       if (res.ok) {
         setOverride(null);
         setEditing(false);

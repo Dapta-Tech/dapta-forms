@@ -391,6 +391,8 @@ export interface FormsMessages {
       /** V4 autosave hardening: surface WHY a save failed + client pre-validation. */
       saveErrorReason: string;
       saveInvalid: string;
+      /** V5: the save request never reached the server; autosave keeps retrying. */
+      saveOffline: string;
       /** Results tab clarity (V4-16 outcome heading + message + redirect field). */
       resultsHelp: {
         outcomeHeadingHelp: string;
@@ -1012,6 +1014,9 @@ export interface FormsMessages {
       /** V5-QA — saved, except one card that has a problem of its own. */
       autosavedPartial: string;
       saveError: string;
+      /** V5: the save never reached the server; autosave is retrying on its own. */
+      saveOffline: string;
+      saveRetrying: string;
       loadError: string;
       enabled: string;
       disabled: string;
@@ -1822,6 +1827,8 @@ export const en: FormsMessages = {
       saveError: 'Could not save — please try again.',
       saveErrorReason: 'Couldn’t save: {reason}',
       saveInvalid: 'Can’t save yet — {reason}',
+      saveOffline:
+        'Can’t reach the server — your changes are kept and saving will retry automatically.',
       resultsHelp: {
         outcomeHeadingHelp:
           'Shown to respondents as the heading on the thank-you screen when their score lands in this range.',
@@ -2396,6 +2403,9 @@ export const en: FormsMessages = {
       autosaved: 'Changes saved automatically',
       autosavedPartial: 'Saved everything except the webhook —',
       saveError: 'Could not save integrations.',
+      saveOffline:
+        'Can’t reach the server — your changes are kept and saving will retry automatically.',
+      saveRetrying: 'Connection lost — retrying…',
       loadError: 'Could not load integrations.',
       enabled: 'Enabled',
       disabled: 'Disabled',
@@ -3181,6 +3191,8 @@ export const es: FormsMessages = {
       saveError: 'No se pudo guardar — inténtalo de nuevo.',
       saveErrorReason: 'No se pudo guardar: {reason}',
       saveInvalid: 'Aún no se puede guardar — {reason}',
+      saveOffline:
+        'No se pudo contactar al servidor — tus cambios se conservan y el guardado se reintentará automáticamente.',
       resultsHelp: {
         outcomeHeadingHelp:
           'Se muestra a los respondientes como el encabezado de la pantalla de agradecimiento cuando su puntaje cae en este rango.',
@@ -3757,6 +3769,9 @@ export const es: FormsMessages = {
       autosaved: 'Cambios guardados automáticamente',
       autosavedPartial: 'Se guardó todo menos el webhook —',
       saveError: 'No se pudieron guardar las integraciones.',
+      saveOffline:
+        'No se pudo contactar al servidor — tus cambios se conservan y el guardado se reintentará automáticamente.',
+      saveRetrying: 'Se perdió la conexión — reintentando…',
       loadError: 'No se pudieron cargar las integraciones.',
       enabled: 'Activado',
       disabled: 'Desactivado',

@@ -5,6 +5,7 @@ import { getMessages } from '@quill/shared';
 import { clientLocale } from '@/lib/client-locale';
 import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import { deleteSubmissionAction } from './actions';
+import { callAction } from '@/lib/call-action';
 
 /** Delete-with-confirm for a submission row (branded dialog → server action). */
 export function DeleteSubmissionButton({
@@ -30,7 +31,8 @@ export function DeleteSubmissionButton({
             confirmLabel: labels.delete,
             destructive: true,
           }).then((ok) => {
-            if (ok) start(() => void deleteSubmissionAction(formId, submissionId));
+            if (ok)
+              start(() => void callAction(() => deleteSubmissionAction(formId, submissionId)));
           });
         }}
         className="text-sm text-destructive transition-opacity hover:opacity-80 disabled:opacity-50"

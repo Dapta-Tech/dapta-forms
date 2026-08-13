@@ -6,6 +6,7 @@ import { DEFAULT_FORM_FONT } from '@quill/engine';
 import { DEFAULT_ACCENT, DEFAULT_CANVAS, onAccent, readableOn, t, type FormsMessages } from '@quill/shared';
 import type { BrandKit, FormSummary } from '@/lib/admin-api';
 import { formDesignProps } from '@/lib/form-design';
+import { callAction } from '@/lib/call-action';
 import { cn } from '@/lib/cn';
 import { Field, PanelSection, SegmentedToggle, TextField } from '../forms/[id]/edit/_components/fields';
 import { ColorPicker } from '../forms/[id]/edit/_components/color-picker';
@@ -61,7 +62,7 @@ export function BrandKitPanel({
 
   const save = () =>
     startSaving(async () => {
-      const res = await saveBrandKitAction(kit);
+      const res = await callAction(() => saveBrandKitAction(kit));
       if (res.ok) {
         setSavedAt(res.value.updatedAt);
         flash(bk.saved);
@@ -72,7 +73,7 @@ export function BrandKitPanel({
     const ids = [...selected];
     if (!ids.length) return;
     startApplying(async () => {
-      const res = await applyBrandKitAction(ids);
+      const res = await callAction(() => applyBrandKitAction(ids));
       if (res.ok) {
         setApplied((a) => ({ ...a, ...Object.fromEntries(res.value.applied.map((id) => [id, true])) }));
         setSelected(new Set());
@@ -84,7 +85,7 @@ export function BrandKitPanel({
   const revert = async (id: string) => {
     setRevertingId(id);
     try {
-      const res = await revertBrandKitAction([id]);
+      const res = await callAction(() => revertBrandKitAction([id]));
       if (res.ok && res.value.reverted.includes(id)) {
         setApplied((a) => ({ ...a, [id]: false }));
         flash(bk.revertedToast);

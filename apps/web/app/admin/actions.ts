@@ -1,7 +1,7 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import { redirect } from 'next/navigation';
+import { redirect, unstable_rethrow } from 'next/navigation';
 import { adminApi } from '@/lib/admin-api';
 
 /** Create a form and jump straight into its editor. */
@@ -44,11 +44,16 @@ export async function saveFormAction(
 ): Promise<{ ok: boolean; message?: string }> {
   try {
     await adminApi.updateForm(id, patch);
-    revalidatePath(`/admin/forms/${id}/edit`);
-    revalidatePath('/admin');
+    // No revalidatePath here on purpose: this fires on every debounced
+    // keystroke, every admin read is already `cache: 'no-store'`, and the
+    // draft it writes is visible only to this editor. Publish revalidates.
     return { ok: true };
   } catch (e) {
-    return { ok: false, message: e instanceof Error ? e.message : 'Failed to save.' };
+    unstable_rethrow(e);
+    return {
+      ok: false,
+      message: e instanceof Error ? e.message : 'Failed to save.',
+    };
   }
 }
 
@@ -64,6 +69,10 @@ export async function publishFormAction(id: string): Promise<{ ok: boolean; mess
     revalidatePath('/admin');
     return { ok: true };
   } catch (e) {
-    return { ok: false, message: e instanceof Error ? e.message : 'Failed to publish.' };
+    unstable_rethrow(e);
+    return {
+      ok: false,
+      message: e instanceof Error ? e.message : 'Failed to publish.',
+    };
   }
 }

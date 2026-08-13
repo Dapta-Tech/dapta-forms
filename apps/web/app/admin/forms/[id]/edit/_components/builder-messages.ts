@@ -19,6 +19,13 @@ export interface BuilderMessages {
     saving: string;
     draft: string;
     saveError: string;
+    /** A save that could not reach the server is being retried automatically. */
+    retrying: string;
+    /** Banner offering to restore work recovered from the local crash backup. */
+    recoveryTitle: string;
+    recoveryBody: string;
+    recoveryRestore: string;
+    recoveryDiscard: string;
     preview: string;
     publish: string;
     publishing: string;
@@ -491,6 +498,12 @@ const en: BuilderMessages = {
     saving: 'Saving…',
     draft: 'Draft',
     saveError: 'Not saved',
+    retrying: 'Retrying…',
+    recoveryTitle: 'Unsaved changes recovered',
+    recoveryBody:
+      'This form has edits from a previous session that never reached the server. Restore them, or keep the saved version?',
+    recoveryRestore: 'Restore edits',
+    recoveryDiscard: 'Discard',
     preview: 'Preview',
     publish: 'Publish',
     publishing: 'Publishing…',
@@ -766,7 +779,10 @@ const en: BuilderMessages = {
       slider: { title: 'Slider', desc: 'Rating scale' },
       message: { title: 'Message', desc: 'Text, no input' },
       reveal: { title: 'Reveal screen', desc: 'A short processing pause' },
-      scheduler: { title: 'Scheduler', desc: 'Book a meeting on your calendar' },
+      scheduler: {
+        title: 'Scheduler',
+        desc: 'Book a meeting on your calendar',
+      },
     },
   },
   map: {
@@ -874,6 +890,12 @@ const es: BuilderMessages = {
     saving: 'Guardando…',
     draft: 'Borrador',
     saveError: 'Sin guardar',
+    retrying: 'Reintentando…',
+    recoveryTitle: 'Cambios sin guardar recuperados',
+    recoveryBody:
+      'Este formulario tiene cambios de una sesión anterior que nunca llegaron al servidor. ¿Restaurarlos o quedarte con la versión guardada?',
+    recoveryRestore: 'Restaurar cambios',
+    recoveryDiscard: 'Descartar',
     preview: 'Vista previa',
     publish: 'Publicar',
     publishing: 'Publicando…',
@@ -1150,8 +1172,14 @@ const es: BuilderMessages = {
       long: { title: 'Texto largo', desc: 'Párrafo' },
       slider: { title: 'Deslizador', desc: 'Escala de valoración' },
       message: { title: 'Mensaje', desc: 'Texto, sin campo' },
-      reveal: { title: 'Pantalla de revelación', desc: 'Una breve pausa de procesamiento' },
-      scheduler: { title: 'Agendador', desc: 'Agenda una reunión en tu calendario' },
+      reveal: {
+        title: 'Pantalla de revelación',
+        desc: 'Una breve pausa de procesamiento',
+      },
+      scheduler: {
+        title: 'Agendador',
+        desc: 'Agenda una reunión en tu calendario',
+      },
     },
   },
   map: {

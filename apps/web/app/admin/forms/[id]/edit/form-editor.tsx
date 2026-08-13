@@ -23,6 +23,9 @@ import type { FormTracking } from '@quill/types';
 import { formConfigSchema } from '@quill/types';
 import { saveFormAction } from '@/app/admin/actions';
 import { useToast } from '@/components/toast';
+import { callAction, isTransportError } from '@/lib/call-action';
+import { useAutosave } from '@/lib/use-autosave';
+import { clearDraftBackup, readDraftBackup, writeDraftBackup } from '@/lib/draft-backup';
 import { cn } from '@/lib/cn';
 import { anchorRevealsLast } from './_components/logic-util';
 import { QuestionSpine } from './_components/question-spine';
@@ -60,12 +63,13 @@ import { getBuilderMessages, tb, type TemplateId } from './_components/builder-m
 import type { EditorMessages } from './_components/messages';
 import './_components/builder.css';
 
-type SaveStatus = 'saved' | 'saving' | 'draft' | 'error';
 const AUTOSAVE_MS = 900;
-/** One backoff retry after a failed/transient save so a blip self-heals. */
-const RETRY_MS = 1500;
-/** Same admin API base the server-side admin-api client uses (client-exposed). */
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
+
+/** What one autosave write carries — always read fresh via `latest`. */
+interface EditorSnapshot {
+  name: string;
+  config: FormConfig;
+}
 
 // `results` is deliberately NOT in this list: `parseTab('results')` falls
 // through to Build, so a bookmark or an old link lands somewhere real instead
@@ -124,6 +128,7 @@ export function FormEditor({
   locale,
   m,
   initialHasDraft = false,
+  updatedAt,
 }: {
   id: string;
   initialName: string;
@@ -133,6 +138,8 @@ export function FormEditor({
   m: EditorMessages;
   /** Whether the form already had an unpublished draft when the page loaded. */
   initialHasDraft?: boolean;
+  /** Server row's last-write stamp — gates the crash-recovery offer. */
+  updatedAt?: number;
 }) {
   const bm = getBuilderMessages(locale);
   const searchParams = useSearchParams();
@@ -177,132 +184,113 @@ export function FormEditor({
   const isDesktop = useIsDesktop();
   const [galleryOpen, setGalleryOpen] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
-  const [status, setStatus] = useState<SaveStatus>(initialConfig.steps.length ? 'saved' : 'draft');
   const [focusCanvas, setFocusCanvas] = useState(0);
   const [saveCount, setSaveCount] = useState(0);
-  // The server's reason for the last failed save — shown in the status tooltip.
-  const [lastError, setLastError] = useState<string | null>(null);
-  // `migrateRevealToStep` returns the SAME object when there was nothing legacy
-  // to fold in, so an identity check is an exact "did we migrate?" — start dirty
-  // in that case and the very first autosave persists the new shape.
-  const dirty = useRef(config !== initialConfig);
-  const retry = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Freshest name/config for the leave handlers + retry (no stale closures).
-  const latest = useRef({ name, config });
+  // Freshest name/config for save/flush/backup paths (no stale closures).
+  const latest = useRef<EditorSnapshot>({ name, config });
   const toast = useToast();
   const toastRef = useRef(toast);
   toastRef.current = toast;
-
-  // --- Autosave (debounced; each successful save stores an unpublished draft) ---
-  // Bulletproofing: (1) surface WHY a save failed, (2) client-side pre-validate
-  // so a doomed PUT never fires, (4) auto-retry a transient failure once — and
-  // keep `dirty` true until a save actually SUCCEEDS so nothing is silently lost.
-  const persist = useCallback(
-    async (nextName: string, nextConfig: FormConfig, opts?: { isRetry?: boolean }): Promise<boolean> => {
-      const normalized = normalizeConfig(nextConfig);
-      const parsed = formConfigSchema.safeParse(normalized);
-      if (!parsed.success) {
-        const issue = parsed.error.issues[0];
-        const field = issue?.path.join('.') || 'config';
-        const reason = `${field}: ${issue?.message ?? 'invalid value'}`;
-        setStatus('error');
-        setLastError(reason);
-        console.error('[forms] autosave blocked — config failed validation:', reason, parsed.error.issues);
-        toastRef.current.error(tb(m.saveInvalid, { reason }));
-        return false; // dirty stays true; the next edit re-attempts
-      }
-      setStatus('saving');
-      const res = await saveFormAction(id, { name: nextName, config: normalized });
-      if (res.ok) {
-        dirty.current = false;
-        setStatus('saved');
-        setLastError(null);
-        setSaveCount((n) => n + 1);
-        return true;
-      }
-      const reason = res.message ?? 'unknown error';
-      console.error('[forms] autosave failed:', reason);
-      setStatus('error');
-      setLastError(reason);
-      if (!opts?.isRetry) {
-        toastRef.current.error(tb(m.saveErrorReason, { reason }));
-        if (retry.current) clearTimeout(retry.current);
-        retry.current = setTimeout(() => {
-          void persist(latest.current.name, latest.current.config, { isRetry: true });
-        }, RETRY_MS);
-      }
-      return false; // dirty stays true until a save actually succeeds
-    },
-    [id, m],
-  );
 
   useEffect(() => {
     latest.current = { name, config };
   }, [name, config]);
 
-  useEffect(() => {
-    if (!dirty.current) return;
-    const t = setTimeout(() => void persist(name, config), AUTOSAVE_MS);
-    return () => clearTimeout(t);
-  }, [name, config, persist]);
-
-  // (3) Flush a pending (debounced) save on leave so a change still sitting in
-  // the debounce window is never dropped. `beacon` = a keepalive PUT that
-  // survives a hard tab close/reload; the SPA-nav + tab-hidden paths use the
-  // cookie-authed server action (the component is still able to fire it).
-  const flush = useCallback(
-    (beacon: boolean) => {
-      if (!dirty.current) return;
-      const { name: n, config: c } = latest.current;
-      const normalized = normalizeConfig(c);
-      if (!formConfigSchema.safeParse(normalized).success) return; // never flush invalid config
-      if (beacon) {
-        try {
-          void fetch(`${API_BASE}/v1/forms/${id}`, {
-            method: 'PUT',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ name: n, config: normalized }),
-            keepalive: true,
-            credentials: 'include',
-          });
-        } catch {
-          /* best-effort on the unload path — nothing to recover to */
-        }
-      } else {
-        void persist(n, c);
+  // --- Autosave (each successful save stores an unpublished draft) -----------
+  // The debounce/serialize/retry machinery lives in `useAutosave` (shared with
+  // the integrations editor). What this component owes it: the freshest
+  // snapshot, the zod pre-validation gate, the server write (transport-safe via
+  // `callAction` — a rejected invocation is a retryable value, never a stuck
+  // "Saving…"), the same-origin keepalive flush for hard tab closes, and a
+  // localStorage backup so even a lost tab can offer its work back on reopen.
+  const autosave = useAutosave<EditorSnapshot>({
+    getSnapshot: () => latest.current,
+    validate: useCallback((s: EditorSnapshot) => {
+      const parsed = formConfigSchema.safeParse(normalizeConfig(s.config));
+      if (parsed.success) return { ok: true as const };
+      const issue = parsed.error.issues[0];
+      const field = issue?.path.join('.') || 'config';
+      return {
+        ok: false as const,
+        reason: `${field}: ${issue?.message ?? 'invalid value'}`,
+      };
+    }, []),
+    save: (s) =>
+      callAction(() => saveFormAction(id, { name: s.name, config: normalizeConfig(s.config) })),
+    beacon: (s) => {
+      try {
+        void fetch(`/admin/forms/${id}/flush`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            kind: 'config',
+            name: s.name,
+            config: normalizeConfig(s.config),
+          }),
+          keepalive: true,
+        });
+      } catch {
+        /* best-effort on the unload path — the localStorage backup remains */
       }
     },
-    [id, persist],
-  );
-  const flushRef = useRef(flush);
-  useEffect(() => {
-    flushRef.current = flush;
-  }, [flush]);
+    backup: {
+      write: (s) => writeDraftBackup(id, s.name, s.config),
+      clear: () => clearDraftBackup(id),
+    },
+    onFailure: (message, transport) => {
+      console.error('[forms] autosave failed:', message);
+      toastRef.current.error(
+        transport ? m.saveOffline : tb(m.saveErrorReason, { reason: message }),
+      );
+    },
+    onSaved: () => setSaveCount((n) => n + 1),
+    // `migrateRevealToStep` returns the SAME object when there was nothing
+    // legacy to fold in, so an identity check is an exact "did we migrate?" —
+    // start dirty in that case and the first autosave persists the new shape.
+    initiallyDirty: config !== initialConfig,
+    debounceMs: AUTOSAVE_MS,
+  });
+  const status = autosave.status;
 
+  // --- Crash recovery: work the backup caught that never reached the server --
+  const [recovery, setRecovery] = useState<EditorSnapshot | null>(null);
   useEffect(() => {
-    const onVisibility = () => {
-      if (document.visibilityState === 'hidden') flushRef.current(false);
-    };
-    const onBeforeUnload = () => flushRef.current(true);
-    document.addEventListener('visibilitychange', onVisibility);
-    window.addEventListener('beforeunload', onBeforeUnload);
-    return () => {
-      document.removeEventListener('visibilitychange', onVisibility);
-      window.removeEventListener('beforeunload', onBeforeUnload);
-      if (retry.current) clearTimeout(retry.current);
-      flushRef.current(false); // SPA nav / unmount → reliable server-action flush
-    };
-  }, []); // subscribe once; the cleanup flushes exactly once on real unmount
+    const b = readDraftBackup(id);
+    if (!b) return;
+    // Only offer a backup that is NEWER than the server row, parses, and
+    // actually differs from what the server already has — else drop it quietly.
+    const stale = updatedAt != null && b.ts <= updatedAt;
+    const unchanged =
+      b.name === initialName && JSON.stringify(b.config) === JSON.stringify(initialConfig);
+    if (stale || unchanged || !formConfigSchema.safeParse(b.config).success) {
+      clearDraftBackup(id);
+      return;
+    }
+    // Restore the RAW stored config (not the zod output): parsing only gates
+    // validity — stripping unknown-but-additive keys here would lose data.
+    setRecovery({ name: b.name, config: b.config as FormConfig });
+    // Mount-only: the backup verdict is about the page load, not later edits.
+  }, []);
+  function restoreRecovery() {
+    if (!recovery) return;
+    setName(recovery.name);
+    setConfig(recovery.config);
+    setSelected(recovery.config.steps.length ? 0 : null);
+    setRecovery(null);
+    autosave.markDirty(); // the restored work goes straight into the save loop
+  }
+  function discardRecovery() {
+    clearDraftBackup(id);
+    setRecovery(null);
+  }
 
   function mutate(updater: (c: FormConfig) => FormConfig) {
-    dirty.current = true;
-    setStatus('saving');
     setConfig(updater);
+    autosave.markDirty();
   }
   function rename(next: string) {
-    dirty.current = true;
-    setStatus('saving');
     setName(next);
+    autosave.markDirty();
   }
 
   // --- Step operations ------------------------------------------------------
@@ -324,8 +312,8 @@ export function FormEditor({
     if (!current) return;
     const oldKey = current.key;
     mutate((c) => engineRenameStepKey(c, oldKey, nextKey));
-    void renameQuestionMappingAction(id, oldKey, nextKey).then((res) => {
-      if (!res.ok && res.code === 'error') {
+    void callAction(() => renameQuestionMappingAction(id, oldKey, nextKey)).then((res) => {
+      if (isTransportError(res) || (!res.ok && res.code === 'error')) {
         // The config rename already applied and autosaved; only the CRM mapping
         // is behind. Say so rather than implying the whole rename failed.
         toastRef.current.error(m.behavior.fieldKeyMappingFailed);
@@ -358,7 +346,11 @@ export function FormEditor({
       return {
         ...c,
         steps,
-        partialSubmitAfterStep: reanchorAfterDelete(c.partialSubmitAfterStep, index, c.steps.length),
+        partialSubmitAfterStep: reanchorAfterDelete(
+          c.partialSubmitAfterStep,
+          index,
+          c.steps.length,
+        ),
       };
     });
     setSelected((sel) => {
@@ -392,19 +384,17 @@ export function FormEditor({
   }
   function applyTemplate(tid: TemplateId) {
     const cfg = TEMPLATES[tid];
-    dirty.current = true;
     // Preserve a name the user already typed; only fall back to the template's
     // name when the field is still blank (V4-11 — templates swap config, not name).
     setName((n) => (n.trim() ? n : bm.empty.templates[tid].name));
     setConfig(cfg);
     setSelected(0);
     setTab('build');
-    setStatus('saving');
+    autosave.markDirty();
   }
 
   // Public title (V7): what the tab/OG/cover show. Empty clears back to `name`.
-  const setTitle = (title: string) =>
-    mutate((c) => ({ ...c, title: title.trim() ? title : null }));
+  const setTitle = (title: string) => mutate((c) => ({ ...c, title: title.trim() ? title : null }));
   const patchCover = (patch: Partial<FormCover>) =>
     mutate((c) => ({ ...c, cover: { ...c.cover, ...patch } }));
   const patchBranding = (patch: Partial<FormBranding>) =>
@@ -485,12 +475,18 @@ export function FormEditor({
       const keep = c.steps.filter((s) => s.type !== 'reveal');
       // Re-anchor the partial marker by the key it pointed at (a reveal can't
       // be the anchor's own step — it captures no answer — but positions shift).
-      const anchorKey = c.partialSubmitAfterStep != null ? c.steps[c.partialSubmitAfterStep - 1]?.key : undefined;
+      const anchorKey =
+        c.partialSubmitAfterStep != null ? c.steps[c.partialSubmitAfterStep - 1]?.key : undefined;
       const idx = anchorKey ? keep.findIndex((s) => s.key === anchorKey) : -1;
-      return { ...c, steps: keep, partialSubmitAfterStep: idx >= 0 ? idx + 1 : undefined };
+      return {
+        ...c,
+        steps: keep,
+        partialSubmitAfterStep: idx >= 0 ? idx + 1 : undefined,
+      };
     });
     // Removing cards can strand the selection past the end of the list.
-    if (!on) setSelected((sel) => (sel == null ? sel : keepLen === 0 ? null : Math.min(sel, keepLen - 1)));
+    if (!on)
+      setSelected((sel) => (sel == null ? sel : keepLen === 0 ? null : Math.min(sel, keepLen - 1)));
   }
 
   /**
@@ -537,13 +533,21 @@ export function FormEditor({
   const statusLabel =
     status === 'saving'
       ? bm.shell.saving
-      : status === 'error'
-        ? bm.shell.saveError
-        : hasQuestions
-          ? bm.shell.saved
-          : bm.shell.draft;
+      : status === 'retrying'
+        ? bm.shell.retrying
+        : status === 'error'
+          ? bm.shell.saveError
+          : hasQuestions
+            ? bm.shell.saved
+            : bm.shell.draft;
   const statusDot =
-    status === 'error' ? 'bg-destructive' : status === 'saving' ? 'bg-muted-foreground' : 'bg-primary-edge';
+    status === 'error'
+      ? 'bg-destructive'
+      : status === 'saving' || status === 'retrying'
+        ? 'bg-muted-foreground'
+        : 'bg-primary-edge';
+  /** Kept for tests/tools reading `data-status`: an empty saved form is "draft". */
+  const displayStatus = status === 'saved' && !hasQuestions ? 'draft' : status;
 
   return (
     <div className="flex h-[100dvh] flex-col overflow-hidden bg-background">
@@ -574,12 +578,16 @@ export function FormEditor({
           <span
             className={cn(
               'hidden shrink-0 items-center gap-1.5 text-xs text-muted-foreground xl:inline-flex',
-              status === 'error' && lastError ? 'cursor-help' : '',
+              (status === 'error' || status === 'retrying') && autosave.detail ? 'cursor-help' : '',
             )}
             data-testid="editor-save-status"
-            data-status={status}
+            data-status={displayStatus}
             // Native tooltip: hover the "Not saved" indicator to read WHY it failed.
-            title={status === 'error' && lastError ? tb(m.saveErrorReason, { reason: lastError }) : undefined}
+            title={
+              (status === 'error' || status === 'retrying') && autosave.detail
+                ? tb(m.saveErrorReason, { reason: autosave.detail })
+                : undefined
+            }
           >
             <span className={cn('h-1.5 w-1.5 rounded-full', statusDot)} />
             {statusLabel}
@@ -642,6 +650,41 @@ export function FormEditor({
           />
         </div>
       </header>
+
+      {/* Crash recovery: edits the local backup caught that never reached the
+          server (closed tab mid-outage, hung API). Offered once per load. */}
+      {recovery ? (
+        <div
+          data-testid="draft-recovery-banner"
+          className="flex flex-wrap items-center gap-3 border-b border-border bg-muted px-3 py-2 text-sm sm:px-4"
+        >
+          <i
+            aria-hidden
+            className="pi pi-history shrink-0 text-muted-foreground"
+            style={{ fontSize: 14 }}
+          />
+          <p className="min-w-0 flex-1">
+            <span className="font-medium">{bm.shell.recoveryTitle}</span>{' '}
+            <span className="text-muted-foreground">{bm.shell.recoveryBody}</span>
+          </p>
+          <div className="flex shrink-0 items-center gap-2">
+            <button
+              type="button"
+              onClick={restoreRecovery}
+              className="inline-flex h-8 items-center rounded-md bg-primary px-3 text-xs font-semibold text-primary-foreground hover:brightness-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              {bm.shell.recoveryRestore}
+            </button>
+            <button
+              type="button"
+              onClick={discardRecovery}
+              className="inline-flex h-8 items-center rounded-md border border-border px-3 text-xs font-medium text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              {bm.shell.recoveryDiscard}
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       {/* Topbar, row 2 — contextual: only what acts on the CURRENT section. */}
       <EditorToolbar m={bm}>
@@ -788,7 +831,9 @@ export function FormEditor({
                       />
                     )
                   ) : (
-                    <p className="py-16 text-center text-sm text-muted-foreground">{bm.settings.empty}</p>
+                    <p className="py-16 text-center text-sm text-muted-foreground">
+                      {bm.settings.empty}
+                    </p>
                   )}
                 </div>
                 {/* Mobile question strip */}
@@ -800,7 +845,9 @@ export function FormEditor({
                       onClick={() => setSelected(i)}
                       className={cn(
                         'inline-flex shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs',
-                        i === selected ? 'border-primary-edge bg-primary/10 text-foreground' : 'border-border text-muted-foreground',
+                        i === selected
+                          ? 'border-primary-edge bg-primary/10 text-foreground'
+                          : 'border-border text-muted-foreground',
                       )}
                     >
                       <span className="font-bold tabular-nums">{i + 1}</span>
@@ -844,7 +891,11 @@ export function FormEditor({
             </div>
           ) : (
             <div className="h-full overflow-y-auto">
-              <EmptyState onPickTemplate={applyTemplate} onScratch={() => setGalleryOpen(true)} m={bm} />
+              <EmptyState
+                onPickTemplate={applyTemplate}
+                onScratch={() => setGalleryOpen(true)}
+                m={bm}
+              />
             </div>
           )
         ) : tab === 'logic' ? (
@@ -912,7 +963,11 @@ export function FormEditor({
         m={bm}
         // Vertical: one reveal, always at the end — a second tile pick would
         // create a card the renderer ignores, so it's offered exactly once.
-        disabled={layout === 'vertical' && hasReveal ? { reveal: bm.gallery.revealVerticalTaken } : undefined}
+        disabled={
+          layout === 'vertical' && hasReveal
+            ? { reveal: bm.gallery.revealVerticalTaken }
+            : undefined
+        }
       />
       {/* The three form-wide views. Branching edits INLINE (R7) — same
           LogicRules/LogicConditions the per-question dialog hosts, same
@@ -931,7 +986,9 @@ export function FormEditor({
         onClose={() => setLogicView(null)}
         config={config}
         onScoringChange={setScoring}
-        onStepScoringChange={(index, on) => patchStep(index, { scoringEnabled: on ? undefined : false })}
+        onStepScoringChange={(index, on) =>
+          patchStep(index, { scoringEnabled: on ? undefined : false })
+        }
         onStepPatch={patchStep}
         bm={bm}
         em={m}
