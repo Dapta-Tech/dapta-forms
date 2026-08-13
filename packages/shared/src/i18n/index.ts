@@ -15,6 +15,14 @@ export interface FormsMessages {
     ctaAction: string;
     /** SEO/OG meta description for a public form page. */
     seoForm: string;
+    /** Step count on the generated share card. `{count}` is a number. */
+    shareCardSteps: string;
+    /**
+     * Headline on a share card for a form that could not be loaded. The card is
+     * rendered by a social crawler, so this is the one string here a RESPONDENT
+     * may never see and a stranger's timeline might.
+     */
+    shareCardUntitled: string;
   };
   /** Public form-renderer chrome (all user content comes from the form config). */
   renderer: {
@@ -1440,6 +1448,8 @@ export const en: FormsMessages = {
     ctaQuestion: 'Want your own form?',
     ctaAction: 'Get Dapta Forms — free',
     seoForm: 'Fill out {name} online.',
+    shareCardSteps: '{count} questions',
+    shareCardUntitled: 'Form',
   },
   renderer: {
     start: 'Start',
@@ -2762,6 +2772,8 @@ export const es: FormsMessages = {
     ctaQuestion: '¿Quieres tu propio formulario?',
     ctaAction: 'Consigue Dapta Forms — gratis',
     seoForm: 'Completa {name} en línea.',
+    shareCardSteps: '{count} preguntas',
+    shareCardUntitled: 'Formulario',
   },
   renderer: {
     start: 'Comenzar',
