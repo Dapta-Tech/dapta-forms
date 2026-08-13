@@ -12,8 +12,15 @@ import {
   claimDueOutbox,
   markOutboxRetry,
   markOutboxDone,
+  markOutboxFailed,
   listFailedDeliveries,
+  listFormDeliveries,
+  listOutbox,
+  recordSettledDelivery,
   summarizeFailedDeliveriesByForm,
+  WEBHOOK_PING_ACTION,
+  type OutboxKind,
+  type OutboxStatus,
 } from './outbox';
 
 let db: Db;
@@ -212,6 +219,248 @@ describe('listFailedDeliveries', () => {
       const rows = await listFailedDeliveries(db, ACC, FORM);
       expect(rows.map((r) => r.id).sort()).toEqual([booking, webhook].sort());
     });
+  });
+});
+
+/**
+ * The delivery transcript — what crossed the wire, kept on the row.
+ *
+ * The columns are the whole reason the history can answer "why", so the cases
+ * that matter are the ones where a later write could destroy an earlier answer.
+ */
+describe('the delivery transcript', () => {
+  const ACC = 'acc-1';
+  const FORM = 'form-1';
+
+  const seedPending = () =>
+    enqueueOutbox(db, {
+      kind: 'webhook',
+      action: 'complete',
+      accountId: ACC,
+      payload: JSON.stringify({ destination: { type: 'webhook' }, ctx: { formId: FORM } }),
+      now: 1_000,
+    });
+
+  const readBack = async (id: string) =>
+    (await listOutbox(db, { accountId: ACC })).find((r) => r.id === id);
+
+  it('keeps what was sent and what came back on a delivered row', async () => {
+    const id = await seedPending();
+    await markOutboxDone(db, id, 2_000, {
+      requestBody: '{"hello":"world"}',
+      responseStatus: 200,
+      responseBody: 'ok',
+    });
+    const row = await readBack(id);
+    expect(row?.requestBody).toBe('{"hello":"world"}');
+    expect(row?.responseStatus).toBe(200);
+    expect(row?.responseBody).toBe('ok');
+  });
+
+  it('keeps them on a failed row too — the one anybody reads back', async () => {
+    const id = await seedPending();
+    await markOutboxFailed(db, id, {
+      attempts: 5,
+      error: 'webhook delivery failed: HTTP 400',
+      now: 2_000,
+      transcript: { requestBody: '{"a":1}', responseStatus: 400, responseBody: '{"error":"nope"}' },
+    });
+    const row = await readBack(id);
+    expect(row?.status).toBe('failed');
+    expect(row?.responseStatus).toBe(400);
+    expect(row?.responseBody).toBe('{"error":"nope"}');
+  });
+
+  it('does not let a later attempt with no transcript erase the earlier one', async () => {
+    // The last retry of a webhook whose host stopped resolving reports no
+    // response. Nulling the stored one would throw away the only evidence of
+    // what the endpoint used to say — which is the answer being looked for.
+    const id = await seedPending();
+    await markOutboxRetry(db, id, {
+      attempts: 1,
+      error: 'HTTP 500',
+      now: 2_000,
+      transcript: { requestBody: '{"a":1}', responseStatus: 500, responseBody: 'boom' },
+    });
+    await markOutboxFailed(db, id, { attempts: 5, error: 'getaddrinfo ENOTFOUND', now: 3_000 });
+    const row = await readBack(id);
+    expect(row?.responseStatus).toBe(500);
+    expect(row?.responseBody).toBe('boom');
+  });
+
+  it('truncates a receiver that answers with a whole page', async () => {
+    const id = await seedPending();
+    await markOutboxDone(db, id, 2_000, { responseBody: 'x'.repeat(5_000) });
+    const row = await readBack(id);
+    expect(row?.responseBody?.length).toBeLessThan(5_000);
+    expect(row?.responseBody?.endsWith('…')).toBe(true);
+  });
+});
+
+/**
+ * The admin's test delivery is synchronous — it never passes through the queue —
+ * but it IS a real POST to the real endpoint, so it is recorded like one.
+ */
+describe('recordSettledDelivery', () => {
+  const ACC = 'acc-1';
+  const FORM = 'form-1';
+
+  const record = (status: 'done' | 'failed') =>
+    recordSettledDelivery(db, {
+      kind: 'webhook',
+      action: WEBHOOK_PING_ACTION,
+      accountId: ACC,
+      payload: JSON.stringify({ destination: { type: 'webhook' }, ctx: { formId: FORM } }),
+      status,
+      error: status === 'failed' ? 'webhook delivery failed: HTTP 400' : null,
+      transcript: { requestBody: '{"test":true}', responseStatus: 400, responseBody: 'nope' },
+      now: 2_000,
+    });
+
+  it('lands in the form history like any other delivery', async () => {
+    const id = await record('failed');
+    const rows = await listFormDeliveries(db, ACC, FORM, { kinds: ['webhook'] });
+    expect(rows.map((r) => r.id)).toEqual([id]);
+    expect(rows[0]?.action).toBe(WEBHOOK_PING_ACTION);
+    expect(rows[0]?.requestBody).toBe('{"test":true}');
+  });
+
+  it('is never claimable, so a test delivery cannot be sent twice', async () => {
+    // Enqueueing and then settling would leave a window for the worker to grab
+    // the row. Inserted terminal, with nothing due, there is no window at all.
+    await record('done');
+    expect(await claimDueOutbox(db, Number.MAX_SAFE_INTEGER)).toEqual([]);
+  });
+});
+
+/**
+ * The same read, widened to answer "what happened" rather than "what broke".
+ *
+ * Every case here is about a narrowing that must hold: the per-integration
+ * history asks for `done` rows, and `done` is most of this table, so a `kinds`
+ * filter that quietly failed open would put a form's landed emails inside its
+ * webhook card.
+ */
+describe('listFormDeliveries', () => {
+  const ACC = 'acc-1';
+  const OTHER = 'acc-2';
+  const FORM = 'form-1';
+
+  async function seed(over: {
+    accountId?: string;
+    formId?: string;
+    kind?: OutboxKind;
+    action?: string;
+    status?: OutboxStatus;
+    lastError?: string | null;
+    attempts?: number;
+    updatedAt?: number;
+  }) {
+    const kind = over.kind ?? 'webhook';
+    const accountId = over.accountId ?? ACC;
+    const id = await enqueueOutbox(db, {
+      kind,
+      action: over.action ?? 'complete',
+      accountId,
+      payload: JSON.stringify({
+        destination: { type: kind, enabled: true, settings: { url: 'https://x.test/hook' } },
+        ctx: { formId: over.formId ?? FORM, submissionId: 'sub-1', accountId },
+      }),
+      now: 1_000,
+    });
+    await db.run(
+      sql`UPDATE outbox SET status = ${over.status ?? 'done'},
+                            last_error = ${over.lastError ?? null},
+                            attempts = ${over.attempts ?? 0},
+                            updated_at = ${over.updatedAt ?? 2_000}
+          WHERE id = ${id}`,
+    );
+    return id;
+  }
+
+  it('defaults to failures only, so existing callers see no change', async () => {
+    const failed = await seed({ status: 'failed', lastError: 'HTTP 400' });
+    await seed({ status: 'done' });
+    await seed({ status: 'pending' });
+
+    const rows = await listFormDeliveries(db, ACC, FORM);
+    expect(rows.map((r) => r.id)).toEqual([failed]);
+  });
+
+  it('returns what landed when asked for it, newest first', async () => {
+    const older = await seed({ status: 'done', updatedAt: 2_000 });
+    const newer = await seed({ status: 'failed', lastError: 'HTTP 400', updatedAt: 3_000 });
+
+    const rows = await listFormDeliveries(db, ACC, FORM, {
+      statuses: ['done', 'pending', 'failed', 'skipped'],
+    });
+    expect(rows.map((r) => r.id)).toEqual([newer, older]);
+    expect(rows.map((r) => r.status)).toEqual(['failed', 'done']);
+  });
+
+  it('narrows to the asked-for kinds and nothing else', async () => {
+    const hook = await seed({ kind: 'webhook', status: 'done' });
+    await seed({ kind: 'email', status: 'done', action: 'submission_received' });
+    await seed({ kind: 'hubspot', status: 'done' });
+
+    const rows = await listFormDeliveries(db, ACC, FORM, {
+      kinds: ['webhook'],
+      statuses: ['done'],
+    });
+    expect(rows.map((r) => r.id)).toEqual([hook]);
+  });
+
+  it('groups booking_sync with hubspot when both are asked for', async () => {
+    const crm = await seed({ kind: 'hubspot', status: 'done', updatedAt: 3_000 });
+    const booking = await seed({
+      kind: 'booking_sync',
+      action: 'crm_update',
+      status: 'failed',
+      lastError: 'calendly 500',
+      updatedAt: 4_000,
+    });
+    await seed({ kind: 'webhook', status: 'done' });
+
+    const rows = await listFormDeliveries(db, ACC, FORM, {
+      kinds: ['hubspot', 'booking_sync'],
+      statuses: ['done', 'failed'],
+    });
+    expect(rows.map((r) => r.id)).toEqual([booking, crm]);
+  });
+
+  it('answers with nothing when the caller narrowed to nothing', async () => {
+    // An empty list is a caller that asked for no kinds — never a caller who
+    // meant "all of them". Widening back would be the worst possible reading:
+    // a card would fill with another integration's history.
+    await seed({ status: 'done' });
+    expect(await listFormDeliveries(db, ACC, FORM, { kinds: [], statuses: ['done'] })).toEqual([]);
+    expect(await listFormDeliveries(db, ACC, FORM, { statuses: [] })).toEqual([]);
+  });
+
+  it('keeps the account boundary while reading landed rows', async () => {
+    await seed({ accountId: OTHER, status: 'done' });
+    expect(
+      await listFormDeliveries(db, ACC, FORM, { kinds: ['webhook'], statuses: ['done'] }),
+    ).toEqual([]);
+  });
+
+  it('carries the action and attempt count the row recorded', async () => {
+    await seed({ action: 'partial', status: 'failed', lastError: 'HTTP 500', attempts: 5 });
+    const [row] = await listFormDeliveries(db, ACC, FORM);
+    expect(row?.action).toBe('partial');
+    expect(row?.attempts).toBe(5);
+  });
+
+  it('bounds the answer with limit and the work with scanLimit', async () => {
+    for (let i = 0; i < 4; i++) await seed({ status: 'done', updatedAt: 2_000 + i });
+    const all = await listFormDeliveries(db, ACC, FORM, { statuses: ['done'] });
+    expect(all).toHaveLength(4);
+    expect(await listFormDeliveries(db, ACC, FORM, { statuses: ['done'], limit: 2 })).toHaveLength(2);
+    // scanLimit stops the read before the form filter ever runs, which is what
+    // keeps a busy account from paging its whole history into memory.
+    expect(
+      await listFormDeliveries(db, ACC, FORM, { statuses: ['done'], scanLimit: 1 }),
+    ).toHaveLength(1);
   });
 });
 

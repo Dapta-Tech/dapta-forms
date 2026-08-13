@@ -1,0 +1,19 @@
+-- An index for reading one account's delivery history — additive.
+--
+-- The only index this table had was `outbox_due_idx (status, next_attempt_at)`,
+-- which serves the worker: "what is due". Every read the ADMIN makes asks the
+-- opposite question — "what happened to this account's webhooks, newest first" —
+-- and had no index at all to answer it.
+--
+-- That was survivable while the admin only ever looked at failures: `failed` and
+-- `skipped` are a rounding error next to the rest of the table, so the planner's
+-- work stayed small even scanning for them. The per-integration history changes
+-- that. It reads `done` too, and `done` is the table: every landed email, every
+-- landed webhook, for the life of the deployment. Without this index, opening a
+-- form's Connect tab means a sequential scan of all of it.
+--
+-- (account_id, kind, updated_at) matches the read exactly: the account is the
+-- tenant boundary and always present, `kind` is what each card narrows to, and
+-- `updated_at` is the sort. Postgres reads a b-tree backwards at no cost, so a
+-- plain ASC index serves the DESC scan.
+CREATE INDEX IF NOT EXISTS outbox_account_kind_updated_idx ON outbox (account_id, kind, updated_at);

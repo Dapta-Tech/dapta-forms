@@ -893,10 +893,6 @@ export interface FormsMessages {
         integrationsSubtitle: string;
         integrationsLoadError: string;
         retry: string;
-        /** Deliveries that ended without landing — hidden when there are none. */
-        deliveriesTitle: string;
-        deliveriesSubtitle: string;
-        deliveriesNoReason: string;
         trackingTitle: string;
         trackingSubtitle: string;
         /** V5-QA — these ride the draft, unlike the integrations above them. */
@@ -1193,6 +1189,40 @@ export interface FormsMessages {
       webhookEventsHelp: string;
       eventPartial: string;
       eventComplete: string;
+      // Delivery history — the collapsible log inside each integration card.
+      /** Per-card headings; the shared panel takes them as props. */
+      historyWebhookTitle: string;
+      historyHubspotTitle: string;
+      historyEmailTitle: string;
+      historyHelp: string;
+      /** How a test delivery differs from a real one, since both are listed. */
+      historyPingNote: string;
+      /** Marks a row the "Send test" button produced. */
+      historyTestBadge: string;
+      // The transcript — what we sent, what came back.
+      historyRequest: string;
+      historyResponse: string;
+      /** No transcript stored: an older delivery, or a kind that reports none. */
+      historyBodyNotRecorded: string;
+      /** The endpoint answered with no body at all. */
+      historyBodyEmpty: string;
+      historyEmpty: string;
+      historyLoadError: string;
+      historyRefresh: string;
+      /** Opens the log in a dialog — a card is a settings form, not a log view. */
+      historyOpen: string;
+      historyClose: string;
+      /** Header chips. `{n}` = a row count within the window that was read. */
+      historyCount: string;
+      historyFailedCount: string;
+      // Row status labels.
+      historyDelivered: string;
+      historyRetrying: string;
+      historyFailed: string;
+      historySkipped: string;
+      /** `{n}` = delivery attempts, shown only past the first. */
+      historyAttempts: string;
+      historyNoReason: string;
       // Google Sheets — announced, not shipped; the card is inert
       gsheetsTitle: string;
       gsheetsDesc: string;
@@ -2291,10 +2321,6 @@ export const en: FormsMessages = {
           'Send each submission to your CRM or a webhook. Delivery is durable and retried.',
         integrationsLoadError: 'Could not load integrations.',
         retry: 'Retry',
-        deliveriesTitle: 'Deliveries that did not land',
-        deliveriesSubtitle:
-          'Submissions reached this form, but these deliveries never completed. The respondent saw nothing wrong, so this is the only place it shows.',
-        deliveriesNoReason: 'No reason was recorded.',
         trackingTitle: 'Tracking & pixels',
         trackingSubtitle:
           'Measure visits and conversions on this form’s public page. Each tag loads only when its ID is set.',
@@ -2574,6 +2600,30 @@ export const en: FormsMessages = {
       webhookEventsHelp: 'Choose which submissions are sent to this webhook. Both are sent by default.',
       eventPartial: 'Partial submissions',
       eventComplete: 'Complete submissions',
+      historyWebhookTitle: 'Webhook history',
+      historyHubspotTitle: 'HubSpot history',
+      historyEmailTitle: 'Email history',
+      historyHelp: 'The last deliveries this form made, newest first. Open one to see what was sent.',
+      historyPingNote:
+        'Test deliveries are listed too, marked as tests: they reach your endpoint for real, but carry sample answers instead of a respondent’s.',
+      historyTestBadge: 'Test',
+      historyRequest: 'What we sent',
+      historyResponse: 'What came back',
+      historyBodyNotRecorded: 'Not recorded for this delivery.',
+      historyBodyEmpty: 'Your endpoint answered with no body.',
+      historyEmpty: 'Nothing has been delivered yet.',
+      historyLoadError: 'Could not load the delivery history.',
+      historyRefresh: 'Refresh',
+      historyOpen: 'View history',
+      historyClose: 'Close',
+      historyCount: '{n} deliveries',
+      historyFailedCount: '{n} failed',
+      historyDelivered: 'Delivered',
+      historyRetrying: 'In progress',
+      historyFailed: 'Failed',
+      historySkipped: 'Skipped',
+      historyAttempts: '{n} attempts',
+      historyNoReason: 'No reason was recorded.',
       gsheetsTitle: 'Google Sheets',
       gsheetsDesc: 'Append each response as a new row in a spreadsheet.',
       comingSoon: 'Coming soon',
@@ -3657,10 +3707,6 @@ export const es: FormsMessages = {
           'Envía cada respuesta a tu CRM o a un webhook. La entrega es duradera y con reintentos.',
         integrationsLoadError: 'No se pudieron cargar las integraciones.',
         retry: 'Reintentar',
-        deliveriesTitle: 'Entregas que no llegaron',
-        deliveriesSubtitle:
-          'Las respuestas llegaron al formulario, pero estas entregas nunca se completaron. Quien respondió no vio ningún problema, así que este es el único lugar donde aparece.',
-        deliveriesNoReason: 'No se registró un motivo.',
         trackingTitle: 'Seguimiento y píxeles',
         trackingSubtitle:
           'Mide visitas y conversiones en la página pública de este formulario. Cada etiqueta se carga solo cuando su ID está configurado.',
@@ -3944,6 +3990,31 @@ export const es: FormsMessages = {
       webhookEventsHelp: 'Elige qué respuestas se envían a este webhook. Por defecto se envían ambas.',
       eventPartial: 'Respuestas parciales',
       eventComplete: 'Respuestas completas',
+      historyWebhookTitle: 'Historial del webhook',
+      historyHubspotTitle: 'Historial de HubSpot',
+      historyEmailTitle: 'Historial de correos',
+      historyHelp:
+        'Las últimas entregas que hizo este formulario, de la más reciente a la más antigua. Abrí una para ver qué se envió.',
+      historyPingNote:
+        'Las entregas de prueba también aparecen, marcadas como tales: llegan de verdad a tu endpoint, pero llevan respuestas de ejemplo en lugar de las de una persona.',
+      historyTestBadge: 'Prueba',
+      historyRequest: 'Lo que enviamos',
+      historyResponse: 'Lo que respondió',
+      historyBodyNotRecorded: 'No se registró para esta entrega.',
+      historyBodyEmpty: 'Tu endpoint respondió sin cuerpo.',
+      historyEmpty: 'Todavía no se ha entregado nada.',
+      historyLoadError: 'No se pudo cargar el historial de entregas.',
+      historyRefresh: 'Actualizar',
+      historyOpen: 'Ver historial',
+      historyClose: 'Cerrar',
+      historyCount: '{n} entregas',
+      historyFailedCount: '{n} con error',
+      historyDelivered: 'Entregada',
+      historyRetrying: 'En curso',
+      historyFailed: 'Falló',
+      historySkipped: 'Omitida',
+      historyAttempts: '{n} intentos',
+      historyNoReason: 'No se registró un motivo.',
       gsheetsTitle: 'Google Sheets',
       gsheetsDesc: 'Añade cada respuesta como una fila nueva en una hoja de cálculo.',
       comingSoon: 'Muy pronto',

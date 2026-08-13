@@ -20,7 +20,16 @@
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
-import { createDb, migrate, seed, getAccountByCode, updateFormDestinations, type Db } from '@quill/db';
+import {
+  createDb,
+  migrate,
+  seed,
+  getAccountByCode,
+  listFormDeliveries,
+  updateFormDestinations,
+  WEBHOOK_PING_ACTION,
+  type Db,
+} from '@quill/db';
 import { FormDestinationsController } from './integrations.controller';
 import { AuthService } from './auth.service';
 import { LocalAuthProvider, type ReqLike } from './auth.provider';
@@ -210,6 +219,77 @@ describe('webhook ping', () => {
       await setWebhook('http://localhost:4999/hook');
       const res = await controller.pingWebhook(asOwner(), formId);
       expect(res).toEqual({ ok: true });
+    });
+  });
+
+  /**
+   * The test delivery is logged like a real one.
+   *
+   * It never passes through the outbox — the author clicks and waits — but it is
+   * a real signed POST to the real endpoint, and when someone is wiring a
+   * webhook up it is very often the ONLY delivery that has run. Leaving it out
+   * kept the history empty during exactly the session it exists to help.
+   */
+  describe('what the history records', () => {
+    const history = () =>
+      listFormDeliveries(db, accountId, formId, {
+        kinds: ['webhook'],
+        statuses: ['done', 'pending', 'failed', 'skipped'],
+      });
+
+    it('records a successful test, with what was sent and what came back', async () => {
+      await setWebhook('http://localhost:4999/hook');
+      await controller.pingWebhook(asOwner(), formId);
+
+      const [row] = await history();
+      expect(row?.status).toBe('done');
+      expect(row?.action).toBe(WEBHOOK_PING_ACTION);
+      expect(row?.responseStatus).toBe(200);
+      expect(row?.responseBody).toBe('{"ok":true}');
+      // The transcript is the delivery's own body, not the enqueued snapshot.
+      expect(JSON.parse(String(row?.requestBody)).data.test).toBe(true);
+    });
+
+    it('records a rejected test with the endpoint’s own answer', async () => {
+      await setWebhook('http://localhost:4999/hook');
+      controller.fetchImpl = (async () =>
+        new Response('{"error":"missing field"}', { status: 400 })) as unknown as typeof fetch;
+      await controller.pingWebhook(asOwner(), formId);
+
+      const [row] = await history();
+      expect(row?.status).toBe('failed');
+      expect(row?.responseStatus).toBe(400);
+      expect(row?.responseBody).toBe('{"error":"missing field"}');
+      expect(row?.lastError).toBe('webhook delivery failed: HTTP 400');
+    });
+
+    it('records the body even when nothing ever answered', async () => {
+      // "We sent THIS and the host never replied" is still the useful half.
+      await setWebhook('http://localhost:4999/hook');
+      controller.fetchImpl = (async () => {
+        throw new TypeError('fetch failed');
+      }) as unknown as typeof fetch;
+      await controller.pingWebhook(asOwner(), formId);
+
+      const [row] = await history();
+      expect(row?.status).toBe('failed');
+      expect(row?.requestBody).toContain('"test":true');
+      expect(row?.responseStatus).toBeNull();
+    });
+
+    it('records a refusal by the SSRF guard, with no transcript to show', async () => {
+      // Nothing crossed the wire, so there is no request or response to keep —
+      // but the author DID click Send test, and an empty history after a click
+      // is the exact complaint this panel exists to answer. The reason the guard
+      // gave is the whole record.
+      await setWebhook('https://10.0.0.5/hook');
+      await controller.pingWebhook(asOwner(), formId);
+
+      const [row] = await history();
+      expect(row?.status).toBe('failed');
+      expect(row?.lastError).toMatch(/private|reserved|blocked/i);
+      expect(row?.requestBody).toBeNull();
+      expect(row?.responseStatus).toBeNull();
     });
   });
 });

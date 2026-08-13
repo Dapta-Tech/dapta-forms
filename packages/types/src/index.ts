@@ -795,6 +795,17 @@ export function hasExtraHubspotDestination(destinations: unknown, stored?: unkno
  */
 export const WEBHOOK_SECRET_MASK = '__DAPTA_FORMS_SECRET_KEEP__';
 
+/**
+ * The `action` a delivery gets when it came from the admin's "Send test" button
+ * rather than a respondent.
+ *
+ * Lives HERE, in the contract package, because both ends read it and neither can
+ * import the other's home: the API stamps it through @quill/db, and the admin —
+ * a browser bundle — reads it to badge the row. A test delivery mislabelled as a
+ * real one would have somebody debugging a submission that never happened.
+ */
+export const WEBHOOK_PING_ACTION = 'ping';
+
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
 }

@@ -123,8 +123,14 @@ export class WebhookDestination implements SubmissionDestination {
         signal: controller.signal,
       });
     } catch (err) {
-      // Timeout (abort) or network error — surface so the outbox retries.
-      throw err instanceof Error ? err : new Error(`webhook delivery failed: ${String(err)}`);
+      // Timeout (abort) or network error — surface so the outbox retries. The
+      // request body rides along even though nothing answered: "we sent THIS and
+      // the host never replied" is still the useful half of the transcript.
+      const error = err instanceof Error ? err : new Error(`webhook delivery failed: ${String(err)}`);
+      // Attached rather than wrapped in a new class: the message and the error's
+      // own type are what the outbox stores and what existing tests assert on.
+      (error as Error & { requestBody?: string }).requestBody = body;
+      throw error;
     } finally {
       clearTimeout(timeout);
     }
@@ -135,6 +141,7 @@ export class WebhookDestination implements SubmissionDestination {
         `webhook delivery refused: endpoint attempted a redirect (HTTP ${res.status})`,
         res.status,
         null,
+        body,
       );
     }
     if (!res.ok) {
@@ -143,9 +150,24 @@ export class WebhookDestination implements SubmissionDestination {
       // best-effort and bounded: a failing endpoint may answer with a whole
       // HTML error page, and none of this belongs in an outbox row.
       const detail = await readErrorBody(res);
-      throw new WebhookHttpError(`webhook delivery failed: HTTP ${res.status}`, res.status, detail);
+      throw new WebhookHttpError(
+        `webhook delivery failed: HTTP ${res.status}`,
+        res.status,
+        detail,
+        body,
+      );
     }
-    return { delivered: true, driver: 'webhook' };
+    // A 2xx body too, not only a failing one. "It returned 200" and "it returned
+    // 200 saying `{"accepted":false}`" are different answers, and the second is
+    // the one that explains a lead that never arrived at a receiver we called
+    // healthy.
+    return {
+      delivered: true,
+      driver: 'webhook',
+      requestBody: body,
+      responseStatus: res.status,
+      responseBody: await readErrorBody(res),
+    };
   }
 }
 
@@ -177,6 +199,12 @@ export class WebhookHttpError extends Error {
     readonly status: number,
     /** The endpoint's own response body, trimmed and truncated, when it sent one. */
     readonly detail: string | null,
+    /**
+     * The exact request body that drew this response. Carried on the ERROR and
+     * not just the success path, because a failed delivery is the only one
+     * anybody ever needs to read back — the outbox stores it from here.
+     */
+    readonly requestBody?: string,
   ) {
     super(message);
     this.name = 'WebhookHttpError';

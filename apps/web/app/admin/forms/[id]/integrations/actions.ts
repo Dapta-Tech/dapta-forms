@@ -3,7 +3,12 @@
 import { unstable_rethrow } from 'next/navigation';
 
 import { revalidatePath } from 'next/cache';
-import { adminApi, type WebhookPingResult } from '@/lib/admin-api';
+import {
+  adminApi,
+  type DeliveryKind,
+  type FormDelivery,
+  type WebhookPingResult,
+} from '@/lib/admin-api';
 import type { FormDestination } from '@quill/types';
 
 /**
@@ -56,5 +61,39 @@ export async function pingWebhookAction(id: string): Promise<WebhookPingResult> 
       reason: 'unknown',
       message: e instanceof Error ? e.message : 'Could not reach the webhook.',
     };
+  }
+}
+
+/** How many rows one integration's history shows. */
+const HISTORY_LIMIT = 25;
+
+/**
+ * One integration's delivery history for this form — what landed and what did
+ * not — newest first.
+ *
+ * `pending` is asked for alongside the rest: a row still working through its
+ * backoff is the most useful thing to see right after wiring an endpoint up, and
+ * leaving it out would show a submission that produced no delivery at all.
+ *
+ * A lookup failure yields an empty list, because this is a diagnostic panel and
+ * it must never make the thing it diagnoses look broken — but `unstable_rethrow`
+ * runs FIRST. Next signals `redirect()` and `notFound()` by throwing, and the
+ * admin API client redirects to /login on a 401; swallowing that here would turn
+ * an expired session into a permanently empty history instead of a sign-in.
+ */
+export async function loadDeliveryHistoryAction(
+  id: string,
+  kinds: DeliveryKind[],
+): Promise<FormDelivery[]> {
+  try {
+    const res = await adminApi.formDeliveries(id, {
+      kinds,
+      statuses: ['done', 'pending', 'failed', 'skipped'],
+      limit: HISTORY_LIMIT,
+    });
+    return res.items;
+  } catch (e) {
+    unstable_rethrow(e);
+    return [];
   }
 }

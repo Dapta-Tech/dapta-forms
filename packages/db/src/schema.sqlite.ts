@@ -110,6 +110,12 @@ export const outbox = sqliteTable('outbox', {
   // Worker claim/lease (H2): set atomically when a row is claimed for delivery.
   claimedAt: integer('claimed_at'),
   claimedBy: text('claimed_by'),
+  // The delivery transcript — what we actually sent and what came back. NULL
+  // for every row written before this shipped, and for kinds whose adapter does
+  // not report one. See `schema.pg.ts` for the full rationale.
+  requestBody: text('request_body'),
+  responseStatus: integer('response_status'),
+  responseBody: text('response_body'),
 });
 
 /** Per-account (and per-form override) notification controls. */
