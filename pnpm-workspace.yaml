@@ -1,3 +1,26 @@
 packages:
   - "apps/*"
   - "packages/*"
+
+onlyBuiltDependencies:
+  - better-sqlite3
+  - esbuild
+  - "@tailwindcss/oxide"
+  - sharp
+  - unrs-resolver
+
+# Transitive-dependency pins for known CVEs where the direct dependency
+# (@nestjs/platform-express, next) has not yet bumped its own dependency range.
+# Each entry cites the advisory it closes; remove once the upstream package
+# raises its own minimum past the patched version.
+overrides:
+  # GHSA-xf7r-hgr6-v32p / GHSA-v52c-386h-88mc / GHSA-5528-5vmv-3xc2 / GHSA-72gw-mp4g-v24j
+  multer: ">=2.2.0"
+  # GHSA-v422-hmwv-36x6 — via @nestjs/platform-express
+  body-parser: ">=1.20.6"
+  # GHSA-fxqj-rqcc-2cmp — via next's own postcss dependency
+  postcss: ">=8.5.23"
+  # GHSA-45bh-jchq-cqjc / GHSA-hjxm-x4rf-4qgj — via @nestjs/common
+  file-type: ">=21.3.2"
+  # GHSA-q8mj-m7cp-5q26 — via @nestjs/platform-express > express
+  qs: ">=6.15.2"
