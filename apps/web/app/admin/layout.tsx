@@ -7,6 +7,7 @@ import { AdminShell } from '@/components/admin-shell';
 import { getLocale } from '@/lib/locale';
 import { getThemePref } from '@/lib/theme.server';
 import { ToastProvider } from '@/components/toast';
+import { PH_ID_COOKIE, sanitizeLandingDistinctId } from '@/lib/attribution';
 import { resolveProductAnalytics } from '@/lib/product-analytics';
 import { ProductAnalytics } from '@/components/analytics/product-analytics';
 import { PlatformGtm, resolvePlatformGtmId } from '@/components/analytics/platform-gtm';
@@ -71,6 +72,10 @@ export default async function AdminLayout({ children }: { children: ReactNode })
           // Passing them only on the wizard would leave every funnel that starts
           // after onboarding un-sliceable by campaign, which is most of them.
           attribution: me.attribution,
+          // The landing's PostHog id, if this login started on a landing CTA.
+          // Re-sanitized on read — the cookie is ours, but the ten minutes
+          // between write and read are not a chain of custody.
+          landingDistinctId: sanitizeLandingDistinctId(jar.get(PH_ID_COOKIE)?.value),
         }}
       />
       <AdminShell

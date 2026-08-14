@@ -52,6 +52,14 @@ export interface AnalyticsIdentity {
    * only registered when present (see `identifyMember`).
    */
   attribution?: Record<string, string | number | null | undefined> | null;
+  /**
+   * The landing's PostHog anonymous id, read back from the `quill_ph_id` cookie
+   * the login route parked. Present only in the minutes after a login that
+   * started on a landing CTA; aliased onto the person exactly once (see
+   * `identifyMember`) so the landing visit and the platform session stop being
+   * two unrelated people.
+   */
+  landingDistinctId?: string | null;
 }
 
 /**
@@ -127,6 +135,7 @@ export function buildAnalyticsSnippet(key: string, host: string): string {
  */
 interface PosthogBrowser {
   identify(distinctId: string, properties?: Record<string, unknown>): void;
+  alias(alias: string, original?: string): void;
   register(properties: Record<string, unknown>): void;
   group(type: string, key: string, properties?: Record<string, unknown>): void;
   capture(event: string, properties?: Record<string, unknown>): void;
@@ -166,6 +175,11 @@ export function identifyMember(identity: AnalyticsIdentity): void {
     account_id: identity.accountId,
     role: identity.role,
   });
+  // AFTER identify, never before: `alias` links its argument to the CURRENT
+  // distinct id, and before identify that is this origin's anonymous id — the
+  // landing visit would be chained to a session that identify then merges,
+  // instead of pinned to the person directly.
+  aliasLandingVisit(ph, identity.landingDistinctId);
   ph.register({
     product: 'forms',
     account_id: identity.accountId,
@@ -183,6 +197,32 @@ export function identifyMember(identity: AnalyticsIdentity): void {
     // answerable across the handful of events we hand-instrument.
     ...groupAttribution(identity.attribution),
   });
+}
+
+/**
+ * Join the landing visit to the person, once per landing id per browser.
+ *
+ * `alias(landingId)` files the landing's anonymous id under the person the
+ * session just identified as — the cross-domain stitch the vendor's cookie
+ * cannot make on its own. The landing id is never an identified id (the landing
+ * has nobody to identify), which is exactly the case alias exists for.
+ *
+ * The latch is `localStorage`, keyed by the landing id itself: the cookie that
+ * carries the id lives ten minutes and nothing can delete it server-side, so
+ * every render inside that window would otherwise re-send the merge. When
+ * storage is blocked the alias fires anyway — the vendor drops a repeated
+ * merge on the floor, and a join that never happens is the only real loss.
+ */
+function aliasLandingVisit(ph: PosthogBrowser, landingId: string | null | undefined): void {
+  if (!landingId) return;
+  try {
+    const key = `dapta_forms_ph_alias:${landingId}`;
+    if (window.localStorage.getItem(key)) return;
+    window.localStorage.setItem(key, '1');
+  } catch {
+    // Private mode: fall through and alias anyway.
+  }
+  ph.alias(landingId);
 }
 
 /** The campaign subset of the attribution blob, snake_cased. Empty when absent. */

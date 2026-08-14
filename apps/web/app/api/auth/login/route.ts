@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { cookies } from 'next/headers';
 import { NextResponse, type NextRequest } from 'next/server';
 import { parseAttribution } from '@quill/types';
+import { PH_ID_COOKIE, PH_ID_QUERY_KEY, sanitizeLandingDistinctId } from '@/lib/attribution';
 import { authProvider } from '@/lib/auth-session';
 import { requestOrigin } from '@/lib/request-origin';
 
@@ -60,6 +61,22 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   // back from campaign B inside ten minutes, and last-wins would credit B.
   if (attribution && !jar.get(ATTRIBUTION_COOKIE)) {
     jar.set(ATTRIBUTION_COOKIE, JSON.stringify(attribution), {
+      path: '/',
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: process.env.NODE_ENV === 'production',
+      maxAge: 600,
+    });
+  }
+
+  // The landing's PostHog anonymous id, parked beside the tags with the same
+  // rules: sanitized (this query is composable by anyone), first attempt wins
+  // (the id of the visit that STARTED the login is the one worth joining), and
+  // absent sets nothing. Unlike the tags it never touches the API or the
+  // database — its whole life is browser-side, ending in one `alias` call.
+  const landingId = sanitizeLandingDistinctId(sp.getAll(PH_ID_QUERY_KEY));
+  if (landingId && !jar.get(PH_ID_COOKIE)) {
+    jar.set(PH_ID_COOKIE, landingId, {
       path: '/',
       httpOnly: true,
       sameSite: 'lax',

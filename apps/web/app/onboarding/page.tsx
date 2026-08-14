@@ -1,6 +1,8 @@
+import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { getMessages } from '@quill/shared';
 import { adminApi, ApiError } from '@/lib/admin-api';
+import { PH_ID_COOKIE, sanitizeLandingDistinctId } from '@/lib/attribution';
 import { preferredLocale } from '@/lib/locale';
 import { currentOnboardingCohort } from '@/lib/dapta-onboarding';
 import { resolveProductAnalytics } from '@/lib/product-analytics';
@@ -81,6 +83,13 @@ export default async function OnboardingPage({
           accountCode: me.accountCode,
           role: me.role,
           attribution: me.attribution,
+          // This is the page that usually spends the ph_id cookie: a fresh
+          // signup lands HERE, not on the dashboard. Wired in both places
+          // because which one renders first is the API's `onboardingRequired`
+          // decision, not ours.
+          landingDistinctId: sanitizeLandingDistinctId(
+            (await cookies()).get(PH_ID_COOKIE)?.value,
+          ),
         }}
       />
       <OnboardingWizard messages={messages} locale={locale} cohort={cohort} />
