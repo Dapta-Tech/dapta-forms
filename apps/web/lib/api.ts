@@ -6,11 +6,15 @@
 import { cache } from 'react';
 import type { PublicForm, PublicProfile } from '@quill/types';
 import { serverApiUrl } from './api-url';
+import { forwardedForHeader } from './forwarded-for';
 
 const API_URL = serverApiUrl;
 
 async function getJson<T>(path: string): Promise<T | null> {
-  const res = await fetch(`${API_URL}${path}`, { cache: 'no-store' });
+  const res = await fetch(`${API_URL}${path}`, {
+    cache: 'no-store',
+    headers: await forwardedForHeader(),
+  });
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`API ${path} failed: ${res.status}`);
   return (await res.json()) as T;
@@ -55,7 +59,7 @@ export async function postSubmission(
     `${API_URL}/v1/public/forms/${encodeURIComponent(accountCode)}/${encodeURIComponent(slug)}/submissions`,
     {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', ...(await forwardedForHeader()) },
       body: JSON.stringify(body),
       cache: 'no-store',
     },
@@ -82,7 +86,7 @@ export async function postFormEvent(
     `${API_URL}/v1/public/forms/${encodeURIComponent(accountCode)}/${encodeURIComponent(slug)}/events`,
     {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', ...(await forwardedForHeader()) },
       body: JSON.stringify(body),
       cache: 'no-store',
     },

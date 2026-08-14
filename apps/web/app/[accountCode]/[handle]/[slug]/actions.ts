@@ -2,6 +2,7 @@
 
 import { postSubmission, postFormEvent } from '@/lib/api';
 import { postBookingCallback } from '@/lib/booking-embed';
+import { forwardedForChain } from '@/lib/forwarded-for';
 import type { BookingCallbackInput } from '@quill/types';
 
 /**
@@ -32,5 +33,5 @@ export async function recordBookingAction(
   slug: string,
   payload: BookingCallbackInput,
 ): Promise<void> {
-  await postBookingCallback(accountCode, slug, payload);
+  await postBookingCallback(accountCode, slug, payload, await forwardedForChain());
 }
