@@ -300,7 +300,10 @@ export interface FormOutcome {
   overrides?: OutcomeOverrideRule[];
   /**
    * Hold the thank-you screen this long before this outcome's redirect fires
-   * (additive — V5-B1). Absent = inherit `config.ending.redirectDelayMs`.
+   * (additive — V5-B1). Absent = 0 when this outcome has its own
+   * `redirectUrl`; `config.ending.redirectDelayMs` is inherited only when the
+   * URL is inherited too — the delay belongs to the URL pairing (see
+   * `resolveEnding`).
    */
   redirectDelayMs?: number;
 }
@@ -1804,7 +1807,9 @@ export function resolveEnding(config: FormConfig, outcome: FormOutcome | null): 
   // outcome-level URL, so a dialog reading 0 held the screen anyway — and a
   // form whose URL had been cleared could leak its orphaned delay the same
   // way.
-  const ownUrl = typeof outcome?.redirectUrl === 'string' && outcome.redirectUrl.trim() !== '';
+  // "Own" by the same definition `pick` uses for the URL itself, so the two
+  // can never disagree about whether the outcome brought a destination.
+  const ownUrl = pick(outcome?.redirectUrl, null) !== null;
   const delaySource = outcome?.redirectDelayMs ?? (ownUrl ? 0 : (e?.redirectDelayMs ?? 0));
   return {
     headline: pick(outcome?.label, e?.headline),
