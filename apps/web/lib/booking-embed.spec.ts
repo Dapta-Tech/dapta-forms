@@ -216,4 +216,22 @@ describe('postBookingCallback', () => {
       postBookingCallback('acme', 'lead-qualifier', { sessionId: 's', provider: 'calendly' }),
     ).resolves.toBeUndefined();
   });
+
+  it('forwards the visitor chain when given one, and omits the header when not', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 201 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await postBookingCallback(
+      'acme',
+      'lead-qualifier',
+      { sessionId: 's', provider: 'calendly' },
+      '203.0.113.7, 10.0.0.2',
+    );
+    let [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(init.headers).toMatchObject({ 'x-forwarded-for': '203.0.113.7, 10.0.0.2' });
+
+    await postBookingCallback('acme', 'lead-qualifier', { sessionId: 's', provider: 'calendly' });
+    [, init] = fetchMock.mock.calls[1] as [string, RequestInit];
+    expect(init.headers).not.toHaveProperty('x-forwarded-for');
+  });
 });
