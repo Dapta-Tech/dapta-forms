@@ -1512,6 +1512,55 @@ describe('resolveEnding (V5-B1 — outcome → form → built-in)', () => {
     expect(resolveEnding(cfg, null).redirectDelayMs).toBe(0);
   });
 
+  it('an outcome with its OWN url never inherits the form-level delay', () => {
+    // The reported bug: the outcomes dialog renders an untouched delay as "0"
+    // and promises "0 = redirect immediately", but the stored value is absent,
+    // and absent used to fall through to the form-level delay — so the public
+    // form held the thank-you the dialog said it would skip. The delay belongs
+    // to the URL pairing: an outcome that brings its own destination without
+    // its own delay redirects immediately, as displayed.
+    const cfg: FormConfig = {
+      version: 1,
+      steps: [],
+      ending: { redirectUrl: 'https://example.com/all', redirectDelayMs: 1500 },
+    };
+    const own = resolveEnding(cfg, outcome({ redirectUrl: 'https://example.com/vip' }));
+    expect(own.redirectUrl).toBe('https://example.com/vip');
+    expect(own.redirectDelayMs).toBe(0);
+    // Its own delay still wins when it has one...
+    expect(
+      resolveEnding(cfg, outcome({ redirectUrl: 'https://example.com/vip', redirectDelayMs: 500 }))
+        .redirectDelayMs,
+    ).toBe(500);
+    // ...and an outcome that inherits the URL keeps inheriting the delay with it.
+    expect(resolveEnding(cfg, outcome()).redirectDelayMs).toBe(1500);
+  });
+
+  it('a form-level delay orphaned by a cleared form URL cannot leak into an outcome', () => {
+    // The ending panel keeps the stored delay when its URL is cleared; before
+    // the pairing rule, that orphan re-attached to any outcome-level URL.
+    const cfg: FormConfig = {
+      version: 1,
+      steps: [],
+      ending: { redirectUrl: null, redirectDelayMs: 2000 },
+    };
+    const out = resolveEnding(cfg, outcome({ redirectUrl: 'https://example.com/vip' }));
+    expect(out.redirectUrl).toBe('https://example.com/vip');
+    expect(out.redirectDelayMs).toBe(0);
+  });
+
+  it('a whitespace-only outcome url is not an OWN url — same rule as pick()', () => {
+    const cfg: FormConfig = {
+      version: 1,
+      steps: [],
+      ending: { redirectUrl: 'https://example.com/all', redirectDelayMs: 1500 },
+    };
+    // The URL falls back to the form's, so the delay travels with it.
+    const out = resolveEnding(cfg, outcome({ redirectUrl: '   ' }));
+    expect(out.redirectUrl).toBe('https://example.com/all');
+    expect(out.redirectDelayMs).toBe(1500);
+  });
+
   it('with scoring off there is no outcome, so the form-level ending is what shows', () => {
     // The V4 complaint end to end: scoring off must not let a range hijack the ending.
     const cfg: FormConfig = {

@@ -194,11 +194,46 @@ export function StepInput({
         />
       );
 
-    case 'multiple_choice':
-      // Multi-select (checkboxes): toggle values in/out of an array; the form's
-      // Continue button submits. No auto-advance (you may pick several).
-      if (isMultiSelect(step)) {
-        const picked = asArray(value);
+    case 'multiple_choice': {
+      // Layout and selection mode are independent axes: `resolveOptionLayout`
+      // picks the markup (card grid vs rows) and `isMultiSelect` picks the
+      // semantics (checkbox toggles + Continue vs radio + auto-advance). The
+      // builder canvas already draws the card grid for multi-select steps, so
+      // the public renderer honoring only one axis was a preview/public
+      // disagreement, not a constraint.
+      const multi = isMultiSelect(step);
+      const picked = asArray(value);
+      const toggle = (opt: FormOption) => {
+        const on = picked.includes(opt.value);
+        onChange(on ? picked.filter((v) => v !== opt.value) : [...picked, opt.value]);
+      };
+      if (resolveOptionLayout(step) === 'cards') {
+        return (
+          <div
+            className="pf-choices--icons"
+            role={multi ? 'group' : 'radiogroup'}
+            aria-label={step.question ?? step.key}
+          >
+            {(step.options ?? []).map((opt) => {
+              const on = multi ? picked.includes(opt.value) : value === opt.value;
+              return (
+                <button
+                  key={opt.value}
+                  type="button"
+                  role={multi ? 'checkbox' : 'radio'}
+                  aria-checked={on}
+                  className={`pf-choice-icon${on ? ' pf-choice-icon--selected' : ''}`}
+                  onClick={() => (multi ? toggle(opt) : onSelect(opt.value))}
+                >
+                  <OptionIcon option={opt} layout="cards" />
+                  <span className="pf-choice-icon__label">{opt.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        );
+      }
+      if (multi) {
         return (
           <div className="pf-choices--list" role="group" aria-label={step.question ?? step.key}>
             {(step.options ?? []).map((opt) => {
@@ -210,34 +245,13 @@ export function StepInput({
                   role="checkbox"
                   aria-checked={on}
                   className={`pf-choice-list pf-choice-list--multi${on ? ' pf-choice-list--selected' : ''}`}
-                  onClick={() =>
-                    onChange(on ? picked.filter((v) => v !== opt.value) : [...picked, opt.value])
-                  }
+                  onClick={() => toggle(opt)}
                 >
                   <span className="pf-choice-list__check" aria-hidden="true" />
                   <span className="pf-choice-list__text">{opt.label}</span>
                 </button>
               );
             })}
-          </div>
-        );
-      }
-      if (resolveOptionLayout(step) === 'cards') {
-        return (
-          <div className="pf-choices--icons" role="radiogroup" aria-label={step.question ?? step.key}>
-            {(step.options ?? []).map((opt) => (
-              <button
-                key={opt.value}
-                type="button"
-                role="radio"
-                aria-checked={value === opt.value}
-                className={`pf-choice-icon${value === opt.value ? ' pf-choice-icon--selected' : ''}`}
-                onClick={() => onSelect(opt.value)}
-              >
-                <OptionIcon option={opt} layout="cards" />
-                <span className="pf-choice-icon__label">{opt.label}</span>
-              </button>
-            ))}
           </div>
         );
       }
@@ -262,6 +276,7 @@ export function StepInput({
           ))}
         </div>
       );
+    }
 
     case 'slider':
       return <SliderInput step={step} value={value} onChange={onChange} onSeed={onSeed} />;

@@ -300,7 +300,10 @@ export interface FormOutcome {
   overrides?: OutcomeOverrideRule[];
   /**
    * Hold the thank-you screen this long before this outcome's redirect fires
-   * (additive — V5-B1). Absent = inherit `config.ending.redirectDelayMs`.
+   * (additive — V5-B1). Absent = 0 when this outcome has its own
+   * `redirectUrl`; `config.ending.redirectDelayMs` is inherited only when the
+   * URL is inherited too — the delay belongs to the URL pairing (see
+   * `resolveEnding`).
    */
   redirectDelayMs?: number;
 }
@@ -1793,7 +1796,21 @@ export function resolveEnding(config: FormConfig, outcome: FormOutcome | null): 
   const redirectUrl = pick(outcome?.redirectUrl, e?.redirectUrl);
   // A delay without a destination is meaningless — report 0 so the renderer
   // never holds the screen waiting for a redirect that is not coming.
-  const delaySource = outcome?.redirectDelayMs ?? e?.redirectDelayMs ?? 0;
+  //
+  // The delay inherits from the form-level ending ONLY when the URL itself was
+  // inherited. It describes how long to hold the thank-you before going to a
+  // specific destination — it belongs to that pairing, not to the outcome in
+  // the abstract. An outcome that brings its own URL with no delay of its own
+  // therefore resolves 0, which is exactly what the outcomes dialog shows its
+  // author for an untouched field ("0 = redirect immediately"). The old rule
+  // (`outcome ?? form ?? 0`) let a form-level delay leak under an
+  // outcome-level URL, so a dialog reading 0 held the screen anyway — and a
+  // form whose URL had been cleared could leak its orphaned delay the same
+  // way.
+  // "Own" by the same definition `pick` uses for the URL itself, so the two
+  // can never disagree about whether the outcome brought a destination.
+  const ownUrl = pick(outcome?.redirectUrl, null) !== null;
+  const delaySource = outcome?.redirectDelayMs ?? (ownUrl ? 0 : (e?.redirectDelayMs ?? 0));
   return {
     headline: pick(outcome?.label, e?.headline),
     body: pick(outcome?.message, e?.body),

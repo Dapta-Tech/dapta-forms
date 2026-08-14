@@ -244,12 +244,22 @@ export async function postBookingCallback(
   accountCode: string,
   slug: string,
   body: BookingCallbackInput,
+  /**
+   * The visitor's X-Forwarded-For chain, when calling from the server on a
+   * visitor's behalf (see `lib/forwarded-for.ts`). A parameter — not a
+   * `next/headers` import — because this module also ships to the browser,
+   * where the visitor IS the socket peer and no forwarding is needed.
+   */
+  forwardedFor?: string | null,
 ): Promise<void> {
   await fetch(
     `${API_URL}/v1/public/forms/${encodeURIComponent(accountCode)}/${encodeURIComponent(slug)}/booking`,
     {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: {
+        'content-type': 'application/json',
+        ...(forwardedFor ? { 'x-forwarded-for': forwardedFor } : {}),
+      },
       body: JSON.stringify(body),
       cache: 'no-store',
     },

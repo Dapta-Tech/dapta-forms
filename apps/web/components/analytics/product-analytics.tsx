@@ -29,7 +29,7 @@ export function ProductAnalytics({
   identity: AnalyticsIdentity;
 }) {
   const { key, host } = analytics;
-  const { email, memberId, accountId, accountCode, role, attribution } = identity;
+  const { email, memberId, accountId, accountCode, role, attribution, landingDistinctId } = identity;
 
   // `attribution` is an OBJECT, re-created by every RSC payload, so depending on
   // it directly would re-run the effect — and re-identify the session — on every
@@ -52,13 +52,18 @@ export function ProductAnalytics({
       accountCode,
       role,
       attribution: attributionRef.current,
+      // The landing's anonymous id, when a `quill_ph_id` cookie was parked by
+      // the login. A plain string, so it sits in the deps without the object
+      // dance above; re-running with the same id is a no-op behind
+      // `identifyMember`'s localStorage latch.
+      landingDistinctId,
     });
     // Re-runs on a workspace switch: `account_id` is a super property and a
     // group, so it has to follow the member into the workspace they are
     // actually looking at, or every event after a switch is filed under the
     // wrong account. The campaign tags are a property of that same WORKSPACE and
     // change with it, which is why `attributionKey` is here too.
-  }, [key, email, memberId, accountId, accountCode, role, attributionKey]);
+  }, [key, email, memberId, accountId, accountCode, role, attributionKey, landingDistinctId]);
 
   if (!key) return null;
 
