@@ -1793,7 +1793,19 @@ export function resolveEnding(config: FormConfig, outcome: FormOutcome | null): 
   const redirectUrl = pick(outcome?.redirectUrl, e?.redirectUrl);
   // A delay without a destination is meaningless — report 0 so the renderer
   // never holds the screen waiting for a redirect that is not coming.
-  const delaySource = outcome?.redirectDelayMs ?? e?.redirectDelayMs ?? 0;
+  //
+  // The delay inherits from the form-level ending ONLY when the URL itself was
+  // inherited. It describes how long to hold the thank-you before going to a
+  // specific destination — it belongs to that pairing, not to the outcome in
+  // the abstract. An outcome that brings its own URL with no delay of its own
+  // therefore resolves 0, which is exactly what the outcomes dialog shows its
+  // author for an untouched field ("0 = redirect immediately"). The old rule
+  // (`outcome ?? form ?? 0`) let a form-level delay leak under an
+  // outcome-level URL, so a dialog reading 0 held the screen anyway — and a
+  // form whose URL had been cleared could leak its orphaned delay the same
+  // way.
+  const ownUrl = typeof outcome?.redirectUrl === 'string' && outcome.redirectUrl.trim() !== '';
+  const delaySource = outcome?.redirectDelayMs ?? (ownUrl ? 0 : (e?.redirectDelayMs ?? 0));
   return {
     headline: pick(outcome?.label, e?.headline),
     body: pick(outcome?.message, e?.body),
