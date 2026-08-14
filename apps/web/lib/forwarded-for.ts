@@ -11,7 +11,11 @@
  * The chain is forwarded VERBATIM, never rebuilt: the API resolves the real
  * client entry from the right by its own `TRUST_PROXY_HOPS`, so the header must
  * reach it exactly as the web app's fronting proxy produced it. Appending or
- * reordering entries here would silently shift that math.
+ * reordering entries here would silently shift that math. For the same reason
+ * the web→API call itself must not traverse an XFF-appending proxy (call the
+ * API directly / in-cluster) — such a hop would append the web server's IP and
+ * the API would resolve back to it, silently re-merging every visitor into one
+ * bucket.
  */
 import { headers } from 'next/headers';
 

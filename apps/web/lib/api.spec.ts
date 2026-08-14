@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { getPublicForm, postFormEvent, postSubmission } from './api';
 
 const headersMock = vi.hoisted(() => vi.fn());
@@ -22,6 +22,10 @@ beforeEach(() => {
   headersMock.mockResolvedValue(requestHeaders({ 'x-forwarded-for': '203.0.113.7, 10.0.0.2' }));
   fetchMock = vi.fn();
   vi.stubGlobal('fetch', fetchMock);
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
 });
 
 /**
