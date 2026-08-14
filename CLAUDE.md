@@ -161,6 +161,97 @@ layer, run this before you push.
    `.env.example` (placeholders) is committed. The `scripts/publish-gate.sh` secret
    scan runs in CI — do not add real hosts, tokens, or credentialed URLs anywhere.
 
+## Typography: no em dashes
+
+Dapta Forms does not use the em dash. It is the most reliable tell that a string
+was drafted by a language model rather than written by a person, and an interface
+full of them reads as machine-made. Use a comma, a colon, a semicolon,
+parentheses, or two sentences. Do not reach for a bare ASCII hyphen: a hyphen
+between clauses reads as a typo, not as punctuation.
+
+**Banned, everywhere:**
+
+| Char | Codepoint | Name |
+|---|---|---|
+| `—` | U+2014 | em dash |
+| `―` | U+2015 | horizontal bar |
+
+**Allowed only as a range operator**, never as sentence punctuation:
+
+| Char | Codepoint | Yes | No |
+|---|---|---|---|
+| `–` | U+2013 | `0–100`, `2–10`, `{min}–{max}`, `$500–$2,000` | `Saved — try again` |
+
+`−` (U+2212) is for arithmetic only, and only where a real minus sign is meant
+(a negative number on screen). Write ASCII `-` in code.
+
+**`─` (U+2500) is NOT a dash.** It draws the section banners in the CSS and in the
+larger components, ~830 of them. Any regex you write must name U+2014 and U+2013
+explicitly. A character class like "all Unicode dashes" destroys every banner in
+the repo, and `/* ── Main area — everything below ── */` needs the middle
+character replaced and the outer two left alone.
+
+### Hard ban vs advisory
+
+**Hard ban, in anything a person outside the team reads:**
+
+- Both message catalogs. There are two: `packages/shared/src/i18n/index.ts` and
+  `apps/web/app/admin/forms/[id]/edit/_components/builder-messages.ts`. A sweep
+  that only knows about the first one misses a third of the UI copy.
+- Copy shipped as string literals: email subjects and bodies
+  (`packages/notifications/src/templates.ts`), seed and template form content
+  (`packages/db/src/demo-form.ts`, `packages/db/src/templates/*`,
+  `packages/db/src/seed.ts`), builder templates
+  (`apps/web/app/admin/forms/[id]/edit/_components/templates.ts`), OpenAPI
+  descriptions (`apps/api/src/openapi.ts`), CRM payload text
+  (`packages/destinations/src/adapters/*`).
+- Page metadata: `title`, `description`, OpenGraph, `alt`, `aria-label`,
+  `placeholder`. A screen reader announces an em dash separator out loud.
+- Anything thrown, logged, echoed, or returned as an error `reason`. The
+  integrations panel renders delivery failures verbatim, so an `OutboxSkipError`
+  message is on-screen copy.
+- Every `.md` at the repo root and in `docs/`, `README.md`, `NOTICE`, every
+  `package.json` `description`, and **every file in `.changeset/`**. Changesets
+  become the public CHANGELOG and cannot be revised afterwards.
+
+**Advisory in code comments and test titles.** Do not write new ones. Do not open
+a PR that only rewrites old ones: that is ~1,500 lines across ~240 files, it
+collapses 137 commits' worth of `git blame` on the most explanatory lines in the
+repo, and roughly half the rewrites read no better than the original. Clean them
+when you are already editing the surrounding lines. If a sweep is ever done
+anyway, add `.git-blame-ignore-revs` in the same PR.
+
+**Exempt:** `packages/db/migrations/**`. Migrations are append-only, so a comment
+there is frozen history rather than editable prose.
+
+### Traps that have already bitten
+
+- **Two dashes are written as the escape `—`**, not as the glyph. A search
+  for the literal character reports those strings clean when they are not.
+- **`admin.submissions.na` is the single character `'—'`**, the empty-cell
+  fallback in the submissions table. A rule like `s/\s*—\s*/, /` turns every
+  empty cell into `, `.
+- **`admin.integrations.autosavedPartial` ENDS with a dash** used as a joiner:
+  the caller does `` `${m.autosavedPartial} ${detail ?? ''}`.trim() ``. Only a
+  period is safe there; a trailing comma or colon breaks the no-detail branch.
+- **Spanish uses tight spacing** (`—UTMs, … envío—`) where English spaces the
+  dash. A regex written as `/ — /` half-fixes the catalog and leaves `es` dashed.
+- **Seven hits sit between placeholders with no whitespace** (`{min}–{max}`). A
+  whitespace-anchored regex misses all of them; a greedy one turns a range into
+  a list and nothing catches it, because both are valid strings.
+- **The `es` catalog is already ~22% cleaner than `en`.** Someone started this
+  pass and stopped. Where a Spanish string is already dash-free, it is the spec
+  for the English rewrite, not the other way round. Never "restore parity" by
+  re-adding a dash to `es`.
+- **The compiler cannot catch any of this.** `FormsMessages` enforces key parity,
+  not value parity, so `tsc` stays green whether you fix one locale or both.
+
+### Check before you push
+
+```bash
+bash scripts/dash-check.sh
+```
+
 ## Review gates a PR must pass
 
 - **DCO sign-off** on every commit: `git commit -s` (adds `Signed-off-by:`). Not a
