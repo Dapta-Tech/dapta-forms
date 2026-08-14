@@ -3,11 +3,13 @@
  * test is mostly a NEGATIVE one: with nothing configured the admin must load no
  * script and make no request, so a bare fork runs untouched.
  */
-import { describe, it, expect } from 'vitest';
+import { afterEach, describe, it, expect, vi } from 'vitest';
 import {
   resolveProductAnalytics,
   buildAnalyticsSnippet,
+  identifyMember,
   DEFAULT_ANALYTICS_HOST,
+  type AnalyticsIdentity,
 } from './product-analytics';
 
 describe('resolveProductAnalytics', () => {
@@ -71,5 +73,89 @@ describe('buildAnalyticsSnippet', () => {
     const snippet = buildAnalyticsSnippet('</script><script>alert(1)</script>', 'https://x.example');
     expect(snippet).not.toContain('</script>');
     expect(snippet).toContain('\\u003c');
+  });
+});
+
+describe('identifyMember — the landing-visit alias', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  /** A window with a call-recording posthog and a real-enough localStorage. */
+  function stubWindow(opts: { storageThrows?: boolean } = {}) {
+    const calls: Array<[string, ...unknown[]]> = [];
+    const record =
+      (name: string) =>
+      (...args: unknown[]) =>
+        void calls.push([name, ...args]);
+    const store = new Map<string, string>();
+    vi.stubGlobal('window', {
+      posthog: {
+        identify: record('identify'),
+        alias: record('alias'),
+        register: record('register'),
+        group: record('group'),
+      },
+      localStorage: opts.storageThrows
+        ? {
+            getItem() {
+              throw new Error('blocked');
+            },
+            setItem() {
+              throw new Error('blocked');
+            },
+          }
+        : {
+            getItem: (k: string) => store.get(k) ?? null,
+            setItem: (k: string, v: string) => void store.set(k, v),
+          },
+    });
+    return calls;
+  }
+
+  const identity = (extra?: Partial<AnalyticsIdentity>): AnalyticsIdentity => ({
+    email: 'ana@example.com',
+    memberId: 'mem_1',
+    accountId: 'acc_1',
+    accountCode: 'ACME1',
+    role: 'owner',
+    ...extra,
+  });
+
+  it('aliases the landing id AFTER identify, so it lands on the person', () => {
+    // Before identify, the current distinct id is this origin's anonymous id —
+    // the landing visit would chain to a session instead of pinning to the
+    // person. The order is the contract.
+    const calls = stubWindow();
+    identifyMember(identity({ landingDistinctId: '0198a1b2-c3d4' }));
+    const names = calls.map(([n]) => n);
+    expect(names.indexOf('alias')).toBeGreaterThan(names.indexOf('identify'));
+    expect(calls.find(([n]) => n === 'alias')).toEqual(['alias', '0198a1b2-c3d4']);
+  });
+
+  it('makes no alias call at all without a landing id', () => {
+    const calls = stubWindow();
+    identifyMember(identity());
+    identifyMember(identity({ landingDistinctId: null }));
+    expect(calls.filter(([n]) => n === 'alias')).toHaveLength(0);
+  });
+
+  it('latches: the same landing id aliases once per browser', () => {
+    // The cookie carrying the id lives ten minutes and cannot be deleted
+    // server-side, so every render inside that window re-offers the id.
+    const calls = stubWindow();
+    identifyMember(identity({ landingDistinctId: 'ph-abc' }));
+    identifyMember(identity({ landingDistinctId: 'ph-abc' }));
+    expect(calls.filter(([n]) => n === 'alias')).toHaveLength(1);
+  });
+
+  it('fires anyway when localStorage is blocked — a repeat beats a never', () => {
+    const calls = stubWindow({ storageThrows: true });
+    identifyMember(identity({ landingDistinctId: 'ph-abc' }));
+    expect(calls.filter(([n]) => n === 'alias')).toHaveLength(1);
+  });
+
+  it('does nothing without an email — no identify means nothing to pin to', () => {
+    const calls = stubWindow();
+    identifyMember(identity({ email: null, landingDistinctId: 'ph-abc' }));
+    expect(calls).toHaveLength(0);
   });
 });

@@ -10,7 +10,11 @@
  */
 import { describe, it, expect } from 'vitest';
 import { parseAttribution, attributionSchema, ATTRIBUTION_QUERY_KEYS } from '@quill/types';
-import { attributionHandoffQuery, crossOriginReferer } from './attribution';
+import {
+  attributionHandoffQuery,
+  crossOriginReferer,
+  sanitizeLandingDistinctId,
+} from './attribution';
 
 describe('parseAttribution — snake_case URL in, camelCase blob out', () => {
   it('maps the UTM set and the paid-click ids onto the stored field names', () => {
@@ -138,6 +142,53 @@ describe('attributionHandoffQuery — hop 1, the seam that already broke', () =>
   it('caps a forwarded value so the redirect cannot carry a huge Location header', () => {
     const query = attributionHandoffQuery({ utm_source: 'a'.repeat(4096) }, null, null);
     expect(new URLSearchParams(query).get('utm_source')).toHaveLength(512);
+  });
+
+  it('carries the landing PostHog id beside the tags', () => {
+    const query = attributionHandoffQuery(
+      { utm_source: 'google', ph_id: '0198a1b2-c3d4-7e89' },
+      null,
+      null,
+    );
+    expect(new URLSearchParams(query).get('ph_id')).toBe('0198a1b2-c3d4-7e89');
+    // ...and it never leaks into the attribution parse on the far side.
+    expect(receive(query)).toEqual({ utmSource: 'google' });
+  });
+
+  it('an id alone is still worth a hop — it spends no claim', () => {
+    // parseAttribution over an id-only query stays null, so the login route
+    // parks no attribution cookie: nothing here can burn first touch.
+    const query = attributionHandoffQuery({ ph_id: 'ph-abc' }, null, null);
+    expect(query).toBe('ph_id=ph-abc');
+    expect(receive(query)).toBeNull();
+  });
+
+  it('drops a hostile id rather than forwarding it', () => {
+    expect(attributionHandoffQuery({ ph_id: '"><script>x' }, null, null)).toBe('');
+    const query = attributionHandoffQuery({ utm_source: 'g', ph_id: '"><script>x' }, null, null);
+    expect(new URLSearchParams(query).get('ph_id')).toBeNull();
+  });
+});
+
+describe('sanitizeLandingDistinctId — attacker-composable, vendor-shaped', () => {
+  it('accepts the shapes the landing snippet can actually mint', () => {
+    expect(sanitizeLandingDistinctId('0198a1b2-c3d4-7e89-a1b2-c3d4e5f60718')).toBe(
+      '0198a1b2-c3d4-7e89-a1b2-c3d4e5f60718',
+    );
+    expect(sanitizeLandingDistinctId('$device:0198a1b2-c3d4')).toBe('$device:0198a1b2-c3d4');
+    expect(sanitizeLandingDistinctId('  ph-abc  ')).toBe('ph-abc');
+  });
+
+  it('refuses everything else', () => {
+    expect(sanitizeLandingDistinctId(undefined)).toBeNull();
+    expect(sanitizeLandingDistinctId('')).toBeNull();
+    expect(sanitizeLandingDistinctId('a b')).toBeNull();
+    expect(sanitizeLandingDistinctId('"><img src=x>')).toBeNull();
+    expect(sanitizeLandingDistinctId('x'.repeat(201))).toBeNull();
+  });
+
+  it('takes the first of a repeated param, like every other inbound key', () => {
+    expect(sanitizeLandingDistinctId(['real', 'injected'])).toBe('real');
   });
 });
 

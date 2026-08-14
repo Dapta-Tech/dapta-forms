@@ -25,6 +25,13 @@ export default async function LoginPage({
 
   return (
     <>
+      {/* No tags to hand the container here, and that is not an oversight. On a
+          Dapta build this page only renders as an ERROR landing or after a
+          sign-out (the redirect above takes every other visit straight to the
+          hosted login), so it is not a step of the acquisition funnel. The tags
+          exist at this point — parked in the httpOnly attribution cookie — but
+          publishing a campaign on a failed login would file the same click under
+          two different pages. */}
       <PlatformGtm gtmId={resolvePlatformGtmId()} />
       <main className="flex min-h-dvh flex-col items-center justify-center gap-8 px-6">
         {/* Sign-in is an entrance, so it gets the full company lockup at display

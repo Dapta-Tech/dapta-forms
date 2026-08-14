@@ -4,6 +4,9 @@ import Script from 'next/script';
 import {
   DAPTA_PLATFORM_GTM_ID,
   PlatformGtm,
+  SIGNUP_DATALAYER_EVENT,
+  buildPlatformPrelude,
+  platformDataLayerVars,
   resolvePlatformGtmId,
   type PlatformGtmEnv,
 } from './platform-gtm';
@@ -121,5 +124,125 @@ describe('PlatformGtm', () => {
     expect((iframe!.props as AnyProps).src).toBe(
       `https://www.googletagmanager.com/ns.html?id=${encodeURIComponent(hostile)}`,
     );
+  });
+});
+
+describe('platformDataLayerVars — the stored blob as container variables', () => {
+  it('re-keys to the snake_case names the container declares', () => {
+    expect(
+      platformDataLayerVars({
+        utmSource: 'google',
+        utmMedium: 'cpc',
+        utmCampaign: 'forms_launch',
+        utmContent: 'variant_a',
+        utmTerm: 'formularios',
+        gclid: 'Cj0KCQ',
+        fbclid: 'IwAR1',
+      }),
+    ).toEqual({
+      utm_source: 'google',
+      utm_medium: 'cpc',
+      utm_campaign: 'forms_launch',
+      utm_content: 'variant_a',
+      utm_term: 'formularios',
+      gclid: 'Cj0KCQ',
+      fbclid: 'IwAR1',
+    });
+  });
+
+  it('publishes referrer and landing path under the FIRST-TOUCH names', () => {
+    // These two are a cross-domain contract: daptaforms.ai pushes the same
+    // variables under these names. Renaming one side alone does not fail — the
+    // container variable just resolves undefined and the tags go quiet.
+    expect(
+      platformDataLayerVars({ referrer: 'https://example.test/x', landingPath: '/precios' }),
+    ).toEqual({ first_touch_referrer: 'https://example.test/x', first_touch_path: '/precios' });
+  });
+
+  it('says nothing at all for an account with no tags', () => {
+    // `{}` and not keys-with-empty-values: a blank utm_source in the layer reads
+    // as "this signup was untagged", which is a different claim from "unknown".
+    expect(platformDataLayerVars(null)).toEqual({});
+    expect(platformDataLayerVars(undefined)).toEqual({});
+    expect(platformDataLayerVars({})).toEqual({});
+    expect(platformDataLayerVars({ utmSource: '', gclid: null })).toEqual({});
+  });
+
+  it('drops what a tag cannot read: unknown keys and non-strings', () => {
+    expect(
+      platformDataLayerVars({ utmSource: 'google', firstSeenAt: 1_700_000_000_000, nope: 'x' }),
+    ).toEqual({ utm_source: 'google' });
+  });
+});
+
+describe('buildPlatformPrelude — what the container sees when it boots', () => {
+  it('initializes the layer even with nothing to push', () => {
+    const out = buildPlatformPrelude({});
+    expect(out).toBe('window.dataLayer=window.dataLayer||[];');
+    expect(out).not.toContain('push');
+  });
+
+  it('emits the signup event only when an account id is passed', () => {
+    expect(buildPlatformPrelude({}, 'acc_123')).toContain(SIGNUP_DATALAYER_EVENT);
+    expect(buildPlatformPrelude({ utm_source: 'google' })).not.toContain(SIGNUP_DATALAYER_EVENT);
+    expect(buildPlatformPrelude({}, null)).not.toContain(SIGNUP_DATALAYER_EVENT);
+  });
+
+  it('latches the signup event per account, and fires when storage is blocked', () => {
+    const out = buildPlatformPrelude({}, 'acc_123');
+    expect(out).toContain('"dapta_forms_signup:acc_123"');
+    // The push sits OUTSIDE the try: a private-mode browser that throws on
+    // localStorage must still report the conversion. Counted twice is
+    // recoverable; never counted is not.
+    const tryEnd = out.indexOf('catch(e){}');
+    expect(tryEnd).toBeGreaterThan(-1);
+    expect(out.indexOf('w.dataLayer.push')).toBeGreaterThan(tryEnd);
+  });
+});
+
+describe('PlatformGtm — attribution reaches the layer before the container', () => {
+  const snippetOf = (el: ReturnType<typeof PlatformGtm>) =>
+    (byTestId(collect(el), 'platform-gtm').props as AnyProps).children as string;
+
+  it('pushes the tags BEFORE gtm.js loads', () => {
+    // The ordering IS the fix. A tag firing on container initialization reads
+    // the layer as it stands at that moment, so a push that lands afterwards
+    // produces a conversion with no campaign on it.
+    const snippet = snippetOf(
+      PlatformGtm({ gtmId: 'GTM-TEST123', attribution: { utmSource: 'google' } }),
+    );
+    expect(snippet).toContain('"utm_source":"google"');
+    expect(snippet.indexOf('"utm_source"')).toBeLessThan(snippet.indexOf('gtm.js'));
+  });
+
+  it('fires the signup event on the wizard and nowhere else', () => {
+    const wizard = snippetOf(
+      PlatformGtm({ gtmId: 'GTM-TEST123', attribution: null, signupAccountId: 'acc_9' }),
+    );
+    expect(wizard).toContain(SIGNUP_DATALAYER_EVENT);
+    // The dashboard passes the same tags without an id — an account signing in
+    // three years later still wants its funnel sliced, and wants no new signup.
+    const dashboard = snippetOf(
+      PlatformGtm({ gtmId: 'GTM-TEST123', attribution: { utmSource: 'google' } }),
+    );
+    expect(dashboard).not.toContain(SIGNUP_DATALAYER_EVENT);
+  });
+
+  it('neutralizes a hostile tag — no </script> breakout out of a utm value', () => {
+    // `utm_source` is whatever the last person to compose a link typed, it is
+    // stored verbatim, and it lands inside an inline <script>.
+    const hostile = `</script><script>alert(1)//`;
+    const snippet = snippetOf(
+      PlatformGtm({ gtmId: 'GTM-TEST123', attribution: { utmSource: hostile } }),
+    );
+    expect(snippet).not.toContain('</script>');
+    expect(snippet).toContain('\\u003c/script>');
+  });
+
+  it('writes no dataLayer at all on a bare fork', () => {
+    // No container means no reader. A fork stays at zero third-party anything.
+    expect(
+      PlatformGtm({ gtmId: null, attribution: { utmSource: 'google' }, signupAccountId: 'acc_1' }),
+    ).toBeNull();
   });
 });
