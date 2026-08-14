@@ -1,7 +1,7 @@
 'use server';
 
 import { redirect } from 'next/navigation';
-import { setSession, clearSession, authProvider } from '@/lib/auth-session';
+import { setSession, clearSession, getSession, authProvider, revokeUpstreamSession } from '@/lib/auth-session';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -22,21 +22,24 @@ export async function signInAction(
 }
 
 /**
- * Logout (AUTH-WEB-CONTRACT §2/§3.5). Clearing the cookie is what makes logout
- * real in AUTH_LOCAL_STRICT mode (the next /v1/me is a 401 → /login). For workos
- * a cookie-only clear leaves the WorkOS session alive, so we must also redirect
- * through the IAM/WorkOS logout — handled by /api/auth/logout.
+ * Logout (AUTH-WEB-CONTRACT §2/§3.5) — Orbit-parity contract: read the session,
+ * clear the cookie, tell the IAM to revoke upstream (best-effort, see
+ * `revokeUpstreamSession`), and land on /login?signedout=1. The order matters:
+ * the session must be READ before `clearSession()` lands its Set-Cookie, or the
+ * revoke has no session id — that gap once left the upstream WorkOS session
+ * alive and "sign in" silently re-authenticated the same person into /admin.
  *
- * On workos we must NOT clear the cookie here. `delete()` lands as a Set-Cookie
- * on THIS response, so the browser drops the session before it navigates to
- * /api/auth/logout — which then reads a null session, finds no `sessionId`, and
- * skips the IAM single-logout entirely. That left the upstream WorkOS session
- * alive: sign out looked like it worked, and the next "sign in" silently
- * re-authenticated the same person straight back into /admin. The route reads
- * the session id and then clears the cookie itself, in that order.
+ * Inline rather than via /api/auth/logout: an action `redirect()` into a route
+ * handler soft-navigates, leaving the URL bar stranded on /api/auth/logout
+ * while the login page renders. The browser never visits WorkOS
+ * (skipIdpRedirect = true in Orbit's terms) — /login?signedout=1 is the landing,
+ * and its param is what suppresses the login page's auto-redirect.
  */
 export async function signOutAction(): Promise<void> {
-  if (authProvider() === 'workos') redirect('/api/auth/logout');
+  const session = await getSession();
   await clearSession();
-  redirect('/login');
+  await revokeUpstreamSession(session);
+  // Keyed on the configured provider, not the (possibly already-null) session:
+  // in workos mode a bare /login auto-redirects straight back into the IAM.
+  redirect(authProvider() === 'workos' ? '/login?signedout=1' : '/login');
 }
