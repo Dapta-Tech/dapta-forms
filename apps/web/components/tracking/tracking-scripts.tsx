@@ -22,11 +22,21 @@ import { hasAnyTracking, type ResolvedTracking } from './resolve-tracking';
  */
 
 /**
- * Serialize an id for interpolation inside an inline JS snippet. JSON encoding
+ * Serialize a value for interpolation inside an inline JS snippet. JSON encoding
  * neutralizes quotes/backslashes; escaping `<` prevents `</script>` breakout.
  * Ids are loosely validated strings from form config/env — treat as data.
+ *
+ * Exported for `components/analytics/platform-gtm.tsx`, which inlines a snippet
+ * of its own. ONE escaper for every inline script in the app, deliberately: a
+ * second copy is a second thing to remember to fix, and the values it guards
+ * against there come off a query string anyone can compose.
+ *
+ * Objects are accepted as well as strings — the platform snippet serializes a
+ * whole `dataLayer` payload. `undefined` is not: `JSON.stringify` returns the
+ * value `undefined` rather than a string, which would interpolate the bare word
+ * into the snippet. Callers pass a value or skip the call.
  */
-function js(value: string): string {
+export function js(value: string | Record<string, string>): string {
   return JSON.stringify(value).replace(/</g, '\\u003c');
 }
 

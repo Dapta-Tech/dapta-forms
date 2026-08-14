@@ -63,7 +63,15 @@ export default async function OnboardingPage({
 
   return (
     <>
-      <PlatformGtm gtmId={resolvePlatformGtmId()} />
+      {/* The only surface that passes `signupAccountId`: this page renders once
+          per brand-new workspace, and its first paint is the conversion the ad
+          platforms are optimizing for. The tags come from `account.attribution`
+          — written by the callback moments ago, before this page ever ran. */}
+      <PlatformGtm
+        gtmId={resolvePlatformGtmId()}
+        attribution={me.attribution}
+        signupAccountId={me.accountId}
+      />
       <ProductAnalytics
         analytics={resolveProductAnalytics()}
         identity={{

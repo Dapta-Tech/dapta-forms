@@ -53,7 +53,10 @@ export default async function AdminLayout({ children }: { children: ReactNode })
 
   return (
     <ToastProvider>
-      <PlatformGtm gtmId={resolvePlatformGtmId()} />
+      {/* Same tags GTM gets on the wizard, minus the signup event: this layout
+          wraps every dashboard page, so the campaign is available to any tag
+          the container fires later — but the account here is of any age. */}
+      <PlatformGtm gtmId={resolvePlatformGtmId()} attribution={me.attribution} />
       <ProductAnalytics
         analytics={analytics}
         identity={{
