@@ -514,7 +514,10 @@ export const formOutcomeSchema = z.object({
   booking: outcomeBookingSchema.nullable().optional(),
   /**
    * Hold the thank-you screen this long before this outcome's redirect fires
-   * (ADDITIVE — V5-B1). Absent = inherit the form-level ending's delay.
+   * (ADDITIVE — V5-B1). Absent = 0 when this outcome has its own
+   * `redirectUrl`; the form-level ending's delay is inherited only when the
+   * URL is inherited too — the delay belongs to the URL pairing (the engine's
+   * `resolveEnding` is the resolver).
    */
   redirectDelayMs: z.number().int().min(0).max(60_000).optional(),
   /**
