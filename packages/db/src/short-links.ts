@@ -56,7 +56,7 @@ export async function generateUniqueShortCode(
     if (isReservedPublicSlug(candidate)) continue;
     if (!(await publicCodeInUse(db, candidate))) return candidate;
   }
-  throw new Error('short-code generation exhausted retries (50) — check the alias/code tables');
+  throw new Error('short-code generation exhausted retries (50). Check the alias/code tables');
 }
 
 /**

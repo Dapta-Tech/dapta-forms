@@ -215,7 +215,7 @@ export function TrendsChart({
             height={H}
             className="block"
             role="img"
-            aria-label={`${labels.metrics[metric]} — ${labels.title}`}
+            aria-label={`${labels.metrics[metric]}: ${labels.title}`}
             data-testid="trends-svg"
             data-metric={metric}
             data-plot-width={W}

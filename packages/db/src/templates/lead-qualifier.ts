@@ -76,14 +76,14 @@ export const LEAD_QUALIFIER_CONFIG: FormConfig = {
       key: 'challenge',
       type: 'textarea',
       question: 'What are you trying to solve?',
-      placeholder: 'A sentence is plenty — it helps us skip the generic pitch.',
+      placeholder: 'A sentence is plenty. It helps us skip the generic pitch.',
       required: false,
       flowGroup: 'qualification',
     },
     {
       key: 'name',
       type: 'name',
-      question: 'Last thing — who are we talking to?',
+      question: 'Last thing: who are we talking to?',
       required: true,
       flowGroup: 'lead_capture',
     },
@@ -100,7 +100,7 @@ export const LEAD_QUALIFIER_CONFIG: FormConfig = {
   outcomes: [
     {
       id: 'nurture',
-      label: 'Thanks — we will be in touch',
+      label: 'Thanks. We will be in touch',
       minScore: 0,
       message: 'We will send over a few things worth reading while you decide.',
     },
@@ -108,7 +108,7 @@ export const LEAD_QUALIFIER_CONFIG: FormConfig = {
       id: 'qualified',
       label: 'You are exactly who we built this for',
       minScore: 20,
-      message: 'Keep an eye on your inbox — someone from the team will reach out today.',
+      message: 'Keep an eye on your inbox: someone from the team will reach out today.',
     },
   ],
   // AFTER the email (step 6), not before it. `partialSubmitAfterStep` is 1-based

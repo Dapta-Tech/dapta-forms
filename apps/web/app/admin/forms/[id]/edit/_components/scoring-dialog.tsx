@@ -219,7 +219,7 @@ function PointsCard({
         <Switch
           checked={on}
           onCheckedChange={onScoringChange}
-          aria-label={`${bm.settings.scoring} — ${title}`}
+          aria-label={`${bm.settings.scoring}: ${title}`}
           data-testid="points-card-toggle"
         />
       </p>
@@ -252,7 +252,7 @@ function PointsCard({
               <span className="min-w-0 flex-1 truncate text-foreground">{o.label}</span>
               <div className="w-20 shrink-0">
                 <NumberField
-                  aria-label={`${em.options.points} — ${o.label}`}
+                  aria-label={`${em.options.points}: ${o.label}`}
                   data-testid="points-option-input"
                   value={o.points ?? 0}
                   step={1}

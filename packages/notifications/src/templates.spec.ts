@@ -33,7 +33,7 @@ describe('renderSubmissionReceived', () => {
       score: 15,
       outcomeLabel: 'Qualified',
     });
-    expect(subject).toBe('New submission — Lead Qualifier');
+    expect(subject).toBe('New submission: Lead Qualifier');
     const text = lines.filter(Boolean).join('\n');
     expect(text).toContain('Lead Qualifier');
     expect(text).toContain('From: lead@acme.io');
@@ -48,7 +48,7 @@ describe('renderSubmissionReceived', () => {
       score: 15,
       outcomeLabel: 'Calificado',
     });
-    expect(subject).toBe('Nueva respuesta — Calificador de Leads');
+    expect(subject).toBe('Nueva respuesta: Calificador de Leads');
     const text = lines.filter(Boolean).join('\n');
     expect(text).toContain('Recibiste una nueva respuesta');
     expect(text).toContain('De: lead@acme.io');
@@ -65,11 +65,11 @@ describe('renderSubmissionReceived', () => {
 describe('renderSubmissionConfirmed', () => {
   it('renders EN and ES respondent confirmations with the form link', () => {
     const en = renderSubmissionConfirmed('en', { formName: 'Survey', formLink: 'https://forms.example.com/x' });
-    expect(en.subject).toBe('We got your responses — Survey');
+    expect(en.subject).toBe('We got your responses: Survey');
     expect(en.lines.join('\n')).toContain('View or edit: https://forms.example.com/x');
 
     const es = renderSubmissionConfirmed('es', { formName: 'Encuesta', formLink: 'https://forms.example.com/x' });
-    expect(es.subject).toBe('Recibimos tus respuestas — Encuesta');
+    expect(es.subject).toBe('Recibimos tus respuestas: Encuesta');
     expect(es.lines.join('\n')).toContain('Ver o editar: https://forms.example.com/x');
   });
 });

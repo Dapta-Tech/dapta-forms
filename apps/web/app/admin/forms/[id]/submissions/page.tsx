@@ -74,7 +74,7 @@ export default async function SubmissionsPage({
 function formatCell(v: unknown, na: string): string {
   if (v == null || v === '') return na;
   if (Array.isArray(v)) return v.length ? v.join(', ') : na;
-  if (typeof v === 'boolean') return v ? '✓' : '—';
+  if (typeof v === 'boolean') return v ? '✓' : '';
   return String(v);
 }
 

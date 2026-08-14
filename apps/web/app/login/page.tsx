@@ -7,7 +7,7 @@ import { authProvider } from '@/lib/auth-session';
 import { PlatformGtm, resolvePlatformGtmId } from '@/components/analytics/platform-gtm';
 import { LoginForm } from './login-form';
 
-export const metadata = { title: `Sign in — ${PRODUCT_NAME}` };
+export const metadata = { title: `Sign in: ${PRODUCT_NAME}` };
 
 export default async function LoginPage({
   searchParams,

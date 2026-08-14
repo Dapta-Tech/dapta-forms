@@ -216,7 +216,7 @@ export class EmailEffects {
     if (!n.accountId && outboxAccountId) n.accountId = outboxAccountId;
     if (!n.accountId && this.provider?.requiresAccountContext) {
       throw new OutboxSkipError(
-        'email outbox row missing account context — skipped (signed transport requires a tenant)',
+        'email outbox row missing account context: skipped (signed transport requires a tenant)',
       );
     }
     switch (action) {
