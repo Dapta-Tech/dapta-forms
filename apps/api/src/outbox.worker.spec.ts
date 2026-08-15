@@ -173,6 +173,25 @@ describe('OutboxWorker claim fencing', () => {
     };
   }
 
+  function dbApplyingRenewalThenThrowingOnce(renewing: () => boolean, onSettlement?: () => void): Db {
+    let responseLost = true;
+    return {
+      ...db,
+      async get<T>(query: Parameters<Db['get']>[0]) {
+        if (renewing()) {
+          if (responseLost) {
+            responseLost = false;
+            await db.get<T>(query);
+            throw new Error('renewal response lost');
+          }
+          return db.get<T>(query);
+        }
+        onSettlement?.();
+        return db.get<T>(query);
+      },
+    };
+  }
+
   it.each(['done', 'retry', 'skipped', 'failed'] as const)(
     'does not let a stale worker settle a reclaimed row as %s',
     async (settlement) => {
@@ -446,7 +465,116 @@ describe('OutboxWorker claim fencing', () => {
     }
   });
 
-  it('settles a failed effect after its renewal applied', async () => {
+  it('records done once when renewal applied but its response was lost', async () => {
+    const claimedAt = 14_500_000;
+    const now = claimedAt;
+    let renewing = true;
+    let settlements = 0;
+    let effects = 0;
+    let releaseDelivery: (() => void) | undefined;
+    let deliveryStarted: (() => void) | undefined;
+    const deliveryBlocked = new Promise<void>((resolve) => {
+      releaseDelivery = resolve;
+    });
+    const deliveryStartedPromise = new Promise<void>((resolve) => {
+      deliveryStarted = resolve;
+    });
+    const id = await enqueueOutbox(db, { kind: 'email', action: 'a', payload: '{}', now: claimedAt });
+    const worker = new OutboxWorker(
+      dbApplyingRenewalThenThrowingOnce(() => renewing, () => {
+        settlements += 1;
+      }),
+      { OUTBOX_WORKER_ENABLED: false, OUTBOX_POLL_MS: 5_000, NODE_ENV: 'test' } as never,
+      {
+        deliver: async () => {
+          effects += 1;
+          deliveryStarted!();
+          await deliveryBlocked;
+        },
+      } as unknown as EmailEffects,
+      {} as DestinationEffects,
+    );
+    setClock(worker, () => now);
+    const renewal = controlRenewal(worker);
+
+    const draining = worker.drainOnce(claimedAt);
+    try {
+      await deliveryStartedPromise;
+      await renewal.fire();
+      renewing = false;
+      releaseDelivery!();
+      await draining;
+      expect(effects).toBe(1);
+      expect(settlements).toBe(1);
+      expect((await listOutbox(db)).find((row) => row.id === id)).toMatchObject({
+        status: 'done',
+        attempts: 0,
+      });
+    } finally {
+      renewing = false;
+      releaseDelivery?.();
+      await draining;
+      renewal.restore();
+    }
+  });
+
+  it('records retry once when renewal applied but its response was lost', async () => {
+    const claimedAt = 14_750_000;
+    const now = claimedAt;
+    let renewing = true;
+    let settlements = 0;
+    let effects = 0;
+    let releaseDelivery: (() => void) | undefined;
+    let deliveryStarted: (() => void) | undefined;
+    const deliveryBlocked = new Promise<void>((resolve) => {
+      releaseDelivery = resolve;
+    });
+    const deliveryStartedPromise = new Promise<void>((resolve) => {
+      deliveryStarted = resolve;
+    });
+    const id = await enqueueOutbox(db, { kind: 'email', action: 'a', payload: '{}', now: claimedAt });
+    const worker = new OutboxWorker(
+      dbApplyingRenewalThenThrowingOnce(() => renewing, () => {
+        settlements += 1;
+      }),
+      { OUTBOX_WORKER_ENABLED: false, OUTBOX_POLL_MS: 5_000, NODE_ENV: 'test' } as never,
+      {
+        deliver: async () => {
+          effects += 1;
+          deliveryStarted!();
+          await deliveryBlocked;
+          throw new Error('boom');
+        },
+      } as unknown as EmailEffects,
+      {} as DestinationEffects,
+    );
+    setClock(worker, () => now);
+    const renewal = controlRenewal(worker);
+
+    const draining = worker.drainOnce(claimedAt);
+    try {
+      await deliveryStartedPromise;
+      await renewal.fire();
+      renewing = false;
+      releaseDelivery!();
+      await draining;
+      expect(effects).toBe(1);
+      expect(settlements).toBe(1);
+      expect((await listOutbox(db)).find((row) => row.id === id)).toMatchObject({
+        status: 'pending',
+        attempts: 1,
+        nextAttemptAt: claimedAt + 1_000,
+        lastError: 'boom',
+      });
+    } finally {
+      renewing = false;
+      releaseDelivery?.();
+      await draining;
+      renewal.restore();
+    }
+  });
+
+  it('settles a failed effect after two applied token-only renewals', async () => {
     const claimedAt = 15_000_000;
     let now = claimedAt;
     let releaseDelivery: (() => void) | undefined;
@@ -477,6 +605,9 @@ describe('OutboxWorker claim fencing', () => {
     try {
       await deliveryStartedPromise;
       now = claimedAt + TEST_LEASE_MS / 2;
+      await renewal.fire();
+      expect((await listOutbox(db)).find((row) => row.id === id)?.claimedAt).toBe(now);
+      now += 1;
       await renewal.fire();
       expect((await listOutbox(db)).find((row) => row.id === id)?.claimedAt).toBe(now);
 

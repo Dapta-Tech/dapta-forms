@@ -142,7 +142,7 @@ export class OutboxWorker implements OnModuleInit, OnModuleDestroy {
   }
 
   private async process(row: OutboxRow, now: () => number): Promise<boolean> {
-    let claim = claimIdentityOf(row);
+    const claim = claimIdentityOf(row);
     if (now() - claim.claimedAt >= DEFAULT_STALE_CLAIM_MS) {
       this.logLostLease(row);
       return false;
@@ -155,12 +155,11 @@ export class OutboxWorker implements OnModuleInit, OnModuleDestroy {
       for (let attempt = 1; attempt <= OUTBOX_CLAIM_RENEWAL_ATTEMPTS; attempt++) {
         try {
           const renewed = await renewOutboxClaim(this.db, row.id, claim, now());
-          if (renewed === null) {
+          if (!renewed) {
             // A zero-match update is the only definitive lost-lease signal.
             lostLease = true;
             return;
           }
-          claim = renewed;
           return;
         } catch (err) {
           if (attempt === OUTBOX_CLAIM_RENEWAL_ATTEMPTS) {
@@ -246,7 +245,12 @@ export class OutboxWorker implements OnModuleInit, OnModuleDestroy {
    * but this worker must not claim a durable result.
    */
   private logLostLease(row: OutboxRow): void {
-    this.log.warn(`outbox ${row.kind}:${row.action} (${row.id}) lease lost before settlement`);
+    const token = row.claimedBy ?? '';
+    const prefixEnd = token.lastIndexOf('#');
+    const owner = prefixEnd > 0 ? token.slice(0, prefixEnd) : 'unknown';
+    this.log.warn(
+      `outbox ${row.kind}:${row.action} (${row.id}) lease lost before settlement (worker ${owner})`,
+    );
   }
 
   /**
