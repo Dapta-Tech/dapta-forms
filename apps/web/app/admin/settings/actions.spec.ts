@@ -11,17 +11,21 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MemberProfile } from '@quill/types';
 
 const saveMyProfile = vi.fn();
+const myProfile = vi.fn();
 const revalidatePath = vi.fn();
 
 vi.mock('@/lib/admin-api', () => ({
-  adminApi: { saveMyProfile: (...a: unknown[]) => saveMyProfile(...a) },
+  adminApi: {
+    saveMyProfile: (...a: unknown[]) => saveMyProfile(...a),
+    myProfile: (...a: unknown[]) => myProfile(...a),
+  },
   ApiError: class ApiError extends Error {},
   isAdminRole: () => true,
 }));
 vi.mock('next/cache', () => ({ revalidatePath: (...a: unknown[]) => revalidatePath(...a) }));
 vi.mock('next/navigation', () => ({ unstable_rethrow: () => undefined }));
 
-import { saveMyProfileAction } from './actions';
+import { myProfileAction, saveMyProfileAction } from './actions';
 
 const profile: MemberProfile = {
   version: 1,
@@ -35,17 +39,21 @@ describe('saveMyProfileAction', () => {
     vi.clearAllMocks();
   });
 
-  it('hands back the profile that was persisted, not just an ok flag', async () => {
-    saveMyProfile.mockResolvedValue({ ok: true, profile });
+  it('hands back the profile the API says it stored, not the request', async () => {
+    // The API's copy differs from what was sent (it applies the schema's
+    // defaults). Echoing the request back would hide that, and would claim a
+    // stored state on a response that never carried one.
+    const stored = { ...profile, headline: null };
+    saveMyProfile.mockResolvedValue({ ok: true, profile: stored });
 
     const res = await saveMyProfileAction(profile);
 
-    expect(res).toEqual({ ok: true, profile });
+    expect(res).toEqual({ ok: true, profile: stored });
     expect(saveMyProfile).toHaveBeenCalledWith(profile);
     expect(revalidatePath).toHaveBeenCalledWith('/admin/settings');
   });
 
-  it('carries a removed page back as the persisted null', async () => {
+  it('carries a removed page back as the stored null', async () => {
     saveMyProfile.mockResolvedValue({ ok: true, profile: null });
 
     expect(await saveMyProfileAction(null)).toEqual({ ok: true, profile: null });
@@ -59,5 +67,23 @@ describe('saveMyProfileAction', () => {
     expect(res).toEqual({ ok: false, message: 'Handle taken.' });
     // Nothing changed server-side, so nothing is revalidated.
     expect(revalidatePath).not.toHaveBeenCalled();
+  });
+});
+
+describe('myProfileAction', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('reads the stored profile back, which is the only authority after a timeout', async () => {
+    myProfile.mockResolvedValue({ handle: 'alex-rivera', profile });
+
+    expect(await myProfileAction()).toEqual({ ok: true, profile });
+  });
+
+  it('reports a still-unknown state rather than inventing one', async () => {
+    myProfile.mockRejectedValue(new Error('offline'));
+
+    expect(await myProfileAction()).toEqual({ ok: false });
   });
 });

@@ -7,30 +7,34 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/components/toast';
-import { saveMyProfileAction, type ProfileSaveState } from './actions';
-import { callAction, isTransportError, type TransportError } from '@/lib/call-action';
+import { saveMyProfileAction, myProfileAction, type ProfileSaveState } from './actions';
+import {
+  callAction,
+  callActionWithRetry,
+  isTransportError,
+  type TransportError,
+} from '@/lib/call-action';
 
 type Msgs = FormsMessages['admin']['settings'];
 
 /**
- * Read a save attempt as a statement about PERSISTED state.
+ * What a save attempt proves about the STORED profile.
  *
- * The switch used to move on click and stay there, so a refused save left the
- * toggle — and the "View page" link beside it — describing a page the server
- * had declined to publish, or hiding one it had declined to take down. Only a
- * server verdict may move the screen: a success adopts the profile that came
- * back, a refusal keeps the last confirmed one, and a transport failure (no
- * verdict at all) settles nothing rather than promoting a hope to a fact.
+ * `saved` is the server's own copy. `rejected` means the server refused and
+ * stored nothing. `unknown` is the dangerous one: the call never produced a
+ * verdict, and a client-side timeout does not abort the PUT — the write may
+ * have landed. Neither the value that was sent nor the one held before it is
+ * evidence of what is stored, so this outcome carries no profile at all.
  */
-export function reconcileProfileSave(
-  confirmed: MemberProfile | null,
-  res: ProfileSaveState | TransportError,
-): { profile: MemberProfile | null; saved: boolean; message: string | null } {
-  // Never reached the server: the write may or may not have landed, so the only
-  // honest thing on screen is the last state the server did confirm.
-  if (isTransportError(res)) return { profile: confirmed, saved: false, message: null };
-  if (!res.ok) return { profile: confirmed, saved: false, message: res.message ?? null };
-  return { profile: res.profile, saved: true, message: null };
+export type SaveVerdict =
+  | { status: 'saved'; profile: MemberProfile | null }
+  | { status: 'rejected'; message: string | null }
+  | { status: 'unknown' };
+
+export function readSaveVerdict(res: ProfileSaveState | TransportError): SaveVerdict {
+  if (isTransportError(res)) return { status: 'unknown' };
+  if (!res.ok) return { status: 'rejected', message: res.message ?? null };
+  return { status: 'saved', profile: res.profile };
 }
 
 /**
@@ -54,14 +58,36 @@ export function PublicPageSettings({
 }) {
   const { success, error } = useToast();
   const [pending, start] = useTransition();
-  // The last profile the server confirmed — what the switch and the View link
-  // render. It moves only when a save comes back, never on click.
+  // The last profile the server told us it stores — what the switch and the
+  // View link render. It moves only when the server answers, never on click.
   const [saved, setSaved] = useState<MemberProfile | null>(initial);
+  // `false` while a save's outcome is unknown: the screen has no authority to
+  // show a state or to write one, so it shows neither until the reread lands.
+  const [settled, setSettled] = useState(true);
   const [headline, setHeadline] = useState(initial?.headline ?? '');
   const [bio, setBio] = useState(initial?.bio ?? '');
   const enabled = saved?.enabled ?? false;
 
+  /** Ask the server what it stores. The only way out of an unknown state. */
+  function reread() {
+    start(async () => {
+      // A read is idempotent, so a few in-place attempts are safe and spare the
+      // member a reload to escape a blocked section.
+      const res = await callActionWithRetry(() => myProfileAction());
+      if (isTransportError(res) || !res.ok) {
+        // Still nothing authoritative: stay blocked rather than guess.
+        error(m.publicPageError);
+        return;
+      }
+      setSaved(res.profile);
+      setSettled(true);
+    });
+  }
+
   function save(nextEnabled = enabled) {
+    // Blocked while the stored state is unknown: any payload built here would
+    // carry a pre-save value over whatever the server ended up storing.
+    if (!settled) return;
     start(async () => {
       const profile: MemberProfile = {
         version: 1,
@@ -74,11 +100,19 @@ export function PublicPageSettings({
         formSlugs: saved?.formSlugs,
         branding: saved?.branding,
       };
-      const res = await callAction(() => saveMyProfileAction(profile));
-      const next = reconcileProfileSave(saved, res);
-      setSaved(next.profile);
-      if (next.saved) success(m.publicPageSaved);
-      else error(next.message ?? m.publicPageError);
+      const verdict = readSaveVerdict(await callAction(() => saveMyProfileAction(profile)));
+      if (verdict.status === 'unknown') {
+        setSettled(false);
+        error(m.publicPageError);
+        reread();
+        return;
+      }
+      if (verdict.status === 'rejected') {
+        error(verdict.message ?? m.publicPageError);
+        return;
+      }
+      setSaved(verdict.profile);
+      success(m.publicPageSaved);
     });
   }
 
@@ -93,13 +127,23 @@ export function PublicPageSettings({
           <p className="mt-0.5 text-sm text-muted-foreground">{m.publicPageSubtitle}</p>
         </div>
         <label className="flex shrink-0 items-center gap-2 text-sm">
-          <Switch
-            checked={enabled}
-            onCheckedChange={(v) => save(v)}
-            disabled={pending || !publicPath}
-            aria-label={m.publicPageEnable}
-          />
-          {m.publicPageEnable}
+          {settled ? (
+            <>
+              <Switch
+                checked={enabled}
+                onCheckedChange={(v) => save(v)}
+                disabled={pending || !publicPath}
+                aria-label={m.publicPageEnable}
+              />
+              {m.publicPageEnable}
+            </>
+          ) : (
+            // Nothing is known about the stored page: no toggle to click, and
+            // no on/off claim to read, until the reread answers.
+            <span aria-live="polite" className="text-muted-foreground">
+              {m.publicPageSaving}
+            </span>
+          )}
         </label>
       </div>
 
@@ -133,10 +177,10 @@ export function PublicPageSettings({
               />
             </label>
             <div className="flex items-center gap-3">
-              <Button onClick={() => save()} disabled={pending} size="sm">
+              <Button onClick={() => save()} disabled={pending || !settled} size="sm">
                 {pending ? m.publicPageSaving : m.publicPageSave}
               </Button>
-              {enabled ? (
+              {settled && enabled ? (
                 <a
                   href={publicPath}
                   target="_blank"

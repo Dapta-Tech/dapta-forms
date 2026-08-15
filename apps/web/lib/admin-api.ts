@@ -556,9 +556,10 @@ export const adminApi = {
   listAccountWebhooks: () => req<AccountWebhooksResponse>('GET', '/v1/integrations/webhooks'),
   /** The caller's own public page config (raw blob or null). */
   myProfile: () => req<{ handle: string | null; profile: MemberProfile | null }>('GET', '/v1/me/profile'),
-  /** Replace the caller's own public page; null removes it. */
+  /** Replace the caller's own public page; null removes it. Echoes what is now
+   *  stored, so a caller reconciles against the server's copy, never its own. */
   saveMyProfile: (profile: MemberProfile | null) =>
-    req<{ ok: boolean }>('PUT', '/v1/me/profile', { profile }),
+    req<{ ok: boolean; profile: MemberProfile | null }>('PUT', '/v1/me/profile', { profile }),
   /** Every workspace the caller can enter, for the switcher. */
   listWorkspaces: () => req<Workspace[]>('GET', '/v1/workspaces'),
   /** Send one sample delivery to a form's webhook (admin-only, SSRF-guarded server-side). */

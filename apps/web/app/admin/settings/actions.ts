@@ -171,34 +171,53 @@ export async function resetNotificationAction(
 }
 
 /**
- * Outcome of a public page write. Success carries the profile that is now
- * persisted so the client reconciles against stored state rather than against
- * the boolean it just sent — the same contract `NotificationSaveState` uses.
- * A refusal carries the reason and no profile: nothing changed.
+ * Outcome of a public page write. Success carries the profile the API says is
+ * now stored — its copy, never the request echoed back — so the client
+ * reconciles against storage instead of against what it hoped to store. The
+ * same contract `NotificationSaveState` uses. A refusal carries the reason and
+ * no profile: nothing changed.
  */
 export type ProfileSaveState =
   | { ok: true; profile: MemberProfile | null }
   | { ok: false; message?: string };
 
+/** Outcome of a public page reread. `ok: false` means the state is still unknown. */
+export type ProfileReadState = { ok: true; profile: MemberProfile | null } | { ok: false };
+
 /**
  * Save (or clear) the caller's own public page. Scoped server-side to the
  * authenticated member — the id is never taken from the request.
- *
- * The API replaces the whole blob, so a resolved call means exactly this
- * profile is what a reader would now get — that is what comes back.
  */
 export async function saveMyProfileAction(
   profile: MemberProfile | null,
 ): Promise<ProfileSaveState> {
   try {
-    await adminApi.saveMyProfile(profile);
+    const stored = await adminApi.saveMyProfile(profile);
     revalidatePath('/admin/settings');
-    return { ok: true, profile };
+    return { ok: true, profile: stored.profile ?? null };
   } catch (e) {
     unstable_rethrow(e);
     return {
       ok: false,
       message: e instanceof Error ? e.message : 'Could not save.',
     };
+  }
+}
+
+/**
+ * Reread the caller's own public page.
+ *
+ * The authority after a save the browser never got an answer to: a client-side
+ * timeout does not abort the PUT, so the write may well have landed. Neither
+ * the value that was sent nor the value held before it is evidence of what is
+ * stored — only asking is.
+ */
+export async function myProfileAction(): Promise<ProfileReadState> {
+  try {
+    const { profile } = await adminApi.myProfile();
+    return { ok: true, profile };
+  } catch (e) {
+    unstable_rethrow(e);
+    return { ok: false };
   }
 }
