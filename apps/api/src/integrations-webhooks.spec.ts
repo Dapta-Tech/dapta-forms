@@ -16,6 +16,8 @@ import {
   migrate,
   seed,
   enqueueOutbox,
+  claimDueOutbox,
+  claimIdentityOf,
   markOutboxFailed,
   getAccountByCode,
   insertAccountWithShortCode,
@@ -106,7 +108,13 @@ async function seedFailure(
     payload: JSON.stringify({ destination: { type: 'webhook' }, ctx: { formId, accountId } }),
     now: 1_000,
   });
-  await markOutboxFailed(db, id, { attempts: 5, error: lastError, now: updatedAt });
+  const [claimed] = await claimDueOutbox(db, updatedAt, { workerId: 'test' });
+  await markOutboxFailed(
+    db,
+    id,
+    { attempts: 5, error: lastError, now: updatedAt },
+    claimIdentityOf(claimed!),
+  );
 }
 
 beforeEach(async () => {

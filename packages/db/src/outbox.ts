@@ -97,6 +97,20 @@ export interface OutboxRow {
   responseBody: string | null;
 }
 
+/** The immutable identity of one worker's lease on an outbox row. */
+export interface OutboxClaim {
+  claimedAt: number;
+  claimedBy: string;
+}
+
+/** Extract the required lease identity from a row returned by `claimDueOutbox`. */
+export function claimIdentityOf(row: Pick<OutboxRow, 'claimedAt' | 'claimedBy'>): OutboxClaim {
+  if (row.claimedAt === null || row.claimedBy === null) {
+    throw new Error('claimed outbox row is missing its claim identity');
+  }
+  return { claimedAt: row.claimedAt, claimedBy: row.claimedBy };
+}
+
 export interface EnqueueOutboxInput {
   kind: OutboxKind;
   action: string;
@@ -285,12 +299,18 @@ function transcriptSets(t: DeliveryTranscript | undefined) {
   return sets;
 }
 
-/** Mark a row delivered, keeping what crossed the wire. */
+function claimedPendingWhere(id: string, claim: OutboxClaim) {
+  return sql`id = ${id} AND status = 'pending'
+      AND claimed_at = ${claim.claimedAt} AND claimed_by = ${claim.claimedBy}`;
+}
+
+/** Mark the current worker's claimed row delivered, keeping what crossed the wire. */
 export async function markOutboxDone(
   db: Db,
   id: string,
-  now = Date.now(),
-  transcript?: DeliveryTranscript,
+  now: number,
+  transcript: DeliveryTranscript | undefined,
+  claim: OutboxClaim,
 ): Promise<void> {
   const sets = [
     sql`status = 'done'`,
@@ -298,7 +318,9 @@ export async function markOutboxDone(
     sql`last_error = NULL`,
     ...transcriptSets(transcript),
   ];
-  await db.run(sql`UPDATE outbox SET ${sql.join(sets, sql`, `)} WHERE id = ${id}`);
+  await db.run(
+    sql`UPDATE outbox SET ${sql.join(sets, sql`, `)} WHERE ${claimedPendingWhere(id, claim)}`,
+  );
 }
 
 /**
@@ -310,6 +332,7 @@ export async function markOutboxRetry(
   db: Db,
   id: string,
   args: { attempts: number; error: string; now?: number; transcript?: DeliveryTranscript },
+  claim: OutboxClaim,
 ): Promise<void> {
   const now = args.now ?? Date.now();
   const nextAt = now + backoffMs(args.attempts);
@@ -323,7 +346,9 @@ export async function markOutboxRetry(
     sql`claimed_by = NULL`,
     ...transcriptSets(args.transcript),
   ];
-  await db.run(sql`UPDATE outbox SET ${sql.join(sets, sql`, `)} WHERE id = ${id}`);
+  await db.run(
+    sql`UPDATE outbox SET ${sql.join(sets, sql`, `)} WHERE ${claimedPendingWhere(id, claim)}`,
+  );
 }
 
 /**
@@ -334,12 +359,13 @@ export async function markOutboxSkipped(
   db: Db,
   id: string,
   args: { reason: string; now?: number },
+  claim: OutboxClaim,
 ): Promise<void> {
   const now = args.now ?? Date.now();
   await db.run(
     sql`UPDATE outbox
         SET status = 'skipped', last_error = ${args.reason.slice(0, 1000)}, updated_at = ${now}
-        WHERE id = ${id}`,
+        WHERE ${claimedPendingWhere(id, claim)}`,
   );
 }
 
@@ -348,6 +374,7 @@ export async function markOutboxFailed(
   db: Db,
   id: string,
   args: { attempts: number; error: string; now?: number; transcript?: DeliveryTranscript },
+  claim: OutboxClaim,
 ): Promise<void> {
   const now = args.now ?? Date.now();
   const sets = [
@@ -357,7 +384,9 @@ export async function markOutboxFailed(
     sql`updated_at = ${now}`,
     ...transcriptSets(args.transcript),
   ];
-  await db.run(sql`UPDATE outbox SET ${sql.join(sets, sql`, `)} WHERE id = ${id}`);
+  await db.run(
+    sql`UPDATE outbox SET ${sql.join(sets, sql`, `)} WHERE ${claimedPendingWhere(id, claim)}`,
+  );
 }
 
 /**

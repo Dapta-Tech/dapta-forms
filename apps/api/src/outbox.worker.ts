@@ -9,6 +9,7 @@ import {
 import { hostname } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import {
+  claimIdentityOf,
   claimDueOutbox,
   markOutboxDone,
   markOutboxFailed,
@@ -107,14 +108,15 @@ export class OutboxWorker implements OnModuleInit, OnModuleDestroy {
   }
 
   private async process(row: OutboxRow, now: number): Promise<void> {
+    const claim = claimIdentityOf(row);
     try {
       const transcript = await this.execute(row);
-      await markOutboxDone(this.db, row.id, now, transcript);
+      await markOutboxDone(this.db, row.id, now, transcript, claim);
     } catch (err) {
       if (err instanceof OutboxSkipError) {
         // A decision, not a failure: record the reason ONCE and stop — waiting
         // and retrying cannot change the outcome.
-        await markOutboxSkipped(this.db, row.id, { reason: err.message, now });
+        await markOutboxSkipped(this.db, row.id, { reason: err.message, now }, claim);
         this.log.warn(`outbox ${row.kind}:${row.action} (${row.id}) skipped: ${err.message}`);
         return;
       }
@@ -124,12 +126,12 @@ export class OutboxWorker implements OnModuleInit, OnModuleDestroy {
       // arrives on the thrown error rather than a returned value.
       const transcript = transcriptOfError(err);
       if (attempts >= row.maxAttempts) {
-        await markOutboxFailed(this.db, row.id, { attempts, error: message, now, transcript });
+        await markOutboxFailed(this.db, row.id, { attempts, error: message, now, transcript }, claim);
         this.log.error(
           `outbox ${row.kind}:${row.action} (${row.id}) gave up after ${attempts} attempts: ${message}`,
         );
       } else {
-        await markOutboxRetry(this.db, row.id, { attempts, error: message, now, transcript });
+        await markOutboxRetry(this.db, row.id, { attempts, error: message, now, transcript }, claim);
         this.log.warn(
           `outbox ${row.kind}:${row.action} (${row.id}) failed (attempt ${attempts}/${row.maxAttempts}), will retry: ${message}`,
         );

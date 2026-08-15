@@ -19,6 +19,8 @@ import {
   migrate,
   seed,
   enqueueOutbox,
+  claimDueOutbox,
+  claimIdentityOf,
   markOutboxDone,
   markOutboxFailed,
   getAccountByCode,
@@ -102,8 +104,16 @@ async function seedDelivery(over: {
     }),
     now: 1_000,
   });
-  if (over.landed) await markOutboxDone(db, id, over.at ?? 5_000);
-  else await markOutboxFailed(db, id, { attempts: 5, error: over.error ?? 'HTTP 400', now: over.at ?? 5_000 });
+  const [claimed] = await claimDueOutbox(db, over.at ?? 5_000, { workerId: 'test' });
+  const claim = claimIdentityOf(claimed!);
+  if (over.landed) await markOutboxDone(db, id, over.at ?? 5_000, undefined, claim);
+  else
+    await markOutboxFailed(
+      db,
+      id,
+      { attempts: 5, error: over.error ?? 'HTTP 400', now: over.at ?? 5_000 },
+      claim,
+    );
   return id;
 }
 

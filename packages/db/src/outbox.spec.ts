@@ -9,10 +9,12 @@ import { createDb, type Db } from './client';
 import { migrate } from './migrate';
 import {
   enqueueOutbox,
+  claimIdentityOf,
   claimDueOutbox,
   markOutboxRetry,
   markOutboxDone,
   markOutboxFailed,
+  markOutboxSkipped,
   listFailedDeliveries,
   listFormDeliveries,
   listOutbox,
@@ -84,7 +86,7 @@ describe('claimDueOutbox', () => {
     const claimed = await claimDueOutbox(db, now, { workerId: 'A' });
     expect(claimed).toHaveLength(1);
 
-    await markOutboxRetry(db, id, { attempts: 1, error: 'boom', now });
+    await markOutboxRetry(db, id, { attempts: 1, error: 'boom', now }, claimIdentityOf(claimed[0]!));
     // Backoff pushed next_attempt_at forward; claim was cleared. It becomes
     // claimable again once the backoff elapses.
     const afterBackoff = now + 10_000;
@@ -97,9 +99,106 @@ describe('claimDueOutbox', () => {
   it('does not reclaim a row already marked done', async () => {
     const now = 5_000_000;
     const id = await enqueueOutbox(db, { kind: 'email', action: 'a', now });
-    await claimDueOutbox(db, now, { workerId: 'A' });
-    await markOutboxDone(db, id, now);
+    const [claimed] = await claimDueOutbox(db, now, { workerId: 'A' });
+    await markOutboxDone(db, id, now, undefined, claimIdentityOf(claimed!));
     expect(await claimDueOutbox(db, now + 1_000_000, { workerId: 'B', staleClaimMs: 0 })).toHaveLength(0);
+  });
+});
+
+describe('outbox settlement claim fencing', () => {
+  const claimedAt = 6_000_000;
+  const reclaimedAt = claimedAt + 60_001;
+
+  async function claimThenReclaim() {
+    const id = await enqueueOutbox(db, { kind: 'email', action: 'a', now: claimedAt });
+    const [claimed] = await claimDueOutbox(db, claimedAt, { workerId: 'A' });
+    const [reclaimed] = await claimDueOutbox(db, reclaimedAt, {
+      workerId: 'B',
+      staleClaimMs: 60_000,
+    });
+    expect(claimed).toBeDefined();
+    expect(reclaimed).toBeDefined();
+    return {
+      id,
+      staleClaim: { claimedAt: claimed!.claimedAt!, claimedBy: claimed!.claimedBy! },
+      currentClaim: { claimedAt: reclaimed!.claimedAt!, claimedBy: reclaimed!.claimedBy! },
+    };
+  }
+
+  async function expectBStillOwns(id: string, currentClaim: { claimedAt: number; claimedBy: string }) {
+    const row = (await listOutbox(db)).find((candidate) => candidate.id === id);
+    expect(row).toMatchObject({
+      status: 'pending',
+      attempts: 0,
+      nextAttemptAt: claimedAt,
+      lastError: null,
+      claimedAt: currentClaim.claimedAt,
+      claimedBy: currentClaim.claimedBy,
+    });
+  }
+
+  it('does not let a stale worker mark a reclaimed row done', async () => {
+    const { id, staleClaim, currentClaim } = await claimThenReclaim();
+
+    await markOutboxDone(db, id, reclaimedAt + 1, undefined, staleClaim);
+    await expectBStillOwns(id, currentClaim);
+
+    await markOutboxDone(db, id, reclaimedAt + 2, undefined, currentClaim);
+    expect((await listOutbox(db)).find((row) => row.id === id)).toMatchObject({ status: 'done' });
+  });
+
+  it('does not let a stale worker schedule retry on a reclaimed row', async () => {
+    const { id, staleClaim, currentClaim } = await claimThenReclaim();
+
+    await markOutboxRetry(db, id, { attempts: 1, error: 'stale', now: reclaimedAt + 1 }, staleClaim);
+    await expectBStillOwns(id, currentClaim);
+
+    await markOutboxRetry(db, id, { attempts: 1, error: 'current', now: reclaimedAt + 2 }, currentClaim);
+    expect((await listOutbox(db)).find((row) => row.id === id)).toMatchObject({
+      status: 'pending',
+      attempts: 1,
+      nextAttemptAt: reclaimedAt + 2 + 1_000,
+      lastError: 'current',
+      claimedAt: null,
+      claimedBy: null,
+    });
+  });
+
+  it('does not let a stale worker skip a reclaimed row', async () => {
+    const { id, staleClaim, currentClaim } = await claimThenReclaim();
+
+    await markOutboxSkipped(db, id, { reason: 'stale', now: reclaimedAt + 1 }, staleClaim);
+    await expectBStillOwns(id, currentClaim);
+
+    await markOutboxSkipped(db, id, { reason: 'current', now: reclaimedAt + 2 }, currentClaim);
+    expect((await listOutbox(db)).find((row) => row.id === id)).toMatchObject({
+      status: 'skipped',
+      lastError: 'current',
+    });
+  });
+
+  it('does not let a stale worker mark a reclaimed row failed', async () => {
+    const { id, staleClaim, currentClaim } = await claimThenReclaim();
+
+    await markOutboxFailed(
+      db,
+      id,
+      { attempts: 1, error: 'stale', now: reclaimedAt + 1 },
+      staleClaim,
+    );
+    await expectBStillOwns(id, currentClaim);
+
+    await markOutboxFailed(
+      db,
+      id,
+      { attempts: 1, error: 'current', now: reclaimedAt + 2 },
+      currentClaim,
+    );
+    expect((await listOutbox(db)).find((row) => row.id === id)).toMatchObject({
+      status: 'failed',
+      attempts: 1,
+      lastError: 'current',
+    });
   });
 });
 
@@ -244,13 +343,20 @@ describe('the delivery transcript', () => {
   const readBack = async (id: string) =>
     (await listOutbox(db, { accountId: ACC })).find((r) => r.id === id);
 
+  async function currentClaim(id: string, now: number) {
+    const row = (await claimDueOutbox(db, now, { workerId: 'test' })).find((candidate) => candidate.id === id);
+    expect(row).toBeDefined();
+    return claimIdentityOf(row!);
+  }
+
   it('keeps what was sent and what came back on a delivered row', async () => {
     const id = await seedPending();
+    const claim = await currentClaim(id, 2_000);
     await markOutboxDone(db, id, 2_000, {
       requestBody: '{"hello":"world"}',
       responseStatus: 200,
       responseBody: 'ok',
-    });
+    }, claim);
     const row = await readBack(id);
     expect(row?.requestBody).toBe('{"hello":"world"}');
     expect(row?.responseStatus).toBe(200);
@@ -259,12 +365,13 @@ describe('the delivery transcript', () => {
 
   it('keeps them on a failed row too — the one anybody reads back', async () => {
     const id = await seedPending();
+    const claim = await currentClaim(id, 2_000);
     await markOutboxFailed(db, id, {
       attempts: 5,
       error: 'webhook delivery failed: HTTP 400',
       now: 2_000,
       transcript: { requestBody: '{"a":1}', responseStatus: 400, responseBody: '{"error":"nope"}' },
-    });
+    }, claim);
     const row = await readBack(id);
     expect(row?.status).toBe('failed');
     expect(row?.responseStatus).toBe(400);
@@ -276,13 +383,20 @@ describe('the delivery transcript', () => {
     // response. Nulling the stored one would throw away the only evidence of
     // what the endpoint used to say — which is the answer being looked for.
     const id = await seedPending();
+    const firstClaim = await currentClaim(id, 2_000);
     await markOutboxRetry(db, id, {
       attempts: 1,
       error: 'HTTP 500',
       now: 2_000,
       transcript: { requestBody: '{"a":1}', responseStatus: 500, responseBody: 'boom' },
-    });
-    await markOutboxFailed(db, id, { attempts: 5, error: 'getaddrinfo ENOTFOUND', now: 3_000 });
+    }, firstClaim);
+    const secondClaim = await currentClaim(id, 3_000);
+    await markOutboxFailed(
+      db,
+      id,
+      { attempts: 5, error: 'getaddrinfo ENOTFOUND', now: 3_000 },
+      secondClaim,
+    );
     const row = await readBack(id);
     expect(row?.responseStatus).toBe(500);
     expect(row?.responseBody).toBe('boom');
@@ -290,7 +404,8 @@ describe('the delivery transcript', () => {
 
   it('truncates a receiver that answers with a whole page', async () => {
     const id = await seedPending();
-    await markOutboxDone(db, id, 2_000, { responseBody: 'x'.repeat(5_000) });
+    const claim = await currentClaim(id, 2_000);
+    await markOutboxDone(db, id, 2_000, { responseBody: 'x'.repeat(5_000) }, claim);
     const row = await readBack(id);
     expect(row?.responseBody?.length).toBeLessThan(5_000);
     expect(row?.responseBody?.endsWith('…')).toBe(true);
