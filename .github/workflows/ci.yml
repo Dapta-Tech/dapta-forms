@@ -86,9 +86,42 @@ jobs:
         # per (form, session), and directly asserts the submission_form_session_uq
         # unique index rejects a duplicate insert. Same test, both dialects —
         # that is the SQLite↔Postgres parity guarantee for Forms.
-        run: pnpm --filter @quill/db test
+        run: pnpm --filter @quill/db exec vitest run --no-file-parallelism
         env:
+          MIGRATION_CONTRACT_POSTGRES_REQUIRED: "true"
           DATABASE_URL: postgres://quill:quill@localhost:5432/quill
+
+  migration-contract-postgres14:
+    name: Migration contract on PostgreSQL 14
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:14
+        env:
+          POSTGRES_USER: quill
+          POSTGRES_PASSWORD: quill
+          POSTGRES_DB: quill
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U quill"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgres://quill:quill@localhost:5432/quill
+      MIGRATION_CONTRACT_POSTGRES_REQUIRED: "true"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build:packages
+      - name: Migration contract on PostgreSQL 14
+        run: pnpm --filter @quill/db exec vitest run src/migration-contract.spec.ts --no-file-parallelism
 
   publish-gate:
     name: Publish gate (secret scan)

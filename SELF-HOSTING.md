@@ -133,7 +133,8 @@ limit the schema, but you should not run production on it.
 - Migration SQL shipped through repository CI is the trusted artifact boundary.
   Forks that add migrations must run the same database tests before deployment.
   The contract verifies real database rollback behavior instead of interpreting
-  SQL in the migration runner.
+  SQL in the migration runner. SQLite runs record that PostgreSQL contract proof
+  is skipped; dedicated PostgreSQL CI lanes carry that safety proof.
 - CI and the local Compose path test PostgreSQL 16. PostgreSQL 14+ remains the
   supported deployment expectation.
 - Per-file atomicity covers a migration script and its `_migrations` marker.
