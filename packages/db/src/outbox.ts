@@ -21,7 +21,7 @@
  * fresh opaque token in `claimed_by` for every claim generation. On Postgres
  * each claim uses `FOR UPDATE SKIP LOCKED`; SQLite serializes its one-row
  * `UPDATE ... RETURNING`. A stale or ambiguous worker cannot settle a newer
- * generation because every renewal and settlement fences on that token. This is
+ * generation because every settlement fences on that token. This is
  * still at-least-once: a crash after an external effect and before settlement
  * can replay the effect after lease expiry. A claim older than `staleClaimMs`
  * is reclaimable so crashed rows are not stranded.
@@ -323,27 +323,6 @@ function claimedPendingWhere(id: string, claim: OutboxClaim) {
 
 async function settlementApplied(db: Db, query: Parameters<Db['get']>[0]): Promise<boolean> {
   return (await db.get<{ id: string }>(query)) !== undefined;
-}
-
-/**
- * Refresh an active lease without changing its immutable claim token.
- *
- * Some pluggable providers do not expose a transport timeout, so the worker
- * renews while it executes rather than letting another replica replay a live
- * effect. `false` means the exact token no longer owns a pending row.
- */
-export async function renewOutboxClaim(
-  db: Db,
-  id: string,
-  claim: OutboxClaim,
-  now = Date.now(),
-): Promise<boolean> {
-  const renewed = await db.get<{ id: string }>(
-    sql`UPDATE outbox SET claimed_at = ${now}
-        WHERE ${claimedPendingWhere(id, claim)}
-        RETURNING id`,
-  );
-  return renewed !== undefined;
 }
 
 /**

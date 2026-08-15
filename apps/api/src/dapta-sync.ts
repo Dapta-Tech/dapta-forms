@@ -42,7 +42,8 @@ export class DaptaSyncDelivery {
   ) {}
 
   /** The worker's executor for a `dapta_sync` outbox row. */
-  async deliver(action: string, payloadJson: string): Promise<void> {
+  async deliver(action: string, payloadJson: string, signal?: AbortSignal): Promise<void> {
+    signal ??= AbortSignal.timeout(120_000);
     const flowUrl = this.env?.DAPTA_SYNC_FLOW_URL;
     const flowKey = this.env?.DAPTA_SYNC_FLOW_KEY;
     if (!flowUrl || !flowKey) {
@@ -72,7 +73,7 @@ export class DaptaSyncDelivery {
     );
 
     if (action === 'complete' && blob) {
-      await this.pushIamResponses(identity.externalId, blob);
+      await this.pushIamResponses(identity.externalId, blob, signal);
     }
 
     const body = buildFlowPayload({
@@ -93,7 +94,7 @@ export class DaptaSyncDelivery {
         // The flow holds a fixed 2s Wait node inside; observed end-to-end run
         // is ~3.5s, so the analytics default of 10s would sit too close to the
         // healthy path.
-        signal: AbortSignal.timeout(FLOW_TIMEOUT_MS),
+        signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(FLOW_TIMEOUT_MS)]) : AbortSignal.timeout(FLOW_TIMEOUT_MS),
       });
     } catch (err) {
       // Network-level: unreachable, DNS, TLS, timeout. All transient.
@@ -117,7 +118,11 @@ export class DaptaSyncDelivery {
    * users completed Dapta's own onboarding, the status reads completed, and
    * nothing is posted on their behalf.
    */
-  private async pushIamResponses(externalId: string, blob: AccountOnboarding): Promise<void> {
+  private async pushIamResponses(
+    externalId: string,
+    blob: AccountOnboarding,
+    signal?: AbortSignal,
+  ): Promise<void> {
     const base = this.env?.IAM_BASE_URL?.replace(/\/+$/, '');
     const key = this.env?.IAM_API_KEY;
     // No IAM configured is a deployment shape, not an error: the flow call
@@ -127,7 +132,7 @@ export class DaptaSyncDelivery {
     // all, not even the bank fetch.
     if (!hasMappableAnswer(blob)) return;
 
-    const { responses, unmapped } = buildIamResponses(blob, await this.questionBank(base, key));
+    const { responses, unmapped } = buildIamResponses(blob, await this.questionBank(base, key, signal));
     if (unmapped.length > 0) {
       // Keys only, never values — an answer is a person's data.
       this.log.warn(`dapta_sync: no IAM home for answer(s): ${unmapped.join(', ')}`);
@@ -137,6 +142,7 @@ export class DaptaSyncDelivery {
     const status = await this.iamGet<{ has_completed_onboarding?: boolean }>(
       `${base}/onboarding/status/${encodeURIComponent(externalId)}`,
       key,
+      signal,
     );
     if (status.has_completed_onboarding) return;
 
@@ -146,7 +152,7 @@ export class DaptaSyncDelivery {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'x-api-key': key },
         body: JSON.stringify({ user_id: externalId, responses }),
-        signal: AbortSignal.timeout(IAM_TIMEOUT_MS),
+        signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(IAM_TIMEOUT_MS)]) : AbortSignal.timeout(IAM_TIMEOUT_MS),
       });
     } catch (err) {
       throw new Error(`dapta_sync IAM responses failed: ${String(err)}`);
@@ -161,12 +167,12 @@ export class DaptaSyncDelivery {
   }
 
   /** GET against the IAM where any failure is transient (throw → retry). */
-  private async iamGet<T>(url: string, key: string): Promise<T> {
+  private async iamGet<T>(url: string, key: string, signal?: AbortSignal): Promise<T> {
     let res: Response;
     try {
       res = await this.fetchImpl(url, {
         headers: { 'x-api-key': key },
-        signal: AbortSignal.timeout(IAM_TIMEOUT_MS),
+        signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(IAM_TIMEOUT_MS)]) : AbortSignal.timeout(IAM_TIMEOUT_MS),
       });
     } catch (err) {
       throw new Error(`dapta_sync IAM GET failed: ${String(err)}`);
@@ -180,12 +186,13 @@ export class DaptaSyncDelivery {
    * the order of months; the TTL exists so a burst of signups shares one GET,
    * not so the cache is ever meaningfully stale.
    */
-  private async questionBank(base: string, key: string): Promise<IamQuestion[]> {
+  private async questionBank(base: string, key: string, signal?: AbortSignal): Promise<IamQuestion[]> {
     const now = Date.now();
     if (this.bank && now - this.bank.fetchedAt < BANK_TTL_MS) return this.bank.questions;
     const questions = await this.iamGet<IamQuestion[]>(
       `${base}/onboarding/questions?stage=pre_signup`,
       key,
+      signal,
     );
     this.bank = { fetchedAt: now, questions };
     return questions;

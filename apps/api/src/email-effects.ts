@@ -211,7 +211,12 @@ export class EmailEffects {
    * worker retries. A missing tenant on a transport that requires it is a
    * DECISION (skip), not a failure.
    */
-  async deliver(action: string, payloadJson: string, outboxAccountId?: string | null): Promise<void> {
+  async deliver(
+    action: string,
+    payloadJson: string,
+    outboxAccountId?: string | null,
+    signal?: AbortSignal,
+  ): Promise<void> {
     const n = JSON.parse(payloadJson) as SubmissionNotification;
     if (!n.accountId && outboxAccountId) n.accountId = outboxAccountId;
     if (!n.accountId && this.provider?.requiresAccountContext) {
@@ -226,13 +231,14 @@ export class EmailEffects {
         // retry policy and the missing-tenant decision above are identical.
         await this.notifier.sendMemberInvited(
           JSON.parse(payloadJson) as MemberInvitedNotification,
+          signal,
         );
         return;
       case 'submission_received':
-        await this.notifier.sendSubmissionReceived(n);
+        await this.notifier.sendSubmissionReceived(n, signal);
         return;
       case 'submission_confirmed':
-        await this.notifier.sendSubmissionConfirmed(n);
+        await this.notifier.sendSubmissionConfirmed(n, signal);
         return;
       default:
         throw new Error(`unknown email action: ${action}`);

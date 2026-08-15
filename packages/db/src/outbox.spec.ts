@@ -17,7 +17,6 @@ import {
   markOutboxDone,
   markOutboxFailed,
   markOutboxSkipped,
-  renewOutboxClaim,
   listFailedDeliveries,
   listFormDeliveries,
   listOutbox,
@@ -136,39 +135,6 @@ describe('claimDueOutbox', () => {
     expect(again).toHaveLength(1);
     expect(again[0]!.claimedBy).toMatch(/^B#[0-9a-f-]{36}$/);
     expect(again[0]!.attempts).toBe(1);
-  });
-
-  it('renews only lease time and still settles with the original token', async () => {
-    const now = 4_500_000;
-    const id = await enqueueOutbox(db, { kind: 'email', action: 'a', now });
-    const [claimed] = await claimDueOutbox(db, now, { workerId: 'A' });
-    const claim = claimIdentityOf(claimed!);
-
-    expect(await renewOutboxClaim(db, id, claim, now + 1)).toBe(true);
-    expect(await renewOutboxClaim(db, id, claim, now + 2)).toBe(true);
-    expect((await listOutbox(db)).find((row) => row.id === id)).toMatchObject({
-      claimedAt: now + 2,
-      claimedBy: claim.claimedBy,
-    });
-    expect(await markOutboxRetry(db, id, { attempts: 1, error: 'boom', now: now + 3 }, claim)).toBe(true);
-  });
-
-  it('does not let a delayed old renewal extend a peer claim', async () => {
-    const now = 4_750_000;
-    const id = await enqueueOutbox(db, { kind: 'email', action: 'a', now });
-    const [old] = await claimDueOutbox(db, now, { workerId: 'A' });
-    const [peer] = await claimDueOutbox(db, now + 60_001, {
-      workerId: 'B',
-      staleClaimMs: 60_000,
-    });
-    const peerClaimedAt = peer!.claimedAt;
-
-    expect(await renewOutboxClaim(db, id, claimIdentityOf(old!), now + 60_002)).toBe(false);
-    expect((await listOutbox(db)).find((row) => row.id === id)).toMatchObject({
-      status: 'pending',
-      claimedAt: peerClaimedAt,
-      claimedBy: peer!.claimedBy,
-    });
   });
 
   it('replays an external effect after a crash before settlement by design', async () => {
@@ -329,7 +295,7 @@ describe('outbox settlement claim fencing', () => {
     });
   });
 
-  it('maps renewal and settlement zero matches to false', async () => {
+  it('maps token settlement zero matches to false', async () => {
     const now = 7_500_000;
     const id = await enqueueOutbox(db, { kind: 'email', action: 'a', now });
     const [old] = await claimDueOutbox(db, now, { workerId: 'A' });
@@ -339,7 +305,6 @@ describe('outbox settlement claim fencing', () => {
     });
     const oldClaim = claimIdentityOf(old!);
 
-    expect(await renewOutboxClaim(db, id, oldClaim, now + 60_002)).toBe(false);
     expect(await markOutboxDone(db, id, now + 60_003, undefined, oldClaim)).toBe(false);
     expect(peer).toBeDefined();
   });
@@ -386,7 +351,6 @@ describe('outbox settlement claim fencing', () => {
       });
       const oldClaim = claimIdentityOf(old!);
 
-      expect(await renewOutboxClaim(left, id, oldClaim, now + 60_002)).toBe(false);
       expect(await markOutboxDone(left, id, now + 60_003, undefined, oldClaim)).toBe(false);
       expect(await markOutboxDone(right, id, now + 60_004, undefined, claimIdentityOf(peer!))).toBe(true);
     } finally {

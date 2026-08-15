@@ -17,7 +17,6 @@ import {
   markOutboxFailed,
   markOutboxRetry,
   markOutboxSkipped,
-  renewOutboxClaim,
   type Db,
   type OutboxRow,
 } from '@quill/db';
@@ -30,14 +29,16 @@ import { AnalyticsCapture } from './analytics-capture';
 import { DaptaSyncDelivery } from './dapta-sync';
 import { DB, ENV } from './tokens';
 
-// Not every pluggable provider has a transport timeout. Renew halfway through
-// the existing lease so an in-flight effect remains owned until it settles.
-const OUTBOX_CLAIM_RENEWAL_MS = Math.floor(DEFAULT_STALE_CLAIM_MS / 2);
-// A renewal transport error is unknown, so make one bounded retry before the
-// final fenced settlement determines whether ownership still exists.
-const OUTBOX_CLAIM_RENEWAL_ATTEMPTS = 2;
+const PAUSE_REMINDER_MS = 60_000;
 
-type RenewalScheduler = (callback: () => Promise<void>, intervalMs: number) => () => void;
+export interface OutboxRuntimeStatus {
+  orphanCount: number;
+  oldestOrphanAgeMs: number | null;
+  timeoutCountByKindAction: Record<string, number>;
+  settledCountByKindAction: Record<string, number>;
+  paused: boolean;
+  sustainedPaused: boolean;
+}
 
 /**
  * The OUTBOX WORKER (B7 / audit DM1). Polls the `outbox` table and drains due
@@ -66,14 +67,19 @@ export class OutboxWorker implements OnModuleInit, OnModuleDestroy {
   fetchImpl: typeof fetch = fetch;
   /** Injectable clock for deterministic claim-age tests. */
   private clock: () => number = Date.now;
-  private readonly claimRenewalMs = OUTBOX_CLAIM_RENEWAL_MS;
-  private renewalScheduler: RenewalScheduler = (callback, intervalMs) => {
-    const timer = setInterval(() => {
-      void callback();
-    }, intervalMs);
-    timer.unref?.();
-    return () => clearInterval(timer);
-  };
+  private readonly orphans = new Map<string, { startedAt: number; row: OutboxRow }>();
+  private readonly timeoutCount = new Map<string, number>();
+  private readonly settledCount = new Map<string, number>();
+  private pausedAt: number | null = null;
+  private lastPauseReminderAt = 0;
+
+  private get maxDeliveryMs(): number {
+    return this.env.OUTBOX_MAX_DELIVERY_MS ?? 120_000;
+  }
+
+  private get maxOrphans(): number {
+    return this.env.OUTBOX_MAX_ORPHANS ?? 8;
+  }
 
   constructor(
     @Inject(DB) private readonly db: Db,
@@ -128,6 +134,11 @@ export class OutboxWorker implements OnModuleInit, OnModuleDestroy {
     let claimNow = now ?? this.clock();
     const rowNow = () => (now !== undefined && this.clock === Date.now ? claimNow : this.clock());
     while (processed < DEFAULT_OUTBOX_CLAIM_LIMIT) {
+      if (this.orphans.size >= this.maxOrphans) {
+        this.notePaused(rowNow());
+        return processed;
+      }
+      this.noteResumed(rowNow());
       const [row] = await claimDueOutbox(this.db, claimNow, {
         workerId: this.workerId,
         limit: 1,
@@ -147,102 +158,157 @@ export class OutboxWorker implements OnModuleInit, OnModuleDestroy {
       this.logLostLease(row);
       return false;
     }
+    const controller = new AbortController();
+    const startedAt = now();
+    let effectSettled = false;
+    const effect = this.execute(row, controller.signal).then(
+      (transcript) => {
+        effectSettled = true;
+        return { kind: 'success' as const, transcript };
+      },
+      (err) => {
+        effectSettled = true;
+        return { kind: 'error' as const, err };
+      },
+    );
+    let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
+    const timedOut = new Promise<{ kind: 'timeout' }>((resolve) => {
+      timeoutHandle = setTimeout(() => resolve({ kind: 'timeout' }), this.maxDeliveryMs);
+      timeoutHandle.unref?.();
+    });
+    const outcome = await Promise.race([effect, timedOut]);
+    if (timeoutHandle) clearTimeout(timeoutHandle);
 
-    let lostLease = false;
-    let renewal = Promise.resolve();
-    const renew = async () => {
-      if (lostLease) return;
-      for (let attempt = 1; attempt <= OUTBOX_CLAIM_RENEWAL_ATTEMPTS; attempt++) {
-        try {
-          const renewed = await renewOutboxClaim(this.db, row.id, claim, now());
-          if (!renewed) {
-            // A zero-match update is the only definitive lost-lease signal.
-            lostLease = true;
-            return;
-          }
-          return;
-        } catch (err) {
-          if (attempt === OUTBOX_CLAIM_RENEWAL_ATTEMPTS) {
-            this.log.warn(
-              `outbox ${row.kind}:${row.action} (${row.id}) lease renewal uncertain: ${String(err)}`,
-            );
-          }
-        }
-      }
-    };
-    const stopRenewalTimer = this.renewalScheduler(() => {
-      renewal = renewal.then(renew);
-      return renewal;
-    }, this.claimRenewalMs);
-    const stopRenewing = async () => {
-      stopRenewalTimer();
-      await renewal;
-    };
-
-    try {
-      const transcript = await this.execute(row);
-      await stopRenewing();
-      if (!(await markOutboxDone(this.db, row.id, now(), transcript, claim))) {
+    if (outcome.kind === 'timeout') {
+      controller.abort(new Error(`outbox delivery timed out after ${this.maxDeliveryMs}ms`));
+      this.increment(this.timeoutCount, row);
+      await this.settleFailure(
+        row,
+        claim,
+        now,
+        new Error(`outbox delivery timed out after ${this.maxDeliveryMs}ms`),
+      );
+      await Promise.resolve();
+      if (!effectSettled) this.trackOrphan(row, startedAt, effect);
+      return true;
+    }
+    if (outcome.kind === 'success') {
+      if (await markOutboxDone(this.db, row.id, now(), outcome.transcript, claim)) {
+        this.increment(this.settledCount, row);
+      } else {
         this.logLostLease(row);
       }
       return true;
-    } catch (err) {
-      await stopRenewing();
-      if (err instanceof OutboxSkipError) {
-        // A decision, not a failure: record the reason ONCE and stop — waiting
-        // and retrying cannot change the outcome.
-        if (
-          !(await markOutboxSkipped(this.db, row.id, { reason: err.message, now: now() }, claim))
-        ) {
-          this.logLostLease(row);
-          return true;
-        }
-        this.log.warn(`outbox ${row.kind}:${row.action} (${row.id}) skipped: ${err.message}`);
-        return true;
-      }
-      const attempts = row.attempts + 1;
-      const message = err instanceof Error ? err.message : String(err);
-      // A failure is the transcript anyone actually needs to read back, and it
-      // arrives on the thrown error rather than a returned value.
-      const transcript = transcriptOfError(err);
-      if (attempts >= row.maxAttempts) {
-        if (
-          !(await markOutboxFailed(
-            this.db,
-            row.id,
-            { attempts, error: message, now: now(), transcript },
-            claim,
-          ))
-        ) {
-          this.logLostLease(row);
-          return true;
-        }
-        this.log.error(
-          `outbox ${row.kind}:${row.action} (${row.id}) gave up after ${attempts} attempts: ${message}`,
-        );
+    }
+    if (outcome.err instanceof OutboxSkipError) {
+      if (await markOutboxSkipped(this.db, row.id, { reason: outcome.err.message, now: now() }, claim)) {
+        this.increment(this.settledCount, row);
+        this.log.warn(`outbox ${row.kind}:${row.action} (${row.id}) skipped: ${outcome.err.message}`);
       } else {
-        if (
-          !(await markOutboxRetry(
-            this.db,
-            row.id,
-            { attempts, error: message, now: now(), transcript },
-            claim,
-          ))
-        ) {
-          this.logLostLease(row);
-          return true;
-        }
-        this.log.warn(
-          `outbox ${row.kind}:${row.action} (${row.id}) failed (attempt ${attempts}/${row.maxAttempts}), will retry: ${message}`,
-        );
+        this.logLostLease(row);
       }
       return true;
     }
+    await this.settleFailure(row, claim, now, outcome.err);
+    return true;
+  }
+
+  private async settleFailure(
+    row: OutboxRow,
+    claim: ReturnType<typeof claimIdentityOf>,
+    now: () => number,
+    err: unknown,
+  ): Promise<void> {
+    const attempts = row.attempts + 1;
+    const message = err instanceof Error ? err.message : String(err);
+    const transcript = transcriptOfError(err);
+    const settled =
+      attempts >= row.maxAttempts
+        ? await markOutboxFailed(this.db, row.id, { attempts, error: message, now: now(), transcript }, claim)
+        : await markOutboxRetry(this.db, row.id, { attempts, error: message, now: now(), transcript }, claim);
+    if (!settled) {
+      this.logLostLease(row);
+      return;
+    }
+    this.increment(this.settledCount, row);
+    if (attempts >= row.maxAttempts) {
+      this.log.error(
+        `outbox ${row.kind}:${row.action} (${row.id}) gave up after ${attempts} attempts: ${message}`,
+      );
+    } else {
+      this.log.warn(
+        `outbox ${row.kind}:${row.action} (${row.id}) failed (attempt ${attempts}/${row.maxAttempts}), will retry: ${message}`,
+      );
+    }
+  }
+
+  private trackOrphan(
+    row: OutboxRow,
+    startedAt: number,
+    effect: Promise<{ kind: 'success'; transcript: DeliveryTranscript | undefined } | { kind: 'error'; err: unknown }>,
+  ): void {
+    const key = `${row.id}:${row.claimedBy}`;
+    this.orphans.set(key, { startedAt, row });
+    if (this.orphans.size >= this.maxOrphans) this.notePaused(this.clock());
+    void effect
+      .then((outcome) => {
+        const result = outcome.kind === 'error' ? `rejected: ${String(outcome.err)}` : 'completed';
+        this.log.warn(`outbox ${row.kind}:${row.action} (${row.id}) finished after timeout (${result})`);
+      })
+      .finally(() => {
+        this.orphans.delete(key);
+        if (this.orphans.size < this.maxOrphans) this.noteResumed(this.clock());
+      });
+  }
+
+  private increment(counter: Map<string, number>, row: OutboxRow): void {
+    const key = `${row.kind}:${row.action}`;
+    counter.set(key, (counter.get(key) ?? 0) + 1);
+  }
+
+  private notePaused(now: number): void {
+    if (this.pausedAt === null) {
+      this.pausedAt = now;
+      this.lastPauseReminderAt = now;
+      this.log.warn(
+        `outbox paused: ${this.orphans.size}/${this.maxOrphans} timed-out effects remain pending`,
+      );
+      return;
+    }
+    if (now - this.lastPauseReminderAt >= PAUSE_REMINDER_MS) {
+      this.lastPauseReminderAt = now;
+      this.log.warn(
+        `outbox remains paused: ${this.orphans.size}/${this.maxOrphans} timed-out effects remain pending`,
+      );
+    }
+  }
+
+  private noteResumed(_now: number): void {
+    if (this.pausedAt === null) return;
+    this.log.log(`outbox resumed: ${this.orphans.size}/${this.maxOrphans} timed-out effects pending`);
+    this.pausedAt = null;
+  }
+
+  getRuntimeStatus(): OutboxRuntimeStatus {
+    const now = this.clock();
+    const oldest = [...this.orphans.values()].reduce<number | null>(
+      (age, orphan) => (age === null ? now - orphan.startedAt : Math.max(age, now - orphan.startedAt)),
+      null,
+    );
+    return {
+      orphanCount: this.orphans.size,
+      oldestOrphanAgeMs: oldest,
+      timeoutCountByKindAction: Object.fromEntries(this.timeoutCount),
+      settledCountByKindAction: Object.fromEntries(this.settledCount),
+      paused: this.pausedAt !== null,
+      sustainedPaused:
+        this.pausedAt !== null && now - this.pausedAt > this.env.OUTBOX_POLL_MS * 2,
+    };
   }
 
   /**
-   * If renewal or settlement loses ownership, the side effect may have happened
-   * but this worker must not claim a durable result.
+   * If settlement loses ownership, the side effect may have happened but this
+   * worker must not claim a durable result.
    */
   private logLostLease(row: OutboxRow): void {
     const token = row.claimedBy ?? '';
@@ -257,20 +323,20 @@ export class OutboxWorker implements OnModuleInit, OnModuleDestroy {
    * Perform the row's side-effect, reporting what crossed the wire when the
    * handler can say. Throws on failure so `process` can retry.
    */
-  private async execute(row: OutboxRow): Promise<DeliveryTranscript | undefined> {
+  private async execute(row: OutboxRow, signal: AbortSignal): Promise<DeliveryTranscript | undefined> {
     if (row.kind === 'email') {
       if (row.payload == null) throw new Error('email outbox row missing payload');
-      await this.email.deliver(row.action, row.payload, row.accountId);
+      await this.email.deliver(row.action, row.payload, row.accountId, signal);
       return undefined;
     }
     if (row.kind === 'webhook' || row.kind === 'hubspot') {
       if (row.payload == null) throw new Error(`${row.kind} outbox row missing payload`);
-      return await this.destinations.deliver(row.action, row.payload);
+      return await this.destinations.deliver(row.action, row.payload, signal);
     }
     if (row.kind === 'booking_sync') {
       if (row.payload == null) throw new Error('booking_sync outbox row missing payload');
       if (!this.bookingSync) throw new Error('booking_sync handler not wired');
-      await this.bookingSync.deliver(row.action, row.payload);
+      await this.bookingSync.deliver(row.action, row.payload, signal);
       return undefined;
     }
     if (row.kind === 'analytics') {
@@ -279,7 +345,7 @@ export class OutboxWorker implements OnModuleInit, OnModuleDestroy {
       // product analytics, and telemetry must never accumulate permanent
       // failures in a queue shared with emails and CRM deliveries.
       if (!this.analytics) throw new OutboxSkipError('analytics handler not wired');
-      await this.analytics.deliver(row.action, row.payload);
+      await this.analytics.deliver(row.action, row.payload, signal);
       return undefined;
     }
     if (row.kind === 'dapta_sync') {
@@ -287,7 +353,7 @@ export class OutboxWorker implements OnModuleInit, OnModuleDestroy {
       // Same reasoning as analytics: an unwired handler is a deployment that
       // does not sync into the Dapta estate, never a delivery failure.
       if (!this.daptaSync) throw new OutboxSkipError('dapta_sync handler not wired');
-      await this.daptaSync.deliver(row.action, row.payload);
+      await this.daptaSync.deliver(row.action, row.payload, signal);
       return undefined;
     }
     throw new Error(`unknown outbox kind: ${String(row.kind)}`);

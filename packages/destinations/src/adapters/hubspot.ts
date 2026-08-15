@@ -103,6 +103,7 @@ interface HubSpotErrorResponse {
  */
 export class HubspotDestination implements SubmissionDestination {
   readonly type = 'hubspot' as const;
+  private activeSignal?: AbortSignal;
 
   constructor(
     private readonly opts: HubspotDestinationOptions,
@@ -207,6 +208,7 @@ export class HubspotDestination implements SubmissionDestination {
   }
 
   async deliver(ctx: DestinationContext): Promise<DestinationResult> {
+    this.activeSignal = ctx.signal ?? AbortSignal.timeout(120_000);
     const email = this.resolveEmail(ctx);
     if (!email) {
       // No key to upsert on — a permanent no-op, not a retryable failure.
@@ -336,6 +338,7 @@ export class HubspotDestination implements SubmissionDestination {
         body: JSON.stringify({
           inputs: [{ idProperty: 'email', id: props.email, properties: props }],
         }),
+        signal: this.activeSignal,
       });
 
       if (res.ok) {
@@ -395,6 +398,7 @@ export class HubspotDestination implements SubmissionDestination {
           'content-type': 'application/json',
         },
         body: JSON.stringify(body),
+        signal: this.activeSignal,
       });
       if (res.ok) return 'ok';
       const detail = await res.text().catch(() => '');
@@ -441,6 +445,7 @@ export class HubspotDestination implements SubmissionDestination {
             },
           ],
         }),
+        signal: this.activeSignal,
       });
       if (res.ok) return true;
       this.logger.warn(`[destination:hubspot] note v3 failed: HTTP ${res.status}`);
@@ -462,6 +467,7 @@ export class HubspotDestination implements SubmissionDestination {
           associations: { contactIds: [contactIdNum], companyIds: [], dealIds: [], ownerIds: [] },
           metadata: { body },
         }),
+        signal: this.activeSignal,
       });
       if (res.ok) return true;
       this.logger.warn(`[destination:hubspot] note v1 failed: HTTP ${res.status}`);

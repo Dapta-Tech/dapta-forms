@@ -69,6 +69,7 @@ import {
             secure: env.SMTP_SECURE,
             user: env.SMTP_USER,
             pass: env.SMTP_PASS,
+            timeoutMs: env.OUTBOX_MAX_DELIVERY_MS,
           },
           http: {
             endpoint: env.EMAIL_HTTP_ENDPOINT,
@@ -78,6 +79,7 @@ import {
             signingSecret: env.EMAIL_HTTP_SIGNING_SECRET,
             apiKey: env.EMAIL_HTTP_API_KEY,
             category: env.EMAIL_HTTP_CATEGORY,
+            timeoutMs: env.OUTBOX_MAX_DELIVERY_MS,
           },
         }),
       inject: [ENV],

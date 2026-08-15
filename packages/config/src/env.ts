@@ -173,6 +173,11 @@ export const serverEnvSchema = z.object({
   OUTBOX_WORKER_ENABLED: boolish.default('true'),
   OUTBOX_POLL_MS: z.coerce.number().int().positive().default(5000),
   OUTBOX_MAX_ATTEMPTS: z.coerce.number().int().positive().default(5),
+  // The delivery cap must remain below the fixed five-minute stale lease. A
+  // timed-out external call may continue despite abort, so the worker settles
+  // first and accounts for the detached operation separately.
+  OUTBOX_MAX_DELIVERY_MS: z.coerce.number().int().positive().lt(300_000).default(120_000),
+  OUTBOX_MAX_ORPHANS: z.coerce.number().int().positive().default(8),
 
   // CORS: a comma-separated allowlist of origins permitted to call the API from
   // a browser. When UNSET we default to PUBLIC_APP_URL only (the app's own web

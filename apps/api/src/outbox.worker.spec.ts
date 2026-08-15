@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { loadServerEnv } from '@quill/config/env';
 import {
   claimDueOutbox,
   createDb,
@@ -22,7 +23,6 @@ const TEST_LEASE_MS = 5 * 60_000;
 
 type WorkerTestSeams = {
   clock: () => number;
-  renewalScheduler: (callback: () => Promise<void>, intervalMs: number) => () => void;
   log: { log: ReturnType<typeof vi.fn>; warn: ReturnType<typeof vi.fn>; error: ReturnType<typeof vi.fn> };
 };
 
@@ -34,46 +34,6 @@ function replaceLog(worker: OutboxWorker) {
   const log = { log: vi.fn(), warn: vi.fn(), error: vi.fn() };
   (worker as unknown as WorkerTestSeams).log = log;
   return log;
-}
-
-function controlRenewal(worker: OutboxWorker) {
-  let callback: (() => void | Promise<void>) | undefined;
-  if ('renewalScheduler' in (worker as object)) {
-    (worker as unknown as WorkerTestSeams).renewalScheduler = (next) => {
-      callback = next;
-      return () => {};
-    };
-    return {
-      fire: async () => {
-        expect(callback).toBeDefined();
-        await callback!();
-      },
-      restore: () => {},
-    };
-  }
-
-  const nativeSetInterval = globalThis.setInterval;
-  const timer = nativeSetInterval(() => {}, 60_000);
-  timer.unref?.();
-  const setIntervalSpy = vi
-    .spyOn(globalThis, 'setInterval')
-    .mockImplementation(
-      ((next: Parameters<typeof setInterval>[0]) => {
-        callback = next as () => void;
-        return timer;
-      }) as typeof setInterval,
-    );
-  return {
-    fire: async () => {
-      expect(callback).toBeDefined();
-      await callback!();
-      await new Promise<void>((resolve) => setImmediate(resolve));
-    },
-    restore: () => {
-      setIntervalSpy.mockRestore();
-      clearInterval(timer);
-    },
-  };
 }
 
 beforeEach(async () => {
@@ -90,6 +50,22 @@ afterEach(async () => {
 describe('OutboxWorker claim fencing', () => {
   const claimedAt = 7_000_000;
   const reclaimedAt = claimedAt + 60_001;
+
+  const timeoutEnv = (over: Record<string, number> = {}) =>
+    ({
+      OUTBOX_WORKER_ENABLED: false,
+      OUTBOX_POLL_MS: 5,
+      OUTBOX_MAX_DELIVERY_MS: 5,
+      OUTBOX_MAX_ORPHANS: 8,
+      NODE_ENV: 'test',
+      ...over,
+    }) as never;
+
+  it('rejects a delivery cap at or above the stale lease', () => {
+    expect(() => loadServerEnv({ OUTBOX_MAX_DELIVERY_MS: '300000' })).toThrow(
+      /OUTBOX_MAX_DELIVERY_MS/,
+    );
+  });
 
   async function runStaleWorker(settlement: 'done' | 'retry' | 'skipped' | 'failed') {
     const id = await enqueueOutbox(db, {
@@ -160,36 +136,6 @@ describe('OutboxWorker claim fencing', () => {
       claimedAt: currentClaim.claimedAt,
       claimedBy: currentClaim.claimedBy,
     });
-  }
-
-  function dbThrowingDuringRenewal(renewing: () => boolean, onSettlement?: () => void): Db {
-    return {
-      ...db,
-      async get<T>(query: Parameters<Db['get']>[0]) {
-        if (renewing()) throw new Error('renewal unavailable');
-        onSettlement?.();
-        return db.get<T>(query);
-      },
-    };
-  }
-
-  function dbApplyingRenewalThenThrowingOnce(renewing: () => boolean, onSettlement?: () => void): Db {
-    let responseLost = true;
-    return {
-      ...db,
-      async get<T>(query: Parameters<Db['get']>[0]) {
-        if (renewing()) {
-          if (responseLost) {
-            responseLost = false;
-            await db.get<T>(query);
-            throw new Error('renewal response lost');
-          }
-          return db.get<T>(query);
-        }
-        onSettlement?.();
-        return db.get<T>(query);
-      },
-    };
   }
 
   it.each(['done', 'retry', 'skipped', 'failed'] as const)(
@@ -320,378 +266,68 @@ describe('OutboxWorker claim fencing', () => {
     expect(deliveries).toBe(0);
   });
 
-  it('renews a blocked provider lease before another worker can reclaim it', async () => {
-    const claimedAt = 11_000_000;
-    let now = claimedAt;
-    let releaseDelivery: (() => void) | undefined;
-    let deliveryStarted: (() => void) | undefined;
-    const deliveryBlocked = new Promise<void>((resolve) => {
-      releaseDelivery = resolve;
+  it('caps a hung effect, aborts it, and records one fenced retry before detaching it', async () => {
+    const now = 11_000_000;
+    let release: (() => void) | undefined;
+    let seenSignal: AbortSignal | undefined;
+    const pending = new Promise<void>((resolve) => {
+      release = resolve;
     });
-    const deliveryStartedPromise = new Promise<void>((resolve) => {
-      deliveryStarted = resolve;
-    });
-    const id = await enqueueOutbox(db, { kind: 'email', action: 'a', payload: '{}', now: claimedAt });
+    const id = await enqueueOutbox(db, { kind: 'email', action: 'a', payload: '{}', now });
     const worker = new OutboxWorker(
       db,
-      { OUTBOX_WORKER_ENABLED: false, OUTBOX_POLL_MS: 5_000, NODE_ENV: 'test' } as never,
+      timeoutEnv(),
       {
-        deliver: async () => {
-          deliveryStarted!();
-          await deliveryBlocked;
+        deliver: async (_action: string, _payload: string, _account: unknown, signal?: AbortSignal) => {
+          seenSignal = signal;
+          await pending;
         },
       } as unknown as EmailEffects,
       {} as DestinationEffects,
     );
-    setClock(worker, () => now);
-    const renewal = controlRenewal(worker);
 
-    const draining = worker.drainOnce(claimedAt);
-    try {
-      await deliveryStartedPromise;
-      now = claimedAt + TEST_LEASE_MS / 2;
-      await renewal.fire();
-      expect((await listOutbox(db)).find((row) => row.id === id)?.claimedAt).toBe(now);
+    await worker.drainOnce(now);
+    expect(seenSignal?.aborted).toBe(true);
+    expect((await listOutbox(db)).find((row) => row.id === id)).toMatchObject({
+      status: 'pending',
+      attempts: 1,
+      nextAttemptAt: now + 1_000,
+    });
+    expect(worker.getRuntimeStatus().orphanCount).toBe(1);
 
-      now = claimedAt + TEST_LEASE_MS + 1;
-      expect(await claimDueOutbox(db, now, { workerId: 'B', staleClaimMs: TEST_LEASE_MS })).toEqual([]);
-    } finally {
-      releaseDelivery?.();
-      await draining;
-      renewal.restore();
-    }
-    expect((await listOutbox(db)).find((row) => row.id === id)).toMatchObject({ status: 'done' });
+    release!();
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(worker.getRuntimeStatus().orphanCount).toBe(0);
   });
 
-  it('records a success when renewal errors leave its claim unchanged', async () => {
-    const claimedAt = 13_000_000;
-    const now = claimedAt;
-    let renewing = true;
-    let settlements = 0;
-    let releaseDelivery: (() => void) | undefined;
-    let deliveryStarted: (() => void) | undefined;
-    const deliveryBlocked = new Promise<void>((resolve) => {
-      releaseDelivery = resolve;
+  it('pauses claims at the orphan ceiling and resumes after the orphan settles', async () => {
+    const now = 11_500_000;
+    let release: (() => void) | undefined;
+    const pending = new Promise<void>((resolve) => {
+      release = resolve;
     });
-    const deliveryStartedPromise = new Promise<void>((resolve) => {
-      deliveryStarted = resolve;
-    });
-    const id = await enqueueOutbox(db, { kind: 'email', action: 'a', payload: '{}', now: claimedAt });
-    const worker = new OutboxWorker(
-      dbThrowingDuringRenewal(() => renewing, () => {
-        settlements += 1;
-      }),
-      { OUTBOX_WORKER_ENABLED: false, OUTBOX_POLL_MS: 5_000, NODE_ENV: 'test' } as never,
-      {
-        deliver: async () => {
-          deliveryStarted!();
-          await deliveryBlocked;
-        },
-      } as unknown as EmailEffects,
-      {} as DestinationEffects,
-    );
-    setClock(worker, () => now);
-    const renewal = controlRenewal(worker);
-
-    const draining = worker.drainOnce(claimedAt);
-    try {
-      await deliveryStartedPromise;
-      await renewal.fire();
-      renewing = false;
-      releaseDelivery!();
-      await draining;
-      expect(settlements).toBe(1);
-      expect((await listOutbox(db)).find((row) => row.id === id)).toMatchObject({ status: 'done' });
-    } finally {
-      renewing = false;
-      releaseDelivery?.();
-      await draining;
-      renewal.restore();
-    }
-  });
-
-  it('records retry attempts and backoff after a renewal error', async () => {
-    const claimedAt = 14_000_000;
-    const now = claimedAt;
-    let renewing = true;
-    let settlements = 0;
-    let releaseDelivery: (() => void) | undefined;
-    let deliveryStarted: (() => void) | undefined;
-    const deliveryBlocked = new Promise<void>((resolve) => {
-      releaseDelivery = resolve;
-    });
-    const deliveryStartedPromise = new Promise<void>((resolve) => {
-      deliveryStarted = resolve;
-    });
-    const id = await enqueueOutbox(db, { kind: 'email', action: 'a', payload: '{}', now: claimedAt });
-    const worker = new OutboxWorker(
-      dbThrowingDuringRenewal(() => renewing, () => {
-        settlements += 1;
-      }),
-      { OUTBOX_WORKER_ENABLED: false, OUTBOX_POLL_MS: 5_000, NODE_ENV: 'test' } as never,
-      {
-        deliver: async () => {
-          deliveryStarted!();
-          await deliveryBlocked;
-          throw new Error('boom');
-        },
-      } as unknown as EmailEffects,
-      {} as DestinationEffects,
-    );
-    setClock(worker, () => now);
-    const renewal = controlRenewal(worker);
-
-    const draining = worker.drainOnce(claimedAt);
-    try {
-      await deliveryStartedPromise;
-      await renewal.fire();
-      renewing = false;
-      releaseDelivery!();
-      await draining;
-      expect(settlements).toBe(1);
-      expect((await listOutbox(db)).find((row) => row.id === id)).toMatchObject({
-        status: 'pending',
-        attempts: 1,
-        nextAttemptAt: claimedAt + 1_000,
-        lastError: 'boom',
-        claimedAt: null,
-        claimedBy: null,
-      });
-    } finally {
-      renewing = false;
-      releaseDelivery?.();
-      await draining;
-      renewal.restore();
-    }
-  });
-
-  it('records done once when renewal applied but its response was lost', async () => {
-    const claimedAt = 14_500_000;
-    const now = claimedAt;
-    let renewing = true;
-    let settlements = 0;
-    let effects = 0;
-    let releaseDelivery: (() => void) | undefined;
-    let deliveryStarted: (() => void) | undefined;
-    const deliveryBlocked = new Promise<void>((resolve) => {
-      releaseDelivery = resolve;
-    });
-    const deliveryStartedPromise = new Promise<void>((resolve) => {
-      deliveryStarted = resolve;
-    });
-    const id = await enqueueOutbox(db, { kind: 'email', action: 'a', payload: '{}', now: claimedAt });
-    const worker = new OutboxWorker(
-      dbApplyingRenewalThenThrowingOnce(() => renewing, () => {
-        settlements += 1;
-      }),
-      { OUTBOX_WORKER_ENABLED: false, OUTBOX_POLL_MS: 5_000, NODE_ENV: 'test' } as never,
-      {
-        deliver: async () => {
-          effects += 1;
-          deliveryStarted!();
-          await deliveryBlocked;
-        },
-      } as unknown as EmailEffects,
-      {} as DestinationEffects,
-    );
-    setClock(worker, () => now);
-    const renewal = controlRenewal(worker);
-
-    const draining = worker.drainOnce(claimedAt);
-    try {
-      await deliveryStartedPromise;
-      await renewal.fire();
-      renewing = false;
-      releaseDelivery!();
-      await draining;
-      expect(effects).toBe(1);
-      expect(settlements).toBe(1);
-      expect((await listOutbox(db)).find((row) => row.id === id)).toMatchObject({
-        status: 'done',
-        attempts: 0,
-      });
-    } finally {
-      renewing = false;
-      releaseDelivery?.();
-      await draining;
-      renewal.restore();
-    }
-  });
-
-  it('records retry once when renewal applied but its response was lost', async () => {
-    const claimedAt = 14_750_000;
-    const now = claimedAt;
-    let renewing = true;
-    let settlements = 0;
-    let effects = 0;
-    let releaseDelivery: (() => void) | undefined;
-    let deliveryStarted: (() => void) | undefined;
-    const deliveryBlocked = new Promise<void>((resolve) => {
-      releaseDelivery = resolve;
-    });
-    const deliveryStartedPromise = new Promise<void>((resolve) => {
-      deliveryStarted = resolve;
-    });
-    const id = await enqueueOutbox(db, { kind: 'email', action: 'a', payload: '{}', now: claimedAt });
-    const worker = new OutboxWorker(
-      dbApplyingRenewalThenThrowingOnce(() => renewing, () => {
-        settlements += 1;
-      }),
-      { OUTBOX_WORKER_ENABLED: false, OUTBOX_POLL_MS: 5_000, NODE_ENV: 'test' } as never,
-      {
-        deliver: async () => {
-          effects += 1;
-          deliveryStarted!();
-          await deliveryBlocked;
-          throw new Error('boom');
-        },
-      } as unknown as EmailEffects,
-      {} as DestinationEffects,
-    );
-    setClock(worker, () => now);
-    const renewal = controlRenewal(worker);
-
-    const draining = worker.drainOnce(claimedAt);
-    try {
-      await deliveryStartedPromise;
-      await renewal.fire();
-      renewing = false;
-      releaseDelivery!();
-      await draining;
-      expect(effects).toBe(1);
-      expect(settlements).toBe(1);
-      expect((await listOutbox(db)).find((row) => row.id === id)).toMatchObject({
-        status: 'pending',
-        attempts: 1,
-        nextAttemptAt: claimedAt + 1_000,
-        lastError: 'boom',
-      });
-    } finally {
-      renewing = false;
-      releaseDelivery?.();
-      await draining;
-      renewal.restore();
-    }
-  });
-
-  it('settles a failed effect after two applied token-only renewals', async () => {
-    const claimedAt = 15_000_000;
-    let now = claimedAt;
-    let releaseDelivery: (() => void) | undefined;
-    let deliveryStarted: (() => void) | undefined;
-    const deliveryBlocked = new Promise<void>((resolve) => {
-      releaseDelivery = resolve;
-    });
-    const deliveryStartedPromise = new Promise<void>((resolve) => {
-      deliveryStarted = resolve;
-    });
-    const id = await enqueueOutbox(db, { kind: 'email', action: 'a', payload: '{}', now: claimedAt });
+    const id = await enqueueOutbox(db, { kind: 'email', action: 'hung', payload: '{}', now });
+    let clock = now;
     const worker = new OutboxWorker(
       db,
-      { OUTBOX_WORKER_ENABLED: false, OUTBOX_POLL_MS: 5_000, NODE_ENV: 'test' } as never,
+      timeoutEnv({ OUTBOX_MAX_ORPHANS: 1 }),
       {
-        deliver: async () => {
-          deliveryStarted!();
-          await deliveryBlocked;
-          throw new Error('boom');
-        },
+        deliver: async () => pending,
       } as unknown as EmailEffects,
       {} as DestinationEffects,
     );
-    setClock(worker, () => now);
-    const renewal = controlRenewal(worker);
+    setClock(worker, () => clock);
 
-    const draining = worker.drainOnce(claimedAt);
-    try {
-      await deliveryStartedPromise;
-      now = claimedAt + TEST_LEASE_MS / 2;
-      await renewal.fire();
-      expect((await listOutbox(db)).find((row) => row.id === id)?.claimedAt).toBe(now);
-      now += 1;
-      await renewal.fire();
-      expect((await listOutbox(db)).find((row) => row.id === id)?.claimedAt).toBe(now);
+    await worker.drainOnce(now);
+    expect(worker.getRuntimeStatus().paused).toBe(true);
+    clock = now + 11;
+    expect(worker.getRuntimeStatus().sustainedPaused).toBe(true);
+    expect(await worker.drainOnce(now + 1)).toBe(0);
+    expect((await listOutbox(db)).find((row) => row.id === id)?.attempts).toBe(1);
 
-      releaseDelivery!();
-      await draining;
-      expect((await listOutbox(db)).find((row) => row.id === id)).toMatchObject({
-        status: 'pending',
-        attempts: 1,
-        nextAttemptAt: now + 1_000,
-        claimedAt: null,
-        claimedBy: null,
-      });
-    } finally {
-      releaseDelivery?.();
-      await draining;
-      renewal.restore();
-    }
-  });
-
-  it('uses the final fenced settlement to detect a peer reclaim after renewal errors', async () => {
-    const claimedAt = 16_000_000;
-    let now = claimedAt;
-    let renewing = true;
-    let settlements = 0;
-    let releaseDelivery: (() => void) | undefined;
-    let deliveryStarted: (() => void) | undefined;
-    const deliveryBlocked = new Promise<void>((resolve) => {
-      releaseDelivery = resolve;
-    });
-    const deliveryStartedPromise = new Promise<void>((resolve) => {
-      deliveryStarted = resolve;
-    });
-    const id = await enqueueOutbox(db, { kind: 'email', action: 'a', payload: '{}', now: claimedAt });
-    const worker = new OutboxWorker(
-      dbThrowingDuringRenewal(() => renewing, () => {
-        settlements += 1;
-      }),
-      { OUTBOX_WORKER_ENABLED: false, OUTBOX_POLL_MS: 5_000, NODE_ENV: 'test' } as never,
-      {
-        deliver: async () => {
-          deliveryStarted!();
-          await deliveryBlocked;
-        },
-      } as unknown as EmailEffects,
-      {} as DestinationEffects,
-    );
-    const log = replaceLog(worker);
-    setClock(worker, () => now);
-    const renewal = controlRenewal(worker);
-
-    const draining = worker.drainOnce(claimedAt);
-    try {
-      await deliveryStartedPromise;
-      await renewal.fire();
-      renewing = false;
-      now = claimedAt + TEST_LEASE_MS + 1;
-      const [reclaimed] = await claimDueOutbox(db, now, {
-        workerId: 'B',
-        staleClaimMs: TEST_LEASE_MS,
-      });
-      expect(reclaimed).toBeDefined();
-
-      releaseDelivery!();
-      await draining;
-      expect(settlements).toBe(1);
-      expect((await listOutbox(db)).find((row) => row.id === id)).toMatchObject({
-        status: 'pending',
-        attempts: 0,
-        claimedAt: reclaimed!.claimedAt,
-        claimedBy: reclaimed!.claimedBy,
-      });
-      const messages = [...log.log.mock.calls, ...log.warn.mock.calls, ...log.error.mock.calls].map(
-        ([message]) => String(message),
-      );
-      expect(messages.some((message) => message.includes('lease lost'))).toBe(true);
-      expect(messages.some((message) => message.includes('will retry'))).toBe(false);
-      expect(messages.some((message) => message.includes('skipped:'))).toBe(false);
-      expect(messages.some((message) => message.includes('gave up after'))).toBe(false);
-    } finally {
-      renewing = false;
-      releaseDelivery?.();
-      await draining;
-      renewal.restore();
-    }
+    release!();
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(worker.getRuntimeStatus().paused).toBe(false);
   });
 
   it('keeps the existing 50-row drain bound', async () => {

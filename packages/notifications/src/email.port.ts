@@ -16,6 +16,8 @@ export interface EmailAttachment {
 }
 
 export interface EmailMessage {
+  /** Worker cancellation signal; transports may honor it when supported. */
+  signal?: AbortSignal;
   /** Tenant context asserted by the authenticated backend, never by a browser. */
   accountId?: string;
   to: string | string[];

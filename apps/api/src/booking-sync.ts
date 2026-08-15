@@ -114,7 +114,8 @@ export class BookingSyncEffects {
   ) {}
 
   /** The worker's executor for a `booking_sync` outbox row. */
-  async deliver(_action: string, payloadJson: string): Promise<void> {
+  async deliver(_action: string, payloadJson: string, signal?: AbortSignal): Promise<void> {
+    signal ??= AbortSignal.timeout(120_000);
     const payload = JSON.parse(payloadJson) as BookingSyncPayload;
 
     const form = await getFormById(this.db, payload.accountId, payload.formId);
@@ -150,8 +151,8 @@ export class BookingSyncEffects {
         );
       } else {
         const [event, fetchedInvitee] = await Promise.all([
-          payload.eventUri ? this.calendlyGet(payload.eventUri, token) : null,
-          payload.inviteeUri ? this.calendlyGet(payload.inviteeUri, token) : null,
+          payload.eventUri ? this.calendlyGet(payload.eventUri, token, signal) : null,
+          payload.inviteeUri ? this.calendlyGet(payload.inviteeUri, token, signal) : null,
         ]);
         const fetchedStart = event?.resource?.start_time;
         if (fetchedStart) {
@@ -228,7 +229,7 @@ export class BookingSyncEffects {
     // upsert first and the Note last, no retryable failure can fire once a Note
     // exists, so the outbox retrying this row can never duplicate one.
     const wroteBooking = Object.keys(properties).length > 0;
-    if (wroteBooking) await this.upsertContact(hubspotToken, email, properties);
+    if (wroteBooking) await this.upsertContact(hubspotToken, email, properties, signal);
 
     // --- Full answers sync, keyed on the invitee (V7) --------------------------
     // A form whose scheduler collects the email (no email QUESTION of its own)
@@ -251,6 +252,7 @@ export class BookingSyncEffects {
             inviteeEmail,
             submission,
             invitee,
+            signal,
           )
         : false;
 
@@ -359,6 +361,7 @@ export class BookingSyncEffects {
     inviteeEmail: string,
     submission: SubmissionRow,
     invitee: InviteeDetails,
+    signal?: AbortSignal,
   ): Promise<boolean> {
     const { data, score } = submission;
 
@@ -416,6 +419,7 @@ export class BookingSyncEffects {
       // the booking page happened to collect.
       data: { ...inviteeAnswers(invitee), ...data, email: inviteeEmail },
       utm: extractUtm(data),
+      signal,
     });
     return result.delivered;
   }
@@ -427,13 +431,14 @@ export class BookingSyncEffects {
    * the pilot had no such check). Retryable failures (network, 429/5xx) THROW;
    * a 4xx or off-host URI degrades to `null` (enrichment is best-effort).
    */
-  private async calendlyGet(url: string, token: string): Promise<CalendlyResource | null> {
+  private async calendlyGet(url: string, token: string, signal?: AbortSignal): Promise<CalendlyResource | null> {
     if (!isCalendlyApiUrl(url)) {
       this.log.warn('booking sync: ignoring non-Calendly booking URI (host not api.calendly.com)');
       return null;
     }
     const res = await this.fetchImpl(url, {
       headers: { Authorization: `Bearer ${token}` },
+      signal,
     });
     if (!res.ok) {
       if (res.status === 429 || res.status >= 500) {
@@ -457,11 +462,13 @@ export class BookingSyncEffects {
     token: string,
     email: string,
     properties: Record<string, string>,
+    signal?: AbortSignal,
   ): Promise<void> {
     const res = await this.fetchImpl(`${this.hubspotApiBase}/crm/v3/objects/contacts/batch/upsert`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ inputs: [{ idProperty: 'email', id: email, properties }] }),
+      signal,
     });
     if (!res.ok) {
       if (res.status === 429 || res.status >= 500) {

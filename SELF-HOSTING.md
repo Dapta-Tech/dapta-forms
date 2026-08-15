@@ -158,6 +158,28 @@ loud** on a bad value. Copy [`.env.example`](.env.example) to `.env` to override
 | `OUTBOX_WORKER_ENABLED` | `true` | set `false` only if a separate worker drains the outbox | no |
 | `OUTBOX_POLL_MS` | `5000` | — | no |
 | `OUTBOX_MAX_ATTEMPTS` | `5` | — | no |
+| `OUTBOX_MAX_DELIVERY_MS` | `120000` | cap one external delivery; must stay below 300000 | no |
+| `OUTBOX_MAX_ORPHANS` | `8` | max timed-out effects before claims pause | no |
+
+### Outbox worker cutover and recovery
+
+The outbox is **at-least-once**. A crash or delivery timeout after an external
+effect can replay that effect on retry. Immutable claim tokens stop an old or
+ambiguous worker from settling a newer claim; they do not make the receiver
+exactly-once.
+
+Mixed old and new workers are unsupported. For every upgrade or rollback:
+
+1. Stop all API and outbox-worker replicas.
+2. Wait `OUTBOX_MAX_DELIVERY_MS + 30s`.
+3. Run `SELECT COUNT(*) FROM outbox WHERE status = 'pending' AND claimed_at IS NOT NULL;`; require zero.
+4. If rows remain, wait the five-minute stale lease and repeat the query.
+5. Start every replica on the target version.
+
+If the orphan ceiling remains paused for more than two poll intervals,
+`/health/ready` returns 503. Timed-out effects that ignore abort cannot be
+recovered in-process; restart the process after the drain preflight above so a
+replacement can reclaim the stale rows.
 | `ONBOARDING_WIZARD` | `true` | set `false` to skip the first-run wizard (and get `SEED_DEMO_FORM` back) | no |
 | `SEED_DEMO_FORM` | `true` | **inert while `ONBOARDING_WIZARD` is on**; set `false` to ship empty new workspaces | no |
 

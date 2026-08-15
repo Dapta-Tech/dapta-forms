@@ -75,7 +75,7 @@ export class SubmissionNotifier {
   constructor(private readonly email: EmailProvider) {}
 
   /** Internal notice to the account: a new submission landed. */
-  sendSubmissionReceived(n: SubmissionNotification): Promise<EmailResult> {
+  sendSubmissionReceived(n: SubmissionNotification, signal?: AbortSignal): Promise<EmailResult> {
     const base = renderSubmissionReceived(normalizeLocale(n.locale), n);
     const { subject, lines } = applyCopyOverride(
       base,
@@ -84,6 +84,7 @@ export class SubmissionNotifier {
     );
     const body = lines.filter(Boolean);
     return this.email.send({
+      signal,
       accountId: n.accountId,
       to: n.to,
       subject,
@@ -98,10 +99,11 @@ export class SubmissionNotifier {
    * "You were added to a workspace." No copy override applies: this is platform
    * copy, not the per-account submission templates an owner can edit.
    */
-  sendMemberInvited(n: MemberInvitedNotification): Promise<EmailResult> {
+  sendMemberInvited(n: MemberInvitedNotification, signal?: AbortSignal): Promise<EmailResult> {
     const { subject, lines } = renderMemberInvited(normalizeLocale(n.locale), n);
     const body = lines.filter(Boolean);
     return this.email.send({
+      signal,
       accountId: n.accountId,
       to: [n.to],
       subject,
@@ -114,7 +116,7 @@ export class SubmissionNotifier {
   }
 
   /** Confirmation to the respondent that their answers were recorded. */
-  sendSubmissionConfirmed(n: SubmissionNotification): Promise<EmailResult> {
+  sendSubmissionConfirmed(n: SubmissionNotification, signal?: AbortSignal): Promise<EmailResult> {
     const base = renderSubmissionConfirmed(normalizeLocale(n.locale), n);
     const { subject, lines } = applyCopyOverride(
       base,
@@ -123,6 +125,7 @@ export class SubmissionNotifier {
     );
     const body = lines.filter(Boolean);
     return this.email.send({
+      signal,
       accountId: n.accountId,
       to: n.respondentEmail ? [n.respondentEmail] : n.to,
       subject,
