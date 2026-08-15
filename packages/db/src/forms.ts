@@ -636,6 +636,18 @@ export async function upsertSubmission(
     if (input.partial && wasCompletedBefore) {
       return { ...(await getSubmissionById(db, existing.id))!, wasCompletedBefore };
     }
+    if (!input.partial && !wasCompletedBefore) {
+      // The SELECT above routes partials and retries, but cannot decide a
+      // completion claim: another finalization may commit after it read NULL.
+      const completed = await db.get<Record<string, unknown>>(
+        sql`UPDATE submission
+            SET data = ${jsonParam(input.data)}, score = ${input.score}, completed_at = ${completedAt}
+            WHERE id = ${existing.id} AND completed_at IS NULL
+            RETURNING *`,
+      );
+      if (completed) return { ...mapSubmission(completed), wasCompletedBefore: false };
+      return { ...(await getSubmissionById(db, existing.id))!, wasCompletedBefore: true };
+    }
     await db.run(
       sql`UPDATE submission
           SET data = ${jsonParam(input.data)}, score = ${input.score},
@@ -705,4 +717,3 @@ export async function recordFormEvent(
           ${input.stepIndex ?? null}, ${input.stepKey ?? null}, ${input.now ?? Date.now()})`,
   );
 }
-
