@@ -26,6 +26,9 @@ const API = 'http://localhost:4400';
 /** Copy families this screen must keep distinct (en). */
 const COPY = {
   notApplied: 'That save timed out and was not applied. Nothing changed.',
+  noOp: 'Your last save did not complete. Your page is unchanged, but another save finished first.',
+  changedElsewhere:
+    'Your public page changed somewhere else. The current version is shown — review it, then save again.',
   latestLoaded:
     'Your last save did not complete. Your page changed in the meantime, so the current version is shown.',
   unresolved:
@@ -35,10 +38,27 @@ const COPY = {
   saved: 'Public page saved.',
 };
 
+interface StoredProfile {
+  enabled?: boolean;
+  headline?: string | null;
+  links?: { label: string; url: string }[];
+}
+
 interface Stored {
-  profile: { enabled?: boolean } | null;
+  profile: StoredProfile | null;
   revision: number;
 }
+
+/** Copy families in Spanish — the same nine states, in the other locale. */
+const COPY_ES = {
+  noOp: 'Tu último guardado no se completó. Tu página no cambió, pero otro guardado terminó primero.',
+  unresolved:
+    'Todavía no podemos saber si se aplicó tu último guardado. La edición queda desactivada hasta saberlo.',
+  changedElsewhere:
+    'Tu página pública cambió en otro lugar. Se muestra la versión actual: revísala y vuelve a guardar.',
+  saved: 'Página pública guardada.',
+  checkAgain: 'Comprobar de nuevo',
+};
 
 const stored = async (request: APIRequestContext): Promise<Stored> => {
   const res = await request.get(`${API}/v2/me/profile`);
@@ -57,6 +77,22 @@ async function resetProfile(request: APIRequestContext): Promise<number> {
   return ((await res.json()) as Stored).revision;
 }
 
+/** Write a page straight through the API, at whatever revision it is at now. */
+async function writeProfile(request: APIRequestContext, profile: StoredProfile): Promise<number> {
+  const before = await stored(request);
+  const res = await request.put(`${API}/v2/me/profile`, {
+    data: { profile: { version: 1, ...profile }, expectedRevision: before.revision },
+  });
+  expect(res.ok(), `profile write failed: ${res.status()} ${await res.text()}`).toBeTruthy();
+  return ((await res.json()) as Stored).revision;
+}
+
+/** Advance the revision from outside the browser WITHOUT changing content. */
+async function fenceFromOutside(request: APIRequestContext, expectedRevision: number): Promise<void> {
+  const res = await request.post(`${API}/v2/me/profile/fence`, { data: { expectedRevision } });
+  expect(res.ok(), `outside fence failed: ${res.status()}`).toBeTruthy();
+}
+
 const isAction = (method: string, headers: Record<string, string>): boolean =>
   method === 'POST' && Boolean(headers['next-action']);
 
@@ -66,6 +102,8 @@ function section(page: Page) {
     root,
     toggle: root.getByRole('switch', { name: 'Published' }),
     viewLink: root.getByRole('link', { name: 'View page' }),
+    headline: root.getByRole('textbox').first(),
+    saveButton: root.getByRole('button').last(),
     notice: page.getByTestId('public-page-notice'),
     status: page.getByTestId('public-page-status'),
     checkAgain: page.getByTestId('public-page-check-again'),
@@ -259,5 +297,165 @@ test.describe('public page: a save whose answer never arrives', () => {
     expect(afterConflict.profile).toMatchObject({ enabled: true });
     // The refused save burned nothing: only the outside write advanced it.
     expect(afterConflict.revision).toBe(afterDisable.revision + 1);
+  });
+});
+
+test.describe('public page: settling without claiming authorship', () => {
+  test.beforeEach(async ({ request }) => {
+    await resetProfile(request);
+  });
+
+  for (const locale of ['en', 'es'] as const) {
+    test(`a revision that advanced without changing the page gets its own copy (${locale})`, async ({
+      page,
+      request,
+      context,
+    }) => {
+      test.setTimeout(120_000);
+      const copy = locale === 'en' ? COPY : COPY_ES;
+      const label = locale === 'en' ? 'Published' : 'Publicada';
+      const baseline = { enabled: false, headline: 'Baseline' };
+      const start = await writeProfile(request, baseline);
+      if (locale === 'es') {
+        await context.addCookies([
+          { name: 'quill_locale', value: 'es', url: 'http://localhost:3400' },
+        ]);
+      }
+
+      // The save never reaches the server, and the first reconciliation cannot
+      // reach it either — which parks the screen where we can stage the no-op.
+      let dropped = false;
+      let fenceAttempts = 0;
+      await page.route('**/admin/settings**', async (route) => {
+        const r = route.request();
+        if (dropped || !isAction(r.method(), r.headers())) return route.fallback();
+        dropped = true;
+        return route.abort('connectionfailed');
+      });
+      await page.route('**/api/settings/public-page/reconcile', async (route) => {
+        fenceAttempts += 1;
+        return fenceAttempts === 1 ? route.abort('connectionfailed') : route.fallback();
+      });
+
+      await page.goto('/admin/settings');
+      const s = section(page);
+      const toggle = page.getByTestId('public-page-settings').getByRole('switch', { name: label });
+      await expect(toggle).toHaveAttribute('aria-checked', 'false', { timeout: 20_000 });
+
+      await toggle.click();
+      await expect(s.status).toHaveText(copy.unresolved, { timeout: 60_000 });
+
+      // Something advances the revision without touching content — another tab
+      // fencing its own ambiguous save, for instance.
+      await fenceFromOutside(request, start);
+
+      // The retry uses the ORIGINAL expectation, so it now conflicts against a
+      // page that is byte-for-byte the one it started from.
+      await s.checkAgain.click();
+
+      await expect(s.notice).toHaveText(copy.noOp, { timeout: 60_000 });
+      // Not "changed elsewhere" (nothing changed) and certainly not "Saved".
+      await expect(page.getByText(copy.changedElsewhere)).toHaveCount(0);
+      await expect(page.getByText(copy.saved)).toHaveCount(0);
+
+      const after = await stored(request);
+      expect(after.profile).toMatchObject(baseline);
+      expect(after.revision).toBe(start + 1);
+    });
+  }
+
+  test('a conflict adopts the stored page but never eats the draft being typed', async ({
+    page,
+    request,
+  }) => {
+    test.setTimeout(120_000);
+    const start = await writeProfile(request, {
+      enabled: false,
+      headline: 'Stored headline',
+      links: [{ label: 'Kept', url: 'https://kept.example' }],
+    });
+
+    await page.goto('/admin/settings');
+    const s = section(page);
+    await expect(s.toggle).toHaveAttribute('aria-checked', 'false', { timeout: 20_000 });
+
+    // Unsaved work in progress.
+    await s.headline.fill('Draft in progress');
+
+    // Meanwhile, somewhere else, the page is published and its links change.
+    await request.put(`${API}/v2/me/profile`, {
+      data: {
+        profile: {
+          version: 1,
+          enabled: true,
+          headline: 'Outside headline',
+          links: [{ label: 'Outside', url: 'https://outside.example' }],
+        },
+        expectedRevision: start,
+      },
+    });
+
+    await s.saveButton.click();
+
+    // Authoritative state is adopted: published, live link, and the fields this
+    // screen only carries.
+    await expect(s.notice).toHaveText(COPY.changedElsewhere, { timeout: 30_000 });
+    await expect(s.toggle).toHaveAttribute('aria-checked', 'true');
+    await expect(s.viewLink).toBeVisible();
+    // The draft is still exactly where the member left it.
+    await expect(s.headline).toHaveValue('Draft in progress');
+
+    // Saving again keeps the adopted links and finally stores the draft.
+    await s.saveButton.click();
+    await expect(page.getByText(COPY.saved)).toBeVisible({ timeout: 30_000 });
+
+    const after = await stored(request);
+    expect(after.profile).toMatchObject({ enabled: true, headline: 'Draft in progress' });
+    expect(after.profile?.links).toEqual([{ label: 'Outside', url: 'https://outside.example' }]);
+    expect(after.revision).toBe(start + 2);
+  });
+
+  test('after reconciling, the next save uses the reconciled revision, not the stale one', async ({
+    page,
+    request,
+  }) => {
+    test.setTimeout(120_000);
+    const start = (await stored(request)).revision;
+
+    let dropped = false;
+    await page.route('**/admin/settings**', async (route) => {
+      const r = route.request();
+      if (dropped || !isAction(r.method(), r.headers())) return route.fallback();
+      dropped = true;
+      return route.abort('connectionfailed');
+    });
+
+    await page.goto('/admin/settings');
+    const s = section(page);
+    await expect(s.toggle).toHaveAttribute('aria-checked', 'false', { timeout: 20_000 });
+
+    await s.toggle.click();
+    await expect(s.notice).toHaveText(COPY.notApplied, { timeout: 60_000 });
+    const fenced = await stored(request);
+    expect(fenced.revision).toBe(start + 1);
+
+    // The reconciliation revalidated on the server and refreshed the client. If
+    // any of that had put the stale initial revision back, this save would come
+    // back 409 "changed somewhere else" and store nothing.
+    await s.toggle.click();
+    await expect(page.getByText(COPY.saved)).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByText(COPY.changedElsewhere)).toHaveCount(0);
+    await expect(s.toggle).toHaveAttribute('aria-checked', 'true');
+
+    const saved = await stored(request);
+    expect(saved.profile).toMatchObject({ enabled: true });
+    expect(saved.revision).toBe(fenced.revision + 1);
+
+    // A real remount agrees with the server, and can still write.
+    await page.reload();
+    await expect(s.toggle).toHaveAttribute('aria-checked', 'true', { timeout: 20_000 });
+    await s.toggle.click();
+    await expect(s.toggle).toHaveAttribute('aria-checked', 'false', { timeout: 30_000 });
+    expect((await stored(request)).revision).toBe(saved.revision + 1);
   });
 });
