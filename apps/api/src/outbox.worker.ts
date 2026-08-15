@@ -33,6 +33,11 @@ import { DB, ENV } from './tokens';
 // Not every pluggable provider has a transport timeout. Renew halfway through
 // the existing lease so an in-flight effect remains owned until it settles.
 const OUTBOX_CLAIM_RENEWAL_MS = Math.floor(DEFAULT_STALE_CLAIM_MS / 2);
+// A renewal transport error is unknown, so make one bounded retry before the
+// final fenced settlement determines whether ownership still exists.
+const OUTBOX_CLAIM_RENEWAL_ATTEMPTS = 2;
+
+type RenewalScheduler = (callback: () => Promise<void>, intervalMs: number) => () => void;
 
 /**
  * The OUTBOX WORKER (B7 / audit DM1). Polls the `outbox` table and drains due
@@ -61,8 +66,14 @@ export class OutboxWorker implements OnModuleInit, OnModuleDestroy {
   fetchImpl: typeof fetch = fetch;
   /** Injectable clock for deterministic claim-age tests. */
   private clock: () => number = Date.now;
-  /** Kept mutable so the lease heartbeat can be exercised without long waits. */
-  private claimRenewalMs = OUTBOX_CLAIM_RENEWAL_MS;
+  private readonly claimRenewalMs = OUTBOX_CLAIM_RENEWAL_MS;
+  private renewalScheduler: RenewalScheduler = (callback, intervalMs) => {
+    const timer = setInterval(() => {
+      void callback();
+    }, intervalMs);
+    timer.unref?.();
+    return () => clearInterval(timer);
+  };
 
   constructor(
     @Inject(DB) private readonly db: Db,
@@ -141,37 +152,43 @@ export class OutboxWorker implements OnModuleInit, OnModuleDestroy {
     let renewal = Promise.resolve();
     const renew = async () => {
       if (lostLease) return;
-      try {
-        const renewed = await renewOutboxClaim(this.db, row.id, claim, now());
-        if (renewed) claim = renewed;
-        else lostLease = true;
-      } catch (err) {
-        lostLease = true;
-        this.log.warn(`outbox ${row.kind}:${row.action} (${row.id}) lease renewal failed: ${String(err)}`);
+      for (let attempt = 1; attempt <= OUTBOX_CLAIM_RENEWAL_ATTEMPTS; attempt++) {
+        try {
+          const renewed = await renewOutboxClaim(this.db, row.id, claim, now());
+          if (renewed === null) {
+            // A zero-match update is the only definitive lost-lease signal.
+            lostLease = true;
+            return;
+          }
+          claim = renewed;
+          return;
+        } catch (err) {
+          if (attempt === OUTBOX_CLAIM_RENEWAL_ATTEMPTS) {
+            this.log.warn(
+              `outbox ${row.kind}:${row.action} (${row.id}) lease renewal uncertain: ${String(err)}`,
+            );
+          }
+        }
       }
     };
-    const renewalTimer = setInterval(() => {
+    const stopRenewalTimer = this.renewalScheduler(() => {
       renewal = renewal.then(renew);
+      return renewal;
     }, this.claimRenewalMs);
-    renewalTimer.unref?.();
     const stopRenewing = async () => {
-      clearInterval(renewalTimer);
+      stopRenewalTimer();
       await renewal;
     };
 
     try {
       const transcript = await this.execute(row);
       await stopRenewing();
-      if (lostLease || !(await markOutboxDone(this.db, row.id, now(), transcript, claim))) {
+      if (!(await markOutboxDone(this.db, row.id, now(), transcript, claim))) {
         this.logLostLease(row);
       }
       return true;
     } catch (err) {
       await stopRenewing();
-      if (lostLease) {
-        this.logLostLease(row);
-        return true;
-      }
       if (err instanceof OutboxSkipError) {
         // A decision, not a failure: record the reason ONCE and stop — waiting
         // and retrying cannot change the outcome.

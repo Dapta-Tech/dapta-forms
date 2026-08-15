@@ -22,7 +22,7 @@ const TEST_LEASE_MS = 5 * 60_000;
 
 type WorkerTestSeams = {
   clock: () => number;
-  claimRenewalMs: number;
+  renewalScheduler: (callback: () => Promise<void>, intervalMs: number) => () => void;
   log: { log: ReturnType<typeof vi.fn>; warn: ReturnType<typeof vi.fn>; error: ReturnType<typeof vi.fn> };
 };
 
@@ -34,6 +34,46 @@ function replaceLog(worker: OutboxWorker) {
   const log = { log: vi.fn(), warn: vi.fn(), error: vi.fn() };
   (worker as unknown as WorkerTestSeams).log = log;
   return log;
+}
+
+function controlRenewal(worker: OutboxWorker) {
+  let callback: (() => void | Promise<void>) | undefined;
+  if ('renewalScheduler' in (worker as object)) {
+    (worker as unknown as WorkerTestSeams).renewalScheduler = (next) => {
+      callback = next;
+      return () => {};
+    };
+    return {
+      fire: async () => {
+        expect(callback).toBeDefined();
+        await callback!();
+      },
+      restore: () => {},
+    };
+  }
+
+  const nativeSetInterval = globalThis.setInterval;
+  const timer = nativeSetInterval(() => {}, 60_000);
+  timer.unref?.();
+  const setIntervalSpy = vi
+    .spyOn(globalThis, 'setInterval')
+    .mockImplementation(
+      ((next: Parameters<typeof setInterval>[0]) => {
+        callback = next as () => void;
+        return timer;
+      }) as typeof setInterval,
+    );
+  return {
+    fire: async () => {
+      expect(callback).toBeDefined();
+      await callback!();
+      await new Promise<void>((resolve) => setImmediate(resolve));
+    },
+    restore: () => {
+      setIntervalSpy.mockRestore();
+      clearInterval(timer);
+    },
+  };
 }
 
 beforeEach(async () => {
@@ -120,6 +160,17 @@ describe('OutboxWorker claim fencing', () => {
       claimedAt: currentClaim.claimedAt,
       claimedBy: currentClaim.claimedBy,
     });
+  }
+
+  function dbThrowingDuringRenewal(renewing: () => boolean, onSettlement?: () => void): Db {
+    return {
+      ...db,
+      async get<T>(query: Parameters<Db['get']>[0]) {
+        if (renewing()) throw new Error('renewal unavailable');
+        onSettlement?.();
+        return db.get<T>(query);
+      },
+    };
   }
 
   it.each(['done', 'retry', 'skipped', 'failed'] as const)(
@@ -274,27 +325,242 @@ describe('OutboxWorker claim fencing', () => {
       {} as DestinationEffects,
     );
     setClock(worker, () => now);
-    (worker as unknown as WorkerTestSeams).claimRenewalMs = 1;
+    const renewal = controlRenewal(worker);
 
     const draining = worker.drainOnce(claimedAt);
     try {
       await deliveryStartedPromise;
       now = claimedAt + TEST_LEASE_MS / 2;
-      let renewed = false;
-      for (let attempt = 0; attempt < 50; attempt++) {
-        await new Promise((resolve) => setTimeout(resolve, 5));
-        renewed = (await listOutbox(db)).find((row) => row.id === id)?.claimedAt === now;
-        if (renewed) break;
-      }
-      expect(renewed).toBe(true);
+      await renewal.fire();
+      expect((await listOutbox(db)).find((row) => row.id === id)?.claimedAt).toBe(now);
 
       now = claimedAt + TEST_LEASE_MS + 1;
       expect(await claimDueOutbox(db, now, { workerId: 'B', staleClaimMs: TEST_LEASE_MS })).toEqual([]);
     } finally {
       releaseDelivery?.();
       await draining;
+      renewal.restore();
     }
     expect((await listOutbox(db)).find((row) => row.id === id)).toMatchObject({ status: 'done' });
+  });
+
+  it('records a success when renewal errors leave its claim unchanged', async () => {
+    const claimedAt = 13_000_000;
+    const now = claimedAt;
+    let renewing = true;
+    let settlements = 0;
+    let releaseDelivery: (() => void) | undefined;
+    let deliveryStarted: (() => void) | undefined;
+    const deliveryBlocked = new Promise<void>((resolve) => {
+      releaseDelivery = resolve;
+    });
+    const deliveryStartedPromise = new Promise<void>((resolve) => {
+      deliveryStarted = resolve;
+    });
+    const id = await enqueueOutbox(db, { kind: 'email', action: 'a', payload: '{}', now: claimedAt });
+    const worker = new OutboxWorker(
+      dbThrowingDuringRenewal(() => renewing, () => {
+        settlements += 1;
+      }),
+      { OUTBOX_WORKER_ENABLED: false, OUTBOX_POLL_MS: 5_000, NODE_ENV: 'test' } as never,
+      {
+        deliver: async () => {
+          deliveryStarted!();
+          await deliveryBlocked;
+        },
+      } as unknown as EmailEffects,
+      {} as DestinationEffects,
+    );
+    setClock(worker, () => now);
+    const renewal = controlRenewal(worker);
+
+    const draining = worker.drainOnce(claimedAt);
+    try {
+      await deliveryStartedPromise;
+      await renewal.fire();
+      renewing = false;
+      releaseDelivery!();
+      await draining;
+      expect(settlements).toBe(1);
+      expect((await listOutbox(db)).find((row) => row.id === id)).toMatchObject({ status: 'done' });
+    } finally {
+      renewing = false;
+      releaseDelivery?.();
+      await draining;
+      renewal.restore();
+    }
+  });
+
+  it('records retry attempts and backoff after a renewal error', async () => {
+    const claimedAt = 14_000_000;
+    const now = claimedAt;
+    let renewing = true;
+    let settlements = 0;
+    let releaseDelivery: (() => void) | undefined;
+    let deliveryStarted: (() => void) | undefined;
+    const deliveryBlocked = new Promise<void>((resolve) => {
+      releaseDelivery = resolve;
+    });
+    const deliveryStartedPromise = new Promise<void>((resolve) => {
+      deliveryStarted = resolve;
+    });
+    const id = await enqueueOutbox(db, { kind: 'email', action: 'a', payload: '{}', now: claimedAt });
+    const worker = new OutboxWorker(
+      dbThrowingDuringRenewal(() => renewing, () => {
+        settlements += 1;
+      }),
+      { OUTBOX_WORKER_ENABLED: false, OUTBOX_POLL_MS: 5_000, NODE_ENV: 'test' } as never,
+      {
+        deliver: async () => {
+          deliveryStarted!();
+          await deliveryBlocked;
+          throw new Error('boom');
+        },
+      } as unknown as EmailEffects,
+      {} as DestinationEffects,
+    );
+    setClock(worker, () => now);
+    const renewal = controlRenewal(worker);
+
+    const draining = worker.drainOnce(claimedAt);
+    try {
+      await deliveryStartedPromise;
+      await renewal.fire();
+      renewing = false;
+      releaseDelivery!();
+      await draining;
+      expect(settlements).toBe(1);
+      expect((await listOutbox(db)).find((row) => row.id === id)).toMatchObject({
+        status: 'pending',
+        attempts: 1,
+        nextAttemptAt: claimedAt + 1_000,
+        lastError: 'boom',
+        claimedAt: null,
+        claimedBy: null,
+      });
+    } finally {
+      renewing = false;
+      releaseDelivery?.();
+      await draining;
+      renewal.restore();
+    }
+  });
+
+  it('settles a failed effect after its renewal applied', async () => {
+    const claimedAt = 15_000_000;
+    let now = claimedAt;
+    let releaseDelivery: (() => void) | undefined;
+    let deliveryStarted: (() => void) | undefined;
+    const deliveryBlocked = new Promise<void>((resolve) => {
+      releaseDelivery = resolve;
+    });
+    const deliveryStartedPromise = new Promise<void>((resolve) => {
+      deliveryStarted = resolve;
+    });
+    const id = await enqueueOutbox(db, { kind: 'email', action: 'a', payload: '{}', now: claimedAt });
+    const worker = new OutboxWorker(
+      db,
+      { OUTBOX_WORKER_ENABLED: false, OUTBOX_POLL_MS: 5_000, NODE_ENV: 'test' } as never,
+      {
+        deliver: async () => {
+          deliveryStarted!();
+          await deliveryBlocked;
+          throw new Error('boom');
+        },
+      } as unknown as EmailEffects,
+      {} as DestinationEffects,
+    );
+    setClock(worker, () => now);
+    const renewal = controlRenewal(worker);
+
+    const draining = worker.drainOnce(claimedAt);
+    try {
+      await deliveryStartedPromise;
+      now = claimedAt + TEST_LEASE_MS / 2;
+      await renewal.fire();
+      expect((await listOutbox(db)).find((row) => row.id === id)?.claimedAt).toBe(now);
+
+      releaseDelivery!();
+      await draining;
+      expect((await listOutbox(db)).find((row) => row.id === id)).toMatchObject({
+        status: 'pending',
+        attempts: 1,
+        nextAttemptAt: now + 1_000,
+        claimedAt: null,
+        claimedBy: null,
+      });
+    } finally {
+      releaseDelivery?.();
+      await draining;
+      renewal.restore();
+    }
+  });
+
+  it('uses the final fenced settlement to detect a peer reclaim after renewal errors', async () => {
+    const claimedAt = 16_000_000;
+    let now = claimedAt;
+    let renewing = true;
+    let settlements = 0;
+    let releaseDelivery: (() => void) | undefined;
+    let deliveryStarted: (() => void) | undefined;
+    const deliveryBlocked = new Promise<void>((resolve) => {
+      releaseDelivery = resolve;
+    });
+    const deliveryStartedPromise = new Promise<void>((resolve) => {
+      deliveryStarted = resolve;
+    });
+    const id = await enqueueOutbox(db, { kind: 'email', action: 'a', payload: '{}', now: claimedAt });
+    const worker = new OutboxWorker(
+      dbThrowingDuringRenewal(() => renewing, () => {
+        settlements += 1;
+      }),
+      { OUTBOX_WORKER_ENABLED: false, OUTBOX_POLL_MS: 5_000, NODE_ENV: 'test' } as never,
+      {
+        deliver: async () => {
+          deliveryStarted!();
+          await deliveryBlocked;
+        },
+      } as unknown as EmailEffects,
+      {} as DestinationEffects,
+    );
+    const log = replaceLog(worker);
+    setClock(worker, () => now);
+    const renewal = controlRenewal(worker);
+
+    const draining = worker.drainOnce(claimedAt);
+    try {
+      await deliveryStartedPromise;
+      await renewal.fire();
+      renewing = false;
+      now = claimedAt + TEST_LEASE_MS + 1;
+      const [reclaimed] = await claimDueOutbox(db, now, {
+        workerId: 'B',
+        staleClaimMs: TEST_LEASE_MS,
+      });
+      expect(reclaimed).toBeDefined();
+
+      releaseDelivery!();
+      await draining;
+      expect(settlements).toBe(1);
+      expect((await listOutbox(db)).find((row) => row.id === id)).toMatchObject({
+        status: 'pending',
+        attempts: 0,
+        claimedAt: reclaimed!.claimedAt,
+        claimedBy: reclaimed!.claimedBy,
+      });
+      const messages = [...log.log.mock.calls, ...log.warn.mock.calls, ...log.error.mock.calls].map(
+        ([message]) => String(message),
+      );
+      expect(messages.some((message) => message.includes('lease lost'))).toBe(true);
+      expect(messages.some((message) => message.includes('will retry'))).toBe(false);
+      expect(messages.some((message) => message.includes('skipped:'))).toBe(false);
+      expect(messages.some((message) => message.includes('gave up after'))).toBe(false);
+    } finally {
+      renewing = false;
+      releaseDelivery?.();
+      await draining;
+      renewal.restore();
+    }
   });
 
   it('keeps the existing 50-row drain bound', async () => {
