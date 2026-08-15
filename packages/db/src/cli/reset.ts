@@ -12,7 +12,8 @@ async function main() {
   const url = process.env.DATABASE_URL ?? 'file:./.data/dev.db';
   if (isPostgresUrl(url)) {
     console.error('[reset] refusing to reset a Postgres database. Drop/recreate it manually.');
-    process.exit(1);
+    process.exitCode = 1;
+    return;
   }
   const path = sqlitePathFromUrl(url);
   if (path !== ':memory:') {
@@ -26,13 +27,16 @@ async function main() {
     console.log(`[reset] removed ${path}`);
   }
   const db = await createDb(url);
-  await migrate(db);
-  const result = await seed(db);
-  console.log(`[reset] fresh database ready. Form: ${result.formPath}`);
-  await db.close();
+  try {
+    await migrate(db);
+    const result = await seed(db);
+    console.log(`[reset] fresh database ready. Form: ${result.formPath}`);
+  } finally {
+    await db.close();
+  }
 }
 
 main().catch((err) => {
   console.error('[reset] failed:', err);
-  process.exit(1);
+  process.exitCode = 1;
 });

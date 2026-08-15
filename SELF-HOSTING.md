@@ -139,8 +139,11 @@ limit the schema, but you should not run production on it.
 
 ### Migration diagnostics
 
-Terminal migration errors identify the migration file and dialect. The migration
-CLI preserves and may print the raw database-driver cause for operator diagnosis.
+Per-script application failures identify the migration file and dialect. Connection
+and `createDb` failures, `_migrations` bootstrap, migration-directory reads,
+`isApplied` pre-checks, and legacy short-link fixups can emit raw driver or system
+diagnostics without migration-file context. The migration CLI preserves and may
+print the raw database-driver cause for operator diagnosis.
 Logs can contain database object names, SQL fragments, driver codes, stack or
 query metadata, and other operational details.
 Treat these logs as sensitive operational data. Restrict access and retention.
