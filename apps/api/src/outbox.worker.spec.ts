@@ -114,7 +114,7 @@ describe('OutboxWorker claim fencing', () => {
     const row = (await listOutbox(db)).find((candidate) => candidate.id === id);
     expect(row).toMatchObject({
       status: 'pending',
-      attempts: 0,
+      attempts: 1,
       nextAttemptAt: claimedAt,
       lastError: null,
       claimedAt: currentClaim.claimedAt,

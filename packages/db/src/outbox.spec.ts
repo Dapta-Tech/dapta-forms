@@ -152,6 +152,7 @@ describe('claimDueOutbox', () => {
 
     expect(reclaimed).toBeDefined();
     expect(reclaimed!.id).toBe(id);
+    expect(reclaimed!.attempts).toBe(1);
     expect(deliveredBy).toEqual(['A', 'B']); // At-least-once remains intentional.
   });
 
@@ -188,7 +189,7 @@ describe('outbox settlement claim fencing', () => {
     const row = (await listOutbox(db)).find((candidate) => candidate.id === id);
     expect(row).toMatchObject({
       status: 'pending',
-      attempts: 0,
+      attempts: 1,
       nextAttemptAt: claimedAt,
       lastError: null,
       claimedAt: currentClaim.claimedAt,

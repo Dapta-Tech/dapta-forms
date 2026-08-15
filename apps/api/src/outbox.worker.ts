@@ -129,6 +129,24 @@ export class OutboxWorker implements OnModuleInit, OnModuleDestroy {
       this.logLostLease(row);
       return false;
     }
+    if (row.attempts >= row.maxAttempts) {
+      const settled = await markOutboxFailed(
+        this.db,
+        row.id,
+        {
+          attempts: row.attempts,
+          error: 'delivery exceeded its claim lease; outcome unknown',
+          now: now(),
+        },
+        claim,
+      );
+      if (settled) {
+        this.log.error(`outbox ${row.kind}:${row.action} (${row.id}) exceeded its claim lease`);
+      } else {
+        this.logLostLease(row);
+      }
+      return true;
+    }
     try {
       const transcript = await this.execute(row);
       if (!(await markOutboxDone(this.db, row.id, now(), transcript, claim))) this.logLostLease(row);

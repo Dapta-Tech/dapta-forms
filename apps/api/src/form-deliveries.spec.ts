@@ -18,9 +18,7 @@ import {
   createDb,
   migrate,
   seed,
-  enqueueOutbox,
-  markOutboxDone,
-  markOutboxFailed,
+  recordSettledDelivery,
   getAccountByCode,
   insertAccountWithShortCode,
   createForm,
@@ -92,7 +90,7 @@ async function seedDelivery(over: {
   at?: number;
 }): Promise<string> {
   const kind = over.kind ?? 'webhook';
-  const id = await enqueueOutbox(db, {
+  return recordSettledDelivery(db, {
     kind,
     action: over.action ?? 'complete',
     accountId: over.accountId,
@@ -100,11 +98,10 @@ async function seedDelivery(over: {
       destination: { type: kind },
       ctx: { formId: over.formId, accountId: over.accountId },
     }),
-    now: 1_000,
+    status: over.landed ? 'done' : 'failed',
+    error: over.landed ? null : (over.error ?? 'HTTP 400'),
+    now: over.at ?? 5_000,
   });
-  if (over.landed) await markOutboxDone(db, id, over.at ?? 5_000);
-  else await markOutboxFailed(db, id, { attempts: 5, error: over.error ?? 'HTTP 400', now: over.at ?? 5_000 });
-  return id;
 }
 
 /** A second tenant, for the isolation assertions. */

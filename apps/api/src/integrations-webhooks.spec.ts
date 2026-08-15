@@ -15,8 +15,7 @@ import {
   createDb,
   migrate,
   seed,
-  enqueueOutbox,
-  markOutboxFailed,
+  recordSettledDelivery,
   getAccountByCode,
   insertAccountWithShortCode,
   createForm,
@@ -99,14 +98,15 @@ async function seedFailure(
   lastError: string,
   updatedAt = 5_000,
 ): Promise<void> {
-  const id = await enqueueOutbox(db, {
+  await recordSettledDelivery(db, {
     kind: 'webhook',
     action: 'complete',
     accountId,
     payload: JSON.stringify({ destination: { type: 'webhook' }, ctx: { formId, accountId } }),
-    now: 1_000,
+    status: 'failed',
+    error: lastError,
+    now: updatedAt,
   });
-  await markOutboxFailed(db, id, { attempts: 5, error: lastError, now: updatedAt });
 }
 
 beforeEach(async () => {
