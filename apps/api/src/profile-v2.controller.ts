@@ -177,8 +177,16 @@ export class ProfileV2Controller {
    */
   @Put()
   async save(@Req() req: ReqLike, @Body() body: unknown) {
-    if (!this.writesEnabled) return writesDisabled();
+    // Identify the caller BEFORE deciding anything else, including whether this
+    // deployment admits guarded writes at all. Write-gate posture describes how
+    // far along an operator's rollout is, and an anonymous caller has no
+    // business learning it — so an unauthenticated request gets the ordinary
+    // auth refusal here, exactly as it would from any other admin route.
     const p = await this.auth.resolveHost(req);
+    // Still the FIRST decision after identity: an admitted caller learns only
+    // that writes are closed, never whether its revision or its profile would
+    // have been acceptable, and nothing reaches the row.
+    if (!this.writesEnabled) return writesDisabled();
     const expectedRevision = requireExpectedRevision(body);
     const raw = (body as { profile?: unknown } | null)?.profile ?? null;
     let profile: unknown = null;

@@ -350,13 +350,16 @@ export class AdminCrudController {
    */
   @Put('me/profile')
   async saveMyProfile(@Req() req: ReqLike, @Body() body: unknown) {
+    // Identify the caller first: whether the compatibility window is still open
+    // is rollout posture, and it is answered only to someone we can name. The
+    // retirement refusal then comes before any validation or persistence.
+    const p = await this.auth.resolveHost(req);
     if (!this.env?.PROFILE_V1_WRITE_SHIM) {
       throw new GoneException({
         error: 'V1_WRITE_RETIRED',
         message: 'This endpoint is retired. Use PUT /v2/me/profile with expectedRevision.',
       });
     }
-    const p = await this.auth.resolveHost(req);
     const raw = (body as { profile?: unknown } | null)?.profile ?? null;
     const profile = raw == null ? null : parse(memberProfileSchema, raw);
     const result = await overwriteMemberProfileLegacy(this.db, p.accountId, p.memberId, profile);

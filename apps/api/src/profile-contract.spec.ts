@@ -14,6 +14,7 @@
  * otherwise.
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { UnauthorizedException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { createDb, migrate, sql, getMemberProfileState, type Db } from '@quill/db';
 import { serverEnvSchema } from '@quill/config/env';
@@ -35,6 +36,19 @@ const statusOf = async (run: () => Promise<unknown>): Promise<number> => {
     return (e as { getStatus?: () => number }).getStatus?.() ?? 0;
   }
   return 200;
+};
+
+/** Status + body of a refusal, together, so two refusals can be compared whole. */
+const outcomeOf = async (
+  run: () => Promise<unknown>,
+): Promise<{ status: number; body: unknown }> => {
+  try {
+    await run();
+  } catch (e) {
+    const err = e as { getStatus?: () => number; getResponse?: () => unknown };
+    return { status: err.getStatus?.() ?? 0, body: err.getResponse?.() ?? null };
+  }
+  return { status: 200, body: null };
 };
 
 const bodyOf = async (run: () => Promise<unknown>): Promise<Record<string, unknown>> => {
@@ -448,5 +462,210 @@ describe('configuration defaults', () => {
       expect(env.PROFILE_V1_WRITE_SHIM, raw).toBe(false);
       expect(env.PROFILE_V2_WRITES_ENABLED, raw).toBe(false);
     }
+  });
+});
+
+/**
+ * Write-gate posture is private.
+ *
+ * `PROFILE_V2_WRITES_ENABLED` and `PROFILE_V1_WRITE_SHIM` describe how far along
+ * an operator's rollout is. Answering them before knowing who is asking hands
+ * that to anyone who can reach the port: `V2_WRITES_DISABLED` says a
+ * revision-aware API is deployed but not switched on, and `V1_WRITE_RETIRED`
+ * says the compatibility window has closed. Both are useful to somebody timing
+ * a rollout, and neither is any of an anonymous caller's business.
+ *
+ * So each gate now sits behind `resolveHost`, and an unauthenticated caller gets
+ * the same refusal it would get from any other authenticated route — the same
+ * status and the same body, byte for byte, whichever way the flags are set.
+ *
+ * The gates stay in front of everything else. An authenticated caller whose
+ * write is not admitted learns only that, never whether its revision or its
+ * profile would have been acceptable, and nothing is persisted.
+ */
+describe('write-gate posture is only visible after authentication', () => {
+  let db: Db;
+  let accountId: string;
+  let memberId: string;
+  let auth: AuthService;
+  const req = {} as ReqLike;
+
+  /** Refuses exactly as the auth provider does when there is no session. */
+  const rejecting = {
+    resolveHost: async () => {
+      throw new UnauthorizedException({ error: 'UNAUTHENTICATED', message: 'No session.' });
+    },
+  } as unknown as AuthService;
+
+  const v2With = (writes: boolean, service: AuthService = auth) =>
+    new ProfileV2Controller(db, service, { PROFILE_V2_WRITES_ENABLED: writes });
+
+  const v1With = (shim: boolean, service: AuthService = auth) =>
+    new AdminCrudController(db, service, {} as never, {} as never, {} as never, undefined, undefined, {
+      PROFILE_V1_WRITE_SHIM: shim,
+      PROFILE_V2_WRITES_ENABLED: false,
+    });
+
+  const revision = async (): Promise<number> =>
+    (await getMemberProfileState(db, accountId, memberId))!.revision;
+
+  beforeEach(async () => {
+    db = await createDb(process.env.DATABASE_URL ?? 'file::memory:');
+    await migrate(db);
+    accountId = randomUUID();
+    memberId = randomUUID();
+    await db.run(
+      sql`INSERT INTO account (id, code, name, created_at)
+          VALUES (${accountId}, ${'t' + accountId.slice(0, 8)}, ${'Test'}, ${Date.now()})`,
+    );
+    await db.run(
+      sql`INSERT INTO member (id, account_id, email, display_name, handle, role, status, created_at)
+          VALUES (${memberId}, ${accountId}, ${memberId + '@e.com'}, ${'Alex'},
+                  ${'h' + memberId.slice(0, 8)}, ${'owner'}, ${'active'}, ${Date.now()})`,
+    );
+    auth = {
+      resolveHost: async () => ({ accountId, memberId, role: 'owner' }),
+    } as unknown as AuthService;
+  });
+
+  afterEach(async () => {
+    await db.run(sql`DELETE FROM member WHERE account_id = ${accountId}`);
+    await db.run(sql`DELETE FROM account WHERE id = ${accountId}`);
+    await db.close();
+  });
+
+  // Case 1
+  it('answers an unauthenticated v2 write identically whether writes are on or off', async () => {
+    // The baseline: what an unauthenticated caller gets from a route with no
+    // gate at all.
+    const baseline = await outcomeOf(() => v2With(true, rejecting).read(req));
+
+    const gateOn = await outcomeOf(() =>
+      v2With(true, rejecting).save(req, { profile: page(true), expectedRevision: 0 }),
+    );
+    const gateOff = await outcomeOf(() =>
+      v2With(false, rejecting).save(req, { profile: page(true), expectedRevision: 0 }),
+    );
+
+    expect(gateOn.status).toBe(401);
+    expect(gateOff.status).toBe(401);
+    // Byte for byte: the two refusals are indistinguishable from each other and
+    // from the ungated route's refusal.
+    expect(JSON.stringify(gateOff.body)).toBe(JSON.stringify(gateOn.body));
+    expect(JSON.stringify(gateOff.body)).toBe(JSON.stringify(baseline.body));
+  });
+
+  it('never leaks V2_WRITES_DISABLED to a caller it has not identified', async () => {
+    for (const writes of [true, false]) {
+      const out = await outcomeOf(() =>
+        v2With(writes, rejecting).save(req, { profile: page(true), expectedRevision: 0 }),
+      );
+      expect(JSON.stringify(out), `writes=${writes}`).not.toContain('V2_WRITES_DISABLED');
+    }
+  });
+
+  // Case 2
+  it('answers an unauthenticated v1 write identically whether the shim is on or off', async () => {
+    const baseline = await outcomeOf(() => v1With(true, rejecting).myProfile(req));
+
+    const shimOn = await outcomeOf(() =>
+      v1With(true, rejecting).saveMyProfile(req, { profile: page(true) }),
+    );
+    const shimOff = await outcomeOf(() =>
+      v1With(false, rejecting).saveMyProfile(req, { profile: page(true) }),
+    );
+
+    expect(shimOn.status).toBe(401);
+    expect(shimOff.status).toBe(401);
+    expect(JSON.stringify(shimOff.body)).toBe(JSON.stringify(shimOn.body));
+    expect(JSON.stringify(shimOff.body)).toBe(JSON.stringify(baseline.body));
+  });
+
+  it('never leaks V1_WRITE_RETIRED to a caller it has not identified', async () => {
+    for (const shim of [true, false]) {
+      const out = await outcomeOf(() =>
+        v1With(shim, rejecting).saveMyProfile(req, { profile: page(true) }),
+      );
+      expect(JSON.stringify(out), `shim=${shim}`).not.toContain('V1_WRITE_RETIRED');
+    }
+  });
+
+  // Case 3
+  it('tells an authenticated caller only that writes are closed, whatever the body says', async () => {
+    const before = await revision();
+
+    // A missing revision, a malformed one, and a profile the schema would
+    // reject: all of them stop at the gate, so none of them reveals whether the
+    // payload would have been accepted.
+    const bodies: unknown[] = [
+      { profile: page(true) },
+      { profile: page(true), expectedRevision: '0' },
+      { profile: page(true), expectedRevision: -1 },
+      { profile: { version: 1, enabled: 'yes' }, expectedRevision: 0 },
+      { profile: { version: 2 }, expectedRevision: 0 },
+      {},
+    ];
+
+    for (const body of bodies) {
+      const out = await outcomeOf(() => v2With(false).save(req, body));
+      expect(out.status, JSON.stringify(body)).toBe(501);
+      expect(out.body).toMatchObject({ error: 'V2_WRITES_DISABLED' });
+      expect(JSON.stringify(out.body)).not.toContain('REVISION_REQUIRED');
+      expect(JSON.stringify(out.body)).not.toContain('BAD_REQUEST');
+    }
+    expect(await revision()).toBe(before);
+  });
+
+  // Case 4
+  it('retires the v1 write after authentication, and persists nothing', async () => {
+    const before = await revision();
+
+    const out = await outcomeOf(() => v1With(false).saveMyProfile(req, { profile: page(true) }));
+
+    expect(out.status).toBe(410);
+    expect(out.body).toMatchObject({ error: 'V1_WRITE_RETIRED' });
+    // Only the profile and its revision are asserted: resolving a principal may
+    // legitimately touch the member row (activation, last seen).
+    expect(await revision()).toBe(before);
+    expect((await getMemberProfileState(db, accountId, memberId))!.profile).toBeNull();
+  });
+
+  // Case 5
+  it('keeps the fence working with writes closed, for this principal only', async () => {
+    const won = await v2With(false).fence(req, { expectedRevision: 0 });
+    expect(won).toMatchObject({ ok: true, revision: 1 });
+
+    // Same expectation again: a conflict, and no second burn.
+    expect(await statusOf(() => v2With(false).fence(req, { expectedRevision: 0 }))).toBe(409);
+    expect(await revision()).toBe(1);
+
+    // Another account asking about this member gets nothing, gate or no gate.
+    const stranger = {
+      resolveHost: async () => ({ accountId: randomUUID(), memberId, role: 'owner' }),
+    } as unknown as AuthService;
+    expect(await statusOf(() => v2With(false, stranger).fence(req, { expectedRevision: 1 }))).toBe(
+      404,
+    );
+    expect(await revision()).toBe(1);
+  });
+
+  // Case 6
+  it('writes normally when the gate is open, and never answers disabled', async () => {
+    const out = await outcomeOf(() =>
+      v2With(true).save(req, { profile: page(true), expectedRevision: 0 }),
+    );
+
+    expect(out.status).toBe(200);
+    expect(await revision()).toBe(1);
+    expect((await getMemberProfileState(db, accountId, memberId))!.profile).toMatchObject({
+      enabled: true,
+    });
+
+    // And a refusal after that still leaves the revision exactly where it is.
+    const refused = await outcomeOf(() =>
+      v2With(false).save(req, { profile: page(false), expectedRevision: 1 }),
+    );
+    expect(refused.status).toBe(501);
+    expect(await revision()).toBe(1);
   });
 });

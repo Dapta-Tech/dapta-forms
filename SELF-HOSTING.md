@@ -362,6 +362,12 @@ becomes undecidable again.
 
 - **N1 Scope.** `accountId` **and** `memberId` scope every profile read, write and
   fence. A member is never addressed by id alone.
+- **N1b Gate posture is private.** Whether guarded writes are admitted, and
+  whether the `/v1` compatibility window is still open, are answered only to an
+  authenticated caller. Both save handlers resolve the principal before their
+  gate, so an anonymous request gets the ordinary authentication refusal and
+  learns nothing about the rollout. For an authenticated caller the gate still
+  comes first, before revision and schema validation and before any write.
 - **N2 Write admission, and forward-only compatibility.**
   `PROFILE_V2_WRITES_ENABLED` admits NEW guarded saves and stays false until
   every API instance in the fleet increments the revision. It does **not** gate
