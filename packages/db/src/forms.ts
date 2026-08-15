@@ -681,7 +681,7 @@ export async function listSubmissions(
 ): Promise<SubmissionRow[]> {
   const rows = await db.all<Record<string, unknown>>(
     sql`SELECT * FROM submission WHERE form_id = ${formId}
-        ORDER BY started_at DESC LIMIT ${limit}`,
+        ORDER BY started_at DESC, id DESC LIMIT ${limit}`,
   );
   return rows.map(mapSubmission);
 }
@@ -705,4 +705,3 @@ export async function recordFormEvent(
           ${input.stepIndex ?? null}, ${input.stepKey ?? null}, ${input.now ?? Date.now()})`,
   );
 }
-

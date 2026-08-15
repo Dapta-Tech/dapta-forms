@@ -27,6 +27,8 @@ import {
   dailyViewSessions,
   dailyStartSessions,
   DAY_MS,
+  querySubmissions,
+  allSubmissionsForExport,
 } from './analytics';
 
 let db: Db;
@@ -69,11 +71,11 @@ async function booking(sessionId: string, createdAt: number): Promise<void> {
 /** Insert one submission (partial or complete) for a session. */
 async function sub(
   sessionId: string,
-  opts: { startedAt: number; completedAt?: number | null; partialAt?: number | null },
+  opts: { id?: string; startedAt: number; completedAt?: number | null; partialAt?: number | null },
 ): Promise<void> {
   await db.run(
     sql`INSERT INTO submission (id, form_id, session_id, data, score, started_at, completed_at, partial_at)
-        VALUES (${randomUUID()}, ${formId}, ${sessionId}, ${'{}'}, ${0},
+        VALUES (${opts.id ?? randomUUID()}, ${formId}, ${sessionId}, ${'{}'}, ${0},
                 ${opts.startedAt}, ${opts.completedAt ?? null}, ${opts.partialAt ?? null})`,
   );
 }
@@ -238,6 +240,36 @@ describe('partial submissions windowed by cohort anchor', () => {
     expect(await partialCount(db, formId, WINDOW)).toBe(1);
     expect(await partialCount(db, formId, { from: D0, to: D1 - 1 })).toBe(0);
     expect(await partialCount(db, formId)).toBe(1);
+  });
+});
+
+describe('submission-table ordering', () => {
+  it('keeps tied timestamps stable across adjacent pages and exports', async () => {
+    const tiedAt = D1 + 1_000;
+    await sub('newest', { id: 'submission-newest', startedAt: tiedAt + 1 });
+    await sub('tie-a', { id: 'submission-tie-a', startedAt: tiedAt });
+    await sub('tie-b', { id: 'submission-tie-b', startedAt: tiedAt });
+    await sub('tie-c', { id: 'submission-tie-c', startedAt: tiedAt });
+    await sub('tie-d', { id: 'submission-tie-d', startedAt: tiedAt });
+    await sub('oldest', { id: 'submission-oldest', startedAt: tiedAt - 1 });
+
+    const expected = [
+      'submission-newest',
+      'submission-tie-d',
+      'submission-tie-c',
+      'submission-tie-b',
+      'submission-tie-a',
+      'submission-oldest',
+    ];
+    const first = await querySubmissions(db, formId, { limit: 2, offset: 0 });
+    const second = await querySubmissions(db, formId, { limit: 2, offset: 2 });
+    const third = await querySubmissions(db, formId, { limit: 2, offset: 4 });
+    const pageIds = [...first.items, ...second.items, ...third.items].map((row) => row.id);
+
+    expect(first.total).toBe(expected.length);
+    expect(pageIds).toEqual(expected);
+    expect(new Set(pageIds)).toHaveLength(expected.length);
+    expect((await allSubmissionsForExport(db, formId)).map((row) => row.id)).toEqual(expected);
   });
 });
 

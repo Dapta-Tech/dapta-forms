@@ -390,7 +390,7 @@ export async function querySubmissions(
   );
   const rows = await db.all<Record<string, unknown>>(
     sql`SELECT * FROM submission ${where}
-        ORDER BY started_at DESC
+        ORDER BY started_at DESC, id DESC
         LIMIT ${limit} OFFSET ${offset}`,
   );
   return { items: rows.map(mapSubmission), total: Number(totalRow?.n ?? 0), limit, offset };
@@ -408,7 +408,7 @@ export async function allSubmissionsForExport(
 ): Promise<SubmissionRow[]> {
   const where = sql`WHERE form_id = ${formId} ${statusClause(q.status)} ${andRange(sql`started_at`, q)}`;
   const rows = await db.all<Record<string, unknown>>(
-    sql`SELECT * FROM submission ${where} ORDER BY started_at DESC`,
+    sql`SELECT * FROM submission ${where} ORDER BY started_at DESC, id DESC`,
   );
   return rows.map(mapSubmission);
 }
