@@ -13,6 +13,12 @@
  * the browser to the last page that still has rows, so the filter survives the
  * hop. These tests pin the redirect target, the preserved status filter, and —
  * just as importantly — that a valid offset is left completely alone.
+ *
+ * Two oracles carry the weight. Every case asserts the exact query the page
+ * asked the API (form, status, limit, offset), because the right answer to the
+ * wrong question is not a passing page. And every redirect is re-entered, so
+ * the target is proven to be a place that renders rather than one that
+ * redirects again.
  */
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { Suspense, type ReactElement } from 'react';
@@ -100,6 +106,37 @@ const submission = (id: string) => ({
   completedAt: '2024-05-01T10:05:00.000Z',
 });
 
+/** One submissions query as the page actually issued it. */
+type Query = { formId: string; status: string; limit: number; offset: number };
+
+/**
+ * Every submissions query issued so far in the current test, in order.
+ *
+ * Asserting the ANSWER alone cannot see a page that asks the wrong question —
+ * a dropped filter, a different page size, or an offset the clamp invented
+ * rather than derived. Mocks are cleared per test, so across a redirect and the
+ * visit that follows it this list is the whole conversation with the API.
+ */
+function queriesSoFar(): Query[] {
+  return listSubmissions.mock.calls.map(([formId, q]) => ({
+    formId,
+    status: q?.status,
+    limit: q?.limit,
+    offset: q?.offset,
+  }));
+}
+
+/** The form ids the page looked up, in order — one per visit. */
+const formLookupsSoFar = (): unknown[] => getForm.mock.calls.map(([id]) => id);
+
+const query = (over: Partial<Query> = {}): Query => ({
+  formId: FORM_ID,
+  status: 'all',
+  limit: PAGE_SIZE,
+  offset: 0,
+  ...over,
+});
+
 /**
  * Run the page for one URL and one API answer, and report what the reader gets:
  * either a redirect target, or the text the table rendered.
@@ -113,7 +150,12 @@ async function visit(opts: {
   offset: number;
   total: number;
   items?: number;
-}): Promise<{ redirectedTo: string | null; text: string }> {
+}): Promise<{
+  redirectedTo: string | null;
+  text: string;
+  queries: Query[];
+  formLookups: unknown[];
+}> {
   const items = opts.items ?? Math.max(0, Math.min(PAGE_SIZE, opts.total - opts.offset));
   const page: SubmissionsPageData = {
     items: Array.from({ length: items }, (_, i) => submission(`s${opts.offset + i}`)),
@@ -139,13 +181,47 @@ async function visit(opts: {
 
   try {
     const tree = await (data.type as (p: unknown) => Promise<unknown>)(data.props);
-    return { redirectedTo: null, text: textOf(tree) };
+    return {
+      redirectedTo: null,
+      text: textOf(tree),
+      queries: queriesSoFar(),
+      formLookups: formLookupsSoFar(),
+    };
   } catch (e) {
     if (e instanceof Error && e.message === REDIRECT) {
-      return { redirectedTo: (e as Error & { url: string }).url, text: '' };
+      return {
+        redirectedTo: (e as Error & { url: string }).url,
+        text: '',
+        queries: queriesSoFar(),
+        formLookups: formLookupsSoFar(),
+      };
     }
     throw e;
   }
+}
+
+/**
+ * Follow a redirect the way a browser would: read the target's own query string
+ * and ask for exactly that, against the same unchanged data.
+ *
+ * A redirect target is only correct if it is somewhere to LAND. Asserting the
+ * URL string proves the page computed one; re-entering it proves the page
+ * accepts it — that the clamp did not hand back another offset past the end and
+ * start a loop, and that the filter it wrote survives being read back.
+ */
+async function reenter(url: string, total: number) {
+  const target = new URL(url, 'https://forms.example.test');
+  expect(target.pathname).toBe(`/admin/forms/${FORM_ID}/submissions`);
+
+  const status = target.searchParams.get('status');
+  if (status !== null && status !== 'completed' && status !== 'partial') {
+    throw new Error(`redirect wrote an unusable status: ${status}`);
+  }
+  return visit({
+    ...(status ? { status } : {}),
+    offset: Number(target.searchParams.get('offset') ?? 0),
+    total,
+  });
 }
 
 describe('submissions pagination — offset past the last row', () => {
@@ -155,46 +231,88 @@ describe('submissions pagination — offset past the last row', () => {
 
   it('sends the browser to the last page with rows after the only row on page 2 is deleted', async () => {
     // 26 → 25 with the browser still on `offset=25`: page 2 no longer exists.
-    const { redirectedTo, text } = await visit({ offset: 25, total: 25 });
+    const { redirectedTo, text, queries, formLookups } = await visit({ offset: 25, total: 25 });
 
     // Nothing renders on the way out, so "26–25 of 25" never reaches a reader.
     expect(text).toBe('');
     expect(redirectedTo).toBe(`/admin/forms/${FORM_ID}/submissions`);
+    // The clamp reacted to the answer to THIS question, asked for THIS form.
+    expect(queries).toEqual([query({ offset: 25 })]);
+    expect(formLookups).toEqual([FORM_ID]);
+
+    const back = await reenter(redirectedTo!, 25);
+    expect(back.redirectedTo).toBeNull();
+    expect(back.text).toContain('1–25 of 25');
+    expect(back.queries).toEqual([query({ offset: 25 }), query({ offset: 0 })]);
+    expect(back.formLookups).toEqual([FORM_ID, FORM_ID]);
   });
 
   it('keeps the status filter across the clamp', async () => {
-    const { redirectedTo } = await visit({ status: 'completed', offset: 25, total: 25 });
+    const { redirectedTo, queries } = await visit({ status: 'completed', offset: 25, total: 25 });
 
     expect(redirectedTo).toBe(`/admin/forms/${FORM_ID}/submissions?status=completed`);
+    expect(queries).toEqual([query({ status: 'completed', offset: 25 })]);
+
+    // The filter has to survive the hop in the QUERY, not just in the URL.
+    const back = await reenter(redirectedTo!, 25);
+    expect(back.redirectedTo).toBeNull();
+    expect(back.text).toContain('1–25 of 25');
+    expect(back.queries).toEqual([
+      query({ status: 'completed', offset: 25 }),
+      query({ status: 'completed', offset: 0 }),
+    ]);
   });
 
   it('clamps to the last page that still has rows, not to the first', async () => {
     // 80 rows, offset 200: the last page holding rows starts at 75.
-    const { redirectedTo } = await visit({ status: 'partial', offset: 200, total: 80, items: 0 });
+    const { redirectedTo, queries } = await visit({
+      status: 'partial',
+      offset: 200,
+      total: 80,
+      items: 0,
+    });
 
     expect(redirectedTo).toBe(`/admin/forms/${FORM_ID}/submissions?status=partial&offset=75`);
+    expect(queries).toEqual([query({ status: 'partial', offset: 200 })]);
+
+    const back = await reenter(redirectedTo!, 80);
+    expect(back.redirectedTo).toBeNull();
+    expect(back.text).toContain('76–80 of 80');
+    expect(back.queries).toEqual([
+      query({ status: 'partial', offset: 200 }),
+      query({ status: 'partial', offset: 75 }),
+    ]);
   });
 
   it('leaves a valid last-page offset alone', async () => {
     // The control: 26 rows, offset 25 — page 2 legitimately holds the 26th.
-    const { redirectedTo, text } = await visit({ offset: 25, total: 26 });
+    const { redirectedTo, text, queries, formLookups } = await visit({ offset: 25, total: 26 });
 
     expect(redirectedTo).toBeNull();
     expect(text).toContain('26–26 of 26');
+    expect(queries).toEqual([query({ offset: 25 })]);
+    expect(formLookups).toEqual([FORM_ID]);
   });
 
   it('leaves the first page alone', async () => {
-    const { redirectedTo, text } = await visit({ offset: 0, total: 25 });
+    const { redirectedTo, text, queries } = await visit({ offset: 0, total: 25 });
 
     expect(redirectedTo).toBeNull();
     expect(text).toContain('1–25 of 25');
+    expect(queries).toEqual([query({ offset: 0 })]);
   });
 
   it('still shows the empty state when the filter matches nothing', async () => {
     // total 0 has no last page to clamp to; the empty state owns this case.
-    const { redirectedTo, text } = await visit({ status: 'completed', offset: 25, total: 0 });
+    const { redirectedTo, text, queries } = await visit({
+      status: 'completed',
+      offset: 25,
+      total: 0,
+    });
 
     expect(redirectedTo).toBeNull();
     expect(text).toContain('No submissions yet');
+    // Still the filtered question — the empty state is not a fallback to `all`.
+    expect(queries).toEqual([query({ status: 'completed', offset: 25 })]);
   });
 });
