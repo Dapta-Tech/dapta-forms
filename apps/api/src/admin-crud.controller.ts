@@ -135,7 +135,9 @@ export class AdminCrudController {
      * working; absent means the `/v1` profile write shim is CLOSED, which is the
      * safe default for anything that did not deliberately turn it on.
      */
-    @Optional() @Inject(ENV) private readonly env?: Pick<ServerEnv, 'PROFILE_V1_WRITE_SHIM'>,
+    @Optional()
+    @Inject(ENV)
+    private readonly env?: Pick<ServerEnv, 'PROFILE_V1_WRITE_SHIM' | 'PROFILE_V2_WRITES_ENABLED'>,
   ) {}
 
   // --- Identity ----------------------------------------------------------
@@ -192,7 +194,13 @@ export class AdminCrudController {
     const first = await claimAccountAttribution(this.db, p.accountId, tags).catch((err) => {
       // Same shape as the activation claim: a lock or a dead connection must not
       // turn a completed login into a 500 on the way to the dashboard.
-      this.log.warn(`attribution claim failed for account ${p.accountId}: ${String(err)}`);
+      // Deliberately opaque: this line is about a claim that did not stick, not
+      // about who tried it or what the driver said. The account id identifies a
+      // customer and the raw error can carry a connection string, a row, or a
+      // vendor message, and none of that belongs in an operational log.
+      this.log.warn(
+        `attribution_claim_failed (error_class=${err instanceof Error ? err.constructor.name : 'unknown'})`,
+      );
       return false;
     });
     if (first && this.productAnalytics?.enabled) {
@@ -312,10 +320,16 @@ export class AdminCrudController {
     if (!member) throw new NotFoundException({ error: 'NOT_FOUND', message: 'Not found.' });
     const state = await getMemberProfileState(this.db, p.accountId, p.memberId);
     if (!state) throw new NotFoundException({ error: 'NOT_FOUND', message: 'Not found.' });
-    // `revision` is ADDITIVE and is also the capability signal: a web build that
-    // does not get a number here knows it is talking to a pre-CAS API and must
-    // block writes rather than send an unguarded one.
-    return { handle: member.handle, profile: state.profile, revision: state.revision };
+    // `revision` is ADDITIVE and is half of the capability signal: a web build
+    // that does not get a number here knows it is talking to a pre-CAS API.
+    // `writesEnabled` is the other half — an API that CAN guard writes but has
+    // not been switched on yet must not be written to either.
+    return {
+      handle: member.handle,
+      profile: state.profile,
+      revision: state.revision,
+      writesEnabled: this.env?.PROFILE_V2_WRITES_ENABLED === true,
+    };
   }
 
   /**

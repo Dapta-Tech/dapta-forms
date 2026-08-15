@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { revalidatePath } from 'next/cache';
 import { fenceMyProfileV2 } from '@/lib/admin-api';
+import { selfHost } from '@/lib/request-origin';
 
 /**
  * Settle ONE public page save whose answer never arrived.
@@ -33,10 +34,20 @@ interface FenceBody {
 const json = (body: unknown, status: number): NextResponse =>
   NextResponse.json(body, { status, headers: { 'cache-control': 'no-store' } });
 
-/** Same-origin only: compare the Origin's host to the host we were reached on. */
+/**
+ * Same-origin only, measured against the host this deployment actually answers
+ * onrather than the raw `Host` header.
+ *
+ * Behind a proxy the internal `Host` is a service name while the browser sends
+ * the public origin, so a raw comparison rejects every legitimate call and the
+ * screen can never leave its unresolved state. `selfHost` is the one resolver
+ * for that question — `PUBLIC_APP_URL` when configured, `X-Forwarded-Host` (first
+ * hop) then `Host` for a self-host clone that has not set it. Sharing it is the
+ * point: a second copy is how a chained proxy header quietly inverts a check.
+ */
 function sameOrigin(request: Request): boolean {
   const origin = request.headers.get('origin');
-  const host = request.headers.get('host');
+  const host = selfHost((name) => request.headers.get(name));
   if (!origin || !host) return false;
   try {
     return new URL(origin).host === host;

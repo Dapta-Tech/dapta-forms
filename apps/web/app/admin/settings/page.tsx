@@ -42,12 +42,15 @@ export default async function SettingsPage() {
   // A failed read is NOT an empty page. Swallowing it into `null` handed the
   // editor a blank form whose first save would have written that blankness over
   // stored links, form choices and branding. The three outcomes stay distinct:
-  // loaded (with the revision to write against), unreadable, or an API too old
-  // to guard writes at all. Only the first one may be edited.
+  // loaded (with the revision to write against), unreadable, or a server that
+  // cannot guard writes — too old, or not switched on yet. Only the first one
+  // may be edited.
   const publicPageState: PublicPageLoad = await adminApi
     .myProfile()
     .then((r): PublicPageLoad =>
-      typeof r.revision === 'number'
+      // Two things must both hold to edit: the server speaks revisions at all,
+      // and revision-guarded writes are switched on. Either one missing blocks.
+      typeof r.revision === 'number' && r.writesEnabled === true
         ? { status: 'ok', profile: r.profile, revision: r.revision }
         : { status: 'unsupported' },
     )

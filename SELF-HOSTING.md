@@ -337,6 +337,81 @@ through the same outbox with retry + backoff).
   compatible with the newer schema — roll back by redeploying the previous image
   tags. Keep old images available (don't prune the tag you might revert to).
 
+### Migration numbering
+
+Migrations are recorded by **filename** in the `_migrations` table, not by a
+highest-number watermark. Two consequences, both deliberate:
+
+- A gap in the numbering is not a missing migration. Branches claim numbers
+  before they merge, and they do not merge in order.
+- A lower-numbered file that arrives in a later release still applies on its own,
+  after a higher-numbered one has already run.
+
+So `0016_member_profile_revision.sql` (the member write counter below) applies
+independently of whatever occupies the `0015` slot; it adds one column to
+`member` and depends on nothing else.
+
+## Public page write compatibility contract
+
+The public member page is written with a per-member revision
+(`member.profile_revision`, migration `0016`). A save whose answer never reaches
+the browser is ambiguous, because a client timeout does not abort the write, so
+the write path is compare-and-set and the client settles ambiguity with a fence.
+These are the normative invariants — change any of them and the ambiguity
+becomes undecidable again.
+
+- **N1 Scope.** `accountId` **and** `memberId` scope every profile read, write and
+  fence. A member is never addressed by id alone.
+- **N2 Rollout gate.** `PROFILE_V2_WRITES_ENABLED` stays false until every API
+  instance in the fleet increments the revision. `PROFILE_V1_WRITE_SHIM` keeps a
+  pre-v2 web build working for a bounded window and still increments the revision
+  atomically with its write.
+- **N3 Zero rows.** A write that changed no rows is disambiguated by an
+  account-scoped re-read: absent member is `404`, a moved revision is `409`.
+- **N4 Abort budget.** The server-side call budget is strictly shorter than the
+  client's Server Action timeout, and an abort never proves the API did not
+  commit.
+- **N5 Legacy rows.** A `NULL` revision is logical 0. Predicates and increments
+  use `coalesce(profile_revision, 0)`, never the bare column.
+- **N6 Draft safety.** Adopting authoritative state updates stored fields (links,
+  listed forms, branding, published state) and never erases the headline or bio
+  the member is typing.
+- **N7 Fence outcomes.** A fence conflict distinguishes a genuinely changed page
+  from a revision that advanced with identical content, and neither is reported
+  as a successful save.
+- **N8 Reconciliation route.** Reconciliation is an authenticated, same-origin
+  `POST` whose body carries only `expectedRevision`; authentication failures come
+  back as JSON status codes, never as a login page with a 200.
+- **N9 After settling.** A resolved reconciliation revalidates `/admin/settings`
+  and refreshes the router, and a remount keeps the reconciled revision instead
+  of regressing to the revision the page was first rendered with.
+- **N10 Dedicated fence.** The fence advances the revision without touching
+  content. A same-value write is not a substitute (schema normalization can
+  change stored bytes), and neither content comparison nor a mutation id inside
+  the profile blob is used.
+
+### Rollout order
+
+1. Run `pnpm db:migrate` (adds `member.profile_revision`, nullable).
+2. Deploy the new API with `PROFILE_V2_WRITES_ENABLED=false` and
+   `PROFILE_V1_WRITE_SHIM=true`. Old web keeps working through `/v1`.
+3. Confirm every API instance is the new build.
+4. Set `PROFILE_V2_WRITES_ENABLED=true` and roll the API.
+5. Deploy the new web. It uses `/v2` only and never falls back to `/v1`.
+6. When no old web pod remains, set `PROFILE_V1_WRITE_SHIM=false` (the `/v1`
+   write then answers `410`). Once that has held for a release, remove the `/v1`
+   route, its writer, and both flags together.
+
+### Rollback order
+
+1. **First** set `PROFILE_V2_WRITES_ENABLED=false` and roll the API, so web
+   sessions already loaded in browsers cannot mutate.
+2. **Then** roll web back.
+3. **Only then** roll the API back below revision awareness.
+
+Never run a v2-enabled API beside an instance that writes the profile without
+incrementing the revision.
+
 ## Troubleshooting
 
 - **API won't boot: `Refusing to boot: AUTH_PROVIDER=local …`** — you set

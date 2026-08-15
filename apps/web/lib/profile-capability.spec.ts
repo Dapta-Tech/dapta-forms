@@ -35,6 +35,7 @@ beforeEach(async () => {
     if (req.url?.startsWith('/v1/me/profile')) {
       // The old build's writer: alive, reachable, and revision-free.
       if (req.method === 'GET') {
+        // An old build reports no revision and no capability at all.
         res.end(JSON.stringify({ handle: 'alex-rivera', profile: null }));
         return;
       }
@@ -106,5 +107,47 @@ describe('new web against an API with no /v2', () => {
     const { saveMyProfileV2 } = await import('./admin-api');
 
     expect(await saveMyProfileV2(null, 0)).toEqual({ status: 'not_found' });
+  });
+});
+
+
+describe('an API that speaks v2 but has writes switched off', () => {
+  it('reports the capability as unavailable rather than letting a write through', async () => {
+    server.removeAllListeners('request');
+    server.on('request', (req, res) => {
+      touched.push(`${req.method} ${req.url}`);
+      res.setHeader('content-type', 'application/json');
+      if (req.method === 'GET') {
+        res.end(JSON.stringify({ handle: 'alex-rivera', profile: null, revision: 3, writesEnabled: false }));
+        return;
+      }
+      // The gate refuses before the row is touched.
+      res.statusCode = 501;
+      res.end(JSON.stringify({ error: 'V2_WRITES_DISABLED', message: 'not enabled' }));
+    });
+    const { saveMyProfileV2, fenceMyProfileV2, adminApi } = await import('./admin-api');
+
+    expect(await saveMyProfileV2({ version: 1, enabled: true }, 3)).toEqual({ status: 'unsupported' });
+    expect(await fenceMyProfileV2(3)).toEqual({ status: 'unsupported' });
+    // The read still works and says why the screen must block.
+    expect(await adminApi.myProfile()).toMatchObject({ revision: 3, writesEnabled: false });
+    // And it never reaches for the deprecated writer.
+    expect(touched.some((t) => t.includes('/v1/me/profile') && !t.startsWith('GET'))).toBe(false);
+  });
+});
+
+describe('an API that cannot resolve a write', () => {
+  it('is reported as unknown, so the screen stays blocked instead of adopting', async () => {
+    server.removeAllListeners('request');
+    server.on('request', (req, res) => {
+      touched.push(`${req.method} ${req.url}`);
+      res.statusCode = 503;
+      res.setHeader('content-type', 'application/json');
+      res.end(JSON.stringify({ error: 'WRITE_UNRESOLVED', message: 'ask again' }));
+    });
+    const { saveMyProfileV2, fenceMyProfileV2 } = await import('./admin-api');
+
+    expect(await saveMyProfileV2({ version: 1, enabled: true }, 3)).toEqual({ status: 'unknown' });
+    expect(await fenceMyProfileV2(3)).toEqual({ status: 'unknown' });
   });
 });

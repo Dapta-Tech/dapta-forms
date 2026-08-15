@@ -174,6 +174,16 @@ export const serverEnvSchema = z.object({
   OUTBOX_POLL_MS: z.coerce.number().int().positive().default(5000),
   OUTBOX_MAX_ATTEMPTS: z.coerce.number().int().positive().default(5),
 
+  // Revision-guarded public page writes (PUT /v2/me/profile and its fence).
+  // OFF by default and enabled only once an operator has confirmed every API
+  // instance in the fleet increments `member.profile_revision` — a pre-revision
+  // writer running beside an enabled one would move the page without moving the
+  // counter, and a fence could no longer decide anything. Reads are never gated:
+  // with this false the read reports the capability as unavailable, so a new web
+  // build blocks writing instead of failing one save at a time. Turning it back
+  // off is the FIRST step of a rollback.
+  PROFILE_V2_WRITES_ENABLED: boolish.default('false'),
+
   // DEPRECATED, REMOVE AFTER THE ROLLOUT. `PUT /v1/me/profile` is the public
   // page write that cannot compare-and-set, kept only so a web build from
   // before `PUT /v2/me/profile` keeps working while the deploy rolls. Default

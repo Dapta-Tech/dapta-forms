@@ -19,6 +19,14 @@ vi.mock('next/cache', () => ({ revalidatePath: (...a: unknown[]) => revalidatePa
 
 import * as route from './route';
 
+/** A request as it arrives behind a proxy: public Origin, internal Host. */
+const proxied = (headers: Record<string, string>): Request =>
+  new Request('https://forms.example.com/api/settings/public-page/reconcile', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', ...headers },
+    body: JSON.stringify({ expectedRevision: 4 }),
+  });
+
 const post = (body: unknown, headers: Record<string, string> = {}): Request =>
   new Request('https://forms.example.com/api/settings/public-page/reconcile', {
     method: 'POST',
@@ -92,6 +100,64 @@ describe('POST /api/settings/public-page/reconcile', () => {
 
     expect(fenceMyProfileV2).toHaveBeenCalledWith(1);
     expect(fenceMyProfileV2).toHaveBeenCalledTimes(1);
+  });
+
+  it('accepts a proxied call whose forwarded host matches the public origin', async () => {
+    // The internal Host is a service name; the browser only ever sees the public
+    // origin. Comparing the raw Host would reject every real call behind a
+    // proxy, and "Check again" could never leave the unresolved state.
+    fenceMyProfileV2.mockResolvedValue({ status: 'ok', profile: null, revision: 5 });
+
+    const res = await route.POST(
+      proxied({
+        origin: 'https://forms.example.com',
+        host: 'web.internal.svc:3000',
+        'x-forwarded-host': 'forms.example.com',
+      }),
+    );
+
+    expect(res.status).toBe(200);
+    expect(fenceMyProfileV2).toHaveBeenCalledWith(4);
+  });
+
+  it('takes the first hop of a chained forwarded host', async () => {
+    fenceMyProfileV2.mockResolvedValue({ status: 'ok', profile: null, revision: 5 });
+
+    const res = await route.POST(
+      proxied({
+        origin: 'https://forms.example.com',
+        host: 'web.internal.svc:3000',
+        'x-forwarded-host': 'forms.example.com, inner.mesh',
+      }),
+    );
+
+    expect(res.status).toBe(200);
+  });
+
+  it('still rejects a foreign origin behind that same proxy shape', async () => {
+    const res = await route.POST(
+      proxied({
+        origin: 'https://evil.example',
+        host: 'web.internal.svc:3000',
+        'x-forwarded-host': 'forms.example.com',
+      }),
+    );
+
+    expect(res.status).toBe(403);
+    expect(fenceMyProfileV2).not.toHaveBeenCalled();
+  });
+
+  it('rejects a forwarded host that does not match the claimed origin', async () => {
+    const res = await route.POST(
+      proxied({
+        origin: 'https://forms.example.com',
+        host: 'forms.example.com',
+        'x-forwarded-host': 'attacker.example',
+      }),
+    );
+
+    expect(res.status).toBe(403);
+    expect(fenceMyProfileV2).not.toHaveBeenCalled();
   });
 
   it('answers an expired session with JSON 401, never login HTML at 200', async () => {

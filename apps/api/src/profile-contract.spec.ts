@@ -70,7 +70,8 @@ describe('public page write contract', () => {
     auth = {
       resolveHost: async () => ({ accountId, memberId, role: 'owner' }),
     } as unknown as AuthService;
-    v2 = new ProfileV2Controller(db, auth);
+    // Writes ON for the contract tests below; the gate has its own describe.
+    v2 = new ProfileV2Controller(db, auth, { PROFILE_V2_WRITES_ENABLED: true });
   });
 
   afterEach(async () => {
@@ -181,16 +182,10 @@ describe('public page write contract', () => {
 
   describe('the deprecated /v1 write shim', () => {
     const shim = (db: Db, auth: AuthService, on: boolean) =>
-      new AdminCrudController(
-        db,
-        auth,
-        {} as never,
-        {} as never,
-        {} as never,
-        undefined,
-        undefined,
-        { PROFILE_V1_WRITE_SHIM: on },
-      );
+      new AdminCrudController(db, auth, {} as never, {} as never, {} as never, undefined, undefined, {
+        PROFILE_V1_WRITE_SHIM: on,
+        PROFILE_V2_WRITES_ENABLED: true,
+      });
 
     it('still increments the revision atomically, so fences stay decidable', async () => {
       const res = (await shim(db, auth, true).saveMyProfile(req, { profile: page(true) })) as {
@@ -230,6 +225,127 @@ describe('public page write contract', () => {
       const read = (await shim(db, auth, true).myProfile(req)) as { revision: number };
 
       expect(typeof read.revision).toBe('number');
+    });
+  });
+});
+
+describe('the v2 write gate', () => {
+  let db: Db;
+  let accountId: string;
+  let memberId: string;
+  let auth: AuthService;
+  const req = {} as ReqLike;
+
+  beforeEach(async () => {
+    db = await createDb(process.env.DATABASE_URL ?? 'file::memory:');
+    await migrate(db);
+    accountId = randomUUID();
+    memberId = randomUUID();
+    await db.run(
+      sql`INSERT INTO account (id, code, name, created_at)
+          VALUES (${accountId}, ${'t' + accountId.slice(0, 8)}, ${'Test'}, ${Date.now()})`,
+    );
+    await db.run(
+      sql`INSERT INTO member (id, account_id, email, display_name, handle, role, status, created_at)
+          VALUES (${memberId}, ${accountId}, ${memberId + '@e.com'}, ${'Alex'},
+                  ${'h' + memberId.slice(0, 8)}, ${'owner'}, ${'active'}, ${Date.now()})`,
+    );
+    auth = {
+      resolveHost: async () => ({ accountId, memberId, role: 'owner' }),
+    } as unknown as AuthService;
+  });
+
+  afterEach(async () => {
+    await db.run(sql`DELETE FROM member WHERE account_id = ${accountId}`);
+    await db.run(sql`DELETE FROM account WHERE id = ${accountId}`);
+    await db.close();
+  });
+
+  const off = () => new ProfileV2Controller(db, auth, { PROFILE_V2_WRITES_ENABLED: false });
+
+  it('is closed when nothing configured it, so a fresh deploy cannot write', async () => {
+    const unconfigured = new ProfileV2Controller(db, auth);
+
+    expect(await statusOf(() => unconfigured.save(req, { profile: page(true), expectedRevision: 0 }))).toBe(
+      501,
+    );
+  });
+
+  it('refuses a CAS before it can touch the row', async () => {
+    const status = await statusOf(() => off().save(req, { profile: page(true), expectedRevision: 0 }));
+
+    expect(status).toBe(501);
+    // Nothing written, and nothing spent: the revision is exactly where it was.
+    expect((await getMemberProfileState(db, accountId, memberId))!.revision).toBe(0);
+    expect((await getMemberProfileState(db, accountId, memberId))!.profile).toBeNull();
+  });
+
+  it('refuses a fence too, so no revision is burned while disabled', async () => {
+    expect(await statusOf(() => off().fence(req, { expectedRevision: 0 }))).toBe(501);
+    expect((await getMemberProfileState(db, accountId, memberId))!.revision).toBe(0);
+  });
+
+  it('still answers reads, and reports the capability as unavailable', async () => {
+    const read = (await off().read(req)) as { revision: number; writesEnabled: boolean };
+
+    expect(read).toMatchObject({ revision: 0, writesEnabled: false });
+  });
+
+  it('reports the capability as available once switched on, and then writes', async () => {
+    const on = new ProfileV2Controller(db, auth, { PROFILE_V2_WRITES_ENABLED: true });
+
+    expect(await on.read(req)).toMatchObject({ writesEnabled: true });
+    expect(await on.save(req, { profile: page(true), expectedRevision: 0 })).toMatchObject({
+      ok: true,
+      revision: 1,
+    });
+  });
+
+  it('is reported through the v1 read as well, so an old route cannot mislead a new client', async () => {
+    const shim = new AdminCrudController(
+      db,
+      auth,
+      {} as never,
+      {} as never,
+      {} as never,
+      undefined,
+      undefined,
+      { PROFILE_V1_WRITE_SHIM: true, PROFILE_V2_WRITES_ENABLED: false },
+    );
+
+    expect(await shim.myProfile(req)).toMatchObject({ writesEnabled: false });
+    // The deprecated writer is still available for an OLD web build in the
+    // bounded window, and still increments.
+    expect(await shim.saveMyProfile(req, { profile: page(true) })).toMatchObject({
+      ok: true,
+      revision: 1,
+    });
+  });
+});
+
+describe('an unresolved write', () => {
+  it('is 503 with its own code — never a 409 a client would adopt', async () => {
+    const stubDb = {
+      dialect: 'postgres',
+      all: async () => {
+        throw Object.assign(new Error('could not serialize access'), { code: '40001' });
+      },
+      get: async () => ({ profile: null, profile_revision: 4 }),
+      run: async () => undefined,
+      execRaw: async () => undefined,
+      close: async () => undefined,
+    } as unknown as Db;
+    const auth = {
+      resolveHost: async () => ({ accountId: 'a', memberId: 'm', role: 'owner' }),
+    } as unknown as AuthService;
+    const controller = new ProfileV2Controller(stubDb, auth, { PROFILE_V2_WRITES_ENABLED: true });
+    const req = {} as ReqLike;
+
+    expect(await statusOf(() => controller.save(req, { profile: page(true), expectedRevision: 4 }))).toBe(
+      503,
+    );
+    expect(await bodyOf(() => controller.fence(req, { expectedRevision: 4 }))).toMatchObject({
+      error: 'WRITE_UNRESOLVED',
     });
   });
 });

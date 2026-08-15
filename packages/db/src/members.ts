@@ -479,7 +479,14 @@ export interface MemberProfileState {
 export type ProfileWriteResult =
   | { status: 'ok'; profile: unknown; revision: number }
   | { status: 'conflict'; profile: unknown; revision: number }
-  | { status: 'not_found' };
+  | { status: 'not_found' }
+  /**
+   * The statement did not commit AND nothing proves the expectation was
+   * consumed — a serialization failure that rolled back with the revision still
+   * where it started. It is not a conflict (nothing else won) and not a success
+   * (nothing was written), so the caller must stay blocked and ask again.
+   */
+  | { status: 'unresolved' };
 
 /** Postgres serialization failure — retryable, and here it means "re-decide". */
 const PG_SERIALIZATION_FAILURE = '40001';
@@ -535,14 +542,24 @@ function writtenState(r: Record<string, unknown>): ProfileWriteResult {
  * Why zero rows changed: the member is gone (or belongs to another account), or
  * the revision moved. Re-read account-scoped so a wrong account can never be
  * answered with someone else's state.
+ *
+ * `expectedRevision` is what makes this safe to reuse for a serialization
+ * failure. Zero rows from a COMMITTED statement already proves the expectation
+ * was consumed, but a 40001 rollback proves nothing — so the conflict is only
+ * reported when the stored revision has actually moved past what the caller
+ * expected. A revision still sitting at the expectation is unresolved, never a
+ * conflict, or a client would adopt state and publish a claim about a write
+ * that may still be retried.
  */
 async function explainNoRows(
   db: Db,
   accountId: string,
   memberId: string,
+  expectedRevision: number,
 ): Promise<ProfileWriteResult> {
   const current = await getMemberProfileState(db, accountId, memberId);
   if (!current) return { status: 'not_found' };
+  if (current.revision === expectedRevision) return { status: 'unresolved' };
   return { status: 'conflict', profile: current.profile, revision: current.revision };
 }
 
@@ -571,12 +588,12 @@ export async function casSetMemberProfile(
     const row = rows[0];
     if (row) return writtenState(row);
   } catch (e) {
-    // A serialization failure means this write definitely did not commit, so
-    // the caller's expected revision is simply no longer decidable here — that
-    // is the conflict path, not a permanent unknown. Anything else propagates.
+    // A serialization failure rolled this write back. Whether the expectation
+    // survived is decided by re-reading, not assumed: `explainNoRows` reports a
+    // conflict only when the revision actually moved. Anything else propagates.
     if (!isSerializationFailure(e)) throw e;
   }
-  return explainNoRows(db, accountId, memberId);
+  return explainNoRows(db, accountId, memberId, expected);
 }
 
 /**
@@ -611,7 +628,7 @@ export async function fenceMemberProfile(
   } catch (e) {
     if (!isSerializationFailure(e)) throw e;
   }
-  return explainNoRows(db, accountId, memberId);
+  return explainNoRows(db, accountId, memberId, expected);
 }
 
 /**
@@ -627,7 +644,7 @@ export async function overwriteMemberProfileLegacy(
   accountId: string,
   memberId: string,
   profile: unknown | null,
-): Promise<ProfileWriteResult> {
+): Promise<Extract<ProfileWriteResult, { status: 'ok' } | { status: 'not_found' }>> {
   const rows = await db.all<Record<string, unknown>>(
     sql`UPDATE member
            SET profile = ${profile == null ? null : JSON.stringify(profile)},
@@ -636,6 +653,8 @@ export async function overwriteMemberProfileLegacy(
      RETURNING profile, profile_revision`,
   );
   const row = rows[0];
-  if (row) return writtenState(row);
+  // No predicate beyond identity, so there is no conflict and nothing to
+  // resolve: it either wrote, or there was no such member in this account.
+  if (row) return writtenState(row) as Extract<ProfileWriteResult, { status: 'ok' }>;
   return { status: 'not_found' };
 }

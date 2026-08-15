@@ -4,8 +4,11 @@ import {
   ConflictException,
   Controller,
   Get,
+  HttpException,
+  HttpStatus,
   Inject,
   NotFoundException,
+  Optional,
   Post,
   Put,
   Req,
@@ -20,7 +23,8 @@ import {
 } from '@quill/db';
 import { memberProfileSchema } from '@quill/types';
 import { ZodError } from 'zod';
-import { DB } from './tokens';
+import { DB, ENV } from './tokens';
+import type { ServerEnv } from '@quill/config/env';
 import { AuthService, type ReqLike } from './auth.service';
 
 /**
@@ -59,6 +63,37 @@ const notFound = (): never => {
 };
 
 /**
+ * The write neither landed nor lost. Distinct from a conflict on purpose: the
+ * caller must keep writing blocked and ask again, and must not adopt state or
+ * announce anything about the attempt.
+ */
+const unresolved = (): never => {
+  throw new HttpException(
+    {
+      error: 'WRITE_UNRESOLVED',
+      message: 'The write could not be resolved. Ask again before writing.',
+    },
+    HttpStatus.SERVICE_UNAVAILABLE,
+  );
+};
+
+/**
+ * v2 writes are OFF until an operator confirms every API writer in the fleet
+ * increments the revision. Until then a v2 mutation is refused BEFORE it can
+ * touch the row, and the read below advertises the capability as unavailable so
+ * a new web build blocks instead of discovering it one failed save at a time.
+ */
+const writesDisabled = (): never => {
+  throw new HttpException(
+    {
+      error: 'V2_WRITES_DISABLED',
+      message: 'Revision-guarded writes are not enabled on this server.',
+    },
+    HttpStatus.NOT_IMPLEMENTED,
+  );
+};
+
+/**
  * `expectedRevision` is REQUIRED and must be a safe non-negative integer.
  * Absent, null, "3", 3.5 and -1 are all rejected: a mutation that cannot name
  * its baseline is exactly the unguarded write this contract exists to stop.
@@ -77,6 +112,7 @@ function requireExpectedRevision(body: unknown): number {
 /** Turn a repository outcome into the HTTP contract. */
 function respond(result: ProfileWriteResult): ProfileStateBody {
   if (result.status === 'not_found') return notFound();
+  if (result.status === 'unresolved') return unresolved();
   if (result.status === 'conflict') return conflict(result);
   return { ok: true, profile: result.profile, revision: result.revision };
 }
@@ -86,7 +122,17 @@ export class ProfileV2Controller {
   constructor(
     @Inject(DB) private readonly db: Db,
     @Inject(AuthService) private readonly auth: AuthService,
+    /**
+     * Optional so direct constructions in tests keep working; absent means the
+     * gate is CLOSED, which is the safe default for anything that did not
+     * deliberately turn revision-guarded writes on.
+     */
+    @Optional() @Inject(ENV) private readonly env?: Pick<ServerEnv, 'PROFILE_V2_WRITES_ENABLED'>,
   ) {}
+
+  private get writesEnabled(): boolean {
+    return this.env?.PROFILE_V2_WRITES_ENABLED === true;
+  }
 
   /**
    * The caller's own public page plus the revision to write against. The same
@@ -101,7 +147,14 @@ export class ProfileV2Controller {
     if (!member) return notFound();
     const state = await getMemberProfileState(this.db, p.accountId, p.memberId);
     if (!state) return notFound();
-    return { handle: member.handle, profile: state.profile, revision: state.revision };
+    // Reads are never gated: a client must be able to see its page, and to see
+    // that it may not write to it.
+    return {
+      handle: member.handle,
+      profile: state.profile,
+      revision: state.revision,
+      writesEnabled: this.writesEnabled,
+    };
   }
 
   /**
@@ -112,6 +165,7 @@ export class ProfileV2Controller {
    */
   @Put()
   async save(@Req() req: ReqLike, @Body() body: unknown) {
+    if (!this.writesEnabled) return writesDisabled();
     const p = await this.auth.resolveHost(req);
     const expectedRevision = requireExpectedRevision(body);
     const raw = (body as { profile?: unknown } | null)?.profile ?? null;
@@ -140,6 +194,7 @@ export class ProfileV2Controller {
    */
   @Post('fence')
   async fence(@Req() req: ReqLike, @Body() body: unknown) {
+    if (!this.writesEnabled) return writesDisabled();
     const p = await this.auth.resolveHost(req);
     const expectedRevision = requireExpectedRevision(body);
     return respond(await fenceMemberProfile(this.db, p.accountId, p.memberId, expectedRevision));

@@ -577,10 +577,13 @@ export const adminApi = {
    * capability signal, and a client without it must not write.
    */
   myProfile: () =>
-    req<{ handle: string | null; profile: MemberProfile | null; revision?: number }>(
-      'GET',
-      '/v1/me/profile',
-    ),
+    req<{
+      handle: string | null;
+      profile: MemberProfile | null;
+      revision?: number;
+      /** False, or absent on a pre-CAS build: this server must not be written to. */
+      writesEnabled?: boolean;
+    }>('GET', '/v1/me/profile'),
   /** Every workspace the caller can enter, for the switcher. */
   listWorkspaces: () => req<Workspace[]>('GET', '/v1/workspaces'),
   /** Send one sample delivery to a form's webhook (admin-only, SSRF-guarded server-side). */
@@ -691,6 +694,11 @@ async function profileCall(
 
   if (res.status === 401) return { status: 'unauthorized' };
   if (res.status === 403) return { status: 'unauthorized' };
+  // The server can guard writes but has not been switched on yet. Same answer
+  // as an API that never could: do not write here.
+  if (res.status === 501) return { status: 'unsupported' };
+  // Neither landed nor lost — the API could not resolve it. Stay blocked.
+  if (res.status === 503) return { status: 'unknown' };
   // An API that predates this contract has no /v2 route (404) and a rolled-out
   // one has retired the /v1 shim (410). Both mean: do not write here.
   if (res.status === 404 || res.status === 410) {
