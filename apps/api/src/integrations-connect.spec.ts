@@ -13,7 +13,7 @@
  *      fallback), and falls back to env / reports disabled when appropriate;
  *   7. connect/disconnect require an admin/owner (a plain member is refused 403).
  */
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, expectTypeOf, beforeEach, afterEach } from 'vitest';
 import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import {
   createDb,
@@ -27,9 +27,11 @@ import {
 } from '@quill/db';
 import type { ServerEnv } from '@quill/config/env';
 import {
+  AccountMetadataCache,
   CalendlyEventTypesService,
   HubspotPropertiesService,
   IntegrationsController,
+  type HubSpotPropertyDto,
 } from './integrations.controller';
 import { AuthService } from './auth.service';
 import { LocalAuthProvider, type ReqLike } from './auth.provider';
@@ -116,6 +118,24 @@ beforeEach(async () => {
 
 afterEach(async () => {
   await db.close();
+});
+
+describe('AccountMetadataCache', () => {
+  it('accepts only metadata at its write boundary', () => {
+    const cache = new AccountMetadataCache<HubSpotPropertyDto[]>();
+    expectTypeOf(cache.set).parameter(1).toEqualTypeOf<HubSpotPropertyDto[]>();
+    // @ts-expect-error Cache data must be provider metadata, never raw credential strings.
+    type _RawTokenCache = AccountMetadataCache<string[]>;
+    const first = [{ name: 'first_property', label: 'First property', type: 'string' }];
+    const second = [{ name: 'second_property', label: 'Second property', type: 'string' }];
+
+    cache.set('first-account', first, 1_000);
+    cache.set('second-account', second, 1_000);
+    cache.invalidate('first-account');
+
+    expect(cache.get('first-account', 1_001)).toBeUndefined();
+    expect(cache.get('second-account', 1_001)).toEqual(second);
+  });
 });
 
 describe('POST /v1/integrations/:provider/connect', () => {
@@ -401,17 +421,20 @@ describe('HubSpot property picker token resolution', () => {
   it('misses cached metadata when the connected token rotates within the five-minute TTL', async () => {
     const initialToken = 'hubspot-cache-initial-0001';
     const rotatedToken = 'hubspot-cache-rotated-0002';
+    const expectedAuthorizations = [
+      `Bearer ${initialToken}`,
+      `Bearer ${initialToken}`,
+      `Bearer ${rotatedToken}`,
+      `Bearer ${rotatedToken}`,
+    ];
     let requests = 0;
     const fetchImpl = (async (url: string, init?: RequestInit) => {
-      requests += 1;
-      if (url !== HUBSPOT_PROPERTIES_URL) return new Response('{}', { status: 404 });
+      const request = requests++;
       const authorization = (init?.headers as Record<string, string> | undefined)?.authorization;
-      const name =
-        authorization === `Bearer ${initialToken}`
-          ? 'initial_property'
-          : authorization === `Bearer ${rotatedToken}`
-            ? 'rotated_property'
-            : 'unexpected_property';
+      if (url !== HUBSPOT_PROPERTIES_URL || authorization !== expectedAuthorizations[request]) {
+        throw new Error('unexpected HubSpot request');
+      }
+      const name = request < 2 ? 'initial_property' : 'rotated_property';
       return jsonResponse({ results: [{ name, label: name, type: 'string' }] });
     }) as unknown as typeof fetch;
     const { hubspot } = build(makeEnv(), fetchImpl);
@@ -427,15 +450,57 @@ describe('HubSpot property picker token resolution', () => {
     expect(first).toMatchObject({ enabled: true, cached: false, properties: [{ name: 'initial_property' }] });
     expect(unchanged).toMatchObject({ enabled: true, cached: true, properties: [{ name: 'initial_property' }] });
     expect(rotated).toMatchObject({ enabled: true, cached: false, properties: [{ name: 'rotated_property' }] });
-    expect(requests).toBe(4);
+    expect(requests).toBe(expectedAuthorizations.length);
+  });
+
+  it('invalidates cached metadata when the account switches to and from an env fallback', async () => {
+    const fallbackToken = 'hubspot-fallback-0001';
+    const accountToken = 'hubspot-account-0002';
+    const expectedAuthorizations = [
+      `Bearer ${fallbackToken}`,
+      `Bearer ${accountToken}`,
+      `Bearer ${accountToken}`,
+      `Bearer ${fallbackToken}`,
+    ];
+    let requests = 0;
+    const fetchImpl = (async (url: string, init?: RequestInit) => {
+      const request = requests++;
+      const authorization = (init?.headers as Record<string, string> | undefined)?.authorization;
+      if (url !== HUBSPOT_PROPERTIES_URL || authorization !== expectedAuthorizations[request]) {
+        throw new Error('unexpected HubSpot request');
+      }
+      const name = request === 0 || request === 3 ? 'fallback_property' : 'account_property';
+      return jsonResponse({ results: [{ name, label: name, type: 'string' }] });
+    }) as unknown as typeof fetch;
+    const { hubspot } = build(makeEnv({ HUBSPOT_PRIVATE_APP_TOKEN: fallbackToken }), fetchImpl);
+    const id = await accountId();
+
+    const fallback = await hubspot.listProperties(id, 1_000);
+    await controller.connect(asOwner(), 'hubspot', { token: accountToken });
+    const connected = await hubspot.listProperties(id, 1_001);
+    await controller.disconnect(asOwner(), 'hubspot');
+    const returnedToFallback = await hubspot.listProperties(id, 1_002);
+
+    expect(fallback).toMatchObject({ enabled: true, cached: false, properties: [{ name: 'fallback_property' }] });
+    expect(connected).toMatchObject({ enabled: true, cached: false, properties: [{ name: 'account_property' }] });
+    expect(returnedToFallback).toMatchObject({
+      enabled: true,
+      cached: false,
+      properties: [{ name: 'fallback_property' }],
+    });
+    expect(requests).toBe(expectedAuthorizations.length);
   });
 
   it('keeps shared-token cached metadata isolated by account', async () => {
+    const fallbackToken = 'shared-hubspot-fallback-token';
     let requests = 0;
     const { hubspot } = build(
-      makeEnv({ HUBSPOT_PRIVATE_APP_TOKEN: 'shared-hubspot-fallback-token' }),
-      (async (url: string) => {
-        if (url !== HUBSPOT_PROPERTIES_URL) return new Response('{}', { status: 404 });
+      makeEnv({ HUBSPOT_PRIVATE_APP_TOKEN: fallbackToken }),
+      (async (url: string, init?: RequestInit) => {
+        const authorization = (init?.headers as Record<string, string> | undefined)?.authorization;
+        if (url !== HUBSPOT_PROPERTIES_URL || authorization !== `Bearer ${fallbackToken}`) {
+          throw new Error('unexpected HubSpot request');
+        }
         requests += 1;
         const name = requests === 1 ? 'first_account_property' : 'second_account_property';
         return jsonResponse({ results: [{ name, label: name, type: 'string' }] });
@@ -453,6 +518,7 @@ describe('HubSpot property picker token resolution', () => {
 
 describe('Calendly event-type picker token resolution', () => {
   const CALENDLY_EVENT_TYPES_BASE = 'https://api.calendly.com/event_types';
+  const CONNECTED_TOKEN = 'cal-account-8888';
   const ME = { resource: { uri: 'https://api.calendly.com/users/U1', email: 'rep@acme.io' } };
   const EVENT_TYPES = {
     collection: [
@@ -476,10 +542,19 @@ describe('Calendly event-type picker token resolution', () => {
     ],
   };
 
-  /** Answers /users/me exactly and /event_types by prefix (it carries a query). */
-  function calendlyFetch(calls: RecordedCall[], me: unknown, list: unknown): typeof fetch {
+  /** Answers /users/me exactly and /event_types by prefix, rejecting unexpected authorization. */
+  function calendlyFetch(
+    calls: RecordedCall[],
+    me: unknown,
+    list: unknown,
+    expectedAuthorization: string,
+  ): typeof fetch {
     return (async (url: string, init?: RequestInit) => {
-      calls.push({ url, headers: (init?.headers ?? {}) as Record<string, string> });
+      const headers = (init?.headers ?? {}) as Record<string, string>;
+      if (headers.authorization !== expectedAuthorization) {
+        throw new Error('unexpected Calendly authorization');
+      }
+      calls.push({ url, headers });
       if (url === CALENDLY_ME_URL) return jsonResponse(me);
       if (url.startsWith(CALENDLY_EVENT_TYPES_BASE)) return jsonResponse(list);
       return new Response('{}', { status: 404 });
@@ -488,8 +563,8 @@ describe('Calendly event-type picker token resolution', () => {
 
   it('uses the CONNECTED account token, scopes to its user, and returns sorted event types', async () => {
     const calls: RecordedCall[] = [];
-    build(makeEnv(), calendlyFetch(calls, ME, EVENT_TYPES));
-    await controller.connect(asOwner(), 'calendly', { token: 'cal-account-8888' });
+    build(makeEnv(), calendlyFetch(calls, ME, EVENT_TYPES, `Bearer ${CONNECTED_TOKEN}`));
+    await controller.connect(asOwner(), 'calendly', { token: CONNECTED_TOKEN });
 
     const res = await controller.calendlyEventTypes(asOwner());
     expect(res.enabled).toBe(true);
@@ -502,7 +577,7 @@ describe('Calendly event-type picker token resolution', () => {
       });
     }
     // Every call carried the ACCOUNT token, and the list was scoped to the user.
-    expect(calls.every((c) => c.headers.authorization === 'Bearer cal-account-8888')).toBe(true);
+    expect(calls.every((c) => c.headers.authorization === `Bearer ${CONNECTED_TOKEN}`)).toBe(true);
     expect(
       calls.some((c) => c.url.includes(`user=${encodeURIComponent(ME.resource.uri)}`)),
     ).toBe(true);
@@ -510,8 +585,8 @@ describe('Calendly event-type picker token resolution', () => {
 
   it('exposes each event type’s own custom questions by their POSITIONAL id', async () => {
     const calls: RecordedCall[] = [];
-    build(makeEnv(), calendlyFetch(calls, ME, EVENT_TYPES));
-    await controller.connect(asOwner(), 'calendly', { token: 'cal-account-8888' });
+    build(makeEnv(), calendlyFetch(calls, ME, EVENT_TYPES, `Bearer ${CONNECTED_TOKEN}`));
+    await controller.connect(asOwner(), 'calendly', { token: CONNECTED_TOKEN });
 
     const res = await controller.calendlyEventTypes(asOwner());
     expect(res.enabled).toBe(true);
@@ -535,11 +610,26 @@ describe('Calendly event-type picker token resolution', () => {
   it('misses cached metadata when the connected token rotates within the five-minute TTL', async () => {
     const initialToken = 'calendly-cache-initial-0001';
     const rotatedToken = 'calendly-cache-rotated-0002';
+    const expectedAuthorizations = [
+      `Bearer ${initialToken}`,
+      `Bearer ${initialToken}`,
+      `Bearer ${initialToken}`,
+      `Bearer ${rotatedToken}`,
+      `Bearer ${rotatedToken}`,
+      `Bearer ${rotatedToken}`,
+    ];
     let requests = 0;
     const fetchImpl = (async (url: string, init?: RequestInit) => {
-      requests += 1;
+      const request = requests++;
       const authorization = (init?.headers as Record<string, string> | undefined)?.authorization;
-      const suffix = authorization === `Bearer ${initialToken}` ? 'initial' : 'rotated';
+      if (authorization !== expectedAuthorizations[request]) {
+        throw new Error('unexpected Calendly authorization');
+      }
+      const expectsMe = request === 0 || request === 1 || request === 3 || request === 4;
+      if ((expectsMe && url !== CALENDLY_ME_URL) || (!expectsMe && !url.startsWith(CALENDLY_EVENT_TYPES_BASE))) {
+        throw new Error('unexpected Calendly request');
+      }
+      const suffix = request < 3 ? 'initial' : 'rotated';
       if (url === CALENDLY_ME_URL) {
         return jsonResponse({ resource: { uri: `https://api.calendly.com/users/${suffix}` } });
       }
@@ -569,14 +659,75 @@ describe('Calendly event-type picker token resolution', () => {
     expect(first).toMatchObject({ enabled: true, cached: false, eventTypes: [{ name: 'initial event' }] });
     expect(unchanged).toMatchObject({ enabled: true, cached: true, eventTypes: [{ name: 'initial event' }] });
     expect(rotated).toMatchObject({ enabled: true, cached: false, eventTypes: [{ name: 'rotated event' }] });
-    expect(requests).toBe(6);
+    expect(requests).toBe(expectedAuthorizations.length);
+  });
+
+  it('invalidates cached metadata when the account switches to and from an env fallback', async () => {
+    const fallbackToken = 'calendly-fallback-0001';
+    const accountToken = 'calendly-account-0002';
+    const expectedAuthorizations = [
+      `Bearer ${fallbackToken}`,
+      `Bearer ${fallbackToken}`,
+      `Bearer ${accountToken}`,
+      `Bearer ${accountToken}`,
+      `Bearer ${accountToken}`,
+      `Bearer ${fallbackToken}`,
+      `Bearer ${fallbackToken}`,
+    ];
+    let requests = 0;
+    const fetchImpl = (async (url: string, init?: RequestInit) => {
+      const request = requests++;
+      const authorization = (init?.headers as Record<string, string> | undefined)?.authorization;
+      if (authorization !== expectedAuthorizations[request]) {
+        throw new Error('unexpected Calendly authorization');
+      }
+      const expectsMe = request === 0 || request === 2 || request === 3 || request === 5;
+      if ((expectsMe && url !== CALENDLY_ME_URL) || (!expectsMe && !url.startsWith(CALENDLY_EVENT_TYPES_BASE))) {
+        throw new Error('unexpected Calendly request');
+      }
+      const suffix = request === 0 || request === 1 || request === 5 || request === 6 ? 'fallback' : 'account';
+      if (url === CALENDLY_ME_URL) {
+        return jsonResponse({ resource: { uri: `https://api.calendly.com/users/${suffix}` } });
+      }
+      return jsonResponse({
+        collection: [
+          {
+            uri: `https://api.calendly.com/event_types/${suffix}`,
+            name: `${suffix} event`,
+            scheduling_url: `https://calendly.com/acme/${suffix}`,
+          },
+        ],
+      });
+    }) as unknown as typeof fetch;
+    const { calendly } = build(makeEnv({ CALENDLY_API_TOKEN: fallbackToken }), fetchImpl);
+    const id = await accountId();
+
+    const fallback = await calendly.listEventTypes(id, 1_000);
+    await controller.connect(asOwner(), 'calendly', { token: accountToken });
+    const connected = await calendly.listEventTypes(id, 1_001);
+    await controller.disconnect(asOwner(), 'calendly');
+    const returnedToFallback = await calendly.listEventTypes(id, 1_002);
+
+    expect(fallback).toMatchObject({ enabled: true, cached: false, eventTypes: [{ name: 'fallback event' }] });
+    expect(connected).toMatchObject({ enabled: true, cached: false, eventTypes: [{ name: 'account event' }] });
+    expect(returnedToFallback).toMatchObject({
+      enabled: true,
+      cached: false,
+      eventTypes: [{ name: 'fallback event' }],
+    });
+    expect(requests).toBe(expectedAuthorizations.length);
   });
 
   it('keeps shared-token cached metadata isolated by account', async () => {
+    const fallbackToken = 'shared-calendly-fallback-token';
     let eventTypeRequests = 0;
     const { calendly } = build(
-      makeEnv({ CALENDLY_API_TOKEN: 'shared-calendly-fallback-token' }),
-      (async (url: string) => {
+      makeEnv({ CALENDLY_API_TOKEN: fallbackToken }),
+      (async (url: string, init?: RequestInit) => {
+        const authorization = (init?.headers as Record<string, string> | undefined)?.authorization;
+        if (authorization !== `Bearer ${fallbackToken}`) {
+          throw new Error('unexpected Calendly authorization');
+        }
         if (url === CALENDLY_ME_URL) {
           return jsonResponse({ resource: { uri: 'https://api.calendly.com/users/shared' } });
         }

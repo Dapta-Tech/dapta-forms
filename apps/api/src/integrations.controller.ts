@@ -16,7 +16,6 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
-import { createHash } from 'node:crypto';
 import { z, ZodError } from 'zod';
 import type { Db, IntegrationProvider, IntegrationStatus } from '@quill/db';
 import {
@@ -122,15 +121,31 @@ const HUBSPOT_PROPERTIES_URL = 'https://api.hubapi.com/crm/v3/properties/contact
 const CALENDLY_ME_URL = 'https://api.calendly.com/users/me';
 const CALENDLY_EVENT_TYPES_URL = 'https://api.calendly.com/event_types';
 
-interface TokenAwareCacheEntry<T> {
-  tokenFingerprint: string;
-  data: T;
-  expires: number;
-}
+/**
+ * Account-scoped integration metadata only. Its write boundary has no
+ * credential argument, so tokens and token-derived values cannot enter state.
+ */
+type IntegrationMetadata = HubSpotPropertyDto[] | CalendlyEventTypeDto[];
 
-/** One-way cache identity for a resolved provider token. */
-function tokenFingerprint(token: string): string {
-  return createHash('sha256').update(token).digest('hex');
+export class AccountMetadataCache<T extends IntegrationMetadata> {
+  private readonly entries = new Map<string, { data: T; expires: number }>();
+
+  get(accountId: string, now: number): T | undefined {
+    const cached = this.entries.get(accountId);
+    if (!cached || cached.expires <= now) {
+      this.entries.delete(accountId);
+      return undefined;
+    }
+    return cached.data;
+  }
+
+  set(accountId: string, data: T, now: number): void {
+    this.entries.set(accountId, { data, expires: now + CACHE_TTL_MS });
+  }
+
+  invalidate(accountId: string): void {
+    this.entries.delete(accountId);
+  }
 }
 
 interface HubSpotPropertyOptionApi {
@@ -175,20 +190,24 @@ function toPropertyOptions(
 @Injectable()
 export class HubspotPropertiesService {
   // Per-ACCOUNT cache: HubSpot contact properties are portal-specific, so one
-  // account's connected token must never surface another account's list. Entries
-  // carry a one-way token fingerprint so a reconnect within the TTL refetches.
+  // account's connected token must never surface another account's list.
   //
   // The keying carries MORE weight now that entries include enumeration options:
   // a global cache would leak not just property names but their values — a
   // portal's internal sales taxonomy (deal stages, lead grades, account tiers).
   // Do not "optimize" this into a single shared map.
-  private readonly cache = new Map<string, TokenAwareCacheEntry<HubSpotPropertyDto[]>>();
+  private readonly cache = new AccountMetadataCache<HubSpotPropertyDto[]>();
 
   constructor(
     @Inject(ENV) private readonly env: ServerEnv,
     @Inject(DB) private readonly db: Db,
     private readonly fetchImpl: typeof fetch = fetch,
   ) {}
+
+  /** Remove metadata after this account's HubSpot credential source changes. */
+  invalidate(accountId: string): void {
+    this.cache.invalidate(accountId);
+  }
 
   /**
    * The live HubSpot token for an account: its connected (decrypted) token if
@@ -215,10 +234,9 @@ export class HubspotPropertiesService {
         reason: 'No HubSpot token — connect HubSpot for this account or set the server token.',
       };
     }
-    const fingerprint = tokenFingerprint(token);
-    const cached = this.cache.get(accountId);
-    if (cached && cached.tokenFingerprint === fingerprint && cached.expires > now) {
-      return { enabled: true, cached: true, properties: cached.data };
+    const cached = this.cache.get(accountId, now);
+    if (cached) {
+      return { enabled: true, cached: true, properties: cached };
     }
     const res = await this.fetchImpl(HUBSPOT_PROPERTIES_URL, {
       headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
@@ -242,7 +260,7 @@ export class HubspotPropertiesService {
         return dto;
       })
       .sort((a, b) => a.label.localeCompare(b.label));
-    this.cache.set(accountId, { tokenFingerprint: fingerprint, data: properties, expires: now + CACHE_TTL_MS });
+    this.cache.set(accountId, properties, now);
     return { enabled: true, cached: false, properties };
   }
 }
@@ -294,14 +312,18 @@ function toBookingFields(questions: CalendlyCustomQuestionApi[] | undefined): Ca
 @Injectable()
 export class CalendlyEventTypesService {
   // Per-ACCOUNT cache: event types are portal-specific to the connected token.
-  // The cache retains only a one-way token fingerprint for rotation detection.
-  private readonly cache = new Map<string, TokenAwareCacheEntry<CalendlyEventTypeDto[]>>();
+  private readonly cache = new AccountMetadataCache<CalendlyEventTypeDto[]>();
 
   constructor(
     @Inject(ENV) private readonly env: ServerEnv,
     @Inject(DB) private readonly db: Db,
     private readonly fetchImpl: typeof fetch = fetch,
   ) {}
+
+  /** Remove metadata after this account's Calendly credential source changes. */
+  invalidate(accountId: string): void {
+    this.cache.invalidate(accountId);
+  }
 
   /** The live Calendly token for an account: connected (decrypted) else env fallback. */
   private async resolveToken(accountId: string): Promise<string | null> {
@@ -324,10 +346,9 @@ export class CalendlyEventTypesService {
         reason: 'No Calendly token — connect Calendly for this account or set the server token.',
       };
     }
-    const fingerprint = tokenFingerprint(token);
-    const cached = this.cache.get(accountId);
-    if (cached && cached.tokenFingerprint === fingerprint && cached.expires > now) {
-      return { enabled: true, cached: true, eventTypes: cached.data };
+    const cached = this.cache.get(accountId, now);
+    if (cached) {
+      return { enabled: true, cached: true, eventTypes: cached };
     }
     const headers = { authorization: `Bearer ${token}`, 'content-type': 'application/json' };
     // Calendly scopes event types by user, so resolve the token's own user first.
@@ -352,7 +373,7 @@ export class CalendlyEventTypesService {
         customQuestions: toBookingFields(e.custom_questions),
       }))
       .sort((a, b) => a.name.localeCompare(b.name));
-    this.cache.set(accountId, { tokenFingerprint: fingerprint, data: eventTypes, expires: now + CACHE_TTL_MS });
+    this.cache.set(accountId, eventTypes, now);
     return { enabled: true, cached: false, eventTypes };
   }
 }
@@ -553,7 +574,9 @@ export class IntegrationsController {
       });
     }
 
-    return upsertIntegration(this.db, p.accountId, provider, token, key!, validation.label);
+    const status = await upsertIntegration(this.db, p.accountId, provider, token, key!, validation.label);
+    this.invalidateProviderCache(provider, p.accountId);
+    return status;
   }
 
   /** Disconnect a provider for this account. Idempotent → 204. */
@@ -564,6 +587,7 @@ export class IntegrationsController {
     assertAdmin(p);
     const provider = parseProvider(providerParam);
     await deleteIntegration(this.db, p.accountId, provider);
+    this.invalidateProviderCache(provider, p.accountId);
   }
 
   /** HubSpot contact-property picker (per-account token, 5-min cache). */
@@ -579,6 +603,15 @@ export class IntegrationsController {
   async calendlyEventTypes(@Req() req: ReqLike): Promise<CalendlyEventTypesResponse> {
     const p = await this.auth.resolveHost(req);
     return this.calendly.listEventTypes(p.accountId);
+  }
+
+  /** A connect or disconnect changes this account's provider metadata source. */
+  private invalidateProviderCache(provider: IntegrationProvider, accountId: string): void {
+    if (provider === 'hubspot') {
+      this.hubspot.invalidate(accountId);
+      return;
+    }
+    this.calendly.invalidate(accountId);
   }
 
   /**
