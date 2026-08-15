@@ -11,10 +11,13 @@ import { randomUUID } from 'node:crypto';
 import {
   claimIdentityOf,
   claimDueOutbox,
+  DEFAULT_OUTBOX_CLAIM_LIMIT,
+  DEFAULT_STALE_CLAIM_MS,
   markOutboxDone,
   markOutboxFailed,
   markOutboxRetry,
   markOutboxSkipped,
+  renewOutboxClaim,
   type Db,
   type OutboxRow,
 } from '@quill/db';
@@ -26,6 +29,10 @@ import { BookingSyncEffects } from './booking-sync';
 import { AnalyticsCapture } from './analytics-capture';
 import { DaptaSyncDelivery } from './dapta-sync';
 import { DB, ENV } from './tokens';
+
+// Not every pluggable provider has a transport timeout. Renew halfway through
+// the existing lease so an in-flight effect remains owned until it settles.
+const OUTBOX_CLAIM_RENEWAL_MS = Math.floor(DEFAULT_STALE_CLAIM_MS / 2);
 
 /**
  * The OUTBOX WORKER (B7 / audit DM1). Polls the `outbox` table and drains due
@@ -52,6 +59,10 @@ export class OutboxWorker implements OnModuleInit, OnModuleDestroy {
   private readonly workerId = `${hostname()}:${process.pid}:${randomUUID().slice(0, 8)}`;
   /** Injectable for tests; defaults to global fetch for webhook delivery. */
   fetchImpl: typeof fetch = fetch;
+  /** Injectable clock for deterministic claim-age tests. */
+  private clock: () => number = Date.now;
+  /** Kept mutable so the lease heartbeat can be exercised without long waits. */
+  private claimRenewalMs = OUTBOX_CLAIM_RENEWAL_MS;
 
   constructor(
     @Inject(DB) private readonly db: Db,
@@ -96,29 +107,82 @@ export class OutboxWorker implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * Process every currently-due row once. Returns the number of rows processed
-   * (attempted), regardless of success. Deterministic for tests via `now`.
+   * Claim and process up to the existing batch bound. Each row is claimed
+   * immediately before its effect so a slow earlier row cannot age its lease.
+   * Returns claimed rows inspected, regardless of settlement. Deterministic for
+   * tests via `now`.
    */
-  async drainOnce(now = Date.now()): Promise<number> {
-    const rows = await claimDueOutbox(this.db, now, { workerId: this.workerId });
-    for (const row of rows) {
-      await this.process(row, now);
+  async drainOnce(now?: number): Promise<number> {
+    let processed = 0;
+    let claimNow = now ?? this.clock();
+    const rowNow = () => (now !== undefined && this.clock === Date.now ? claimNow : this.clock());
+    while (processed < DEFAULT_OUTBOX_CLAIM_LIMIT) {
+      const [row] = await claimDueOutbox(this.db, claimNow, {
+        workerId: this.workerId,
+        limit: 1,
+      });
+      if (!row) break;
+      const executed = await this.process(row, rowNow);
+      processed += 1;
+      if (!executed) break;
+      claimNow = rowNow();
     }
-    return rows.length;
+    return processed;
   }
 
-  private async process(row: OutboxRow, now: number): Promise<void> {
-    const claim = claimIdentityOf(row);
+  private async process(row: OutboxRow, now: () => number): Promise<boolean> {
+    let claim = claimIdentityOf(row);
+    if (now() - claim.claimedAt >= DEFAULT_STALE_CLAIM_MS) {
+      this.logLostLease(row);
+      return false;
+    }
+
+    let lostLease = false;
+    let renewal = Promise.resolve();
+    const renew = async () => {
+      if (lostLease) return;
+      try {
+        const renewed = await renewOutboxClaim(this.db, row.id, claim, now());
+        if (renewed) claim = renewed;
+        else lostLease = true;
+      } catch (err) {
+        lostLease = true;
+        this.log.warn(`outbox ${row.kind}:${row.action} (${row.id}) lease renewal failed: ${String(err)}`);
+      }
+    };
+    const renewalTimer = setInterval(() => {
+      renewal = renewal.then(renew);
+    }, this.claimRenewalMs);
+    renewalTimer.unref?.();
+    const stopRenewing = async () => {
+      clearInterval(renewalTimer);
+      await renewal;
+    };
+
     try {
       const transcript = await this.execute(row);
-      await markOutboxDone(this.db, row.id, now, transcript, claim);
+      await stopRenewing();
+      if (lostLease || !(await markOutboxDone(this.db, row.id, now(), transcript, claim))) {
+        this.logLostLease(row);
+      }
+      return true;
     } catch (err) {
+      await stopRenewing();
+      if (lostLease) {
+        this.logLostLease(row);
+        return true;
+      }
       if (err instanceof OutboxSkipError) {
         // A decision, not a failure: record the reason ONCE and stop — waiting
         // and retrying cannot change the outcome.
-        await markOutboxSkipped(this.db, row.id, { reason: err.message, now }, claim);
+        if (
+          !(await markOutboxSkipped(this.db, row.id, { reason: err.message, now: now() }, claim))
+        ) {
+          this.logLostLease(row);
+          return true;
+        }
         this.log.warn(`outbox ${row.kind}:${row.action} (${row.id}) skipped: ${err.message}`);
-        return;
+        return true;
       }
       const attempts = row.attempts + 1;
       const message = err instanceof Error ? err.message : String(err);
@@ -126,17 +190,46 @@ export class OutboxWorker implements OnModuleInit, OnModuleDestroy {
       // arrives on the thrown error rather than a returned value.
       const transcript = transcriptOfError(err);
       if (attempts >= row.maxAttempts) {
-        await markOutboxFailed(this.db, row.id, { attempts, error: message, now, transcript }, claim);
+        if (
+          !(await markOutboxFailed(
+            this.db,
+            row.id,
+            { attempts, error: message, now: now(), transcript },
+            claim,
+          ))
+        ) {
+          this.logLostLease(row);
+          return true;
+        }
         this.log.error(
           `outbox ${row.kind}:${row.action} (${row.id}) gave up after ${attempts} attempts: ${message}`,
         );
       } else {
-        await markOutboxRetry(this.db, row.id, { attempts, error: message, now, transcript }, claim);
+        if (
+          !(await markOutboxRetry(
+            this.db,
+            row.id,
+            { attempts, error: message, now: now(), transcript },
+            claim,
+          ))
+        ) {
+          this.logLostLease(row);
+          return true;
+        }
         this.log.warn(
           `outbox ${row.kind}:${row.action} (${row.id}) failed (attempt ${attempts}/${row.maxAttempts}), will retry: ${message}`,
         );
       }
+      return true;
     }
+  }
+
+  /**
+   * If renewal or settlement loses ownership, the side effect may have happened
+   * but this worker must not claim a durable result.
+   */
+  private logLostLease(row: OutboxRow): void {
+    this.log.warn(`outbox ${row.kind}:${row.action} (${row.id}) lease lost before settlement`);
   }
 
   /**

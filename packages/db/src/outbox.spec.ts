@@ -86,7 +86,9 @@ describe('claimDueOutbox', () => {
     const claimed = await claimDueOutbox(db, now, { workerId: 'A' });
     expect(claimed).toHaveLength(1);
 
-    await markOutboxRetry(db, id, { attempts: 1, error: 'boom', now }, claimIdentityOf(claimed[0]!));
+    expect(
+      await markOutboxRetry(db, id, { attempts: 1, error: 'boom', now }, claimIdentityOf(claimed[0]!)),
+    ).toBe(true);
     // Backoff pushed next_attempt_at forward; claim was cleared. It becomes
     // claimable again once the backoff elapses.
     const afterBackoff = now + 10_000;
@@ -100,7 +102,7 @@ describe('claimDueOutbox', () => {
     const now = 5_000_000;
     const id = await enqueueOutbox(db, { kind: 'email', action: 'a', now });
     const [claimed] = await claimDueOutbox(db, now, { workerId: 'A' });
-    await markOutboxDone(db, id, now, undefined, claimIdentityOf(claimed!));
+    expect(await markOutboxDone(db, id, now, undefined, claimIdentityOf(claimed!))).toBe(true);
     expect(await claimDueOutbox(db, now + 1_000_000, { workerId: 'B', staleClaimMs: 0 })).toHaveLength(0);
   });
 });
@@ -140,20 +142,34 @@ describe('outbox settlement claim fencing', () => {
   it('does not let a stale worker mark a reclaimed row done', async () => {
     const { id, staleClaim, currentClaim } = await claimThenReclaim();
 
-    await markOutboxDone(db, id, reclaimedAt + 1, undefined, staleClaim);
+    expect(await markOutboxDone(db, id, reclaimedAt + 1, undefined, staleClaim)).toBe(false);
     await expectBStillOwns(id, currentClaim);
 
-    await markOutboxDone(db, id, reclaimedAt + 2, undefined, currentClaim);
+    expect(await markOutboxDone(db, id, reclaimedAt + 2, undefined, currentClaim)).toBe(true);
     expect((await listOutbox(db)).find((row) => row.id === id)).toMatchObject({ status: 'done' });
   });
 
   it('does not let a stale worker schedule retry on a reclaimed row', async () => {
     const { id, staleClaim, currentClaim } = await claimThenReclaim();
 
-    await markOutboxRetry(db, id, { attempts: 1, error: 'stale', now: reclaimedAt + 1 }, staleClaim);
+    expect(
+      await markOutboxRetry(
+        db,
+        id,
+        { attempts: 1, error: 'stale', now: reclaimedAt + 1 },
+        staleClaim,
+      ),
+    ).toBe(false);
     await expectBStillOwns(id, currentClaim);
 
-    await markOutboxRetry(db, id, { attempts: 1, error: 'current', now: reclaimedAt + 2 }, currentClaim);
+    expect(
+      await markOutboxRetry(
+        db,
+        id,
+        { attempts: 1, error: 'current', now: reclaimedAt + 2 },
+        currentClaim,
+      ),
+    ).toBe(true);
     expect((await listOutbox(db)).find((row) => row.id === id)).toMatchObject({
       status: 'pending',
       attempts: 1,
@@ -167,10 +183,14 @@ describe('outbox settlement claim fencing', () => {
   it('does not let a stale worker skip a reclaimed row', async () => {
     const { id, staleClaim, currentClaim } = await claimThenReclaim();
 
-    await markOutboxSkipped(db, id, { reason: 'stale', now: reclaimedAt + 1 }, staleClaim);
+    expect(
+      await markOutboxSkipped(db, id, { reason: 'stale', now: reclaimedAt + 1 }, staleClaim),
+    ).toBe(false);
     await expectBStillOwns(id, currentClaim);
 
-    await markOutboxSkipped(db, id, { reason: 'current', now: reclaimedAt + 2 }, currentClaim);
+    expect(
+      await markOutboxSkipped(db, id, { reason: 'current', now: reclaimedAt + 2 }, currentClaim),
+    ).toBe(true);
     expect((await listOutbox(db)).find((row) => row.id === id)).toMatchObject({
       status: 'skipped',
       lastError: 'current',
@@ -180,25 +200,66 @@ describe('outbox settlement claim fencing', () => {
   it('does not let a stale worker mark a reclaimed row failed', async () => {
     const { id, staleClaim, currentClaim } = await claimThenReclaim();
 
-    await markOutboxFailed(
-      db,
-      id,
-      { attempts: 1, error: 'stale', now: reclaimedAt + 1 },
-      staleClaim,
-    );
+    expect(
+      await markOutboxFailed(
+        db,
+        id,
+        { attempts: 1, error: 'stale', now: reclaimedAt + 1 },
+        staleClaim,
+      ),
+    ).toBe(false);
     await expectBStillOwns(id, currentClaim);
 
-    await markOutboxFailed(
-      db,
-      id,
-      { attempts: 1, error: 'current', now: reclaimedAt + 2 },
-      currentClaim,
-    );
+    expect(
+      await markOutboxFailed(
+        db,
+        id,
+        { attempts: 1, error: 'current', now: reclaimedAt + 2 },
+        currentClaim,
+      ),
+    ).toBe(true);
     expect((await listOutbox(db)).find((row) => row.id === id)).toMatchObject({
       status: 'failed',
       attempts: 1,
       lastError: 'current',
     });
+  });
+
+  it('requires claimed_by as well as claimed_at to settle', async () => {
+    const now = 7_000_000;
+    const id = await enqueueOutbox(db, { kind: 'email', action: 'a', now });
+    const [claimed] = await claimDueOutbox(db, now, { workerId: 'A' });
+    const claim = claimIdentityOf(claimed!);
+    await db.run(sql`UPDATE outbox SET claimed_by = 'B' WHERE id = ${id}`);
+
+    expect(await markOutboxDone(db, id, now + 1, undefined, claim)).toBe(false);
+    expect((await listOutbox(db)).find((row) => row.id === id)).toMatchObject({
+      status: 'pending',
+      claimedAt: claim.claimedAt,
+      claimedBy: 'B',
+    });
+  });
+
+  it('fences stale settlement across two Postgres sessions', async () => {
+    if (db.dialect !== 'postgres') return;
+
+    const other = await createDb(process.env.DATABASE_URL!);
+    try {
+      const now = 8_000_000;
+      const id = await enqueueOutbox(db, { kind: 'email', action: 'a', now });
+      const [claimed] = await claimDueOutbox(db, now, { workerId: 'A' });
+      const [reclaimed] = await claimDueOutbox(other, now + 60_001, {
+        workerId: 'B',
+        staleClaimMs: 60_000,
+      });
+      const staleClaim = claimIdentityOf(claimed!);
+      const currentClaim = claimIdentityOf(reclaimed!);
+
+      expect(await markOutboxDone(db, id, now + 60_002, undefined, staleClaim)).toBe(false);
+      expect(await markOutboxDone(other, id, now + 60_003, undefined, currentClaim)).toBe(true);
+    } finally {
+      await other.close();
+    }
   });
 });
 

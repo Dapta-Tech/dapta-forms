@@ -202,6 +202,8 @@ function mapRow(r: Record<string, unknown>): OutboxRow {
 
 /** Default lease before a claim is considered stale and reclaimable (5 min). */
 export const DEFAULT_STALE_CLAIM_MS = 5 * 60_000;
+/** The most rows one drain may execute before yielding to its next poll. */
+export const DEFAULT_OUTBOX_CLAIM_LIMIT = 50;
 
 export interface ClaimOptions {
   /** Max rows to claim in one call. */
@@ -226,7 +228,7 @@ export async function claimDueOutbox(
   now: number,
   opts: ClaimOptions = {},
 ): Promise<OutboxRow[]> {
-  const limit = opts.limit ?? 50;
+  const limit = opts.limit ?? DEFAULT_OUTBOX_CLAIM_LIMIT;
   const workerId = opts.workerId ?? 'worker';
   const staleBefore = now - (opts.staleClaimMs ?? DEFAULT_STALE_CLAIM_MS);
   const claimable = sql`status = 'pending' AND next_attempt_at <= ${now}
@@ -304,36 +306,68 @@ function claimedPendingWhere(id: string, claim: OutboxClaim) {
       AND claimed_at = ${claim.claimedAt} AND claimed_by = ${claim.claimedBy}`;
 }
 
-/** Mark the current worker's claimed row delivered, keeping what crossed the wire. */
+async function settlementApplied(db: Db, query: Parameters<Db['get']>[0]): Promise<boolean> {
+  return (await db.get<{ id: string }>(query)) !== undefined;
+}
+
+/**
+ * Refresh an active lease without changing its worker identity.
+ *
+ * Some pluggable providers do not expose a transport timeout, so the worker
+ * renews while it executes rather than letting another replica replay a live
+ * effect. A failed refresh means ownership is lost and must not be settled.
+ */
+export async function renewOutboxClaim(
+  db: Db,
+  id: string,
+  claim: OutboxClaim,
+  now = Date.now(),
+): Promise<OutboxClaim | null> {
+  const renewed = await db.get<{ claimed_at: number; claimed_by: string }>(
+    sql`UPDATE outbox SET claimed_at = ${now}
+        WHERE ${claimedPendingWhere(id, claim)}
+        RETURNING claimed_at, claimed_by`,
+  );
+  return renewed == null
+    ? null
+    : { claimedAt: Number(renewed.claimed_at), claimedBy: String(renewed.claimed_by) };
+}
+
+/**
+ * Mark the current worker's claimed row delivered, keeping what crossed the
+ * wire. Returns false if it lost the lease.
+ */
 export async function markOutboxDone(
   db: Db,
   id: string,
   now: number,
   transcript: DeliveryTranscript | undefined,
   claim: OutboxClaim,
-): Promise<void> {
+): Promise<boolean> {
   const sets = [
     sql`status = 'done'`,
     sql`updated_at = ${now}`,
     sql`last_error = NULL`,
     ...transcriptSets(transcript),
   ];
-  await db.run(
-    sql`UPDATE outbox SET ${sql.join(sets, sql`, `)} WHERE ${claimedPendingWhere(id, claim)}`,
+  return settlementApplied(
+    db,
+    sql`UPDATE outbox SET ${sql.join(sets, sql`, `)} WHERE ${claimedPendingWhere(id, claim)}
+        RETURNING id`,
   );
 }
 
 /**
  * Record a failed attempt and schedule the next retry with backoff. `attempts`
  * is the new (incremented) count; the row stays `pending` so the worker picks it
- * up again once `next_attempt_at` passes.
+ * up again once `next_attempt_at` passes. Returns false if it lost the lease.
  */
 export async function markOutboxRetry(
   db: Db,
   id: string,
   args: { attempts: number; error: string; now?: number; transcript?: DeliveryTranscript },
   claim: OutboxClaim,
-): Promise<void> {
+): Promise<boolean> {
   const now = args.now ?? Date.now();
   const nextAt = now + backoffMs(args.attempts);
   // Clear the claim so the row is reclaimable once its backoff elapses.
@@ -346,36 +380,44 @@ export async function markOutboxRetry(
     sql`claimed_by = NULL`,
     ...transcriptSets(args.transcript),
   ];
-  await db.run(
-    sql`UPDATE outbox SET ${sql.join(sets, sql`, `)} WHERE ${claimedPendingWhere(id, claim)}`,
+  return settlementApplied(
+    db,
+    sql`UPDATE outbox SET ${sql.join(sets, sql`, `)} WHERE ${claimedPendingWhere(id, claim)}
+        RETURNING id`,
   );
 }
 
 /**
  * Deliberately not performed — terminal on the FIRST decision (no retry
- * schedule burned), with the reason kept as the log record.
+ * schedule burned), with the reason kept as the log record. Returns false if it
+ * lost the lease.
  */
 export async function markOutboxSkipped(
   db: Db,
   id: string,
   args: { reason: string; now?: number },
   claim: OutboxClaim,
-): Promise<void> {
+): Promise<boolean> {
   const now = args.now ?? Date.now();
-  await db.run(
+  return settlementApplied(
+    db,
     sql`UPDATE outbox
         SET status = 'skipped', last_error = ${args.reason.slice(0, 1000)}, updated_at = ${now}
-        WHERE ${claimedPendingWhere(id, claim)}`,
+        WHERE ${claimedPendingWhere(id, claim)}
+        RETURNING id`,
   );
 }
 
-/** Give up: the row exhausted its retries. Terminal state; kept as the log. */
+/**
+ * Give up: the row exhausted its retries. Terminal state; kept as the log.
+ * Returns false if it lost the lease.
+ */
 export async function markOutboxFailed(
   db: Db,
   id: string,
   args: { attempts: number; error: string; now?: number; transcript?: DeliveryTranscript },
   claim: OutboxClaim,
-): Promise<void> {
+): Promise<boolean> {
   const now = args.now ?? Date.now();
   const sets = [
     sql`status = 'failed'`,
@@ -384,8 +426,10 @@ export async function markOutboxFailed(
     sql`updated_at = ${now}`,
     ...transcriptSets(args.transcript),
   ];
-  await db.run(
-    sql`UPDATE outbox SET ${sql.join(sets, sql`, `)} WHERE ${claimedPendingWhere(id, claim)}`,
+  return settlementApplied(
+    db,
+    sql`UPDATE outbox SET ${sql.join(sets, sql`, `)} WHERE ${claimedPendingWhere(id, claim)}
+        RETURNING id`,
   );
 }
 

@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   claimDueOutbox,
   createDb,
@@ -17,6 +17,24 @@ import { EmailEffects, OutboxSkipError } from './email-effects';
 import { OutboxWorker } from './outbox.worker';
 
 let db: Db;
+
+const TEST_LEASE_MS = 5 * 60_000;
+
+type WorkerTestSeams = {
+  clock: () => number;
+  claimRenewalMs: number;
+  log: { log: ReturnType<typeof vi.fn>; warn: ReturnType<typeof vi.fn>; error: ReturnType<typeof vi.fn> };
+};
+
+function setClock(worker: OutboxWorker, clock: () => number) {
+  (worker as unknown as WorkerTestSeams).clock = clock;
+}
+
+function replaceLog(worker: OutboxWorker) {
+  const log = { log: vi.fn(), warn: vi.fn(), error: vi.fn() };
+  (worker as unknown as WorkerTestSeams).log = log;
+  return log;
+}
 
 beforeEach(async () => {
   db = await createDb(process.env.DATABASE_URL ?? 'file::memory:');
@@ -67,6 +85,7 @@ describe('OutboxWorker claim fencing', () => {
       email,
       {} as DestinationEffects,
     );
+    const log = replaceLog(worker);
 
     const draining = worker.drainOnce(claimedAt);
     await deliveryStartedPromise;
@@ -80,6 +99,7 @@ describe('OutboxWorker claim fencing', () => {
 
     return {
       id,
+      log,
       currentClaim: {
         claimedAt: reclaimed!.claimedAt!,
         claimedBy: reclaimed!.claimedBy!,
@@ -105,17 +125,19 @@ describe('OutboxWorker claim fencing', () => {
   it.each(['done', 'retry', 'skipped', 'failed'] as const)(
     'does not let a stale worker settle a reclaimed row as %s',
     async (settlement) => {
-      const { id, currentClaim } = await runStaleWorker(settlement);
+      const { id, currentClaim, log } = await runStaleWorker(settlement);
       await expectBStillOwns(id, currentClaim);
 
       const now = reclaimedAt + 2;
       if (settlement === 'done') {
-        await markOutboxDone(db, id, now, undefined, currentClaim);
+        expect(await markOutboxDone(db, id, now, undefined, currentClaim)).toBe(true);
         expect((await listOutbox(db)).find((row) => row.id === id)).toMatchObject({
           status: 'done',
         });
       } else if (settlement === 'retry') {
-        await markOutboxRetry(db, id, { attempts: 1, error: 'current', now }, currentClaim);
+        expect(
+          await markOutboxRetry(db, id, { attempts: 1, error: 'current', now }, currentClaim),
+        ).toBe(true);
         expect((await listOutbox(db)).find((row) => row.id === id)).toMatchObject({
           status: 'pending',
           attempts: 1,
@@ -124,19 +146,175 @@ describe('OutboxWorker claim fencing', () => {
           claimedBy: null,
         });
       } else if (settlement === 'skipped') {
-        await markOutboxSkipped(db, id, { reason: 'current', now }, currentClaim);
+        expect(await markOutboxSkipped(db, id, { reason: 'current', now }, currentClaim)).toBe(true);
         expect((await listOutbox(db)).find((row) => row.id === id)).toMatchObject({
           status: 'skipped',
           lastError: 'current',
         });
       } else {
-        await markOutboxFailed(db, id, { attempts: 1, error: 'current', now }, currentClaim);
+        expect(
+          await markOutboxFailed(db, id, { attempts: 1, error: 'current', now }, currentClaim),
+        ).toBe(true);
         expect((await listOutbox(db)).find((row) => row.id === id)).toMatchObject({
           status: 'failed',
           attempts: 1,
           lastError: 'current',
         });
       }
+
+      const messages = [...log.log.mock.calls, ...log.warn.mock.calls, ...log.error.mock.calls].map(
+        ([message]) => String(message),
+      );
+      expect(messages.some((message) => message.includes('lease lost'))).toBe(true);
+      expect(messages.some((message) => message.includes('will retry'))).toBe(false);
+      expect(messages.some((message) => message.includes('skipped:'))).toBe(false);
+      expect(messages.some((message) => message.includes('gave up after'))).toBe(false);
     },
   );
+
+  it('claims each row immediately before execution so a slow drain cannot replay a reclaimed row', async () => {
+    const startedAt = 9_000_000;
+    const reclaimedAt = startedAt + TEST_LEASE_MS + 1;
+    let now = startedAt;
+    const aDeliveries: number[] = [];
+    const bDeliveries: number[] = [];
+
+    for (let sequence = 1; sequence <= 6; sequence++) {
+      await enqueueOutbox(db, {
+        kind: 'email',
+        action: 'slow',
+        payload: JSON.stringify({ sequence }),
+        now: startedAt,
+      });
+    }
+
+    const emailA = {
+      deliver: async (_action: string, payload: string) => {
+        aDeliveries.push((JSON.parse(payload) as { sequence: number }).sequence);
+      },
+    } as unknown as EmailEffects;
+    const emailB = {
+      deliver: async (_action: string, payload: string) => {
+        bDeliveries.push((JSON.parse(payload) as { sequence: number }).sequence);
+      },
+    } as unknown as EmailEffects;
+    const env = { OUTBOX_WORKER_ENABLED: false, OUTBOX_POLL_MS: 5_000, NODE_ENV: 'test' } as never;
+    const workerB = new OutboxWorker(db, env, emailB, {} as DestinationEffects);
+    setClock(workerB, () => now);
+
+    let settlements = 0;
+    const aDb: Db = {
+      ...db,
+      async get<T>(query: Parameters<Db['get']>[0]) {
+        const row = await db.get<T>(query);
+        await afterSettlement();
+        return row;
+      },
+      async run(query: Parameters<Db['run']>[0]) {
+        await db.run(query);
+        await afterSettlement();
+      },
+    };
+    const workerA = new OutboxWorker(aDb, env, emailA, {} as DestinationEffects);
+    setClock(workerA, () => now);
+
+    async function afterSettlement() {
+      settlements += 1;
+      if (settlements !== 4) return;
+      now = reclaimedAt;
+      await workerB.drainOnce(now);
+    }
+
+    expect(await workerA.drainOnce(startedAt)).toBe(4);
+    expect(aDeliveries).toEqual([1, 2, 3, 4]);
+    expect(bDeliveries).toEqual([5, 6]);
+  });
+
+  it('does not start an effect once its claim has expired', async () => {
+    const claimedAt = 10_000_000;
+    let deliveries = 0;
+    await enqueueOutbox(db, { kind: 'email', action: 'a', payload: '{}', now: claimedAt });
+    const worker = new OutboxWorker(
+      db,
+      { OUTBOX_WORKER_ENABLED: false, OUTBOX_POLL_MS: 5_000, NODE_ENV: 'test' } as never,
+      {
+        deliver: async () => {
+          deliveries += 1;
+        },
+      } as unknown as EmailEffects,
+      {} as DestinationEffects,
+    );
+    setClock(worker, () => claimedAt + TEST_LEASE_MS);
+
+    await worker.drainOnce(claimedAt);
+    expect(deliveries).toBe(0);
+  });
+
+  it('renews a blocked provider lease before another worker can reclaim it', async () => {
+    const claimedAt = 11_000_000;
+    let now = claimedAt;
+    let releaseDelivery: (() => void) | undefined;
+    let deliveryStarted: (() => void) | undefined;
+    const deliveryBlocked = new Promise<void>((resolve) => {
+      releaseDelivery = resolve;
+    });
+    const deliveryStartedPromise = new Promise<void>((resolve) => {
+      deliveryStarted = resolve;
+    });
+    const id = await enqueueOutbox(db, { kind: 'email', action: 'a', payload: '{}', now: claimedAt });
+    const worker = new OutboxWorker(
+      db,
+      { OUTBOX_WORKER_ENABLED: false, OUTBOX_POLL_MS: 5_000, NODE_ENV: 'test' } as never,
+      {
+        deliver: async () => {
+          deliveryStarted!();
+          await deliveryBlocked;
+        },
+      } as unknown as EmailEffects,
+      {} as DestinationEffects,
+    );
+    setClock(worker, () => now);
+    (worker as unknown as WorkerTestSeams).claimRenewalMs = 1;
+
+    const draining = worker.drainOnce(claimedAt);
+    try {
+      await deliveryStartedPromise;
+      now = claimedAt + TEST_LEASE_MS / 2;
+      let renewed = false;
+      for (let attempt = 0; attempt < 50; attempt++) {
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        renewed = (await listOutbox(db)).find((row) => row.id === id)?.claimedAt === now;
+        if (renewed) break;
+      }
+      expect(renewed).toBe(true);
+
+      now = claimedAt + TEST_LEASE_MS + 1;
+      expect(await claimDueOutbox(db, now, { workerId: 'B', staleClaimMs: TEST_LEASE_MS })).toEqual([]);
+    } finally {
+      releaseDelivery?.();
+      await draining;
+    }
+    expect((await listOutbox(db)).find((row) => row.id === id)).toMatchObject({ status: 'done' });
+  });
+
+  it('keeps the existing 50-row drain bound', async () => {
+    const now = 12_000_000;
+    let deliveries = 0;
+    for (let sequence = 0; sequence < 51; sequence++) {
+      await enqueueOutbox(db, { kind: 'email', action: 'a', payload: '{}', now });
+    }
+    const worker = new OutboxWorker(
+      db,
+      { OUTBOX_WORKER_ENABLED: false, OUTBOX_POLL_MS: 5_000, NODE_ENV: 'test' } as never,
+      {
+        deliver: async () => {
+          deliveries += 1;
+        },
+      } as unknown as EmailEffects,
+      {} as DestinationEffects,
+    );
+
+    expect(await worker.drainOnce(now)).toBe(50);
+    expect(deliveries).toBe(50);
+  });
 });
