@@ -137,17 +137,34 @@ limit the schema, but you should not run production on it.
 - Booting the API against an **unmigrated** database makes the outbox worker fail on
   every poll with `no such table: outbox` — always migrate first.
 
-### Migration diagnostics
+### Database CLI diagnostics
 
-Per-script application failures identify the migration file and dialect. Connection
-and `createDb` failures, `_migrations` bootstrap, migration-directory reads,
-`isApplied` pre-checks, and legacy short-link fixups can emit raw driver or system
-diagnostics without migration-file context. The migration CLI preserves and may
-print the raw database-driver cause for operator diagnosis.
+`migrate`, `seed`, and `reset` can emit raw driver or system diagnostics. The
+`db:setup` wrapper runs `migrate` and then `seed`, so it preserves diagnostics
+from the phase that runs.
+
+- **Migration and setup.** `createDb` and setup failures, `_migrations` table
+  bootstrap, migration-directory and script reads (including resolved absolute
+  paths), `isApplied` prechecks, and short-link fixups can emit raw diagnostics.
+  A per-script failure identifies the migration file and dialect, then includes
+  the raw underlying cause.
+- **Seed.** `seed` writes can emit raw diagnostics. The seed phase of `reset`
+  has the same behavior.
+- **Reset.** `reset` reports its refusal to operate on Postgres and the resolved
+  SQLite path that it removes. A failed `rm` of the database file or sidecar is
+  silent and does not add a raw diagnostic.
+- **Teardown.** A close-only failure reports the close error. If work and close
+  both fail, the CLI writes `close failed (secondary; the original failure follows)`
+  and the close cause first, then the original failure and cause. The original
+  failure is authoritative. For Postgres, forced close has a five-second budget.
+  This limits the close attempt only: a half-open peer can remain, and it does
+  not promise a bounded process lifetime.
+
 Logs can contain database object names, SQL fragments, driver codes, stack or
-query metadata, and other operational details.
-Treat these logs as sensitive operational data. Restrict access and retention.
-Never expose them to end users. No redaction or bounded-output guarantee is made.
+query metadata, and other operational details. Treat stdout and stderr from
+`migrate`, `seed`, and `reset` as trusted-operator-only sensitive output. Apply
+access and retention controls. Do not expose or copy it to end users or
+untrusted channels. No redaction or bounded-output guarantee is made.
 
 ## Full environment reference
 

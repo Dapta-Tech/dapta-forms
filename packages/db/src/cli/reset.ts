@@ -7,6 +7,7 @@ import { createDb, sqlitePathFromUrl } from '../client';
 import { migrate } from '../migrate';
 import { seed } from '../seed';
 import { isPostgresUrl } from '@quill/config/env';
+import { withDb } from './with-db';
 
 async function main() {
   const url = process.env.DATABASE_URL ?? 'file:./.data/dev.db';
@@ -27,13 +28,11 @@ async function main() {
     console.log(`[reset] removed ${path}`);
   }
   const db = await createDb(url);
-  try {
+  await withDb('reset', db, async () => {
     await migrate(db);
     const result = await seed(db);
     console.log(`[reset] fresh database ready. Form: ${result.formPath}`);
-  } finally {
-    await db.close();
-  }
+  });
 }
 
 main().catch((err) => {
