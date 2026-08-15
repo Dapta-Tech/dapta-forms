@@ -4,6 +4,7 @@
  * applied names in a `_migrations` table. Identical semantics on SQLite and
  * Postgres — no drizzle-kit / engine binary needed for clone-and-run.
  */
+import { randomBytes } from 'node:crypto';
 import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -20,6 +21,30 @@ class MarkerInsertFailure extends Error {
   constructor(readonly original: unknown) {
     super('Migration marker insert failed');
   }
+}
+
+class MigrationEscapeError extends Error {
+  readonly file: string;
+  readonly dialect: Db['dialect'];
+  override readonly cause: unknown;
+
+  constructor(
+    file: string,
+    dialect: Db['dialect'],
+    cause: unknown,
+  ) {
+    super(
+      `Migration ${file} escaped the ${dialect} transaction boundary; marker withheld and no recovery attempted because effects may already be durable.`,
+    );
+    this.name = 'MigrationEscapeError';
+    this.file = file;
+    this.dialect = dialect;
+    this.cause = cause;
+  }
+}
+
+function canarySavepointName(): string {
+  return `migration_canary_${randomBytes(16).toString('hex')}`;
 }
 
 function migrationMarkerSql(file: string): string {
@@ -86,7 +111,14 @@ async function applyMigrationAtomically(db: Db, file: string, script: string): P
       );
       if (already) return false;
 
+      const canary = canarySavepointName();
+      sqlite.exec(`SAVEPOINT ${canary}`);
       sqlite.exec(script);
+      try {
+        sqlite.exec(`RELEASE SAVEPOINT ${canary}`);
+      } catch (error) {
+        throw new MigrationEscapeError(file, db.dialect, error);
+      }
       try {
         sqlite.exec(migrationMarkerSql(file));
       } catch (error) {
@@ -104,7 +136,14 @@ async function applyMigrationAtomically(db: Db, file: string, script: string): P
     );
     if (already.length > 0) return false;
 
+    const canary = canarySavepointName();
+    await tx.execute(sql.raw(`SAVEPOINT ${canary}`));
     await tx.execute(sql.raw(script));
+    try {
+      await tx.execute(sql.raw(`RELEASE SAVEPOINT ${canary}`));
+    } catch (error) {
+      throw new MigrationEscapeError(file, db.dialect, error);
+    }
     try {
       await tx.execute(
         sql`INSERT INTO _migrations (name, applied_at) VALUES (${file}, ${Date.now()})`,
@@ -121,6 +160,7 @@ async function applyMigrationOrObservePeer(db: Db, file: string, script: string)
     try {
       return await applyMigrationAtomically(db, file, script);
     } catch (caught) {
+      if (caught instanceof MigrationEscapeError) throw caught;
       const original = caught instanceof MarkerInsertFailure ? caught.original : caught;
       if (
         db.dialect === 'sqlite' &&

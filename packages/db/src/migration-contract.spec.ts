@@ -508,12 +508,8 @@ async function assertPartialApplyDanger(): Promise<void> {
     );
     const before = await snapshot(db);
 
-    const removeMarkerFailure = await installMarkerFailure(db, file, suffix);
-    try {
-      await expect(migrate(db, root)).rejects.toThrow('migration contract marker failure');
-    } finally {
-      await removeMarkerFailure();
-    }
+    const error = await captureMigrationError(db, root);
+    expectMigrationEscape(error, file, ACTIVE_DIALECT);
     const after = await snapshot(db);
 
     expect(after.migrations).not.toContain(file);
@@ -600,7 +596,9 @@ async function assertScriptErrorDoesNotRecoverFromLaterMarker(): Promise<void> {
       },
     };
 
-    await expect(migrate(delayedMarkerDb, root)).rejects.toThrow();
+    const error = await captureMigrationError(delayedMarkerDb, root);
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).name).not.toBe('MigrationEscapeError');
     expect(probes).toBe(1);
     assertCorpusAcceptance(before, await snapshot(db));
   } finally {
@@ -705,6 +703,213 @@ async function assertPostgresMarkerContention(): Promise<void> {
   }
 }
 
+function createScriptRoot(dialect: Dialect, file: string, script: string): string {
+  const root = join(TEST_ARTIFACT_ROOT, randomUUID());
+  const directory = join(root, dialect);
+  mkdirSync(directory, { recursive: true });
+  writeFileSync(join(directory, file), script);
+  return root;
+}
+
+async function createCanaryDb(): Promise<Db> {
+  const db = await createContractDb();
+  expect(await trackingTableExists(db)).toBe(false);
+  await createTrackingTable(db);
+  await expect(migrate(db, createRoot(ACTIVE_DIALECT, [ACTIVE_FILES[0]!]))).resolves.toEqual([
+    ACTIVE_FILES[0],
+  ]);
+  return db;
+}
+
+async function captureMigrationError(db: Db, root: string): Promise<unknown> {
+  return migrate(db, root).then(
+    () => undefined,
+    (error: unknown) => error,
+  );
+}
+
+function expectMigrationEscape(error: unknown, file: string, dialect: Dialect): void {
+  expect(error).toMatchObject({
+    name: 'MigrationEscapeError',
+    file,
+    dialect,
+  });
+  const message = error instanceof Error ? error.message : String(error);
+  expect(message).toContain('transaction boundary');
+  expect(message).toContain('marker withheld');
+  expect(message).toContain('no recovery attempted');
+  expect(message).not.toContain('canary-secret');
+}
+
+const OUTER_TERMINATION_FIXTURES = [
+  ['COMMIT', 'COMMIT;'],
+  ['END', 'END;'],
+  ['ROLLBACK', 'ROLLBACK;'],
+  ['COMMIT;BEGIN', 'COMMIT; BEGIN;'],
+  ['ROLLBACK;BEGIN', 'ROLLBACK; BEGIN;'],
+  ...(ACTIVE_DIALECT === 'postgres'
+    ? [
+        ['COMMIT AND CHAIN', 'COMMIT AND CHAIN;'],
+        ['ROLLBACK AND CHAIN', 'ROLLBACK AND CHAIN;'],
+        ['ABORT', 'ABORT;'],
+      ]
+    : []),
+] as const;
+
+async function assertOuterTerminationRejected(label: string, script: string): Promise<void> {
+  const db = await createCanaryDb();
+  const suffix = randomUUID().replaceAll('-', '').slice(0, 14);
+  const file = `9000_canary_${label.replaceAll(/[^A-Za-z0-9]/g, '_')}_${suffix}.sql`;
+  const root = createScriptRoot(ACTIVE_DIALECT, file, `${script}\nSELECT 'canary-secret';`);
+
+  try {
+    const error = await captureMigrationError(db, root);
+    expectMigrationEscape(error, file, ACTIVE_DIALECT);
+    expect(await snapshot(db).then((state) => state.migrations)).not.toContain(file);
+  } finally {
+    await db.close();
+  }
+}
+
+async function assertNoOpAndUntrackedEffectsReject(): Promise<void> {
+  const db = await createCanaryDb();
+  const suffix = randomUUID().replaceAll('-', '').slice(0, 14);
+  const updateFile = `9001_canary_update_${suffix}.sql`;
+  const objectFile = `9002_canary_object_${suffix}.sql`;
+  const objectName = `mc_untracked_${suffix}`;
+
+  try {
+    const beforeUpdate = await snapshot(db);
+    const updateError = await captureMigrationError(
+      db,
+      createScriptRoot(
+        ACTIVE_DIALECT,
+        updateFile,
+        `COMMIT; UPDATE account SET name = 'escaped' WHERE id = 'missing';`,
+      ),
+    );
+    expect(corpusStateMatches(beforeUpdate, await snapshot(db))).toBe(true);
+    expectMigrationEscape(updateError, updateFile, ACTIVE_DIALECT);
+
+    const beforeObject = await snapshot(db);
+    const objectScript =
+      ACTIVE_DIALECT === 'sqlite'
+        ? `COMMIT; CREATE VIEW ${objectName} AS SELECT 1 AS id;`
+        : `COMMIT; CREATE SEQUENCE ${objectName};`;
+    const objectError = await captureMigrationError(
+      db,
+      createScriptRoot(ACTIVE_DIALECT, objectFile, objectScript),
+    );
+    expect(corpusStateMatches(beforeObject, await snapshot(db))).toBe(true);
+    expectMigrationEscape(objectError, objectFile, ACTIVE_DIALECT);
+  } finally {
+    await db.close();
+  }
+}
+
+async function assertLegitimateSavepointsPass(): Promise<void> {
+  const db = await createCanaryDb();
+  const suffix = randomUUID().replaceAll('-', '').slice(0, 14);
+  const file = `9003_legitimate_savepoints_${suffix}.sql`;
+  const triggerName = `mc_canary_trigger_${suffix}`;
+  const functionName = `mc_canary_fn_${suffix}`;
+  const script =
+    ACTIVE_DIALECT === 'sqlite'
+      ? `-- COMMIT in a comment\r
+         PRAGMA defer_foreign_keys = ON;
+         SAVEPOINT inner_one;
+         UPDATE account SET name = name WHERE 1 = 0;
+         ROLLBACK TO SAVEPOINT inner_one;
+         RELEASE SAVEPOINT inner_one;
+         SAVEPOINT dangling_inner;
+         CREATE TRIGGER ${triggerName} AFTER UPDATE ON account BEGIN SELECT 1; END;`
+      : `SAVEPOINT inner_one;
+         UPDATE account SET name = name WHERE false;
+         ROLLBACK TO SAVEPOINT inner_one;
+         RELEASE SAVEPOINT inner_one;
+         SAVEPOINT dangling_inner;
+         CREATE FUNCTION ${functionName}() RETURNS integer LANGUAGE SQL
+         BEGIN ATOMIC
+           SELECT 1;
+         END;`;
+
+  try {
+    await expect(migrate(db, createScriptRoot(ACTIVE_DIALECT, file, script))).resolves.toEqual([file]);
+    expect(await snapshot(db).then((state) => state.migrations)).toContain(file);
+  } finally {
+    await db.close();
+  }
+}
+
+async function assertProcedureCommitRemainsScriptError(): Promise<void> {
+  if (ACTIVE_DIALECT !== 'postgres') return;
+
+  const db = await createCanaryDb();
+  const suffix = randomUUID().replaceAll('-', '').slice(0, 14);
+  const file = `9004_procedure_commit_${suffix}.sql`;
+  const procedureName = `mc_canary_proc_${suffix}`;
+  const script = `CREATE PROCEDURE ${procedureName}() LANGUAGE plpgsql AS $procedure$
+    BEGIN
+      COMMIT;
+    END;
+    $procedure$;
+    CALL ${procedureName}();`;
+
+  try {
+    const error = await captureMigrationError(db, createScriptRoot(ACTIVE_DIALECT, file, script));
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).name).not.toBe('MigrationEscapeError');
+  } finally {
+    await db.close();
+  }
+}
+
+async function assertCanaryFailureDoesNotRetryOrRecover(): Promise<void> {
+  const db = await createCanaryDb();
+  if (db.dialect !== 'sqlite') {
+    await db.close();
+    return;
+  }
+
+  const suffix = randomUUID().replaceAll('-', '').slice(0, 14);
+  const file = `9005_canary_busy_${suffix}.sql`;
+  const native = db.sqlite!;
+  const originalExec = native.exec;
+  let releaseAttempts = 0;
+  let probes = 0;
+  native.exec = (statement: string): void => {
+    if (statement.startsWith('RELEASE SAVEPOINT migration_canary_')) {
+      releaseAttempts++;
+      throw Object.assign(new Error('canary release busy'), { code: 'SQLITE_BUSY' });
+    }
+    originalExec(statement);
+  };
+  const noRecoveryDb: Db = {
+    ...db,
+    get: async <T>(query) => {
+      probes++;
+      if (probes === 2) {
+        await db.run(sql`INSERT INTO _migrations (name, applied_at) VALUES (${file}, ${Date.now()})`);
+      }
+      return db.get<T>(query);
+    },
+  };
+
+  try {
+    const error = await captureMigrationError(
+      noRecoveryDb,
+      createScriptRoot(ACTIVE_DIALECT, file, `SELECT 'canary-secret';`),
+    );
+    expectMigrationEscape(error, file, ACTIVE_DIALECT);
+    expect(releaseAttempts).toBe(1);
+    expect(probes).toBe(1);
+    expect(await snapshot(db).then((state) => state.migrations)).not.toContain(file);
+  } finally {
+    native.exec = originalExec;
+    await db.close();
+  }
+}
+
 beforeAll(async () => {
   if (POSTGRES_REQUIRED && !POSTGRES_CONFIGURED) {
     throw new Error('MIGRATION_CONTRACT_POSTGRES_REQUIRED requires a PostgreSQL DATABASE_URL');
@@ -762,6 +967,28 @@ describe('migration contract', () => {
 
   it('verifies PostgreSQL marker contention metadata and peer recognition', async () => {
     await assertPostgresMarkerContention();
+  });
+
+  for (const [label, script] of OUTER_TERMINATION_FIXTURES) {
+    it(`rejects ${label} at the transaction canary`, async () => {
+      await assertOuterTerminationRejected(label, script);
+    });
+  }
+
+  it('rejects no-op DML and untracked durable objects even when snapshots match', async () => {
+    await assertNoOpAndUntrackedEffectsReject();
+  });
+
+  it('allows legitimate savepoints and dialect-native bodies', async () => {
+    await assertLegitimateSavepointsPass();
+  });
+
+  it('keeps procedure COMMIT as a script error', async () => {
+    await assertProcedureCommitRemainsScriptError();
+  });
+
+  it('does not retry or peer-recover a canary failure', async () => {
+    await assertCanaryFailureDoesNotRetryOrRecover();
   });
 
   it('drops a recorded scratch database after a simulated admin close failure', async () => {

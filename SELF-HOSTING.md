@@ -138,7 +138,16 @@ limit the schema, but you should not run production on it.
 - CI and the local Compose path test PostgreSQL 16. PostgreSQL 14+ remains the
   supported deployment expectation.
 - Per-file atomicity covers a migration script and its `_migrations` marker.
-  The short-link fixups that run after migration are outside that boundary.
+  A transaction canary detects outer transaction termination and withholds the
+  marker. It detects; it does not recover. If CI is bypassed, partial effects may
+  already persist.
+- The canary's state-independent check is limited to the outer-transaction-
+  termination class. Transaction survival does not make non-transactional side
+  effects atomic, including PostgreSQL `nextval` / `setval` and engine-forbidden
+  operations. The additive-only migration policy and real-engine CI remain the
+  boundary; this does not claim to cover all side effects.
+- The short-link fixups that run after migration are outside the script-and-marker
+  boundary.
 - Booting the API against an **unmigrated** database makes the outbox worker fail on
   every poll with `no such table: outbox` — always migrate first.
 
