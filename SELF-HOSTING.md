@@ -137,6 +137,15 @@ limit the schema, but you should not run production on it.
 - Booting the API against an **unmigrated** database makes the outbox worker fail on
   every poll with `no such table: outbox` — always migrate first.
 
+### Migration diagnostics
+
+Terminal migration errors identify the migration file and dialect. The migration
+CLI preserves and may print the raw database-driver cause for operator diagnosis.
+Logs can contain database object names, SQL fragments, driver codes, stack or
+query metadata, and other operational details.
+Treat these logs as sensitive operational data. Restrict access and retention.
+Never expose them to end users. No redaction or bounded-output guarantee is made.
+
 ## Full environment reference
 
 Every variable has a safe default that selects the zero-infra path, so a bare
