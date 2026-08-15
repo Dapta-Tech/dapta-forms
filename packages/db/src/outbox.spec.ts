@@ -91,6 +91,7 @@ describe('claimDueOutbox', () => {
     expect(reclaimed).toBeDefined();
     expect(reclaimed!.claimedAt).toBe(now);
     expect(reclaimed!.claimedBy).not.toBe(original!.claimedBy);
+    expect(reclaimed!.attempts).toBe(1);
     expect(await markOutboxDone(db, id, now + 1, undefined, claimIdentityOf(original!))).toBe(false);
     expect(await markOutboxDone(db, id, now + 1, undefined, claimIdentityOf(reclaimed!))).toBe(true);
 
@@ -215,6 +216,29 @@ describe('outbox settlement claim fencing', () => {
       claimedBy: currentClaim.claimedBy,
     });
   }
+
+  it.each(['done', 'retry', 'failed', 'skipped'] as const)(
+    'settles %s after only claimed_at changes while the token remains current',
+    async (method) => {
+      const now = 6_500_000;
+      const id = await enqueueOutbox(db, { kind: 'email', action: method, now });
+      const [claimed] = await claimDueOutbox(db, now, { workerId: 'A' });
+      const claim = claimIdentityOf(claimed!);
+      await db.run(sql`UPDATE outbox SET claimed_at = ${now + 1} WHERE id = ${id}`);
+
+      const settled =
+        method === 'done'
+          ? await markOutboxDone(db, id, now + 2, undefined, claim)
+          : method === 'retry'
+            ? await markOutboxRetry(db, id, { attempts: 1, error: 'retry', now: now + 2 }, claim)
+            : method === 'failed'
+              ? await markOutboxFailed(db, id, { attempts: 1, error: 'failed', now: now + 2 }, claim)
+              : await markOutboxSkipped(db, id, { reason: 'skipped', now: now + 2 }, claim);
+      expect(settled).toBe(true);
+      const row = (await listOutbox(db)).find((candidate) => candidate.id === id);
+      expect(row?.status).toBe(method === 'retry' ? 'pending' : method);
+    },
+  );
 
   it('does not let a stale worker mark a reclaimed row done', async () => {
     const { id, staleClaim, currentClaim } = await claimThenReclaim();

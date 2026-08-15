@@ -276,6 +276,37 @@ describe('OutboxWorker claim fencing', () => {
     });
   });
 
+  it('allows one clean maxAttempts=1 effect but blocks its over-lease reclaim', async () => {
+    const now = 10_750_000;
+    const id = await enqueueOutbox(db, { kind: 'email', action: 'a', payload: '{}', now, maxAttempts: 1 });
+    const [first] = await claimDueOutbox(db, now, { workerId: 'A' });
+    let effects = 0;
+    const worker = new OutboxWorker(
+      db,
+      { OUTBOX_WORKER_ENABLED: false, OUTBOX_POLL_MS: 5_000, NODE_ENV: 'test' } as never,
+      { deliver: async () => { effects += 1; } } as unknown as EmailEffects,
+      {} as DestinationEffects,
+    );
+    await (worker as unknown as { execute: (row: typeof first) => Promise<unknown> }).execute(first!);
+    const [reclaimed] = await claimDueOutbox(db, now + 60_001, {
+      workerId: 'B',
+      staleClaimMs: 60_000,
+    });
+    setClock(worker, () => now + 60_002);
+
+    await (worker as unknown as { process: (row: typeof reclaimed, now: () => number) => Promise<boolean> }).process(
+      reclaimed!,
+      () => now + 60_002,
+    );
+    expect(effects).toBe(1);
+    expect(reclaimed!.attempts).toBe(1);
+    expect((await listOutbox(db)).find((row) => row.id === id)).toMatchObject({
+      status: 'failed',
+      attempts: 1,
+      lastError: 'delivery exceeded its claim lease; outcome unknown',
+    });
+  });
+
 
   it('keeps the existing 50-row drain bound', async () => {
     const now = 12_000_000;
