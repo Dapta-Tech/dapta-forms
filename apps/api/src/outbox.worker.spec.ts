@@ -1,5 +1,4 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { loadServerEnv } from '@quill/config/env';
 import {
   claimDueOutbox,
   createDb,
@@ -23,6 +22,7 @@ const TEST_LEASE_MS = 5 * 60_000;
 
 type WorkerTestSeams = {
   clock: () => number;
+  claimRenewalMs: number;
   log: { log: ReturnType<typeof vi.fn>; warn: ReturnType<typeof vi.fn>; error: ReturnType<typeof vi.fn> };
 };
 
@@ -50,22 +50,6 @@ afterEach(async () => {
 describe('OutboxWorker claim fencing', () => {
   const claimedAt = 7_000_000;
   const reclaimedAt = claimedAt + 60_001;
-
-  const timeoutEnv = (over: Record<string, number> = {}) =>
-    ({
-      OUTBOX_WORKER_ENABLED: false,
-      OUTBOX_POLL_MS: 5,
-      OUTBOX_MAX_DELIVERY_MS: 5,
-      OUTBOX_MAX_ORPHANS: 8,
-      NODE_ENV: 'test',
-      ...over,
-    }) as never;
-
-  it('rejects a delivery cap at or above the stale lease', () => {
-    expect(() => loadServerEnv({ OUTBOX_MAX_DELIVERY_MS: '300000' })).toThrow(
-      /OUTBOX_MAX_DELIVERY_MS/,
-    );
-  });
 
   async function runStaleWorker(settlement: 'done' | 'retry' | 'skipped' | 'failed') {
     const id = await enqueueOutbox(db, {
@@ -266,73 +250,6 @@ describe('OutboxWorker claim fencing', () => {
     expect(deliveries).toBe(0);
   });
 
-  it('caps a hung effect, aborts it, and records one fenced retry before detaching it', async () => {
-    const now = 11_000_000;
-    let release: (() => void) | undefined;
-    let seenSignal: AbortSignal | undefined;
-    const pending = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    const id = await enqueueOutbox(db, { kind: 'email', action: 'a', payload: '{}', now });
-    const worker = new OutboxWorker(
-      db,
-      timeoutEnv(),
-      {
-        deliver: async (_action: string, _payload: string, _account: unknown, signal?: AbortSignal) => {
-          seenSignal = signal;
-          await pending;
-        },
-      } as unknown as EmailEffects,
-      {} as DestinationEffects,
-    );
-
-    await worker.drainOnce(now);
-    expect(seenSignal?.aborted).toBe(true);
-    expect((await listOutbox(db)).find((row) => row.id === id)).toMatchObject({
-      status: 'pending',
-      attempts: 1,
-      nextAttemptAt: now + 1_000,
-    });
-    expect(worker.getRuntimeStatus().orphanCount).toBe(1);
-
-    release!();
-    for (let attempt = 0; attempt < 20 && worker.getRuntimeStatus().orphanCount > 0; attempt++) {
-      await new Promise<void>((resolve) => setTimeout(resolve, 5));
-    }
-    expect(worker.getRuntimeStatus().orphanCount).toBe(0);
-  });
-
-  it('pauses claims at the orphan ceiling and resumes after the orphan settles', async () => {
-    const now = 11_500_000;
-    let release: (() => void) | undefined;
-    const pending = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    const id = await enqueueOutbox(db, { kind: 'email', action: 'hung', payload: '{}', now });
-    let clock = now;
-    const worker = new OutboxWorker(
-      db,
-      timeoutEnv({ OUTBOX_MAX_ORPHANS: 1 }),
-      {
-        deliver: async () => pending,
-      } as unknown as EmailEffects,
-      {} as DestinationEffects,
-    );
-    setClock(worker, () => clock);
-
-    await worker.drainOnce(now);
-    expect(worker.getRuntimeStatus().paused).toBe(true);
-    clock = now + 11;
-    expect(worker.getRuntimeStatus().sustainedPaused).toBe(true);
-    expect(await worker.drainOnce(now + 1)).toBe(0);
-    expect((await listOutbox(db)).find((row) => row.id === id)?.attempts).toBe(1);
-
-    release!();
-    for (let attempt = 0; attempt < 20 && worker.getRuntimeStatus().orphanCount > 0; attempt++) {
-      await new Promise<void>((resolve) => setTimeout(resolve, 5));
-    }
-    expect(worker.getRuntimeStatus().paused).toBe(false);
-  });
 
   it('keeps the existing 50-row drain bound', async () => {
     const now = 12_000_000;

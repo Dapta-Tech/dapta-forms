@@ -21,7 +21,7 @@
  * fresh opaque token in `claimed_by` for every claim generation. On Postgres
  * each claim uses `FOR UPDATE SKIP LOCKED`; SQLite serializes its one-row
  * `UPDATE ... RETURNING`. A stale or ambiguous worker cannot settle a newer
- * generation because every settlement fences on that token. This is
+ * generation because every renewal and settlement fences on that token. This is
  * still at-least-once: a crash after an external effect and before settlement
  * can replay the effect after lease expiry. A claim older than `staleClaimMs`
  * is reclaimable so crashed rows are not stranded.
@@ -205,8 +205,6 @@ function mapRow(r: Record<string, unknown>): OutboxRow {
 
 /** Default lease before a claim is considered stale and reclaimable (5 min). */
 export const DEFAULT_STALE_CLAIM_MS = 5 * 60_000;
-/** Default external-effect cap; always below the stale lease. */
-export const DEFAULT_MAX_DELIVERY_MS = Math.floor(DEFAULT_STALE_CLAIM_MS * 0.4);
 /** The most rows one drain may execute before yielding to its next poll. */
 export const DEFAULT_OUTBOX_CLAIM_LIMIT = 50;
 
@@ -379,46 +377,6 @@ export async function markOutboxRetry(
     sql`UPDATE outbox SET ${sql.join(sets, sql`, `)} WHERE ${claimedPendingWhere(id, claim)}
         RETURNING id`,
   );
-}
-
-/**
- * Record a deadline while an external effect may still finish. The row remains
- * pending and retains its token and lease, so a late outcome can fence-settle
- * the same generation without a second attempt increment.
- */
-export async function markOutboxTimedOut(
-  db: Db,
-  id: string,
-  args: { attempts: number; error: string; now?: number; transcript?: DeliveryTranscript },
-  claim: OutboxClaim,
-): Promise<boolean> {
-  const now = args.now ?? Date.now();
-  const sets = [
-    sql`attempts = ${args.attempts}`,
-    sql`next_attempt_at = ${now + backoffMs(args.attempts)}`,
-    sql`last_error = ${args.error.slice(0, 1000)}`,
-    sql`updated_at = ${now}`,
-    ...transcriptSets(args.transcript),
-  ];
-  return settlementApplied(
-    db,
-    sql`UPDATE outbox SET ${sql.join(sets, sql`, `)} WHERE ${claimedPendingWhere(id, claim)}
-        RETURNING id`,
-  );
-}
-
-/** Number of pending claims whose lease is still live at `now`. */
-export async function countLiveOutboxClaims(
-  db: Db,
-  now: number,
-  staleClaimMs = DEFAULT_STALE_CLAIM_MS,
-): Promise<number> {
-  const row = await db.get<{ n: number }>(
-    sql`SELECT COUNT(*) AS n FROM outbox
-        WHERE status = 'pending' AND claimed_at IS NOT NULL
-          AND claimed_at > ${now - staleClaimMs}`,
-  );
-  return Number(row?.n ?? 0);
 }
 
 /**

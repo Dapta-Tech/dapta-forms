@@ -14,7 +14,6 @@ export interface EmailConfig {
     secure?: boolean;
     user?: string;
     pass?: string;
-    timeoutMs?: number;
   };
   http?: {
     endpoint?: string;
@@ -34,7 +33,6 @@ export interface EmailConfig {
     apiKey?: string;
     /** Message category — `transactional-v1` profile (defaults to `lifecycle`). */
     category?: string;
-    timeoutMs?: number;
   };
 }
 
@@ -55,7 +53,6 @@ export function createEmailProvider(config: EmailConfig): EmailProvider {
           secure: config.smtp.secure ?? false,
           user: config.smtp.user,
           pass: config.smtp.pass,
-          timeoutMs: config.smtp.timeoutMs,
           fromEmail: config.fromEmail,
           fromName: config.fromName,
         });
@@ -95,7 +92,6 @@ export function createEmailProvider(config: EmailConfig): EmailProvider {
           signingSecret: config.http.signingSecret,
           apiKey: config.http.apiKey,
           category: config.http.category,
-          timeoutMs: config.http.timeoutMs,
           fromEmail: config.fromEmail,
           fromName: config.fromName,
         });

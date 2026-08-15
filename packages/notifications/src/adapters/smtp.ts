@@ -11,7 +11,6 @@ export interface SmtpOptions {
   fromEmail: string;
   fromName?: string;
   replyTo?: string;
-  timeoutMs?: number;
 }
 
 /**
@@ -36,15 +35,11 @@ export class SmtpEmailProvider implements EmailProvider {
         port: opts.port,
         secure: opts.secure,
         pool: true,
-        connectionTimeout: opts.timeoutMs ?? 120_000,
-        greetingTimeout: opts.timeoutMs ?? 120_000,
-        socketTimeout: opts.timeoutMs ?? 120_000,
         auth: opts.user ? { user: opts.user, pass: opts.pass } : undefined,
       });
   }
 
   async send(message: EmailMessage): Promise<EmailResult> {
-    if (message.signal?.aborted) throw message.signal.reason ?? new Error('smtp send aborted');
     const to = normalizeRecipients(message.to);
     try {
       const info = await this.transporter.sendMail({

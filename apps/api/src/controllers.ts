@@ -1,16 +1,12 @@
-import { Controller, Get, Header, HttpException, HttpStatus, Inject, Optional } from '@nestjs/common';
+import { Controller, Get, Header, HttpException, HttpStatus, Inject } from '@nestjs/common';
 import type { Db } from '@quill/db';
 import { countOutbox, sql } from '@quill/db';
 import { DB } from './tokens';
 import { openapiSpec } from './openapi';
-import { OutboxWorker } from './outbox.worker';
 
 @Controller('health')
 export class HealthController {
-  constructor(
-    @Inject(DB) private readonly db: Db,
-    @Optional() private readonly outboxWorker?: OutboxWorker,
-  ) {}
+  constructor(@Inject(DB) private readonly db: Db) {}
 
   private async dbState(): Promise<'up' | 'down'> {
     try {
@@ -42,7 +38,6 @@ export class HealthController {
   @Get('ready')
   async ready() {
     const db = await this.dbState();
-    const outboxRuntime = this.outboxWorker?.getRuntimeStatus() ?? null;
     let outbox: { pending: number; failed: number } | null = null;
     if (db === 'up') {
       try {
@@ -54,15 +49,8 @@ export class HealthController {
         outbox = null;
       }
     }
-    const ready = db === 'up';
-    const body = {
-      status: ready ? 'ready' : 'unavailable',
-      service: 'forms-api',
-      db,
-      outbox,
-      outboxRuntime,
-    };
-    if (!ready) throw new HttpException(body, HttpStatus.SERVICE_UNAVAILABLE);
+    const body = { status: db === 'up' ? 'ready' : 'unavailable', service: 'forms-api', db, outbox };
+    if (db !== 'up') throw new HttpException(body, HttpStatus.SERVICE_UNAVAILABLE);
     return body;
   }
 }

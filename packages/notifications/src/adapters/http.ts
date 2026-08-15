@@ -36,8 +36,6 @@ export interface HttpEmailOptions {
   apiKey?: string;
   /** Message category for `transactional-v1` (defaults to `lifecycle`). */
   category?: string;
-  /** Hard deadline for an HTTP send when the caller supplied no earlier signal. */
-  timeoutMs?: number;
   fromEmail: string;
   fromName?: string;
 }
@@ -108,7 +106,6 @@ export class HttpEmailProvider implements EmailProvider {
           ...(this.opts.token ? { authorization: `Bearer ${this.opts.token}` } : {}),
         },
         body: JSON.stringify(payload),
-        signal: deadlineSignal(message.signal, this.opts.timeoutMs),
       });
       if (!res.ok) throw new Error(`http mailer failed: HTTP ${res.status}`);
       const body = (await res.json().catch(() => ({}))) as { messageId?: string };
@@ -174,20 +171,14 @@ export class HttpEmailProvider implements EmailProvider {
           ...authHeaders,
         },
         body: requestBody,
-        signal: deadlineSignal(message.signal, this.opts.timeoutMs),
       });
     } catch (err) {
       // Network/transport error — surface so the outbox worker retries.
       throw err instanceof Error ? err : new Error(`transactional email failed: ${String(err)}`);
     }
-
     const body = await res.json().catch(() => null);
     return interpretTransactionalResponse(res.status, body);
   }
-}
-
-function deadlineSignal(signal: AbortSignal | undefined, timeoutMs = 120_000): AbortSignal {
-  return signal ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]) : AbortSignal.timeout(timeoutMs);
 }
 
 /**

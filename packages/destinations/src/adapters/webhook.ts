@@ -120,9 +120,7 @@ export class WebhookDestination implements SubmissionDestination {
         headers,
         body,
         redirect: 'manual',
-        signal: ctx.signal
-          ? AbortSignal.any([ctx.signal, controller.signal])
-          : controller.signal,
+        signal: controller.signal,
       });
     } catch (err) {
       // Timeout (abort) or network error — surface so the outbox retries. The

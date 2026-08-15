@@ -9,16 +9,6 @@
 > instancia aislada :3400). Todos los defectos abajo se reprodujeron con números
 > reales.
 
-## Outbox runtime signals
-
-The API readiness payload exposes the in-process outbox orphan gauge, oldest
-orphan age, paused gauge, timeout counter by `kind:action`, and successful
-fenced-settlement counter by `kind:action`. These are process-local because no
-metrics registry is installed in this repository; they reset on process restart
-and must be scraped from `/health/ready` or logs until a deployment supplies an
-external registry. A sustained orphan pause makes readiness unavailable after
-two poll intervals.
-
 ---
 
 ## 0. Decisiones de producto (LOCKED)

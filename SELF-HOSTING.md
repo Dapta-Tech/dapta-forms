@@ -116,6 +116,15 @@ docker build -f apps/web/Dockerfile -t dapta-forms-web \
 
 ## Database
 
+### Outbox worker upgrades
+
+Mixed outbox worker versions are unsupported. Stop every old API/worker
+replica, wait at least the stale claim lease for in-flight old claims or confirm
+the queue is drained, then start every new replica. Use the same coordination
+before rollback. Delivery stays at-least-once: crashes, effects longer than the
+lease, hung providers, and late successes after peer terminalization can
+duplicate or leave an external effect unrecorded.
+
 **PostgreSQL is the source of truth** (CI and production run Postgres). SQLite is a
 portable subset for zero-infra dev and evaluation only — it is never allowed to
 limit the schema, but you should not run production on it.
@@ -158,29 +167,6 @@ loud** on a bad value. Copy [`.env.example`](.env.example) to `.env` to override
 | `OUTBOX_WORKER_ENABLED` | `true` | set `false` only if a separate worker drains the outbox | no |
 | `OUTBOX_POLL_MS` | `5000` | — | no |
 | `OUTBOX_MAX_ATTEMPTS` | `5` | — | no |
-| `OUTBOX_MAX_DELIVERY_MS` | `120000` | cap one external delivery; must stay below 300000 | no |
-| `OUTBOX_MAX_ORPHANS` | `8` | max timed-out effects before claims pause | no |
-
-### Outbox worker cutover and recovery
-
-The outbox is **at-least-once**. A crash or delivery timeout after an external
-effect can replay that effect on retry. Immutable claim tokens stop an old or
-ambiguous worker from settling a newer claim; they do not make the receiver
-exactly-once.
-
-Mixed old and new workers are unsupported. For every upgrade or rollback:
-
-1. Stop all API and outbox-worker replicas.
-2. Wait `OUTBOX_MAX_DELIVERY_MS + 30s`.
-3. Run `pnpm --filter @quill/db outbox:preflight`; it counts only non-stale
-   pending claims and exits nonzero while any live holder remains.
-4. If rows remain, wait the five-minute stale lease and repeat the query.
-5. Start every replica on the target version.
-
-`/health/ready` remains a DB/API readiness check and reports orphan diagnostics
-without failing solely for worker pressure. Timed-out effects that ignore abort
-cannot be recovered in-process; restart the process after the drain preflight
-above so a replacement can reclaim the stale rows.
 | `ONBOARDING_WIZARD` | `true` | set `false` to skip the first-run wizard (and get `SEED_DEMO_FORM` back) | no |
 | `SEED_DEMO_FORM` | `true` | **inert while `ONBOARDING_WIZARD` is on**; set `false` to ship empty new workspaces | no |
 

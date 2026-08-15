@@ -150,14 +150,13 @@ export class DestinationEffects {
    * resolves so the row is marked done.
    */
   /** Returns what crossed the wire, for the queue to record. */
-  async deliver(action: string, payloadJson: string, signal?: AbortSignal): Promise<DeliveryTranscript> {
-    signal ??= AbortSignal.timeout(120_000);
+  async deliver(action: string, payloadJson: string): Promise<DeliveryTranscript> {
     const { destination, ctx } = JSON.parse(payloadJson) as DestinationOutboxPayload;
     // ctx.accountId is the form's account — resolve that account's HubSpot token
     // (else the env fallback) at delivery time.
-    const spec = await this.toSpec(destination, ctx.accountId, signal);
+    const spec = await this.toSpec(destination, ctx.accountId);
     const dest = createDestination(spec, this.fetchImpl);
-    const result = await dest.deliver({ ...ctx, signal });
+    const result = await dest.deliver(ctx);
     if (!result.delivered) {
       this.log.warn(
         `destination ${destination.type} (${ctx.submissionId}/${action}) no-op via ${result.driver}` +
@@ -177,11 +176,7 @@ export class DestinationEffects {
   }
 
   /** Resolve a stored destination config into a delivery spec (inject secrets). */
-  private async toSpec(
-    destination: FormDestination,
-    accountId: string,
-    signal?: AbortSignal,
-  ): Promise<DestinationSpec> {
+  private async toSpec(destination: FormDestination, accountId: string): Promise<DestinationSpec> {
     if (destination.type === 'webhook') {
       return {
         type: 'webhook',
@@ -233,7 +228,7 @@ export class DestinationEffects {
         // the lookup at all.
         formGuid: mirrorGuid ?? undefined,
         portalId: mirrorGuid
-          ? ((await this.resolvePortalId(accountId, token ?? '', signal)) ?? undefined)
+          ? ((await this.resolvePortalId(accountId, token ?? '')) ?? undefined)
           : undefined,
       },
     };
@@ -247,14 +242,13 @@ export class DestinationEffects {
    * submissions at another customer's forms. A failure returns null and the
    * mirror submission is simply skipped; the contact still syncs.
    */
-  private async resolvePortalId(accountId: string, token: string, signal?: AbortSignal): Promise<string | null> {
+  private async resolvePortalId(accountId: string, token: string): Promise<string | null> {
     if (!token) return null;
     const cached = this.portalIds.get(accountId);
     if (cached && cached.token === token) return cached.portalId;
     try {
       const res = await this.fetchImpl(`${HUBSPOT_API_BASE}/account-info/v3/details`, {
         headers: { authorization: `Bearer ${token}` },
-        signal,
       });
       if (!res.ok) {
         this.log.warn(`[destinations] could not resolve HubSpot portal: HTTP ${res.status}`);

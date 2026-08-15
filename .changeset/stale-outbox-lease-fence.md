@@ -4,11 +4,10 @@
 
 Fence outbox settlement updates to the worker lease that claimed the row.
 Settlement calls now report whether the lease still owns the row. The worker
-claims rows one at a time and caps one delivery before it records a fenced
-retry or failure. Timed-out effects are counted separately while they finish.
-Mixed old and new workers require the documented stop/drain cutover.
+claims each row immediately before its effect.
 
 Each claim now receives an opaque `claimed_by` token. Stale or ambiguous claims
-cannot settle another generation, including during a rolling deploy. Delivery
-remains at-least-once: a crash after an external effect and before settlement
-can still replay that effect.
+cannot settle another generation. Mixed versions are unsupported and require a
+coordinated stop/drain cutover. Delivery remains at-least-once: a crash, a slow
+effect, a hung replica, a late success after peer terminalization, or an
+adapter success-then-throw can still replay or misrecord an external effect.

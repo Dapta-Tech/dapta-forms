@@ -24,8 +24,6 @@ export type DestinationType = 'webhook' | 'hubspot';
  * was captured — independent of any subsequent edit to the form or its config.
  */
 export interface DestinationContext {
-  /** Worker cancellation signal; adapters must pass it to external I/O. */
-  signal?: AbortSignal;
   /**
    * Stable, event-specific de-duplication key. Submission deliveries use
    * `submission:<id>:<phase>:<destinationType>:<index>`; the booking-time

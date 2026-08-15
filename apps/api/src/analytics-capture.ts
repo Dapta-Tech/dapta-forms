@@ -38,7 +38,7 @@ export class AnalyticsCapture {
   constructor(@Optional() @Inject(ENV) private readonly env?: ServerEnv) {}
 
   /** The worker's executor for an `analytics` outbox row. */
-  async deliver(_action: string, payloadJson: string, signal?: AbortSignal): Promise<void> {
+  async deliver(_action: string, payloadJson: string): Promise<void> {
     const key = this.env?.PRODUCT_ANALYTICS_KEY;
     if (!key) {
       throw new OutboxSkipError('analytics: PRODUCT_ANALYTICS_KEY is not configured');
@@ -78,9 +78,7 @@ export class AnalyticsCapture {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(body),
-        signal: signal
-          ? AbortSignal.any([signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)])
-          : AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       });
     } catch (err) {
       // Network-level: unreachable, DNS, TLS, timeout. All transient.
