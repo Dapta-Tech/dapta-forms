@@ -250,6 +250,32 @@ describe('OutboxWorker claim fencing', () => {
     expect(deliveries).toBe(0);
   });
 
+  it('marks an exhausted reclaimed generation failed without a third effect', async () => {
+    const now = 10_500_000;
+    const id = await enqueueOutbox(db, { kind: 'email', action: 'a', payload: '{}', now, maxAttempts: 2 });
+    await claimDueOutbox(db, now, { workerId: 'A' });
+    await claimDueOutbox(db, now + 60_001, { workerId: 'B', staleClaimMs: 60_000 });
+    const [third] = await claimDueOutbox(db, now + 120_002, { workerId: 'C', staleClaimMs: 60_000 });
+    let effects = 0;
+    const worker = new OutboxWorker(
+      db,
+      { OUTBOX_WORKER_ENABLED: false, OUTBOX_POLL_MS: 5_000, NODE_ENV: 'test' } as never,
+      { deliver: async () => { effects += 1; } } as unknown as EmailEffects,
+      {} as DestinationEffects,
+    );
+    setClock(worker, () => now + 120_003);
+
+    await (worker as unknown as { process: (row: typeof third, now: () => number) => Promise<boolean> }).process(
+      third!,
+      () => now + 120_003,
+    );
+    expect(effects).toBe(0);
+    expect((await listOutbox(db)).find((row) => row.id === id)).toMatchObject({
+      status: 'failed',
+      attempts: 2,
+    });
+  });
+
 
   it('keeps the existing 50-row drain bound', async () => {
     const now = 12_000_000;

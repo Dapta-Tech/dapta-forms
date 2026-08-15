@@ -148,6 +148,7 @@ describe('claimDueOutbox', () => {
       workerId: 'B',
       staleClaimMs: 60_000,
     });
+
     deliveredBy.push('B');
 
     expect(reclaimed).toBeDefined();
@@ -155,6 +156,24 @@ describe('claimDueOutbox', () => {
     expect(reclaimed!.attempts).toBe(1);
     expect(deliveredBy).toEqual(['A', 'B']); // At-least-once remains intentional.
   });
+
+  it('charges one attempt only when reclaiming a stale generation', async () => {
+      const now = 5_100_000;
+      const id = await enqueueOutbox(db, { kind: 'email', action: 'a', now, maxAttempts: 2 });
+      const [first] = await claimDueOutbox(db, now, { workerId: 'A' });
+      expect(first!.attempts).toBe(0);
+      const [second] = await claimDueOutbox(db, now + 60_001, {
+        workerId: 'B',
+        staleClaimMs: 60_000,
+      });
+      expect(second!.attempts).toBe(1);
+      expect(await markOutboxRetry(db, id, { attempts: 1, error: 'late', now: now + 60_002 }, claimIdentityOf(first!))).toBe(false);
+      const [third] = await claimDueOutbox(db, now + 120_002, {
+        workerId: 'C',
+        staleClaimMs: 60_000,
+      });
+      expect(third!.attempts).toBe(2);
+    });
 
   it('does not reclaim a row already marked done', async () => {
     const now = 5_000_000;
