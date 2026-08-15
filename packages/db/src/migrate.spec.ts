@@ -111,6 +111,21 @@ async function state(db: Db): Promise<State> {
   };
 }
 
+async function captureFailure(work: Promise<unknown>): Promise<Error> {
+  const error = await work.then(
+    () => undefined,
+    (caught: unknown) => caught,
+  );
+  expect(error).toBeInstanceOf(Error);
+  return error as Error;
+}
+
+function expectCause(error: Error, text: string): void {
+  expect(error.message).toContain('Migration');
+  expect(error.cause).toBeInstanceOf(Error);
+  expect((error.cause as Error).message).toContain(text);
+}
+
 async function installMarkerFailure(db: Db, file: string, suffix: string): Promise<() => Promise<void>> {
   const trigger = `migration_marker_fail_${suffix}`;
   if (db.dialect === 'sqlite') {
@@ -162,7 +177,7 @@ async function assertCorpusRollback(file: string, index: number): Promise<void> 
     const before = await state(db);
     const removeFailure = await installMarkerFailure(db, file, suffix);
     try {
-      await expect(migrate(db, root)).rejects.toThrow('marker failure');
+      expectCause(await captureFailure(migrate(db, root)), 'marker failure');
     } finally {
       await removeFailure();
     }
@@ -238,7 +253,8 @@ describe('migration atomicity', () => {
     try {
       await trackingTable(db);
       const before = await state(db);
-      await expect(migrate(db, root)).rejects.toThrow();
+      const error = await captureFailure(migrate(db, root));
+      expect(error.cause).toBeInstanceOf(Error);
       expect(await state(db)).toEqual(before);
     } finally {
       await db.close();
@@ -256,10 +272,43 @@ describe('migration atomicity', () => {
       const before = await state(db);
       const removeFailure = await installMarkerFailure(db, file, 'marker_failure');
       try {
-        await expect(migrate(db, root)).rejects.toThrow('marker failure');
+        expectCause(await captureFailure(migrate(db, root)), 'marker failure');
       } finally {
         await removeFailure();
       }
+      expect(await state(db)).toEqual(before);
+    } finally {
+      await db.close();
+    }
+  });
+
+  it('preserves the script error when the peer probe fails', async () => {
+    const db = await createTestDb();
+    const file = '9002_probe_failure.sql';
+    const table = 'probe_failure_table';
+    const root = customRoot(
+      ACTIVE_DIALECT,
+      file,
+      `CREATE TABLE ${table} (id INTEGER PRIMARY KEY);
+       INSERT INTO ${table} (id) VALUES (1);
+       INSERT INTO ${table} (id) VALUES (1);`,
+    );
+    const probeError = new Error('peer probe unavailable');
+    let reads = 0;
+    const failingProbeDb: Db = {
+      ...db,
+      get: async <T>(query) => {
+        if (++reads === 2) throw probeError;
+        return db.get<T>(query);
+      },
+    };
+
+    try {
+      await trackingTable(db);
+      const before = await state(db);
+      const error = await captureFailure(migrate(failingProbeDb, root));
+      expect(error.cause).toBeInstanceOf(Error);
+      expect(error.cause).not.toBe(probeError);
       expect(await state(db)).toEqual(before);
     } finally {
       await db.close();
@@ -272,20 +321,22 @@ describe('migration atomicity', () => {
     });
   }
 
-  it('applies a concurrent migration exactly once', async () => {
+  async function assertConcurrentScript(
+    file: string,
+    table: string,
+    script: string,
+    delaySqlitePeer = false,
+    prepareTable = true,
+  ): Promise<void> {
     const databaseUrl =
       ACTIVE_DIALECT === 'sqlite'
         ? `file:${join(TEST_ROOT, `${randomUUID()}.db`)}`
         : scratch!.url;
     const primary = await createDb(databaseUrl);
     const peer = await createDb(databaseUrl);
-    const file = '9003_concurrent.sql';
-    const table = 'concurrent_probe';
-    const root = customRoot(
-      ACTIVE_DIALECT,
-      file,
-      `INSERT INTO ${table} (id) VALUES (1) ON CONFLICT DO NOTHING;`,
-    );
+    const peerNative = peer.sqlite;
+    const originalPeerTxn = peerNative?.txn;
+    const root = customRoot(ACTIVE_DIALECT, file, script);
     let release!: () => void;
     const releasePromise = new Promise<void>((resolve) => {
       release = resolve;
@@ -304,25 +355,64 @@ describe('migration atomicity', () => {
         await primary.execRaw(`DROP SCHEMA public CASCADE; CREATE SCHEMA public`);
       }
       await prepareBase(primary);
-      await primary.execRaw(`CREATE TABLE ${table} (id INTEGER PRIMARY KEY)`);
+      if (prepareTable) {
+        await primary.execRaw(`CREATE TABLE ${table} (id INTEGER PRIMARY KEY)`);
+      }
       const first = withInitialBarrier(primary, primaryReady, releasePromise);
       const second = withInitialBarrier(peer, peerReady, releasePromise);
-      const primaryMigration = migrate(first, root);
+      let primaryDone = false;
+      if (delaySqlitePeer && peerNative && originalPeerTxn) {
+        peerNative.txn = <T>(fn: () => T): T => {
+          if (!primaryDone) {
+            throw Object.assign(new Error('peer write window busy'), { code: 'SQLITE_BUSY' });
+          }
+          return originalPeerTxn(fn);
+        };
+      }
+      const primaryMigration = migrate(first, root).then((result) => {
+        primaryDone = true;
+        return result;
+      });
       const peerMigration = migrate(second, root);
       await Promise.all([primaryReadyPromise, peerReadyPromise]);
       release();
-      const applied = await Promise.all([primaryMigration, peerMigration]);
+      const outcomes = await Promise.allSettled([primaryMigration, peerMigration]);
+      expect(outcomes.map((outcome) => outcome.status)).toEqual(['fulfilled', 'fulfilled']);
+      const applied = outcomes.flatMap((outcome) => (outcome.status === 'fulfilled' ? outcome.value : []));
       expect(applied.flat()).toEqual([file]);
-      const rows = await primary.get<{ count: number | string }>(
-        sql.raw(`SELECT COUNT(*) AS count FROM ${table}`),
-      );
-      expect(Number(rows?.count)).toBe(1);
+      if (prepareTable) {
+        const rows = await primary.get<{ count: number | string }>(
+          sql.raw(`SELECT COUNT(*) AS count FROM ${table}`),
+        );
+        expect(Number(rows?.count)).toBe(1);
+      } else {
+        expect((await state(primary)).tables).toContain(table);
+      }
       expect(await primary.get<{ name: string }>(sql`SELECT name FROM _migrations WHERE name = ${file}`)).toBeTruthy();
     } finally {
+      if (peerNative && originalPeerTxn) peerNative.txn = originalPeerTxn;
       release?.();
       await peer.close();
       await primary.close();
     }
+  }
+
+  it('applies a concurrent migration exactly once', async () => {
+    await assertConcurrentScript(
+      '9003_concurrent.sql',
+      'concurrent_probe',
+      `INSERT INTO concurrent_probe (id) VALUES (1) ON CONFLICT DO NOTHING;`,
+    );
+  });
+
+  it('observes a peer-applied marker after a script conflict', async () => {
+    await assertConcurrentScript(
+      '9004_peer_script_conflict.sql',
+      'peer_script_conflict',
+      `CREATE TABLE peer_script_conflict (id INTEGER PRIMARY KEY);`,
+      true,
+      false,
+    );
   });
 
   it('retries SQLite busy contention introduced by the wrapper', async () => {
@@ -330,7 +420,7 @@ describe('migration atomicity', () => {
     const url = `file:${join(TEST_ROOT, `${randomUUID()}.db`)}`;
     const primary = await createDb(url);
     const peer = await createDb(url);
-    const file = '9004_busy_retry.sql';
+    const file = '9005_busy_retry.sql';
     const root = customRoot(
       'sqlite',
       file,
