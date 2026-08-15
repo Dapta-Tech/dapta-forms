@@ -176,8 +176,8 @@ export class OutboxWorker implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * If renewal or settlement loses ownership, the side effect may have happened
-   * but this worker must not claim a durable result.
+   * If settlement loses ownership, the side effect may have happened but this
+   * worker must not claim a durable result.
    */
   private logLostLease(row: OutboxRow): void {
     const token = row.claimedBy ?? '';

@@ -21,7 +21,7 @@
  * fresh opaque token in `claimed_by` for every claim generation. On Postgres
  * each claim uses `FOR UPDATE SKIP LOCKED`; SQLite serializes its one-row
  * `UPDATE ... RETURNING`. A stale or ambiguous worker cannot settle a newer
- * generation because every renewal and settlement fences on that token. This is
+ * generation because every settlement fences on that token. This is
  * still at-least-once: a crash after an external effect and before settlement
  * can replay the effect after lease expiry. A claim older than `staleClaimMs`
  * is reclaimable so crashed rows are not stranded.
@@ -748,7 +748,7 @@ export async function summarizeFailedDeliveriesByForm(
   return [...byForm.values()];
 }
 
-/** Count rows in a status (readiness/backlog reporting). */
+/** Count rows in a status for backlog reporting. */
 export async function countOutbox(db: Db, status: OutboxStatus): Promise<number> {
   const row = await db.get<{ n: number }>(
     sql`SELECT COUNT(*) AS n FROM outbox WHERE status = ${status}`,

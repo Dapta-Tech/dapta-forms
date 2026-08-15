@@ -338,13 +338,13 @@ through the same outbox with retry + backoff).
 
 ## Upgrades & rollback
 
-- **Upgrade:** pull the new version, rebuild both images (remember: `NEXT_PUBLIC_*`
-  are baked at build time, so a changed API URL needs a web rebuild), run
-  `pnpm db:migrate` (additive-only, idempotent — safe to run before rolling pods),
-  then roll the API and web.
-- **Rollback:** because migrations are additive-only, the previous images stay
-  compatible with the newer schema — roll back by redeploying the previous image
-  tags. Keep old images available (don't prune the tag you might revert to).
+- **API upgrade:** pull the target version, run `pnpm db:migrate` (additive-only
+  and idempotent), then stop every old API worker. Drain active claims or wait
+  at least one full `staleClaimMs`, then start only target-version API workers.
+- **API rollback:** use the same stop/drain-or-wait/start sequence before
+  starting the rollback API workers. Do not run mixed API worker versions.
+- **Web rollout:** web images may roll independently. Rebuild the web image when
+  a `NEXT_PUBLIC_*` value changes because those values are baked at build time.
 
 ## Troubleshooting
 

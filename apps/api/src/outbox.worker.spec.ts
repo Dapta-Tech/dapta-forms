@@ -22,7 +22,6 @@ const TEST_LEASE_MS = 5 * 60_000;
 
 type WorkerTestSeams = {
   clock: () => number;
-  claimRenewalMs: number;
   log: { log: ReturnType<typeof vi.fn>; warn: ReturnType<typeof vi.fn>; error: ReturnType<typeof vi.fn> };
 };
 
