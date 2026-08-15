@@ -265,6 +265,7 @@ export const accountIntegration = pgTable(
     meta: jsonb('meta'),
     connectedAt: bigint('connected_at', { mode: 'number' }).notNull(),
     updatedAt: bigint('updated_at', { mode: 'number' }).notNull(),
+    credentialGeneration: bigint('credential_generation', { mode: 'number' }).notNull().default(1),
   },
   (t) => ({
     accountIntegrationAccountProviderUq: uniqueIndex('account_integration_account_provider_uq').on(

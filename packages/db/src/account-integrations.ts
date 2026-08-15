@@ -33,6 +33,7 @@ export interface IntegrationRow {
   meta: IntegrationMeta | null;
   connectedAt: number;
   updatedAt: number;
+  credentialGeneration: number;
 }
 
 const providerCredentialRevisionBrand: unique symbol = Symbol('ProviderCredentialRevision');
@@ -40,22 +41,26 @@ const providerCredentialRevisionBrand: unique symbol = Symbol('ProviderCredentia
 /**
  * Non-secret identity for the source of a resolved provider credential.
  *
- * A stored credential pairs its durable row id with its monotonically updated
- * timestamp. The env fallback uses a stable sentinel because it has no
- * account-row revision. The private brand prevents credential strings from
- * entering callers that accept only revisions.
+ * A stored credential pairs its durable row id, database-allocated generation,
+ * and timestamp. The timestamp keeps rollout compatibility with old writers
+ * that change it without incrementing the generation. The env fallback uses a
+ * stable sentinel because it has no account-row revision. The private brand
+ * prevents credential strings from entering callers that accept only revisions.
  */
-export type ProviderCredentialRevision =
-  | {
-      readonly kind: 'stored';
-      readonly id: string;
-      readonly updatedAt: number;
-      readonly [providerCredentialRevisionBrand]: true;
-    }
-  | {
-      readonly kind: 'env-fallback';
-      readonly [providerCredentialRevisionBrand]: true;
-    };
+export interface StoredProviderCredentialRevision {
+  readonly kind: 'stored';
+  readonly id: string;
+  readonly generation: number;
+  readonly updatedAt: number;
+  readonly [providerCredentialRevisionBrand]: true;
+}
+
+export interface EnvFallbackCredentialRevision {
+  readonly kind: 'env-fallback';
+  readonly [providerCredentialRevisionBrand]: true;
+}
+
+export type ProviderCredentialRevision = StoredProviderCredentialRevision | EnvFallbackCredentialRevision;
 
 /** The live provider token paired with its non-secret source revision. */
 export interface ResolvedProviderToken {
@@ -72,6 +77,7 @@ function storedCredentialRevision(row: IntegrationRow): ProviderCredentialRevisi
   return {
     kind: 'stored',
     id: row.id,
+    generation: row.credentialGeneration,
     updatedAt: row.updatedAt,
     [providerCredentialRevisionBrand]: true,
   };
@@ -83,8 +89,9 @@ export function providerCredentialRevisionEquals(
   b: ProviderCredentialRevision,
 ): boolean {
   if (a.kind !== b.kind) return false;
-  if (a.kind === 'env-fallback' || b.kind === 'env-fallback') return true;
-  return a.id === b.id && a.updatedAt === b.updatedAt;
+  if (a.kind === 'env-fallback') return true;
+  if (b.kind === 'env-fallback') return false;
+  return a.id === b.id && a.generation === b.generation && a.updatedAt === b.updatedAt;
 }
 
 /** Public, token-free view of a connection for the connections UI. */
@@ -105,7 +112,29 @@ function mapRow(r: Record<string, unknown>): IntegrationRow {
     meta: r.meta == null ? null : parseJsonColumn<IntegrationMeta | null>(r.meta, null),
     connectedAt: Number(r.connected_at),
     updatedAt: Number(r.updated_at),
+    credentialGeneration: normalizeCredentialGeneration(r.credential_generation),
   };
+}
+
+/** Accept only a positive, safe database generation; do not substitute a fallback. */
+function normalizeCredentialGeneration(value: unknown): number {
+  let generation: number;
+  if (typeof value === 'number') {
+    generation = value;
+  } else if (typeof value === 'bigint') {
+    if (value > BigInt(Number.MAX_SAFE_INTEGER)) {
+      throw new Error('invalid credential generation returned by database');
+    }
+    generation = Number(value);
+  } else if (typeof value === 'string' && /^[0-9]+$/.test(value)) {
+    generation = Number(value);
+  } else {
+    throw new Error('invalid credential generation returned by database');
+  }
+  if (!Number.isSafeInteger(generation) || generation <= 0) {
+    throw new Error('invalid credential generation returned by database');
+  }
+  return generation;
 }
 
 /** Never leaks the token — safe to return to the browser. */
@@ -126,7 +155,7 @@ export async function getIntegration(
   provider: IntegrationProvider,
 ): Promise<IntegrationRow | null> {
   const r = await db.get<Record<string, unknown>>(
-    sql`SELECT id, account_id, provider, encrypted_token, meta, connected_at, updated_at
+    sql`SELECT id, account_id, provider, encrypted_token, meta, connected_at, updated_at, credential_generation
         FROM account_integration WHERE account_id = ${accountId} AND provider = ${provider} LIMIT 1`,
   );
   return r ? mapRow(r) : null;
@@ -138,7 +167,7 @@ export async function listIntegrationStatuses(
   accountId: string,
 ): Promise<IntegrationStatus[]> {
   const rows = await db.all<Record<string, unknown>>(
-    sql`SELECT id, account_id, provider, encrypted_token, meta, connected_at, updated_at
+    sql`SELECT id, account_id, provider, encrypted_token, meta, connected_at, updated_at, credential_generation
         FROM account_integration WHERE account_id = ${accountId}`,
   );
   return rows.map((r) => describeIntegration(mapRow(r)));
@@ -149,6 +178,60 @@ export async function listIntegrationStatuses(
  * `label` is an optional non-secret display hint resolved by the caller after
  * validating the token against the provider. Returns the token-free status.
  */
+export interface UpsertIntegrationResult {
+  status: IntegrationStatus;
+  revision: StoredProviderCredentialRevision;
+}
+
+/**
+ * Atomically writes a credential and returns its persistent revision. The
+ * generation increment happens inside the database conflict update, never in
+ * application memory, so concurrent writers receive distinct revisions.
+ */
+export async function upsertIntegrationWithRevision(
+  db: Db,
+  accountId: string,
+  provider: IntegrationProvider,
+  token: string,
+  encryptionKey: string,
+  label?: string | null,
+): Promise<UpsertIntegrationResult> {
+  const meta: IntegrationMeta = { last4: tokenLast4(token) };
+  if (label) meta.label = label;
+  const encrypted = encryptToken(token, encryptionKey);
+  const now = Date.now();
+  const returned = await db.get<{ id: unknown; credential_generation: unknown }>(
+    sql`INSERT INTO account_integration (
+          id, account_id, provider, encrypted_token, meta, connected_at, updated_at, credential_generation
+        ) VALUES (
+          ${randomUUID()}, ${accountId}, ${provider}, ${encrypted}, ${jsonParam(meta)}, ${now}, ${now}, 1
+        )
+        ON CONFLICT (account_id, provider) DO UPDATE SET
+          encrypted_token = EXCLUDED.encrypted_token,
+          meta = EXCLUDED.meta,
+          updated_at = EXCLUDED.updated_at,
+          credential_generation = account_integration.credential_generation + 1
+        RETURNING id, credential_generation`,
+  );
+  if (!returned || typeof returned.id !== 'string' || returned.id === '') {
+    throw new Error('credential upsert did not return an id');
+  }
+  const generation = normalizeCredentialGeneration(returned.credential_generation);
+  const row = await getIntegration(db, accountId, provider);
+  if (!row) throw new Error('credential upsert did not persist a row');
+  return {
+    status: describeIntegration(row),
+    revision: {
+      kind: 'stored',
+      id: returned.id,
+      generation,
+      updatedAt: now,
+      [providerCredentialRevisionBrand]: true,
+    },
+  };
+}
+
+/** Connect (or re-connect) a provider and return the token-free status. */
 export async function upsertIntegration(
   db: Db,
   accountId: string,
@@ -157,27 +240,7 @@ export async function upsertIntegration(
   encryptionKey: string,
   label?: string | null,
 ): Promise<IntegrationStatus> {
-  const meta: IntegrationMeta = { last4: tokenLast4(token) };
-  if (label) meta.label = label;
-  const encrypted = encryptToken(token, encryptionKey);
-  const existing = await getIntegration(db, accountId, provider);
-  // `updated_at` is the persistent cache revision. Advance it even when two
-  // successful reconnects share a millisecond, so every mutation is visible.
-  const now = Math.max(Date.now(), (existing?.updatedAt ?? 0) + 1);
-  if (existing) {
-    await db.run(
-      sql`UPDATE account_integration
-          SET encrypted_token = ${encrypted}, meta = ${jsonParam(meta)}, updated_at = ${now}
-          WHERE account_id = ${accountId} AND provider = ${provider}`,
-    );
-  } else {
-    await db.run(
-      sql`INSERT INTO account_integration (id, account_id, provider, encrypted_token, meta, connected_at, updated_at)
-          VALUES (${randomUUID()}, ${accountId}, ${provider}, ${encrypted}, ${jsonParam(meta)}, ${now}, ${now})`,
-    );
-  }
-  const row = await getIntegration(db, accountId, provider);
-  return describeIntegration(row!);
+  return (await upsertIntegrationWithRevision(db, accountId, provider, token, encryptionKey, label)).status;
 }
 
 /** Disconnect a provider. Idempotent. */

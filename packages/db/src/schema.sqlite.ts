@@ -269,6 +269,7 @@ export const accountIntegration = sqliteTable(
     meta: text('meta'),
     connectedAt: integer('connected_at').notNull(),
     updatedAt: integer('updated_at').notNull(),
+    credentialGeneration: integer('credential_generation').notNull().default(1),
   },
   (t) => ({
     accountIntegrationAccountProviderUq: uniqueIndex('account_integration_account_provider_uq').on(

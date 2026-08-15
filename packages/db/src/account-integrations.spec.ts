@@ -11,12 +11,15 @@ import { migrate } from './migrate';
 import { encryptToken, decryptToken, hasEncryptionKey, tokenLast4 } from './crypto';
 import {
   upsertIntegration,
+  upsertIntegrationWithRevision,
   getIntegration,
   listIntegrationStatuses,
   deleteIntegration,
   resolveProviderToken,
   describeIntegration,
+  integrationProviders,
 } from './account-integrations';
+import { jsonParam } from './forms';
 
 const KEY = randomBytes(32).toString('base64');
 
@@ -78,6 +81,7 @@ describe('account_integration repo', () => {
     const row = await getIntegration(db, accountId, 'hubspot');
     expect(row!.encryptedToken).not.toContain('fake-testtoken-abc-9999');
     expect(decryptToken(row!.encryptedToken, KEY)).toBe('fake-testtoken-abc-9999');
+    expect(row!.credentialGeneration).toBe(1);
     // describe never leaks the token
     expect(JSON.stringify(describeIntegration(row!))).not.toContain('fake-testtoken');
   });
@@ -93,8 +97,91 @@ describe('account_integration repo', () => {
     expect(decryptToken((await getIntegration(db, accountId, 'hubspot'))!.encryptedToken, KEY)).toBe(
       'token-two-2222',
     );
+    if (!first || first.revision.kind !== 'stored') throw new Error('expected first stored revision');
+    if (!second || second.revision.kind !== 'stored') throw new Error('expected second stored revision');
     expect(second).toMatchObject({ token: 'token-two-2222', revision: { kind: 'stored' } });
-    expect(second!.revision).not.toEqual(first!.revision);
+    expect(second.revision).not.toEqual(first.revision);
+    expect(second.revision.generation).toBe(2);
+    expect(second.revision.id).toBe(first.revision.id);
+  });
+
+  it('returns one row from db.get for credential UPSERT RETURNING on this dialect', async () => {
+    const id = randomUUID();
+    const now = Date.now();
+    const returned = await db.get<{ id: unknown; credential_generation: unknown }>(
+      sql`INSERT INTO account_integration (
+            id, account_id, provider, encrypted_token, meta, connected_at, updated_at, credential_generation
+          ) VALUES (
+            ${id}, ${accountId}, ${'hubspot'}, ${encryptToken('returning-token', KEY)},
+            ${jsonParam({ last4: 'oken' })}, ${now}, ${now}, 1
+          )
+          ON CONFLICT (account_id, provider) DO UPDATE SET
+            encrypted_token = EXCLUDED.encrypted_token,
+            meta = EXCLUDED.meta,
+            updated_at = EXCLUDED.updated_at,
+            credential_generation = account_integration.credential_generation + 1
+          RETURNING id, credential_generation`,
+    );
+
+    expect(returned).toBeDefined();
+    expect(returned!.id).toBe(id);
+    expect(Number(returned!.credential_generation)).toBe(1);
+  });
+
+  it('defaults credential generation to 1 for a legacy writer that omits the column', async () => {
+    const id = randomUUID();
+    const now = Date.now();
+    await db.run(
+      sql`INSERT INTO account_integration (
+            id, account_id, provider, encrypted_token, meta, connected_at, updated_at
+          ) VALUES (
+            ${id}, ${accountId}, ${'calendly'}, ${encryptToken('legacy-token', KEY)},
+            ${jsonParam({ last4: 'oken' })}, ${now}, ${now}
+          )`,
+    );
+
+    expect((await getIntegration(db, accountId, 'calendly'))!.credentialGeneration).toBe(1);
+  });
+
+  it('rejects non-positive, non-integer, and unsafe generations returned by UPSERT', async () => {
+    for (const generation of ['0', '1.5', '9007199254740992']) {
+      const invalidReturningDb = {
+        dialect: 'sqlite',
+        get: async () => ({ id: 'returned-id', credential_generation: generation }),
+      } as unknown as Db;
+      await expect(
+        upsertIntegrationWithRevision(invalidReturningDb, accountId, 'hubspot', 'invalid-generation', KEY),
+      ).rejects.toThrow('invalid credential generation returned by database');
+    }
+  });
+
+  it('allocates distinct database generations for concurrent writes and increments sequential writes', async () => {
+    for (const provider of integrationProviders) {
+      const before = await upsertIntegrationWithRevision(db, accountId, provider, `${provider}-r0`, KEY);
+      const [writeA, writeB] = await Promise.all([
+        upsertIntegrationWithRevision(db, accountId, provider, `${provider}-a`, KEY),
+        upsertIntegrationWithRevision(db, accountId, provider, `${provider}-b`, KEY),
+      ]);
+      const current = await resolveProviderToken(db, accountId, provider, KEY, undefined);
+
+      // This is the counterfactual oracle: a read-then-write allocator can
+      // reuse generation 2 here, while the conflict update must return 2 and 3.
+      expect(new Set([writeA.revision.generation, writeB.revision.generation])).toEqual(new Set([2, 3]));
+      expect(writeA.revision.generation).not.toBe(before.revision.generation);
+      expect(writeB.revision.generation).not.toBe(before.revision.generation);
+      expect(writeA.revision.id).toBe(before.revision.id);
+      expect(writeB.revision.id).toBe(before.revision.id);
+      expect(current).toMatchObject({ token: expect.stringMatching(new RegExp(`${provider}-[ab]`)) });
+      expect(current!.revision).toMatchObject({ generation: 3 });
+    }
+
+    const writes = 4;
+    await deleteIntegration(db, accountId, 'hubspot');
+    let latest = await upsertIntegrationWithRevision(db, accountId, 'hubspot', 'sequential-r0', KEY);
+    for (let i = 1; i <= writes; i++) {
+      latest = await upsertIntegrationWithRevision(db, accountId, 'hubspot', `sequential-${i}`, KEY);
+    }
+    expect(latest.revision.generation).toBe(writes + 1);
   });
 
   it('resolveProviderToken prefers the account token, falls back to env', async () => {
@@ -108,7 +195,7 @@ describe('account_integration repo', () => {
     await upsertIntegration(db, accountId, 'hubspot', 'account-token', KEY);
     expect(await resolveProviderToken(db, accountId, 'hubspot', KEY, 'env-token')).toMatchObject({
       token: 'account-token',
-      revision: { kind: 'stored', id: expect.any(String), updatedAt: expect.any(Number) },
+      revision: { kind: 'stored', id: expect.any(String), generation: 1, updatedAt: expect.any(Number) },
     });
     // Without an encryption key configured → only env fallback is consulted.
     expect(await resolveProviderToken(db, accountId, 'hubspot', undefined, 'env-token')).toMatchObject({

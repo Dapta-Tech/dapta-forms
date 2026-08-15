@@ -13,7 +13,7 @@
  *      fallback), and falls back to env / reports disabled when appropriate;
  *   7. connect/disconnect require an admin/owner (a plain member is refused 403).
  */
-import { describe, it, expect, expectTypeOf, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, expectTypeOf, beforeEach, afterEach, vi } from 'vitest';
 import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import {
   createDb,
@@ -25,6 +25,10 @@ import {
   inviteMember,
   resolveProviderToken,
   upsertIntegration,
+  deleteIntegration,
+  encryptToken,
+  jsonParam,
+  sql,
   type Db,
   type ProviderCredentialRevision,
 } from '@quill/db';
@@ -97,10 +101,10 @@ function makeEnv(overrides: Partial<ServerEnv> = {}): ServerEnv {
 }
 
 /** Wire the real controller with a swappable fetch (used for both connect + picker). */
-function build(
+function createController(
   env: ServerEnv,
   fetchImpl: typeof fetch,
-): { hubspot: HubspotPropertiesService; calendly: CalendlyEventTypesService } {
+): { controller: IntegrationsController; hubspot: HubspotPropertiesService; calendly: CalendlyEventTypesService } {
   const provider = new LocalAuthProvider(db, {
     NODE_ENV: 'test',
     DEV_LOGIN_EMAIL: undefined,
@@ -111,9 +115,18 @@ function build(
   const auth = new AuthService(db, provider);
   const hubspot = new HubspotPropertiesService(env, db, fetchImpl);
   const calendly = new CalendlyEventTypesService(env, db, fetchImpl);
-  controller = new IntegrationsController(auth, hubspot, calendly, db, env);
-  controller.fetchImpl = fetchImpl;
-  return { hubspot, calendly };
+  const instance = new IntegrationsController(auth, hubspot, calendly, db, env);
+  instance.fetchImpl = fetchImpl;
+  return { controller: instance, hubspot, calendly };
+}
+
+function build(
+  env: ServerEnv,
+  fetchImpl: typeof fetch,
+): { controller: IntegrationsController; hubspot: HubspotPropertiesService; calendly: CalendlyEventTypesService } {
+  const built = createController(env, fetchImpl);
+  controller = built.controller;
+  return built;
 }
 
 async function accountId(): Promise<string> {
@@ -122,12 +135,18 @@ async function accountId(): Promise<string> {
 }
 
 beforeEach(async () => {
-  db = await createDb('file::memory:');
+  db = await createDb(process.env.DATABASE_URL ?? 'file::memory:');
   await migrate(db);
   await seed(db); // account "acme" + owner alex@example.com
+  const account = await getAccountByCode(db, 'acme');
+  if (account) {
+    await deleteIntegration(db, account.id, 'hubspot');
+    await deleteIntegration(db, account.id, 'calendly');
+  }
 });
 
 afterEach(async () => {
+  vi.restoreAllMocks();
   await db.close();
 });
 
@@ -534,6 +553,233 @@ describe('HubSpot property picker token resolution', () => {
     expect(bAuthorizations).toEqual([`Bearer ${initialToken}`, `Bearer ${rotatedToken}`]);
   });
 
+  it('keeps the final concurrent HubSpot connect winner after a held R0 fetch', async () => {
+    const r0Token = 'hubspot-r0-0001';
+    const writerAToken = 'hubspot-writer-a-0002';
+    const writerBToken = 'hubspot-writer-b-0003';
+    const r0FetchStarted = deferred<void>();
+    const r0Fetch = deferred<Response>();
+    const readerAuthorizations: string[] = [];
+    const readerFetch = (async (url: string, init?: RequestInit) => {
+      const authorization = (init?.headers as Record<string, string> | undefined)?.authorization;
+      if (url !== HUBSPOT_PROPERTIES_URL) throw new Error('unexpected HubSpot URL');
+      readerAuthorizations.push(authorization ?? '');
+      if (authorization === `Bearer ${r0Token}`) {
+        r0FetchStarted.resolve();
+        return r0Fetch.promise;
+      }
+      if (authorization === `Bearer ${writerBToken}`) {
+        return jsonResponse({ results: [{ name: 'writer_b', label: 'Writer B', type: 'string' }] });
+      }
+      throw new Error('unexpected HubSpot authorization');
+    }) as unknown as typeof fetch;
+    const writerAStarted = deferred<void>();
+    const writerAResponse = deferred<Response>();
+    const writerAAuthorizations: string[] = [];
+    const writerAFetch = (async (url: string, init?: RequestInit) => {
+      const authorization = (init?.headers as Record<string, string> | undefined)?.authorization;
+      if (url !== HUBSPOT_PROPERTIES_URL || authorization !== `Bearer ${writerAToken}`) {
+        throw new Error('unexpected HubSpot writer A request');
+      }
+      writerAAuthorizations.push(authorization);
+      writerAStarted.resolve();
+      return writerAResponse.promise;
+    }) as unknown as typeof fetch;
+    const writerBStarted = deferred<void>();
+    const writerBResponse = deferred<Response>();
+    const writerBAuthorizations: string[] = [];
+    const writerBFetch = (async (url: string, init?: RequestInit) => {
+      const authorization = (init?.headers as Record<string, string> | undefined)?.authorization;
+      if (url !== HUBSPOT_PROPERTIES_URL || authorization !== `Bearer ${writerBToken}`) {
+        throw new Error('unexpected HubSpot writer B request');
+      }
+      writerBAuthorizations.push(authorization);
+      writerBStarted.resolve();
+      return writerBResponse.promise;
+    }) as unknown as typeof fetch;
+    const cacheWrite = vi.spyOn(AccountMetadataCache.prototype, 'setIfCurrent');
+    const reader = new HubspotPropertiesService(makeEnv(), db, readerFetch);
+    const controllerA = createController(makeEnv(), writerAFetch).controller;
+    const controllerB = createController(makeEnv(), writerBFetch).controller;
+    const id = await accountId();
+
+    await upsertIntegration(db, id, 'hubspot', r0Token, ENCRYPTION_KEY);
+    const pending = reader.listProperties(id, 1_000);
+    await r0FetchStarted.promise;
+    // Both connects start from R0; resolving B last makes it the durable winner.
+    const connectA = controllerA.connect(asOwner(), 'hubspot', { token: writerAToken });
+    const connectB = controllerB.connect(asOwner(), 'hubspot', { token: writerBToken });
+    await Promise.all([writerAStarted.promise, writerBStarted.promise]);
+    writerAResponse.resolve(jsonResponse({ results: [] }));
+    await connectA;
+    writerBResponse.resolve(jsonResponse({ results: [] }));
+    await connectB;
+    const winner = await resolveProviderToken(db, id, 'hubspot', ENCRYPTION_KEY, undefined);
+    r0Fetch.resolve(jsonResponse({ results: [{ name: 'r0', label: 'R0', type: 'string' }] }));
+
+    const stale = await pending;
+    const current = await reader.listProperties(id, 1_001);
+    const hit = await reader.listProperties(id, 1_002);
+
+    expect(stale).toMatchObject({ enabled: true, cached: false, properties: [{ name: 'r0' }] });
+    expect(winner).toMatchObject({ token: writerBToken, revision: { kind: 'stored' } });
+    expect(current).toMatchObject({ enabled: true, cached: false, properties: [{ name: 'writer_b' }] });
+    expect(hit).toMatchObject({ enabled: true, cached: true, properties: [{ name: 'writer_b' }] });
+    expect(cacheWrite).toHaveReturnedWith(false);
+    expect(readerAuthorizations).toEqual([`Bearer ${r0Token}`, `Bearer ${writerBToken}`]);
+    expect(writerAAuthorizations).toEqual([`Bearer ${writerAToken}`]);
+    expect(writerBAuthorizations).toEqual([`Bearer ${writerBToken}`]);
+  });
+
+  it('misses cached HubSpot metadata after a peer advances generation N to N+1', async () => {
+    const initialToken = 'first';
+    const nextToken = 'second';
+    const readerAuthorizations: string[] = [];
+    const readerFetch = (async (url: string, init?: RequestInit) => {
+      const authorization = (init?.headers as Record<string, string> | undefined)?.authorization;
+      if (url !== HUBSPOT_PROPERTIES_URL) throw new Error('unexpected HubSpot URL');
+      readerAuthorizations.push(authorization ?? '');
+      if (authorization === `Bearer ${initialToken}`) {
+        return jsonResponse({ results: [{ name: 'generation_n', label: 'Generation N', type: 'string' }] });
+      }
+      if (authorization === `Bearer ${nextToken}`) {
+        return jsonResponse({ results: [{ name: 'generation_n_plus_1', label: 'Generation N+1', type: 'string' }] });
+      }
+      throw new Error('unexpected HubSpot authorization');
+    }) as unknown as typeof fetch;
+    const peerAuthorizations: string[] = [];
+    const peerFetch = (async (url: string, init?: RequestInit) => {
+      const authorization = (init?.headers as Record<string, string> | undefined)?.authorization;
+      if (url !== HUBSPOT_PROPERTIES_URL || authorization !== `Bearer ${nextToken}`) {
+        throw new Error('unexpected HubSpot peer request');
+      }
+      peerAuthorizations.push(authorization);
+      return jsonResponse({ results: [] });
+    }) as unknown as typeof fetch;
+    const reader = new HubspotPropertiesService(makeEnv(), db, readerFetch);
+    const peer = createController(makeEnv(), peerFetch);
+    const id = await accountId();
+
+    await upsertIntegration(db, id, 'hubspot', initialToken, ENCRYPTION_KEY);
+    const first = await reader.listProperties(id, 1_000);
+    const before = await resolveProviderToken(db, id, 'hubspot', ENCRYPTION_KEY, undefined);
+    await peer.controller.connect(asOwner(), 'hubspot', { token: nextToken });
+    const after = await resolveProviderToken(db, id, 'hubspot', ENCRYPTION_KEY, undefined);
+    const current = await reader.listProperties(id, 1_001);
+    const hit = await reader.listProperties(id, 1_002);
+    if (!before || before.revision.kind !== 'stored') throw new Error('expected stored pre-write revision');
+    if (!after || after.revision.kind !== 'stored') throw new Error('expected stored post-write revision');
+
+    expect(reader).not.toBe(peer.hubspot);
+    expect(first).toMatchObject({ enabled: true, cached: false, properties: [{ name: 'generation_n' }] });
+    expect(after.revision.generation).toBe(before.revision.generation + 1);
+    expect(current).toMatchObject({
+      enabled: true,
+      cached: false,
+      properties: [{ name: 'generation_n_plus_1' }],
+    });
+    expect(hit).toMatchObject({ enabled: true, cached: true, properties: [{ name: 'generation_n_plus_1' }] });
+    expect(readerAuthorizations).toEqual([`Bearer ${initialToken}`, `Bearer ${nextToken}`]);
+    expect(peerAuthorizations).toEqual([`Bearer ${nextToken}`]);
+  });
+
+  it('misses an uninformed HubSpot cache through disconnect, env fallback, and reconnect', async () => {
+    const initialToken = 'hubspot-pre-disconnect-0001';
+    const fallbackToken = 'hubspot-fallback-0002';
+    const reconnectToken = 'hubspot-reconnect-0003';
+    const readerAuthorizations: string[] = [];
+    const readerFetch = (async (url: string, init?: RequestInit) => {
+      const authorization = (init?.headers as Record<string, string> | undefined)?.authorization;
+      if (url !== HUBSPOT_PROPERTIES_URL) throw new Error('unexpected HubSpot URL');
+      readerAuthorizations.push(authorization ?? '');
+      const name =
+        authorization === `Bearer ${initialToken}`
+          ? 'initial'
+          : authorization === `Bearer ${fallbackToken}`
+            ? 'fallback'
+            : authorization === `Bearer ${reconnectToken}`
+              ? 'reconnect'
+              : null;
+      if (!name) throw new Error('unexpected HubSpot authorization');
+      return jsonResponse({ results: [{ name, label: name, type: 'string' }] });
+    }) as unknown as typeof fetch;
+    const peerAuthorizations: string[] = [];
+    const peerFetch = (async (url: string, init?: RequestInit) => {
+      const authorization = (init?.headers as Record<string, string> | undefined)?.authorization;
+      if (url !== HUBSPOT_PROPERTIES_URL || authorization !== `Bearer ${reconnectToken}`) {
+        throw new Error('unexpected HubSpot peer request');
+      }
+      peerAuthorizations.push(authorization);
+      return jsonResponse({ results: [] });
+    }) as unknown as typeof fetch;
+    const env = makeEnv({ HUBSPOT_PRIVATE_APP_TOKEN: fallbackToken });
+    const reader = new HubspotPropertiesService(env, db, readerFetch);
+    const peer = createController(env, peerFetch);
+    const id = await accountId();
+
+    await upsertIntegration(db, id, 'hubspot', initialToken, ENCRYPTION_KEY);
+    const before = await resolveProviderToken(db, id, 'hubspot', ENCRYPTION_KEY, fallbackToken);
+    const initial = await reader.listProperties(id, 1_000);
+    await peer.controller.disconnect(asOwner(), 'hubspot');
+    const fallback = await reader.listProperties(id, 1_001);
+    await peer.controller.connect(asOwner(), 'hubspot', { token: reconnectToken });
+    const after = await resolveProviderToken(db, id, 'hubspot', ENCRYPTION_KEY, fallbackToken);
+    const reconnected = await reader.listProperties(id, 1_002);
+    if (!before || before.revision.kind !== 'stored') throw new Error('expected stored pre-disconnect revision');
+    if (!after || after.revision.kind !== 'stored') throw new Error('expected stored reconnect revision');
+
+    expect(after.revision.generation).toBe(1);
+    expect(after.revision.id).not.toBe(before.revision.id);
+    expect(initial).toMatchObject({ enabled: true, cached: false, properties: [{ name: 'initial' }] });
+    expect(fallback).toMatchObject({ enabled: true, cached: false, properties: [{ name: 'fallback' }] });
+    expect(reconnected).toMatchObject({ enabled: true, cached: false, properties: [{ name: 'reconnect' }] });
+    expect(readerAuthorizations).toEqual([
+      `Bearer ${initialToken}`,
+      `Bearer ${fallbackToken}`,
+      `Bearer ${reconnectToken}`,
+    ]);
+    expect(peerAuthorizations).toEqual([`Bearer ${reconnectToken}`]);
+  });
+
+  it('treats an old-writer updatedAt change as a HubSpot cache revision change', async () => {
+    const initialToken = 'hubspot-old-writer-initial-0001';
+    const replacementToken = 'hubspot-old-writer-replacement-0002';
+    const authorizations: string[] = [];
+    const fetchImpl = (async (url: string, init?: RequestInit) => {
+      const authorization = (init?.headers as Record<string, string> | undefined)?.authorization;
+      if (url !== HUBSPOT_PROPERTIES_URL) throw new Error('unexpected HubSpot URL');
+      authorizations.push(authorization ?? '');
+      const name =
+        authorization === `Bearer ${initialToken}`
+          ? 'initial'
+          : authorization === `Bearer ${replacementToken}`
+            ? 'replacement'
+            : null;
+      if (!name) throw new Error('unexpected HubSpot authorization');
+      return jsonResponse({ results: [{ name, label: name, type: 'string' }] });
+    }) as unknown as typeof fetch;
+    const reader = new HubspotPropertiesService(makeEnv(), db, fetchImpl);
+    const id = await accountId();
+
+    await upsertIntegration(db, id, 'hubspot', initialToken, ENCRYPTION_KEY);
+    const first = await reader.listProperties(id, 1_000);
+    const row = await getIntegration(db, id, 'hubspot');
+    await db.run(
+      sql`UPDATE account_integration
+          SET encrypted_token = ${encryptToken(replacementToken, ENCRYPTION_KEY)},
+              meta = ${jsonParam({ last4: '0002' })},
+              updated_at = ${row!.updatedAt + 1}
+          WHERE account_id = ${id} AND provider = ${'hubspot'}`,
+    );
+    const replacement = await reader.listProperties(id, 1_001);
+    const updated = await getIntegration(db, id, 'hubspot');
+
+    expect(first).toMatchObject({ enabled: true, cached: false, properties: [{ name: 'initial' }] });
+    expect(replacement).toMatchObject({ enabled: true, cached: false, properties: [{ name: 'replacement' }] });
+    expect(updated!.credentialGeneration).toBe(row!.credentialGeneration);
+    expect(authorizations).toEqual([`Bearer ${initialToken}`, `Bearer ${replacementToken}`]);
+  });
+
   it('invalidates cached metadata when the account switches to and from an env fallback', async () => {
     const fallbackToken = 'hubspot-fallback-0001';
     const accountToken = 'hubspot-account-0002';
@@ -741,6 +987,114 @@ describe('Calendly event-type picker token resolution', () => {
     expect(unchanged).toMatchObject({ enabled: true, cached: true, eventTypes: [{ name: 'initial event' }] });
     expect(rotated).toMatchObject({ enabled: true, cached: false, eventTypes: [{ name: 'rotated event' }] });
     expect(requests).toBe(expectedAuthorizations.length);
+  });
+
+  it('keeps the final concurrent Calendly connect winner after a held R0 fetch', async () => {
+    const r0Token = 'calendly-r0-0001';
+    const writerAToken = 'calendly-writer-a-0002';
+    const writerBToken = 'calendly-writer-b-0003';
+    const r0MeStarted = deferred<void>();
+    const r0Me = deferred<Response>();
+    const readerAuthorizations: string[] = [];
+    const readerFetch = (async (url: string, init?: RequestInit) => {
+      const authorization = (init?.headers as Record<string, string> | undefined)?.authorization;
+      readerAuthorizations.push(authorization ?? '');
+      if (authorization === `Bearer ${r0Token}`) {
+        if (url === CALENDLY_ME_URL) {
+          r0MeStarted.resolve();
+          return r0Me.promise;
+        }
+        if (url.startsWith(CALENDLY_EVENT_TYPES_BASE)) {
+          return jsonResponse({
+            collection: [
+              {
+                uri: 'https://api.calendly.com/event_types/r0',
+                name: 'r0 event',
+                scheduling_url: 'https://calendly.com/acme/r0',
+              },
+            ],
+          });
+        }
+      }
+      if (authorization === `Bearer ${writerBToken}`) {
+        if (url === CALENDLY_ME_URL) {
+          return jsonResponse({ resource: { uri: 'https://api.calendly.com/users/writer-b' } });
+        }
+        if (url.startsWith(CALENDLY_EVENT_TYPES_BASE)) {
+          return jsonResponse({
+            collection: [
+              {
+                uri: 'https://api.calendly.com/event_types/writer-b',
+                name: 'writer b event',
+                scheduling_url: 'https://calendly.com/acme/writer-b',
+              },
+            ],
+          });
+        }
+      }
+      throw new Error('unexpected Calendly reader request');
+    }) as unknown as typeof fetch;
+    const writerAStarted = deferred<void>();
+    const writerAResponse = deferred<Response>();
+    const writerAAuthorizations: string[] = [];
+    const writerAFetch = (async (url: string, init?: RequestInit) => {
+      const authorization = (init?.headers as Record<string, string> | undefined)?.authorization;
+      if (url !== CALENDLY_ME_URL || authorization !== `Bearer ${writerAToken}`) {
+        throw new Error('unexpected Calendly writer A request');
+      }
+      writerAAuthorizations.push(authorization);
+      writerAStarted.resolve();
+      return writerAResponse.promise;
+    }) as unknown as typeof fetch;
+    const writerBStarted = deferred<void>();
+    const writerBResponse = deferred<Response>();
+    const writerBAuthorizations: string[] = [];
+    const writerBFetch = (async (url: string, init?: RequestInit) => {
+      const authorization = (init?.headers as Record<string, string> | undefined)?.authorization;
+      if (url !== CALENDLY_ME_URL || authorization !== `Bearer ${writerBToken}`) {
+        throw new Error('unexpected Calendly writer B request');
+      }
+      writerBAuthorizations.push(authorization);
+      writerBStarted.resolve();
+      return writerBResponse.promise;
+    }) as unknown as typeof fetch;
+    const cacheWrite = vi.spyOn(AccountMetadataCache.prototype, 'setIfCurrent');
+    const reader = new CalendlyEventTypesService(makeEnv(), db, readerFetch);
+    const controllerA = createController(makeEnv(), writerAFetch).controller;
+    const controllerB = createController(makeEnv(), writerBFetch).controller;
+    const id = await accountId();
+
+    await upsertIntegration(db, id, 'calendly', r0Token, ENCRYPTION_KEY);
+    const pending = reader.listEventTypes(id, 1_000);
+    await r0MeStarted.promise;
+    // Both connects start from R0; resolving B last makes it the durable winner.
+    const connectA = controllerA.connect(asOwner(), 'calendly', { token: writerAToken });
+    const connectB = controllerB.connect(asOwner(), 'calendly', { token: writerBToken });
+    await Promise.all([writerAStarted.promise, writerBStarted.promise]);
+    writerAResponse.resolve(jsonResponse({ resource: { uri: 'https://api.calendly.com/users/writer-a' } }));
+    await connectA;
+    writerBResponse.resolve(jsonResponse({ resource: { uri: 'https://api.calendly.com/users/writer-b' } }));
+    await connectB;
+    const winner = await resolveProviderToken(db, id, 'calendly', ENCRYPTION_KEY, undefined);
+    r0Me.resolve(jsonResponse({ resource: { uri: 'https://api.calendly.com/users/r0' } }));
+
+    const stale = await pending;
+    const current = await reader.listEventTypes(id, 1_001);
+    const hit = await reader.listEventTypes(id, 1_002);
+
+    expect(stale).toMatchObject({ enabled: true, cached: false, eventTypes: [{ name: 'r0 event' }] });
+    expect(winner).toMatchObject({ token: writerBToken, revision: { kind: 'stored' } });
+    expect(current).toMatchObject({ enabled: true, cached: false, eventTypes: [{ name: 'writer b event' }] });
+    expect(hit).toMatchObject({ enabled: true, cached: true, eventTypes: [{ name: 'writer b event' }] });
+    expect(cacheWrite).toHaveReturnedWith(false);
+    expect(readerAuthorizations).toEqual([
+      `Bearer ${r0Token}`,
+      `Bearer ${r0Token}`,
+      `Bearer ${writerBToken}`,
+      `Bearer ${writerBToken}`,
+    ]);
+    expect(writerAAuthorizations).toEqual([`Bearer ${writerAToken}`]);
+    expect(writerBAuthorizations).toEqual([`Bearer ${writerBToken}`]);
   });
 
   it('does not let a pre-disconnect fetch repopulate cache across service instances', async () => {
