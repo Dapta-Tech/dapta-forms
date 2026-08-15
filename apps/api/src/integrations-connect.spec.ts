@@ -84,7 +84,10 @@ function makeEnv(overrides: Partial<ServerEnv> = {}): ServerEnv {
 }
 
 /** Wire the real controller with a swappable fetch (used for both connect + picker). */
-function build(env: ServerEnv, fetchImpl: typeof fetch): void {
+function build(
+  env: ServerEnv,
+  fetchImpl: typeof fetch,
+): { hubspot: HubspotPropertiesService; calendly: CalendlyEventTypesService } {
   const provider = new LocalAuthProvider(db, {
     NODE_ENV: 'test',
     DEV_LOGIN_EMAIL: undefined,
@@ -97,6 +100,7 @@ function build(env: ServerEnv, fetchImpl: typeof fetch): void {
   const calendly = new CalendlyEventTypesService(env, db, fetchImpl);
   controller = new IntegrationsController(auth, hubspot, calendly, db, env);
   controller.fetchImpl = fetchImpl;
+  return { hubspot, calendly };
 }
 
 async function accountId(): Promise<string> {
@@ -393,6 +397,58 @@ describe('HubSpot property picker token resolution', () => {
     expect(second.enabled && second.cached).toBe(true);
     expect(second.enabled && second.properties).toEqual(first.enabled && first.properties);
   });
+
+  it('misses cached metadata when the connected token rotates within the five-minute TTL', async () => {
+    const initialToken = 'hubspot-cache-initial-0001';
+    const rotatedToken = 'hubspot-cache-rotated-0002';
+    let requests = 0;
+    const fetchImpl = (async (url: string, init?: RequestInit) => {
+      requests += 1;
+      if (url !== HUBSPOT_PROPERTIES_URL) return new Response('{}', { status: 404 });
+      const authorization = (init?.headers as Record<string, string> | undefined)?.authorization;
+      const name =
+        authorization === `Bearer ${initialToken}`
+          ? 'initial_property'
+          : authorization === `Bearer ${rotatedToken}`
+            ? 'rotated_property'
+            : 'unexpected_property';
+      return jsonResponse({ results: [{ name, label: name, type: 'string' }] });
+    }) as unknown as typeof fetch;
+    const { hubspot } = build(makeEnv(), fetchImpl);
+    const id = await accountId();
+
+    await controller.connect(asOwner(), 'hubspot', { token: initialToken });
+    const first = await hubspot.listProperties(id, 1_000);
+    const unchanged = await hubspot.listProperties(id, 1_001);
+
+    await controller.connect(asOwner(), 'hubspot', { token: rotatedToken });
+    const rotated = await hubspot.listProperties(id, 1_002);
+
+    expect(first).toMatchObject({ enabled: true, cached: false, properties: [{ name: 'initial_property' }] });
+    expect(unchanged).toMatchObject({ enabled: true, cached: true, properties: [{ name: 'initial_property' }] });
+    expect(rotated).toMatchObject({ enabled: true, cached: false, properties: [{ name: 'rotated_property' }] });
+    expect(requests).toBe(4);
+  });
+
+  it('keeps shared-token cached metadata isolated by account', async () => {
+    let requests = 0;
+    const { hubspot } = build(
+      makeEnv({ HUBSPOT_PRIVATE_APP_TOKEN: 'shared-hubspot-fallback-token' }),
+      (async (url: string) => {
+        if (url !== HUBSPOT_PROPERTIES_URL) return new Response('{}', { status: 404 });
+        requests += 1;
+        const name = requests === 1 ? 'first_account_property' : 'second_account_property';
+        return jsonResponse({ results: [{ name, label: name, type: 'string' }] });
+      }) as unknown as typeof fetch,
+    );
+
+    const first = await hubspot.listProperties('first-account', 1_000);
+    const second = await hubspot.listProperties('second-account', 1_001);
+
+    expect(first).toMatchObject({ enabled: true, cached: false, properties: [{ name: 'first_account_property' }] });
+    expect(second).toMatchObject({ enabled: true, cached: false, properties: [{ name: 'second_account_property' }] });
+    expect(requests).toBe(2);
+  });
 });
 
 describe('Calendly event-type picker token resolution', () => {
@@ -474,5 +530,78 @@ describe('Calendly event-type picker token resolution', () => {
     build(makeEnv({ CALENDLY_API_TOKEN: undefined }), noopFetch);
     const res = await controller.calendlyEventTypes(asOwner());
     expect(res.enabled).toBe(false);
+  });
+
+  it('misses cached metadata when the connected token rotates within the five-minute TTL', async () => {
+    const initialToken = 'calendly-cache-initial-0001';
+    const rotatedToken = 'calendly-cache-rotated-0002';
+    let requests = 0;
+    const fetchImpl = (async (url: string, init?: RequestInit) => {
+      requests += 1;
+      const authorization = (init?.headers as Record<string, string> | undefined)?.authorization;
+      const suffix = authorization === `Bearer ${initialToken}` ? 'initial' : 'rotated';
+      if (url === CALENDLY_ME_URL) {
+        return jsonResponse({ resource: { uri: `https://api.calendly.com/users/${suffix}` } });
+      }
+      if (url.startsWith(CALENDLY_EVENT_TYPES_BASE)) {
+        return jsonResponse({
+          collection: [
+            {
+              uri: `https://api.calendly.com/event_types/${suffix}`,
+              name: `${suffix} event`,
+              scheduling_url: `https://calendly.com/acme/${suffix}`,
+            },
+          ],
+        });
+      }
+      return new Response('{}', { status: 404 });
+    }) as unknown as typeof fetch;
+    const { calendly } = build(makeEnv(), fetchImpl);
+    const id = await accountId();
+
+    await controller.connect(asOwner(), 'calendly', { token: initialToken });
+    const first = await calendly.listEventTypes(id, 1_000);
+    const unchanged = await calendly.listEventTypes(id, 1_001);
+
+    await controller.connect(asOwner(), 'calendly', { token: rotatedToken });
+    const rotated = await calendly.listEventTypes(id, 1_002);
+
+    expect(first).toMatchObject({ enabled: true, cached: false, eventTypes: [{ name: 'initial event' }] });
+    expect(unchanged).toMatchObject({ enabled: true, cached: true, eventTypes: [{ name: 'initial event' }] });
+    expect(rotated).toMatchObject({ enabled: true, cached: false, eventTypes: [{ name: 'rotated event' }] });
+    expect(requests).toBe(6);
+  });
+
+  it('keeps shared-token cached metadata isolated by account', async () => {
+    let eventTypeRequests = 0;
+    const { calendly } = build(
+      makeEnv({ CALENDLY_API_TOKEN: 'shared-calendly-fallback-token' }),
+      (async (url: string) => {
+        if (url === CALENDLY_ME_URL) {
+          return jsonResponse({ resource: { uri: 'https://api.calendly.com/users/shared' } });
+        }
+        if (url.startsWith(CALENDLY_EVENT_TYPES_BASE)) {
+          eventTypeRequests += 1;
+          const suffix = eventTypeRequests === 1 ? 'first-account' : 'second-account';
+          return jsonResponse({
+            collection: [
+              {
+                uri: `https://api.calendly.com/event_types/${suffix}`,
+                name: suffix,
+                scheduling_url: `https://calendly.com/acme/${suffix}`,
+              },
+            ],
+          });
+        }
+        return new Response('{}', { status: 404 });
+      }) as unknown as typeof fetch,
+    );
+
+    const first = await calendly.listEventTypes('first-account', 1_000);
+    const second = await calendly.listEventTypes('second-account', 1_001);
+
+    expect(first).toMatchObject({ enabled: true, cached: false, eventTypes: [{ name: 'first-account' }] });
+    expect(second).toMatchObject({ enabled: true, cached: false, eventTypes: [{ name: 'second-account' }] });
+    expect(eventTypeRequests).toBe(2);
   });
 });

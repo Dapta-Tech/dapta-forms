@@ -16,6 +16,7 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
+import { createHash } from 'node:crypto';
 import { z, ZodError } from 'zod';
 import type { Db, IntegrationProvider, IntegrationStatus } from '@quill/db';
 import {
@@ -121,6 +122,17 @@ const HUBSPOT_PROPERTIES_URL = 'https://api.hubapi.com/crm/v3/properties/contact
 const CALENDLY_ME_URL = 'https://api.calendly.com/users/me';
 const CALENDLY_EVENT_TYPES_URL = 'https://api.calendly.com/event_types';
 
+interface TokenAwareCacheEntry<T> {
+  tokenFingerprint: string;
+  data: T;
+  expires: number;
+}
+
+/** One-way cache identity for a resolved provider token. */
+function tokenFingerprint(token: string): string {
+  return createHash('sha256').update(token).digest('hex');
+}
+
 interface HubSpotPropertyOptionApi {
   value?: string;
   label?: string;
@@ -163,15 +175,14 @@ function toPropertyOptions(
 @Injectable()
 export class HubspotPropertiesService {
   // Per-ACCOUNT cache: HubSpot contact properties are portal-specific, so one
-  // account's connected token must never surface another account's list. Keyed
-  // by accountId (accounts sharing the env fallback cache separately — a minor
-  // duplication, never a cross-account leak).
+  // account's connected token must never surface another account's list. Entries
+  // carry a one-way token fingerprint so a reconnect within the TTL refetches.
   //
   // The keying carries MORE weight now that entries include enumeration options:
   // a global cache would leak not just property names but their values — a
   // portal's internal sales taxonomy (deal stages, lead grades, account tiers).
   // Do not "optimize" this into a single shared map.
-  private readonly cache = new Map<string, { data: HubSpotPropertyDto[]; expires: number }>();
+  private readonly cache = new Map<string, TokenAwareCacheEntry<HubSpotPropertyDto[]>>();
 
   constructor(
     @Inject(ENV) private readonly env: ServerEnv,
@@ -204,8 +215,9 @@ export class HubspotPropertiesService {
         reason: 'No HubSpot token — connect HubSpot for this account or set the server token.',
       };
     }
+    const fingerprint = tokenFingerprint(token);
     const cached = this.cache.get(accountId);
-    if (cached && cached.expires > now) {
+    if (cached && cached.tokenFingerprint === fingerprint && cached.expires > now) {
       return { enabled: true, cached: true, properties: cached.data };
     }
     const res = await this.fetchImpl(HUBSPOT_PROPERTIES_URL, {
@@ -230,7 +242,7 @@ export class HubspotPropertiesService {
         return dto;
       })
       .sort((a, b) => a.label.localeCompare(b.label));
-    this.cache.set(accountId, { data: properties, expires: now + CACHE_TTL_MS });
+    this.cache.set(accountId, { tokenFingerprint: fingerprint, data: properties, expires: now + CACHE_TTL_MS });
     return { enabled: true, cached: false, properties };
   }
 }
@@ -282,7 +294,8 @@ function toBookingFields(questions: CalendlyCustomQuestionApi[] | undefined): Ca
 @Injectable()
 export class CalendlyEventTypesService {
   // Per-ACCOUNT cache: event types are portal-specific to the connected token.
-  private readonly cache = new Map<string, { data: CalendlyEventTypeDto[]; expires: number }>();
+  // The cache retains only a one-way token fingerprint for rotation detection.
+  private readonly cache = new Map<string, TokenAwareCacheEntry<CalendlyEventTypeDto[]>>();
 
   constructor(
     @Inject(ENV) private readonly env: ServerEnv,
@@ -311,8 +324,9 @@ export class CalendlyEventTypesService {
         reason: 'No Calendly token — connect Calendly for this account or set the server token.',
       };
     }
+    const fingerprint = tokenFingerprint(token);
     const cached = this.cache.get(accountId);
-    if (cached && cached.expires > now) {
+    if (cached && cached.tokenFingerprint === fingerprint && cached.expires > now) {
       return { enabled: true, cached: true, eventTypes: cached.data };
     }
     const headers = { authorization: `Bearer ${token}`, 'content-type': 'application/json' };
@@ -338,7 +352,7 @@ export class CalendlyEventTypesService {
         customQuestions: toBookingFields(e.custom_questions),
       }))
       .sort((a, b) => a.name.localeCompare(b.name));
-    this.cache.set(accountId, { data: eventTypes, expires: now + CACHE_TTL_MS });
+    this.cache.set(accountId, { tokenFingerprint: fingerprint, data: eventTypes, expires: now + CACHE_TTL_MS });
     return { enabled: true, cached: false, eventTypes };
   }
 }
