@@ -112,13 +112,21 @@ describe('new web against an API with no /v2', () => {
 
 
 describe('an API that speaks v2 but has writes switched off', () => {
-  it('reports the capability as unavailable rather than letting a write through', async () => {
+  it('reports write admission as unavailable while keeping recovery available', async () => {
     server.removeAllListeners('request');
     server.on('request', (req, res) => {
       touched.push(`${req.method} ${req.url}`);
       res.setHeader('content-type', 'application/json');
       if (req.method === 'GET') {
-        res.end(JSON.stringify({ handle: 'alex-rivera', profile: null, revision: 3, writesEnabled: false }));
+        res.end(
+          JSON.stringify({
+            handle: 'alex-rivera',
+            profile: null,
+            revision: 3,
+            writesEnabled: false,
+            fenceSupported: true,
+          }),
+        );
         return;
       }
       // The gate refuses before the row is touched.
@@ -128,11 +136,89 @@ describe('an API that speaks v2 but has writes switched off', () => {
     const { saveMyProfileV2, fenceMyProfileV2, adminApi } = await import('./admin-api');
 
     expect(await saveMyProfileV2({ version: 1, enabled: true }, 3)).toEqual({ status: 'unsupported' });
-    expect(await fenceMyProfileV2(3)).toEqual({ status: 'unsupported' });
-    // The read still works and says why the screen must block.
-    expect(await adminApi.myProfile()).toMatchObject({ revision: 3, writesEnabled: false });
+    // The read still works and says why the screen must block — and says,
+    // separately, that an ambiguous save can still be settled here.
+    expect(await adminApi.myProfile()).toMatchObject({
+      revision: 3,
+      writesEnabled: false,
+      fenceSupported: true,
+    });
     // And it never reaches for the deprecated writer.
     expect(touched.some((t) => t.includes('/v1/me/profile') && !t.startsWith('GET'))).toBe(false);
+  });
+
+  it('settles a fence even though new saves are refused', async () => {
+    server.removeAllListeners('request');
+    server.on('request', (req, res) => {
+      touched.push(`${req.method} ${req.url}`);
+      res.setHeader('content-type', 'application/json');
+      if (req.url?.endsWith('/fence')) {
+        res.end(JSON.stringify({ ok: true, profile: null, revision: 4 }));
+        return;
+      }
+      res.statusCode = 501;
+      res.end(JSON.stringify({ error: 'V2_WRITES_DISABLED', message: 'not enabled' }));
+    });
+    const { saveMyProfileV2, fenceMyProfileV2 } = await import('./admin-api');
+
+    expect(await saveMyProfileV2({ version: 1, enabled: true }, 3)).toEqual({ status: 'unsupported' });
+    expect(await fenceMyProfileV2(3)).toEqual({ status: 'ok', profile: null, revision: 4 });
+  });
+});
+
+describe('a mutation that came back 5xx', () => {
+  /** Answer every mutation with `status`, and record what was asked. */
+  const answerWith = (status: number, body: unknown) => {
+    server.removeAllListeners('request');
+    server.on('request', (req, res) => {
+      touched.push(`${req.method} ${req.url}`);
+      res.statusCode = status;
+      res.setHeader('content-type', 'application/json');
+      res.end(JSON.stringify(body));
+    });
+  };
+
+  it('is unknown for a 500, because the row may already have been written', async () => {
+    answerWith(500, { statusCode: 500, message: 'Internal server error' });
+    const { saveMyProfileV2 } = await import('./admin-api');
+
+    expect(await saveMyProfileV2({ version: 1, enabled: true }, 3)).toEqual({ status: 'unknown' });
+  });
+
+  it('is unknown for a proxy 502 or 504, which never saw the outcome at all', async () => {
+    const { saveMyProfileV2 } = await import('./admin-api');
+
+    for (const status of [502, 504]) {
+      answerWith(status, { message: 'bad gateway' });
+      expect(await saveMyProfileV2({ version: 1, enabled: true }, 3), String(status)).toEqual({
+        status: 'unknown',
+      });
+    }
+  });
+
+  it('is unknown for a bare 501 with no contract code — a proxy can invent one', async () => {
+    answerWith(501, { message: 'not implemented' });
+    const { saveMyProfileV2 } = await import('./admin-api');
+
+    expect(await saveMyProfileV2({ version: 1, enabled: true }, 3)).toEqual({ status: 'unknown' });
+  });
+
+  it('sends exactly one mutation — never a silent retry that could double-apply', async () => {
+    answerWith(500, { message: 'boom' });
+    const { saveMyProfileV2 } = await import('./admin-api');
+
+    await saveMyProfileV2({ version: 1, enabled: true }, 3);
+
+    expect(touched).toEqual(['PUT /v2/me/profile']);
+  });
+
+  it('still reports a deterministic 4xx as the contract outcome it is', async () => {
+    answerWith(400, { error: 'REVISION_REQUIRED', message: 'expectedRevision required' });
+    const { saveMyProfileV2 } = await import('./admin-api');
+
+    expect(await saveMyProfileV2({ version: 1, enabled: true }, 3)).toMatchObject({
+      status: 'failed',
+    });
   });
 });
 

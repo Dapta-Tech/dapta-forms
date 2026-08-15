@@ -186,12 +186,14 @@ export const serverEnvSchema = z.object({
 
   // DEPRECATED, REMOVE AFTER THE ROLLOUT. `PUT /v1/me/profile` is the public
   // page write that cannot compare-and-set, kept only so a web build from
-  // before `PUT /v2/me/profile` keeps working while the deploy rolls. Default
-  // ON so the API can roll ahead of the web without breaking old pods; set it
-  // to false once every web pod is on v2, then delete the route, the shim
-  // writer, and this flag together. It never weakens v2: the shim still
-  // increments the profile revision atomically with its write.
-  PROFILE_V1_WRITE_SHIM: boolish.default('true'),
+  // before `PUT /v2/me/profile` keeps working during the transition. OFF by
+  // default: an unguarded writer must be something a deployment switches on for
+  // a bounded window and then switches off, never something that stays alive
+  // because nobody set a variable. Turn it on for the transition, then off once
+  // no old web pod remains, then delete the route, the shim writer, and this
+  // flag together. It never weakens v2: the shim still increments the profile
+  // revision atomically with its write.
+  PROFILE_V1_WRITE_SHIM: boolish.default('false'),
 
   // CORS: a comma-separated allowlist of origins permitted to call the API from
   // a browser. When UNSET we default to PUBLIC_APP_URL only (the app's own web

@@ -194,13 +194,12 @@ export class AdminCrudController {
     const first = await claimAccountAttribution(this.db, p.accountId, tags).catch((err) => {
       // Same shape as the activation claim: a lock or a dead connection must not
       // turn a completed login into a 500 on the way to the dashboard.
-      // Deliberately opaque: this line is about a claim that did not stick, not
-      // about who tried it or what the driver said. The account id identifies a
-      // customer and the raw error can carry a connection string, a row, or a
-      // vendor message, and none of that belongs in an operational log.
-      this.log.warn(
-        `attribution_claim_failed (error_class=${err instanceof Error ? err.constructor.name : 'unknown'})`,
-      );
+      // One fixed event, and nothing else. Not the account id, not the raw
+      // error, and not the error's class either: a class name is still derived
+      // from an attacker- or vendor-influenced object, and a custom error class
+      // can carry data in its own name. Operators need to know that claims are
+      // failing; the value of the failure is in the metric, not in this line.
+      this.log.warn('attribution_claim_failed');
       return false;
     });
     if (first && this.productAnalytics?.enabled) {
@@ -328,7 +327,10 @@ export class AdminCrudController {
       handle: member.handle,
       profile: state.profile,
       revision: state.revision,
+      /** May a NEW save start here? */
       writesEnabled: this.env?.PROFILE_V2_WRITES_ENABLED === true,
+      /** May an ambiguous save be settled here? Any revision-aware build can. */
+      fenceSupported: true,
     };
   }
 

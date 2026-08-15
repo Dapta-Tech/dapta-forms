@@ -40,18 +40,18 @@ describe('attribution claim logging', () => {
     await db.close();
   });
 
-  /** A controller whose attribution claim always fails with a chatty error. */
-  function controller(): AdminCrudController {
+  /** A controller whose attribution claim always fails with `error`. */
+  function controller(error: unknown = new TypeError(SECRET_MESSAGE)): AdminCrudController {
     const failing = {
       dialect: db.dialect,
       all: async () => {
-        throw new TypeError(SECRET_MESSAGE);
+        throw error;
       },
       get: async () => {
-        throw new TypeError(SECRET_MESSAGE);
+        throw error;
       },
       run: async () => {
-        throw new TypeError(SECRET_MESSAGE);
+        throw error;
       },
       execRaw: async () => undefined,
       close: async () => undefined,
@@ -79,12 +79,42 @@ describe('attribution claim logging', () => {
     expect(line).not.toContain(SECRET_MESSAGE);
   });
 
-  it('still says a claim failed, with a stable name and the error class', async () => {
+  it('still says a claim failed, as one fixed event', async () => {
     await controller().recordAttribution({} as ReqLike, { utmSource: 'newsletter' });
 
-    const line = warnings.join('\n');
-    expect(line).toContain('attribution_claim_failed');
-    expect(line).toContain('TypeError');
+    expect(warnings).toEqual(['attribution_claim_failed']);
+  });
+
+  it('says exactly the same thing whatever was thrown', async () => {
+    // The error's CLASS is derived from the thrown object too, and a custom
+    // class can carry data in its own name. Nothing about the error survives.
+    class LeakyPostgresError extends Error {
+      constructor() {
+        super(SECRET_MESSAGE);
+        this.name = 'LeakyPostgresError:alex@example.com';
+      }
+    }
+    const thrown: unknown[] = [
+      new TypeError(SECRET_MESSAGE),
+      new Error(SECRET_MESSAGE),
+      new LeakyPostgresError(),
+      'a bare string with hunter2 in it',
+      { code: '28P01', detail: SECRET_MESSAGE },
+    ];
+
+    for (const err of thrown) {
+      warnings = [];
+      await controller(err).recordAttribution({} as ReqLike, { utmSource: 'newsletter' });
+      expect(warnings, String(err)).toEqual(['attribution_claim_failed']);
+    }
+  });
+
+  it('never names the error class', async () => {
+    await controller(new TypeError(SECRET_MESSAGE)).recordAttribution({} as ReqLike, {
+      utmSource: 'newsletter',
+    });
+
+    expect(warnings.join('\n')).not.toContain('TypeError');
   });
 
   it('keeps the login working — a failed claim is not a failed request', async () => {

@@ -78,10 +78,15 @@ const unresolved = (): never => {
 };
 
 /**
- * v2 writes are OFF until an operator confirms every API writer in the fleet
- * increments the revision. Until then a v2 mutation is refused BEFORE it can
- * touch the row, and the read below advertises the capability as unavailable so
- * a new web build blocks instead of discovering it one failed save at a time.
+ * NEW v2 writes are OFF until an operator confirms every API writer in the fleet
+ * increments the revision. Until then a save is refused BEFORE it can touch the
+ * row, and the read below advertises write admission as unavailable so a new web
+ * build blocks instead of discovering it one failed save at a time.
+ *
+ * This gates saves ONLY. The fence is recovery, not a new write: a browser
+ * holding an expectation from a save that was admitted earlier must still be
+ * able to settle it, or turning the flag off would strand exactly the sessions
+ * that are already in trouble.
  */
 const writesDisabled = (): never => {
   throw new HttpException(
@@ -153,7 +158,14 @@ export class ProfileV2Controller {
       handle: member.handle,
       profile: state.profile,
       revision: state.revision,
+      /** May a NEW save start here? */
       writesEnabled: this.writesEnabled,
+      /**
+       * May an ambiguous save be settled here? True on every revision-aware
+       * build, independently of write admission. An older API reports neither
+       * field and supports neither.
+       */
+      fenceSupported: true,
     };
   }
 
@@ -194,7 +206,7 @@ export class ProfileV2Controller {
    */
   @Post('fence')
   async fence(@Req() req: ReqLike, @Body() body: unknown) {
-    if (!this.writesEnabled) return writesDisabled();
+    // Deliberately NOT gated by write admission — see `writesDisabled`.
     const p = await this.auth.resolveHost(req);
     const expectedRevision = requireExpectedRevision(body);
     return respond(await fenceMemberProfile(this.db, p.accountId, p.memberId, expectedRevision));

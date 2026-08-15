@@ -16,6 +16,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { createDb, migrate, sql, getMemberProfileState, type Db } from '@quill/db';
+import { serverEnvSchema } from '@quill/config/env';
 import { ProfileV2Controller } from './profile-v2.controller';
 import { AdminCrudController } from './admin-crud.controller';
 import type { AuthService, ReqLike } from './auth.service';
@@ -219,6 +220,25 @@ describe('public page write contract', () => {
       );
 
       expect(await statusOf(() => noEnv.saveMyProfile(req, { profile: page(true) }))).toBe(410);
+      expect((await getMemberProfileState(db, accountId, memberId))!.revision).toBe(0);
+    });
+
+    it('is closed when the flag is simply unset, not just when it is false', async () => {
+      // The default must not leave a non-CAS writer alive for anyone who never
+      // heard of the flag: it takes an explicit true to open it.
+      const unset = new AdminCrudController(
+        db,
+        auth,
+        {} as never,
+        {} as never,
+        {} as never,
+        undefined,
+        undefined,
+        { PROFILE_V2_WRITES_ENABLED: true } as never,
+      );
+
+      expect(await statusOf(() => unset.saveMyProfile(req, { profile: page(true) }))).toBe(410);
+      expect((await getMemberProfileState(db, accountId, memberId))!.revision).toBe(0);
     });
 
     it('reports the revision on the v1 read, which is how a client detects v2', async () => {
@@ -280,15 +300,40 @@ describe('the v2 write gate', () => {
     expect((await getMemberProfileState(db, accountId, memberId))!.profile).toBeNull();
   });
 
-  it('refuses a fence too, so no revision is burned while disabled', async () => {
-    expect(await statusOf(() => off().fence(req, { expectedRevision: 0 }))).toBe(501);
-    expect((await getMemberProfileState(db, accountId, memberId))!.revision).toBe(0);
+  it('still fences, because recovery is not a new write', async () => {
+    // A browser holding an expectation from a save that WAS admitted must be
+    // able to settle it. Gating this would strand exactly the sessions that are
+    // already in trouble, and closing the gate is the first step of a rollback.
+    const won = await off().fence(req, { expectedRevision: 0 });
+
+    expect(won).toMatchObject({ ok: true, revision: 1 });
+    // And the losing direction works too, with no extra burn.
+    expect(await statusOf(() => off().fence(req, { expectedRevision: 0 }))).toBe(409);
+    expect((await getMemberProfileState(db, accountId, memberId))!.revision).toBe(1);
   });
 
-  it('still answers reads, and reports the capability as unavailable', async () => {
-    const read = (await off().read(req)) as { revision: number; writesEnabled: boolean };
+  it('fences a conflict against a write that landed before the gate closed', async () => {
+    await new ProfileV2Controller(db, auth, { PROFILE_V2_WRITES_ENABLED: true }).save(req, {
+      profile: page(true),
+      expectedRevision: 0,
+    });
 
-    expect(read).toMatchObject({ revision: 0, writesEnabled: false });
+    const body = await bodyOf(() => off().fence(req, { expectedRevision: 0 }));
+
+    expect(body).toMatchObject({ error: 'REVISION_CONFLICT', revision: 1 });
+    expect((body.profile as { enabled: boolean }).enabled).toBe(true);
+  });
+
+  it('still answers reads: no new saves, but recovery is available', async () => {
+    const read = (await off().read(req)) as {
+      revision: number;
+      writesEnabled: boolean;
+      fenceSupported: boolean;
+    };
+
+    // Two separate answers. Fence support must never be inferred from write
+    // admission — that is what made closing the gate strand a session.
+    expect(read).toMatchObject({ revision: 0, writesEnabled: false, fenceSupported: true });
   });
 
   it('reports the capability as available once switched on, and then writes', async () => {
@@ -299,6 +344,21 @@ describe('the v2 write gate', () => {
       ok: true,
       revision: 1,
     });
+  });
+
+  it('reports fence support through the v1 read too', async () => {
+    const shim = new AdminCrudController(
+      db,
+      auth,
+      {} as never,
+      {} as never,
+      {} as never,
+      undefined,
+      undefined,
+      { PROFILE_V1_WRITE_SHIM: false, PROFILE_V2_WRITES_ENABLED: false },
+    );
+
+    expect(await shim.myProfile(req)).toMatchObject({ writesEnabled: false, fenceSupported: true });
   });
 
   it('is reported through the v1 read as well, so an old route cannot mislead a new client', async () => {
@@ -347,5 +407,46 @@ describe('an unresolved write', () => {
     expect(await bodyOf(() => controller.fence(req, { expectedRevision: 4 }))).toMatchObject({
       error: 'WRITE_UNRESOLVED',
     });
+  });
+});
+
+describe('configuration defaults', () => {
+  /** Parse a minimal environment, as a fresh deployment would have. */
+  const parsed = () =>
+    serverEnvSchema.parse({ DATABASE_URL: 'file:./.data/dev.db', PUBLIC_APP_URL: 'http://localhost:3000' });
+
+  it('admits no guarded writes until someone turns them on', () => {
+    expect(parsed().PROFILE_V2_WRITES_ENABLED).toBe(false);
+  });
+
+  it('leaves the deprecated v1 writer OFF when nothing sets it', () => {
+    // The unguarded writer must be something a deployment switches on for a
+    // bounded window, never something left alive by omission.
+    expect(parsed().PROFILE_V1_WRITE_SHIM).toBe(false);
+  });
+
+  it('takes an explicit true to open either one', () => {
+    const env = serverEnvSchema.parse({
+      DATABASE_URL: 'file:./.data/dev.db',
+      PUBLIC_APP_URL: 'http://localhost:3000',
+      PROFILE_V1_WRITE_SHIM: 'true',
+      PROFILE_V2_WRITES_ENABLED: 'true',
+    });
+
+    expect(env.PROFILE_V1_WRITE_SHIM).toBe(true);
+    expect(env.PROFILE_V2_WRITES_ENABLED).toBe(true);
+  });
+
+  it('treats anything that is not a truthy string as off', () => {
+    for (const raw of ['false', '0', 'no', 'maybe', '']) {
+      const env = serverEnvSchema.parse({
+        DATABASE_URL: 'file:./.data/dev.db',
+        PUBLIC_APP_URL: 'http://localhost:3000',
+        PROFILE_V1_WRITE_SHIM: raw,
+        PROFILE_V2_WRITES_ENABLED: raw,
+      });
+      expect(env.PROFILE_V1_WRITE_SHIM, raw).toBe(false);
+      expect(env.PROFILE_V2_WRITES_ENABLED, raw).toBe(false);
+    }
   });
 });

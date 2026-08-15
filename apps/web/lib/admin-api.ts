@@ -581,8 +581,15 @@ export const adminApi = {
       handle: string | null;
       profile: MemberProfile | null;
       revision?: number;
-      /** False, or absent on a pre-CAS build: this server must not be written to. */
+      /** False, or absent on a pre-CAS build: no NEW save may start here. */
       writesEnabled?: boolean;
+      /**
+       * Whether this build can settle an ambiguous save. Reported separately
+       * because recovery outlives write admission: an operator closing the
+       * write gate must not strand a browser holding an expectation. Absent on
+       * an API that predates the contract, which supports neither.
+       */
+      fenceSupported?: boolean;
     }>('GET', '/v1/me/profile'),
   /** Every workspace the caller can enter, for the switcher. */
   listWorkspaces: () => req<Workspace[]>('GET', '/v1/workspaces'),
@@ -694,11 +701,6 @@ async function profileCall(
 
   if (res.status === 401) return { status: 'unauthorized' };
   if (res.status === 403) return { status: 'unauthorized' };
-  // The server can guard writes but has not been switched on yet. Same answer
-  // as an API that never could: do not write here.
-  if (res.status === 501) return { status: 'unsupported' };
-  // Neither landed nor lost — the API could not resolve it. Stay blocked.
-  if (res.status === 503) return { status: 'unknown' };
   // An API that predates this contract has no /v2 route (404) and a rolled-out
   // one has retired the /v1 shim (410). Both mean: do not write here.
   if (res.status === 404 || res.status === 410) {
@@ -723,6 +725,18 @@ async function profileCall(
     if (revision === null) return { status: 'failed', message: payload.message };
     return { status: 'conflict', profile: payload.profile ?? null, revision };
   }
+  // The ONE 5xx that is a decision rather than an accident: this build can
+  // guard writes but has not been switched on, and it says so before touching
+  // the row. It is recognised by its code, not by the status alone, so a proxy
+  // returning a bare 501 is still treated as ambiguous below.
+  if (res.status === 501 && payload.error === 'V2_WRITES_DISABLED') {
+    return { status: 'unsupported' };
+  }
+  // Every other 5xx is ambiguous, full stop. A 500 or a 502 can be raised after
+  // the row was already written — by the app, by a proxy, by a load balancer
+  // that gave up on a response — so calling it a failure would drop an
+  // expectation that is still live and let the screen claim nothing happened.
+  if (res.status >= 500) return { status: 'unknown' };
   if (!res.ok) return { status: 'failed', message: payload.message ?? payload.error };
   if (revision === null) return { status: 'unsupported' };
   return { status: 'ok', profile: payload.profile ?? null, revision };

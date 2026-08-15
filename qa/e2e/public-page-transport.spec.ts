@@ -460,44 +460,50 @@ test.describe('public page: settling without claiming authorship', () => {
   });
 });
 
-test.describe('public page: reconciling behind a proxy', () => {
+/**
+ * The reconciliation route's same-origin check is NOT driven from here.
+ *
+ * It compares the caller's `Origin` against the host this deployment answers on
+ * (`selfHost`: `PUBLIC_APP_URL` when configured, else `X-Forwarded-Host` then
+ * `Host`). A browser will not let a test forge either header — Playwright's
+ * route interception cannot override `Host`, and Chromium rewrites `Origin` for
+ * a same-origin fetch — so a run staged here proves nothing about that check and
+ * would pass against an implementation that ignored it. The accepting and
+ * refusing cases are asserted directly against the route, with the environment
+ * under test control, in
+ * `apps/web/app/api/settings/public-page/reconcile/route.spec.ts`.
+ */
+
+test.describe('public page: a mutation that came back 5xx', () => {
   test.beforeEach(async ({ request }) => {
     await resetProfile(request);
   });
 
-  /**
-   * The route decides same-origin against the host this deployment ANSWERS on,
-   * which behind a proxy is `X-Forwarded-Host`, not the internal `Host`. That
-   * cuts both ways, and the browser can only prove the strict half: a forwarded
-   * host that disagrees with the caller's Origin must be refused, which leaves
-   * the screen unresolved with its way out still on offer.
-   *
-   * A raw-`Host` implementation ignores the forwarded header, accepts this call
-   * and settles — so this run fails against it. The accepting direction (public
-   * Origin, internal Host, matching X-Forwarded-Host) cannot be staged from a
-   * browser, because Chromium will not let a test forge `Host`; it is asserted
-   * directly against the route in
-   * `apps/web/app/api/settings/public-page/reconcile/route.spec.ts`.
-   */
-  test('refuses a reconciliation whose forwarded host is not ours, and stays unresolved', async ({
+  test('stays pinned and recoverable when the write applied but the answer was a 500', async ({
     page,
     request,
   }) => {
     test.setTimeout(120_000);
     const start = (await stored(request)).revision;
 
-    let dropped = false;
+    // Forward the save so it really lands, then answer 500. A server error can
+    // be raised after the row is written — by the app, a proxy, or a balancer
+    // that gave up — so nothing about the outcome may be concluded from it.
+    let broke = false;
+    let actionPosts = 0;
     await page.route('**/admin/settings**', async (route) => {
       const r = route.request();
-      if (dropped || !isAction(r.method(), r.headers())) return route.fallback();
-      dropped = true;
-      return route.abort('connectionfailed');
+      if (!isAction(r.method(), r.headers())) return route.fallback();
+      actionPosts += 1;
+      if (broke) return route.fallback();
+      broke = true;
+      await route.fetch();
+      return route.fulfill({
+        status: 500,
+        contentType: 'application/json',
+        body: JSON.stringify({ message: 'Internal server error' }),
+      });
     });
-    await page.route('**/api/settings/public-page/reconcile', async (route) =>
-      route.continue({
-        headers: { ...route.request().headers(), 'x-forwarded-host': 'proxy.invalid' },
-      }),
-    );
 
     await page.goto('/admin/settings');
     const s = section(page);
@@ -505,14 +511,18 @@ test.describe('public page: reconciling behind a proxy', () => {
 
     await s.toggle.click();
 
-    // Refused, so nothing was decided: still blocked, still offering a way out.
-    await expect(s.status).toHaveText(COPY.unresolved, { timeout: 60_000 });
-    await expect(s.checkAgain).toBeVisible();
-    await expect(s.reload).toBeVisible();
-    expect(await writesAreBlocked(page)).toBe(true);
+    // The write landed, so the fence loses and the current page is adopted —
+    // reported as a changed state, never as a save this screen completed.
+    await expect(s.notice).toHaveText(COPY.latestLoaded, { timeout: 60_000 });
+    await expect(s.toggle).toHaveAttribute('aria-checked', 'true');
+    await expect(s.viewLink).toBeVisible();
     await expect(page.getByText(COPY.saved)).toHaveCount(0);
-    await expect(page.getByText(COPY.notApplied)).toHaveCount(0);
-    // A refused reconciliation fences nothing.
-    expect((await stored(request)).revision).toBe(start);
+
+    const after = await stored(request);
+    expect(after.profile).toMatchObject({ enabled: true });
+    // Exactly one write: the 500 must not have triggered a retry, and the
+    // losing fence burns nothing.
+    expect(after.revision).toBe(start + 1);
+    expect(actionPosts).toBe(1);
   });
 });

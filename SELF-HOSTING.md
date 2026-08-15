@@ -362,9 +362,15 @@ becomes undecidable again.
 
 - **N1 Scope.** `accountId` **and** `memberId` scope every profile read, write and
   fence. A member is never addressed by id alone.
-- **N2 Rollout gate.** `PROFILE_V2_WRITES_ENABLED` stays false until every API
-  instance in the fleet increments the revision. `PROFILE_V1_WRITE_SHIM` keeps a
-  pre-v2 web build working for a bounded window and still increments the revision
+- **N2 Write admission, and forward-only compatibility.**
+  `PROFILE_V2_WRITES_ENABLED` admits NEW guarded saves and stays false until
+  every API instance in the fleet increments the revision. It does **not** gate
+  the fence: a browser holding an expectation from an earlier save can always
+  settle it, on any revision-aware build. Once guarded writes have been enabled
+  against a database, running an API that predates the revision is
+  **unsupported** — the migration and the revision-aware API are forward-only
+  compatibility infrastructure. `PROFILE_V1_WRITE_SHIM` is off by default and is
+  turned on only for the bounded old-web window; it still increments the revision
   atomically with its write.
 - **N3 Zero rows.** A write that changed no rows is disambiguated by an
   account-scoped re-read: absent member is `404`, a moved revision is `409`.
@@ -402,14 +408,36 @@ becomes undecidable again.
    write then answers `410`). Once that has held for a release, remove the `/v1`
    route, its writer, and both flags together.
 
-### Rollback order
+### Rollback
 
-1. **First** set `PROFILE_V2_WRITES_ENABLED=false` and roll the API, so web
-   sessions already loaded in browsers cannot mutate.
-2. **Then** roll web back.
-3. **Only then** roll the API back below revision awareness.
+**Before guarded writes have ever been enabled** (step 4 above has not run on
+this database), the previous API is still a supported rollback target: no
+guarded write exists, so no browser holds an expectation to settle.
 
-Never run a v2-enabled API beside an instance that writes the profile without
+**After guarded writes have been enabled, rolling the API below revision
+awareness is not supported.** A browser can be holding an expectation from a
+save whose answer it never received, and only a revision-aware API can settle
+it. An API without the fence cannot answer that question at all, so the session
+is left unable to distinguish "not applied" from "applied", which is the defect
+this contract exists to remove. There is no way to drain those expectations
+first: they live in open browser tabs, not in the server.
+
+The supported emergency rollback is:
+
+1. Set `PROFILE_V2_WRITES_ENABLED=false` and roll the API. New saves stop being
+   admitted immediately; the fence keeps working, so sessions in an ambiguous
+   state can still resolve.
+2. Roll web back if the web build is the problem.
+3. Keep the revision-aware API. It is compatible with older web builds through
+   the `/v1` shim (`PROFILE_V1_WRITE_SHIM=true`), which still increments the
+   revision.
+
+A hard reload remains the last resort for a client that cannot settle: it drops
+the pending expectation and re-reads stored state. That is a client recovery, not
+a licence to downgrade the API, because the reload shows what is stored without
+ever establishing what the ambiguous save did.
+
+Never run a write-enabled API beside an instance that writes the profile without
 incrementing the revision.
 
 ## Troubleshooting
