@@ -97,6 +97,7 @@ function makeEnv(overrides: Partial<ServerEnv> = {}): ServerEnv {
     FORMS_ENCRYPTION_KEY: ENCRYPTION_KEY,
     HUBSPOT_PRIVATE_APP_TOKEN: undefined,
     INTEGRATION_CREDENTIAL_WRITERS: 'generation-only',
+    INTEGRATION_CREDENTIAL_WRITERS_ACK: 'all-writers-generation-aware',
     ...overrides,
   } as unknown as ServerEnv;
 }
@@ -200,10 +201,28 @@ describe('AccountMetadataCache', () => {
 });
 
 describe('integration credential writer configuration', () => {
-  it('defaults to mixed and rejects invalid values', () => {
+  it('defaults to mixed and requires the exact generation-only acknowledgment', () => {
     expect(loadServerEnv({}).INTEGRATION_CREDENTIAL_WRITERS).toBe('mixed');
     expect(() => loadServerEnv({ INTEGRATION_CREDENTIAL_WRITERS: 'unsafe' })).toThrow(
       'INTEGRATION_CREDENTIAL_WRITERS',
+    );
+    expect(() => loadServerEnv({ INTEGRATION_CREDENTIAL_WRITERS: 'generation-only' })).toThrow(
+      'INTEGRATION_CREDENTIAL_WRITERS_ACK=all-writers-generation-aware',
+    );
+    expect(() =>
+      loadServerEnv({
+        INTEGRATION_CREDENTIAL_WRITERS: 'generation-only',
+        INTEGRATION_CREDENTIAL_WRITERS_ACK: 'wrong',
+      }),
+    ).toThrow('INTEGRATION_CREDENTIAL_WRITERS_ACK=all-writers-generation-aware');
+    expect(
+      loadServerEnv({
+        INTEGRATION_CREDENTIAL_WRITERS: 'generation-only',
+        INTEGRATION_CREDENTIAL_WRITERS_ACK: 'all-writers-generation-aware',
+      }).INTEGRATION_CREDENTIAL_WRITERS,
+    ).toBe('generation-only');
+    expect(loadServerEnv({ INTEGRATION_CREDENTIAL_WRITERS: 'mixed' }).INTEGRATION_CREDENTIAL_WRITERS).toBe(
+      'mixed',
     );
   });
 
@@ -262,13 +281,75 @@ describe('integration credential writer configuration', () => {
     );
   });
 
+  it('classifies a missing credential column as migration 0015 required', async () => {
+    const missingColumn = Object.assign(new Error('column credential_generation does not exist'), {
+      code: '42703',
+    });
+    const missingDb = {
+      dialect: 'sqlite',
+      get: vi.fn().mockResolvedValueOnce({ name: '0015_account_integration_credential_generation.sql' }).mockRejectedValueOnce(missingColumn),
+    } as unknown as Db;
+    const env = makeEnv({ INTEGRATION_CREDENTIAL_WRITERS: 'generation-only' });
+    const provider = new LocalAuthProvider(db, {
+      NODE_ENV: 'test',
+      DEV_LOGIN_EMAIL: undefined,
+      AUTH_LOCAL_STRICT: undefined,
+      SEED_DEMO_FORM: false,
+      ONBOARDING_WIZARD: false,
+    });
+    const auth = new AuthService(db, provider);
+    const controllerForBoot = new IntegrationsController(
+      auth,
+      new HubspotPropertiesService(env, missingDb, 'generation-only', noopFetch),
+      new CalendlyEventTypesService(env, missingDb, 'generation-only', noopFetch),
+      missingDb,
+      env,
+      'generation-only',
+    );
+
+    await expect(controllerForBoot.onModuleInit()).rejects.toThrow(
+      'INTEGRATION_CREDENTIAL_WRITERS=generation-only requires migration 0015',
+    );
+  });
+
+  it('preserves unrelated startup failures instead of masking them as migration errors', async () => {
+    const permissionError = Object.assign(new Error('permission denied for relation _migrations'), {
+      code: '42501',
+    });
+    const failingDb = {
+      dialect: 'sqlite',
+      get: async () => {
+        throw permissionError;
+      },
+    } as unknown as Db;
+    const env = makeEnv({ INTEGRATION_CREDENTIAL_WRITERS: 'generation-only' });
+    const provider = new LocalAuthProvider(db, {
+      NODE_ENV: 'test',
+      DEV_LOGIN_EMAIL: undefined,
+      AUTH_LOCAL_STRICT: undefined,
+      SEED_DEMO_FORM: false,
+      ONBOARDING_WIZARD: false,
+    });
+    const auth = new AuthService(db, provider);
+    const controllerForBoot = new IntegrationsController(
+      auth,
+      new HubspotPropertiesService(env, failingDb, 'generation-only', noopFetch),
+      new CalendlyEventTypesService(env, failingDb, 'generation-only', noopFetch),
+      failingDb,
+      env,
+      'generation-only',
+    );
+
+    await expect(controllerForBoot.onModuleInit()).rejects.toBe(permissionError);
+  });
+
   it('probes migration 0015 and logs generation-only at startup', async () => {
     const env = makeEnv({ INTEGRATION_CREDENTIAL_WRITERS: 'generation-only' });
     const built = createController(env, noopFetch);
     const log = vi.spyOn(Logger.prototype, 'log');
 
     await expect(built.controller.onModuleInit()).resolves.toBeUndefined();
-    expect(log).toHaveBeenCalledWith('integration credential writers=generation-only');
+    expect(log).toHaveBeenCalledWith('integration credential writers=generation-only attestation=accepted');
   });
 });
 

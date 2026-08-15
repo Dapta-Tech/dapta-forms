@@ -202,6 +202,7 @@ write a "first" form into the same account.
 |---|---|---|---|
 | `HUBSPOT_PRIVATE_APP_TOKEN` | _(unset)_ | to enable the HubSpot destination (else it reports a disabled state) | yes |
 | `INTEGRATION_CREDENTIAL_WRITERS` | `mixed` | set `generation-only` only after all credential writers are upgraded | no |
+| `INTEGRATION_CREDENTIAL_WRITERS_ACK` | _(unset)_ | exact `all-writers-generation-aware` only with `generation-only` | no |
 
 Webhook destinations are configured **per form in the admin UI** (URL + optional
 HMAC secret) — no environment variable.
@@ -349,18 +350,30 @@ Forward order:
 2. Deploy the new API with `INTEGRATION_CREDENTIAL_WRITERS` unset or set to
    `mixed`. Stored-credential metadata caching is off. Env-fallback metadata
    caching stays on.
+   A provider request already in flight can return its freshly fetched old
+   metadata once with `cached:false`, but it cannot populate the stored cache or
+   create a later stale cache hit.
 3. Confirm every credential writer runs the new binary and cannot scale back.
-4. Set `INTEGRATION_CREDENTIAL_WRITERS=generation-only` and roll the API.
+   This is not automatic discovery: direct SQL and old binaries cannot be
+   detected by the API.
+4. Set `INTEGRATION_CREDENTIAL_WRITERS=generation-only` and
+   `INTEGRATION_CREDENTIAL_WRITERS_ACK=all-writers-generation-aware`, then roll
+   the API. The exact acknowledgment is the operator-owned control.
 
 Reverse order:
 
 1. Set or unset `INTEGRATION_CREDENTIAL_WRITERS` to use `mixed` and roll the API.
+   Mixed is permanently supported and ignores the acknowledgment.
 2. Deploy older binaries if needed.
 3. Leave the additive generation column in place.
 
 A single-process self-host that uses only environment fallback credentials needs
 no action. Its metadata cache remains safe because no database writer can change
 the active credential.
+
+Do not set the acknowledgment falsely. Doing so permits generation-only stored
+caching while an old writer can still reuse a generation, which can reopen a
+stale-cache risk. Use `mixed` as the safe fallback and rollback mode.
 
 ## Troubleshooting
 

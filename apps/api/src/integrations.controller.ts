@@ -133,6 +133,14 @@ const CREDENTIAL_GENERATION_MIGRATION = '0015_account_integration_credential_gen
 
 export type IntegrationCredentialWriterMode = ServerEnv['INTEGRATION_CREDENTIAL_WRITERS'];
 
+function isMissingCredentialGenerationCapability(err: unknown): boolean {
+  const code =
+    typeof err === 'object' && err !== null && 'code' in err ? (err as { code?: unknown }).code : undefined;
+  if (code === '42P01' || code === '42703') return true;
+  const message = err instanceof Error ? err.message : String(err);
+  return /no such table: (?:_migrations|account_integration)|no such column: credential_generation/i.test(message);
+}
+
 /**
  * Account-scoped integration metadata only. Its write boundary has no
  * credential argument, so tokens and token-derived values cannot enter state.
@@ -491,22 +499,31 @@ export class IntegrationsController implements OnModuleInit {
   ) {}
 
   async onModuleInit(): Promise<void> {
-    this.log.log(`integration credential writers=${this.credentialWriters}`);
+    this.log.log(
+      this.credentialWriters === 'generation-only'
+        ? 'integration credential writers=generation-only attestation=accepted'
+        : 'integration credential writers=mixed',
+    );
     if (this.credentialWriters !== 'generation-only') return;
+    const migrationRequired = (detail: string): Error =>
+      new Error(
+        `INTEGRATION_CREDENTIAL_WRITERS=generation-only requires migration ${CREDENTIAL_GENERATION_MIGRATION} ` +
+          `with account_integration.credential_generation before startup: ${detail}`,
+      );
     try {
       const applied = await this.db.get<{ name: string }>(
         sql`SELECT name FROM _migrations WHERE name = ${CREDENTIAL_GENERATION_MIGRATION} LIMIT 1`,
       );
       if (!applied) {
-        throw new Error(`migration ${CREDENTIAL_GENERATION_MIGRATION} is not applied`);
+        throw migrationRequired(`migration ${CREDENTIAL_GENERATION_MIGRATION} is not applied`);
       }
       await this.db.get(sql`SELECT credential_generation FROM account_integration LIMIT 1`);
     } catch (err) {
-      const detail = err instanceof Error ? err.message : String(err);
-      throw new Error(
-        `INTEGRATION_CREDENTIAL_WRITERS=generation-only requires migration ${CREDENTIAL_GENERATION_MIGRATION} ` +
-          `with account_integration.credential_generation before startup: ${detail}`,
-      );
+      if (isMissingCredentialGenerationCapability(err)) {
+        const detail = err instanceof Error ? err.message : String(err);
+        throw migrationRequired(detail);
+      }
+      throw err;
     }
   }
 

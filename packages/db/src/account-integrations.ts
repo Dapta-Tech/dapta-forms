@@ -9,7 +9,7 @@
  * user-facing goes through `describeIntegration` which never exposes the token.
  */
 import { randomUUID } from 'node:crypto';
-import { sql } from 'drizzle-orm';
+import { sql, type SQL } from 'drizzle-orm';
 import type { Db } from './client';
 import { parseJsonColumn, jsonParam } from './forms';
 import { encryptToken, decryptToken, tokenLast4 } from './crypto';
@@ -180,6 +180,31 @@ export interface UpsertIntegrationResult {
   revision: StoredProviderCredentialRevision;
 }
 
+export interface CredentialUpsertInput {
+  id: string;
+  accountId: string;
+  provider: IntegrationProvider;
+  encryptedToken: string;
+  meta: IntegrationMeta;
+  now: number;
+}
+
+/** One portable statement for the database-owned credential generation update. */
+export function credentialUpsertStatement(input: CredentialUpsertInput): SQL {
+  return sql`INSERT INTO account_integration (
+        id, account_id, provider, encrypted_token, meta, connected_at, updated_at, credential_generation
+      ) VALUES (
+        ${input.id}, ${input.accountId}, ${input.provider}, ${input.encryptedToken},
+        ${jsonParam(input.meta)}, ${input.now}, ${input.now}, 1
+      )
+      ON CONFLICT (account_id, provider) DO UPDATE SET
+        encrypted_token = EXCLUDED.encrypted_token,
+        meta = EXCLUDED.meta,
+        updated_at = EXCLUDED.updated_at,
+        credential_generation = account_integration.credential_generation + 1
+      RETURNING id, credential_generation`;
+}
+
 /**
  * Atomically writes a credential and returns its persistent revision. The
  * generation increment happens inside the database conflict update, never in
@@ -198,17 +223,14 @@ export async function upsertIntegrationWithRevision(
   const encrypted = encryptToken(token, encryptionKey);
   const now = Date.now();
   const returned = await db.get<{ id: unknown; credential_generation: unknown }>(
-    sql`INSERT INTO account_integration (
-          id, account_id, provider, encrypted_token, meta, connected_at, updated_at, credential_generation
-        ) VALUES (
-          ${randomUUID()}, ${accountId}, ${provider}, ${encrypted}, ${jsonParam(meta)}, ${now}, ${now}, 1
-        )
-        ON CONFLICT (account_id, provider) DO UPDATE SET
-          encrypted_token = EXCLUDED.encrypted_token,
-          meta = EXCLUDED.meta,
-          updated_at = EXCLUDED.updated_at,
-          credential_generation = account_integration.credential_generation + 1
-        RETURNING id, credential_generation`,
+    credentialUpsertStatement({
+      id: randomUUID(),
+      accountId,
+      provider,
+      encryptedToken: encrypted,
+      meta,
+      now,
+    }),
   );
   if (!returned || typeof returned.id !== 'string' || returned.id === '') {
     throw new Error('credential upsert did not return an id');

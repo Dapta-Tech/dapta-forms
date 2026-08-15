@@ -12,16 +12,46 @@ import { encryptToken, decryptToken, hasEncryptionKey, tokenLast4 } from './cryp
 import {
   upsertIntegration,
   upsertIntegrationWithRevision,
+  credentialUpsertStatement,
   getIntegration,
   listIntegrationStatuses,
   deleteIntegration,
   resolveProviderToken,
   describeIntegration,
   integrationProviders,
+  providerCredentialRevisionEquals,
 } from './account-integrations';
 import { jsonParam } from './forms';
 
 const KEY = randomBytes(32).toString('base64');
+
+function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+}
+
+function returnedGeneration(raw: unknown): { id: string; generation: number } {
+  const row = (raw as Array<{ id?: unknown; credential_generation?: unknown }>)[0];
+  const generation = Number(row?.credential_generation);
+  if (!row || typeof row.id !== 'string' || !Number.isSafeInteger(generation) || generation <= 0) {
+    throw new Error('invalid UPSERT RETURNING row');
+  }
+  return { id: row.id, generation };
+}
+
+async function waitForPostgresLock(db: Db, pid: number): Promise<void> {
+  for (let attempt = 0; attempt < 100; attempt++) {
+    const state = await db.get<{ wait_event_type: string | null }>(
+      sql`SELECT wait_event_type FROM pg_stat_activity WHERE pid = ${pid}`,
+    );
+    if (state?.wait_event_type === 'Lock') return;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error(`PostgreSQL session ${pid} did not reach the row-lock barrier`);
+}
 
 describe('token crypto', () => {
   it('round-trips a token', () => {
@@ -182,6 +212,92 @@ describe('account_integration repo', () => {
       latest = await upsertIntegrationWithRevision(db, accountId, 'hubspot', `sequential-${i}`, KEY);
     }
     expect(latest.revision.generation).toBe(writes + 1);
+  });
+
+  it('uses two live PostgreSQL sessions that contend at a row-lock barrier', async () => {
+    if (db.dialect !== 'postgres') return;
+    const url = process.env.DATABASE_URL;
+    if (!url) throw new Error('DATABASE_URL is required for live PostgreSQL concurrency proof');
+    const sessionA = await createDb(url);
+    const sessionB = await createDb(url);
+    try {
+      for (const provider of integrationProviders) {
+        const baseline = await upsertIntegrationWithRevision(db, accountId, provider, `${provider}-r0`, KEY);
+        const aLocked = deferred<void>();
+        const releaseA = deferred<void>();
+        const bReady = deferred<number>();
+        const startB = deferred<void>();
+        const bWrote = deferred<void>();
+        const releaseB = deferred<void>();
+        const now = Date.now();
+        const statementA = credentialUpsertStatement({
+          id: randomUUID(),
+          accountId,
+          provider,
+          encryptedToken: encryptToken(`${provider}-a`, KEY),
+          meta: { last4: 'r-a' },
+          now,
+        });
+        const statementB = credentialUpsertStatement({
+          id: randomUUID(),
+          accountId,
+          provider,
+          encryptedToken: encryptToken(`${provider}-b`, KEY),
+          meta: { last4: 'r-b' },
+          now,
+        });
+        const aTask = sessionA.pg!.drizzle.transaction(async (tx) => {
+          await tx.execute(
+            sql`SELECT id FROM account_integration
+                WHERE account_id = ${accountId} AND provider = ${provider}
+                FOR UPDATE`,
+          );
+          aLocked.resolve();
+          await releaseA.promise;
+          return returnedGeneration(await tx.execute(statementA));
+        });
+        await aLocked.promise;
+        const bTask = sessionB.pg!.drizzle.transaction(async (tx) => {
+          const pidRow = (await tx.execute(sql`SELECT pg_backend_pid() AS pid`)) as unknown as Array<{
+            pid: unknown;
+          }>;
+          const pid = Number(pidRow[0]?.pid);
+          if (!Number.isSafeInteger(pid) || pid <= 0) throw new Error('invalid PostgreSQL backend pid');
+          bReady.resolve(pid);
+          await startB.promise;
+          const result = returnedGeneration(await tx.execute(statementB));
+          bWrote.resolve();
+          await releaseB.promise;
+          return result;
+        });
+        const bPid = await bReady.promise;
+        startB.resolve();
+        await waitForPostgresLock(db, bPid);
+        releaseA.resolve();
+        const writeA = await aTask;
+        await bWrote.promise;
+        const stale = await resolveProviderToken(db, accountId, provider, KEY, undefined);
+        if (!stale || stale.revision.kind !== 'stored') throw new Error('expected stale stored revision');
+        releaseB.resolve();
+        const writeB = await bTask;
+        const current = await resolveProviderToken(db, accountId, provider, KEY, undefined);
+        if (!current || current.revision.kind !== 'stored') throw new Error('expected current stored revision');
+
+        // This fails if a read-before-write allocator reuses N+1.
+        expect(new Set([writeA.generation, writeB.generation])).toEqual(
+          new Set([baseline.revision.generation + 1, baseline.revision.generation + 2]),
+        );
+        expect(writeA.id).toBe(baseline.revision.id);
+        expect(writeB.id).toBe(baseline.revision.id);
+        expect(stale.revision.generation).toBe(writeA.generation);
+        expect(current.revision.generation).toBe(writeB.generation);
+        expect(providerCredentialRevisionEquals(stale.revision, current.revision)).toBe(false);
+        expect(current.token).toBe(`${provider}-b`);
+      }
+    } finally {
+      await sessionA.close();
+      await sessionB.close();
+    }
   });
 
   it('resolveProviderToken prefers the account token, falls back to env', async () => {

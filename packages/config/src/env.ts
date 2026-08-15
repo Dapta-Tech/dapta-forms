@@ -105,6 +105,9 @@ export const serverEnvSchema = z.object({
   // Set `generation-only` only after every writer runs the generation-aware
   // binary and rollback to an old writer is no longer possible.
   INTEGRATION_CREDENTIAL_WRITERS: z.enum(['mixed', 'generation-only']).default('mixed'),
+  // Operator acknowledgment required only for `generation-only`. This is an
+  // assertion about the deployment population, not automatic fleet discovery.
+  INTEGRATION_CREDENTIAL_WRITERS_ACK: z.string().optional(),
 
   // Premium features (vanity slug + future perks). Forms is ALWAYS free —
   // `locked` gates premium on the customer's Dapta AI subscription via the
@@ -271,6 +274,16 @@ export function loadServerEnv(source: NodeJS.ProcessEnv = process.env): ServerEn
     throw new Error(
       'Refusing to boot: AUTH_PROVIDER=local is an unauthenticated development stub and cannot run in ' +
         'production. Set AUTH_PROVIDER=workos (with the private auth overlay) or another real provider.',
+    );
+  }
+  if (
+    parsed.data.INTEGRATION_CREDENTIAL_WRITERS === 'generation-only' &&
+    parsed.data.INTEGRATION_CREDENTIAL_WRITERS_ACK !== 'all-writers-generation-aware'
+  ) {
+    throw new Error(
+      'INTEGRATION_CREDENTIAL_WRITERS=generation-only requires ' +
+        'INTEGRATION_CREDENTIAL_WRITERS_ACK=all-writers-generation-aware. ' +
+        'Use mixed unless every credential writer is generation-aware.',
     );
   }
   return parsed.data;
