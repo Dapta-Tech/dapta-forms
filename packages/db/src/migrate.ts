@@ -26,12 +26,16 @@ class MarkerInsertFailure extends Error {
 class MigrationEscapeError extends Error {
   readonly file: string;
   readonly dialect: Db['dialect'];
+  readonly original?: unknown;
+  readonly probeCause?: unknown;
   override readonly cause: unknown;
 
   constructor(
     file: string,
     dialect: Db['dialect'],
     cause: unknown,
+    original?: unknown,
+    probeCause?: unknown,
   ) {
     super(
       `Migration ${file} escaped the ${dialect} transaction boundary; marker withheld and no recovery attempted because effects may already be durable.`,
@@ -40,6 +44,32 @@ class MigrationEscapeError extends Error {
     this.file = file;
     this.dialect = dialect;
     this.cause = cause;
+    this.original = original;
+    this.probeCause = probeCause;
+  }
+}
+
+class MigrationQuarantinedError extends Error {
+  constructor(
+    readonly file: string,
+    readonly dialect: Db['dialect'],
+    readonly reasonCode: string,
+  ) {
+    super(`Migration ${file} is quarantined for ${dialect} (${reasonCode}); manual intervention is required.`);
+    this.name = 'MigrationQuarantinedError';
+  }
+}
+
+class QuarantinePersistFailure extends AggregateError {
+  constructor(
+    readonly escape: MigrationEscapeError,
+    readonly persistenceCause: unknown,
+  ) {
+    super(
+      [escape, persistenceCause],
+      `Migration ${escape.file} escaped the ${escape.dialect} transaction boundary and no durable quarantine record exists.`,
+    );
+    this.name = 'QuarantinePersistFailure';
   }
 }
 
@@ -68,6 +98,23 @@ function isSqliteBusyOrLocked(error: unknown): boolean {
   );
 }
 
+function isTransientScriptError(db: Db, error: unknown): boolean {
+  const code = errorField(error, 'code');
+  if (typeof code !== 'string') return false;
+
+  if (db.dialect === 'sqlite') {
+    return (
+      isSqliteBusyOrLocked(error) ||
+      code === 'SQLITE_FULL' ||
+      code === 'SQLITE_NOMEM' ||
+      code === 'SQLITE_IOERR' ||
+      code.startsWith('SQLITE_IOERR_')
+    );
+  }
+
+  return code.startsWith('08') || code === '57014' || code === '57P01' || code === '25P03';
+}
+
 function isExactMarkerUniqueConflict(db: Db, error: unknown): boolean {
   if (db.dialect === 'postgres') {
     return (
@@ -90,6 +137,12 @@ function isExactMarkerUniqueConflict(db: Db, error: unknown): boolean {
   );
 }
 
+function quarantineInsertSql(file: string, dialect: Db['dialect']): string {
+  const escapedFile = file.replaceAll("'", "''");
+  const escapedDialect = dialect.replaceAll("'", "''");
+  return `INSERT OR IGNORE INTO _migration_quarantine (name, dialect, reason_code, detected_at) VALUES ('${escapedFile}', '${escapedDialect}', 'transaction_boundary_escape', ${Date.now()})`;
+}
+
 function pause(milliseconds: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
@@ -97,6 +150,28 @@ function pause(milliseconds: number): Promise<void> {
 async function migrationAlreadyApplied(db: Db, file: string): Promise<boolean> {
   return Boolean(
     await db.get<{ name: string }>(sql`SELECT name FROM _migrations WHERE name = ${file} LIMIT 1`),
+  );
+}
+
+async function migrationQuarantine(db: Db, file: string): Promise<{ reason_code: string } | undefined> {
+  return db.get<{ reason_code: string }>(
+    sql`SELECT reason_code
+        FROM _migration_quarantine
+        WHERE name = ${file} AND dialect = ${db.dialect}
+        LIMIT 1`,
+  );
+}
+
+async function persistQuarantine(db: Db, escape: MigrationEscapeError): Promise<void> {
+  if (db.dialect === 'sqlite') {
+    await db.execRaw(quarantineInsertSql(escape.file, escape.dialect));
+    return;
+  }
+
+  await db.run(
+    sql`INSERT INTO _migration_quarantine (name, dialect, reason_code, detected_at)
+        VALUES (${escape.file}, ${escape.dialect}, ${'transaction_boundary_escape'}, ${Date.now()})
+        ON CONFLICT (name, dialect) DO NOTHING`,
   );
 }
 
@@ -113,7 +188,17 @@ async function applyMigrationAtomically(db: Db, file: string, script: string): P
 
       const canary = canarySavepointName();
       sqlite.exec(`SAVEPOINT ${canary}`);
-      sqlite.exec(script);
+      try {
+        sqlite.exec(script);
+      } catch (original) {
+        try {
+          sqlite.exec(`ROLLBACK TO SAVEPOINT ${canary}`);
+        } catch (probeCause) {
+          if (isTransientScriptError(db, original)) throw original;
+          throw new MigrationEscapeError(file, db.dialect, probeCause, original, probeCause);
+        }
+        throw original;
+      }
       try {
         sqlite.exec(`RELEASE SAVEPOINT ${canary}`);
       } catch (error) {
@@ -138,7 +223,17 @@ async function applyMigrationAtomically(db: Db, file: string, script: string): P
 
     const canary = canarySavepointName();
     await tx.execute(sql.raw(`SAVEPOINT ${canary}`));
-    await tx.execute(sql.raw(script));
+    try {
+      await tx.execute(sql.raw(script));
+    } catch (original) {
+      try {
+        await tx.execute(sql.raw(`ROLLBACK TO SAVEPOINT ${canary}`));
+      } catch (probeCause) {
+        if (isTransientScriptError(db, original)) throw original;
+        throw new MigrationEscapeError(file, db.dialect, probeCause, original, probeCause);
+      }
+      throw original;
+    }
     try {
       await tx.execute(sql.raw(`RELEASE SAVEPOINT ${canary}`));
     } catch (error) {
@@ -160,7 +255,14 @@ async function applyMigrationOrObservePeer(db: Db, file: string, script: string)
     try {
       return await applyMigrationAtomically(db, file, script);
     } catch (caught) {
-      if (caught instanceof MigrationEscapeError) throw caught;
+      if (caught instanceof MigrationEscapeError) {
+        try {
+          await persistQuarantine(db, caught);
+        } catch (persistenceCause) {
+          throw new QuarantinePersistFailure(caught, persistenceCause);
+        }
+        throw caught;
+      }
       const original = caught instanceof MarkerInsertFailure ? caught.original : caught;
       if (
         db.dialect === 'sqlite' &&
@@ -187,9 +289,25 @@ export async function migrate(db: Db, migrationsRoot = MIGRATIONS_ROOT): Promise
   await db.execRaw(
     `CREATE TABLE IF NOT EXISTS _migrations (name TEXT PRIMARY KEY, applied_at BIGINT NOT NULL)`,
   );
+  await db.execRaw(
+    `CREATE TABLE IF NOT EXISTS _migration_quarantine (
+       name TEXT NOT NULL,
+       dialect TEXT NOT NULL,
+       reason_code TEXT NOT NULL,
+       detected_at BIGINT NOT NULL,
+       PRIMARY KEY (name, dialect)
+     )`,
+  );
   const files = readdirSync(dir)
     .filter((file) => file.endsWith('.sql'))
     .sort();
+
+  for (const file of files) {
+    const quarantine = await migrationQuarantine(db, file);
+    if (quarantine) {
+      throw new MigrationQuarantinedError(file, db.dialect, quarantine.reason_code);
+    }
+  }
 
   const applied: string[] = [];
   for (const file of files) {

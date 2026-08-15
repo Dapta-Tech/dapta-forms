@@ -151,6 +151,28 @@ limit the schema, but you should not run production on it.
 - Booting the API against an **unmigrated** database makes the outbox worker fail on
   every poll with `no such table: outbox` — always migrate first.
 
+### Migration quarantine
+
+When the canary detects an outer transaction escape, Dapta Forms writes one
+`_migration_quarantine` row for that migration and dialect. Do not rerun the
+migration until an operator has inspected the database. Durable effects may
+exist, or may not exist.
+
+1. Inspect `_migration_quarantine`, then repair the database or restore it from
+   backup.
+2. Delete only the named row after repair:
+   ```sql
+   DELETE FROM _migration_quarantine
+   WHERE name = '<migration-file>' AND dialect = '<sqlite-or-postgres>';
+   ```
+3. Rerun the corrected migration.
+
+The runner never clears quarantine automatically. A process crash between escape
+detection and quarantine persistence remains a residual risk. Transient resource
+and connection failures are not quarantined. Resetting a SQLite development
+database deletes the whole file and therefore clears quarantine; the Postgres
+reset command still refuses to run.
+
 ## Full environment reference
 
 Every variable has a safe default that selects the zero-infra path, so a bare

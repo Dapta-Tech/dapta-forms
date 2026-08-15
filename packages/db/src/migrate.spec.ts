@@ -275,7 +275,7 @@ describe('migrate concurrency and recovery', () => {
       ...db,
       get: async <T>(query) => {
         probeCount++;
-        if (probeCount === 2) {
+        if (probeCount === 3) {
           await db.run(
             sql`INSERT INTO _migrations (name, applied_at) VALUES (${fixture.filename}, ${Date.now()})`,
           );
@@ -286,7 +286,7 @@ describe('migrate concurrency and recovery', () => {
 
     try {
       await expect(migrate(delayedMarkerDb, fixture.root)).rejects.toThrow();
-      expect(probeCount).toBe(1);
+      expect(probeCount).toBe(2);
       expect(await hasMigration(db, fixture.filename)).toBe(false);
       expect(await hasTable(db, fixture.tableName)).toBe(false);
     } finally {

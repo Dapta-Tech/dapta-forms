@@ -1,7 +1,9 @@
 import { randomUUID } from 'node:crypto';
+import { execFile } from 'node:child_process';
 import { copyFileSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { promisify } from 'node:util';
 import postgres from 'postgres';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createDb, sql, type Db, type Dialect } from './client';
@@ -23,6 +25,7 @@ const POSTGRES_CONFIGURED = Boolean(
 );
 const POSTGRES_REQUIRED = process.env.MIGRATION_CONTRACT_POSTGRES_REQUIRED === 'true';
 const ACTIVE_DIALECT: Dialect = POSTGRES_CONFIGURED ? 'postgres' : 'sqlite';
+const execFileAsync = promisify(execFile);
 
 interface Snapshot {
   tables: string[];
@@ -109,8 +112,13 @@ function canonicalRows(rows: Record<string, unknown>[]): string[] {
 }
 
 function userTableNames(tableNames: string[]): string[] {
-  // PostgreSQL queries only public objects; `_migrations` is marker state and `sqlite_%` tables are engine internals.
-  return tableNames.filter((name) => name !== '_migrations' && !name.startsWith('sqlite_'));
+  // PostgreSQL queries only public objects; migration tracking tables and `sqlite_%` objects are not user artifacts.
+  return tableNames.filter(
+    (name) =>
+      name !== '_migrations' &&
+      name !== '_migration_quarantine' &&
+      !name.startsWith('sqlite_'),
+  );
 }
 
 function createRoot(dialect: Dialect, files: string[]): string {
@@ -182,6 +190,15 @@ async function trackingTableExists(db: Db): Promise<boolean> {
 async function createTrackingTable(db: Db): Promise<void> {
   await db.execRaw(
     `CREATE TABLE IF NOT EXISTS _migrations (name TEXT PRIMARY KEY, applied_at BIGINT NOT NULL)`,
+  );
+  await db.execRaw(
+    `CREATE TABLE IF NOT EXISTS _migration_quarantine (
+       name TEXT NOT NULL,
+       dialect TEXT NOT NULL,
+       reason_code TEXT NOT NULL,
+       detected_at BIGINT NOT NULL,
+       PRIMARY KEY (name, dialect)
+     )`,
   );
 }
 
@@ -340,6 +357,34 @@ async function postgresSnapshot(db: Db): Promise<Snapshot> {
 
 async function snapshot(db: Db): Promise<Snapshot> {
   return db.dialect === 'sqlite' ? sqliteSnapshot(db) : postgresSnapshot(db);
+}
+
+async function quarantineRows(db: Db): Promise<
+  Array<{ name: string; dialect: string; reason_code: string }>
+> {
+  return db.all<{ name: string; dialect: string; reason_code: string }>(
+    sql`SELECT name, dialect, reason_code
+        FROM _migration_quarantine
+        ORDER BY name, dialect`,
+  );
+}
+
+async function quarantineTableExists(db: Db): Promise<boolean> {
+  if (db.dialect === 'sqlite') {
+    return Boolean(
+      await db.get<{ name: string }>(
+        sql`SELECT name FROM sqlite_master WHERE type = 'table' AND name = '_migration_quarantine' LIMIT 1`,
+      ),
+    );
+  }
+  return Boolean(
+    await db.get<{ table_name: string }>(
+      sql`SELECT table_name
+          FROM information_schema.tables
+          WHERE table_schema = 'public' AND table_name = '_migration_quarantine'
+          LIMIT 1`,
+    ),
+  );
 }
 
 function comparableSnapshot(snapshot: Snapshot, coverage: SnapshotCoverage): object {
@@ -589,7 +634,7 @@ async function assertScriptErrorDoesNotRecoverFromLaterMarker(): Promise<void> {
       ...db,
       get: async <T>(query) => {
         probes++;
-        if (probes === 2) {
+        if (probes === 3) {
           await db.run(sql`INSERT INTO _migrations (name, applied_at) VALUES (${file}, ${Date.now()})`);
         }
         return db.get<T>(query);
@@ -599,7 +644,7 @@ async function assertScriptErrorDoesNotRecoverFromLaterMarker(): Promise<void> {
     const error = await captureMigrationError(delayedMarkerDb, root);
     expect(error).toBeInstanceOf(Error);
     expect((error as Error).name).not.toBe('MigrationEscapeError');
-    expect(probes).toBe(1);
+    expect(probes).toBe(2);
     assertCorpusAcceptance(before, await snapshot(db));
   } finally {
     await db.close();
@@ -739,6 +784,16 @@ function expectMigrationEscape(error: unknown, file: string, dialect: Dialect): 
   expect(message).toContain('marker withheld');
   expect(message).toContain('no recovery attempted');
   expect(message).not.toContain('canary-secret');
+}
+
+function expectMigrationQuarantined(error: unknown, file: string, dialect: Dialect): void {
+  expect(error).toMatchObject({
+    name: 'MigrationQuarantinedError',
+    file,
+    dialect,
+    reasonCode: 'transaction_boundary_escape',
+  });
+  expect(error instanceof Error ? error.message : String(error)).toContain('manual intervention');
 }
 
 const OUTER_TERMINATION_FIXTURES = [
@@ -888,7 +943,7 @@ async function assertCanaryFailureDoesNotRetryOrRecover(): Promise<void> {
     ...db,
     get: async <T>(query) => {
       probes++;
-      if (probes === 2) {
+      if (probes === 3) {
         await db.run(sql`INSERT INTO _migrations (name, applied_at) VALUES (${file}, ${Date.now()})`);
       }
       return db.get<T>(query);
@@ -902,12 +957,394 @@ async function assertCanaryFailureDoesNotRetryOrRecover(): Promise<void> {
     );
     expectMigrationEscape(error, file, ACTIVE_DIALECT);
     expect(releaseAttempts).toBe(1);
-    expect(probes).toBe(1);
+    expect(probes).toBe(2);
     expect(await snapshot(db).then((state) => state.migrations)).not.toContain(file);
   } finally {
     native.exec = originalExec;
     await db.close();
   }
+}
+
+async function assertErrorProbePreservesOriginal(): Promise<void> {
+  const db = await createCanaryDb();
+  const suffix = randomUUID().replaceAll('-', '').slice(0, 14);
+  const file = `9006_script_error_${suffix}.sql`;
+  const script = `SELECT 'script-error-${suffix}';`;
+
+  try {
+    if (db.dialect === 'sqlite') {
+      const native = db.sqlite!;
+      const originalExec = native.exec;
+      const original = Object.assign(new Error('exact SQLite script error'), { code: 'SQLITE_CONSTRAINT' });
+      native.exec = (statement: string): void => {
+        if (statement === script) throw original;
+        originalExec(statement);
+      };
+      try {
+        expect(await captureMigrationError(db, createScriptRoot(ACTIVE_DIALECT, file, script))).toBe(original);
+      } finally {
+        native.exec = originalExec;
+      }
+      return;
+    }
+
+    const sentinel = Object.assign(new Error('exact Postgres script error'), { code: '23505' });
+    const realDrizzle = db.pg!.drizzle;
+    let executeCount = 0;
+    const scriptErrorDrizzle = new Proxy(realDrizzle, {
+      get(target, property) {
+        if (property === 'transaction') {
+          return async <T>(callback: (tx: Record<string, unknown>) => Promise<T>): Promise<T> =>
+            target.transaction(async (tx) => {
+              const wrappedTx = new Proxy(tx, {
+                get(transaction, transactionProperty) {
+                  if (transactionProperty === 'execute') {
+                    return async (query: unknown): Promise<unknown> => {
+                      executeCount++;
+                      if (executeCount === 4) throw sentinel;
+                      return (transaction.execute as (statement: unknown) => Promise<unknown>)(query);
+                    };
+                  }
+                  const value = Reflect.get(transaction, transactionProperty, transaction);
+                  return typeof value === 'function' ? value.bind(transaction) : value;
+                },
+              });
+              return callback(wrappedTx);
+            });
+        }
+        const value = Reflect.get(target, property, target);
+        return typeof value === 'function' ? value.bind(target) : value;
+      },
+    }) as typeof realDrizzle;
+    const scriptErrorDb: Db = {
+      ...db,
+      pg: { ...db.pg!, drizzle: scriptErrorDrizzle },
+    };
+
+    expect(
+      await captureMigrationError(scriptErrorDb, createScriptRoot(ACTIVE_DIALECT, file, script)),
+    ).toBe(sentinel);
+  } finally {
+    await db.close();
+  }
+}
+
+async function assertErrorPathEscapes(): Promise<void> {
+  const scenarios = [
+    ['COMMIT', 'COMMIT;'],
+    ['END', 'END;'],
+    ['ROLLBACK;BEGIN', 'ROLLBACK; BEGIN;'],
+  ];
+
+  for (const [label, prefix] of scenarios) {
+    const db = await createCanaryDb();
+    const suffix = randomUUID().replaceAll('-', '').slice(0, 14);
+    const file = `9007_error_${label.replaceAll(/[^A-Za-z0-9]/g, '_')}_${suffix}.sql`;
+    const probeTable = `mc_error_probe_${suffix}`;
+    const root = createScriptRoot(
+      ACTIVE_DIALECT,
+      file,
+      `${prefix}
+       INSERT INTO ${probeTable} (id) VALUES (2);
+       INSERT INTO ${probeTable} (id) VALUES (1);`,
+    );
+
+    try {
+      await db.execRaw(
+        `CREATE TABLE ${probeTable} (id INTEGER PRIMARY KEY);
+         INSERT INTO ${probeTable} (id) VALUES (1);`,
+      );
+      const error = await captureMigrationError(db, root);
+      expectMigrationEscape(error, file, ACTIVE_DIALECT);
+      expect(await quarantineRows(db)).toContainEqual({
+        name: file,
+        dialect: ACTIVE_DIALECT,
+        reason_code: 'transaction_boundary_escape',
+      });
+    } finally {
+      await db.close();
+    }
+  }
+}
+
+async function assertTransientProbeFailureDoesNotQuarantine(): Promise<void> {
+  const db = await createCanaryDb();
+  if (db.dialect !== 'sqlite') {
+    await db.close();
+    return;
+  }
+
+  const suffix = randomUUID().replaceAll('-', '').slice(0, 14);
+  const file = `9008_transient_${suffix}.sql`;
+  const script = `SELECT 'transient-${suffix}';`;
+  const native = db.sqlite!;
+  const originalExec = native.exec;
+  let scriptAttempts = 0;
+  let probeAttempts = 0;
+  native.exec = (statement: string): void => {
+    if (statement === script && scriptAttempts++ === 0) {
+      throw Object.assign(new Error('transient busy'), { code: 'SQLITE_BUSY' });
+    }
+    if (statement.startsWith('ROLLBACK TO SAVEPOINT') && probeAttempts++ === 0) {
+      throw new Error('savepoint unavailable');
+    }
+    originalExec(statement);
+  };
+
+  try {
+    await expect(migrate(db, createScriptRoot(ACTIVE_DIALECT, file, script))).resolves.toEqual([file]);
+    expect(scriptAttempts).toBe(2);
+    expect(probeAttempts).toBe(1);
+    expect(await quarantineRows(db)).toEqual([]);
+  } finally {
+    native.exec = originalExec;
+    await db.close();
+  }
+}
+
+async function assertPostgresTransientProbeFailuresDoNotQuarantine(): Promise<void> {
+  if (ACTIVE_DIALECT !== 'postgres') return;
+
+  for (const code of ['08006', '57014', '57P01', '25P03']) {
+    const db = await createCanaryDb();
+    const suffix = randomUUID().replaceAll('-', '').slice(0, 14);
+    const file = `9013_pg_transient_${code}_${suffix}.sql`;
+    const sentinel = Object.assign(new Error(`transient ${code}`), { code });
+    const probeCause = new Error('canary unavailable');
+    const realDrizzle = db.pg!.drizzle;
+    let executeCount = 0;
+    const transientDrizzle = new Proxy(realDrizzle, {
+      get(target, property) {
+        if (property === 'transaction') {
+          return async <T>(callback: (tx: Record<string, unknown>) => Promise<T>): Promise<T> =>
+            target.transaction(async (tx) => {
+              const wrappedTx = new Proxy(tx, {
+                get(transaction, transactionProperty) {
+                  if (transactionProperty === 'execute') {
+                    return async (query: unknown): Promise<unknown> => {
+                      executeCount++;
+                      if (executeCount === 4) throw sentinel;
+                      if (executeCount === 5) throw probeCause;
+                      return (transaction.execute as (statement: unknown) => Promise<unknown>)(query);
+                    };
+                  }
+                  const value = Reflect.get(transaction, transactionProperty, transaction);
+                  return typeof value === 'function' ? value.bind(transaction) : value;
+                },
+              });
+              return callback(wrappedTx);
+            });
+        }
+        const value = Reflect.get(target, property, target);
+        return typeof value === 'function' ? value.bind(target) : value;
+      },
+    }) as typeof realDrizzle;
+    const transientDb: Db = {
+      ...db,
+      pg: { ...db.pg!, drizzle: transientDrizzle },
+    };
+
+    try {
+      expect(
+        await captureMigrationError(
+          transientDb,
+          createScriptRoot(ACTIVE_DIALECT, file, `SELECT '${code}';`),
+        ),
+      ).toBe(sentinel);
+      expect(await quarantineRows(db)).toEqual([]);
+    } finally {
+      await db.close();
+    }
+  }
+}
+
+async function assertQuarantineLifecycle(): Promise<void> {
+  const db = await createCanaryDb();
+  const suffix = randomUUID().replaceAll('-', '').slice(0, 14);
+  const file = `9009_quarantine_${suffix}.sql`;
+  const root = createScriptRoot(ACTIVE_DIALECT, file, `COMMIT; SELECT 1;`);
+
+  try {
+    const escape = await captureMigrationError(db, root);
+    expectMigrationEscape(escape, file, ACTIVE_DIALECT);
+    expect(await quarantineRows(db)).toEqual([
+      {
+        name: file,
+        dialect: ACTIVE_DIALECT,
+        reason_code: 'transaction_boundary_escape',
+      },
+    ]);
+
+    expectMigrationQuarantined(await captureMigrationError(db, root), file, ACTIVE_DIALECT);
+    await db.run(sql`INSERT INTO _migrations (name, applied_at) VALUES (${file}, ${Date.now()})`);
+    expectMigrationQuarantined(await captureMigrationError(db, root), file, ACTIVE_DIALECT);
+
+    writeFileSync(join(root, ACTIVE_DIALECT, file), `SELECT 1;`);
+    await db.run(
+      sql`DELETE FROM _migration_quarantine WHERE name = ${file} AND dialect = ${ACTIVE_DIALECT}`,
+    );
+    await db.run(sql`DELETE FROM _migrations WHERE name = ${file}`);
+    await expect(migrate(db, root)).resolves.toEqual([file]);
+  } finally {
+    await db.close();
+  }
+}
+
+async function assertQuarantinePersistenceFailure(): Promise<void> {
+  const db = await createCanaryDb();
+  if (db.dialect !== 'sqlite') {
+    await db.close();
+    return;
+  }
+
+  const suffix = randomUUID().replaceAll('-', '').slice(0, 14);
+  const file = `9010_quarantine_persist_${suffix}.sql`;
+  const root = createScriptRoot(ACTIVE_DIALECT, file, `COMMIT; SELECT 1;`);
+  const persistenceCause = new Error('quarantine storage unavailable');
+  const persistenceFailingDb: Db = {
+    ...db,
+    execRaw: async (statement) => {
+      if (statement.startsWith('INSERT OR IGNORE INTO _migration_quarantine')) {
+        throw persistenceCause;
+      }
+      await db.execRaw(statement);
+    },
+  };
+
+  try {
+    const error = await captureMigrationError(persistenceFailingDb, root);
+    expect(error).toMatchObject({ name: 'QuarantinePersistFailure' });
+    expect(error).toBeInstanceOf(AggregateError);
+    expect((error as AggregateError).errors).toContain(persistenceCause);
+    expect((error as AggregateError).errors[0]).toMatchObject({
+      name: 'MigrationEscapeError',
+      file,
+      dialect: ACTIVE_DIALECT,
+    });
+    expect(await quarantineRows(db)).toEqual([]);
+  } finally {
+    await db.close();
+  }
+}
+
+async function assertQuarantineBootstrapAndConvergence(): Promise<void> {
+  const suffix = randomUUID().replaceAll('-', '').slice(0, 14);
+  const databaseUrl = `file:${join(TEST_ARTIFACT_ROOT, `quarantine-${suffix}.db`)}`;
+  const first = await createDb(databaseUrl);
+  const second = await createDb(databaseUrl);
+  const file = `9011_converge_${suffix}.sql`;
+  const root = createScriptRoot('sqlite', file, `COMMIT; SELECT 1;`);
+
+  try {
+    expect(await quarantineTableExists(first)).toBe(false);
+    const sqliteInitial = migrationFiles('sqlite')[0]!;
+    await expect(migrate(first, createRoot('sqlite', [sqliteInitial]))).resolves.toEqual([
+      sqliteInitial,
+    ]);
+    expect(await quarantineTableExists(first)).toBe(true);
+
+    await Promise.allSettled([migrate(first, root), migrate(second, root)]);
+    expect(await quarantineRows(first)).toEqual([
+      {
+        name: file,
+        dialect: 'sqlite',
+        reason_code: 'transaction_boundary_escape',
+      },
+    ]);
+  } finally {
+    await second.close();
+    await first.close();
+  }
+}
+
+async function assertPostgresQuarantineConvergence(): Promise<void> {
+  if (ACTIVE_DIALECT !== 'postgres') return;
+
+  const primary = await createCanaryDb();
+  const peer = await createDb(postgresScratch!.databaseUrl);
+  const suffix = randomUUID().replaceAll('-', '').slice(0, 14);
+  const file = `9012_pg_converge_${suffix}.sql`;
+  const root = createScriptRoot(ACTIVE_DIALECT, file, `COMMIT; SELECT 1;`);
+
+  try {
+    const outcomes = await Promise.allSettled([migrate(primary, root), migrate(peer, root)]);
+    expect(outcomes.every((outcome) => outcome.status === 'rejected')).toBe(true);
+    expect(await quarantineRows(primary)).toEqual([
+      {
+        name: file,
+        dialect: 'postgres',
+        reason_code: 'transaction_boundary_escape',
+      },
+    ]);
+  } finally {
+    await peer.close();
+    await primary.close();
+  }
+}
+
+async function assertSqliteCliQuarantineLifecycle(): Promise<void> {
+  const suffix = randomUUID().replaceAll('-', '').slice(0, 14);
+  const databasePath = join(TEST_ARTIFACT_ROOT, `cli-quarantine-${suffix}.db`);
+  const databaseUrl = `file:${databasePath}`;
+  const file = '0001_init.sql';
+  const root = createScriptRoot('sqlite', file, `COMMIT; SELECT 1;`);
+  const packageRoot = join(HERE, '..');
+  const tsxCli = join(packageRoot, 'node_modules', 'tsx', 'dist', 'cli.mjs');
+  const env = { ...process.env, DATABASE_URL: databaseUrl };
+  const db = await createDb(databaseUrl);
+
+  try {
+    expectMigrationEscape(await captureMigrationError(db, root), file, 'sqlite');
+  } finally {
+    await db.close();
+  }
+
+  await expect(
+    execFileAsync(process.execPath, [tsxCli, 'src/cli/seed.ts'], {
+      cwd: packageRoot,
+      env,
+    }),
+  ).rejects.toThrow();
+
+  const blocked = await createDb(databaseUrl);
+  try {
+    expect(await quarantineRows(blocked)).toEqual([
+      {
+        name: file,
+        dialect: 'sqlite',
+        reason_code: 'transaction_boundary_escape',
+      },
+    ]);
+  } finally {
+    await blocked.close();
+  }
+
+  await expect(
+    execFileAsync(process.execPath, [tsxCli, 'src/cli/reset.ts'], {
+      cwd: packageRoot,
+      env,
+    }),
+  ).resolves.toBeDefined();
+
+  const reset = await createDb(databaseUrl);
+  try {
+    expect(await quarantineRows(reset)).toEqual([]);
+  } finally {
+    await reset.close();
+  }
+}
+
+async function assertPostgresResetRefuses(): Promise<void> {
+  if (ACTIVE_DIALECT !== 'postgres') return;
+
+  const packageRoot = join(HERE, '..');
+  const tsxCli = join(packageRoot, 'node_modules', 'tsx', 'dist', 'cli.mjs');
+  await expect(
+    execFileAsync(process.execPath, [tsxCli, 'src/cli/reset.ts'], {
+      cwd: packageRoot,
+      env: { ...process.env, DATABASE_URL: postgresScratch!.databaseUrl },
+    }),
+  ).rejects.toThrow();
 }
 
 beforeAll(async () => {
@@ -989,6 +1426,47 @@ describe('migration contract', () => {
 
   it('does not retry or peer-recover a canary failure', async () => {
     await assertCanaryFailureDoesNotRetryOrRecover();
+  });
+
+  it('preserves original script errors when the rollback probe succeeds', async () => {
+    await assertErrorProbePreservesOriginal();
+  });
+
+  it('quarantines error paths that lose the canary savepoint', async () => {
+    await assertErrorPathEscapes();
+  });
+
+  it('keeps transient rollback-probe failures out of quarantine', async () => {
+    await assertTransientProbeFailureDoesNotQuarantine();
+  });
+
+  it('propagates reviewed PostgreSQL transient originals without quarantine', async () => {
+    await assertPostgresTransientProbeFailuresDoNotQuarantine();
+  });
+
+  it('persists quarantine before applied checks and requires manual clearance', async () => {
+    await assertQuarantineLifecycle();
+  });
+
+  it('retains both causes when quarantine persistence fails', async () => {
+    await assertQuarantinePersistenceFailure();
+  });
+
+  it('creates quarantine storage for old SQLite databases and converges escaping peers', async () => {
+    await assertQuarantineBootstrapAndConvergence();
+  });
+
+  it('converges PostgreSQL escaping peers on one quarantine row', async () => {
+    await assertPostgresQuarantineConvergence();
+  });
+
+  it('blocks SQLite seed and clears quarantine only through destructive reset', async () => {
+    if (ACTIVE_DIALECT !== 'sqlite') return;
+    await assertSqliteCliQuarantineLifecycle();
+  });
+
+  it('keeps the PostgreSQL reset command refused', async () => {
+    await assertPostgresResetRefuses();
   });
 
   it('drops a recorded scratch database after a simulated admin close failure', async () => {
