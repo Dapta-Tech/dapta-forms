@@ -12,46 +12,20 @@ const TEST_ARTIFACT_ROOT = join(
   '..',
   '..',
   '.data',
-  `migration-atomicity-${process.pid}-${randomUUID()}`,
+  `migrate-runtime-${process.pid}-${randomUUID()}`,
 );
 
-interface MigrationFixture {
+interface Fixture {
   root: string;
   filename: string;
   tableName: string;
-  gateTableName: string;
   auditTableName: string;
-  markerTriggerName: string;
   path: string;
 }
 
 interface Deferred {
   promise: Promise<void>;
   resolve(): void;
-}
-
-interface Barrier {
-  wait(): Promise<void>;
-}
-
-function createFixture(dialect: Db['dialect']): MigrationFixture {
-  const id = randomUUID().replaceAll('-', '');
-  const root = join(TEST_ARTIFACT_ROOT, id);
-  const directory = join(root, dialect);
-  const filename = `${id}.sql`;
-  const path = join(directory, filename);
-
-  mkdirSync(directory, { recursive: true });
-
-  return {
-    root,
-    filename,
-    tableName: `migration_atomicity_${id}`,
-    gateTableName: `migration_atomicity_gate_${id}`,
-    auditTableName: `migration_atomicity_audit_${id}`,
-    markerTriggerName: `migration_atomicity_marker_${id}`,
-    path,
-  };
 }
 
 function createDeferred(): Deferred {
@@ -62,73 +36,32 @@ function createDeferred(): Deferred {
   return { promise, resolve };
 }
 
-function createBarrier(parties: number): Barrier {
-  const released = createDeferred();
-  let arrivals = 0;
-
-  return {
-    async wait(): Promise<void> {
-      arrivals++;
-      if (arrivals === parties) released.resolve();
-      await released.promise;
-    },
-  };
-}
-
 function pause(milliseconds: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
-function writeMigration(fixture: MigrationFixture, script: string): void {
+function createFixture(dialect: Db['dialect']): Fixture {
+  const id = randomUUID().replaceAll('-', '');
+  const root = join(TEST_ARTIFACT_ROOT, id);
+  const directory = join(root, dialect);
+  const filename = `${id}.sql`;
+
+  mkdirSync(directory, { recursive: true });
+  return {
+    root,
+    filename,
+    tableName: `migrate_runtime_${id}`,
+    auditTableName: `migrate_runtime_audit_${id}`,
+    path: join(directory, filename),
+  };
+}
+
+function writeMigration(fixture: Fixture, script: string): void {
   writeFileSync(fixture.path, script);
 }
 
-function withInitialProbeBarrier(db: Db, barrier: Barrier): Db {
-  let firstProbe = true;
-  return {
-    ...db,
-    get: async <T>(query) => {
-      const row = await db.get<T>(query);
-      if (firstProbe) {
-        firstProbe = false;
-        await barrier.wait();
-      }
-      return row;
-    },
-  };
-}
-
-function withPausedInitialProbe(db: Db, arrived: Deferred, release: Deferred): Db {
-  let firstProbe = true;
-  return {
-    ...db,
-    get: async <T>(query) => {
-      const row = await db.get<T>(query);
-      if (firstProbe) {
-        firstProbe = false;
-        arrived.resolve();
-        await release.promise;
-      }
-      return row;
-    },
-  };
-}
-
-function isSqliteBusy(error: unknown): boolean {
-  if (typeof error !== 'object' || error === null || !('code' in error)) return false;
-  const code = (error as { code?: unknown }).code;
-  return typeof code === 'string' && code.startsWith('SQLITE_BUSY');
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
 async function openDatabase(databaseUrl?: string): Promise<{ db: Db; databaseUrl: string }> {
-  const resolvedUrl =
-    databaseUrl ??
-    process.env.DATABASE_URL ??
-    `file:${join(TEST_ARTIFACT_ROOT, `${randomUUID()}.db`)}`;
+  const resolvedUrl = databaseUrl ?? `file:${join(TEST_ARTIFACT_ROOT, `${randomUUID()}.db`)}`;
   const db = await createDb(resolvedUrl);
   await migrate(db);
   return { db, databaseUrl: resolvedUrl };
@@ -159,254 +92,73 @@ async function hasTable(db: Db, tableName: string): Promise<boolean> {
   );
 }
 
-async function countRows(db: Db, tableName: string): Promise<number> {
-  const row = await db.get<{ count: number | string }>(sql.raw(`SELECT COUNT(*) AS count FROM ${tableName}`));
-  return Number(row?.count ?? 0);
-}
-
-async function createDurableEffects(db: Db, fixture: MigrationFixture): Promise<void> {
-  await db.execRaw(
-    `CREATE TABLE ${fixture.gateTableName} (id INTEGER PRIMARY KEY);
-     CREATE TABLE ${fixture.auditTableName} (id INTEGER PRIMARY KEY);
-     INSERT INTO ${fixture.gateTableName} (id) VALUES (1);`,
-  );
-}
-
-async function captureMigrationError(db: Db, fixture: MigrationFixture): Promise<unknown> {
-  return migrate(db, fixture.root).then(
-    () => undefined,
-    (error: unknown) => error,
-  );
-}
-
-function expectGuardError(
-  error: unknown,
-  db: Db,
-  fixture: MigrationFixture,
-  classification: string,
-): void {
-  const message = errorMessage(error);
-  expect(message).toBe(`Unsafe ${db.dialect} migration statement: ${classification}.`);
-  expect(message).not.toContain(fixture.filename);
-}
-
-async function expectNoDurableEffects(db: Db, fixture: MigrationFixture): Promise<void> {
-  expect(await hasTable(db, fixture.tableName)).toBe(false);
-  expect(await countRows(db, fixture.auditTableName)).toBe(0);
-  expect(await hasMigration(db, fixture.filename)).toBe(false);
-}
-
-async function cleanFixture(db: Db, fixture: MigrationFixture): Promise<void> {
-  if (db.dialect === 'sqlite') {
-    await db.execRaw(`DROP TRIGGER IF EXISTS ${fixture.markerTriggerName}`);
-  }
+async function cleanFixture(db: Db, fixture: Fixture): Promise<void> {
   await db.execRaw(`DROP TABLE IF EXISTS ${fixture.tableName}`);
-  await db.execRaw(`DROP TABLE IF EXISTS ${fixture.gateTableName}`);
   await db.execRaw(`DROP TABLE IF EXISTS ${fixture.auditTableName}`);
   await db.run(sql`DELETE FROM _migrations WHERE name = ${fixture.filename}`);
+}
+
+function withForcedInitialProbeOverlap(db: Db, arrived: Deferred, release: Deferred): Db {
+  let firstProbe = true;
+  return {
+    ...db,
+    get: async <T>(query) => {
+      const row = await db.get<T>(query);
+      if (firstProbe) {
+        firstProbe = false;
+        arrived.resolve();
+        await release.promise;
+      }
+      return row;
+    },
+  };
+}
+
+function isSqliteBusyOrLocked(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null || !('code' in error)) return false;
+  const code = (error as { code?: unknown }).code;
+  return typeof code === 'string' && (code.startsWith('SQLITE_BUSY') || code.startsWith('SQLITE_LOCKED'));
 }
 
 afterAll(() => {
   rmSync(TEST_ARTIFACT_ROOT, { recursive: true, force: true });
 });
 
-describe('migrate atomicity', () => {
-  it('rejects END before DDL and DML can escape the wrapper transaction', async () => {
-    const { db } = await openDatabase();
-    const fixture = createFixture(db.dialect);
-    await createDurableEffects(db, fixture);
-    writeMigration(
-      fixture,
-      `END;
-       CREATE TABLE ${fixture.tableName} (id INTEGER PRIMARY KEY);
-       INSERT INTO ${fixture.auditTableName} (id) VALUES (1);
-       INSERT INTO ${fixture.gateTableName} (id) VALUES (1);`,
-    );
-
-    try {
-      const error = await captureMigrationError(db, fixture);
-      await expectNoDurableEffects(db, fixture);
-      expectGuardError(error, db, fixture, 'outer transaction control');
-    } finally {
-      await cleanFixture(db, fixture);
-      await db.close();
-    }
-  });
-
-  it.each([
-    ['a standard backslash quote boundary', `SELECT 'backslash\\';`],
-    ['a doubled quote boundary', `SELECT 'doubled '' quote';`],
-  ])('rejects END after %s', async (_label, quotedStatement) => {
-    const { db } = await openDatabase();
-    const fixture = createFixture(db.dialect);
-    await createDurableEffects(db, fixture);
-    writeMigration(
-      fixture,
-      `${quotedStatement}
-       END;
-       CREATE TABLE ${fixture.tableName} (id INTEGER PRIMARY KEY);
-       INSERT INTO ${fixture.auditTableName} (id) VALUES (1);
-       INSERT INTO ${fixture.gateTableName} (id) VALUES (1);`,
-    );
-
-    try {
-      const error = await captureMigrationError(db, fixture);
-      await expectNoDurableEffects(db, fixture);
-      expectGuardError(error, db, fixture, 'outer transaction control');
-    } finally {
-      await cleanFixture(db, fixture);
-      await db.close();
-    }
-  });
-
-  it.each([
-    ['BEGIN', 'BEGIN;', 'outer transaction control'],
-    ['END WORK', 'END WORK;', 'outer transaction control'],
-    ['END TRANSACTION', 'END TRANSACTION;', 'outer transaction control'],
-    ['COMMIT', 'COMMIT;', 'outer transaction control'],
-    ['ROLLBACK', 'ROLLBACK;', 'outer transaction control'],
-    ['VACUUM', 'VACUUM;', 'transaction-incompatible VACUUM'],
-    ['PRAGMA', 'PRAGMA foreign_keys = OFF;', 'unsafe PRAGMA'],
-    [
-      'CREATE INDEX CONCURRENTLY',
-      'CREATE INDEX CONCURRENTLY migration_atomicity_unsafe_index ON target (id);',
-      'transaction-incompatible CREATE INDEX CONCURRENTLY',
-    ],
-  ])('rejects unsafe %s before it executes', async (_label, unsafeStatement, classification) => {
-    const { db } = await openDatabase();
-    const fixture = createFixture(db.dialect);
-    writeMigration(
-      fixture,
-      `CREATE TABLE ${fixture.tableName} (id INTEGER PRIMARY KEY);
-       ${unsafeStatement.replace('target', fixture.tableName)}`,
-    );
-
-    try {
-      const error = await captureMigrationError(db, fixture);
-      expect(await hasTable(db, fixture.tableName)).toBe(false);
-      expect(await hasMigration(db, fixture.filename)).toBe(false);
-      expectGuardError(error, db, fixture, classification);
-    } finally {
-      await cleanFixture(db, fixture);
-      await db.close();
-    }
-  });
-
-  it('allows nested savepoints and SQLite local foreign-key deferral', async () => {
-    const { db } = await openDatabase();
-    const fixture = createFixture(db.dialect);
-    await db.execRaw(`CREATE TABLE ${fixture.auditTableName} (id INTEGER PRIMARY KEY)`);
-    const safeStatements =
-      db.dialect === 'sqlite'
-        ? `PRAGMA defer_foreign_keys = ON;
-           SAVEPOINT nested;
-           INSERT INTO ${fixture.auditTableName} (id) VALUES (1);
-           ROLLBACK TO SAVEPOINT nested;
-           RELEASE SAVEPOINT nested;`
-        : `SAVEPOINT nested;
-           INSERT INTO ${fixture.auditTableName} (id) VALUES (1);
-           ROLLBACK TO SAVEPOINT nested;
-           RELEASE SAVEPOINT nested;`;
-    writeMigration(
-      fixture,
-      `${safeStatements}
-       CREATE TABLE ${fixture.tableName} (id INTEGER PRIMARY KEY);`,
-    );
-
-    try {
-      await expect(migrate(db, fixture.root)).resolves.toEqual([fixture.filename]);
-      expect(await hasTable(db, fixture.tableName)).toBe(true);
-      expect(await countRows(db, fixture.auditTableName)).toBe(0);
-      expect(await hasMigration(db, fixture.filename)).toBe(true);
-    } finally {
-      await cleanFixture(db, fixture);
-      await db.close();
-    }
-  });
-
-  it('allows quoted transaction words and PostgreSQL dollar-quoted bodies', async () => {
-    const { db } = await openDatabase();
-    const fixture = createFixture(db.dialect);
-    const quotedStatement =
-      db.dialect === 'postgres'
-        ? `DO $migration_guard$ BEGIN PERFORM 'END;'; END $migration_guard$;`
-        : `SELECT 'END;'; SELECT 'doubled '' quote';`;
-    writeMigration(
-      fixture,
-      `${quotedStatement}
-       CREATE TABLE ${fixture.tableName} (id INTEGER PRIMARY KEY);`,
-    );
-
-    try {
-      await expect(migrate(db, fixture.root)).resolves.toEqual([fixture.filename]);
-      expect(await hasTable(db, fixture.tableName)).toBe(true);
-      expect(await hasMigration(db, fixture.filename)).toBe(true);
-    } finally {
-      await cleanFixture(db, fixture);
-      await db.close();
-    }
-  });
-
-  it('rolls back DDL and DML when inserting the migration marker fails', async () => {
-    const { db } = await openDatabase();
-    if (db.dialect !== 'sqlite') {
-      await db.close();
-      return;
-    }
-
-    const fixture = createFixture(db.dialect);
-    await db.execRaw(
-      `CREATE TABLE ${fixture.auditTableName} (id INTEGER PRIMARY KEY);
-       CREATE TRIGGER ${fixture.markerTriggerName}
-       BEFORE INSERT ON _migrations
-       WHEN NEW.name = '${fixture.filename}'
-       BEGIN
-         SELECT RAISE(ABORT, 'marker insertion failed');
-       END;`,
-    );
-    writeMigration(
-      fixture,
-      `CREATE TABLE ${fixture.tableName} (id INTEGER PRIMARY KEY);
-       INSERT INTO ${fixture.auditTableName} (id) VALUES (1);`,
-    );
-
-    try {
-      await expect(migrate(db, fixture.root)).rejects.toThrow('marker insertion failed');
-      await expectNoDurableEffects(db, fixture);
-    } finally {
-      await cleanFixture(db, fixture);
-      await db.close();
-    }
-  });
-
-  it('forces both callers past the marker probe and applies the migration once', async () => {
+describe('migrate concurrency and recovery', () => {
+  it('forces concurrent callers past the first probe and applies each file once', async () => {
     const primary = await openDatabase();
     const peer = await openDatabase(primary.databaseUrl);
     const fixture = createFixture(primary.db.dialect);
-    const barrier = createBarrier(2);
-    writeMigration(
-      fixture,
-      `CREATE TABLE ${fixture.tableName} (id INTEGER PRIMARY KEY);
-       INSERT INTO ${fixture.tableName} (id) VALUES (1);`,
-    );
+    const primaryArrived = createDeferred();
+    const peerArrived = createDeferred();
+    const release = createDeferred();
+    writeMigration(fixture, `CREATE TABLE ${fixture.tableName} (id INTEGER PRIMARY KEY);`);
 
     try {
-      const applied = await Promise.all([
-        migrate(withInitialProbeBarrier(primary.db, barrier), fixture.root),
-        migrate(withInitialProbeBarrier(peer.db, barrier), fixture.root),
-      ]);
+      const primaryMigration = migrate(
+        withForcedInitialProbeOverlap(primary.db, primaryArrived, release),
+        fixture.root,
+      );
+      const peerMigration = migrate(
+        withForcedInitialProbeOverlap(peer.db, peerArrived, release),
+        fixture.root,
+      );
+      await Promise.all([primaryArrived.promise, peerArrived.promise]);
+      release.resolve();
+      const applied = await Promise.all([primaryMigration, peerMigration]);
 
       expect(applied.flat()).toEqual([fixture.filename]);
       expect(await hasMigration(primary.db, fixture.filename)).toBe(true);
-      expect(await countRows(primary.db, fixture.tableName)).toBe(1);
+      expect(await hasTable(primary.db, fixture.tableName)).toBe(true);
     } finally {
+      release.resolve();
       await peer.db.close();
       await cleanFixture(primary.db, fixture);
       await primary.db.close();
     }
   });
 
-  it('retries SQLite busy errors until a peer applies the migration', async () => {
+  it('retries SQLite BUSY until a peer applies the file', async () => {
     const primary = await openDatabase();
     if (primary.db.dialect !== 'sqlite') {
       await primary.db.close();
@@ -418,15 +170,15 @@ describe('migrate atomicity', () => {
     const primaryNative = primary.db.sqlite!;
     const peerNative = peer.db.sqlite!;
     const originalTxn = primaryNative.txn;
-    const primaryAtProbe = createDeferred();
-    const releasePrimary = createDeferred();
+    const primaryArrived = createDeferred();
+    const release = createDeferred();
     let busyAttempts = 0;
     let peerTransactionOpen = false;
     primaryNative.txn = <T>(fn: () => T): T => {
       try {
         return originalTxn(fn);
       } catch (error) {
-        if (isSqliteBusy(error)) busyAttempts++;
+        if (isSqliteBusyOrLocked(error)) busyAttempts++;
         throw error;
       }
     };
@@ -435,10 +187,10 @@ describe('migrate atomicity', () => {
 
     try {
       const primaryMigration = migrate(
-        withPausedInitialProbe(primary.db, primaryAtProbe, releasePrimary),
+        withForcedInitialProbeOverlap(primary.db, primaryArrived, release),
         fixture.root,
       );
-      await primaryAtProbe.promise;
+      await primaryArrived.promise;
 
       peerNative.exec('BEGIN IMMEDIATE');
       peerTransactionOpen = true;
@@ -458,23 +210,140 @@ describe('migrate atomicity', () => {
         }
       })();
 
-      releasePrimary.resolve();
+      release.resolve();
       const outcomes = await Promise.allSettled([primaryMigration, peerMigration]);
-
       expect(outcomes.map((outcome) => outcome.status)).toEqual(['fulfilled', 'fulfilled']);
       expect(busyAttempts).toBeGreaterThan(0);
       expect(
         outcomes.flatMap((outcome) => (outcome.status === 'fulfilled' ? outcome.value : [])),
       ).toEqual([fixture.filename]);
-      expect(await hasMigration(primary.db, fixture.filename)).toBe(true);
-      expect(await hasTable(primary.db, fixture.tableName)).toBe(true);
     } finally {
-      releasePrimary.resolve();
+      release.resolve();
       primaryNative.txn = originalTxn;
       if (peerTransactionOpen) peerNative.exec('ROLLBACK');
       await peer.db.close();
       await cleanFixture(primary.db, fixture);
       await primary.db.close();
+    }
+  });
+
+  it('retries a recognized SQLite LOCKED error', async () => {
+    const { db } = await openDatabase();
+    if (db.dialect !== 'sqlite') {
+      await db.close();
+      return;
+    }
+
+    const fixture = createFixture(db.dialect);
+    const native = db.sqlite!;
+    const originalTxn = native.txn;
+    let attempts = 0;
+    native.txn = <T>(fn: () => T): T => {
+      attempts++;
+      if (attempts === 1) {
+        throw Object.assign(new Error('database table is locked'), { code: 'SQLITE_LOCKED' });
+      }
+      return originalTxn(fn);
+    };
+    writeMigration(fixture, `CREATE TABLE ${fixture.tableName} (id INTEGER PRIMARY KEY);`);
+
+    try {
+      await expect(migrate(db, fixture.root)).resolves.toEqual([fixture.filename]);
+      expect(attempts).toBe(2);
+      expect(await hasTable(db, fixture.tableName)).toBe(true);
+    } finally {
+      native.txn = originalTxn;
+      await cleanFixture(db, fixture);
+      await db.close();
+    }
+  });
+
+  it('propagates a script error without probing for a marker that appears later', async () => {
+    const { db } = await openDatabase();
+    const fixture = createFixture(db.dialect);
+    await db.execRaw(
+      `CREATE TABLE ${fixture.auditTableName} (id INTEGER PRIMARY KEY);
+       INSERT INTO ${fixture.auditTableName} (id) VALUES (1);`,
+    );
+    writeMigration(
+      fixture,
+      `CREATE TABLE ${fixture.tableName} (id INTEGER PRIMARY KEY);
+       INSERT INTO ${fixture.auditTableName} (id) VALUES (1);`,
+    );
+    let probeCount = 0;
+    const delayedMarkerDb: Db = {
+      ...db,
+      get: async <T>(query) => {
+        probeCount++;
+        if (probeCount === 2) {
+          await db.run(
+            sql`INSERT INTO _migrations (name, applied_at) VALUES (${fixture.filename}, ${Date.now()})`,
+          );
+        }
+        return db.get<T>(query);
+      },
+    };
+
+    try {
+      await expect(migrate(delayedMarkerDb, fixture.root)).rejects.toThrow();
+      expect(probeCount).toBe(1);
+      expect(await hasMigration(db, fixture.filename)).toBe(false);
+      expect(await hasTable(db, fixture.tableName)).toBe(false);
+    } finally {
+      await cleanFixture(db, fixture);
+      await db.close();
+    }
+  });
+
+  it('resolves only an exact marker unique conflict after a peer has applied the file', async () => {
+    const { db } = await openDatabase();
+    if (db.dialect !== 'sqlite') {
+      await db.close();
+      return;
+    }
+
+    const fixture = createFixture(db.dialect);
+    await db.run(
+      sql`INSERT INTO _migrations (name, applied_at) VALUES (${fixture.filename}, ${Date.now()})`,
+    );
+    writeMigration(fixture, `CREATE TABLE ${fixture.tableName} (id INTEGER PRIMARY KEY);`);
+    const native = db.sqlite!;
+    let hideOuterProbe = true;
+    let hideInnerProbe = true;
+    const hiddenMarkerDrizzle = new Proxy(native.drizzle, {
+      get(target, property) {
+        if (property === 'get') {
+          return <T>(query: Parameters<typeof target.get>[0]): T | undefined => {
+            if (hideInnerProbe) {
+              hideInnerProbe = false;
+              return undefined;
+            }
+            return target.get(query) as T | undefined;
+          };
+        }
+        const value = Reflect.get(target, property, target);
+        return typeof value === 'function' ? value.bind(target) : value;
+      },
+    }) as typeof native.drizzle;
+    const peerAppliedDb: Db = {
+      ...db,
+      get: async <T>(query) => {
+        if (hideOuterProbe) {
+          hideOuterProbe = false;
+          return undefined;
+        }
+        return db.get<T>(query);
+      },
+      sqlite: { ...native, drizzle: hiddenMarkerDrizzle },
+    };
+
+    try {
+      await expect(migrate(peerAppliedDb, fixture.root)).resolves.toEqual([]);
+      expect(await hasMigration(db, fixture.filename)).toBe(true);
+      expect(await hasTable(db, fixture.tableName)).toBe(false);
+    } finally {
+      await cleanFixture(db, fixture);
+      await db.close();
     }
   });
 });

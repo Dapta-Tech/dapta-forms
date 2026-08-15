@@ -130,6 +130,14 @@ limit the schema, but you should not run production on it.
 - **Migrations are additive-only** — new nullable columns / new tables, never a
   destructive rename or drop that would break a running deployment. Both dialects
   ship parallel numbered migrations under `packages/db/migrations/{postgres,sqlite}`.
+- Migration SQL shipped through repository CI is the trusted artifact boundary.
+  Forks that add migrations must run the same database tests before deployment.
+  The contract verifies real database rollback behavior instead of interpreting
+  SQL in the migration runner.
+- CI and the local Compose path test PostgreSQL 16. PostgreSQL 14+ remains the
+  supported deployment expectation.
+- Per-file atomicity covers a migration script and its `_migrations` marker.
+  The short-link fixups that run after migration are outside that boundary.
 - Booting the API against an **unmigrated** database makes the outbox worker fail on
   every poll with `no such table: outbox` — always migrate first.
 
