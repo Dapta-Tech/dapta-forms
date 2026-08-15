@@ -180,7 +180,7 @@ export interface UpsertIntegrationResult {
   revision: StoredProviderCredentialRevision;
 }
 
-export interface CredentialUpsertInput {
+interface CredentialUpsertInput {
   id: string;
   accountId: string;
   provider: IntegrationProvider;
@@ -190,7 +190,7 @@ export interface CredentialUpsertInput {
 }
 
 /** One portable statement for the database-owned credential generation update. */
-export function credentialUpsertStatement(input: CredentialUpsertInput): SQL {
+function credentialUpsertStatement(input: CredentialUpsertInput): SQL {
   return sql`INSERT INTO account_integration (
         id, account_id, provider, encrypted_token, meta, connected_at, updated_at, credential_generation
       ) VALUES (

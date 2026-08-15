@@ -501,7 +501,7 @@ export class IntegrationsController implements OnModuleInit {
   async onModuleInit(): Promise<void> {
     this.log.log(
       this.credentialWriters === 'generation-only'
-        ? 'integration credential writers=generation-only attestation=accepted'
+        ? `integration credential writers=generation-only attestation=accepted id=${this.env.INTEGRATION_CREDENTIAL_WRITER_ATTESTATION_ID}`
         : 'integration credential writers=mixed',
     );
     if (this.credentialWriters !== 'generation-only') return;

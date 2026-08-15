@@ -108,6 +108,9 @@ export const serverEnvSchema = z.object({
   // Operator acknowledgment required only for `generation-only`. This is an
   // assertion about the deployment population, not automatic fleet discovery.
   INTEGRATION_CREDENTIAL_WRITERS_ACK: z.string().optional(),
+  // Non-secret deployment inventory or change-record identifier. Required only
+  // for `generation-only`; the operator retains the referenced receipt.
+  INTEGRATION_CREDENTIAL_WRITER_ATTESTATION_ID: z.string().optional(),
 
   // Premium features (vanity slug + future perks). Forms is ALWAYS free —
   // `locked` gates premium on the customer's Dapta AI subscription via the
@@ -284,6 +287,16 @@ export function loadServerEnv(source: NodeJS.ProcessEnv = process.env): ServerEn
       'INTEGRATION_CREDENTIAL_WRITERS=generation-only requires ' +
         'INTEGRATION_CREDENTIAL_WRITERS_ACK=all-writers-generation-aware. ' +
         'Use mixed unless every credential writer is generation-aware.',
+    );
+  }
+  if (
+    parsed.data.INTEGRATION_CREDENTIAL_WRITERS === 'generation-only' &&
+    (!parsed.data.INTEGRATION_CREDENTIAL_WRITER_ATTESTATION_ID ||
+        !/^[A-Za-z0-9][A-Za-z0-9._:/-]{2,127}$/.test(parsed.data.INTEGRATION_CREDENTIAL_WRITER_ATTESTATION_ID))
+  ) {
+    throw new Error(
+        'INTEGRATION_CREDENTIAL_WRITERS=generation-only requires a valid ' +
+          'INTEGRATION_CREDENTIAL_WRITER_ATTESTATION_ID (3-128 chars: letters, digits, . _ : / -).',
     );
   }
   return parsed.data;

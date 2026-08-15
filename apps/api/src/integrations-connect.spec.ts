@@ -98,6 +98,7 @@ function makeEnv(overrides: Partial<ServerEnv> = {}): ServerEnv {
     HUBSPOT_PRIVATE_APP_TOKEN: undefined,
     INTEGRATION_CREDENTIAL_WRITERS: 'generation-only',
     INTEGRATION_CREDENTIAL_WRITERS_ACK: 'all-writers-generation-aware',
+    INTEGRATION_CREDENTIAL_WRITER_ATTESTATION_ID: 'chg-1234',
     ...overrides,
   } as unknown as ServerEnv;
 }
@@ -201,7 +202,7 @@ describe('AccountMetadataCache', () => {
 });
 
 describe('integration credential writer configuration', () => {
-  it('defaults to mixed and requires the exact generation-only acknowledgment', () => {
+  it('defaults to mixed and requires exact generation-only acknowledgment and attestation ID', () => {
     expect(loadServerEnv({}).INTEGRATION_CREDENTIAL_WRITERS).toBe('mixed');
     expect(() => loadServerEnv({ INTEGRATION_CREDENTIAL_WRITERS: 'unsafe' })).toThrow(
       'INTEGRATION_CREDENTIAL_WRITERS',
@@ -215,15 +216,36 @@ describe('integration credential writer configuration', () => {
         INTEGRATION_CREDENTIAL_WRITERS_ACK: 'wrong',
       }),
     ).toThrow('INTEGRATION_CREDENTIAL_WRITERS_ACK=all-writers-generation-aware');
+    expect(() =>
+      loadServerEnv({
+        INTEGRATION_CREDENTIAL_WRITERS: 'generation-only',
+        INTEGRATION_CREDENTIAL_WRITERS_ACK: 'all-writers-generation-aware',
+      }),
+    ).toThrow('INTEGRATION_CREDENTIAL_WRITER_ATTESTATION_ID');
+    expect(() =>
+      loadServerEnv({
+        INTEGRATION_CREDENTIAL_WRITERS: 'generation-only',
+        INTEGRATION_CREDENTIAL_WRITERS_ACK: 'all-writers-generation-aware',
+        INTEGRATION_CREDENTIAL_WRITER_ATTESTATION_ID: 'bad id',
+      }),
+    ).toThrow('INTEGRATION_CREDENTIAL_WRITER_ATTESTATION_ID');
     expect(
       loadServerEnv({
         INTEGRATION_CREDENTIAL_WRITERS: 'generation-only',
         INTEGRATION_CREDENTIAL_WRITERS_ACK: 'all-writers-generation-aware',
+        INTEGRATION_CREDENTIAL_WRITER_ATTESTATION_ID: 'chg-1234',
       }).INTEGRATION_CREDENTIAL_WRITERS,
     ).toBe('generation-only');
     expect(loadServerEnv({ INTEGRATION_CREDENTIAL_WRITERS: 'mixed' }).INTEGRATION_CREDENTIAL_WRITERS).toBe(
       'mixed',
     );
+    expect(
+      loadServerEnv({
+        INTEGRATION_CREDENTIAL_WRITERS: 'mixed',
+        INTEGRATION_CREDENTIAL_WRITERS_ACK: 'wrong',
+        INTEGRATION_CREDENTIAL_WRITER_ATTESTATION_ID: 'bad id',
+      }).INTEGRATION_CREDENTIAL_WRITERS,
+    ).toBe('mixed');
   });
 
   it('logs mixed once and skips the migration probe', async () => {
@@ -349,7 +371,9 @@ describe('integration credential writer configuration', () => {
     const log = vi.spyOn(Logger.prototype, 'log');
 
     await expect(built.controller.onModuleInit()).resolves.toBeUndefined();
-    expect(log).toHaveBeenCalledWith('integration credential writers=generation-only attestation=accepted');
+    expect(log).toHaveBeenCalledWith(
+      'integration credential writers=generation-only attestation=accepted id=chg-1234',
+    );
   });
 });
 

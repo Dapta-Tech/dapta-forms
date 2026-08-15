@@ -203,6 +203,7 @@ write a "first" form into the same account.
 | `HUBSPOT_PRIVATE_APP_TOKEN` | _(unset)_ | to enable the HubSpot destination (else it reports a disabled state) | yes |
 | `INTEGRATION_CREDENTIAL_WRITERS` | `mixed` | set `generation-only` only after all credential writers are upgraded | no |
 | `INTEGRATION_CREDENTIAL_WRITERS_ACK` | _(unset)_ | exact `all-writers-generation-aware` only with `generation-only` | no |
+| `INTEGRATION_CREDENTIAL_WRITER_ATTESTATION_ID` | _(unset)_ | deployment inventory/change record only with `generation-only` | no |
 
 Webhook destinations are configured **per form in the admin UI** (URL + optional
 HMAC secret) — no environment variable.
@@ -357,23 +358,29 @@ Forward order:
    This is not automatic discovery: direct SQL and old binaries cannot be
    detected by the API.
 4. Set `INTEGRATION_CREDENTIAL_WRITERS=generation-only` and
-   `INTEGRATION_CREDENTIAL_WRITERS_ACK=all-writers-generation-aware`, then roll
-   the API. The exact acknowledgment is the operator-owned control.
+   `INTEGRATION_CREDENTIAL_WRITERS_ACK=all-writers-generation-aware`, plus
+   `INTEGRATION_CREDENTIAL_WRITER_ATTESTATION_ID=<inventory-or-change-record>`,
+   then roll the API. The deployment operator owns this signoff and must retain
+   the referenced inventory through the rollback window.
 
 Reverse order:
 
 1. Set or unset `INTEGRATION_CREDENTIAL_WRITERS` to use `mixed` and roll the API.
-   Mixed is permanently supported and ignores the acknowledgment.
+   Mixed is permanently supported and ignores the acknowledgment and attestation ID.
 2. Deploy older binaries if needed.
 3. Leave the additive generation column in place.
+4. Retire the attestation receipt only after the API is running in `mixed`.
 
 A single-process self-host that uses only environment fallback credentials needs
 no action. Its metadata cache remains safe because no database writer can change
 the active credential.
 
-Do not set the acknowledgment falsely. Doing so permits generation-only stored
-caching while an old writer can still reuse a generation, which can reopen a
-stale-cache risk. Use `mixed` as the safe fallback and rollback mode.
+The application verifies the signoff fields, not the writer population. Old
+binaries and direct SQL are not discoverable. A false acknowledgment or
+attestation ID can permit generation-only stored caching while an old writer
+reuses a generation, which reopens stale-cache risk. The acceptance owner
+accepts this configuration-misrepresentation risk. Use `mixed` as the safe
+fallback and rollback mode.
 
 ## Troubleshooting
 

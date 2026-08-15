@@ -5,14 +5,13 @@
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { randomUUID, randomBytes } from 'node:crypto';
-import { sql } from 'drizzle-orm';
+import { sql, type SQL } from 'drizzle-orm';
 import { createDb, type Db } from './client';
 import { migrate } from './migrate';
 import { encryptToken, decryptToken, hasEncryptionKey, tokenLast4 } from './crypto';
 import {
   upsertIntegration,
   upsertIntegrationWithRevision,
-  credentialUpsertStatement,
   getIntegration,
   listIntegrationStatuses,
   deleteIntegration,
@@ -33,13 +32,24 @@ function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
   return { promise, resolve };
 }
 
-function returnedGeneration(raw: unknown): { id: string; generation: number } {
-  const row = (raw as Array<{ id?: unknown; credential_generation?: unknown }>)[0];
-  const generation = Number(row?.credential_generation);
-  if (!row || typeof row.id !== 'string' || !Number.isSafeInteger(generation) || generation <= 0) {
-    throw new Error('invalid UPSERT RETURNING row');
-  }
-  return { id: row.id, generation };
+interface PostgresTransaction {
+  execute(query: SQL): Promise<unknown>;
+}
+
+function dbForPostgresTransaction(tx: PostgresTransaction): Db {
+  const rows = async <T>(query: SQL): Promise<T[]> => (await tx.execute(query)) as T[];
+  return {
+    dialect: 'postgres',
+    all: rows,
+    get: async <T>(query: SQL) => (await rows<T>(query))[0],
+    run: async (query: SQL) => {
+      await tx.execute(query);
+    },
+    execRaw: async () => {
+      throw new Error('raw SQL is unavailable inside the test transaction adapter');
+    },
+    close: async () => undefined,
+  };
 }
 
 async function waitForPostgresLock(db: Db, pid: number): Promise<void> {
@@ -135,29 +145,6 @@ describe('account_integration repo', () => {
     expect(second.revision.id).toBe(first.revision.id);
   });
 
-  it('returns one row from db.get for credential UPSERT RETURNING on this dialect', async () => {
-    const id = randomUUID();
-    const now = Date.now();
-    const returned = await db.get<{ id: unknown; credential_generation: unknown }>(
-      sql`INSERT INTO account_integration (
-            id, account_id, provider, encrypted_token, meta, connected_at, updated_at, credential_generation
-          ) VALUES (
-            ${id}, ${accountId}, ${'hubspot'}, ${encryptToken('returning-token', KEY)},
-            ${jsonParam({ last4: 'oken' })}, ${now}, ${now}, 1
-          )
-          ON CONFLICT (account_id, provider) DO UPDATE SET
-            encrypted_token = EXCLUDED.encrypted_token,
-            meta = EXCLUDED.meta,
-            updated_at = EXCLUDED.updated_at,
-            credential_generation = account_integration.credential_generation + 1
-          RETURNING id, credential_generation`,
-    );
-
-    expect(returned).toBeDefined();
-    expect(returned!.id).toBe(id);
-    expect(Number(returned!.credential_generation)).toBe(1);
-  });
-
   it('defaults credential generation to 1 for a legacy writer that omits the column', async () => {
     const id = randomUUID();
     const now = Date.now();
@@ -214,7 +201,7 @@ describe('account_integration repo', () => {
     expect(latest.revision.generation).toBe(writes + 1);
   });
 
-  it('uses two live PostgreSQL sessions that contend at a row-lock barrier', async () => {
+  it('uses the public allocator from two live PostgreSQL sessions at a row-lock barrier', async () => {
     if (db.dialect !== 'postgres') return;
     const url = process.env.DATABASE_URL;
     if (!url) throw new Error('DATABASE_URL is required for live PostgreSQL concurrency proof');
@@ -229,23 +216,6 @@ describe('account_integration repo', () => {
         const startB = deferred<void>();
         const bWrote = deferred<void>();
         const releaseB = deferred<void>();
-        const now = Date.now();
-        const statementA = credentialUpsertStatement({
-          id: randomUUID(),
-          accountId,
-          provider,
-          encryptedToken: encryptToken(`${provider}-a`, KEY),
-          meta: { last4: 'r-a' },
-          now,
-        });
-        const statementB = credentialUpsertStatement({
-          id: randomUUID(),
-          accountId,
-          provider,
-          encryptedToken: encryptToken(`${provider}-b`, KEY),
-          meta: { last4: 'r-b' },
-          now,
-        });
         const aTask = sessionA.pg!.drizzle.transaction(async (tx) => {
           await tx.execute(
             sql`SELECT id FROM account_integration
@@ -254,7 +224,13 @@ describe('account_integration repo', () => {
           );
           aLocked.resolve();
           await releaseA.promise;
-          return returnedGeneration(await tx.execute(statementA));
+          return upsertIntegrationWithRevision(
+            dbForPostgresTransaction(tx),
+            accountId,
+            provider,
+            `${provider}-a`,
+            KEY,
+          );
         });
         await aLocked.promise;
         const bTask = sessionB.pg!.drizzle.transaction(async (tx) => {
@@ -265,7 +241,13 @@ describe('account_integration repo', () => {
           if (!Number.isSafeInteger(pid) || pid <= 0) throw new Error('invalid PostgreSQL backend pid');
           bReady.resolve(pid);
           await startB.promise;
-          const result = returnedGeneration(await tx.execute(statementB));
+          const result = await upsertIntegrationWithRevision(
+            dbForPostgresTransaction(tx),
+            accountId,
+            provider,
+            `${provider}-b`,
+            KEY,
+          );
           bWrote.resolve();
           await releaseB.promise;
           return result;
@@ -284,13 +266,13 @@ describe('account_integration repo', () => {
         if (!current || current.revision.kind !== 'stored') throw new Error('expected current stored revision');
 
         // This fails if a read-before-write allocator reuses N+1.
-        expect(new Set([writeA.generation, writeB.generation])).toEqual(
+        expect(new Set([writeA.revision.generation, writeB.revision.generation])).toEqual(
           new Set([baseline.revision.generation + 1, baseline.revision.generation + 2]),
         );
-        expect(writeA.id).toBe(baseline.revision.id);
-        expect(writeB.id).toBe(baseline.revision.id);
-        expect(stale.revision.generation).toBe(writeA.generation);
-        expect(current.revision.generation).toBe(writeB.generation);
+        expect(writeA.revision.id).toBe(baseline.revision.id);
+        expect(writeB.revision.id).toBe(baseline.revision.id);
+        expect(stale.revision.generation).toBe(writeA.revision.generation);
+        expect(current.revision.generation).toBe(writeB.revision.generation);
         expect(providerCredentialRevisionEquals(stale.revision, current.revision)).toBe(false);
         expect(current.token).toBe(`${provider}-b`);
       }
