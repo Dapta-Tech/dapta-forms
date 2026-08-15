@@ -1,0 +1,17 @@
+-- Public page write revision — additive, nullable. Migration 0016; 0015 belongs
+-- to the cache branch.
+--
+-- The public page switch could disagree with what is stored. A save whose
+-- response never arrives does not abort the write server-side, so the browser
+-- cannot tell "not applied" from "applied, answer lost". Reading the profile
+-- back does not settle it either: a read that overtakes the in-flight write
+-- returns the old value and looks like proof that nothing landed.
+--
+-- A per-member counter makes the ambiguity decidable. Every profile write
+-- increments it by exactly one, so a client that knows the revision it started
+-- from can name the write it is asking about instead of comparing content.
+--
+-- NULL is every member that existed before this column and means logical 0:
+-- reads and writes use coalesce(profile_revision, 0), never profile_revision
+-- directly, so a legacy row compares and increments like any other.
+ALTER TABLE member ADD COLUMN IF NOT EXISTS profile_revision INTEGER;

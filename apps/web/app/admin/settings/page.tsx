@@ -8,7 +8,7 @@ import { PageHeader } from '@/components/ui/page-header';
 import { InviteMember } from './invite-member';
 import { MemberRowActions } from './member-row-actions';
 import { NotificationSettings } from './notification-settings';
-import { PublicPageSettings } from './public-page';
+import { PublicPageSettings, type PublicPageLoad } from './public-page';
 import { ThemeSettings } from './theme-settings';
 
 export const dynamic = 'force-dynamic';
@@ -38,13 +38,26 @@ export default async function SettingsPage() {
   };
   const publicPath = me.handle ? `/${me.accountCode}/${me.handle}` : null;
   // Every member edits their OWN page, so this is not admin-gated.
-  const myProfile = await adminApi.myProfile().catch(() => null);
+  //
+  // A failed read is NOT an empty page. Swallowing it into `null` handed the
+  // editor a blank form whose first save would have written that blankness over
+  // stored links, form choices and branding. The three outcomes stay distinct:
+  // loaded (with the revision to write against), unreadable, or an API too old
+  // to guard writes at all. Only the first one may be edited.
+  const publicPageState: PublicPageLoad = await adminApi
+    .myProfile()
+    .then((r): PublicPageLoad =>
+      typeof r.revision === 'number'
+        ? { status: 'ok', profile: r.profile, revision: r.revision }
+        : { status: 'unsupported' },
+    )
+    .catch(() => ({ status: 'failed' }) as PublicPageLoad);
 
   return (
     <div className="mx-auto max-w-[1520px] px-6 py-10 sm:px-8">
       <PageHeader title={s.title} subtitle={s.subtitle} />
 
-      <PublicPageSettings publicPath={publicPath} initial={myProfile?.profile ?? null} m={s} />
+      <PublicPageSettings publicPath={publicPath} load={publicPageState} m={s} />
 
       <ThemeSettings pref={await getThemePref()} s={s} m={getMessages(locale).admin.chrome.theme} />
 

@@ -7,6 +7,7 @@ import type { MemberProfile } from '@quill/types';
 import {
   adminApi,
   ApiError,
+  saveMyProfileV2,
   isAdminRole,
   type NotificationEmailKey,
   type NotificationPatch,
@@ -171,53 +172,46 @@ export async function resetNotificationAction(
 }
 
 /**
- * Outcome of a public page write. Success carries the profile the API says is
- * now stored — its copy, never the request echoed back — so the client
- * reconciles against storage instead of against what it hoped to store. The
- * same contract `NotificationSaveState` uses. A refusal carries the reason and
- * no profile: nothing changed.
+ * Outcome of a public page write, as the screen sees it.
+ *
+ * `unknown` is the one that matters: the call was aborted or dropped, so the
+ * write may still have landed. It is never reported as success or as failure —
+ * the fence Route Handler settles it.
  */
 export type ProfileSaveState =
-  | { ok: true; profile: MemberProfile | null }
-  | { ok: false; message?: string };
-
-/** Outcome of a public page reread. `ok: false` means the state is still unknown. */
-export type ProfileReadState = { ok: true; profile: MemberProfile | null } | { ok: false };
+  | { status: 'ok'; profile: MemberProfile | null; revision: number }
+  | { status: 'conflict'; profile: MemberProfile | null; revision: number }
+  | { status: 'unsupported' }
+  | { status: 'unknown' }
+  | { status: 'failed'; message?: string };
 
 /**
- * Save (or clear) the caller's own public page. Scoped server-side to the
- * authenticated member — the id is never taken from the request.
+ * Save the caller's own public page against the revision it was read at.
+ *
+ * Scoped server-side to the authenticated member — the id is never taken from
+ * the request. `expectedRevision` is required: a save that cannot name its
+ * baseline is the unguarded write this contract exists to stop, so there is no
+ * overload without it and no fallback to the deprecated `/v1` writer.
  */
 export async function saveMyProfileAction(
   profile: MemberProfile | null,
+  expectedRevision: number,
 ): Promise<ProfileSaveState> {
   try {
-    const stored = await adminApi.saveMyProfile(profile);
-    revalidatePath('/admin/settings');
-    return { ok: true, profile: stored.profile ?? null };
+    const result = await saveMyProfileV2(profile, expectedRevision);
+    if (result.status === 'ok' || result.status === 'conflict') {
+      // Stored state moved (ours, or somebody else's) — the rendered page is stale.
+      revalidatePath('/admin/settings');
+      return result;
+    }
+    if (result.status === 'unsupported') return { status: 'unsupported' };
+    if (result.status === 'unknown') return { status: 'unknown' };
+    if (result.status === 'unauthorized') return { status: 'failed' };
+    if (result.status === 'not_found') return { status: 'failed' };
+    return { status: 'failed', message: result.message };
   } catch (e) {
     unstable_rethrow(e);
-    return {
-      ok: false,
-      message: e instanceof Error ? e.message : 'Could not save.',
-    };
-  }
-}
-
-/**
- * Reread the caller's own public page.
- *
- * The authority after a save the browser never got an answer to: a client-side
- * timeout does not abort the PUT, so the write may well have landed. Neither
- * the value that was sent nor the value held before it is evidence of what is
- * stored — only asking is.
- */
-export async function myProfileAction(): Promise<ProfileReadState> {
-  try {
-    const { profile } = await adminApi.myProfile();
-    return { ok: true, profile };
-  } catch (e) {
-    unstable_rethrow(e);
-    return { ok: false };
+    // A throw here is the invocation failing, not a verdict about the write.
+    return { status: 'unknown' };
   }
 }

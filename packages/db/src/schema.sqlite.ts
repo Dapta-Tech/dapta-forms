@@ -68,6 +68,12 @@ export const member = sqliteTable(
     locale: text('locale'),
     /** The public member page, or NULL when there is none (see 0008). */
     profile: text('profile'),
+    /**
+     * Write counter for `profile` (see 0016). NULL is a row that predates the
+     * column and means logical 0 — always read/compare through
+     * coalesce(profile_revision, 0), never the raw column.
+     */
+    profileRevision: integer('profile_revision'),
     /** Epoch-ms of the member's last authenticated request; NULL = never seen (see 0010). */
     lastSeenAt: integer('last_seen_at'),
     createdAt: integer('created_at').notNull(),

@@ -5,6 +5,7 @@ import {
   Controller,
   Delete,
   Get,
+  GoneException,
   HttpCode,
   Inject,
   Logger,
@@ -43,8 +44,8 @@ import {
   updateForm,
   upsertNotificationSetting,
   type CrudResult,
-  getMemberProfileRaw,
-  setMemberProfile,
+  getMemberProfileState,
+  overwriteMemberProfileLegacy,
 } from '@quill/db';
 import {
   defaultSubmissionTemplate,
@@ -76,7 +77,8 @@ import { EmailEffects } from './email-effects';
 import { AnalyticsEffects } from './analytics-effects';
 import { assertAdmin, assertCanManageTarget, assertNotSelf } from './permissions';
 import { parseBound, parseIntParam, parseKinds, parseOutboxStatuses, parseStatus } from './query-params';
-import { DB } from './tokens';
+import { DB, ENV } from './tokens';
+import type { ServerEnv } from '@quill/config/env';
 
 function parse<T>(schema: { parse: (v: unknown) => T }, body: unknown): T {
   try {
@@ -128,6 +130,12 @@ export class AdminCrudController {
     // service (per-question drop-off shown to a form owner). This one is our own
     // telemetry about the people using the builder. Different audience entirely.
     @Optional() @Inject(AnalyticsEffects) private readonly productAnalytics?: AnalyticsEffects,
+    /**
+     * Optional like the effects above so direct constructions in tests keep
+     * working; absent means the `/v1` profile write shim is CLOSED, which is the
+     * safe default for anything that did not deliberately turn it on.
+     */
+    @Optional() @Inject(ENV) private readonly env?: Pick<ServerEnv, 'PROFILE_V1_WRITE_SHIM'>,
   ) {}
 
   // --- Identity ----------------------------------------------------------
@@ -296,31 +304,50 @@ export class AdminCrudController {
     return this.auth.listWorkspaces(req);
   }
 
-  /** This member's public page config (the raw blob, or null). */
+  /** This member's public page config (the raw blob, or null) + its revision. */
   @Get('me/profile')
   async myProfile(@Req() req: ReqLike) {
     const p = await this.auth.resolveHost(req);
     const member = await getAccountMember(this.db, p.accountId, p.memberId);
     if (!member) throw new NotFoundException({ error: 'NOT_FOUND', message: 'Not found.' });
-    const raw = await getMemberProfileRaw(this.db, p.accountId, p.memberId);
-    return { handle: member.handle, profile: raw };
+    const state = await getMemberProfileState(this.db, p.accountId, p.memberId);
+    if (!state) throw new NotFoundException({ error: 'NOT_FOUND', message: 'Not found.' });
+    // `revision` is ADDITIVE and is also the capability signal: a web build that
+    // does not get a number here knows it is talking to a pre-CAS API and must
+    // block writes rather than send an unguarded one.
+    return { handle: member.handle, profile: state.profile, revision: state.revision };
   }
 
   /**
-   * Replace this member's public page. A null body removes it entirely, which is
-   * the same thing as never having had one — the page goes back to 404-ing.
+   * DEPRECATED — the last-write-wins public page write, kept ONLY so a web build
+   * from before the v2 contract keeps working during a rolling deploy. Remove
+   * this route, `overwriteMemberProfileLegacy` and `PROFILE_V1_WRITE_SHIM`
+   * together once no old web pod can reach this API.
    *
-   * Scoped to the CALLER's own member row, never an id from the request: your
-   * public page is yours, and an admin editing a teammate's bio is a different
-   * feature with different consent.
+   * Gated by configuration and off by 410 when the gate is closed, so a
+   * deployment that has finished rolling cannot keep an unguarded writer alive
+   * by accident. It cannot compare-and-set (its callers know nothing about
+   * revisions) but it DOES increment the revision in the same statement as the
+   * write, which is what keeps the fence monotonic while an old tab saves.
+   *
+   * Scoped to the CALLER's own member row, never an id from the request.
    */
   @Put('me/profile')
   async saveMyProfile(@Req() req: ReqLike, @Body() body: unknown) {
+    if (!this.env?.PROFILE_V1_WRITE_SHIM) {
+      throw new GoneException({
+        error: 'V1_WRITE_RETIRED',
+        message: 'This endpoint is retired. Use PUT /v2/me/profile with expectedRevision.',
+      });
+    }
     const p = await this.auth.resolveHost(req);
     const raw = (body as { profile?: unknown } | null)?.profile ?? null;
     const profile = raw == null ? null : parse(memberProfileSchema, raw);
-    await setMemberProfile(this.db, p.accountId, p.memberId, profile);
-    return { ok: true, profile };
+    const result = await overwriteMemberProfileLegacy(this.db, p.accountId, p.memberId, profile);
+    if (result.status === 'not_found') {
+      throw new NotFoundException({ error: 'NOT_FOUND', message: 'Not found.' });
+    }
+    return { ok: true, profile: result.profile, revision: result.revision };
   }
 
   @Get('vanity')

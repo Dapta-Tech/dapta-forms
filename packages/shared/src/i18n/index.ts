@@ -280,6 +280,29 @@ export interface FormsMessages {
       publicPageSaved: string;
       publicPageError: string;
       publicPageView: string;
+      /**
+       * The nine states this section can be in. Ambiguity gets its OWN copy:
+       * reusing "Saving…" or "Could not save" for a save whose outcome is
+       * unknown is exactly the false certainty that made the switch lie.
+       */
+      /** 1 — the page could not be read at all; nothing here may be edited. */
+      publicPageLoadFailed: string;
+      /** 2 — this server cannot guard writes (older API); writing is blocked. */
+      publicPageUnsupported: string;
+      /** 3 — a save's outcome is unknown and is being settled right now. */
+      publicPageReconciling: string;
+      /** 4 — settled: the save timed out and was NOT applied. */
+      publicPageTimedOutNotApplied: string;
+      /** 5 — settled after uncertainty: a newer stored version is now shown. */
+      publicPageLatestLoaded: string;
+      /** 6 — an ordinary save lost to a change made somewhere else. */
+      publicPageChangedElsewhere: string;
+      /** 7 — still unsettled: editing stays blocked, with a way to retry. */
+      publicPageUnresolved: string;
+      publicPageCheckAgain: string;
+      publicPageReload: string;
+      /** 8 — settled: the stored page is unchanged, but a write went first. */
+      publicPageNoOpAdvance: string;
       membersEmpty: string;
       you: string;
       addMember: string;
@@ -1753,6 +1776,22 @@ export const en: FormsMessages = {
       publicPageSaved: 'Public page saved.',
       publicPageError: 'Could not save your public page.',
       publicPageView: 'View page',
+      publicPageLoadFailed:
+        'We could not load your public page, so it cannot be edited right now. Reload to try again.',
+      publicPageUnsupported:
+        'This server cannot save public page changes safely yet. Reload after the update finishes.',
+      publicPageReconciling: 'Checking whether your last save was applied…',
+      publicPageTimedOutNotApplied: 'That save timed out and was not applied. Nothing changed.',
+      publicPageLatestLoaded:
+        'Your last save did not complete. Your page changed in the meantime, so the current version is shown.',
+      publicPageChangedElsewhere:
+        'Your public page changed somewhere else. The current version is shown — review it, then save again.',
+      publicPageUnresolved:
+        'We still cannot tell whether your last save was applied. Editing stays off until we know.',
+      publicPageCheckAgain: 'Check again',
+      publicPageReload: 'Reload',
+      publicPageNoOpAdvance:
+        'Your last save did not complete. Your page is unchanged, but another save finished first.',
       membersEmpty: 'No members yet.',
       you: 'You',
       addMember: 'Add member',
@@ -3137,6 +3176,23 @@ export const es: FormsMessages = {
       publicPageSaved: 'Página pública guardada.',
       publicPageError: 'No se pudo guardar tu página pública.',
       publicPageView: 'Ver página',
+      publicPageLoadFailed:
+        'No pudimos cargar tu página pública, así que no se puede editar ahora. Vuelve a cargar para intentarlo otra vez.',
+      publicPageUnsupported:
+        'Este servidor todavía no puede guardar cambios de la página pública de forma segura. Vuelve a cargar cuando termine la actualización.',
+      publicPageReconciling: 'Comprobando si se aplicó tu último guardado…',
+      publicPageTimedOutNotApplied:
+        'Ese guardado agotó el tiempo de espera y no se aplicó. Nada cambió.',
+      publicPageLatestLoaded:
+        'Tu último guardado no se completó. Tu página cambió mientras tanto, así que se muestra la versión actual.',
+      publicPageChangedElsewhere:
+        'Tu página pública cambió en otro lugar. Se muestra la versión actual: revísala y vuelve a guardar.',
+      publicPageUnresolved:
+        'Todavía no podemos saber si se aplicó tu último guardado. La edición queda desactivada hasta saberlo.',
+      publicPageCheckAgain: 'Comprobar de nuevo',
+      publicPageReload: 'Volver a cargar',
+      publicPageNoOpAdvance:
+        'Tu último guardado no se completó. Tu página no cambió, pero otro guardado terminó primero.',
       membersEmpty: 'Aún no hay miembros.',
       you: 'Tú',
       addMember: 'Añadir miembro',

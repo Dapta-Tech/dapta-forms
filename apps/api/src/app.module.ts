@@ -32,6 +32,7 @@ import type { Db } from '@quill/db';
 import { HealthController, DocsController } from './controllers';
 import { PublicController } from './public.controller';
 import { AdminCrudController } from './admin-crud.controller';
+import { ProfileV2Controller } from './profile-v2.controller';
 import { BrandingController } from './branding.controller';
 import { AnalyticsController } from './analytics.controller';
 import { AnalyticsService } from './analytics.service';
@@ -48,6 +49,7 @@ import {
     DocsController,
     PublicController,
     AdminCrudController,
+    ProfileV2Controller,
     BrandingController,
     AnalyticsController,
     IntegrationsController,

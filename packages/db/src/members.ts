@@ -443,28 +443,199 @@ export async function listPublishedFormsForAccount(
   });
 }
 
-/** Replace a member's public page (account-scoped). NULL removes it entirely. */
-export async function setMemberProfile(
+/**
+ * The public page write path — compare-and-set over a per-member revision.
+ *
+ * A save whose answer never reaches the browser is ambiguous: the client-side
+ * timeout does not abort the write. Content cannot settle it (the stored value
+ * may equal what was sent, by coincidence or by an ABA sequence) and neither
+ * can a plain reread (it can overtake the in-flight write and return the old
+ * value). A counter can: every writer below increments it by exactly one, so a
+ * caller that knows the revision it started from can ask about ITS write.
+ *
+ * These three functions are the ONLY writers of `member.profile`, and each one
+ * increments the revision in the same statement that touches the blob — there
+ * is no path that moves the profile without moving the counter.
+ * `member-profile-revision.spec.ts` pins that closed set against the source.
+ *
+ * NULL revision is a pre-0016 row and means logical 0, so every predicate and
+ * increment goes through coalesce(profile_revision, 0).
+ */
+
+/** Authoritative profile state: the stored blob and the revision behind it. */
+export interface MemberProfileState {
+  /** The raw JSON blob, or null when this member has no page. */
+  profile: unknown;
+  revision: number;
+}
+
+/**
+ * Outcome of a revision-guarded write.
+ * - `ok`: this caller's write landed; state is what it produced.
+ * - `conflict`: the row moved on — the expected revision can never land now.
+ *   Carries authoritative state and burns NO revision.
+ * - `not_found`: no such member in this account.
+ */
+export type ProfileWriteResult =
+  | { status: 'ok'; profile: unknown; revision: number }
+  | { status: 'conflict'; profile: unknown; revision: number }
+  | { status: 'not_found' };
+
+/** Postgres serialization failure — retryable, and here it means "re-decide". */
+const PG_SERIALIZATION_FAILURE = '40001';
+
+const isSerializationFailure = (e: unknown): boolean =>
+  typeof e === 'object' && e !== null && (e as { code?: unknown }).code === PG_SERIALIZATION_FAILURE;
+
+/**
+ * A revision read off a row, as a number we can compare and hand out.
+ *
+ * Postgres drivers may return an integer column as a string (bigint coercion
+ * rules bite even on int4 once a driver is configured for it) and SQLite hands
+ * back whatever the column holds, so every read normalizes here rather than at
+ * a dozen call sites. A value that is not a safe non-negative integer is
+ * corruption, not a state to reconcile from — it fails loudly instead of
+ * silently reconciling against a wrong number.
+ */
+export function normalizeProfileRevision(raw: unknown): number {
+  const n = Number(raw ?? 0);
+  if (!Number.isSafeInteger(n) || n < 0) {
+    throw new Error(`member.profile_revision is not a safe non-negative integer: ${String(raw)}`);
+  }
+  return n;
+}
+
+/** Read the authoritative profile + revision for one member (account-scoped). */
+export async function getMemberProfileState(
+  db: Db,
+  accountId: string,
+  memberId: string,
+): Promise<MemberProfileState | null> {
+  const r = await db.get<Record<string, unknown>>(
+    sql`SELECT profile, coalesce(profile_revision, 0) AS profile_revision
+          FROM member WHERE id = ${memberId} AND account_id = ${accountId} LIMIT 1`,
+  );
+  if (!r) return null;
+  return {
+    profile: r.profile == null ? null : parseJsonColumn<unknown>(r.profile, null),
+    revision: normalizeProfileRevision(r.profile_revision),
+  };
+}
+
+/** Shape one RETURNING row into an `ok` result. */
+function writtenState(r: Record<string, unknown>): ProfileWriteResult {
+  return {
+    status: 'ok',
+    profile: r.profile == null ? null : parseJsonColumn<unknown>(r.profile, null),
+    revision: normalizeProfileRevision(r.profile_revision),
+  };
+}
+
+/**
+ * Why zero rows changed: the member is gone (or belongs to another account), or
+ * the revision moved. Re-read account-scoped so a wrong account can never be
+ * answered with someone else's state.
+ */
+async function explainNoRows(
+  db: Db,
+  accountId: string,
+  memberId: string,
+): Promise<ProfileWriteResult> {
+  const current = await getMemberProfileState(db, accountId, memberId);
+  if (!current) return { status: 'not_found' };
+  return { status: 'conflict', profile: current.profile, revision: current.revision };
+}
+
+/**
+ * Replace a member's public page if — and only if — the row is still at
+ * `expectedRevision`. One atomic statement: the guard, the write and the
+ * increment cannot be separated by another writer.
+ */
+export async function casSetMemberProfile(
   db: Db,
   accountId: string,
   memberId: string,
   profile: unknown | null,
-): Promise<void> {
-  await db.run(
-    sql`UPDATE member SET profile = ${profile == null ? null : JSON.stringify(profile)}
-        WHERE id = ${memberId} AND account_id = ${accountId}`,
-  );
+  expectedRevision: number,
+): Promise<ProfileWriteResult> {
+  const expected = normalizeProfileRevision(expectedRevision);
+  try {
+    const rows = await db.all<Record<string, unknown>>(
+      sql`UPDATE member
+             SET profile = ${profile == null ? null : JSON.stringify(profile)},
+                 profile_revision = coalesce(profile_revision, 0) + 1
+           WHERE id = ${memberId} AND account_id = ${accountId}
+             AND coalesce(profile_revision, 0) = ${expected}
+       RETURNING profile, profile_revision`,
+    );
+    const row = rows[0];
+    if (row) return writtenState(row);
+  } catch (e) {
+    // A serialization failure means this write definitely did not commit, so
+    // the caller's expected revision is simply no longer decidable here — that
+    // is the conflict path, not a permanent unknown. Anything else propagates.
+    if (!isSerializationFailure(e)) throw e;
+  }
+  return explainNoRows(db, accountId, memberId);
 }
 
-/** The stored public-page blob for one member (account-scoped), or null. */
-export async function getMemberProfileRaw(
+/**
+ * Order one ambiguous write without touching content.
+ *
+ * Same predicate as the CAS, same single increment, but the profile is left
+ * exactly as it is. Winning proves the ambiguous CAS never landed and can never
+ * land (its expected revision is now spent). Losing proves something else got
+ * there first, and the authoritative state comes back so the caller can adopt
+ * it instead of guessing.
+ *
+ * A same-value profile write would not do: the blob passes through schema
+ * normalization, so "write what is already there" can still change bytes.
+ */
+export async function fenceMemberProfile(
   db: Db,
   accountId: string,
   memberId: string,
-): Promise<unknown> {
-  const r = await db.get<Record<string, unknown>>(
-    sql`SELECT profile FROM member WHERE id = ${memberId} AND account_id = ${accountId} LIMIT 1`,
+  expectedRevision: number,
+): Promise<ProfileWriteResult> {
+  const expected = normalizeProfileRevision(expectedRevision);
+  try {
+    const rows = await db.all<Record<string, unknown>>(
+      sql`UPDATE member
+             SET profile_revision = coalesce(profile_revision, 0) + 1
+           WHERE id = ${memberId} AND account_id = ${accountId}
+             AND coalesce(profile_revision, 0) = ${expected}
+       RETURNING profile, profile_revision`,
+    );
+    const row = rows[0];
+    if (row) return writtenState(row);
+  } catch (e) {
+    if (!isSerializationFailure(e)) throw e;
+  }
+  return explainNoRows(db, accountId, memberId);
+}
+
+/**
+ * DEPRECATED — the last-write-wins writer, for the `/v1` compatibility shim
+ * only (see `PROFILE_V1_WRITE_SHIM`). Remove with the shim.
+ *
+ * It cannot check a revision, because the web build that calls it does not know
+ * revisions exist. It still increments in the same statement as the write, so a
+ * fence stays monotonic and decidable even while an old tab is saving.
+ */
+export async function overwriteMemberProfileLegacy(
+  db: Db,
+  accountId: string,
+  memberId: string,
+  profile: unknown | null,
+): Promise<ProfileWriteResult> {
+  const rows = await db.all<Record<string, unknown>>(
+    sql`UPDATE member
+           SET profile = ${profile == null ? null : JSON.stringify(profile)},
+               profile_revision = coalesce(profile_revision, 0) + 1
+         WHERE id = ${memberId} AND account_id = ${accountId}
+     RETURNING profile, profile_revision`,
   );
-  if (!r || r.profile == null) return null;
-  return parseJsonColumn<unknown>(r.profile, null);
+  const row = rows[0];
+  if (row) return writtenState(row);
+  return { status: 'not_found' };
 }

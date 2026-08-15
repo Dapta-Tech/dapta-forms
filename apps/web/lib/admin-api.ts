@@ -30,17 +30,34 @@ export class ApiError extends Error {
   }
 }
 
-async function req<T>(method: string, path: string, body?: unknown): Promise<T> {
+/**
+ * The identity headers one API call carries. Factored out of `req` so the
+ * revision-guarded profile calls can send exactly the same identity WITHOUT
+ * `req`'s redirect-to-login behaviour, which only makes sense while rendering a
+ * page — a Route Handler answering a background reconciliation must return
+ * JSON, not login HTML with a 200.
+ *
+ * Always returns headers, even when there is no session: the `local` provider
+ * serves developers who have none, and the API — not this function — is the
+ * authority on whether a caller is authenticated. An unauthenticated call comes
+ * back 401 from the API and is reported as such.
+ */
+export async function apiIdentityHeaders(): Promise<Record<string, string>> {
   const session = await getSession();
   // Which workspace, asked separately from who — and read from its own cookie,
   // because the local provider serves developers who have no session at all.
   // The API re-checks membership against the database; this authorizes nothing.
   const workspace = await getWorkspace();
   const headers: Record<string, string> = {};
-  if (body) headers['content-type'] = 'application/json';
   if (session?.provider === 'workos') headers['authorization'] = `Bearer ${session.accessToken}`;
   else if (session?.provider === 'local') headers['x-quill-email'] = session.email;
   if (workspace) headers['x-quill-workspace'] = workspace;
+  return headers;
+}
+
+async function req<T>(method: string, path: string, body?: unknown): Promise<T> {
+  const headers: Record<string, string> = { ...(await apiIdentityHeaders()) };
+  if (body) headers['content-type'] = 'application/json';
 
   const res = await fetch(`${API_URL}${path}`, {
     method,
@@ -70,7 +87,7 @@ async function req<T>(method: string, path: string, body?: unknown): Promise<T> 
   // a Server Component render, where `cookies().set()` throws. Clearing it here
   // and redirecting anyway produced an infinite loop — the dead workspace was
   // re-sent on every hop. The handler owns its response, so the delete lands.
-  if (res.status === 403 && workspace) {
+  if (res.status === 403 && headers['x-quill-workspace']) {
     const j = (await res.clone().json().catch(() => ({}))) as { error?: string };
     if (j.error === 'WORKSPACE_FORBIDDEN') redirect('/api/workspace/reset');
   }
@@ -554,12 +571,16 @@ export const adminApi = {
   listIntegrations: () => req<IntegrationsResponse>('GET', '/v1/integrations'),
   /** Every webhook across this account's forms, read-only (secrets never selected). */
   listAccountWebhooks: () => req<AccountWebhooksResponse>('GET', '/v1/integrations/webhooks'),
-  /** The caller's own public page config (raw blob or null). */
-  myProfile: () => req<{ handle: string | null; profile: MemberProfile | null }>('GET', '/v1/me/profile'),
-  /** Replace the caller's own public page; null removes it. Echoes what is now
-   *  stored, so a caller reconciles against the server's copy, never its own. */
-  saveMyProfile: (profile: MemberProfile | null) =>
-    req<{ ok: boolean; profile: MemberProfile | null }>('PUT', '/v1/me/profile', { profile }),
+  /**
+   * The caller's own public page, with the revision to write against. `revision`
+   * is absent when the API predates the compare-and-set contract — that is the
+   * capability signal, and a client without it must not write.
+   */
+  myProfile: () =>
+    req<{ handle: string | null; profile: MemberProfile | null; revision?: number }>(
+      'GET',
+      '/v1/me/profile',
+    ),
   /** Every workspace the caller can enter, for the switcher. */
   listWorkspaces: () => req<Workspace[]>('GET', '/v1/workspaces'),
   /** Send one sample delivery to a form's webhook (admin-only, SSRF-guarded server-side). */
@@ -598,3 +619,122 @@ export const adminApi = {
   resetFormNotification: (id: string, emailKey: NotificationEmailKey) =>
     req<FormNotificationView>('POST', `/v1/forms/${id}/notifications/${emailKey}/reset`),
 };
+
+
+// --- Public page writes (v2: compare-and-set + fence) ------------------------
+
+/**
+ * How long a server-side profile call may run before we abort it.
+ *
+ * Strictly shorter than the 15s ceiling `callAction` puts on a Server Action, so
+ * the ambiguity is decided HERE, in one place we control, instead of the action
+ * being killed from outside while this fetch is still open.
+ *
+ * Aborting proves nothing about the API: the request may already have been
+ * received and committed. That is exactly why an aborted write is reported as
+ * `unknown` and settled by the fence, never reported as a failure.
+ */
+export const PROFILE_CALL_TIMEOUT_MS = 8_000;
+
+/** The stored public page and the revision behind it. */
+export interface ProfileState {
+  profile: MemberProfile | null;
+  revision: number;
+}
+
+/**
+ * Outcome of a revision-guarded profile call, as the web sees it.
+ * `unknown` is the honest answer to an aborted or dropped call: the write may
+ * have landed. `unsupported` means this API cannot guard writes at all.
+ */
+export type ProfileCallResult =
+  | { status: 'ok'; profile: MemberProfile | null; revision: number }
+  | { status: 'conflict'; profile: MemberProfile | null; revision: number }
+  | { status: 'unsupported' }
+  | { status: 'unauthorized' }
+  | { status: 'not_found' }
+  | { status: 'unknown' }
+  | { status: 'failed'; message?: string };
+
+const numericRevision = (v: unknown): number | null =>
+  typeof v === 'number' && Number.isSafeInteger(v) && v >= 0 ? v : null;
+
+/**
+ * One revision-guarded call to the API, with no redirect behaviour: every
+ * outcome comes back as a value so both a Server Action and a Route Handler can
+ * branch on it.
+ */
+async function profileCall(
+  method: 'PUT' | 'POST',
+  path: string,
+  body: Record<string, unknown>,
+  opts?: { signal?: AbortSignal },
+): Promise<ProfileCallResult> {
+  const identity = await apiIdentityHeaders();
+  const budget = AbortSignal.timeout(PROFILE_CALL_TIMEOUT_MS);
+  const signal = opts?.signal ? AbortSignal.any([opts.signal, budget]) : budget;
+
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}${path}`, {
+      method,
+      headers: { ...identity, 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+      cache: 'no-store',
+      signal,
+    });
+  } catch {
+    // Aborted, dropped, or refused before an answer: the write may still be
+    // running server-side. Do not call this a failure.
+    return { status: 'unknown' };
+  }
+
+  if (res.status === 401) return { status: 'unauthorized' };
+  if (res.status === 403) return { status: 'unauthorized' };
+  // An API that predates this contract has no /v2 route (404) and a rolled-out
+  // one has retired the /v1 shim (410). Both mean: do not write here.
+  if (res.status === 404 || res.status === 410) {
+    const body404 = (await res.json().catch(() => ({}))) as { error?: string };
+    if (res.status === 410 || body404.error === 'NOT_FOUND') {
+      return res.status === 410 ? { status: 'unsupported' } : { status: 'not_found' };
+    }
+    return { status: 'unsupported' };
+  }
+
+  const payload = (await res.json().catch(() => ({}))) as {
+    profile?: MemberProfile | null;
+    revision?: unknown;
+    message?: string;
+    error?: string;
+  };
+  const revision = numericRevision(payload.revision);
+
+  if (res.status === 409) {
+    // A conflict without authoritative state is unusable — treat it as failure
+    // rather than adopting an invented revision.
+    if (revision === null) return { status: 'failed', message: payload.message };
+    return { status: 'conflict', profile: payload.profile ?? null, revision };
+  }
+  if (!res.ok) return { status: 'failed', message: payload.message ?? payload.error };
+  if (revision === null) return { status: 'unsupported' };
+  return { status: 'ok', profile: payload.profile ?? null, revision };
+}
+
+/** Replace the caller's public page, but only if it is still at `expectedRevision`. */
+export const saveMyProfileV2 = (
+  profile: MemberProfile | null,
+  expectedRevision: number,
+  opts?: { signal?: AbortSignal },
+): Promise<ProfileCallResult> =>
+  profileCall('PUT', '/v2/me/profile', { profile, expectedRevision }, opts);
+
+/**
+ * Order one ambiguous save: advance the revision without touching content.
+ * Winning proves the ambiguous write never landed; losing returns the state
+ * that beat it. Always called with the revision the ambiguous save expected.
+ */
+export const fenceMyProfileV2 = (
+  expectedRevision: number,
+  opts?: { signal?: AbortSignal },
+): Promise<ProfileCallResult> =>
+  profileCall('POST', '/v2/me/profile/fence', { expectedRevision }, opts);

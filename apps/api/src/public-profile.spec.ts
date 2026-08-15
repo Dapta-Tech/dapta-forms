@@ -21,7 +21,7 @@ import {
   migrate,
   seed,
   getAccountByCode,
-  setMemberProfile,
+  overwriteMemberProfileLegacy,
   sql,
   type Db,
 } from '@quill/db';
@@ -58,14 +58,14 @@ describe('public member profile', () => {
   });
 
   const enable = (extra: Record<string, unknown> = {}) =>
-    setMemberProfile(db, accountId, memberId, { version: 1, enabled: true, ...extra });
+    overwriteMemberProfileLegacy(db, accountId, memberId, { version: 1, enabled: true, ...extra });
 
   it('is 404 for a member who never set one up', async () => {
     expect(await svc.publicProfile(accountCode, handle)).toBeNull();
   });
 
   it('is 404 while the page is disabled', async () => {
-    await setMemberProfile(db, accountId, memberId, { version: 1, enabled: false, bio: 'hi' });
+    await overwriteMemberProfileLegacy(db, accountId, memberId, { version: 1, enabled: false, bio: 'hi' });
     expect(await svc.publicProfile(accountCode, handle)).toBeNull();
   });
 

@@ -1,89 +1,86 @@
 /**
- * `saveMyProfileAction` is the only authority the public page screen has over
- * what is stored: the browser cannot see the member row, so whatever this
- * returns is what the switch and the "View page" link render. A bare `ok: true`
- * left the screen reconciling against the boolean it had just sent — fine while
- * saves succeed, wrong the moment one is refused. Success therefore carries the
- * persisted profile back, the same contract `saveNotificationAction` already
- * uses for a notification setting.
+ * `saveMyProfileAction` is the only way this screen writes, and the only thing
+ * that can tell it what is stored. Three things are pinned here:
+ *
+ *  - it always sends the revision it read (there is no unguarded overload, and
+ *    no fallback to the deprecated `/v1` writer),
+ *  - an aborted or dropped call comes back as `unknown` — never as a failure,
+ *    because the write may have landed,
+ *  - only outcomes that actually moved stored state revalidate the page.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MemberProfile } from '@quill/types';
 
-const saveMyProfile = vi.fn();
-const myProfile = vi.fn();
+const saveMyProfileV2 = vi.fn();
 const revalidatePath = vi.fn();
 
 vi.mock('@/lib/admin-api', () => ({
-  adminApi: {
-    saveMyProfile: (...a: unknown[]) => saveMyProfile(...a),
-    myProfile: (...a: unknown[]) => myProfile(...a),
-  },
+  adminApi: {},
   ApiError: class ApiError extends Error {},
   isAdminRole: () => true,
+  saveMyProfileV2: (...a: unknown[]) => saveMyProfileV2(...a),
 }));
 vi.mock('next/cache', () => ({ revalidatePath: (...a: unknown[]) => revalidatePath(...a) }));
 vi.mock('next/navigation', () => ({ unstable_rethrow: () => undefined }));
 
-import { myProfileAction, saveMyProfileAction } from './actions';
+import { saveMyProfileAction } from './actions';
 
-const profile: MemberProfile = {
-  version: 1,
-  enabled: true,
-  headline: 'Growth partner',
-  bio: null,
-};
+const profile: MemberProfile = { version: 1, enabled: true, headline: 'Growth partner', bio: null };
+const stored: MemberProfile = { ...profile, headline: null };
 
 describe('saveMyProfileAction', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it('hands back the profile the API says it stored, not the request', async () => {
-    // The API's copy differs from what was sent (it applies the schema's
-    // defaults). Echoing the request back would hide that, and would claim a
-    // stored state on a response that never carried one.
-    const stored = { ...profile, headline: null };
-    saveMyProfile.mockResolvedValue({ ok: true, profile: stored });
+  it('sends the expected revision with every write', async () => {
+    saveMyProfileV2.mockResolvedValue({ status: 'ok', profile: stored, revision: 5 });
 
-    const res = await saveMyProfileAction(profile);
+    const res = await saveMyProfileAction(profile, 4);
 
-    expect(res).toEqual({ ok: true, profile: stored });
-    expect(saveMyProfile).toHaveBeenCalledWith(profile);
+    expect(saveMyProfileV2).toHaveBeenCalledWith(profile, 4);
+    expect(res).toEqual({ status: 'ok', profile: stored, revision: 5 });
     expect(revalidatePath).toHaveBeenCalledWith('/admin/settings');
   });
 
-  it('carries a removed page back as the stored null', async () => {
-    saveMyProfile.mockResolvedValue({ ok: true, profile: null });
+  it('hands back the API’s stored copy, not the request', async () => {
+    saveMyProfileV2.mockResolvedValue({ status: 'ok', profile: stored, revision: 2 });
 
-    expect(await saveMyProfileAction(null)).toEqual({ ok: true, profile: null });
+    const res = await saveMyProfileAction(profile, 1);
+
+    expect(res).toMatchObject({ profile: stored });
   });
 
-  it('reports a refusal with the reason and no profile to adopt', async () => {
-    saveMyProfile.mockRejectedValue(new Error('Handle taken.'));
+  it('passes a conflict through with the authoritative state to adopt', async () => {
+    saveMyProfileV2.mockResolvedValue({ status: 'conflict', profile: stored, revision: 9 });
 
-    const res = await saveMyProfileAction(profile);
+    expect(await saveMyProfileAction(profile, 4)).toEqual({
+      status: 'conflict',
+      profile: stored,
+      revision: 9,
+    });
+    // Stored state moved (somebody else's write), so the render is stale too.
+    expect(revalidatePath).toHaveBeenCalledWith('/admin/settings');
+  });
 
-    expect(res).toEqual({ ok: false, message: 'Handle taken.' });
-    // Nothing changed server-side, so nothing is revalidated.
+  it('reports an aborted call as unknown, never as a failure', async () => {
+    saveMyProfileV2.mockResolvedValue({ status: 'unknown' });
+
+    expect(await saveMyProfileAction(profile, 4)).toEqual({ status: 'unknown' });
+    // Nothing is known to have changed, so nothing is revalidated.
     expect(revalidatePath).not.toHaveBeenCalled();
   });
-});
 
-describe('myProfileAction', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
+  it('reports an invocation that threw as unknown too', async () => {
+    saveMyProfileV2.mockRejectedValue(new Error('socket hang up'));
+
+    expect(await saveMyProfileAction(profile, 4)).toEqual({ status: 'unknown' });
   });
 
-  it('reads the stored profile back, which is the only authority after a timeout', async () => {
-    myProfile.mockResolvedValue({ handle: 'alex-rivera', profile });
+  it('surfaces an API that cannot guard writes instead of writing anyway', async () => {
+    saveMyProfileV2.mockResolvedValue({ status: 'unsupported' });
 
-    expect(await myProfileAction()).toEqual({ ok: true, profile });
-  });
-
-  it('reports a still-unknown state rather than inventing one', async () => {
-    myProfile.mockRejectedValue(new Error('offline'));
-
-    expect(await myProfileAction()).toEqual({ ok: false });
+    expect(await saveMyProfileAction(profile, 4)).toEqual({ status: 'unsupported' });
+    expect(revalidatePath).not.toHaveBeenCalled();
   });
 });
