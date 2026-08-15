@@ -459,3 +459,60 @@ test.describe('public page: settling without claiming authorship', () => {
     expect((await stored(request)).revision).toBe(saved.revision + 1);
   });
 });
+
+test.describe('public page: reconciling behind a proxy', () => {
+  test.beforeEach(async ({ request }) => {
+    await resetProfile(request);
+  });
+
+  /**
+   * The route decides same-origin against the host this deployment ANSWERS on,
+   * which behind a proxy is `X-Forwarded-Host`, not the internal `Host`. That
+   * cuts both ways, and the browser can only prove the strict half: a forwarded
+   * host that disagrees with the caller's Origin must be refused, which leaves
+   * the screen unresolved with its way out still on offer.
+   *
+   * A raw-`Host` implementation ignores the forwarded header, accepts this call
+   * and settles — so this run fails against it. The accepting direction (public
+   * Origin, internal Host, matching X-Forwarded-Host) cannot be staged from a
+   * browser, because Chromium will not let a test forge `Host`; it is asserted
+   * directly against the route in
+   * `apps/web/app/api/settings/public-page/reconcile/route.spec.ts`.
+   */
+  test('refuses a reconciliation whose forwarded host is not ours, and stays unresolved', async ({
+    page,
+    request,
+  }) => {
+    test.setTimeout(120_000);
+    const start = (await stored(request)).revision;
+
+    let dropped = false;
+    await page.route('**/admin/settings**', async (route) => {
+      const r = route.request();
+      if (dropped || !isAction(r.method(), r.headers())) return route.fallback();
+      dropped = true;
+      return route.abort('connectionfailed');
+    });
+    await page.route('**/api/settings/public-page/reconcile', async (route) =>
+      route.continue({
+        headers: { ...route.request().headers(), 'x-forwarded-host': 'proxy.invalid' },
+      }),
+    );
+
+    await page.goto('/admin/settings');
+    const s = section(page);
+    await expect(s.toggle).toHaveAttribute('aria-checked', 'false', { timeout: 20_000 });
+
+    await s.toggle.click();
+
+    // Refused, so nothing was decided: still blocked, still offering a way out.
+    await expect(s.status).toHaveText(COPY.unresolved, { timeout: 60_000 });
+    await expect(s.checkAgain).toBeVisible();
+    await expect(s.reload).toBeVisible();
+    expect(await writesAreBlocked(page)).toBe(true);
+    await expect(page.getByText(COPY.saved)).toHaveCount(0);
+    await expect(page.getByText(COPY.notApplied)).toHaveCount(0);
+    // A refused reconciliation fences nothing.
+    expect((await stored(request)).revision).toBe(start);
+  });
+});
