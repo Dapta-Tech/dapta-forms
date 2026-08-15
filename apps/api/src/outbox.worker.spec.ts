@@ -296,7 +296,9 @@ describe('OutboxWorker claim fencing', () => {
     expect(worker.getRuntimeStatus().orphanCount).toBe(1);
 
     release!();
-    await new Promise<void>((resolve) => setImmediate(resolve));
+    for (let attempt = 0; attempt < 20 && worker.getRuntimeStatus().orphanCount > 0; attempt++) {
+      await new Promise<void>((resolve) => setTimeout(resolve, 5));
+    }
     expect(worker.getRuntimeStatus().orphanCount).toBe(0);
   });
 
@@ -326,7 +328,9 @@ describe('OutboxWorker claim fencing', () => {
     expect((await listOutbox(db)).find((row) => row.id === id)?.attempts).toBe(1);
 
     release!();
-    await new Promise<void>((resolve) => setImmediate(resolve));
+    for (let attempt = 0; attempt < 20 && worker.getRuntimeStatus().orphanCount > 0; attempt++) {
+      await new Promise<void>((resolve) => setTimeout(resolve, 5));
+    }
     expect(worker.getRuntimeStatus().paused).toBe(false);
   });
 
