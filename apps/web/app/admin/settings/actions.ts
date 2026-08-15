@@ -171,16 +171,29 @@ export async function resetNotificationAction(
 }
 
 /**
+ * Outcome of a public page write. Success carries the profile that is now
+ * persisted so the client reconciles against stored state rather than against
+ * the boolean it just sent — the same contract `NotificationSaveState` uses.
+ * A refusal carries the reason and no profile: nothing changed.
+ */
+export type ProfileSaveState =
+  | { ok: true; profile: MemberProfile | null }
+  | { ok: false; message?: string };
+
+/**
  * Save (or clear) the caller's own public page. Scoped server-side to the
  * authenticated member — the id is never taken from the request.
+ *
+ * The API replaces the whole blob, so a resolved call means exactly this
+ * profile is what a reader would now get — that is what comes back.
  */
 export async function saveMyProfileAction(
   profile: MemberProfile | null,
-): Promise<{ ok: boolean; message?: string }> {
+): Promise<ProfileSaveState> {
   try {
     await adminApi.saveMyProfile(profile);
     revalidatePath('/admin/settings');
-    return { ok: true };
+    return { ok: true, profile };
   } catch (e) {
     unstable_rethrow(e);
     return {
