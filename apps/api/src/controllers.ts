@@ -54,7 +54,7 @@ export class HealthController {
         outbox = null;
       }
     }
-    const ready = db === 'up' && !outboxRuntime?.sustainedPaused;
+    const ready = db === 'up';
     const body = {
       status: ready ? 'ready' : 'unavailable',
       service: 'forms-api',

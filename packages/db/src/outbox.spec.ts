@@ -17,6 +17,8 @@ import {
   markOutboxDone,
   markOutboxFailed,
   markOutboxSkipped,
+  markOutboxTimedOut,
+  countLiveOutboxClaims,
   listFailedDeliveries,
   listFormDeliveries,
   listOutbox,
@@ -159,6 +161,31 @@ describe('claimDueOutbox', () => {
     const [claimed] = await claimDueOutbox(db, now, { workerId: 'A' });
     expect(await markOutboxDone(db, id, now, undefined, claimIdentityOf(claimed!))).toBe(true);
     expect(await claimDueOutbox(db, now + 1_000_000, { workerId: 'B', staleClaimMs: 0 })).toHaveLength(0);
+  });
+
+  it('counts only non-stale live claims at the exact boundary', async () => {
+    const now = 5_500_000;
+    const id = await enqueueOutbox(db, { kind: 'email', action: 'a', now });
+    await claimDueOutbox(db, now, { workerId: 'A' });
+    expect(await countLiveOutboxClaims(db, now + 60_000, 60_000)).toBe(0);
+    expect(await countLiveOutboxClaims(db, now + 59_999, 60_000)).toBe(1);
+    expect(id).toBeTruthy();
+  });
+
+  it('records timeout once without releasing its token or lease', async () => {
+    const now = 5_600_000;
+    const id = await enqueueOutbox(db, { kind: 'email', action: 'a', now });
+    const [claimed] = await claimDueOutbox(db, now, { workerId: 'A' });
+    const claim = claimIdentityOf(claimed!);
+    expect(
+      await markOutboxTimedOut(db, id, { attempts: 1, error: 'timeout', now: now + 1 }, claim),
+    ).toBe(true);
+    expect((await listOutbox(db)).find((row) => row.id === id)).toMatchObject({
+      status: 'pending',
+      attempts: 1,
+      claimedAt: now,
+      claimedBy: claim.claimedBy,
+    });
   });
 });
 

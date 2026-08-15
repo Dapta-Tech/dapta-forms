@@ -17,7 +17,8 @@
     "typecheck": "tsc --noEmit",
     "migrate": "tsx src/cli/migrate.ts",
     "seed": "tsx src/cli/seed.ts",
-    "reset": "tsx src/cli/reset.ts"
+    "reset": "tsx src/cli/reset.ts",
+    "outbox:preflight": "tsx src/cli/outbox-preflight.ts"
   },
   "dependencies": {
     "@quill/engine": "workspace:*",

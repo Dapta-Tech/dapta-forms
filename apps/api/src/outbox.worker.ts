@@ -17,6 +17,7 @@ import {
   markOutboxFailed,
   markOutboxRetry,
   markOutboxSkipped,
+  markOutboxTimedOut,
   type Db,
   type OutboxRow,
 } from '@quill/db';
@@ -158,6 +159,14 @@ export class OutboxWorker implements OnModuleInit, OnModuleDestroy {
       this.logLostLease(row);
       return false;
     }
+    if (row.attempts >= row.maxAttempts) {
+      if (await markOutboxFailed(this.db, row.id, { attempts: row.attempts, error: 'attempt limit reached', now: now() }, claim)) {
+        this.increment(this.settledCount, row);
+      } else {
+        this.logLostLease(row);
+      }
+      return true;
+    }
     const controller = new AbortController();
     const startedAt = now();
     let effectSettled = false;
@@ -182,14 +191,18 @@ export class OutboxWorker implements OnModuleInit, OnModuleDestroy {
     if (outcome.kind === 'timeout') {
       controller.abort(new Error(`outbox delivery timed out after ${this.maxDeliveryMs}ms`));
       this.increment(this.timeoutCount, row);
-      await this.settleFailure(
-        row,
-        claim,
-        now,
-        new Error(`outbox delivery timed out after ${this.maxDeliveryMs}ms`),
-      );
       await Promise.resolve();
-      if (!effectSettled) this.trackOrphan(row, startedAt, effect);
+      if (!effectSettled) this.trackOrphan(row, claim, startedAt, now, effect);
+      const attempts = row.attempts + 1;
+      const timeoutError = new Error(`outbox delivery timed out after ${this.maxDeliveryMs}ms`);
+      const settled = await markOutboxTimedOut(
+        this.db,
+        row.id,
+        { attempts, error: timeoutError.message, now: now(), transcript: transcriptOfError(timeoutError) },
+        claim,
+      );
+      if (settled) this.increment(this.settledCount, row);
+      else this.logLostLease(row);
       return true;
     }
     if (outcome.kind === 'success') {
@@ -218,8 +231,9 @@ export class OutboxWorker implements OnModuleInit, OnModuleDestroy {
     claim: ReturnType<typeof claimIdentityOf>,
     now: () => number,
     err: unknown,
+    attemptAlreadyCounted = false,
   ): Promise<void> {
-    const attempts = row.attempts + 1;
+    const attempts = attemptAlreadyCounted ? row.attempts : row.attempts + 1;
     const message = err instanceof Error ? err.message : String(err);
     const transcript = transcriptOfError(err);
     const settled =
@@ -244,7 +258,9 @@ export class OutboxWorker implements OnModuleInit, OnModuleDestroy {
 
   private trackOrphan(
     row: OutboxRow,
+    claim: ReturnType<typeof claimIdentityOf>,
     startedAt: number,
+    now: () => number,
     effect: Promise<{ kind: 'success'; transcript: DeliveryTranscript | undefined } | { kind: 'error'; err: unknown }>,
   ): void {
     const key = `${row.id}:${row.claimedBy}`;
@@ -252,8 +268,13 @@ export class OutboxWorker implements OnModuleInit, OnModuleDestroy {
     if (this.orphans.size >= this.maxOrphans) this.notePaused(this.clock());
     void effect
       .then((outcome) => {
-        const result = outcome.kind === 'error' ? `rejected: ${String(outcome.err)}` : 'completed';
-        this.log.warn(`outbox ${row.kind}:${row.action} (${row.id}) finished after timeout (${result})`);
+        if (outcome.kind === 'success') {
+          return markOutboxDone(this.db, row.id, now(), outcome.transcript, claim).then((settled) => {
+            if (settled) this.increment(this.settledCount, row);
+            else this.logLostLease(row);
+          });
+        }
+        return this.settleFailure(row, claim, now, outcome.err, true);
       })
       .finally(() => {
         this.orphans.delete(key);
