@@ -1323,6 +1323,8 @@ export function validateAnswer(step: FormStep, value: AnswerValue): ValidationRe
     case 'multiple_choice': {
       const allowed = new Set((step.options ?? []).map((o) => o.value));
       const picked = tokens(value);
+      if ((Array.isArray(value) && !isMultiSelect(step)) || new Set(picked).size !== picked.length)
+        return { ok: false, error: 'Choose one of the available options.' };
       if (picked.some((p) => !allowed.has(p)))
         return { ok: false, error: 'Choose one of the available options.' };
       return { ok: true };
@@ -1334,8 +1336,9 @@ export function validateAnswer(step: FormStep, value: AnswerValue): ValidationRe
 
 /** Points for a single choice/dropdown answer (sum across multi-select). */
 function optionPoints(step: FormStep, value: AnswerValue): number {
+  if (Array.isArray(value) && !isMultiSelect(step)) return 0;
   const byValue = new Map((step.options ?? []).map((o) => [o.value, o.points ?? 0]));
-  return tokens(value).reduce((sum, t) => sum + (byValue.get(t) ?? 0), 0);
+  return [...new Set(tokens(value))].reduce((sum, t) => sum + (byValue.get(t) ?? 0), 0);
 }
 
 /**

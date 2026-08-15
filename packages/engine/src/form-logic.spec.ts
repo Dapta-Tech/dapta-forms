@@ -1151,6 +1151,39 @@ describe('isMultiSelect + multiple_choice scoring', () => {
     expect(validateAnswer(multi, ['a', 'b']).ok).toBe(true);
     expect(validateAnswer(multi, ['a', 'zzz']).ok).toBe(false);
   });
+
+  it('rejects arrays for single-select choice steps and does not score them', () => {
+    const singleChoice = step({
+      key: 'single',
+      type: 'multiple_choice',
+      selectionMode: 'single',
+      flowGroup: 'qualification',
+      options: [
+        { label: 'A', value: 'a', points: 2 },
+        { label: 'B', value: 'b', points: 3 },
+      ],
+    });
+    const dropdown = step({
+      ...singleChoice,
+      type: 'dropdown',
+    });
+
+    for (const single of [singleChoice, dropdown]) {
+      const cfg: FormConfig = { version: 1, steps: [single] };
+      expect(validateAnswer(single, ['a', 'b']).ok).toBe(false);
+      expect(computeScore(cfg, { single: ['a', 'b'] })).toBe(0);
+      expect(validateAnswer(single, 'a').ok).toBe(true);
+      expect(computeScore(cfg, { single: 'a' })).toBe(2);
+    }
+  });
+
+  it('rejects duplicate multi-select tokens and scores each option once', () => {
+    const cfg: FormConfig = { version: 1, steps: [multi] };
+    expect(validateAnswer(multi, ['a', 'a', 'b']).ok).toBe(false);
+    expect(computeScore(cfg, { features: ['a', 'a', 'b'] })).toBe(5);
+    expect(validateAnswer(multi, ['a', 'b']).ok).toBe(true);
+    expect(computeScore(cfg, { features: ['a', 'b'] })).toBe(5);
+  });
 });
 
 // ---------------------------------------------------------------------------
