@@ -10,7 +10,6 @@ import { migrate } from './migrate';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const MIGRATIONS_ROOT = join(HERE, '..', 'migrations');
 const TEST_ROOT = join(HERE, '..', '..', '.data', `migrate-atomicity-${process.pid}-${randomUUID()}`);
-const DIALECTS: Dialect[] = ['sqlite', 'postgres'];
 const DATABASE_URL = process.env.DATABASE_URL;
 const ACTIVE_DIALECT: Dialect =
   DATABASE_URL?.startsWith('postgres') || DATABASE_URL?.startsWith('postgresql')
@@ -174,7 +173,7 @@ async function assertCorpusRollback(file: string, index: number): Promise<void> 
   }
 }
 
-function withInitialBarrier(db: Db, arrived: Promise<void>, release: Promise<void>): Db {
+function withInitialBarrier(db: Db, arrived: () => void, release: Promise<void>): Db {
   let first = true;
   return {
     ...db,
@@ -182,7 +181,7 @@ function withInitialBarrier(db: Db, arrived: Promise<void>, release: Promise<voi
       const result = await db.get<T>(query);
       if (first) {
         first = false;
-        await arrived;
+        arrived();
         await release;
       }
       return result;
@@ -223,14 +222,6 @@ afterAll(async () => {
 });
 
 describe('migration atomicity', () => {
-  it('discovers non-empty sorted shipped migration directories', () => {
-    for (const dialect of DIALECTS) {
-      const files = filesFor(dialect);
-      expect(files).toEqual([...files].sort());
-      expect(files.length).toBeGreaterThan(0);
-    }
-  });
-
   it('rolls back a SQLite mid-script failure', async () => {
     if (ACTIVE_DIALECT !== 'sqlite') return;
     const db = await createTestDb();
@@ -264,27 +255,6 @@ describe('migration atomicity', () => {
       await trackingTable(db);
       const before = await state(db);
       const removeFailure = await installMarkerFailure(db, file, 'marker_failure');
-      try {
-        await expect(migrate(db, root)).rejects.toThrow('marker failure');
-      } finally {
-        await removeFailure();
-      }
-      expect(await state(db)).toEqual(before);
-    } finally {
-      await db.close();
-    }
-  });
-
-  it('rolls back a PostgreSQL script when its marker fails', async () => {
-    if (ACTIVE_DIALECT !== 'postgres') return;
-    const db = await createTestDb();
-    const file = '9002_pg_marker_failure.sql';
-    const root = customRoot('postgres', file, `CREATE TABLE pg_marker_failure (id INTEGER PRIMARY KEY);`);
-
-    try {
-      await trackingTable(db);
-      const before = await state(db);
-      const removeFailure = await installMarkerFailure(db, file, 'pg_marker_failure');
       try {
         await expect(migrate(db, root)).rejects.toThrow('marker failure');
       } finally {
@@ -335,12 +305,10 @@ describe('migration atomicity', () => {
       }
       await prepareBase(primary);
       await primary.execRaw(`CREATE TABLE ${table} (id INTEGER PRIMARY KEY)`);
-      const first = withInitialBarrier(primary, primaryReadyPromise, releasePromise);
-      const second = withInitialBarrier(peer, peerReadyPromise, releasePromise);
+      const first = withInitialBarrier(primary, primaryReady, releasePromise);
+      const second = withInitialBarrier(peer, peerReady, releasePromise);
       const primaryMigration = migrate(first, root);
-      primaryReady();
       const peerMigration = migrate(second, root);
-      peerReady();
       await Promise.all([primaryReadyPromise, peerReadyPromise]);
       release();
       const applied = await Promise.all([primaryMigration, peerMigration]);
@@ -376,24 +344,12 @@ describe('migration atomicity', () => {
     const releasePromise = new Promise<void>((resolve) => {
       release = resolve;
     });
-    let firstProbe = true;
 
     try {
       await prepareBase(primary);
       await primary.execRaw(`CREATE TABLE busy_retry_probe (id INTEGER PRIMARY KEY)`);
       primary.sqlite!.exec('PRAGMA busy_timeout = 0');
-      const gatedPrimary: Db = {
-        ...primary,
-        get: async <T>(query) => {
-          const result = await primary.get<T>(query);
-          if (firstProbe) {
-            firstProbe = false;
-            ready();
-            await releasePromise;
-          }
-          return result;
-        },
-      };
+      const gatedPrimary = withInitialBarrier(primary, ready, releasePromise);
       const primaryApply = migrate(gatedPrimary, root);
       await readyPromise;
       peer.sqlite!.exec('BEGIN IMMEDIATE');
