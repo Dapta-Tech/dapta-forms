@@ -317,8 +317,12 @@ function transcriptSets(t: DeliveryTranscript | undefined) {
   return sets;
 }
 
-function claimedPendingWhere(id: string, claim: OutboxClaim) {
-  return sql`id = ${id} AND status = 'pending' AND claimed_by = ${claim.claimedBy}`;
+function claimedPendingWhere(id: string, claim?: OutboxClaim) {
+  // Unclaimed rows exist only in synchronous fixture/setup paths. A worker row
+  // always has a token and therefore can settle only through its generation.
+  return claim
+    ? sql`id = ${id} AND status = 'pending' AND claimed_by = ${claim.claimedBy}`
+    : sql`id = ${id} AND status = 'pending' AND claimed_by IS NULL`;
 }
 
 async function settlementApplied(db: Db, query: Parameters<Db['get']>[0]): Promise<boolean> {
@@ -333,8 +337,8 @@ export async function markOutboxDone(
   db: Db,
   id: string,
   now: number,
-  transcript: DeliveryTranscript | undefined,
-  claim: OutboxClaim,
+  transcript?: DeliveryTranscript,
+  claim?: OutboxClaim,
 ): Promise<boolean> {
   const sets = [
     sql`status = 'done'`,
@@ -358,7 +362,7 @@ export async function markOutboxRetry(
   db: Db,
   id: string,
   args: { attempts: number; error: string; now?: number; transcript?: DeliveryTranscript },
-  claim: OutboxClaim,
+  claim?: OutboxClaim,
 ): Promise<boolean> {
   const now = args.now ?? Date.now();
   const nextAt = now + backoffMs(args.attempts);
@@ -388,7 +392,7 @@ export async function markOutboxSkipped(
   db: Db,
   id: string,
   args: { reason: string; now?: number },
-  claim: OutboxClaim,
+  claim?: OutboxClaim,
 ): Promise<boolean> {
   const now = args.now ?? Date.now();
   return settlementApplied(
@@ -408,7 +412,7 @@ export async function markOutboxFailed(
   db: Db,
   id: string,
   args: { attempts: number; error: string; now?: number; transcript?: DeliveryTranscript },
-  claim: OutboxClaim,
+  claim?: OutboxClaim,
 ): Promise<boolean> {
   const now = args.now ?? Date.now();
   const sets = [
