@@ -136,13 +136,14 @@ export class BookingSyncEffects {
     let invitee: InviteeDetails = NO_INVITEE_DETAILS;
     if (payload.provider === 'calendly' && (payload.eventUri || payload.inviteeUri)) {
       // Per-account Calendly token (connected → decrypted), else the env fallback.
-      const token = await resolveProviderToken(
+      const credential = await resolveProviderToken(
         this.db,
         payload.accountId,
         'calendly',
         this.env?.FORMS_ENCRYPTION_KEY,
         this.env?.CALENDLY_API_TOKEN,
       );
+      const token = credential?.token ?? null;
       if (!token) {
         // Graceful degradation: no token = no enrichment, never a hard failure.
         this.log.warn(
@@ -205,13 +206,14 @@ export class BookingSyncEffects {
     }
 
     // Per-account HubSpot token (connected → decrypted), else the env fallback.
-    const hubspotToken = await resolveProviderToken(
+    const hubspotCredential = await resolveProviderToken(
       this.db,
       payload.accountId,
       'hubspot',
       this.env?.FORMS_ENCRYPTION_KEY,
       this.env?.HUBSPOT_PRIVATE_APP_TOKEN,
     );
+    const hubspotToken = hubspotCredential?.token ?? null;
     if (!hubspotToken) {
       // Log-only degradation: property KEYS only — never values (no PII).
       this.log.log(

@@ -194,13 +194,14 @@ export class DestinationEffects {
     }
     // Per-account HubSpot token (connected → decrypted), else the env fallback.
     // Null resolves to '' so the factory degrades to a harmless log-only no-op.
-    const token = await resolveProviderToken(
+    const credential = await resolveProviderToken(
       this.db,
       accountId,
       'hubspot',
       this.env?.FORMS_ENCRYPTION_KEY,
       this.env?.HUBSPOT_PRIVATE_APP_TOKEN,
     );
+    const token = credential?.token ?? null;
     const mirrorGuid =
       destination.settings?.formActivity === true ? (destination.settings?.formGuid ?? null) : null;
     return {

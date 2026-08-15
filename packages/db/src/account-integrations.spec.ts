@@ -84,24 +84,37 @@ describe('account_integration repo', () => {
 
   it('re-connect updates the same (account, provider) row', async () => {
     await upsertIntegration(db, accountId, 'hubspot', 'token-one-1111', KEY);
+    const first = await resolveProviderToken(db, accountId, 'hubspot', KEY, undefined);
     await upsertIntegration(db, accountId, 'hubspot', 'token-two-2222', KEY);
+    const second = await resolveProviderToken(db, accountId, 'hubspot', KEY, undefined);
     const rows = await listIntegrationStatuses(db, accountId);
     expect(rows).toHaveLength(1);
     expect(rows[0]!.last4).toBe('2222');
     expect(decryptToken((await getIntegration(db, accountId, 'hubspot'))!.encryptedToken, KEY)).toBe(
       'token-two-2222',
     );
+    expect(second).toMatchObject({ token: 'token-two-2222', revision: { kind: 'stored' } });
+    expect(second!.revision).not.toEqual(first!.revision);
   });
 
   it('resolveProviderToken prefers the account token, falls back to env', async () => {
     // No connection yet → env fallback.
-    expect(await resolveProviderToken(db, accountId, 'hubspot', KEY, 'env-token')).toBe('env-token');
+    expect(await resolveProviderToken(db, accountId, 'hubspot', KEY, 'env-token')).toMatchObject({
+      token: 'env-token',
+      revision: { kind: 'env-fallback' },
+    });
     expect(await resolveProviderToken(db, accountId, 'hubspot', KEY, undefined)).toBeNull();
     // After connecting → the account token wins.
     await upsertIntegration(db, accountId, 'hubspot', 'account-token', KEY);
-    expect(await resolveProviderToken(db, accountId, 'hubspot', KEY, 'env-token')).toBe('account-token');
+    expect(await resolveProviderToken(db, accountId, 'hubspot', KEY, 'env-token')).toMatchObject({
+      token: 'account-token',
+      revision: { kind: 'stored', id: expect.any(String), updatedAt: expect.any(Number) },
+    });
     // Without an encryption key configured → only env fallback is consulted.
-    expect(await resolveProviderToken(db, accountId, 'hubspot', undefined, 'env-token')).toBe('env-token');
+    expect(await resolveProviderToken(db, accountId, 'hubspot', undefined, 'env-token')).toMatchObject({
+      token: 'env-token',
+      revision: { kind: 'env-fallback' },
+    });
   });
 
   it('disconnect removes the row (idempotent) and is account-scoped', async () => {
@@ -117,5 +130,17 @@ describe('account_integration repo', () => {
     await deleteIntegration(db, accountId, 'calendly');
     expect(await getIntegration(db, accountId, 'calendly')).toBeNull();
     await deleteIntegration(db, accountId, 'calendly'); // idempotent
+  });
+
+  it('changes the stored revision after a disconnect and reconnect', async () => {
+    await upsertIntegration(db, accountId, 'hubspot', 'first-token-1111', KEY);
+    const first = await resolveProviderToken(db, accountId, 'hubspot', KEY, undefined);
+    await deleteIntegration(db, accountId, 'hubspot');
+    await upsertIntegration(db, accountId, 'hubspot', 'second-token-2222', KEY);
+    const second = await resolveProviderToken(db, accountId, 'hubspot', KEY, undefined);
+
+    expect(first).toMatchObject({ revision: { kind: 'stored' } });
+    expect(second).toMatchObject({ revision: { kind: 'stored' } });
+    expect(second!.revision).not.toEqual(first!.revision);
   });
 });

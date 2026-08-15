@@ -23,7 +23,10 @@ import {
   getIntegration,
   decryptToken,
   inviteMember,
+  resolveProviderToken,
+  upsertIntegration,
   type Db,
+  type ProviderCredentialRevision,
 } from '@quill/db';
 import type { ServerEnv } from '@quill/config/env';
 import {
@@ -71,6 +74,14 @@ function jsonResponse(body: unknown, status = 200): Response {
     status,
     headers: { 'content-type': 'application/json' },
   });
+}
+
+function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
 }
 
 let db: Db;
@@ -121,20 +132,37 @@ afterEach(async () => {
 });
 
 describe('AccountMetadataCache', () => {
-  it('accepts only metadata at its write boundary', () => {
+  it('accepts only metadata and opaque revisions at its write boundary', async () => {
     const cache = new AccountMetadataCache<HubSpotPropertyDto[]>();
-    expectTypeOf(cache.set).parameter(1).toEqualTypeOf<HubSpotPropertyDto[]>();
+    const credential = await resolveProviderToken(
+      db,
+      await accountId(),
+      'hubspot',
+      ENCRYPTION_KEY,
+      'cache-fallback-token',
+    );
+    if (!credential) throw new Error('expected fallback credential');
+    expectTypeOf(cache.setIfCurrent).parameter(1).toEqualTypeOf<ProviderCredentialRevision>();
+    expectTypeOf(cache.setIfCurrent).parameter(2).toEqualTypeOf<ProviderCredentialRevision>();
+    expectTypeOf(cache.setIfCurrent).parameter(3).toEqualTypeOf<HubSpotPropertyDto[]>();
+    type Assert<T extends true> = T;
+    type _RawCredentialCannotBeRevision = Assert<string extends ProviderCredentialRevision ? false : true>;
     // @ts-expect-error Cache data must be provider metadata, never raw credential strings.
     type _RawTokenCache = AccountMetadataCache<string[]>;
     const first = [{ name: 'first_property', label: 'First property', type: 'string' }];
     const second = [{ name: 'second_property', label: 'Second property', type: 'string' }];
 
-    cache.set('first-account', first, 1_000);
-    cache.set('second-account', second, 1_000);
+    expect(cache.setIfCurrent('first-account', credential.revision, credential.revision, first, 1_000)).toBe(true);
+    expect(cache.setIfCurrent('second-account', credential.revision, credential.revision, second, 1_000)).toBe(true);
+    await upsertIntegration(db, await accountId(), 'hubspot', 'metadata-cache-account-token', ENCRYPTION_KEY);
+    const current = await resolveProviderToken(db, await accountId(), 'hubspot', ENCRYPTION_KEY, undefined);
+    if (!current) throw new Error('expected stored credential');
+    expect(cache.setIfCurrent('stale-account', credential.revision, current.revision, first, 1_000)).toBe(false);
     cache.invalidate('first-account');
 
-    expect(cache.get('first-account', 1_001)).toBeUndefined();
-    expect(cache.get('second-account', 1_001)).toEqual(second);
+    expect(cache.get('first-account', credential.revision, 1_001)).toBeUndefined();
+    expect(cache.get('second-account', credential.revision, 1_001)).toEqual(second);
+    expect(cache.get('stale-account', current.revision, 1_001)).toBeUndefined();
   });
 });
 
@@ -453,6 +481,59 @@ describe('HubSpot property picker token resolution', () => {
     expect(requests).toBe(expectedAuthorizations.length);
   });
 
+  it('does not let a pre-reconnect fetch repopulate cache across service instances', async () => {
+    const initialToken = 'hubspot-overlap-initial-0001';
+    const rotatedToken = 'hubspot-overlap-rotated-0002';
+    const oldFetchStarted = deferred<void>();
+    const oldFetch = deferred<Response>();
+    const aAuthorizations: string[] = [];
+    const fetchA = (async (url: string, init?: RequestInit) => {
+      const authorization = (init?.headers as Record<string, string> | undefined)?.authorization;
+      if (url !== HUBSPOT_PROPERTIES_URL) throw new Error('unexpected HubSpot URL');
+      aAuthorizations.push(authorization ?? '');
+      if (authorization === `Bearer ${initialToken}`) {
+        oldFetchStarted.resolve();
+        return oldFetch.promise;
+      }
+      if (authorization === `Bearer ${rotatedToken}`) {
+        return jsonResponse({ results: [{ name: 'rotated_property', label: 'Rotated property', type: 'string' }] });
+      }
+      throw new Error('unexpected HubSpot authorization');
+    }) as unknown as typeof fetch;
+    const bAuthorizations: string[] = [];
+    const fetchB = (async (url: string, init?: RequestInit) => {
+      const authorization = (init?.headers as Record<string, string> | undefined)?.authorization;
+      if (url !== HUBSPOT_PROPERTIES_URL) throw new Error('unexpected HubSpot URL');
+      bAuthorizations.push(authorization ?? '');
+      if (authorization !== `Bearer ${initialToken}` && authorization !== `Bearer ${rotatedToken}`) {
+        throw new Error('unexpected HubSpot authorization');
+      }
+      return jsonResponse({ results: [] });
+    }) as unknown as typeof fetch;
+    const { hubspot: serviceB } = build(makeEnv(), fetchB);
+    const serviceA = new HubspotPropertiesService(makeEnv(), db, fetchA);
+    const id = await accountId();
+
+    await controller.connect(asOwner(), 'hubspot', { token: initialToken });
+    const pending = serviceA.listProperties(id, 1_000);
+    await oldFetchStarted.promise;
+    await controller.connect(asOwner(), 'hubspot', { token: rotatedToken });
+    oldFetch.resolve(
+      jsonResponse({ results: [{ name: 'initial_property', label: 'Initial property', type: 'string' }] }),
+    );
+
+    const stale = await pending;
+    const current = await serviceA.listProperties(id, 1_001);
+    const hit = await serviceA.listProperties(id, 1_002);
+
+    expect(serviceA).not.toBe(serviceB);
+    expect(stale).toMatchObject({ enabled: true, cached: false, properties: [{ name: 'initial_property' }] });
+    expect(current).toMatchObject({ enabled: true, cached: false, properties: [{ name: 'rotated_property' }] });
+    expect(hit).toMatchObject({ enabled: true, cached: true, properties: [{ name: 'rotated_property' }] });
+    expect(aAuthorizations).toEqual([`Bearer ${initialToken}`, `Bearer ${rotatedToken}`]);
+    expect(bAuthorizations).toEqual([`Bearer ${initialToken}`, `Bearer ${rotatedToken}`]);
+  });
+
   it('invalidates cached metadata when the account switches to and from an env fallback', async () => {
     const fallbackToken = 'hubspot-fallback-0001';
     const accountToken = 'hubspot-account-0002';
@@ -660,6 +741,87 @@ describe('Calendly event-type picker token resolution', () => {
     expect(unchanged).toMatchObject({ enabled: true, cached: true, eventTypes: [{ name: 'initial event' }] });
     expect(rotated).toMatchObject({ enabled: true, cached: false, eventTypes: [{ name: 'rotated event' }] });
     expect(requests).toBe(expectedAuthorizations.length);
+  });
+
+  it('does not let a pre-disconnect fetch repopulate cache across service instances', async () => {
+    const accountToken = 'calendly-overlap-account-0001';
+    const fallbackToken = 'calendly-overlap-fallback-0002';
+    const oldMeStarted = deferred<void>();
+    const oldMe = deferred<Response>();
+    const aAuthorizations: string[] = [];
+    const fetchA = (async (url: string, init?: RequestInit) => {
+      const authorization = (init?.headers as Record<string, string> | undefined)?.authorization;
+      aAuthorizations.push(authorization ?? '');
+      if (authorization === `Bearer ${accountToken}`) {
+        if (url === CALENDLY_ME_URL) {
+          oldMeStarted.resolve();
+          return oldMe.promise;
+        }
+        if (url.startsWith(CALENDLY_EVENT_TYPES_BASE)) {
+          return jsonResponse({
+            collection: [
+              {
+                uri: 'https://api.calendly.com/event_types/account',
+                name: 'account event',
+                scheduling_url: 'https://calendly.com/acme/account',
+              },
+            ],
+          });
+        }
+      }
+      if (authorization === `Bearer ${fallbackToken}`) {
+        if (url === CALENDLY_ME_URL) {
+          return jsonResponse({ resource: { uri: 'https://api.calendly.com/users/fallback' } });
+        }
+        if (url.startsWith(CALENDLY_EVENT_TYPES_BASE)) {
+          return jsonResponse({
+            collection: [
+              {
+                uri: 'https://api.calendly.com/event_types/fallback',
+                name: 'fallback event',
+                scheduling_url: 'https://calendly.com/acme/fallback',
+              },
+            ],
+          });
+        }
+      }
+      throw new Error('unexpected Calendly request');
+    }) as unknown as typeof fetch;
+    const bAuthorizations: string[] = [];
+    const fetchB = (async (url: string, init?: RequestInit) => {
+      const authorization = (init?.headers as Record<string, string> | undefined)?.authorization;
+      bAuthorizations.push(authorization ?? '');
+      if (url !== CALENDLY_ME_URL || authorization !== `Bearer ${accountToken}`) {
+        throw new Error('unexpected Calendly request');
+      }
+      return jsonResponse({ resource: { uri: 'https://api.calendly.com/users/account' } });
+    }) as unknown as typeof fetch;
+    const env = makeEnv({ CALENDLY_API_TOKEN: fallbackToken });
+    const { calendly: serviceB } = build(env, fetchB);
+    const serviceA = new CalendlyEventTypesService(env, db, fetchA);
+    const id = await accountId();
+
+    await controller.connect(asOwner(), 'calendly', { token: accountToken });
+    const pending = serviceA.listEventTypes(id, 1_000);
+    await oldMeStarted.promise;
+    await controller.disconnect(asOwner(), 'calendly');
+    oldMe.resolve(jsonResponse({ resource: { uri: 'https://api.calendly.com/users/account' } }));
+
+    const stale = await pending;
+    const current = await serviceA.listEventTypes(id, 1_001);
+    const hit = await serviceA.listEventTypes(id, 1_002);
+
+    expect(serviceA).not.toBe(serviceB);
+    expect(stale).toMatchObject({ enabled: true, cached: false, eventTypes: [{ name: 'account event' }] });
+    expect(current).toMatchObject({ enabled: true, cached: false, eventTypes: [{ name: 'fallback event' }] });
+    expect(hit).toMatchObject({ enabled: true, cached: true, eventTypes: [{ name: 'fallback event' }] });
+    expect(aAuthorizations).toEqual([
+      `Bearer ${accountToken}`,
+      `Bearer ${accountToken}`,
+      `Bearer ${fallbackToken}`,
+      `Bearer ${fallbackToken}`,
+    ]);
+    expect(bAuthorizations).toEqual([`Bearer ${accountToken}`]);
   });
 
   it('invalidates cached metadata when the account switches to and from an env fallback', async () => {

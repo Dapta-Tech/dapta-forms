@@ -17,7 +17,13 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { z, ZodError } from 'zod';
-import type { Db, IntegrationProvider, IntegrationStatus } from '@quill/db';
+import type {
+  Db,
+  IntegrationProvider,
+  IntegrationStatus,
+  ProviderCredentialRevision,
+  ResolvedProviderToken,
+} from '@quill/db';
 import {
   deleteIntegration,
   hasEncryptionKey,
@@ -25,6 +31,7 @@ import {
   listAccountWebhooks,
   listIntegrationStatuses,
   resolveProviderToken,
+  providerCredentialRevisionEquals,
   getFormById,
   recordSettledDelivery,
   WEBHOOK_PING_ACTION,
@@ -128,19 +135,27 @@ const CALENDLY_EVENT_TYPES_URL = 'https://api.calendly.com/event_types';
 type IntegrationMetadata = HubSpotPropertyDto[] | CalendlyEventTypeDto[];
 
 export class AccountMetadataCache<T extends IntegrationMetadata> {
-  private readonly entries = new Map<string, { data: T; expires: number }>();
+  private readonly entries = new Map<string, { revision: ProviderCredentialRevision; data: T; expires: number }>();
 
-  get(accountId: string, now: number): T | undefined {
+  get(accountId: string, revision: ProviderCredentialRevision, now: number): T | undefined {
     const cached = this.entries.get(accountId);
-    if (!cached || cached.expires <= now) {
+    if (!cached || cached.expires <= now || !providerCredentialRevisionEquals(cached.revision, revision)) {
       this.entries.delete(accountId);
       return undefined;
     }
     return cached.data;
   }
 
-  set(accountId: string, data: T, now: number): void {
-    this.entries.set(accountId, { data, expires: now + CACHE_TTL_MS });
+  setIfCurrent(
+    accountId: string,
+    capturedRevision: ProviderCredentialRevision,
+    currentRevision: ProviderCredentialRevision,
+    data: T,
+    now: number,
+  ): boolean {
+    if (!providerCredentialRevisionEquals(capturedRevision, currentRevision)) return false;
+    this.entries.set(accountId, { revision: capturedRevision, data, expires: now + CACHE_TTL_MS });
+    return true;
   }
 
   invalidate(accountId: string): void {
@@ -214,32 +229,32 @@ export class HubspotPropertiesService {
    * present, else the single-tenant env fallback. Placeholder env values count
    * as absent so a bare clone reports disabled instead of 401-ing HubSpot.
    */
-  private async resolveToken(accountId: string): Promise<string | null> {
-    const token = await resolveProviderToken(
+  private async resolveToken(accountId: string): Promise<ResolvedProviderToken | null> {
+    const credential = await resolveProviderToken(
       this.db,
       accountId,
       'hubspot',
       this.env.FORMS_ENCRYPTION_KEY,
       this.env.HUBSPOT_PRIVATE_APP_TOKEN,
     );
-    if (!token || PLACEHOLDER_TOKENS.has(token.trim())) return null;
-    return token;
+    if (!credential || PLACEHOLDER_TOKENS.has(credential.token.trim())) return null;
+    return credential;
   }
 
   async listProperties(accountId: string, now = Date.now()): Promise<HubSpotPropertiesResponse> {
-    const token = await this.resolveToken(accountId);
-    if (!token) {
+    const credential = await this.resolveToken(accountId);
+    if (!credential) {
       return {
         enabled: false,
         reason: 'No HubSpot token — connect HubSpot for this account or set the server token.',
       };
     }
-    const cached = this.cache.get(accountId, now);
+    const cached = this.cache.get(accountId, credential.revision, now);
     if (cached) {
       return { enabled: true, cached: true, properties: cached };
     }
     const res = await this.fetchImpl(HUBSPOT_PROPERTIES_URL, {
-      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      headers: { authorization: `Bearer ${credential.token}`, 'content-type': 'application/json' },
     });
     if (!res.ok) {
       // Don't cache a failure; report disabled with the status so the UI can show it.
@@ -260,7 +275,12 @@ export class HubspotPropertiesService {
         return dto;
       })
       .sort((a, b) => a.label.localeCompare(b.label));
-    this.cache.set(accountId, properties, now);
+    // Provider I/O can overlap a credential mutation; cache only the source
+    // revision that is still current after the response arrives.
+    const current = await this.resolveToken(accountId);
+    if (current) {
+      this.cache.setIfCurrent(accountId, credential.revision, current.revision, properties, now);
+    }
     return { enabled: true, cached: false, properties };
   }
 }
@@ -326,31 +346,31 @@ export class CalendlyEventTypesService {
   }
 
   /** The live Calendly token for an account: connected (decrypted) else env fallback. */
-  private async resolveToken(accountId: string): Promise<string | null> {
-    const token = await resolveProviderToken(
+  private async resolveToken(accountId: string): Promise<ResolvedProviderToken | null> {
+    const credential = await resolveProviderToken(
       this.db,
       accountId,
       'calendly',
       this.env.FORMS_ENCRYPTION_KEY,
       this.env.CALENDLY_API_TOKEN,
     );
-    if (!token || PLACEHOLDER_TOKENS.has(token.trim())) return null;
-    return token;
+    if (!credential || PLACEHOLDER_TOKENS.has(credential.token.trim())) return null;
+    return credential;
   }
 
   async listEventTypes(accountId: string, now = Date.now()): Promise<CalendlyEventTypesResponse> {
-    const token = await this.resolveToken(accountId);
-    if (!token) {
+    const credential = await this.resolveToken(accountId);
+    if (!credential) {
       return {
         enabled: false,
         reason: 'No Calendly token — connect Calendly for this account or set the server token.',
       };
     }
-    const cached = this.cache.get(accountId, now);
+    const cached = this.cache.get(accountId, credential.revision, now);
     if (cached) {
       return { enabled: true, cached: true, eventTypes: cached };
     }
-    const headers = { authorization: `Bearer ${token}`, 'content-type': 'application/json' };
+    const headers = { authorization: `Bearer ${credential.token}`, 'content-type': 'application/json' };
     // Calendly scopes event types by user, so resolve the token's own user first.
     const meRes = await this.fetchImpl(CALENDLY_ME_URL, { headers });
     if (!meRes.ok) return { enabled: false, reason: `Calendly rejected the request (HTTP ${meRes.status}).` };
@@ -373,7 +393,12 @@ export class CalendlyEventTypesService {
         customQuestions: toBookingFields(e.custom_questions),
       }))
       .sort((a, b) => a.name.localeCompare(b.name));
-    this.cache.set(accountId, eventTypes, now);
+    // Provider I/O can overlap a credential mutation; cache only the source
+    // revision that is still current after the response arrives.
+    const current = await this.resolveToken(accountId);
+    if (current) {
+      this.cache.setIfCurrent(accountId, credential.revision, current.revision, eventTypes, now);
+    }
     return { enabled: true, cached: false, eventTypes };
   }
 }
@@ -810,13 +835,14 @@ export class FormDestinationsController {
     // Resolved once, and only for a form that actually has a HubSpot entry.
     let token: string | null = null;
     try {
-      token = await resolveProviderToken(
+      const credential = await resolveProviderToken(
         this.db,
         accountId,
         'hubspot',
         this.env?.FORMS_ENCRYPTION_KEY,
         this.env?.HUBSPOT_PRIVATE_APP_TOKEN,
       );
+      token = credential?.token ?? null;
     } catch {
       token = null;
     }

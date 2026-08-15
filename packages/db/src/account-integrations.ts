@@ -26,12 +26,65 @@ export interface IntegrationMeta {
 }
 
 export interface IntegrationRow {
+  id: string;
   accountId: string;
   provider: IntegrationProvider;
   encryptedToken: string;
   meta: IntegrationMeta | null;
   connectedAt: number;
   updatedAt: number;
+}
+
+const providerCredentialRevisionBrand: unique symbol = Symbol('ProviderCredentialRevision');
+
+/**
+ * Non-secret identity for the source of a resolved provider credential.
+ *
+ * A stored credential pairs its durable row id with its monotonically updated
+ * timestamp. The env fallback uses a stable sentinel because it has no
+ * account-row revision. The private brand prevents credential strings from
+ * entering callers that accept only revisions.
+ */
+export type ProviderCredentialRevision =
+  | {
+      readonly kind: 'stored';
+      readonly id: string;
+      readonly updatedAt: number;
+      readonly [providerCredentialRevisionBrand]: true;
+    }
+  | {
+      readonly kind: 'env-fallback';
+      readonly [providerCredentialRevisionBrand]: true;
+    };
+
+/** The live provider token paired with its non-secret source revision. */
+export interface ResolvedProviderToken {
+  token: string;
+  revision: ProviderCredentialRevision;
+}
+
+const ENV_FALLBACK_REVISION: ProviderCredentialRevision = {
+  kind: 'env-fallback',
+  [providerCredentialRevisionBrand]: true,
+};
+
+function storedCredentialRevision(row: IntegrationRow): ProviderCredentialRevision {
+  return {
+    kind: 'stored',
+    id: row.id,
+    updatedAt: row.updatedAt,
+    [providerCredentialRevisionBrand]: true,
+  };
+}
+
+/** Compare opaque, non-secret credential source revisions across API instances. */
+export function providerCredentialRevisionEquals(
+  a: ProviderCredentialRevision,
+  b: ProviderCredentialRevision,
+): boolean {
+  if (a.kind !== b.kind) return false;
+  if (a.kind === 'env-fallback' || b.kind === 'env-fallback') return true;
+  return a.id === b.id && a.updatedAt === b.updatedAt;
 }
 
 /** Public, token-free view of a connection for the connections UI. */
@@ -45,6 +98,7 @@ export interface IntegrationStatus {
 
 function mapRow(r: Record<string, unknown>): IntegrationRow {
   return {
+    id: String(r.id),
     accountId: String(r.account_id),
     provider: String(r.provider) as IntegrationProvider,
     encryptedToken: String(r.encrypted_token),
@@ -72,7 +126,7 @@ export async function getIntegration(
   provider: IntegrationProvider,
 ): Promise<IntegrationRow | null> {
   const r = await db.get<Record<string, unknown>>(
-    sql`SELECT account_id, provider, encrypted_token, meta, connected_at, updated_at
+    sql`SELECT id, account_id, provider, encrypted_token, meta, connected_at, updated_at
         FROM account_integration WHERE account_id = ${accountId} AND provider = ${provider} LIMIT 1`,
   );
   return r ? mapRow(r) : null;
@@ -84,7 +138,7 @@ export async function listIntegrationStatuses(
   accountId: string,
 ): Promise<IntegrationStatus[]> {
   const rows = await db.all<Record<string, unknown>>(
-    sql`SELECT account_id, provider, encrypted_token, meta, connected_at, updated_at
+    sql`SELECT id, account_id, provider, encrypted_token, meta, connected_at, updated_at
         FROM account_integration WHERE account_id = ${accountId}`,
   );
   return rows.map((r) => describeIntegration(mapRow(r)));
@@ -106,8 +160,10 @@ export async function upsertIntegration(
   const meta: IntegrationMeta = { last4: tokenLast4(token) };
   if (label) meta.label = label;
   const encrypted = encryptToken(token, encryptionKey);
-  const now = Date.now();
   const existing = await getIntegration(db, accountId, provider);
+  // `updated_at` is the persistent cache revision. Advance it even when two
+  // successful reconnects share a millisecond, so every mutation is visible.
+  const now = Math.max(Date.now(), (existing?.updatedAt ?? 0) + 1);
   if (existing) {
     await db.run(
       sql`UPDATE account_integration
@@ -137,9 +193,11 @@ export async function deleteIntegration(
 
 /**
  * Resolve the live token for a provider: the account's stored (decrypted) token
- * if connected, else the single-tenant env fallback. Returns null when neither
- * is available. `encryptionKey` may be empty (then only the env fallback is
- * consulted). This is the one function the 4 delivery/read sites call.
+ * if connected, else the single-tenant env fallback. Pairs the token with a
+ * non-secret source revision so in-process caches can self-heal across API
+ * instances. Returns null when neither is available. `encryptionKey` may be
+ * empty (then only the env fallback is consulted). This is the one function
+ * the delivery/read sites call.
  */
 export async function resolveProviderToken(
   db: Db,
@@ -147,17 +205,21 @@ export async function resolveProviderToken(
   provider: IntegrationProvider,
   encryptionKey: string | undefined,
   envFallback: string | undefined,
-): Promise<string | null> {
+): Promise<ResolvedProviderToken | null> {
   if (encryptionKey) {
     const row = await getIntegration(db, accountId, provider);
     if (row) {
       try {
-        return decryptToken(row.encryptedToken, encryptionKey);
+        return {
+          token: decryptToken(row.encryptedToken, encryptionKey),
+          revision: storedCredentialRevision(row),
+        };
       } catch {
         // A key rotation / corrupt row must not crash delivery — fall through
         // to the env fallback and let the caller degrade (log-only).
       }
     }
   }
-  return envFallback && envFallback.trim() ? envFallback.trim() : null;
+  const token = envFallback?.trim();
+  return token ? { token, revision: ENV_FALLBACK_REVISION } : null;
 }
