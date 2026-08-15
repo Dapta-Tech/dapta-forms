@@ -130,48 +130,12 @@ limit the schema, but you should not run production on it.
 - **Migrations are additive-only** — new nullable columns / new tables, never a
   destructive rename or drop that would break a running deployment. Both dialects
   ship parallel numbered migrations under `packages/db/migrations/{postgres,sqlite}`.
-- Migration SQL shipped through repository CI is the trusted artifact boundary.
-  Forks that add migrations must run the same database tests before deployment.
-  The contract verifies real database rollback behavior instead of interpreting
-  SQL in the migration runner. SQLite runs record that PostgreSQL contract proof
-  is skipped; dedicated PostgreSQL CI lanes carry that safety proof.
-- CI and the local Compose path test PostgreSQL 16. PostgreSQL 14+ remains the
-  supported deployment expectation.
-- Per-file atomicity covers a migration script and its `_migrations` marker.
-  A transaction canary detects outer transaction termination and withholds the
-  marker. It detects; it does not recover. If CI is bypassed, partial effects may
-  already persist.
-- The canary's state-independent check is limited to the outer-transaction-
-  termination class. Transaction survival does not make non-transactional side
-  effects atomic, including PostgreSQL `nextval` / `setval` and engine-forbidden
-  operations. The additive-only migration policy and real-engine CI remain the
-  boundary; this does not claim to cover all side effects.
-- The short-link fixups that run after migration are outside the script-and-marker
-  boundary.
+- Repository-shipped migrations run as a script plus marker transaction and are
+  verified by CI. Fork or custom migrations with transaction control or
+  non-transactional operations are unsupported and may partially apply.
+- Short-link fixups run after migrations and are outside that boundary.
 - Booting the API against an **unmigrated** database makes the outbox worker fail on
   every poll with `no such table: outbox` — always migrate first.
-
-### Migration quarantine
-
-When the canary detects an outer transaction escape, Dapta Forms writes one
-`_migration_quarantine` row for that migration and dialect. Do not rerun the
-migration until an operator has inspected the database. Durable effects may
-exist, or may not exist.
-
-1. Inspect `_migration_quarantine`, then repair the database or restore it from
-   backup.
-2. Delete only the named row after repair:
-   ```sql
-   DELETE FROM _migration_quarantine
-   WHERE name = '<migration-file>' AND dialect = '<sqlite-or-postgres>';
-   ```
-3. Rerun the corrected migration.
-
-The runner never clears quarantine automatically. A process crash between escape
-detection and quarantine persistence remains a residual risk. Transient resource
-and connection failures are not quarantined. Resetting a SQLite development
-database deletes the whole file and therefore clears quarantine; the Postgres
-reset command still refuses to run.
 
 ## Full environment reference
 

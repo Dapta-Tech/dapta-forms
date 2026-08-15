@@ -1,348 +1,443 @@
 import { randomUUID } from 'node:crypto';
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { afterAll, describe, expect, it } from 'vitest';
-import { createDb, sql, type Db } from './client';
+import postgres from 'postgres';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { createDb, sql, type Db, type Dialect } from './client';
 import { migrate } from './migrate';
 
-const TEST_ARTIFACT_ROOT = join(
-  dirname(fileURLToPath(import.meta.url)),
-  '..',
-  '..',
-  '..',
-  '.data',
-  `migrate-runtime-${process.pid}-${randomUUID()}`,
-);
+const HERE = dirname(fileURLToPath(import.meta.url));
+const MIGRATIONS_ROOT = join(HERE, '..', 'migrations');
+const TEST_ROOT = join(HERE, '..', '..', '.data', `migrate-atomicity-${process.pid}-${randomUUID()}`);
+const DIALECTS: Dialect[] = ['sqlite', 'postgres'];
+const DATABASE_URL = process.env.DATABASE_URL;
+const ACTIVE_DIALECT: Dialect =
+  DATABASE_URL?.startsWith('postgres') || DATABASE_URL?.startsWith('postgresql')
+    ? 'postgres'
+    : 'sqlite';
 
-interface Fixture {
-  root: string;
-  filename: string;
-  tableName: string;
-  auditTableName: string;
-  path: string;
+interface State {
+  tables: string[];
+  indexes: string[];
+  markers: string[];
 }
 
-interface Deferred {
-  promise: Promise<void>;
-  resolve(): void;
+interface Scratch {
+  name: string;
+  url: string;
+  adminUrl: string;
 }
 
-function createDeferred(): Deferred {
-  let resolve: () => void = () => undefined;
-  const promise = new Promise<void>((resolvePromise) => {
-    resolve = resolvePromise;
-  });
-  return { promise, resolve };
+let scratch: Scratch | undefined;
+
+function filesFor(dialect: Dialect): string[] {
+  const files = readdirSync(join(MIGRATIONS_ROOT, dialect))
+    .filter((file) => file.endsWith('.sql'))
+    .sort();
+  if (files.length === 0) throw new Error(`No ${dialect} migrations found`);
+  return files;
 }
 
-function pause(milliseconds: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+const ACTIVE_FILES = filesFor(ACTIVE_DIALECT);
+
+function quoteIdentifier(value: string): string {
+  return `"${value.replaceAll('"', '""')}"`;
 }
 
-function createFixture(dialect: Db['dialect']): Fixture {
-  const id = randomUUID().replaceAll('-', '');
-  const root = join(TEST_ARTIFACT_ROOT, id);
+function rootFor(dialect: Dialect, files: string[]): string {
+  const root = join(TEST_ROOT, randomUUID());
   const directory = join(root, dialect);
-  const filename = `${id}.sql`;
-
   mkdirSync(directory, { recursive: true });
+  for (const file of files) {
+    copyFileSync(join(MIGRATIONS_ROOT, dialect, file), join(directory, file));
+  }
+  return root;
+}
+
+function customRoot(dialect: Dialect, file: string, script: string): string {
+  const root = join(TEST_ROOT, randomUUID());
+  const directory = join(root, dialect);
+  mkdirSync(directory, { recursive: true });
+  writeFileSync(join(directory, file), script);
+  return root;
+}
+
+async function createTestDb(): Promise<Db> {
+  if (ACTIVE_DIALECT === 'sqlite') {
+    return createDb(`file:${join(TEST_ROOT, `${randomUUID()}.db`)}`);
+  }
+
+  const db = await createDb(scratch!.url);
+  await db.execRaw(`DROP SCHEMA public CASCADE; CREATE SCHEMA public`);
+  return db;
+}
+
+async function trackingTable(db: Db): Promise<void> {
+  await db.execRaw(
+    `CREATE TABLE IF NOT EXISTS _migrations (name TEXT PRIMARY KEY, applied_at BIGINT NOT NULL)`,
+  );
+}
+
+async function state(db: Db): Promise<State> {
+  if (db.dialect === 'sqlite') {
+    const tables = await db.all<{ name: string }>(
+      sql.raw(`SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name`),
+    );
+    const indexes = await db.all<{ name: string }>(
+      sql.raw(`SELECT name FROM sqlite_master WHERE type = 'index' ORDER BY name`),
+    );
+    const markers = await db.all<{ name: string }>(sql.raw(`SELECT name FROM _migrations ORDER BY name`));
+    return {
+      tables: tables.map((row) => row.name),
+      indexes: indexes.map((row) => row.name),
+      markers: markers.map((row) => row.name),
+    };
+  }
+
+  const tables = await db.all<{ table_name: string }>(
+    sql.raw(
+      `SELECT table_name FROM information_schema.tables
+       WHERE table_schema = 'public' ORDER BY table_name`,
+    ),
+  );
+  const indexes = await db.all<{ indexname: string }>(
+    sql.raw(`SELECT indexname FROM pg_indexes WHERE schemaname = 'public' ORDER BY indexname`),
+  );
+  const markers = await db.all<{ name: string }>(sql.raw(`SELECT name FROM _migrations ORDER BY name`));
   return {
-    root,
-    filename,
-    tableName: `migrate_runtime_${id}`,
-    auditTableName: `migrate_runtime_audit_${id}`,
-    path: join(directory, filename),
+    tables: tables.map((row) => row.table_name),
+    indexes: indexes.map((row) => row.indexname),
+    markers: markers.map((row) => row.name),
   };
 }
 
-function writeMigration(fixture: Fixture, script: string): void {
-  writeFileSync(fixture.path, script);
-}
-
-async function openDatabase(databaseUrl?: string): Promise<{ db: Db; databaseUrl: string }> {
-  const resolvedUrl = databaseUrl ?? `file:${join(TEST_ARTIFACT_ROOT, `${randomUUID()}.db`)}`;
-  const db = await createDb(resolvedUrl);
-  await migrate(db);
-  return { db, databaseUrl: resolvedUrl };
-}
-
-async function hasMigration(db: Db, filename: string): Promise<boolean> {
-  return Boolean(
-    await db.get<{ name: string }>(sql`SELECT name FROM _migrations WHERE name = ${filename} LIMIT 1`),
-  );
-}
-
-async function hasTable(db: Db, tableName: string): Promise<boolean> {
+async function installMarkerFailure(db: Db, file: string, suffix: string): Promise<() => Promise<void>> {
+  const trigger = `migration_marker_fail_${suffix}`;
   if (db.dialect === 'sqlite') {
-    return Boolean(
-      await db.get<{ name: string }>(
-        sql`SELECT name FROM sqlite_master WHERE type = 'table' AND name = ${tableName} LIMIT 1`,
-      ),
+    await db.execRaw(
+      `CREATE TRIGGER ${trigger} BEFORE INSERT ON _migrations
+       WHEN NEW.name = '${file}'
+       BEGIN SELECT RAISE(ABORT, 'marker failure'); END;`,
     );
+    return async () => {
+      await db.execRaw(`DROP TRIGGER IF EXISTS ${trigger}`);
+    };
   }
 
-  return Boolean(
-    await db.get<{ table_name: string }>(
-      sql`SELECT table_name
-          FROM information_schema.tables
-          WHERE table_schema = 'public' AND table_name = ${tableName}
-          LIMIT 1`,
-    ),
+  const fn = `migration_marker_fail_fn_${suffix}`;
+  await db.execRaw(
+    `CREATE FUNCTION ${fn}() RETURNS trigger LANGUAGE plpgsql AS $marker$
+     BEGIN
+       IF NEW.name = '${file}' THEN RAISE EXCEPTION 'marker failure'; END IF;
+       RETURN NEW;
+     END;
+     $marker$;
+     CREATE TRIGGER ${trigger} BEFORE INSERT ON _migrations
+       FOR EACH ROW EXECUTE FUNCTION ${fn}();`,
   );
+  return async () => {
+    await db.execRaw(`DROP TRIGGER IF EXISTS ${trigger} ON _migrations`);
+    await db.execRaw(`DROP FUNCTION IF EXISTS ${fn}()`);
+  };
 }
 
-async function cleanFixture(db: Db, fixture: Fixture): Promise<void> {
-  await db.execRaw(`DROP TABLE IF EXISTS ${fixture.tableName}`);
-  await db.execRaw(`DROP TABLE IF EXISTS ${fixture.auditTableName}`);
-  await db.run(sql`DELETE FROM _migrations WHERE name = ${fixture.filename}`);
+async function prepareBase(db: Db): Promise<void> {
+  await trackingTable(db);
+  await expect(migrate(db, rootFor(ACTIVE_DIALECT, [ACTIVE_FILES[0]!]))).resolves.toEqual([
+    ACTIVE_FILES[0],
+  ]);
 }
 
-function withForcedInitialProbeOverlap(db: Db, arrived: Deferred, release: Deferred): Db {
-  let firstProbe = true;
+async function assertCorpusRollback(file: string, index: number): Promise<void> {
+  const db = await createTestDb();
+  const prefix = ACTIVE_FILES.slice(0, index);
+  const root = rootFor(ACTIVE_DIALECT, ACTIVE_FILES.slice(0, index + 1));
+  const suffix = randomUUID().replaceAll('-', '').slice(0, 16);
+
+  try {
+    await trackingTable(db);
+    if (prefix.length > 0) {
+      await expect(migrate(db, rootFor(ACTIVE_DIALECT, prefix))).resolves.toEqual(prefix);
+    }
+    const before = await state(db);
+    const removeFailure = await installMarkerFailure(db, file, suffix);
+    try {
+      await expect(migrate(db, root)).rejects.toThrow('marker failure');
+    } finally {
+      await removeFailure();
+    }
+    expect(await state(db)).toEqual(before);
+    await expect(migrate(db, root)).resolves.toEqual([file]);
+  } finally {
+    await db.close();
+  }
+}
+
+function withInitialBarrier(db: Db, arrived: Promise<void>, release: Promise<void>): Db {
+  let first = true;
   return {
     ...db,
     get: async <T>(query) => {
-      const row = await db.get<T>(query);
-      if (firstProbe) {
-        firstProbe = false;
-        arrived.resolve();
-        await release.promise;
+      const result = await db.get<T>(query);
+      if (first) {
+        first = false;
+        await arrived;
+        await release;
       }
-      return row;
+      return result;
     },
   };
 }
 
-function isSqliteBusyOrLocked(error: unknown): boolean {
-  if (typeof error !== 'object' || error === null || !('code' in error)) return false;
-  const code = (error as { code?: unknown }).code;
-  return typeof code === 'string' && (code.startsWith('SQLITE_BUSY') || code.startsWith('SQLITE_LOCKED'));
-}
-
-afterAll(() => {
-  rmSync(TEST_ARTIFACT_ROOT, { recursive: true, force: true });
+beforeAll(async () => {
+  if (ACTIVE_DIALECT !== 'postgres') return;
+  const base = new URL(DATABASE_URL!);
+  const admin = new URL(base);
+  admin.pathname = '/postgres';
+  const name = `migration_atomicity_${process.pid}_${randomUUID().replaceAll('-', '').slice(0, 20)}`;
+  const client = postgres(admin.toString(), { max: 1 });
+  try {
+    await client.unsafe(`DROP DATABASE IF EXISTS ${quoteIdentifier(name)}`);
+    await client.unsafe(`CREATE DATABASE ${quoteIdentifier(name)}`);
+  } finally {
+    await client.end({ timeout: 5 });
+  }
+  base.pathname = `/${name}`;
+  scratch = { name, url: base.toString(), adminUrl: admin.toString() };
 });
 
-describe('migrate concurrency and recovery', () => {
-  it('forces concurrent callers past the first probe and applies each file once', async () => {
-    const primary = await openDatabase();
-    const peer = await openDatabase(primary.databaseUrl);
-    const fixture = createFixture(primary.db.dialect);
-    const primaryArrived = createDeferred();
-    const peerArrived = createDeferred();
-    const release = createDeferred();
-    writeMigration(fixture, `CREATE TABLE ${fixture.tableName} (id INTEGER PRIMARY KEY);`);
-
-    try {
-      const primaryMigration = migrate(
-        withForcedInitialProbeOverlap(primary.db, primaryArrived, release),
-        fixture.root,
-      );
-      const peerMigration = migrate(
-        withForcedInitialProbeOverlap(peer.db, peerArrived, release),
-        fixture.root,
-      );
-      await Promise.all([primaryArrived.promise, peerArrived.promise]);
-      release.resolve();
-      const applied = await Promise.all([primaryMigration, peerMigration]);
-
-      expect(applied.flat()).toEqual([fixture.filename]);
-      expect(await hasMigration(primary.db, fixture.filename)).toBe(true);
-      expect(await hasTable(primary.db, fixture.tableName)).toBe(true);
-    } finally {
-      release.resolve();
-      await peer.db.close();
-      await cleanFixture(primary.db, fixture);
-      await primary.db.close();
-    }
-  });
-
-  it('retries SQLite BUSY until a peer applies the file', async () => {
-    const primary = await openDatabase();
-    if (primary.db.dialect !== 'sqlite') {
-      await primary.db.close();
-      return;
-    }
-
-    const peer = await openDatabase(primary.databaseUrl);
-    const fixture = createFixture(primary.db.dialect);
-    const primaryNative = primary.db.sqlite!;
-    const peerNative = peer.db.sqlite!;
-    const originalTxn = primaryNative.txn;
-    const primaryArrived = createDeferred();
-    const release = createDeferred();
-    let busyAttempts = 0;
-    let peerTransactionOpen = false;
-    primaryNative.txn = <T>(fn: () => T): T => {
+afterAll(async () => {
+  try {
+    if (scratch) {
+      const admin = postgres(scratch.adminUrl, { max: 1 });
       try {
-        return originalTxn(fn);
-      } catch (error) {
-        if (isSqliteBusyOrLocked(error)) busyAttempts++;
-        throw error;
+        await admin.unsafe(`DROP DATABASE IF EXISTS ${quoteIdentifier(scratch.name)}`);
+      } finally {
+        await admin.end({ timeout: 5 });
       }
-    };
-    primaryNative.exec('PRAGMA busy_timeout = 0');
-    writeMigration(fixture, `CREATE TABLE ${fixture.tableName} (id INTEGER PRIMARY KEY);`);
+    }
+  } finally {
+    rmSync(TEST_ROOT, { recursive: true, force: true });
+  }
+});
+
+describe('migration atomicity', () => {
+  it('discovers non-empty sorted shipped migration directories', () => {
+    for (const dialect of DIALECTS) {
+      const files = filesFor(dialect);
+      expect(files).toEqual([...files].sort());
+      expect(files.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('rolls back a SQLite mid-script failure', async () => {
+    if (ACTIVE_DIALECT !== 'sqlite') return;
+    const db = await createTestDb();
+    const file = '9000_mid_script.sql';
+    const table = 'mid_script_table';
+    const root = customRoot(
+      'sqlite',
+      file,
+      `CREATE TABLE ${table} (id INTEGER PRIMARY KEY);
+       INSERT INTO ${table} (id) VALUES (1);
+       INSERT INTO ${table} (id) VALUES (1);`,
+    );
 
     try {
-      const primaryMigration = migrate(
-        withForcedInitialProbeOverlap(primary.db, primaryArrived, release),
-        fixture.root,
+      await trackingTable(db);
+      const before = await state(db);
+      await expect(migrate(db, root)).rejects.toThrow();
+      expect(await state(db)).toEqual(before);
+    } finally {
+      await db.close();
+    }
+  });
+
+  it('rolls back a failed marker insert', async () => {
+    const db = await createTestDb();
+    const file = '9001_marker_failure.sql';
+    const table = 'marker_failure_table';
+    const root = customRoot(ACTIVE_DIALECT, file, `CREATE TABLE ${table} (id INTEGER PRIMARY KEY);`);
+
+    try {
+      await trackingTable(db);
+      const before = await state(db);
+      const removeFailure = await installMarkerFailure(db, file, 'marker_failure');
+      try {
+        await expect(migrate(db, root)).rejects.toThrow('marker failure');
+      } finally {
+        await removeFailure();
+      }
+      expect(await state(db)).toEqual(before);
+    } finally {
+      await db.close();
+    }
+  });
+
+  it('rolls back a PostgreSQL script when its marker fails', async () => {
+    if (ACTIVE_DIALECT !== 'postgres') return;
+    const db = await createTestDb();
+    const file = '9002_pg_marker_failure.sql';
+    const root = customRoot('postgres', file, `CREATE TABLE pg_marker_failure (id INTEGER PRIMARY KEY);`);
+
+    try {
+      await trackingTable(db);
+      const before = await state(db);
+      const removeFailure = await installMarkerFailure(db, file, 'pg_marker_failure');
+      try {
+        await expect(migrate(db, root)).rejects.toThrow('marker failure');
+      } finally {
+        await removeFailure();
+      }
+      expect(await state(db)).toEqual(before);
+    } finally {
+      await db.close();
+    }
+  });
+
+  for (const [index, file] of ACTIVE_FILES.entries()) {
+    it(`rolls back shipped migration ${file} with its marker`, async () => {
+      await assertCorpusRollback(file, index);
+    });
+  }
+
+  it('applies a concurrent migration exactly once', async () => {
+    const databaseUrl =
+      ACTIVE_DIALECT === 'sqlite'
+        ? `file:${join(TEST_ROOT, `${randomUUID()}.db`)}`
+        : scratch!.url;
+    const primary = await createDb(databaseUrl);
+    const peer = await createDb(databaseUrl);
+    const file = '9003_concurrent.sql';
+    const table = 'concurrent_probe';
+    const root = customRoot(
+      ACTIVE_DIALECT,
+      file,
+      `INSERT INTO ${table} (id) VALUES (1) ON CONFLICT DO NOTHING;`,
+    );
+    let release!: () => void;
+    const releasePromise = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let primaryReady!: () => void;
+    let peerReady!: () => void;
+    const primaryReadyPromise = new Promise<void>((resolve) => {
+      primaryReady = resolve;
+    });
+    const peerReadyPromise = new Promise<void>((resolve) => {
+      peerReady = resolve;
+    });
+
+    try {
+      if (ACTIVE_DIALECT === 'postgres') {
+        await primary.execRaw(`DROP SCHEMA public CASCADE; CREATE SCHEMA public`);
+      }
+      await prepareBase(primary);
+      await primary.execRaw(`CREATE TABLE ${table} (id INTEGER PRIMARY KEY)`);
+      const first = withInitialBarrier(primary, primaryReadyPromise, releasePromise);
+      const second = withInitialBarrier(peer, peerReadyPromise, releasePromise);
+      const primaryMigration = migrate(first, root);
+      primaryReady();
+      const peerMigration = migrate(second, root);
+      peerReady();
+      await Promise.all([primaryReadyPromise, peerReadyPromise]);
+      release();
+      const applied = await Promise.all([primaryMigration, peerMigration]);
+      expect(applied.flat()).toEqual([file]);
+      const rows = await primary.get<{ count: number | string }>(
+        sql.raw(`SELECT COUNT(*) AS count FROM ${table}`),
       );
-      await primaryArrived.promise;
+      expect(Number(rows?.count)).toBe(1);
+      expect(await primary.get<{ name: string }>(sql`SELECT name FROM _migrations WHERE name = ${file}`)).toBeTruthy();
+    } finally {
+      release?.();
+      await peer.close();
+      await primary.close();
+    }
+  });
 
-      peerNative.exec('BEGIN IMMEDIATE');
-      peerTransactionOpen = true;
-      const peerMigration = (async () => {
-        try {
-          const applied = await migrate(peer.db, fixture.root);
-          await pause(30);
-          peerNative.exec('COMMIT');
-          peerTransactionOpen = false;
-          return applied;
-        } catch (error) {
-          if (peerTransactionOpen) {
-            peerNative.exec('ROLLBACK');
-            peerTransactionOpen = false;
+  it('retries SQLite busy contention introduced by the wrapper', async () => {
+    if (ACTIVE_DIALECT !== 'sqlite') return;
+    const url = `file:${join(TEST_ROOT, `${randomUUID()}.db`)}`;
+    const primary = await createDb(url);
+    const peer = await createDb(url);
+    const file = '9004_busy_retry.sql';
+    const root = customRoot(
+      'sqlite',
+      file,
+      `INSERT INTO busy_retry_probe (id) VALUES (1) ON CONFLICT DO NOTHING;`,
+    );
+    let ready!: () => void;
+    let release!: () => void;
+    const readyPromise = new Promise<void>((resolve) => {
+      ready = resolve;
+    });
+    const releasePromise = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let firstProbe = true;
+
+    try {
+      await prepareBase(primary);
+      await primary.execRaw(`CREATE TABLE busy_retry_probe (id INTEGER PRIMARY KEY)`);
+      primary.sqlite!.exec('PRAGMA busy_timeout = 0');
+      const gatedPrimary: Db = {
+        ...primary,
+        get: async <T>(query) => {
+          const result = await primary.get<T>(query);
+          if (firstProbe) {
+            firstProbe = false;
+            ready();
+            await releasePromise;
           }
-          throw error;
-        }
+          return result;
+        },
+      };
+      const primaryApply = migrate(gatedPrimary, root);
+      await readyPromise;
+      peer.sqlite!.exec('BEGIN IMMEDIATE');
+      const peerApply = (async () => {
+        const applied = await migrate(peer, root);
+        await new Promise((resolve) => setTimeout(resolve, 30));
+        peer.sqlite!.exec('COMMIT');
+        return applied;
       })();
-
-      release.resolve();
-      const outcomes = await Promise.allSettled([primaryMigration, peerMigration]);
-      expect(outcomes.map((outcome) => outcome.status)).toEqual(['fulfilled', 'fulfilled']);
-      expect(busyAttempts).toBeGreaterThan(0);
-      expect(
-        outcomes.flatMap((outcome) => (outcome.status === 'fulfilled' ? outcome.value : [])),
-      ).toEqual([fixture.filename]);
+      release();
+      const applied = await primaryApply;
+      const peerResult = await peerApply;
+      expect([...applied, ...peerResult]).toEqual([file]);
     } finally {
-      release.resolve();
-      primaryNative.txn = originalTxn;
-      if (peerTransactionOpen) peerNative.exec('ROLLBACK');
-      await peer.db.close();
-      await cleanFixture(primary.db, fixture);
-      await primary.db.close();
+      release?.();
+      await peer.close();
+      await primary.close();
     }
   });
 
-  it('retries a recognized SQLite LOCKED error', async () => {
-    const { db } = await openDatabase();
+  it('fails the rollback oracle without the native wrapper', async () => {
+    const db = await createTestDb();
     if (db.dialect !== 'sqlite') {
       await db.close();
       return;
     }
+    const table = 'wrong_wrapper_probe';
 
-    const fixture = createFixture(db.dialect);
-    const native = db.sqlite!;
-    const originalTxn = native.txn;
-    let attempts = 0;
-    native.txn = <T>(fn: () => T): T => {
-      attempts++;
-      if (attempts === 1) {
-        throw Object.assign(new Error('database table is locked'), { code: 'SQLITE_LOCKED' });
+    try {
+      await trackingTable(db);
+      const before = await state(db);
+      let failed = false;
+      try {
+        await db.execRaw(
+          `CREATE TABLE ${table} (id INTEGER PRIMARY KEY);
+           INSERT INTO ${table} (id) VALUES (1);
+           INSERT INTO ${table} (id) VALUES (1);`,
+        );
+      } catch {
+        failed = true;
       }
-      return originalTxn(fn);
-    };
-    writeMigration(fixture, `CREATE TABLE ${fixture.tableName} (id INTEGER PRIMARY KEY);`);
-
-    try {
-      await expect(migrate(db, fixture.root)).resolves.toEqual([fixture.filename]);
-      expect(attempts).toBe(2);
-      expect(await hasTable(db, fixture.tableName)).toBe(true);
+      expect(failed).toBe(true);
+      expect(await state(db)).not.toEqual(before);
     } finally {
-      native.txn = originalTxn;
-      await cleanFixture(db, fixture);
-      await db.close();
-    }
-  });
-
-  it('propagates a script error without probing for a marker that appears later', async () => {
-    const { db } = await openDatabase();
-    const fixture = createFixture(db.dialect);
-    await db.execRaw(
-      `CREATE TABLE ${fixture.auditTableName} (id INTEGER PRIMARY KEY);
-       INSERT INTO ${fixture.auditTableName} (id) VALUES (1);`,
-    );
-    writeMigration(
-      fixture,
-      `CREATE TABLE ${fixture.tableName} (id INTEGER PRIMARY KEY);
-       INSERT INTO ${fixture.auditTableName} (id) VALUES (1);`,
-    );
-    let probeCount = 0;
-    const delayedMarkerDb: Db = {
-      ...db,
-      get: async <T>(query) => {
-        probeCount++;
-        if (probeCount === 3) {
-          await db.run(
-            sql`INSERT INTO _migrations (name, applied_at) VALUES (${fixture.filename}, ${Date.now()})`,
-          );
-        }
-        return db.get<T>(query);
-      },
-    };
-
-    try {
-      await expect(migrate(delayedMarkerDb, fixture.root)).rejects.toThrow();
-      expect(probeCount).toBe(2);
-      expect(await hasMigration(db, fixture.filename)).toBe(false);
-      expect(await hasTable(db, fixture.tableName)).toBe(false);
-    } finally {
-      await cleanFixture(db, fixture);
-      await db.close();
-    }
-  });
-
-  it('resolves only an exact marker unique conflict after a peer has applied the file', async () => {
-    const { db } = await openDatabase();
-    if (db.dialect !== 'sqlite') {
-      await db.close();
-      return;
-    }
-
-    const fixture = createFixture(db.dialect);
-    await db.run(
-      sql`INSERT INTO _migrations (name, applied_at) VALUES (${fixture.filename}, ${Date.now()})`,
-    );
-    writeMigration(fixture, `CREATE TABLE ${fixture.tableName} (id INTEGER PRIMARY KEY);`);
-    const native = db.sqlite!;
-    let hideOuterProbe = true;
-    let hideInnerProbe = true;
-    const hiddenMarkerDrizzle = new Proxy(native.drizzle, {
-      get(target, property) {
-        if (property === 'get') {
-          return <T>(query: Parameters<typeof target.get>[0]): T | undefined => {
-            if (hideInnerProbe) {
-              hideInnerProbe = false;
-              return undefined;
-            }
-            return target.get(query) as T | undefined;
-          };
-        }
-        const value = Reflect.get(target, property, target);
-        return typeof value === 'function' ? value.bind(target) : value;
-      },
-    }) as typeof native.drizzle;
-    const peerAppliedDb: Db = {
-      ...db,
-      get: async <T>(query) => {
-        if (hideOuterProbe) {
-          hideOuterProbe = false;
-          return undefined;
-        }
-        return db.get<T>(query);
-      },
-      sqlite: { ...native, drizzle: hiddenMarkerDrizzle },
-    };
-
-    try {
-      await expect(migrate(peerAppliedDb, fixture.root)).resolves.toEqual([]);
-      expect(await hasMigration(db, fixture.filename)).toBe(true);
-      expect(await hasTable(db, fixture.tableName)).toBe(false);
-    } finally {
-      await cleanFixture(db, fixture);
       await db.close();
     }
   });
