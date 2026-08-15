@@ -14,7 +14,7 @@
  *   7. connect/disconnect require an admin/owner (a plain member is refused 403).
  */
 import { describe, it, expect, expectTypeOf, beforeEach, afterEach, vi } from 'vitest';
-import { BadRequestException, ForbiddenException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Logger } from '@nestjs/common';
 import {
   createDb,
   migrate,
@@ -32,7 +32,7 @@ import {
   type Db,
   type ProviderCredentialRevision,
 } from '@quill/db';
-import type { ServerEnv } from '@quill/config/env';
+import { loadServerEnv, type ServerEnv } from '@quill/config/env';
 import {
   AccountMetadataCache,
   CalendlyEventTypesService,
@@ -96,6 +96,7 @@ function makeEnv(overrides: Partial<ServerEnv> = {}): ServerEnv {
     NODE_ENV: 'test',
     FORMS_ENCRYPTION_KEY: ENCRYPTION_KEY,
     HUBSPOT_PRIVATE_APP_TOKEN: undefined,
+    INTEGRATION_CREDENTIAL_WRITERS: 'generation-only',
     ...overrides,
   } as unknown as ServerEnv;
 }
@@ -113,9 +114,16 @@ function createController(
     ONBOARDING_WIZARD: false,
   });
   const auth = new AuthService(db, provider);
-  const hubspot = new HubspotPropertiesService(env, db, fetchImpl);
-  const calendly = new CalendlyEventTypesService(env, db, fetchImpl);
-  const instance = new IntegrationsController(auth, hubspot, calendly, db, env);
+  const hubspot = new HubspotPropertiesService(env, db, env.INTEGRATION_CREDENTIAL_WRITERS, fetchImpl);
+  const calendly = new CalendlyEventTypesService(env, db, env.INTEGRATION_CREDENTIAL_WRITERS, fetchImpl);
+  const instance = new IntegrationsController(
+    auth,
+    hubspot,
+    calendly,
+    db,
+    env,
+    env.INTEGRATION_CREDENTIAL_WRITERS,
+  );
   instance.fetchImpl = fetchImpl;
   return { controller: instance, hubspot, calendly };
 }
@@ -152,7 +160,7 @@ afterEach(async () => {
 
 describe('AccountMetadataCache', () => {
   it('accepts only metadata and opaque revisions at its write boundary', async () => {
-    const cache = new AccountMetadataCache<HubSpotPropertyDto[]>();
+    const cache = new AccountMetadataCache<HubSpotPropertyDto[]>('generation-only');
     const credential = await resolveProviderToken(
       db,
       await accountId(),
@@ -166,6 +174,12 @@ describe('AccountMetadataCache', () => {
     expectTypeOf(cache.setIfCurrent).parameter(3).toEqualTypeOf<HubSpotPropertyDto[]>();
     type Assert<T extends true> = T;
     type _RawCredentialCannotBeRevision = Assert<string extends ProviderCredentialRevision ? false : true>;
+    type StoredRevisionKeys = keyof Extract<ProviderCredentialRevision, { kind: 'stored' }>;
+    type _NoTokenRevisionKey = Assert<'token' extends StoredRevisionKeys ? false : true>;
+    type _NoHashRevisionKey = Assert<'hash' extends StoredRevisionKeys ? false : true>;
+    type _NoMetaRevisionKey = Assert<'meta' extends StoredRevisionKeys ? false : true>;
+    type _NoLast4RevisionKey = Assert<'last4' extends StoredRevisionKeys ? false : true>;
+    type _NoUpdatedAtRevisionKey = Assert<'updatedAt' extends StoredRevisionKeys ? false : true>;
     // @ts-expect-error Cache data must be provider metadata, never raw credential strings.
     type _RawTokenCache = AccountMetadataCache<string[]>;
     const first = [{ name: 'first_property', label: 'First property', type: 'string' }];
@@ -182,6 +196,79 @@ describe('AccountMetadataCache', () => {
     expect(cache.get('first-account', credential.revision, 1_001)).toBeUndefined();
     expect(cache.get('second-account', credential.revision, 1_001)).toEqual(second);
     expect(cache.get('stale-account', current.revision, 1_001)).toBeUndefined();
+  });
+});
+
+describe('integration credential writer configuration', () => {
+  it('defaults to mixed and rejects invalid values', () => {
+    expect(loadServerEnv({}).INTEGRATION_CREDENTIAL_WRITERS).toBe('mixed');
+    expect(() => loadServerEnv({ INTEGRATION_CREDENTIAL_WRITERS: 'unsafe' })).toThrow(
+      'INTEGRATION_CREDENTIAL_WRITERS',
+    );
+  });
+
+  it('logs mixed once and skips the migration probe', async () => {
+    const probe = vi.fn(async () => undefined);
+    const missingDb = { dialect: 'sqlite', get: probe } as unknown as Db;
+    const env = makeEnv({ INTEGRATION_CREDENTIAL_WRITERS: 'mixed' });
+    const provider = new LocalAuthProvider(db, {
+      NODE_ENV: 'test',
+      DEV_LOGIN_EMAIL: undefined,
+      AUTH_LOCAL_STRICT: undefined,
+      SEED_DEMO_FORM: false,
+      ONBOARDING_WIZARD: false,
+    });
+    const auth = new AuthService(db, provider);
+    const controllerForBoot = new IntegrationsController(
+      auth,
+      new HubspotPropertiesService(env, missingDb, 'mixed', noopFetch),
+      new CalendlyEventTypesService(env, missingDb, 'mixed', noopFetch),
+      missingDb,
+      env,
+      'mixed',
+    );
+    const log = vi.spyOn(Logger.prototype, 'log');
+
+    await expect(controllerForBoot.onModuleInit()).resolves.toBeUndefined();
+    expect(probe).not.toHaveBeenCalled();
+    expect(log).toHaveBeenCalledWith('integration credential writers=mixed');
+  });
+
+  it('refuses generation-only before migration 0015 is available', async () => {
+    const missingDb = {
+      dialect: 'sqlite',
+      get: async () => undefined,
+    } as unknown as Db;
+    const env = makeEnv({ INTEGRATION_CREDENTIAL_WRITERS: 'generation-only' });
+    const provider = new LocalAuthProvider(db, {
+      NODE_ENV: 'test',
+      DEV_LOGIN_EMAIL: undefined,
+      AUTH_LOCAL_STRICT: undefined,
+      SEED_DEMO_FORM: false,
+      ONBOARDING_WIZARD: false,
+    });
+    const auth = new AuthService(db, provider);
+    const controllerForBoot = new IntegrationsController(
+      auth,
+      new HubspotPropertiesService(env, missingDb, 'generation-only', noopFetch),
+      new CalendlyEventTypesService(env, missingDb, 'generation-only', noopFetch),
+      missingDb,
+      env,
+      'generation-only',
+    );
+
+    await expect(controllerForBoot.onModuleInit()).rejects.toThrow(
+      'INTEGRATION_CREDENTIAL_WRITERS=generation-only requires migration 0015',
+    );
+  });
+
+  it('probes migration 0015 and logs generation-only at startup', async () => {
+    const env = makeEnv({ INTEGRATION_CREDENTIAL_WRITERS: 'generation-only' });
+    const built = createController(env, noopFetch);
+    const log = vi.spyOn(Logger.prototype, 'log');
+
+    await expect(built.controller.onModuleInit()).resolves.toBeUndefined();
+    expect(log).toHaveBeenCalledWith('integration credential writers=generation-only');
   });
 });
 
@@ -358,7 +445,10 @@ describe('HubSpot property picker token resolution', () => {
   it('uses the CONNECTED account token, not the env fallback', async () => {
     const calls: RecordedCall[] = [];
     build(
-      makeEnv({ HUBSPOT_PRIVATE_APP_TOKEN: 'env-fallback-token' }),
+      makeEnv({
+        HUBSPOT_PRIVATE_APP_TOKEN: 'env-fallback-token',
+        INTEGRATION_CREDENTIAL_WRITERS: 'mixed',
+      }),
       recordingFetch(calls, {
         [HUBSPOT_PROPERTIES_URL]: () =>
           jsonResponse({ results: [{ name: 'email', label: 'Email', type: 'string' }] }),
@@ -530,7 +620,7 @@ describe('HubSpot property picker token resolution', () => {
       return jsonResponse({ results: [] });
     }) as unknown as typeof fetch;
     const { hubspot: serviceB } = build(makeEnv(), fetchB);
-    const serviceA = new HubspotPropertiesService(makeEnv(), db, fetchA);
+    const serviceA = new HubspotPropertiesService(makeEnv(), db, 'generation-only', fetchA);
     const id = await accountId();
 
     await controller.connect(asOwner(), 'hubspot', { token: initialToken });
@@ -598,7 +688,7 @@ describe('HubSpot property picker token resolution', () => {
       return writerBResponse.promise;
     }) as unknown as typeof fetch;
     const cacheWrite = vi.spyOn(AccountMetadataCache.prototype, 'setIfCurrent');
-    const reader = new HubspotPropertiesService(makeEnv(), db, readerFetch);
+    const reader = new HubspotPropertiesService(makeEnv(), db, 'generation-only', readerFetch);
     const controllerA = createController(makeEnv(), writerAFetch).controller;
     const controllerB = createController(makeEnv(), writerBFetch).controller;
     const id = await accountId();
@@ -631,6 +721,110 @@ describe('HubSpot property picker token resolution', () => {
     expect(writerBAuthorizations).toEqual([`Bearer ${writerBToken}`]);
   });
 
+  it('does not cache held HubSpot metadata through equal-time old-writer updates in mixed mode', async () => {
+    const r0Token = 'r0';
+    const oldWriterAToken = 'old-a';
+    const oldWriterBToken = 'old-b';
+    const r0FetchStarted = deferred<void>();
+    const r0Fetch = deferred<Response>();
+    const authorizations: string[] = [];
+    const fetchImpl = (async (url: string, init?: RequestInit) => {
+      const authorization = (init?.headers as Record<string, string> | undefined)?.authorization;
+      if (url !== HUBSPOT_PROPERTIES_URL) throw new Error('unexpected HubSpot URL');
+      authorizations.push(authorization ?? '');
+      if (authorization === `Bearer ${r0Token}`) {
+        r0FetchStarted.resolve();
+        return r0Fetch.promise;
+      }
+      if (authorization === `Bearer ${oldWriterBToken}`) {
+        return jsonResponse({ results: [{ name: 'writer_b', label: 'Writer B', type: 'string' }] });
+      }
+      throw new Error('unexpected HubSpot authorization');
+    }) as unknown as typeof fetch;
+    const cacheWrite = vi.spyOn(AccountMetadataCache.prototype, 'setIfCurrent');
+    const reader = new HubspotPropertiesService(makeEnv({ INTEGRATION_CREDENTIAL_WRITERS: 'mixed' }), db, 'mixed', fetchImpl);
+    const id = await accountId();
+
+    await upsertIntegration(db, id, 'hubspot', r0Token, ENCRYPTION_KEY);
+    const before = await getIntegration(db, id, 'hubspot');
+    const pending = reader.listProperties(id, 1_000);
+    await r0FetchStarted.promise;
+    const oldWriterUpdatedAt = before!.updatedAt + 1;
+    for (const token of [oldWriterAToken, oldWriterBToken]) {
+      await db.run(
+        sql`UPDATE account_integration
+            SET encrypted_token = ${encryptToken(token, ENCRYPTION_KEY)},
+                meta = ${jsonParam({ last4: token.slice(-4) })},
+                updated_at = ${oldWriterUpdatedAt}
+            WHERE account_id = ${id} AND provider = ${'hubspot'}`,
+      );
+    }
+    r0Fetch.resolve(jsonResponse({ results: [{ name: 'r0', label: 'R0', type: 'string' }] }));
+
+    const stale = await pending;
+    const current = await reader.listProperties(id, 1_001);
+    const after = await getIntegration(db, id, 'hubspot');
+    const winner = await resolveProviderToken(db, id, 'hubspot', ENCRYPTION_KEY, undefined);
+
+    expect(stale).toMatchObject({ enabled: true, cached: false, properties: [{ name: 'r0' }] });
+    expect(current).toMatchObject({ enabled: true, cached: false, properties: [{ name: 'writer_b' }] });
+    expect(cacheWrite).toHaveReturnedWith(false);
+    expect(after!.credentialGeneration).toBe(before!.credentialGeneration);
+    expect(after!.updatedAt).toBe(oldWriterUpdatedAt);
+    expect(winner).toMatchObject({ token: oldWriterBToken });
+    expect(authorizations).toEqual([`Bearer ${r0Token}`, `Bearer ${oldWriterBToken}`]);
+  });
+
+  it('safety counterfactual: generation-only stale-serves held HubSpot R0 after equal-time old writers', async () => {
+    const r0Token = 'r0';
+    const oldWriterAToken = 'old-a';
+    const oldWriterBToken = 'old-b';
+    const r0FetchStarted = deferred<void>();
+    const r0Fetch = deferred<Response>();
+    const authorizations: string[] = [];
+    const fetchImpl = (async (url: string, init?: RequestInit) => {
+      const authorization = (init?.headers as Record<string, string> | undefined)?.authorization;
+      if (url !== HUBSPOT_PROPERTIES_URL || authorization !== `Bearer ${r0Token}`) {
+        throw new Error('unexpected HubSpot request');
+      }
+      authorizations.push(authorization);
+      r0FetchStarted.resolve();
+      return r0Fetch.promise;
+    }) as unknown as typeof fetch;
+    const cacheWrite = vi.spyOn(AccountMetadataCache.prototype, 'setIfCurrent');
+    const reader = new HubspotPropertiesService(
+      makeEnv({ INTEGRATION_CREDENTIAL_WRITERS: 'generation-only' }),
+      db,
+      'generation-only',
+      fetchImpl,
+    );
+    const id = await accountId();
+
+    await upsertIntegration(db, id, 'hubspot', r0Token, ENCRYPTION_KEY);
+    const before = await getIntegration(db, id, 'hubspot');
+    const pending = reader.listProperties(id, 1_000);
+    await r0FetchStarted.promise;
+    const oldWriterUpdatedAt = before!.updatedAt + 1;
+    for (const token of [oldWriterAToken, oldWriterBToken]) {
+      await db.run(
+        sql`UPDATE account_integration
+            SET encrypted_token = ${encryptToken(token, ENCRYPTION_KEY)},
+                meta = ${jsonParam({ last4: token.slice(-4) })},
+                updated_at = ${oldWriterUpdatedAt}
+            WHERE account_id = ${id} AND provider = ${'hubspot'}`,
+      );
+    }
+    r0Fetch.resolve(jsonResponse({ results: [{ name: 'r0', label: 'R0', type: 'string' }] }));
+
+    const stale = await pending;
+    const later = await reader.listProperties(id, 1_001);
+
+    expect(stale).toMatchObject({ enabled: true, cached: false, properties: [{ name: 'r0' }] });
+    expect(later).toMatchObject({ enabled: true, cached: true, properties: [{ name: 'r0' }] });
+    expect(cacheWrite).toHaveReturnedWith(true);
+    expect(authorizations).toEqual([`Bearer ${r0Token}`]);
+  });
+
   it('misses cached HubSpot metadata after a peer advances generation N to N+1', async () => {
     const initialToken = 'first';
     const nextToken = 'second';
@@ -656,7 +850,7 @@ describe('HubSpot property picker token resolution', () => {
       peerAuthorizations.push(authorization);
       return jsonResponse({ results: [] });
     }) as unknown as typeof fetch;
-    const reader = new HubspotPropertiesService(makeEnv(), db, readerFetch);
+    const reader = new HubspotPropertiesService(makeEnv(), db, 'generation-only', readerFetch);
     const peer = createController(makeEnv(), peerFetch);
     const id = await accountId();
 
@@ -713,7 +907,7 @@ describe('HubSpot property picker token resolution', () => {
       return jsonResponse({ results: [] });
     }) as unknown as typeof fetch;
     const env = makeEnv({ HUBSPOT_PRIVATE_APP_TOKEN: fallbackToken });
-    const reader = new HubspotPropertiesService(env, db, readerFetch);
+    const reader = new HubspotPropertiesService(env, db, env.INTEGRATION_CREDENTIAL_WRITERS, readerFetch);
     const peer = createController(env, peerFetch);
     const id = await accountId();
 
@@ -741,43 +935,67 @@ describe('HubSpot property picker token resolution', () => {
     expect(peerAuthorizations).toEqual([`Bearer ${reconnectToken}`]);
   });
 
-  it('treats an old-writer updatedAt change as a HubSpot cache revision change', async () => {
-    const initialToken = 'hubspot-old-writer-initial-0001';
-    const replacementToken = 'hubspot-old-writer-replacement-0002';
-    const authorizations: string[] = [];
-    const fetchImpl = (async (url: string, init?: RequestInit) => {
-      const authorization = (init?.headers as Record<string, string> | undefined)?.authorization;
-      if (url !== HUBSPOT_PROPERTIES_URL) throw new Error('unexpected HubSpot URL');
-      authorizations.push(authorization ?? '');
-      const name =
-        authorization === `Bearer ${initialToken}`
-          ? 'initial'
-          : authorization === `Bearer ${replacementToken}`
-            ? 'replacement'
-            : null;
-      if (!name) throw new Error('unexpected HubSpot authorization');
-      return jsonResponse({ results: [{ name, label: name, type: 'string' }] });
-    }) as unknown as typeof fetch;
-    const reader = new HubspotPropertiesService(makeEnv(), db, fetchImpl);
+  it('keeps mixed safe and labels generation-only old-writer stale serving as a safety counterfactual', async () => {
+    const initialToken = 'old-a';
+    const replacementToken = 'old-b';
+    const fetchFor = (authorizations: string[]): typeof fetch =>
+      (async (url: string, init?: RequestInit) => {
+        const authorization = (init?.headers as Record<string, string> | undefined)?.authorization;
+        if (url !== HUBSPOT_PROPERTIES_URL) throw new Error('unexpected HubSpot URL');
+        authorizations.push(authorization ?? '');
+        const name =
+          authorization === `Bearer ${initialToken}`
+            ? 'initial'
+            : authorization === `Bearer ${replacementToken}`
+              ? 'replacement'
+              : null;
+        if (!name) throw new Error('unexpected HubSpot authorization');
+        return jsonResponse({ results: [{ name, label: name, type: 'string' }] });
+      }) as unknown as typeof fetch;
     const id = await accountId();
 
-    await upsertIntegration(db, id, 'hubspot', initialToken, ENCRYPTION_KEY);
-    const first = await reader.listProperties(id, 1_000);
-    const row = await getIntegration(db, id, 'hubspot');
-    await db.run(
-      sql`UPDATE account_integration
-          SET encrypted_token = ${encryptToken(replacementToken, ENCRYPTION_KEY)},
-              meta = ${jsonParam({ last4: '0002' })},
-              updated_at = ${row!.updatedAt + 1}
-          WHERE account_id = ${id} AND provider = ${'hubspot'}`,
-    );
-    const replacement = await reader.listProperties(id, 1_001);
-    const updated = await getIntegration(db, id, 'hubspot');
+    const oldWriterUpdate = async (): Promise<void> => {
+      const row = await getIntegration(db, id, 'hubspot');
+      await db.run(
+        sql`UPDATE account_integration
+            SET encrypted_token = ${encryptToken(replacementToken, ENCRYPTION_KEY)},
+                meta = ${jsonParam({ last4: 'ld-b' })},
+                updated_at = ${row!.updatedAt + 1}
+            WHERE account_id = ${id} AND provider = ${'hubspot'}`,
+      );
+    };
 
-    expect(first).toMatchObject({ enabled: true, cached: false, properties: [{ name: 'initial' }] });
-    expect(replacement).toMatchObject({ enabled: true, cached: false, properties: [{ name: 'replacement' }] });
-    expect(updated!.credentialGeneration).toBe(row!.credentialGeneration);
-    expect(authorizations).toEqual([`Bearer ${initialToken}`, `Bearer ${replacementToken}`]);
+    await upsertIntegration(db, id, 'hubspot', initialToken, ENCRYPTION_KEY);
+    const mixedAuthorizations: string[] = [];
+    const mixed = new HubspotPropertiesService(makeEnv({ INTEGRATION_CREDENTIAL_WRITERS: 'mixed' }), db, 'mixed', fetchFor(mixedAuthorizations));
+    const mixedFirst = await mixed.listProperties(id, 1_000);
+    const mixedBefore = await getIntegration(db, id, 'hubspot');
+    await oldWriterUpdate();
+    const mixedCurrent = await mixed.listProperties(id, 1_001);
+    const mixedAfter = await getIntegration(db, id, 'hubspot');
+
+    expect(mixedFirst).toMatchObject({ enabled: true, cached: false, properties: [{ name: 'initial' }] });
+    expect(mixedCurrent).toMatchObject({ enabled: true, cached: false, properties: [{ name: 'replacement' }] });
+    expect(mixedAfter!.credentialGeneration).toBe(mixedBefore!.credentialGeneration);
+    expect(mixedAuthorizations).toEqual([`Bearer ${initialToken}`, `Bearer ${replacementToken}`]);
+
+    await upsertIntegration(db, id, 'hubspot', initialToken, ENCRYPTION_KEY);
+    const generationOnlyAuthorizations: string[] = [];
+    const generationOnly = new HubspotPropertiesService(
+      makeEnv({ INTEGRATION_CREDENTIAL_WRITERS: 'generation-only' }),
+      db,
+      'generation-only',
+      fetchFor(generationOnlyAuthorizations),
+    );
+    const unsafeFirst = await generationOnly.listProperties(id, 1_002);
+    await oldWriterUpdate();
+    // Safety counterfactual only: an old writer while generation-only is live
+    // leaves its generation unchanged, so this intentionally stale-serves A.
+    const unsafeSecond = await generationOnly.listProperties(id, 1_003);
+
+    expect(unsafeFirst).toMatchObject({ enabled: true, cached: false, properties: [{ name: 'initial' }] });
+    expect(unsafeSecond).toMatchObject({ enabled: true, cached: true, properties: [{ name: 'initial' }] });
+    expect(generationOnlyAuthorizations).toEqual([`Bearer ${initialToken}`]);
   });
 
   it('invalidates cached metadata when the account switches to and from an env fallback', async () => {
@@ -934,6 +1152,46 @@ describe('Calendly event-type picker token resolution', () => {
     expect(res.enabled).toBe(false);
   });
 
+  it('caches Calendly env-fallback metadata in mixed mode', async () => {
+    const fallbackToken = 'fallback';
+    let requests = 0;
+    const fetchImpl = (async (url: string, init?: RequestInit) => {
+      const authorization = (init?.headers as Record<string, string> | undefined)?.authorization;
+      if (authorization !== `Bearer ${fallbackToken}`) throw new Error('unexpected Calendly authorization');
+      requests += 1;
+      if (url === CALENDLY_ME_URL) {
+        return jsonResponse({ resource: { uri: 'https://api.calendly.com/users/fallback' } });
+      }
+      if (url.startsWith(CALENDLY_EVENT_TYPES_BASE)) {
+        return jsonResponse({
+          collection: [
+            {
+              uri: 'https://api.calendly.com/event_types/fallback',
+              name: 'fallback event',
+              scheduling_url: 'https://calendly.com/acme/fallback',
+            },
+          ],
+        });
+      }
+      throw new Error('unexpected Calendly URL');
+    }) as unknown as typeof fetch;
+    const { calendly } = build(
+      makeEnv({
+        CALENDLY_API_TOKEN: fallbackToken,
+        INTEGRATION_CREDENTIAL_WRITERS: 'mixed',
+      }),
+      fetchImpl,
+    );
+    const id = await accountId();
+
+    const first = await calendly.listEventTypes(id, 1_000);
+    const second = await calendly.listEventTypes(id, 1_001);
+
+    expect(first).toMatchObject({ enabled: true, cached: false, eventTypes: [{ name: 'fallback event' }] });
+    expect(second).toMatchObject({ enabled: true, cached: true, eventTypes: [{ name: 'fallback event' }] });
+    expect(requests).toBe(2);
+  });
+
   it('misses cached metadata when the connected token rotates within the five-minute TTL', async () => {
     const initialToken = 'calendly-cache-initial-0001';
     const rotatedToken = 'calendly-cache-rotated-0002';
@@ -1059,7 +1317,7 @@ describe('Calendly event-type picker token resolution', () => {
       return writerBResponse.promise;
     }) as unknown as typeof fetch;
     const cacheWrite = vi.spyOn(AccountMetadataCache.prototype, 'setIfCurrent');
-    const reader = new CalendlyEventTypesService(makeEnv(), db, readerFetch);
+    const reader = new CalendlyEventTypesService(makeEnv(), db, 'generation-only', readerFetch);
     const controllerA = createController(makeEnv(), writerAFetch).controller;
     const controllerB = createController(makeEnv(), writerBFetch).controller;
     const id = await accountId();
@@ -1095,6 +1353,157 @@ describe('Calendly event-type picker token resolution', () => {
     ]);
     expect(writerAAuthorizations).toEqual([`Bearer ${writerAToken}`]);
     expect(writerBAuthorizations).toEqual([`Bearer ${writerBToken}`]);
+  });
+
+  it('does not cache held Calendly metadata through equal-time old-writer updates in mixed mode', async () => {
+    const r0Token = 'r0';
+    const oldWriterAToken = 'old-a';
+    const oldWriterBToken = 'old-b';
+    const r0MeStarted = deferred<void>();
+    const r0Me = deferred<Response>();
+    const authorizations: string[] = [];
+    const fetchImpl = (async (url: string, init?: RequestInit) => {
+      const authorization = (init?.headers as Record<string, string> | undefined)?.authorization;
+      authorizations.push(authorization ?? '');
+      if (authorization === `Bearer ${r0Token}`) {
+        if (url === CALENDLY_ME_URL) {
+          r0MeStarted.resolve();
+          return r0Me.promise;
+        }
+        if (url.startsWith(CALENDLY_EVENT_TYPES_BASE)) {
+          return jsonResponse({
+            collection: [
+              {
+                uri: 'https://api.calendly.com/event_types/r0',
+                name: 'r0 event',
+                scheduling_url: 'https://calendly.com/acme/r0',
+              },
+            ],
+          });
+        }
+      }
+      if (authorization === `Bearer ${oldWriterBToken}`) {
+        if (url === CALENDLY_ME_URL) {
+          return jsonResponse({ resource: { uri: 'https://api.calendly.com/users/writer-b' } });
+        }
+        if (url.startsWith(CALENDLY_EVENT_TYPES_BASE)) {
+          return jsonResponse({
+            collection: [
+              {
+                uri: 'https://api.calendly.com/event_types/writer-b',
+                name: 'writer b event',
+                scheduling_url: 'https://calendly.com/acme/writer-b',
+              },
+            ],
+          });
+        }
+      }
+      throw new Error('unexpected Calendly request');
+    }) as unknown as typeof fetch;
+    const cacheWrite = vi.spyOn(AccountMetadataCache.prototype, 'setIfCurrent');
+    const reader = new CalendlyEventTypesService(
+      makeEnv({ INTEGRATION_CREDENTIAL_WRITERS: 'mixed' }),
+      db,
+      'mixed',
+      fetchImpl,
+    );
+    const id = await accountId();
+
+    await upsertIntegration(db, id, 'calendly', r0Token, ENCRYPTION_KEY);
+    const before = await getIntegration(db, id, 'calendly');
+    const pending = reader.listEventTypes(id, 1_000);
+    await r0MeStarted.promise;
+    const oldWriterUpdatedAt = before!.updatedAt + 1;
+    for (const token of [oldWriterAToken, oldWriterBToken]) {
+      await db.run(
+        sql`UPDATE account_integration
+            SET encrypted_token = ${encryptToken(token, ENCRYPTION_KEY)},
+                meta = ${jsonParam({ last4: token.slice(-4) })},
+                updated_at = ${oldWriterUpdatedAt}
+            WHERE account_id = ${id} AND provider = ${'calendly'}`,
+      );
+    }
+    r0Me.resolve(jsonResponse({ resource: { uri: 'https://api.calendly.com/users/r0' } }));
+
+    const stale = await pending;
+    const current = await reader.listEventTypes(id, 1_001);
+    const after = await getIntegration(db, id, 'calendly');
+    const winner = await resolveProviderToken(db, id, 'calendly', ENCRYPTION_KEY, undefined);
+
+    expect(stale).toMatchObject({ enabled: true, cached: false, eventTypes: [{ name: 'r0 event' }] });
+    expect(current).toMatchObject({ enabled: true, cached: false, eventTypes: [{ name: 'writer b event' }] });
+    expect(cacheWrite).toHaveReturnedWith(false);
+    expect(after!.credentialGeneration).toBe(before!.credentialGeneration);
+    expect(after!.updatedAt).toBe(oldWriterUpdatedAt);
+    expect(winner).toMatchObject({ token: oldWriterBToken });
+    expect(authorizations).toEqual([
+      `Bearer ${r0Token}`,
+      `Bearer ${r0Token}`,
+      `Bearer ${oldWriterBToken}`,
+      `Bearer ${oldWriterBToken}`,
+    ]);
+  });
+
+  it('safety counterfactual: generation-only stale-serves held Calendly R0 after equal-time old writers', async () => {
+    const r0Token = 'r0';
+    const oldWriterAToken = 'old-a';
+    const oldWriterBToken = 'old-b';
+    const r0MeStarted = deferred<void>();
+    const r0Me = deferred<Response>();
+    const authorizations: string[] = [];
+    const fetchImpl = (async (url: string, init?: RequestInit) => {
+      const authorization = (init?.headers as Record<string, string> | undefined)?.authorization;
+      if (authorization !== `Bearer ${r0Token}`) throw new Error('unexpected Calendly authorization');
+      authorizations.push(authorization);
+      if (url === CALENDLY_ME_URL) {
+        r0MeStarted.resolve();
+        return r0Me.promise;
+      }
+      if (url.startsWith(CALENDLY_EVENT_TYPES_BASE)) {
+        return jsonResponse({
+          collection: [
+            {
+              uri: 'https://api.calendly.com/event_types/r0',
+              name: 'r0 event',
+              scheduling_url: 'https://calendly.com/acme/r0',
+            },
+          ],
+        });
+      }
+      throw new Error('unexpected Calendly URL');
+    }) as unknown as typeof fetch;
+    const cacheWrite = vi.spyOn(AccountMetadataCache.prototype, 'setIfCurrent');
+    const reader = new CalendlyEventTypesService(
+      makeEnv({ INTEGRATION_CREDENTIAL_WRITERS: 'generation-only' }),
+      db,
+      'generation-only',
+      fetchImpl,
+    );
+    const id = await accountId();
+
+    await upsertIntegration(db, id, 'calendly', r0Token, ENCRYPTION_KEY);
+    const before = await getIntegration(db, id, 'calendly');
+    const pending = reader.listEventTypes(id, 1_000);
+    await r0MeStarted.promise;
+    const oldWriterUpdatedAt = before!.updatedAt + 1;
+    for (const token of [oldWriterAToken, oldWriterBToken]) {
+      await db.run(
+        sql`UPDATE account_integration
+            SET encrypted_token = ${encryptToken(token, ENCRYPTION_KEY)},
+                meta = ${jsonParam({ last4: token.slice(-4) })},
+                updated_at = ${oldWriterUpdatedAt}
+            WHERE account_id = ${id} AND provider = ${'calendly'}`,
+      );
+    }
+    r0Me.resolve(jsonResponse({ resource: { uri: 'https://api.calendly.com/users/r0' } }));
+
+    const stale = await pending;
+    const later = await reader.listEventTypes(id, 1_001);
+
+    expect(stale).toMatchObject({ enabled: true, cached: false, eventTypes: [{ name: 'r0 event' }] });
+    expect(later).toMatchObject({ enabled: true, cached: true, eventTypes: [{ name: 'r0 event' }] });
+    expect(cacheWrite).toHaveReturnedWith(true);
+    expect(authorizations).toEqual([`Bearer ${r0Token}`, `Bearer ${r0Token}`]);
   });
 
   it('does not let a pre-disconnect fetch repopulate cache across service instances', async () => {
@@ -1152,7 +1561,7 @@ describe('Calendly event-type picker token resolution', () => {
     }) as unknown as typeof fetch;
     const env = makeEnv({ CALENDLY_API_TOKEN: fallbackToken });
     const { calendly: serviceB } = build(env, fetchB);
-    const serviceA = new CalendlyEventTypesService(env, db, fetchA);
+    const serviceA = new CalendlyEventTypesService(env, db, env.INTEGRATION_CREDENTIAL_WRITERS, fetchA);
     const id = await accountId();
 
     await controller.connect(asOwner(), 'calendly', { token: accountToken });

@@ -15,6 +15,7 @@ import {
   Put,
   Req,
   UseGuards,
+  type OnModuleInit,
 } from '@nestjs/common';
 import { z, ZodError } from 'zod';
 import type {
@@ -38,6 +39,7 @@ import {
   summarizeFailedDeliveriesByForm,
   updateFormDestinations,
   upsertIntegration,
+  sql,
 } from '@quill/db';
 import {
   destinationFiresForPhase,
@@ -54,7 +56,7 @@ import type { ServerEnv } from '@quill/config/env';
 import { AuthService, type ReqLike } from './auth.service';
 import { assertAdmin } from './permissions';
 import { RateLimitGuard } from './rate-limit';
-import { DB, ENV } from './tokens';
+import { DB, ENV, INTEGRATION_CREDENTIAL_WRITERS } from './tokens';
 
 /**
  * One allowed value of an enumeration property, as HubSpot defines it.
@@ -127,6 +129,9 @@ const HUBSPOT_PROPERTIES_URL = 'https://api.hubapi.com/crm/v3/properties/contact
 /** Calendly identity probe: validates a pasted token + yields its display label. */
 const CALENDLY_ME_URL = 'https://api.calendly.com/users/me';
 const CALENDLY_EVENT_TYPES_URL = 'https://api.calendly.com/event_types';
+const CREDENTIAL_GENERATION_MIGRATION = '0015_account_integration_credential_generation.sql';
+
+export type IntegrationCredentialWriterMode = ServerEnv['INTEGRATION_CREDENTIAL_WRITERS'];
 
 /**
  * Account-scoped integration metadata only. Its write boundary has no
@@ -137,7 +142,17 @@ type IntegrationMetadata = HubSpotPropertyDto[] | CalendlyEventTypeDto[];
 export class AccountMetadataCache<T extends IntegrationMetadata> {
   private readonly entries = new Map<string, { revision: ProviderCredentialRevision; data: T; expires: number }>();
 
+  constructor(private readonly credentialWriters: IntegrationCredentialWriterMode) {}
+
+  private isEnabledFor(revision: ProviderCredentialRevision): boolean {
+    return revision.kind === 'env-fallback' || this.credentialWriters === 'generation-only';
+  }
+
   get(accountId: string, revision: ProviderCredentialRevision, now: number): T | undefined {
+    if (!this.isEnabledFor(revision)) {
+      this.entries.delete(accountId);
+      return undefined;
+    }
     const cached = this.entries.get(accountId);
     if (!cached || cached.expires <= now || !providerCredentialRevisionEquals(cached.revision, revision)) {
       this.entries.delete(accountId);
@@ -153,6 +168,7 @@ export class AccountMetadataCache<T extends IntegrationMetadata> {
     data: T,
     now: number,
   ): boolean {
+    if (!this.isEnabledFor(capturedRevision) || !this.isEnabledFor(currentRevision)) return false;
     if (!providerCredentialRevisionEquals(capturedRevision, currentRevision)) return false;
     this.entries.set(accountId, { revision: capturedRevision, data, expires: now + CACHE_TTL_MS });
     return true;
@@ -211,13 +227,16 @@ export class HubspotPropertiesService {
   // a global cache would leak not just property names but their values — a
   // portal's internal sales taxonomy (deal stages, lead grades, account tiers).
   // Do not "optimize" this into a single shared map.
-  private readonly cache = new AccountMetadataCache<HubSpotPropertyDto[]>();
+  private readonly cache: AccountMetadataCache<HubSpotPropertyDto[]>;
 
   constructor(
     @Inject(ENV) private readonly env: ServerEnv,
     @Inject(DB) private readonly db: Db,
+    credentialWriters: IntegrationCredentialWriterMode,
     private readonly fetchImpl: typeof fetch = fetch,
-  ) {}
+  ) {
+    this.cache = new AccountMetadataCache<HubSpotPropertyDto[]>(credentialWriters);
+  }
 
   /** Remove metadata after this account's HubSpot credential source changes. */
   invalidate(accountId: string): void {
@@ -332,13 +351,16 @@ function toBookingFields(questions: CalendlyCustomQuestionApi[] | undefined): Ca
 @Injectable()
 export class CalendlyEventTypesService {
   // Per-ACCOUNT cache: event types are portal-specific to the connected token.
-  private readonly cache = new AccountMetadataCache<CalendlyEventTypeDto[]>();
+  private readonly cache: AccountMetadataCache<CalendlyEventTypeDto[]>;
 
   constructor(
     @Inject(ENV) private readonly env: ServerEnv,
     @Inject(DB) private readonly db: Db,
+    credentialWriters: IntegrationCredentialWriterMode,
     private readonly fetchImpl: typeof fetch = fetch,
-  ) {}
+  ) {
+    this.cache = new AccountMetadataCache<CalendlyEventTypeDto[]>(credentialWriters);
+  }
 
   /** Remove metadata after this account's Calendly credential source changes. */
   invalidate(accountId: string): void {
@@ -453,7 +475,8 @@ export interface AccountWebhooksResponse {
 }
 
 @Controller('v1/integrations')
-export class IntegrationsController {
+export class IntegrationsController implements OnModuleInit {
+  private readonly log = new Logger('IntegrationsController');
   /** Injectable for tests; defaults to global fetch for provider validation. */
   fetchImpl: typeof fetch = fetch;
 
@@ -463,7 +486,29 @@ export class IntegrationsController {
     @Inject(CalendlyEventTypesService) private readonly calendly: CalendlyEventTypesService,
     @Inject(DB) private readonly db: Db,
     @Inject(ENV) private readonly env: ServerEnv,
+    @Inject(INTEGRATION_CREDENTIAL_WRITERS)
+    private readonly credentialWriters: IntegrationCredentialWriterMode,
   ) {}
+
+  async onModuleInit(): Promise<void> {
+    this.log.log(`integration credential writers=${this.credentialWriters}`);
+    if (this.credentialWriters !== 'generation-only') return;
+    try {
+      const applied = await this.db.get<{ name: string }>(
+        sql`SELECT name FROM _migrations WHERE name = ${CREDENTIAL_GENERATION_MIGRATION} LIMIT 1`,
+      );
+      if (!applied) {
+        throw new Error(`migration ${CREDENTIAL_GENERATION_MIGRATION} is not applied`);
+      }
+      await this.db.get(sql`SELECT credential_generation FROM account_integration LIMIT 1`);
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      throw new Error(
+        `INTEGRATION_CREDENTIAL_WRITERS=generation-only requires migration ${CREDENTIAL_GENERATION_MIGRATION} ` +
+          `with account_integration.credential_generation before startup: ${detail}`,
+      );
+    }
+  }
 
   /**
    * This account's connections (token-free) + whether server encryption is

@@ -10,6 +10,7 @@ import {
   ENV,
   NOTIFIER,
   ONBOARDING_ENABLED,
+  INTEGRATION_CREDENTIAL_WRITERS,
   PREMIUM_MODE,
   RATE_LIMITER,
 } from './tokens';
@@ -101,6 +102,11 @@ import {
       useFactory: (env: ServerEnv) => env.ONBOARDING_WIZARD,
       inject: [ENV],
     },
+    {
+      provide: INTEGRATION_CREDENTIAL_WRITERS,
+      useFactory: (env: ServerEnv) => env.INTEGRATION_CREDENTIAL_WRITERS,
+      inject: [ENV],
+    },
     // Host auth backend selected by AUTH_PROVIDER (local stub / WorkOS overlay).
     {
       provide: AUTH_PROVIDER,
@@ -158,16 +164,18 @@ import {
     // env fallback), so it needs the DB. Factory so `fetch` isn't DI-reflected.
     {
       provide: HubspotPropertiesService,
-      useFactory: (env: ServerEnv, db: Db) => new HubspotPropertiesService(env, db),
-      inject: [ENV, DB],
+      useFactory: (env: ServerEnv, db: Db, writers: ServerEnv['INTEGRATION_CREDENTIAL_WRITERS']) =>
+        new HubspotPropertiesService(env, db, writers),
+      inject: [ENV, DB, INTEGRATION_CREDENTIAL_WRITERS],
     },
     // Server-side Calendly event-type lookup for the scheduler step's picker
     // (5-min cache, disabled state without a token). Factory so `fetch` isn't
     // DI-reflected — mirrors HubspotPropertiesService.
     {
       provide: CalendlyEventTypesService,
-      useFactory: (env: ServerEnv, db: Db) => new CalendlyEventTypesService(env, db),
-      inject: [ENV, DB],
+      useFactory: (env: ServerEnv, db: Db, writers: ServerEnv['INTEGRATION_CREDENTIAL_WRITERS']) =>
+        new CalendlyEventTypesService(env, db, writers),
+      inject: [ENV, DB, INTEGRATION_CREDENTIAL_WRITERS],
     },
     // Drains the durable outbox (submission emails + destinations) with
     // retry+backoff — no silent loss on a provider outage (B1/B7/DM1).

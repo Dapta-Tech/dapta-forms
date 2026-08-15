@@ -47,7 +47,7 @@ let db: Db;
 let controller: IntegrationsController;
 
 function build(): void {
-  const env = { NODE_ENV: 'test' } as unknown as ServerEnv;
+  const env = { NODE_ENV: 'test', INTEGRATION_CREDENTIAL_WRITERS: 'mixed' } as unknown as ServerEnv;
   const provider = new LocalAuthProvider(db, {
     NODE_ENV: 'test',
     DEV_LOGIN_EMAIL: undefined,
@@ -58,10 +58,11 @@ function build(): void {
   const auth = new AuthService(db, provider);
   controller = new IntegrationsController(
     auth,
-    new HubspotPropertiesService(env, db, noopFetch),
-    new CalendlyEventTypesService(env, db, noopFetch),
+    new HubspotPropertiesService(env, db, env.INTEGRATION_CREDENTIAL_WRITERS, noopFetch),
+    new CalendlyEventTypesService(env, db, env.INTEGRATION_CREDENTIAL_WRITERS, noopFetch),
     db,
     env,
+    env.INTEGRATION_CREDENTIAL_WRITERS,
   );
 }
 

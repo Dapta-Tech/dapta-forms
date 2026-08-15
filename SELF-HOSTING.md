@@ -201,6 +201,7 @@ write a "first" form into the same account.
 | Var | Default | Required when | Secret |
 |---|---|---|---|
 | `HUBSPOT_PRIVATE_APP_TOKEN` | _(unset)_ | to enable the HubSpot destination (else it reports a disabled state) | yes |
+| `INTEGRATION_CREDENTIAL_WRITERS` | `mixed` | set `generation-only` only after all credential writers are upgraded | no |
 
 Webhook destinations are configured **per form in the admin UI** (URL + optional
 HMAC secret) — no environment variable.
@@ -336,6 +337,30 @@ through the same outbox with retry + backoff).
 - **Rollback:** because migrations are additive-only, the previous images stay
   compatible with the newer schema — roll back by redeploying the previous image
   tags. Keep old images available (don't prune the tag you might revert to).
+
+### Account integration credential-cache rollout
+
+This setting is validated when the API starts. Changing it requires a restart.
+It is an operator safety gate, not a performance tuning option.
+
+Forward order:
+
+1. Run migration `0015_account_integration_credential_generation.sql`.
+2. Deploy the new API with `INTEGRATION_CREDENTIAL_WRITERS` unset or set to
+   `mixed`. Stored-credential metadata caching is off. Env-fallback metadata
+   caching stays on.
+3. Confirm every credential writer runs the new binary and cannot scale back.
+4. Set `INTEGRATION_CREDENTIAL_WRITERS=generation-only` and roll the API.
+
+Reverse order:
+
+1. Set or unset `INTEGRATION_CREDENTIAL_WRITERS` to use `mixed` and roll the API.
+2. Deploy older binaries if needed.
+3. Leave the additive generation column in place.
+
+A single-process self-host that uses only environment fallback credentials needs
+no action. Its metadata cache remains safe because no database writer can change
+the active credential.
 
 ## Troubleshooting
 

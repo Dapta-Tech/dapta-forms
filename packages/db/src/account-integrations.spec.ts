@@ -195,7 +195,7 @@ describe('account_integration repo', () => {
     await upsertIntegration(db, accountId, 'hubspot', 'account-token', KEY);
     expect(await resolveProviderToken(db, accountId, 'hubspot', KEY, 'env-token')).toMatchObject({
       token: 'account-token',
-      revision: { kind: 'stored', id: expect.any(String), generation: 1, updatedAt: expect.any(Number) },
+      revision: { kind: 'stored', id: expect.any(String), generation: 1 },
     });
     // Without an encryption key configured → only env fallback is consulted.
     expect(await resolveProviderToken(db, accountId, 'hubspot', undefined, 'env-token')).toMatchObject({

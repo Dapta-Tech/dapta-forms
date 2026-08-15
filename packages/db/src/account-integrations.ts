@@ -41,17 +41,15 @@ const providerCredentialRevisionBrand: unique symbol = Symbol('ProviderCredentia
 /**
  * Non-secret identity for the source of a resolved provider credential.
  *
- * A stored credential pairs its durable row id, database-allocated generation,
- * and timestamp. The timestamp keeps rollout compatibility with old writers
- * that change it without incrementing the generation. The env fallback uses a
- * stable sentinel because it has no account-row revision. The private brand
- * prevents credential strings from entering callers that accept only revisions.
+ * A stored credential pairs its durable row id and database-allocated
+ * generation. The env fallback uses a stable sentinel because it has no
+ * account-row revision. The private brand prevents credential strings from
+ * entering callers that accept only revisions.
  */
 export interface StoredProviderCredentialRevision {
   readonly kind: 'stored';
   readonly id: string;
   readonly generation: number;
-  readonly updatedAt: number;
   readonly [providerCredentialRevisionBrand]: true;
 }
 
@@ -78,7 +76,6 @@ function storedCredentialRevision(row: IntegrationRow): ProviderCredentialRevisi
     kind: 'stored',
     id: row.id,
     generation: row.credentialGeneration,
-    updatedAt: row.updatedAt,
     [providerCredentialRevisionBrand]: true,
   };
 }
@@ -91,7 +88,7 @@ export function providerCredentialRevisionEquals(
   if (a.kind !== b.kind) return false;
   if (a.kind === 'env-fallback') return true;
   if (b.kind === 'env-fallback') return false;
-  return a.id === b.id && a.generation === b.generation && a.updatedAt === b.updatedAt;
+  return a.id === b.id && a.generation === b.generation;
 }
 
 /** Public, token-free view of a connection for the connections UI. */
@@ -225,7 +222,6 @@ export async function upsertIntegrationWithRevision(
       kind: 'stored',
       id: returned.id,
       generation,
-      updatedAt: now,
       [providerCredentialRevisionBrand]: true,
     },
   };

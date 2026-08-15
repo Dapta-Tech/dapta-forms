@@ -99,6 +99,13 @@ export const serverEnvSchema = z.object({
   // from whatever the callback carried). Never sent to the browser.
   CALENDLY_API_TOKEN: z.string().optional(),
 
+  // Operator-declared population of account-integration credential writers.
+  // `mixed` is the safe rollout default: stored-credential metadata caches stay
+  // off while old binaries can still update tokens without a generation bump.
+  // Set `generation-only` only after every writer runs the generation-aware
+  // binary and rollback to an old writer is no longer possible.
+  INTEGRATION_CREDENTIAL_WRITERS: z.enum(['mixed', 'generation-only']).default('mixed'),
+
   // Premium features (vanity slug + future perks). Forms is ALWAYS free —
   // `locked` gates premium on the customer's Dapta AI subscription via the
   // entitlement service below; `open` (default) unlocks everything, so a bare
