@@ -19,6 +19,7 @@ import {
   ForbiddenException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
   Optional,
 } from '@nestjs/common';
@@ -37,6 +38,7 @@ import {
   removeMember,
   renameAccount,
   sql,
+  wouldOrphanWorkspace,
   type MemberView,
   type WorkspaceRow,
 } from '@quill/db';
@@ -49,6 +51,8 @@ import type { WorkspaceProjection } from './workspace-projection';
 
 @Injectable()
 export class WorkspaceService {
+  private readonly log = new Logger('WorkspaceService');
+
   constructor(
     @Inject(DB) private readonly db: Db,
     @Inject(AUTH_PROVIDER) private readonly provider: AuthProvider,
@@ -338,6 +342,13 @@ export class WorkspaceService {
     if (!up || !this.projection || !wsId || !ref?.workspaceUserId) {
       throw new ConflictException({ error: 'NO_UPSTREAM', message: 'This member is not managed by the identity service.' });
     }
+    // The last-owner guard runs BEFORE anything is written upstream: an
+    // upstream write that then 409s locally would leave the two disagreeing.
+    const demoting = input.role !== undefined && input.role !== 'owner' && target.role === 'owner';
+    const disabling = input.status !== undefined && input.status !== 'active' && target.role === 'owner';
+    if ((demoting || disabling) && (await wouldOrphanWorkspace(this.db, p.accountId, memberId))) {
+      throw new ConflictException({ error: 'LAST_OWNER', message: 'A workspace must keep at least one owner.' });
+    }
     if (input.role !== undefined && input.role !== target.role) {
       if (input.role === 'admin') {
         const roles = await this.projection.iam.listRoles(up.bearer, wsId);
@@ -370,6 +381,9 @@ export class WorkspaceService {
     const target = await getAccountMember(this.db, p.accountId, memberId);
     if (!target) return { ok: true };
     assertCanManageTarget(p, target);
+    if (await wouldOrphanWorkspace(this.db, p.accountId, memberId)) {
+      throw new ConflictException({ error: 'LAST_OWNER', message: 'A workspace must keep at least one owner.' });
+    }
     const up = await this.upstream(req);
     const ref = await getMemberUpstreamRef(this.db, p.accountId, memberId);
     if (up && this.projection && ref?.workspaceUserId) {
@@ -379,6 +393,11 @@ export class WorkspaceService {
         if (!(err instanceof IamHttpError && err.status === 404)) throw err;
       }
       if (ref.externalId) this.projection.invalidate(ref.externalId);
+    } else if (up && this.projection && ref?.externalId) {
+      // Known to the identity service (has a subject) but we hold no upstream
+      // membership id to remove: a local delete would be undone by their next
+      // login. Refuse rather than pretend.
+      throw new ConflictException({ error: 'NO_UPSTREAM', message: 'This member is not managed by the identity service.' });
     }
     const res = await removeMember(this.db, p.accountId, memberId);
     if (!res.ok) throw new ConflictException({ error: res.reason, message: res.message ?? 'Conflict.' });
@@ -386,8 +405,7 @@ export class WorkspaceService {
   }
 
   private logWarn(message: string): void {
-    // Kept tiny on purpose; the projection carries the real logger.
-    console.warn(`[WorkspaceService] ${message}`);
+    this.log.warn(message);
   }
 
   private async accountCompletedOnboarding(accountId: string): Promise<boolean> {

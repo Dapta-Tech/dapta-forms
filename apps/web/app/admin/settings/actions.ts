@@ -67,13 +67,16 @@ export async function inviteMemberAction(
  */
 export type ManageMemberState =
   | { ok: true }
-  | { ok: false; code: 'LAST_OWNER' | 'FORBIDDEN' | 'FAILED' };
+  | { ok: false; code: 'LAST_OWNER' | 'FORBIDDEN' | 'UPSTREAM' | 'FAILED' };
 
 /** Map an API failure to a stable, localizable code (never a raw server string). */
 function manageError(e: unknown): ManageMemberState {
   if (e instanceof ApiError) {
     if (e.code === 'LAST_OWNER') return { ok: false, code: 'LAST_OWNER' };
     if (e.status === 403 || e.code === 'FORBIDDEN') return { ok: false, code: 'FORBIDDEN' };
+    // Identity-service deployments: some changes are only expressible over there.
+    if (e.code === 'NOT_SUPPORTED_UPSTREAM' || e.code === 'NO_UPSTREAM' || e.code === 'ROLE_UNAVAILABLE')
+      return { ok: false, code: 'UPSTREAM' };
   }
   return { ok: false, code: 'FAILED' };
 }

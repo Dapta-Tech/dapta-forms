@@ -166,6 +166,7 @@ export default async function SettingsPage() {
                           manageErrorLastOwner: s.manageErrorLastOwner,
                           manageErrorForbidden: s.manageErrorForbidden,
                           manageErrorFailed: s.manageErrorFailed,
+                          manageErrorUpstream: s.manageErrorUpstream,
                         }}
                       />
                     ) : (

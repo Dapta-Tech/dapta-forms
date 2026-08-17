@@ -292,6 +292,57 @@ describe('workspace projection (IAM-backed workspaces)', () => {
   });
 });
 
+describe('workspace projection: edge cases', () => {
+  let db: Db;
+  let iam: FakeIam;
+  let projection: WorkspaceProjection;
+  let auth: AuthService;
+  const now = 1_700_000_000_000;
+
+  beforeEach(async () => {
+    db = await createDb('file::memory:');
+    await migrate(db);
+    iam = new FakeIam();
+    iam.workspaces = [ws(WS_OWN, 'dapta', IAM_ACCOUNT, [{ id: 'wu-own', user_id: SUB, type: 'OWNER', is_active: true, roles: [] }])];
+    projection = new WorkspaceProjection(
+      db,
+      new IamWorkspacesClient({ baseUrl: 'https://iam.test/iam', fetchImpl: iam.fetch }),
+      { ttlMs: 60_000, now: () => now },
+    );
+    auth = new AuthService(
+      db,
+      new WorkOsAuthProvider(
+        db,
+        { JWT_SECRET: SECRET, JWT_ISSUER: undefined, JWT_AUDIENCE: undefined, SEED_DEMO_FORM: false, ONBOARDING_WIZARD: false },
+        undefined,
+        projection,
+      ),
+    );
+  });
+
+  afterEach(async () => {
+    await db.close?.();
+  });
+
+  it('coalesces concurrent cold requests into ONE upstream read', async () => {
+    await Promise.all([auth.resolveHost(asReq(tokenFor(SUB))), auth.resolveHost(asReq(tokenFor(SUB))), auth.resolveHost(asReq(tokenFor(SUB)))]);
+    expect(iam.calls.filter((c) => c.path.startsWith('/iam/workspace/search')).length).toBe(1);
+  });
+
+  it('a person with no workspace anywhere is refused (403), never given a token-account row', async () => {
+    iam.workspaces = [];
+    await expect(auth.resolveHost(asReq(tokenFor(OTHER_SUB, 'acct-x')))).rejects.toBeInstanceOf(ForbiddenException);
+    const rows = await db.all<{ id: string }>(sql`SELECT id FROM account WHERE external_id = 'acct-x'`);
+    expect(rows.length).toBe(0);
+  });
+
+  it('a workspace whose users[] omits the owner still projects with the owner role', async () => {
+    iam.workspaces = [{ id: WS_OWN, name: 'dapta', account_id: IAM_ACCOUNT, is_active: true, isOwner: true, users: [] }];
+    const p = await auth.resolveHost(asReq(tokenFor(SUB)));
+    expect(p.role).toBe('owner');
+  });
+});
+
 describe('roleFromIam', () => {
   it('maps OWNER → owner, workspace_admin → admin, anything else → member', () => {
     expect(roleFromIam({ type: 'OWNER', roles: [] })).toBe('owner');

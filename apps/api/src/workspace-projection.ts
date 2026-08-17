@@ -60,6 +60,8 @@ const DEFAULT_TTL_MS = 60_000;
 export class WorkspaceProjection {
   private readonly log = new Logger('WorkspaceProjection');
   private readonly cache = new Map<string, ProjectionState>();
+  /** One upstream read per person at a time: a cold session fires several API calls at once. */
+  private readonly inflight = new Map<string, Promise<ProjectionState>>();
   private readonly ttlMs: number;
 
   constructor(
@@ -94,7 +96,20 @@ export class WorkspaceProjection {
     const cached = this.cache.get(id.sub);
     const now = this.now();
     if (cached && !opts.force && now - cached.syncedAt < this.ttlMs) return cached;
+    const pending = this.inflight.get(id.sub);
+    if (pending && !opts.force) return pending;
+    const run = this.refresh(id, cached, now).finally(() => {
+      if (this.inflight.get(id.sub) === run) this.inflight.delete(id.sub);
+    });
+    this.inflight.set(id.sub, run);
+    return run;
+  }
 
+  private async refresh(
+    id: UpstreamIdentity,
+    cached: ProjectionState | undefined,
+    now: number,
+  ): Promise<ProjectionState> {
     let workspaces: IamWorkspace[];
     let featureFlags: Record<string, unknown> | null = null;
     try {
@@ -157,7 +172,16 @@ export class WorkspaceProjection {
 
     for (const c of result.created) {
       if (c.role === 'owner' && result.createdAccounts.includes(c.accountId) && this.opts.seedEnv) {
-        await maybeSeedDemoForm(this.db, c.accountId, this.opts.seedEnv, this.log);
+        // No demo form in a workspace whose upstream ACCOUNT still has a
+        // pre-0015 local row: that row holds the owner's real forms and must be
+        // able to absorb this account on the owner's next login (see
+        // rebindLegacyAccount) — a seeded form here would block the absorb.
+        const row = await this.db.get<{ external_id: string | null }>(
+          sql`SELECT external_id FROM account WHERE id = ${c.accountId} LIMIT 1`,
+        );
+        const ws = workspaces.find((w) => w.id === row?.external_id);
+        const legacyBlocked = ws?.account_id ? !!(await getAccountByExternalId(this.db, ws.account_id)) : false;
+        if (!legacyBlocked) await maybeSeedDemoForm(this.db, c.accountId, this.opts.seedEnv, this.log);
       }
       notifySignup(this.opts.onSignup, this.log, {
         accountId: c.accountId,

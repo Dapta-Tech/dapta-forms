@@ -18,7 +18,7 @@
  * `createAuthProvider` still fails loud without it. No vendor host/secret name
  * appears here — issuer/audience/secret all arrive via env.
  */
-import { Logger, UnauthorizedException } from '@nestjs/common';
+import { ForbiddenException, Logger, UnauthorizedException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import type { Db, AccountRole } from '@quill/db';
 import { deriveUniqueHandle, insertAccountWithShortCode, sql } from '@quill/db';
@@ -127,14 +127,24 @@ export class WorkOsAuthProvider implements AuthProvider {
         displayName: typeof claims.name === 'string' ? claims.name : null,
         bearer: token,
       };
-      const state = await this.projection.ensure(upstream);
-      const home = await this.projection.home(upstream, state);
+      let state = await this.projection.ensure(upstream);
+      let home = await this.projection.home(upstream, state);
+      if (!home && !state.degraded) {
+        // A warm cache can hide a membership that was just restored upstream;
+        // one forced re-read is cheap and honest.
+        state = await this.projection.ensure(upstream, { force: true });
+        home = await this.projection.home(upstream, state);
+      }
       if (home) return home;
-      // Nothing upstream and nothing local for this person. The identity
-      // service creates a workspace at signup, so this is not expected — fall
-      // through to the token-account path rather than refuse a valid token,
-      // and the next projection pass rebinds that row once a workspace exists.
-      this.log.warn(`no upstream workspace for ${sub}; falling back to token account ${accountExtId}`);
+      // Nothing upstream and nothing local. The identity service creates a
+      // workspace at signup, so this is a real fault, not a first login — and
+      // minting a token-account row here would recreate exactly the pre-0015
+      // shape 0015 retires. Refuse, loudly.
+      this.log.warn(`no workspace for ${sub} (upstream account ${accountExtId}); refusing`);
+      throw new ForbiddenException({
+        error: 'NO_WORKSPACE',
+        message: 'Your account has no workspace yet. Open the Dapta app once, then try again.',
+      });
     }
 
     const accountId = await this.resolveAccount(accountExtId, claims);

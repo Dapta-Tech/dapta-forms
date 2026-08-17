@@ -24,6 +24,7 @@ export interface MemberRowActionsLabels {
   manageErrorLastOwner: string;
   manageErrorForbidden: string;
   manageErrorFailed: string;
+  manageErrorUpstream: string;
 }
 
 /**
@@ -85,7 +86,9 @@ export function MemberRowActions({
         ? labels.manageErrorLastOwner
         : result.code === 'FORBIDDEN'
           ? labels.manageErrorForbidden
-          : labels.manageErrorFailed;
+          : result.code === 'UPSTREAM'
+            ? labels.manageErrorUpstream
+            : labels.manageErrorFailed;
     toast.error(message);
   };
 

@@ -110,9 +110,12 @@ export async function rebindLegacyAccount(
   }
 
   await db.run(
-    sql`UPDATE account SET external_id = ${'legacy:' + args.iamAccountId}, iam_account_id = ${args.iamAccountId}
+    sql`UPDATE account SET external_id = ${'legacy:' + args.iamAccountId}, iam_account_id = ${args.iamAccountId},
+          name = name || ' (legacy)'
         WHERE id = ${legacy.id}`,
   );
+  // Parked means unreachable: its rows must not keep it alive in the switcher.
+  await db.run(sql`UPDATE member SET status = 'disabled' WHERE account_id = ${legacy.id}`);
   return { accountId: projected.id, parkedLegacyId: legacy.id };
 }
 
@@ -387,9 +390,14 @@ export async function projectRoster(
           ON CONFLICT (account_id, external_id) DO NOTHING`,
     );
   }
+  // Only rows the identity service KNOWS (they carry an upstream membership id)
+  // can be disabled by its silence. A row without one — the workspace owner
+  // when upstream omits them from `users[]`, an invite by email, a dev/seed
+  // row — is outside its authority and must survive a roster read.
   const held = await db.all<{ id: string; external_id: string }>(
     sql`SELECT id, external_id FROM member
-        WHERE account_id = ${accountId} AND external_id IS NOT NULL AND status = 'active'`,
+        WHERE account_id = ${accountId} AND external_id IS NOT NULL
+          AND iam_workspace_user_id IS NOT NULL AND status = 'active'`,
   );
   for (const h of held) {
     if (seen.has(h.external_id)) continue;
