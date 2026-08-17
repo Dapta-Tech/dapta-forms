@@ -59,7 +59,7 @@ export interface BuilderMessages {
   logicDialog: {
     /** Trigger label in the Build panel / canvas hover buttons. */
     open: string;
-    /** "Logic — {question}" */
+    /** "Logic: {question}" */
     title: string;
     subtitle: string;
     visibility: string;
