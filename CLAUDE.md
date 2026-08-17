@@ -228,12 +228,22 @@ there is frozen history rather than editable prose.
 
 - **Two dashes are written as the escape `—`**, not as the glyph. A search
   for the literal character reports those strings clean when they are not.
-- **`admin.submissions.na` is the single character `'—'`**, the empty-cell
-  fallback in the submissions table. A rule like `s/\s*—\s*/, /` turns every
-  empty cell into `, `.
-- **`admin.integrations.autosavedPartial` ENDS with a dash** used as a joiner:
+- **`admin.submissions.na` WAS the single character `'—'`**, the empty-cell
+  fallback in the submissions table, and a rule like `s/\s*—\s*/, /` turned
+  every empty cell into `, `. It is `''` now: the table draws row borders, so an
+  empty cell already reads as empty. The webhook health cell had the same glyph
+  hardcoded in JSX and got the same treatment.
+- **`admin.integrations.autosavedPartial` ENDED with a dash** used as a joiner:
   the caller does `` `${m.autosavedPartial} ${detail ?? ''}`.trim() ``. Only a
-  period is safe there; a trailing comma or colon breaks the no-detail branch.
+  period was safe there; a trailing comma or colon breaks the no-detail branch.
+- **An error message thrown from a package can be on-screen copy.**
+  `ONE_HUBSPOT_DESTINATION_MESSAGE` lives in `packages/types`, is returned as an
+  API error `message`, and `question-hubspot-actions.ts` hands it to the editor
+  verbatim. Grep for where a message SURFACES, not for where it is defined.
+- **A JSDoc that quotes a UI string goes stale on its own schedule.** One read
+  `"Logic {emdash} {question}"` long after the copy became `"Logic: {question}"`,
+  so the comment was the only dash left and it documented copy that no longer
+  existed.
 - **Spanish uses tight spacing** (`—UTMs, … envío—`) where English spaces the
   dash. A regex written as `/ — /` half-fixes the catalog and leaves `es` dashed.
 - **Seven hits sit between placeholders with no whitespace** (`{min}–{max}`). A
@@ -251,6 +261,36 @@ there is frozen history rather than editable prose.
 ```bash
 bash scripts/dash-check.sh
 ```
+
+The check has two severities, because copy and docs are in different places.
+
+**Copy blocks, on the whole tree, always.** The string catalogs, email
+templates, seed and template form content, OpenAPI descriptions and CRM payload
+text are at zero occurrences and stay there. CI runs this on every PR.
+
+**Docs block only on the lines a PR adds.** `.changeset/` and `docs/` carry
+roughly 320 older dashes, most of them in changesets that already shipped as
+public CHANGELOG entries and cannot be revised. A whole-tree gate on those could
+never be switched on, so CI passes the PR's base and the script charges the PR
+for what it adds. The count falls on its own; nobody has to sweep 320 lines
+first. Run it with a base to see exactly what CI will say:
+
+```bash
+bash scripts/dash-check.sh origin/develop
+```
+
+Comment lines and `*.spec.ts` titles are skipped in the copy paths, matching the
+advisory rule above. Note what is deliberately NOT done there: code spans are
+stripped before matching in docs but never in code, because stripping them in
+code would erase template literals, and a dashed template literal is copy.
+
+**Write the pattern as an alternation, never as a bracket class.** CI runs with
+`LANG` unset, and in the C locale grep degrades a bracket class of multi-byte
+characters into the set of their bytes. `[emdash horizontalbar]` becomes
+`{E2,80,94,95}` and matches every General Punctuation character, since they all
+begin with byte `E2`. That reported arrows, typographic apostrophes, ellipses
+and bullets as em dashes: 260 false positives out of 586, which is why the check
+sat outside CI for a while.
 
 ## Review gates a PR must pass
 
