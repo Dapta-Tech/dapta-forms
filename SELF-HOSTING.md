@@ -236,9 +236,9 @@ are runtime server env for the web container.
 |---|---|---|---|
 | `NEXT_PUBLIC_API_URL` | `http://localhost:4000` | any real deploy (build arg) | no |
 | `NEXT_PUBLIC_PRODUCT_NAME` | `Forms` | branding (build arg) | no |
-| `NEXT_PUBLIC_PLATFORM_URL` | _(empty)_ | app-switcher link (build arg) | no |
+| `NEXT_PUBLIC_PLATFORM_URL` | _(empty)_ | the platform: app-switcher row + the "Dapta Agents" nav item; unset renders neither (build arg) | no |
 | `NEXT_PUBLIC_SIGNUP_URL` | _(empty)_ | growth-loop opt-in — unset renders no badge/CTA (build arg) | no |
-| `NEXT_PUBLIC_LANDING_URL` | product landing | where the badge/CTA point; falls back to the signup URL (build arg) | no |
+| `NEXT_PUBLIC_LANDING_URL` | product landing | where the badge/CTA point; falls back to the signup URL. Keep any trailing slash the host expects, the UTMs ride in the query (build arg) | no |
 | `NEXT_PUBLIC_HIDE_BADGE` | _(empty)_ | set truthy to hide the badge (build arg) | no |
 | `NEXT_PUBLIC_CALENDARS_URL` | _(empty)_ | app-switcher link (build arg) | no |
 | `AUTH_PROVIDER` | `local` | mirror the API value so the web picks the right login UX | no |

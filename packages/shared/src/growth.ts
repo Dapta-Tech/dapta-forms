@@ -1,5 +1,5 @@
 /**
- * Growth loop — the "Powered by Dapta" attribution on public pages.
+ * Growth loop — the "Made with Dapta Forms" attribution on public pages.
  *
  * Open-core rule: like the app-switcher's platform URL, the signup destination
  * comes ONLY from the deployment (NEXT_PUBLIC_SIGNUP_URL) — no internal host
@@ -10,8 +10,15 @@
  * identical on every surface.
  */
 
-/** UTM values are fixed product-wide; only the medium varies by surface. */
-export type SignupMedium = 'badge' | 'confirmation';
+/**
+ * UTM values are fixed product-wide; only the medium varies by surface.
+ *
+ * `form-button` is the attribution pill on the form itself; `confirmation` is
+ * the "Want your own form?" CTA on the thank-you screen. The pill's medium was
+ * `badge` until 2026-08 — any report filtering on it has to accept BOTH values
+ * across that date, or the earlier days read as zero.
+ */
+export type SignupMedium = 'form-button' | 'confirmation';
 
 export const UTM_SOURCE = 'dapta-forms';
 export const UTM_CAMPAIGN = 'made-with-dapta';
@@ -22,6 +29,8 @@ export const UTM_CAMPAIGN = 'made-with-dapta';
  * `accountCode` (already public — it's in the page URL) rides along as
  * utm_content for attribution; nothing else about the tenant is leaked.
  * String-built (no URL/URLSearchParams): this package stays lib-ES2022-only.
+ * The base is appended to verbatim — a trailing slash on its path survives,
+ * which matters when the host 301s the slash-less spelling and drops the query.
  */
 export function buildSignupUrl(opts: {
   baseUrl?: string | null;
@@ -55,10 +64,10 @@ export function buildSignupUrl(opts: {
  *    `signupUrl` otherwise.
  *
  * They were the same value once, and that was the bug: both surfaces greet a
- * STRANGER — the badge says "Powered by Dapta", the CTA asks "Want your own
- * form?" — and both were dropping that person on the app's login screen for a
- * product they had never heard of. A landing page is written for exactly that
- * reader; a login screen is written for someone who already decided.
+ * STRANGER — the badge says "Made with Dapta Forms", the CTA asks "Want your
+ * own form?" — and both were dropping that person on the app's login screen
+ * for a product they had never heard of. A landing page is written for exactly
+ * that reader; a login screen is written for someone who already decided.
  */
 export function growthTarget(opts: {
   signupUrl?: string | null;

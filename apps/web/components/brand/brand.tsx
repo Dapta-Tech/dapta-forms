@@ -79,9 +79,12 @@ export function BrandMark({ className, labelled }: { className?: string; labelle
  *
  * Distinct from `BrandMark` on purpose, and the two are not interchangeable: a
  * surface signs itself with the mark that matches the name written next to it.
- * In-product chrome says "Forms" and takes `BrandMark`; the attribution badge on
- * a public form says "Powered by Dapta" and takes this one. Pairing either mark
- * with the other name is the bug this split exists to prevent.
+ * Anything that says "Forms" — in-product chrome AND the "Made with Dapta Forms"
+ * attribution badge — takes `BrandMark`; only a surface that names the company
+ * takes this one. Pairing either mark with the other name is the bug this split
+ * exists to prevent. No surface takes it today (the badge did while its copy
+ * read "Powered by Dapta"); it stays because the split is the rule, and the
+ * next surface that names Dapta should not have to rediscover it.
  *
  * Same open-core gate as every other surface here — a fork gets its own initial,
  * never Dapta's `d`.

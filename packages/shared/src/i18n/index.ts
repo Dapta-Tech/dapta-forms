@@ -135,6 +135,12 @@ export interface FormsMessages {
         integrations: string;
         branding: string;
         settings: string;
+        /**
+         * The door to the wider platform (agents), an EXTERNAL link. Rendered
+         * only when the deployment configures a platform URL, so a fork's rail
+         * never carries a dead item.
+         */
+        agents: string;
       };
       /** The Dapta suite app-switcher. */
       switcher: {
@@ -1527,9 +1533,9 @@ export interface FormsMessages {
 
 export const en: FormsMessages = {
   growth: {
-    madeWith: 'Powered by Dapta',
+    madeWith: 'Made with Dapta Forms',
     ctaQuestion: 'Want your own form?',
-    ctaAction: 'Get Dapta Forms — free',
+    ctaAction: 'Get Dapta Forms, free',
     seoForm: 'Fill out {name} online.',
     shareCardSteps: '{count} questions',
     shareCardUntitled: 'Form',
@@ -1543,7 +1549,7 @@ export const en: FormsMessages = {
     thankYouTitle: 'Thank you!',
     thankYouBody: 'Your answers were recorded.',
     ctaQuestion: 'Want your own form?',
-    ctaAction: 'Get Dapta Forms — free',
+    ctaAction: 'Get Dapta Forms, free',
     progressLabel: 'Step {current} of {total}',
     verticalProgress: '{answered} of {total} answered',
     verticalErrors: 'Check the highlighted questions above.',
@@ -1618,12 +1624,13 @@ export const en: FormsMessages = {
         integrations: 'Integrations',
         branding: 'Brand kit',
         settings: 'Settings',
+        agents: 'Dapta Agents',
       },
       switcher: {
         trigger: 'Switch product',
         menuLabel: 'Dapta products',
         eyebrow: 'Dapta',
-        dapta: 'Dapta AI',
+        dapta: 'Dapta Agents',
         calendars: 'Dapta Calendars',
         opensNewTab: '(opens in a new tab)',
       },
@@ -2910,9 +2917,9 @@ export const en: FormsMessages = {
 
 export const es: FormsMessages = {
   growth: {
-    madeWith: 'Con tecnología de Dapta',
+    madeWith: 'Hecho con Dapta Forms',
     ctaQuestion: '¿Quieres tu propio formulario?',
-    ctaAction: 'Consigue Dapta Forms — gratis',
+    ctaAction: 'Consigue Dapta Forms, gratis',
     seoForm: 'Completa {name} en línea.',
     shareCardSteps: '{count} preguntas',
     shareCardUntitled: 'Formulario',
@@ -2926,7 +2933,7 @@ export const es: FormsMessages = {
     thankYouTitle: '¡Gracias!',
     thankYouBody: 'Tus respuestas quedaron registradas.',
     ctaQuestion: '¿Quieres tu propio formulario?',
-    ctaAction: 'Consigue Dapta Forms — gratis',
+    ctaAction: 'Consigue Dapta Forms, gratis',
     progressLabel: 'Paso {current} de {total}',
     verticalProgress: '{answered} de {total} respondidas',
     verticalErrors: 'Revisa las preguntas marcadas arriba.',
@@ -3001,12 +3008,13 @@ export const es: FormsMessages = {
         integrations: 'Integraciones',
         branding: 'Kit de marca',
         settings: 'Ajustes',
+        agents: 'Dapta Agents',
       },
       switcher: {
         trigger: 'Cambiar producto',
         menuLabel: 'Productos Dapta',
         eyebrow: 'Dapta',
-        dapta: 'Dapta AI',
+        dapta: 'Dapta Agents',
         calendars: 'Dapta Calendars',
         opensNewTab: '(se abre en una pestaña nueva)',
       },
