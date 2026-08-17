@@ -105,8 +105,9 @@ describe('DaptaMark', () => {
   });
 
   it('is decorative by default and only announces itself when labelled', () => {
-    // The badge sets no title: the visible "Powered by Dapta" beside it already
-    // names the link, and a title would have a screen reader say it twice.
+    // A mark beside visible text sets no title (the badge did, while it carried
+    // this one): the text already names the link, and a title would have a
+    // screen reader say it twice.
     expect(markup()).toContain('aria-hidden="true"');
     expect(markup()).not.toContain('<title>');
 
