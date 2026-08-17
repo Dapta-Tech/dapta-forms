@@ -1,21 +1,23 @@
 'use client';
 
-import { useCallback, useRef, useState, useTransition } from 'react';
+import { useCallback, useEffect, useRef, useState, useTransition } from 'react';
 import type { FormsMessages } from '@quill/shared';
 import type { Workspace } from '@/lib/admin-api';
-import { switchWorkspaceAction } from '@/app/admin/workspace-actions';
+import { refreshWorkspacesAction, switchWorkspaceAction } from '@/app/admin/workspace-actions';
 import { AnchoredMenu } from '@/components/ui/anchored-menu';
+import { CreateWorkspaceDialog } from '@/components/create-workspace-dialog';
 import { callAction } from '@/lib/call-action';
 
 type Messages = FormsMessages['admin']['chrome']['workspaces'];
 
 /**
- * Which workspace you are in, and how to change it.
+ * Which workspace you are in, how to change it, and how to make a new one.
  *
- * Renders NOTHING for someone who belongs to a single account — the overwhelming
- * majority — because a picker with one entry is a control that teaches you it
- * does nothing. It appears the moment a second membership exists, which in
- * practice is the moment an invitation is accepted.
+ * Always rendered — even with a single membership — because the menu is also
+ * where "New workspace" lives, and that entry point must exist BEFORE there is
+ * a second workspace to switch to. Opening the menu re-reads the list from the
+ * identity service (when there is one), so a workspace created or joined in the
+ * Dapta app appears without waiting for the projection's TTL.
  *
  * Switching is a server action: it rewrites the signed session cookie and
  * reloads. It grants nothing on its own — the API re-checks membership on every
@@ -41,12 +43,22 @@ export function WorkspaceSwitcher({
   m: Messages;
 }) {
   const [open, setOpen] = useState(false);
+  const [creating, setCreating] = useState(false);
   const [pending, start] = useTransition();
   const triggerRef = useRef<HTMLButtonElement>(null);
   const close = useCallback(() => setOpen(false), []);
-
-  // One membership is not a choice. Say nothing rather than show a dead control.
-  if (workspaces.length < 2) return null;
+  // One refresh per open, never per render: the action revalidates the layout,
+  // which re-renders this component with the fresh list.
+  const refreshedRef = useRef(false);
+  useEffect(() => {
+    if (!open) {
+      refreshedRef.current = false;
+      return;
+    }
+    if (refreshedRef.current) return;
+    refreshedRef.current = true;
+    void callAction(() => refreshWorkspacesAction());
+  }, [open]);
 
   const current = workspaces.find((w) => w.accountId === currentAccountId);
   const label = current?.accountName ?? m.unknown;
@@ -139,7 +151,23 @@ export function WorkspaceSwitcher({
             </button>
           );
         })}
+        <div className="my-1 border-t border-border" />
+        <button
+          type="button"
+          role="menuitem"
+          data-testid="workspace-create"
+          onClick={() => {
+            setOpen(false);
+            setCreating(true);
+          }}
+          className="flex items-center gap-2 px-2.5 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-muted focus-visible:bg-muted focus-visible:outline-none"
+        >
+          <i aria-hidden className="pi pi-plus text-muted-foreground" style={{ fontSize: 11 }} />
+          <span className="min-w-0 flex-1 truncate">{m.create}</span>
+        </button>
       </AnchoredMenu>
+
+      <CreateWorkspaceDialog open={creating} onClose={() => setCreating(false)} m={m} />
     </div>
   );
 }

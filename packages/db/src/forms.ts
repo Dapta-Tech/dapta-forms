@@ -76,6 +76,8 @@ export async function getAccountByCode(db: Db, code: string): Promise<AccountRow
 
 export interface MeView {
   accountId: string;
+  /** The workspace's display name (renameable in Settings). */
+  accountName: string;
   accountCode: string;
   accountShortCode: string;
   vanitySlug: string | null;
@@ -104,6 +106,7 @@ export interface MeView {
 export async function getMe(db: Db, accountId: string, memberId: string): Promise<MeView | null> {
   const row = await db.get<{
     code: string;
+    name: string;
     vanity_slug: string | null;
     handle: string | null;
     display_name: string | null;
@@ -113,7 +116,7 @@ export async function getMe(db: Db, accountId: string, memberId: string): Promis
     onboarding_completed_at: number | null;
     attribution: unknown;
   }>(
-    sql`SELECT a.code, a.vanity_slug, a.onboarding_completed_at, a.attribution,
+    sql`SELECT a.code, a.name, a.vanity_slug, a.onboarding_completed_at, a.attribution,
                m.handle, m.display_name, m.email, m.role, m.status
         FROM account a JOIN member m ON m.account_id = a.id
         WHERE a.id = ${accountId} AND m.id = ${memberId} LIMIT 1`,
@@ -121,6 +124,7 @@ export async function getMe(db: Db, accountId: string, memberId: string): Promis
   if (!row) return null;
   return {
     accountId,
+    accountName: row.name,
     accountCode: canonicalPublicCode({ code: row.code, vanity_slug: row.vanity_slug }),
     accountShortCode: row.code,
     vanitySlug: row.vanity_slug,

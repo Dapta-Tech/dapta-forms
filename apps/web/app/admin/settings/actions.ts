@@ -189,3 +189,14 @@ export async function saveMyProfileAction(
     };
   }
 }
+
+/** Resend a pending invitation (identity-service deployments). */
+export async function resendInvitationAction(id: string): Promise<{ ok: boolean }> {
+  try {
+    await adminApi.resendInvitation(id);
+    return { ok: true };
+  } catch (e) {
+    unstable_rethrow(e);
+    return { ok: false };
+  }
+}

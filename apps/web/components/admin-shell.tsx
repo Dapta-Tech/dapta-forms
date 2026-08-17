@@ -328,8 +328,9 @@ export function AdminShell({
       >
         {brand}
         {/* Directly under the wordmark and above the nav: which tenant every
-            link below belongs to. It renders nothing at all for the single-
-            workspace majority. */}
+            link below belongs to, and where a new one is made. Always
+            rendered: "New workspace" has to exist before there is a second
+            workspace to switch to. */}
         {currentAccountId ? (
           <WorkspaceSwitcher
             workspaces={workspaces}

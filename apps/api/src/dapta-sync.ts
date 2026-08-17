@@ -67,8 +67,11 @@ export class DaptaSyncDelivery {
     const me = await getMe(this.db, payload.accountId, payload.memberId);
     const state = await getAccountOnboarding(this.db, payload.accountId);
     const blob = state?.onboarding ?? null;
+    // `iam_account_id` is the upstream ACCOUNT (billing) id since 0015;
+    // `external_id` was that same value before and is the upstream WORKSPACE
+    // id after, so the coalesce keeps rows the projection has not touched yet.
     const account = await this.db.get<{ external_id: string | null }>(
-      sql`SELECT external_id FROM account WHERE id = ${payload.accountId} LIMIT 1`,
+      sql`SELECT COALESCE(iam_account_id, external_id) AS external_id FROM account WHERE id = ${payload.accountId} LIMIT 1`,
     );
 
     if (action === 'complete' && blob) {

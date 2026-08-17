@@ -1,0 +1,412 @@
+/**
+ * Workspaces as a PROJECTION of the identity service (see migration 0015).
+ *
+ * The identity service (the Dapta IAM) owns the truth about workspaces and who
+ * belongs to them. Locally, an `account` row IS one of its workspaces
+ * (`account.external_id` = upstream workspace id) and a `member` row IS one of
+ * its `workspace_users` rows. Nothing here talks to the network: the API layer
+ * reads upstream and calls these to make the local rows agree, so every query in
+ * the product keeps scoping by `account_id` exactly as before, and the public
+ * URLs (`account.code`) never move.
+ *
+ * Everything is idempotent — a projection that runs twice must be a no-op the
+ * second time — because it runs on the login path and on demand.
+ */
+import { randomUUID } from 'node:crypto';
+import { sql, type Db } from './client';
+import { deriveUniqueHandle, insertAccountWithShortCode } from './short-links';
+import { ACCOUNT_ROLES, type AccountRole } from './members';
+
+/** One upstream membership, as the API layer hands it to the projection. */
+export interface ProjectedMembership {
+  /** Upstream workspace id → `account.external_id`. */
+  workspaceId: string;
+  workspaceName: string;
+  /** Upstream account (billing) id the workspace hangs from → `account.iam_account_id`. */
+  iamAccountId: string | null;
+  /** Upstream `workspace_users.id` → `member.iam_workspace_user_id`. */
+  workspaceUserId: string | null;
+  role: AccountRole;
+  /** Upstream `is_active` on the membership row. */
+  active: boolean;
+}
+
+/** The identity being projected — always the authenticated principal, never the request. */
+export interface ProjectedIdentity {
+  /** The token `sub` → `member.external_id`. */
+  externalId: string;
+  email: string | null;
+  displayName: string | null;
+}
+
+export interface ProjectionResult {
+  /** Local account ids for every ACTIVE upstream membership, in input order. */
+  accountIds: string[];
+  /** Local `(accountId, memberId)` pairs whose member row was CREATED by this run. */
+  created: Array<{ accountId: string; memberId: string; role: AccountRole; isFirstMember: boolean }>;
+  /** Local account ids that were CREATED by this run (a workspace never seen before). */
+  createdAccounts: string[];
+}
+
+/** Local account by the upstream workspace id, or null. */
+export async function getAccountByExternalId(
+  db: Db,
+  externalId: string,
+): Promise<{ id: string; name: string; iamAccountId: string | null } | null> {
+  const r = await db.get<{ id: string; name: string; iam_account_id: string | null }>(
+    sql`SELECT id, name, iam_account_id FROM account WHERE external_id = ${externalId} LIMIT 1`,
+  );
+  return r ? { id: r.id, name: r.name, iamAccountId: r.iam_account_id ?? null } : null;
+}
+
+/**
+ * Rebind a pre-0015 account (whose `external_id` still holds the upstream
+ * ACCOUNT id) onto the upstream WORKSPACE it should have meant all along.
+ *
+ * Returns the local account id that now carries `external_id = workspaceId`:
+ * the legacy row itself when it could be rebound; the already-projected row
+ * when one existed. Two rows can only both exist when someone else in that
+ * workspace logged in after the deploy and before this person did — and if
+ * that projected row is still empty (no forms) it is absorbed so the person's
+ * existing forms keep their account, their code, and their URLs. A projected
+ * row that already has forms is kept, and the legacy row is parked under a
+ * `legacy:` prefix so it can never be mistaken for a live workspace; that case
+ * is loud in the logs and is not expected in practice.
+ */
+export async function rebindLegacyAccount(
+  db: Db,
+  args: { iamAccountId: string; workspaceId: string; workspaceName: string },
+): Promise<{ accountId: string; parkedLegacyId: string | null } | null> {
+  const legacy = await db.get<{ id: string }>(
+    sql`SELECT id FROM account WHERE external_id = ${args.iamAccountId} LIMIT 1`,
+  );
+  if (!legacy) return null;
+
+  const projected = await db.get<{ id: string }>(
+    sql`SELECT id FROM account WHERE external_id = ${args.workspaceId} LIMIT 1`,
+  );
+  if (!projected) {
+    await db.run(
+      sql`UPDATE account SET external_id = ${args.workspaceId}, iam_account_id = ${args.iamAccountId}
+          WHERE id = ${legacy.id}`,
+    );
+    return { accountId: legacy.id, parkedLegacyId: null };
+  }
+
+  const projectedForms = await db.get<{ n: number }>(
+    sql`SELECT COUNT(*) AS n FROM form WHERE account_id = ${projected.id}`,
+  );
+  if (Number(projectedForms?.n ?? 0) === 0) {
+    // Absorb the empty projection: its member rows are re-created by the next
+    // projection pass against the legacy row, so nothing of value is lost.
+    await db.run(sql`DELETE FROM member WHERE account_id = ${projected.id}`);
+    await db.run(sql`DELETE FROM account_alias WHERE account_id = ${projected.id}`);
+    await db.run(sql`DELETE FROM account WHERE id = ${projected.id}`);
+    await db.run(
+      sql`UPDATE account SET external_id = ${args.workspaceId}, iam_account_id = ${args.iamAccountId}
+          WHERE id = ${legacy.id}`,
+    );
+    return { accountId: legacy.id, parkedLegacyId: null };
+  }
+
+  await db.run(
+    sql`UPDATE account SET external_id = ${'legacy:' + args.iamAccountId}, iam_account_id = ${args.iamAccountId}
+        WHERE id = ${legacy.id}`,
+  );
+  return { accountId: projected.id, parkedLegacyId: legacy.id };
+}
+
+/**
+ * Whether this human has finished the first-run wizard ANYWHERE. Onboarding
+ * describes the person's first contact with the product, not each workspace
+ * they are later projected into — a workspace that came from the identity
+ * service was set up over there.
+ */
+export async function humanHasCompletedOnboarding(db: Db, externalId: string): Promise<boolean> {
+  const r = await db.get<{ id: string }>(
+    sql`SELECT a.id FROM account a JOIN member m ON m.account_id = a.id
+        WHERE m.external_id = ${externalId} AND a.onboarding_completed_at IS NOT NULL LIMIT 1`,
+  );
+  return !!r;
+}
+
+/**
+ * Make the local rows agree with the upstream memberships of one identity.
+ *
+ * For each ACTIVE membership: the account is found by `external_id` (created
+ * when unseen), its name and `iam_account_id` refreshed, and the member row for
+ * this identity upserted with the upstream role. Memberships upstream marks
+ * inactive, and local rows this identity holds in accounts the upstream list no
+ * longer names, are set `disabled` — never deleted, so `created_by` on forms
+ * keeps resolving. Rows the identity service cannot know about (an invite by
+ * email with no `external_id` yet, dev/seed rows) are left alone.
+ *
+ * `inheritOnboarding` stamps `onboarding_completed_at` on accounts CREATED by
+ * this run, so a person who already finished the wizard is not sent through it
+ * again for every workspace they belong to upstream.
+ */
+export async function projectMemberships(
+  db: Db,
+  identity: ProjectedIdentity,
+  memberships: ProjectedMembership[],
+  opts: { inheritOnboarding?: boolean; now?: number } = {},
+): Promise<ProjectionResult> {
+  const now = opts.now ?? Date.now();
+  const result: ProjectionResult = { accountIds: [], created: [], createdAccounts: [] };
+  const seenAccountIds = new Set<string>();
+
+  for (const m of memberships) {
+    if (!m.active) continue;
+    const role: AccountRole = (ACCOUNT_ROLES as readonly string[]).includes(m.role) ? m.role : 'member';
+
+    let account = await getAccountByExternalId(db, m.workspaceId);
+    let accountCreated = false;
+    if (!account) {
+      await insertAccountWithShortCode(db, {
+        name: m.workspaceName || 'Workspace',
+        externalId: m.workspaceId,
+      });
+      account = await getAccountByExternalId(db, m.workspaceId);
+      if (!account) throw new Error(`projection: could not create account for workspace ${m.workspaceId}`);
+      accountCreated = true;
+      result.createdAccounts.push(account.id);
+      if (opts.inheritOnboarding) {
+        await db.run(
+          sql`UPDATE account SET onboarding_completed_at = ${now}
+              WHERE id = ${account.id} AND onboarding_completed_at IS NULL`,
+        );
+      }
+    }
+    await db.run(
+      sql`UPDATE account SET name = ${m.workspaceName || account.name},
+            iam_account_id = COALESCE(${m.iamAccountId}, iam_account_id),
+            synced_at = ${now}
+          WHERE id = ${account.id}`,
+    );
+
+    const existing = await db.get<{ id: string; status: string }>(
+      sql`SELECT id, status FROM member WHERE account_id = ${account.id} AND external_id = ${identity.externalId} LIMIT 1`,
+    );
+    if (existing) {
+      // Upstream is the authority on role and on being active. `disabled`
+      // locally is revived here on purpose: the identity service says this
+      // membership is active NOW, and it is the only place a membership can be
+      // revoked or restored from.
+      await db.run(
+        sql`UPDATE member SET role = ${role}, status = 'active',
+              iam_workspace_user_id = COALESCE(${m.workspaceUserId}, iam_workspace_user_id),
+              email = COALESCE(email, ${identity.email}),
+              display_name = COALESCE(display_name, ${identity.displayName})
+            WHERE id = ${existing.id} AND account_id = ${account.id}`,
+      );
+    } else {
+      // Adopt an invite-by-email row before creating a second identity for the
+      // same person (mirrors the auth provider's invite adoption).
+      const email = identity.email?.trim().toLowerCase() || null;
+      const invited = email
+        ? await db.get<{ id: string }>(
+            sql`SELECT id FROM member
+                WHERE account_id = ${account.id} AND external_id IS NULL AND lower(email) = ${email}
+                ORDER BY created_at ASC LIMIT 1`,
+          )
+        : null;
+      if (invited) {
+        await db.run(
+          sql`UPDATE member SET external_id = ${identity.externalId}, status = 'active', role = ${role},
+                iam_workspace_user_id = COALESCE(${m.workspaceUserId}, iam_workspace_user_id),
+                display_name = COALESCE(display_name, ${identity.displayName})
+              WHERE id = ${invited.id} AND account_id = ${account.id}`,
+        );
+      } else {
+        const others = await db.get<{ id: string }>(
+          sql`SELECT id FROM member WHERE account_id = ${account.id} LIMIT 1`,
+        );
+        const id = randomUUID();
+        const handle = await deriveUniqueHandle(db, account.id, identity.displayName, identity.email);
+        await db.run(
+          sql`INSERT INTO member (id, account_id, external_id, email, display_name, handle, role, status,
+                iam_workspace_user_id, created_at)
+              VALUES (${id}, ${account.id}, ${identity.externalId}, ${identity.email}, ${identity.displayName},
+                ${handle}, ${role}, 'active', ${m.workspaceUserId}, ${now})
+              ON CONFLICT (account_id, external_id) DO NOTHING`,
+        );
+        const row = await db.get<{ id: string }>(
+          sql`SELECT id FROM member WHERE account_id = ${account.id} AND external_id = ${identity.externalId} LIMIT 1`,
+        );
+        if (row && row.id === id) {
+          result.created.push({ accountId: account.id, memberId: id, role, isFirstMember: !others || accountCreated });
+        }
+      }
+    }
+    seenAccountIds.add(account.id);
+    result.accountIds.push(account.id);
+  }
+
+  // Memberships upstream no longer names (or names as inactive): disable the
+  // local rows this identity holds in PROJECTED accounts only. A purely local
+  // account (never synced) is outside the identity service's authority.
+  const held = await db.all<{ id: string; account_id: string }>(
+    sql`SELECT m.id, m.account_id FROM member m JOIN account a ON a.id = m.account_id
+        WHERE m.external_id = ${identity.externalId} AND m.status = 'active' AND a.synced_at IS NOT NULL`,
+  );
+  for (const h of held) {
+    if (seenAccountIds.has(h.account_id)) continue;
+    await db.run(sql`UPDATE member SET status = 'disabled' WHERE id = ${h.id} AND account_id = ${h.account_id}`);
+  }
+
+  return result;
+}
+
+/**
+ * The account this identity should land in when nothing else says otherwise:
+ * the one it was seen in most recently, else its oldest membership. Only
+ * accounts where the membership is ACTIVE count.
+ */
+export async function pickHomeAccount(
+  db: Db,
+  externalId: string,
+  preferExternalId: string | null,
+): Promise<{ accountId: string; memberId: string } | null> {
+  if (preferExternalId) {
+    const preferred = await db.get<{ account_id: string; member_id: string }>(
+      sql`SELECT m.account_id, m.id AS member_id FROM member m JOIN account a ON a.id = m.account_id
+          WHERE m.external_id = ${externalId} AND m.status = 'active' AND a.external_id = ${preferExternalId}
+          LIMIT 1`,
+    );
+    if (preferred) return { accountId: preferred.account_id, memberId: preferred.member_id };
+  }
+  const row = await db.get<{ account_id: string; member_id: string }>(
+    sql`SELECT m.account_id, m.id AS member_id FROM member m JOIN account a ON a.id = m.account_id
+        WHERE m.external_id = ${externalId} AND m.status = 'active'
+        ORDER BY (m.last_seen_at IS NULL) ASC, m.last_seen_at DESC, m.created_at ASC LIMIT 1`,
+  );
+  return row ? { accountId: row.account_id, memberId: row.member_id } : null;
+}
+
+/**
+ * Create a purely LOCAL workspace (no identity service): a fresh account plus
+ * this identity as its owner. This is the path the dev stub and forks take;
+ * with the identity service configured the API creates upstream first and
+ * projects instead. Returns the new local account id.
+ */
+export async function createLocalWorkspace(
+  db: Db,
+  identity: Omit<ProjectedIdentity, 'externalId'> & { externalId: string | null },
+  input: { name: string; inheritOnboarding?: boolean; now?: number },
+): Promise<{ accountId: string; memberId: string }> {
+  const now = input.now ?? Date.now();
+  const externalId = `local:${randomUUID()}`;
+  await insertAccountWithShortCode(db, { name: input.name, externalId });
+  const account = await getAccountByExternalId(db, externalId);
+  if (!account) throw new Error('createLocalWorkspace: account insert did not land');
+  if (input.inheritOnboarding) {
+    await db.run(sql`UPDATE account SET onboarding_completed_at = ${now} WHERE id = ${account.id}`);
+  }
+  const memberId = randomUUID();
+  const handle = await deriveUniqueHandle(db, account.id, identity.displayName, identity.email);
+  await db.run(
+    sql`INSERT INTO member (id, account_id, external_id, email, display_name, handle, role, status, created_at)
+        VALUES (${memberId}, ${account.id}, ${identity.externalId}, ${identity.email}, ${identity.displayName},
+          ${handle}, 'owner', 'active', ${now})`,
+  );
+  return { accountId: account.id, memberId };
+}
+
+/** Rename a workspace locally (the API renames upstream first when it can). */
+export async function renameAccount(db: Db, accountId: string, name: string): Promise<void> {
+  await db.run(sql`UPDATE account SET name = ${name} WHERE id = ${accountId}`);
+}
+
+/** One upstream roster row, as the API layer hands it to `projectRoster`. */
+export interface ProjectedRosterRow {
+  externalId: string;
+  email: string | null;
+  displayName: string | null;
+  role: AccountRole;
+  active: boolean;
+  workspaceUserId: string | null;
+}
+
+/**
+ * Make one workspace's local roster agree with the upstream `users[]`.
+ *
+ * Every upstream member gets a local row (created if unseen, adopting an
+ * invite-by-email row when the address matches); role, status and the
+ * upstream membership id are refreshed. Local rows carrying an `external_id`
+ * that upstream no longer lists are disabled. Rows with NO `external_id`
+ * (invited by email locally, never signed in) are left alone — upstream cannot
+ * know them.
+ */
+export async function projectRoster(
+  db: Db,
+  accountId: string,
+  rows: ProjectedRosterRow[],
+  opts: { now?: number } = {},
+): Promise<void> {
+  const now = opts.now ?? Date.now();
+  const seen = new Set<string>();
+  for (const r of rows) {
+    seen.add(r.externalId);
+    const role: AccountRole = (ACCOUNT_ROLES as readonly string[]).includes(r.role) ? r.role : 'member';
+    const status = r.active ? 'active' : 'disabled';
+    const existing = await db.get<{ id: string }>(
+      sql`SELECT id FROM member WHERE account_id = ${accountId} AND external_id = ${r.externalId} LIMIT 1`,
+    );
+    if (existing) {
+      await db.run(
+        sql`UPDATE member SET role = ${role}, status = ${status},
+              iam_workspace_user_id = COALESCE(${r.workspaceUserId}, iam_workspace_user_id),
+              email = COALESCE(email, ${r.email}),
+              display_name = COALESCE(display_name, ${r.displayName})
+            WHERE id = ${existing.id} AND account_id = ${accountId}`,
+      );
+      continue;
+    }
+    const email = r.email?.trim().toLowerCase() || null;
+    const invited = email
+      ? await db.get<{ id: string }>(
+          sql`SELECT id FROM member WHERE account_id = ${accountId} AND external_id IS NULL AND lower(email) = ${email}
+              ORDER BY created_at ASC LIMIT 1`,
+        )
+      : null;
+    if (invited) {
+      await db.run(
+        sql`UPDATE member SET external_id = ${r.externalId}, role = ${role}, status = ${status},
+              iam_workspace_user_id = COALESCE(${r.workspaceUserId}, iam_workspace_user_id),
+              display_name = COALESCE(display_name, ${r.displayName})
+            WHERE id = ${invited.id} AND account_id = ${accountId}`,
+      );
+      continue;
+    }
+    const handle = await deriveUniqueHandle(db, accountId, r.displayName, r.email);
+    await db.run(
+      sql`INSERT INTO member (id, account_id, external_id, email, display_name, handle, role, status,
+            iam_workspace_user_id, created_at)
+          VALUES (${randomUUID()}, ${accountId}, ${r.externalId}, ${r.email}, ${r.displayName}, ${handle},
+            ${role}, ${status}, ${r.workspaceUserId}, ${now})
+          ON CONFLICT (account_id, external_id) DO NOTHING`,
+    );
+  }
+  const held = await db.all<{ id: string; external_id: string }>(
+    sql`SELECT id, external_id FROM member
+        WHERE account_id = ${accountId} AND external_id IS NOT NULL AND status = 'active'`,
+  );
+  for (const h of held) {
+    if (seen.has(h.external_id)) continue;
+    await db.run(sql`UPDATE member SET status = 'disabled' WHERE id = ${h.id} AND account_id = ${accountId}`);
+  }
+  await db.run(sql`UPDATE account SET synced_at = ${now} WHERE id = ${accountId}`);
+}
+
+/** The upstream ids the members service needs to act on one local member. */
+export async function getMemberUpstreamRef(
+  db: Db,
+  accountId: string,
+  memberId: string,
+): Promise<{ externalId: string | null; workspaceUserId: string | null; email: string | null } | null> {
+  const r = await db.get<{ external_id: string | null; iam_workspace_user_id: string | null; email: string | null }>(
+    sql`SELECT external_id, iam_workspace_user_id, email FROM member WHERE id = ${memberId} AND account_id = ${accountId} LIMIT 1`,
+  );
+  if (!r) return null;
+  return { externalId: r.external_id ?? null, workspaceUserId: r.iam_workspace_user_id ?? null, email: r.email ?? null };
+}

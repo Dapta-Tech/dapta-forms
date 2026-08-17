@@ -121,6 +121,8 @@ export interface WebhookPingResult {
 
 export interface Me {
   accountId: string;
+  /** The workspace's display name. */
+  accountName: string;
   accountCode: string;
   accountShortCode: string;
   vanitySlug: string | null;
@@ -240,6 +242,15 @@ export interface AccountMember {
   role: AccountRole;
   status: MemberStatus;
   createdAt: number;
+}
+
+/** An invitation that has not been accepted yet (lives in the identity service). */
+export interface PendingInvitation {
+  id: string;
+  email: string;
+  status: string;
+  createdAt: string | null;
+  expiresAt: string | null;
 }
 
 export type { AnalyticsResponse, SubmissionsPage } from '@quill/types';
@@ -561,6 +572,15 @@ export const adminApi = {
     req<{ ok: boolean }>('PUT', '/v1/me/profile', { profile }),
   /** Every workspace the caller can enter, for the switcher. */
   listWorkspaces: () => req<Workspace[]>('GET', '/v1/workspaces'),
+  /** Same list after forcing a re-read from the identity service (when there is one). */
+  refreshWorkspaces: () => req<Workspace[]>('POST', '/v1/workspaces/refresh'),
+  /** Create a workspace with the caller as owner; returns the new local account id. */
+  createWorkspace: (name: string) => req<{ accountId: string }>('POST', '/v1/workspaces', { name }),
+  /** Rename the workspace the caller is acting in (admin/owner). */
+  renameWorkspace: (name: string) =>
+    req<{ accountId: string; name: string }>('PATCH', '/v1/workspaces/current', { name }),
+  /** Tell the API the caller is about to open this workspace (membership re-checked; remembered upstream). */
+  enterWorkspace: (accountId: string) => req<{ ok: true }>('POST', `/v1/workspaces/${accountId}/enter`),
   /** Send one sample delivery to a form's webhook (admin-only, SSRF-guarded server-side). */
   pingWebhook: (id: string) =>
     req<WebhookPingResult>('POST', `/v1/forms/${id}/destinations/webhook/ping`),
@@ -578,6 +598,9 @@ export const adminApi = {
   updateMember: (id: string, b: { role?: AccountRole; status?: MemberStatus }) =>
     req<AccountMember>('PATCH', `/v1/members/${id}`, b),
   removeMember: (id: string) => req<{ ok: boolean }>('DELETE', `/v1/members/${id}`),
+  /** Pending invitations (identity-service deployments only; empty otherwise). */
+  listInvitations: () => req<PendingInvitation[]>('GET', '/v1/invitations'),
+  resendInvitation: (id: string) => req<{ ok: true }>('POST', `/v1/invitations/${id}/resend`),
 
   // Notifications (submission emails — admin/owner only)
   getNotifications: () => req<NotificationsResponse>('GET', '/v1/notifications'),
