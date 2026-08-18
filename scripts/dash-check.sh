@@ -68,6 +68,52 @@ CODE=(
   'apps/api/src/openapi.ts'
 )
 
+# UI: every frontend component, checked as a WHOLE LINE once comments are
+# removed. The CODE list above holds the string catalogs, and that left the
+# actual components uncovered: a dash typed straight into JSX text or into a
+# `title` / `aria-label` is on screen, is in no catalog, and passed every gate.
+# That is not hypothetical, it is how the webhook health cell shipped one.
+#
+# This can block on the whole tree because the components are already at zero.
+UI=(
+  'apps/web/app'
+  'apps/web/components'
+  'apps/web/lib'
+)
+
+# Strip comments with BLOCK STATE, then look at whatever text is left.
+#
+# The CODE paths get away with a line-shaped filter because only quoted text
+# counts there. Here the target is JSX text, which carries no quotes at all, so
+# the whole line has to be read; and that makes the `{/* ... */}` block the
+# problem, because its continuation lines start with neither `*` nor `//` and
+# are indistinguishable from prose by any per-line rule. Roughly 140 comment
+# lines in apps/web look exactly like copy without this.
+scan_ui() {
+  local files
+  files=$(grep -RlE "$BANNED" "${UI[@]}" --include='*.ts' --include='*.tsx' $SKIP_SPECS 2>/dev/null || true)
+  [ -z "$files" ] && return 0
+  printf '%s\n' "$files" | while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    awk -v F="$f" '
+      BEGIN { block = 0 }
+      {
+        line = $0
+        # inside a block comment: nothing counts until it closes
+        if (block) { i = index(line, "*/"); if (i == 0) next; line = substr(line, i + 2); block = 0 }
+        # whole comments opened and closed on this line, `{/* x */}` included
+        while (match(line, /\{?\/\*.*\*\/\}?/)) line = substr(line, 1, RSTART - 1) substr(line, RSTART + RLENGTH)
+        # an opener with no closer takes the rest of the line and the ones after
+        p = index(line, "/*"); if (p > 0) { block = 1; line = substr(line, 1, p - 1) }
+        # a trailing // comment, only when the quotes before it balance
+        c = index(line, "//")
+        if (c > 0) { b = substr(line, 1, c - 1); t = b; n = gsub(/["\047`]/, "", t); if (n % 2 == 0) line = b }
+        if (line ~ /\xe2\x80\x94|\xe2\x80\x95/) print F ":" FNR ": " line
+      }
+    ' "$f"
+  done
+}
+
 # A dash between two quotes of the same kind.
 QUOTED=$'(\'[^\']*(—|―)[^\']*\'|"[^"]*(—|―)[^"]*"|`[^`]*(—|―)[^`]*`)'
 QUOTED_EN=$'(\'[^\']*–[^\']*\'|"[^"]*–[^"]*"|`[^`]*–[^`]*`)'
@@ -132,7 +178,8 @@ echo "== dash-check: banned characters =="
 # CODE: strings that reach a screen, an inbox, or a screen reader. Always blocks.
 CODE_HITS=$(grep -RInE "$QUOTED" "${CODE[@]}" $SKIP_SPECS 2>/dev/null | grep -vE "$COMMENT_LINE" || true)
 CODE_HITS="$CODE_HITS
-$(grep -RInE "$BANNED_ESCAPED" "${CODE[@]}" $SKIP_SPECS 2>/dev/null || true)"
+$(grep -RInE "$BANNED_ESCAPED" "${CODE[@]}" $SKIP_SPECS 2>/dev/null || true)
+$(scan_ui || true)"
 CODE_HITS=$(printf '%s\n' "$CODE_HITS" | grep -vE '^[[:space:]]*$' || true)
 
 # PROSE: docs and changesets. Blocking scope is whatever this range added.

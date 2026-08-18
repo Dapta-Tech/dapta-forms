@@ -195,6 +195,15 @@ character replaced and the outer two left alone.
 
 **Hard ban, in anything a person outside the team reads:**
 
+- **Every frontend component in `apps/web`.** Text typed straight into JSX is
+  copy, exactly like a catalog entry, and it is the easiest kind to miss because
+  it belongs to no catalog and no reviewer greps for it. That includes the text
+  between tags, the attributes a person or a screen reader hears (`title`,
+  `aria-label`, `alt`, `placeholder`), and any string literal in the component.
+  This is not hypothetical: the webhook health cell shipped a bare `—` as its
+  empty state, hardcoded in JSX, and no gate saw it. Prefer a catalog key over
+  hardcoded text anyway (invariant 8), but a dash in a component is a hard ban
+  whether or not the string should have been in the catalog.
 - Both message catalogs. There are two: `packages/shared/src/i18n/index.ts` and
   `apps/web/app/admin/forms/[id]/edit/_components/builder-messages.ts`. A sweep
   that only knows about the first one misses a third of the UI copy.
@@ -262,11 +271,23 @@ there is frozen history rather than editable prose.
 bash scripts/dash-check.sh
 ```
 
-The check has two severities, because copy and docs are in different places.
+The check has three scopes, because the three live at different counts.
+
+**Components block, on the whole tree, always.** Every `.ts`/`.tsx` under
+`apps/web/app`, `apps/web/components` and `apps/web/lib` is read as a WHOLE LINE
+once comments are removed, so JSX text and `title`/`aria-label`/`alt` attributes
+are covered, not just quoted strings. Those files were uncovered until the gate
+had already let a hardcoded `—` reach the screen.
+
+Reading whole lines is what forces the block-comment state machine in the
+script: a `{/* ... */}` continuation line starts with neither `*` nor `//`, so
+no per-line filter can tell it from copy, and roughly 140 comment lines in
+`apps/web` look exactly like on-screen text without it.
 
 **Copy blocks, on the whole tree, always.** The string catalogs, email
 templates, seed and template form content, OpenAPI descriptions and CRM payload
-text are at zero occurrences and stay there. CI runs this on every PR.
+text are at zero occurrences and stay there. Only QUOTED text counts in these,
+because their comments outnumber their strings about five to one.
 
 **Docs block only on the lines a PR adds.** `.changeset/` and `docs/` carry
 roughly 320 older dashes, most of them in changesets that already shipped as
@@ -279,8 +300,18 @@ first. Run it with a base to see exactly what CI will say:
 bash scripts/dash-check.sh origin/develop
 ```
 
-Comment lines and `*.spec.ts` titles are skipped in the copy paths, matching the
-advisory rule above. Note what is deliberately NOT done there: code spans are
+**What the check does NOT read: comments and `*.spec.ts` titles.** Both are
+advisory per the rule above, in every scope, so a dashed code comment or test
+title will never fail CI. That is a deliberate ceiling, not an oversight: the
+repo holds ~1,500 dashes in comments, and a gate that blocked on them would be
+switched off in a week. It also means the check is not a substitute for reading
+your own diff.
+
+Two more things it cannot see. `apps/api` route handlers are only covered where
+a string is a known copy path, so a message you invent and return as an error
+`reason` can still reach the integrations panel unchecked. And no static gate
+reaches copy that is already PERSISTED: form configs and saved notification
+templates carry their text in stored JSON, where only a migration can fix it. Note what is deliberately NOT done there: code spans are
 stripped before matching in docs but never in code, because stripping them in
 code would erase template literals, and a dashed template literal is copy.
 
