@@ -21,7 +21,7 @@ import { fileURLToPath } from 'node:url';
  *      confirmation with the FORM override as subjectTemplate.
  *   3. "Use account template" (branded confirm dialog) removes the override;
  *      the next submission snapshots the account/stock template again (null).
- *   4. The account Settings → Notifications page still works after the shared
+ *   4. The Account settings → Notifications page still works after the shared
  *      editor refactor: load, save round-trip, reset (+ the new muted note
  *      that forms can override from their Connect tab).
  *
@@ -323,13 +323,13 @@ test('per-form override: customize → outbox snapshots it → reset → account
   expect(payload2.bodyTemplate ?? null).toBeNull();
 });
 
-test('account Settings → Notifications still works: load, save round-trip, reset', async ({
+test('Account settings → Notifications still works: load, save round-trip, reset', async ({
   page,
   request,
 }) => {
   const customSubject = `V3 settings ${RUN} {{formName}}`;
 
-  await page.goto('/admin/settings');
+  await page.goto('/admin/account/notifications');
   await expect(page.getByRole('heading', { name: 'Notifications', level: 2 })).toBeVisible();
   // The new muted pointer: forms can override from their Connect tab.
   await expect(page.getByTestId('notifications-form-override-note')).toBeVisible();

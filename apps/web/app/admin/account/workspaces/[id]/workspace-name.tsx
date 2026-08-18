@@ -15,13 +15,17 @@ export interface WorkspaceNameLabels {
 /**
  * The workspace's name, editable by admins/owners. Renames upstream first when
  * the identity service is configured (the server action goes through the API),
- * so the Dapta app shows the new name too.
+ * so the Dapta app shows the new name too. `accountId` names the workspace in
+ * a hidden input, so Account settings can rename any workspace the caller
+ * administers without switching into it.
  */
 export function WorkspaceName({
+  accountId,
   initial,
   canEdit,
   labels,
 }: {
+  accountId: string;
   initial: string;
   canEdit: boolean;
   labels: WorkspaceNameLabels;
@@ -42,19 +46,20 @@ export function WorkspaceName({
 
   if (!canEdit) {
     return (
-      <div>
-        <dt className="text-xs font-medium uppercase tracking-wide text-faint">{labels.workspaceName}</dt>
-        <dd className="mt-1 text-sm text-foreground" data-testid="workspace-name">
+      <div className="min-w-0">
+        <p className="text-2xs uppercase tracking-wide text-faint">{labels.workspaceName}</p>
+        <h2 className="mt-1 truncate text-2xl font-semibold tracking-tight" data-testid="workspace-name">
           {initial}
-        </dd>
+        </h2>
       </div>
     );
   }
 
   return (
-    <form action={action} className="sm:col-span-2" data-testid="workspace-name-form">
+    <form action={action} className="min-w-0" data-testid="workspace-name-form">
+      <input type="hidden" name="accountId" value={accountId} />
       <label className="flex flex-col gap-1.5 text-sm">
-        <span className="text-xs font-medium uppercase tracking-wide text-faint">{labels.workspaceName}</span>
+        <span className="text-2xs uppercase tracking-wide text-faint">{labels.workspaceName}</span>
         <div className="flex items-center gap-2">
           <input
             name="name"
@@ -65,7 +70,7 @@ export function WorkspaceName({
             key={initial}
             autoComplete="off"
             data-testid="workspace-name-input"
-            className="w-full max-w-md rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="w-full max-w-md rounded-md border border-input bg-background px-3 py-2 text-base font-semibold tracking-tight focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           />
           <Button type="submit" size="sm" disabled={pending}>
             {labels.workspaceNameSave}

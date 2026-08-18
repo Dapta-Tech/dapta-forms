@@ -5,7 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 /**
- * N5 — editable email templates (Settings → Notifications).
+ * N5 — editable email templates (Account settings → Notifications, /admin/account/notifications).
  *
  * The two submission emails (`submission_received` = owner notice,
  * `submission_confirmed` = respondent receipt) are per-account customizable:
@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url';
  * A stored subject/body of `null` means "shipped default" (the send path falls
  * back to the code template). These specs exercise:
  *   1. API contract of GET /v1/notifications (two settings + defaults + tokens).
- *   2. The Settings UI renders both editable cards (toggle/subject/body/chips/
+ *   2. The Notifications page renders both editable cards (toggle/subject/body/chips/
  *      live preview).
  *   3. Editing the owner subject interpolates live, persists across a reload,
  *      and resets cleanly to the shipped default.
@@ -28,7 +28,7 @@ import { fileURLToPath } from 'node:url';
 
 const API = 'http://localhost:4400';
 
-// EN i18n labels the Settings → Notifications UI renders (packages/shared i18n
+// EN i18n labels the Account settings → Notifications UI renders (packages/shared i18n
 // `admin.notifications`; the QA env locale is `en`).
 const OWNER_TITLE = 'New submission notice'; // submission_received
 const RESPONDENT_TITLE = 'Respondent confirmation'; // submission_confirmed
@@ -223,10 +223,10 @@ test('GET /v1/notifications returns the two settings with defaults + token catal
   expect(respondent.defaults.en.subject).toBe('We got your responses: {{formName}}');
 });
 
-test('Settings → Notifications renders both cards with toggle, subject, body, chips, preview', async ({
+test('Account settings → Notifications renders both cards with toggle, subject, body, chips, preview', async ({
   page,
 }) => {
-  await page.goto('/admin/settings');
+  await page.goto('/admin/account/notifications');
 
   await expect(page.getByRole('heading', { name: 'Notifications', level: 2 })).toBeVisible();
 
@@ -263,7 +263,7 @@ test('editing the owner subject previews live, persists across reload, and reset
   const customSubject = 'Custom {{formName}} notice';
   const interpolated = interpolate(customSubject, { formName: SAMPLE_FORM_NAME });
 
-  await page.goto('/admin/settings');
+  await page.goto('/admin/account/notifications');
   const card = cardByTitle(page, OWNER_TITLE);
   await expect(card).toBeVisible();
 

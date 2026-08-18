@@ -113,8 +113,6 @@ export interface FormsMessages {
     };
     /** App shell chrome shared across every admin page (sidebar/header/footer). */
     chrome: {
-      signOut: string;
-      viewPublic: string;
       collapse: string;
       expand: string;
       openNav: string;
@@ -133,14 +131,19 @@ export interface FormsMessages {
         submissions: string;
         analytics: string;
         integrations: string;
-        branding: string;
-        settings: string;
         /**
          * The door to the wider platform (agents), an EXTERNAL link. Rendered
          * only when the deployment configures a platform URL, so a fork's rail
          * never carries a dead item.
          */
         agents: string;
+      };
+      /** The bottom-left profile button (avatar + name) and its menu. */
+      profileMenu: {
+        /** Accessible name of the trigger + the menu. */
+        label: string;
+        accountSettings: string;
+        logOut: string;
       };
       /** The Dapta suite app-switcher. */
       switcher: {
@@ -194,7 +197,7 @@ export interface FormsMessages {
       analytics: string;
       analyticsDesc: string;
     };
-    /** The workspace brand-kit page (/admin/branding). */
+    /** The workspace brand kit (Account settings → Brand kit; /admin/branding redirects there). */
     brandKit: {
       title: string;
       subtitle: string;
@@ -259,15 +262,10 @@ export interface FormsMessages {
       completionValue: string; // {n}
       completionLabel: string;
     };
-    /** The workspace settings page (/admin/settings). */
+    /** Workspace/member/public-page labels shared by Account settings (/admin/settings redirects there). */
     settings: {
       title: string;
       subtitle: string;
-      /** The colour-scheme preference section. */
-      appearanceHeading: string;
-      appearanceSubtitle: string;
-      workspaceHeading: string;
-      workspaceSubtitle: string;
       /** The renameable workspace name (admin/owner). */
       workspaceName: string;
       workspaceNameSave: string;
@@ -281,10 +279,7 @@ export interface FormsMessages {
       vanityNone: string;
       publicPage: string;
       viewPublic: string;
-      membersHeading: string;
-      membersSubtitle: string;
       /** Pending invitations (identity-service deployments). */
-      pendingHeading: string;
       pendingBadge: string;
       resendInvite: string;
       resendSuccess: string;
@@ -339,6 +334,64 @@ export interface FormsMessages {
       manageErrorUpstream: string;
       /** Ownership is a membership type upstream; only the Dapta app transfers it. */
       manageErrorOwnership: string;
+    };
+    /**
+     * Account settings (/admin/account): the area behind the profile button.
+     * Sub-nav Workspaces · Brand kit · Notifications · Public page. Role /
+     * status / invite / manage-error labels are shared with `settings`.
+     */
+    account: {
+      title: string;
+      subtitle: string;
+      /** Names the workspace the pages act in ("Managing: {name}"). */
+      managing: string;
+      nav: {
+        workspaces: string;
+        brandKit: string;
+        notifications: string;
+        publicPage: string;
+      };
+      /** The workspace list (cards). */
+      workspaces: {
+        title: string;
+        subtitle: string;
+        search: string;
+        searchEmpty: string;
+        newWorkspace: string;
+        current: string;
+        open: string;
+        manage: string;
+        yourRole: string;
+        memberOne: string;
+        /** {count} */
+        memberOther: string;
+        empty: string;
+      };
+      /** One workspace: name, Members and Invitations tabs. */
+      workspace: {
+        back: string;
+        tabMembers: string;
+        tabInvitations: string;
+        notFound: string;
+        noAccess: string;
+        colName: string;
+        colEmail: string;
+        colRole: string;
+        colStatus: string;
+        colActions: string;
+        colSent: string;
+        colExpires: string;
+        activate: string;
+        deactivate: string;
+        statusChangeSuccess: string;
+        invitationsEmpty: string;
+        invitationsSubtitle: string;
+      };
+      /** Public page: the member's own identity fields shown next to the editor. */
+      profileHeading: string;
+      profileSubtitle: string;
+      /** Notifications, seen by a plain member (admins/owners edit them). */
+      notificationsNoAccess: string;
     };
     /** Settings → Notifications: edit the two submission emails the platform sends. */
     notifications: {
@@ -1634,8 +1687,6 @@ export const en: FormsMessages = {
       noResults: 'No results',
     },
     chrome: {
-      signOut: 'Sign out',
-      viewPublic: 'View public page',
       collapse: 'Collapse sidebar',
       expand: 'Expand sidebar',
       openNav: 'Open navigation',
@@ -1651,9 +1702,12 @@ export const en: FormsMessages = {
         submissions: 'Submissions',
         analytics: 'Analytics',
         integrations: 'Integrations',
-        branding: 'Brand kit',
-        settings: 'Settings',
         agents: 'Dapta Agents',
+      },
+      profileMenu: {
+        label: 'Account menu',
+        accountSettings: 'Account settings',
+        logOut: 'Log out',
       },
       switcher: {
         trigger: 'Switch product',
@@ -1766,10 +1820,6 @@ export const en: FormsMessages = {
     settings: {
       title: 'Settings',
       subtitle: 'Your workspace and team.',
-      appearanceHeading: 'Appearance',
-      appearanceSubtitle: 'Choose how Dapta Forms looks on this device.',
-      workspaceHeading: 'Workspace',
-      workspaceSubtitle: 'Your identity and public link.',
       workspaceName: 'Workspace name',
       workspaceNameSave: 'Save',
       workspaceNameSaved: 'Workspace renamed.',
@@ -1782,9 +1832,6 @@ export const en: FormsMessages = {
       vanityNone: 'Not set',
       publicPage: 'Public page',
       viewPublic: 'View public page',
-      membersHeading: 'Members',
-      membersSubtitle: 'People with access to this workspace.',
-      pendingHeading: 'Pending invitations',
       pendingBadge: 'Pending',
       resendInvite: 'Resend',
       resendSuccess: 'Invitation sent again.',
@@ -1836,6 +1883,53 @@ export const en: FormsMessages = {
       manageErrorFailed: 'Something went wrong. Please try again.',
       manageErrorUpstream: 'The identity service could not apply this change.',
       manageErrorOwnership: 'Ownership is transferred from the Dapta app.',
+    },
+    account: {
+      title: 'Account settings',
+      subtitle: 'Your workspaces, brand kit, notifications and public page.',
+      managing: 'Managing',
+      nav: {
+        workspaces: 'Workspaces',
+        brandKit: 'Brand kit',
+        notifications: 'Notifications',
+        publicPage: 'Public page',
+      },
+      workspaces: {
+        title: 'Workspaces',
+        subtitle: 'Every workspace you belong to. Open one to work in it, or manage its members and invitations.',
+        search: 'Search workspaces',
+        searchEmpty: 'No workspace matches that.',
+        newWorkspace: 'New workspace',
+        current: 'Current',
+        open: 'Open',
+        manage: 'Manage',
+        yourRole: 'Your role',
+        memberOne: '1 member',
+        memberOther: '{count} members',
+        empty: 'You are not in any workspace yet.',
+      },
+      workspace: {
+        back: 'All workspaces',
+        tabMembers: 'Members',
+        tabInvitations: 'Invitations',
+        notFound: 'That workspace is not among yours.',
+        noAccess: 'Only admins and owners of this workspace can manage its members.',
+        colName: 'Name',
+        colEmail: 'Email',
+        colRole: 'Role',
+        colStatus: 'Status',
+        colActions: 'Actions',
+        colSent: 'Sent',
+        colExpires: 'Expires',
+        activate: 'Activate',
+        deactivate: 'Deactivate',
+        statusChangeSuccess: 'Status updated.',
+        invitationsEmpty: 'No pending invitations.',
+        invitationsSubtitle: 'People invited by email who have not accepted yet.',
+      },
+      profileHeading: 'Your identity',
+      profileSubtitle: 'How you appear on your public page.',
+      notificationsNoAccess: 'Only admins and owners of this workspace can edit its notification emails.',
     },
     notifications: {
       heading: 'Notifications',
@@ -3041,8 +3135,6 @@ export const es: FormsMessages = {
       noResults: 'Sin resultados',
     },
     chrome: {
-      signOut: 'Cerrar sesión',
-      viewPublic: 'Ver página pública',
       collapse: 'Contraer barra lateral',
       expand: 'Expandir barra lateral',
       openNav: 'Abrir navegación',
@@ -3058,9 +3150,12 @@ export const es: FormsMessages = {
         submissions: 'Respuestas',
         analytics: 'Analíticas',
         integrations: 'Integraciones',
-        branding: 'Kit de marca',
-        settings: 'Ajustes',
         agents: 'Dapta Agents',
+      },
+      profileMenu: {
+        label: 'Menú de cuenta',
+        accountSettings: 'Ajustes de cuenta',
+        logOut: 'Cerrar sesión',
       },
       switcher: {
         trigger: 'Cambiar producto',
@@ -3174,10 +3269,6 @@ export const es: FormsMessages = {
     settings: {
       title: 'Ajustes',
       subtitle: 'Tu espacio de trabajo y tu equipo.',
-      appearanceHeading: 'Apariencia',
-      appearanceSubtitle: 'Elige cómo se ve Dapta Forms en este dispositivo.',
-      workspaceHeading: 'Espacio de trabajo',
-      workspaceSubtitle: 'Tu identidad y tu enlace público.',
       workspaceName: 'Nombre del workspace',
       workspaceNameSave: 'Guardar',
       workspaceNameSaved: 'Workspace renombrado.',
@@ -3190,9 +3281,6 @@ export const es: FormsMessages = {
       vanityNone: 'Sin definir',
       publicPage: 'Página pública',
       viewPublic: 'Ver página pública',
-      membersHeading: 'Miembros',
-      membersSubtitle: 'Personas con acceso a este espacio de trabajo.',
-      pendingHeading: 'Invitaciones pendientes',
       pendingBadge: 'Pendiente',
       resendInvite: 'Reenviar',
       resendSuccess: 'Invitación enviada de nuevo.',
@@ -3244,6 +3332,53 @@ export const es: FormsMessages = {
       manageErrorFailed: 'Algo salió mal. Inténtalo de nuevo.',
       manageErrorUpstream: 'El servicio de identidad no pudo aplicar este cambio.',
       manageErrorOwnership: 'La propiedad se transfiere desde la app de Dapta.',
+    },
+    account: {
+      title: 'Ajustes de cuenta',
+      subtitle: 'Tus workspaces, kit de marca, notificaciones y página pública.',
+      managing: 'Administrando',
+      nav: {
+        workspaces: 'Workspaces',
+        brandKit: 'Kit de marca',
+        notifications: 'Notificaciones',
+        publicPage: 'Página pública',
+      },
+      workspaces: {
+        title: 'Workspaces',
+        subtitle: 'Todos los workspaces a los que perteneces. Abre uno para trabajar en él, o administra sus miembros e invitaciones.',
+        search: 'Buscar workspaces',
+        searchEmpty: 'Ningún workspace coincide.',
+        newWorkspace: 'Nuevo workspace',
+        current: 'Actual',
+        open: 'Abrir',
+        manage: 'Administrar',
+        yourRole: 'Tu rol',
+        memberOne: '1 miembro',
+        memberOther: '{count} miembros',
+        empty: 'Todavía no perteneces a ningún workspace.',
+      },
+      workspace: {
+        back: 'Todos los workspaces',
+        tabMembers: 'Miembros',
+        tabInvitations: 'Invitaciones',
+        notFound: 'Ese workspace no está entre los tuyos.',
+        noAccess: 'Solo los administradores y propietarios de este workspace pueden administrar sus miembros.',
+        colName: 'Nombre',
+        colEmail: 'Correo',
+        colRole: 'Rol',
+        colStatus: 'Estado',
+        colActions: 'Acciones',
+        colSent: 'Enviada',
+        colExpires: 'Vence',
+        activate: 'Activar',
+        deactivate: 'Desactivar',
+        statusChangeSuccess: 'Estado actualizado.',
+        invitationsEmpty: 'No hay invitaciones pendientes.',
+        invitationsSubtitle: 'Personas invitadas por correo que aún no han aceptado.',
+      },
+      profileHeading: 'Tu identidad',
+      profileSubtitle: 'Cómo apareces en tu página pública.',
+      notificationsNoAccess: 'Solo los administradores y propietarios de este workspace pueden editar sus correos de notificación.',
     },
     notifications: {
       heading: 'Notificaciones',

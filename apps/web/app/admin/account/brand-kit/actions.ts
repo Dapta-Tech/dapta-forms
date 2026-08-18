@@ -5,8 +5,9 @@ import { unstable_rethrow } from 'next/navigation';
 import { adminApi, ApiError, type BrandKit } from '@/lib/admin-api';
 
 /**
- * Brand-kit actions (/admin/branding). Apply/revert rewrite form configs, so
- * every mutation revalidates the surfaces that render form branding state.
+ * Brand-kit actions (/admin/account/brand-kit). Apply/revert rewrite form
+ * configs, so every mutation revalidates the surfaces that render form
+ * branding state.
  */
 
 export type BrandActionResult<T = undefined> =
@@ -14,7 +15,7 @@ export type BrandActionResult<T = undefined> =
   | { ok: false; message?: string };
 
 function revalidateBrandSurfaces(): void {
-  revalidatePath('/admin/branding');
+  revalidatePath('/admin/account/brand-kit');
   revalidatePath('/admin');
   revalidatePath('/admin/forms');
 }

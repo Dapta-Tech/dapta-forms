@@ -73,7 +73,7 @@ export default async function AdminHome() {
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <CreateForm labels={createLabels} variant="card" cardTitle={h.createForm} cardDesc={h.createFormDesc} />
-        <Shortcut href="/admin/branding" icon="pi-palette" title={h.branding} desc={h.brandingDesc} />
+        <Shortcut href="/admin/account/brand-kit" icon="pi-palette" title={h.branding} desc={h.brandingDesc} />
         <Shortcut href="/admin/integrations" icon="pi-link" title={h.integrations} desc={h.integrationsDesc} />
         <Shortcut href="/admin/analytics" icon="pi-chart-bar" title={h.analytics} desc={h.analyticsDesc} />
       </div>

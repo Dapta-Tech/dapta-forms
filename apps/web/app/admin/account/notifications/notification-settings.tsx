@@ -45,7 +45,10 @@ export interface NotificationLabels {
   formOverrideNote: string;
 }
 
-/** The Notifications section: one editable card per submission email. */
+/**
+ * The Notifications section: one editable card per submission email. Rendered
+ * as the whole of /admin/account/notifications, so it carries no outer margin.
+ */
 export function NotificationSettings({
   settings,
   locale,
@@ -61,7 +64,7 @@ export function NotificationSettings({
       : { title: labels.confirmedTitle, subtitle: labels.confirmedSubtitle };
 
   return (
-    <section className="mt-8 rounded-xl border border-border bg-card p-6">
+    <section data-testid="notification-settings" className="rounded-xl border border-border bg-card p-6">
       <h2 className="text-lg font-semibold tracking-tight">{labels.heading}</h2>
       <p className="mt-0.5 text-sm text-muted-foreground">{labels.subtitle}</p>
       {/* These are the ACCOUNT templates — any form can pin its own copy. */}
