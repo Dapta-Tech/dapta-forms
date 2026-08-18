@@ -4,7 +4,7 @@ import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 import { unstable_rethrow } from 'next/navigation';
 import { setWorkspace } from '@/lib/auth-session';
-import { adminApi, ApiError } from '@/lib/admin-api';
+import { adminApi, ApiError, type WorkspaceSearchRow } from '@/lib/admin-api';
 
 /**
  * Enter a different workspace.
@@ -33,6 +33,43 @@ export async function switchWorkspaceAction(accountId: string): Promise<{ error?
 
   await setWorkspace(id);
   // Every admin page is scoped to the account, so all of it is now stale.
+  revalidatePath('/admin', 'layout');
+  redirect('/admin');
+}
+
+/**
+ * Type-to-find over the workspaces the caller may enter (the switcher's search
+ * box). Own workspaces always; the deployment's staff also get the estate. A
+ * failure is an empty result, never an error the menu has to explain.
+ */
+export async function searchWorkspacesAction(
+  q: string,
+): Promise<{ rows: WorkspaceSearchRow[]; staff: boolean }> {
+  try {
+    const res = await adminApi.searchWorkspaces(q.slice(0, 120));
+    return { rows: res.rows, staff: res.staff };
+  } catch (e) {
+    unstable_rethrow(e);
+    return { rows: [], staff: false };
+  }
+}
+
+/**
+ * Staff only: enter an estate workspace the caller holds no membership in. The
+ * API re-reads the workspace upstream, projects it, mints the access grant and
+ * remembers the choice; then this is a plain switch.
+ */
+export async function enterEstateWorkspaceAction(workspaceId: string): Promise<{ error?: string }> {
+  const id = workspaceId.trim();
+  if (!id) return { error: 'unknown' };
+  let accountId: string;
+  try {
+    accountId = (await adminApi.enterEstateWorkspace(id)).accountId;
+  } catch (e) {
+    unstable_rethrow(e);
+    return { error: 'forbidden' };
+  }
+  await setWorkspace(accountId);
   revalidatePath('/admin', 'layout');
   redirect('/admin');
 }

@@ -222,6 +222,21 @@ export const serverEnvSchema = z.object({
   // read from / written to the IAM with the caller's bearer, and the local
   // account/member rows are a projection. Unset = local-only workspaces.
   IAM_BASE_URL: z.string().url().optional(),
+  // Staff of the deployment, by email domain (comma-separated, no `@`). With
+  // the identity service configured, a person whose email is on one of these
+  // domains may search the WHOLE estate and enter any workspace, as an admin,
+  // the way the Dapta app lets its team; the row minted for that carries
+  // `member.access_grant = 'staff'` and is never shown on the team's roster.
+  // Unset (the default, every fork) = nobody is staff.
+  IAM_STAFF_DOMAINS: z
+    .string()
+    .optional()
+    .transform((v) =>
+      (v ?? '')
+        .split(',')
+        .map((d) => d.trim().toLowerCase().replace(/^@/, ''))
+        .filter(Boolean),
+    ),
   IAM_API_KEY: z.string().optional(),
   DAPTA_SYNC_FLOW_URL: z.string().url().optional(),
   DAPTA_SYNC_FLOW_KEY: z.string().optional(),

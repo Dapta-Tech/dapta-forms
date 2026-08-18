@@ -67,7 +67,14 @@ describe('WorkspaceService (IAM-backed)', () => {
         lastWorkspace = body.feature_flags.last_workspace;
         return json({});
       }
-      if (method === 'GET' && url.pathname === '/iam/workspace/search') return json({ data: workspaces, totalPages: 1 });
+      if (method === 'GET' && url.pathname === '/iam/workspace/search') {
+        // Like the real thing: `query` filters by name; the estate is returned
+        // to everyone here (the fake has no idea who is staff), so the SERVICE
+        // is what keeps non-staff to their memberships.
+        const q = (url.searchParams.get('query') ?? '').toLowerCase();
+        const rows = q ? workspaces.filter((w) => w.name.toLowerCase().includes(q)) : workspaces;
+        return json({ data: rows, total: rows.length, totalPages: 1 });
+      }
       if (method === 'POST' && url.pathname === '/iam/workspace') {
         const created: IamWorkspace = {
           id: `ws-new-${workspaces.length}`, name: body.name, account_id: body.account_id, is_active: true,
@@ -126,6 +133,7 @@ describe('WorkspaceService (IAM-backed)', () => {
     const projection = new WorkspaceProjection(
       db,
       new IamWorkspacesClient({ baseUrl: 'https://iam.test/iam', fetchImpl, now: () => clock }),
+      { staffDomains: ['staff.test'] },
     );
     const provider = new WorkOsAuthProvider(
       db,
@@ -353,6 +361,138 @@ describe('WorkspaceService (IAM-backed)', () => {
     const list = await svc.refresh(req());
     expect(calls.filter((c) => c.path === '/iam/workspace/search').length).toBe(before + 1);
     expect(list.map((w) => w.accountName).sort()).toEqual(['Late', 'Mine']);
+  });
+});
+
+describe('WorkspaceService (IAM-backed) — staff of the deployment', () => {
+  // Same fake as above, plus a staff person with their own workspace and a
+  // customer workspace they hold no membership in.
+  let db: Db;
+  let svc: WorkspaceService;
+  let calls: Array<{ method: string; path: string }>;
+  let workspaces: IamWorkspace[];
+  const STAFF_SUB = 'sub-staff';
+  const staffToken = signJwtHs256({ sub: STAFF_SUB, account_id: 'acc-staff', email: 's@staff.test', name: 'Staff', exp: 4102444800 }, SECRET);
+  const staffReq = (workspace?: string): ReqLike => ({
+    headers: { authorization: `Bearer ${staffToken}`, ...(workspace ? { [WORKSPACE_HEADER]: workspace } : {}) },
+  });
+  const customerToken = signJwtHs256({ sub: SUB, account_id: IAM_ACCOUNT, email: 'a@x.com', name: 'A', exp: 4102444800 }, SECRET);
+  const customerReq = (): ReqLike => ({ headers: { authorization: `Bearer ${customerToken}` } });
+
+  beforeEach(async () => {
+    db = await createDb('file::memory:');
+    await migrate(db);
+    calls = [];
+    workspaces = [
+      { id: WS_OWN, name: 'Mine', account_id: IAM_ACCOUNT, is_active: true, users: [{ id: 'wu1', user_id: SUB, type: 'OWNER', is_active: true, roles: [] }] },
+      { id: 'ws-staff', name: 'Staff HQ', account_id: 'acc-staff', is_active: true, users: [{ id: 'wu-s', user_id: STAFF_SUB, type: 'OWNER', is_active: true, roles: [] }] },
+      { id: 'ws-other', name: 'Other Corp', account_id: 'acc-other', is_active: true, users: [{ id: 'wu-o', user_id: 'sub-o', type: 'OWNER', is_active: true, roles: [] }] },
+    ];
+    const fetchImpl: typeof fetch = async (input, init) => {
+      const url = new URL(String(input));
+      const method = init?.method ?? 'GET';
+      calls.push({ method, path: url.pathname });
+      if (method === 'GET' && url.pathname.startsWith('/iam/account/')) return json({ id: url.pathname.split('/').pop(), feature_flags: {} });
+      if (method === 'PUT' && url.pathname.startsWith('/iam/account/')) return json({});
+      if (method === 'GET' && url.pathname === '/iam/workspace/search') {
+        const q = (url.searchParams.get('query') ?? '').toLowerCase();
+        const rows = q ? workspaces.filter((w) => w.name.toLowerCase().includes(q)) : workspaces;
+        return json({ data: rows, total: rows.length, totalPages: 1 });
+      }
+      if (method === 'GET' && url.pathname.startsWith('/iam/workspace/')) {
+        const w = workspaces.find((x) => x.id === url.pathname.split('/').pop());
+        return w ? json(w) : new Response('nf', { status: 404 });
+      }
+      return new Response('nope', { status: 404 });
+    };
+    const projection = new WorkspaceProjection(
+      db,
+      new IamWorkspacesClient({ baseUrl: 'https://iam.test/iam', fetchImpl }),
+      { staffDomains: ['staff.test'] },
+    );
+    const provider = new WorkOsAuthProvider(
+      db,
+      { JWT_SECRET: SECRET, JWT_ISSUER: undefined, JWT_AUDIENCE: undefined, SEED_DEMO_FORM: false, ONBOARDING_WIZARD: false },
+      undefined,
+      projection,
+    );
+    svc = new WorkspaceService(db, provider, new AuthService(db, provider), projection);
+  });
+
+  afterEach(async () => {
+    await db.close?.();
+  });
+
+  it('a customer searches only their own workspaces; staff get the estate too, own rows first', async () => {
+    const mine = await svc.search(customerReq(), { query: '' });
+    expect(mine.staff).toBe(false);
+    expect(mine.rows.map((r) => r.name)).toEqual(['Mine']);
+
+    const all = await svc.search(staffReq(), { query: '' });
+    expect(all.staff).toBe(true);
+    expect(all.rows.map((r) => r.name)).toEqual(['Staff HQ', 'Mine', 'Other Corp']);
+    expect(all.rows[0]!.accountId).not.toBeNull(); // own: projected
+    expect(all.rows[1]!.accountId).toBeNull(); // estate: not yet
+    expect(all.rows[1]!.workspaceId).toBe(WS_OWN);
+
+    const some = await svc.search(staffReq(), { query: 'other' });
+    expect(some.rows.map((r) => r.name)).toEqual(['Other Corp']);
+    // Nothing was projected by LOOKING: the customer's own and the staff person's
+    // own workspaces exist locally (their lists projected them); Other Corp does not.
+    const other = await db.get<{ id: string }>(sql`SELECT id FROM account WHERE external_id = 'ws-other'`);
+    expect(other).toBeUndefined();
+    const n = await db.get<{ n: number }>(sql`SELECT COUNT(*) AS n FROM account`);
+    expect(Number(n!.n)).toBe(2);
+  });
+
+  it('entering an estate workspace mints an admin grant that is off the roster and never pruned; a customer cannot', async () => {
+    await expect(svc.enterEstateWorkspace(customerReq(), 'ws-other')).rejects.toBeInstanceOf(ForbiddenException);
+
+    const { accountId } = await svc.enterEstateWorkspace(staffReq(), WS_OWN);
+    const row = await db.get<{ role: string; access_grant: string | null; status: string }>(
+      sql`SELECT role, access_grant, status FROM member WHERE account_id = ${accountId} AND external_id = ${STAFF_SUB}`,
+    );
+    expect(row).toMatchObject({ role: 'admin', access_grant: 'staff', status: 'active' });
+    // No onboarding stamp on the customer's account, no demo form.
+    const acc = await db.get<{ onboarding_completed_at: number | null }>(sql`SELECT onboarding_completed_at FROM account WHERE id = ${accountId}`);
+    expect(acc!.onboarding_completed_at).toBeNull();
+
+    // The staff person can act in it (header check passes) and sees it in their list, marked.
+    const list = await svc.list(staffReq());
+    const entry = list.find((w) => w.accountId === accountId)!;
+    expect(entry.role).toBe('admin');
+    expect(entry.accessGrant).toBe('staff');
+    // Their own workspace lists first.
+    expect(list[0]!.accountName).toBe('Staff HQ');
+
+    // The customer's roster does not show them, and the count does not include them.
+    await svc.list(customerReq());
+    const roster = await svc.roster(customerReq());
+    expect(roster.map((m) => m.email)).toEqual(['a@x.com']);
+    const mine = await svc.list(customerReq());
+    expect(mine[0]!.memberCount).toBe(1);
+
+    // A later refresh of the staff person's memberships (the estate workspace is
+    // not among them) leaves the grant alone.
+    await svc.refresh(staffReq());
+    const again = await db.get<{ status: string }>(sql`SELECT status FROM member WHERE account_id = ${accountId} AND external_id = ${STAFF_SUB}`);
+    expect(again!.status).toBe('active');
+    // Idempotent.
+    expect((await svc.enterEstateWorkspace(staffReq(), WS_OWN)).accountId).toBe(accountId);
+  });
+
+  it('a grant turns into a real membership when upstream later names them, and search stops listing it as estate', async () => {
+    const { accountId } = await svc.enterEstateWorkspace(staffReq(), WS_OWN);
+    workspaces[0]!.users!.push({ id: 'wu-s2', user_id: STAFF_SUB, type: 'MEMBER', is_active: true, roles: [] });
+    await svc.refresh(staffReq());
+    const row = await db.get<{ role: string; access_grant: string | null }>(
+      sql`SELECT role, access_grant FROM member WHERE account_id = ${accountId} AND external_id = ${STAFF_SUB}`,
+    );
+    expect(row).toEqual({ role: 'member', access_grant: null });
+    const res = await svc.search(staffReq(), { query: 'mine' });
+    expect(res.rows).toHaveLength(1);
+    expect(res.rows[0]!.accountId).toBe(accountId);
+    expect(res.rows[0]!.accessGrant).toBeNull();
   });
 });
 

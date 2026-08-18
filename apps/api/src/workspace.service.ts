@@ -31,6 +31,7 @@ import {
   getAccountMember,
   getMemberIdentity,
   getMemberUpstreamRef,
+  grantStaffAccess,
   humanHasCompletedOnboarding,
   listMembers,
   listWorkspacesForIdentity,
@@ -39,6 +40,9 @@ import {
   renameAccount,
   sql,
   wouldOrphanWorkspace,
+  type AccessGrant,
+  type AccountRole,
+  type MemberStatus,
   type MemberView,
   type WorkspaceRow,
 } from '@quill/db';
@@ -56,6 +60,21 @@ import {
   userNameOf,
 } from './iam-workspaces';
 import type { WorkspaceProjection } from './workspace-projection';
+
+/** One row of `WorkspaceService.search`: a local workspace, or an estate one not yet projected. */
+export interface WorkspaceSearchRow {
+  /** Upstream workspace id; set only for estate rows the caller holds no local row in. */
+  workspaceId: string | null;
+  /** Local account id; null for an estate row (enter it through `enterEstateWorkspace`). */
+  accountId: string | null;
+  name: string;
+  role: AccountRole;
+  status: MemberStatus;
+  accessGrant: AccessGrant | null;
+  memberCount: number;
+  /** Estate rows only: whether the workspace already has a local account (someone here opened it). */
+  localExists?: boolean;
+}
 
 @Injectable()
 export class WorkspaceService {
@@ -195,6 +214,138 @@ export class WorkspaceService {
     return identity ? listWorkspacesForIdentity(this.db, identity) : [];
   }
 
+  // --- Staff: the whole estate ----------------------------------------------
+
+  /** True when the caller's email domain is one the deployment lists as staff (identity-backed only). */
+  async isStaff(req: ReqLike): Promise<boolean> {
+    const up = await this.upstream(req);
+    return !!(up && this.projection && this.projection.isStaff(up.email));
+  }
+
+  /**
+   * Type-to-find over the workspaces the caller may enter.
+   *
+   * For everyone: their own list (the projection), filtered by name. For the
+   * deployment's STAFF, additionally the whole estate as the identity service
+   * answers its search (the same call the Dapta app's sidebar makes), so a
+   * workspace they never opened here is one keystroke away. Rows carry the
+   * local `accountId` when the caller already holds a row there (a membership
+   * or an earlier grant); otherwise `null`, and entering it goes through
+   * `enterEstateWorkspace`, which mints the grant.
+   */
+  async search(
+    req: ReqLike,
+    input: { query: string; page?: number; limit?: number },
+  ): Promise<{ rows: WorkspaceSearchRow[]; staff: boolean; total: number; totalPages: number; page: number }> {
+    const q = input.query.trim().toLowerCase();
+    const mine = await this.list(req);
+    const mineFiltered = q ? mine.filter((w) => w.accountName.toLowerCase().includes(q)) : mine;
+    const own: WorkspaceSearchRow[] = mineFiltered.map((w) => ({
+      workspaceId: null,
+      accountId: w.accountId,
+      name: w.accountName,
+      role: w.role,
+      status: w.status,
+      accessGrant: w.accessGrant,
+      memberCount: w.memberCount,
+    }));
+
+    const up = await this.upstream(req);
+    if (!up || !this.projection || !this.projection.isStaff(up.email)) {
+      return { rows: own, staff: false, total: own.length, totalPages: 1, page: 1 };
+    }
+
+    // Staff: the estate page from upstream, minus what the own list already
+    // shows (matched by upstream workspace id), so a workspace never appears
+    // twice. Own rows first: they are the ones the person actually works in.
+    const page = await this.projection.iam.searchWorkspaces(up.bearer, {
+      query: q,
+      page: input.page,
+      limit: input.limit,
+    });
+    const ownWsIds = new Set<string>();
+    if (mineFiltered.length) {
+      const ids = mineFiltered.map((w) => sql`${w.accountId}`);
+      const rows = await this.db.all<{ external_id: string | null }>(
+        sql`SELECT external_id FROM account WHERE id IN (${sql.join(ids, sql`, `)})`,
+      );
+      for (const r of rows) if (r.external_id) ownWsIds.add(r.external_id);
+    }
+    const estate: WorkspaceSearchRow[] = [];
+    for (const ws of page.rows) {
+      if (ownWsIds.has(ws.id)) continue;
+      const local = await getAccountByExternalId(this.db, ws.id);
+      estate.push({
+        workspaceId: ws.id,
+        accountId: null,
+        name: ws.name,
+        role: 'admin',
+        status: 'active',
+        accessGrant: 'staff',
+        memberCount: (ws.users ?? []).filter((u) => u.is_active !== false).length,
+        localExists: !!local,
+      });
+    }
+    return {
+      rows: [...(input.page && input.page > 1 ? [] : own), ...estate],
+      staff: true,
+      total: page.total,
+      totalPages: page.totalPages,
+      page: page.page,
+    };
+  }
+
+  /**
+   * A STAFF caller is about to open an estate workspace they hold no upstream
+   * membership in. The workspace is re-read upstream (never trusted from the
+   * client), projected locally if unseen (no onboarding stamp, no demo form,
+   * no signup event) and the caller gets an `admin` row marked
+   * `access_grant = 'staff'`. A caller who DOES hold a membership there is
+   * simply projected as such. Returns the local account id to switch into.
+   */
+  async enterEstateWorkspace(req: ReqLike, workspaceId: string): Promise<{ accountId: string }> {
+    const up = await this.upstream(req);
+    if (!up || !this.projection) {
+      throw new ForbiddenException({ error: 'FORBIDDEN', message: 'Requires the identity service.' });
+    }
+    if (!this.projection.isStaff(up.email)) {
+      throw new ForbiddenException({ error: 'WORKSPACE_FORBIDDEN', message: 'You are not a member of that workspace.' });
+    }
+    let ws;
+    try {
+      ws = await this.projection.iam.getWorkspace(up.bearer, workspaceId);
+    } catch (err) {
+      if (err instanceof IamHttpError && (err.status === 403 || err.status === 404)) {
+        throw new ForbiddenException({ error: 'WORKSPACE_FORBIDDEN', message: 'You are not a member of that workspace.' });
+      }
+      throw err;
+    }
+    if (!ws || ws.is_active === false) {
+      throw new ForbiddenException({ error: 'WORKSPACE_FORBIDDEN', message: 'You are not a member of that workspace.' });
+    }
+    const identity = { externalId: up.sub, email: up.email, displayName: up.displayName };
+    const me = (ws.users ?? []).find((u) => u.user_id === up.sub);
+    let accountId: string;
+    if (me && me.is_active !== false) {
+      // A real membership upstream: project it as such, no grant needed.
+      await this.projection.ensure(up, { force: true });
+      const local = await getAccountByExternalId(this.db, ws.id);
+      if (!local) throw new BadRequestException({ error: 'WORKSPACE_NOT_VISIBLE', message: 'Try refreshing.' });
+      accountId = local.id;
+    } else {
+      accountId = (
+        await grantStaffAccess(this.db, identity, {
+          workspaceId: ws.id,
+          workspaceName: ws.name,
+          iamAccountId: ws.account_id ?? null,
+        })
+      ).accountId;
+      this.log.log(`staff grant: ${up.email ?? up.sub} entered workspace ${ws.id} as admin`);
+    }
+    await this.projection.rememberLastWorkspace(up, accountId);
+    return { accountId };
+  }
+
   // --- Members via the identity service ------------------------------------
 
   /** True when this deployment routes member management upstream. */
@@ -332,6 +483,7 @@ export class WorkspaceService {
         role: input.role === 'admin' ? 'admin' : 'member',
         status: 'invited',
         createdAt: Date.now(),
+        accessGrant: null,
       };
     } catch (err) {
       // 409, or a 400 whose body says "already": the address is taken. Any

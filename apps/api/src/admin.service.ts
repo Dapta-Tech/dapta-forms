@@ -92,8 +92,10 @@ export class AdminService {
     if (!view) return view;
     return {
       ...view,
+      // Never for an access grant: the wizard describes the workspace and is
+      // its owner's to answer, not the staff member's who dropped in.
       onboardingRequired:
-        this.onboardingEnabled && view.onboardingCompletedAt == null && isAdmin(p.role),
+        this.onboardingEnabled && view.onboardingCompletedAt == null && isAdmin(p.role) && !view.accessGrant,
     };
   }
 

@@ -100,6 +100,8 @@ export interface MeView {
    * un-sliceable by campaign, which is most of the reason to measure it.
    */
   attribution: Attribution | null;
+  /** `'staff'` when the caller is in this workspace by access grant, not by membership (0016). */
+  accessGrant: 'staff' | null;
 }
 
 /** The authenticated host's identity for the dashboard header + settings. */
@@ -115,9 +117,10 @@ export async function getMe(db: Db, accountId: string, memberId: string): Promis
     status: string;
     onboarding_completed_at: number | null;
     attribution: unknown;
+    access_grant: string | null;
   }>(
     sql`SELECT a.code, a.name, a.vanity_slug, a.onboarding_completed_at, a.attribution,
-               m.handle, m.display_name, m.email, m.role, m.status
+               m.handle, m.display_name, m.email, m.role, m.status, m.access_grant
         FROM account a JOIN member m ON m.account_id = a.id
         WHERE a.id = ${accountId} AND m.id = ${memberId} LIMIT 1`,
   );
@@ -142,6 +145,7 @@ export async function getMe(db: Db, accountId: string, memberId: string): Promis
     // a stale blob must not throw inside the request that renders every
     // dashboard page. Unreadable tags degrade to "not known", never to a 500.
     attribution: parseAttributionColumn(row.attribution),
+    accessGrant: row.access_grant === 'staff' ? 'staff' : null,
   };
 }
 

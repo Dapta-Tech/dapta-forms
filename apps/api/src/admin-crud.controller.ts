@@ -144,7 +144,12 @@ export class AdminCrudController {
   @Get('me')
   async me(@Req() req: ReqLike) {
     const p = await this.auth.resolveHost(req);
-    return this.admin.me(p);
+    const view = await this.admin.me(p);
+    if (!view) return view;
+    // Staff of the deployment (by email domain, identity-backed only): the
+    // switcher offers them the whole estate to search.
+    const staff = this.workspacesSvc ? await this.workspacesSvc.isStaff(req) : false;
+    return { ...view, staff };
   }
 
   /**
@@ -336,6 +341,38 @@ export class AdminCrudController {
   @HttpCode(200)
   async enterWorkspace(@Req() req: ReqLike, @Param('id') id: string) {
     return this.ws().enter(req, id);
+  }
+
+  /**
+   * Type-to-find over the workspaces the caller may enter. Everyone gets their
+   * own list filtered; the deployment's staff also get the estate (see
+   * `WorkspaceService.search`).
+   */
+  @Get('workspaces/search')
+  async searchWorkspaces(
+    @Req() req: ReqLike,
+    @Query('q') q?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    const pageN = page ? Number(page) : undefined;
+    const limitN = limit ? Number(limit) : undefined;
+    return this.ws().search(req, {
+      query: typeof q === 'string' ? q.slice(0, 120) : '',
+      page: pageN && Number.isFinite(pageN) ? pageN : undefined,
+      limit: limitN && Number.isFinite(limitN) ? limitN : undefined,
+    });
+  }
+
+  /**
+   * Staff only: open an estate workspace the caller holds no membership in.
+   * The workspace is re-read upstream, projected, and the caller gets an
+   * `access_grant = 'staff'` row (never on the team's roster).
+   */
+  @Post('workspaces/estate/:workspaceId/enter')
+  @HttpCode(200)
+  async enterEstateWorkspace(@Req() req: ReqLike, @Param('workspaceId') workspaceId: string) {
+    return this.ws().enterEstateWorkspace(req, workspaceId);
   }
 
   /** This member's public page config (the raw blob, or null). */

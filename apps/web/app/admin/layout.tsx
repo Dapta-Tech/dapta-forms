@@ -86,6 +86,7 @@ export default async function AdminLayout({ children }: { children: ReactNode })
         accountNav={adminMessages.account.nav}
         workspaces={workspaces}
         currentAccountId={me.accountId}
+        staff={me.staff}
         user={{ displayName: me.displayName, email: me.email }}
       >
         {children}

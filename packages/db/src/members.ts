@@ -23,6 +23,9 @@ export type AccountRole = (typeof ACCOUNT_ROLES)[number];
 export const MEMBER_STATUSES = ['active', 'invited', 'disabled'] as const;
 export type MemberStatus = (typeof MEMBER_STATUSES)[number];
 
+/** Why a member row exists when the identity service holds no membership: staff of the deployment. */
+export type AccessGrant = 'staff';
+
 export interface MemberView {
   id: string;
   email: string | null;
@@ -32,6 +35,8 @@ export interface MemberView {
   role: AccountRole;
   status: MemberStatus;
   createdAt: number;
+  /** `null` for a real membership; `'staff'` for a domain-based access grant (0016). */
+  accessGrant: AccessGrant | null;
 }
 
 interface MemberDbRow {
@@ -43,6 +48,7 @@ interface MemberDbRow {
   role: string;
   status: string;
   created_at: number;
+  access_grant: string | null;
 }
 
 function toMemberView(r: MemberDbRow): MemberView {
@@ -55,15 +61,21 @@ function toMemberView(r: MemberDbRow): MemberView {
     role: (r.role as AccountRole) ?? 'member',
     status: (r.status as MemberStatus) ?? 'active',
     createdAt: r.created_at,
+    accessGrant: r.access_grant === 'staff' ? 'staff' : null,
   };
 }
 
-const MEMBER_COLS = sql`id, email, display_name, handle, avatar_url, role, status, created_at`;
+const MEMBER_COLS = sql`id, email, display_name, handle, avatar_url, role, status, created_at, access_grant`;
 
-/** All members of an account, oldest first (owner typically leads). */
+/**
+ * The ROSTER of an account, oldest first (owner typically leads). Access-grant
+ * rows are not on it: a customer's team list never shows the deployment's
+ * staff, and a staff row is not something the team can manage.
+ */
 export async function listMembers(db: Db, accountId: string): Promise<MemberView[]> {
   const rows = await db.all<MemberDbRow>(
-    sql`SELECT ${MEMBER_COLS} FROM member WHERE account_id = ${accountId} ORDER BY created_at ASC, id ASC`,
+    sql`SELECT ${MEMBER_COLS} FROM member WHERE account_id = ${accountId} AND access_grant IS NULL
+        ORDER BY created_at ASC, id ASC`,
   );
   return rows.map(toMemberView);
 }
@@ -272,6 +284,8 @@ export interface WorkspaceRow {
   status: MemberStatus;
   /** How many ACTIVE members the workspace has (the account-settings cards show it). */
   memberCount: number;
+  /** `'staff'` when the person is in this workspace by access grant, not by membership. */
+  accessGrant: AccessGrant | null;
 }
 
 /**
@@ -333,13 +347,15 @@ export async function listWorkspacesForIdentity(
     role: string;
     status: string;
     member_count: number | string;
+    access_grant: string | null;
   }>(
-    sql`SELECT a.id AS account_id, a.code, a.name, m.id AS member_id, m.role, m.status,
-               (SELECT COUNT(*) FROM member mm WHERE mm.account_id = a.id AND mm.status = 'active') AS member_count
+    sql`SELECT a.id AS account_id, a.code, a.name, m.id AS member_id, m.role, m.status, m.access_grant,
+               (SELECT COUNT(*) FROM member mm
+                 WHERE mm.account_id = a.id AND mm.status = 'active' AND mm.access_grant IS NULL) AS member_count
         FROM member m JOIN account a ON a.id = m.account_id
         WHERE m.status IN ('active', 'invited')
           AND (${sql.join(conds, sql` OR `)})
-        ORDER BY a.name ASC, a.created_at ASC`,
+        ORDER BY (m.access_grant IS NOT NULL) ASC, a.name ASC, a.created_at ASC`,
   );
 
   // The same account can match on both keys (one row, two predicates) — and in
@@ -363,6 +379,7 @@ export async function listWorkspacesForIdentity(
         : 'active',
       // Postgres returns COUNT(*) as a bigint string; SQLite as a number.
       memberCount: Number(r.member_count ?? 0),
+      accessGrant: r.access_grant === 'staff' ? 'staff' : null,
     });
   }
   return out;
