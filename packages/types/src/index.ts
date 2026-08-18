@@ -731,7 +731,7 @@ export type FormDestination = z.infer<typeof formDestinationSchema>;
 
 /** Rejection message for a second HubSpot destination (see `hasExtraHubspotDestination`). */
 export const ONE_HUBSPOT_DESTINATION_MESSAGE =
-  'Only one HubSpot destination per form — map several properties from the same question instead.';
+  'Only one HubSpot destination per form. Map several properties from the same question instead.';
 
 /** How many HubSpot entries a (loosely typed) destinations array carries. */
 function hubspotCount(destinations: unknown): number {

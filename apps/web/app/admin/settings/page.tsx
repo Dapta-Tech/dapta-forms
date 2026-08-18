@@ -66,9 +66,9 @@ export default async function SettingsPage() {
               workspaceNameError: s.workspaceNameError,
             }}
           />
-          <Field label={s.displayName} value={me.displayName ?? '—'} />
-          <Field label={s.email} value={me.email ?? '—'} />
-          <Field label={s.handle} value={me.handle ?? '—'} mono />
+          <Field label={s.displayName} value={me.displayName ?? ''} />
+          <Field label={s.email} value={me.email ?? ''} />
+          <Field label={s.handle} value={me.handle ?? ''} mono />
           <Field label={s.accountCode} value={me.accountCode} mono />
           <Field label={s.vanity} value={me.vanitySlug ?? s.vanityNone} mono />
         </dl>
@@ -136,7 +136,7 @@ export default async function SettingsPage() {
                     </span>
                     <div className="min-w-0 flex-1">
                       <span className="flex items-center gap-2 truncate text-sm font-medium">
-                        {mem.displayName ?? mem.email ?? '—'}
+                        {mem.displayName ?? mem.email ?? ''}
                         {isYou ? (
                           <span className="rounded-full bg-muted px-1.5 py-0.5 text-2xs font-medium uppercase tracking-wide text-faint">
                             {s.you}

@@ -64,8 +64,8 @@ describe('GET /v1/notifications', () => {
     expect(received.subject).toBeNull();
     expect(received.body).toBeNull();
     // The shipped default copy (token-bearing) for both locales, for the UI.
-    expect(received.defaults.en.subject).toBe('New submission — {{formName}}');
-    expect(received.defaults.es.subject).toBe('Nueva respuesta — {{formName}}');
+    expect(received.defaults.en.subject).toBe('New submission: {{formName}}');
+    expect(received.defaults.es.subject).toBe('Nueva respuesta: {{formName}}');
     // The interpolation catalog.
     expect(received.tokens).toEqual([
       'formName',
@@ -186,7 +186,7 @@ describe('per-form overrides (/v1/forms/:id/notifications)', () => {
     const confirmedBefore = res.settings.find((s) => s.emailKey === 'submission_confirmed')!;
     expect(confirmedBefore.account).toEqual({ enabled: true, subject: 'ACCT {{formName}}', body: null });
     expect(confirmedBefore.override).toBeNull();
-    expect(confirmedBefore.defaults.en.subject).toBe('We got your responses — {{formName}}');
+    expect(confirmedBefore.defaults.en.subject).toBe('We got your responses: {{formName}}');
     expect(confirmedBefore.tokens).toContain('formName');
 
     // PUT pins a form-level copy; GET now reports the override.

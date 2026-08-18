@@ -51,6 +51,26 @@ jobs:
       - run: pnpm test
       - run: pnpm build
 
+  dash-check:
+    name: Typography (no em dashes in reader-facing text)
+    # PR-only, like commitlint, and for the same reason: the docs half of this
+    # check is scoped to the lines a PR ADDS. On a bare push there is no base to
+    # diff against, and the ~320 dashes sitting in already-published changesets
+    # would fail every run until someone switched the job off.
+    #
+    # The copy half is not scoped: user-visible strings are at zero and this
+    # blocks on the whole tree, which is the point. Roughly thirty branches are
+    # open against develop right now and any of them can put one back on screen.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # The script needs the merge-base, so the base commit must be present.
+          fetch-depth: 0
+      - name: Check typography
+        run: bash scripts/dash-check.sh "${{ github.event.pull_request.base.sha }}"
+
   postgres:
     name: Test on Postgres (source of truth — submission integrity)
     runs-on: ubuntu-latest

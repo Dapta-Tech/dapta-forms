@@ -158,13 +158,13 @@ async function AnalyticsData({
     {
       label: m.metricCompletionRate,
       // null = no starts in range, so the rate has no denominator.
-      value: a.completionRate == null ? '—' : `${a.completionRate}%`,
+      value: a.completionRate == null ? '' : `${a.completionRate}%`,
     },
     {
       label: m.metricTimeToComplete,
       // null = no completed session in range had a derivable open time. Showing
       // "0s" there would state a duration nobody measured.
-      value: a.timeToComplete == null ? '—' : formatDuration(a.timeToComplete, m.seconds),
+      value: a.timeToComplete == null ? '' : formatDuration(a.timeToComplete, m.seconds),
     },
     { label: m.metricPartials, value: String(a.partialSubmits) },
     // Only when the form actually converts through a meeting: an eternal "0"

@@ -218,12 +218,12 @@ test('per-form override: customize → outbox snapshots it → reset → account
   // Collapsed state previews the effective account/stock subject (sample-interpolated).
   await expect(
     page.getByTestId('connect-email-account-preview-submission_confirmed'),
-  ).toContainText('We got your responses — Lead Qualifier');
+  ).toContainText('We got your responses: Lead Qualifier');
 
   // --- Customize the respondent confirmation subject for THIS form only.
   await page.getByTestId('connect-email-customize-submission_confirmed').click();
   const subjectInput = page.getByTestId('connect-email-submission_confirmed-subject');
-  await expect(subjectInput).toHaveValue('We got your responses — {{formName}}'); // prefilled from account/stock
+  await expect(subjectInput).toHaveValue('We got your responses: {{formName}}'); // prefilled from account/stock
   await subjectInput.fill(customSubject);
   await page.getByTestId('connect-email-save-submission_confirmed').click();
   await expect(page.getByTestId('connect-email-badge-submission_confirmed')).toHaveText(
@@ -337,7 +337,7 @@ test('account Settings → Notifications still works: load, save round-trip, res
   // Load: the owner card hydrates with the shipped default and previews live.
   const card = settingsCard(page, OWNER_TITLE);
   await expect(card).toBeVisible();
-  await expect(card.locator('input')).toHaveValue('New submission — {{formName}}');
+  await expect(card.locator('input')).toHaveValue('New submission: {{formName}}');
   await expect(card.getByText(SETTINGS_USING_DEFAULT)).toBeVisible();
 
   // Save round-trip.
@@ -365,7 +365,7 @@ test('account Settings → Notifications still works: load, save round-trip, res
   await expect(page.getByTestId('confirm-dialog')).toBeVisible();
   await page.getByTestId('confirm-dialog-confirm').click();
   await expect(page.getByTestId('confirm-dialog')).toBeHidden();
-  await expect(reloaded.locator('input')).toHaveValue('New submission — {{formName}}', {
+  await expect(reloaded.locator('input')).toHaveValue('New submission: {{formName}}', {
     timeout: 10_000,
   });
   await expect(reloaded.getByText(SETTINGS_USING_DEFAULT)).toBeVisible();

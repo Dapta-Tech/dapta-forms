@@ -24,7 +24,7 @@ const SAMPLE_CONFIG = {
     enabled: true,
     eyebrow: 'Quick check',
     headline: 'See if we are a fit',
-    subheadline: 'Answer a few questions — takes under a minute.',
+    subheadline: 'Answer a few questions: takes under a minute.',
     ctaText: 'Start',
   },
   steps: [

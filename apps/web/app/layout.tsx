@@ -23,8 +23,8 @@ function appBaseUrl(): URL {
 
 export const metadata: Metadata = {
   metadataBase: appBaseUrl(),
-  title: `${productName} — open-source forms`,
-  description: `${productName} is open-source forms. Clone, run, and collect — anywhere.`,
+  title: `${productName}: open-source forms`,
+  description: `${productName} is open-source forms. Clone, run, and collect: anywhere.`,
 };
 
 export default async function RootLayout({ children }: { children: ReactNode }) {

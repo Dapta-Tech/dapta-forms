@@ -576,11 +576,11 @@ export function buildSubmissionNoteBody(
     )
     .join('');
   return [
-    `<p style="margin:0 0 8px 0;"><strong>Form submission — ${escapeHtml(opts.formName)}</strong></p>`,
+    `<p style="margin:0 0 8px 0;"><strong>Form submission: ${escapeHtml(opts.formName)}</strong></p>`,
     `<p style="margin:0 0 6px 0;"><strong>Submitted:</strong> ${escapeHtml(submittedAt)}</p>`,
     `<p style="margin:0 0 6px 0;"><strong>Score:</strong> ${escapeHtml(String(opts.score))}</p>`,
     `<p style="margin:0 0 6px 0;"><strong>Outcome:</strong> ${escapeHtml(qualification)}</p>`,
     `<p style="margin:8px 0 8px 0;"><strong>Submitted data:</strong></p>`,
-    fieldLines || `<p style="margin:0;">—</p>`,
+    fieldLines || `<p style="margin:0;">: </p>`,
   ].join('\n');
 }

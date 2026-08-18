@@ -17,7 +17,7 @@ const FONT_LABELS: Record<FormFont, string> = {
   'work-sans': 'Work Sans',
   fraunces: 'Fraunces',
   playfair: 'Playfair Display',
-  custom: '—',
+  custom: '',
 };
 
 const CURATED = FORM_FONTS.filter((f) => f !== 'custom');

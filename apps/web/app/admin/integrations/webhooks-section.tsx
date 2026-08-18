@@ -177,9 +177,7 @@ function WebhookTable({ items, m, locale }: { items: AccountWebhook[]; m: Msgs; 
                         <i aria-hidden className="pi pi-exclamation-triangle" style={{ fontSize: 11 }} />
                         {t(m.failedCount, { n: w.failures.count })}
                       </span>
-                    ) : (
-                      <span className="text-xs text-faint">—</span>
-                    )}
+                    ) : null}
                   </td>
                   <td className="whitespace-nowrap px-4 py-3 text-right">
                     <Link

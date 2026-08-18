@@ -58,7 +58,7 @@ export function renderSubmissionReceived(
 ): RenderedCopy {
   if (locale === 'es') {
     return {
-      subject: `Nueva respuesta — ${v.formName}`,
+      subject: `Nueva respuesta: ${v.formName}`,
       lines: [
         `Recibiste una nueva respuesta en "${v.formName}".`,
         v.respondentEmail ? `De: ${v.respondentEmail}` : '',
@@ -69,7 +69,7 @@ export function renderSubmissionReceived(
     };
   }
   return {
-    subject: `New submission — ${v.formName}`,
+    subject: `New submission: ${v.formName}`,
     lines: [
       `You have a new submission on "${v.formName}".`,
       v.respondentEmail ? `From: ${v.respondentEmail}` : '',
@@ -91,17 +91,17 @@ export function renderSubmissionConfirmed(
 ): RenderedCopy {
   if (locale === 'es') {
     return {
-      subject: `Recibimos tus respuestas — ${v.formName}`,
+      subject: `Recibimos tus respuestas: ${v.formName}`,
       lines: [
-        `Gracias — registramos tus respuestas de "${v.formName}".`,
+        `Gracias: registramos tus respuestas de "${v.formName}".`,
         v.formLink ? `Ver o editar: ${v.formLink}` : '',
       ],
     };
   }
   return {
-    subject: `We got your responses — ${v.formName}`,
+    subject: `We got your responses: ${v.formName}`,
     lines: [
-      `Thanks — we've recorded your responses to "${v.formName}".`,
+      `Thanks: we've recorded your responses to "${v.formName}".`,
       v.formLink ? `View or edit: ${v.formLink}` : '',
     ],
   };
@@ -249,7 +249,7 @@ export function defaultSubmissionTemplate(
   if (key === 'submission_received') {
     return locale === 'es'
       ? {
-          subject: 'Nueva respuesta — {{formName}}',
+          subject: 'Nueva respuesta: {{formName}}',
           body: [
             'Recibiste una nueva respuesta en "{{formName}}".',
             'De: {{respondentEmail}}',
@@ -259,7 +259,7 @@ export function defaultSubmissionTemplate(
           ].join('\n'),
         }
       : {
-          subject: 'New submission — {{formName}}',
+          subject: 'New submission: {{formName}}',
           body: [
             'You have a new submission on "{{formName}}".',
             'From: {{respondentEmail}}',
@@ -271,14 +271,14 @@ export function defaultSubmissionTemplate(
   }
   return locale === 'es'
     ? {
-        subject: 'Recibimos tus respuestas — {{formName}}',
-        body: ['Gracias — registramos tus respuestas de "{{formName}}".', 'Ver o editar: {{formLink}}'].join(
+        subject: 'Recibimos tus respuestas: {{formName}}',
+        body: ['Gracias: registramos tus respuestas de "{{formName}}".', 'Ver o editar: {{formLink}}'].join(
           '\n',
         ),
       }
     : {
-        subject: 'We got your responses — {{formName}}',
-        body: ["Thanks — we've recorded your responses to \"{{formName}}\".", 'View or edit: {{formLink}}'].join(
+        subject: 'We got your responses: {{formName}}',
+        body: ["Thanks: we've recorded your responses to \"{{formName}}\".", 'View or edit: {{formLink}}'].join(
           '\n',
         ),
       };

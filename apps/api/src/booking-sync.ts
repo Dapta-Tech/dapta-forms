@@ -146,7 +146,7 @@ export class BookingSyncEffects {
       if (!token) {
         // Graceful degradation: no token = no enrichment, never a hard failure.
         this.log.warn(
-          'CALENDLY_API_TOKEN not set — booking sync proceeds without Calendly enrichment',
+          'CALENDLY_API_TOKEN not set. Booking sync proceeds without Calendly enrichment',
         );
       } else {
         const [event, fetchedInvitee] = await Promise.all([
@@ -218,7 +218,7 @@ export class BookingSyncEffects {
         `booking sync (log-only, HUBSPOT_PRIVATE_APP_TOKEN unset): would update contact ` +
           `properties [${Object.keys(properties).join(', ')}] for booking ${payload.bookingEventId}`,
       );
-      throw new OutboxSkipError('HUBSPOT_PRIVATE_APP_TOKEN not set — booking sync logged property keys only');
+      throw new OutboxSkipError('HUBSPOT_PRIVATE_APP_TOKEN not set. Booking sync logged property keys only');
     }
 
     // --- Booking properties FIRST — write order is the retry-safety here -------
@@ -307,7 +307,7 @@ export class BookingSyncEffects {
     // property; the stage stamp and the meeting time still go out, and an
     // absent date is something a human can see and correct.
     this.log.warn(
-      `booking sync: booking ${payload.bookingEventId} has no booked-at and no submission — booking day not written`,
+      `booking sync: booking ${payload.bookingEventId} has no booked-at and no submission. Booking day not written`,
     );
     return null;
   }
@@ -439,7 +439,7 @@ export class BookingSyncEffects {
       if (res.status === 429 || res.status >= 500) {
         throw new Error(`calendly fetch failed: HTTP ${res.status}`);
       }
-      this.log.warn(`calendly fetch rejected (HTTP ${res.status}) — proceeding without enrichment`);
+      this.log.warn(`calendly fetch rejected (HTTP ${res.status}): proceeding without enrichment`);
       return null;
     }
     return (await res.json()) as CalendlyResource;
@@ -468,7 +468,7 @@ export class BookingSyncEffects {
         throw new Error(`hubspot booking upsert failed: HTTP ${res.status}`);
       }
       throw new OutboxSkipError(
-        `hubspot booking upsert rejected (HTTP ${res.status}) — check the configured booking properties`,
+        `hubspot booking upsert rejected (HTTP ${res.status}). Check the configured booking properties`,
       );
     }
   }
@@ -561,7 +561,7 @@ export function dayMidnightMs(epochMs: number, timezone?: string, log?: Logger):
     // warning actionable. Quoted through JSON so an author cannot smuggle a
     // newline into the log and forge a line of their own.
     log?.warn(
-      `booking sync: unusable dateTimezone ${JSON.stringify(zone)} — booking day computed in UTC instead`,
+      `booking sync: unusable dateTimezone ${JSON.stringify(zone)}. Booking day computed in UTC instead`,
     );
   }
   return utcMidnightMs(epochMs);
