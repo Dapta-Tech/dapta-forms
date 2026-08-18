@@ -14,7 +14,7 @@ here, and a workspace created here was invisible upstream. From migration 0015 o
 on login (at most once per TTL), on demand when the switcher opens, and after
 every write, which goes upstream first.
 
-- `packages/db/src/workspaces.ts` — `projectMemberships`, `projectRoster`,
+- `packages/db/src/workspaces.ts`: `projectMemberships`, `projectRoster`,
   `rebindLegacyAccount`, `pickHomeAccount`, `createLocalWorkspace`,
   `humanHasCompletedOnboarding`. Three additive columns: `account.iam_account_id`,
   `account.synced_at`, `member.iam_workspace_user_id`.
@@ -29,7 +29,7 @@ every write, which goes upstream first.
   their email and their acceptance live upstream; removals and role changes go
   upstream first. Pending invitations are listed and can be resent.
 - Roles: `OWNER` → owner, `MEMBER` holding `workspace_admin` → admin, any other →
-  member — one function (`roleFromIam`) so a future `forms` permission component
+  member; one function (`roleFromIam`) so a future `forms` permission component
   changes exactly one place.
 - Onboarding is per person, not per workspace: someone who finished the wizard is
   not sent through it again for a workspace projected from upstream.
