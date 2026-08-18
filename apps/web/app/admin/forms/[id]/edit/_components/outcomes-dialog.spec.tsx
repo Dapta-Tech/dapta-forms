@@ -14,7 +14,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { isValidElement, type ReactElement, type ReactNode } from 'react';
 import type { FormConfig, FormOutcome, FormStep } from '@quill/engine';
 import { getMessages } from '@quill/shared';
-import { OutcomesDialog, ScoreBar, firstClash, spanText, toStoredInt } from './outcomes-dialog';
+import { OutcomesDialog, ScoreBar, firstClash, segmentLabel, spanText, toStoredInt } from './outcomes-dialog';
 import { getBuilderMessages } from './builder-messages';
 
 type AnyProps = Record<string, unknown> & { children?: ReactNode };
@@ -208,6 +208,36 @@ describe('OutcomesDialog — ranges', () => {
     expect(allByTestId(withGap, 'outcomes-score-gap')).toHaveLength(1);
     const tiled = collect(ScoreBar({ outcomes: [outcome('a', 0, { maxScore: 2 }), outcome('b', 3)], top: 10 }));
     expect(allByTestId(tiled, 'outcomes-score-gap')).toHaveLength(0);
+  });
+
+  it('never lets a long label widen or spill out of its segment', () => {
+    // A 3-point range beside a 90-point one: the segment is a sliver whatever
+    // the label says. The label yields (initials + full text in `title`),
+    // the layout does not.
+    const long = 'Excelente fit, agendemos una llamada esta misma semana';
+    const els = collect(
+      ScoreBar({ outcomes: [outcome('a', 0, { maxScore: 2, label: long }), outcome('b', 3, { label: 'P1' })], top: 100 }),
+    );
+    const segs = allByTestId(els, 'outcomes-score-segment');
+    expect(segs).toHaveLength(2);
+    const [narrow, wide] = segs.map((el) => el.props as AnyProps);
+    expect(narrow!.title).toBe(long);
+    expect(String(narrow!.className)).toContain('min-w-0');
+    const narrowText = collect(narrow!.children as ReactNode).find((el) => el.type === 'span')!;
+    expect(String((narrowText.props as AnyProps).className)).toContain('truncate');
+    expect((narrowText.props as AnyProps).children).toBe('EF');
+    // The roomy one keeps its words (and still truncates rather than wrapping).
+    const wideText = collect(wide!.children as ReactNode).find((el) => el.type === 'span')!;
+    expect((wideText.props as AnyProps).children).toBe('P1');
+    expect(String((wideText.props as AnyProps).className)).toContain('truncate');
+  });
+
+  it('segmentLabel: initials only below the share floor, short codes always whole', () => {
+    expect(segmentLabel('Muy buen fit', 0.5)).toBe('Muy buen fit');
+    expect(segmentLabel('Muy buen fit', 0.05)).toBe('MB');
+    expect(segmentLabel('Excelente', 0.05)).toBe('EX');
+    expect(segmentLabel('P3', 0.01)).toBe('P3');
+    expect(segmentLabel('#4', 0.01)).toBe('#4');
   });
 
   it('closes the range below when a new one takes over the open top', () => {

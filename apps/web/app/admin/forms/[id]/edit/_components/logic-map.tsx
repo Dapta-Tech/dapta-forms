@@ -305,7 +305,9 @@ function OutcomeNode({ outcome, m }: { outcome: FormOutcome; m: BuilderMessages 
           <span className="block text-2xs font-semibold uppercase tracking-wide text-primary">
             {m.map.outcomeKicker}
           </span>
-          <span className="block truncate text-sm font-semibold text-foreground">{outcome.label}</span>
+          <span className="block truncate text-sm font-semibold text-foreground" title={outcome.label}>
+            {outcome.label}
+          </span>
           {redirects ? (
             <span className="mt-0.5 block truncate text-xs text-muted-foreground">
               {tb(m.map.redirect, { url: (outcome.redirectUrl ?? '').replace(/^https?:\/\//, '') })}

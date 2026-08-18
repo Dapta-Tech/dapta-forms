@@ -124,6 +124,19 @@
   * {
     border-color: var(--border);
   }
+
+  /* Tailwind v4 dropped the v3 preflight rule that gave buttons a pointer
+     cursor, and only 9 of ~150 raw <button>s here ever added `cursor-pointer`
+     back. The visible symptom: the "Create a form" card on Home (a <button>)
+     showed the arrow while its three <Link> siblings showed the hand. One base
+     rule restores the affordance everywhere a click does something. Base layer
+     loses to utilities, so the handful of deliberate `cursor-not-allowed` /
+     `cursor-default` / `cursor-grab` sites keep winning. */
+  button:not(:disabled),
+  [role='button']:not([aria-disabled='true']),
+  summary {
+    cursor: pointer;
+  }
 }
 
 /* Point the accent-as-TEXT utility at `--primary-ink` instead of `--primary`.

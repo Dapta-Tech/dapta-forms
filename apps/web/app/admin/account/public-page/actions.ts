@@ -15,6 +15,9 @@ export async function saveMyProfileAction(
   try {
     await adminApi.saveMyProfile(profile);
     revalidatePath('/admin/account/public-page');
+    // Home shows the public page link only while it is published, so a toggle
+    // here has to reach that page too, not just this one.
+    revalidatePath('/admin');
     return { ok: true };
   } catch (e) {
     unstable_rethrow(e);
