@@ -76,6 +76,7 @@ export default async function AnalyticsPage({
           <p className="mt-1 text-muted-foreground">{m.analytics.subtitle}</p>
         </div>
         <AnalyticsFilter
+          locale={locale}
           labels={{
             today: m.analytics.rangeToday,
             week: m.analytics.rangeWeek,
