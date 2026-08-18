@@ -25,6 +25,7 @@ export interface MemberRowActionsLabels {
   manageErrorForbidden: string;
   manageErrorFailed: string;
   manageErrorUpstream: string;
+  manageErrorOwnership: string;
 }
 
 /**
@@ -40,10 +41,13 @@ export interface MemberRowActionsLabels {
 export function MemberRowActions({
   memberId,
   role,
+  canRemove,
   labels,
 }: {
   memberId: string;
   role: AccountRole;
+  /** Removal is OWNER-only (the identity service's rule); admins get the role items only. */
+  canRemove: boolean;
   labels: MemberRowActionsLabels;
 }) {
   const [open, setOpen] = useState(false);
@@ -86,9 +90,11 @@ export function MemberRowActions({
         ? labels.manageErrorLastOwner
         : result.code === 'FORBIDDEN'
           ? labels.manageErrorForbidden
-          : result.code === 'UPSTREAM'
-            ? labels.manageErrorUpstream
-            : labels.manageErrorFailed;
+          : result.code === 'OWNERSHIP'
+            ? labels.manageErrorOwnership
+            : result.code === 'UPSTREAM'
+              ? labels.manageErrorUpstream
+              : labels.manageErrorFailed;
     toast.error(message);
   };
 
@@ -166,19 +172,22 @@ export function MemberRowActions({
             </button>
           ) : null}
 
-          <div className="my-1 border-t border-border" role="separator" />
-
-          <button
-            type="button"
-            role="menuitem"
-            tabIndex={-1}
-            disabled={pending}
-            onClick={remove}
-            className="flex w-full items-center gap-2.5 rounded-sm px-2 py-2 text-left text-sm text-destructive transition-colors hover:bg-destructive/10 focus-visible:bg-destructive/10 focus-visible:outline-none disabled:opacity-50"
-          >
-            <i aria-hidden className="pi pi-trash" style={{ fontSize: 13 }} />
-            {labels.removeMember}
-          </button>
+          {canRemove ? (
+            <>
+              <div className="my-1 border-t border-border" role="separator" />
+              <button
+                type="button"
+                role="menuitem"
+                tabIndex={-1}
+                disabled={pending}
+                onClick={remove}
+                className="flex w-full items-center gap-2.5 rounded-sm px-2 py-2 text-left text-sm text-destructive transition-colors hover:bg-destructive/10 focus-visible:bg-destructive/10 focus-visible:outline-none disabled:opacity-50"
+              >
+                <i aria-hidden className="pi pi-trash" style={{ fontSize: 13 }} />
+                {labels.removeMember}
+              </button>
+            </>
+          ) : null}
         </div>
       ) : null}
       {dialog}

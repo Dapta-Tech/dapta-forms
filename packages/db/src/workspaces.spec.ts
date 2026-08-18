@@ -98,6 +98,10 @@ describe('projectMemberships', () => {
     await projectMemberships(db, identity, [two[0]!]);
     const list = await listWorkspacesForIdentity(db, identity);
     expect(list.map((w) => w.accountName)).toEqual(['A']);
+    // memberCount is a NUMBER on both dialects (Postgres hands COUNT(*) back as
+    // a bigint string) and counts active rows only.
+    expect(list[0]!.memberCount).toBe(1);
+    expect(typeof list[0]!.memberCount).toBe('number');
     const bRow = await db.get<{ status: string }>(
       sql`SELECT m.status FROM member m JOIN account acc ON acc.id = m.account_id WHERE acc.external_id = ${b} AND m.external_id = ${SUB}`,
     );

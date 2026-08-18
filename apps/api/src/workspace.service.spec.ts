@@ -10,7 +10,7 @@
  * `enter` refuses an account the caller is not in.
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { ForbiddenException } from '@nestjs/common';
+import { ConflictException, ForbiddenException } from '@nestjs/common';
 import { createDb, migrate, seed, getAccountByCode, sql, type Db } from '@quill/db';
 import { AuthService, WORKSPACE_HEADER } from './auth.service';
 import { LocalAuthProvider, type ReqLike } from './auth.provider';
@@ -36,6 +36,9 @@ describe('WorkspaceService (IAM-backed)', () => {
   let workspaces: IamWorkspace[];
   let lastWorkspace: string | null;
   let invitations: Array<{ id: string; workspace_id: string; invited_email: string; status: string; role_id?: string }>;
+  /** Test seams: the fake clock the role-catalog cache reads, and a way to make `/role` fail. */
+  let clock: number;
+  let roleCatalogStatus: number;
 
   const token = signJwtHs256({ sub: SUB, account_id: IAM_ACCOUNT, email: 'a@x.com', name: 'A', exp: 4102444800 }, SECRET);
   const req = (workspace?: string): ReqLike => ({
@@ -48,6 +51,8 @@ describe('WorkspaceService (IAM-backed)', () => {
     calls = [];
     lastWorkspace = null;
     invitations = [];
+    clock = 1_000_000;
+    roleCatalogStatus = 200;
     workspaces = [
       { id: WS_OWN, name: 'Mine', account_id: IAM_ACCOUNT, is_active: true, users: [{ id: 'wu1', user_id: SUB, type: 'OWNER', is_active: true, roles: [] }] },
     ];
@@ -80,8 +85,30 @@ describe('WorkspaceService (IAM-backed)', () => {
         const w = workspaces.find((x) => x.id === url.pathname.split('/').pop());
         return w ? json(w) : new Response('nf', { status: 404 });
       }
+      // Like the real thing: the per-workspace list carries ONLY workspace_admin
+      // (+ custom roles); the other system roles live in the catalog.
       if (method === 'GET' && url.pathname.startsWith('/iam/role/roles-workspace/'))
         return json([{ id: 'role-admin', name: 'workspace_admin', is_system: true }]);
+      if (method === 'GET' && url.pathname === '/iam/role' && roleCatalogStatus !== 200)
+        return new Response('nope', { status: roleCatalogStatus });
+      if (method === 'GET' && url.pathname === '/iam/role')
+        return json([
+          { id: 'role-admin', name: 'workspace_admin', is_system: true },
+          { id: 'role-editor', name: 'workspace_editor', is_system: true },
+          { id: 'role-viewer', name: 'workspace_viewer', is_system: true },
+          { id: 'role-ws-owner', name: 'workspace_owner', is_system: true },
+          { id: 'role-custom', name: 'workspace_editor', is_system: false, workspace_id: 'elsewhere' },
+        ]);
+      if (method === 'POST' && url.pathname === '/iam/workspaceUser/assign-role') {
+        const name = ({ 'role-admin': 'workspace_admin', 'role-editor': 'workspace_editor' } as Record<string, string>)[body.role_id];
+        if (!name) return new Response('bad role', { status: 400 });
+        for (const w of workspaces) for (const u of w.users ?? []) if (u.id === body.workspace_user_id) u.roles = [{ id: body.role_id, name }];
+        return json({ ok: true });
+      }
+      if (method === 'PUT' && url.pathname === '/iam/workspaceUser') {
+        for (const w of workspaces) for (const u of w.users ?? []) if (u.id === body.id) u.is_active = body.is_active;
+        return json({ ok: true });
+      }
       if (method === 'POST' && url.pathname === '/iam/workspace-invitations') {
         invitations.push({ id: `inv-${invitations.length + 1}`, workspace_id: body.workspace_id, invited_email: body.invited_email, status: 'pending', role_id: body.role_id });
         return json(invitations[invitations.length - 1], 201);
@@ -96,7 +123,10 @@ describe('WorkspaceService (IAM-backed)', () => {
       }
       return new Response('nope', { status: 404 });
     };
-    const projection = new WorkspaceProjection(db, new IamWorkspacesClient({ baseUrl: 'https://iam.test/iam', fetchImpl }));
+    const projection = new WorkspaceProjection(
+      db,
+      new IamWorkspacesClient({ baseUrl: 'https://iam.test/iam', fetchImpl, now: () => clock }),
+    );
     const provider = new WorkOsAuthProvider(
       db,
       { JWT_SECRET: SECRET, JWT_ISSUER: undefined, JWT_AUDIENCE: undefined, SEED_DEMO_FORM: false, ONBOARDING_WIZARD: false },
@@ -182,15 +212,138 @@ describe('WorkspaceService (IAM-backed)', () => {
     expect(calls.some((c) => c.path === '/iam/workspace-invitations/resend')).toBe(true);
   });
 
-  it('removes a member upstream first, then locally', async () => {
+  it('invites a MEMBER with the editor role_id (from the system catalog, not the per-workspace list)', async () => {
+    await svc.list(req());
+    await svc.inviteUpstream(req(), { email: 'ed@x.com', role: 'member' });
+    const post = calls.find((c) => c.method === 'POST' && c.path === '/iam/workspace-invitations');
+    expect((post!.body as { role_id: string }).role_id).toBe('role-editor');
+    expect(calls.some((c) => c.method === 'GET' && c.path === '/iam/role')).toBe(true);
+  });
+
+  it('promotes (assign workspace_admin) and DEMOTES (assign workspace_editor) through assign-role; the roster reflects it', async () => {
     await svc.list(req());
     workspaces[0]!.users!.push({ id: 'wu2', user_id: 'sub-2', type: 'MEMBER', is_active: true, roles: [], user: { email: 'b@x.com', name: 'B' } });
+    let b = (await svc.roster(req())).find((m) => m.email === 'b@x.com')!;
+    expect(b.role).toBe('member');
+
+    const promoted = await svc.updateMemberUpstream(req(), b.id, { role: 'admin' });
+    expect(promoted.role).toBe('admin');
+    let assign = calls.filter((c) => c.method === 'POST' && c.path === '/iam/workspaceUser/assign-role');
+    expect(assign.at(-1)!.body).toEqual({ workspace_user_id: 'wu2', role_id: 'role-admin' });
+
+    const demoted = await svc.updateMemberUpstream(req(), b.id, { role: 'member' });
+    expect(demoted.role).toBe('member');
+    assign = calls.filter((c) => c.method === 'POST' && c.path === '/iam/workspaceUser/assign-role');
+    expect(assign.at(-1)!.body).toEqual({ workspace_user_id: 'wu2', role_id: 'role-editor' });
+    // Upstream is the authority: the fake replaced the role, and the roster read it back.
+    b = (await svc.roster(req())).find((m) => m.email === 'b@x.com')!;
+    expect(b.role).toBe('member');
+
+    // The catalog is read once and cached: a second demote is a cache hit.
+    await svc.updateMemberUpstream(req(), b.id, { role: 'admin' });
+    await svc.updateMemberUpstream(req(), b.id, { role: 'member' });
+    expect(calls.filter((c) => c.method === 'GET' && c.path === '/iam/role').length).toBe(1);
+    // …and only the catalog is consulted for a system role: the per-workspace
+    // list is a fallback, not a probe on every write.
+    expect(calls.filter((c) => c.path.startsWith('/iam/role/roles-workspace/')).length).toBe(0);
+  });
+
+  it('the role catalog expires after its TTL, and a name missing from the cache forces one re-read', async () => {
+    await svc.list(req());
+    workspaces[0]!.users!.push({ id: 'wu2', user_id: 'sub-2', type: 'MEMBER', is_active: true, roles: [], user: { email: 'b@x.com', name: 'B' } });
+    const b = (await svc.roster(req())).find((m) => m.email === 'b@x.com')!;
+    const reads = () => calls.filter((c) => c.method === 'GET' && c.path === '/iam/role').length;
+    await svc.updateMemberUpstream(req(), b.id, { role: 'admin' });
+    expect(reads()).toBe(1);
+    clock += 4 * 60_000;
+    await svc.updateMemberUpstream(req(), b.id, { role: 'member' });
+    expect(reads()).toBe(1); // still fresh
+    clock += 2 * 60_000;
+    await svc.updateMemberUpstream(req(), b.id, { role: 'admin' });
+    expect(reads()).toBe(2); // expired → re-read
+  });
+
+  it('a catalog the caller may not read is a 403; a catalog that is down is a 409 ROLE_UNAVAILABLE (never a 500)', async () => {
+    await svc.list(req());
+    workspaces[0]!.users!.push({ id: 'wu2', user_id: 'sub-2', type: 'MEMBER', is_active: true, roles: [], user: { email: 'b@x.com', name: 'B' } });
+    const b = (await svc.roster(req())).find((m) => m.email === 'b@x.com')!;
+    roleCatalogStatus = 403;
+    // The admin role still resolves: it is on the per-workspace list (fallback).
+    await svc.updateMemberUpstream(req(), b.id, { role: 'admin' });
+    // The editor role is catalog-only → the upstream's refusal is the caller's 403.
+    await expect(svc.updateMemberUpstream(req(), b.id, { role: 'member' })).rejects.toBeInstanceOf(ForbiddenException);
+    roleCatalogStatus = 503;
+    await expect(svc.updateMemberUpstream(req(), b.id, { role: 'member' })).rejects.toBeInstanceOf(ConflictException);
+    // A member invite still goes out — with the workspace's default role.
+    await svc.inviteUpstream(req(), { email: 'late@x.com', role: 'member' });
+    const post = calls.filter((c) => c.method === 'POST' && c.path === '/iam/workspace-invitations').at(-1)!;
+    expect((post.body as { role_id?: string }).role_id).toBeUndefined();
+    // An admin invite still carries the admin role: it resolves from the
+    // per-workspace list, which does not depend on the catalog.
+    await svc.inviteUpstream(req(), { email: 'boss@x.com', role: 'admin' });
+    const adm = calls.filter((c) => c.method === 'POST' && c.path === '/iam/workspace-invitations').at(-1)!;
+    expect((adm.body as { role_id?: string }).role_id).toBe('role-admin');
+  });
+
+  it('a workspace_owner role upstream reads as admin here', async () => {
+    workspaces[0]!.users!.push({ id: 'wu3', user_id: 'sub-3', type: 'MEMBER', is_active: true, roles: [{ id: 'role-ws-owner', name: 'workspace_owner' }], user: { email: 'c@x.com', name: 'C' } });
+    await svc.list(req());
+    const c = (await svc.roster(req())).find((m) => m.email === 'c@x.com')!;
+    expect(c.role).toBe('admin');
+  });
+
+  it('making someone owner (or un-owning them) is a 409: ownership is not a role upstream', async () => {
+    await svc.list(req());
+    workspaces[0]!.users!.push({ id: 'wu2', user_id: 'sub-2', type: 'MEMBER', is_active: true, roles: [], user: { email: 'b@x.com', name: 'B' } });
+    const b = (await svc.roster(req())).find((m) => m.email === 'b@x.com')!;
+    await expect(svc.updateMemberUpstream(req(), b.id, { role: 'owner' })).rejects.toBeInstanceOf(ConflictException);
+    expect(calls.some((c) => c.path === '/iam/workspaceUser/assign-role')).toBe(false);
+  });
+
+  it('deactivates and reactivates through PUT /workspaceUser', async () => {
+    await svc.list(req());
+    workspaces[0]!.users!.push({ id: 'wu2', user_id: 'sub-2', type: 'MEMBER', is_active: true, roles: [], user: { email: 'b@x.com', name: 'B' } });
+    const b = (await svc.roster(req())).find((m) => m.email === 'b@x.com')!;
+    const off = await svc.updateMemberUpstream(req(), b.id, { status: 'disabled' });
+    expect(off.status).toBe('disabled');
+    expect(calls.filter((c) => c.method === 'PUT' && c.path === '/iam/workspaceUser').at(-1)!.body).toEqual({ id: 'wu2', is_active: false });
+    const on = await svc.updateMemberUpstream(req(), b.id, { status: 'active' });
+    expect(on.status).toBe('active');
+  });
+
+  it('removes a member upstream first, then locally — OWNER only; an admin gets 403 (the identity service’s rule)', async () => {
+    await svc.list(req());
+    workspaces[0]!.users!.push(
+      { id: 'wu2', user_id: 'sub-2', type: 'MEMBER', is_active: true, roles: [], user: { email: 'b@x.com', name: 'B' } },
+      { id: 'wu-adm', user_id: 'sub-adm', type: 'MEMBER', is_active: true, roles: [{ id: 'role-admin', name: 'workspace_admin' }], user: { email: 'adm@x.com', name: 'Adm' } },
+    );
     const roster = await svc.roster(req());
     const b = roster.find((m) => m.email === 'b@x.com')!;
+
+    // An admin of the same workspace, acting through their own token.
+    const admToken = signJwtHs256({ sub: 'sub-adm', account_id: 'acc-adm', email: 'adm@x.com', name: 'Adm', exp: 4102444800 }, SECRET);
+    const admReq = (): ReqLike => ({ headers: { authorization: `Bearer ${admToken}` } });
+    await expect(svc.removeMemberUpstream(admReq(), b.id)).rejects.toBeInstanceOf(ForbiddenException);
+    expect(calls.some((c) => c.method === 'DELETE')).toBe(false);
+    // …but that same admin CAN demote / disable.
+    const off = await svc.updateMemberUpstream(admReq(), b.id, { status: 'disabled' });
+    expect(off.status).toBe('disabled');
+
     await svc.removeMemberUpstream(req(), b.id);
     expect(calls.some((c) => c.method === 'DELETE' && c.path === '/iam/workspaceUser/member/wu2')).toBe(true);
     const gone = await db.get<{ id: string }>(sql`SELECT id FROM member WHERE id = ${b.id}`);
     expect(gone).toBeUndefined();
+  });
+
+  it('memberCount on the workspace list counts ACTIVE members only', async () => {
+    workspaces[0]!.users!.push(
+      { id: 'wu2', user_id: 'sub-2', type: 'MEMBER', is_active: true, roles: [], user: { email: 'b@x.com', name: 'B' } },
+      { id: 'wu4', user_id: 'sub-4', type: 'MEMBER', is_active: false, roles: [], user: { email: 'd@x.com', name: 'D' } },
+    );
+    await svc.list(req());
+    await svc.roster(req());
+    const list = await svc.list(req());
+    expect(list.find((w) => w.accountName === 'Mine')!.memberCount).toBe(2);
   });
 
   it('refresh forces an upstream re-read within the TTL', async () => {

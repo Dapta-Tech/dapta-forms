@@ -30,12 +30,22 @@ export class ApiError extends Error {
   }
 }
 
-async function req<T>(method: string, path: string, body?: unknown): Promise<T> {
+/**
+ * Per-call options. `workspace` names the workspace to act in INSTEAD of the
+ * one in the cookie — the account-settings pages manage a workspace by id
+ * without switching into it. The API re-checks membership either way.
+ */
+export interface ReqOptions {
+  workspace?: string;
+}
+
+async function req<T>(method: string, path: string, body?: unknown, opts: ReqOptions = {}): Promise<T> {
   const session = await getSession();
   // Which workspace, asked separately from who — and read from its own cookie,
   // because the local provider serves developers who have no session at all.
   // The API re-checks membership against the database; this authorizes nothing.
-  const workspace = await getWorkspace();
+  const cookieWorkspace = await getWorkspace();
+  const workspace = opts.workspace ?? cookieWorkspace;
   const headers: Record<string, string> = {};
   if (body) headers['content-type'] = 'application/json';
   if (session?.provider === 'workos') headers['authorization'] = `Bearer ${session.accessToken}`;
@@ -70,7 +80,11 @@ async function req<T>(method: string, path: string, body?: unknown): Promise<T> 
   // a Server Component render, where `cookies().set()` throws. Clearing it here
   // and redirecting anyway produced an infinite loop — the dead workspace was
   // re-sent on every hop. The handler owns its response, so the delete lands.
-  if (res.status === 403 && workspace) {
+  //
+  // Only for the COOKIE's workspace. A 403 on an explicit `opts.workspace` means
+  // "you cannot manage that one" and is the caller's to show; resetting the
+  // cookie for it would throw the person out of the workspace they ARE in.
+  if (res.status === 403 && cookieWorkspace && (opts.workspace === undefined || opts.workspace === cookieWorkspace)) {
     const j = (await res.clone().json().catch(() => ({}))) as { error?: string };
     if (j.error === 'WORKSPACE_FORBIDDEN') redirect('/api/workspace/reset');
   }
@@ -94,6 +108,8 @@ export interface Workspace {
   role: AccountRole;
   /** `invited` until they first open it — shown as pending in the switcher. */
   status: MemberStatus;
+  /** Active members in that workspace. */
+  memberCount: number;
 }
 
 /** Why a webhook test delivery failed — mirrors `WebhookPingReason` in the API. */
@@ -487,7 +503,8 @@ export interface FormNotificationsResponse {
 }
 
 export const adminApi = {
-  me: () => req<Me>('GET', '/v1/me'),
+  /** Who am I, in the cookie's workspace — or in `opts.workspace` when managing another one. */
+  me: (opts?: ReqOptions) => req<Me>('GET', '/v1/me', undefined, opts),
 
   // Onboarding (first-run wizard)
   saveOnboarding: (b: OnboardingProgress) =>
@@ -576,9 +593,9 @@ export const adminApi = {
   refreshWorkspaces: () => req<Workspace[]>('POST', '/v1/workspaces/refresh'),
   /** Create a workspace with the caller as owner; returns the new local account id. */
   createWorkspace: (name: string) => req<{ accountId: string }>('POST', '/v1/workspaces', { name }),
-  /** Rename the workspace the caller is acting in (admin/owner). */
-  renameWorkspace: (name: string) =>
-    req<{ accountId: string; name: string }>('PATCH', '/v1/workspaces/current', { name }),
+  /** Rename the workspace the caller is acting in (admin/owner), or `opts.workspace`. */
+  renameWorkspace: (name: string, opts?: ReqOptions) =>
+    req<{ accountId: string; name: string }>('PATCH', '/v1/workspaces/current', { name }, opts),
   /** Tell the API the caller is about to open this workspace (membership re-checked; remembered upstream). */
   enterWorkspace: (accountId: string) => req<{ ok: true }>('POST', `/v1/workspaces/${accountId}/enter`),
   /** Send one sample delivery to a form's webhook (admin-only, SSRF-guarded server-side). */
@@ -591,16 +608,21 @@ export const adminApi = {
   disconnectIntegration: (provider: IntegrationProvider) =>
     req<void>('DELETE', `/v1/integrations/${provider}`),
 
-  // Members (workspace roster — admin/owner only)
-  listMembers: () => req<AccountMember[]>('GET', '/v1/members'),
-  inviteMember: (b: { email: string; role?: 'admin' | 'member' }) =>
-    req<AccountMember>('POST', '/v1/members', b),
-  updateMember: (id: string, b: { role?: AccountRole; status?: MemberStatus }) =>
-    req<AccountMember>('PATCH', `/v1/members/${id}`, b),
-  removeMember: (id: string) => req<{ ok: boolean }>('DELETE', `/v1/members/${id}`),
+  // Members (workspace roster — admin/owner only). Every call takes `opts.workspace`
+  // so Account settings can manage a workspace without switching into it.
+  listMembers: (opts?: ReqOptions) => req<AccountMember[]>('GET', '/v1/members', undefined, opts),
+  inviteMember: (b: { email: string; role?: 'admin' | 'member' }, opts?: ReqOptions) =>
+    req<AccountMember>('POST', '/v1/members', b, opts),
+  updateMember: (id: string, b: { role?: AccountRole; status?: MemberStatus }, opts?: ReqOptions) =>
+    req<AccountMember>('PATCH', `/v1/members/${id}`, b, opts),
+  /** Owner-only (the identity service's rule, mirrored on the local path). */
+  removeMember: (id: string, opts?: ReqOptions) =>
+    req<{ ok: boolean }>('DELETE', `/v1/members/${id}`, undefined, opts),
   /** Pending invitations (identity-service deployments only; empty otherwise). */
-  listInvitations: () => req<PendingInvitation[]>('GET', '/v1/invitations'),
-  resendInvitation: (id: string) => req<{ ok: true }>('POST', `/v1/invitations/${id}/resend`),
+  listInvitations: (opts?: ReqOptions) =>
+    req<PendingInvitation[]>('GET', '/v1/invitations', undefined, opts),
+  resendInvitation: (id: string, opts?: ReqOptions) =>
+    req<{ ok: true }>('POST', `/v1/invitations/${id}/resend`, undefined, opts),
 
   // Notifications (submission emails — admin/owner only)
   getNotifications: () => req<NotificationsResponse>('GET', '/v1/notifications'),

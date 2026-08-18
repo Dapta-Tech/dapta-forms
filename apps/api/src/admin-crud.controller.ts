@@ -77,7 +77,7 @@ import { AuthService, type ReqLike } from './auth.service';
 import { WorkspaceService } from './workspace.service';
 import { EmailEffects } from './email-effects';
 import { AnalyticsEffects } from './analytics-effects';
-import { assertAdmin, assertCanManageTarget, assertNotSelf } from './permissions';
+import { assertAdmin, assertCanManageTarget, assertNotSelf, assertOwner } from './permissions';
 import { parseBound, parseIntParam, parseKinds, parseOutboxStatuses, parseStatus } from './query-params';
 import { DB } from './tokens';
 
@@ -647,6 +647,13 @@ export class AdminCrudController {
     return updated;
   }
 
+  /**
+   * Remove a member. OWNER-only (an admin may invite, promote, demote and
+   * disable, but not remove) — the identity service's rule, applied on the
+   * local path too so a fork and an identity-backed deployment agree. An
+   * `invited` row is an invitation, not a membership: retracting one is the
+   * inviter's call, so an admin may remove those.
+   */
   @Delete('members/:id')
   @HttpCode(200)
   async removeMember(@Req() req: ReqLike, @Param('id') id: string) {
@@ -657,7 +664,11 @@ export class AdminCrudController {
     assertAdmin(p);
     assertNotSelf(p, id);
     const target = await getAccountMember(this.db, p.accountId, id);
-    if (!target) return { ok: true }; // idempotent — already gone
+    if (!target) {
+      assertOwner(p);
+      return { ok: true }; // idempotent — already gone
+    }
+    if (target.status !== 'invited') assertOwner(p);
     assertCanManageTarget(p, target);
     unwrapCrud(await removeMember(this.db, p.accountId, id));
     return { ok: true };

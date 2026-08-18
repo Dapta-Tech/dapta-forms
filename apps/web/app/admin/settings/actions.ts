@@ -16,7 +16,7 @@ import {
 /** Machine-readable outcome of an invite so the client can localize the message. */
 export type InviteMemberState =
   | { ok: true }
-  | { ok: false; code: 'INVALID' | 'TAKEN' | 'FAILED' }
+  | { ok: false; code: 'INVALID' | 'TAKEN' | 'UPSTREAM' | 'FAILED' }
   | null;
 
 /**
@@ -53,6 +53,9 @@ export async function inviteMemberAction(
     unstable_rethrow(e);
     if (e instanceof ApiError) {
       if (e.code === 'EMAIL_TAKEN') return { ok: false, code: 'TAKEN' };
+      // The identity service could not take it (role missing, unmanaged
+      // workspace, refused payload): a retry with the same input will not help.
+      if (e.code === 'ROLE_UNAVAILABLE' || e.code === 'NO_UPSTREAM') return { ok: false, code: 'UPSTREAM' };
       if (e.status === 400) return { ok: false, code: 'INVALID' };
     }
     return { ok: false, code: 'FAILED' };
@@ -63,20 +66,22 @@ export async function inviteMemberAction(
  * Machine-readable outcome of a roster management op (change-role / remove) so the
  * client localizes the message. `LAST_OWNER` = the guarded 409 (would leave the
  * workspace ownerless); `FORBIDDEN` = the guarded 403 (non-admin, or an admin
- * touching an owner); `FAILED` = anything else.
+ * touching an owner); `OWNERSHIP` = ownership is only transferred in the Dapta
+ * app; `UPSTREAM` = the identity service could not apply the change; `FAILED`
+ * = anything else.
  */
 export type ManageMemberState =
   | { ok: true }
-  | { ok: false; code: 'LAST_OWNER' | 'FORBIDDEN' | 'UPSTREAM' | 'FAILED' };
+  | { ok: false; code: 'LAST_OWNER' | 'FORBIDDEN' | 'OWNERSHIP' | 'UPSTREAM' | 'FAILED' };
 
 /** Map an API failure to a stable, localizable code (never a raw server string). */
 function manageError(e: unknown): ManageMemberState {
   if (e instanceof ApiError) {
     if (e.code === 'LAST_OWNER') return { ok: false, code: 'LAST_OWNER' };
     if (e.status === 403 || e.code === 'FORBIDDEN') return { ok: false, code: 'FORBIDDEN' };
-    // Identity-service deployments: some changes are only expressible over there.
-    if (e.code === 'NOT_SUPPORTED_UPSTREAM' || e.code === 'NO_UPSTREAM' || e.code === 'ROLE_UNAVAILABLE')
-      return { ok: false, code: 'UPSTREAM' };
+    if (e.code === 'NOT_SUPPORTED_UPSTREAM') return { ok: false, code: 'OWNERSHIP' };
+    // Identity-service deployments: the change could not be applied over there.
+    if (e.code === 'NO_UPSTREAM' || e.code === 'ROLE_UNAVAILABLE') return { ok: false, code: 'UPSTREAM' };
   }
   return { ok: false, code: 'FAILED' };
 }
@@ -105,14 +110,15 @@ export async function updateMemberRoleAction(
 }
 
 /**
- * Remove a member from the workspace. Admin/owner only; an admin cannot remove an
- * owner; you cannot remove yourself; the last active owner cannot be removed
- * (LAST_OWNER). Forms are account-owned, so removing a member never deletes
- * forms or submissions — only the roster row. Success revalidates the roster.
+ * Remove a member from the workspace. OWNER only (the identity service's rule,
+ * mirrored by the API on the local path too); you cannot remove yourself; the
+ * last active owner cannot be removed (LAST_OWNER). Forms are account-owned, so
+ * removing a member never deletes forms or submissions — only the roster row.
+ * Success revalidates the roster.
  */
 export async function removeMemberAction(id: string): Promise<ManageMemberState> {
   const me = await adminApi.me();
-  if (!isAdminRole(me.role)) return { ok: false, code: 'FORBIDDEN' };
+  if (me.role !== 'owner') return { ok: false, code: 'FORBIDDEN' };
   if (id === me.memberId) return { ok: false, code: 'FORBIDDEN' };
   try {
     await adminApi.removeMember(id);

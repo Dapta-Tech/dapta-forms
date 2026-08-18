@@ -270,6 +270,8 @@ export interface WorkspaceRow {
   role: AccountRole;
   /** `invited` until they first enter it — the switcher marks these as pending. */
   status: MemberStatus;
+  /** How many ACTIVE members the workspace has (the account-settings cards show it). */
+  memberCount: number;
 }
 
 /**
@@ -330,8 +332,10 @@ export async function listWorkspacesForIdentity(
     member_id: string;
     role: string;
     status: string;
+    member_count: number | string;
   }>(
-    sql`SELECT a.id AS account_id, a.code, a.name, m.id AS member_id, m.role, m.status
+    sql`SELECT a.id AS account_id, a.code, a.name, m.id AS member_id, m.role, m.status,
+               (SELECT COUNT(*) FROM member mm WHERE mm.account_id = a.id AND mm.status = 'active') AS member_count
         FROM member m JOIN account a ON a.id = m.account_id
         WHERE m.status IN ('active', 'invited')
           AND (${sql.join(conds, sql` OR `)})
@@ -357,6 +361,8 @@ export async function listWorkspacesForIdentity(
       status: (MEMBER_STATUSES as readonly string[]).includes(r.status)
         ? (r.status as MemberStatus)
         : 'active',
+      // Postgres returns COUNT(*) as a bigint string; SQLite as a number.
+      memberCount: Number(r.member_count ?? 0),
     });
   }
   return out;
