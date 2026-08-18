@@ -85,6 +85,11 @@ export function createEmptyStep(
   if (type === 'message') {
     base.buttonText = 'Continue';
   }
+  // A url step hints at the shape it expects; the stored value always carries a
+  // scheme (see `normalizeUrl`), so the placeholder shows one too.
+  if (type === 'url') {
+    base.placeholder = 'https://';
+  }
   // A reveal step owns its copy and duration, so a form can hold several with
   // different messages (V5-B3). Seeded enabled — an author who drops one in
   // wants it to play.

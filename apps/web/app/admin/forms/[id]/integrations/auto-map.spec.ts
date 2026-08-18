@@ -56,6 +56,15 @@ describe('suggestProperty', () => {
     );
   });
 
+  it('maps a url question to website by field type alone', () => {
+    // The key/label say nothing about a website; the type is what decides.
+    expect(suggestProperty(q({ key: 'url_1', label: 'Where can we find you?', type: 'url' }), HUBSPOT)).toBe(
+      'website',
+    );
+    // A url question whose label mentions the company still lands on website.
+    expect(suggestProperty(q({ key: 'company', label: 'Company', type: 'url' }), HUBSPOT)).toBe('website');
+  });
+
   it('returns the portal casing, not the guessed lowercase', () => {
     const cased = propertyLookup([{ name: 'MobilePhone' }]);
     expect(suggestProperty(q({ key: 'phone', type: 'phone' }), cased)).toBe('MobilePhone');

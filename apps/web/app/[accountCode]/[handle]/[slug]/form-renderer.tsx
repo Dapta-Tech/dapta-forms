@@ -15,6 +15,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   runtimeSteps,
   validateAnswerCode,
+  canonicalizeAnswer,
   resolveOutcome,
   resolveEnding,
   computeScore,
@@ -441,13 +442,19 @@ export function FormRenderer({
 
   function submitCurrent() {
     if (!step) return;
-    const check = validateAnswerCode(step, answers[step.key], answers);
+    // Commit point: store the canonical value (a url step gains its scheme
+    // here) BEFORE validating, so Enter and the button hand the same shape to
+    // the engine, the partial save and the CRM.
+    const canonical = canonicalizeAnswer(step, answers[step.key]);
+    const next = canonical === answers[step.key] ? answers : { ...answers, [step.key]: canonical };
+    if (next !== answers) setAnswers(next);
+    const check = validateAnswerCode(step, next[step.key], next);
     if (!check.ok) {
       setError(err(check.code));
       return;
     }
     setError(null);
-    void advance(answers, step);
+    void advance(next, step);
   }
 
   // Choice/dropdown selection: record the answer and auto-advance.

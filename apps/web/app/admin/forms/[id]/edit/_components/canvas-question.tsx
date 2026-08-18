@@ -457,7 +457,13 @@ function QuestionEditableBody({
         ) : (
           <div className="rounded-xl border border-border bg-background px-4 py-3 text-[15px] text-muted-foreground/60">
             {step.placeholder ||
-              (step.type === 'email' ? 'you@company.com' : step.type === 'phone' ? '+1 555 000 0000' : '…')}
+              (step.type === 'email'
+                ? 'you@company.com'
+                : step.type === 'phone'
+                  ? '+1 555 000 0000'
+                  : step.type === 'url'
+                    ? 'https://example.com'
+                    : '…')}
           </div>
         )}
       </div>

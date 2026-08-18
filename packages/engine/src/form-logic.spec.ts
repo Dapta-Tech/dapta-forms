@@ -3,6 +3,8 @@ import {
   visibleSteps,
   validateAnswer,
   validateAnswerCode,
+  normalizeUrl,
+  canonicalizeAnswer,
   phoneSubscriberDigits,
   computeScore,
   resolveOutcome,
@@ -300,6 +302,19 @@ describe('validateAnswer', () => {
     expect(validateAnswer(s, 'nope').ok).toBe(false);
     expect(validateAnswer(s, 'a@gmail.com').ok).toBe(false);
     expect(validateAnswer(s, 'a@acme.io').ok).toBe(true);
+  });
+
+  it('validates a url step with a pure regex (scheme optional, http(s) only)', () => {
+    const s = step({ key: 'u', type: 'url', required: true });
+    for (const ok of ['acme.com', 'www.acme.com/x?y=1', 'https://acme.com:8443/p', 'http://x.io']) {
+      expect(validateAnswer(s, ok), ok).toEqual({ ok: true });
+    }
+    for (const bad of ['acme', 'ftp://acme.com', 'javascript:alert(1)', 'https://', 'acme .com']) {
+      expect(validateAnswer(s, bad), bad).toEqual({ ok: false, error: 'Enter a valid website address.' });
+    }
+    // Empty is the required check's job, like every other type.
+    expect(validateAnswer(s, '')).toEqual({ ok: false, error: 'This field is required.' });
+    expect(validateAnswer(step({ key: 'u', type: 'url' }), '')).toEqual({ ok: true });
   });
 
   it('validates phone digit count', () => {
@@ -647,6 +662,8 @@ describe('validateAnswerCode', () => {
     expect(
       validateAnswerCode(step({ key: 'e', type: 'email', corporateEmailOnly: true }), 'a@gmail.com').code,
     ).toBe('work_email');
+    expect(validateAnswerCode(step({ key: 'u', type: 'url' }), 'acme').code).toBe('url');
+    expect(validateAnswerCode(step({ key: 'u', type: 'url' }), 'https://acme.com').ok).toBe(true);
     expect(validateAnswerCode(step({ key: 'p', type: 'phone', phoneMinDigits: 8 }), '12').code).toBe('phone');
     // E.164 value: the '+52' dial code is excluded, so 6 subscriber digits < 8.
     expect(validateAnswerCode(step({ key: 'p', type: 'phone', phoneMinDigits: 8 }), '+52551234').code).toBe('phone');
@@ -658,6 +675,39 @@ describe('validateAnswerCode', () => {
     expect(validateAnswerCode(s, undefined, { firstname: 'Ada', lastname: '' }).ok).toBe(false);
     expect(validateAnswerCode(s, undefined, { firstname: 'Ada', lastname: 'Lovelace' }).ok).toBe(true);
     expect(nameFields(s)).toEqual(['firstname', 'lastname']);
+  });
+});
+
+describe('normalizeUrl / canonicalizeAnswer', () => {
+  it('trims and prepends https:// only when no http(s) scheme is present', () => {
+    expect(normalizeUrl('  acme.com ')).toBe('https://acme.com');
+    expect(normalizeUrl('http://acme.com')).toBe('http://acme.com');
+    expect(normalizeUrl('HTTPS://acme.com/x')).toBe('HTTPS://acme.com/x');
+    expect(normalizeUrl('')).toBe('');
+    expect(normalizeUrl('   ')).toBe('');
+  });
+
+  it('is idempotent', () => {
+    const once = normalizeUrl('www.acme.com/x?y=1');
+    expect(normalizeUrl(once)).toBe(once);
+    expect(once).toBe('https://www.acme.com/x?y=1');
+  });
+
+  it('canonicalizes only VALID url answers and leaves every other type alone', () => {
+    const url = step({ key: 'u', type: 'url' });
+    expect(canonicalizeAnswer(url, 'acme.com')).toBe('https://acme.com');
+    expect(canonicalizeAnswer(url, '')).toBe('');
+    expect(canonicalizeAnswer(url, '   ')).toBe('   ');
+    expect(canonicalizeAnswer(url, undefined)).toBeUndefined();
+    // A typo stays as typed: the error must be about what was written, not
+    // about a scheme the visitor never saw.
+    expect(canonicalizeAnswer(url, 'acme')).toBe('acme');
+    expect(canonicalizeAnswer(url, 'acme .com')).toBe('acme .com');
+    const text = step({ key: 't', type: 'text' });
+    expect(canonicalizeAnswer(text, 'acme.com')).toBe('acme.com');
+    const multi = step({ key: 'm', type: 'multiple_choice' });
+    const picked = ['a', 'b'];
+    expect(canonicalizeAnswer(multi, picked)).toBe(picked);
   });
 });
 
