@@ -159,6 +159,18 @@ export interface FormsMessages {
         invited: string;
         /** The account is not among the caller's memberships (a stale choice). */
         unknown: string;
+        /** "New workspace" menu entry + the create dialog. */
+        create: string;
+        createTitle: string;
+        createSubtitle: string;
+        createNameLabel: string;
+        createNamePlaceholder: string;
+        createSubmit: string;
+        creating: string;
+        createCancel: string;
+        createErrorInvalid: string;
+        createErrorForbidden: string;
+        createErrorFailed: string;
       };
     };
     /** The dashboard home (/admin) — greeting, public link, stats, quick actions. */
@@ -256,6 +268,11 @@ export interface FormsMessages {
       appearanceSubtitle: string;
       workspaceHeading: string;
       workspaceSubtitle: string;
+      /** The renameable workspace name (admin/owner). */
+      workspaceName: string;
+      workspaceNameSave: string;
+      workspaceNameSaved: string;
+      workspaceNameError: string;
       displayName: string;
       email: string;
       handle: string;
@@ -266,6 +283,12 @@ export interface FormsMessages {
       viewPublic: string;
       membersHeading: string;
       membersSubtitle: string;
+      /** Pending invitations (identity-service deployments). */
+      pendingHeading: string;
+      pendingBadge: string;
+      resendInvite: string;
+      resendSuccess: string;
+      resendError: string;
       roleOwner: string;
       roleAdmin: string;
       roleMember: string;
@@ -310,6 +333,8 @@ export interface FormsMessages {
       manageErrorLastOwner: string;
       manageErrorForbidden: string;
       manageErrorFailed: string;
+      /** The change is only expressible in the identity service (Dapta app). */
+      manageErrorUpstream: string;
     };
     /** Settings → Notifications: edit the two submission emails the platform sends. */
     notifications: {
@@ -1639,6 +1664,17 @@ export const en: FormsMessages = {
         eyebrow: 'Workspace',
         invited: 'Invited',
         unknown: 'Unknown workspace',
+        create: 'New workspace',
+        createTitle: 'New workspace',
+        createSubtitle: 'A separate space with its own forms, members, branding and integrations. You will be its owner.',
+        createNameLabel: 'Name',
+        createNamePlaceholder: 'e.g. Sales team',
+        createSubmit: 'Create',
+        creating: 'Creating…',
+        createCancel: 'Cancel',
+        createErrorInvalid: 'Give the workspace a name (up to 80 characters).',
+        createErrorForbidden: 'Your account cannot create workspaces.',
+        createErrorFailed: 'Could not create the workspace. Try again.',
       },
     },
     home: {
@@ -1730,6 +1766,10 @@ export const en: FormsMessages = {
       appearanceSubtitle: 'Choose how Dapta Forms looks on this device.',
       workspaceHeading: 'Workspace',
       workspaceSubtitle: 'Your identity and public link.',
+      workspaceName: 'Workspace name',
+      workspaceNameSave: 'Save',
+      workspaceNameSaved: 'Workspace renamed.',
+      workspaceNameError: 'Could not rename the workspace.',
       displayName: 'Name',
       email: 'Email',
       handle: 'Handle',
@@ -1740,6 +1780,11 @@ export const en: FormsMessages = {
       viewPublic: 'View public page',
       membersHeading: 'Members',
       membersSubtitle: 'People with access to this workspace.',
+      pendingHeading: 'Pending invitations',
+      pendingBadge: 'Pending',
+      resendInvite: 'Resend',
+      resendSuccess: 'Invitation sent again.',
+      resendError: 'Could not resend the invitation.',
       roleOwner: 'Owner',
       roleAdmin: 'Admin',
       roleMember: 'Member',
@@ -1784,6 +1829,7 @@ export const en: FormsMessages = {
       manageErrorLastOwner: 'A workspace must keep at least one owner.',
       manageErrorForbidden: 'You do not have permission to do that.',
       manageErrorFailed: 'Something went wrong. Please try again.',
+      manageErrorUpstream: 'Change this from the Dapta app: it manages this workspace’s members.',
     },
     notifications: {
       heading: 'Notifications',
@@ -3023,6 +3069,17 @@ export const es: FormsMessages = {
         eyebrow: 'Workspace',
         invited: 'Invitado',
         unknown: 'Workspace desconocido',
+        create: 'Nuevo workspace',
+        createTitle: 'Nuevo workspace',
+        createSubtitle: 'Un espacio aparte con sus propios formularios, miembros, marca e integraciones. Vas a ser su owner.',
+        createNameLabel: 'Nombre',
+        createNamePlaceholder: 'p. ej. Equipo de ventas',
+        createSubmit: 'Crear',
+        creating: 'Creando…',
+        createCancel: 'Cancelar',
+        createErrorInvalid: 'Ponle un nombre al workspace (hasta 80 caracteres).',
+        createErrorForbidden: 'Tu cuenta no puede crear workspaces.',
+        createErrorFailed: 'No se pudo crear el workspace. Intenta de nuevo.',
       },
     },
     home: {
@@ -3115,6 +3172,10 @@ export const es: FormsMessages = {
       appearanceSubtitle: 'Elige cómo se ve Dapta Forms en este dispositivo.',
       workspaceHeading: 'Espacio de trabajo',
       workspaceSubtitle: 'Tu identidad y tu enlace público.',
+      workspaceName: 'Nombre del workspace',
+      workspaceNameSave: 'Guardar',
+      workspaceNameSaved: 'Workspace renombrado.',
+      workspaceNameError: 'No se pudo renombrar el workspace.',
       displayName: 'Nombre',
       email: 'Correo',
       handle: 'Alias',
@@ -3125,6 +3186,11 @@ export const es: FormsMessages = {
       viewPublic: 'Ver página pública',
       membersHeading: 'Miembros',
       membersSubtitle: 'Personas con acceso a este espacio de trabajo.',
+      pendingHeading: 'Invitaciones pendientes',
+      pendingBadge: 'Pendiente',
+      resendInvite: 'Reenviar',
+      resendSuccess: 'Invitación enviada de nuevo.',
+      resendError: 'No se pudo reenviar la invitación.',
       roleOwner: 'Propietario',
       roleAdmin: 'Administrador',
       roleMember: 'Miembro',
@@ -3169,6 +3235,7 @@ export const es: FormsMessages = {
       manageErrorLastOwner: 'Un espacio de trabajo debe conservar al menos un propietario.',
       manageErrorForbidden: 'No tienes permiso para hacer eso.',
       manageErrorFailed: 'Algo salió mal. Inténtalo de nuevo.',
+      manageErrorUpstream: 'Hazlo desde la app de Dapta: ahí se administran los miembros de este workspace.',
     },
     notifications: {
       heading: 'Notificaciones',

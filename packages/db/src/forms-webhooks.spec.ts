@@ -46,18 +46,27 @@ const hook = (settings: Record<string, unknown>, extra: Record<string, unknown> 
   ...extra,
 });
 
+// Every query under test is account-scoped, so this file only ever needs its
+// OWN two accounts gone — never `DELETE FROM account` outright. On the shared
+// Postgres of the parity job the specs run in parallel, and a table-wide
+// delete here silently emptied the rows other files had just inserted.
+async function cleanOwn() {
+  for (const id of [accountId, otherAccountId].filter(Boolean)) {
+    await db.run(sql`DELETE FROM form WHERE account_id = ${id}`);
+    await db.run(sql`DELETE FROM member WHERE account_id = ${id}`);
+    await db.run(sql`DELETE FROM account WHERE id = ${id}`);
+  }
+}
+
 beforeEach(async () => {
   db = await createDb(process.env.DATABASE_URL ?? 'file::memory:');
   await migrate(db);
-  await db.run(sql`DELETE FROM form`);
-  await db.run(sql`DELETE FROM account`);
   accountId = await insertAccount();
   otherAccountId = await insertAccount();
 });
 
 afterEach(async () => {
-  await db.run(sql`DELETE FROM form`);
-  await db.run(sql`DELETE FROM account`);
+  await cleanOwn();
   await db.close();
 });
 

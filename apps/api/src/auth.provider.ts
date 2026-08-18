@@ -27,6 +27,7 @@ import type { ServerEnv } from '@quill/config/env';
 // from here) is safe: each side references the other only inside function
 // bodies, never during module evaluation.
 import { WorkOsAuthProvider } from './auth.provider.workos';
+import type { WorkspaceProjection } from './workspace-projection';
 
 export interface ReqLike {
   headers: Record<string, string | string[] | undefined>;
@@ -114,11 +115,33 @@ export async function maybeSeedDemoForm(
   }
 }
 
+/**
+ * What a provider can say about the caller's UPSTREAM identity, for the parts
+ * of the product that must talk to the identity service on the caller's behalf
+ * (workspace create/rename, invitations, "last opened" bookkeeping). Shape is
+ * provider-agnostic on purpose: a subject, the person's own upstream account,
+ * and an opaque bearer to forward. `null` means "this provider has no
+ * upstream" (the dev stub, every fork), and callers fall back to local-only.
+ */
+export interface UpstreamIdentity {
+  sub: string;
+  iamAccountId: string;
+  email: string | null;
+  displayName: string | null;
+  bearer: string;
+}
+
 /** The port every host-auth backend implements. */
 export interface AuthProvider {
   readonly name: string;
   /** Resolve the authenticated host (dashboard). Throws 401 if unresolved. */
   resolveHost(req: ReqLike): Promise<ResolvedHost>;
+  /**
+   * The caller's upstream identity, when this provider has one. Optional so the
+   * dev stub and forks implement nothing; MUST throw 401 (not return null) when
+   * the request carries no valid credential at all.
+   */
+  resolveUpstream?(req: ReqLike): Promise<UpstreamIdentity | null>;
 }
 
 /**
@@ -288,6 +311,13 @@ export function createAuthProvider(
   env: ServerEnv,
   db: Db,
   onSignup?: SignupObserver,
+  /**
+   * The workspace projection (identity-service-backed workspaces). Present only
+   * when `IAM_BASE_URL` is configured; the workos adapter then resolves the
+   * HOME workspace from what the identity service says instead of the token's
+   * `account_id`. Absent = pre-0015 behavior, one local account per token account.
+   */
+  projection?: WorkspaceProjection,
 ): AuthProvider {
   switch (env.AUTH_PROVIDER) {
     case 'local':
@@ -300,7 +330,7 @@ export function createAuthProvider(
             'AUTH_PROVIDER=local for development only.',
         );
       }
-      return new WorkOsAuthProvider(db, env, onSignup);
+      return new WorkOsAuthProvider(db, env, onSignup, projection);
     default:
       throw new Error(`Unknown AUTH_PROVIDER: ${String((env as ServerEnv).AUTH_PROVIDER)}`);
   }

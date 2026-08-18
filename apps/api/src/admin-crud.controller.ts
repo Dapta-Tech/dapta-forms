@@ -66,12 +66,15 @@ import {
   memberProfileSchema,
   onboardingCompleteSchema,
   onboardingProgressSchema,
+  workspaceCreateSchema,
+  workspaceRenameSchema,
 } from '@quill/types';
 import { ZodError } from 'zod';
 import { AdminService } from './admin.service';
 import { SubmissionService } from './submission.service';
 import { AnalyticsService } from './analytics.service';
 import { AuthService, type ReqLike } from './auth.service';
+import { WorkspaceService } from './workspace.service';
 import { EmailEffects } from './email-effects';
 import { AnalyticsEffects } from './analytics-effects';
 import { assertAdmin, assertCanManageTarget, assertNotSelf } from './permissions';
@@ -128,7 +131,14 @@ export class AdminCrudController {
     // service (per-question drop-off shown to a form owner). This one is our own
     // telemetry about the people using the builder. Different audience entirely.
     @Optional() @Inject(AnalyticsEffects) private readonly productAnalytics?: AnalyticsEffects,
+    // Last on purpose: existing tests construct this controller positionally.
+    @Optional() @Inject(WorkspaceService) private readonly workspacesSvc?: WorkspaceService,
   ) {}
+
+  private ws(): WorkspaceService {
+    if (!this.workspacesSvc) throw new Error('WorkspaceService not wired');
+    return this.workspacesSvc;
+  }
 
   // --- Identity ----------------------------------------------------------
   @Get('me')
@@ -294,6 +304,38 @@ export class AdminCrudController {
   @Get('workspaces')
   async workspaces(@Req() req: ReqLike) {
     return this.auth.listWorkspaces(req);
+  }
+
+  /** Same list, after forcing a re-read from the identity service (when there is one). */
+  @Post('workspaces/refresh')
+  @HttpCode(200)
+  async refreshWorkspaces(@Req() req: ReqLike) {
+    return this.ws().refresh(req);
+  }
+
+  /** Create a workspace with the caller as owner (upstream first when configured). */
+  @Post('workspaces')
+  @HttpCode(201)
+  async createWorkspace(@Req() req: ReqLike, @Body() body: unknown) {
+    const input = parse(workspaceCreateSchema, body);
+    return this.ws().create(req, input);
+  }
+
+  /** Rename the workspace the caller is acting in (admin/owner). */
+  @Patch('workspaces/current')
+  async renameWorkspace(@Req() req: ReqLike, @Body() body: unknown) {
+    const input = parse(workspaceRenameSchema, body);
+    return this.ws().rename(req, input);
+  }
+
+  /**
+   * The caller is about to open this workspace. Membership is re-checked, and
+   * the choice is remembered upstream so the Dapta app opens the same one.
+   */
+  @Post('workspaces/:id/enter')
+  @HttpCode(200)
+  async enterWorkspace(@Req() req: ReqLike, @Param('id') id: string) {
+    return this.ws().enter(req, id);
   }
 
   /** This member's public page config (the raw blob, or null). */
@@ -531,19 +573,47 @@ export class AdminCrudController {
   }
 
   // --- Members (workspace roster; admin/owner-only) ----------------------
+  //
+  // With the identity service configured (0015) the roster IS the upstream
+  // workspace's `users[]`, invitations live upstream (their email included),
+  // and every change goes upstream first. Without it (forks, dev stub) the
+  // local model below is the whole story. `hasUpstream` is what decides.
   @Get('members')
   async members(@Req() req: ReqLike) {
+    if (this.workspacesSvc && (await this.workspacesSvc.hasUpstream(req))) {
+      return this.workspacesSvc.roster(req);
+    }
     const p = await this.auth.resolveHost(req);
     assertAdmin(p);
     return listMembers(this.db, p.accountId);
   }
 
+  /** Pending invitations (upstream-only; empty without an identity service). */
+  @Get('invitations')
+  async invitations(@Req() req: ReqLike) {
+    if (this.workspacesSvc && (await this.workspacesSvc.hasUpstream(req))) {
+      return this.workspacesSvc.listInvitations(req);
+    }
+    const p = await this.auth.resolveHost(req);
+    assertAdmin(p);
+    return [];
+  }
+
+  @Post('invitations/:id/resend')
+  @HttpCode(200)
+  async resendInvitation(@Req() req: ReqLike, @Param('id') id: string) {
+    return this.ws().resendInvitation(req, id);
+  }
+
   @Post('members')
   @HttpCode(201)
   async inviteMember(@Req() req: ReqLike, @Body() body: unknown) {
+    const input = parse(memberInviteSchema, body);
+    if (this.workspacesSvc && (await this.workspacesSvc.hasUpstream(req))) {
+      return this.workspacesSvc.inviteUpstream(req, input);
+    }
     const p = await this.auth.resolveHost(req);
     assertAdmin(p);
-    const input = parse(memberInviteSchema, body);
     const member = unwrapCrud(await inviteMember(this.db, p.accountId, input));
     // Tell them. Until now the row was created and nobody was ever notified.
     // Enqueued (never sent inline) and fire-and-forget: a mail provider being
@@ -561,10 +631,13 @@ export class AdminCrudController {
 
   @Patch('members/:id')
   async updateMember(@Req() req: ReqLike, @Param('id') id: string, @Body() body: unknown) {
+    const input = parse(memberPatchSchema, body);
+    if (this.workspacesSvc && (await this.workspacesSvc.hasUpstream(req))) {
+      return this.workspacesSvc.updateMemberUpstream(req, id, input);
+    }
     const p = await this.auth.resolveHost(req);
     assertAdmin(p);
     assertNotSelf(p, id);
-    const input = parse(memberPatchSchema, body);
     const target = await getAccountMember(this.db, p.accountId, id);
     if (!target) throw new NotFoundException({ error: 'NOT_FOUND', message: 'Not found.' });
     assertCanManageTarget(p, target, { toRole: input.role });
@@ -577,6 +650,9 @@ export class AdminCrudController {
   @Delete('members/:id')
   @HttpCode(200)
   async removeMember(@Req() req: ReqLike, @Param('id') id: string) {
+    if (this.workspacesSvc && (await this.workspacesSvc.hasUpstream(req))) {
+      return this.workspacesSvc.removeMemberUpstream(req, id);
+    }
     const p = await this.auth.resolveHost(req);
     assertAdmin(p);
     assertNotSelf(p, id);

@@ -10,6 +10,8 @@ import { MemberRowActions } from './member-row-actions';
 import { NotificationSettings } from './notification-settings';
 import { PublicPageSettings } from './public-page';
 import { ThemeSettings } from './theme-settings';
+import { WorkspaceName } from './workspace-name';
+import { PendingInvitations } from './pending-invitations';
 
 export const dynamic = 'force-dynamic';
 
@@ -21,6 +23,8 @@ export default async function SettingsPage() {
   const members: AccountMember[] = isAdminRole(me.role)
     ? await adminApi.listMembers().catch(() => [])
     : [];
+  // Invitations not yet accepted — only identity-service deployments have any.
+  const invitations = isAdminRole(me.role) ? await adminApi.listInvitations().catch(() => []) : [];
   // The two submission emails (owner notice + respondent confirmation), admin-only.
   const notifications = isAdminRole(me.role)
     ? await adminApi.getNotifications().catch(() => null)
@@ -52,6 +56,16 @@ export default async function SettingsPage() {
         <h2 className="text-lg font-semibold tracking-tight">{s.workspaceHeading}</h2>
         <p className="mt-0.5 text-sm text-muted-foreground">{s.workspaceSubtitle}</p>
         <dl className="mt-5 grid grid-cols-1 gap-x-8 gap-y-4 sm:grid-cols-2">
+          <WorkspaceName
+            initial={me.accountName}
+            canEdit={isAdminRole(me.role)}
+            labels={{
+              workspaceName: s.workspaceName,
+              workspaceNameSave: s.workspaceNameSave,
+              workspaceNameSaved: s.workspaceNameSaved,
+              workspaceNameError: s.workspaceNameError,
+            }}
+          />
           <Field label={s.displayName} value={me.displayName ?? '—'} />
           <Field label={s.email} value={me.email ?? '—'} />
           <Field label={s.handle} value={me.handle ?? '—'} mono />
@@ -152,6 +166,7 @@ export default async function SettingsPage() {
                           manageErrorLastOwner: s.manageErrorLastOwner,
                           manageErrorForbidden: s.manageErrorForbidden,
                           manageErrorFailed: s.manageErrorFailed,
+                          manageErrorUpstream: s.manageErrorUpstream,
                         }}
                       />
                     ) : (
@@ -162,6 +177,16 @@ export default async function SettingsPage() {
               })}
             </ul>
           )}
+          <PendingInvitations
+            invitations={invitations}
+            labels={{
+              pendingHeading: s.pendingHeading,
+              pendingBadge: s.pendingBadge,
+              resendInvite: s.resendInvite,
+              resendSuccess: s.resendSuccess,
+              resendError: s.resendError,
+            }}
+          />
         </section>
       ) : null}
 
