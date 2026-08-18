@@ -229,6 +229,11 @@ export const serverEnvSchema = z.object({
   //
   // All four unset (the default, and every bare fork) = the feature does not
   // exist: nothing is enqueued, no third-party request is ever made.
+  //
+  // IAM_BASE_URL + AUTH_PROVIDER=workos ALSO selects identity-service-backed
+  // workspaces (0015): memberships, roles, invitations and "last opened" are
+  // read from / written to the IAM with the caller's bearer, and the local
+  // account/member rows are a projection. Unset = local-only workspaces.
   IAM_BASE_URL: z.string().url().optional(),
   IAM_API_KEY: z.string().optional(),
   DAPTA_SYNC_FLOW_URL: z.string().url().optional(),

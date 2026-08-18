@@ -11,6 +11,7 @@ import { ThemeToggle } from '@/components/theme-toggle';
 import { WorkspaceSwitcher } from '@/components/workspace-switcher';
 import type { Workspace } from '@/lib/admin-api';
 import { resetAnalytics } from '@/lib/product-analytics';
+import { PLATFORM_URL, suiteHref } from '@/lib/suite';
 import type { ThemePref } from '@/lib/theme';
 
 type ChromeMessages = FormsMessages['admin']['chrome'];
@@ -21,7 +22,15 @@ type ChromeMessages = FormsMessages['admin']['chrome'];
  *  a desktop collapse rail (cookie-persisted, no FOUC), and a <768px off-canvas
  *  drawer with a hamburger top bar. Tokens only; R22 press/hover; R27/R28. */
 
-type IconName = 'home' | 'forms' | 'submissions' | 'analytics' | 'integrations' | 'branding' | 'cog';
+type IconName =
+  | 'home'
+  | 'forms'
+  | 'submissions'
+  | 'analytics'
+  | 'integrations'
+  | 'branding'
+  | 'cog'
+  | 'agents';
 
 interface NavItem {
   key: keyof ChromeMessages['nav'];
@@ -29,11 +38,21 @@ interface NavItem {
   icon: IconName;
   /** Active when the path matches any of these (prefix) in addition to href. */
   match?: string[];
+  /** Leaves the app: plain anchor in a new tab, never `aria-current`. */
+  external?: true;
 }
 
 // Forms information architecture: Home, Forms, Submissions, Analytics,
 // Integrations, Settings. Submissions/Analytics/Integrations are per-form
 // surfaces reached through a form picker at their global route.
+//
+// Last, and only on a deployment that has a platform: "Dapta Agents", the door
+// to the wider platform. It sits IN the nav rather than in a separate block so
+// the rail reads as one list, and it takes the external-link affordance so it
+// is never mistaken for a page of this app. Same open-core gate as the
+// app-switcher's first row: with NEXT_PUBLIC_PLATFORM_URL unset a fork's rail
+// carries no dead item. Same helper too, so both doors tag themselves alike
+// (`utm_source=forms`, medium = the piece of chrome clicked).
 const NAV: NavItem[] = [
   { key: 'home', href: '/admin', icon: 'home' },
   { key: 'forms', href: '/admin/forms', icon: 'forms' },
@@ -42,6 +61,9 @@ const NAV: NavItem[] = [
   { key: 'integrations', href: '/admin/integrations', icon: 'integrations' },
   { key: 'branding', href: '/admin/branding', icon: 'branding' },
   { key: 'settings', href: '/admin/settings', icon: 'cog' },
+  ...(PLATFORM_URL
+    ? [{ key: 'agents', href: suiteHref(PLATFORM_URL, 'sidebar'), icon: 'agents', external: true } as const]
+    : []),
 ];
 
 const NAV_COLLAPSED_KEY = 'forms.nav.collapsed';
@@ -56,6 +78,7 @@ const PI_BY_NAME: Record<IconName, string> = {
   integrations: 'pi-link',
   branding: 'pi-palette',
   cog: 'pi-cog',
+  agents: 'pi-microchip-ai',
 };
 
 function Icon({ name, className }: { name: IconName; className?: string }) {
@@ -71,48 +94,85 @@ function Icon({ name, className }: { name: IconName; className?: string }) {
 function NavLinks({
   collapsed,
   nav,
+  newTab,
   onNavigate,
 }: {
   collapsed: boolean;
   nav: ChromeMessages['nav'];
+  /** "(opens in a new tab)" — read out after an external item's label. */
+  newTab: string;
   onNavigate?: () => void;
 }) {
   const pathname = usePathname();
   return (
     <ul className="flex flex-col gap-1">
       {NAV.map((item) => {
-        const active = isNavItemActive(pathname, item.href, item.match);
+        // An external item is never "here": its href is another origin, so the
+        // prefix rule could not match anyway, but the intent should not depend
+        // on that accident.
+        const active = !item.external && isNavItemActive(pathname, item.href, item.match);
         const label = nav[item.key];
+        const className = [
+          'relative flex items-center gap-3 rounded-md text-sm transition-colors active:scale-[0.99]',
+          collapsed ? 'mx-auto h-11 w-11 justify-center gap-0 px-0' : 'min-h-[44px] px-3 py-2.5',
+          active
+            ? 'bg-muted font-medium text-foreground'
+            : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+          // The `bg-muted` wash alone cannot mark "you are here": on paper it
+          // is 1.18:1 against the card behind it, well under the 3:1 WCAG
+          // 1.4.11 asks of a state indicator, and a grey chip on white can
+          // never reach it. The wash still does the scanning work; this 2px
+          // accent bar does the identifying, at 3.3:1 on light and 14:1 on
+          // dark. Two signals, so neither has to carry the whole job.
+          active &&
+            'before:absolute before:inset-y-1.5 before:left-0 before:w-0.5 before:rounded-full before:bg-primary-edge before:content-[""]',
+        ]
+          .filter(Boolean)
+          .join(' ');
+        // Label stays in the a11y tree when collapsed (sr-only) so the
+        // icon-only link keeps a discernible name (WCAG 4.1.2).
+        const body = (
+          <>
+            <Icon name={item.icon} />
+            <span className={collapsed ? 'sr-only' : ''}>{label}</span>
+          </>
+        );
         return (
           <li key={item.href}>
-            <Link
-              href={item.href}
-              onClick={onNavigate}
-              title={collapsed ? label : undefined}
-              aria-current={active ? 'page' : undefined}
-              className={[
-                'relative flex items-center gap-3 rounded-md text-sm transition-colors active:scale-[0.99]',
-                collapsed ? 'mx-auto h-11 w-11 justify-center gap-0 px-0' : 'min-h-[44px] px-3 py-2.5',
-                active
-                  ? 'bg-muted font-medium text-foreground'
-                  : 'text-muted-foreground hover:bg-muted hover:text-foreground',
-                // The `bg-muted` wash alone cannot mark "you are here": on paper it
-                // is 1.18:1 against the card behind it, well under the 3:1 WCAG
-                // 1.4.11 asks of a state indicator, and a grey chip on white can
-                // never reach it. The wash still does the scanning work; this 2px
-                // accent bar does the identifying, at 3.3:1 on light and 14:1 on
-                // dark. Two signals, so neither has to carry the whole job.
-                active &&
-                  'before:absolute before:inset-y-1.5 before:left-0 before:w-0.5 before:rounded-full before:bg-primary-edge before:content-[""]',
-              ]
-                .filter(Boolean)
-                .join(' ')}
-            >
-              <Icon name={item.icon} />
-              {/* Label stays in the a11y tree when collapsed (sr-only) so the
-                  icon-only link keeps a discernible name (WCAG 4.1.2). */}
-              <span className={collapsed ? 'sr-only' : ''}>{label}</span>
-            </Link>
+            {item.external ? (
+              <a
+                href={item.href}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={onNavigate}
+                title={collapsed ? label : undefined}
+                data-testid={`nav-${item.key}`}
+                className={className}
+              >
+                {body}
+                {/* The same trailing arrow the app-switcher rows carry, so
+                    "leaves the app" reads the same wherever it appears. Hidden
+                    on the 64px rail, where the 44px tile is the icon alone. */}
+                {!collapsed ? (
+                  <i
+                    aria-hidden
+                    className="pi pi-external-link ml-auto text-muted-foreground"
+                    style={{ fontSize: 13 }}
+                  />
+                ) : null}
+                <span className="sr-only"> {newTab}</span>
+              </a>
+            ) : (
+              <Link
+                href={item.href}
+                onClick={onNavigate}
+                title={collapsed ? label : undefined}
+                aria-current={active ? 'page' : undefined}
+                className={className}
+              >
+                {body}
+              </Link>
+            )}
           </li>
         );
       })}
@@ -228,7 +288,7 @@ export function AdminShell({
       target="_blank"
       rel="noopener noreferrer"
       title={messages.viewPublic}
-      aria-label={`${messages.viewPublic} (opens in a new tab)`}
+      aria-label={`${messages.viewPublic} ${messages.switcher.opensNewTab}`}
       className="flex h-11 w-11 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground active:scale-[0.98]"
     >
       <i aria-hidden className="pi pi-external-link" style={{ fontSize: 16 }} />
@@ -328,8 +388,9 @@ export function AdminShell({
       >
         {brand}
         {/* Directly under the wordmark and above the nav: which tenant every
-            link below belongs to. It renders nothing at all for the single-
-            workspace majority. */}
+            link below belongs to, and where a new one is made. Always
+            rendered: "New workspace" has to exist before there is a second
+            workspace to switch to. */}
         {currentAccountId ? (
           <WorkspaceSwitcher
             workspaces={workspaces}
@@ -339,7 +400,7 @@ export function AdminShell({
           />
         ) : null}
         <nav aria-label="Primary">
-          <NavLinks collapsed={railCollapsed} nav={messages.nav} />
+          <NavLinks collapsed={railCollapsed} nav={messages.nav} newTab={messages.switcher.opensNewTab} />
         </nav>
         {renderFooter(railCollapsed)}
       </aside>
@@ -385,7 +446,12 @@ export function AdminShell({
           />
         ) : null}
         <nav>
-          <NavLinks collapsed={false} nav={messages.nav} onNavigate={() => setDrawerOpen(false)} />
+          <NavLinks
+            collapsed={false}
+            nav={messages.nav}
+            newTab={messages.switcher.opensNewTab}
+            onNavigate={() => setDrawerOpen(false)}
+          />
         </nav>
         {renderFooter(false)}
       </aside>

@@ -10,6 +10,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { sql, type Db } from './client';
+import type { SQL } from 'drizzle-orm';
 import type { CrudResult } from './crud';
 import { deriveUniqueHandle } from './short-links';
 import { getAccountByCode, parseJsonColumn } from './forms';
@@ -106,6 +107,17 @@ async function otherActiveOwners(
           AND id <> ${excludeMemberId}`,
   );
   return Number(row?.n ?? 0);
+}
+
+/**
+ * Whether removing/disabling/demoting `memberId` would leave the workspace with
+ * no active owner. Exported so callers that write UPSTREAM FIRST can refuse
+ * before the upstream write, not after.
+ */
+export async function wouldOrphanWorkspace(db: Db, accountId: string, memberId: string): Promise<boolean> {
+  const current = await getAccountMember(db, accountId, memberId);
+  if (!current || current.role !== 'owner' || current.status !== 'active') return false;
+  return (await otherActiveOwners(db, accountId, memberId)) === 0;
 }
 
 const EMAIL_LOCAL = (email: string) => email.split('@')[0] ?? email;
@@ -303,6 +315,14 @@ export async function listWorkspacesForIdentity(
   // Match on EITHER key. A person can hold rows created by two different paths
   // — an IAM-provisioned one carrying `external_id`, and an invite that only
   // ever knew their address — and both are the same human.
+  //
+  // The branches are assembled here, not as `(${x} IS NOT NULL AND …)` in SQL:
+  // Postgres cannot infer a type for a bare parameter compared to NULL
+  // ("could not determine data type of parameter $1"), and that query ran
+  // only on SQLite until the switcher became always-on.
+  const conds: SQL[] = [];
+  if (externalId) conds.push(sql`m.external_id = ${externalId}`);
+  if (email) conds.push(sql`lower(m.email) = ${email}`);
   const rows = await db.all<{
     account_id: string;
     code: string;
@@ -314,10 +334,7 @@ export async function listWorkspacesForIdentity(
     sql`SELECT a.id AS account_id, a.code, a.name, m.id AS member_id, m.role, m.status
         FROM member m JOIN account a ON a.id = m.account_id
         WHERE m.status IN ('active', 'invited')
-          AND (
-            (${externalId} IS NOT NULL AND m.external_id = ${externalId})
-            OR (${email} IS NOT NULL AND lower(m.email) = ${email})
-          )
+          AND (${sql.join(conds, sql` OR `)})
         ORDER BY a.name ASC, a.created_at ASC`,
   );
 

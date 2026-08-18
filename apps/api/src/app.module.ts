@@ -13,6 +13,7 @@ import {
   INTEGRATION_CREDENTIAL_WRITERS,
   PREMIUM_MODE,
   RATE_LIMITER,
+  WORKSPACE_PROJECTION,
 } from './tokens';
 import { SubmissionService } from './submission.service';
 import { AdminService } from './admin.service';
@@ -28,7 +29,10 @@ import { DaptaSyncDelivery } from './dapta-sync';
 import { OutboxWorker } from './outbox.worker';
 import { RateLimitGuard, createRateLimiter } from './rate-limit';
 import { resolveEntitlementsProvider } from './entitlements.provider';
-import { createAuthProvider } from './auth.provider';
+import { createAuthProvider, type SignupObserver } from './auth.provider';
+import { WorkspaceProjection } from './workspace-projection';
+import { IamWorkspacesClient } from './iam-workspaces';
+import { WorkspaceService } from './workspace.service';
 import type { Db } from '@quill/db';
 import { HealthController, DocsController } from './controllers';
 import { PublicController } from './public.controller';
@@ -42,6 +46,23 @@ import {
   HubspotPropertiesService,
   IntegrationsController,
 } from './integrations.controller';
+
+/** Product telemetry for "a person joined" — shared by the auth provider and the projection. */
+function signupObserver(productAnalytics: AnalyticsEffects): SignupObserver {
+  return (signup) => {
+    if (!signup.email) return;
+    void productAnalytics.capture('signup_completed', {
+      distinctId: signup.email,
+      accountId: signup.accountId,
+      properties: {
+        member_id: signup.memberId,
+        role: signup.role,
+        is_first_member: signup.isFirstMember,
+        from_invite: signup.fromInvite,
+      },
+    });
+  };
+}
 
 @Module({
   controllers: [
@@ -107,6 +128,20 @@ import {
       useFactory: (env: ServerEnv) => env.INTEGRATION_CREDENTIAL_WRITERS,
       inject: [ENV],
     },
+    // The identity service's workspaces ARE the workspaces (0015). Present only
+    // when IAM_BASE_URL is configured AND the workos provider is selected; a
+    // fork / plain local dev gets null and every workspace path stays local.
+    {
+      provide: WORKSPACE_PROJECTION,
+      useFactory: (env: ServerEnv, db: Db, productAnalytics: AnalyticsEffects) =>
+        env.AUTH_PROVIDER === 'workos' && env.IAM_BASE_URL
+          ? new WorkspaceProjection(db, new IamWorkspacesClient({ baseUrl: env.IAM_BASE_URL }), {
+              seedEnv: env,
+              onSignup: signupObserver(productAnalytics),
+            })
+          : null,
+      inject: [ENV, DB, AnalyticsEffects],
+    },
     // Host auth backend selected by AUTH_PROVIDER (local stub / WorkOS overlay).
     {
       provide: AUTH_PROVIDER,
@@ -114,21 +149,13 @@ import {
       // members are materialized just-in-time inside the provider, so there is
       // no signup endpoint to instrument. Passed as a plain callback so the auth
       // adapters stay ignorant of analytics (invariant 6).
-      useFactory: (env: ServerEnv, db: Db, productAnalytics: AnalyticsEffects) =>
-        createAuthProvider(env, db, (signup) => {
-          if (!signup.email) return;
-          void productAnalytics.capture('signup_completed', {
-            distinctId: signup.email,
-            accountId: signup.accountId,
-            properties: {
-              member_id: signup.memberId,
-              role: signup.role,
-              is_first_member: signup.isFirstMember,
-              from_invite: signup.fromInvite,
-            },
-          });
-        }),
-      inject: [ENV, DB, AnalyticsEffects],
+      useFactory: (
+        env: ServerEnv,
+        db: Db,
+        productAnalytics: AnalyticsEffects,
+        projection: WorkspaceProjection | null,
+      ) => createAuthProvider(env, db, signupObserver(productAnalytics), projection ?? undefined),
+      inject: [ENV, DB, AnalyticsEffects, WORKSPACE_PROJECTION],
     },
     // Rate limiter for the public surface (P1-5): token bucket by default, noop
     // when RATE_LIMIT_ENABLED=false; swappable for a distributed limiter.
@@ -138,6 +165,7 @@ import {
     AnalyticsService,
     AdminService,
     AuthService,
+    WorkspaceService,
     EmailEffects,
     // Fans submissions out to enabled destinations (webhook/HubSpot) via the
     // durable outbox; delivery never blocks or fails submission handling.

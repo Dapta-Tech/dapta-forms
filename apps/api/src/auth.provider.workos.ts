@@ -18,7 +18,7 @@
  * `createAuthProvider` still fails loud without it. No vendor host/secret name
  * appears here — issuer/audience/secret all arrive via env.
  */
-import { Logger, UnauthorizedException } from '@nestjs/common';
+import { ForbiddenException, Logger, UnauthorizedException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import type { Db, AccountRole } from '@quill/db';
 import { deriveUniqueHandle, insertAccountWithShortCode, sql } from '@quill/db';
@@ -31,8 +31,10 @@ import {
   type ResolvedHost,
   type ReqLike,
   type SignupObserver,
+  type UpstreamIdentity,
 } from './auth.provider';
 import { verifyJwtHs256, JwtError, type JwtClaims } from './jwt';
+import type { WorkspaceProjection } from './workspace-projection';
 
 type WorkOsEnv = Pick<
   ServerEnv,
@@ -58,6 +60,14 @@ export class WorkOsAuthProvider implements AuthProvider {
     private readonly env: WorkOsEnv,
     /** Optional; omitted means nothing observes signups (the fork default). */
     private readonly onSignup?: SignupObserver,
+    /**
+     * Optional; present when the identity service's workspaces are the
+     * workspaces (`IAM_BASE_URL` set). Then HOME is whatever the identity
+     * service says the person opened last, and the local rows are a projection
+     * of their upstream memberships. Absent = the token's `account_id` IS the
+     * one local account (pre-0015 shape; still what tests and forks get).
+     */
+    private readonly projection?: WorkspaceProjection,
   ) {
     if (!env.JWT_SECRET) {
       // Defensive: the factory already guards this, but never run without a key.
@@ -66,7 +76,8 @@ export class WorkOsAuthProvider implements AuthProvider {
     this.secret = env.JWT_SECRET;
   }
 
-  async resolveHost(req: ReqLike): Promise<ResolvedHost> {
+  /** Verify the bearer and read the claims this provider relies on. */
+  private verify(req: ReqLike): { token: string; claims: JwtClaims; sub: string; accountExtId: string } {
     const authHeader = header(req, 'authorization');
     const token =
       authHeader && authHeader.startsWith('Bearer ')
@@ -90,6 +101,51 @@ export class WorkOsAuthProvider implements AuthProvider {
     const sub = typeof claims.sub === 'string' ? claims.sub : undefined;
     if (!accountExtId) throw unauthenticated('Token missing account_id.');
     if (!sub) throw unauthenticated('Token missing sub.');
+    return { token, claims, sub, accountExtId };
+  }
+
+  async resolveUpstream(req: ReqLike): Promise<UpstreamIdentity | null> {
+    if (!this.projection) return null;
+    const { token, claims, sub, accountExtId } = this.verify(req);
+    return {
+      sub,
+      iamAccountId: accountExtId,
+      email: typeof claims.email === 'string' ? claims.email : null,
+      displayName: typeof claims.name === 'string' ? claims.name : null,
+      bearer: token,
+    };
+  }
+
+  async resolveHost(req: ReqLike): Promise<ResolvedHost> {
+    const { token, claims, sub, accountExtId } = this.verify(req);
+
+    if (this.projection) {
+      const upstream: UpstreamIdentity = {
+        sub,
+        iamAccountId: accountExtId,
+        email: typeof claims.email === 'string' ? claims.email : null,
+        displayName: typeof claims.name === 'string' ? claims.name : null,
+        bearer: token,
+      };
+      let state = await this.projection.ensure(upstream);
+      let home = await this.projection.home(upstream, state);
+      if (!home && !state.degraded) {
+        // A warm cache can hide a membership that was just restored upstream;
+        // one forced re-read is cheap and honest.
+        state = await this.projection.ensure(upstream, { force: true });
+        home = await this.projection.home(upstream, state);
+      }
+      if (home) return home;
+      // Nothing upstream and nothing local. The identity service creates a
+      // workspace at signup, so this is a real fault, not a first login — and
+      // minting a token-account row here would recreate exactly the pre-0015
+      // shape 0015 retires. Refuse, loudly.
+      this.log.warn(`no workspace for ${sub} (upstream account ${accountExtId}); refusing`);
+      throw new ForbiddenException({
+        error: 'NO_WORKSPACE',
+        message: 'Your account has no workspace yet. Open the Dapta app once, then try again.',
+      });
+    }
 
     const accountId = await this.resolveAccount(accountExtId, claims);
     const memberId = await this.resolveMember(accountId, sub, claims);

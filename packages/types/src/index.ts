@@ -1340,6 +1340,18 @@ export type SubmissionsPage = z.infer<typeof submissionsPageSchema>;
 
 // --- Member management (workspace roster) ------------------------------------
 
+/** Create a workspace: a name is the only thing a person types. */
+export const workspaceCreateSchema = z.object({
+  name: z.string().trim().min(1, 'A name is required.').max(80),
+});
+export type WorkspaceCreateInput = z.infer<typeof workspaceCreateSchema>;
+
+/** Rename the current workspace. */
+export const workspaceRenameSchema = z.object({
+  name: z.string().trim().min(1, 'A name is required.').max(80),
+});
+export type WorkspaceRenameInput = z.infer<typeof workspaceRenameSchema>;
+
 export const memberInviteSchema = z.object({
   email: z.string().email().max(320),
   role: z.enum(['admin', 'member']).optional(),

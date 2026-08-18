@@ -1,19 +1,19 @@
 import { getMessages } from '@quill/shared';
-import { PlatformMark } from '@/components/brand/brand';
+import { BrandMark } from '@/components/brand/brand';
 import { signupHref } from '@/lib/growth';
 
 /**
- * "Powered by Dapta" — the growth-loop attribution on every public surface (R11).
+ * "Made with Dapta Forms" — the growth-loop attribution on every public surface (R11).
  *
- * The copy names the PLATFORM, not the product: a respondent who has just filled
- * a form is a warmer lead for Dapta than for Dapta Forms, and the badge's whole
- * job is to send them somewhere. Where it sends them is `NEXT_PUBLIC_SIGNUP_URL`
- * — never a domain in this file (see `signupHref`).
- *
- * The MARK follows the copy, which is why this is the one surface taking
- * `PlatformMark` and not `BrandMark`: the badge used to set the product's `F`
- * beside a sentence naming the company, so the two halves of the pill argued
- * with each other about who the reader was being sent to.
+ * The copy names the PRODUCT, and so does the mark: this is `BrandMark`, the
+ * Forms `F`, never `PlatformMark`. A pill signs itself with the mark that
+ * matches the name written beside it; the two halves used to argue (the F next
+ * to "Powered by Dapta", then the d), and each swap was a release on its own.
+ * Where it sends the reader is a deployment fact — `NEXT_PUBLIC_LANDING_URL`
+ * with `NEXT_PUBLIC_SIGNUP_URL` as the opt-in — never a domain in this file
+ * (see `signupHref`). Dapta's image points it at the Forms landing, so a
+ * stranger who just answered someone's form lands on a page written for a
+ * stranger, tagged `utm_medium=form-button`.
  *
  * It is FORM CHROME, not a document footer. It used to render as a `<footer>`
  * AFTER the renderer in `page.tsx`, and `.pf` carries `min-height: 100dvh` —
@@ -39,7 +39,7 @@ export function MadeWithBadge({
   locale?: string;
   accountCode?: string | null;
 }) {
-  const href = signupHref('badge', accountCode);
+  const href = signupHref('form-button', accountCode);
   if (!href) return null;
   const m = getMessages(locale);
   return (
@@ -50,11 +50,11 @@ export function MadeWithBadge({
         target="_blank"
         rel="noopener noreferrer"
       >
-        {/* The bowl is currentColor, so it picks up the pill's foreground and
-            stays legible on any host background; only the lime tick is literal.
+        {/* The stem is currentColor, so it picks up the pill's foreground and
+            stays legible on any host background; only the lime arms are literal.
             Unlabelled on purpose — the visible text right beside it already
             names the destination, so a title here would read it out twice. */}
-        <PlatformMark className="pf__attribution-mark" />
+        <BrandMark className="pf__attribution-mark" />
         <span>{m.growth.madeWith}</span>
         {/* Localized, like every other string on this surface — this used to be
             a hardcoded English "(opens in a new tab)". Same catalog key the

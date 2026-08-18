@@ -3,12 +3,13 @@
 import { useCallback, useRef, useState } from 'react';
 import { BrandMark } from '@/components/brand/brand';
 import { AnchoredMenu } from '@/components/ui/anchored-menu';
+import { CALENDARS_URL, PLATFORM_URL, suiteHref } from '@/lib/suite';
 
 /**
  * App-switcher — the discreet door to the wider Dapta suite (design-parity with
  * Dapta Calendars). An Atlassian-style grid affordance next to the product
  * wordmark that opens a small menu:
- *   • Dapta AI (→ platform, new tab)  • Dapta Calendars (new tab)  • Forms (current)
+ *   • Dapta Agents (→ platform, new tab)  • Dapta Calendars (new tab)  • Forms (current)
  *
  * Growth-loop only — hidden entirely when NEITHER suite URL is configured
  * (white-label / self-host builds), so the switcher never dead-ends on a lone
@@ -26,20 +27,6 @@ interface SwitcherMessages {
 }
 
 const PRODUCT_NAME = process.env.NEXT_PUBLIC_PRODUCT_NAME || 'Forms';
-const PLATFORM_URL = process.env.NEXT_PUBLIC_PLATFORM_URL || '';
-const CALENDARS_URL = process.env.NEXT_PUBLIC_CALENDARS_URL || '';
-
-/** A suite URL carrying app-switcher UTM tags (best-effort). */
-function suiteHref(base: string): string {
-  try {
-    const url = new URL(base);
-    url.searchParams.set('utm_source', 'forms');
-    url.searchParams.set('utm_medium', 'app_switcher');
-    return url.toString();
-  } catch {
-    return base;
-  }
-}
 
 export function AppSwitcher({ messages: m }: { messages: SwitcherMessages }) {
   const [open, setOpen] = useState(false);
@@ -83,12 +70,14 @@ export function AppSwitcher({ messages: m }: { messages: SwitcherMessages }) {
           {m.eyebrow}
         </p>
 
-        {/* Dapta AI — the platform (external, new tab). First, per Felipe. */}
+        {/* Dapta Agents — the platform (external, new tab). First, per Felipe.
+            Same name and destination as the rail's own "Dapta Agents" item: one
+            door, two handles, so it never reads as two different products. */}
         {PLATFORM_URL ? (
           <a
             role="menuitem"
             tabIndex={-1}
-            href={suiteHref(PLATFORM_URL)}
+            href={suiteHref(PLATFORM_URL, 'app_switcher')}
             target="_blank"
             rel="noopener noreferrer"
             onClick={close}
@@ -123,7 +112,7 @@ export function AppSwitcher({ messages: m }: { messages: SwitcherMessages }) {
           <a
             role="menuitem"
             tabIndex={-1}
-            href={suiteHref(CALENDARS_URL)}
+            href={suiteHref(CALENDARS_URL, 'app_switcher')}
             target="_blank"
             rel="noopener noreferrer"
             onClick={close}
