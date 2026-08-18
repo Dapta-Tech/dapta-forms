@@ -112,6 +112,15 @@ export interface FormsMessages {
       search: string;
       noResults: string;
     };
+    /** Branded mini calendar (`components/ui/date-picker`) that replaces native
+     *  date inputs. */
+    datePicker: {
+      placeholder: string;
+      dialogLabel: string;
+      prevMonth: string;
+      nextMonth: string;
+      clear: string;
+    };
     /** App shell chrome shared across every admin page (sidebar/header/footer). */
     chrome: {
       collapse: string;
@@ -1696,6 +1705,13 @@ export const en: FormsMessages = {
       search: 'Search…',
       noResults: 'No results',
     },
+    datePicker: {
+      placeholder: 'Pick a date',
+      dialogLabel: 'Calendar',
+      prevMonth: 'Previous month',
+      nextMonth: 'Next month',
+      clear: 'Clear date',
+    },
     chrome: {
       collapse: 'Collapse sidebar',
       expand: 'Expand sidebar',
@@ -3149,6 +3165,13 @@ export const es: FormsMessages = {
     select: {
       search: 'Buscar…',
       noResults: 'Sin resultados',
+    },
+    datePicker: {
+      placeholder: 'Elige una fecha',
+      dialogLabel: 'Calendario',
+      prevMonth: 'Mes anterior',
+      nextMonth: 'Mes siguiente',
+      clear: 'Borrar fecha',
     },
     chrome: {
       collapse: 'Contraer barra lateral',
