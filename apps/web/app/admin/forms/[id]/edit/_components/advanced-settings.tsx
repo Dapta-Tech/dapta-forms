@@ -128,6 +128,7 @@ export function PrefillRow({
   const sample = (): string => {
     if (step.type === 'email') return 'ana%40acme.com';
     if (step.type === 'phone') return '%2B15555550123';
+    if (step.type === 'url') return 'https%3A%2F%2Facme.com';
     if (step.type === 'slider') return '5';
     const option = step.options?.[0];
     if (option) return encodeURIComponent(option.value ?? option.label ?? 'value');

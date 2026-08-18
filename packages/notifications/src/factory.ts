@@ -73,14 +73,14 @@ export function createEmailProvider(config: EmailConfig): EmailProvider {
           if (!legacyKey) {
             console.warn(
               '[email:http] transactional-v1 selected but EMAIL_HTTP_CLIENT_ID/EMAIL_HTTP_SIGNING_SECRET ' +
-                'are missing and no legacy EMAIL_HTTP_API_KEY is set — falling back to log-only. ' +
+                'are missing and no legacy EMAIL_HTTP_API_KEY is set. Falling back to log-only. ' +
                 'No real mail will be sent until the HMAC credentials are configured.',
             );
             return new LogOnlyEmailProvider();
           }
           console.warn(
             '[email:http] transactional-v1 running on the DEPRECATED static API key ' +
-              '(EMAIL_HTTP_API_KEY) — configure EMAIL_HTTP_CLIENT_ID + EMAIL_HTTP_SIGNING_SECRET ' +
+              '(EMAIL_HTTP_API_KEY). Configure EMAIL_HTTP_CLIENT_ID + EMAIL_HTTP_SIGNING_SECRET ' +
               'to switch to signed requests.',
           );
         }

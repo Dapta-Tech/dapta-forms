@@ -731,7 +731,7 @@ export type FormDestination = z.infer<typeof formDestinationSchema>;
 
 /** Rejection message for a second HubSpot destination (see `hasExtraHubspotDestination`). */
 export const ONE_HUBSPOT_DESTINATION_MESSAGE =
-  'Only one HubSpot destination per form — map several properties from the same question instead.';
+  'Only one HubSpot destination per form. Map several properties from the same question instead.';
 
 /** How many HubSpot entries a (loosely typed) destinations array carries. */
 function hubspotCount(destinations: unknown): number {
@@ -1339,6 +1339,18 @@ export const submissionsPageSchema = z.object({
 export type SubmissionsPage = z.infer<typeof submissionsPageSchema>;
 
 // --- Member management (workspace roster) ------------------------------------
+
+/** Create a workspace: a name is the only thing a person types. */
+export const workspaceCreateSchema = z.object({
+  name: z.string().trim().min(1, 'A name is required.').max(80),
+});
+export type WorkspaceCreateInput = z.infer<typeof workspaceCreateSchema>;
+
+/** Rename the current workspace. */
+export const workspaceRenameSchema = z.object({
+  name: z.string().trim().min(1, 'A name is required.').max(80),
+});
+export type WorkspaceRenameInput = z.infer<typeof workspaceRenameSchema>;
 
 export const memberInviteSchema = z.object({
   email: z.string().email().max(320),

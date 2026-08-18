@@ -2,6 +2,8 @@
 
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useState, useTransition } from 'react';
+import { DatePicker } from '@/components/ui/date-picker';
+import { todayUtcIso } from '@/lib/calendar-math';
 
 type Preset = 'all' | 'today' | 'week' | 'month' | 'year' | 'custom';
 
@@ -13,11 +15,15 @@ type Preset = 'all' | 'today' | 'week' | 'month' | 'year' | 'custom';
  * page.tsx so every teammate sees the same numbers regardless of where they are.
  * Writes the choice to the URL query so the server component re-fetches; a
  * Suspense boundary shows the skeleton while it does (R22). Tokens-only; 44px
- * hit targets (R28).
+ * hit targets (R28). The custom From/To fields are the branded `DatePicker`
+ * (not native date inputs), fed the server's `locale` so the first frame
+ * matches on both sides.
  */
 export function AnalyticsFilter({
   labels,
+  locale,
 }: {
+  locale: string;
   labels: {
     today: string;
     week: string;
@@ -54,7 +60,7 @@ export function AnalyticsFilter({
 
   // Today in UTC — the same reference the server resolves ranges against, so the
   // picker cannot offer a "future" that is only future in the viewer's timezone.
-  const todayUtc = new Date().toISOString().slice(0, 10);
+  const todayUtc = todayUtcIso();
 
   const applyCustom = () => {
     if (!from && !to) return;
@@ -103,31 +109,34 @@ export function AnalyticsFilter({
 
       {showCustom ? (
         <div className="flex flex-wrap items-end gap-3">
-          <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-            {labels.from}
-            <input
-              type="date"
+          <div className="flex flex-col gap-1 text-xs text-muted-foreground">
+            <span>{labels.from}</span>
+            <DatePicker
               value={from}
+              onChange={setFrom}
               max={to || todayUtc}
-              onChange={(e) => setFrom(e.target.value)}
-              className="h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground"
+              locale={locale}
+              ariaLabel={labels.from}
+              testId="analytics-from"
             />
-          </label>
-          <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-            {labels.to}
-            <input
-              type="date"
+          </div>
+          <div className="flex flex-col gap-1 text-xs text-muted-foreground">
+            <span>{labels.to}</span>
+            <DatePicker
               value={to}
+              onChange={setTo}
               min={from || undefined}
               max={todayUtc}
-              onChange={(e) => setTo(e.target.value)}
-              className="h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground"
+              locale={locale}
+              ariaLabel={labels.to}
+              testId="analytics-to"
             />
-          </label>
+          </div>
           <button
             type="button"
             disabled={pending || (!from && !to)}
             onClick={applyCustom}
+            data-testid="analytics-apply"
             className="inline-flex h-9 items-center rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground transition-transform active:scale-[0.98] disabled:opacity-60"
           >
             {labels.apply}

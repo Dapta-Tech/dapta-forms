@@ -201,7 +201,7 @@ export class HubspotPropertiesService {
     if (!token) {
       return {
         enabled: false,
-        reason: 'No HubSpot token — connect HubSpot for this account or set the server token.',
+        reason: 'No HubSpot token. Connect HubSpot for this account or set the server token.',
       };
     }
     const cached = this.cache.get(accountId);
@@ -308,7 +308,7 @@ export class CalendlyEventTypesService {
     if (!token) {
       return {
         enabled: false,
-        reason: 'No Calendly token — connect Calendly for this account or set the server token.',
+        reason: 'No Calendly token. Connect Calendly for this account or set the server token.',
       };
     }
     const cached = this.cache.get(accountId);
@@ -1052,6 +1052,9 @@ function sampleAnswers(steps: { key: string; type: string }[]): Record<string, u
         break;
       case 'phone':
         out[s.key] = '+15555550123';
+        break;
+      case 'url':
+        out[s.key] = 'https://example.com';
         break;
       case 'slider':
         out[s.key] = 5;

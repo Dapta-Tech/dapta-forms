@@ -22,7 +22,7 @@ export const EVENT_REGISTRATION_CONFIG: FormConfig = {
     headline: 'Save your spot',
     subheadline: 'Tell us who is coming and we will send the details straight to your inbox.',
     ctaText: 'Register',
-    trustBadge: 'Free to attend — we will only email you about this event',
+    trustBadge: 'Free to attend. We will only email you about this event',
   },
   steps: [
     {

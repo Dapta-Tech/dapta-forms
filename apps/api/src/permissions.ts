@@ -5,8 +5,11 @@
  * a 403 with a stable `FORBIDDEN` body.
  *
  * Capability model (see ROLES-PERMISSIONS-PLAN):
- *   - owner  — everything (+ transfer / delete workspace, act on other owners)
- *   - admin  — manage members (except owners) and everyone's resources; NOT owners
+ *   - owner  — everything (+ transfer / delete workspace, act on other owners,
+ *              REMOVE members — the identity service's rule, mirrored here)
+ *   - admin  — invite, promote/demote, enable/disable members (except owners),
+ *              retract invitations, and everyone's resources; NOT owners, and
+ *              NOT removal of an accepted membership
  *   - member — own resources only
  *
  * This is the ACCOUNT role, distinct from the per-team `team_membership.role`.
@@ -33,7 +36,7 @@ export function assertAdmin(p: RoledPrincipal): void {
   if (!isAdmin(p.role)) forbidden('Requires an admin or owner.');
 }
 
-/** Owner-only routes (transfer ownership, delete workspace, act on another owner). */
+/** Owner-only routes (transfer ownership, delete workspace, act on another owner, remove a member). */
 export function assertOwner(p: RoledPrincipal): void {
   if (!isOwner(p.role)) forbidden('Requires the workspace owner.');
 }

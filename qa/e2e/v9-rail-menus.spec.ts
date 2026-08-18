@@ -11,10 +11,11 @@ import { test, expect, type APIRequestContext, type Page } from '@playwright/tes
  * over it. An earlier fix moved the app switcher to `position: fixed`, which
  * beat the clip but not the stacking context, and never touched the workspace
  * switcher at all. Both now render through AnchoredMenu, a portal to
- * document.body.
+ * document.body — and so does the bottom-left profile menu (Account settings /
+ * Log out) that replaced the Settings and Brand kit rail links.
  *
  * Under test: apps/web/components/ui/anchored-menu.tsx, app-switcher.tsx,
- * workspace-switcher.tsx, admin-shell.tsx.
+ * workspace-switcher.tsx, profile-menu.tsx, admin-shell.tsx.
  *
  * The assertion is a hit test, not a screenshot: at five points across the open
  * panel, document.elementFromPoint must return the panel or one of its
@@ -22,27 +23,48 @@ import { test, expect, type APIRequestContext, type Page } from '@playwright/tes
  * canvas fails it — which is exactly what the pre-fix build does on the builder
  * route.
  *
- * Coverage: every admin route in the nav plus the builder, in the expanded
- * rail, the collapsed rail, and the <768px drawer. Requires two workspaces for
- * the workspace switcher to render at all; the suite seeds them if the QA
- * database only has the single seeded account.
+ * Coverage: every admin route in the nav, the account-settings area behind the
+ * profile menu, and the builder, in the expanded rail, the collapsed rail, and
+ * the <768px drawer. Requires two workspaces for the workspace switcher to
+ * render at all; the suite seeds them if the QA database only has the single
+ * seeded account.
  */
 
 const API = 'http://localhost:4400';
 const NAV_COLLAPSED_COOKIE = 'forms.nav.collapsed';
+/**
+ * The mobile top bar's hamburger (`admin.chrome.openNav`, EN + ES). Named
+ * precisely: the rail's profile button is labelled "Account menu", so a loose
+ * /menu/ pattern would have two candidates once the drawer is in the tree.
+ */
+const OPEN_NAV = /open navigation|abrir navegaci/i;
 
-/** Every admin surface reachable from the rail. */
+/**
+ * Every admin surface reachable from the rail, plus the account-settings area
+ * behind the profile menu — still inside the shell, still with the rail.
+ */
 const ROUTES = [
   '/admin',
   '/admin/forms',
   '/admin/submissions',
   '/admin/analytics',
   '/admin/integrations',
-  '/admin/branding',
-  '/admin/settings',
+  '/admin/account/workspaces',
+  '/admin/account/brand-kit',
 ];
 
-type Switcher = 'app-switcher' | 'workspace-switcher';
+type Switcher = 'app-switcher' | 'workspace-switcher' | 'profile-menu';
+
+/**
+ * The trigger and the (portalled) panel for each menu. The two switchers follow
+ * the `<name>-trigger` / `<name>-menu` convention; the profile menu's panel is
+ * plain `profile-menu`, which is why this is a table and not a template.
+ */
+const TEST_IDS: Record<Switcher, { trigger: string; menu: string }> = {
+  'app-switcher': { trigger: 'app-switcher-trigger', menu: 'app-switcher-menu' },
+  'workspace-switcher': { trigger: 'workspace-switcher-trigger', menu: 'workspace-switcher-menu' },
+  'profile-menu': { trigger: 'profile-menu-trigger', menu: 'profile-menu' },
+};
 
 interface HitTest {
   ok: boolean;
@@ -100,26 +122,26 @@ async function expectMenuOnTop(page: Page, which: Switcher, where: string) {
       }
     }
     return { ok: true, reason: 'on top' };
-  }, `${which}-menu`);
+  }, TEST_IDS[which].menu);
 
   expect(result.ok, `${which} on ${where}: ${result.reason}`).toBe(true);
 }
 
 /**
- * The switcher is mounted twice — once in the desktop rail, once in the mobile
+ * Each menu is mounted twice — once in the desktop rail, once in the mobile
  * drawer — and the breakpoint display:none-s whichever is not in play. Only the
  * visible one is the one under test.
  */
 function triggerFor(page: Page, which: Switcher) {
-  return page.getByTestId(`${which}-trigger`).filter({ visible: true }).first();
+  return page.getByTestId(TEST_IDS[which].trigger).filter({ visible: true }).first();
 }
 
-/** Open one switcher and hit-test it, then close it again. */
+/** Open one menu and hit-test it, then close it again. */
 async function openAndCheck(page: Page, which: Switcher, where: string) {
   const trigger = triggerFor(page, which);
   await expect(trigger, `${which} trigger renders on ${where}`).toBeVisible({ timeout: 20_000 });
   await trigger.click();
-  const menu = page.getByTestId(`${which}-menu`);
+  const menu = page.getByTestId(TEST_IDS[which].menu);
   await expect(menu, `${which} opens on ${where}`).toBeVisible();
   await expectMenuOnTop(page, which, where);
   await page.keyboard.press('Escape');
@@ -171,12 +193,17 @@ test.describe('V9 — rail menus open above the page on every admin surface', ()
     await request.dispose();
   });
 
-  /** Both switchers, on one route, at whatever rail state the caller set up. */
+  /**
+   * Every rail menu, on one route, at whatever rail state the caller set up:
+   * the two switchers at the top and the profile menu at the bottom, which
+   * opens UPWARD from the rail's footer and so exercises the flip branch.
+   */
   async function checkRoute(page: Page, path: string, state: string) {
     await page.goto(path);
     const where = `${path} (${state})`;
     await openAndCheck(page, 'app-switcher', where);
     if (hasWorkspaces) await openAndCheck(page, 'workspace-switcher', where);
+    await openAndCheck(page, 'profile-menu', where);
   }
 
   test('expanded desktop rail — every nav route', async ({ page, context }) => {
@@ -219,10 +246,10 @@ test.describe('V9 — rail menus open above the page on every admin surface', ()
     const where = '/admin/forms (mobile drawer)';
 
     // Escape is wired to the drawer as well as to the menu, so dismissing a
-    // menu takes the drawer with it — re-open before each switcher rather than
+    // menu takes the drawer with it — re-open before each menu rather than
     // chaining them.
     const openDrawer = async () => {
-      await page.getByRole('button', { name: /nav|menu|navegación/i }).first().click();
+      await page.getByRole('button', { name: OPEN_NAV }).first().click();
       // Slid fully in, not mid-transition: the trigger has to be clickable.
       await expect(triggerFor(page, 'app-switcher')).toBeInViewport();
     };
@@ -233,6 +260,10 @@ test.describe('V9 — rail menus open above the page on every admin surface', ()
       await openDrawer();
       await openAndCheck(page, 'workspace-switcher', where);
     }
+    // The profile menu sits in the drawer's footer, at the very bottom of the
+    // 812px viewport, so its panel has to flip up AND clear the off-canvas nav.
+    await openDrawer();
+    await openAndCheck(page, 'profile-menu', where);
   });
 
   test('the open drawer contains assistive tech with inert, not aria-modal', async ({ page }) => {
@@ -243,7 +274,7 @@ test.describe('V9 — rail menus open above the page on every admin surface', ()
     // the panel, which the hit test above catches.
     await page.setViewportSize({ width: 375, height: 812 });
     await page.goto('/admin/forms');
-    await page.getByRole('button', { name: /nav|menu|navegación/i }).first().click();
+    await page.getByRole('button', { name: OPEN_NAV }).first().click();
     await expect(triggerFor(page, 'app-switcher')).toBeInViewport();
 
     const state = await page.evaluate(() => {
@@ -267,7 +298,10 @@ test.describe('V9 — rail menus open above the page on every admin surface', ()
 
   test('the menu follows its trigger while the page scrolls', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 700 });
-    await page.goto('/admin/settings');
+    // The brand kit is the longest admin page: logo, client logos, colors,
+    // typography, controls, the apply list and the preview all stack, so a
+    // 700px viewport always has somewhere to scroll to.
+    await page.goto('/admin/account/brand-kit');
     await triggerFor(page, 'app-switcher').click();
     const menu = page.getByTestId('app-switcher-menu');
     await expect(menu).toBeVisible();
@@ -281,7 +315,7 @@ test.describe('V9 — rail menus open above the page on every admin surface', ()
     await expect(menu, 'the panel survives a scroll').toBeVisible();
     const after = await menu.boundingBox();
     expect(Math.abs((after?.y ?? 0) - (before?.y ?? 0)), 'the panel stays glued to its trigger').toBeLessThan(4);
-    await expectMenuOnTop(page, 'app-switcher', '/admin/settings after scrolling');
+    await expectMenuOnTop(page, 'app-switcher', '/admin/account/brand-kit after scrolling');
   });
 
   test('a panel taller than the space available clamps and scrolls in place', async ({ page }) => {

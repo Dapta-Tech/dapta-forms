@@ -43,8 +43,18 @@ export const account = sqliteTable('account', {
    * NULL means "send them to the wizard".
    */
   onboardingCompletedAt: integer('onboarding_completed_at'),
+  /**
+   * The identity service's ACCOUNT this workspace hangs from (see 0015).
+   * `external_id` is the upstream WORKSPACE id; this is the billing layer above
+   * it. NULL for purely local accounts (seed, dev stub).
+   */
+  iamAccountId: text('iam_account_id'),
+  /** Epoch-ms of the last successful projection refresh from the identity service; NULL = never. */
+  syncedAt: integer('synced_at'),
   createdAt: integer('created_at').notNull(),
-});
+}, (t) => ({
+  accountIamAccountIdx: index('account_iam_account_idx').on(t.iamAccountId),
+}));
 
 /** Retired public codes — each alias permanently resolves to its account. */
 export const accountAlias = sqliteTable('account_alias', {
@@ -70,6 +80,10 @@ export const member = sqliteTable(
     profile: text('profile'),
     /** Epoch-ms of the member's last authenticated request; NULL = never seen (see 0010). */
     lastSeenAt: integer('last_seen_at'),
+    /** The upstream `workspace_users.id` for this membership (see 0015); NULL when the identity service does not know it. */
+    iamWorkspaceUserId: text('iam_workspace_user_id'),
+    /** NULL for a real membership; 'staff' for a domain-based access grant (0016). */
+    accessGrant: text('access_grant'),
     createdAt: integer('created_at').notNull(),
   },
   (t) => ({

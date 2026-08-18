@@ -41,11 +41,11 @@ export const DEMO_FORM_CONFIG: FormConfig = {
   branding: { primaryColor: '#2b6e4f' },
   cover: {
     enabled: true,
-    bannerText: 'Demo form — edit or delete it anytime from your dashboard',
+    bannerText: 'Demo form: edit or delete it anytime from your dashboard',
     eyebrow: 'We would love your feedback',
     headline: 'How was your experience?',
     subheadline:
-      'Three quick questions — under a minute. Your answers help us build a better product for you.',
+      'Three quick questions: under a minute. Your answers help us build a better product for you.',
     ctaText: 'Share my feedback',
     trustBadge: 'Anonymous unless you choose to leave your email',
     clientLogos: [{ name: 'Northwind' }, { name: 'Acme Co' }, { name: 'Globex' }, { name: 'Initech' }],
@@ -101,7 +101,7 @@ export const DEMO_FORM_CONFIG: FormConfig = {
       key: 'improvement',
       type: 'textarea',
       question: 'What is the one thing we could do better?',
-      placeholder: 'Optional — but we read every single note.',
+      placeholder: 'Optional: but we read every single note.',
       required: false,
       flowGroup: 'qualification',
     },
@@ -109,7 +109,7 @@ export const DEMO_FORM_CONFIG: FormConfig = {
       key: 'email',
       type: 'email',
       question: 'Want us to follow up? Leave your email.',
-      helper: 'Optional. We only use it to reply to your feedback — no spam.',
+      helper: 'Optional. We only use it to reply to your feedback. No spam.',
       placeholder: 'you@company.com',
       required: false,
       flowGroup: 'lead_capture',
@@ -124,7 +124,7 @@ export const DEMO_FORM_CONFIG: FormConfig = {
   reveal: {
     enabled: true,
     headline: 'Saving your feedback…',
-    subtitle: 'Hang tight — this only takes a second.',
+    subtitle: 'Hang tight. This only takes a second.',
   },
   partialSubmitAfterStep: 5,
 };

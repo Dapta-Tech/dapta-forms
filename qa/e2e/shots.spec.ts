@@ -145,7 +145,7 @@ test('N4 · editor header link buttons', async ({ page, request }) => {
 });
 
 test('N5 · notifications settings', async ({ page }) => {
-  await page.goto('/admin/settings');
+  await page.goto('/admin/account/notifications');
   await page.waitForLoadState('networkidle');
   await page.waitForTimeout(500);
   // scroll to the notifications section if present

@@ -8,9 +8,9 @@ import type { BrandKit, FormSummary } from '@/lib/admin-api';
 import { formDesignProps } from '@/lib/form-design';
 import { callAction, isTransportError } from '@/lib/call-action';
 import { cn } from '@/lib/cn';
-import { Field, PanelSection, SegmentedToggle, TextField } from '../forms/[id]/edit/_components/fields';
-import { ColorPicker } from '../forms/[id]/edit/_components/color-picker';
-import { FontPicker } from '../forms/[id]/edit/_components/font-picker';
+import { Field, PanelSection, SegmentedToggle, TextField } from '@/app/admin/forms/[id]/edit/_components/fields';
+import { ColorPicker } from '@/app/admin/forms/[id]/edit/_components/color-picker';
+import { FontPicker } from '@/app/admin/forms/[id]/edit/_components/font-picker';
 import { applyBrandKitAction, revertBrandKitAction, saveBrandKitAction } from './actions';
 
 type BrandKitMessages = FormsMessages['admin']['brandKit'];

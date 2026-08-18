@@ -63,6 +63,13 @@ describe('createEmptyStep', () => {
 
     const email = createEmptyStep('email');
     expect(email.flowGroup).toBe('lead_capture');
+
+    // A url step is a Text-group question, not a contact field: it qualifies,
+    // it is required like any other input, and it hints at the stored shape.
+    const url = createEmptyStep('url');
+    expect(url.placeholder).toBe('https://');
+    expect(url.flowGroup).toBe('qualification');
+    expect(url.required).toBe(true);
   });
 });
 

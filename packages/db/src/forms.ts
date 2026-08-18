@@ -76,6 +76,8 @@ export async function getAccountByCode(db: Db, code: string): Promise<AccountRow
 
 export interface MeView {
   accountId: string;
+  /** The workspace's display name (renameable in Settings). */
+  accountName: string;
   accountCode: string;
   accountShortCode: string;
   vanitySlug: string | null;
@@ -98,12 +100,15 @@ export interface MeView {
    * un-sliceable by campaign, which is most of the reason to measure it.
    */
   attribution: Attribution | null;
+  /** `'staff'` when the caller is in this workspace by access grant, not by membership (0016). */
+  accessGrant: 'staff' | null;
 }
 
 /** The authenticated host's identity for the dashboard header + settings. */
 export async function getMe(db: Db, accountId: string, memberId: string): Promise<MeView | null> {
   const row = await db.get<{
     code: string;
+    name: string;
     vanity_slug: string | null;
     handle: string | null;
     display_name: string | null;
@@ -112,15 +117,17 @@ export async function getMe(db: Db, accountId: string, memberId: string): Promis
     status: string;
     onboarding_completed_at: number | null;
     attribution: unknown;
+    access_grant: string | null;
   }>(
-    sql`SELECT a.code, a.vanity_slug, a.onboarding_completed_at, a.attribution,
-               m.handle, m.display_name, m.email, m.role, m.status
+    sql`SELECT a.code, a.name, a.vanity_slug, a.onboarding_completed_at, a.attribution,
+               m.handle, m.display_name, m.email, m.role, m.status, m.access_grant
         FROM account a JOIN member m ON m.account_id = a.id
         WHERE a.id = ${accountId} AND m.id = ${memberId} LIMIT 1`,
   );
   if (!row) return null;
   return {
     accountId,
+    accountName: row.name,
     accountCode: canonicalPublicCode({ code: row.code, vanity_slug: row.vanity_slug }),
     accountShortCode: row.code,
     vanitySlug: row.vanity_slug,
@@ -138,6 +145,7 @@ export async function getMe(db: Db, accountId: string, memberId: string): Promis
     // a stale blob must not throw inside the request that renders every
     // dashboard page. Unreadable tags degrade to "not known", never to a 500.
     attribution: parseAttributionColumn(row.attribution),
+    accessGrant: row.access_grant === 'staff' ? 'staff' : null,
   };
 }
 

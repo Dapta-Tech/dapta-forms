@@ -188,7 +188,7 @@ export function PreviewFrame({
   const displayUrl = fullUrl.replace(/^https?:\/\//, '');
   const percent = Math.round(scale * 100);
   const viewportLabel =
-    t(x.viewport, { width, height }) + (percent < 100 ? ` — ${t(x.scaled, { percent })}` : '');
+    t(x.viewport, { width, height }) + (percent < 100 ? `: ${t(x.scaled, { percent })}` : '');
 
   async function copy() {
     try {

@@ -34,8 +34,18 @@ export const account = pgTable('account', {
    * NULL means "send them to the wizard".
    */
   onboardingCompletedAt: bigint('onboarding_completed_at', { mode: 'number' }),
+  /**
+   * The identity service's ACCOUNT this workspace hangs from (see 0015).
+   * `external_id` is the upstream WORKSPACE id; this is the billing layer above
+   * it. NULL for purely local accounts (seed, dev stub).
+   */
+  iamAccountId: text('iam_account_id'),
+  /** Epoch-ms of the last successful projection refresh from the identity service; NULL = never. */
+  syncedAt: bigint('synced_at', { mode: 'number' }),
   createdAt: bigint('created_at', { mode: 'number' }).notNull(),
-});
+}, (t) => ({
+  accountIamAccountIdx: index('account_iam_account_idx').on(t.iamAccountId),
+}));
 
 export const accountAlias = pgTable('account_alias', {
   alias: text('alias').primaryKey(),
@@ -60,6 +70,10 @@ export const member = pgTable(
     profile: jsonb('profile'),
     /** Epoch-ms of the member's last authenticated request; NULL = never seen (see 0010). */
     lastSeenAt: bigint('last_seen_at', { mode: 'number' }),
+    /** The upstream `workspace_users.id` for this membership (see 0015); NULL when the identity service does not know it. */
+    iamWorkspaceUserId: text('iam_workspace_user_id'),
+    /** NULL for a real membership; 'staff' for a domain-based access grant (0016). */
+    accessGrant: text('access_grant'),
     createdAt: bigint('created_at', { mode: 'number' }).notNull(),
   },
   (t) => ({

@@ -13,6 +13,7 @@ export * from './crypto';
 export * from './analytics';
 export * from './milestones';
 export * from './members';
+export * from './workspaces';
 export * from './demo-form';
 export * from './onboarding';
 export * from './templates';

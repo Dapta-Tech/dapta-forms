@@ -3,19 +3,33 @@ import { buildSignupUrl, badgeHidden, growthTarget, UTM_SOURCE, UTM_CAMPAIGN } f
 
 describe('growth attribution', () => {
   it('tags signup URLs with the forms UTM source', () => {
-    const built = buildSignupUrl({ baseUrl: 'https://app.example.com', medium: 'badge', accountCode: 'acme' });
+    const built = buildSignupUrl({ baseUrl: 'https://app.example.com', medium: 'form-button', accountCode: 'acme' });
     expect(built).not.toBeNull();
     const url = new URL(built!);
     expect(url.searchParams.get('utm_source')).toBe('dapta-forms');
     expect(url.searchParams.get('utm_source')).toBe(UTM_SOURCE);
-    expect(url.searchParams.get('utm_medium')).toBe('badge');
+    expect(url.searchParams.get('utm_medium')).toBe('form-button');
     expect(url.searchParams.get('utm_campaign')).toBe(UTM_CAMPAIGN);
     expect(url.searchParams.get('utm_content')).toBe('acme');
   });
 
+  it('names the surface in utm_medium', () => {
+    const pill = new URL(buildSignupUrl({ baseUrl: 'https://app.example.com', medium: 'form-button' })!);
+    const cta = new URL(buildSignupUrl({ baseUrl: 'https://app.example.com', medium: 'confirmation' })!);
+    expect(pill.searchParams.get('utm_medium')).toBe('form-button');
+    expect(cta.searchParams.get('utm_medium')).toBe('confirmation');
+  });
+
+  it('keeps a trailing slash on the landing path', () => {
+    // The host may 301 the slash-less spelling to the slashed one and drop the
+    // query on the way — every UTM lost. The base is appended to verbatim.
+    const built = buildSignupUrl({ baseUrl: 'https://www.example.ai/forms/', medium: 'form-button' });
+    expect(built).toMatch(/^https:\/\/www\.example\.ai\/forms\/\?utm_source=/);
+  });
+
   it('returns null for a missing/non-http base (fork carries no dead link)', () => {
-    expect(buildSignupUrl({ baseUrl: null, medium: 'badge' })).toBeNull();
-    expect(buildSignupUrl({ baseUrl: 'ftp://x', medium: 'badge' })).toBeNull();
+    expect(buildSignupUrl({ baseUrl: null, medium: 'form-button' })).toBeNull();
+    expect(buildSignupUrl({ baseUrl: 'ftp://x', medium: 'form-button' })).toBeNull();
   });
 
   it('badgeHidden only honors explicit truthy flags', () => {
@@ -55,7 +69,7 @@ describe('growthTarget — the loop is gated on signup, but points at the landin
   it('the built URL still carries every UTM tag', () => {
     const built = buildSignupUrl({
       baseUrl: growthTarget({ signupUrl: 'https://app.example.com', landingUrl: 'https://www.example.ai' }),
-      medium: 'badge',
+      medium: 'form-button',
       accountCode: 'acme',
     });
     const url = new URL(built!);

@@ -226,7 +226,7 @@ function StepBlock({
                   it would silently vanish. */}
               <div data-testid="branching-always" className="w-full max-w-[340px]">
                 <SelectField
-                  aria-label={`${b.alwaysGoTo} — ${title}`}
+                  aria-label={`${b.alwaysGoTo}: ${title}`}
                   value={alwaysValue}
                   onChange={(e) => writeGoto(valueRules, e.target.value)}
                   className="h-8 py-1 text-xs"

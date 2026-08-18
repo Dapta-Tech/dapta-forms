@@ -1,0 +1,17 @@
+-- Staff access grants: additive.
+--
+-- A member row can now say WHY the person is in the workspace when the identity
+-- service holds no membership for them:
+--
+--   member.access_grant  — NULL for a real membership (invited, accepted, or
+--                          projected from the identity service); 'staff' for a
+--                          row minted because the person's email domain is one
+--                          the deployment lists as staff (IAM_STAFF_DOMAINS),
+--                          who may enter any workspace of the estate the way the
+--                          Dapta app lets them.
+--
+-- Grant rows are excluded from rosters and member counts (a customer's team
+-- list never shows staff), never carry `iam_workspace_user_id`, never stamp
+-- onboarding on the accounts they create, and are never pruned by the
+-- membership projection (their lifecycle is the grant's, not upstream's).
+ALTER TABLE member ADD COLUMN IF NOT EXISTS access_grant TEXT;

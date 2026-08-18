@@ -558,6 +558,30 @@ function describeOverride(
 }
 
 /**
+ * Below this share of the bar a segment is too narrow to show words at all
+ * (~40px on the dialog's ~560px bar), so it shows initials instead. A fixed
+ * share rather than a measured width keeps the bar a pure function of the
+ * outcomes, which is what lets the spec exercise it as one.
+ */
+const INITIALS_SHARE = 0.12;
+
+/**
+ * What a bar segment prints for an outcome label given its share of the bar:
+ * the label itself when there is room to truncate it legibly, otherwise the
+ * initials of its first two words ("Muy buen fit" -> "MB", "P3" -> "P3"). Never
+ * more than three characters in the narrow case, so a code like "P3" or "#4"
+ * survives whole. Exported for the spec.
+ */
+export function segmentLabel(label: string, share: number): string {
+  if (share >= INITIALS_SHARE) return label;
+  const trimmed = label.trim();
+  if (trimmed.length <= 3) return trimmed;
+  const words = trimmed.split(/\s+/).filter(Boolean);
+  if (words.length >= 2) return (words[0]![0]! + words[1]![0]!).toUpperCase();
+  return trimmed.slice(0, 2).toUpperCase();
+}
+
+/**
  * A segmented bar of the score ranges, from cold (muted) to hot (lime).
  *
  * Widths come from `outcomeRanges`, the same helper the rows and the Logic
@@ -586,6 +610,7 @@ export function ScoreBar({ outcomes, top }: { outcomes: FormOutcome[]; top: numb
     });
     previousEnd = end;
   });
+  const total = segments.reduce((n, s) => n + s.width, 0);
   return (
     <div data-testid="outcomes-score-bar">
       <div className="flex h-9 overflow-hidden rounded-lg">
@@ -601,14 +626,21 @@ export function ScoreBar({ outcomes, top }: { outcomes: FormOutcome[]; top: numb
           ) : (
             <div
               key={s.key}
-              className="flex items-center justify-center overflow-hidden text-xs font-semibold"
+              data-testid="outcomes-score-segment"
+              title={s.label}
+              className="flex min-w-0 items-center justify-center overflow-hidden text-xs font-semibold"
               style={{
                 flex: s.width,
                 background: `color-mix(in srgb, var(--primary) ${Math.round(20 + s.hot * 80)}%, var(--muted))`,
                 color: s.hot > 0.6 ? 'var(--primary-foreground)' : 'var(--muted-foreground)',
               }}
             >
-              {s.label}
+              {/* The segment is as wide as its RANGE, not its label: a 3-point
+                  range beside a 70-point one gets a sliver whatever it is
+                  called. So the label yields, never the layout: it truncates
+                  with an ellipsis, and a sliver shows only its initials. The
+                  `title` (and the row below) carry the full text. */}
+              <span className="min-w-0 truncate px-1.5">{segmentLabel(s.label, s.width / total)}</span>
             </div>
           ),
         )}

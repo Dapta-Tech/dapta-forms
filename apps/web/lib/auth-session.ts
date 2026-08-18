@@ -33,7 +33,7 @@ const secret = () => process.env.WEB_SESSION_SECRET ?? '';
 function requireSecretUnlessLocal(): void {
   if (!secret() && authProvider() !== 'local') {
     throw new Error(
-      'WEB_SESSION_SECRET is required unless AUTH_PROVIDER=local — refusing to issue an unsigned, forgeable session cookie.',
+      'WEB_SESSION_SECRET is required unless AUTH_PROVIDER=local. Refusing to issue an unsigned, forgeable session cookie.',
     );
   }
 }
@@ -72,6 +72,32 @@ export function decodeSession(raw: string | undefined): Session | null {
 export async function getSession(): Promise<Session | null> {
   const jar = await cookies();
   return decodeSession(jar.get(SESSION_COOKIE)?.value);
+}
+
+/**
+ * Best-effort upstream revoke — Orbit-parity contract (skipIdpRedirect = true):
+ * POST {IAM}/auth/logout?redirect=false so the IAM revokes the WorkOS session
+ * server-side. Deliberately unauthenticated: /auth/logout is a public IAM route
+ * (like login/refresh), and sending an expired Bearer is what creates
+ * logout -> 401 -> logout loops. Fired even without a session id ({} body) —
+ * the IAM can still invalidate server-side state. The response's
+ * logoutUrl/logoutURL is the WorkOS single-logout URL — unused by design; a
+ * future "switch account" flow (skipIdpRedirect = false) is the only consumer.
+ * Never throws and never hangs past its timeout: the caller's local cleanup
+ * must not be hostage to the IAM being up.
+ */
+export async function revokeUpstreamSession(session: Session | null): Promise<void> {
+  const iam = process.env.IAM_BASE_URL?.replace(/\/$/, '');
+  if (!iam || session?.provider !== 'workos') return;
+  const sessionId = session.sessionId;
+  const body = sessionId ? { workos_session_id: sessionId, session_id: sessionId } : {};
+  await fetch(`${iam}/auth/logout?redirect=false`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+    cache: 'no-store',
+    signal: AbortSignal.timeout(5000),
+  }).catch(() => null);
 }
 
 /**
@@ -137,13 +163,15 @@ export async function hostFetch(path: string, init?: RequestInit): Promise<Respo
     cache: 'no-store',
   });
   if (res.status === 401) {
-    // Workos goes through /api/auth/logout, which needs the cookie STILL PRESENT
-    // to read the session id and revoke upstream — clearing it here would land a
-    // Set-Cookie on this response and hand that route a null session (see
-    // `signOutAction`). The route clears it itself, unconditionally.
-    if (authProvider() === 'workos') redirect('/api/auth/logout');
+    // Same shape as `signOutAction` (Orbit-parity): read the session BEFORE
+    // clearing (the revoke needs its id), clear unconditionally, revoke
+    // best-effort. Inline rather than via /api/auth/logout — an action
+    // `redirect()` into a route handler strands the URL bar there. And per the
+    // contract, a 401 anywhere never re-enters logout: one revoke, then /login.
+    const session = await getSession();
     await clearSession();
-    redirect('/login');
+    await revokeUpstreamSession(session);
+    redirect(authProvider() === 'workos' ? '/login?signedout=1' : '/login');
   }
   return res;
 }

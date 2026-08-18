@@ -67,8 +67,11 @@ export class DaptaSyncDelivery {
     const me = await getMe(this.db, payload.accountId, payload.memberId);
     const state = await getAccountOnboarding(this.db, payload.accountId);
     const blob = state?.onboarding ?? null;
+    // `iam_account_id` is the upstream ACCOUNT (billing) id since 0015;
+    // `external_id` was that same value before and is the upstream WORKSPACE
+    // id after, so the coalesce keeps rows the projection has not touched yet.
     const account = await this.db.get<{ external_id: string | null }>(
-      sql`SELECT external_id FROM account WHERE id = ${payload.accountId} LIMIT 1`,
+      sql`SELECT COALESCE(iam_account_id, external_id) AS external_id FROM account WHERE id = ${payload.accountId} LIMIT 1`,
     );
 
     if (action === 'complete' && blob) {
@@ -265,6 +268,16 @@ export interface FlowPayload {
   phone?: string;
   name?: string;
   params?: Record<string, string>;
+  /**
+   * The two Forms answers the IAM bank has no home for, so they cannot ride
+   * the IAM path like industry/crm/volume do. The flow reads them straight from
+   * its trigger body, maps `lead_source` onto HubSpot's `como_obtienes_leads`
+   * options and writes `use_case` to `dapta_forms_use_case`, and treats an
+   * absent or unknown value as "keep whatever the contact already has". Sent
+   * as our raw enum keys; the flow owns the HubSpot-side labels.
+   */
+  lead_source?: string;
+  use_case?: string;
 }
 
 /**
@@ -280,6 +293,13 @@ const MIN_PHONE_LENGTH = 7;
  * actually reads (`utm_source`, `utm_medium`, `utm_campaign`) — verified
  * against the flow's own JSON. gclid/fbclid have no vehicle and are dropped.
  * Empty values are omitted entirely; an empty `params` omits the field.
+ *
+ * `lead_source` / `use_case` sit at the TOP level, not inside `params`: the
+ * flow replaces `params` wholesale with the IAM's stored UTMs whenever the
+ * user has any, which is exactly the Dapta-cohort case, and those two answers
+ * are the only ones that cohort gives us. They are omitted when unanswered,
+ * so the `early` call (phone only) never carries them and the flow keeps the
+ * contact's existing values.
  */
 export function buildFlowPayload(input: {
   email: string;
@@ -295,6 +315,9 @@ export function buildFlowPayload(input: {
 
   const phone = input.blob?.phone?.trim();
   if (phone && phone.length >= MIN_PHONE_LENGTH) body.phone = phone;
+
+  if (input.blob?.leadSource) body.lead_source = input.blob.leadSource;
+  if (input.blob?.useCase) body.use_case = input.blob.useCase;
 
   const params: Record<string, string> = {};
   const a = input.attribution;

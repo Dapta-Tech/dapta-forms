@@ -48,6 +48,7 @@ const ALL_ITEMS: GalleryItem[] = GALLERY_GROUPS.flatMap((g) => GALLERY[g]);
 const PLACEHOLDER_TYPES: ReadonlySet<FormStep['type']> = new Set([
   'text',
   'email',
+  'url',
   'textarea',
   'dropdown',
 ]);

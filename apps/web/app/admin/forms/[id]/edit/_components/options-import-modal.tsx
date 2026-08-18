@@ -139,7 +139,7 @@ export function OptionsImportModal({
                   return (
                     <tr key={`${r.line}-${r.label}`} className="border-b border-border last:border-b-0">
                       <td className="px-3 py-1.5">{r.label}</td>
-                      <td className="px-3 py-1.5 font-mono tabular-nums">{r.points ?? '—'}</td>
+                      <td className="px-3 py-1.5 font-mono tabular-nums">{r.points ?? ''}</td>
                       <td className="px-3 py-1.5">
                         <span className={`rounded-full px-2 py-0.5 text-2xs font-semibold ${toneClass[st.tone]}`}>
                           {st.text}

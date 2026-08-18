@@ -47,7 +47,7 @@ describe('SubmissionNotifier', () => {
       locale: 'es-CO',
     });
     const m = provider.sent[0]!;
-    expect(m.subject).toBe('Nueva respuesta — Calificador');
+    expect(m.subject).toBe('Nueva respuesta: Calificador');
     expect(m.text).toContain('Puntuación: 9');
     expect(m.text).toContain('De: lead@acme.io');
     // Idempotency key is language-independent.

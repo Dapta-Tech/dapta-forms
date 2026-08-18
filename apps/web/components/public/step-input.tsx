@@ -10,6 +10,7 @@ import {
   resolveOptionLayout,
   resolveOptionIcon,
   optionInitials,
+  canonicalizeAnswer,
 } from '@quill/engine';
 import { getMessages } from '@quill/shared';
 import { SearchableDropdown } from './searchable-dropdown';
@@ -164,6 +165,32 @@ export function StepInput({
           className="pf-input"
           value={String(value ?? '')}
           onChange={(e) => onChange(e.target.value)}
+          placeholder={step.placeholder ?? ''}
+          aria-label={step.question ?? step.key}
+          autoFocus={autoFocus}
+        />
+      );
+
+    case 'url':
+      // Native URL validation never fires (the renderers have no <form>), so the
+      // engine's regex is the only gate. Blur normalizes the value the same way
+      // the commit points do (`canonicalizeAnswer`) so the visitor sees the
+      // stored shape (`https://acme.com`) before pressing Continue.
+      return (
+        <input
+          type="url"
+          inputMode="url"
+          autoComplete="url"
+          autoCapitalize="none"
+          spellCheck={false}
+          className="pf-input"
+          value={String(value ?? '')}
+          onChange={(e) => onChange(e.target.value)}
+          onBlur={(e) => {
+            const raw = e.target.value;
+            const next = canonicalizeAnswer(step, raw);
+            if (next !== raw) onChange(next);
+          }}
           placeholder={step.placeholder ?? ''}
           aria-label={step.question ?? step.key}
           autoFocus={autoFocus}
