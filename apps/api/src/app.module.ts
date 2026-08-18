@@ -132,6 +132,7 @@ function signupObserver(productAnalytics: AnalyticsEffects): SignupObserver {
           ? new WorkspaceProjection(db, new IamWorkspacesClient({ baseUrl: env.IAM_BASE_URL }), {
               seedEnv: env,
               onSignup: signupObserver(productAnalytics),
+              staffDomains: env.IAM_STAFF_DOMAINS,
             })
           : null,
       inject: [ENV, DB, AnalyticsEffects],

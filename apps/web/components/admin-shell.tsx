@@ -183,6 +183,7 @@ export function AdminShell({
   themePref = 'dark',
   workspaces = [],
   currentAccountId,
+  staff = false,
   children,
 }: {
   user: ShellUser | null;
@@ -198,6 +199,8 @@ export function AdminShell({
   workspaces?: Workspace[];
   /** The account these pages are currently scoped to. */
   currentAccountId?: string;
+  /** Staff of the deployment: the switcher's search reaches the whole estate. */
+  staff?: boolean;
   children: ReactNode;
 }) {
   const pathname = usePathname();
@@ -346,6 +349,7 @@ export function AdminShell({
             workspaces={workspaces}
             currentAccountId={currentAccountId}
             collapsed={railCollapsed}
+            staff={staff}
             m={messages.workspaces}
           />
         ) : null}
@@ -392,6 +396,7 @@ export function AdminShell({
           <WorkspaceSwitcher
             workspaces={workspaces}
             currentAccountId={currentAccountId}
+            staff={staff}
             m={messages.workspaces}
           />
         ) : null}

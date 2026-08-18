@@ -82,6 +82,8 @@ export const member = sqliteTable(
     lastSeenAt: integer('last_seen_at'),
     /** The upstream `workspace_users.id` for this membership (see 0015); NULL when the identity service does not know it. */
     iamWorkspaceUserId: text('iam_workspace_user_id'),
+    /** NULL for a real membership; 'staff' for a domain-based access grant (0016). */
+    accessGrant: text('access_grant'),
     createdAt: integer('created_at').notNull(),
   },
   (t) => ({

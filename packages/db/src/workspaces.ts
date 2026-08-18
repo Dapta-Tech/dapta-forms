@@ -15,7 +15,7 @@
 import { randomUUID } from 'node:crypto';
 import { sql, type Db } from './client';
 import { deriveUniqueHandle, insertAccountWithShortCode } from './short-links';
-import { ACCOUNT_ROLES, type AccountRole } from './members';
+import { ACCOUNT_ROLES, type AccessGrant, type AccountRole } from './members';
 
 /** One upstream membership, as the API layer hands it to the projection. */
 export interface ProjectedMembership {
@@ -29,6 +29,13 @@ export interface ProjectedMembership {
   role: AccountRole;
   /** Upstream `is_active` on the membership row. */
   active: boolean;
+  /**
+   * `'staff'` when this is not a membership upstream at all but an access grant
+   * (the person's email domain is one the deployment lists as staff). Grant
+   * rows never stamp onboarding on the accounts they create, are excluded from
+   * rosters and counts, and are not pruned by a later membership projection.
+   */
+  accessGrant?: AccessGrant | null;
 }
 
 /** The identity being projected — always the authenticated principal, never the request. */
@@ -43,7 +50,13 @@ export interface ProjectionResult {
   /** Local account ids for every ACTIVE upstream membership, in input order. */
   accountIds: string[];
   /** Local `(accountId, memberId)` pairs whose member row was CREATED by this run. */
-  created: Array<{ accountId: string; memberId: string; role: AccountRole; isFirstMember: boolean }>;
+  created: Array<{
+    accountId: string;
+    memberId: string;
+    role: AccountRole;
+    isFirstMember: boolean;
+    accessGrant: AccessGrant | null;
+  }>;
   /** Local account ids that were CREATED by this run (a workspace never seen before). */
   createdAccounts: string[];
 }
@@ -152,7 +165,16 @@ export async function projectMemberships(
   db: Db,
   identity: ProjectedIdentity,
   memberships: ProjectedMembership[],
-  opts: { inheritOnboarding?: boolean; now?: number } = {},
+  opts: {
+    inheritOnboarding?: boolean;
+    now?: number;
+    /**
+     * Whether rows this identity holds in projected accounts that `memberships`
+     * does not name are set `disabled` (default). A single-workspace grant
+     * (`grantStaffAccess`) passes false: it adds one row, it is not the list.
+     */
+    pruneMissing?: boolean;
+  } = {},
 ): Promise<ProjectionResult> {
   const now = opts.now ?? Date.now();
   const result: ProjectionResult = { accountIds: [], created: [], createdAccounts: [] };
@@ -161,6 +183,7 @@ export async function projectMemberships(
   for (const m of memberships) {
     if (!m.active) continue;
     const role: AccountRole = (ACCOUNT_ROLES as readonly string[]).includes(m.role) ? m.role : 'member';
+    const grant: AccessGrant | null = m.accessGrant === 'staff' ? 'staff' : null;
 
     let account = await getAccountByExternalId(db, m.workspaceId);
     let accountCreated = false;
@@ -173,7 +196,9 @@ export async function projectMemberships(
       if (!account) throw new Error(`projection: could not create account for workspace ${m.workspaceId}`);
       accountCreated = true;
       result.createdAccounts.push(account.id);
-      if (opts.inheritOnboarding) {
+      // A grant never stamps onboarding: the account belongs to whoever owns
+      // the workspace upstream, and THEIR first login must still get the wizard.
+      if (opts.inheritOnboarding && !grant) {
         await db.run(
           sql`UPDATE account SET onboarding_completed_at = ${now}
               WHERE id = ${account.id} AND onboarding_completed_at IS NULL`,
@@ -194,10 +219,12 @@ export async function projectMemberships(
       // Upstream is the authority on role and on being active. `disabled`
       // locally is revived here on purpose: the identity service says this
       // membership is active NOW, and it is the only place a membership can be
-      // revoked or restored from.
+      // revoked or restored from. A real membership also clears an earlier
+      // grant (the person was staff-granted, then actually invited).
       await db.run(
         sql`UPDATE member SET role = ${role}, status = 'active',
               iam_workspace_user_id = COALESCE(${m.workspaceUserId}, iam_workspace_user_id),
+              access_grant = ${grant},
               email = COALESCE(email, ${identity.email}),
               display_name = COALESCE(display_name, ${identity.displayName})
             WHERE id = ${existing.id} AND account_id = ${account.id}`,
@@ -217,27 +244,30 @@ export async function projectMemberships(
         await db.run(
           sql`UPDATE member SET external_id = ${identity.externalId}, status = 'active', role = ${role},
                 iam_workspace_user_id = COALESCE(${m.workspaceUserId}, iam_workspace_user_id),
+                access_grant = ${grant},
                 display_name = COALESCE(display_name, ${identity.displayName})
               WHERE id = ${invited.id} AND account_id = ${account.id}`,
         );
       } else {
+        // "First member" counts real memberships only: a staff grant that got
+        // here first must not steal the owner's welcome (demo form, signup).
         const others = await db.get<{ id: string }>(
-          sql`SELECT id FROM member WHERE account_id = ${account.id} LIMIT 1`,
+          sql`SELECT id FROM member WHERE account_id = ${account.id} AND access_grant IS NULL LIMIT 1`,
         );
         const id = randomUUID();
         const handle = await deriveUniqueHandle(db, account.id, identity.displayName, identity.email);
         await db.run(
           sql`INSERT INTO member (id, account_id, external_id, email, display_name, handle, role, status,
-                iam_workspace_user_id, created_at)
+                iam_workspace_user_id, access_grant, created_at)
               VALUES (${id}, ${account.id}, ${identity.externalId}, ${identity.email}, ${identity.displayName},
-                ${handle}, ${role}, 'active', ${m.workspaceUserId}, ${now})
+                ${handle}, ${role}, 'active', ${m.workspaceUserId}, ${grant}, ${now})
               ON CONFLICT (account_id, external_id) DO NOTHING`,
         );
         const row = await db.get<{ id: string }>(
           sql`SELECT id FROM member WHERE account_id = ${account.id} AND external_id = ${identity.externalId} LIMIT 1`,
         );
         if (row && row.id === id) {
-          result.created.push({ accountId: account.id, memberId: id, role, isFirstMember: !others || accountCreated });
+          result.created.push({ accountId: account.id, memberId: id, role, isFirstMember: !others, accessGrant: grant });
         }
       }
     }
@@ -247,17 +277,57 @@ export async function projectMemberships(
 
   // Memberships upstream no longer names (or names as inactive): disable the
   // local rows this identity holds in PROJECTED accounts only. A purely local
-  // account (never synced) is outside the identity service's authority.
-  const held = await db.all<{ id: string; account_id: string }>(
-    sql`SELECT m.id, m.account_id FROM member m JOIN account a ON a.id = m.account_id
-        WHERE m.external_id = ${identity.externalId} AND m.status = 'active' AND a.synced_at IS NOT NULL`,
-  );
-  for (const h of held) {
-    if (seenAccountIds.has(h.account_id)) continue;
-    await db.run(sql`UPDATE member SET status = 'disabled' WHERE id = ${h.id} AND account_id = ${h.account_id}`);
+  // account (never synced) is outside the identity service's authority, and so
+  // is a grant row: upstream never named it, so its absence says nothing.
+  if (opts.pruneMissing !== false) {
+    const held = await db.all<{ id: string; account_id: string }>(
+      sql`SELECT m.id, m.account_id FROM member m JOIN account a ON a.id = m.account_id
+          WHERE m.external_id = ${identity.externalId} AND m.status = 'active' AND a.synced_at IS NOT NULL
+            AND m.access_grant IS NULL`,
+    );
+    for (const h of held) {
+      if (seenAccountIds.has(h.account_id)) continue;
+      await db.run(sql`UPDATE member SET status = 'disabled' WHERE id = ${h.id} AND account_id = ${h.account_id}`);
+    }
   }
 
   return result;
+}
+
+/**
+ * Let a STAFF identity into one workspace it holds no upstream membership in:
+ * the account is projected (created if unseen, without an onboarding stamp)
+ * and the person gets an `admin` row marked `access_grant = 'staff'`. Nothing
+ * else this identity holds is touched. Idempotent. Returns the local ids.
+ */
+export async function grantStaffAccess(
+  db: Db,
+  identity: ProjectedIdentity,
+  workspace: { workspaceId: string; workspaceName: string; iamAccountId: string | null },
+  opts: { now?: number } = {},
+): Promise<{ accountId: string; memberId: string }> {
+  await projectMemberships(
+    db,
+    identity,
+    [
+      {
+        workspaceId: workspace.workspaceId,
+        workspaceName: workspace.workspaceName,
+        iamAccountId: workspace.iamAccountId,
+        workspaceUserId: null,
+        role: 'admin',
+        active: true,
+        accessGrant: 'staff',
+      },
+    ],
+    { inheritOnboarding: false, pruneMissing: false, now: opts.now },
+  );
+  const row = await db.get<{ account_id: string; id: string }>(
+    sql`SELECT m.account_id, m.id FROM member m JOIN account a ON a.id = m.account_id
+        WHERE a.external_id = ${workspace.workspaceId} AND m.external_id = ${identity.externalId} LIMIT 1`,
+  );
+  if (!row) throw new Error(`grant: no member row for ${identity.externalId} in ${workspace.workspaceId}`);
+  return { accountId: row.account_id, memberId: row.id };
 }
 
 /**
@@ -278,10 +348,13 @@ export async function pickHomeAccount(
     );
     if (preferred) return { accountId: preferred.account_id, memberId: preferred.member_id };
   }
+  // A real membership beats a grant as the fallback home: staff who never
+  // opened anything land in their own workspace, not in a customer's.
   const row = await db.get<{ account_id: string; member_id: string }>(
     sql`SELECT m.account_id, m.id AS member_id FROM member m JOIN account a ON a.id = m.account_id
         WHERE m.external_id = ${externalId} AND m.status = 'active'
-        ORDER BY (m.last_seen_at IS NULL) ASC, m.last_seen_at DESC, m.created_at ASC LIMIT 1`,
+        ORDER BY (m.access_grant IS NOT NULL) ASC, (m.last_seen_at IS NULL) ASC, m.last_seen_at DESC, m.created_at ASC
+        LIMIT 1`,
   );
   return row ? { accountId: row.account_id, memberId: row.member_id } : null;
 }

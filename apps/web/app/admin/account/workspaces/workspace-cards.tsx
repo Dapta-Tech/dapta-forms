@@ -175,6 +175,16 @@ export function WorkspaceCards({
                             {labels.invited}
                           </span>
                         ) : null}
+                        {/* In it by the staff grant, not by membership. Same
+                            copy as the rail switcher's badge. */}
+                        {w.accessGrant === 'staff' ? (
+                          <span
+                            data-testid="workspace-staff-badge"
+                            className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-2xs font-medium text-muted-foreground"
+                          >
+                            {labels.createDialog.staff}
+                          </span>
+                        ) : null}
                       </div>
                       <p className="mt-0.5 truncate font-mono text-xs text-faint" title={w.accountCode}>
                         {w.accountCode}

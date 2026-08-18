@@ -174,6 +174,14 @@ export interface FormsMessages {
         createErrorInvalid: string;
         createErrorForbidden: string;
         createErrorFailed: string;
+        /** Type-to-find inside the menu (shown from six workspaces, or always for staff). */
+        search: string;
+        searching: string;
+        searchEmpty: string;
+        /** Marks a workspace the person is in by access grant (deployment staff), or an estate row. */
+        staff: string;
+        /** Eyebrow over estate rows the person never opened here (staff only). */
+        estate: string;
       };
     };
     /** The dashboard home (/admin) — greeting, public link, stats, quick actions. */
@@ -1733,6 +1741,11 @@ export const en: FormsMessages = {
         createErrorInvalid: 'Give the workspace a name (up to 80 characters).',
         createErrorForbidden: 'Your account cannot create workspaces.',
         createErrorFailed: 'Could not create the workspace. Try again.',
+        search: 'Find a workspace',
+        searching: 'Searching',
+        searchEmpty: 'No workspace matches that.',
+        staff: 'Staff',
+        estate: 'All workspaces',
       },
     },
     home: {
@@ -3181,6 +3194,11 @@ export const es: FormsMessages = {
         createErrorInvalid: 'Ponle un nombre al workspace (hasta 80 caracteres).',
         createErrorForbidden: 'Tu cuenta no puede crear workspaces.',
         createErrorFailed: 'No se pudo crear el workspace. Intenta de nuevo.',
+        search: 'Buscar workspace',
+        searching: 'Buscando',
+        searchEmpty: 'Ningún workspace coincide.',
+        staff: 'Staff',
+        estate: 'Todos los workspaces',
       },
     },
     home: {

@@ -20,9 +20,10 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { createDb, sql, type Db } from './client';
 import { migrate } from './migrate';
-import { listWorkspacesForIdentity } from './members';
+import { listMembers, listWorkspacesForIdentity } from './members';
 import {
   createLocalWorkspace,
+  grantStaffAccess,
   humanHasCompletedOnboarding,
   pickHomeAccount,
   projectMemberships,
@@ -214,5 +215,46 @@ describe('pickHomeAccount + createLocalWorkspace', () => {
     created.push(local.accountId);
     const list = await listWorkspacesForIdentity(db, { externalId: SUB, email: null });
     expect(list.find((w) => w.accountId === local.accountId)!.role).toBe('owner');
+  });
+});
+
+describe('grantStaffAccess (both dialects)', () => {
+  it('mints an admin grant row that is off the roster and count, keeps the owner first for home, and is not pruned', async () => {
+    const wsId = `ws-${randomUUID()}`;
+    const staff = { externalId: `staff-${randomUUID()}`, email: 's@example.test', displayName: 'S' };
+    const staffHome = `ws-${randomUUID()}`;
+    // The staff person's own workspace first, then the grant.
+    await projectMemberships(db, staff, [
+      { workspaceId: staffHome, workspaceName: 'HQ', iamAccountId: 'acc-s', workspaceUserId: 'wu-s', role: 'owner', active: true },
+    ]);
+    const { accountId, memberId } = await grantStaffAccess(db, staff, { workspaceId: wsId, workspaceName: 'Cust', iamAccountId: 'acc-c' });
+    await ids([wsId, staffHome]);
+    const same = await grantStaffAccess(db, staff, { workspaceId: wsId, workspaceName: 'Cust', iamAccountId: 'acc-c' });
+    expect(same.memberId).toBe(memberId);
+
+    // The customer's owner arrives later: still the FIRST member, still gets onboarding owed.
+    const owner = { externalId: `own-${randomUUID()}`, email: 'o@example.test', displayName: 'O' };
+    const res = await projectMemberships(db, owner, [
+      { workspaceId: wsId, workspaceName: 'Cust', iamAccountId: 'acc-c', workspaceUserId: 'wu-o', role: 'owner', active: true },
+    ], { inheritOnboarding: true });
+    expect(res.created[0]!.isFirstMember).toBe(true);
+    const acc = await db.get<{ onboarding_completed_at: number | null }>(sql`SELECT onboarding_completed_at FROM account WHERE id = ${accountId}`);
+    expect(acc!.onboarding_completed_at).toBeNull(); // the account pre-existed (grant), so no stamp: the wizard is still owed
+
+    // Roster and count exclude the grant; the owner's list shows one member.
+    expect((await listMembers(db, accountId)).map((m) => m.email)).toEqual(['o@example.test']);
+    const ownerList = await listWorkspacesForIdentity(db, { externalId: owner.externalId, email: null });
+    expect(ownerList[0]!.memberCount).toBe(1);
+    // The staff list shows both, own first, the grant marked.
+    const staffList = await listWorkspacesForIdentity(db, { externalId: staff.externalId, email: null });
+    expect(staffList.map((w) => [w.accountName, w.accessGrant])).toEqual([['HQ', null], ['Cust', 'staff']]);
+    // Home falls back to the real membership.
+    expect((await pickHomeAccount(db, staff.externalId, null))!.accountId).not.toBe(accountId);
+    // A membership refresh that does not name the grant leaves it active.
+    await projectMemberships(db, staff, [
+      { workspaceId: staffHome, workspaceName: 'HQ', iamAccountId: 'acc-s', workspaceUserId: 'wu-s', role: 'owner', active: true },
+    ]);
+    const g = await db.get<{ status: string }>(sql`SELECT status FROM member WHERE id = ${memberId}`);
+    expect(g!.status).toBe('active');
   });
 });

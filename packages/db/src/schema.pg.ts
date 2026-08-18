@@ -72,6 +72,8 @@ export const member = pgTable(
     lastSeenAt: bigint('last_seen_at', { mode: 'number' }),
     /** The upstream `workspace_users.id` for this membership (see 0015); NULL when the identity service does not know it. */
     iamWorkspaceUserId: text('iam_workspace_user_id'),
+    /** NULL for a real membership; 'staff' for a domain-based access grant (0016). */
+    accessGrant: text('access_grant'),
     createdAt: bigint('created_at', { mode: 'number' }).notNull(),
   },
   (t) => ({

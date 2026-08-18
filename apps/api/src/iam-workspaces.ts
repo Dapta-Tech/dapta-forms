@@ -230,6 +230,36 @@ export class IamWorkspacesClient {
     return out;
   }
 
+  /**
+   * One page of the workspace search as the upstream answers it, membership NOT
+   * applied: for the deployment's staff the identity service answers with the
+   * whole estate, and that is exactly the list they get to search (the same
+   * call the Dapta app's sidebar makes, `?query=`). Callers decide who may
+   * see it; this only fetches.
+   */
+  async searchWorkspaces(
+    bearer: string,
+    opts: { query?: string; page?: number; limit?: number } = {},
+  ): Promise<{ rows: IamWorkspace[]; total: number; totalPages: number; page: number }> {
+    const page = Math.max(1, Math.floor(opts.page ?? 1));
+    const limit = Math.min(PAGE_SIZE, Math.max(1, Math.floor(opts.limit ?? 20)));
+    const q = (opts.query ?? '').trim();
+    const res = await this.call<{ data?: IamWorkspace[]; total?: number; totalPages?: number }>(
+      bearer,
+      'GET',
+      `/workspace/search?page=${page}&limit=${limit}${q ? `&query=${encodeURIComponent(q)}` : ''}`,
+    );
+    const rows = (Array.isArray(res?.data) ? res.data : []).filter(
+      (ws) => ws && typeof ws.id === 'string' && ws.is_active !== false,
+    );
+    return {
+      rows,
+      total: typeof res?.total === 'number' ? res.total : rows.length,
+      totalPages: typeof res?.totalPages === 'number' ? res.totalPages : 1,
+      page,
+    };
+  }
+
   getWorkspace(bearer: string, workspaceId: string): Promise<IamWorkspace> {
     return this.call<IamWorkspace>(bearer, 'GET', `/workspace/${encodeURIComponent(workspaceId)}`);
   }

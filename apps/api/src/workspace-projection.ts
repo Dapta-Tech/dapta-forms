@@ -73,9 +73,25 @@ export class WorkspaceProjection {
       seedEnv?: SeedDemoEnv;
       onSignup?: SignupObserver;
       now?: () => number;
+      /**
+       * Email domains (lowercase, no `@`) whose people are STAFF of the
+       * deployment: they may search the whole estate and enter any workspace
+       * (see `WorkspaceService.enterEstateWorkspace`). Empty = nobody.
+       */
+      staffDomains?: readonly string[];
     } = {},
   ) {
     this.ttlMs = opts.ttlMs ?? DEFAULT_TTL_MS;
+  }
+
+  /** Whether this email belongs to the deployment's staff (by domain). */
+  isStaff(email: string | null | undefined): boolean {
+    const domains = this.opts.staffDomains ?? [];
+    if (!domains.length || !email) return false;
+    const at = email.lastIndexOf('@');
+    if (at < 0) return false;
+    const domain = email.slice(at + 1).trim().toLowerCase();
+    return domains.includes(domain);
   }
 
   private now(): number {
@@ -171,7 +187,11 @@ export class WorkspaceProjection {
     );
 
     for (const c of result.created) {
-      if (c.role === 'owner' && result.createdAccounts.includes(c.accountId) && this.opts.seedEnv) {
+      // An access grant is not a person joining: no demo form, no signup event.
+      if (c.accessGrant) continue;
+      // "First member" counts REAL memberships: an account a staff grant
+      // created ahead of its owner still gets the owner's demo form.
+      if (c.role === 'owner' && c.isFirstMember && this.opts.seedEnv) {
         // No demo form in a workspace whose upstream ACCOUNT still has a
         // pre-0015 local row: that row holds the owner's real forms and must be
         // able to absorb this account on the owner's next login (see

@@ -110,6 +110,33 @@ export interface Workspace {
   status: MemberStatus;
   /** Active members in that workspace. */
   memberCount: number;
+  /** `'staff'` when the person is in it by access grant (deployment staff), not by membership. */
+  accessGrant: 'staff' | null;
+}
+
+/**
+ * One row of the type-to-find search: a workspace of the caller's own list, or
+ * (staff only) one of the estate they never opened here (`accountId` null:
+ * enter it with `enterEstateWorkspace`).
+ */
+export interface WorkspaceSearchRow {
+  workspaceId: string | null;
+  accountId: string | null;
+  name: string;
+  role: AccountRole;
+  status: MemberStatus;
+  accessGrant: 'staff' | null;
+  memberCount: number;
+  localExists?: boolean;
+}
+
+export interface WorkspaceSearchResponse {
+  rows: WorkspaceSearchRow[];
+  /** Whether the caller is staff of the deployment (the estate is searchable). */
+  staff: boolean;
+  total: number;
+  totalPages: number;
+  page: number;
 }
 
 /** Why a webhook test delivery failed — mirrors `WebhookPingReason` in the API. */
@@ -163,6 +190,10 @@ export interface Me {
    * campaign, which is most of the reason to measure it.
    */
   attribution: Record<string, string | number | null | undefined> | null;
+  /** `'staff'` when the caller is in this workspace by access grant, not by membership. */
+  accessGrant: 'staff' | null;
+  /** Staff of the deployment (by email domain, identity-backed only): may search and enter the whole estate. */
+  staff: boolean;
 }
 
 /**
@@ -598,6 +629,12 @@ export const adminApi = {
     req<{ accountId: string; name: string }>('PATCH', '/v1/workspaces/current', { name }, opts),
   /** Tell the API the caller is about to open this workspace (membership re-checked; remembered upstream). */
   enterWorkspace: (accountId: string) => req<{ ok: true }>('POST', `/v1/workspaces/${accountId}/enter`),
+  /** Type-to-find: own workspaces filtered by name; staff also get the estate. */
+  searchWorkspaces: (q: string, page = 1) =>
+    req<WorkspaceSearchResponse>('GET', `/v1/workspaces/search?q=${encodeURIComponent(q)}&page=${page}`),
+  /** Staff only: open an estate workspace (an access grant is minted); returns the local account id. */
+  enterEstateWorkspace: (workspaceId: string) =>
+    req<{ accountId: string }>('POST', `/v1/workspaces/estate/${encodeURIComponent(workspaceId)}/enter`),
   /** Send one sample delivery to a form's webhook (admin-only, SSRF-guarded server-side). */
   pingWebhook: (id: string) =>
     req<WebhookPingResult>('POST', `/v1/forms/${id}/destinations/webhook/ping`),
