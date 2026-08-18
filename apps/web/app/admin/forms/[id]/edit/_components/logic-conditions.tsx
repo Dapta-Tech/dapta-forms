@@ -269,7 +269,7 @@ function ConditionEditor({
         ) : null}
       </div>
       <SelectField
-        aria-label={`${label} — ${m.field}`}
+        aria-label={`${label}: ${m.field}`}
         value={cond?.field ?? NONE}
         onChange={(e) => pickField(e.target.value)}
         className="h-8 py-1 text-xs"
@@ -289,7 +289,7 @@ function ConditionEditor({
           <div className="flex flex-col gap-2">
             <div data-testid={`${testid}-op`}>
               <SelectField
-                aria-label={`${label} — ${m.operator}`}
+                aria-label={`${label}: ${m.operator}`}
                 value={op}
                 onChange={(e) => onChange({ ...cond, op: e.target.value as ConditionOp })}
                 className="h-8 py-1 text-xs"
@@ -307,7 +307,7 @@ function ConditionEditor({
                   key={`${cond.field}-min`}
                   initial={cond.min}
                   label={m.betweenMin}
-                  ariaLabel={`${label} — ${m.betweenMin}`}
+                  ariaLabel={`${label}: ${m.betweenMin}`}
                   testid={`${testid}-min`}
                   onCommit={(n) => onChange({ ...cond, min: n })}
                 />
@@ -315,7 +315,7 @@ function ConditionEditor({
                   key={`${cond.field}-max`}
                   initial={cond.max}
                   label={m.betweenMax}
-                  ariaLabel={`${label} — ${m.betweenMax}`}
+                  ariaLabel={`${label}: ${m.betweenMax}`}
                   testid={`${testid}-max`}
                   onCommit={(n) => onChange({ ...cond, max: n })}
                 />
@@ -325,7 +325,7 @@ function ConditionEditor({
                 key={`${cond.field}-value`}
                 initial={cond.value}
                 label={m.value}
-                ariaLabel={`${label} — ${m.value}`}
+                ariaLabel={`${label}: ${m.value}`}
                 testid={`${testid}-value`}
                 onCommit={(n) => onChange({ ...cond, value: n })}
               />

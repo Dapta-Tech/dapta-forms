@@ -33,7 +33,7 @@ const secret = () => process.env.WEB_SESSION_SECRET ?? '';
 function requireSecretUnlessLocal(): void {
   if (!secret() && authProvider() !== 'local') {
     throw new Error(
-      'WEB_SESSION_SECRET is required unless AUTH_PROVIDER=local — refusing to issue an unsigned, forgeable session cookie.',
+      'WEB_SESSION_SECRET is required unless AUTH_PROVIDER=local. Refusing to issue an unsigned, forgeable session cookie.',
     );
   }
 }

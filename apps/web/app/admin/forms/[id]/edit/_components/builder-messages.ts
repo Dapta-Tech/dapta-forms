@@ -59,7 +59,7 @@ export interface BuilderMessages {
   logicDialog: {
     /** Trigger label in the Build panel / canvas hover buttons. */
     open: string;
-    /** "Logic — {question}" */
+    /** "Logic: {question}" */
     title: string;
     subtitle: string;
     visibility: string;
@@ -519,7 +519,7 @@ const en: BuilderMessages = {
     embed: 'Embed',
     embedTitle: 'Embed this form on your site',
     embedIntro:
-      'Paste this snippet into your page. The form loads inside it and grows to fit its content — the script keeps the height in sync, so there is never an inner scrollbar.',
+      'Paste this snippet into your page. The form loads inside it and grows to fit its content. The script keeps the height in sync, so there is never an inner scrollbar.',
     embedCopy: 'Copy snippet',
     embedCopied: 'Copied',
     copied: 'Copied',
@@ -528,7 +528,7 @@ const en: BuilderMessages = {
   },
   logicDialog: {
     open: 'Edit logic',
-    title: 'Logic — {question}',
+    title: 'Logic: {question}',
     subtitle: 'Decide when this question appears and where it leads next.',
     visibility: 'When this question appears',
     visibilityHint: 'Leave both empty and it always appears.',
@@ -539,7 +539,7 @@ const en: BuilderMessages = {
     scoreContext: 'Highest possible score before this question: {n}',
     scoreContextNone: 'No question above this one awards points, so a score rule would always read 0.',
     noRouting: 'This question type has no answer values to branch on. Use the visibility rules above.',
-    empty: 'No logic yet — this question always appears and continues in order.',
+    empty: 'No logic yet. This question always appears and continues in order.',
     done: 'Done',
   },
   branching: {
@@ -547,10 +547,10 @@ const en: BuilderMessages = {
     title: 'Branching',
     subtitle: 'Every question in order. Change where each one leads, right here.',
     summary: '{n} of {total} questions carry logic.',
-    summaryNone: 'No question carries logic yet — everyone walks the same path.',
+    summaryNone: 'No question carries logic yet. Everyone walks the same path.',
     edit: 'Edit',
     editAria: 'Edit the logic for {question}',
-    empty: 'Add a question first — there is nothing to route yet.',
+    empty: 'Add a question first: there is nothing to route yet.',
     anyAnswer: 'any answer',
     anyBooking: 'any booking',
     alwaysGoTo: 'Always go to',
@@ -562,9 +562,9 @@ const en: BuilderMessages = {
     title: 'Scoring',
     subtitle: 'Every point value in the form, editable here. A negative number subtracts.',
     stepMax: 'Max {n}',
-    noOptions: 'No options yet — add some to award points.',
+    noOptions: 'No options yet. Add some to award points.',
     inert:
-      'Scoring is off, so none of these points are awarded. They are kept exactly as they are — turn scoring on to use them again.',
+      'Scoring is off, so none of these points are awarded. They are kept exactly as they are: turn scoring on to use them again.',
   },
   outcomes: {
     open: 'Outcomes',
@@ -589,12 +589,12 @@ const en: BuilderMessages = {
     tipStored:
       'Each partial is stored as a submission and upgraded in place if the respondent completes the form.',
     suggestEmail:
-      'This form asks for an email, but answers are only saved at the end. Capture the lead as soon as they share their email — even if they never finish.',
+      'This form asks for an email, but answers are only saved at the end. Capture the lead as soon as they share their email: even if they never finish.',
     suggestEmailAction: 'Capture after the email question',
     tipNotify: 'Consider letting respondents know their answers may be collected before they submit.',
     tipWhere: 'View them in Submissions with the “Partial” filter.',
-    tipAfterLast: 'After the last question it never fires — the final submit already captures everything.',
-    designNote: 'Configured in the question list on the Build tab — look for the “Partial submit point” card.',
+    tipAfterLast: 'After the last question it never fires. The final submit already captures everything.',
+    designNote: 'Configured in the question list on the Build tab: look for the “Partial submit point” card.',
   },
   canvas: {
     questionN: 'Question {n}',
@@ -682,9 +682,9 @@ const en: BuilderMessages = {
     scoring: 'Scoring',
     scoringHint:
       'Counts this question toward the score. Points from the selected option add to the total; set ranges in Results.',
-    scoringFormOff: 'Scoring is off for the whole form — turn it on in Results to score individual questions.',
+    scoringFormOff: 'Scoring is off for the whole form: turn it on in Results to score individual questions.',
     scoringZeroHint: 'Assign points to your answers to enable ranges.',
-    contactHint: 'Contact field — doesn’t affect the score.',
+    contactHint: 'Contact field: doesn’t affect the score.',
     advancedTitle: 'Advanced settings',
     badgeDynamic: 'Dynamic',
     badgeEndsForm: 'Ends form',
@@ -698,7 +698,7 @@ const en: BuilderMessages = {
     prefillCopy: 'Copy',
     prefillCopied: 'Copied',
     prefillUtmWarning:
-      'A key starting with utm_ is never read from the URL — those are captured separately as campaign data. Rename the key to make prefill work.',
+      'A key starting with utm_ is never read from the URL: those are captured separately as campaign data. Rename the key to make prefill work.',
     placeholder: 'Placeholder',
     placeholderHint: 'Ghost text shown inside the input while it is empty.',
     placeholderEmpty: 'Leave empty for none',
@@ -712,11 +712,11 @@ const en: BuilderMessages = {
   tokens: {
     hint: 'Type @ or [field] to insert a previous answer',
     pickerLabel: 'Insert a previous answer',
-    pickerEmpty: 'No earlier answers yet — this is the first question.',
+    pickerEmpty: 'No earlier answers yet. This is the first question.',
     pickerNoMatch: 'No matching fields.',
-    warnLater: '“{token}” is asked after this step — it will be empty here.',
+    warnLater: '“{token}” is asked after this step. It will be empty here.',
     warnUnknown: '“{token}” doesn’t exist in this form.',
-    warnRaw: '“{token}” stays as literal text — only {fixed} fills in an answer. Pick the field from the list to insert it.',
+    warnRaw: '“{token}” stays as literal text: only {fixed} fills in an answer. Pick the field from the list to insert it.',
   },
   hubspot: {
     title: 'HubSpot',
@@ -733,14 +733,14 @@ const en: BuilderMessages = {
     notConnected: 'Connect HubSpot to map answers to contact properties.',
     goToConnections: 'Go to Connections',
     needsEmail:
-      'This form asks for no email and books nothing, so HubSpot has no way to identify the contact — nothing mapped here would sync. Add an email question, or a booking step.',
+      'This form asks for no email and books nothing, so HubSpot has no way to identify the contact. Nothing mapped here would sync. Add an email question, or a booking step.',
     schedulerDisconnected:
-      'The booking step would supply the address, but Calendly is not connected for this account — so the invitee cannot be read back and nothing mapped here will reach HubSpot.',
+      'The booking step would supply the address, but Calendly is not connected for this account: so the invitee cannot be read back and nothing mapped here will reach HubSpot.',
     bookingIntro: 'A booking produces these. Send each one to a contact property.',
     bookingStartHint:
       'Sent as text, exactly as the booking reported it. For a real HubSpot date property, use the booking sync in Connect.',
     bookingEmailNote:
-      'The invitee’s email is the contact key — the booking supplies it, so it is never mapped here.',
+      'The invitee’s email is the contact key. The booking supplies it, so it is never mapped here.',
   },
   rules: {
     ifAnswerIs: 'If answer is',
@@ -766,7 +766,7 @@ const en: BuilderMessages = {
     hint: 'Picking a type drops the question in and focuses the canvas to edit it.',
     close: 'Close',
     noResults: 'No matching types.',
-    revealVerticalTaken: 'Already added — a one-page form plays its reveal once, after Submit.',
+    revealVerticalTaken: 'Already added. A one-page form plays its reveal once, after Submit.',
     items: {
       name: { title: 'Name', desc: 'Full name field' },
       email: { title: 'Email', desc: 'Validated email' },
@@ -824,7 +824,7 @@ const en: BuilderMessages = {
   results: {
     pointsTitle: 'Points',
     pointsHint: 'Each answer adds to a score. Highest possible: {n}.',
-    pointsHintOff: 'Scoring is off — no answer adds to a score right now.',
+    pointsHintOff: 'Scoring is off. No answer adds to a score right now.',
     endTitle: 'What happens at the end',
     endHint: 'Map score ranges to an outcome. The first matching range wins.',
     addRange: 'Add a range',
@@ -840,7 +840,7 @@ const en: BuilderMessages = {
     thankYouMessage: 'Thank-you message',
     redirect: 'Redirect',
     redirectPlaceholder: 'https://…',
-    messagePlaceholder: '“Thanks — we’ll be in touch.”',
+    messagePlaceholder: '“Thanks: we’ll be in touch.”',
     remove: 'Remove range',
     scoringOff: 'Scoring is off. Turn it on to score answers and route by result.',
     enableScoring: 'Enable scoring',
@@ -850,7 +850,7 @@ const en: BuilderMessages = {
   empty: {
     title: 'Let’s build your form',
     subtitle: 'Begin with a blank canvas, or pick a ready-made template to edit live.',
-    scratch: 'or start from scratch — add your first question',
+    scratch: 'or start from scratch. Add your first question',
     scratchTitle: 'Start from scratch',
     scratchDesc: 'Begin with a blank canvas and add your own questions.',
     templatesLabel: 'Or choose a template',
@@ -862,7 +862,7 @@ const en: BuilderMessages = {
       },
       contact: {
         name: 'Contact form',
-        desc: 'Name, email and a message — sent to your inbox or CRM.',
+        desc: 'Name, email and a message: sent to your inbox or CRM.',
         meta: '3 questions · no scoring',
       },
       feedback: {
@@ -911,7 +911,7 @@ const es: BuilderMessages = {
     embed: 'Insertar',
     embedTitle: 'Inserta este formulario en tu sitio',
     embedIntro:
-      'Pega este fragmento en tu página. El formulario carga dentro y crece según su contenido — el script mantiene la altura sincronizada, así nunca hay scroll interno.',
+      'Pega este fragmento en tu página. El formulario carga dentro y crece según su contenido. El script mantiene la altura sincronizada, así nunca hay scroll interno.',
     embedCopy: 'Copiar fragmento',
     embedCopied: 'Copiado',
     copied: 'Copiado',
@@ -920,7 +920,7 @@ const es: BuilderMessages = {
   },
   logicDialog: {
     open: 'Editar lógica',
-    title: 'Lógica — {question}',
+    title: 'Lógica: {question}',
     subtitle: 'Define cuándo aparece esta pregunta y a dónde lleva después.',
     visibility: 'Cuándo aparece esta pregunta',
     visibilityHint: 'Si dejas las dos vacías, aparece siempre.',
@@ -931,7 +931,7 @@ const es: BuilderMessages = {
     scoreContext: 'Puntaje máximo posible antes de esta pregunta: {n}',
     scoreContextNone: 'Ninguna pregunta anterior suma puntos, así que una regla por puntaje siempre leería 0.',
     noRouting: 'Este tipo de pregunta no tiene valores de respuesta para ramificar. Usa las reglas de visibilidad de arriba.',
-    empty: 'Sin lógica — esta pregunta siempre aparece y continúa en orden.',
+    empty: 'Sin lógica. Esta pregunta siempre aparece y continúa en orden.',
     done: 'Listo',
   },
   branching: {
@@ -939,10 +939,10 @@ const es: BuilderMessages = {
     title: 'Ramificación',
     subtitle: 'Todas las preguntas en orden. Cambia a dónde lleva cada una, aquí mismo.',
     summary: '{n} de {total} preguntas tienen lógica.',
-    summaryNone: 'Ninguna pregunta tiene lógica todavía — todos recorren el mismo camino.',
+    summaryNone: 'Ninguna pregunta tiene lógica todavía. Todos recorren el mismo camino.',
     edit: 'Editar',
     editAria: 'Editar la lógica de {question}',
-    empty: 'Añade una pregunta primero — todavía no hay nada que enrutar.',
+    empty: 'Añade una pregunta primero: todavía no hay nada que enrutar.',
     anyAnswer: 'cualquier respuesta',
     anyBooking: 'cualquier reserva',
     alwaysGoTo: 'Siempre va a',
@@ -954,9 +954,9 @@ const es: BuilderMessages = {
     title: 'Puntaje',
     subtitle: 'Todos los puntos del formulario, editables aquí. Un número negativo resta.',
     stepMax: 'Máx {n}',
-    noOptions: 'Sin opciones todavía — añade algunas para asignar puntos.',
+    noOptions: 'Sin opciones todavía: añade algunas para asignar puntos.',
     inert:
-      'El puntaje está apagado, así que estos puntos no se otorgan. Se conservan tal cual — actívalo para volver a usarlos.',
+      'El puntaje está apagado, así que estos puntos no se otorgan. Se conservan tal cual: actívalo para volver a usarlos.',
   },
   outcomes: {
     open: 'Resultados',
@@ -981,13 +981,13 @@ const es: BuilderMessages = {
     tipStored:
       'Cada parcial se guarda como un envío y se actualiza en su lugar si la persona completa el formulario.',
     suggestEmail:
-      'Este formulario pide un email, pero las respuestas solo se guardan al final. Captura el lead en cuanto comparta su email — aunque nunca termine.',
+      'Este formulario pide un email, pero las respuestas solo se guardan al final. Captura el lead en cuanto comparta su email: aunque nunca termine.',
     suggestEmailAction: 'Capturar tras la pregunta de email',
     tipNotify: 'Considera avisar a tus respondientes de que sus respuestas pueden recopilarse antes de enviar.',
     tipWhere: 'Míralos en Envíos con el filtro «Parciales».',
-    tipAfterLast: 'Después de la última pregunta nunca se activa — el envío final ya lo captura todo.',
+    tipAfterLast: 'Después de la última pregunta nunca se activa. El envío final ya lo captura todo.',
     designNote:
-      'Se configura en la lista de preguntas, en la pestaña Construir — busca la tarjeta «Punto de envío parcial».',
+      'Se configura en la lista de preguntas, en la pestaña Construir: busca la tarjeta «Punto de envío parcial».',
   },
   canvas: {
     questionN: 'Pregunta {n}',
@@ -1076,9 +1076,9 @@ const es: BuilderMessages = {
     scoring: 'Puntaje',
     scoringHint:
       'Cuenta esta pregunta para el puntaje. Los puntos de la opción elegida suman al total; define los rangos en Resultados.',
-    scoringFormOff: 'El puntaje está apagado para todo el formulario — enciéndelo en Resultados para puntuar preguntas individuales.',
+    scoringFormOff: 'El puntaje está apagado para todo el formulario: enciéndelo en Resultados para puntuar preguntas individuales.',
     scoringZeroHint: 'Asigna puntos a tus respuestas para habilitar los rangos.',
-    contactHint: 'Campo de contacto — no afecta el puntaje.',
+    contactHint: 'Campo de contacto. No afecta el puntaje.',
     advancedTitle: 'Ajustes avanzados',
     badgeDynamic: 'Dinámica',
     badgeEndsForm: 'Termina el formulario',
@@ -1106,11 +1106,11 @@ const es: BuilderMessages = {
   tokens: {
     hint: 'Escribe @ o [campo] para insertar una respuesta anterior',
     pickerLabel: 'Insertar una respuesta anterior',
-    pickerEmpty: 'Aún no hay respuestas anteriores — esta es la primera pregunta.',
+    pickerEmpty: 'Aún no hay respuestas anteriores. Esta es la primera pregunta.',
     pickerNoMatch: 'Ningún campo coincide.',
-    warnLater: '«{token}» se pregunta después de este paso — quedará vacío.',
+    warnLater: '«{token}» se pregunta después de este paso: quedará vacío.',
     warnUnknown: '«{token}» no existe en este formulario.',
-    warnRaw: '«{token}» queda como texto literal — solo {fixed} rellena una respuesta. Elige el campo de la lista para insertarlo.',
+    warnRaw: '«{token}» queda como texto literal: solo {fixed} rellena una respuesta. Elige el campo de la lista para insertarlo.',
   },
   hubspot: {
     title: 'HubSpot',
@@ -1127,9 +1127,9 @@ const es: BuilderMessages = {
     notConnected: 'Conecta HubSpot para asignar respuestas a propiedades del contacto.',
     goToConnections: 'Ir a Conexiones',
     needsEmail:
-      'Este formulario no pide correo ni agenda nada, así que HubSpot no tiene cómo identificar al contacto — nada de lo que mapees acá se va a sincronizar. Agregá una pregunta de correo, o un paso de agenda.',
+      'Este formulario no pide correo ni agenda nada, así que HubSpot no tiene cómo identificar al contacto. Nada de lo que mapees acá se va a sincronizar. Agregá una pregunta de correo, o un paso de agenda.',
     schedulerDisconnected:
-      'El paso de agenda aportaría el correo, pero Calendly no está conectado en esta cuenta — así que no se puede leer al invitado y nada de lo mapeado acá va a llegar a HubSpot.',
+      'El paso de agenda aportaría el correo, pero Calendly no está conectado en esta cuenta: así que no se puede leer al invitado y nada de lo mapeado acá va a llegar a HubSpot.',
     bookingIntro: 'Una reserva produce estos datos. Mandá cada uno a una propiedad del contacto.',
     bookingStartHint:
       'Se envía como texto, tal cual lo reportó la reserva. Para una propiedad de fecha real de HubSpot, usá la sincronización de reservas en Conectar.',
@@ -1160,7 +1160,7 @@ const es: BuilderMessages = {
     hint: 'Al elegir un tipo se añade la pregunta y se enfoca el lienzo para editarla.',
     close: 'Cerrar',
     noResults: 'No hay tipos que coincidan.',
-    revealVerticalTaken: 'Ya añadida — un formulario de una página muestra su revelación una vez, después de Enviar.',
+    revealVerticalTaken: 'Ya añadida. Un formulario de una página muestra su revelación una vez, después de Enviar.',
     items: {
       name: { title: 'Nombre', desc: 'Campo de nombre completo' },
       email: { title: 'Correo', desc: 'Correo validado' },
@@ -1221,7 +1221,7 @@ const es: BuilderMessages = {
   results: {
     pointsTitle: 'Puntos',
     pointsHint: 'Cada respuesta suma al puntaje. Máximo posible: {n}.',
-    pointsHintOff: 'El puntaje está apagado — ninguna respuesta suma por ahora.',
+    pointsHintOff: 'El puntaje está apagado. Ninguna respuesta suma por ahora.',
     endTitle: 'Qué pasa al final',
     endHint: 'Asigna rangos de puntaje a un resultado. Gana el primer rango que coincida.',
     addRange: 'Añadir un rango',
@@ -1237,7 +1237,7 @@ const es: BuilderMessages = {
     thankYouMessage: 'Mensaje de agradecimiento',
     redirect: 'Redirigir',
     redirectPlaceholder: 'https://…',
-    messagePlaceholder: '«Gracias — te contactaremos.»',
+    messagePlaceholder: '«Gracias: te contactaremos.»',
     remove: 'Quitar rango',
     scoringOff: 'El puntaje está desactivado. Actívalo para puntuar respuestas y enrutar por resultado.',
     enableScoring: 'Activar puntaje',
@@ -1247,7 +1247,7 @@ const es: BuilderMessages = {
   empty: {
     title: 'Construyamos tu formulario',
     subtitle: 'Comienza con un lienzo en blanco, o elige una plantilla lista para editar en vivo.',
-    scratch: 'o empieza desde cero — añade tu primera pregunta',
+    scratch: 'o empieza desde cero: añade tu primera pregunta',
     scratchTitle: 'Empezar desde cero',
     scratchDesc: 'Comienza con un lienzo en blanco y añade tus propias preguntas.',
     templatesLabel: 'O elige una plantilla',
@@ -1259,7 +1259,7 @@ const es: BuilderMessages = {
       },
       contact: {
         name: 'Formulario de contacto',
-        desc: 'Nombre, correo y un mensaje — enviado a tu bandeja o CRM.',
+        desc: 'Nombre, correo y un mensaje: enviado a tu bandeja o CRM.',
         meta: '3 preguntas · sin puntaje',
       },
       feedback: {

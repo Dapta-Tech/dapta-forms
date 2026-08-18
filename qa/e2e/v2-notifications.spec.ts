@@ -219,8 +219,8 @@ test('GET /v1/notifications returns the two settings with defaults + token catal
   expect(owner.body).toBeNull();
   expect(respondent.subject).toBeNull();
   // The two defaults are the shipped English copy.
-  expect(owner.defaults.en.subject).toBe('New submission — {{formName}}');
-  expect(respondent.defaults.en.subject).toBe('We got your responses — {{formName}}');
+  expect(owner.defaults.en.subject).toBe('New submission: {{formName}}');
+  expect(respondent.defaults.en.subject).toBe('We got your responses: {{formName}}');
 });
 
 test('Account settings → Notifications renders both cards with toggle, subject, body, chips, preview', async ({
@@ -231,8 +231,8 @@ test('Account settings → Notifications renders both cards with toggle, subject
   await expect(page.getByRole('heading', { name: 'Notifications', level: 2 })).toBeVisible();
 
   for (const { title, defaultSubject } of [
-    { title: OWNER_TITLE, defaultSubject: 'New submission — {{formName}}' },
-    { title: RESPONDENT_TITLE, defaultSubject: 'We got your responses — {{formName}}' },
+    { title: OWNER_TITLE, defaultSubject: 'New submission: {{formName}}' },
+    { title: RESPONDENT_TITLE, defaultSubject: 'We got your responses: {{formName}}' },
   ]) {
     const card = cardByTitle(page, title);
     await expect(card).toBeVisible();

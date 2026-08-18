@@ -191,7 +191,7 @@ export async function syncMirrorForm(
     return {
       settings,
       action: 'failed',
-      error: 'No HubSpot token — connect HubSpot for this account first.',
+      error: 'No HubSpot token. Connect HubSpot for this account first.',
     };
   }
 
@@ -233,7 +233,7 @@ export async function syncMirrorForm(
       return {
         settings: { ...settings, formGuid: null, formSignature: undefined },
         action: 'failed',
-        error: 'The HubSpot form for this Dapta form no longer exists — it will be recreated.',
+        error: 'The HubSpot form for this Dapta form no longer exists. It will be recreated.',
       };
     }
     // Only a rejected PAYLOAD is worth retrying smaller. A 401/403 is about the

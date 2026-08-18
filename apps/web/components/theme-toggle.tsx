@@ -27,7 +27,7 @@ type ThemeMessages = FormsMessages['admin']['chrome']['theme'];
 export function ThemeToggle({ pref, m }: { pref: ThemePref; m: ThemeMessages }) {
   const [pending, start] = useTransition();
   const next = THEME_PREFS[(THEME_PREFS.indexOf(pref) + 1) % THEME_PREFS.length]!;
-  const label = `${m.label}: ${m[pref]} — ${m.next} ${m[next].toLowerCase()}`;
+  const label = `${m.label}: ${m[pref]}: ${m.next} ${m[next].toLowerCase()}`;
 
   return (
     <button

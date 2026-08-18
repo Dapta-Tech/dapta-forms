@@ -39,7 +39,7 @@ export async function generateMetadata({
   // the OpenGraph title of a page whose whole purpose is to be shared.
   const name = personName(profile.displayName) ?? profile.handle;
   return {
-    title: profile.headline ? `${name} — ${profile.headline}` : name,
+    title: profile.headline ? `${name}: ${profile.headline}` : name,
     description: profile.bio ?? undefined,
     openGraph: {
       title: name,

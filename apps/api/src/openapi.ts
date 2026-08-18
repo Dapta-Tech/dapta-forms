@@ -9,7 +9,7 @@ export const openapiSpec = {
   info: {
     title: 'Quill API',
     version: '1.0.0',
-    description: 'Open-source forms — public form rendering + submission surfaces.',
+    description: 'Open-source forms: public form rendering + submission surfaces.',
     license: { name: 'MIT' },
   },
   servers: [{ url: '/', description: 'This deployment' }],
@@ -66,7 +66,7 @@ export const openapiSpec = {
       put: {
         summary: 'Update a form (host)',
         description:
-          'name/slug apply to the live form immediately; config is stored as an unpublished draft — publish it via POST /v1/forms/{id}/publish. The public renderer keeps serving the previously published config until then.',
+          'name/slug apply to the live form immediately; config is stored as an unpublished draft: publish it via POST /v1/forms/{id}/publish. The public renderer keeps serving the previously published config until then.',
         security: [{ hostSession: [] }],
         responses: { '200': { description: 'Updated (config changes staged as a draft)' } },
       },
@@ -83,14 +83,14 @@ export const openapiSpec = {
       get: {
         summary: "The workspace brand kit (host)",
         description:
-          "The account's brand kit (logo, client logos, colors, font, radius, button style) or { config: null } when none is saved. Forms snapshot the kit at creation and on an explicit apply — it is never resolved live at render.",
+          "The account's brand kit (logo, client logos, colors, font, radius, button style) or { config: null } when none is saved. Forms snapshot the kit at creation and on an explicit apply. It is never resolved live at render.",
         security: [{ hostSession: [] }],
         responses: { '200': { description: '{ config, updatedAt }' } },
       },
       put: {
         summary: 'Save the workspace brand kit (host, admin/owner)',
         description:
-          'Replaces the stored kit. Body is the brand-kit object; every field optional — absent fields leave the corresponding axis to each form.',
+          'Replaces the stored kit. Body is the brand-kit object; every field optional: absent fields leave the corresponding axis to each form.',
         security: [{ hostSession: [] }],
         responses: {
           '200': { description: '{ config, updatedAt }' },
@@ -182,7 +182,7 @@ export const openapiSpec = {
           'Per email: the effective account-level template this form inherits, whether a per-form override exists, and the override values (Typeform-style per-form Follow-ups). Send-time precedence is form → account → stock, per field. The form must belong to the caller’s account.',
         security: [{ hostSession: [] }],
         responses: {
-          '200': { description: '{ settings[] } — each { emailKey, account, override|null, defaults, tokens }' },
+          '200': { description: '{ settings[] }: each { emailKey, account, override|null, defaults, tokens }' },
           '403': { description: 'Requires an admin or owner' },
           '404': { description: 'Form not found in this account' },
         },
@@ -192,7 +192,7 @@ export const openapiSpec = {
       put: {
         summary: 'Create/update a form’s override for one submission email (host, admin/owner)',
         description:
-          'Body { enabled?, subject?, body? } — same contract as the account-level PUT, stored against this form. While an override exists its enabled toggle wins; a null subject/body inherits that field from the account template.',
+          'Body { enabled?, subject?, body? }: same contract as the account-level PUT, stored against this form. While an override exists its enabled toggle wins; a null subject/body inherits that field from the account template.',
         parameters: [
           {
             name: 'emailKey',
@@ -212,7 +212,7 @@ export const openapiSpec = {
     },
     '/v1/forms/{id}/notifications/{emailKey}/reset': {
       post: {
-        summary: 'Remove a form’s override — inherit the account template again (host, admin/owner)',
+        summary: 'Remove a form’s override: inherit the account template again (host, admin/owner)',
         description: 'Deletes the per-form row entirely (copy AND toggle revert to the account setting).',
         parameters: [
           {

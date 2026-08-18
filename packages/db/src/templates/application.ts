@@ -21,7 +21,7 @@ export const APPLICATION_CONFIG: FormConfig = {
     enabled: true,
     eyebrow: 'We are reading every one',
     headline: 'Tell us what you need',
-    subheadline: 'Six questions. No account, no login — just the details so we can get moving.',
+    subheadline: 'Six questions. No account, no login: just the details so we can get moving.',
     ctaText: 'Start my request',
   },
   steps: [
@@ -81,7 +81,7 @@ export const APPLICATION_CONFIG: FormConfig = {
     },
   ],
   ending: {
-    headline: 'Got it — thank you',
+    headline: 'Got it: thank you',
     body: 'We read every submission and will come back to you at the address you gave us.',
   },
   partialSubmitAfterStep: 2,

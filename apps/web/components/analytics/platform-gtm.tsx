@@ -44,7 +44,7 @@ export function resolvePlatformGtmId(
   // call would silently resolve null: the exact no-op this resolver exists to
   // prevent. Fail loud instead; resolve in the page/layout and pass the id in.
   if (typeof window !== 'undefined') {
-    throw new Error('resolvePlatformGtmId is server-only — pass the resolved id down as a prop.');
+    throw new Error('resolvePlatformGtmId is server-only: pass the resolved id down as a prop.');
   }
   const configured = env.NEXT_PUBLIC_PLATFORM_GTM_ID?.trim();
   if (configured) return configured;

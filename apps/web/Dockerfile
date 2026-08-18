@@ -40,26 +40,27 @@ ENV NEXT_PUBLIC_SIGNUP_URL=$NEXT_PUBLIC_SIGNUP_URL
 # about a deployment. Nothing changes for a fork — the loop stays gated on
 # NEXT_PUBLIC_SIGNUP_URL, so with that unset neither surface renders at all.
 #
-# It follows the badge's COPY, and the copy now reads "Powered by Dapta". This
-# default was written when it read "Made with Dapta Forms" and pointed at the
-# product's own site; the sentence changed and this did not, so a respondent
-# clicking a badge that says Dapta was landing on daptaforms.ai.
+# It follows the badge's COPY. The copy reads "Made with Dapta Forms", so the
+# destination is the Forms landing on the platform's site — the page written
+# for a stranger who just answered someone's form. Every time the sentence
+# changed and this did not, a respondent was sent somewhere the pill did not
+# name; keep the two together.
 #
-# The APEX, with no `www.` prefix, and that is not a style choice — the two
-# spellings behave in opposite ways and the wrong one silently destroys the loop:
-#   apex, as written below   → 200, no redirect, query INTACT
-#   the `www.` prefix        → 301 to the apex, and the query is DROPPED
-# daptaforms.ai is the mirror image of that, which is where the old prefix came
-# from; carrying the habit over is exactly the mistake to avoid. Everything the
-# loop carries — utm_source=dapta-forms, utm_medium=badge | confirmation,
-# utm_campaign, utm_content=<accountCode> — rides in that query, so a redirect
-# that drops it makes every attributed signup look like direct traffic. Re-test
-# with `curl -sLo /dev/null -w '%{url_effective}' -L` before changing this host.
+# THREE spellings of this URL exist and only one keeps the query string:
+#   apex + `/forms/` with the trailing slash, as written below
+#                              → 200, no redirect, query INTACT
+#   apex + `/forms` (no slash) → 301 to the slashed path, query DROPPED
+#   the `www.` prefix          → 301 to the apex, query DROPPED
+# Everything the loop carries — utm_source=dapta-forms,
+# utm_medium=form-button | confirmation, utm_campaign, utm_content=<accountCode>
+# — rides in that query, so a redirect that drops it makes every attributed
+# signup look like direct traffic. Re-test with
+# `curl -sSo /dev/null -w '%{http_code} %{redirect_url}'` before changing this.
 #
-# (Spelled out rather than shown as two example URLs on purpose: publish-gate's
+# (Spelled out rather than shown as example URLs on purpose: publish-gate's
 # denylist bans every `*.dapta.ai` subdomain outside a short file allowlist that
 # this Dockerfile is not on, so writing the bad host even in a comment fails CI.)
-ARG NEXT_PUBLIC_LANDING_URL=https://dapta.ai
+ARG NEXT_PUBLIC_LANDING_URL=https://dapta.ai/forms/
 ENV NEXT_PUBLIC_LANDING_URL=$NEXT_PUBLIC_LANDING_URL
 ARG NEXT_PUBLIC_HIDE_BADGE=
 ENV NEXT_PUBLIC_HIDE_BADGE=$NEXT_PUBLIC_HIDE_BADGE
@@ -90,11 +91,11 @@ ARG NEXT_PUBLIC_PLATFORM_URL=
 ENV NEXT_PUBLIC_PLATFORM_URL=$NEXT_PUBLIC_PLATFORM_URL
 ARG NEXT_PUBLIC_SIGNUP_URL=
 ENV NEXT_PUBLIC_SIGNUP_URL=$NEXT_PUBLIC_SIGNUP_URL
-# Apex, no `www.` — see the note on the build stage's copy of this ARG. The two
-# stages must not drift: the client bundle takes the BUILD stage's value and SSR
-# takes this one, so a mismatch means the badge in the HTML and the badge after
-# hydration point at different hosts.
-ARG NEXT_PUBLIC_LANDING_URL=https://dapta.ai
+# Apex, no `www.`, trailing slash kept — see the note on the build stage's copy
+# of this ARG. The two stages must not drift: the client bundle takes the BUILD
+# stage's value and SSR takes this one, so a mismatch means the badge in the
+# HTML and the badge after hydration point at different places.
+ARG NEXT_PUBLIC_LANDING_URL=https://dapta.ai/forms/
 ENV NEXT_PUBLIC_LANDING_URL=$NEXT_PUBLIC_LANDING_URL
 ARG NEXT_PUBLIC_HIDE_BADGE=
 ENV NEXT_PUBLIC_HIDE_BADGE=$NEXT_PUBLIC_HIDE_BADGE

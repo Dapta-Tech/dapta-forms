@@ -161,6 +161,168 @@ layer, run this before you push.
    `.env.example` (placeholders) is committed. The `scripts/publish-gate.sh` secret
    scan runs in CI — do not add real hosts, tokens, or credentialed URLs anywhere.
 
+## Typography: no em dashes
+
+Dapta Forms does not use the em dash. It is the most reliable tell that a string
+was drafted by a language model rather than written by a person, and an interface
+full of them reads as machine-made. Use a comma, a colon, a semicolon,
+parentheses, or two sentences. Do not reach for a bare ASCII hyphen: a hyphen
+between clauses reads as a typo, not as punctuation.
+
+**Banned, everywhere:**
+
+| Char | Codepoint | Name |
+|---|---|---|
+| `—` | U+2014 | em dash |
+| `―` | U+2015 | horizontal bar |
+
+**Allowed only as a range operator**, never as sentence punctuation:
+
+| Char | Codepoint | Yes | No |
+|---|---|---|---|
+| `–` | U+2013 | `0–100`, `2–10`, `{min}–{max}`, `$500–$2,000` | `Saved — try again` |
+
+`−` (U+2212) is for arithmetic only, and only where a real minus sign is meant
+(a negative number on screen). Write ASCII `-` in code.
+
+**`─` (U+2500) is NOT a dash.** It draws the section banners in the CSS and in the
+larger components, ~830 of them. Any regex you write must name U+2014 and U+2013
+explicitly. A character class like "all Unicode dashes" destroys every banner in
+the repo, and `/* ── Main area — everything below ── */` needs the middle
+character replaced and the outer two left alone.
+
+### Hard ban vs advisory
+
+**Hard ban, in anything a person outside the team reads:**
+
+- **Every frontend component in `apps/web`.** Text typed straight into JSX is
+  copy, exactly like a catalog entry, and it is the easiest kind to miss because
+  it belongs to no catalog and no reviewer greps for it. That includes the text
+  between tags, the attributes a person or a screen reader hears (`title`,
+  `aria-label`, `alt`, `placeholder`), and any string literal in the component.
+  This is not hypothetical: the webhook health cell shipped a bare `—` as its
+  empty state, hardcoded in JSX, and no gate saw it. Prefer a catalog key over
+  hardcoded text anyway (invariant 8), but a dash in a component is a hard ban
+  whether or not the string should have been in the catalog.
+- Both message catalogs. There are two: `packages/shared/src/i18n/index.ts` and
+  `apps/web/app/admin/forms/[id]/edit/_components/builder-messages.ts`. A sweep
+  that only knows about the first one misses a third of the UI copy.
+- Copy shipped as string literals: email subjects and bodies
+  (`packages/notifications/src/templates.ts`), seed and template form content
+  (`packages/db/src/demo-form.ts`, `packages/db/src/templates/*`,
+  `packages/db/src/seed.ts`), builder templates
+  (`apps/web/app/admin/forms/[id]/edit/_components/templates.ts`), OpenAPI
+  descriptions (`apps/api/src/openapi.ts`), CRM payload text
+  (`packages/destinations/src/adapters/*`).
+- Page metadata: `title`, `description`, OpenGraph, `alt`, `aria-label`,
+  `placeholder`. A screen reader announces an em dash separator out loud.
+- Anything thrown, logged, echoed, or returned as an error `reason`. The
+  integrations panel renders delivery failures verbatim, so an `OutboxSkipError`
+  message is on-screen copy.
+- Every `.md` at the repo root and in `docs/`, `README.md`, `NOTICE`, every
+  `package.json` `description`, and **every file in `.changeset/`**. Changesets
+  become the public CHANGELOG and cannot be revised afterwards.
+
+**Advisory in code comments and test titles.** Do not write new ones. Do not open
+a PR that only rewrites old ones: that is ~1,500 lines across ~240 files, it
+collapses 137 commits' worth of `git blame` on the most explanatory lines in the
+repo, and roughly half the rewrites read no better than the original. Clean them
+when you are already editing the surrounding lines. If a sweep is ever done
+anyway, add `.git-blame-ignore-revs` in the same PR.
+
+**Exempt:** `packages/db/migrations/**`. Migrations are append-only, so a comment
+there is frozen history rather than editable prose.
+
+### Traps that have already bitten
+
+- **Two dashes are written as the escape `—`**, not as the glyph. A search
+  for the literal character reports those strings clean when they are not.
+- **`admin.submissions.na` WAS the single character `'—'`**, the empty-cell
+  fallback in the submissions table, and a rule like `s/\s*—\s*/, /` turned
+  every empty cell into `, `. It is `''` now: the table draws row borders, so an
+  empty cell already reads as empty. The webhook health cell had the same glyph
+  hardcoded in JSX and got the same treatment.
+- **`admin.integrations.autosavedPartial` ENDED with a dash** used as a joiner:
+  the caller does `` `${m.autosavedPartial} ${detail ?? ''}`.trim() ``. Only a
+  period was safe there; a trailing comma or colon breaks the no-detail branch.
+- **An error message thrown from a package can be on-screen copy.**
+  `ONE_HUBSPOT_DESTINATION_MESSAGE` lives in `packages/types`, is returned as an
+  API error `message`, and `question-hubspot-actions.ts` hands it to the editor
+  verbatim. Grep for where a message SURFACES, not for where it is defined.
+- **A JSDoc that quotes a UI string goes stale on its own schedule.** One read
+  `"Logic {emdash} {question}"` long after the copy became `"Logic: {question}"`,
+  so the comment was the only dash left and it documented copy that no longer
+  existed.
+- **Spanish uses tight spacing** (`—UTMs, … envío—`) where English spaces the
+  dash. A regex written as `/ — /` half-fixes the catalog and leaves `es` dashed.
+- **Seven hits sit between placeholders with no whitespace** (`{min}–{max}`). A
+  whitespace-anchored regex misses all of them; a greedy one turns a range into
+  a list and nothing catches it, because both are valid strings.
+- **The `es` catalog is already ~22% cleaner than `en`.** Someone started this
+  pass and stopped. Where a Spanish string is already dash-free, it is the spec
+  for the English rewrite, not the other way round. Never "restore parity" by
+  re-adding a dash to `es`.
+- **The compiler cannot catch any of this.** `FormsMessages` enforces key parity,
+  not value parity, so `tsc` stays green whether you fix one locale or both.
+
+### Check before you push
+
+```bash
+bash scripts/dash-check.sh
+```
+
+The check has three scopes, because the three live at different counts.
+
+**Components block, on the whole tree, always.** Every `.ts`/`.tsx` under
+`apps/web/app`, `apps/web/components` and `apps/web/lib` is read as a WHOLE LINE
+once comments are removed, so JSX text and `title`/`aria-label`/`alt` attributes
+are covered, not just quoted strings. Those files were uncovered until the gate
+had already let a hardcoded `—` reach the screen.
+
+Reading whole lines is what forces the block-comment state machine in the
+script: a `{/* ... */}` continuation line starts with neither `*` nor `//`, so
+no per-line filter can tell it from copy, and roughly 140 comment lines in
+`apps/web` look exactly like on-screen text without it.
+
+**Copy blocks, on the whole tree, always.** The string catalogs, email
+templates, seed and template form content, OpenAPI descriptions and CRM payload
+text are at zero occurrences and stay there. Only QUOTED text counts in these,
+because their comments outnumber their strings about five to one.
+
+**Docs block only on the lines a PR adds.** `.changeset/` and `docs/` carry
+roughly 320 older dashes, most of them in changesets that already shipped as
+public CHANGELOG entries and cannot be revised. A whole-tree gate on those could
+never be switched on, so CI passes the PR's base and the script charges the PR
+for what it adds. The count falls on its own; nobody has to sweep 320 lines
+first. Run it with a base to see exactly what CI will say:
+
+```bash
+bash scripts/dash-check.sh origin/develop
+```
+
+**What the check does NOT read: comments and `*.spec.ts` titles.** Both are
+advisory per the rule above, in every scope, so a dashed code comment or test
+title will never fail CI. That is a deliberate ceiling, not an oversight: the
+repo holds ~1,500 dashes in comments, and a gate that blocked on them would be
+switched off in a week. It also means the check is not a substitute for reading
+your own diff.
+
+Two more things it cannot see. `apps/api` route handlers are only covered where
+a string is a known copy path, so a message you invent and return as an error
+`reason` can still reach the integrations panel unchecked. And no static gate
+reaches copy that is already PERSISTED: form configs and saved notification
+templates carry their text in stored JSON, where only a migration can fix it. Note what is deliberately NOT done there: code spans are
+stripped before matching in docs but never in code, because stripping them in
+code would erase template literals, and a dashed template literal is copy.
+
+**Write the pattern as an alternation, never as a bracket class.** CI runs with
+`LANG` unset, and in the C locale grep degrades a bracket class of multi-byte
+characters into the set of their bytes. `[emdash horizontalbar]` becomes
+`{E2,80,94,95}` and matches every General Punctuation character, since they all
+begin with byte `E2`. That reported arrows, typographic apostrophes, ellipses
+and bullets as em dashes: 260 false positives out of 586, which is why the check
+sat outside CI for a while.
+
 ## Review gates a PR must pass
 
 - **DCO sign-off** on every commit: `git commit -s` (adds `Signed-off-by:`). Not a

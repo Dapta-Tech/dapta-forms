@@ -131,6 +131,12 @@ export interface FormsMessages {
         submissions: string;
         analytics: string;
         integrations: string;
+        /**
+         * The door to the wider platform (agents), an EXTERNAL link. Rendered
+         * only when the deployment configures a platform URL, so a fork's rail
+         * never carries a dead item.
+         */
+        agents: string;
       };
       /** The bottom-left profile button (avatar + name) and its menu. */
       profileMenu: {
@@ -1609,9 +1615,9 @@ export interface FormsMessages {
 
 export const en: FormsMessages = {
   growth: {
-    madeWith: 'Powered by Dapta',
+    madeWith: 'Made with Dapta Forms',
     ctaQuestion: 'Want your own form?',
-    ctaAction: 'Get Dapta Forms — free',
+    ctaAction: 'Get Dapta Forms, free',
     seoForm: 'Fill out {name} online.',
     shareCardSteps: '{count} questions',
     shareCardUntitled: 'Form',
@@ -1625,7 +1631,7 @@ export const en: FormsMessages = {
     thankYouTitle: 'Thank you!',
     thankYouBody: 'Your answers were recorded.',
     ctaQuestion: 'Want your own form?',
-    ctaAction: 'Get Dapta Forms — free',
+    ctaAction: 'Get Dapta Forms, free',
     progressLabel: 'Step {current} of {total}',
     verticalProgress: '{answered} of {total} answered',
     verticalErrors: 'Check the highlighted questions above.',
@@ -1658,7 +1664,7 @@ export const en: FormsMessages = {
       too_low: 'Value is too low.',
       too_high: 'Value is too high.',
       option: 'Choose one of the available options.',
-      submit: 'Could not submit — please try again.',
+      submit: 'Could not submit. Please try again.',
     },
     phonePicker: {
       countryLabel: 'Select country code',
@@ -1696,6 +1702,7 @@ export const en: FormsMessages = {
         submissions: 'Submissions',
         analytics: 'Analytics',
         integrations: 'Integrations',
+        agents: 'Dapta Agents',
       },
       profileMenu: {
         label: 'Account menu',
@@ -1706,7 +1713,7 @@ export const en: FormsMessages = {
         trigger: 'Switch product',
         menuLabel: 'Dapta products',
         eyebrow: 'Dapta',
-        dapta: 'Dapta AI',
+        dapta: 'Dapta Agents',
         calendars: 'Dapta Calendars',
         opensNewTab: '(opens in a new tab)',
       },
@@ -1742,7 +1749,7 @@ export const en: FormsMessages = {
       createForm: 'Create a form',
       createFormDesc: 'Build a new form and share its link.',
       branding: 'Branding & style',
-      brandingDesc: 'Your brand kit — logo, colors and the public look.',
+      brandingDesc: 'Your brand kit: logo, colors and the public look.',
       integrations: 'Integrations & webhooks',
       integrationsDesc: 'Send responses to your CRM or a webhook.',
       analytics: 'Analytics',
@@ -1751,11 +1758,11 @@ export const en: FormsMessages = {
     brandKit: {
       title: 'Brand kit',
       subtitle:
-        'Your workspace look — logo, colors, font and controls. New forms start with it; you can apply it to existing forms below.',
+        'Your workspace look: logo, colors, font and controls. New forms start with it; you can apply it to existing forms below.',
       save: 'Save brand kit',
       saving: 'Saving…',
       saved: 'Brand kit saved.',
-      saveOffline: 'Can’t reach the server — check your connection and try again.',
+      saveOffline: 'Can’t reach the server. Check your connection and try again.',
       adminOnly: 'Only an admin or owner can edit the brand kit.',
       logoTitle: 'Logo',
       logoSubtitle: 'Shown on covers and headers unless a form sets its own.',
@@ -1769,7 +1776,7 @@ export const en: FormsMessages = {
       clientLogoNamePlaceholder: 'Client name',
       colorsTitle: 'Colors',
       colorsSubtitle: 'Setting a background locks the light/dark theme of forms the kit is applied to.',
-      notSet: 'Not set — each form keeps its own',
+      notSet: 'Not set: each form keeps its own',
       clearAxis: 'Clear',
       typographyTitle: 'Typography',
       typographySubtitle: 'The typeface forms render with.',
@@ -1791,7 +1798,7 @@ export const en: FormsMessages = {
       revert: 'Undo',
       reverting: 'Undoing…',
       revertedToast: 'Brand kit apply undone.',
-      emptyForms: 'No forms yet — the kit will style your first one automatically.',
+      emptyForms: 'No forms yet. The kit will style your first one automatically.',
       updatedAt: 'Last saved {date}',
     },
     picker: {
@@ -1958,7 +1965,7 @@ export const en: FormsMessages = {
     login: {
       title: 'Sign in',
       subtitle:
-        'Open-source forms. This build uses the local dev provider — enter your email to sign in as yourself.',
+        'Open-source forms. This build uses the local dev provider: enter your email to sign in as yourself.',
       continue: 'Continue',
       footnote:
         'Local mode: any email signs you into its own workspace. Configure WorkOS in your deployment for real accounts.',
@@ -2003,20 +2010,20 @@ export const en: FormsMessages = {
       save: 'Save',
       saving: 'Saving…',
       saved: 'Saved.',
-      saveError: 'Could not save — please try again.',
+      saveError: 'Could not save. Please try again.',
       saveErrorReason: 'Couldn’t save: {reason}',
-      saveInvalid: 'Can’t save yet — {reason}',
+      saveInvalid: 'Can’t save yet: {reason}',
       saveOffline:
-        'Can’t reach the server — your changes are kept and saving will retry automatically.',
+        'Can’t reach the server. Your changes are kept and saving will retry automatically.',
       resultsHelp: {
         outcomeHeadingHelp:
           'Shown to respondents as the heading on the thank-you screen when their score lands in this range.',
         outcomeHeadingHelp2:
-          'This is the big line on the thank-you screen for this range — not an internal name for it. Write it as something a respondent should read.',
+          'This is the big line on the thank-you screen for this range. Not an internal name for it. Write it as something a respondent should read.',
         redirectHelp2:
-          'If you set this, the thank-you screen above is never shown for this range — the respondent goes straight to the URL. Leave it empty to show the screen.',
+          'If you set this, the thank-you screen above is never shown for this range. The respondent goes straight to the URL. Leave it empty to show the screen.',
         outcomesInert:
-          'Scoring is off, so no range can be reached — everyone sees the form’s own thank-you screen. Anything set on a range is skipped too, including its redirect and its scheduling handoff. Your ranges are kept; turn scoring on to use them again.',
+          'Scoring is off, so no range can be reached. Everyone sees the form’s own thank-you screen. Anything set on a range is skipped too, including its redirect and its scheduling handoff. Your ranges are kept; turn scoring on to use them again.',
         redirectDelayLabel: 'Show the thank-you first (ms)',
         redirectDelayHelp:
           'How long the thank-you screen stays up before the redirect happens. 0 leaves immediately.',
@@ -2042,7 +2049,7 @@ export const en: FormsMessages = {
         headlineHint: 'Leave empty for the default “Thank you”.',
         headlineHelp:
           'The big line on the thank-you screen. A score range with its own heading replaces this one for people who land in that range.',
-        headlinePlaceholder: 'Thanks — we got it',
+        headlinePlaceholder: 'Thanks. We got it',
         body: 'Message',
         bodyHint: 'Use [field] to insert an answer. Leave empty for the default text.',
         bodyPlaceholder: 'We’ll be in touch shortly.',
@@ -2107,8 +2114,8 @@ export const en: FormsMessages = {
         sliderStep: 'Step',
         sliderDefault: 'Default',
         sliderDefaultOutOfRange: 'Default sits outside {min}–{max}. Respondents will see {shown} instead.',
-        sliderMaxBelowMin: 'Max is below Min — the slider has nothing to move along.',
-        sliderNoTravel: 'Min and Max are the same, so the handle cannot move — respondents can only answer {min}.',
+        sliderMaxBelowMin: 'Max is below Min. The slider has nothing to move along.',
+        sliderNoTravel: 'Min and Max are the same, so the handle cannot move. Respondents can only answer {min}.',
         sliderStepInvalid: 'Step must be greater than 0. Browsers ignore anything else and move in steps of 1.',
       },
       options: {
@@ -2128,7 +2135,7 @@ export const en: FormsMessages = {
         iconClear: 'Clear',
         iconEmpty: 'Pick an icon',
         iconLettersHint: 'Up to two letters, e.g. HS for HubSpot. Empty falls back to the label’s initials.',
-        iconImageHint: 'An https:// image URL. Logos keep their shape — they are fit inside a box, not cropped to a circle.',
+        iconImageHint: 'An https:// image URL. Logos keep their shape. They are fit inside a box, not cropped to a circle.',
         iconUrlInvalid: 'This URL protocol is not allowed for images.',
         emojiGroups: {
           reactions: 'Reactions',
@@ -2143,7 +2150,7 @@ export const en: FormsMessages = {
         empty: 'No options yet.',
         labelHelp: 'What respondents read on the option. Safe to reword at any time.',
         valueHelp:
-          'What gets stored in the response and sent to HubSpot or a webhook. Keep it stable — changing it breaks past answers and any mapping that points at it.',
+          'What gets stored in the response and sent to HubSpot or a webhook. Keep it stable: changing it breaks past answers and any mapping that points at it.',
         importer: {
           open: 'Import options',
           title: 'Import options from a spreadsheet',
@@ -2166,7 +2173,7 @@ export const en: FormsMessages = {
           summaryTruncated: '{n} over the limit',
           submit: 'Import {n} options',
           replaceIconsNote: 'Replacing removes the icons your current options carry.',
-          noScoresNote: 'No scores in this paste — this question keeps its current points.',
+          noScoresNote: 'No scores in this paste. This question keeps its current points.',
           cancel: 'Cancel',
         },
       },
@@ -2178,8 +2185,8 @@ export const en: FormsMessages = {
         max: 'To',
         points: 'Points',
         remove: 'Remove range',
-        empty: 'No scoring ranges — the slider does not score.',
-        unreachable: 'Outside the slider’s {min}–{max} range — this range can never award points.',
+        empty: 'No scoring ranges. The slider does not score.',
+        unreachable: 'Outside the slider’s {min}–{max} range. This range can never award points.',
         overlapped: 'Overlaps a range above it. When both match, the one listed first wins.',
       },
       logic: {
@@ -2193,9 +2200,9 @@ export const en: FormsMessages = {
         clear: 'Clear',
         noPriorFields: 'Add a step before this one to branch on its answer.',
         scoreField: 'Score so far',
-        scoreHint: 'The points collected by the questions above this one. This question\u2019s own answer is not counted \u2014 it has not been given yet.',
+        scoreHint: 'The points collected by the questions above this one. This question\u2019s own answer is not counted, because it has not been given yet.',
         scoreDead:
-          'This rule reads the score, but no question above this one can add points \u2014 the score is always 0 here, so it can never change what respondents see. Clear it, or move a scored question above.',
+          'This rule reads the score, but no question above this one can add points: the score is always 0 here, so it can never change what respondents see. Clear it, or move a scored question above.',
         hint: 'Show or hide this question based on an earlier answer.',
         hideNone: 'Never hidden',
         personalEmailOnly: 'Personal email only',
@@ -2210,15 +2217,15 @@ export const en: FormsMessages = {
         betweenMin: 'Min',
         betweenMax: 'Max',
         contradiction:
-          'These show and hide rules cancel out — this question could never appear. Adjust one of them.',
+          'These show and hide rules cancel out. This question could never appear. Adjust one of them.',
         narrow:
           'The hide rule cuts into the show rule: this question only appears for {lo}–{hi}. If that is what you meant, ignore this.',
         neverShowMissing:
-          'This rule has no value yet, so it never matches — the question is hidden from everyone until you fill it in.',
+          'This rule has no value yet, so it never matches. The question is hidden from everyone until you fill it in.',
         neverShowEmpty:
-          'Min is above Max, so no answer can fall in this range — the question is hidden from everyone.',
+          'Min is above Max, so no answer can fall in this range. The question is hidden from everyone.',
         neverShowNoValues:
-          'No options are selected, so this rule never matches — the question is hidden from everyone.',
+          'No options are selected, so this rule never matches. The question is hidden from everyone.',
         hideRuleInert: 'This hide rule is incomplete, so it never applies. Finish it or clear it.',
       },
       variants: {
@@ -2230,23 +2237,23 @@ export const en: FormsMessages = {
         matchValue: 'When answer is',
         matchValuePlaceholder: 'e.g. founder',
         matchValueMulti: 'Tick every option this version answers to',
-        matchValueMultiEmpty: 'Pick at least one option — an empty row never matches.',
-        matchValueMultiLast: 'Keep at least one option — a row with none never matches.',
+        matchValueMultiEmpty: 'Pick at least one option. An empty row never matches.',
+        matchValueMultiLast: 'Keep at least one option. A row with none never matches.',
         matchValueMultiDuplicate: 'Another version already answers to that exact combination.',
         matchValueMultiOrphaned: 'This row still matches on {values}, which the question above no longer offers.',
-        matchValueMultiExact: 'Fires only when the respondent picks exactly these options — no more, no fewer.',
+        matchValueMultiExact: 'Fires only when the respondent picks exactly these options. No more, no fewer.',
         variantQuestion: 'Ask instead',
         fallback: 'Fallback (any other answer)',
         remove: 'Remove variant',
         interpolationHint: 'Type @ (or [field]) to insert an earlier answer into the question.',
-        scopeNote: 'This only changes the question’s title — not its options. To send people to a different question, use Logic.',
+        scopeNote: 'This only changes the question’s title. Not its options. To send people to a different question, use Logic.',
         sliderLabel: 'Slider unit label',
         tokenPickerLabel: 'Insert a previous answer',
-        tokenPickerEmpty: 'No earlier answers yet — this is the first question.',
+        tokenPickerEmpty: 'No earlier answers yet. This is the first question.',
         tokenPickerNoMatch: 'No matching fields.',
-        tokenWarnLater: '“{token}” is asked after this step — it will be empty here.',
+        tokenWarnLater: '“{token}” is asked after this step. It will be empty here.',
         tokenWarnUnknown: '“{token}” doesn’t exist in this form.',
-        tokenWarnRaw: '“{token}” stays as literal text — only {fixed} fills in an answer. Pick the field from the list to insert it.',
+        tokenWarnRaw: '“{token}” stays as literal text: only {fixed} fills in an answer. Pick the field from the list to insert it.',
       },
       behavior: {
         title: 'Behavior',
@@ -2256,10 +2263,10 @@ export const en: FormsMessages = {
         revealHint:
           'Adds a reveal card right after this question. Turning it off removes that card. Edit its copy by selecting the card.',
         hidden: 'Hidden question',
-        hiddenHint: 'Not shown to respondents — its answer is filled from a matching URL parameter (?key=value).',
+        hiddenHint: 'Not shown to respondents. Its answer is filled from a matching URL parameter (?key=value).',
         fieldKey: 'Field key',
         fieldKeyHint:
-          'The name this answer is stored under — the URL parameter that prefills it, and what you type between brackets to recall it in a later question. Letters, numbers and underscores, up to 64 characters.',
+          'The name this answer is stored under. The URL parameter that prefills it, and what you type between brackets to recall it in a later question. Letters, numbers and underscores, up to 64 characters.',
         fieldKeyTaken: 'Another question already uses that key.',
         fieldKeyInvalid: 'A key needs at least one letter or number.',
         fieldKeyUrlExample: 'Prefill it with ?{key}=value',
@@ -2278,7 +2285,7 @@ export const en: FormsMessages = {
       partial: {
         title: 'Partial submissions',
         hint: 'Save a partial submission once a question is completed, even if the respondent never finishes.',
-        none: 'Off — only save completed submissions',
+        none: 'Off: only save completed submissions',
         afterStep: 'After question {n}',
       },
       layout: {
@@ -2288,9 +2295,9 @@ export const en: FormsMessages = {
         slidesHint: 'One question per screen, step by step.',
         vertical: 'One page',
         verticalHint:
-          'Every question on a single page with one Submit. Logic still applies live — questions show and hide as answers change.',
+          'Every question on a single page with one Submit. Logic still applies live: questions show and hide as answers change.',
         coverCtaNote:
-          'On a one-page form the cover renders as a header above the questions — there is no Start button, so its text is not used.',
+          'On a one-page form the cover renders as a header above the questions: there is no Start button, so its text is not used.',
         endReveal: 'Reveal screen before results',
         endRevealHint:
           'Plays once, after Submit and before the result. Edit its copy by selecting the card at the end of the question list.',
@@ -2304,7 +2311,7 @@ export const en: FormsMessages = {
         bannerScopeForm: 'Every screen',
         bannerScopeCover: 'Cover only',
         bannerColor: 'Banner color',
-        bannerColorHint: 'Empty uses a soft tint of the accent — set a color to make the strip carry.',
+        bannerColorHint: 'Empty uses a soft tint of the accent. Set a color to make the strip carry.',
         bannerTextColor: 'Banner text color',
         bannerSize: 'Banner height',
         bannerSizeSm: 'Slim',
@@ -2371,14 +2378,14 @@ export const en: FormsMessages = {
         copyLink: 'Copy link',
         copied: 'Copied',
         openForm: 'Open',
-        inert: 'Preview only — nothing here is submitted.',
+        inert: 'Preview only. Nothing here is submitted.',
         previous: 'Previous screen',
         next: 'Next screen',
       },
       design: {
         publicTitle: 'Form title',
         publicTitleHint:
-          'What visitors see — the browser tab, share previews, and the cover heading. Leave empty to use the form\u2019s internal name.',
+          'What visitors see. The browser tab, share previews, and the cover heading. Leave empty to use the form\u2019s internal name.',
         presetsTitle: 'Theme',
         presetsSubtitle: 'A starting point you can edit. Pick one, then change anything below.',
         presetsCustom: 'Custom',
@@ -2388,7 +2395,7 @@ export const en: FormsMessages = {
         foreground: 'Text',
         accent: 'Accent',
         themeLockHint:
-          'Choosing a background fixes the form to this palette — it stops following the visitor’s light or dark setting.',
+          'Choosing a background fixes the form to this palette. It stops following the visitor’s light or dark setting.',
         backgroundStyle: 'Background style',
         bgSolid: 'Solid',
         bgGradient: 'Gradient',
@@ -2400,9 +2407,9 @@ export const en: FormsMessages = {
         contrast: 'Contrast',
         contrastText: 'Text on background',
         contrastButton: 'Label on button',
-        contrastFail: 'Below AA — hard to read.',
+        contrastFail: 'Below AA: hard to read.',
         accentLowContrast:
-          'Your accent is {ratio}:1 against the background. No text uses it, so nothing becomes unreadable — but a selected option and the button may be hard to pick out.',
+          'Your accent is {ratio}:1 against the background. No text uses it, so nothing becomes unreadable: but a selected option and the button may be hard to pick out.',
         suggestApply: 'Use {color}',
         typographyTitle: 'Typography',
         typographySubtitle: 'All eight faces are self-hosted, so the form loads nothing from a font CDN.',
@@ -2471,7 +2478,7 @@ export const en: FormsMessages = {
         trackingSubtitle:
           'Measure visits and conversions on this form’s public page. Each tag loads only when its ID is set.',
         trackingDraftNote:
-          'These IDs are staged with the rest of your draft — click Publish to put them on the live form. Integrations above save to the live form immediately.',
+          'These IDs are staged with the rest of your draft: click Publish to put them on the live form. Integrations above save to the live form immediately.',
         gtmLabel: 'Google Tag Manager ID',
         gtmHelp: 'Loads your GTM container on the form page so your tags fire.',
         metaLabel: 'Meta Pixel ID',
@@ -2564,7 +2571,7 @@ export const en: FormsMessages = {
       prev: 'Previous',
       next: 'Next',
       showing: '{from}–{to} of {total}',
-      na: '—',
+      na: '',
       error: 'Couldn’t load submissions.',
       retry: 'Try again',
     },
@@ -2576,11 +2583,11 @@ export const en: FormsMessages = {
       saving: 'Saving…',
       saved: 'Integrations saved.',
       autosaved: 'Changes saved automatically',
-      autosavedPartial: 'Saved everything except the webhook —',
+      autosavedPartial: 'Saved everything except the webhook.',
       saveError: 'Could not save integrations.',
       saveOffline:
-        'Can’t reach the server — your changes are kept and saving will retry automatically.',
-      saveRetrying: 'Connection lost — retrying…',
+        'Can’t reach the server. Your changes are kept and saving will retry automatically.',
+      saveRetrying: 'Connection lost: retrying…',
       loadError: 'Could not load integrations.',
       enabled: 'Enabled',
       disabled: 'Disabled',
@@ -2592,7 +2599,7 @@ export const en: FormsMessages = {
       webhookSecret: 'Signing secret (optional)',
       webhookSecretHelp:
         'When set, each request is signed with HMAC-SHA256 in the X-Forms-Signature header so you can verify it.',
-      webhookSecretSetPlaceholder: 'A secret is set — leave blank to keep it, or type a new one.',
+      webhookSecretSetPlaceholder: 'A secret is set. Leave blank to keep it, or type a new one.',
       hubspotTitle: 'HubSpot',
       hubspotDesc: 'Upsert the respondent as a contact and attach a note on completed submissions.',
       hubspotDisabled:
@@ -2608,16 +2615,16 @@ export const en: FormsMessages = {
       createNoteHelp: 'Attaches a note with the form name and score to the contact.',
       formActivity: 'Record a form submission in HubSpot',
       formActivityHelp:
-        'Creates a matching form in your portal, so each completed submission shows on the contact as a form submission activity listing the properties it set — not just a note. Needs the forms and form-submissions-write scopes on your private app.',
+        'Creates a matching form in your portal, so each completed submission shows on the contact as a form submission activity listing the properties it set. Not just a note. Needs the forms and form-submissions-write scopes on your private app.',
       formActivityError: 'HubSpot could not set this up: {reason}',
       selectProperty: 'Select a property…',
-      noProperty: '— none —',
+      noProperty: '(none)',
       addMapping: 'Add mapping',
       remove: 'Remove',
       stepKey: 'Form step key',
       property: 'HubSpot property',
       emptyMappings: 'No mappings yet.',
-      valueMaps: 'Value maps — translate form answers to CRM values',
+      valueMaps: 'Value maps: translate form answers to CRM values',
       valueMapsHelp:
         'Rewrite specific answers into the exact values your HubSpot picklists expect. Answers without a translation are sent unchanged.',
       valueMapsExample: 'E.g. when the answer is “Sales”, HubSpot receives “sales”.',
@@ -2629,10 +2636,10 @@ export const en: FormsMessages = {
       scorePropertyHelp:
         'Receives the total score as a number, on completed submissions only.',
       datePropertyHelp:
-        'Receives the submission date. HubSpot date properties store midnight UTC, so the time of day is not kept — a webhook gets the full timestamp instead.',
+        'Receives the submission date. HubSpot date properties store midnight UTC, so the time of day is not kept. A webhook gets the full timestamp instead.',
       outcomeProperty: 'Outcome property',
       outcomePropertyHelp:
-        'Receives the HEADING you wrote on the matching score range in Results — the same text the respondent sees. Only on completed submissions, and only when a range matches; with scoring off nothing is sent.',
+        'Receives the HEADING you wrote on the matching score range in Results. The same text the respondent sees. Only on completed submissions, and only when a range matches; with scoring off nothing is sent.',
       staticProperties: 'Static properties',
       staticPropertiesHelp:
         'Fixed values stamped on every completed submission (e.g. an opt-in flag). They never overwrite a mapped answer.',
@@ -2641,7 +2648,7 @@ export const en: FormsMessages = {
       emptyStaticProperties: 'No static properties yet.',
       inferCompany: 'Infer company from email',
       inferCompanyHelp:
-        'When the respondent uses a work email, fill the company and website properties from its domain — free-mail domains (gmail, outlook…) are skipped, and mapped values are never overwritten.',
+        'When the respondent uses a work email, fill the company and website properties from its domain: free-mail domains (gmail, outlook…) are skipped, and mapped values are never overwritten.',
       bookingSync: 'Booking sync',
       bookingSyncHelp:
         'When a respondent books a meeting from a scheduler step, stamp these contact properties with the booking facts. Leave a field blank to skip it.',
@@ -2657,20 +2664,20 @@ export const en: FormsMessages = {
       bookingDateTimezoneHelp:
         'IANA timezone the booking day is computed in (e.g. America/Bogota). Blank = UTC.',
       bookingDateTimezonePlaceholder: 'America/Bogota',
-      bookingDateTimezoneInvalid: 'Not a timezone name we recognise — the day will be computed in UTC.',
+      bookingDateTimezoneInvalid: 'Not a timezone name we recognise. The day will be computed in UTC.',
       extraHubspotTitle: 'This form has a second HubSpot connection',
       extraHubspotBody:
-        'This screen only edits the first one, so the other is invisible here — and any edit on this tab saves right away and deletes it, along with any mappings it holds. To send one answer to several properties, add the properties to the same question above instead.',
+        'This screen only edits the first one, so the other is invisible here: and any edit on this tab saves right away and deletes it, along with any mappings it holds. To send one answer to several properties, add the properties to the same question above instead.',
       carriedWebhooksTitle: 'This form has {count} more webhook(s)',
       carriedWebhooksBody:
-        'This card edits the first one. The rest keep running exactly as they are and are saved untouched — they are just not editable from here. You can see all of them under Integrations.',
+        'This card edits the first one. The rest keep running exactly as they are and are saved untouched. They are just not editable from here. You can see all of them under Integrations.',
       connectPromptTitle: 'Connect HubSpot to map this form',
       connectPromptBody:
         'HubSpot isn’t connected for your account yet. Connect it once, then come back to map each question to a contact property.',
       connectPromptCta: 'Go to Connections',
       emailRequiredTitle: 'This form has no email address to sync',
       emailRequiredBody:
-        'HubSpot matches a contact by email address — it updates the one it finds, or creates a new one. A submission with no address arrives with nothing to identify, so no contact is created and the lead is not synced. Add an email question, or a scheduler: Calendly collects the invitee’s address when someone books.',
+        'HubSpot matches a contact by email address. It updates the one it finds, or creates a new one. A submission with no address arrives with nothing to identify, so no contact is created and the lead is not synced. Add an email question, or a scheduler: Calendly collects the invitee’s address when someone books.',
       emailRequiredCta: 'Add an email question',
       emailFromScheduler:
         'Contacts will be keyed on the address Calendly collects when someone books. Answers only reach HubSpot once a meeting is booked.',
@@ -2678,17 +2685,17 @@ export const en: FormsMessages = {
       hubspotHowBody:
         'Every submission is matched to a contact by email address: an existing contact is updated, and a new one is created when there is no match. A form that never asks for an email cannot be synced.',
       hubspotHowBodyScheduler:
-        'Every submission is matched to a contact by email address: an existing contact is updated, and a new one is created when there is no match. This form does not ask for one — the booking collects it, so nothing here should be mapped to “email”.',
+        'Every submission is matched to a contact by email address: an existing contact is updated, and a new one is created when there is no match. This form does not ask for one. The booking collects it, so nothing here should be mapped to “email”.',
       schedulerDisconnected:
-        'Calendly is not connected for this account, so the invitee’s address cannot be read back and nothing will reach HubSpot — the booking still succeeds, which is why this fails quietly. Connect Calendly in Connections.',
+        'Calendly is not connected for this account, so the invitee’s address cannot be read back and nothing will reach HubSpot. The booking still succeeds, which is why this fails quietly. Connect Calendly in Connections.',
       mapQuestionsHelpScheduler:
-        'Send each answer to a HubSpot contact property. Do not map anything to “email” — the booking supplies it, and a mapping here takes over and stops the sync.',
+        'Send each answer to a HubSpot contact property. Do not map anything to “email”. The booking supplies it, and a mapping here takes over and stops the sync.',
       emailMappingConflictTitle: 'This mapping stops the sync',
       emailMappingConflictBody:
         'The booking already supplies the address. A question mapped to “email” takes over as the contact key, so answers stop reaching HubSpot after a booking. Remove the mapping on: {keys}.',
       pingWebhook: 'Send test',
       pingSending: 'Sending…',
-      pingOk: 'Test delivered — your endpoint accepted it.',
+      pingOk: 'Test delivered. Your endpoint accepted it.',
       pingFailed: 'Test failed: {reason}',
       pingNeedsUrl: 'Save a webhook URL first.',
       pingHelp:
@@ -2699,18 +2706,18 @@ export const en: FormsMessages = {
       pingMethodNotAllowed: 'It does not accept POST on this URL.',
       pingUnsupportedMedia: 'It refused the content type.',
       pingRejectedBody: 'It read the request and rejected the body.',
-      pingUnauthorized: 'It refused the request as unauthorised — check any token or secret it expects.',
+      pingUnauthorized: 'It refused the request as unauthorised. Check any token or secret it expects.',
       pingNotFound: 'There is nothing at that URL.',
-      pingRateLimited: 'It is rate-limiting us — try again shortly.',
+      pingRateLimited: 'It is rate-limiting us. Try again shortly.',
       pingServerError: 'It failed on its side.',
       pingRedirect: 'It answered with a redirect, which we never follow. Use the final URL directly.',
       pingBlocked:
         'Blocked before sending: that address is private, reserved, or internal, and we never post to those.',
-      pingUnreachable: 'Nothing answered at that URL — check the host is reachable and not timing out.',
+      pingUnreachable: 'Nothing answered at that URL. Check the host is reachable and not timing out.',
       pingUnknown: 'The delivery failed for a reason we could not identify.',
       connectedBadge: 'HubSpot connected',
       propertiesUnavailable:
-        'HubSpot properties are temporarily unavailable — you can still type a property name.',
+        'HubSpot properties are temporarily unavailable, but you can still type a property name.',
       mapQuestions: 'Map questions',
       mapQuestionsHelp: 'Send each answer to a HubSpot contact property. One question should map to “email”.',
       yourQuestion: 'Your question',
@@ -2720,18 +2727,18 @@ export const en: FormsMessages = {
       autoMapNone: 'No new matches to suggest.',
       mapElements: 'Map form elements',
       mapElementsHelp:
-        'Send captured metadata — UTMs, lead score, outcome, and submitted date — to HubSpot properties.',
+        'Send captured metadata (UTMs, lead score, outcome, and submitted date) to HubSpot properties.',
       customMappings: 'Custom field mappings',
       customMappingsHelp:
-        'Send an extra piece of form data to a HubSpot property — useful for hidden fields or UTMs.',
+        'Send an extra piece of form data to a HubSpot property: useful for hidden fields or UTMs.',
       keyGroupQuestions: 'Form questions',
       keyGroupSystem: 'System fields',
       keyCustomOption: 'Custom key…',
-      inviteeName: 'Booking — full name',
-      inviteeFirstName: 'Booking — first name',
-      inviteeLastName: 'Booking — last name',
-      inviteePhone: 'Booking — phone',
-      bookingStart: 'Booking — meeting time',
+      inviteeName: 'Booking: full name',
+      inviteeFirstName: 'Booking: first name',
+      inviteeLastName: 'Booking: last name',
+      inviteePhone: 'Booking: phone',
+      bookingStart: 'Booking: meeting time',
       keyCustomBack: 'Back to list',
       selectKeyPlaceholder: 'Select a field…',
       selectValue: 'Select a value…',
@@ -2843,8 +2850,8 @@ export const en: FormsMessages = {
     publish: {
       publish: 'Publish',
       publishing: 'Publishing…',
-      published: 'Changes published — your form is live.',
-      publishError: 'Could not publish — please try again.',
+      published: 'Changes published. Your form is live.',
+      publishError: 'Could not publish. Please try again.',
       unpublishedChanges: 'Unpublished changes',
       noChanges: 'All changes are published',
     },
@@ -2856,7 +2863,7 @@ export const en: FormsMessages = {
       creatingSubtitle: 'Setting up your questions. This only takes a second.',
       error: {
         headline: 'We could not create your form',
-        body: 'Your answers are saved. Try again — it is usually a passing connection problem.',
+        body: 'Your answers are saved. Try again. It is usually a passing connection problem.',
         retry: 'Try again',
       },
       progress: 'Question {current} of {total}',
@@ -2880,7 +2887,7 @@ export const en: FormsMessages = {
         helper: 'Start typing to find yours.',
         placeholder: 'Search industries',
         search: 'Search',
-        empty: 'Nothing matches — pick Other.',
+        empty: 'Nothing matches. Pick Other.',
         options: {
           accounting: 'Accounting',
           airlines_aviation: 'Airlines/Aviation',
@@ -2991,7 +2998,7 @@ export const en: FormsMessages = {
       },
       templates: {
         question: 'Here is your first form',
-        helper: 'Start from one of these — every question is yours to change.',
+        helper: 'Start from one of these: every question is yours to change.',
         recommended: 'Recommended for you',
         cta: 'Create my form',
         options: {
@@ -3056,9 +3063,9 @@ export const en: FormsMessages = {
 
 export const es: FormsMessages = {
   growth: {
-    madeWith: 'Con tecnología de Dapta',
+    madeWith: 'Hecho con Dapta Forms',
     ctaQuestion: '¿Quieres tu propio formulario?',
-    ctaAction: 'Consigue Dapta Forms — gratis',
+    ctaAction: 'Consigue Dapta Forms, gratis',
     seoForm: 'Completa {name} en línea.',
     shareCardSteps: '{count} preguntas',
     shareCardUntitled: 'Formulario',
@@ -3072,7 +3079,7 @@ export const es: FormsMessages = {
     thankYouTitle: '¡Gracias!',
     thankYouBody: 'Tus respuestas quedaron registradas.',
     ctaQuestion: '¿Quieres tu propio formulario?',
-    ctaAction: 'Consigue Dapta Forms — gratis',
+    ctaAction: 'Consigue Dapta Forms, gratis',
     progressLabel: 'Paso {current} de {total}',
     verticalProgress: '{answered} de {total} respondidas',
     verticalErrors: 'Revisa las preguntas marcadas arriba.',
@@ -3143,6 +3150,7 @@ export const es: FormsMessages = {
         submissions: 'Respuestas',
         analytics: 'Analíticas',
         integrations: 'Integraciones',
+        agents: 'Dapta Agents',
       },
       profileMenu: {
         label: 'Menú de cuenta',
@@ -3153,7 +3161,7 @@ export const es: FormsMessages = {
         trigger: 'Cambiar producto',
         menuLabel: 'Productos Dapta',
         eyebrow: 'Dapta',
-        dapta: 'Dapta AI',
+        dapta: 'Dapta Agents',
         calendars: 'Dapta Calendars',
         opensNewTab: '(se abre en una pestaña nueva)',
       },
@@ -3202,7 +3210,7 @@ export const es: FormsMessages = {
       save: 'Guardar kit de marca',
       saving: 'Guardando…',
       saved: 'Kit de marca guardado.',
-      saveOffline: 'No se pudo contactar al servidor — revisa tu conexión e inténtalo de nuevo.',
+      saveOffline: 'No se pudo contactar al servidor. Revisa tu conexión e inténtalo de nuevo.',
       adminOnly: 'Solo un admin o el owner puede editar el kit de marca.',
       logoTitle: 'Logo',
       logoSubtitle: 'Se muestra en portadas y encabezados salvo que un formulario tenga el suyo.',
@@ -3216,7 +3224,7 @@ export const es: FormsMessages = {
       clientLogoNamePlaceholder: 'Nombre del cliente',
       colorsTitle: 'Colores',
       colorsSubtitle: 'Elegir un fondo fija el tema claro/oscuro de los formularios donde se aplique el kit.',
-      notSet: 'Sin definir — cada formulario conserva el suyo',
+      notSet: 'Sin definir: cada formulario conserva el suyo',
       clearAxis: 'Limpiar',
       typographyTitle: 'Tipografía',
       typographySubtitle: 'La tipografía con la que se renderizan los formularios.',
@@ -3239,7 +3247,7 @@ export const es: FormsMessages = {
       revert: 'Deshacer',
       reverting: 'Deshaciendo…',
       revertedToast: 'Aplicación del kit deshecha.',
-      emptyForms: 'Aún no hay formularios — el kit vestirá el primero automáticamente.',
+      emptyForms: 'Aún no hay formularios. El kit vestirá el primero automáticamente.',
       updatedAt: 'Guardado por última vez {date}',
     },
     picker: {
@@ -3407,7 +3415,7 @@ export const es: FormsMessages = {
     login: {
       title: 'Iniciar sesión',
       subtitle:
-        'Formularios de código abierto. Esta versión usa el proveedor de desarrollo local — introduce tu correo para entrar como tú mismo.',
+        'Formularios de código abierto. Esta versión usa el proveedor de desarrollo local: introduce tu correo para entrar como tú mismo.',
       continue: 'Continuar',
       footnote:
         'Modo local: cualquier correo entra a su propio espacio. Configura WorkOS en tu despliegue para cuentas reales.',
@@ -3452,20 +3460,20 @@ export const es: FormsMessages = {
       save: 'Guardar',
       saving: 'Guardando…',
       saved: 'Guardado.',
-      saveError: 'No se pudo guardar — inténtalo de nuevo.',
+      saveError: 'No se pudo guardar. Inténtalo de nuevo.',
       saveErrorReason: 'No se pudo guardar: {reason}',
-      saveInvalid: 'Aún no se puede guardar — {reason}',
+      saveInvalid: 'Aún no se puede guardar: {reason}',
       saveOffline:
-        'No se pudo contactar al servidor — tus cambios se conservan y el guardado se reintentará automáticamente.',
+        'No se pudo contactar al servidor. Tus cambios se conservan y el guardado se reintentará automáticamente.',
       resultsHelp: {
         outcomeHeadingHelp:
           'Se muestra a los respondientes como el encabezado de la pantalla de agradecimiento cuando su puntaje cae en este rango.',
         outcomeHeadingHelp2:
-          'Es la línea grande de la pantalla de agradecimiento para este rango — no un nombre interno. Escríbela como algo que el respondiente deba leer.',
+          'Es la línea grande de la pantalla de agradecimiento para este rango. No un nombre interno. Escríbela como algo que el respondiente deba leer.',
         redirectHelp2:
-          'Si la defines, la pantalla de agradecimiento de arriba nunca se muestra para este rango — el respondiente va directo a la URL. Déjala vacía para mostrar la pantalla.',
+          'Si la defines, la pantalla de agradecimiento de arriba nunca se muestra para este rango. El respondiente va directo a la URL. Déjala vacía para mostrar la pantalla.',
         outcomesInert:
-          'El puntaje está apagado, así que ningún rango puede alcanzarse — todos ven la pantalla de agradecimiento del formulario. También se omite todo lo configurado en un rango, incluida su redirección y su agenda. Tus rangos se conservan; enciende el puntaje para volver a usarlos.',
+          'El puntaje está apagado, así que ningún rango puede alcanzarse. Todos ven la pantalla de agradecimiento del formulario. También se omite todo lo configurado en un rango, incluida su redirección y su agenda. Tus rangos se conservan; enciende el puntaje para volver a usarlos.',
         redirectDelayLabel: 'Mostrar el agradecimiento antes (ms)',
         redirectDelayHelp:
           'Cuánto se queda la pantalla de agradecimiento antes de redirigir. 0 se va de inmediato.',
@@ -3491,7 +3499,7 @@ export const es: FormsMessages = {
         headlineHint: 'Déjalo vacío para el «Gracias» por defecto.',
         headlineHelp:
           'La línea grande de la pantalla de agradecimiento. Un rango de puntaje con su propio encabezado reemplaza este para quienes caigan en ese rango.',
-        headlinePlaceholder: 'Gracias — lo recibimos',
+        headlinePlaceholder: 'Gracias: lo recibimos',
         body: 'Mensaje',
         bodyHint: 'Usa [campo] para insertar una respuesta. Déjalo vacío para el texto por defecto.',
         bodyPlaceholder: 'Te contactamos en breve.',
@@ -3556,8 +3564,8 @@ export const es: FormsMessages = {
         sliderStep: 'Paso',
         sliderDefault: 'Predeterminado',
         sliderDefaultOutOfRange: 'El predeterminado está fuera de {min}–{max}. Los respondientes verán {shown}.',
-        sliderMaxBelowMin: 'El máximo es menor que el mínimo — el deslizador no tiene recorrido.',
-        sliderNoTravel: 'El mínimo y el máximo son iguales, así que el control no se puede mover — solo se puede responder {min}.',
+        sliderMaxBelowMin: 'El máximo es menor que el mínimo. El deslizador no tiene recorrido.',
+        sliderNoTravel: 'El mínimo y el máximo son iguales, así que el control no se puede mover: solo se puede responder {min}.',
         sliderStepInvalid: 'El paso debe ser mayor que 0. Los navegadores ignoran cualquier otro valor y avanzan de 1 en 1.',
       },
       options: {
@@ -3569,7 +3577,7 @@ export const es: FormsMessages = {
         pointsHint: 'Se suma al puntaje cuando se elige esta opción. Usa un número negativo para restar.',
         labelHelp: 'Lo que leen los respondientes en la opción. Puedes reescribirlo cuando quieras.',
         valueHelp:
-          'Lo que se guarda en la respuesta y se envía a HubSpot o al webhook. Mantenlo estable — cambiarlo rompe las respuestas anteriores y cualquier mapeo que lo use.',
+          'Lo que se guarda en la respuesta y se envía a HubSpot o al webhook. Mantenlo estable: cambiarlo rompe las respuestas anteriores y cualquier mapeo que lo use.',
         importer: {
           open: 'Importar opciones',
           title: 'Importar opciones desde una hoja de cálculo',
@@ -3592,7 +3600,7 @@ export const es: FormsMessages = {
           summaryTruncated: '{n} sobre el límite',
           submit: 'Importar {n} opciones',
           replaceIconsNote: 'Reemplazar elimina los íconos de las opciones actuales.',
-          noScoresNote: 'Este pegado no trae puntajes — la pregunta conserva sus puntos actuales.',
+          noScoresNote: 'Este pegado no trae puntajes. La pregunta conserva sus puntos actuales.',
           cancel: 'Cancelar',
         },
         icon: 'Ícono',
@@ -3605,7 +3613,7 @@ export const es: FormsMessages = {
         iconClear: 'Quitar',
         iconEmpty: 'Elige un ícono',
         iconLettersHint: 'Hasta dos letras, por ejemplo HS para HubSpot. Si lo dejas vacío se usan las iniciales de la etiqueta.',
-        iconImageHint: 'Una URL de imagen https://. Los logos conservan su forma — entran completos en una caja, no se recortan en un círculo.',
+        iconImageHint: 'Una URL de imagen https://. Los logos conservan su forma: entran completos en una caja, no se recortan en un círculo.',
         iconUrlInvalid: 'Este protocolo de URL no está permitido para imágenes.',
         emojiGroups: {
           reactions: 'Reacciones',
@@ -3627,8 +3635,8 @@ export const es: FormsMessages = {
         max: 'Hasta',
         points: 'Puntos',
         remove: 'Quitar rango',
-        empty: 'Sin rangos de puntaje — el deslizador no suma.',
-        unreachable: 'Fuera del rango {min}–{max} del deslizador — este rango nunca puede dar puntos.',
+        empty: 'Sin rangos de puntaje. El deslizador no suma.',
+        unreachable: 'Fuera del rango {min}–{max} del deslizador. Este rango nunca puede dar puntos.',
         overlapped: 'Se solapa con un rango de más arriba. Cuando ambos coinciden, gana el que está primero.',
       },
       logic: {
@@ -3659,15 +3667,15 @@ export const es: FormsMessages = {
         betweenMin: 'Mín',
         betweenMax: 'Máx',
         contradiction:
-          'Estas reglas de mostrar y ocultar se anulan — esta pregunta nunca aparecería. Ajusta una de ellas.',
+          'Estas reglas de mostrar y ocultar se anulan. Esta pregunta nunca aparecería. Ajusta una de ellas.',
         narrow:
           'La regla de ocultar recorta la de mostrar: esta pregunta solo aparece entre {lo} y {hi}. Si es lo que buscabas, ignora este aviso.',
         neverShowMissing:
-          'Esta regla aún no tiene valor, así que nunca coincide — la pregunta queda oculta para todos hasta que lo completes.',
+          'Esta regla aún no tiene valor, así que nunca coincide. La pregunta queda oculta para todos hasta que lo completes.',
         neverShowEmpty:
-          'El mínimo es mayor que el máximo, así que ninguna respuesta cae en ese rango — la pregunta queda oculta para todos.',
+          'El mínimo es mayor que el máximo, así que ninguna respuesta cae en ese rango. La pregunta queda oculta para todos.',
         neverShowNoValues:
-          'No hay opciones seleccionadas, así que esta regla nunca coincide — la pregunta queda oculta para todos.',
+          'No hay opciones seleccionadas, así que esta regla nunca coincide. La pregunta queda oculta para todos.',
         hideRuleInert: 'Esta regla de ocultar está incompleta, así que nunca aplica. Complétala o bórrala.',
       },
       variants: {
@@ -3679,23 +3687,23 @@ export const es: FormsMessages = {
         matchValue: 'Cuando la respuesta sea',
         matchValuePlaceholder: 'p. ej. fundador',
         matchValueMulti: 'Marca todas las opciones a las que responde esta versión',
-        matchValueMultiEmpty: 'Elige al menos una opción — una fila vacía nunca coincide.',
-        matchValueMultiLast: 'Deja al menos una opción — una fila sin ninguna nunca coincide.',
+        matchValueMultiEmpty: 'Elige al menos una opción. Una fila vacía nunca coincide.',
+        matchValueMultiLast: 'Deja al menos una opción. Una fila sin ninguna nunca coincide.',
         matchValueMultiDuplicate: 'Otra versión ya responde a esa combinación exacta.',
         matchValueMultiOrphaned: 'Esta fila todavía coincide con {values}, que la pregunta de arriba ya no ofrece.',
-        matchValueMultiExact: 'Se activa solo si el respondiente elige exactamente estas opciones — ni más, ni menos.',
+        matchValueMultiExact: 'Se activa solo si el respondiente elige exactamente estas opciones: ni más, ni menos.',
         variantQuestion: 'Preguntar en su lugar',
         fallback: 'Alternativa (cualquier otra respuesta)',
         remove: 'Quitar variante',
         interpolationHint: 'Escribe @ (o [campo]) para insertar una respuesta anterior en la pregunta.',
-        scopeNote: 'Esto solo cambia el título de la pregunta — no sus opciones. Para enviar a otra pregunta, usa Lógica.',
+        scopeNote: 'Esto solo cambia el título de la pregunta. No sus opciones. Para enviar a otra pregunta, usa Lógica.',
         sliderLabel: 'Etiqueta de unidad del deslizador',
         tokenPickerLabel: 'Insertar una respuesta anterior',
-        tokenPickerEmpty: 'Aún no hay respuestas anteriores — esta es la primera pregunta.',
+        tokenPickerEmpty: 'Aún no hay respuestas anteriores. Esta es la primera pregunta.',
         tokenPickerNoMatch: 'Ningún campo coincide.',
-        tokenWarnLater: '«{token}» se pregunta después de este paso — quedará vacío.',
+        tokenWarnLater: '«{token}» se pregunta después de este paso: quedará vacío.',
         tokenWarnUnknown: '«{token}» no existe en este formulario.',
-        tokenWarnRaw: '«{token}» queda como texto literal — solo {fixed} rellena una respuesta. Elige el campo de la lista para insertarlo.',
+        tokenWarnRaw: '«{token}» queda como texto literal: solo {fixed} rellena una respuesta. Elige el campo de la lista para insertarlo.',
       },
       behavior: {
         title: 'Comportamiento',
@@ -3705,10 +3713,10 @@ export const es: FormsMessages = {
         revealHint:
           'Añade una tarjeta de revelación justo después de esta pregunta. Al apagarlo se elimina esa tarjeta. Edita su texto seleccionando la tarjeta.',
         hidden: 'Pregunta oculta',
-        hiddenHint: 'No se muestra a los respondientes — su respuesta se rellena desde un parámetro de URL coincidente (?clave=valor).',
+        hiddenHint: 'No se muestra a los respondientes: su respuesta se rellena desde un parámetro de URL coincidente (?clave=valor).',
         fieldKey: 'Clave del campo',
         fieldKeyHint:
-          'El nombre con el que se guarda esta respuesta — el parámetro de URL que la rellena y lo que escribes entre corchetes para reutilizarla en una pregunta posterior. Letras, números y guiones bajos, hasta 64 caracteres.',
+          'El nombre con el que se guarda esta respuesta. El parámetro de URL que la rellena y lo que escribes entre corchetes para reutilizarla en una pregunta posterior. Letras, números y guiones bajos, hasta 64 caracteres.',
         fieldKeyTaken: 'Otra pregunta ya usa esa clave.',
         fieldKeyInvalid: 'La clave necesita al menos una letra o número.',
         fieldKeyUrlExample: 'Rellénala con ?{key}=valor',
@@ -3727,7 +3735,7 @@ export const es: FormsMessages = {
       partial: {
         title: 'Envíos parciales',
         hint: 'Guarda un envío parcial al completar una pregunta, aunque la persona no termine.',
-        none: 'Desactivado — solo guardar envíos completos',
+        none: 'Desactivado: solo guardar envíos completos',
         afterStep: 'Tras la pregunta {n}',
       },
       layout: {
@@ -3737,9 +3745,9 @@ export const es: FormsMessages = {
         slidesHint: 'Una pregunta por pantalla, paso a paso.',
         vertical: 'Una página',
         verticalHint:
-          'Todas las preguntas en una sola página con un solo Enviar. La lógica sigue aplicando en vivo — las preguntas aparecen y se ocultan según las respuestas.',
+          'Todas las preguntas en una sola página con un solo Enviar. La lógica sigue aplicando en vivo. Las preguntas aparecen y se ocultan según las respuestas.',
         coverCtaNote:
-          'En un formulario de una página la portada se muestra como encabezado sobre las preguntas — no hay botón de inicio, así que su texto no se usa.',
+          'En un formulario de una página la portada se muestra como encabezado sobre las preguntas. No hay botón de inicio, así que su texto no se usa.',
         endReveal: 'Pantalla de revelación antes del resultado',
         endRevealHint:
           'Se muestra una vez, después de Enviar y antes del resultado. Edita su texto seleccionando la tarjeta al final de la lista de preguntas.',
@@ -3921,7 +3929,7 @@ export const es: FormsMessages = {
         trackingSubtitle:
           'Mide visitas y conversiones en la página pública de este formulario. Cada etiqueta se carga solo cuando su ID está configurado.',
         trackingDraftNote:
-          'Estos IDs se guardan con el resto de tu borrador — haz clic en Publicar para ponerlos en el formulario público. Las integraciones de arriba se guardan en vivo de inmediato.',
+          'Estos IDs se guardan con el resto de tu borrador: haz clic en Publicar para ponerlos en el formulario público. Las integraciones de arriba se guardan en vivo de inmediato.',
         gtmLabel: 'ID de Google Tag Manager',
         gtmHelp: 'Carga tu contenedor de GTM en la página del formulario para que se disparen tus etiquetas.',
         metaLabel: 'ID del píxel de Meta',
@@ -4015,7 +4023,7 @@ export const es: FormsMessages = {
       prev: 'Anterior',
       next: 'Siguiente',
       showing: '{from}–{to} de {total}',
-      na: '—',
+      na: '',
       error: 'No se pudieron cargar las respuestas.',
       retry: 'Reintentar',
     },
@@ -4027,11 +4035,11 @@ export const es: FormsMessages = {
       saving: 'Guardando…',
       saved: 'Integraciones guardadas.',
       autosaved: 'Cambios guardados automáticamente',
-      autosavedPartial: 'Se guardó todo menos el webhook —',
+      autosavedPartial: 'Se guardó todo menos el webhook.',
       saveError: 'No se pudieron guardar las integraciones.',
       saveOffline:
-        'No se pudo contactar al servidor — tus cambios se conservan y el guardado se reintentará automáticamente.',
-      saveRetrying: 'Se perdió la conexión — reintentando…',
+        'No se pudo contactar al servidor. Tus cambios se conservan y el guardado se reintentará automáticamente.',
+      saveRetrying: 'Se perdió la conexión. Reintentando…',
       loadError: 'No se pudieron cargar las integraciones.',
       enabled: 'Activado',
       disabled: 'Desactivado',
@@ -4043,7 +4051,7 @@ export const es: FormsMessages = {
       webhookSecret: 'Secreto de firma (opcional)',
       webhookSecretHelp:
         'Si se define, cada solicitud se firma con HMAC-SHA256 en la cabecera X-Forms-Signature para que puedas verificarla.',
-      webhookSecretSetPlaceholder: 'Hay un secreto guardado — déjalo en blanco para conservarlo o escribe uno nuevo.',
+      webhookSecretSetPlaceholder: 'Hay un secreto guardado: déjalo en blanco para conservarlo o escribe uno nuevo.',
       hubspotTitle: 'HubSpot',
       hubspotDesc: 'Crea o actualiza el contacto y adjunta una nota en las respuestas completadas.',
       hubspotDisabled:
@@ -4059,16 +4067,16 @@ export const es: FormsMessages = {
       createNoteHelp: 'Adjunta al contacto una nota con el nombre del formulario y la puntuación.',
       formActivity: 'Registrar la respuesta como form submission en HubSpot',
       formActivityHelp:
-        'Crea un formulario espejo en tu portal, para que cada respuesta completada aparezca en el contacto como una actividad de form submission con las propiedades que escribió — y no solo como una nota. Necesita los permisos forms y form-submissions-write en tu private app.',
+        'Crea un formulario espejo en tu portal, para que cada respuesta completada aparezca en el contacto como una actividad de form submission con las propiedades que escribió: y no solo como una nota. Necesita los permisos forms y form-submissions-write en tu private app.',
       formActivityError: 'HubSpot no pudo configurarlo: {reason}',
       selectProperty: 'Selecciona una propiedad…',
-      noProperty: '— ninguna —',
+      noProperty: '(ninguna)',
       addMapping: 'Añadir mapeo',
       remove: 'Quitar',
       stepKey: 'Clave del paso',
       property: 'Propiedad de HubSpot',
       emptyMappings: 'Aún no hay mapeos.',
-      valueMaps: 'Mapas de valores — traduce respuestas del formulario a valores del CRM',
+      valueMaps: 'Mapas de valores: traduce respuestas del formulario a valores del CRM',
       valueMapsHelp:
         'Convierte respuestas concretas en los valores exactos que esperan tus listas de HubSpot. Las respuestas sin traducción se envían sin cambios.',
       valueMapsExample: 'Ej.: cuando la respuesta es “Ventas”, HubSpot recibe “sales”.',
@@ -4080,10 +4088,10 @@ export const es: FormsMessages = {
       scorePropertyHelp:
         'Recibe el puntaje total como número, solo en respuestas completadas.',
       datePropertyHelp:
-        'Recibe la fecha de envío. Las propiedades de fecha de HubSpot guardan medianoche UTC, así que se pierde la hora — un webhook recibe la marca de tiempo completa.',
+        'Recibe la fecha de envío. Las propiedades de fecha de HubSpot guardan medianoche UTC, así que se pierde la hora. Un webhook recibe la marca de tiempo completa.',
       outcomeProperty: 'Propiedad de resultado',
       outcomePropertyHelp:
-        'Recibe el ENCABEZADO que escribiste en el rango de puntaje que coincida, en Resultados — el mismo texto que ve el respondiente. Solo en respuestas completadas y solo si algún rango coincide; con el puntaje apagado no se envía nada.',
+        'Recibe el ENCABEZADO que escribiste en el rango de puntaje que coincida, en Resultados. El mismo texto que ve el respondiente. Solo en respuestas completadas y solo si algún rango coincide; con el puntaje apagado no se envía nada.',
       staticProperties: 'Propiedades estáticas',
       staticPropertiesHelp:
         'Valores fijos que se estampan en cada respuesta completada (p. ej. una marca de opt-in). Nunca sobrescriben una respuesta mapeada.',
@@ -4092,7 +4100,7 @@ export const es: FormsMessages = {
       emptyStaticProperties: 'Aún no hay propiedades estáticas.',
       inferCompany: 'Inferir la empresa desde el email',
       inferCompanyHelp:
-        'Cuando la persona usa un email de trabajo, rellena las propiedades de empresa y sitio web a partir de su dominio — los dominios gratuitos (gmail, outlook…) se omiten y los valores mapeados nunca se sobrescriben.',
+        'Cuando la persona usa un email de trabajo, rellena las propiedades de empresa y sitio web a partir de su dominio. Los dominios gratuitos (gmail, outlook…) se omiten y los valores mapeados nunca se sobrescriben.',
       bookingSync: 'Sincronización de reservas',
       bookingSyncHelp:
         'Cuando la persona agenda una reunión desde un paso de calendario, estampa estas propiedades del contacto con los datos de la reserva. Deja un campo en blanco para omitirlo.',
@@ -4111,13 +4119,13 @@ export const es: FormsMessages = {
         'Zona horaria IANA para calcular el día de agendado (ej. America/Bogota). Vacío = UTC.',
       bookingDateTimezonePlaceholder: 'America/Bogota',
       bookingDateTimezoneInvalid:
-        'No reconocemos ese nombre de zona horaria — el día se calculará en UTC.',
+        'No reconocemos ese nombre de zona horaria. El día se calculará en UTC.',
       extraHubspotTitle: 'Este formulario tiene una segunda conexión con HubSpot',
       extraHubspotBody:
-        'Esta pantalla solo edita la primera, así que la otra es invisible acá — y cualquier cambio en esta pestaña se guarda al instante y la elimina, junto con las asignaciones que tenga. Para mandar una respuesta a varias propiedades, agrega las propiedades a la misma pregunta de arriba.',
+        'Esta pantalla solo edita la primera, así que la otra es invisible acá: y cualquier cambio en esta pestaña se guarda al instante y la elimina, junto con las asignaciones que tenga. Para mandar una respuesta a varias propiedades, agrega las propiedades a la misma pregunta de arriba.',
       carriedWebhooksTitle: 'Este formulario tiene {count} webhook(s) más',
       carriedWebhooksBody:
-        'Esta tarjeta edita el primero. Los demás siguen funcionando igual y se guardan sin tocarlos — solo que no se editan desde acá. Los ves todos en Integraciones.',
+        'Esta tarjeta edita el primero. Los demás siguen funcionando igual y se guardan sin tocarlos: solo que no se editan desde acá. Los ves todos en Integraciones.',
       connectPromptTitle: 'Conecta HubSpot para asignar este formulario',
       connectPromptBody:
         'HubSpot aún no está conectado en tu cuenta. Conéctalo una vez y luego vuelve para asignar cada pregunta a una propiedad de contacto.',
@@ -4132,9 +4140,9 @@ export const es: FormsMessages = {
       hubspotHowBody:
         'Cada envío se busca en HubSpot por correo: si el contacto existe se actualiza, y si no, se crea uno nuevo. Un formulario que nunca pide correo no se puede sincronizar.',
       hubspotHowBodyScheduler:
-        'Cada envío se busca en HubSpot por correo: si el contacto existe se actualiza, y si no, se crea uno nuevo. Este formulario no lo pide — lo recoge la agenda, así que acá no hay que mapear nada a «email».',
+        'Cada envío se busca en HubSpot por correo: si el contacto existe se actualiza, y si no, se crea uno nuevo. Este formulario no lo pide: lo recoge la agenda, así que acá no hay que mapear nada a «email».',
       schedulerDisconnected:
-        'Calendly no está conectado en esta cuenta, así que no se puede leer el correo del invitado y no va a llegar nada a HubSpot — la reserva igual funciona, por eso falla en silencio. Conectá Calendly en Conexiones.',
+        'Calendly no está conectado en esta cuenta, así que no se puede leer el correo del invitado y no va a llegar nada a HubSpot. La reserva igual funciona, por eso falla en silencio. Conectá Calendly en Conexiones.',
       mapQuestionsHelpScheduler:
         'Mandá cada respuesta a una propiedad de contacto de HubSpot. No mapees nada a «email»: lo aporta la agenda, y un mapeo acá lo reemplaza y apaga la sincronización.',
       emailMappingConflictTitle: 'Este mapeo apaga la sincronización',
@@ -4174,18 +4182,18 @@ export const es: FormsMessages = {
       autoMapNone: 'No hay nuevas coincidencias que sugerir.',
       mapElements: 'Asignar elementos del formulario',
       mapElementsHelp:
-        'Envía los metadatos capturados —UTMs, puntuación, resultado y fecha de envío— a propiedades de HubSpot.',
+        'Envía los metadatos capturados (UTMs, puntuación, resultado y fecha de envío) a propiedades de HubSpot.',
       customMappings: 'Asignaciones personalizadas',
       customMappingsHelp:
-        'Envía un dato adicional del form a una propiedad de HubSpot — útil para campos ocultos o UTMs.',
+        'Envía un dato adicional del form a una propiedad de HubSpot: útil para campos ocultos o UTMs.',
       keyGroupQuestions: 'Preguntas del formulario',
       keyGroupSystem: 'Campos del sistema',
       keyCustomOption: 'Clave personalizada…',
-      inviteeName: 'Agenda — nombre completo',
-      inviteeFirstName: 'Agenda — nombre',
-      inviteeLastName: 'Agenda — apellido',
-      inviteePhone: 'Agenda — teléfono',
-      bookingStart: 'Agenda — hora de la reunión',
+      inviteeName: 'Agenda: nombre completo',
+      inviteeFirstName: 'Agenda: nombre',
+      inviteeLastName: 'Agenda: apellido',
+      inviteePhone: 'Agenda: teléfono',
+      bookingStart: 'Agenda: hora de la reunión',
       keyCustomBack: 'Volver a la lista',
       selectKeyPlaceholder: 'Selecciona un campo…',
       selectValue: 'Selecciona un valor…',
