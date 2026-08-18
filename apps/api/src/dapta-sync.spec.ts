@@ -236,6 +236,51 @@ describe('buildFlowPayload — pure mapping', () => {
 
     expect(body).toEqual({ email: 'a@b.com', user_id: 'user-ext-1' });
   });
+
+  it('carries lead_source and use_case at the TOP level, never inside params', () => {
+    // The flow overwrites `params` with the IAM's stored UTMs for anyone who
+    // has them (the whole Dapta cohort), so anything nested there would be
+    // lost for exactly the people whose only answers these two are.
+    const body = buildFlowPayload({
+      email: 'a@b.com',
+      userId: 'user-ext-1',
+      accountExternalId: null,
+      displayName: null,
+      blob: {
+        version: 1,
+        cohort: 'dapta',
+        leadSource: 'google_ads',
+        useCase: 'leads',
+      } as AccountOnboarding,
+      attribution: { utmSource: 'landing' },
+    });
+
+    expect(body).toEqual({
+      email: 'a@b.com',
+      user_id: 'user-ext-1',
+      lead_source: 'google_ads',
+      use_case: 'leads',
+      params: { utm_source: 'landing' },
+    });
+    expect(body.params).not.toHaveProperty('lead_source');
+  });
+
+  it('omits lead_source and use_case while unanswered (the early call is phone-only)', () => {
+    // The flow keeps a contact's existing values when the keys are absent;
+    // sending empty strings would clear what the Typeform quiz already wrote.
+    const body = buildFlowPayload({
+      email: 'a@b.com',
+      userId: 'user-ext-1',
+      accountExternalId: null,
+      displayName: null,
+      blob: { version: 1, phone: '3001234567', lastStep: 'phone' } as AccountOnboarding,
+      attribution: null,
+    });
+
+    expect(body).toEqual({ email: 'a@b.com', user_id: 'user-ext-1', phone: '3001234567' });
+    expect(body).not.toHaveProperty('lead_source');
+    expect(body).not.toHaveProperty('use_case');
+  });
 });
 
 describe('DaptaSyncEffects — enqueue', () => {
@@ -358,6 +403,14 @@ describe('DaptaSyncDelivery — worker-side', () => {
     await newWorker(newDelivery(envWith(), calls)).drainOnce();
 
     expect(calls.map((c) => c.url)).toEqual([FLOW_URL]);
+    // ...and those two answers are the ONLY thing this cohort contributes to
+    // HubSpot, so they must ride the webhook body itself.
+    expect(calls[0]!.body).toMatchObject({
+      email: 'a@b.com',
+      user_id: 'user-ext-1',
+      lead_source: 'outbound',
+      use_case: 'leads',
+    });
   });
 
   it('skips a member with no external identity — the flow dies silently on unknown ids', async () => {
