@@ -480,6 +480,7 @@ export type GalleryItemId =
   | 'dropdown'
   | 'short'
   | 'long'
+  | 'url'
   | 'slider'
   | 'message'
   | 'reveal'
@@ -776,6 +777,7 @@ const en: BuilderMessages = {
       dropdown: { title: 'Dropdown', desc: 'Compact list' },
       short: { title: 'Short text', desc: 'One line' },
       long: { title: 'Long text', desc: 'Paragraph' },
+      url: { title: 'Website', desc: 'Validated URL' },
       slider: { title: 'Slider', desc: 'Rating scale' },
       message: { title: 'Message', desc: 'Text, no input' },
       reveal: { title: 'Reveal screen', desc: 'A short processing pause' },
@@ -1170,6 +1172,7 @@ const es: BuilderMessages = {
       dropdown: { title: 'Desplegable', desc: 'Lista compacta' },
       short: { title: 'Texto corto', desc: 'Una línea' },
       long: { title: 'Texto largo', desc: 'Párrafo' },
+      url: { title: 'Sitio web', desc: 'URL validada' },
       slider: { title: 'Deslizador', desc: 'Escala de valoración' },
       message: { title: 'Mensaje', desc: 'Texto, sin campo' },
       reveal: {

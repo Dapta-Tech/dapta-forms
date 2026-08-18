@@ -75,6 +75,7 @@ export interface FormsMessages {
       required: string;
       email: string;
       work_email: string;
+      url: string;
       phone: string;
       number: string;
       too_low: string;
@@ -1667,6 +1668,7 @@ export const en: FormsMessages = {
       required: 'This field is required.',
       email: 'Enter a valid email address.',
       work_email: 'Please use your work email address.',
+      url: 'Enter a valid website address.',
       phone: 'Enter a valid phone number.',
       number: 'Enter a number.',
       too_low: 'Value is too low.',
@@ -3120,6 +3122,7 @@ export const es: FormsMessages = {
       required: 'Este campo es obligatorio.',
       email: 'Introduce un correo válido.',
       work_email: 'Usa tu correo corporativo.',
+      url: 'Introduce una dirección web válida.',
       phone: 'Introduce un número de teléfono válido.',
       number: 'Introduce un número.',
       too_low: 'El valor es muy bajo.',

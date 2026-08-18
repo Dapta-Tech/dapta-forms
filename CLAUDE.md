@@ -343,20 +343,41 @@ above and the gates so CI does not surprise you.
 
 ## Common tasks (file pointers)
 
-**Add a question type, end-to-end** (order matters):
-1. `packages/engine/src/form-logic.ts` — add to `FORM_FIELD_TYPES`; add branches in
-   `validateAnswer` + `validateAnswerCode`; extend `computeScore` if it is scored.
-2. `packages/engine/src/form-config.ts` — per-type defaults in `createEmptyStep`.
-3. `packages/types/src/index.ts` — add any new step fields to `formStepSchema` (the
-   type enum is re-exported from the engine, so it updates automatically); add a new
-   `ValidationCode` if you introduced one.
-4. `packages/shared/src/i18n/index.ts` — label under `admin.editor.types` and any
-   new `renderer.errors.*` code, in **both** `en` and `es`.
-5. `apps/web/app/admin/forms/[id]/edit/_components/` — `step-list.tsx` (register in
-   `STEP_TYPES`) and `step-properties.tsx` (the editing panel); add an editor
-   component if the type needs one.
-6. `apps/web/components/public/step-input.tsx` — add a `case` to the render switch.
-7. Tests: `packages/engine/src/form-logic.spec.ts` (+ `form-config.spec.ts`).
+**Add a question type, end-to-end** (order matters; the `url` type is a complete,
+recent example of every stop on this list):
+1. `packages/engine/src/form-logic.ts`: add to `FORM_FIELD_TYPES`; add branches in
+   `validateAnswer` + `validateAnswerCode` (and a new `ValidationCode` member if the
+   type fails in a new way); extend `computeScore` if it is scored; if the stored
+   value must have a canonical shape, teach `canonicalizeAnswer` about it (the
+   renderers call it at their commit points, right before `validateAnswerCode`).
+   `packages/types` re-exports the enum into `formStepSchema.type`, so it needs no
+   edit unless the type carries new step fields.
+2. `packages/engine/src/form-config.ts`: per-type defaults in `createEmptyStep`.
+3. `packages/shared/src/i18n/index.ts`: any new `renderer.errors.*` code, in
+   **both** `en` and `es` (the renderers' `err(code)` indexes the catalog by the
+   validation code, so the key must match it exactly). `admin.editor.types` in that
+   catalog is nearly dead: only `types.slider` is read (a settings-section
+   heading), so a new type needs no entry there unless its settings section
+   reuses one.
+4. Builder, all under `apps/web/app/admin/forms/[id]/edit/_components/`:
+   `question-types.ts` (`GALLERY` entry + `iconForStep`), `builder-messages.ts`
+   (`GalleryItemId` union + `gallery.items` in `en` and `es`; the Record type
+   forces both), `question-settings.tsx` (`PLACEHOLDER_TYPES` if the public input
+   renders `step.placeholder`, plus any type-specific settings section),
+   `canvas-question.tsx` (the WYSIWYG preview branch), `logic-map.tsx`
+   (`galleryIdForStep`, or the Logic node is labelled "Short text"),
+   `advanced-settings.tsx` (`sample()` for the prefill URL example).
+5. `apps/web/components/public/step-input.tsx`: add a `case` to the render switch.
+   There is no `<form>` element in the renderers, so native input validation never
+   fires; the engine's validator is the only gate.
+6. `apps/web/app/admin/forms/[id]/integrations/auto-map.ts`: a `suggestProperty`
+   shortcut if the type maps to an obvious HubSpot contact property; and
+   `apps/api/src/integrations.controller.ts` `sampleAnswers`, so the mapping
+   preview and the webhook test body show a value of the right shape.
+7. Tests: `packages/engine/src/form-logic.spec.ts` (+ `form-config.spec.ts`),
+   `apps/web/components/public/step-input.spec.tsx`,
+   `apps/web/app/admin/forms/[id]/integrations/auto-map.spec.ts`.
+8. A changeset for `@quill/engine` (and `@quill/shared` if the catalog changed).
 
 **Add a destination adapter** (CRM/webhook sync):
 `packages/destinations/src/destination.port.ts` (extend the driver union) →

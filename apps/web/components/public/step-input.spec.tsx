@@ -71,3 +71,20 @@ describe('multiple_choice: layout x selection mode', () => {
     expect(html).toContain('📅');
   });
 });
+
+describe('url', () => {
+  it('renders a native url input with the url keyboard and the step placeholder', () => {
+    const html = render(
+      { key: 'site', type: 'url', question: 'Your website', placeholder: 'https://' },
+      'acme.com',
+    );
+    expect(html).toContain('type="url"');
+    // React serializes these camelCased in static markup.
+    expect(html).toContain('inputMode="url"');
+    expect(html).toContain('autoComplete="url"');
+    expect(html).toContain('placeholder="https://"');
+    expect(html).toContain('aria-label="Your website"');
+    expect(html).toContain('value="acme.com"');
+    expect(html).toContain('class="pf-input"');
+  });
+});

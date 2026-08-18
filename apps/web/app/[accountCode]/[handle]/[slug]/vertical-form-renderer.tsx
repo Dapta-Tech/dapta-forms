@@ -29,6 +29,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   runtimeSteps,
   validateAnswerCode,
+  canonicalizeAnswer,
   resolveOutcome,
   resolveEnding,
   computeScore,
@@ -447,6 +448,14 @@ export function VerticalFormRenderer({
     // Moving focus WITHIN the question (name's two fields) is not leaving it.
     if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
     if (step.type === 'message' || step.type === 'reveal' || step.type === 'scheduler') return;
+    // Commit point: a url step stores its canonical value (scheme included)
+    // before it is validated, so the ref, the partial save and the CRM all see
+    // the same shape. Identity for every other type.
+    const canonical = canonicalizeAnswer(step, answersRef.current[step.key]);
+    if (canonical !== answersRef.current[step.key]) {
+      answersRef.current = { ...answersRef.current, [step.key]: canonical };
+      setAnswers(answersRef.current);
+    }
     const a = answersRef.current;
     if (hasContent(step, a) || errors[step.key]) {
       const check = validateAnswerCode(step, a[step.key], a);
@@ -519,6 +528,22 @@ export function VerticalFormRenderer({
 
   /** Submit the whole page: validate the walk, scroll to the first error. */
   async function submitAll() {
+    // Commit point: canonicalize every answer (url steps gain their scheme)
+    // before the walk is validated, so a value typed and submitted without a
+    // blur still lands in its stored shape.
+    let canonicalized = false;
+    const draft: Answers = { ...answersRef.current };
+    for (const s of walk) {
+      const canonical = canonicalizeAnswer(s, draft[s.key]);
+      if (canonical !== draft[s.key]) {
+        draft[s.key] = canonical;
+        canonicalized = true;
+      }
+    }
+    if (canonicalized) {
+      answersRef.current = draft;
+      setAnswers(draft);
+    }
     const a = answersRef.current;
     const errs: Record<string, string> = {};
     let firstBad: string | null = null;

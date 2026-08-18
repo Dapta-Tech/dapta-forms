@@ -33,6 +33,7 @@ export const FORM_FIELD_TYPES = [
   'name',
   'email',
   'phone',
+  'url',
   'dropdown',
   'multiple_choice',
   'slider',
@@ -1199,6 +1200,44 @@ export function isPersonalEmail(value: AnswerValue): boolean {
 export type ValidationResult = { ok: true } | { ok: false; error: string };
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+/**
+ * A web address for a `url` step: optional http(s) scheme, a dotted host with a
+ * TLD of two or more letters, optional port, optional path/query/fragment. A pure
+ * regex on purpose (no `new URL`) so the engine stays free of platform APIs and
+ * `acme.com` passes while `acme` and `ftp://acme.com` do not.
+ */
+const URL_RE = /^(?:https?:\/\/)?(?:[\p{L}\p{N}-]+\.)+[\p{L}]{2,}(?::\d{1,5})?(?:[/?#]\S*)?$/iu;
+
+/**
+ * Canonical form of a `url` answer: trimmed, always carrying a scheme (`https://`
+ * is prepended when the visitor typed none). Idempotent, so it is safe to run
+ * on every commit and on a value that was already normalized.
+ */
+export function normalizeUrl(raw: string): string {
+  const trimmed = raw.trim();
+  if (trimmed === '') return trimmed;
+  return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+}
+
+/** Whether a `url` answer passes the same test the validators apply. */
+export function isValidWebUrl(raw: string): boolean {
+  return URL_RE.test(raw.trim());
+}
+
+/**
+ * The value the renderers store for a step right before validating it. Only
+ * `url` steps rewrite their answer today (see `normalizeUrl`), and only when the
+ * answer is a valid address: a typo like `acme` stays as typed so the error the
+ * visitor sees is about what they wrote, not about `https://acme`. Every other
+ * type is returned untouched.
+ */
+export function canonicalizeAnswer(step: FormStep, value: AnswerValue): AnswerValue {
+  if (step.type === 'url' && typeof value === 'string' && isValidWebUrl(value)) {
+    return normalizeUrl(value);
+  }
+  return value;
+}
+
 /** Common personal/free email domains rejected when `corporateEmailOnly`. */
 const PERSONAL_EMAIL_DOMAINS = new Set([
   'gmail.com',
@@ -1302,6 +1341,11 @@ export function validateAnswer(step: FormStep, value: AnswerValue): ValidationRe
       // free-mail bases) so both validators agree on any given address.
       if (step.corporateEmailOnly && isPersonalEmail(email))
         return { ok: false, error: 'Please use your work email address.' };
+      return { ok: true };
+    }
+    case 'url': {
+      if (!URL_RE.test(String(value).trim()))
+        return { ok: false, error: 'Enter a valid website address.' };
       return { ok: true };
     }
     case 'phone': {
@@ -1830,6 +1874,7 @@ export type ValidationCode =
   | 'required'
   | 'email'
   | 'work_email'
+  | 'url'
   | 'phone'
   | 'number'
   | 'too_low'
@@ -1870,6 +1915,10 @@ export function validateAnswerCode(
       if (!EMAIL_RE.test(email)) return { ok: false, code: 'email' };
       if (step.corporateEmailOnly && isPersonalEmail(email))
         return { ok: false, code: 'work_email' };
+      return { ok: true };
+    }
+    case 'url': {
+      if (!URL_RE.test(String(value).trim())) return { ok: false, code: 'url' };
       return { ok: true };
     }
     case 'phone': {

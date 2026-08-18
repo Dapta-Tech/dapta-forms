@@ -271,6 +271,8 @@ function galleryIdForStep(step: FormStep): GalleryItemId {
       return 'slider';
     case 'textarea':
       return 'long';
+    case 'url':
+      return 'url';
     case 'message':
       return 'message';
     case 'text':

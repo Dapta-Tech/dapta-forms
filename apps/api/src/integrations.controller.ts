@@ -1053,6 +1053,9 @@ function sampleAnswers(steps: { key: string; type: string }[]): Record<string, u
       case 'phone':
         out[s.key] = '+15555550123';
         break;
+      case 'url':
+        out[s.key] = 'https://example.com';
+        break;
       case 'slider':
         out[s.key] = 5;
         break;
