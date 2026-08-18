@@ -1822,7 +1822,7 @@ export const en: FormsMessages = {
       manageErrorLastOwner: 'A workspace must keep at least one owner.',
       manageErrorForbidden: 'You do not have permission to do that.',
       manageErrorFailed: 'Something went wrong. Please try again.',
-      manageErrorUpstream: 'Change this from the Dapta app: it manages this workspace’s members.',
+      manageErrorUpstream: 'The identity service could not apply this change. Ownership is transferred from the Dapta app.',
     },
     notifications: {
       heading: 'Notifications',
@@ -3227,7 +3227,7 @@ export const es: FormsMessages = {
       manageErrorLastOwner: 'Un espacio de trabajo debe conservar al menos un propietario.',
       manageErrorForbidden: 'No tienes permiso para hacer eso.',
       manageErrorFailed: 'Algo salió mal. Inténtalo de nuevo.',
-      manageErrorUpstream: 'Hazlo desde la app de Dapta: ahí se administran los miembros de este workspace.',
+      manageErrorUpstream: 'El servicio de identidad no pudo aplicar este cambio. La propiedad se transfiere desde la app de Dapta.',
     },
     notifications: {
       heading: 'Notificaciones',

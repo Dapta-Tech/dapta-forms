@@ -155,6 +155,7 @@ export default async function SettingsPage() {
                       <MemberRowActions
                         memberId={mem.id}
                         role={mem.role}
+                        canRemove={me.role === 'owner'}
                         labels={{
                           membersMenu: s.membersMenu,
                           makeAdmin: s.makeAdmin,

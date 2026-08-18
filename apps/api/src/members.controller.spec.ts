@@ -172,12 +172,23 @@ describe('DELETE /v1/members/:id (remove member)', () => {
     expect(await controller.removeMember(asOwner(), randomUUID())).toEqual({ ok: true });
   });
 
-  it('refuses a plain member (admin/owner only) with 403', async () => {
+  it('refuses a plain member (owner only) with 403', async () => {
     await controller.inviteMember(asOwner(), { email: 'plain@acme.test', role: 'member' });
     const target = await controller.inviteMember(asOwner(), { email: 'victim@acme.test' });
     await expect(
       controller.removeMember(asEmail('plain@acme.test'), target.id),
     ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('refuses an ADMIN removing a plain member with 403 — removal is owner-only, like the identity service', async () => {
+    await controller.inviteMember(asOwner(), { email: 'boss@acme.test', role: 'admin' });
+    const target = await controller.inviteMember(asOwner(), { email: 'victim@acme.test' });
+    await expect(
+      controller.removeMember(asEmail('boss@acme.test'), target.id),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    // …while the same admin can still demote / disable them.
+    const demoted = await controller.updateMember(asEmail('boss@acme.test'), target.id, { status: 'disabled' });
+    expect(demoted.status).toBe('disabled');
   });
 
   it('refuses an admin removing an owner with 403', async () => {

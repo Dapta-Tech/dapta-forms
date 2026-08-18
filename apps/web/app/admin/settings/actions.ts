@@ -105,14 +105,15 @@ export async function updateMemberRoleAction(
 }
 
 /**
- * Remove a member from the workspace. Admin/owner only; an admin cannot remove an
- * owner; you cannot remove yourself; the last active owner cannot be removed
- * (LAST_OWNER). Forms are account-owned, so removing a member never deletes
- * forms or submissions — only the roster row. Success revalidates the roster.
+ * Remove a member from the workspace. OWNER only (the identity service's rule,
+ * mirrored by the API on the local path too); you cannot remove yourself; the
+ * last active owner cannot be removed (LAST_OWNER). Forms are account-owned, so
+ * removing a member never deletes forms or submissions — only the roster row.
+ * Success revalidates the roster.
  */
 export async function removeMemberAction(id: string): Promise<ManageMemberState> {
   const me = await adminApi.me();
-  if (!isAdminRole(me.role)) return { ok: false, code: 'FORBIDDEN' };
+  if (me.role !== 'owner') return { ok: false, code: 'FORBIDDEN' };
   if (id === me.memberId) return { ok: false, code: 'FORBIDDEN' };
   try {
     await adminApi.removeMember(id);

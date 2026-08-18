@@ -80,22 +80,34 @@ export interface IamInvitation {
   expires_at?: string | null;
 }
 
-/** The upstream system role that maps to this product's `admin`. */
+/** The upstream system role this product ASSIGNS for `admin`. */
 export const IAM_ADMIN_ROLE_NAME = 'workspace_admin';
+/**
+ * The upstream system role this product ASSIGNS for `member` (demote / invite as
+ * member). Roles upstream are replaced, never removed, so "make them a member"
+ * means "give them the editor role" — the same thing the Dapta app's role dialog
+ * does when it picks a non-admin role.
+ */
+export const IAM_MEMBER_ROLE_NAME = 'workspace_editor';
+/** Every upstream role name that READS as `admin` here (assigned by us or by the Dapta app). */
+export const IAM_ADMIN_ROLE_NAMES: readonly string[] = ['workspace_admin', 'workspace_owner'];
 
 /**
  * Upstream membership → local account role.
  *
- *   OWNER                              → owner
- *   MEMBER holding `workspace_admin`   → admin   (can manage members, branding, integrations)
- *   MEMBER with any other / no role    → member  (creates and edits forms, reads results)
+ *   OWNER                                              → owner
+ *   MEMBER holding `workspace_admin` / `workspace_owner` → admin   (manages members, branding, integrations)
+ *   MEMBER with any other / no role                    → member  (creates and edits forms, reads results)
  *
  * One function on purpose: when the identity service grows a `forms` component
  * in its permission catalog, this is the only place that changes.
  */
 export function roleFromIam(wu: Pick<IamWorkspaceUser, 'type' | 'roles'>): AccountRole {
   if (wu.type === 'OWNER') return 'owner';
-  const admin = (wu.roles ?? []).some((r) => (r.name ?? r.role?.name) === IAM_ADMIN_ROLE_NAME);
+  const admin = (wu.roles ?? []).some((r) => {
+    const name = r.name ?? r.role?.name;
+    return typeof name === 'string' && IAM_ADMIN_ROLE_NAMES.includes(name);
+  });
   return admin ? 'admin' : 'member';
 }
 
@@ -127,22 +139,33 @@ const IAM_TIMEOUT_MS = 10_000;
 const PAGE_SIZE = 100;
 /** Guard against an upstream that pages forever; a person is in far fewer than this. */
 const MAX_PAGES = 20;
+/**
+ * The system role catalog changes when the identity service deploys, not per
+ * request. Cached per client instance; a name that is not in the cached copy
+ * forces one re-read before giving up (see `roleIdByName`).
+ */
+const ROLE_CATALOG_TTL_MS = 5 * 60_000;
 
 export interface IamWorkspacesClientOptions {
   baseUrl: string;
   fetchImpl?: typeof fetch;
   timeoutMs?: number;
+  /** Test seam; defaults to `Date.now`. */
+  now?: () => number;
 }
 
 export class IamWorkspacesClient {
   private readonly base: string;
   private readonly fetchImpl: typeof fetch;
   private readonly timeoutMs: number;
+  private readonly now: () => number;
+  private roleCatalog: { at: number; roles: IamRole[] } | null = null;
 
   constructor(opts: IamWorkspacesClientOptions) {
     this.base = opts.baseUrl.replace(/\/$/, '');
     this.fetchImpl = opts.fetchImpl ?? fetch;
     this.timeoutMs = opts.timeoutMs ?? IAM_TIMEOUT_MS;
+    this.now = opts.now ?? Date.now;
   }
 
   // --- Accounts ------------------------------------------------------------
@@ -227,6 +250,11 @@ export class IamWorkspacesClient {
 
   // --- Roles + members -----------------------------------------------------
 
+  /**
+   * The roles offered for ONE workspace: `workspace_admin` plus that workspace's
+   * custom roles. This is what the Dapta app's role dialog lists; note it does
+   * NOT include the other system roles (`workspace_editor`, …).
+   */
   async listRoles(bearer: string, workspaceId: string): Promise<IamRole[]> {
     const res = await this.call<IamRole[] | { data?: IamRole[] }>(
       bearer,
@@ -234,6 +262,43 @@ export class IamWorkspacesClient {
       `/role/roles-workspace/${encodeURIComponent(workspaceId)}`,
     );
     return Array.isArray(res) ? res : Array.isArray(res?.data) ? res.data : [];
+  }
+
+  /**
+   * The whole role catalog (`is_system` roles plus every custom role the caller
+   * can see). Ids differ per environment, so roles are always resolved by NAME
+   * from this list, never hardcoded. Cached for `ROLE_CATALOG_TTL_MS`.
+   */
+  async listSystemRoles(bearer: string, opts: { force?: boolean } = {}): Promise<IamRole[]> {
+    if (this.roleCatalog && this.catalogFresh() && !opts.force) return this.roleCatalog.roles;
+    const res = await this.call<IamRole[] | { data?: IamRole[] }>(bearer, 'GET', '/role');
+    const roles = Array.isArray(res) ? res : Array.isArray(res?.data) ? res.data : [];
+    this.roleCatalog = { at: this.now(), roles };
+    return roles;
+  }
+
+  private catalogFresh(): boolean {
+    return !!this.roleCatalog && this.now() - this.roleCatalog.at < ROLE_CATALOG_TTL_MS;
+  }
+
+  /**
+   * The id of the upstream role called `name`, for `workspaceId`. Looks at the
+   * workspace's own list first (custom roles shadow nothing, but this is where
+   * `workspace_admin` is guaranteed to appear), then at the system catalog. A
+   * miss re-reads the catalog once — a role added since the cache was filled —
+   * before answering null.
+   */
+  async roleIdByName(bearer: string, name: string, workspaceId?: string): Promise<string | null> {
+    if (workspaceId) {
+      const scoped = await this.listRoles(bearer, workspaceId).catch(() => [] as IamRole[]);
+      const hit = scoped.find((r) => r.name === name);
+      if (hit?.id) return hit.id;
+    }
+    const system = (r: IamRole) => r.name === name && r.is_system !== false && !r.workspace_id;
+    const servedFromCache = this.catalogFresh();
+    let hit = (await this.listSystemRoles(bearer)).find(system);
+    if (!hit && servedFromCache) hit = (await this.listSystemRoles(bearer, { force: true })).find(system);
+    return hit?.id ?? null;
   }
 
   removeWorkspaceUser(bearer: string, workspaceUserId: string): Promise<unknown> {

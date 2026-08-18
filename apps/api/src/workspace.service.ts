@@ -45,8 +45,15 @@ import {
 import { AUTH_PROVIDER, DB, WORKSPACE_PROJECTION } from './tokens';
 import type { AuthProvider, HostPrincipal, ReqLike, UpstreamIdentity } from './auth.provider';
 import { AuthService } from './auth.service';
-import { assertAdmin, assertCanManageTarget, assertNotSelf } from './permissions';
-import { IAM_ADMIN_ROLE_NAME, IamHttpError, roleFromIam, userEmailOf, userNameOf } from './iam-workspaces';
+import { assertAdmin, assertCanManageTarget, assertNotSelf, assertOwner } from './permissions';
+import {
+  IAM_ADMIN_ROLE_NAME,
+  IAM_MEMBER_ROLE_NAME,
+  IamHttpError,
+  roleFromIam,
+  userEmailOf,
+  userNameOf,
+} from './iam-workspaces';
 import type { WorkspaceProjection } from './workspace-projection';
 
 @Injectable()
@@ -238,10 +245,29 @@ export class WorkspaceService {
   }
 
   /**
+   * The upstream role id behind one of our roles, resolved by NAME (ids differ
+   * per environment): admin → `workspace_admin`, member → `workspace_editor`.
+   * `owner` is not a role upstream but a membership TYPE, and nothing this
+   * product calls can transfer it → 409.
+   */
+  private async upstreamRoleId(bearer: string, wsId: string, role: 'admin' | 'member'): Promise<string> {
+    const name = role === 'admin' ? IAM_ADMIN_ROLE_NAME : IAM_MEMBER_ROLE_NAME;
+    const id = await this.projection!.iam.roleIdByName(bearer, name, wsId);
+    if (!id) {
+      throw new ConflictException({
+        error: 'ROLE_UNAVAILABLE',
+        message: `The ${role} role is not available upstream.`,
+      });
+    }
+    return id;
+  }
+
+  /**
    * Invite by email through the identity service. The invitation, its email,
    * and its acceptance all live upstream; the person appears in the roster
    * once they accept (next roster read). Admin → the upstream `workspace_admin`
-   * role; member → the workspace's default.
+   * role; member → `workspace_editor`, so what the invitee lands with is what
+   * the inviter picked, in both apps.
    */
   async inviteUpstream(
     req: ReqLike,
@@ -255,16 +281,12 @@ export class WorkspaceService {
       throw new ConflictException({ error: 'NO_UPSTREAM', message: 'This workspace has no identity service behind it.' });
     }
     const email = input.email.trim().toLowerCase();
-    let roleId: string | undefined;
-    if (input.role === 'admin') {
-      const roles = await this.projection.iam.listRoles(up.bearer, wsId);
-      roleId = roles.find((r) => r.name === IAM_ADMIN_ROLE_NAME)?.id;
-    }
+    const roleId = await this.upstreamRoleId(up.bearer, wsId, input.role === 'admin' ? 'admin' : 'member');
     try {
       const inv = await this.projection.iam.createInvitation(up.bearer, {
         invited_email: email,
         workspace_id: wsId,
-        ...(roleId ? { role_id: roleId } : {}),
+        role_id: roleId,
       });
       // Shaped like a roster row so the caller's contract does not fork: the
       // invitation is `invited` until upstream turns it into a membership.
@@ -321,9 +343,10 @@ export class WorkspaceService {
   }
 
   /**
-   * Change a member upstream: promote to admin (assign `workspace_admin`),
-   * enable/disable. Demoting to member is not expressible upstream (roles are
-   * assigned, never removed, through the API this product has) → 409.
+   * Change a member upstream: promote (assign `workspace_admin`), demote (assign
+   * `workspace_editor` — roles are replaced, so this is how "member" is said),
+   * enable/disable. Ownership is a membership TYPE upstream, not a role, and
+   * nothing this product calls transfers it → 409.
    */
   async updateMemberUpstream(
     req: ReqLike,
@@ -350,16 +373,27 @@ export class WorkspaceService {
       throw new ConflictException({ error: 'LAST_OWNER', message: 'A workspace must keep at least one owner.' });
     }
     if (input.role !== undefined && input.role !== target.role) {
-      if (input.role === 'admin') {
-        const roles = await this.projection.iam.listRoles(up.bearer, wsId);
-        const roleId = roles.find((r) => r.name === IAM_ADMIN_ROLE_NAME)?.id;
-        if (!roleId) throw new ConflictException({ error: 'ROLE_UNAVAILABLE', message: 'The admin role is not available upstream.' });
-        await this.projection.iam.assignRole(up.bearer, ref.workspaceUserId, roleId);
-      } else {
+      if (input.role === 'owner' || target.role === 'owner') {
+        // OWNER is the membership type upstream; there is no call that changes it.
         throw new ConflictException({
           error: 'NOT_SUPPORTED_UPSTREAM',
-          message: 'Change this role from the Dapta app.',
+          message: 'Ownership is transferred from the Dapta app.',
         });
+      }
+      const roleId = await this.upstreamRoleId(up.bearer, wsId, input.role);
+      try {
+        await this.projection.iam.assignRole(up.bearer, ref.workspaceUserId, roleId);
+      } catch (err) {
+        // The upstream applies its own authorization: a 401/403 is THEM
+        // refusing the caller; any other 4xx is them refusing THIS role for
+        // THIS membership. Surface both as such, not as a crash.
+        if (err instanceof IamHttpError && (err.status === 401 || err.status === 403)) {
+          throw new ForbiddenException({ error: 'FORBIDDEN', message: 'The identity service refused this change.' });
+        }
+        if (err instanceof IamHttpError && err.status >= 400 && err.status < 500) {
+          throw new ConflictException({ error: 'ROLE_UNAVAILABLE', message: `The ${input.role} role was refused upstream.` });
+        }
+        throw err;
       }
     }
     if (input.status !== undefined && input.status !== target.status) {
@@ -373,10 +407,15 @@ export class WorkspaceService {
     return (await getAccountMember(this.db, p.accountId, memberId)) ?? target;
   }
 
-  /** Remove a member upstream, then locally. Idempotent. */
+  /**
+   * Remove a member upstream, then locally. Idempotent. OWNER-only, the same
+   * rule the Dapta app applies (an admin may invite, promote, demote and
+   * disable, but not remove) — kept identical so a person managing a workspace
+   * from either app meets the same door.
+   */
   async removeMemberUpstream(req: ReqLike, memberId: string): Promise<{ ok: true }> {
     const p = await this.auth.resolveHost(req);
-    assertAdmin(p);
+    assertOwner(p);
     assertNotSelf(p, memberId);
     const target = await getAccountMember(this.db, p.accountId, memberId);
     if (!target) return { ok: true };
