@@ -4,13 +4,12 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { isNavItemActive, type FormsMessages } from '@quill/shared';
-import { signOutAction } from '@/app/login/actions';
 import { AppSwitcher } from '@/components/app-switcher';
 import { BrandMark, BrandWordmark } from '@/components/brand/brand';
+import { ProfileMenu } from '@/components/profile-menu';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { WorkspaceSwitcher } from '@/components/workspace-switcher';
 import type { Workspace } from '@/lib/admin-api';
-import { resetAnalytics } from '@/lib/product-analytics';
 import type { ThemePref } from '@/lib/theme';
 
 type ChromeMessages = FormsMessages['admin']['chrome'];
@@ -21,7 +20,7 @@ type ChromeMessages = FormsMessages['admin']['chrome'];
  *  a desktop collapse rail (cookie-persisted, no FOUC), and a <768px off-canvas
  *  drawer with a hamburger top bar. Tokens only; R22 press/hover; R27/R28. */
 
-type IconName = 'home' | 'forms' | 'submissions' | 'analytics' | 'integrations' | 'branding' | 'cog';
+type IconName = 'home' | 'forms' | 'submissions' | 'analytics' | 'integrations';
 
 interface NavItem {
   key: keyof ChromeMessages['nav'];
@@ -32,16 +31,17 @@ interface NavItem {
 }
 
 // Forms information architecture: Home, Forms, Submissions, Analytics,
-// Integrations, Settings. Submissions/Analytics/Integrations are per-form
-// surfaces reached through a form picker at their global route.
+// Integrations. Submissions/Analytics/Integrations are per-form surfaces
+// reached through a form picker at their global route. Everything about the
+// ACCOUNT (workspaces, brand kit, notifications, public page) lives behind the
+// profile button at the bottom of the rail, under /admin/account — the same
+// place Dapta's admin panel keeps it — so no rail item is active on those pages.
 const NAV: NavItem[] = [
   { key: 'home', href: '/admin', icon: 'home' },
   { key: 'forms', href: '/admin/forms', icon: 'forms' },
   { key: 'submissions', href: '/admin/submissions', icon: 'submissions' },
   { key: 'analytics', href: '/admin/analytics', icon: 'analytics' },
   { key: 'integrations', href: '/admin/integrations', icon: 'integrations' },
-  { key: 'branding', href: '/admin/branding', icon: 'branding' },
-  { key: 'settings', href: '/admin/settings', icon: 'cog' },
 ];
 
 const NAV_COLLAPSED_KEY = 'forms.nav.collapsed';
@@ -54,8 +54,6 @@ const PI_BY_NAME: Record<IconName, string> = {
   submissions: 'pi-inbox',
   analytics: 'pi-chart-bar',
   integrations: 'pi-link',
-  branding: 'pi-palette',
-  cog: 'pi-cog',
 };
 
 function Icon({ name, className }: { name: IconName; className?: string }) {
@@ -120,15 +118,15 @@ function NavLinks({
   );
 }
 
-interface ShellUser {
+export interface ShellUser {
   displayName: string | null;
-  handle: string | null;
-  accountCode: string;
+  email: string | null;
 }
 
 export function AdminShell({
   user,
   messages,
+  accountNav,
   initialCollapsed = false,
   themePref = 'dark',
   workspaces = [],
@@ -138,6 +136,8 @@ export function AdminShell({
   user: ShellUser | null;
   /** Active-locale chrome catalog — nav + common labels + switcher. */
   messages: ChromeMessages;
+  /** Labels of the account-settings entries the profile menu lists. */
+  accountNav: FormsMessages['admin']['account']['nav'];
   /** Server-read cookie value → no collapse-rail FOUC on reload. */
   initialCollapsed?: boolean;
   /** Server-read colour-scheme choice, so the toggle's icon matches the paint. */
@@ -186,9 +186,6 @@ export function AdminShell({
     };
   }, [drawerOpen]);
 
-  const initial = (user?.displayName?.trim()?.charAt(0) || 'A').toUpperCase();
-  const userLabel = user?.displayName ?? 'Not signed in';
-
   const brand = (
     // px-3 matches the nav links' own padding, so the wordmark's left edge lands
     // on the same column as the nav icons instead of hanging 3.5px outside it.
@@ -220,71 +217,32 @@ export function AdminShell({
     </div>
   );
 
+  // The footer is two rows: the theme toggle above, the profile button last.
+  // The profile button is the door to Account settings and Log out (see
+  // profile-menu.tsx) — the loose "view public page" and "sign out" icons that
+  // used to sit beside the toggle are gone, so the identity row no longer has
+  // to share its width with a strip of 44px targets. The address gets the full
+  // rail; the toggle keeps its own row so it stays a 44px hit target (R28).
   // The mobile drawer is always full-width, so its footer renders expanded
   // regardless of the DESKTOP rail state — hence a param, not the shared const.
-  const viewPublic = user?.handle ? (
-    <Link
-      href={`/${user.accountCode}/${user.handle}`}
-      target="_blank"
-      rel="noopener noreferrer"
-      title={messages.viewPublic}
-      aria-label={`${messages.viewPublic} (opens in a new tab)`}
-      className="flex h-11 w-11 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground active:scale-[0.98]"
-    >
-      <i aria-hidden className="pi pi-external-link" style={{ fontSize: 16 }} />
-    </Link>
-  ) : null;
-
-  // Sign-out: a server action clears the session cookie (and redirects to the
-  // WorkOS logout when that provider is active).
-  const signOut = (
-    <form action={signOutAction}>
-      <button
-        type="submit"
-        // Drop the analytics identity BEFORE the session goes away. Without
-        // this the distinct id survives in the browser and the next person to
-        // sign in on this machine has their events attributed to whoever
-        // logged out — a shared laptop is enough to corrupt per-user data.
-        onClick={() => resetAnalytics()}
-        title={messages.signOut}
-        aria-label={messages.signOut}
-        className="flex h-11 w-11 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground active:scale-[0.98]"
-      >
-        <i aria-hidden className="pi pi-sign-out" style={{ fontSize: 16 }} />
-      </button>
-    </form>
-  );
-
-  // Identity and actions are stacked rather than sharing one row. They used to be
-  // a single `30px 1fr auto` grid, which worked while there were two 44px icon
-  // buttons: a third (the theme toggle) pushed the `auto` track to 136px and
-  // squeezed the email's `1fr` to 25px — an address ellipsised to "y…". Shrinking
-  // the buttons was the other option and it is the wrong one; 44px is the hit
-  // target (R28). A 240px rail does not fit an address and three targets on one
-  // line, so the address gets the full width and the targets get their own row.
-  // The collapsed rail is unaffected — it was already a single centred column.
-  const renderFooter = (footerCollapsed: boolean) => (
+  // `onNavigate` lets the drawer close itself when "Account settings" is chosen.
+  const renderFooter = (footerCollapsed: boolean, onNavigate?: () => void) => (
     <div
-      className={`mt-auto flex border-t border-border pt-3 ${
-        footerCollapsed ? 'flex-col items-center gap-1' : 'flex-col gap-2'
+      className={`mt-auto flex flex-col border-t border-border pt-3 ${
+        footerCollapsed ? 'items-center gap-1' : 'gap-1'
       }`}
     >
-      <div className={footerCollapsed ? '' : 'grid grid-cols-[30px_1fr] items-center gap-2'}>
-        <span className="flex h-[30px] w-[30px] items-center justify-center rounded-full border border-border bg-card text-xs font-semibold text-muted-foreground">
-          {initial}
-        </span>
-        {!footerCollapsed ? (
-          <span className="truncate text-sm text-foreground" title={userLabel}>
-            {userLabel}
-          </span>
-        ) : null}
-      </div>
       {/* Icon actions stay reachable in the collapsed rail too. */}
-      <span className={`flex items-center ${footerCollapsed ? 'flex-col gap-1' : 'gap-0.5'}`}>
+      <span className="flex items-center">
         <ThemeToggle pref={themePref} m={messages.theme} />
-        {viewPublic}
-        {signOut}
       </span>
+      <ProfileMenu
+        user={user}
+        collapsed={footerCollapsed}
+        m={messages.profileMenu}
+        nav={accountNav}
+        onNavigate={onNavigate}
+      />
     </div>
   );
 
@@ -388,7 +346,7 @@ export function AdminShell({
         <nav>
           <NavLinks collapsed={false} nav={messages.nav} onNavigate={() => setDrawerOpen(false)} />
         </nav>
-        {renderFooter(false)}
+        {renderFooter(false, () => setDrawerOpen(false))}
       </aside>
 
       <main inert={drawerOpen || undefined} className="min-w-0 flex-1 bg-background">

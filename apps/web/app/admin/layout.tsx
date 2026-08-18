@@ -40,7 +40,8 @@ export default async function AdminLayout({ children }: { children: ReactNode })
   // Server-read the collapse pref so the sidebar renders at the right width on
   // first paint (no rail FOUC).
   const initialCollapsed = jar.get('forms.nav.collapsed')?.value === '1';
-  const chrome = getMessages(await getLocale()).admin.chrome;
+  const adminMessages = getMessages(await getLocale()).admin;
+  const chrome = adminMessages.chrome;
 
   // Best-effort: a failure here must never take down the dashboard. Without the
   // list the switcher simply does not render, which is exactly how it behaves
@@ -82,9 +83,10 @@ export default async function AdminLayout({ children }: { children: ReactNode })
         initialCollapsed={initialCollapsed}
         themePref={await getThemePref()}
         messages={chrome}
+        accountNav={adminMessages.account.nav}
         workspaces={workspaces}
         currentAccountId={me.accountId}
-        user={{ displayName: me.displayName, handle: me.handle, accountCode: me.accountCode }}
+        user={{ displayName: me.displayName, email: me.email }}
       >
         {children}
       </AdminShell>

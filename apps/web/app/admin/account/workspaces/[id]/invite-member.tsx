@@ -26,13 +26,15 @@ export interface InviteMemberLabels {
 }
 
 /**
- * Add-member entry point on the Settings page (admin/owner only). Follows the
+ * Add-member entry point on a workspace's page (admin/owner only). Follows the
  * list/create pattern (Design Quality Bar): a primary trigger opens a dedicated
  * dialog, never an inline form under the list. Submits to `inviteMemberAction`,
  * which creates an `invited` member adopted on their first sign-in. On success
  * the dialog closes, a toast confirms, and the revalidated roster shows the row.
+ * `accountId` rides along as a hidden input so one component serves every
+ * workspace without switching into it.
  */
-export function InviteMember({ labels }: { labels: InviteMemberLabels }) {
+export function InviteMember({ accountId, labels }: { accountId: string; labels: InviteMemberLabels }) {
   const [open, setOpen] = useState(false);
   // The branded Select is not a native form control, so mirror its value into a
   // hidden input that carries `role` in the posted FormData (see the form below).
@@ -86,6 +88,7 @@ export function InviteMember({ labels }: { labels: InviteMemberLabels }) {
       >
         <p className="-mt-2 mb-4 text-sm text-muted-foreground">{labels.inviteSubtitle}</p>
         <form ref={formRef} action={action} className="flex flex-col gap-4">
+          <input type="hidden" name="accountId" value={accountId} />
           <label className="flex flex-col gap-1.5 text-sm">
             <span className="font-medium">{labels.inviteEmailLabel}</span>
             <input

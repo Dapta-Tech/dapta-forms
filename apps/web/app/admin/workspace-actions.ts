@@ -93,15 +93,20 @@ export type RenameWorkspaceState =
   | { ok: true }
   | { ok: false; code: 'INVALID' | 'FORBIDDEN' | 'FAILED' };
 
-/** Rename the current workspace (admin/owner; the API is the real gate). */
+/**
+ * Rename a workspace (admin/owner; the API is the real gate). The form may name
+ * the workspace with a hidden `accountId` — Account settings manages any
+ * workspace by id without switching into it; absent, the current one.
+ */
 export async function renameWorkspaceAction(
   _prev: RenameWorkspaceState,
   formData: FormData,
 ): Promise<RenameWorkspaceState> {
   const name = String(formData.get('name') ?? '').trim();
+  const accountId = String(formData.get('accountId') ?? '').trim();
   if (!name || name.length > 80) return { ok: false, code: 'INVALID' };
   try {
-    await adminApi.renameWorkspace(name);
+    await adminApi.renameWorkspace(name, accountId ? { workspace: accountId } : undefined);
   } catch (e) {
     unstable_rethrow(e);
     if (e instanceof ApiError) {
