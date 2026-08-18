@@ -22,6 +22,7 @@ export interface InviteMemberLabels {
   inviteErrorTaken: string;
   inviteErrorInvalid: string;
   inviteErrorFailed: string;
+  inviteErrorUpstream: string;
 }
 
 /**
@@ -66,7 +67,9 @@ export function InviteMember({ labels }: { labels: InviteMemberLabels }) {
         ? labels.inviteErrorTaken
         : state.code === 'INVALID'
           ? labels.inviteErrorInvalid
-          : labels.inviteErrorFailed
+          : state.code === 'UPSTREAM'
+            ? labels.inviteErrorUpstream
+            : labels.inviteErrorFailed
       : null;
 
   return (

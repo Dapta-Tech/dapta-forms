@@ -50,6 +50,7 @@ import {
   IAM_ADMIN_ROLE_NAME,
   IAM_MEMBER_ROLE_NAME,
   IamHttpError,
+  IamUnavailableError,
   roleFromIam,
   userEmailOf,
   userNameOf,
@@ -249,10 +250,28 @@ export class WorkspaceService {
    * per environment): admin → `workspace_admin`, member → `workspace_editor`.
    * `owner` is not a role upstream but a membership TYPE, and nothing this
    * product calls can transfer it → 409.
+   *
+   * The upstream applies its own authorization: a 401/403 while reading the
+   * catalog is THEM refusing the caller (→ 403 here); any other failure — the
+   * role missing, a 4xx, the service unreachable — is "this role cannot be
+   * resolved right now" (→ 409 `ROLE_UNAVAILABLE`), never a crash.
    */
   private async upstreamRoleId(bearer: string, wsId: string, role: 'admin' | 'member'): Promise<string> {
     const name = role === 'admin' ? IAM_ADMIN_ROLE_NAME : IAM_MEMBER_ROLE_NAME;
-    const id = await this.projection!.iam.roleIdByName(bearer, name, wsId);
+    let id: string | null;
+    try {
+      id = await this.projection!.iam.roleIdByName(bearer, name, wsId);
+    } catch (err) {
+      if (err instanceof IamHttpError && (err.status === 401 || err.status === 403)) {
+        throw new ForbiddenException({ error: 'FORBIDDEN', message: 'The identity service refused this change.' });
+      }
+      if (err instanceof IamHttpError || err instanceof IamUnavailableError) {
+        this.logWarn(`role catalog read failed for ${wsId}: ${String(err)}`);
+        id = null;
+      } else {
+        throw err;
+      }
+    }
     if (!id) {
       throw new ConflictException({
         error: 'ROLE_UNAVAILABLE',
@@ -281,12 +300,26 @@ export class WorkspaceService {
       throw new ConflictException({ error: 'NO_UPSTREAM', message: 'This workspace has no identity service behind it.' });
     }
     const email = input.email.trim().toLowerCase();
-    const roleId = await this.upstreamRoleId(up.bearer, wsId, input.role === 'admin' ? 'admin' : 'member');
+    // Admin MUST carry the admin role (an admin invite that lands as a plain
+    // member is a silent privilege mismatch). Member SHOULD carry the editor
+    // role; when the catalog cannot be read the invitation still goes out with
+    // the workspace's default, as it did before the editor role was sent.
+    let roleId: string | undefined;
+    if (input.role === 'admin') {
+      roleId = await this.upstreamRoleId(up.bearer, wsId, 'admin');
+    } else {
+      try {
+        roleId = await this.upstreamRoleId(up.bearer, wsId, 'member');
+      } catch (err) {
+        if (!(err instanceof ConflictException)) throw err;
+        this.logWarn(`member invite for ${wsId} sent without role_id: editor role unavailable`);
+      }
+    }
     try {
       const inv = await this.projection.iam.createInvitation(up.bearer, {
         invited_email: email,
         workspace_id: wsId,
-        role_id: roleId,
+        ...(roleId ? { role_id: roleId } : {}),
       });
       // Shaped like a roster row so the caller's contract does not fork: the
       // invitation is `invited` until upstream turns it into a membership.
@@ -301,8 +334,18 @@ export class WorkspaceService {
         createdAt: Date.now(),
       };
     } catch (err) {
-      if (err instanceof IamHttpError && (err.status === 409 || err.status === 400)) {
+      // 409, or a 400 whose body says "already": the address is taken. Any
+      // other 400 is the upstream refusing the payload (the role, the address
+      // shape) and is reported as such — a retry with the same input will
+      // not help, and "already a member" would be a lie.
+      if (err instanceof IamHttpError && err.status === 409) {
         throw new ConflictException({ error: 'EMAIL_TAKEN', message: 'That address is already invited or a member.' });
+      }
+      if (err instanceof IamHttpError && err.status === 400) {
+        if (/already|exist|duplicate|invited|member/i.test(err.body)) {
+          throw new ConflictException({ error: 'EMAIL_TAKEN', message: 'That address is already invited or a member.' });
+        }
+        throw new BadRequestException({ error: 'INVALID', message: 'The identity service refused that invitation.' });
       }
       throw err;
     }
@@ -411,14 +454,20 @@ export class WorkspaceService {
    * Remove a member upstream, then locally. Idempotent. OWNER-only, the same
    * rule the Dapta app applies (an admin may invite, promote, demote and
    * disable, but not remove) — kept identical so a person managing a workspace
-   * from either app meets the same door.
+   * from either app meets the same door. The one exception is a row that is
+   * still `invited` (a pre-0015 local invitation nobody accepted): retracting
+   * an invitation is the inviter's call, so an admin may.
    */
   async removeMemberUpstream(req: ReqLike, memberId: string): Promise<{ ok: true }> {
     const p = await this.auth.resolveHost(req);
-    assertOwner(p);
+    assertAdmin(p);
     assertNotSelf(p, memberId);
     const target = await getAccountMember(this.db, p.accountId, memberId);
-    if (!target) return { ok: true };
+    if (!target) {
+      assertOwner(p); // an unknown id is a "remove" in intent; hold it to the owner rule
+      return { ok: true };
+    }
+    if (target.status !== 'invited') assertOwner(p);
     assertCanManageTarget(p, target);
     if (await wouldOrphanWorkspace(this.db, p.accountId, memberId)) {
       throw new ConflictException({ error: 'LAST_OWNER', message: 'A workspace must keep at least one owner.' });

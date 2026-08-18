@@ -36,6 +36,9 @@ describe('WorkspaceService (IAM-backed)', () => {
   let workspaces: IamWorkspace[];
   let lastWorkspace: string | null;
   let invitations: Array<{ id: string; workspace_id: string; invited_email: string; status: string; role_id?: string }>;
+  /** Test seams: the fake clock the role-catalog cache reads, and a way to make `/role` fail. */
+  let clock: number;
+  let roleCatalogStatus: number;
 
   const token = signJwtHs256({ sub: SUB, account_id: IAM_ACCOUNT, email: 'a@x.com', name: 'A', exp: 4102444800 }, SECRET);
   const req = (workspace?: string): ReqLike => ({
@@ -48,6 +51,8 @@ describe('WorkspaceService (IAM-backed)', () => {
     calls = [];
     lastWorkspace = null;
     invitations = [];
+    clock = 1_000_000;
+    roleCatalogStatus = 200;
     workspaces = [
       { id: WS_OWN, name: 'Mine', account_id: IAM_ACCOUNT, is_active: true, users: [{ id: 'wu1', user_id: SUB, type: 'OWNER', is_active: true, roles: [] }] },
     ];
@@ -84,6 +89,8 @@ describe('WorkspaceService (IAM-backed)', () => {
       // (+ custom roles); the other system roles live in the catalog.
       if (method === 'GET' && url.pathname.startsWith('/iam/role/roles-workspace/'))
         return json([{ id: 'role-admin', name: 'workspace_admin', is_system: true }]);
+      if (method === 'GET' && url.pathname === '/iam/role' && roleCatalogStatus !== 200)
+        return new Response('nope', { status: roleCatalogStatus });
       if (method === 'GET' && url.pathname === '/iam/role')
         return json([
           { id: 'role-admin', name: 'workspace_admin', is_system: true },
@@ -116,7 +123,10 @@ describe('WorkspaceService (IAM-backed)', () => {
       }
       return new Response('nope', { status: 404 });
     };
-    const projection = new WorkspaceProjection(db, new IamWorkspacesClient({ baseUrl: 'https://iam.test/iam', fetchImpl }));
+    const projection = new WorkspaceProjection(
+      db,
+      new IamWorkspacesClient({ baseUrl: 'https://iam.test/iam', fetchImpl, now: () => clock }),
+    );
     const provider = new WorkOsAuthProvider(
       db,
       { JWT_SECRET: SECRET, JWT_ISSUER: undefined, JWT_AUDIENCE: undefined, SEED_DEMO_FORM: false, ONBOARDING_WIZARD: false },
@@ -229,8 +239,50 @@ describe('WorkspaceService (IAM-backed)', () => {
     b = (await svc.roster(req())).find((m) => m.email === 'b@x.com')!;
     expect(b.role).toBe('member');
 
-    // The catalog is read once and cached — three role writes, one GET /role.
+    // The catalog is read once and cached: a second demote is a cache hit.
+    await svc.updateMemberUpstream(req(), b.id, { role: 'admin' });
+    await svc.updateMemberUpstream(req(), b.id, { role: 'member' });
     expect(calls.filter((c) => c.method === 'GET' && c.path === '/iam/role').length).toBe(1);
+    // …and only the catalog is consulted for a system role: the per-workspace
+    // list is a fallback, not a probe on every write.
+    expect(calls.filter((c) => c.path.startsWith('/iam/role/roles-workspace/')).length).toBe(0);
+  });
+
+  it('the role catalog expires after its TTL, and a name missing from the cache forces one re-read', async () => {
+    await svc.list(req());
+    workspaces[0]!.users!.push({ id: 'wu2', user_id: 'sub-2', type: 'MEMBER', is_active: true, roles: [], user: { email: 'b@x.com', name: 'B' } });
+    const b = (await svc.roster(req())).find((m) => m.email === 'b@x.com')!;
+    const reads = () => calls.filter((c) => c.method === 'GET' && c.path === '/iam/role').length;
+    await svc.updateMemberUpstream(req(), b.id, { role: 'admin' });
+    expect(reads()).toBe(1);
+    clock += 4 * 60_000;
+    await svc.updateMemberUpstream(req(), b.id, { role: 'member' });
+    expect(reads()).toBe(1); // still fresh
+    clock += 2 * 60_000;
+    await svc.updateMemberUpstream(req(), b.id, { role: 'admin' });
+    expect(reads()).toBe(2); // expired → re-read
+  });
+
+  it('a catalog the caller may not read is a 403; a catalog that is down is a 409 ROLE_UNAVAILABLE (never a 500)', async () => {
+    await svc.list(req());
+    workspaces[0]!.users!.push({ id: 'wu2', user_id: 'sub-2', type: 'MEMBER', is_active: true, roles: [], user: { email: 'b@x.com', name: 'B' } });
+    const b = (await svc.roster(req())).find((m) => m.email === 'b@x.com')!;
+    roleCatalogStatus = 403;
+    // The admin role still resolves: it is on the per-workspace list (fallback).
+    await svc.updateMemberUpstream(req(), b.id, { role: 'admin' });
+    // The editor role is catalog-only → the upstream's refusal is the caller's 403.
+    await expect(svc.updateMemberUpstream(req(), b.id, { role: 'member' })).rejects.toBeInstanceOf(ForbiddenException);
+    roleCatalogStatus = 503;
+    await expect(svc.updateMemberUpstream(req(), b.id, { role: 'member' })).rejects.toBeInstanceOf(ConflictException);
+    // A member invite still goes out — with the workspace's default role.
+    await svc.inviteUpstream(req(), { email: 'late@x.com', role: 'member' });
+    const post = calls.filter((c) => c.method === 'POST' && c.path === '/iam/workspace-invitations').at(-1)!;
+    expect((post.body as { role_id?: string }).role_id).toBeUndefined();
+    // An admin invite still carries the admin role: it resolves from the
+    // per-workspace list, which does not depend on the catalog.
+    await svc.inviteUpstream(req(), { email: 'boss@x.com', role: 'admin' });
+    const adm = calls.filter((c) => c.method === 'POST' && c.path === '/iam/workspace-invitations').at(-1)!;
+    expect((adm.body as { role_id?: string }).role_id).toBe('role-admin');
   });
 
   it('a workspace_owner role upstream reads as admin here', async () => {

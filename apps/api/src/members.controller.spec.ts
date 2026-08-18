@@ -180,15 +180,26 @@ describe('DELETE /v1/members/:id (remove member)', () => {
     ).rejects.toBeInstanceOf(ForbiddenException);
   });
 
-  it('refuses an ADMIN removing a plain member with 403 — removal is owner-only, like the identity service', async () => {
+  it('refuses an ADMIN removing an ACTIVE member with 403 — removal is owner-only, like the identity service', async () => {
     await controller.inviteMember(asOwner(), { email: 'boss@acme.test', role: 'admin' });
     const target = await controller.inviteMember(asOwner(), { email: 'victim@acme.test' });
+    // Accepted membership (what first login does): the owner-only rule applies.
+    await db.run(sql`UPDATE member SET status = 'active' WHERE id = ${target.id}`);
     await expect(
       controller.removeMember(asEmail('boss@acme.test'), target.id),
     ).rejects.toBeInstanceOf(ForbiddenException);
     // …while the same admin can still demote / disable them.
     const demoted = await controller.updateMember(asEmail('boss@acme.test'), target.id, { status: 'disabled' });
     expect(demoted.status).toBe('disabled');
+  });
+
+  it('an admin CAN retract an invitation (an `invited` row is not a membership yet)', async () => {
+    await controller.inviteMember(asOwner(), { email: 'boss@acme.test', role: 'admin' });
+    const pending = await controller.inviteMember(asEmail('boss@acme.test'), { email: 'maybe@acme.test' });
+    expect(pending.status).toBe('invited');
+    expect(await controller.removeMember(asEmail('boss@acme.test'), pending.id)).toEqual({ ok: true });
+    const roster = await controller.members(asOwner());
+    expect(roster.map((m) => m.email)).not.toContain('maybe@acme.test');
   });
 
   it('refuses an admin removing an owner with 403', async () => {

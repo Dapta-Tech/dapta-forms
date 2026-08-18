@@ -4,7 +4,10 @@
  * Every call forwards the CALLER's bearer token — the same platform JWT the
  * auth provider validated — so the identity service applies its own
  * authorization and this client never holds a privileged credential. Nothing
- * here is cached or persisted; `workspace-projection.ts` decides what to keep.
+ * per tenant is cached or persisted here — `workspace-projection.ts` decides
+ * what to keep — with one deliberate exception: the SYSTEM role catalog (the
+ * same rows for every caller, filtered of anything workspace-scoped), kept for
+ * a few minutes so role writes do not re-read it every time.
  *
  * Only the shapes this product reads are typed. Upstream returns far more per
  * row (phone numbers, plans, stripe ids); it is dropped at the boundary.
@@ -141,10 +144,16 @@ const PAGE_SIZE = 100;
 const MAX_PAGES = 20;
 /**
  * The system role catalog changes when the identity service deploys, not per
- * request. Cached per client instance; a name that is not in the cached copy
- * forces one re-read before giving up (see `roleIdByName`).
+ * request. Cached per client instance (system rows only — see `isSystemRole`);
+ * a name that is not in the cached copy forces one re-read before giving up
+ * (see `roleIdByName`).
  */
 const ROLE_CATALOG_TTL_MS = 5 * 60_000;
+
+/** A role of the identity service itself, not one a workspace defined. */
+export function isSystemRole(r: IamRole): boolean {
+  return r.is_system !== false && !r.workspace_id;
+}
 
 export interface IamWorkspacesClientOptions {
   baseUrl: string;
@@ -265,14 +274,18 @@ export class IamWorkspacesClient {
   }
 
   /**
-   * The whole role catalog (`is_system` roles plus every custom role the caller
-   * can see). Ids differ per environment, so roles are always resolved by NAME
-   * from this list, never hardcoded. Cached for `ROLE_CATALOG_TTL_MS`.
+   * The SYSTEM role catalog. `GET /role` answers with the system roles plus
+   * every custom role the caller can see; only the system rows are kept (and
+   * cached, for `ROLE_CATALOG_TTL_MS`) — the client is a process singleton
+   * shared by every tenant, so nothing workspace-scoped may sit in it. Ids
+   * differ per environment, so roles are always resolved by NAME from this
+   * list, never hardcoded.
    */
   async listSystemRoles(bearer: string, opts: { force?: boolean } = {}): Promise<IamRole[]> {
     if (this.roleCatalog && this.catalogFresh() && !opts.force) return this.roleCatalog.roles;
     const res = await this.call<IamRole[] | { data?: IamRole[] }>(bearer, 'GET', '/role');
-    const roles = Array.isArray(res) ? res : Array.isArray(res?.data) ? res.data : [];
+    const all = Array.isArray(res) ? res : Array.isArray(res?.data) ? res.data : [];
+    const roles = all.filter(isSystemRole);
     this.roleCatalog = { at: this.now(), roles };
     return roles;
   }
@@ -282,22 +295,32 @@ export class IamWorkspacesClient {
   }
 
   /**
-   * The id of the upstream role called `name`, for `workspaceId`. Looks at the
-   * workspace's own list first (custom roles shadow nothing, but this is where
-   * `workspace_admin` is guaranteed to appear), then at the system catalog. A
-   * miss re-reads the catalog once — a role added since the cache was filled —
-   * before answering null.
+   * The id of the SYSTEM role called `name`. The cached catalog is consulted
+   * first (no round trip on a hit); a miss re-reads it once — a role added
+   * since the cache was filled — and, when `workspaceId` is given, falls back
+   * to that workspace's own list, the one place `workspace_admin` is
+   * guaranteed to appear even for a caller who cannot read `/role`. A custom
+   * role that happens to share the name never wins over the system one.
    */
   async roleIdByName(bearer: string, name: string, workspaceId?: string): Promise<string | null> {
-    if (workspaceId) {
-      const scoped = await this.listRoles(bearer, workspaceId).catch(() => [] as IamRole[]);
-      const hit = scoped.find((r) => r.name === name);
-      if (hit?.id) return hit.id;
-    }
-    const system = (r: IamRole) => r.name === name && r.is_system !== false && !r.workspace_id;
+    const match = (r: IamRole) => r.name === name && isSystemRole(r);
     const servedFromCache = this.catalogFresh();
-    let hit = (await this.listSystemRoles(bearer)).find(system);
-    if (!hit && servedFromCache) hit = (await this.listSystemRoles(bearer, { force: true })).find(system);
+    let hit: IamRole | undefined;
+    let catalogError: unknown = null;
+    try {
+      hit = (await this.listSystemRoles(bearer)).find(match);
+      if (!hit && servedFromCache) hit = (await this.listSystemRoles(bearer, { force: true })).find(match);
+    } catch (err) {
+      // Not fatal yet: the workspace's own list may still name it.
+      if (!workspaceId) throw err;
+      catalogError = err;
+    }
+    if (!hit && workspaceId) {
+      hit = (await this.listRoles(bearer, workspaceId)).find(match);
+    }
+    // A catalog failure that the fallback did not paper over is the caller's
+    // to map (a 403 is THEM refusing the caller, not "no such role").
+    if (!hit && catalogError) throw catalogError;
     return hit?.id ?? null;
   }
 

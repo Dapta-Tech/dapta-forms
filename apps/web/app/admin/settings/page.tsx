@@ -111,6 +111,7 @@ export default async function SettingsPage() {
                 inviteErrorTaken: s.inviteErrorTaken,
                 inviteErrorInvalid: s.inviteErrorInvalid,
                 inviteErrorFailed: s.inviteErrorFailed,
+                inviteErrorUpstream: s.inviteErrorUpstream,
               }}
             />
           </div>
@@ -168,6 +169,7 @@ export default async function SettingsPage() {
                           manageErrorForbidden: s.manageErrorForbidden,
                           manageErrorFailed: s.manageErrorFailed,
                           manageErrorUpstream: s.manageErrorUpstream,
+                          manageErrorOwnership: s.manageErrorOwnership,
                         }}
                       />
                     ) : (

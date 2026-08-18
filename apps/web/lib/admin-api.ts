@@ -84,7 +84,7 @@ async function req<T>(method: string, path: string, body?: unknown, opts: ReqOpt
   // Only for the COOKIE's workspace. A 403 on an explicit `opts.workspace` means
   // "you cannot manage that one" and is the caller's to show; resetting the
   // cookie for it would throw the person out of the workspace they ARE in.
-  if (res.status === 403 && cookieWorkspace && !opts.workspace) {
+  if (res.status === 403 && cookieWorkspace && (opts.workspace === undefined || opts.workspace === cookieWorkspace)) {
     const j = (await res.clone().json().catch(() => ({}))) as { error?: string };
     if (j.error === 'WORKSPACE_FORBIDDEN') redirect('/api/workspace/reset');
   }

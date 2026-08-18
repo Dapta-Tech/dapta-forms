@@ -650,7 +650,9 @@ export class AdminCrudController {
   /**
    * Remove a member. OWNER-only (an admin may invite, promote, demote and
    * disable, but not remove) — the identity service's rule, applied on the
-   * local path too so a fork and an identity-backed deployment agree.
+   * local path too so a fork and an identity-backed deployment agree. An
+   * `invited` row is an invitation, not a membership: retracting one is the
+   * inviter's call, so an admin may remove those.
    */
   @Delete('members/:id')
   @HttpCode(200)
@@ -659,10 +661,14 @@ export class AdminCrudController {
       return this.workspacesSvc.removeMemberUpstream(req, id);
     }
     const p = await this.auth.resolveHost(req);
-    assertOwner(p);
+    assertAdmin(p);
     assertNotSelf(p, id);
     const target = await getAccountMember(this.db, p.accountId, id);
-    if (!target) return { ok: true }; // idempotent — already gone
+    if (!target) {
+      assertOwner(p);
+      return { ok: true }; // idempotent — already gone
+    }
+    if (target.status !== 'invited') assertOwner(p);
     assertCanManageTarget(p, target);
     unwrapCrud(await removeMember(this.db, p.accountId, id));
     return { ok: true };

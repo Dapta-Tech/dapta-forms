@@ -18,7 +18,8 @@ behind a workspace, and removal follows its rule.
   membership TYPE upstream, not a role, and nothing this product calls transfers it.
 - Removing a member is OWNER-only, the identity service's rule, on the local
   path too so a fork and an identity-backed deployment agree. Admins still
-  invite, promote, demote and disable.
+  invite, promote, demote, disable, and may retract an invitation that has not
+  been accepted (an `invited` row is not a membership yet).
 - `listWorkspacesForIdentity` rows carry `memberCount` (active members), for
   the workspace cards in Account settings.
 - The web API client takes a per-call `{ workspace }` override so a workspace can

@@ -317,6 +317,8 @@ export interface FormsMessages {
       inviteErrorTaken: string;
       inviteErrorInvalid: string;
       inviteErrorFailed: string;
+      /** The identity service refused the invitation (role or address). */
+      inviteErrorUpstream: string;
       membersMenu: string;
       makeAdmin: string;
       makeMember: string;
@@ -327,8 +329,10 @@ export interface FormsMessages {
       manageErrorLastOwner: string;
       manageErrorForbidden: string;
       manageErrorFailed: string;
-      /** The change is only expressible in the identity service (Dapta app). */
+      /** The identity service could not apply the change (role missing, member unmanaged, refused). */
       manageErrorUpstream: string;
+      /** Ownership is a membership type upstream; only the Dapta app transfers it. */
+      manageErrorOwnership: string;
     };
     /** Settings → Notifications: edit the two submission emails the platform sends. */
     notifications: {
@@ -1812,6 +1816,7 @@ export const en: FormsMessages = {
       inviteErrorTaken: 'A member with that email already exists.',
       inviteErrorInvalid: 'Enter a valid email address.',
       inviteErrorFailed: 'Could not add the member. Please try again.',
+      inviteErrorUpstream: 'The identity service refused that invitation.',
       membersMenu: 'Member actions',
       makeAdmin: 'Change to Admin',
       makeMember: 'Change to Member',
@@ -1822,7 +1827,8 @@ export const en: FormsMessages = {
       manageErrorLastOwner: 'A workspace must keep at least one owner.',
       manageErrorForbidden: 'You do not have permission to do that.',
       manageErrorFailed: 'Something went wrong. Please try again.',
-      manageErrorUpstream: 'The identity service could not apply this change. Ownership is transferred from the Dapta app.',
+      manageErrorUpstream: 'The identity service could not apply this change.',
+      manageErrorOwnership: 'Ownership is transferred from the Dapta app.',
     },
     notifications: {
       heading: 'Notifications',
@@ -3217,6 +3223,7 @@ export const es: FormsMessages = {
       inviteErrorTaken: 'Ya existe un miembro con ese correo.',
       inviteErrorInvalid: 'Introduce un correo válido.',
       inviteErrorFailed: 'No se pudo añadir el miembro. Inténtalo de nuevo.',
+      inviteErrorUpstream: 'El servicio de identidad rechazó esa invitación.',
       membersMenu: 'Acciones de miembro',
       makeAdmin: 'Cambiar a Administrador',
       makeMember: 'Cambiar a Miembro',
@@ -3227,7 +3234,8 @@ export const es: FormsMessages = {
       manageErrorLastOwner: 'Un espacio de trabajo debe conservar al menos un propietario.',
       manageErrorForbidden: 'No tienes permiso para hacer eso.',
       manageErrorFailed: 'Algo salió mal. Inténtalo de nuevo.',
-      manageErrorUpstream: 'El servicio de identidad no pudo aplicar este cambio. La propiedad se transfiere desde la app de Dapta.',
+      manageErrorUpstream: 'El servicio de identidad no pudo aplicar este cambio.',
+      manageErrorOwnership: 'La propiedad se transfiere desde la app de Dapta.',
     },
     notifications: {
       heading: 'Notificaciones',
