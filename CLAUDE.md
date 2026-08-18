@@ -300,6 +300,24 @@ first. Run it with a base to see exactly what CI will say:
 bash scripts/dash-check.sh origin/develop
 ```
 
+**The release PR (`develop` into `main`) is charged for everything develop
+added since the last release**, not for one feature. A dash that reached
+develop before this gate ran on PRs (or through a merge nobody re-checked) is
+invisible on every feature PR and fails only on the release, where the fix is
+a detour: a second PR into develop, then the release re-runs. It happened on
+2026-08-18 with `.changeset/iam-workspaces.md` (merged one PR before the CI job
+existed). So, before opening the release PR, run the check with main as the
+base and fix what it reports in a small PR to develop first:
+
+```bash
+bash scripts/dash-check.sh origin/main
+```
+
+And when you write a changeset, remember it is the one file the whole-tree
+copy scan does NOT read (it is docs scope, diff-only): the base rule above,
+"no em dash in anything a person outside the team reads", is the only thing
+keeping it clean, and it becomes the public CHANGELOG the moment it ships.
+
 **What the check does NOT read: comments and `*.spec.ts` titles.** Both are
 advisory per the rule above, in every scope, so a dashed code comment or test
 title will never fail CI. That is a deliberate ceiling, not an oversight: the
