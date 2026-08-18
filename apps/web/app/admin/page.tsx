@@ -4,6 +4,7 @@ import { getMessages, t } from '@quill/shared';
 import { adminApi } from '@/lib/admin-api';
 import { getLocale } from '@/lib/locale';
 import { greetingName } from '@/lib/person';
+import { publishedPublicPagePath } from '@/lib/public-page';
 import { CopyLink } from '@/components/copy-link';
 import { CreateForm } from './forms/create-form';
 
@@ -13,7 +14,12 @@ export default async function AdminHome() {
   const locale = await getLocale();
   const messages = getMessages(locale).admin;
   const h = messages.home;
-  const [me, forms] = await Promise.all([adminApi.me(), adminApi.listForms()]);
+  const [me, forms, myProfile] = await Promise.all([
+    adminApi.me(),
+    adminApi.listForms(),
+    // Missing or unreadable profile reads as "not published": the box hides.
+    adminApi.myProfile().catch(() => null),
+  ]);
 
   // Aggregate submissions + completion across every form (reuse per-form
   // analytics — no new endpoint). Weighted completion = Σsubmissions / Σstarts.
@@ -29,9 +35,12 @@ export default async function AdminHome() {
   const completionRate =
     totalStarts > 0 ? Math.min(100, Math.round((totalSubmissions / totalStarts) * 1000) / 10) : 0;
 
-  // The dashboard's shareable link points at the most recently updated form.
-  const latest = [...forms].sort((a, b) => b.updatedAt - a.updatedAt)[0];
-  const publicUrl = latest ? `/${me.accountCode}/${me.handle ?? 'me'}/${latest.slug}` : null;
+  // The dashboard's shareable link is the member's PUBLIC PAGE (the form list at
+  // /{accountCode}/{handle}), and only while it is published in Account
+  // settings. It used to point at the most recently updated form, which is not
+  // what "your public link" means and could be a draft. Off or no handle: the
+  // box hides rather than pointing at a 404.
+  const publicUrl = publishedPublicPagePath(me, myProfile?.profile);
 
   // Null when `displayName` is really the address — the full one for local signup,
   // the local part for an invite. The email has to be passed to catch the second
@@ -59,7 +68,10 @@ export default async function AdminHome() {
       <p className="mb-8 text-muted-foreground">{h.subtitle}</p>
 
       {publicUrl ? (
-        <div className="mb-8 flex flex-col gap-2 rounded-xl border border-border bg-card p-5">
+        <div
+          data-testid="home-public-page"
+          className="mb-8 flex flex-col gap-2 rounded-xl border border-border bg-card p-5"
+        >
           <span className="text-sm text-muted-foreground">{h.publicLink}</span>
           <CopyLink path={publicUrl} labels={{ copy: h.copy, copied: h.copied, open: h.open }} />
         </div>

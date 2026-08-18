@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import { getMessages } from '@quill/shared';
 import { adminApi } from '@/lib/admin-api';
 import { getLocale } from '@/lib/locale';
+import { publicPagePath } from '@/lib/public-page';
 import { PublicPageSettings } from './public-page';
 
 export const dynamic = 'force-dynamic';
@@ -21,7 +22,7 @@ export default async function PublicPagePage() {
 
   const me = await adminApi.me();
   const myProfile = await adminApi.myProfile().catch(() => null);
-  const publicPath = me.handle ? `/${me.accountCode}/${me.handle}` : null;
+  const publicPath = publicPagePath(me);
 
   return (
     <div data-testid="account-public-page">

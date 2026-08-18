@@ -2,6 +2,7 @@
 
 import { useMemo, useState, useTransition } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import type { FormsMessages, Locale } from '@quill/shared';
 import { t } from '@quill/shared';
 import type { AccountRole, Workspace } from '@/lib/admin-api';
@@ -61,6 +62,7 @@ export function WorkspaceCards({
   const [openingId, setOpeningId] = useState<string | null>(null);
   const [pending, start] = useTransition();
   const toast = useToast();
+  const router = useRouter();
 
   const roleLabel: Record<AccountRole, string> = {
     owner: labels.roleOwner,
@@ -88,6 +90,21 @@ export function WorkspaceCards({
       if (isTransportError(res)) toast.error(labels.openErrorFailed);
       else if (res.error) toast.error(res.error === 'forbidden' ? labels.openErrorForbidden : labels.openErrorFailed);
     });
+  }
+
+  const manageHref = (accountId: string) => `/admin/account/workspaces/${accountId}`;
+
+  // The whole card is a way into Manage, not only its button: people click the
+  // card, and a card that answers with nothing reads as broken. Pointer only,
+  // on purpose: the Manage link inside is already the keyboard and screen
+  // reader way in, and giving the <li> a role or a tab stop would either nest
+  // interactive content inside a link or take the list's semantics away. Two
+  // things are NOT a card click: the action row (Open must stay Open, so it
+  // stops the event before it gets here), and a text selection (someone
+  // copying the workspace code should not be navigated away mid-drag).
+  function cardClick(accountId: string) {
+    if (window.getSelection()?.toString()) return;
+    router.push(manageHref(accountId));
   }
 
   return (
@@ -139,6 +156,10 @@ export function WorkspaceCards({
             {visible.map((w) => {
               const isCurrent = w.accountId === currentAccountId;
               const isOpening = pending && openingId === w.accountId;
+              // An invited card offers only Open (accepting is the explicit
+              // click, see the note by the buttons), so it has no Manage to
+              // navigate to and stays a plain card.
+              const clickable = w.status !== 'invited';
               const memberText =
                 w.memberCount === 1
                   ? labels.memberOne
@@ -148,9 +169,11 @@ export function WorkspaceCards({
                   key={w.accountId}
                   data-testid="workspace-card"
                   data-account-id={w.accountId}
+                  onClick={clickable ? () => cardClick(w.accountId) : undefined}
                   className={cn(
                     'flex flex-col gap-4 rounded-xl border bg-card p-5 transition-colors',
                     isCurrent ? 'border-primary-edge/60' : 'border-border hover:border-primary-edge/40',
+                    clickable && 'cursor-pointer',
                   )}
                 >
                   <div className="flex items-start gap-3">
@@ -203,7 +226,13 @@ export function WorkspaceCards({
                     </div>
                   </dl>
 
-                  <div className="mt-auto flex items-center gap-2 border-t border-border pt-4">
+                  {/* The action row is its own click target: a click on Open or
+                      Manage (or the space between them) never bubbles up as a
+                      card click, so Open cannot double as Manage. */}
+                  <div
+                    className="mt-auto flex items-center gap-2 border-t border-border pt-4"
+                    onClick={(e) => e.stopPropagation()}
+                  >
                     <Button
                       size="sm"
                       data-testid="workspace-open"

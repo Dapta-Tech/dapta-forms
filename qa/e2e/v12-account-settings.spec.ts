@@ -264,6 +264,88 @@ test.describe('V12: account settings behind the profile menu', () => {
     await expect(myRow).toBeVisible();
   });
 
+  test('Workspaces: the whole card is a way into Manage, the action row is not', async ({
+    page,
+    request,
+  }) => {
+    const me = await whoAmI(request);
+    await page.goto('/admin/account/workspaces');
+    const current = page.locator(
+      `[data-testid="workspace-card"][data-account-id="${me.accountId}"]`,
+    );
+    await expect(current, 'the current workspace has a card').toBeVisible({ timeout: 20_000 });
+    await expect(current, 'the card shows the hand, not the arrow').toHaveCSS('cursor', 'pointer');
+    // Pointer only: the list keeps its semantics and the Manage link stays the
+    // keyboard way in, so the card itself is neither a link nor a tab stop.
+    await expect(current).not.toHaveAttribute('role', /.+/);
+    await expect(current).not.toHaveAttribute('tabindex', /.+/);
+
+    // The action row swallows its clicks: the gap to the right of Manage is
+    // still the row, so a click there must not fall through to the card.
+    const row = current.locator('div.mt-auto');
+    const rowBox = (await row.boundingBox())!;
+    await row.click({ position: { x: rowBox.width - 6, y: rowBox.height / 2 } });
+    await page.waitForTimeout(500);
+    expect(new URL(page.url()).pathname, 'the action row is not a card click').toBe(
+      '/admin/account/workspaces',
+    );
+
+    // The body of the card (the role line) is.
+    await current.getByText('Your role', { exact: false }).click();
+    await page.waitForURL((url) => url.pathname === `/admin/account/workspaces/${me.accountId}`, {
+      timeout: 20_000,
+    });
+    await expect(page.getByTestId('workspace-tab-members'), 'Manage opened').toBeVisible({
+      timeout: 20_000,
+    });
+  });
+
+  test('Home links to the public page only while it is published', async ({ page, request }) => {
+    const me = await whoAmI(request);
+    const before = await request.get(`${API}/v1/me/profile`);
+    expect(before.ok(), `GET /v1/me/profile ${before.status()}`).toBeTruthy();
+    const original = (await before.json()) as { handle: string | null; profile: unknown };
+    test.skip(!original.handle, 'the seeded owner has no handle, so there is no public page');
+
+    const setEnabled = async (enabled: boolean) => {
+      const res = await request.put(`${API}/v1/me/profile`, {
+        data: { profile: { version: 1, enabled } },
+      });
+      expect(res.ok(), `PUT /v1/me/profile ${res.status()}`).toBeTruthy();
+    };
+
+    try {
+      await setEnabled(true);
+      await page.goto('/admin');
+      const box = page.getByTestId('home-public-page');
+      await expect(box, 'published: Home shows the public page box').toBeVisible({
+        timeout: 20_000,
+      });
+      // The link is the PAGE (/{code}/{handle}), not one of the forms.
+      await expect(box).toContainText(`/${me.accountCode}/${original.handle}`);
+      await expect(box, 'the box copies the page, not a form').not.toContainText(
+        new RegExp(`/${escapeRegExp(me.accountCode)}/${escapeRegExp(original.handle!)}/.+`),
+      );
+      await expect(box.getByRole('link', { name: /Open/ })).toHaveAttribute(
+        'href',
+        `/${me.accountCode}/${original.handle}`,
+      );
+
+      await setEnabled(false);
+      await page.goto('/admin');
+      await expect(page.getByRole('heading', { level: 1 })).toBeVisible({ timeout: 20_000 });
+      await expect(
+        page.getByTestId('home-public-page'),
+        'unpublished: the box is gone rather than pointing at a 404',
+      ).toHaveCount(0);
+    } finally {
+      const res = await request.put(`${API}/v1/me/profile`, {
+        data: { profile: original.profile ?? null },
+      });
+      expect(res.ok(), 'the original profile is restored').toBeTruthy();
+    }
+  });
+
   test('Notifications, Public page and Brand kit render inside the account frame', async ({
     page,
   }) => {
