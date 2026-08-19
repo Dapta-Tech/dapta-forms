@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { redirect } from 'next/navigation';
 import { getMessages, t, type FormsMessages } from '@quill/shared';
 import {
   adminApi,
@@ -13,6 +14,7 @@ import { getLocale } from '@/lib/locale';
 import { InviteMember } from './invite-member';
 import { InvitationsTable } from './invitations-table';
 import { MembersTable } from './members-table';
+import { WorkspaceId } from './workspace-id';
 import { WorkspaceName } from './workspace-name';
 
 export const dynamic = 'force-dynamic';
@@ -28,6 +30,12 @@ type Tab = 'members' | 'invitations';
  * membership + role on every call; a 403 on the override renders the
  * not-found panel rather than bouncing the person out of the workspace they
  * are actually in.
+ *
+ * The `[id]` in the URL is the identity service's workspace id when the
+ * workspace has one (the same id the Dapta app shows, so links travel between
+ * the two apps), and the local account id otherwise. Both are accepted: a link
+ * carrying the local id of a projected workspace is redirected to the
+ * canonical one. The API calls below always go by the local account id.
  */
 export default async function WorkspacePage({
   params,
@@ -46,15 +54,21 @@ export default async function WorkspacePage({
   const s = messages.settings;
 
   const workspaces = await adminApi.listWorkspaces().catch(() => []);
-  const ws = workspaces.find((x) => x.accountId === id);
+  // The upstream id first: it is the canonical one, and in principle nothing
+  // stops a local id from colliding with it.
+  const ws = workspaces.find((x) => x.workspaceId === id) ?? workspaces.find((x) => x.accountId === id);
   if (!ws) return <NotFoundPanel a={a} />;
+  if (ws.workspaceId && ws.workspaceId !== id) {
+    redirect(`/admin/account/workspaces/${ws.workspaceId}${tab === 'invitations' ? '?tab=invitations' : ''}`);
+  }
+  const accountId = ws.accountId;
 
   // Who am I in THAT workspace (role can differ per workspace). A 403 means
   // "not yours to manage" and is rendered, never redirected; anything else
   // (API down) still surfaces to the error boundary.
   let me: Me;
   try {
-    me = await adminApi.me({ workspace: id });
+    me = await adminApi.me({ workspace: accountId });
   } catch (e) {
     if (e instanceof ApiError && (e.status === 403 || e.status === 404)) return <NotFoundPanel a={a} />;
     throw e;
@@ -63,8 +77,8 @@ export default async function WorkspacePage({
 
   const [members, invitations]: [AccountMember[], PendingInvitation[]] = canManage
     ? await Promise.all([
-        adminApi.listMembers({ workspace: id }).catch(() => []),
-        adminApi.listInvitations({ workspace: id }).catch(() => []),
+        adminApi.listMembers({ workspace: accountId }).catch(() => []),
+        adminApi.listInvitations({ workspace: accountId }).catch(() => []),
       ])
     : [[], []];
 
@@ -104,7 +118,7 @@ export default async function WorkspacePage({
 
       <div className="mt-4 flex flex-wrap items-end justify-between gap-4">
         <WorkspaceName
-          accountId={id}
+          accountId={accountId}
           initial={ws.accountName}
           canEdit={canManage}
           labels={{
@@ -116,7 +130,7 @@ export default async function WorkspacePage({
         />
         {canManage ? (
           <InviteMember
-            accountId={id}
+            accountId={accountId}
             labels={{
               addMember: s.addMember,
               inviteTitle: s.inviteTitle,
@@ -158,6 +172,13 @@ export default async function WorkspacePage({
         <span className="font-mono text-xs text-faint" title={ws.accountCode}>
           {ws.accountCode}
         </span>
+        <span aria-hidden className="text-faint">
+          ·
+        </span>
+        <WorkspaceId
+          id={ws.workspaceId ?? ws.accountId}
+          labels={{ idLabel: w.idLabel, copyId: w.copyId, copied: w.copied }}
+        />
       </div>
 
       {!canManage ? (
@@ -197,7 +218,7 @@ export default async function WorkspacePage({
           <div className="mt-6">
             {tab === 'members' ? (
               <MembersTable
-                accountId={id}
+                accountId={accountId}
                 members={members}
                 me={{ memberId: me.memberId, role: me.role }}
                 labels={{
@@ -235,7 +256,7 @@ export default async function WorkspacePage({
               />
             ) : (
               <InvitationsTable
-                accountId={id}
+                accountId={accountId}
                 invitations={invitations}
                 invitedMembers={members.filter((m) => m.status === 'invited')}
                 locale={locale}

@@ -276,6 +276,13 @@ export interface MemberIdentity {
 /** One account this person can act in. */
 export interface WorkspaceRow {
   accountId: string;
+  /**
+   * The identity service's workspace id (`account.external_id`), null when the
+   * account was never projected from one. It is the id the rest of the Dapta
+   * estate knows this workspace by, so URLs that people copy between the two
+   * apps carry it; the API itself always speaks `accountId`.
+   */
+  workspaceId: string | null;
   accountCode: string;
   accountName: string;
   memberId: string;
@@ -341,6 +348,7 @@ export async function listWorkspacesForIdentity(
   if (email) conds.push(sql`lower(m.email) = ${email}`);
   const rows = await db.all<{
     account_id: string;
+    external_id: string | null;
     code: string;
     name: string;
     member_id: string;
@@ -349,7 +357,7 @@ export async function listWorkspacesForIdentity(
     member_count: number | string;
     access_grant: string | null;
   }>(
-    sql`SELECT a.id AS account_id, a.code, a.name, m.id AS member_id, m.role, m.status, m.access_grant,
+    sql`SELECT a.id AS account_id, a.external_id, a.code, a.name, m.id AS member_id, m.role, m.status, m.access_grant,
                (SELECT COUNT(*) FROM member mm
                  WHERE mm.account_id = a.id AND mm.status = 'active' AND mm.access_grant IS NULL) AS member_count
         FROM member m JOIN account a ON a.id = m.account_id
@@ -368,6 +376,7 @@ export async function listWorkspacesForIdentity(
     seen.add(r.account_id);
     out.push({
       accountId: r.account_id,
+      workspaceId: r.external_id ?? null,
       accountCode: r.code,
       accountName: r.name,
       memberId: r.member_id,

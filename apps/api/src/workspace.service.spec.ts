@@ -432,6 +432,7 @@ describe('WorkspaceService (IAM-backed) — staff of the deployment', () => {
     expect(all.staff).toBe(true);
     expect(all.rows.map((r) => r.name)).toEqual(['Staff HQ', 'Mine', 'Other Corp']);
     expect(all.rows[0]!.accountId).not.toBeNull(); // own: projected
+    expect(all.rows[0]!.workspaceId).toBe('ws-staff'); // and it still names its upstream id
     expect(all.rows[1]!.accountId).toBeNull(); // estate: not yet
     expect(all.rows[1]!.workspaceId).toBe(WS_OWN);
 

@@ -63,7 +63,7 @@ import type { WorkspaceProjection } from './workspace-projection';
 
 /** One row of `WorkspaceService.search`: a local workspace, or an estate one not yet projected. */
 export interface WorkspaceSearchRow {
-  /** Upstream workspace id; set only for estate rows the caller holds no local row in. */
+  /** Upstream workspace id (null for a local-only account that was never projected). */
   workspaceId: string | null;
   /** Local account id; null for an estate row (enter it through `enterEstateWorkspace`). */
   accountId: string | null;
@@ -241,7 +241,7 @@ export class WorkspaceService {
     const mine = await this.list(req);
     const mineFiltered = q ? mine.filter((w) => w.accountName.toLowerCase().includes(q)) : mine;
     const own: WorkspaceSearchRow[] = mineFiltered.map((w) => ({
-      workspaceId: null,
+      workspaceId: w.workspaceId,
       accountId: w.accountId,
       name: w.accountName,
       role: w.role,
@@ -264,13 +264,7 @@ export class WorkspaceService {
       limit: input.limit,
     });
     const ownWsIds = new Set<string>();
-    if (mineFiltered.length) {
-      const ids = mineFiltered.map((w) => sql`${w.accountId}`);
-      const rows = await this.db.all<{ external_id: string | null }>(
-        sql`SELECT external_id FROM account WHERE id IN (${sql.join(ids, sql`, `)})`,
-      );
-      for (const r of rows) if (r.external_id) ownWsIds.add(r.external_id);
-    }
+    for (const w of mineFiltered) if (w.workspaceId) ownWsIds.add(w.workspaceId);
     const estate: WorkspaceSearchRow[] = [];
     for (const ws of page.rows) {
       if (ownWsIds.has(ws.id)) continue;

@@ -186,7 +186,7 @@ export function WorkspaceSwitcher({
       ownRows.push({
         key: `a:${w.accountId}`,
         accountId: w.accountId,
-        workspaceId: null,
+        workspaceId: w.workspaceId,
         name: w.accountName,
         status: w.status,
         staff: w.accessGrant === 'staff',
