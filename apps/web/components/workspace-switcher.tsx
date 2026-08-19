@@ -9,7 +9,7 @@ import {
   useTransition,
   type KeyboardEvent as ReactKeyboardEvent,
 } from 'react';
-import type { FormsMessages } from '@quill/shared';
+import { t, type FormsMessages } from '@quill/shared';
 import type { MemberStatus, Workspace, WorkspaceSearchRow } from '@/lib/admin-api';
 import {
   enterEstateWorkspaceAction,
@@ -43,6 +43,8 @@ interface Row {
   /** Shows the "Staff" badge: in it by grant, or an estate row. */
   staff: boolean;
   estate: boolean;
+  /** Why an estate row matched when its name did not (staff search). */
+  hint?: { kind: 'email' | 'form'; value: string } | null;
 }
 
 /**
@@ -221,6 +223,7 @@ export function WorkspaceSwitcher({
         status: r.status,
         staff: true,
         estate: true,
+        hint: r.hint ?? null,
       });
     }
     return { own: ownRows, estate: estateRows };
@@ -306,7 +309,16 @@ export function WorkspaceSwitcher({
           className={`pi ${active ? 'pi-check text-primary' : 'pi-circle-off opacity-0'}`}
           style={{ fontSize: 11 }}
         />
-        <span className="min-w-0 flex-1 truncate">{row.name}</span>
+        <span className="flex min-w-0 flex-1 flex-col">
+          <span className="truncate">{row.name}</span>
+          {/* Matched by a member's email or a form's name, not by the workspace
+              name: say so, or the row reads as a wrong answer. */}
+          {row.hint ? (
+            <span className="truncate text-2xs text-faint" data-testid="workspace-option-hint">
+              {row.hint.kind === 'form' ? t(m.hintForm, { name: row.hint.value }) : row.hint.value}
+            </span>
+          ) : null}
+        </span>
         {/* An invitation you have not opened yet. Naming it is the difference
             between "why are there two?" and "ah, that one is waiting for me." */}
         {row.status === 'invited' && !row.estate ? (

@@ -18,6 +18,7 @@ import type { Db } from '@quill/db';
 import {
   getAccountByExternalId,
   humanHasCompletedOnboarding,
+  listWorkspacesForIdentity,
   pickHomeAccount,
   projectMemberships,
   rebindLegacyAccount,
@@ -25,6 +26,7 @@ import {
   type ProjectedMembership,
 } from '@quill/db';
 import {
+  IamHttpError,
   IamUnavailableError,
   IamWorkspacesClient,
   membershipOf,
@@ -56,6 +58,8 @@ export interface ProjectionState {
 }
 
 const DEFAULT_TTL_MS = 60_000;
+/** How many already-projected memberships a staff refresh re-reads upstream (in parallel). */
+const STAFF_KNOWN_LIMIT = 25;
 
 export class WorkspaceProjection {
   private readonly log = new Logger('WorkspaceProjection');
@@ -127,9 +131,13 @@ export class WorkspaceProjection {
     now: number,
   ): Promise<ProjectionState> {
     let workspaces: IamWorkspace[];
+    // Whether a membership the upstream stopped naming may be disabled below.
+    // False only when the staff path could not re-read one of the person's
+    // known workspaces: then "not in the list" proves nothing.
+    let pruneMissing = true;
     let featureFlags: Record<string, unknown> | null = null;
     try {
-      const [account, wss] = await Promise.all([
+      const [account, mine] = await Promise.all([
         this.iam.getAccount(id.bearer, id.iamAccountId).catch((err) => {
           // The person's account row is nice-to-have (last_workspace); a
           // failure there must not fail the workspace list.
@@ -137,9 +145,12 @@ export class WorkspaceProjection {
           this.log.warn(`IAM account read failed for ${id.iamAccountId}: ${String(err)}`);
           return null;
         }),
-        this.iam.listMyWorkspaces(id.bearer, id.sub),
+        this.isStaff(id.email)
+          ? this.staffMemberships(id)
+          : this.iam.listMyWorkspaces(id.bearer, id.sub).then((wss) => ({ workspaces: wss, complete: true })),
       ]);
-      workspaces = wss;
+      workspaces = mine.workspaces;
+      pruneMissing = mine.complete;
       featureFlags =
         account?.feature_flags && typeof account.feature_flags === 'object' ? account.feature_flags : null;
     } catch (err) {
@@ -183,7 +194,7 @@ export class WorkspaceProjection {
       this.db,
       { externalId: id.sub, email: id.email, displayName: id.displayName },
       memberships,
-      { inheritOnboarding, now },
+      { inheritOnboarding, now, pruneMissing },
     );
 
     for (const c of result.created) {
@@ -249,6 +260,97 @@ export class WorkspaceProjection {
     } catch (err) {
       this.log.warn(`last_workspace write failed for ${id.sub}: ${String(err)}`);
     }
+  }
+
+  /**
+   * Project ONE upstream workspace the person is a real member of, without
+   * touching any other row (no pruning). Used when staff enter an estate
+   * workspace that turns out to name them: their refresh no longer reads the
+   * estate (see `staffMemberships`), so a membership in someone else's account
+   * that was never projected is found exactly here, and from then on it is a
+   * known row the refresh re-reads.
+   */
+  async projectOne(id: UpstreamIdentity, ws: IamWorkspace): Promise<void> {
+    const me = membershipOf(ws, id.sub);
+    const inheritOnboarding = await humanHasCompletedOnboarding(this.db, id.sub);
+    await projectMemberships(
+      this.db,
+      { externalId: id.sub, email: id.email, displayName: id.displayName },
+      [
+        {
+          workspaceId: ws.id,
+          workspaceName: ws.name,
+          iamAccountId: ws.account_id ?? null,
+          workspaceUserId: me?.id ?? null,
+          role: me ? roleFromIam(me) : 'owner',
+          active: me ? me.is_active !== false : true,
+        },
+      ],
+      { inheritOnboarding, now: this.now(), pruneMissing: false },
+    );
+    this.invalidate(id.sub);
+  }
+
+  /**
+   * The memberships of one of the deployment's STAFF, without reading the
+   * estate. To a staff token the unscoped upstream search answers with every
+   * workspace there is, and paging through all of it on every refresh (every
+   * TTL, every switcher open) is what made each staff request take tens of
+   * seconds. Instead:
+   *
+   *   1. the workspaces of the person's OWN upstream account (the search,
+   *      scoped with `accountId`: a page or two), and
+   *   2. every other workspace this database already knows them in (a
+   *      membership projected earlier, or a staff grant), re-read one by one,
+   *      in parallel, so a membership revoked upstream is still disabled and
+   *      a grant whose workspace now names them becomes the real membership.
+   *
+   * What this cannot see: a membership in someone ELSE's account that was never
+   * projected here. Staff reach those through the estate search, and entering
+   * one re-reads it upstream and projects the real membership when there is
+   * one (`enterEstateWorkspace`), so it joins the list from then on.
+   *
+   * `complete` is false when one of the re-reads failed for a reason other than
+   * "gone" (404): the caller then skips pruning, because a workspace absent
+   * from this list might simply not have answered.
+   */
+  private async staffMemberships(id: UpstreamIdentity): Promise<{ workspaces: IamWorkspace[]; complete: boolean }> {
+    const own = await this.iam.listAccountWorkspaces(id.bearer, id.sub, id.iamAccountId);
+    const seen = new Set(own.map((w) => w.id));
+    const known = (await listWorkspacesForIdentity(this.db, { externalId: id.sub, email: id.email }))
+      .filter((r) => !!r.workspaceId && !seen.has(r.workspaceId as string))
+      // A pre-0015 row carries the upstream ACCOUNT id, not a workspace; the
+      // legacy rebind below handles it, a workspace read would only 404.
+      .filter((r) => r.workspaceId !== id.iamAccountId)
+      .map((r) => r.workspaceId as string);
+    if (known.length > STAFF_KNOWN_LIMIT) {
+      this.log.warn(`staff ${id.sub} holds ${known.length} projected memberships; re-reading the first ${STAFF_KNOWN_LIMIT}`);
+    }
+    const reads = await Promise.all(
+      known.slice(0, STAFF_KNOWN_LIMIT).map((wsId) =>
+        this.iam.getWorkspace(id.bearer, wsId).then(
+          (ws): { ws: IamWorkspace | null; failed: boolean } => ({ ws, failed: false }),
+          (err: unknown) => {
+            if (err instanceof IamUnavailableError) throw err;
+            // Gone upstream: a real "not yours any more", prune applies.
+            if (err instanceof IamHttpError && err.status === 404) return { ws: null, failed: false };
+            this.log.warn(`staff workspace re-read failed for ${wsId}: ${String(err)}`);
+            return { ws: null, failed: true };
+          },
+        ),
+      ),
+    );
+    let complete = known.length <= STAFF_KNOWN_LIMIT;
+    for (const r of reads) {
+      if (r.failed) complete = false;
+      const ws = r.ws;
+      if (!ws || typeof ws.id !== 'string' || seen.has(ws.id)) continue;
+      seen.add(ws.id);
+      if (ws.is_active === false) continue;
+      const me = membershipOf(ws, id.sub);
+      if (me || ws.isOwner === true) own.push(ws);
+    }
+    return { workspaces: own, complete };
   }
 
   /**

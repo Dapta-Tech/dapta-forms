@@ -135,6 +135,8 @@ export interface WorkspaceSearchRow {
   accessGrant: 'staff' | null;
   memberCount: number;
   localExists?: boolean;
+  /** Staff rows matched by something other than the name: the email or form name that did. */
+  hint?: { kind: 'email' | 'form'; value: string } | null;
 }
 
 export interface WorkspaceSearchResponse {

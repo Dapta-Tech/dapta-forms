@@ -231,6 +231,36 @@ export class IamWorkspacesClient {
   }
 
   /**
+   * Every workspace of ONE upstream account that `sub` is a member of (or owns).
+   * Same search endpoint, scoped with `accountId`: for the deployment's staff
+   * the unscoped search is the whole estate, and paging through thousands of
+   * rows to find the handful they actually belong to is what made every staff
+   * request crawl. Scoped, it is a page or two.
+   */
+  async listAccountWorkspaces(bearer: string, sub: string, accountId: string): Promise<IamWorkspace[]> {
+    const out: IamWorkspace[] = [];
+    const seen = new Set<string>();
+    for (let page = 1; page <= MAX_PAGES; page++) {
+      const res = await this.call<{ data?: IamWorkspace[]; totalPages?: number; total?: number }>(
+        bearer,
+        'GET',
+        `/workspace/search?page=${page}&limit=${PAGE_SIZE}&accountId=${encodeURIComponent(accountId)}`,
+      );
+      const rows = Array.isArray(res?.data) ? res.data : [];
+      for (const ws of rows) {
+        if (!ws || typeof ws.id !== 'string' || seen.has(ws.id)) continue;
+        seen.add(ws.id);
+        if (ws.is_active === false) continue;
+        const me = membershipOf(ws, sub);
+        if (me || ws.isOwner === true) out.push(ws);
+      }
+      const totalPages = typeof res?.totalPages === 'number' ? res.totalPages : 1;
+      if (rows.length < PAGE_SIZE || page >= totalPages) break;
+    }
+    return out;
+  }
+
+  /**
    * One page of the workspace search as the upstream answers it, membership NOT
    * applied: for the deployment's staff the identity service answers with the
    * whole estate, and that is exactly the list they get to search (the same

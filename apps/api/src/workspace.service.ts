@@ -28,6 +28,7 @@ import {
   createLocalWorkspace,
   findMembership,
   getAccountByExternalId,
+  searchProjectedAccounts,
   getAccountMember,
   getMemberIdentity,
   getMemberUpstreamRef,
@@ -74,6 +75,12 @@ export interface WorkspaceSearchRow {
   memberCount: number;
   /** Estate rows only: whether the workspace already has a local account (someone here opened it). */
   localExists?: boolean;
+  /**
+   * Staff rows matched locally by something other than the workspace name: the
+   * member email or the form name that matched, so the person sees WHY this
+   * workspace answered their query.
+   */
+  hint?: { kind: 'email' | 'form'; value: string } | null;
 }
 
 @Injectable()
@@ -255,19 +262,40 @@ export class WorkspaceService {
       return { rows: own, staff: false, total: own.length, totalPages: 1, page: 1 };
     }
 
-    // Staff: the estate page from upstream, minus what the own list already
-    // shows (matched by upstream workspace id), so a workspace never appears
-    // twice. Own rows first: they are the ones the person actually works in.
-    const page = await this.projection.iam.searchWorkspaces(up.bearer, {
-      query: q,
-      page: input.page,
-      limit: input.limit,
-    });
-    const ownWsIds = new Set<string>();
-    for (const w of mineFiltered) if (w.workspaceId) ownWsIds.add(w.workspaceId);
+    // Staff: two sources, in parallel. (1) The accounts THIS database already
+    // projected, matched by workspace name, member email or form name: the
+    // identity service knows workspaces by name only, and staff rarely hold
+    // the name; they hold a form link or the customer's address. (2) The
+    // estate page from upstream (name match). Both minus what the own list
+    // already shows, never a workspace twice. Own rows first: they are the
+    // ones the person actually works in; then the local hits (Forms users,
+    // the ones staff come here for); then the rest of the estate.
+    const firstPage = !input.page || input.page <= 1;
+    const [localHits, page] = await Promise.all([
+      firstPage && q ? searchProjectedAccounts(this.db, q, { limit: input.limit }) : Promise.resolve([]),
+      this.projection.iam.searchWorkspaces(up.bearer, { query: q, page: input.page, limit: input.limit }),
+    ]);
+    const seen = new Set<string>();
+    for (const w of mineFiltered) if (w.workspaceId) seen.add(w.workspaceId);
     const estate: WorkspaceSearchRow[] = [];
+    for (const hit of localHits) {
+      if (seen.has(hit.workspaceId)) continue;
+      seen.add(hit.workspaceId);
+      estate.push({
+        workspaceId: hit.workspaceId,
+        accountId: null,
+        name: hit.name,
+        role: 'admin',
+        status: 'active',
+        accessGrant: 'staff',
+        memberCount: hit.memberCount,
+        localExists: true,
+        hint: hit.hint,
+      });
+    }
     for (const ws of page.rows) {
-      if (ownWsIds.has(ws.id)) continue;
+      if (seen.has(ws.id)) continue;
+      seen.add(ws.id);
       const local = await getAccountByExternalId(this.db, ws.id);
       estate.push({
         workspaceId: ws.id,
@@ -281,7 +309,7 @@ export class WorkspaceService {
       });
     }
     return {
-      rows: [...(input.page && input.page > 1 ? [] : own), ...estate],
+      rows: [...(firstPage ? own : []), ...estate],
       staff: true,
       total: page.total,
       totalPages: page.totalPages,
@@ -321,8 +349,10 @@ export class WorkspaceService {
     const me = (ws.users ?? []).find((u) => u.user_id === up.sub);
     let accountId: string;
     if (me && me.is_active !== false) {
-      // A real membership upstream: project it as such, no grant needed.
-      await this.projection.ensure(up, { force: true });
+      // A real membership upstream: project it as such, no grant needed. This
+      // ONE workspace, directly: a staff refresh does not read the estate, so
+      // a membership in someone else's account is not found any other way.
+      await this.projection.projectOne(up, ws);
       const local = await getAccountByExternalId(this.db, ws.id);
       if (!local) throw new BadRequestException({ error: 'WORKSPACE_NOT_VISIBLE', message: 'Try refreshing.' });
       accountId = local.id;
