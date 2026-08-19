@@ -192,6 +192,8 @@ export interface FormsMessages {
         staff: string;
         /** Eyebrow over estate rows the person never opened here (staff only). */
         estate: string;
+        /** Staff search: why a row matched when its name did not. `{name}` is the form. */
+        hintForm: string;
       };
     };
     /** The dashboard home (/admin) — greeting, public link, stats, quick actions. */
@@ -1768,6 +1770,7 @@ export const en: FormsMessages = {
         searchEmpty: 'No workspace matches that.',
         staff: 'Staff',
         estate: 'All workspaces',
+        hintForm: 'Form: {name}',
       },
     },
     home: {
@@ -3232,6 +3235,7 @@ export const es: FormsMessages = {
         searchEmpty: 'Ningún workspace coincide.',
         staff: 'Staff',
         estate: 'Todos los workspaces',
+        hintForm: 'Formulario: {name}',
       },
     },
     home: {

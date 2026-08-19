@@ -397,9 +397,15 @@ export function WorkspaceCards({
                               {labels.createDialog.staff}
                             </span>
                           </div>
-                          <p className="mt-0.5 truncate font-mono text-xs text-faint" title={workspaceId}>
-                            {workspaceId}
-                          </p>
+                          {r.hint ? (
+                            <p className="mt-0.5 truncate text-xs text-faint" data-testid="workspace-card-hint">
+                              {r.hint.kind === 'form' ? t(labels.createDialog.hintForm, { name: r.hint.value }) : r.hint.value}
+                            </p>
+                          ) : (
+                            <p className="mt-0.5 truncate font-mono text-xs text-faint" title={workspaceId}>
+                              {workspaceId}
+                            </p>
+                          )}
                         </div>
                       </div>
                       <dl className="flex flex-col gap-1 text-sm">

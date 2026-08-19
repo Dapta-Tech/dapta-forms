@@ -29,6 +29,7 @@ import {
   projectMemberships,
   projectRoster,
   rebindLegacyAccount,
+  searchProjectedAccounts,
 } from './workspaces';
 
 let db: Db;
@@ -277,5 +278,51 @@ describe('grantStaffAccess (both dialects)', () => {
     ]);
     const g = await db.get<{ status: string }>(sql`SELECT status FROM member WHERE id = ${memberId}`);
     expect(g!.status).toBe('active');
+  });
+});
+
+describe('searchProjectedAccounts (both dialects)', () => {
+  it('matches by workspace name, member email or form name; names the reason; skips local-only accounts', async () => {
+    const tag = randomUUID().slice(0, 8);
+    const wsA = `ws-${randomUUID()}`, wsB = `ws-${randomUUID()}`;
+    const owner = { externalId: `sub-${tag}-a`, email: `zed-${tag}@seika.test`, displayName: 'Zed' };
+    await projectMemberships(db, owner, [
+      { workspaceId: wsA, workspaceName: `Henry Bravo ${tag}`, iamAccountId: 'acc-a', workspaceUserId: 'wu-a', role: 'owner', active: true },
+    ]);
+    await projectMemberships(db, { externalId: `sub-${tag}-b`, email: `other-${tag}@example.com`, displayName: 'B' }, [
+      { workspaceId: wsB, workspaceName: `Bravo Corp ${tag}`, iamAccountId: 'acc-b', workspaceUserId: 'wu-b', role: 'owner', active: true },
+    ]);
+    await ids([wsA, wsB]);
+    const a = created[0]!;
+    const now = Date.now();
+    await db.run(
+      sql`INSERT INTO form (id, account_id, name, slug, config, created_at, updated_at)
+          VALUES (${randomUUID()}, ${a}, ${`Katagi Leads demo ${tag}`}, ${`katagi-${tag}`}, '{}', ${now}, ${now})`,
+    );
+    // A local-only account (never projected) with a matching name: not a workspace anyone is granted into.
+    const local = randomUUID();
+    created.push(local);
+    await db.run(sql`INSERT INTO account (id, code, name, created_at) VALUES (${local}, ${`c${local.slice(0, 8)}`}, ${`Bravo local ${tag}`}, ${now})`);
+
+    // By name: both projected accounts, the local-only one left out; no hint (the name matched).
+    const byName = await searchProjectedAccounts(db, tag);
+    expect(byName.map((h) => h.name).sort()).toEqual([`Bravo Corp ${tag}`, `Henry Bravo ${tag}`]);
+    expect(byName.every((h) => h.hint === null)).toBe(true);
+    expect(byName.find((h) => h.name === `Henry Bravo ${tag}`)!.workspaceId).toBe(wsA);
+    expect(byName.find((h) => h.name === `Henry Bravo ${tag}`)!.memberCount).toBe(1);
+
+    // By the owner's email: the hint says which address matched.
+    const byEmail = await searchProjectedAccounts(db, `zed-${tag}@seika`);
+    expect(byEmail.map((h) => h.name)).toEqual([`Henry Bravo ${tag}`]);
+    expect(byEmail[0]!.hint).toEqual({ kind: 'email', value: `zed-${tag}@seika.test` });
+
+    // By a form's name: the hint is the form.
+    const byForm = await searchProjectedAccounts(db, `katagi leads`);
+    expect(byForm.some((h) => h.workspaceId === wsA)).toBe(true);
+    expect(byForm.find((h) => h.workspaceId === wsA)!.hint).toEqual({ kind: 'form', value: `Katagi Leads demo ${tag}` });
+
+    // LIKE wildcards are literal; blank is nothing.
+    expect(await searchProjectedAccounts(db, `%${tag}%`)).toEqual([]);
+    expect(await searchProjectedAccounts(db, '   ')).toEqual([]);
   });
 });
