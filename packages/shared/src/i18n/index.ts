@@ -390,6 +390,10 @@ export interface FormsMessages {
         back: string;
         tabMembers: string;
         tabInvitations: string;
+        /** The id the Dapta estate knows the workspace by, with a copy control. */
+        idLabel: string;
+        copyId: string;
+        copied: string;
         notFound: string;
         noAccess: string;
         colName: string;
@@ -1943,6 +1947,9 @@ export const en: FormsMessages = {
         back: 'All workspaces',
         tabMembers: 'Members',
         tabInvitations: 'Invitations',
+        idLabel: 'Workspace ID',
+        copyId: 'Copy ID',
+        copied: 'Copied',
         notFound: 'That workspace is not among yours.',
         noAccess: 'Only admins and owners of this workspace can manage its members.',
         colName: 'Name',
@@ -3405,6 +3412,9 @@ export const es: FormsMessages = {
         back: 'Todos los workspaces',
         tabMembers: 'Miembros',
         tabInvitations: 'Invitaciones',
+        idLabel: 'ID del workspace',
+        copyId: 'Copiar ID',
+        copied: 'Copiado',
         notFound: 'Ese workspace no está entre los tuyos.',
         noAccess: 'Solo los administradores y propietarios de este workspace pueden administrar sus miembros.',
         colName: 'Nombre',

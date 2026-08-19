@@ -102,6 +102,13 @@ export type MemberStatus = 'active' | 'invited' | 'disabled';
 /** One account the signed-in person can act in. */
 export interface Workspace {
   accountId: string;
+  /**
+   * The Dapta identity service's workspace id, null for an account that was
+   * never projected from one. Account settings URLs carry THIS id when there is
+   * one, so a link copied from the Dapta app and one copied from here name the
+   * same workspace the same way; the API itself always takes `accountId`.
+   */
+  workspaceId: string | null;
   accountCode: string;
   accountName: string;
   memberId: string;

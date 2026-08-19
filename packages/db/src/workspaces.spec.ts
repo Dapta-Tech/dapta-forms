@@ -75,8 +75,29 @@ describe('listWorkspacesForIdentity (both dialects)', () => {
     await ids([ws]);
     expect((await listWorkspacesForIdentity(db, { externalId: SUB, email: null })).length).toBe(1);
     expect((await listWorkspacesForIdentity(db, { externalId: null, email: EMAIL })).length).toBe(1);
-    expect((await listWorkspacesForIdentity(db, { externalId: SUB, email: EMAIL })).length).toBe(1);
+    const both = await listWorkspacesForIdentity(db, { externalId: SUB, email: EMAIL });
+    expect(both.length).toBe(1);
+    // The row carries the upstream workspace id: the id the Dapta estate (and
+    // the Account settings URL) knows the workspace by.
+    expect(both[0]!.workspaceId).toBe(ws);
     expect((await listWorkspacesForIdentity(db, { externalId: null, email: null })).length).toBe(0);
+  });
+
+  it('a local-only account (never projected) lists with workspaceId null', async () => {
+    const id = randomUUID();
+    created.push(id);
+    const now = Date.now();
+    await db.run(
+      sql`INSERT INTO account (id, code, name, created_at) VALUES (${id}, ${`c${id.slice(0, 8)}`}, 'Local', ${now})`,
+    );
+    const email = `local-${id.slice(0, 8)}@example.com`;
+    await db.run(
+      sql`INSERT INTO member (id, account_id, email, role, status, created_at)
+          VALUES (${randomUUID()}, ${id}, ${email}, 'owner', 'active', ${now})`,
+    );
+    const list = await listWorkspacesForIdentity(db, { externalId: null, email });
+    expect(list.length).toBe(1);
+    expect(list[0]!.workspaceId).toBeNull();
   });
 });
 
