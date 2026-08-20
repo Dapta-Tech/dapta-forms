@@ -7,12 +7,14 @@ import { createDb, sqlitePathFromUrl } from '../client';
 import { migrate } from '../migrate';
 import { seed } from '../seed';
 import { isPostgresUrl } from '@quill/config/env';
+import { withDb } from './with-db';
 
 async function main() {
   const url = process.env.DATABASE_URL ?? 'file:./.data/dev.db';
   if (isPostgresUrl(url)) {
     console.error('[reset] refusing to reset a Postgres database. Drop/recreate it manually.');
-    process.exit(1);
+    process.exitCode = 1;
+    return;
   }
   const path = sqlitePathFromUrl(url);
   if (path !== ':memory:') {
@@ -26,13 +28,14 @@ async function main() {
     console.log(`[reset] removed ${path}`);
   }
   const db = await createDb(url);
-  await migrate(db);
-  const result = await seed(db);
-  console.log(`[reset] fresh database ready. Form: ${result.formPath}`);
-  await db.close();
+  await withDb('reset', db, async () => {
+    await migrate(db);
+    const result = await seed(db);
+    console.log(`[reset] fresh database ready. Form: ${result.formPath}`);
+  });
 }
 
 main().catch((err) => {
   console.error('[reset] failed:', err);
-  process.exit(1);
+  process.exitCode = 1;
 });

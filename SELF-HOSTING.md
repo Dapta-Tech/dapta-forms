@@ -130,8 +130,41 @@ limit the schema, but you should not run production on it.
 - **Migrations are additive-only** — new nullable columns / new tables, never a
   destructive rename or drop that would break a running deployment. Both dialects
   ship parallel numbered migrations under `packages/db/migrations/{postgres,sqlite}`.
+- Repository-shipped migrations run as a script plus marker transaction and are
+  verified by CI. Fork or custom migrations with transaction control or
+  non-transactional operations are unsupported and may partially apply.
+- Short-link fixups run after migrations and are outside that boundary.
 - Booting the API against an **unmigrated** database makes the outbox worker fail on
   every poll with `no such table: outbox` — always migrate first.
+
+### Database CLI diagnostics
+
+`migrate`, `seed`, and `reset` can emit raw driver or system diagnostics. The
+`db:setup` wrapper runs `migrate` and then `seed`, so it preserves diagnostics
+from the phase that runs.
+
+- **Migration and setup.** `createDb` and setup failures, `_migrations` table
+  bootstrap, migration-directory and script reads (including resolved absolute
+  paths), `isApplied` prechecks, and short-link fixups can emit raw diagnostics.
+  A per-script failure identifies the migration file and dialect, then includes
+  the raw underlying cause.
+- **Seed.** `seed` writes can emit raw diagnostics. The seed phase of `reset`
+  has the same behavior.
+- **Reset.** `reset` reports its refusal to operate on Postgres and the resolved
+  SQLite path that it removes. A failed `rm` of the database file or sidecar is
+  silent and does not add a raw diagnostic.
+- **Teardown.** A close-only failure reports the close error. If work and close
+  both fail, the CLI writes `close failed (secondary; the original failure follows)`
+  and the close cause first, then the original failure and cause. The original
+  failure is authoritative. For Postgres, forced close has a five-second budget.
+  This limits the close attempt only: a half-open peer can remain, and it does
+  not promise a bounded process lifetime.
+
+Logs can contain database object names, SQL fragments, driver codes, stack or
+query metadata, and other operational details. Treat stdout and stderr from
+`migrate`, `seed`, and `reset` as trusted-operator-only sensitive output. Apply
+access and retention controls. Do not expose or copy it to end users or
+untrusted channels. No redaction or bounded-output guarantee is made.
 
 ## Full environment reference
 

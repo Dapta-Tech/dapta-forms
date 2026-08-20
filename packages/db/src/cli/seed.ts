@@ -2,17 +2,19 @@
 import { createDb } from '../client';
 import { migrate } from '../migrate';
 import { seed } from '../seed';
+import { withDb } from './with-db';
 
 async function main() {
   const db = await createDb();
-  await migrate(db);
-  const result = await seed(db);
-  console.log(`[seed] done (${db.dialect}). Try the form at:`);
-  console.log(`  ${result.formPath}`);
-  await db.close();
+  await withDb('seed', db, async () => {
+    await migrate(db);
+    const result = await seed(db);
+    console.log(`[seed] done (${db.dialect}). Try the form at:`);
+    console.log(`  ${result.formPath}`);
+  });
 }
 
 main().catch((err) => {
   console.error('[seed] failed:', err);
-  process.exit(1);
+  process.exitCode = 1;
 });
