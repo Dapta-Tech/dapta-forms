@@ -64,7 +64,10 @@ async function req<T>(method: string, path: string, body?: unknown, opts: ReqOpt
     // hands that route a null session and silently skips the single-logout (see
     // `signOutAction`). This path only appeared to work because `delete()` throws
     // during a Server Component render; from a Server Action it lands and breaks.
-    if (authProvider() === 'workos') redirect('/api/auth/logout');
+    // ?reason=expired: this is a token expiring mid-render, not a person asking
+    // to leave, so the route must not bounce the browser through the WorkOS
+    // logout and end their whole Dapta platform session.
+    if (authProvider() === 'workos') redirect('/api/auth/logout?reason=expired');
     try {
       await clearSession();
     } catch {

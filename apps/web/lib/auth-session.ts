@@ -75,29 +75,62 @@ export async function getSession(): Promise<Session | null> {
 }
 
 /**
- * Best-effort upstream revoke — Orbit-parity contract (skipIdpRedirect = true):
- * POST {IAM}/auth/logout?redirect=false so the IAM revokes the WorkOS session
- * server-side. Deliberately unauthenticated: /auth/logout is a public IAM route
- * (like login/refresh), and sending an expired Bearer is what creates
- * logout -> 401 -> logout loops. Fired even without a session id ({} body) —
- * the IAM can still invalidate server-side state. The response's
- * logoutUrl/logoutURL is the WorkOS single-logout URL — unused by design; a
- * future "switch account" flow (skipIdpRedirect = false) is the only consumer.
+ * Best-effort upstream revoke (Orbit contract): POST {IAM}/auth/logout with
+ * redirect=false so the IAM revokes the WorkOS session server-side and hands
+ * back the IdP logout URL instead of redirecting anyone itself. Deliberately
+ * unauthenticated: /auth/logout is a public IAM route (like login/refresh),
+ * and sending an expired Bearer is what creates logout -> 401 -> logout loops.
+ * Fired even without a session id ({} body): the IAM can still invalidate
+ * server-side state.
+ *
+ * Returns the WorkOS logout URL (the IAM serializes it as logoutUrl or
+ * logoutURL) or null. Server-side revocation alone is NOT a browser logout:
+ * the AuthKit session cookie lives on WorkOS's domain and only dies when the
+ * browser visits this URL. Callers choose per Orbit's skipIdpRedirect switch:
+ * the explicit sign-out button follows it (a Forms logout must also end the
+ * shared Dapta session, or the next "sign in" silently re-authenticates the
+ * same person); the 401 expiry paths ignore it (a Forms token expiring must
+ * not log the person out of the whole Dapta platform).
+ *
  * Never throws and never hangs past its timeout: the caller's local cleanup
  * must not be hostage to the IAM being up.
  */
-export async function revokeUpstreamSession(session: Session | null): Promise<void> {
+export async function revokeUpstreamSession(session: Session | null): Promise<string | null> {
   const iam = process.env.IAM_BASE_URL?.replace(/\/$/, '');
-  if (!iam || session?.provider !== 'workos') return;
+  if (!iam || session?.provider !== 'workos') return null;
   const sessionId = session.sessionId;
   const body = sessionId ? { workos_session_id: sessionId, session_id: sessionId } : {};
-  await fetch(`${iam}/auth/logout?redirect=false`, {
+  const res = await fetch(`${iam}/auth/logout?redirect=false`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
     cache: 'no-store',
     signal: AbortSignal.timeout(5000),
   }).catch(() => null);
+  if (!res?.ok) return null;
+  const out = (await res.json().catch(() => null)) as { logoutUrl?: unknown; logoutURL?: unknown } | null;
+  const url = out?.logoutUrl ?? out?.logoutURL;
+  return typeof url === 'string' && url ? url : null;
+}
+
+/**
+ * The IdP logout redirect for the sign-out button: the IAM's logout URL with
+ * return_to pointing back at our login landing, so WorkOS ends the browser
+ * session and sends the person to /login?signedout=1 instead of stranding
+ * them on a blank api.workos.com page. The URL must be allowlisted under
+ * "Logout redirect URIs" in the WorkOS dashboard or WorkOS ignores it.
+ * Null when the logout URL is absent or unparseable (NextResponse.redirect
+ * and the action redirect would both throw on it): callers land locally.
+ */
+export function idpLogoutTarget(logoutUrl: string | null, origin: string): string | null {
+  if (!logoutUrl) return null;
+  try {
+    const target = new URL(logoutUrl);
+    target.searchParams.set('return_to', new URL('/login?signedout=1', origin).toString());
+    return target.toString();
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -163,11 +196,15 @@ export async function hostFetch(path: string, init?: RequestInit): Promise<Respo
     cache: 'no-store',
   });
   if (res.status === 401) {
-    // Same shape as `signOutAction` (Orbit-parity): read the session BEFORE
+    // Same shape as `signOutAction` (Orbit contract): read the session BEFORE
     // clearing (the revoke needs its id), clear unconditionally, revoke
-    // best-effort. Inline rather than via /api/auth/logout — an action
+    // best-effort. Inline rather than via /api/auth/logout, because an action
     // `redirect()` into a route handler strands the URL bar there. And per the
     // contract, a 401 anywhere never re-enters logout: one revoke, then /login.
+    // The returned IdP logout URL is deliberately ignored here (Orbit's
+    // skipIdpRedirect = true): a Forms token expiring must not bounce the
+    // browser through WorkOS and end the person's whole Dapta session. Only
+    // the explicit sign-out button does that.
     const session = await getSession();
     await clearSession();
     await revokeUpstreamSession(session);
