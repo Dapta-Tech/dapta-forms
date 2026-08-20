@@ -116,6 +116,15 @@ docker build -f apps/web/Dockerfile -t dapta-forms-web \
 
 ## Database
 
+### Outbox worker upgrades
+
+Mixed outbox worker versions are unsupported. Stop every old API/worker
+replica, wait at least the stale claim lease for in-flight old claims or confirm
+the queue is drained, then start every new replica. Use the same coordination
+before rollback. Delivery stays at-least-once: crashes, effects longer than the
+lease, hung providers, and late successes after peer terminalization can
+duplicate or leave an external effect unrecorded.
+
 **PostgreSQL is the source of truth** (CI and production run Postgres). SQLite is a
 portable subset for zero-infra dev and evaluation only — it is never allowed to
 limit the schema, but you should not run production on it.
@@ -362,13 +371,13 @@ through the same outbox with retry + backoff).
 
 ## Upgrades & rollback
 
-- **Upgrade:** pull the new version, rebuild both images (remember: `NEXT_PUBLIC_*`
-  are baked at build time, so a changed API URL needs a web rebuild), run
-  `pnpm db:migrate` (additive-only, idempotent — safe to run before rolling pods),
-  then roll the API and web.
-- **Rollback:** because migrations are additive-only, the previous images stay
-  compatible with the newer schema — roll back by redeploying the previous image
-  tags. Keep old images available (don't prune the tag you might revert to).
+- **API upgrade:** pull the target version, run `pnpm db:migrate` (additive-only
+  and idempotent), then stop every old API worker. Drain active claims or wait
+  at least one full `staleClaimMs`, then start only target-version API workers.
+- **API rollback:** use the same stop/drain-or-wait/start sequence before
+  starting the rollback API workers. Do not run mixed API worker versions.
+- **Web rollout:** web images may roll independently. Rebuild the web image when
+  a `NEXT_PUBLIC_*` value changes because those values are baked at build time.
 
 ## Troubleshooting
 

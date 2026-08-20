@@ -17,14 +17,14 @@
  * mechanics. `subject_uid` is the domain anchor a row belongs to (a submission
  * id for email rows) so related pending work can be cancelled together.
  *
- * Concurrency (H2): due rows are ATOMICALLY CLAIMED before processing, so
- * multiple API replicas draining the same table never deliver a row twice
- * (prod runs an HPA — multiple `forms-api` pods). On Postgres the claim is
- * `UPDATE ... WHERE id IN (SELECT ... FOR UPDATE SKIP LOCKED) RETURNING`; on
- * SQLite (single writer) the same UPDATE ... RETURNING is atomic without locks.
- * A claim older than `staleClaimMs` is reclaimable so a crashed worker's rows
- * are not stranded. The worker's in-process `running` guard prevents overlapping
- * ticks in one process; the claim prevents overlap ACROSS processes.
+ * Concurrency (H2): due rows are atomically claimed before processing, with a
+ * fresh opaque token in `claimed_by` for every claim generation. On Postgres
+ * each claim uses `FOR UPDATE SKIP LOCKED`; SQLite serializes its one-row
+ * `UPDATE ... RETURNING`. A stale or ambiguous worker cannot settle a newer
+ * generation because every settlement fences on that token. This is
+ * still at-least-once: a crash after an external effect and before settlement
+ * can replay the effect after lease expiry. A claim older than `staleClaimMs`
+ * is reclaimable so crashed rows are not stranded.
  */
 import { randomUUID } from 'node:crypto';
 import { sql } from 'drizzle-orm';
@@ -85,7 +85,7 @@ export interface OutboxRow {
   updatedAt: number;
   /** Lease marker: epoch-ms this row was claimed by a worker (null = unclaimed). */
   claimedAt: number | null;
-  /** Which worker instance holds the claim (diagnostics). */
+  /** Immutable opaque token for this claim generation (prefix is diagnostics). */
   claimedBy: string | null;
   /**
    * The last attempt's transcript. `null` = not recorded — a row from before
@@ -95,6 +95,23 @@ export interface OutboxRow {
   requestBody: string | null;
   responseStatus: number | null;
   responseBody: string | null;
+}
+
+/**
+ * One claim generation. `claimedAt` is a diagnostic snapshot only; fencing
+ * predicates use the immutable `claimedBy` token.
+ */
+export interface OutboxClaim {
+  claimedAt: number;
+  claimedBy: string;
+}
+
+/** Extract the required lease identity from a row returned by `claimDueOutbox`. */
+export function claimIdentityOf(row: Pick<OutboxRow, 'claimedAt' | 'claimedBy'>): OutboxClaim {
+  if (row.claimedAt === null || row.claimedBy === null) {
+    throw new Error('claimed outbox row is missing its claim identity');
+  }
+  return { claimedAt: row.claimedAt, claimedBy: row.claimedBy };
 }
 
 export interface EnqueueOutboxInput {
@@ -188,56 +205,75 @@ function mapRow(r: Record<string, unknown>): OutboxRow {
 
 /** Default lease before a claim is considered stale and reclaimable (5 min). */
 export const DEFAULT_STALE_CLAIM_MS = 5 * 60_000;
+/** The most rows one drain may execute before yielding to its next poll. */
+export const DEFAULT_OUTBOX_CLAIM_LIMIT = 50;
 
 export interface ClaimOptions {
   /** Max rows to claim in one call. */
   limit?: number;
-  /** Identifies the claiming worker (host:pid). Stored for diagnostics. */
+  /**
+   * Diagnostic worker prefix (host:pid). The queue appends a fresh UUID for
+   * every claimed row, so callers cannot supply or reuse a claim token.
+   */
   workerId?: string;
   /** A claim older than this (ms) is reclaimable — a crashed worker's rows. */
   staleClaimMs?: number;
 }
 
 /**
- * Atomically CLAIM up to `limit` due rows and return them (H2). A row is due
- * when `status='pending'` and `next_attempt_at <= now`; it is claimable when it
- * is unclaimed OR its claim is stale (older than `staleClaimMs`). The claim sets
- * `claimed_at`/`claimed_by` in the SAME statement that selects the rows, so two
- * workers never receive the same row. `status` stays `pending` throughout (the
- * lifecycle transitions live in markOutbox*); a retry clears the claim so the
- * row can be picked up again after its backoff.
+ * Atomically claim up to `limit` due rows and return them (H2). Each row is
+ * claimed in its own statement so `claimed_by` can carry a fresh opaque token
+ * for that exact generation. A row is due when `status='pending'` and
+ * `next_attempt_at <= now`; it is claimable when it is unclaimed OR its claim
+ * is stale (older than `staleClaimMs`). `status` stays `pending` throughout
+ * (the lifecycle transitions live in markOutbox*); a retry clears the claim so
+ * the row can be picked up again after its backoff.
  */
 export async function claimDueOutbox(
   db: Db,
   now: number,
   opts: ClaimOptions = {},
 ): Promise<OutboxRow[]> {
-  const limit = opts.limit ?? 50;
-  const workerId = opts.workerId ?? 'worker';
+  const limit = opts.limit ?? DEFAULT_OUTBOX_CLAIM_LIMIT;
+  const workerPrefix = opts.workerId ?? 'worker';
   const staleBefore = now - (opts.staleClaimMs ?? DEFAULT_STALE_CLAIM_MS);
   const claimable = sql`status = 'pending' AND next_attempt_at <= ${now}
       AND (claimed_at IS NULL OR claimed_at <= ${staleBefore})`;
-  // Postgres: FOR UPDATE SKIP LOCKED makes concurrent claims skip locked rows.
-  // SQLite: single writer serializes the UPDATE, so no row-lock clause is needed
-  // (and it isn't supported). Both use UPDATE ... RETURNING for the claimed set.
-  const selectDue =
-    db.dialect === 'postgres'
-      ? sql`SELECT id FROM outbox WHERE ${claimable} ORDER BY next_attempt_at ASC LIMIT ${limit} FOR UPDATE SKIP LOCKED`
-      : sql`SELECT id FROM outbox WHERE ${claimable} ORDER BY next_attempt_at ASC LIMIT ${limit}`;
-  // Postgres must materialize the subquery via ARRAY(...): with a bare
-  // IN (SELECT ... LIMIT n FOR UPDATE SKIP LOCKED) the planner may re-scan the
-  // subquery per outer row and claim MORE than `limit` rows (plan-dependent),
-  // defeating the two-worker split.
-  const rows = await db.all<Record<string, unknown>>(
-    db.dialect === 'postgres'
-      ? sql`UPDATE outbox SET claimed_at = ${now}, claimed_by = ${workerId}
-            WHERE id = ANY (ARRAY(${selectDue}))
-            RETURNING *`
-      : sql`UPDATE outbox SET claimed_at = ${now}, claimed_by = ${workerId}
-            WHERE id IN (${selectDue})
-            RETURNING *`,
-  );
-  return rows.map(mapRow);
+  const claimed: OutboxRow[] = [];
+  for (let i = 0; i < limit; i++) {
+    const claimToken = `${workerPrefix}#${randomUUID()}`;
+    const excludeClaimed =
+      claimed.length === 0
+        ? sql``
+        : sql` AND id NOT IN (${sql.join(
+            claimed.map((row) => sql`${row.id}`),
+            sql`, `,
+          )})`;
+    const selectDue =
+      db.dialect === 'postgres'
+        ? sql`SELECT id FROM outbox WHERE ${claimable}${excludeClaimed}
+              ORDER BY next_attempt_at ASC LIMIT 1 FOR UPDATE SKIP LOCKED`
+        : sql`SELECT id FROM outbox WHERE ${claimable}${excludeClaimed}
+              ORDER BY next_attempt_at ASC LIMIT 1`;
+    // Postgres locks one row with SKIP LOCKED; SQLite serializes its one-row
+    // UPDATE. Both atomically write the fresh token with the lease timestamp.
+    const rows = await db.all<Record<string, unknown>>(
+      db.dialect === 'postgres'
+        ? sql`UPDATE outbox
+              SET claimed_at = ${now}, claimed_by = ${claimToken},
+                  attempts = attempts + CASE WHEN claimed_at IS NULL THEN 0 ELSE 1 END
+              WHERE id = ANY (ARRAY(${selectDue}))
+              RETURNING *`
+        : sql`UPDATE outbox
+              SET claimed_at = ${now}, claimed_by = ${claimToken},
+                  attempts = attempts + CASE WHEN claimed_at IS NULL THEN 0 ELSE 1 END
+              WHERE id IN (${selectDue})
+              RETURNING *`,
+    );
+    if (rows.length === 0) break;
+    claimed.push(...rows.map(mapRow));
+  }
+  return claimed;
 }
 
 /**
@@ -285,32 +321,49 @@ function transcriptSets(t: DeliveryTranscript | undefined) {
   return sets;
 }
 
-/** Mark a row delivered, keeping what crossed the wire. */
+function claimedPendingWhere(id: string, claim: OutboxClaim) {
+  return sql`id = ${id} AND status = 'pending' AND claimed_by = ${claim.claimedBy}`;
+}
+
+async function settlementApplied(db: Db, query: Parameters<Db['get']>[0]): Promise<boolean> {
+  return (await db.get<{ id: string }>(query)) !== undefined;
+}
+
+/**
+ * Mark the current worker's claimed row delivered, keeping what crossed the
+ * wire. Returns false if it lost the lease.
+ */
 export async function markOutboxDone(
   db: Db,
   id: string,
-  now = Date.now(),
-  transcript?: DeliveryTranscript,
-): Promise<void> {
+  now: number,
+  transcript: DeliveryTranscript | undefined,
+  claim: OutboxClaim,
+): Promise<boolean> {
   const sets = [
     sql`status = 'done'`,
     sql`updated_at = ${now}`,
     sql`last_error = NULL`,
     ...transcriptSets(transcript),
   ];
-  await db.run(sql`UPDATE outbox SET ${sql.join(sets, sql`, `)} WHERE id = ${id}`);
+  return settlementApplied(
+    db,
+    sql`UPDATE outbox SET ${sql.join(sets, sql`, `)} WHERE ${claimedPendingWhere(id, claim)}
+        RETURNING id`,
+  );
 }
 
 /**
  * Record a failed attempt and schedule the next retry with backoff. `attempts`
  * is the new (incremented) count; the row stays `pending` so the worker picks it
- * up again once `next_attempt_at` passes.
+ * up again once `next_attempt_at` passes. Returns false if it lost the lease.
  */
 export async function markOutboxRetry(
   db: Db,
   id: string,
   args: { attempts: number; error: string; now?: number; transcript?: DeliveryTranscript },
-): Promise<void> {
+  claim: OutboxClaim,
+): Promise<boolean> {
   const now = args.now ?? Date.now();
   const nextAt = now + backoffMs(args.attempts);
   // Clear the claim so the row is reclaimable once its backoff elapses.
@@ -323,32 +376,44 @@ export async function markOutboxRetry(
     sql`claimed_by = NULL`,
     ...transcriptSets(args.transcript),
   ];
-  await db.run(sql`UPDATE outbox SET ${sql.join(sets, sql`, `)} WHERE id = ${id}`);
+  return settlementApplied(
+    db,
+    sql`UPDATE outbox SET ${sql.join(sets, sql`, `)} WHERE ${claimedPendingWhere(id, claim)}
+        RETURNING id`,
+  );
 }
 
 /**
  * Deliberately not performed — terminal on the FIRST decision (no retry
- * schedule burned), with the reason kept as the log record.
+ * schedule burned), with the reason kept as the log record. Returns false if it
+ * lost the lease.
  */
 export async function markOutboxSkipped(
   db: Db,
   id: string,
   args: { reason: string; now?: number },
-): Promise<void> {
+  claim: OutboxClaim,
+): Promise<boolean> {
   const now = args.now ?? Date.now();
-  await db.run(
+  return settlementApplied(
+    db,
     sql`UPDATE outbox
         SET status = 'skipped', last_error = ${args.reason.slice(0, 1000)}, updated_at = ${now}
-        WHERE id = ${id}`,
+        WHERE ${claimedPendingWhere(id, claim)}
+        RETURNING id`,
   );
 }
 
-/** Give up: the row exhausted its retries. Terminal state; kept as the log. */
+/**
+ * Give up: the row exhausted its retries. Terminal state; kept as the log.
+ * Returns false if it lost the lease.
+ */
 export async function markOutboxFailed(
   db: Db,
   id: string,
   args: { attempts: number; error: string; now?: number; transcript?: DeliveryTranscript },
-): Promise<void> {
+  claim: OutboxClaim,
+): Promise<boolean> {
   const now = args.now ?? Date.now();
   const sets = [
     sql`status = 'failed'`,
@@ -357,7 +422,11 @@ export async function markOutboxFailed(
     sql`updated_at = ${now}`,
     ...transcriptSets(args.transcript),
   ];
-  await db.run(sql`UPDATE outbox SET ${sql.join(sets, sql`, `)} WHERE id = ${id}`);
+  return settlementApplied(
+    db,
+    sql`UPDATE outbox SET ${sql.join(sets, sql`, `)} WHERE ${claimedPendingWhere(id, claim)}
+        RETURNING id`,
+  );
 }
 
 /**
@@ -679,7 +748,7 @@ export async function summarizeFailedDeliveriesByForm(
   return [...byForm.values()];
 }
 
-/** Count rows in a status (readiness/backlog reporting). */
+/** Count rows in a status for backlog reporting. */
 export async function countOutbox(db: Db, status: OutboxStatus): Promise<number> {
   const row = await db.get<{ n: number }>(
     sql`SELECT COUNT(*) AS n FROM outbox WHERE status = ${status}`,

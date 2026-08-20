@@ -9,7 +9,10 @@ import {
 import { hostname } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import {
+  claimIdentityOf,
   claimDueOutbox,
+  DEFAULT_OUTBOX_CLAIM_LIMIT,
+  DEFAULT_STALE_CLAIM_MS,
   markOutboxDone,
   markOutboxFailed,
   markOutboxRetry,
@@ -51,6 +54,8 @@ export class OutboxWorker implements OnModuleInit, OnModuleDestroy {
   private readonly workerId = `${hostname()}:${process.pid}:${randomUUID().slice(0, 8)}`;
   /** Injectable for tests; defaults to global fetch for webhook delivery. */
   fetchImpl: typeof fetch = fetch;
+  /** Injectable clock for deterministic claim-age tests. */
+  private clock: () => number = Date.now;
 
   constructor(
     @Inject(DB) private readonly db: Db,
@@ -95,46 +100,92 @@ export class OutboxWorker implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * Process every currently-due row once. Returns the number of rows processed
-   * (attempted), regardless of success. Deterministic for tests via `now`.
+   * Claim and process up to the existing batch bound. Each row is claimed
+   * immediately before its effect so a slow earlier row cannot age its lease.
+   * Returns claimed rows inspected, regardless of settlement. Deterministic for
+   * tests via `now`.
    */
-  async drainOnce(now = Date.now()): Promise<number> {
-    const rows = await claimDueOutbox(this.db, now, { workerId: this.workerId });
-    for (const row of rows) {
-      await this.process(row, now);
+  async drainOnce(now?: number): Promise<number> {
+    let processed = 0;
+    let claimNow = now ?? this.clock();
+    const rowNow = () => (now !== undefined && this.clock === Date.now ? claimNow : this.clock());
+    while (processed < DEFAULT_OUTBOX_CLAIM_LIMIT) {
+      const [row] = await claimDueOutbox(this.db, claimNow, {
+        workerId: this.workerId,
+        limit: 1,
+      });
+      if (!row) break;
+      const executed = await this.process(row, rowNow);
+      processed += 1;
+      if (!executed) break;
+      claimNow = rowNow();
     }
-    return rows.length;
+    return processed;
   }
 
-  private async process(row: OutboxRow, now: number): Promise<void> {
+  private async process(row: OutboxRow, now: () => number): Promise<boolean> {
+    const claim = claimIdentityOf(row);
+    if (now() - claim.claimedAt >= DEFAULT_STALE_CLAIM_MS) {
+      this.logLostLease(row);
+      return false;
+    }
+    if (row.attempts >= row.maxAttempts) {
+      const settled = await markOutboxFailed(
+        this.db,
+        row.id,
+        {
+          attempts: row.attempts,
+          error: 'delivery exceeded its claim lease; outcome unknown',
+          now: now(),
+        },
+        claim,
+      );
+      if (settled) {
+        this.log.error(`outbox ${row.kind}:${row.action} (${row.id}) exceeded its claim lease`);
+      } else {
+        this.logLostLease(row);
+      }
+      return true;
+    }
     try {
       const transcript = await this.execute(row);
-      await markOutboxDone(this.db, row.id, now, transcript);
+      if (!(await markOutboxDone(this.db, row.id, now(), transcript, claim))) this.logLostLease(row);
+      return true;
     } catch (err) {
       if (err instanceof OutboxSkipError) {
-        // A decision, not a failure: record the reason ONCE and stop — waiting
-        // and retrying cannot change the outcome.
-        await markOutboxSkipped(this.db, row.id, { reason: err.message, now });
-        this.log.warn(`outbox ${row.kind}:${row.action} (${row.id}) skipped: ${err.message}`);
-        return;
+        if (await markOutboxSkipped(this.db, row.id, { reason: err.message, now: now() }, claim)) {
+          this.log.warn(`outbox ${row.kind}:${row.action} (${row.id}) skipped: ${err.message}`);
+        } else this.logLostLease(row);
+        return true;
       }
       const attempts = row.attempts + 1;
       const message = err instanceof Error ? err.message : String(err);
-      // A failure is the transcript anyone actually needs to read back, and it
-      // arrives on the thrown error rather than a returned value.
       const transcript = transcriptOfError(err);
-      if (attempts >= row.maxAttempts) {
-        await markOutboxFailed(this.db, row.id, { attempts, error: message, now, transcript });
-        this.log.error(
-          `outbox ${row.kind}:${row.action} (${row.id}) gave up after ${attempts} attempts: ${message}`,
-        );
+      const settled = attempts >= row.maxAttempts
+        ? await markOutboxFailed(this.db, row.id, { attempts, error: message, now: now(), transcript }, claim)
+        : await markOutboxRetry(this.db, row.id, { attempts, error: message, now: now(), transcript }, claim);
+      if (!settled) {
+        this.logLostLease(row);
+      } else if (attempts >= row.maxAttempts) {
+        this.log.error(`outbox ${row.kind}:${row.action} (${row.id}) gave up after ${attempts} attempts: ${message}`);
       } else {
-        await markOutboxRetry(this.db, row.id, { attempts, error: message, now, transcript });
-        this.log.warn(
-          `outbox ${row.kind}:${row.action} (${row.id}) failed (attempt ${attempts}/${row.maxAttempts}), will retry: ${message}`,
-        );
+        this.log.warn(`outbox ${row.kind}:${row.action} (${row.id}) failed (attempt ${attempts}/${row.maxAttempts}), will retry: ${message}`);
       }
+      return true;
     }
+  }
+
+  /**
+   * If settlement loses ownership, the side effect may have happened but this
+   * worker must not claim a durable result.
+   */
+  private logLostLease(row: OutboxRow): void {
+    const token = row.claimedBy ?? '';
+    const prefixEnd = token.lastIndexOf('#');
+    const owner = prefixEnd > 0 ? token.slice(0, prefixEnd) : 'unknown';
+    this.log.warn(
+      `outbox ${row.kind}:${row.action} (${row.id}) lease lost before settlement (worker ${owner})`,
+    );
   }
 
   /**
