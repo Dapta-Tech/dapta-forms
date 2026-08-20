@@ -12,6 +12,7 @@ import { createDestination } from '@quill/destinations';
 import type { ServerEnv } from '@quill/config/env';
 import { OutboxSkipError } from './email-effects';
 import { extractUtm } from './destination-effects';
+import { HubspotPortalResolver, mirrorGuidFor } from './hubspot-portal';
 import type { BookingSyncPayload } from './booking-effects';
 import { DB, ENV } from './tokens';
 
@@ -131,6 +132,8 @@ export class BookingSyncEffects {
   fetchImpl: typeof fetch = fetch;
   /** Overridable in tests to point the HubSpot client at a fake. */
   hubspotApiBase: string = HUBSPOT_API_BASE;
+  /** accountId -> the portal its HubSpot token belongs to (mirror submit URL). */
+  private readonly portals = new HubspotPortalResolver();
 
   constructor(
     @Inject(DB) private readonly db: Db,
@@ -400,6 +403,17 @@ export class BookingSyncEffects {
         )?.label ?? null)
       : null;
 
+    // The mirror form, exactly as the submit path resolves it. It was missing
+    // here, and this is the ONLY path a scheduler-keyed form ever takes: those
+    // forms got their answers and their Note but never the "Form submission"
+    // activity, because the adapter skips mirroring unless it has BOTH the guid
+    // and the portal. Resolved only when a mirror is configured, so a form
+    // without one still makes no extra call.
+    const mirrorGuid = mirrorGuidFor(destination.settings);
+    const portalId = mirrorGuid
+      ? await this.portals.resolve(payload.accountId, token, this.fetchImpl)
+      : null;
+
     // Through the factory — the same construction seam the submit path uses
     // (invariant #7); the token is injected here and never persisted.
     const adapter = createDestination(
@@ -416,6 +430,8 @@ export class BookingSyncEffects {
           outcomeProperty: destination.outcomeProperty ?? undefined,
           staticProperties: destination.staticProperties,
           inferCompanyFromEmail: destination.inferCompanyFromEmail,
+          formGuid: mirrorGuid ?? undefined,
+          portalId: portalId ?? undefined,
         },
       },
       this.fetchImpl,

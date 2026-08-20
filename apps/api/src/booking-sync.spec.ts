@@ -29,6 +29,7 @@ import { OutboxWorker } from './outbox.worker';
 const EVENT_URI = 'https://api.calendly.com/scheduled_events/abc';
 const INVITEE_URI = 'https://api.calendly.com/scheduled_events/abc/invitees/def';
 const HUBSPOT_UPSERT_URL = 'https://api.hubapi.com/crm/v3/objects/contacts/batch/upsert';
+const ACCOUNT_INFO_URL = 'https://api.hubapi.com/account-info/v3/details';
 
 interface RecordedCall {
   url: string;
@@ -572,6 +573,72 @@ describe('booking_sync delivery', () => {
       }
     ).inputs[0]!.properties;
     expect(props.phone).toBeUndefined();
+  });
+
+  // A scheduler-keyed form NEVER delivers at submit time (nothing to key on), so
+  // this is the only path its mirror form can be posted from. It shipped without
+  // one: the answers and the Note arrived and the "Form submission" activity
+  // never did, on every booking form in the account.
+  it('posts the mirror form submission when the destination configures one', async () => {
+    await setHubspotDestination(undefined, {
+      fieldMappings: { role: 'role' },
+      settings: { note: true, formActivity: true, formGuid: 'guid-1' },
+    });
+    await svc.submit('acme', 'lead-qualifier', {
+      sessionId: 'sess-mirror',
+      data: { role: 'founder' },
+    });
+    await svc.booking('acme', 'lead-qualifier', {
+      sessionId: 'sess-mirror',
+      provider: 'calendly',
+      eventUri: EVENT_URI,
+      inviteeUri: INVITEE_URI,
+    });
+
+    const calls: RecordedCall[] = [];
+    bookingSync.fetchImpl = recordingFetch(calls, {
+      [EVENT_URI]: () => jsonResponse({ resource: { start_time: '2026-08-02T10:00:00Z' } }),
+      [INVITEE_URI]: () => jsonResponse({ resource: { email: 'm@corp.io', name: 'Ada Lovelace' } }),
+      [ACCOUNT_INFO_URL]: () => jsonResponse({ portalId: 4242 }),
+      [HUBSPOT_UPSERT_URL]: () => jsonResponse({ results: [{ id: '93' }] }),
+    });
+    await drainDue();
+
+    const mirror = calls.find((c) => c.url.includes('/submissions/v3/integration/secure/submit/'));
+    expect(mirror?.url).toContain('/4242/guid-1');
+    const fields = (mirror?.body as { fields?: Array<{ name: string; value: string }> }).fields ?? [];
+    expect(fields.find((f) => f.name === 'email')?.value).toBe('m@corp.io');
+  });
+
+  // The switch is what enables it; the guid alone survives being turned off so
+  // the same form is reused when it is turned back on.
+  it('skips the mirror when the form activity switch is off', async () => {
+    await setHubspotDestination(undefined, {
+      fieldMappings: { role: 'role' },
+      settings: { note: true, formActivity: false, formGuid: 'guid-1' },
+    });
+    await svc.submit('acme', 'lead-qualifier', {
+      sessionId: 'sess-nomirror',
+      data: { role: 'founder' },
+    });
+    await svc.booking('acme', 'lead-qualifier', {
+      sessionId: 'sess-nomirror',
+      provider: 'calendly',
+      eventUri: EVENT_URI,
+      inviteeUri: INVITEE_URI,
+    });
+
+    const calls: RecordedCall[] = [];
+    bookingSync.fetchImpl = recordingFetch(calls, {
+      [EVENT_URI]: () => jsonResponse({ resource: { start_time: '2026-08-02T10:00:00Z' } }),
+      [INVITEE_URI]: () => jsonResponse({ resource: { email: 'n@corp.io', name: 'Ada Lovelace' } }),
+      [HUBSPOT_UPSERT_URL]: () => jsonResponse({ results: [{ id: '94' }] }),
+    });
+    await drainDue();
+
+    expect(calls.some((c) => c.url.includes('/submissions/v3/integration/'))).toBe(false);
+    // And no portal lookup either: a form with no mirror pays for no extra call.
+    expect(calls.some((c) => c.url === ACCOUNT_INFO_URL)).toBe(false);
   });
 
   // Calendly always returns `name` and only sometimes the split pair.
