@@ -143,6 +143,22 @@ describe('submission upsert', () => {
     expect(await listSubmissions(db, formId)).toHaveLength(2);
   });
 
+  it('orders tied started timestamps by id descending', async () => {
+    const startedAt = 1_700_000_000_000;
+    for (const id of ['submission-tie-a', 'submission-tie-b', 'submission-tie-c']) {
+      await db.run(
+        sql`INSERT INTO submission (id, form_id, session_id, data, score, started_at)
+            VALUES (${id}, ${formId}, ${'session-' + id}, ${'{}'}, ${0}, ${startedAt})`,
+      );
+    }
+
+    expect((await listSubmissions(db, formId)).map((row) => row.id)).toEqual([
+      'submission-tie-c',
+      'submission-tie-b',
+      'submission-tie-a',
+    ]);
+  });
+
   it('enforces the (form_id, session_id) unique index', async () => {
     await upsertSubmission(db, { formId, sessionId: 'dup', data: {}, score: 0 });
     // A raw duplicate insert must violate the unique index (the parity guarantee).
