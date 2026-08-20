@@ -453,6 +453,127 @@ describe('booking_sync delivery', () => {
     expect(props.full_name).toBe('Ada Lovelace');
   });
 
+  // Real event types ask for the phone as a CUSTOM question, not the native SMS
+  // field, so `text_reminder_number` is absent and the number arrives only in
+  // `questions_and_answers`. The phone question is found by its text, at any
+  // position, and only an answer that parses as a number is taken.
+  it('takes the phone from a custom booking-form question when the SMS field is absent', async () => {
+    await setHubspotDestination(undefined, {
+      fieldMappings: { '@invitee_phone': 'phone' },
+    });
+    await svc.submit('acme', 'lead-qualifier', { sessionId: 'sess-qa', data: { role: 'founder' } });
+    await svc.booking('acme', 'lead-qualifier', {
+      sessionId: 'sess-qa',
+      provider: 'calendly',
+      eventUri: EVENT_URI,
+      inviteeUri: INVITEE_URI,
+    });
+
+    const calls: RecordedCall[] = [];
+    bookingSync.fetchImpl = recordingFetch(calls, {
+      [EVENT_URI]: () => jsonResponse({ resource: { start_time: '2026-08-02T10:00:00Z' } }),
+      [INVITEE_URI]: () =>
+        jsonResponse({
+          resource: {
+            email: 'qa@corp.io',
+            name: 'Ada Lovelace',
+            questions_and_answers: [
+              { question: 'Company', answer: 'Analytical Engines', position: 0 },
+              { question: '¿Cual es tu numero de teléfono?', answer: '+1 909-413-7555', position: 1 },
+            ],
+          },
+        }),
+      [HUBSPOT_UPSERT_URL]: () => jsonResponse({ results: [{ id: '90' }] }),
+    });
+    await drainDue();
+
+    const props = (
+      calls.filter((c) => c.url === HUBSPOT_UPSERT_URL).at(-1)!.body as {
+        inputs: Array<{ properties: Record<string, string> }>;
+      }
+    ).inputs[0]!.properties;
+    expect(props.phone).toBe('+1 909-413-7555');
+  });
+
+  it('the native SMS field wins over a custom phone question', async () => {
+    await setHubspotDestination(undefined, {
+      fieldMappings: { '@invitee_phone': 'phone' },
+    });
+    await svc.submit('acme', 'lead-qualifier', { sessionId: 'sess-sms', data: { role: 'founder' } });
+    await svc.booking('acme', 'lead-qualifier', {
+      sessionId: 'sess-sms',
+      provider: 'calendly',
+      eventUri: EVENT_URI,
+      inviteeUri: INVITEE_URI,
+    });
+
+    const calls: RecordedCall[] = [];
+    bookingSync.fetchImpl = recordingFetch(calls, {
+      [EVENT_URI]: () => jsonResponse({ resource: { start_time: '2026-08-02T10:00:00Z' } }),
+      [INVITEE_URI]: () =>
+        jsonResponse({
+          resource: {
+            email: 'sms@corp.io',
+            name: 'Ada Lovelace',
+            text_reminder_number: '+57 300 111 2233',
+            questions_and_answers: [
+              { question: 'Phone number', answer: '+1 555 000 1111', position: 0 },
+            ],
+          },
+        }),
+      [HUBSPOT_UPSERT_URL]: () => jsonResponse({ results: [{ id: '91' }] }),
+    });
+    await drainDue();
+
+    const props = (
+      calls.filter((c) => c.url === HUBSPOT_UPSERT_URL).at(-1)!.body as {
+        inputs: Array<{ properties: Record<string, string> }>;
+      }
+    ).inputs[0]!.properties;
+    expect(props.phone).toBe('+57 300 111 2233');
+  });
+
+  // Either guard alone fails on real data: some event types open with "Company"
+  // (answered with a phone once in a while) and others with free text. A phone
+  // property must never receive a company name or a paragraph.
+  it('ignores custom answers that are not a phone number behind a phone question', async () => {
+    await setHubspotDestination(undefined, {
+      fieldMappings: { '@invitee_phone': 'phone' },
+    });
+    await svc.submit('acme', 'lead-qualifier', { sessionId: 'sess-noqa', data: { role: 'founder' } });
+    await svc.booking('acme', 'lead-qualifier', {
+      sessionId: 'sess-noqa',
+      provider: 'calendly',
+      eventUri: EVENT_URI,
+      inviteeUri: INVITEE_URI,
+    });
+
+    const calls: RecordedCall[] = [];
+    bookingSync.fetchImpl = recordingFetch(calls, {
+      [EVENT_URI]: () => jsonResponse({ resource: { start_time: '2026-08-02T10:00:00Z' } }),
+      [INVITEE_URI]: () =>
+        jsonResponse({
+          resource: {
+            email: 'noqa@corp.io',
+            name: 'Ada Lovelace',
+            questions_and_answers: [
+              { question: 'Compañía', answer: '+1 555 123 4567', position: 0 },
+              { question: 'Phone number', answer: 'call me whenever', position: 1 },
+            ],
+          },
+        }),
+      [HUBSPOT_UPSERT_URL]: () => jsonResponse({ results: [{ id: '92' }] }),
+    });
+    await drainDue();
+
+    const props = (
+      calls.filter((c) => c.url === HUBSPOT_UPSERT_URL).at(-1)!.body as {
+        inputs: Array<{ properties: Record<string, string> }>;
+      }
+    ).inputs[0]!.properties;
+    expect(props.phone).toBeUndefined();
+  });
+
   // Calendly always returns `name` and only sometimes the split pair.
   it('derives first/last from the full name when the provider omits the split pair', async () => {
     await setHubspotDestination(undefined, {

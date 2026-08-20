@@ -32,7 +32,31 @@ interface CalendlyResource {
     last_name?: string;
     /** Present only when the event type asks for an SMS reminder number. */
     text_reminder_number?: string;
+    /** The booking form's custom questions, in the order the event type asks them. */
+    questions_and_answers?: { question?: string; answer?: string; position?: number }[];
   };
+}
+
+/**
+ * A custom-question answer that is a phone number, or null.
+ *
+ * `text_reminder_number` only exists when the event type uses Calendly's native
+ * SMS field, and real event types ask for the phone as a CUSTOM question instead
+ * ("What is your phone number?"), which arrives here. Guarded twice, because
+ * either check alone fails on real data: event types exist whose first question
+ * is "Company" (and people have answered it with their phone) and others with
+ * free-text "Please share anything...", so the QUESTION must ask for a phone AND
+ * the ANSWER must parse as one. Position is irrelevant: the question is found by
+ * its text, wherever the event type asks it.
+ */
+function phoneFromQuestions(
+  qa: { question?: string; answer?: string }[] | undefined,
+): string | null {
+  const asksForPhone = (q: string | undefined) =>
+    /tel[eé]fono|phone|celular|m[oó]vil|whatsapp|n[uú]mero/i.test(q ?? '');
+  const looksLikePhone = (a: string | undefined) => /^[+()\-.\s\d]{7,}$/.test((a ?? '').trim());
+  const hit = (qa ?? []).find((x) => asksForPhone(x.question) && looksLikePhone(x.answer));
+  return hit?.answer?.trim() ?? null;
 }
 
 /** What the booking page collected about the person, beyond their address. */
@@ -168,7 +192,11 @@ export class BookingSyncEffects {
           name: fetchedInvitee?.resource?.name?.trim() || null,
           firstName: fetchedInvitee?.resource?.first_name?.trim() || null,
           lastName: fetchedInvitee?.resource?.last_name?.trim() || null,
-          phone: fetchedInvitee?.resource?.text_reminder_number?.trim() || null,
+          // The structured SMS field wins; a custom question is the fallback.
+          phone:
+            fetchedInvitee?.resource?.text_reminder_number?.trim() ||
+            phoneFromQuestions(fetchedInvitee?.resource?.questions_and_answers) ||
+            null,
         };
       }
     }
