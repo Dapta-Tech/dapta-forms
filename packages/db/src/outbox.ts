@@ -165,19 +165,159 @@ export async function enqueueOutbox(db: Db, input: EnqueueOutboxInput): Promise<
 }
 
 /**
- * Delete still-PENDING rows matching a subject + kind + action — used to cancel
- * scheduled sends before they fire. Never touches rows already `done`/`failed`.
+ * NEVER HANDED OFF: the row is still exactly as `enqueueOutbox` wrote it.
+ *
+ * `status = 'pending'` on its own does not mean that. It is equally true of a
+ * row a worker is delivering RIGHT NOW (claimed, lease held) and of a row
+ * waiting out its retry backoff (attempted, claim cleared, due again later).
+ * Two more columns separate the three:
+ *
+ *   claimed_at IS NULL   nobody holds the lease, so no attempt is in flight
+ *   attempts = 0         no attempt was ever made, so nothing can have landed
+ *                        at the far end
+ *
+ * Both are load-bearing and neither implies the other: a FIRST claim charges no
+ * attempt (`claimed_at` is set while `attempts` stays 0), and `markOutboxRetry`
+ * clears the claim while leaving `attempts` above 0. Drop either column and one
+ * of the two live states starts looking cancellable.
  */
-export async function deletePendingOutbox(
+const UNSTARTED_OUTBOX = sql`status = 'pending' AND claimed_at IS NULL AND attempts = 0`;
+
+/**
+ * DELETE queued work that has not been started yet, scoped to one subject +
+ * kind + action. The first of the three moves a re-enqueue pass makes.
+ *
+ * This is the only state where deleting is honest. Nothing was attempted, so
+ * there is nothing to record and nothing anyone could have received: the row
+ * leaves no trace because it produced no event. The other two pending states
+ * are handled elsewhere and on purpose, because both have already done
+ * something: {@link skipBackoffOutbox} settles an attempted row that is waiting
+ * to retry, keeping everything it recorded, and a row a worker is currently
+ * holding is left strictly alone, because only that worker may settle it.
+ *
+ * WHERE THE SETTINGS BOUNDARY SITS. Configuration decides what is queued and
+ * what stops being retried. It does not reach a request that is in flight. An
+ * edit to a destination is never a synchronous cancel: it takes effect on this
+ * path only when the subject comes round again, and even then a delivery a
+ * worker has already picked up runs to its own terminal state, because it may
+ * already have crossed the wire and this row is the only record that it did.
+ * Whether that delivery is still the current one is a question for the moment
+ * it is made, off {@link listPendingOutbox}, not for this pass.
+ */
+export async function deleteUnstartedOutbox(
   db: Db,
   filter: { subjectUid: string; kind: OutboxKind; action: string },
 ): Promise<void> {
   await db.run(
     sql`DELETE FROM outbox
-        WHERE status = 'pending' AND subject_uid = ${filter.subjectUid}
+        WHERE ${UNSTARTED_OUTBOX} AND subject_uid = ${filter.subjectUid}
           AND kind = ${filter.kind} AND action = ${filter.action}`,
   );
 }
+
+/**
+ * WAITING OUT A BACKOFF: attempted at least once, nobody holding it, due again
+ * later.
+ *
+ * The mirror image of {@link UNSTARTED_OUTBOX}, and the reason both columns are
+ * named twice. `attempts > 0` is what keeps this off a never-started row, which
+ * belongs to the delete and must survive this statement untouched.
+ * `claimed_at IS NULL` is what keeps it off a row a worker holds right now,
+ * which is not waiting for anything: it is running, it may already have crossed
+ * the wire, and only its own worker may settle it.
+ */
+const RETRY_BACKOFF_OUTBOX = sql`status = 'pending' AND claimed_at IS NULL AND attempts > 0`;
+
+/**
+ * Settle every backoff row in one scope as `skipped`, and report how many.
+ *
+ * A queued row carries a FROZEN snapshot of the config and the answers it was
+ * built from. That is what makes retrying safe, and it is also what makes a
+ * retry go stale: once the same subject, kind and action come round again, the
+ * snapshot describes something the caller has already replaced, so every retry
+ * still on the schedule would deliver superseded content. A destination that
+ * was switched off or deleted in the meantime is the sharper version of the
+ * same problem, because nothing else will ever stop it retrying.
+ *
+ * `skipped` rather than deleted, and rather than `failed`. The attempt really
+ * happened and the record of it is the point of the table, so `failed` would
+ * claim the retries ran out, which is not what happened.
+ *
+ * ONLY `status` MOVES. The row is the record of a delivery that was attempted,
+ * and being superseded is not a second thing that happened to it: `last_error`
+ * still holds the reason the attempt failed, which is what an admin opening the
+ * delivery log came to read, and `updated_at` still holds when that happened,
+ * which is what the history is ordered by. Restamping either one would bury a
+ * genuinely newer failure under every row a busy form supersedes. `attempts`
+ * and the transcript are left alone for the same reason.
+ *
+ * One statement, whatever the size of the set, so a caller cannot interleave a
+ * claim between reading the rows and settling them.
+ */
+export async function skipBackoffOutbox(
+  db: Db,
+  filter: { subjectUid: string; kind: OutboxKind; action: string },
+): Promise<number> {
+  const settled = await db.all<{ id: string }>(
+    sql`UPDATE outbox
+        SET status = 'skipped'
+        WHERE ${RETRY_BACKOFF_OUTBOX} AND subject_uid = ${filter.subjectUid}
+          AND kind = ${filter.kind} AND action = ${filter.action}
+        RETURNING id`,
+  );
+  return settled.length;
+}
+
+/** STILL QUEUED: not yet settled, whichever of the three pending states it is in. */
+const PENDING_OUTBOX = sql`status = 'pending'`;
+
+/** A queued row, in the only three terms a delivery needs to compare rows. */
+export interface PendingOutboxRow {
+  id: string;
+  /** The serialized snapshot, which is what names the delivery being made. */
+  payload: string | null;
+  /** When the row was queued: what makes one of two snapshots the later one. */
+  createdAt: number;
+}
+
+/**
+ * Everything still queued in one scope, oldest first.
+ *
+ * Read from the DELIVERY side, not the enqueue side. A row about to cross the
+ * wire is the last point at which anyone can still ask whether the snapshot it
+ * carries is the current one, and the only way to answer is to look at what
+ * else is queued for the same subject, kind and action. All three pending
+ * states belong in the answer: a row waiting to be picked up, one waiting out a
+ * backoff and one another worker is holding are three facts about the same
+ * thing, a delivery that has not happened yet.
+ *
+ * RECENCY IS `created_at` AND NOTHING ELSE. The rows come back in that order as
+ * a convenience, but the order is not the answer: `id` is a random UUID, so
+ * sorting by it to break a tie would manufacture a "latest" between two rows
+ * queued in the same millisecond, and a caller reading the last row would act
+ * on a coin toss. The timestamp is reported instead, and a caller that finds a
+ * tie is meant to treat it as one.
+ *
+ * Deliberately narrow: nothing here needs the transcript, the attempt count or
+ * the account, so none of them are read.
+ */
+export async function listPendingOutbox(
+  db: Db,
+  filter: { subjectUid: string; kind: OutboxKind; action: string },
+): Promise<PendingOutboxRow[]> {
+  const rows = await db.all<Record<string, unknown>>(
+    sql`SELECT id, payload, created_at FROM outbox
+        WHERE ${PENDING_OUTBOX} AND subject_uid = ${filter.subjectUid}
+          AND kind = ${filter.kind} AND action = ${filter.action}
+        ORDER BY created_at ASC`,
+  );
+  return rows.map((r) => ({
+    id: String(r.id),
+    payload: (r.payload as string | null) ?? null,
+    createdAt: Number(r.created_at),
+  }));
+}
+
 
 function mapRow(r: Record<string, unknown>): OutboxRow {
   return {
