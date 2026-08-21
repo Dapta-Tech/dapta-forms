@@ -10,7 +10,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import type { FormStep } from '@quill/engine';
 import { StepInput } from './step-input';
 
-function render(step: FormStep, value: unknown = null) {
+function render(step: FormStep, value: unknown = null, autoFocus?: boolean) {
   return renderToStaticMarkup(
     <StepInput
       step={step}
@@ -21,6 +21,7 @@ function render(step: FormStep, value: unknown = null) {
       onSelect={() => {}}
       dropdownPlaceholder="Pick one"
       dropdownEmpty="No matches"
+      autoFocus={autoFocus}
     />,
   );
 }
@@ -69,6 +70,57 @@ describe('multiple_choice: layout x selection mode', () => {
     const html = render({ ...cards, selectionMode: 'multiple' });
     expect(html).toContain('🧲');
     expect(html).toContain('📅');
+  });
+});
+
+/**
+ * `autoFocus` must reach EVERY text-entry step, including `phone`. The
+ * regression pinned here: the `phone` case dropped the prop and PhoneInput
+ * focused its number field unconditionally, so the vertical layout — which
+ * renders every question at once and passes `autoFocus={false}` precisely to
+ * stop this — still had its phone field grab focus and scroll the page.
+ *
+ * Focus oracle: these tests assert on the `autofocus` attribute of the rendered
+ * `type="tel"` field — the browser's declarative "focus me" directive, i.e. the
+ * behavior a respondent actually experiences — never on component source text.
+ * The web suite runs in `environment: 'node'` (see vitest.config.ts), so there
+ * is no `document.activeElement`; the rendered directive is the observable.
+ */
+const phone: FormStep = {
+  key: 'mobile',
+  type: 'phone',
+  question: 'What is your phone number?',
+};
+
+/** The rendered phone number field, isolated so the assertion cannot be
+ *  satisfied by an `autofocus` belonging to some other element. */
+function telField(html: string): string {
+  const tag = html.match(/<input\b[^>]*\btype="tel"[^>]*>/)?.[0];
+  if (!tag) throw new Error(`no tel input rendered:\n${html}`);
+  return tag;
+}
+
+describe('phone: autoFocus reaches the number field', () => {
+  it('autoFocus={false} leaves the phone field unfocused', () => {
+    expect(telField(render(phone, '', false))).not.toContain('autofocus');
+  });
+
+  it('autoFocus={true} focuses the phone field', () => {
+    expect(telField(render(phone, '', true))).toContain('autofocus');
+  });
+
+  it('the default still focuses the phone field (slides layout)', () => {
+    expect(telField(render(phone, ''))).toContain('autofocus');
+  });
+
+  it('other text steps are unchanged by the fix', () => {
+    const text: FormStep = { key: 'company', type: 'text', question: 'Company?' };
+    expect(render(text, '', false)).not.toContain('autofocus');
+    expect(render(text, '')).toContain('autofocus');
+    // `name` renders two inputs: only the FIRST one ever autofocuses.
+    const name: FormStep = { key: 'full_name', type: 'name', question: 'Your name?' };
+    expect(render(name, '', false)).not.toContain('autofocus');
+    expect(render(name, '').match(/autofocus/g)).toHaveLength(1);
   });
 });
 
