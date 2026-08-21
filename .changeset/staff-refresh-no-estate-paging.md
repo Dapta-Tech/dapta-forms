@@ -1,7 +1,5 @@
 ---
-'@quill/api': patch
 '@quill/db': patch
-'@quill/web': patch
 '@quill/shared': patch
 ---
 

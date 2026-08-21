@@ -13,7 +13,8 @@ import type { NextRequest } from 'next/server';
  * not set it (where there is no fronting proxy to spoof through).
  */
 export function requestOrigin(req: NextRequest): string {
-  return originFrom((n) => req.headers.get(n)) ?? new URL(req.url).origin;
+  const own = req.nextUrl.protocol.replace(/:$/, '') || undefined;
+  return originFrom((n) => req.headers.get(n), own) ?? new URL(req.url).origin;
 }
 
 /**
@@ -21,8 +22,16 @@ export function requestOrigin(req: NextRequest): string {
  * of a `NextRequest` (server actions have no request object). Null when nothing
  * trustworthy resolves; a caller building an OAuth or IdP redirect should then
  * skip the redirect rather than guess an origin.
+ *
+ * `fallbackProto` is the scheme to use when a host resolves but no
+ * `X-Forwarded-Proto` came with it. It is NOT a trust decision: the host is
+ * whatever the trust order already settled on, and this only picks the scheme
+ * to pair with it.
  */
-export function originFrom(get: (name: string) => string | null | undefined): string | null {
+export function originFrom(
+  get: (name: string) => string | null | undefined,
+  fallbackProto?: string,
+): string | null {
   const configured = process.env.PUBLIC_APP_URL?.trim();
   if (configured) {
     try {
@@ -36,8 +45,12 @@ export function originFrom(get: (name: string) => string | null | undefined): st
   const host = selfHost(get);
   if (proto && host) return `${proto}://${host}`;
   // A bare self-host/dev clone with no proxy in front: the Host header is the
-  // only signal there is, and plain http is the only scheme it can be serving.
-  if (host) return `http://${host}`;
+  // only signal there is. The request's OWN scheme is the next best thing and
+  // callers holding a NextRequest pass it, because a deployment that forwards
+  // Host but not X-Forwarded-Proto would otherwise downgrade an https OAuth
+  // returnTo to http. Only the server-action caller, which has no request
+  // object to read a scheme off, falls back to plain http.
+  if (host) return `${fallbackProto ?? 'http'}://${host}`;
   return null;
 }
 

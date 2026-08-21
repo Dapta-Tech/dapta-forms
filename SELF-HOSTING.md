@@ -118,12 +118,23 @@ docker build -f apps/web/Dockerfile -t dapta-forms-web \
 
 ### Outbox worker upgrades
 
-Mixed outbox worker versions are unsupported. Stop every old API/worker
-replica, wait at least the stale claim lease for in-flight old claims or confirm
-the queue is drained, then start every new replica. Use the same coordination
-before rollback. Delivery stays at-least-once: crashes, effects longer than the
-lease, hung providers, and late successes after peer terminalization can
-duplicate or leave an external effect unrecorded.
+A worker settles only the row it still holds the lease on: every settlement
+carries the claim token it was issued, and a worker that lost its lease logs
+`lease lost before settlement` instead of recording a result it no longer owns.
+Versions before that fence settle by row id alone.
+
+So a rolling upgrade, where old and new replicas run side by side for a few
+minutes, is supported but unfenced for as long as it lasts: an old replica can
+still overwrite the settlement of a row a new replica has since reclaimed. That
+is the at-least-once behaviour the outbox already advertises, which is why a
+rolling deploy is safe. It is not the stronger guarantee the fence gives you
+once every replica is on the new version.
+
+A stop, drain-or-wait one full `staleClaimMs`, then start sequence avoids the
+window entirely. Prefer it when you can schedule the downtime, and use the same
+sequence on rollback. Either way delivery stays at-least-once: crashes, effects
+longer than the lease, hung providers, and late successes after peer
+terminalization can duplicate or leave an external effect unrecorded.
 
 **PostgreSQL is the source of truth** (CI and production run Postgres). SQLite is a
 portable subset for zero-infra dev and evaluation only — it is never allowed to
@@ -375,7 +386,9 @@ through the same outbox with retry + backoff).
   and idempotent), then stop every old API worker. Drain active claims or wait
   at least one full `staleClaimMs`, then start only target-version API workers.
 - **API rollback:** use the same stop/drain-or-wait/start sequence before
-  starting the rollback API workers. Do not run mixed API worker versions.
+  starting the rollback API workers. Rolling instead of stopping is safe and
+  stays at-least-once, but see "Outbox worker upgrades" for what mixed versions
+  give up while the rollout lasts.
 - **Web rollout:** web images may roll independently. Rebuild the web image when
   a `NEXT_PUBLIC_*` value changes because those values are baked at build time.
 

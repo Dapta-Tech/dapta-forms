@@ -21,7 +21,7 @@ import { adminApi, ApiError, isAdminRole, type MemberStatus } from '@/lib/admin-
  * workspace id when there is one and the local account id otherwise, and the
  * actions only know the latter.
  */
-function revalidateWorkspace(_accountId: string): void {
+function revalidateWorkspace(): void {
   revalidatePath('/admin/account/workspaces/[id]', 'page');
   revalidatePath('/admin/account/workspaces');
 }
@@ -56,7 +56,7 @@ export async function inviteMemberAction(
     const me = await adminApi.me({ workspace: accountId });
     if (!isAdminRole(me.role)) return { ok: false, code: 'FAILED' };
     await adminApi.inviteMember({ email, role }, { workspace: accountId });
-    revalidateWorkspace(accountId);
+    revalidateWorkspace();
     return { ok: true };
   } catch (e) {
     unstable_rethrow(e);
@@ -111,7 +111,7 @@ export async function updateMemberRoleAction(
     if (!isAdminRole(me.role)) return { ok: false, code: 'FORBIDDEN' };
     if (id === me.memberId) return { ok: false, code: 'FORBIDDEN' };
     await adminApi.updateMember(id, { role }, { workspace: accountId });
-    revalidateWorkspace(accountId);
+    revalidateWorkspace();
     return { ok: true };
   } catch (e) {
     unstable_rethrow(e);
@@ -135,7 +135,7 @@ export async function setMemberStatusAction(
     if (!isAdminRole(me.role)) return { ok: false, code: 'FORBIDDEN' };
     if (id === me.memberId) return { ok: false, code: 'FORBIDDEN' };
     await adminApi.updateMember(id, { status }, { workspace: accountId });
-    revalidateWorkspace(accountId);
+    revalidateWorkspace();
     return { ok: true };
   } catch (e) {
     unstable_rethrow(e);
@@ -158,7 +158,7 @@ export async function removeMemberAction(accountId: string, id: string): Promise
     if (!isAdminRole(me.role)) return { ok: false, code: 'FORBIDDEN' };
     if (id === me.memberId) return { ok: false, code: 'FORBIDDEN' };
     await adminApi.removeMember(id, { workspace: accountId });
-    revalidateWorkspace(accountId);
+    revalidateWorkspace();
     return { ok: true };
   } catch (e) {
     unstable_rethrow(e);

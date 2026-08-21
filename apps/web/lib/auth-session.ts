@@ -126,11 +126,32 @@ export function idpLogoutTarget(logoutUrl: string | null, origin: string): strin
   if (!logoutUrl) return null;
   try {
     const target = new URL(logoutUrl);
+    if (!isBrowserNavigable(target)) return null;
     target.searchParams.set('return_to', new URL('/login?signedout=1', origin).toString());
     return target.toString();
   } catch {
     return null;
   }
+}
+
+/**
+ * Whether a URL is one we are willing to send a browser to.
+ *
+ * `revokeUpstreamSession` returns the IAM's `logoutUrl` field verbatim, and it
+ * goes straight into `NextResponse.redirect` and the action `redirect()`. The
+ * IAM is first-party and env-configured, so this is defence in depth rather
+ * than a live hole, but an unvalidated redirect target on the auth path is
+ * worth closing, and `javascript:` and `data:` are one bad response away.
+ *
+ * The scheme is all that is checked. The host deliberately is NOT pinned to
+ * `IAM_BASE_URL`: the logout URL points at the IdP (`api.workos.com`), not at
+ * the IAM, so a strict same-host pin would break sign-out outright. An
+ * allowlist would have to name both hosts and be configurable.
+ */
+function isBrowserNavigable(target: URL): boolean {
+  if (target.protocol === 'https:') return true;
+  const local = target.hostname === 'localhost' || target.hostname === '127.0.0.1';
+  return target.protocol === 'http:' && local;
 }
 
 /**

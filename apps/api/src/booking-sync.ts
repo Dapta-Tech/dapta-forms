@@ -38,6 +38,18 @@ interface CalendlyResource {
   };
 }
 
+const PHONE_QUESTION =
+  /tel[eé]fono|phone|celular|m[oó]vil|whatsapp|n[uú]mero\s+(?:de\s+)?(?:tel[eé]fono|celular|m[oó]vil|contacto|whatsapp)/i;
+
+/**
+ * A question asking for a "número" that is not a phone. Every other alternative
+ * above is phone-specific, but a bare "número" also opens "Número de documento",
+ * "Número de identificación" and "Número de empleados", whose answers pass the
+ * digit-count check too. The phone property upsert is destructive, so a document
+ * number reaching it OVERWRITES the real phone rather than sitting beside it.
+ */
+const NOT_PHONE_QUESTION = /documento|identificaci[oó]n|c[eé]dula|\bnit\b|empleados/i;
+
 /**
  * A custom-question answer that is a phone number, or null.
  *
@@ -48,13 +60,16 @@ interface CalendlyResource {
  * is "Company" (and people have answered it with their phone) and others with
  * free-text "Please share anything...", so the QUESTION must ask for a phone AND
  * the ANSWER must parse as one. Position is irrelevant: the question is found by
- * its text, wherever the event type asks it.
+ * its text, wherever the event type asks it. A question asking for a "número"
+ * counts only when it says which one (see NOT_PHONE_QUESTION).
  */
 function phoneFromQuestions(
   qa: { question?: string; answer?: string }[] | undefined,
 ): string | null {
-  const asksForPhone = (q: string | undefined) =>
-    /tel[eé]fono|phone|celular|m[oó]vil|whatsapp|n[uú]mero/i.test(q ?? '');
+  const asksForPhone = (q: string | undefined) => {
+    const text = q ?? '';
+    return PHONE_QUESTION.test(text) && !NOT_PHONE_QUESTION.test(text);
+  };
   const looksLikePhone = (a: string | undefined) => /^[+()\-.\s\d]{7,}$/.test((a ?? '').trim());
   const hit = (qa ?? []).find((x) => asksForPhone(x.question) && looksLikePhone(x.answer));
   return hit?.answer?.trim() ?? null;
