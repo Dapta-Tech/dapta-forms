@@ -9,6 +9,7 @@
  * form rather than two, and that a member cannot rewrite the owner's answers.
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { randomUUID } from 'node:crypto';
 import { ForbiddenException, BadRequestException } from '@nestjs/common';
 import {
   createDb,
@@ -151,6 +152,27 @@ describe('/v1/me — the dashboard gate', () => {
     expect(me?.onboardingRequired).toBe(false);
     // Still genuinely un-onboarded — the account state is unchanged, only who is
     // asked to fix it.
+    expect(me?.onboardingCompletedAt).toBeNull();
+  });
+
+  it('does not require it of an owner who already finished it in ANOTHER workspace (asked per person, not per workspace)', async () => {
+    // The same human (one identity-service subject) owns a second, older
+    // local account that is stamped: they did the wizard there. The account
+    // under test predates their membership (created by a colleague's access
+    // grant, so never stamped) and now names them owner.
+    const other = randomUUID();
+    await db.run(
+      sql`INSERT INTO account (id, code, name, created_at, onboarding_completed_at)
+          VALUES (${other}, ${'o' + other.slice(0, 6)}, 'Elsewhere', 1000, 900)`,
+    );
+    await db.run(
+      sql`INSERT INTO member (id, account_id, external_id, email, role, status, created_at)
+          VALUES (${randomUUID()}, ${other}, 'sub-human', 'owner@test.local', 'owner', 'active', 1000)`,
+    );
+    await db.run(sql`UPDATE member SET external_id = 'sub-human' WHERE id = ${ownerId}`);
+    const me = await controllerWith(true).me(asOwner());
+    expect(me?.onboardingRequired).toBe(false);
+    // The account itself is still genuinely un-onboarded; only who is asked changed.
     expect(me?.onboardingCompletedAt).toBeNull();
   });
 

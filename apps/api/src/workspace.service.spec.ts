@@ -373,6 +373,8 @@ describe('WorkspaceService (IAM-backed) — staff of the deployment', () => {
   let workspaces: IamWorkspace[];
   // Workspace ids whose single read answers 500 (a flaky upstream row).
   let broken: Set<string>;
+  // When set, POST /workspace answers this refusal instead of creating.
+  let createRefusal: { status: number; body: string } | null;
   const STAFF_SUB = 'sub-staff';
   const staffToken = signJwtHs256({ sub: STAFF_SUB, account_id: 'acc-staff', email: 's@staff.test', name: 'Staff', exp: 4102444800 }, SECRET);
   const staffReq = (workspace?: string): ReqLike => ({
@@ -386,6 +388,7 @@ describe('WorkspaceService (IAM-backed) — staff of the deployment', () => {
     await migrate(db);
     calls = [];
     broken = new Set();
+    createRefusal = null;
     workspaces = [
       { id: WS_OWN, name: 'Mine', account_id: IAM_ACCOUNT, is_active: true, users: [{ id: 'wu1', user_id: SUB, type: 'OWNER', is_active: true, roles: [] }] },
       { id: 'ws-staff', name: 'Staff HQ', account_id: 'acc-staff', is_active: true, users: [{ id: 'wu-s', user_id: STAFF_SUB, type: 'OWNER', is_active: true, roles: [] }] },
@@ -404,6 +407,19 @@ describe('WorkspaceService (IAM-backed) — staff of the deployment', () => {
         let rows = q ? workspaces.filter((w) => w.name.toLowerCase().includes(q)) : workspaces;
         if (acc) rows = rows.filter((w) => w.account_id === acc);
         return json({ data: rows, total: rows.length, totalPages: 1 });
+      }
+      if (method === 'POST' && url.pathname === '/iam/workspace') {
+        if (createRefusal) return new Response(createRefusal.body, { status: createRefusal.status });
+        const b = JSON.parse(String(init?.body ?? '{}')) as { name: string; account_id: string };
+        const ws: IamWorkspace = {
+          id: `ws-new-${workspaces.length}`,
+          name: b.name,
+          account_id: b.account_id,
+          is_active: true,
+          users: [{ id: `wu-new-${workspaces.length}`, user_id: STAFF_SUB, type: 'OWNER', is_active: true, roles: [] }],
+        };
+        workspaces.push(ws);
+        return json(ws);
       }
       if (method === 'GET' && url.pathname.startsWith('/iam/workspace/')) {
         const id = url.pathname.split('/').pop() ?? '';
@@ -530,6 +546,36 @@ describe('WorkspaceService (IAM-backed) — staff of the deployment', () => {
     const byName = await svc.search(staffReq(), { query: 'mine' });
     expect(byName.rows.filter((r) => r.workspaceId === WS_OWN)).toHaveLength(1);
     expect(byName.rows[0]!.hint ?? null).toBeNull();
+  });
+
+  it('a staff refresh keeps going when one known workspace answers 500: the rest still projects', async () => {
+    workspaces[2]!.users!.push({ id: 'wu-s2', user_id: STAFF_SUB, type: 'MEMBER', is_active: true, roles: [] });
+    await svc.enterEstateWorkspace(staffReq(), 'ws-other');
+    broken.add('ws-other');
+    // A new workspace of the staff person's own account appears upstream.
+    workspaces.push({ id: 'ws-staff-2', name: 'Staff Lab', account_id: 'acc-staff', is_active: true, users: [{ id: 'wu-s3', user_id: STAFF_SUB, type: 'OWNER', is_active: true, roles: [] }] });
+    await svc.refresh(staffReq());
+    // Not degraded: the new one is projected; the broken one is kept, not pruned.
+    expect((await svc.list(staffReq())).map((w) => w.accountName).sort()).toEqual(['Other Corp', 'Staff HQ', 'Staff Lab']);
+  });
+
+  it('create projects the new workspace directly, even when the refresh cannot re-read a known one', async () => {
+    workspaces[2]!.users!.push({ id: 'wu-s2', user_id: STAFF_SUB, type: 'MEMBER', is_active: true, roles: [] });
+    await svc.enterEstateWorkspace(staffReq(), 'ws-other');
+    broken.add('ws-other');
+    const { accountId } = await svc.create(staffReq(), { name: 'Fresh' });
+    const row = await db.get<{ external_id: string; name: string }>(sql`SELECT external_id, name FROM account WHERE id = ${accountId}`);
+    expect(row?.name).toBe('Fresh');
+    expect(workspaces.some((w) => w.id === row?.external_id)).toBe(true);
+    const me = (await svc.list(staffReq())).find((w) => w.accountId === accountId);
+    expect(me?.role).toBe('owner');
+  });
+
+  it("create hands the identity service's refusal to the caller instead of a bare 500", async () => {
+    createRefusal = { status: 422, body: JSON.stringify({ message: 'Plan limit: 1 workspace' }) };
+    await expect(svc.create(staffReq(), { name: 'One more' })).rejects.toMatchObject({
+      response: { error: 'WORKSPACE_CREATE_REJECTED', message: 'Plan limit: 1 workspace' },
+    });
   });
 
   it('a staff refresh never pages the estate: own account scoped, known memberships re-read one by one', async () => {
