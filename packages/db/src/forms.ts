@@ -6,6 +6,7 @@
  * so the identical code runs on SQLite (clone-and-run) and Postgres (prod).
  */
 import { randomUUID } from 'node:crypto';
+import { validateFormSlug } from '@quill/engine';
 import { attributionSchema, mergeWebhookSecrets, type Attribution } from '@quill/types';
 import { sql, type Db } from './client';
 import { canonicalPublicCode } from './short-links';
@@ -219,17 +220,44 @@ export function slugify(raw: string): string {
   );
 }
 
-/** A slug unique within the account: `base`, then `base-2`, `base-3`… */
+/**
+ * A slug unique within the account: `base`, then `base-2`, `base-3`…
+ *
+ * "Unique" means free of BOTH live slugs and retired ones (`form_alias`). A
+ * retired slug still answers requests, so handing it to a new form would make
+ * the direct match win and silently redirect every already-published link for
+ * the form that retired it onto a stranger's form. Skipping the candidate costs
+ * a suffix; not skipping it costs someone else's traffic.
+ */
 export async function uniqueFormSlug(db: Db, accountId: string, base: string): Promise<string> {
   const root = slugify(base);
   for (let n = 1; n < 1000; n++) {
     const candidate = n === 1 ? root : `${root}-${n}`;
-    const clash = await db.get<{ id: string }>(
-      sql`SELECT id FROM form WHERE account_id = ${accountId} AND slug = ${candidate} LIMIT 1`,
-    );
-    if (!clash) return candidate;
+    if (!(await formSlugInUse(db, accountId, candidate))) return candidate;
   }
   return `${root}-${randomUUID().slice(0, 6)}`;
+}
+
+/**
+ * Is `slug` spoken for inside this account, as a live slug or a retired alias?
+ * `excludeFormId` lets a form re-claim one of its OWN old slugs (and ignore its
+ * own current one) without reporting a clash against itself.
+ */
+export async function formSlugInUse(
+  db: Db,
+  accountId: string,
+  slug: string,
+  excludeFormId?: string,
+): Promise<boolean> {
+  const live = await db.get<{ id: string }>(
+    sql`SELECT id FROM form WHERE account_id = ${accountId} AND slug = ${slug} LIMIT 1`,
+  );
+  if (live) return String(live.id) !== excludeFormId;
+  const retired = await db.get<{ form_id: string }>(
+    sql`SELECT form_id FROM form_alias WHERE account_id = ${accountId} AND alias = ${slug} LIMIT 1`,
+  );
+  if (retired) return String(retired.form_id) !== excludeFormId;
+  return false;
 }
 
 const FORM_SLUG_INSERT_ATTEMPTS = 3;
@@ -414,25 +442,27 @@ export async function createForm(
   throw new Error('unreachable: form slug insert retries must return or rethrow');
 }
 
+/**
+ * Patch a form's name and/or config.
+ *
+ * `slug` is deliberately NOT here. It used to be, as a plain UPDATE that
+ * checked for a clash and overwrote the column, which is exactly the wrong
+ * shape for a value that is a public URL: it dropped the previous slug on the
+ * floor and broke every link already published for the form. Renaming a slug is
+ * `setFormSlug`, which retires the old value into `form_alias` instead. One
+ * implementation, so no caller can pick the lossy one by accident.
+ */
 export async function updateForm(
   db: Db,
   accountId: string,
   id: string,
-  patch: { name?: string; slug?: string; config?: unknown },
+  patch: { name?: string; config?: unknown },
 ): Promise<CrudResult<FormRow>> {
   const existing = await getFormById(db, accountId, id);
   if (!existing) return { ok: false, reason: 'NOT_FOUND' };
 
   const sets = [];
   if (patch.name !== undefined) sets.push(sql`name = ${patch.name}`);
-  if (patch.slug !== undefined) {
-    const slug = slugify(patch.slug);
-    const clash = await db.get<{ id: string }>(
-      sql`SELECT id FROM form WHERE account_id = ${accountId} AND slug = ${slug} AND id <> ${id} LIMIT 1`,
-    );
-    if (clash) return { ok: false, reason: 'SLUG_TAKEN', message: 'That slug is already in use.' };
-    sets.push(sql`slug = ${slug}`);
-  }
   if (patch.config !== undefined) {
     // Preserve masked webhook secrets: a full-config write that round-trips the
     // READ-masked config (WEBHOOK_SECRET_MASK) must not clobber the stored
@@ -460,6 +490,126 @@ export async function updateForm(
       sql`UPDATE form SET ${sql.join(sets, sql`, `)} WHERE account_id = ${accountId} AND id = ${id}`,
     );
   }
+  return { ok: true, value: (await getFormById(db, accountId, id))! };
+}
+
+// --- Form slug (the public URL's third segment) ------------------------------
+
+/**
+ * Record a slug this form used to answer to. Idempotent: the composite primary
+ * key (account_id, alias) makes a repeat a no-op rather than an error, which is
+ * what a re-rename back and forth produces.
+ */
+async function addFormAlias(
+  db: Db,
+  accountId: string,
+  formId: string,
+  alias: string,
+): Promise<void> {
+  try {
+    await db.run(
+      sql`INSERT INTO form_alias (account_id, alias, form_id, created_at)
+          VALUES (${accountId}, ${alias}, ${formId}, ${Date.now()})`,
+    );
+  } catch {
+    // Already recorded (PK). Idempotent no-op, same as `addAccountAlias`.
+  }
+}
+
+/**
+ * Follow a renamed slug into every member's public-page selection.
+ *
+ * A member profile lists the account's published forms BY SLUG
+ * (`profile.formSlugs`, see 0008), and the public profile filters with
+ * `allowed.includes(form.slug)` against the CANONICAL slug. So a rename that
+ * did not come through here would drop the form off every page that listed it,
+ * silently, with nothing on screen explaining why. An alias cannot cover this:
+ * the filter compares live slugs, never retired ones.
+ *
+ * Deliberately not aliased away instead. `formSlugs` is an author's explicit
+ * selection, so the right behaviour is to follow the rename, not to leave a
+ * stale value that resolves through a redirect.
+ */
+async function renameSlugInMemberProfiles(
+  db: Db,
+  accountId: string,
+  from: string,
+  to: string,
+): Promise<void> {
+  const rows = await db.all<Record<string, unknown>>(
+    sql`SELECT id, profile FROM member WHERE account_id = ${accountId} AND profile IS NOT NULL`,
+  );
+  for (const row of rows) {
+    const profile = parseJsonColumn<Record<string, unknown> | null>(row.profile, null);
+    if (!profile || typeof profile !== 'object') continue;
+    const slugs = profile.formSlugs;
+    if (!Array.isArray(slugs) || !slugs.includes(from)) continue;
+    // Dedupe: a selection holding BOTH the old and the new slug (possible after
+    // a rename round-trip) must not end up listing the same form twice.
+    const next = [...new Set(slugs.map((s) => (s === from ? to : s)))];
+    await db.run(
+      sql`UPDATE member SET profile = ${JSON.stringify({ ...profile, formSlugs: next })}
+          WHERE id = ${row.id} AND account_id = ${accountId}`,
+    );
+  }
+}
+
+/**
+ * Rename a form's public URL, keeping every link ever published for it alive.
+ *
+ * Separate from `updateForm` on purpose. That one is the builder's AUTOSAVE,
+ * fired on a debounce as the author types, and rotating a public URL from a
+ * keystroke is not a thing anyone asks for: a typo in the form's name would
+ * retire a slug that is printed on a QR code. Renaming a URL is an explicit,
+ * confirmed act, so it gets an explicit call.
+ *
+ * Order matters. The UPDATE lands first, so a lost uniqueness race leaves the
+ * ledger untouched; only once the new slug is really ours does the old one get
+ * retired and the reclaimed alias dropped.
+ */
+export async function setFormSlug(
+  db: Db,
+  accountId: string,
+  id: string,
+  requested: string,
+): Promise<CrudResult<FormRow>> {
+  const existing = await getFormById(db, accountId, id);
+  if (!existing) return { ok: false, reason: 'NOT_FOUND' };
+
+  const slug = requested.trim().toLowerCase();
+  if (validateFormSlug(slug)) {
+    return { ok: false, reason: 'SLUG_INVALID', message: 'That link is not a valid slug.' };
+  }
+  // A no-op rename is a success, not a clash against itself.
+  if (slug === existing.slug) return { ok: true, value: existing };
+
+  if (await formSlugInUse(db, accountId, slug, id)) {
+    return { ok: false, reason: 'SLUG_TAKEN', message: 'That slug is already in use.' };
+  }
+
+  try {
+    await db.run(
+      sql`UPDATE form SET slug = ${slug}, updated_at = ${Date.now()}
+          WHERE account_id = ${accountId} AND id = ${id}`,
+    );
+  } catch (error) {
+    // A concurrent claim of the same slug lost the race to `form_account_slug_uq`.
+    // The check above cannot see it; the index can. Same answer either way, never a 500.
+    if (isFormAccountSlugConflict(error)) {
+      return { ok: false, reason: 'SLUG_TAKEN', message: 'That slug is already in use.' };
+    }
+    throw error;
+  }
+
+  await addFormAlias(db, accountId, id, existing.slug);
+  // Re-claiming one of this form's own retired slugs: it is canonical again, so
+  // the alias row would be dead weight that never gets consulted.
+  await db.run(
+    sql`DELETE FROM form_alias
+        WHERE account_id = ${accountId} AND alias = ${slug} AND form_id = ${id}`,
+  );
+  await renameSlugInMemberProfiles(db, accountId, existing.slug, slug);
+
   return { ok: true, value: (await getFormById(db, accountId, id))! };
 }
 
@@ -607,10 +757,31 @@ export async function deleteForm(db: Db, accountId: string, id: string): Promise
   await db.run(
     sql`DELETE FROM notification_setting WHERE account_id = ${accountId} AND form_id = ${id}`,
   );
+  // Retired slugs die with the form they pointed at: leaving them would keep a
+  // deleted form's URLs reserved forever, and `formSlugInUse` reads this table.
+  await db.run(sql`DELETE FROM form_alias WHERE account_id = ${accountId} AND form_id = ${id}`);
   await db.run(sql`DELETE FROM form WHERE account_id = ${accountId} AND id = ${id}`);
 }
 
-/** The published form for a public code + slug (no account scope leaked). */
+/**
+ * The published form for a public code + slug (no account scope leaked).
+ *
+ * Falls back to the alias ledger when nothing matches directly, so a slug the
+ * form used to answer to still resolves: the QR code already printed, the
+ * campaign link already sent, the iframe already pasted into someone else's
+ * site. This ONE fallback covers every public entry point at once, because the
+ * page, the OG image, submissions, funnel events and the booking callback all
+ * arrive through here.
+ *
+ * The returned `slug` is always the CANONICAL one, never what was asked for.
+ * That is what lets the public page notice it was reached through a retired
+ * slug and 308 to the real URL, instead of serving two addresses forever.
+ *
+ * A direct hit wins over an alias, always. `uniqueFormSlug` / `setFormSlug`
+ * refuse to hand one form a slug another form retired, so the two can only
+ * collide for the SAME form (it re-claimed its own old slug), where the direct
+ * row is the right answer anyway.
+ */
 export async function getPublishedForm(
   db: Db,
   accountCode: string,
@@ -618,10 +789,21 @@ export async function getPublishedForm(
 ): Promise<{ id: string; accountId: string; name: string; slug: string; config: unknown } | null> {
   const account = await getAccountByCode(db, accountCode);
   if (!account) return null;
-  const r = await db.get<Record<string, unknown>>(
+  let r = await db.get<Record<string, unknown>>(
     sql`SELECT id, account_id, name, slug, config FROM form
         WHERE account_id = ${account.id} AND slug = ${slug} LIMIT 1`,
   );
+  if (!r) {
+    const retired = await db.get<{ form_id: string }>(
+      sql`SELECT form_id FROM form_alias
+          WHERE account_id = ${account.id} AND alias = ${slug} LIMIT 1`,
+    );
+    if (!retired) return null;
+    r = await db.get<Record<string, unknown>>(
+      sql`SELECT id, account_id, name, slug, config FROM form
+          WHERE account_id = ${account.id} AND id = ${retired.form_id} LIMIT 1`,
+    );
+  }
   if (!r) return null;
   return {
     id: String(r.id),

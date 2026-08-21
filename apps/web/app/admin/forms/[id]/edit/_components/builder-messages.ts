@@ -47,6 +47,20 @@ export interface BuilderMessages {
     embedCopied: string;
     copied: string;
     openForm: string;
+    /**
+     * Rename-the-public-link dialog. Its own control beside Copy link, because
+     * the link is the thing being changed and this is where people look at it.
+     */
+    renameLink: string;
+    renameTitle: string;
+    renameIntro: string;
+    renameLabel: string;
+    renameSave: string;
+    renameSaving: string;
+    renameCancel: string;
+    renameTaken: string;
+    renameInvalid: string;
+    renameFailed: string;
     /** Accessible name for the per-tab contextual toolbar (topbar row 2). */
     toolbar: string;
   };
@@ -525,6 +539,17 @@ const en: BuilderMessages = {
     embedCopied: 'Copied',
     copied: 'Copied',
     openForm: 'Open form',
+    renameLink: 'Edit link',
+    renameTitle: 'Edit this form\u2019s link',
+    renameIntro:
+      'Links you already shared keep working: they redirect here. Printed QR codes, campaign emails and embeds on other sites are safe.',
+    renameLabel: 'Link',
+    renameSave: 'Save link',
+    renameSaving: 'Saving',
+    renameCancel: 'Cancel',
+    renameTaken: 'Another form in this workspace is already using that link.',
+    renameInvalid: 'Use lowercase letters, numbers and hyphens, up to 80 characters.',
+    renameFailed: 'Could not save the link. Try again.',
     toolbar: 'Tools',
   },
   logicDialog: {
@@ -918,6 +943,17 @@ const es: BuilderMessages = {
     embedCopied: 'Copiado',
     copied: 'Copiado',
     openForm: 'Abrir formulario',
+    renameLink: 'Editar enlace',
+    renameTitle: 'Edita el enlace de este formulario',
+    renameIntro:
+      'Los enlaces que ya compartiste siguen funcionando: redirigen aquí. Los códigos QR impresos, los correos de campaña y los formularios insertados en otros sitios no se rompen.',
+    renameLabel: 'Enlace',
+    renameSave: 'Guardar enlace',
+    renameSaving: 'Guardando',
+    renameCancel: 'Cancelar',
+    renameTaken: 'Otro formulario de este espacio ya usa ese enlace.',
+    renameInvalid: 'Usa minúsculas, números y guiones, hasta 80 caracteres.',
+    renameFailed: 'No se pudo guardar el enlace. Inténtalo de nuevo.',
     toolbar: 'Herramientas',
   },
   logicDialog: {

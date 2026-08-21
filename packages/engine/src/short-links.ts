@@ -63,6 +63,38 @@ export function validateVanitySlug(slug: string): VanitySlugIssue {
 }
 
 /**
+ * A FORM slug is the third path segment (`/{accountCode}/{handle}/{slug}`), and
+ * that position is the whole reason it validates differently from a vanity
+ * account slug:
+ *
+ *   - **No reserved-word blocklist.** A vanity slug sits at the root, where
+ *     `signup` or `admin` would shadow a real route. Nothing is routed under
+ *     `[accountCode]/[handle]/` except `[slug]` itself, so no form slug can
+ *     shadow anything. Rejecting `settings` here would be theatre.
+ *   - **80 characters, not 30.** This is `formInputSchema.slug`'s ceiling in
+ *     @quill/types, deliberately kept in sync: the API rejects anything longer
+ *     before this ever runs, and a slug is generated from a form's NAME, which
+ *     is allowed 200.
+ *
+ * Uniqueness stays the DB's job (`form_account_slug_uq` plus the alias ledger),
+ * exactly as it is for vanity slugs.
+ */
+export const FORM_SLUG_MAX_LENGTH = 80;
+
+/** Lowercase alphanumeric words joined by single hyphens. No leading, trailing or doubled hyphen. */
+export const FORM_SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+export type FormSlugIssue = 'invalid' | 'too-long' | null;
+
+/** Shape validation for a form slug. Returns an issue key, or null when valid. */
+export function validateFormSlug(slug: string): FormSlugIssue {
+  const s = slug.trim().toLowerCase();
+  if (s.length > FORM_SLUG_MAX_LENGTH) return 'too-long';
+  if (!FORM_SLUG_RE.test(s)) return 'invalid';
+  return null;
+}
+
+/**
  * The single policy gate for claiming a vanity slug (open-core). Forms is
  * ALWAYS free — there is no Forms-side plan. Premium unlocks come from the
  * customer's Dapta AI subscription, validated upstream (IAM) and passed in

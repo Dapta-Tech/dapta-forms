@@ -1118,6 +1118,19 @@ export const formInputSchema = z.object({
 });
 export type FormInput = z.infer<typeof formInputSchema>;
 
+/**
+ * Body of PUT /v1/forms/:id/slug: the form's new public URL segment.
+ *
+ * Shape validation (the character rules) is `validateFormSlug` in @quill/engine
+ * and runs in the data layer, so a slug that gets past this bound still comes
+ * back as a typed SLUG_INVALID rather than a 500. What this pins is the
+ * CEILING, 80, which the engine's `FORM_SLUG_MAX_LENGTH` mirrors on purpose.
+ */
+export const formSlugInputSchema = z.object({
+  slug: z.string().trim().min(1).max(80),
+});
+export type FormSlugInput = z.infer<typeof formSlugInputSchema>;
+
 export const formViewSchema = z.object({
   id: z.string(),
   accountId: z.string(),
