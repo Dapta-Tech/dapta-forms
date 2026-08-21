@@ -1,8 +1,6 @@
 ---
-'@quill/web': minor
-'@quill/api': patch
 '@quill/db': patch
-'@quill/shared': patch
+'@quill/shared': minor
 ---
 
 Account settings names workspaces by the same id the Dapta app does.
