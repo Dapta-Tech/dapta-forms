@@ -25,32 +25,13 @@ export type DestinationType = 'webhook' | 'hubspot';
  */
 export interface DestinationContext {
   /**
-   * Stable, event-specific de-duplication key.
-   *
-   * Submission deliveries use
-   * `submission:<id>:<phase>:<destinationType>:<destination digest>:<content
-   * digest>`, where each digest is a full lower-case SHA-256 hex over canonical
-   * JSON: the first of the destination's persisted, non-secret identity, the
-   * second of everything in this context except the key itself and
-   * `submittedAt`. The booking-time answers sync uses
-   * `booking:<bookingEventId>:hubspot`.
-   *
-   * EQUAL KEYS MEAN THE SAME DELIVERY. A retry reuses its key, and so does a
-   * re-submit that changed no answer, because neither is a new thing to send.
-   * Anything that changes what is sent, or where it is sent, produces a
-   * different key. That is the whole contract a receiver deduping on the
-   * forwarded header depends on, so it is content-addressed rather than
-   * positional: a key derived from a destination's index in the form config
-   * changed meaning whenever a destination was reordered or deleted.
-   *
-   * Nothing secret is digested. The key is forwarded to the receiver, so a
-   * signing secret is deliberately not part of the destination's identity; a
-   * rotated secret keeps the same key, which is also the right answer, since
-   * rotating one does not create a delivery.
-   *
-   * NOTE: the HubSpot adapter does not read it — its Note create is not
-   * idempotent, which is why every caller must make the Note the LAST side
-   * effect of a delivery (nothing retryable after).
+   * Stable, event-specific de-duplication key. Submission deliveries use
+   * `submission:<id>:<phase>:<destinationType>:<index>`; the booking-time
+   * answers sync uses `booking:<bookingEventId>:hubspot`. A retried delivery
+   * reuses the same key; distinct events get distinct keys. Webhooks forward it
+   * as a header so the RECEIVER can dedupe. NOTE: the HubSpot adapter does not
+   * read it — its Note create is not idempotent, which is why every caller must
+   * make the Note the LAST side effect of a delivery (nothing retryable after).
    */
   idempotencyKey: string;
   /** The persisted submission id (the domain anchor). */
@@ -66,10 +47,7 @@ export interface DestinationContext {
   outcomeLabel: string | null;
   /** `partial` = an intermediate save; `complete` = the final submit. */
   phase: 'partial' | 'complete';
-  /**
-   * Epoch-ms the submission reached this phase. Deliberately OUTSIDE the
-   * identity above: a later reading of the clock is not a different delivery.
-   */
+  /** Epoch-ms the submission reached this phase. */
   submittedAt: number;
   /** The submission answers: fieldName -> value. */
   data: Record<string, unknown>;

@@ -24,7 +24,7 @@ import { destinationType } from '@quill/types';
 import { SubmissionNotifier, LogOnlyEmailProvider } from '@quill/notifications';
 import { signWebhookBody } from '@quill/destinations';
 import { SubmissionService } from './submission.service';
-import { EmailEffects, OutboxSkipError } from './email-effects';
+import { EmailEffects } from './email-effects';
 import { DestinationEffects, type SubmissionDeliveryInput } from './destination-effects';
 import { OutboxWorker } from './outbox.worker';
 
@@ -58,27 +58,9 @@ function keyOf(payload: string | null): string | null {
   }
 }
 
-/**
- * Pin a row's position in the queue's own ordering.
- *
- * Two passes of one session routinely land in the same millisecond, and the
- * newest-row rule falls back to the row id on a tie, which is a random UUID.
- * Stamping `created_at` is what makes a test about ORDER assert the order it
- * means rather than whichever id sorted higher.
- */
-const stampCreatedAt = (id: string, at: number) =>
-  db.run(sql`UPDATE outbox SET created_at = ${at} WHERE id = ${id}`);
-
 /** Hand a row to a worker without racing a real claim for it. */
 const holdRow = (id: string, by = 'W#held') =>
   db.run(sql`UPDATE outbox SET claimed_at = ${Date.now()}, claimed_by = ${by} WHERE id = ${id}`);
-
-/** Hold a row on a lease old enough for a drain to reclaim it (a crashed worker). */
-const holdStale = (id: string) =>
-  db.run(
-    sql`UPDATE outbox SET claimed_at = ${Date.now() - 10 * 60_000}, claimed_by = 'W#crashed'
-        WHERE id = ${id}`,
-  );
 
 beforeEach(async () => {
   db = await createDb('file::memory:');
@@ -489,8 +471,7 @@ describe('re-enqueue reconsideration across a config change', () => {
   it('queues the newer delivery BESIDE the one a worker is already making', async () => {
     // The in-flight row cannot be cancelled, and the answers this pass carries
     // are the ones the respondent actually left, so neither may be dropped.
-    // Both are queued; which of them is still worth sending is decided at
-    // delivery time, when the row is about to cross the wire.
+    // Both are queued, and both keep the same unchanged positional key.
     await destinations.enqueueSubmissionDeliveries(deliveryInput('complete', 'sub-dup', [WEBHOOK]));
     const [queued] = await rowsFor('sub-dup');
     const claimed = (await claimDueOutbox(db, Date.now(), { workerId: 'W' })).find(
@@ -510,10 +491,17 @@ describe('re-enqueue reconsideration across a config change', () => {
       claimedAt: claimed!.claimedAt,
       claimedBy: claimed!.claimedBy,
     });
-    // ...and the newer answers are queued under their own key.
+    // ...and the newer answers are queued beside it. Both rows carry the SAME
+    // positional key, unchanged by this branch, because the submission, the
+    // phase, the type and the config index are all the same. What the far end
+    // does when it sees that key twice is the receiver's business and outside
+    // Dapta Forms; this test asserts only what the queue holds. What the queue
+    // must not do is drop either row on our side, because the held one may
+    // already have landed and the fresh one is the only copy of the latest
+    // answers.
     const fresh = rows.find((r) => r.id !== claimed!.id)!;
     expect(fresh).toMatchObject({ status: 'pending', attempts: 0, claimedAt: null });
-    expect(keyOf(fresh.payload)).not.toBe(keyOf(rows.find((r) => r.id === claimed!.id)!.payload));
+    expect(keyOf(fresh.payload)).toBe(keyOf(rows.find((r) => r.id === claimed!.id)!.payload));
     // Named by payload, not counted: the surviving unstarted row is the one
     // carrying THIS pass's answers, and the held row still carries the first's.
     expect(JSON.parse(fresh.payload!).ctx.data).toEqual({ email: 'moved@acme.io' });
@@ -546,11 +534,19 @@ describe('re-enqueue reconsideration across a config change', () => {
     // destinations are queued again under the new answers.
     expect(after).toHaveLength(3);
     expect(after.find((r) => r.id === held.id)).toMatchObject({ claimedBy: 'W#held' });
-    expect(after.filter((r) => r.claimedAt === null)).toHaveLength(2);
-    expect(new Set(after.map((r) => keyOf(r.payload))).size).toBe(3);
+    const unstarted = after.filter((r) => r.claimedAt === null);
+    expect(unstarted).toHaveLength(2);
+    // The two fresh rows are the two SIBLINGS, not one destination queued
+    // twice: they carry different endpoints and different keys, so the pass
+    // never let one of them stand in for the other.
+    expect(unstarted.map((r) => JSON.parse(r.payload!).destination.settings.url).sort()).toEqual([
+      'https://first.example/hook',
+      'https://second.example/hook',
+    ]);
+    expect(new Set(unstarted.map((r) => keyOf(r.payload))).size).toBe(2);
   });
 
-  it('leaves at most one in-flight row and one unstarted row however often the session re-submits', async () => {
+  it('replaces the row the previous SEQUENTIAL pass left, rather than stacking one per submit', async () => {
     await destinations.enqueueSubmissionDeliveries(deliveryInput('complete', 'sub-rep', [WEBHOOK]));
     const [first] = await rowsFor('sub-rep');
     await claimDueOutbox(db, Date.now(), { workerId: 'W' });
@@ -563,9 +559,14 @@ describe('re-enqueue reconsideration across a config change', () => {
     );
 
     const rows = await rowsFor('sub-rep');
-    // Every pass after the first deletes the unstarted row the one before it
-    // left, so re-submitting cannot grow the queue without bound: the held row,
-    // plus the latest answers, and nothing else.
+    // Each pass deletes the unstarted row the pass before it left, so a session
+    // submitted over and over does not stack a row per submit: the held row,
+    // plus the latest answers. This is a statement about passes that RUN ONE
+    // AFTER ANOTHER, which is how a session submits. Two passes overlapping in
+    // time can both get past the delete before either enqueues, and nothing
+    // here bounds that: the queue is at-least-once, and the rows it produces
+    // carry the same unchanged positional key. Whether anything is made of that
+    // at the far end is outside Dapta Forms.
     expect(rows).toHaveLength(2);
     expect(rows.map((r) => r.id)).toContain(first!.id);
     const live = rows.filter((r) => r.claimedAt === null);
@@ -592,8 +593,18 @@ describe('re-enqueue reconsideration across a config change', () => {
  * was built from. Once the same session and phase come round again that
  * snapshot is stale, so every retry still on its schedule is a scheduled
  * delivery of content the form has already replaced, and a destination the
- * author switched off keeps retrying until it burns through `max_attempts`.
- * The pass settles those rows instead of leaving them due.
+ * author switched off has nothing left in its own config to stop it retrying.
+ * The pass settles the rows that are UNCLAIMED WHEN IT RUNS, and only those. A
+ * row a worker is holding at that moment is left alone, and the pass cannot
+ * bound what happens to it next: the attempt may succeed and finish `done`, may
+ * fail and drop back into backoff unclaimed, or may lose its lease and stay
+ * claimed for another worker. Because the row this pass queues is due
+ * immediately and a backed-off retry is not, Dapta Forms can send the older
+ * payload after the newer one and then mark that older row done; `max_attempts`
+ * caps the retries that follow rather than un-sending the ones already made,
+ * and no later pass is guaranteed to settle it, since a re-landed complete does
+ * not re-enqueue. What a receiver makes of the pair is outside Dapta Forms. The
+ * tests below assert the bounded half, and claim nothing about the rest.
  */
 describe('superseding a delivery that is waiting out its retry backoff', () => {
   const WEBHOOK = { type: 'webhook', enabled: true, settings: { url: 'https://acme.io/hook' } };
@@ -670,7 +681,7 @@ describe('superseding a delivery that is waiting out its retry backoff', () => {
     });
   });
 
-  it('stops a WITHDRAWN destination from retrying, and the worker never calls it again', async () => {
+  it('settles the unclaimed backoff row of a WITHDRAWN destination as skipped', async () => {
     const stale = await intoBackoff('sub-wd');
 
     // The author disables the webhook, then the session is submitted again.
@@ -682,8 +693,11 @@ describe('superseding a delivery that is waiting out its retry backoff', () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ id: stale, status: 'skipped', attempts: 2 });
 
-    // Nothing is due any more, so a drain long after the backoff has elapsed
-    // reaches no endpoint at all.
+    // The drain below is corroboration, not the oracle. `markOutboxRetry` put
+    // this row's next attempt in the future, so a drain now would reach no
+    // endpoint whether it had been settled or was merely not yet due; the
+    // status assertion above is what distinguishes the two. What the drain does
+    // add is that settling changed nothing else the worker looks at.
     let called = 0;
     destinations.fetchImpl = (async () => {
       called += 1;
@@ -723,31 +737,26 @@ describe('superseding a delivery that is waiting out its retry backoff', () => {
 });
 
 /**
- * What the idempotency key is derived from.
+ * What the idempotency key is, and what a delivery is allowed to depend on.
  *
- * The key used to be the destination's INDEX in the config array, which is not
- * an identity: delete the first of two webhooks and the second inherits the
- * first's key, so a queued delivery to one endpoint and a queued delivery to a
- * different endpoint became indistinguishable. It also could not tell two sends
- * apart when the answers had changed underneath them, which is the one question
- * a re-submit has to be able to ask.
+ * The key names a destination POSITIONALLY: the submission, the phase, the
+ * destination type, and the destination's index in the form config. A webhook
+ * delivery sends it as a header, the HubSpot adapter does not read it at all,
+ * and nothing inside this system reads it back. What a receiver does with it is
+ * that receiver's business and outside Dapta Forms; these tests pin only the
+ * shape we emit. Both facts were briefly given up on this branch: the key was
+ * made content-addressed, and `deliver` was made to re-read the queue to decide
+ * whether the row it had been handed was still the current one. Both are out.
  *
- * So the key is CONTENT-ADDRESSED: what is being delivered to (an explicit
- * allowlist of the destination's persisted, non-secret semantics) and what is
- * being delivered (the whole delivery context bar the key itself and the
- * submission's clock reading), each as a full SHA-256 over canonical JSON.
- * Equal keys mean equal deliveries, which is exactly what a receiver deduping
- * on the header we send it is entitled to assume.
+ * Delivery is a function of the row it was given. A claimed row's fate cannot
+ * turn on what some later pass did or did not enqueue, because a worker holding
+ * a row may already have crossed the wire, and a second opinion formed after
+ * the fact cannot unsend anything.
  */
-describe('the content-addressed delivery key', () => {
+describe('the delivery key, and what delivery may depend on', () => {
   const WEBHOOK = { type: 'webhook', enabled: true, settings: { url: 'https://acme.io/hook' } };
-  const KEY_SHAPE = /^submission:[^:]+:(partial|complete):(webhook|hubspot):[0-9a-f]{64}:[0-9a-f]{64}$/;
 
-  function deliveryInput(
-    submissionId: string,
-    destinationsConfig: unknown[],
-    over: Partial<SubmissionDeliveryInput> = {},
-  ): SubmissionDeliveryInput {
+  function deliveryInput(submissionId: string, destinationsConfig: unknown[]): SubmissionDeliveryInput {
     return {
       formId: 'form-1',
       formName: 'F',
@@ -760,471 +769,65 @@ describe('the content-addressed delivery key', () => {
       submittedAt: 1_700_000_000_000,
       data: { email: 'lead@acme.io' },
       config: { version: 1, steps: [], destinations: destinationsConfig },
-      ...over,
     };
   }
 
-  const keysFor = async (subjectUid: string, kind: 'webhook' | 'hubspot' = 'webhook') =>
-    (await listOutbox(db, { kind, subjectUid })).map((r) => keyOf(r.payload)!);
+  it('is the submission, the phase, the type and the config index, exactly', async () => {
+    await destinations.enqueueSubmissionDeliveries(deliveryInput('sub-key', [WEBHOOK]));
 
-  /** The two halves of a key: what it delivers TO, and WHAT it delivers. */
-  const digests = (key: string) => {
-    const parts = key.split(':');
-    return { destination: parts[4]!, content: parts[5]! };
-  };
-
-  /** Queue one destination on its own and report the digest of its identity. */
-  const identityOf = async (
-    subjectUid: string,
-    destination: unknown,
-    kind: 'webhook' | 'hubspot' = 'webhook',
-  ) => {
-    await destinations.enqueueSubmissionDeliveries(deliveryInput(subjectUid, [destination]));
-    const [key] = await keysFor(subjectUid, kind);
-    return digests(key!).destination;
-  };
-
-  it('names the submission, the phase and the kind in the clear and digests the rest', async () => {
-    await destinations.enqueueSubmissionDeliveries(deliveryInput('sub-k', [WEBHOOK]));
-
-    const [key] = await keysFor('sub-k');
-    expect(key).toMatch(KEY_SHAPE);
-    expect(key!.startsWith('submission:sub-k:complete:webhook:')).toBe(true);
+    const rows = await listOutbox(db, { kind: 'webhook', subjectUid: 'sub-key' });
+    expect(rows.map((r) => keyOf(r.payload))).toEqual(['submission:sub-key:complete:webhook:0']);
   });
 
-  it('re-keys a delivery whose ANSWERS changed, and only its content half', async () => {
-    await destinations.enqueueSubmissionDeliveries(deliveryInput('sub-kc', [WEBHOOK]));
-    const [before] = await keysFor('sub-kc');
-
-    await destinations.enqueueSubmissionDeliveries(
-      deliveryInput('sub-kc', [WEBHOOK], { data: { email: 'moved@acme.io' } }),
-    );
-    const [after] = await keysFor('sub-kc');
-
-    expect(after).not.toBe(before);
-    expect(digests(after!).content).not.toBe(digests(before!).content);
-    expect(digests(after!).destination).toBe(digests(before!).destination);
-  });
-
-  it('gives a re-submit that changed nothing the identical key', async () => {
-    await destinations.enqueueSubmissionDeliveries(deliveryInput('sub-ks', [WEBHOOK]));
-    const [before] = await keysFor('sub-ks');
-
-    // A later clock reading is not a different delivery: the same answers to the
-    // same form are the same thing to send, so a retry keeps its key.
-    await destinations.enqueueSubmissionDeliveries(
-      deliveryInput('sub-ks', [WEBHOOK], { submittedAt: 1_700_000_999_999 }),
-    );
-
-    expect((await keysFor('sub-ks'))[0]).toBe(before);
-  });
-
-  it('does not depend on where a destination sits in the config array', async () => {
-    const a = { ...WEBHOOK, settings: { url: 'https://a.example/hook' } };
-    const b = { ...WEBHOOK, settings: { url: 'https://b.example/hook' } };
-    await destinations.enqueueSubmissionDeliveries(deliveryInput('sub-ko', [a, b]));
-    const inOrder = (await keysFor('sub-ko')).sort();
-
-    await destinations.enqueueSubmissionDeliveries(deliveryInput('sub-ko', [b, a]));
-
-    expect((await keysFor('sub-ko')).sort()).toEqual(inOrder);
-  });
-
-  it("never hands a removed destination's key to its neighbour", async () => {
-    const a = { ...WEBHOOK, settings: { url: 'https://a.example/hook' } };
-    const b = { ...WEBHOOK, settings: { url: 'https://b.example/hook' } };
-    await destinations.enqueueSubmissionDeliveries(deliveryInput('sub-kr', [a]));
-    const [keyA] = await keysFor('sub-kr');
-
-    // `a` is deleted, so `b` moves into index 0. Under a positional key it would
-    // now be indistinguishable from the delivery `a` had queued.
-    await destinations.enqueueSubmissionDeliveries(deliveryInput('sub-kr', [b]));
-
-    expect((await keysFor('sub-kr'))[0]).not.toBe(keyA);
-  });
-
-  it('is blind to the signing secret, so rotating it does not re-key the delivery', async () => {
-    // The key is forwarded to the receiver as a header. Anything digested into
-    // it is published, so the secret cannot be part of what identifies the
-    // destination, and rotating a secret is not a new delivery either way.
-    const withSecret = { ...WEBHOOK, settings: { ...WEBHOOK.settings, secret: 'shh-one' } };
-    const rotated = { ...WEBHOOK, settings: { ...WEBHOOK.settings, secret: 'shh-two' } };
-
-    expect(await identityOf('sub-kx1', withSecret)).toBe(await identityOf('sub-kx2', rotated));
-    expect(await identityOf('sub-kx3', WEBHOOK)).toBe(await identityOf('sub-kx1', withSecret));
-  });
-
-  it('re-keys when the URL of a destination with no id changes', async () => {
-    // A legacy webhook carries no id, so the endpoint is the only stable thing
-    // left to identify it by.
-    const moved = { ...WEBHOOK, settings: { url: 'https://elsewhere.example/hook' } };
-    expect(await identityOf('sub-ku1', WEBHOOK)).not.toBe(await identityOf('sub-ku2', moved));
-  });
-
-  it('re-keys when the id, the events or the signature header change', async () => {
-    const base = { ...WEBHOOK, id: 'wh-1' };
-    const plain = await identityOf('sub-ki0', base);
-
-    expect(await identityOf('sub-ki1', { ...base, id: 'wh-2' })).not.toBe(plain);
-    expect(await identityOf('sub-ki2', { ...base, events: ['complete'] })).not.toBe(plain);
-    expect(
-      await identityOf('sub-ki3', {
-        ...base,
-        settings: { ...base.settings, signatureHeader: 'X-Acme-Signature' },
-      }),
-    ).not.toBe(plain);
-  });
-
-  it('digests the same answers to the same key whatever order they arrive in', async () => {
-    // The answers and the CRM mappings are records built from user input, so
-    // their key order is an accident of how the form was filled in or edited.
-    // Two spellings of one object are one object, or the digest is not an
-    // identity and every re-submit re-keys itself.
-    const mapped = (fieldMappings: Record<string, string>) => ({
-      type: 'hubspot',
-      enabled: true,
-      fieldMappings,
-    });
-    await destinations.enqueueSubmissionDeliveries(
-      deliveryInput('sub-kn', [mapped({ email: 'email', role: 'jobtitle' })], {
-        data: { email: 'lead@acme.io', role: 'ops' },
-      }),
-    );
-    const [before] = await keysFor('sub-kn', 'hubspot');
-
-    await destinations.enqueueSubmissionDeliveries(
-      deliveryInput('sub-kn', [mapped({ role: 'jobtitle', email: 'email' })], {
-        data: { role: 'ops', email: 'lead@acme.io' },
-      }),
-    );
-
-    expect((await keysFor('sub-kn', 'hubspot'))[0]).toBe(before);
-  });
-
-  it('keeps two id-bearing webhooks pointed at ONE url apart', async () => {
+  it('gives each same-type sibling its own key, one per config index', async () => {
     const two = [
-      { ...WEBHOOK, id: 'wh-left' },
-      { ...WEBHOOK, id: 'wh-right' },
+      { ...WEBHOOK, settings: { url: 'https://first.example/hook' } },
+      { ...WEBHOOK, settings: { url: 'https://second.example/hook' } },
     ];
-    await destinations.enqueueSubmissionDeliveries(deliveryInput('sub-k2', two));
 
-    const keys = await keysFor('sub-k2');
-    expect(keys).toHaveLength(2);
-    expect(new Set(keys.map((k) => digests(k).destination)).size).toBe(2);
-  });
+    await destinations.enqueueSubmissionDeliveries(deliveryInput('sub-sibkey', two));
 
-  it('keeps two HubSpot destinations with different mappings apart', async () => {
-    // HubSpot holds no secret in its config, so its identity is everything the
-    // form persists about it. Two entries differing only in what they write are
-    // two different deliveries.
-    const two = [
-      { type: 'hubspot', enabled: true, fieldMappings: { email: 'email' } },
-      { type: 'hubspot', enabled: true, fieldMappings: { email: 'work_email' } },
-    ];
-    await destinations.enqueueSubmissionDeliveries(deliveryInput('sub-k3', two));
-
-    const keys = await keysFor('sub-k3', 'hubspot');
-    expect(keys).toHaveLength(2);
-    expect(new Set(keys.map((k) => digests(k).destination)).size).toBe(2);
-  });
-});
-
-/**
- * Which queued row is still worth sending, decided when it is about to be sent.
- *
- * The enqueue pass cannot answer this. It can delete what was never started and
- * settle what is waiting to retry, but a row a worker is holding is beyond its
- * reach, and declining to queue the newer answers instead would lose them: the
- * in-flight row carries a snapshot the respondent has since replaced.
- *
- * So both rows are queued, and the decision moves to the last possible moment.
- * A row about to cross the wire looks at what else is queued for the same
- * subject, kind and action, keeps only the rows delivering to the SAME
- * destination, and stands down if it is not the newest of them. Nothing is
- * lost: the row that stands down is the one another row supersedes.
- */
-describe('retiring a superseded delivery at the moment it crosses the wire', () => {
-  const WEBHOOK = { type: 'webhook', enabled: true, settings: { url: 'https://acme.io/hook' } };
-  let called = 0;
-  let sent: string[] = [];
-
-  beforeEach(() => {
-    called = 0;
-    sent = [];
-    destinations.fetchImpl = (async (_url: unknown, init?: { body?: unknown }) => {
-      called += 1;
-      sent.push(String(init?.body ?? ''));
-      return new Response('{}', { status: 200 });
-    }) as unknown as typeof fetch;
-  });
-
-  function deliveryInput(
-    submissionId: string,
-    destinationsConfig: unknown[],
-    data: Record<string, unknown> = { email: 'lead@acme.io' },
-  ): SubmissionDeliveryInput {
-    return {
-      formId: 'form-1',
-      formName: 'F',
-      accountId: 'acc-1',
-      submissionId,
-      sessionId: `sess-${submissionId}`,
-      score: 0,
-      outcomeLabel: null,
-      phase: 'complete',
-      submittedAt: 1_700_000_000_000,
-      data,
-      config: { version: 1, steps: [], destinations: destinationsConfig },
-    };
-  }
-
-  const rowsFor = (subjectUid: string) => listOutbox(db, { kind: 'webhook', subjectUid });
-
-  /**
-   * Queue a pass and pin the rows it added to one moment in the ordering, so
-   * "newest" means what the test says rather than whichever UUID sorted higher.
-   */
-  async function pass(
-    subjectUid: string,
-    destinationsConfig: unknown[],
-    data: Record<string, unknown>,
-    at: number,
-  ) {
-    const before = new Set((await rowsFor(subjectUid)).map((r) => r.id));
-    await destinations.enqueueSubmissionDeliveries(
-      deliveryInput(subjectUid, destinationsConfig, data),
-    );
-    const added = (await rowsFor(subjectUid)).filter((r) => !before.has(r.id));
-    for (const row of added) await stampCreatedAt(row.id, at);
-    return added;
-  }
-
-  const deliverRow = (row: { action: string; payload: string | null }) =>
-    destinations.deliver(row.action, row.payload!);
-
-  it('stands the older row down once newer answers are queued for the same destination', async () => {
-    const [first] = await pass('sub-g1', [WEBHOOK], { email: 'first@acme.io' }, 1_000);
-    await holdRow(first!.id);
-    const [second] = await pass('sub-g1', [WEBHOOK], { email: 'second@acme.io' }, 2_000);
-
-    await expect(deliverRow(first!)).rejects.toBeInstanceOf(OutboxSkipError);
-    expect(called).toBe(0);
-
-    // The row that stood down is the OLDER one, by id, and the delivery that
-    // goes out is the one carrying the answers the respondent actually left.
-    // Counting rows would not distinguish that from the opposite mistake.
-    await expect(deliverRow(second!)).resolves.toBeDefined();
-    expect(second!.id).not.toBe(first!.id);
-    expect(sent).toHaveLength(1);
-    expect(JSON.parse(sent[0]!).data).toEqual({ email: 'second@acme.io' });
-    const survivors = await rowsFor('sub-g1');
-    expect(survivors.map((r) => r.id).sort()).toEqual([first!.id, second!.id].sort());
-  });
-
-  it('retires neither of two rows queued in the SAME instant, and delivers both', async () => {
-    // Two passes of one session can land on a single millisecond. The row id is
-    // a random UUID, so ordering by it would pick a winner at random and drop
-    // the other delivery for good. Equal timestamps are no evidence of which
-    // came later, so neither row may retire the other: both go out, under
-    // distinct keys, and the receiver deduping on the header sees two events
-    // because there genuinely were two.
-    const [first] = await pass('sub-gt', [WEBHOOK], { email: 'first@acme.io' }, 5_000);
-    await holdRow(first!.id, 'W#one');
-    const [second] = await pass('sub-gt', [WEBHOOK], { email: 'second@acme.io' }, 5_000);
-    await holdRow(second!.id, 'W#two');
-    expect(keyOf(second!.payload)).not.toBe(keyOf(first!.payload));
-
-    await expect(deliverRow(first!)).resolves.toBeDefined();
-    await expect(deliverRow(second!)).resolves.toBeDefined();
-
-    expect(sent).toHaveLength(2);
-    expect(sent.map((b) => JSON.parse(b).data.email).sort()).toEqual([
-      'first@acme.io',
-      'second@acme.io',
+    const rows = await listOutbox(db, { kind: 'webhook', subjectUid: 'sub-sibkey' });
+    expect(rows.map((r) => keyOf(r.payload)).sort()).toEqual([
+      'submission:sub-sibkey:complete:webhook:0',
+      'submission:sub-sibkey:complete:webhook:1',
     ]);
   });
 
-  it('delivers the newest row, which can never retire itself', async () => {
-    const [first] = await pass('sub-g2', [WEBHOOK], { email: 'first@acme.io' }, 1_000);
-    await holdRow(first!.id);
-    const [second] = await pass('sub-g2', [WEBHOOK], { email: 'second@acme.io' }, 2_000);
+  it('keeps the index a destination had in the config, not its position after filtering', async () => {
+    // The disabled entry still occupies index 0, so the one that fires is 1.
+    const config = [
+      { ...WEBHOOK, enabled: false },
+      { ...WEBHOOK, settings: { url: 'https://second.example/hook' } },
+    ];
 
-    await expect(deliverRow(second!)).resolves.toBeDefined();
-    expect(called).toBe(1);
+    await destinations.enqueueSubmissionDeliveries(deliveryInput('sub-idx', config));
+
+    const rows = await listOutbox(db, { kind: 'webhook', subjectUid: 'sub-idx' });
+    expect(rows.map((r) => keyOf(r.payload))).toEqual(['submission:sub-idx:complete:webhook:1']);
   });
 
-  it('delivers an identical re-submit: the same key supersedes nothing', async () => {
-    const [first] = await pass('sub-g3', [WEBHOOK], { email: 'same@acme.io' }, 1_000);
-    await holdRow(first!.id);
-    const [second] = await pass('sub-g3', [WEBHOOK], { email: 'same@acme.io' }, 2_000);
-    expect(keyOf(second!.payload)).toBe(keyOf(first!.payload));
+  it('reads nothing from the database while delivering', async () => {
+    await destinations.enqueueSubmissionDeliveries(deliveryInput('sub-noread', [WEBHOOK]));
+    const [row] = await listOutbox(db, { kind: 'webhook', subjectUid: 'sub-noread' });
+    destinations.fetchImpl = (async () =>
+      new Response('{}', { status: 200 })) as unknown as typeof fetch;
 
-    await expect(deliverRow(first!)).resolves.toBeDefined();
-    expect(called).toBe(1);
-  });
+    const handle = db as unknown as Record<'run' | 'get' | 'all', (q: unknown) => unknown>;
+    const real = { run: handle.run, get: handle.get, all: handle.all };
+    let queries = 0;
+    for (const name of ['run', 'get', 'all'] as const) {
+      handle[name] = (q: unknown) => {
+        queries += 1;
+        return real[name].call(db, q);
+      };
+    }
+    try {
+      await destinations.deliver(row!.action, row!.payload!);
+    } finally {
+      Object.assign(handle, real);
+    }
 
-  it('never lets one destination retire a same-kind sibling', async () => {
-    const a = { ...WEBHOOK, settings: { url: 'https://a.example/hook' } };
-    const b = { ...WEBHOOK, settings: { url: 'https://b.example/hook' } };
-    const firstPass = await pass('sub-g4', [a, b], { email: 'first@acme.io' }, 1_000);
-    for (const row of firstPass) await holdRow(row.id);
-    // Only `a` is re-queued, with new answers. Nothing newer exists for `b`.
-    await pass('sub-g4', [a], { email: 'second@acme.io' }, 2_000);
-
-    const held = await rowsFor('sub-g4');
-    const oldB = firstPass.find(
-      (r) => JSON.parse(r.payload!).destination.settings.url === 'https://b.example/hook',
-    )!;
-    const oldA = firstPass.find((r) => r.id !== oldB.id)!;
-    expect(held).toHaveLength(3);
-
-    await expect(deliverRow(oldB)).resolves.toBeDefined();
-    await expect(deliverRow(oldA)).rejects.toBeInstanceOf(OutboxSkipError);
-    expect(called).toBe(1);
-  });
-
-  it('ignores a queued row whose payload cannot be read', async () => {
-    const [first] = await pass('sub-g5', [WEBHOOK], { email: 'first@acme.io' }, 1_000);
-    await holdRow(first!.id);
-    const id = await enqueueOutbox(db, {
-      kind: 'webhook',
-      action: 'complete',
-      subjectUid: 'sub-g5',
-      accountId: 'acc-1',
-      payload: 'not json',
-    });
-    await stampCreatedAt(id, 9_000);
-
-    // A row that names no delivery vouches for none, so it can supersede none.
-    await expect(deliverRow(first!)).resolves.toBeDefined();
-    expect(called).toBe(1);
-  });
-
-  it('ignores a queued row carrying a legacy positional key', async () => {
-    const [first] = await pass('sub-g6', [WEBHOOK], { email: 'first@acme.io' }, 1_000);
-    await holdRow(first!.id);
-    const id = await enqueueOutbox(db, {
-      kind: 'webhook',
-      action: 'complete',
-      subjectUid: 'sub-g6',
-      accountId: 'acc-1',
-      payload: JSON.stringify({ ctx: { idempotencyKey: 'submission:sub-g6:complete:webhook:0' } }),
-    });
-    await stampCreatedAt(id, 9_000);
-
-    // The old shape names no destination this rule can compare against, so it
-    // cannot stand in for one and retire unrelated work.
-    await expect(deliverRow(first!)).resolves.toBeDefined();
-    expect(called).toBe(1);
-  });
-
-  it('ignores a key that only LOOKS like one of ours', async () => {
-    // The fingerprint filter cannot be the only check, because a string can
-    // carry this row's own destination digest and still not be a key this
-    // scheme ever minted. An extra segment is the cheapest way to be neither.
-    const [first] = await pass('sub-ga', [WEBHOOK], { email: 'first@acme.io' }, 1_000);
-    await holdRow(first!.id);
-    const mine = keyOf(first!.payload)!;
-    const id = await enqueueOutbox(db, {
-      kind: 'webhook',
-      action: 'complete',
-      subjectUid: 'sub-ga',
-      accountId: 'acc-1',
-      payload: JSON.stringify({ ctx: { idempotencyKey: `${mine}:extra` } }),
-    });
-    await stampCreatedAt(id, 9_000);
-
-    await expect(deliverRow(first!)).resolves.toBeDefined();
-    expect(called).toBe(1);
-  });
-
-  it('ignores a key of the right shape whose digests are not digests', async () => {
-    // Same segment count, same destination half, and a content half that no
-    // SHA-256 could have produced. Reading it as a delivery would let a
-    // hand-written string retire a real one.
-    const [first] = await pass('sub-gb', [WEBHOOK], { email: 'first@acme.io' }, 1_000);
-    await holdRow(first!.id);
-    const mine = keyOf(first!.payload)!;
-    const id = await enqueueOutbox(db, {
-      kind: 'webhook',
-      action: 'complete',
-      subjectUid: 'sub-gb',
-      accountId: 'acc-1',
-      payload: JSON.stringify({
-        ctx: { idempotencyKey: [...mine.split(':').slice(0, 5), 'deadbeef'].join(':') },
-      }),
-    });
-    await stampCreatedAt(id, 9_000);
-
-    await expect(deliverRow(first!)).resolves.toBeDefined();
-    expect(called).toBe(1);
-  });
-
-  it('delivers a row whose OWN key is legacy rather than guessing what supersedes it', async () => {
-    const legacy = await enqueueOutbox(db, {
-      kind: 'webhook',
-      action: 'complete',
-      subjectUid: 'sub-g7',
-      accountId: 'acc-1',
-      payload: JSON.stringify({
-        destination: WEBHOOK,
-        ctx: {
-          idempotencyKey: 'submission:sub-g7:complete:webhook:0',
-          submissionId: 'sub-g7',
-          formId: 'form-1',
-          formName: 'F',
-          accountId: 'acc-1',
-          sessionId: 'sess-g7',
-          score: 0,
-          outcomeLabel: null,
-          phase: 'complete',
-          submittedAt: 1_700_000_000_000,
-          data: { email: 'legacy@acme.io' },
-          utm: {},
-        },
-      }),
-    });
-    await stampCreatedAt(legacy, 1_000);
-    await holdRow(legacy);
-    await pass('sub-g7', [WEBHOOK], { email: 'second@acme.io' }, 2_000);
-
-    const row = (await rowsFor('sub-g7')).find((r) => r.id === legacy)!;
-    await expect(deliverRow(row)).resolves.toBeDefined();
-    expect(called).toBe(1);
-  });
-
-  it('settles the retired row as skipped through the worker, and calls the endpoint once', async () => {
-    const [first] = await pass('sub-g8', [WEBHOOK], { email: 'first@acme.io' }, 1_000);
-    // Held by a worker that then died: the second pass cannot delete it (it is
-    // not unstarted) and the drain below can reclaim it (the lease is stale).
-    await holdStale(first!.id);
-    await pass('sub-g8', [WEBHOOK], { email: 'second@acme.io' }, 2_000);
-    expect(await rowsFor('sub-g8')).toHaveLength(2);
-
-    const env = { OUTBOX_WORKER_ENABLED: false, OUTBOX_POLL_MS: 5000, NODE_ENV: 'test' } as never;
-    const email = new EmailEffects(new SubmissionNotifier(new LogOnlyEmailProvider()), db);
-    await new OutboxWorker(db, env, email, destinations).drainOnce();
-
-    expect(called).toBe(1);
-    const rows = await rowsFor('sub-g8');
-    expect(rows.map((r) => r.status).sort()).toEqual(['done', 'skipped']);
-    // The worker's ordinary skip path records why, with no digest or key in it.
-    const retired = rows.find((r) => r.status === 'skipped')!;
-    expect(retired.id).toBe(first!.id);
-    expect(retired.lastError).toBe(
-      'superseded by a later submission of the same session and phase',
-    );
-  });
-
-  it('lets exactly one of two rows racing to deliver reach the endpoint', async () => {
-    const [first] = await pass('sub-g9', [WEBHOOK], { email: 'first@acme.io' }, 1_000);
-    await holdRow(first!.id, 'W#one');
-    const [second] = await pass('sub-g9', [WEBHOOK], { email: 'second@acme.io' }, 2_000);
-    await holdRow(second!.id, 'W#two');
-
-    const outcomes = await Promise.allSettled([deliverRow(first!), deliverRow(second!)]);
-
-    expect(outcomes.filter((o) => o.status === 'rejected')).toHaveLength(1);
-    expect(called).toBe(1);
+    expect(queries).toBe(0);
   });
 });

@@ -14,7 +14,6 @@ import {
   claimIdentityOf,
   claimDueOutbox,
   deleteUnstartedOutbox,
-  listPendingOutbox,
   skipBackoffOutbox,
   markOutboxRetry,
   markOutboxDone,
@@ -993,10 +992,21 @@ describe('deleteUnstartedOutbox', () => {
  * leaving it entirely alone turned out to be wrong too. Its payload is a frozen
  * snapshot of a form config and a set of answers that a later pass has already
  * replaced, so every remaining retry is a scheduled delivery of superseded
- * content, and a destination the author disabled or deleted keeps retrying
- * until it exhausts `max_attempts`. Settling it as `skipped` closes both: the
+ * content, and a destination the author disabled or deleted has nothing left in
+ * its own config to stop it retrying. Settling it as `skipped` closes both: the
  * row stops being due, keeps everything it recorded about what it attempted,
  * and stays in the delivery history with a reason rather than vanishing.
+ *
+ * It closes them for the rows it can SEE, which is the rows unclaimed at the
+ * moment the statement runs. A row a worker holds is out of reach by design,
+ * and this statement has no say in what becomes of it: the attempt may succeed
+ * and finish `done`, may fail and drop back into backoff unclaimed, or may lose
+ * its lease and stay claimed for another worker to reclaim. A caller's freshly
+ * queued row is due immediately and a backed-off retry is not, so the older
+ * snapshot really can be sent after the newer one and then marked done;
+ * `max_attempts` caps the retries that follow rather than un-sending the ones
+ * already made, and no later call is guaranteed to arrive and settle it.
+ * Nothing below asserts otherwise.
  *
  * Both fences are load-bearing and neither implies the other. `attempts > 0` is
  * what separates it from a never-started row, which is the delete's business
@@ -1169,125 +1179,5 @@ describe('skipBackoffOutbox', () => {
 
     expect((await rowById(target))?.status).toBe('skipped');
     for (const id of others) expect((await rowById(id))?.status).toBe('pending');
-  });
-});
-
-/**
- * Reading the queue from the delivery side.
- *
- * A row about to cross the wire has to know what ELSE is still queued for the
- * same subject, kind and action, because that is the only way to tell whether
- * the snapshot it carries has since been replaced. It needs the payload to know
- * which delivery each row names, and `created_at` to know which of them is the
- * latest; it needs nothing else, and this runs on the delivery path, so nothing
- * else is selected.
- */
-describe('listPendingOutbox', () => {
-  const SUBJECT = 'sub-pending';
-  const ACCOUNT = 'acc-pending';
-  const NOW = 12_000_000;
-
-  const enqueue = (
-    over: {
-      kind?: OutboxKind;
-      action?: string;
-      subjectUid?: string;
-      payload?: string;
-      now?: number;
-    } = {},
-  ): Promise<string> =>
-    enqueueOutbox(db, {
-      kind: over.kind ?? 'webhook',
-      action: over.action ?? 'complete',
-      subjectUid: over.subjectUid ?? SUBJECT,
-      accountId: ACCOUNT,
-      payload: over.payload ?? JSON.stringify({ ctx: { idempotencyKey: 'key-a' } }),
-      now: over.now ?? NOW,
-    });
-
-  const pending = () =>
-    listPendingOutbox(db, { subjectUid: SUBJECT, kind: 'webhook', action: 'complete' });
-
-  it('returns each pending row as an id, a payload and when it was queued', async () => {
-    const id = await enqueue();
-
-    const rows = await pending();
-
-    expect(rows).toHaveLength(1);
-    expect(rows[0]).toEqual({
-      id,
-      payload: JSON.stringify({ ctx: { idempotencyKey: 'key-a' } }),
-      createdAt: NOW,
-    });
-    // Narrow on purpose: no status, attempts, transcript or account come back.
-    expect(Object.keys(rows[0]!).sort()).toEqual(['createdAt', 'id', 'payload']);
-  });
-
-  it('reads all three pending states, because all three are still queued work', async () => {
-    // Never handed off, waiting out a backoff, and held by a worker are three
-    // different facts about ONE thing: a delivery that has not happened yet.
-    const unstarted = await enqueue({ now: NOW + 3 });
-    const backoff = await enqueue({ now: NOW + 1 });
-    const inFlight = await enqueue({ now: NOW + 2 });
-    const claimed = await claimDueOutbox(db, NOW + 10, { workerId: 'A', limit: 50 });
-    await markOutboxRetry(
-      db,
-      backoff,
-      { attempts: 1, error: 'boom', now: NOW + 10 },
-      claimIdentityOf(claimed.find((r) => r.id === backoff)!),
-    );
-    await db.run(sql`UPDATE outbox SET claimed_at = NULL, claimed_by = NULL WHERE id = ${unstarted}`);
-
-    expect((await pending()).map((r) => r.id)).toEqual([backoff, inFlight, unstarted]);
-  });
-
-  it('leaves out every settled row: done, failed and skipped are not queued', async () => {
-    const settle = async (as: 'done' | 'failed' | 'skipped') => {
-      const id = await enqueue();
-      const row = (await claimDueOutbox(db, NOW, { workerId: 'A' })).find((r) => r.id === id);
-      const claim = claimIdentityOf(row!);
-      const applied =
-        as === 'done'
-          ? await markOutboxDone(db, id, NOW, undefined, claim)
-          : as === 'failed'
-            ? await markOutboxFailed(db, id, { attempts: 5, error: 'gave up', now: NOW }, claim)
-            : await markOutboxSkipped(db, id, { reason: 'no target', now: NOW }, claim);
-      expect(applied).toBe(true);
-      return id;
-    };
-    await settle('done');
-    await settle('failed');
-    await settle('skipped');
-
-    expect(await pending()).toEqual([]);
-  });
-
-  it('orders by when the row was queued, and makes no claim about a tie', async () => {
-    // Recency is a timestamp here, never a position. The row id is a random
-    // UUID, so sorting by it would invent an order between two rows queued in
-    // the same millisecond and hand a caller a winner that means nothing. The
-    // reader reports `created_at` and leaves a tie a tie.
-    const same = [await enqueue(), await enqueue(), await enqueue()];
-    const later = await enqueue({ now: NOW + 1 });
-
-    const rows = await pending();
-    expect(rows.map((r) => r.createdAt)).toEqual([NOW, NOW, NOW, NOW + 1]);
-    expect(rows[3]!.id).toBe(later);
-    expect(
-      rows
-        .slice(0, 3)
-        .map((r) => r.id)
-        .sort(),
-    ).toEqual([...same].sort());
-  });
-
-  it('stays inside the exact subject_uid + kind + action scope', async () => {
-    const target = await enqueue();
-    await enqueue({ kind: 'hubspot' });
-    await enqueue({ action: 'partial' });
-    await enqueue({ subjectUid: 'sub-other' });
-    await enqueue({ action: WEBHOOK_PING_ACTION });
-
-    expect((await pending()).map((r) => r.id)).toEqual([target]);
   });
 });

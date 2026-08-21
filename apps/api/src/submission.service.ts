@@ -175,8 +175,9 @@ export class SubmissionService {
     // The pass itself is safe to repeat: it deletes what was never started,
     // settles what is waiting to retry, and queues the current answers for
     // every firing destination. What it cannot do is reach a request a worker
-    // is already making, so whether THAT one is still the delivery worth making
-    // is decided when it is made, not here.
+    // is already making. That one is settled on the worker side, and may still
+    // deliver its older payload after this pass's, so a config edit here is
+    // never a synchronous cancel of a delivery in flight.
     if (!reCompleted)
       await this.destinations?.enqueueSubmissionDeliveries({
       formId: form.id,
