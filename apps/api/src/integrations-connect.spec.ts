@@ -14,6 +14,7 @@
  *   7. connect/disconnect require an admin/owner (a plain member is refused 403).
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { createHash } from 'node:crypto';
 import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import {
   createDb,
@@ -22,7 +23,9 @@ import {
   getAccountByCode,
   getIntegration,
   decryptToken,
+  deleteIntegration,
   inviteMember,
+  upsertIntegration,
   type Db,
 } from '@quill/db';
 import type { ServerEnv } from '@quill/config/env';
@@ -84,7 +87,10 @@ function makeEnv(overrides: Partial<ServerEnv> = {}): ServerEnv {
 }
 
 /** Wire the real controller with a swappable fetch (used for both connect + picker). */
-function build(env: ServerEnv, fetchImpl: typeof fetch): void {
+function build(
+  env: ServerEnv,
+  fetchImpl: typeof fetch,
+): { hubspot: HubspotPropertiesService; calendly: CalendlyEventTypesService } {
   const provider = new LocalAuthProvider(db, {
     NODE_ENV: 'test',
     DEV_LOGIN_EMAIL: undefined,
@@ -97,6 +103,7 @@ function build(env: ServerEnv, fetchImpl: typeof fetch): void {
   const calendly = new CalendlyEventTypesService(env, db, fetchImpl);
   controller = new IntegrationsController(auth, hubspot, calendly, db, env);
   controller.fetchImpl = fetchImpl;
+  return { hubspot, calendly };
 }
 
 async function accountId(): Promise<string> {
@@ -474,5 +481,313 @@ describe('Calendly event-type picker token resolution', () => {
     build(makeEnv({ CALENDLY_API_TOKEN: undefined }), noopFetch);
     const res = await controller.calendlyEventTypes(asOwner());
     expect(res.enabled).toBe(false);
+  });
+});
+
+describe('provider metadata cache token identity', () => {
+  const HUBSPOT_TOKEN_A = 'cache-token-å';
+  const HUBSPOT_TOKEN_B = ' cache-token-å ';
+  const CALENDLY_EVENT_TYPES_BASE = 'https://api.calendly.com/event_types';
+
+  function authorizationToken(init?: RequestInit): string {
+    const headers = (init?.headers ?? {}) as Record<string, string>;
+    return headers.authorization?.replace(/^Bearer /, '') ?? '';
+  }
+
+  function hubspotFetchByToken(
+    calls: RecordedCall[],
+    propertyByToken: Record<string, string>,
+  ): typeof fetch {
+    return (async (url: string, init?: RequestInit) => {
+      const headers = (init?.headers ?? {}) as Record<string, string>;
+      calls.push({ url, headers });
+      const property = propertyByToken[authorizationToken(init)] ?? 'unexpected';
+      return jsonResponse({ results: [{ name: property, label: property, type: 'string' }] });
+    }) as unknown as typeof fetch;
+  }
+
+  function calendlyFetchByToken(
+    calls: RecordedCall[],
+    identityByToken: Record<string, string>,
+  ): typeof fetch {
+    return (async (url: string, init?: RequestInit) => {
+      const headers = (init?.headers ?? {}) as Record<string, string>;
+      calls.push({ url, headers });
+      const identity = identityByToken[authorizationToken(init)] ?? 'unexpected';
+      if (url === CALENDLY_ME_URL) {
+        return jsonResponse({ resource: { uri: `https://api.calendly.com/users/${identity}` } });
+      }
+      if (url.startsWith(CALENDLY_EVENT_TYPES_BASE)) {
+        return jsonResponse({
+          collection: [
+            {
+              uri: `event/${identity}`,
+              name: identity,
+              scheduling_url: `https://calendly.com/test/${identity.toLowerCase()}`,
+              active: true,
+            },
+          ],
+        });
+      }
+      return new Response('{}', { status: 404 });
+    }) as unknown as typeof fetch;
+  }
+
+  function expectHubspotProperty(
+    response: Awaited<ReturnType<HubspotPropertiesService['listProperties']>>,
+    property: string,
+  ): void {
+    expect(response.enabled).toBe(true);
+    if (response.enabled) expect(response.properties.map((item) => item.name)).toEqual([property]);
+  }
+
+  function expectCalendlyEvent(
+    response: Awaited<ReturnType<CalendlyEventTypesService['listEventTypes']>>,
+    eventName: string,
+  ): void {
+    expect(response.enabled).toBe(true);
+    if (response.enabled) expect(response.eventTypes.map((item) => item.name)).toEqual([eventName]);
+  }
+
+  it('rotates HubSpot from A to B across the picker and mirror service chokepoint', async () => {
+    const id = await accountId();
+    const calls: RecordedCall[] = [];
+    await upsertIntegration(db, id, 'hubspot', HUBSPOT_TOKEN_A, ENCRYPTION_KEY);
+    const { hubspot } = build(
+      makeEnv(),
+      hubspotFetchByToken(calls, {
+        [HUBSPOT_TOKEN_A]: 'from-a',
+        [HUBSPOT_TOKEN_B]: 'from-b',
+      }),
+    );
+
+    expectHubspotProperty(await controller.hubspotProperties(asOwner()), 'from-a');
+    await upsertIntegration(db, id, 'hubspot', HUBSPOT_TOKEN_B, ENCRYPTION_KEY);
+    const rotated = await hubspot.listProperties(id);
+
+    expectHubspotProperty(rotated, 'from-b');
+    expect(rotated.enabled && rotated.cached).toBe(false);
+    expect(calls.map((call) => authorizationToken({ headers: call.headers }))).toEqual([
+      HUBSPOT_TOKEN_A,
+      HUBSPOT_TOKEN_B,
+    ]);
+  });
+
+  it('rotates both HubSpot service instances sharing one database', async () => {
+    const id = await accountId();
+    const calls: RecordedCall[] = [];
+    const fetchImpl = hubspotFetchByToken(calls, {
+      [HUBSPOT_TOKEN_A]: 'from-a',
+      [HUBSPOT_TOKEN_B]: 'from-b',
+    });
+    const env = makeEnv();
+    const first = new HubspotPropertiesService(env, db, fetchImpl);
+    const second = new HubspotPropertiesService(env, db, fetchImpl);
+    await upsertIntegration(db, id, 'hubspot', HUBSPOT_TOKEN_A, ENCRYPTION_KEY);
+
+    expectHubspotProperty(await first.listProperties(id), 'from-a');
+    expectHubspotProperty(await second.listProperties(id), 'from-a');
+    await upsertIntegration(db, id, 'hubspot', HUBSPOT_TOKEN_B, ENCRYPTION_KEY);
+    expectHubspotProperty(await first.listProperties(id), 'from-b');
+    expectHubspotProperty(await second.listProperties(id), 'from-b');
+
+    expect(calls.map((call) => authorizationToken({ headers: call.headers }))).toEqual([
+      HUBSPOT_TOKEN_A,
+      HUBSPOT_TOKEN_A,
+      HUBSPOT_TOKEN_B,
+      HUBSPOT_TOKEN_B,
+    ]);
+  });
+
+  it('reuses HubSpot cache after reconnecting the same token', async () => {
+    const id = await accountId();
+    const calls: RecordedCall[] = [];
+    const service = new HubspotPropertiesService(
+      makeEnv(),
+      db,
+      hubspotFetchByToken(calls, { [HUBSPOT_TOKEN_A]: 'from-a' }),
+    );
+    await upsertIntegration(db, id, 'hubspot', HUBSPOT_TOKEN_A, ENCRYPTION_KEY);
+    expectHubspotProperty(await service.listProperties(id), 'from-a');
+
+    await upsertIntegration(db, id, 'hubspot', HUBSPOT_TOKEN_A, ENCRYPTION_KEY);
+    const reused = await service.listProperties(id);
+
+    expectHubspotProperty(reused, 'from-a');
+    expect(reused.enabled && reused.cached).toBe(true);
+    expect(calls).toHaveLength(1);
+  });
+
+  it('misses HubSpot cache after disconnecting to a different env fallback', async () => {
+    const id = await accountId();
+    const calls: RecordedCall[] = [];
+    const envFallbackToken = 'env-fallback-token-b';
+    const service = new HubspotPropertiesService(
+      makeEnv({ HUBSPOT_PRIVATE_APP_TOKEN: envFallbackToken }),
+      db,
+      hubspotFetchByToken(calls, {
+        [HUBSPOT_TOKEN_A]: 'from-a',
+        [envFallbackToken]: 'from-b',
+      }),
+    );
+    await upsertIntegration(db, id, 'hubspot', HUBSPOT_TOKEN_A, ENCRYPTION_KEY);
+    expectHubspotProperty(await service.listProperties(id), 'from-a');
+
+    await deleteIntegration(db, id, 'hubspot');
+    expectHubspotProperty(await service.listProperties(id), 'from-b');
+    expect(calls.map((call) => authorizationToken({ headers: call.headers }))).toEqual([
+      HUBSPOT_TOKEN_A,
+      envFallbackToken,
+    ]);
+  });
+
+  it('never serves late A data to B after B has already completed', async () => {
+    const id = await accountId();
+    const calls: RecordedCall[] = [];
+    let releaseA!: () => void;
+    let markAStarted!: () => void;
+    const aGate = new Promise<void>((resolve) => {
+      releaseA = resolve;
+    });
+    const aStarted = new Promise<void>((resolve) => {
+      markAStarted = resolve;
+    });
+    const fetchImpl = (async (url: string, init?: RequestInit) => {
+      const headers = (init?.headers ?? {}) as Record<string, string>;
+      calls.push({ url, headers });
+      const token = authorizationToken(init);
+      if (token === HUBSPOT_TOKEN_A) {
+        markAStarted();
+        await aGate;
+      }
+      const property = token === HUBSPOT_TOKEN_A ? 'from-a' : 'from-b';
+      return jsonResponse({ results: [{ name: property, label: property, type: 'string' }] });
+    }) as unknown as typeof fetch;
+    const service = new HubspotPropertiesService(makeEnv(), db, fetchImpl);
+    await upsertIntegration(db, id, 'hubspot', HUBSPOT_TOKEN_A, ENCRYPTION_KEY);
+
+    const lateA = service.listProperties(id);
+    await aStarted;
+    await upsertIntegration(db, id, 'hubspot', HUBSPOT_TOKEN_B, ENCRYPTION_KEY);
+    expectHubspotProperty(await service.listProperties(id), 'from-b');
+    releaseA();
+    expectHubspotProperty(await lateA, 'from-a');
+    expectHubspotProperty(await service.listProperties(id), 'from-b');
+
+    expect(calls.map((call) => authorizationToken({ headers: call.headers }))).toEqual([
+      HUBSPOT_TOKEN_A,
+      HUBSPOT_TOKEN_B,
+      HUBSPOT_TOKEN_B,
+    ]);
+  });
+
+  it('rotates Calendly from A to B and uses B for both provider calls', async () => {
+    const id = await accountId();
+    const tokenA = 'cal-token-a';
+    const tokenB = 'cal-token-b';
+    const calls: RecordedCall[] = [];
+    const service = new CalendlyEventTypesService(
+      makeEnv(),
+      db,
+      calendlyFetchByToken(calls, { [tokenA]: 'A', [tokenB]: 'B' }),
+    );
+    await upsertIntegration(db, id, 'calendly', tokenA, ENCRYPTION_KEY);
+    expectCalendlyEvent(await service.listEventTypes(id), 'A');
+
+    await upsertIntegration(db, id, 'calendly', tokenB, ENCRYPTION_KEY);
+    const rotated = await service.listEventTypes(id);
+
+    expectCalendlyEvent(rotated, 'B');
+    expect(rotated.enabled && rotated.cached).toBe(false);
+    expect(calls.slice(2).map((call) => authorizationToken({ headers: call.headers }))).toEqual([
+      tokenB,
+      tokenB,
+    ]);
+  });
+
+  it('keeps HubSpot cache data isolated between accounts', async () => {
+    const calls: RecordedCall[] = [];
+    let fetchNumber = 0;
+    const fetchImpl = (async (url: string, init?: RequestInit) => {
+      const headers = (init?.headers ?? {}) as Record<string, string>;
+      calls.push({ url, headers });
+      fetchNumber += 1;
+      const property = fetchNumber === 1 ? 'account-a' : 'account-b';
+      return jsonResponse({ results: [{ name: property, label: property, type: 'string' }] });
+    }) as unknown as typeof fetch;
+    const service = new HubspotPropertiesService(
+      makeEnv({ HUBSPOT_PRIVATE_APP_TOKEN: 'shared-env-token' }),
+      db,
+      fetchImpl,
+    );
+
+    expectHubspotProperty(await service.listProperties('account-a'), 'account-a');
+    expectHubspotProperty(await service.listProperties('account-b'), 'account-b');
+    expectHubspotProperty(await service.listProperties('account-a'), 'account-a');
+    expect(calls).toHaveLength(2);
+  });
+
+  it('does not expose tokens or fingerprints in provider responses', async () => {
+    const id = await accountId();
+    const hubspotToken = 'hubspot-private-response-token';
+    const calendlyToken = 'calendly-private-response-token';
+    await upsertIntegration(db, id, 'hubspot', hubspotToken, ENCRYPTION_KEY);
+    await upsertIntegration(db, id, 'calendly', calendlyToken, ENCRYPTION_KEY);
+    const hubspot = new HubspotPropertiesService(
+      makeEnv(),
+      db,
+      hubspotFetchByToken([], { [hubspotToken]: 'safe-property' }),
+    );
+    const calendly = new CalendlyEventTypesService(
+      makeEnv(),
+      db,
+      calendlyFetchByToken([], { [calendlyToken]: 'Safe' }),
+    );
+
+    const serialized = JSON.stringify({
+      hubspot: await hubspot.listProperties(id),
+      calendly: await calendly.listEventTypes(id),
+    });
+    for (const token of [hubspotToken, calendlyToken]) {
+      expect(serialized).not.toContain(token);
+      expect(serialized).not.toContain(createHash('sha256').update(token, 'utf8').digest('hex'));
+    }
+    expect(serialized).not.toContain('credentialFingerprint');
+  });
+
+  it('refetches HubSpot with the same token at TTL plus one', async () => {
+    const calls: RecordedCall[] = [];
+    const service = new HubspotPropertiesService(
+      makeEnv({ HUBSPOT_PRIVATE_APP_TOKEN: HUBSPOT_TOKEN_A }),
+      db,
+      hubspotFetchByToken(calls, { [HUBSPOT_TOKEN_A]: 'from-a' }),
+    );
+    const start = 10_000;
+
+    expectHubspotProperty(await service.listProperties('ttl-account', start), 'from-a');
+    const expired = await service.listProperties('ttl-account', start + 5 * 60 * 1000 + 1);
+
+    expectHubspotProperty(expired, 'from-a');
+    expect(expired.enabled && expired.cached).toBe(false);
+    expect(calls).toHaveLength(2);
+  });
+
+  it('does not cache a failed HubSpot provider response', async () => {
+    let attempt = 0;
+    const fetchImpl = (async () => {
+      attempt += 1;
+      return attempt === 1
+        ? new Response('{}', { status: 503 })
+        : jsonResponse({ results: [{ name: 'recovered', label: 'Recovered', type: 'string' }] });
+    }) as unknown as typeof fetch;
+    const service = new HubspotPropertiesService(
+      makeEnv({ HUBSPOT_PRIVATE_APP_TOKEN: HUBSPOT_TOKEN_A }),
+      db,
+      fetchImpl,
+    );
+
+    expect((await service.listProperties('failure-account')).enabled).toBe(false);
+    expectHubspotProperty(await service.listProperties('failure-account'), 'recovered');
+    expect(attempt).toBe(2);
   });
 });
