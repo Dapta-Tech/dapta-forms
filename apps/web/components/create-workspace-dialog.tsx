@@ -38,7 +38,9 @@ export function CreateWorkspaceDialog({
         ? m.createErrorForbidden
         : state.code === 'INVALID'
           ? m.createErrorInvalid
-          : m.createErrorFailed
+          : state.code === 'REJECTED'
+            ? state.message
+            : m.createErrorFailed
       : null;
 
   return (

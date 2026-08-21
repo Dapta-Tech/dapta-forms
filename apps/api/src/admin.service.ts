@@ -7,6 +7,8 @@ import {
   getAccountOnboarding,
   getFormTemplate,
   getMe,
+  getMemberIdentity,
+  humanHasCompletedOnboarding,
   recordOnboardingFormId,
   saveOnboardingProgress,
   setVanitySlug,
@@ -86,17 +88,29 @@ export class AdminService {
    * that sent them. No sidebar, no sign-out, no way out. Answering `false` for
    * anyone who cannot complete it puts them on the dashboard of a workspace
    * whose owner has not finished setting up, which is a normal state.
+   *
+   * And it is asked of a PERSON once, not of every workspace they are later in.
+   * The stamp lives on the account (it is also what the wizard's endpoints
+   * guard on), but the gate reads the person's history: someone who finished
+   * the wizard in any workspace is not sent through it again when the
+   * identity service projects them, as owner, into another one whose local row
+   * predates them (created by a colleague's access grant, say). The projection
+   * inherits the stamp onto accounts it CREATES; this covers the ones it did not.
    */
   async me(p: HostPrincipal) {
     const view = await getMe(this.db, p.accountId, p.memberId);
     if (!view) return view;
-    return {
-      ...view,
-      // Never for an access grant: the wizard describes the workspace and is
-      // its owner's to answer, not the staff member's who dropped in.
-      onboardingRequired:
-        this.onboardingEnabled && view.onboardingCompletedAt == null && isAdmin(p.role) && !view.accessGrant,
-    };
+    let required =
+      this.onboardingEnabled && view.onboardingCompletedAt == null && isAdmin(p.role) && !view.accessGrant;
+    // Never for an access grant: the wizard describes the workspace and is
+    // its owner's to answer, not the staff member's who dropped in.
+    if (required) {
+      const identity = await getMemberIdentity(this.db, p.accountId, p.memberId);
+      if (identity?.externalId && (await humanHasCompletedOnboarding(this.db, identity.externalId))) {
+        required = false;
+      }
+    }
+    return { ...view, onboardingRequired: required };
   }
 
   // --- Onboarding (first-run wizard) ---------------------------------------

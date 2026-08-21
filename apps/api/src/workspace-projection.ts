@@ -312,7 +312,8 @@ export class WorkspaceProjection {
    *
    * `complete` is false when one of the re-reads failed for a reason other than
    * "gone" (404): the caller then skips pruning, because a workspace absent
-   * from this list might simply not have answered.
+   * from this list might simply not have answered. Only the own-account list
+   * failing makes the refresh fail (and degrade to the local copy).
    */
   private async staffMemberships(id: UpstreamIdentity): Promise<{ workspaces: IamWorkspace[]; complete: boolean }> {
     const own = await this.iam.listAccountWorkspaces(id.bearer, id.sub, id.iamAccountId);
@@ -331,9 +332,13 @@ export class WorkspaceProjection {
         this.iam.getWorkspace(id.bearer, wsId).then(
           (ws): { ws: IamWorkspace | null; failed: boolean } => ({ ws, failed: false }),
           (err: unknown) => {
-            if (err instanceof IamUnavailableError) throw err;
             // Gone upstream: a real "not yours any more", prune applies.
             if (err instanceof IamHttpError && err.status === 404) return { ws: null, failed: false };
+            // Anything else, a 5xx included, is THIS row not answering, not
+            // the identity service being down: the own-account list above
+            // already answered. One broken workspace must not degrade the
+            // whole refresh (which would freeze the list at its local copy
+            // and hide every workspace created or joined since).
             this.log.warn(`staff workspace re-read failed for ${wsId}: ${String(err)}`);
             return { ws: null, failed: true };
           },
