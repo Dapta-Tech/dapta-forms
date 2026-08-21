@@ -72,6 +72,89 @@ export async function getAccountByExternalId(
   return r ? { id: r.id, name: r.name, iamAccountId: r.iam_account_id ?? null } : null;
 }
 
+/** One projected account the staff search matched locally. */
+export interface ProjectedAccountHit {
+  /** Local account id. */
+  id: string;
+  /** The upstream workspace id (`account.external_id`). */
+  workspaceId: string;
+  name: string;
+  /** Active real members (grants excluded). */
+  memberCount: number;
+  /** When the NAME did not match: the member email or form name that did. */
+  hint: { kind: 'email' | 'form'; value: string } | null;
+}
+
+/** `%`/`_` are LIKE wildcards; a search for them must mean them. */
+function likePattern(q: string): string {
+  return `%${q.toLowerCase().replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+}
+
+/**
+ * Staff search over the accounts this database already projected from the
+ * identity service: by workspace name, by a member's email, or by one of its
+ * FORMS' names. The identity service knows workspaces by name only, and a
+ * workspace is rarely what the deployment's staff remember: they hold a
+ * submission email, a form link, the customer's address. Local-only accounts
+ * (no `external_id`) are not workspaces anyone can be granted into, so they
+ * are left out.
+ */
+export async function searchProjectedAccounts(
+  db: Db,
+  query: string,
+  opts: { limit?: number } = {},
+): Promise<ProjectedAccountHit[]> {
+  const q = query.trim();
+  if (!q) return [];
+  const pat = likePattern(q);
+  const limit = Math.max(1, Math.min(50, opts.limit ?? 20));
+  const rows = await db.all<{
+    id: string;
+    external_id: string;
+    name: string;
+    member_count: number | string;
+    name_hit: number | boolean;
+    email_hit: string | null;
+    form_hit: string | null;
+  }>(
+    sql`SELECT a.id, a.external_id, a.name,
+               (SELECT COUNT(*) FROM member mm
+                 WHERE mm.account_id = a.id AND mm.status = 'active' AND mm.access_grant IS NULL) AS member_count,
+               (lower(a.name) LIKE ${pat} ESCAPE '\\') AS name_hit,
+               (SELECT m.email FROM member m
+                 WHERE m.account_id = a.id AND m.access_grant IS NULL AND m.email IS NOT NULL
+                   AND lower(m.email) LIKE ${pat} ESCAPE '\\'
+                 ORDER BY (m.role = 'owner') DESC, m.created_at ASC LIMIT 1) AS email_hit,
+               (SELECT f.name FROM form f
+                 WHERE f.account_id = a.id AND lower(f.name) LIKE ${pat} ESCAPE '\\'
+                 ORDER BY f.created_at DESC LIMIT 1) AS form_hit
+        FROM account a
+        WHERE a.external_id IS NOT NULL
+          AND (lower(a.name) LIKE ${pat} ESCAPE '\\'
+            OR EXISTS (SELECT 1 FROM member m2
+                        WHERE m2.account_id = a.id AND m2.access_grant IS NULL AND m2.email IS NOT NULL
+                          AND lower(m2.email) LIKE ${pat} ESCAPE '\\')
+            OR EXISTS (SELECT 1 FROM form f2
+                        WHERE f2.account_id = a.id AND lower(f2.name) LIKE ${pat} ESCAPE '\\'))
+        ORDER BY (lower(a.name) LIKE ${pat} ESCAPE '\\') DESC, a.name ASC
+        LIMIT ${limit}`,
+  );
+  return rows.map((r) => ({
+    id: r.id,
+    workspaceId: r.external_id,
+    name: r.name,
+    memberCount: Number(r.member_count ?? 0),
+    hint:
+      r.name_hit === true || r.name_hit === 1
+        ? null
+        : r.email_hit
+          ? { kind: 'email', value: r.email_hit }
+          : r.form_hit
+            ? { kind: 'form', value: r.form_hit }
+            : null,
+  }));
+}
+
 /**
  * Rebind a pre-0015 account (whose `external_id` still holds the upstream
  * ACCOUNT id) onto the upstream WORKSPACE it should have meant all along.

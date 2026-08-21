@@ -1,7 +1,16 @@
 'use server';
 
 import { redirect } from 'next/navigation';
-import { setSession, clearSession, getSession, authProvider, revokeUpstreamSession } from '@/lib/auth-session';
+import { headers } from 'next/headers';
+import {
+  setSession,
+  clearSession,
+  getSession,
+  authProvider,
+  revokeUpstreamSession,
+  idpLogoutTarget,
+} from '@/lib/auth-session';
+import { originFrom } from '@/lib/request-origin';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -22,23 +31,31 @@ export async function signInAction(
 }
 
 /**
- * Logout (AUTH-WEB-CONTRACT §2/§3.5) — Orbit-parity contract: read the session,
- * clear the cookie, tell the IAM to revoke upstream (best-effort, see
- * `revokeUpstreamSession`), and land on /login?signedout=1. The order matters:
- * the session must be READ before `clearSession()` lands its Set-Cookie, or the
- * revoke has no session id — that gap once left the upstream WorkOS session
- * alive and "sign in" silently re-authenticated the same person into /admin.
+ * Logout (AUTH-WEB-CONTRACT §2/§3.5): read the session, clear the cookie, tell
+ * the IAM to revoke upstream, then FOLLOW the returned IdP logout URL (Orbit's
+ * skipIdpRedirect = false case, "logout completo"). The browser hop through
+ * WorkOS is not optional for the sign-out button: the AuthKit session cookie
+ * lives on WorkOS's domain, and with the shared Dapta session still alive the
+ * next "sign in" silently re-authenticates the same person back into /admin,
+ * with no way to switch accounts. WorkOS sends the browser back to
+ * /login?signedout=1 via return_to (the URL must stay allowlisted under
+ * "Logout redirect URIs" in the WorkOS dashboard).
  *
- * Inline rather than via /api/auth/logout: an action `redirect()` into a route
- * handler soft-navigates, leaving the URL bar stranded on /api/auth/logout
- * while the login page renders. The browser never visits WorkOS
- * (skipIdpRedirect = true in Orbit's terms) — /login?signedout=1 is the landing,
- * and its param is what suppresses the login page's auto-redirect.
+ * The order matters: the session must be READ before `clearSession()` lands its
+ * Set-Cookie, or the revoke has no session id. That gap once left the upstream
+ * WorkOS session alive (the pre-#82 bug). Local cleanup always runs, whatever
+ * the IAM call does; when no logout URL comes back (IAM down, unparseable URL,
+ * no session id) the person still lands signed out on /login?signedout=1, whose
+ * param suppresses the login page's auto-redirect.
  */
 export async function signOutAction(): Promise<void> {
   const session = await getSession();
   await clearSession();
-  await revokeUpstreamSession(session);
+  const logoutUrl = await revokeUpstreamSession(session);
+  const hdrs = await headers();
+  const origin = originFrom((n) => hdrs.get(n));
+  const idp = origin ? idpLogoutTarget(logoutUrl, origin) : null;
+  if (idp) redirect(idp);
   // Keyed on the configured provider, not the (possibly already-null) session:
   // in workos mode a bare /login auto-redirects straight back into the IAM.
   redirect(authProvider() === 'workos' ? '/login?signedout=1' : '/login');

@@ -1,6 +1,5 @@
 ---
 '@quill/types': patch
-'@quill/web': patch
 ---
 
 Remove the last two em dashes a user could see, and make the check that finds

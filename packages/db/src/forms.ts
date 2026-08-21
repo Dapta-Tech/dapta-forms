@@ -232,6 +232,51 @@ export async function uniqueFormSlug(db: Db, accountId: string, base: string): P
   return `${root}-${randomUUID().slice(0, 6)}`;
 }
 
+const FORM_SLUG_INSERT_ATTEMPTS = 3;
+const SQLITE_FORM_SLUG_UNIQUE_MESSAGE = 'UNIQUE constraint failed: form.account_id, form.slug';
+
+type DatabaseError = {
+  code?: unknown;
+  constraint?: unknown;
+  constraint_name?: unknown;
+  message?: unknown;
+  cause?: unknown;
+  driverError?: unknown;
+};
+
+function asDatabaseError(error: unknown): DatabaseError | undefined {
+  return error && typeof error === 'object' ? (error as DatabaseError) : undefined;
+}
+
+/** True only for the account-scoped `form(account_id, slug)` unique index. */
+function isFormAccountSlugUniqueViolation(error: unknown): boolean {
+  const candidate = asDatabaseError(error);
+  if (!candidate) return false;
+
+  if (
+    candidate.code === '23505' &&
+    (candidate.constraint === 'form_account_slug_uq' || candidate.constraint_name === 'form_account_slug_uq')
+  ) {
+    return true;
+  }
+
+  return (
+    candidate.code === 'SQLITE_CONSTRAINT_UNIQUE' &&
+    typeof candidate.message === 'string' &&
+    candidate.message.includes(SQLITE_FORM_SLUG_UNIQUE_MESSAGE)
+  );
+}
+
+/** Drizzle wraps driver errors; inspect the immediate driver shape without widening retries. */
+function isFormAccountSlugConflict(error: unknown): boolean {
+  const wrapped = asDatabaseError(error);
+  return (
+    isFormAccountSlugUniqueViolation(error) ||
+    isFormAccountSlugUniqueViolation(wrapped?.cause) ||
+    isFormAccountSlugUniqueViolation(wrapped?.driverError)
+  );
+}
+
 export async function listForms(db: Db, accountId: string): Promise<FormSummary[]> {
   const rows = await db.all<Record<string, unknown>>(
     sql`SELECT id, name, slug, brand_applied_at, created_at, updated_at FROM form
@@ -345,17 +390,28 @@ export async function createForm(
    */
   createdBy?: string | null,
 ): Promise<CrudResult<FormRow>> {
-  const slug = await uniqueFormSlug(db, accountId, input.slug ?? input.name);
-  const id = randomUUID();
-  const now = Date.now();
   const config = input.config ?? { version: 1, steps: [] };
-  await db.run(
-    sql`INSERT INTO form (id, account_id, name, slug, config, created_by, created_at, updated_at)
-        VALUES (${id}, ${accountId}, ${input.name}, ${slug}, ${jsonParam(config)},
-                ${createdBy ?? null}, ${now}, ${now})`,
-  );
-  const created = await getFormById(db, accountId, id);
-  return created ? { ok: true, value: created } : { ok: false, reason: 'CONFLICT' };
+
+  for (let attempt = 0; attempt < FORM_SLUG_INSERT_ATTEMPTS; attempt++) {
+    const slug = await uniqueFormSlug(db, accountId, input.slug ?? input.name);
+    const id = randomUUID();
+    const now = Date.now();
+    try {
+      await db.run(
+        sql`INSERT INTO form (id, account_id, name, slug, config, created_by, created_at, updated_at)
+            VALUES (${id}, ${accountId}, ${input.name}, ${slug}, ${jsonParam(config)},
+                    ${createdBy ?? null}, ${now}, ${now})`,
+      );
+    } catch (error) {
+      if (attempt + 1 < FORM_SLUG_INSERT_ATTEMPTS && isFormAccountSlugConflict(error)) continue;
+      throw error;
+    }
+
+    const created = await getFormById(db, accountId, id);
+    return created ? { ok: true, value: created } : { ok: false, reason: 'CONFLICT' };
+  }
+
+  throw new Error('unreachable: form slug insert retries must return or rethrow');
 }
 
 export async function updateForm(
@@ -644,6 +700,18 @@ export async function upsertSubmission(
     if (input.partial && wasCompletedBefore) {
       return { ...(await getSubmissionById(db, existing.id))!, wasCompletedBefore };
     }
+    if (!input.partial && !wasCompletedBefore) {
+      // The SELECT above routes partials and retries, but cannot decide a
+      // completion claim: another finalization may commit after it read NULL.
+      const completed = await db.get<Record<string, unknown>>(
+        sql`UPDATE submission
+            SET data = ${jsonParam(input.data)}, score = ${input.score}, completed_at = ${completedAt}
+            WHERE id = ${existing.id} AND completed_at IS NULL
+            RETURNING *`,
+      );
+      if (completed) return { ...mapSubmission(completed), wasCompletedBefore: false };
+      return { ...(await getSubmissionById(db, existing.id))!, wasCompletedBefore: true };
+    }
     await db.run(
       sql`UPDATE submission
           SET data = ${jsonParam(input.data)}, score = ${input.score},
@@ -689,7 +757,7 @@ export async function listSubmissions(
 ): Promise<SubmissionRow[]> {
   const rows = await db.all<Record<string, unknown>>(
     sql`SELECT * FROM submission WHERE form_id = ${formId}
-        ORDER BY started_at DESC LIMIT ${limit}`,
+        ORDER BY started_at DESC, id DESC LIMIT ${limit}`,
   );
   return rows.map(mapSubmission);
 }
@@ -713,4 +781,3 @@ export async function recordFormEvent(
           ${input.stepIndex ?? null}, ${input.stepKey ?? null}, ${input.now ?? Date.now()})`,
   );
 }
-

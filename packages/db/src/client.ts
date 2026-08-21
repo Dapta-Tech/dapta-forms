@@ -22,6 +22,7 @@ export interface SqliteNative {
   drizzle: BetterSQLite3Database;
   /** better-sqlite3 Database — used for its synchronous `.transaction()`. */
   txn: <T>(fn: () => T) => T;
+  exec(script: string): void;
 }
 
 /** Native Postgres handle for the async atomic path. */
@@ -111,6 +112,9 @@ async function createSqliteDb(url: string): Promise<Db> {
     sqlite: {
       drizzle: db,
       txn: <T>(fn: () => T): T => sqlite.transaction(fn)(),
+      exec: (script: string): void => {
+        sqlite.exec(script);
+      },
     },
     close: () => {
       sqlite.close();

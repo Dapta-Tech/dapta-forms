@@ -7,7 +7,9 @@ export const dynamic = 'force-dynamic';
 
 /**
  * Account settings → Workspaces: every workspace the caller belongs to, with
- * Open (enter it) and Manage (its members + invitations, no switching).
+ * Open (enter it) and Manage (its members + invitations, no switching). The
+ * deployment's staff also search the whole estate from here, as in the rail
+ * switcher.
  */
 export default async function WorkspacesPage() {
   const locale = await getLocale();
@@ -21,6 +23,7 @@ export default async function WorkspacesPage() {
     <WorkspaceCards
       workspaces={workspaces}
       currentAccountId={me.accountId}
+      staff={me.staff === true}
       locale={locale}
       labels={{
         title: a.title,

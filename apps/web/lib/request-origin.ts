@@ -13,19 +13,45 @@ import type { NextRequest } from 'next/server';
  * not set it (where there is no fronting proxy to spoof through).
  */
 export function requestOrigin(req: NextRequest): string {
+  const own = req.nextUrl.protocol.replace(/:$/, '') || undefined;
+  return originFrom((n) => req.headers.get(n), own) ?? new URL(req.url).origin;
+}
+
+/**
+ * Same trust order as `requestOrigin`, for callers that hold `headers()` instead
+ * of a `NextRequest` (server actions have no request object). Null when nothing
+ * trustworthy resolves; a caller building an OAuth or IdP redirect should then
+ * skip the redirect rather than guess an origin.
+ *
+ * `fallbackProto` is the scheme to use when a host resolves but no
+ * `X-Forwarded-Proto` came with it. It is NOT a trust decision: the host is
+ * whatever the trust order already settled on, and this only picks the scheme
+ * to pair with it.
+ */
+export function originFrom(
+  get: (name: string) => string | null | undefined,
+  fallbackProto?: string,
+): string | null {
   const configured = process.env.PUBLIC_APP_URL?.trim();
   if (configured) {
     try {
       return new URL(configured).origin;
     } catch {
-      // Misconfigured PUBLIC_APP_URL — fall through to header/req.url derivation
-      // rather than crash the auth route.
+      // Misconfigured PUBLIC_APP_URL: fall through to header derivation rather
+      // than crash the auth path.
     }
   }
-  const proto = req.headers.get('x-forwarded-proto')?.split(',')[0]?.trim();
-  const host = selfHost((n) => req.headers.get(n));
+  const proto = get('x-forwarded-proto')?.split(',')[0]?.trim();
+  const host = selfHost(get);
   if (proto && host) return `${proto}://${host}`;
-  return new URL(req.url).origin;
+  // A bare self-host/dev clone with no proxy in front: the Host header is the
+  // only signal there is. The request's OWN scheme is the next best thing and
+  // callers holding a NextRequest pass it, because a deployment that forwards
+  // Host but not X-Forwarded-Proto would otherwise downgrade an https OAuth
+  // returnTo to http. Only the server-action caller, which has no request
+  // object to read a scheme off, falls back to plain http.
+  if (host) return `${fallbackProto ?? 'http'}://${host}`;
+  return null;
 }
 
 /**

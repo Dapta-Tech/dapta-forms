@@ -12,6 +12,7 @@ import { createDestination } from '@quill/destinations';
 import type { ServerEnv } from '@quill/config/env';
 import { OutboxSkipError } from './email-effects';
 import { extractUtm } from './destination-effects';
+import { HubspotPortalResolver, mirrorGuidFor } from './hubspot-portal';
 import type { BookingSyncPayload } from './booking-effects';
 import { DB, ENV } from './tokens';
 
@@ -32,7 +33,46 @@ interface CalendlyResource {
     last_name?: string;
     /** Present only when the event type asks for an SMS reminder number. */
     text_reminder_number?: string;
+    /** The booking form's custom questions, in the order the event type asks them. */
+    questions_and_answers?: { question?: string; answer?: string; position?: number }[];
   };
+}
+
+const PHONE_QUESTION =
+  /tel[eé]fono|phone|celular|m[oó]vil|whatsapp|n[uú]mero\s+(?:de\s+)?(?:tel[eé]fono|celular|m[oó]vil|contacto|whatsapp)/i;
+
+/**
+ * A question asking for a "número" that is not a phone. Every other alternative
+ * above is phone-specific, but a bare "número" also opens "Número de documento",
+ * "Número de identificación" and "Número de empleados", whose answers pass the
+ * digit-count check too. The phone property upsert is destructive, so a document
+ * number reaching it OVERWRITES the real phone rather than sitting beside it.
+ */
+const NOT_PHONE_QUESTION = /documento|identificaci[oó]n|c[eé]dula|\bnit\b|empleados/i;
+
+/**
+ * A custom-question answer that is a phone number, or null.
+ *
+ * `text_reminder_number` only exists when the event type uses Calendly's native
+ * SMS field, and real event types ask for the phone as a CUSTOM question instead
+ * ("What is your phone number?"), which arrives here. Guarded twice, because
+ * either check alone fails on real data: event types exist whose first question
+ * is "Company" (and people have answered it with their phone) and others with
+ * free-text "Please share anything...", so the QUESTION must ask for a phone AND
+ * the ANSWER must parse as one. Position is irrelevant: the question is found by
+ * its text, wherever the event type asks it. A question asking for a "número"
+ * counts only when it says which one (see NOT_PHONE_QUESTION).
+ */
+function phoneFromQuestions(
+  qa: { question?: string; answer?: string }[] | undefined,
+): string | null {
+  const asksForPhone = (q: string | undefined) => {
+    const text = q ?? '';
+    return PHONE_QUESTION.test(text) && !NOT_PHONE_QUESTION.test(text);
+  };
+  const looksLikePhone = (a: string | undefined) => /^[+()\-.\s\d]{7,}$/.test((a ?? '').trim());
+  const hit = (qa ?? []).find((x) => asksForPhone(x.question) && looksLikePhone(x.answer));
+  return hit?.answer?.trim() ?? null;
 }
 
 /** What the booking page collected about the person, beyond their address. */
@@ -107,6 +147,8 @@ export class BookingSyncEffects {
   fetchImpl: typeof fetch = fetch;
   /** Overridable in tests to point the HubSpot client at a fake. */
   hubspotApiBase: string = HUBSPOT_API_BASE;
+  /** accountId -> the portal its HubSpot token belongs to (mirror submit URL). */
+  private readonly portals = new HubspotPortalResolver();
 
   constructor(
     @Inject(DB) private readonly db: Db,
@@ -168,7 +210,11 @@ export class BookingSyncEffects {
           name: fetchedInvitee?.resource?.name?.trim() || null,
           firstName: fetchedInvitee?.resource?.first_name?.trim() || null,
           lastName: fetchedInvitee?.resource?.last_name?.trim() || null,
-          phone: fetchedInvitee?.resource?.text_reminder_number?.trim() || null,
+          // The structured SMS field wins; a custom question is the fallback.
+          phone:
+            fetchedInvitee?.resource?.text_reminder_number?.trim() ||
+            phoneFromQuestions(fetchedInvitee?.resource?.questions_and_answers) ||
+            null,
         };
       }
     }
@@ -372,6 +418,17 @@ export class BookingSyncEffects {
         )?.label ?? null)
       : null;
 
+    // The mirror form, exactly as the submit path resolves it. It was missing
+    // here, and this is the ONLY path a scheduler-keyed form ever takes: those
+    // forms got their answers and their Note but never the "Form submission"
+    // activity, because the adapter skips mirroring unless it has BOTH the guid
+    // and the portal. Resolved only when a mirror is configured, so a form
+    // without one still makes no extra call.
+    const mirrorGuid = mirrorGuidFor(destination.settings);
+    const portalId = mirrorGuid
+      ? await this.portals.resolve(payload.accountId, token, this.fetchImpl)
+      : null;
+
     // Through the factory — the same construction seam the submit path uses
     // (invariant #7); the token is injected here and never persisted.
     const adapter = createDestination(
@@ -388,6 +445,8 @@ export class BookingSyncEffects {
           outcomeProperty: destination.outcomeProperty ?? undefined,
           staticProperties: destination.staticProperties,
           inferCompanyFromEmail: destination.inferCompanyFromEmail,
+          formGuid: mirrorGuid ?? undefined,
+          portalId: portalId ?? undefined,
         },
       },
       this.fetchImpl,

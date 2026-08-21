@@ -1,6 +1,6 @@
 import { Suspense } from 'react';
 import Link from 'next/link';
-import { notFound } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
 import type { FormConfig, SubmissionsPage } from '@quill/types';
 import { getMessages, t, type FormsMessages, type Locale } from '@quill/shared';
 import { adminApi, ApiError } from '@/lib/admin-api';
@@ -112,6 +112,22 @@ async function SubmissionsData({
         <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">{m.submissions.emptyBody}</p>
       </div>
     );
+  }
+
+  // `?offset=` outlives the rows it pointed at: delete the only submission on
+  // the last page and the browser still asks for that page. The API answers
+  // with no items and a `total` that is not zero, so the empty state above does
+  // not apply and the table rendered a header with no rows under an impossible
+  // range ("26–25 of 25"), with Next disabled. `total` is authoritative — it
+  // counts every row matching the filter, before pagination — so it is what
+  // decides where the last page starts. Send the reader there, filter intact.
+  if (offset >= page.total) {
+    const lastOffset = Math.floor((page.total - 1) / page.limit) * page.limit;
+    const q = new URLSearchParams();
+    if (status !== 'all') q.set('status', status);
+    if (lastOffset > 0) q.set('offset', String(lastOffset));
+    const query = q.toString();
+    redirect(`/admin/forms/${id}/submissions${query ? `?${query}` : ''}`);
   }
 
   const from = offset + 1;

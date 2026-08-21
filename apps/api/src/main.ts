@@ -3,6 +3,7 @@ import { NestFactory } from '@nestjs/core';
 import { loadServerEnv } from '@quill/config/env';
 import { loadDotenv } from '@quill/config/dotenv';
 import { AppModule } from './app.module';
+import { databaseLogLabel } from './database-log-label';
 
 async function bootstrap() {
   // Load .env (root + app-local) before reading env — a self-hoster's .env must
@@ -23,7 +24,7 @@ async function bootstrap() {
   app.enableCors({ origin: origins, credentials: true });
   console.log(`[api] CORS allowlist: ${origins.join(', ')}`);
   await app.listen(env.API_PORT);
-  console.log(`[api] listening on http://localhost:${env.API_PORT} (db=${env.DATABASE_URL.replace(/\/\/([^:@/]+):[^@]+@/, '//$1:***@')})`);
+  console.log(`[api] listening on http://localhost:${env.API_PORT} (db=${databaseLogLabel(env.DATABASE_URL)})`);
 }
 
 bootstrap().catch((err) => {

@@ -8,7 +8,6 @@ import {
 } from '@quill/db';
 import {
   createDestination,
-  HUBSPOT_API_BASE,
   type DeliveryTranscript,
   type DestinationContext,
   type DestinationSpec,
@@ -21,6 +20,7 @@ import {
   type FormDestination,
 } from '@quill/types';
 import type { ServerEnv } from '@quill/config/env';
+import { HubspotPortalResolver, mirrorGuidFor } from './hubspot-portal';
 import { DB, ENV } from './tokens';
 
 /** The delivery snapshot serialized into an outbox row (config + context). */
@@ -61,12 +61,8 @@ export class DestinationEffects {
   fetchImpl: typeof fetch = fetch;
   /** Injectable DNS resolver for tests (webhook SSRF guard); default = Node DNS. */
   resolveDns?: DnsResolver;
-  /**
-   * accountId -> the portal its HubSpot token belongs to. The pair is stored
-   * together so a rotated token misses the cache instead of serving the
-   * previous portal's id.
-   */
-  private readonly portalIds = new Map<string, { token: string; portalId: string }>();
+  /** accountId -> the portal its HubSpot token belongs to (mirror submit URL). */
+  private readonly portals = new HubspotPortalResolver();
 
   constructor(
     @Inject(DB) private readonly db: Db,
@@ -201,8 +197,7 @@ export class DestinationEffects {
       this.env?.FORMS_ENCRYPTION_KEY,
       this.env?.HUBSPOT_PRIVATE_APP_TOKEN,
     );
-    const mirrorGuid =
-      destination.settings?.formActivity === true ? (destination.settings?.formGuid ?? null) : null;
+    const mirrorGuid = mirrorGuidFor(destination.settings);
     return {
       type: 'hubspot',
       hubspot: {
@@ -217,52 +212,17 @@ export class DestinationEffects {
         outcomeProperty: destination.outcomeProperty ?? undefined,
         staticProperties: destination.staticProperties,
         inferCompanyFromEmail: destination.inferCompanyFromEmail,
-        // The mirror form. Gated on the author's switch as well as the guid:
-        // the guid SURVIVES the switch being turned off, so that turning it back
-        // on reuses the same form instead of orphaning the activities already
-        // attached to it. Policy lives here rather than in the adapter, which
-        // simply posts when it is given somewhere to post to.
-        //
-        // The portal is resolved lazily — nothing else in the product needs it,
-        // so it is not worth a column, and a form with no mirror never pays for
-        // the lookup at all.
+        // The mirror form and the portal its submit URL carries: see
+        // `mirrorGuidFor` and `HubspotPortalResolver`, shared with the
+        // booking-time path so the two cannot disagree on what enables it.
         formGuid: mirrorGuid ?? undefined,
         portalId: mirrorGuid
-          ? ((await this.resolvePortalId(accountId, token ?? '')) ?? undefined)
+          ? ((await this.portals.resolve(accountId, token ?? '', this.fetchImpl)) ?? undefined)
           : undefined,
       },
     };
   }
 
-  /**
-   * The portal a token belongs to, cached per account.
-   *
-   * Keyed on the token as well as the account so a rotated credential cannot
-   * keep serving the previous portal's id — which would post one customer's
-   * submissions at another customer's forms. A failure returns null and the
-   * mirror submission is simply skipped; the contact still syncs.
-   */
-  private async resolvePortalId(accountId: string, token: string): Promise<string | null> {
-    if (!token) return null;
-    const cached = this.portalIds.get(accountId);
-    if (cached && cached.token === token) return cached.portalId;
-    try {
-      const res = await this.fetchImpl(`${HUBSPOT_API_BASE}/account-info/v3/details`, {
-        headers: { authorization: `Bearer ${token}` },
-      });
-      if (!res.ok) {
-        this.log.warn(`[destinations] could not resolve HubSpot portal: HTTP ${res.status}`);
-        return null;
-      }
-      const body = (await res.json().catch(() => ({}))) as { portalId?: number | string };
-      const portalId = body.portalId == null ? null : String(body.portalId);
-      if (portalId) this.portalIds.set(accountId, { token, portalId });
-      return portalId;
-    } catch (err) {
-      this.log.warn(`[destinations] could not resolve HubSpot portal: ${String(err)}`);
-      return null;
-    }
-  }
 }
 
 /** Read the destinations array from a stored config, tolerating legacy/absent. */

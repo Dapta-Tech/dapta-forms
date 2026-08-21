@@ -64,7 +64,10 @@ async function req<T>(method: string, path: string, body?: unknown, opts: ReqOpt
     // hands that route a null session and silently skips the single-logout (see
     // `signOutAction`). This path only appeared to work because `delete()` throws
     // during a Server Component render; from a Server Action it lands and breaks.
-    if (authProvider() === 'workos') redirect('/api/auth/logout');
+    // ?reason=expired: this is a token expiring mid-render, not a person asking
+    // to leave, so the route must not bounce the browser through the WorkOS
+    // logout and end their whole Dapta platform session.
+    if (authProvider() === 'workos') redirect('/api/auth/logout?reason=expired');
     try {
       await clearSession();
     } catch {
@@ -102,6 +105,13 @@ export type MemberStatus = 'active' | 'invited' | 'disabled';
 /** One account the signed-in person can act in. */
 export interface Workspace {
   accountId: string;
+  /**
+   * The Dapta identity service's workspace id, null for an account that was
+   * never projected from one. Account settings URLs carry THIS id when there is
+   * one, so a link copied from the Dapta app and one copied from here name the
+   * same workspace the same way; the API itself always takes `accountId`.
+   */
+  workspaceId: string | null;
   accountCode: string;
   accountName: string;
   memberId: string;
@@ -128,6 +138,8 @@ export interface WorkspaceSearchRow {
   accessGrant: 'staff' | null;
   memberCount: number;
   localExists?: boolean;
+  /** Staff rows matched by something other than the name: the email or form name that did. */
+  hint?: { kind: 'email' | 'form'; value: string } | null;
 }
 
 export interface WorkspaceSearchResponse {

@@ -7,7 +7,7 @@
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { randomUUID } from 'node:crypto';
-import { sql } from 'drizzle-orm';
+import { sql, type SQL } from 'drizzle-orm';
 import { createDb, type Db } from './client';
 import { migrate } from './migrate';
 import { upsertSubmission, listSubmissions } from './forms';
@@ -15,6 +15,32 @@ import { upsertSubmission, listSubmissions } from './forms';
 let db: Db;
 let accountId: string;
 let formId: string;
+
+/**
+ * Hold the two reads that begin concurrent finalizations until both have
+ * observed the same partial row. This stays test-local: production code has no
+ * testing hook or scheduling concern.
+ */
+function interleaveFirstTwoReads(source: Db): Db {
+  let reached = 0;
+  let release!: () => void;
+  const bothReadsReached = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+
+  return {
+    ...source,
+    get: async <T>(query: SQL): Promise<T | undefined> => {
+      const row = await source.get<T>(query);
+      if (reached < 2) {
+        reached += 1;
+        if (reached === 2) release();
+        await bothReadsReached;
+      }
+      return row;
+    },
+  };
+}
 
 beforeEach(async () => {
   // Honors DATABASE_URL so CI re-runs this same suite against real Postgres
@@ -98,10 +124,39 @@ describe('submission upsert', () => {
     expect(latePartial.wasCompletedBefore).toBe(true); // reorder-guarded no-op
   });
 
+  it('reports exactly one first completion when finalizations race', async () => {
+    const session = 'concurrent-finalization';
+    await upsertSubmission(db, { formId, sessionId: session, data: { a: 1 }, score: 3, partial: true });
+
+    const racingDb = interleaveFirstTwoReads(db);
+    const results = await Promise.all([
+      upsertSubmission(racingDb, { formId, sessionId: session, data: { a: 1, b: 2 }, score: 7 }),
+      upsertSubmission(racingDb, { formId, sessionId: session, data: { a: 1, b: 3 }, score: 8 }),
+    ]);
+
+    expect(results.filter((row) => !row.wasCompletedBefore)).toHaveLength(1);
+  });
+
   it('creates distinct rows for distinct sessions', async () => {
     await upsertSubmission(db, { formId, sessionId: 'a', data: {}, score: 0 });
     await upsertSubmission(db, { formId, sessionId: 'b', data: {}, score: 0 });
     expect(await listSubmissions(db, formId)).toHaveLength(2);
+  });
+
+  it('orders tied started timestamps by id descending', async () => {
+    const startedAt = 1_700_000_000_000;
+    for (const id of ['submission-tie-a', 'submission-tie-b', 'submission-tie-c']) {
+      await db.run(
+        sql`INSERT INTO submission (id, form_id, session_id, data, score, started_at)
+            VALUES (${id}, ${formId}, ${'session-' + id}, ${'{}'}, ${0}, ${startedAt})`,
+      );
+    }
+
+    expect((await listSubmissions(db, formId)).map((row) => row.id)).toEqual([
+      'submission-tie-c',
+      'submission-tie-b',
+      'submission-tie-a',
+    ]);
   });
 
   it('enforces the (form_id, session_id) unique index', async () => {

@@ -192,6 +192,8 @@ export interface FormsMessages {
         staff: string;
         /** Eyebrow over estate rows the person never opened here (staff only). */
         estate: string;
+        /** Staff search: why a row matched when its name did not. `{name}` is the form. */
+        hintForm: string;
       };
     };
     /** The dashboard home (/admin) — greeting, public link, stats, quick actions. */
@@ -390,6 +392,10 @@ export interface FormsMessages {
         back: string;
         tabMembers: string;
         tabInvitations: string;
+        /** The id the Dapta estate knows the workspace by, with a copy control. */
+        idLabel: string;
+        copyId: string;
+        copied: string;
         notFound: string;
         noAccess: string;
         colName: string;
@@ -1764,6 +1770,7 @@ export const en: FormsMessages = {
         searchEmpty: 'No workspace matches that.',
         staff: 'Staff',
         estate: 'All workspaces',
+        hintForm: 'Form: {name}',
       },
     },
     home: {
@@ -1943,6 +1950,9 @@ export const en: FormsMessages = {
         back: 'All workspaces',
         tabMembers: 'Members',
         tabInvitations: 'Invitations',
+        idLabel: 'Workspace ID',
+        copyId: 'Copy ID',
+        copied: 'Copied',
         notFound: 'That workspace is not among yours.',
         noAccess: 'Only admins and owners of this workspace can manage its members.',
         colName: 'Name',
@@ -3225,6 +3235,7 @@ export const es: FormsMessages = {
         searchEmpty: 'Ningún workspace coincide.',
         staff: 'Staff',
         estate: 'Todos los workspaces',
+        hintForm: 'Formulario: {name}',
       },
     },
     home: {
@@ -3405,6 +3416,9 @@ export const es: FormsMessages = {
         back: 'Todos los workspaces',
         tabMembers: 'Miembros',
         tabInvitations: 'Invitaciones',
+        idLabel: 'ID del workspace',
+        copyId: 'Copiar ID',
+        copied: 'Copiado',
         notFound: 'Ese workspace no está entre los tuyos.',
         noAccess: 'Solo los administradores y propietarios de este workspace pueden administrar sus miembros.',
         colName: 'Nombre',

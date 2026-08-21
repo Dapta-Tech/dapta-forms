@@ -231,6 +231,12 @@ test.describe('V12: account settings behind the profile menu', () => {
       'the Invitations tab renders',
     ).toBeVisible();
 
+    // The header names the workspace by the id the Dapta estate knows it by
+    // (its identity-service id when projected from one; the QA database has
+    // none, so the local account id), with a copy control.
+    await expect(page.getByTestId('workspace-id'), 'the workspace id is shown').toContainText(me.accountId);
+    await expect(page.getByTestId('workspace-id-copy'), 'the id has a copy button').toBeVisible();
+
     const membersTable = page.getByTestId('members-table');
     await expect(membersTable, 'the members table is the default tab').toBeVisible();
     const myRow = membersTable.locator(

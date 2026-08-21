@@ -116,6 +116,26 @@ docker build -f apps/web/Dockerfile -t dapta-forms-web \
 
 ## Database
 
+### Outbox worker upgrades
+
+A worker settles only the row it still holds the lease on: every settlement
+carries the claim token it was issued, and a worker that lost its lease logs
+`lease lost before settlement` instead of recording a result it no longer owns.
+Versions before that fence settle by row id alone.
+
+So a rolling upgrade, where old and new replicas run side by side for a few
+minutes, is supported but unfenced for as long as it lasts: an old replica can
+still overwrite the settlement of a row a new replica has since reclaimed. That
+is the at-least-once behaviour the outbox already advertises, which is why a
+rolling deploy is safe. It is not the stronger guarantee the fence gives you
+once every replica is on the new version.
+
+A stop, drain-or-wait one full `staleClaimMs`, then start sequence avoids the
+window entirely. Prefer it when you can schedule the downtime, and use the same
+sequence on rollback. Either way delivery stays at-least-once: crashes, effects
+longer than the lease, hung providers, and late successes after peer
+terminalization can duplicate or leave an external effect unrecorded.
+
 **PostgreSQL is the source of truth** (CI and production run Postgres). SQLite is a
 portable subset for zero-infra dev and evaluation only — it is never allowed to
 limit the schema, but you should not run production on it.
@@ -130,8 +150,41 @@ limit the schema, but you should not run production on it.
 - **Migrations are additive-only** — new nullable columns / new tables, never a
   destructive rename or drop that would break a running deployment. Both dialects
   ship parallel numbered migrations under `packages/db/migrations/{postgres,sqlite}`.
+- Repository-shipped migrations run as a script plus marker transaction and are
+  verified by CI. Fork or custom migrations with transaction control or
+  non-transactional operations are unsupported and may partially apply.
+- Short-link fixups run after migrations and are outside that boundary.
 - Booting the API against an **unmigrated** database makes the outbox worker fail on
   every poll with `no such table: outbox` — always migrate first.
+
+### Database CLI diagnostics
+
+`migrate`, `seed`, and `reset` can emit raw driver or system diagnostics. The
+`db:setup` wrapper runs `migrate` and then `seed`, so it preserves diagnostics
+from the phase that runs.
+
+- **Migration and setup.** `createDb` and setup failures, `_migrations` table
+  bootstrap, migration-directory and script reads (including resolved absolute
+  paths), `isApplied` prechecks, and short-link fixups can emit raw diagnostics.
+  A per-script failure identifies the migration file and dialect, then includes
+  the raw underlying cause.
+- **Seed.** `seed` writes can emit raw diagnostics. The seed phase of `reset`
+  has the same behavior.
+- **Reset.** `reset` reports its refusal to operate on Postgres and the resolved
+  SQLite path that it removes. A failed `rm` of the database file or sidecar is
+  silent and does not add a raw diagnostic.
+- **Teardown.** A close-only failure reports the close error. If work and close
+  both fail, the CLI writes `close failed (secondary; the original failure follows)`
+  and the close cause first, then the original failure and cause. The original
+  failure is authoritative. For Postgres, forced close has a five-second budget.
+  This limits the close attempt only: a half-open peer can remain, and it does
+  not promise a bounded process lifetime.
+
+Logs can contain database object names, SQL fragments, driver codes, stack or
+query metadata, and other operational details. Treat stdout and stderr from
+`migrate`, `seed`, and `reset` as trusted-operator-only sensitive output. Apply
+access and retention controls. Do not expose or copy it to end users or
+untrusted channels. No redaction or bounded-output guarantee is made.
 
 ## Full environment reference
 
@@ -329,13 +382,15 @@ through the same outbox with retry + backoff).
 
 ## Upgrades & rollback
 
-- **Upgrade:** pull the new version, rebuild both images (remember: `NEXT_PUBLIC_*`
-  are baked at build time, so a changed API URL needs a web rebuild), run
-  `pnpm db:migrate` (additive-only, idempotent — safe to run before rolling pods),
-  then roll the API and web.
-- **Rollback:** because migrations are additive-only, the previous images stay
-  compatible with the newer schema — roll back by redeploying the previous image
-  tags. Keep old images available (don't prune the tag you might revert to).
+- **API upgrade:** pull the target version, run `pnpm db:migrate` (additive-only
+  and idempotent), then stop every old API worker. Drain active claims or wait
+  at least one full `staleClaimMs`, then start only target-version API workers.
+- **API rollback:** use the same stop/drain-or-wait/start sequence before
+  starting the rollback API workers. Rolling instead of stopping is safe and
+  stays at-least-once, but see "Outbox worker upgrades" for what mixed versions
+  give up while the rollout lasts.
+- **Web rollout:** web images may roll independently. Rebuild the web image when
+  a `NEXT_PUBLIC_*` value changes because those values are baked at build time.
 
 ## Troubleshooting
 
