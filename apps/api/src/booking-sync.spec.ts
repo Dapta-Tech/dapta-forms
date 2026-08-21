@@ -575,6 +575,93 @@ describe('booking_sync delivery', () => {
     expect(props.phone).toBeUndefined();
   });
 
+  // The answer guard cannot catch these: a document number, a tax id and a head
+  // count all parse as a phone by digit count. Only the QUESTION separates them,
+  // and the phone upsert is destructive, so a hit here would overwrite the real
+  // number on the contact rather than sit next to it.
+  it.each([
+    ['Número de documento', '1020304050'],
+    ['Número de identificación', '80123456'],
+    ['NIT de la empresa', '9001234567'],
+    ['Número de empleados', '1500000'],
+  ])('ignores "%s", a número question that is not a phone', async (question, answer) => {
+    await setHubspotDestination(undefined, {
+      fieldMappings: { '@invitee_phone': 'phone' },
+    });
+    const sessionId = `sess-num-${question.replace(/\W+/g, '-').toLowerCase()}`;
+    await svc.submit('acme', 'lead-qualifier', { sessionId, data: { role: 'founder' } });
+    await svc.booking('acme', 'lead-qualifier', {
+      sessionId,
+      provider: 'calendly',
+      eventUri: EVENT_URI,
+      inviteeUri: INVITEE_URI,
+    });
+
+    const calls: RecordedCall[] = [];
+    bookingSync.fetchImpl = recordingFetch(calls, {
+      [EVENT_URI]: () => jsonResponse({ resource: { start_time: '2026-08-02T10:00:00Z' } }),
+      [INVITEE_URI]: () =>
+        jsonResponse({
+          resource: {
+            email: 'num@corp.io',
+            name: 'Ada Lovelace',
+            questions_and_answers: [{ question, answer, position: 0 }],
+          },
+        }),
+      [HUBSPOT_UPSERT_URL]: () => jsonResponse({ results: [{ id: '93' }] }),
+    });
+    await drainDue();
+
+    const props = (
+      calls.filter((c) => c.url === HUBSPOT_UPSERT_URL).at(-1)!.body as {
+        inputs: Array<{ properties: Record<string, string> }>;
+      }
+    ).inputs[0]!.properties;
+    expect(props.phone).toBeUndefined();
+  });
+
+  // The qualified forms of the same word must still land: dropping the bare
+  // alternative must not cost the event types that spell it out.
+  it.each([
+    ['Número de teléfono', '+57 300 123 4567'],
+    ['¿Cuál es tu número de celular?', '3001234567'],
+    ['Número de contacto', '+1 555 000 1111'],
+  ])('still reads "%s" as the phone', async (question, answer) => {
+    await setHubspotDestination(undefined, {
+      fieldMappings: { '@invitee_phone': 'phone' },
+    });
+    const sessionId = `sess-ok-${question.replace(/\W+/g, '-').toLowerCase()}`;
+    await svc.submit('acme', 'lead-qualifier', { sessionId, data: { role: 'founder' } });
+    await svc.booking('acme', 'lead-qualifier', {
+      sessionId,
+      provider: 'calendly',
+      eventUri: EVENT_URI,
+      inviteeUri: INVITEE_URI,
+    });
+
+    const calls: RecordedCall[] = [];
+    bookingSync.fetchImpl = recordingFetch(calls, {
+      [EVENT_URI]: () => jsonResponse({ resource: { start_time: '2026-08-02T10:00:00Z' } }),
+      [INVITEE_URI]: () =>
+        jsonResponse({
+          resource: {
+            email: 'ok@corp.io',
+            name: 'Ada Lovelace',
+            questions_and_answers: [{ question, answer, position: 0 }],
+          },
+        }),
+      [HUBSPOT_UPSERT_URL]: () => jsonResponse({ results: [{ id: '94' }] }),
+    });
+    await drainDue();
+
+    const props = (
+      calls.filter((c) => c.url === HUBSPOT_UPSERT_URL).at(-1)!.body as {
+        inputs: Array<{ properties: Record<string, string> }>;
+      }
+    ).inputs[0]!.properties;
+    expect(props.phone).toBe(answer);
+  });
+
   // A scheduler-keyed form NEVER delivers at submit time (nothing to key on), so
   // this is the only path its mirror form can be posted from. It shipped without
   // one: the answers and the Note arrived and the "Form submission" activity
