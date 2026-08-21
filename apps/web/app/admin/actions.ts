@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { redirect, unstable_rethrow } from 'next/navigation';
-import { adminApi } from '@/lib/admin-api';
+import { adminApi, ApiError } from '@/lib/admin-api';
 
 /** Create a form and jump straight into its editor. */
 export async function createFormAction(formData: FormData): Promise<void> {
@@ -74,5 +74,48 @@ export async function publishFormAction(id: string): Promise<{ ok: boolean; mess
       ok: false,
       message: e instanceof Error ? e.message : 'Failed to publish.',
     };
+  }
+}
+
+/**
+ * Rename the form's public URL.
+ *
+ * Its own action rather than a field on `saveFormAction`, mirroring the API
+ * split: autosave fires on a debounce while somebody types, and retiring a
+ * public slug is a confirmed act, not a keystroke.
+ *
+ * Returns the new path on success so the editor can retarget Copy link, Embed,
+ * Open form and the prefill example WITHOUT a reload. `revalidatePath` alone
+ * cannot do that: the client components hold the old path in props until the
+ * server component re-renders, and the person who just renamed the link is the
+ * single most likely person to copy it in the next two seconds.
+ *
+ * The two refusals come back as codes, not prose, so the dialog can say
+ * something specific in the reader's own language.
+ */
+export async function renameFormSlugAction(
+  id: string,
+  slug: string,
+): Promise<
+  | { ok: true; slug: string; publicPath: string }
+  | { ok: false; code: 'SLUG_TAKEN' | 'SLUG_INVALID' | 'UNKNOWN'; message?: string }
+> {
+  try {
+    const [form, me] = await Promise.all([adminApi.setFormSlug(id, slug), adminApi.me()]);
+    revalidatePath(`/admin/forms/${id}/edit`);
+    revalidatePath('/admin/forms');
+    revalidatePath('/admin');
+    return {
+      ok: true,
+      slug: form.slug,
+      publicPath: `/${me.accountCode}/${me.handle ?? 'me'}/${form.slug}`,
+    };
+  } catch (e) {
+    unstable_rethrow(e);
+    const code =
+      e instanceof ApiError && (e.code === 'SLUG_TAKEN' || e.code === 'SLUG_INVALID')
+        ? e.code
+        : 'UNKNOWN';
+    return { ok: false, code, message: e instanceof Error ? e.message : undefined };
   }
 }
