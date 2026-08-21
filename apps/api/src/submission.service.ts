@@ -171,9 +171,13 @@ export class SubmissionService {
     // internally guarded so it cannot throw) — the actual delivery happens later
     // in the worker, so the submission is never blocked or failed by a slow/failing
     // destination. Enqueued for BOTH phases; adapters decide phase behavior.
-    // Skipped on a re-landed complete (same reasoning as the emails above):
-    // enqueue cancels only PENDING rows, so once the worker drained the first
-    // delivery a second enqueue is a duplicate webhook/CRM activity, not a retry.
+    // Skipped on a re-landed complete (same reasoning as the emails above).
+    // The pass itself is safe to repeat: it deletes what was never started,
+    // settles what is waiting to retry, and queues the current answers for
+    // every firing destination. What it cannot do is reach a request a worker
+    // is already making. That one is settled on the worker side, and may still
+    // deliver its older payload after this pass's, so a config edit here is
+    // never a synchronous cancel of a delivery in flight.
     if (!reCompleted)
       await this.destinations?.enqueueSubmissionDeliveries({
       formId: form.id,

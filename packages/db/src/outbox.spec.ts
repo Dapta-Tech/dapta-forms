@@ -13,6 +13,8 @@ import {
   enqueueOutbox,
   claimIdentityOf,
   claimDueOutbox,
+  deleteUnstartedOutbox,
+  skipBackoffOutbox,
   markOutboxRetry,
   markOutboxDone,
   markOutboxFailed,
@@ -834,5 +836,348 @@ describe('summarizeFailedDeliveriesByForm', () => {
     });
     await db.run(sql`UPDATE outbox SET status = 'failed' WHERE id = ${id}`);
     expect(await summarizeFailedDeliveriesByForm(db, ACC, 'webhook')).toEqual([]);
+  });
+});
+
+/**
+ * The cancellation boundary: which rows a caller may still take back.
+ *
+ * `status = 'pending'` was never the right line. It is true of three different
+ * situations, and only one of them is cancellable:
+ *
+ *   - NEVER HANDED OFF. Enqueued, unclaimed, zero attempts. Nothing has happened
+ *     yet, so deleting it undoes nothing.
+ *   - IN FLIGHT. A worker holds the lease right now. The external effect may
+ *     already have crossed the wire; the row is the only record that it did, and
+ *     the only thing that can settle it.
+ *   - WAITING OUT A BACKOFF. Attempted at least once, claim cleared, due again
+ *     later. At-least-once means the earlier attempt may well have landed.
+ *
+ * Deleting either of the last two cancels a delivery that already partly
+ * happened and destroys its log. Once a row is attempted, the retry lifecycle
+ * owns it through to a terminal state.
+ *
+ * Each protection below is its own test on purpose: the in-flight row carries
+ * zero attempts and the backoff row carries no claim, so neither predicate can
+ * stand in for the other and dropping either one fails exactly one of them.
+ */
+describe('deleteUnstartedOutbox', () => {
+  const SUBJECT = 'sub-cancel';
+  const ACCOUNT = 'acc-cancel';
+  const NOW = 9_000_000;
+
+  const enqueue = (
+    over: { kind?: OutboxKind; action?: string; subjectUid?: string } = {},
+  ): Promise<string> =>
+    enqueueOutbox(db, {
+      kind: over.kind ?? 'webhook',
+      action: over.action ?? 'complete',
+      subjectUid: over.subjectUid ?? SUBJECT,
+      accountId: ACCOUNT,
+      now: NOW,
+    });
+
+  const cancel = () =>
+    deleteUnstartedOutbox(db, { subjectUid: SUBJECT, kind: 'webhook', action: 'complete' });
+
+  const idsLeft = async (): Promise<string[]> => (await listOutbox(db)).map((r) => r.id).sort();
+
+  it('deletes a row that was never handed off to a worker', async () => {
+    const unstarted = await enqueue();
+    expect(await idsLeft()).toEqual([unstarted]);
+
+    await cancel();
+
+    expect(await idsLeft()).toEqual([]);
+  });
+
+  it('keeps a CLAIMED row: a worker holds the lease and may already have delivered', async () => {
+    const inFlight = await enqueue();
+    const [claimed] = await claimDueOutbox(db, NOW, { workerId: 'A' });
+    expect(claimed?.id).toBe(inFlight);
+    // A first claim charges no attempt, so `attempts = 0` cannot protect this
+    // row. Only the claim marker separates it from a never-handed-off row.
+    expect(claimed!.attempts).toBe(0);
+    expect(claimed!.claimedAt).toBe(NOW);
+
+    await cancel();
+
+    expect(await idsLeft()).toEqual([inFlight]);
+  });
+
+  it('keeps a row waiting out its RETRY BACKOFF: it was already attempted once', async () => {
+    const attempted = await enqueue();
+    const [claimed] = await claimDueOutbox(db, NOW, { workerId: 'A' });
+    expect(
+      await markOutboxRetry(
+        db,
+        attempted,
+        { attempts: 1, error: 'HTTP 500', now: NOW },
+        claimIdentityOf(claimed!),
+      ),
+    ).toBe(true);
+    // A retry CLEARS the claim so the row is reclaimable, so `claimed_at IS NULL`
+    // cannot protect it. Only the attempt count separates it.
+    expect((await listOutbox(db)).find((r) => r.id === attempted)).toMatchObject({
+      status: 'pending',
+      attempts: 1,
+      claimedAt: null,
+    });
+
+    await cancel();
+
+    expect(await idsLeft()).toEqual([attempted]);
+  });
+
+  it('keeps every settled row: done, failed and skipped are the delivery log', async () => {
+    const settle = async (as: 'done' | 'failed' | 'skipped') => {
+      const id = await enqueue();
+      const row = (await claimDueOutbox(db, NOW, { workerId: 'A' })).find((r) => r.id === id);
+      const claim = claimIdentityOf(row!);
+      const applied =
+        as === 'done'
+          ? await markOutboxDone(db, id, NOW, undefined, claim)
+          : as === 'failed'
+            ? await markOutboxFailed(db, id, { attempts: 5, error: 'gave up', now: NOW }, claim)
+            : await markOutboxSkipped(db, id, { reason: 'no target', now: NOW }, claim);
+      expect(applied).toBe(true);
+      return id;
+    };
+    const settled = [await settle('done'), await settle('failed'), await settle('skipped')];
+
+    await cancel();
+
+    expect(await idsLeft()).toEqual([...settled].sort());
+  });
+
+  it('cancels within the exact subject_uid + kind + action scope and nothing wider', async () => {
+    const target = await enqueue();
+    const otherKind = await enqueue({ kind: 'hubspot' });
+    const otherAction = await enqueue({ action: 'partial' });
+    const otherSubject = await enqueue({ subjectUid: 'sub-other' });
+
+    await cancel();
+
+    expect(await idsLeft()).toEqual([otherAction, otherKind, otherSubject].sort());
+    expect(await idsLeft()).not.toContain(target);
+  });
+
+  it('keeps a same-subject webhook ping: a test delivery is not a queued send', async () => {
+    // The admin's "Send test" is synchronous and recorded terminal, and a queued
+    // row would still carry the ping action rather than a submission phase.
+    const recordedPing = await recordSettledDelivery(db, {
+      kind: 'webhook',
+      action: WEBHOOK_PING_ACTION,
+      accountId: ACCOUNT,
+      subjectUid: SUBJECT,
+      payload: JSON.stringify({ ctx: { formId: 'form-1' } }),
+      status: 'done',
+      now: NOW,
+    });
+    const pendingPing = await enqueue({ action: WEBHOOK_PING_ACTION });
+    await enqueue();
+
+    await cancel();
+
+    expect(await idsLeft()).toEqual([pendingPing, recordedPing].sort());
+  });
+});
+
+/**
+ * The middle state, and the one the delete above deliberately cannot touch: a
+ * row that WAS attempted, failed, and is sitting out its backoff waiting to be
+ * tried again.
+ *
+ * Deleting it is wrong for the reasons `deleteUnstartedOutbox` documents. But
+ * leaving it entirely alone turned out to be wrong too. Its payload is a frozen
+ * snapshot of a form config and a set of answers that a later pass has already
+ * replaced, so every remaining retry is a scheduled delivery of superseded
+ * content, and a destination the author disabled or deleted has nothing left in
+ * its own config to stop it retrying. Settling it as `skipped` closes both: the
+ * row stops being due, keeps everything it recorded about what it attempted,
+ * and stays in the delivery history with a reason rather than vanishing.
+ *
+ * It closes them for the rows it can SEE, which is the rows unclaimed at the
+ * moment the statement runs. A row a worker holds is out of reach by design,
+ * and this statement has no say in what becomes of it: the attempt may succeed
+ * and finish `done`, may fail and drop back into backoff unclaimed, or may lose
+ * its lease and stay claimed for another worker to reclaim. A caller's freshly
+ * queued row is due immediately and a backed-off retry is not, so the older
+ * snapshot really can be sent after the newer one and then marked done;
+ * `max_attempts` caps the retries that follow rather than un-sending the ones
+ * already made, and no later call is guaranteed to arrive and settle it.
+ * Nothing below asserts otherwise.
+ *
+ * Both fences are load-bearing and neither implies the other. `attempts > 0` is
+ * what separates it from a never-started row, which is the delete's business
+ * and must survive this. `claimed_at IS NULL` is what separates it from a row
+ * a worker holds RIGHT NOW, which may already have crossed the wire and can
+ * carry attempts of its own from an earlier generation.
+ */
+describe('skipBackoffOutbox', () => {
+  const SUBJECT = 'sub-supersede';
+  const ACCOUNT = 'acc-supersede';
+  const FORM = 'form-supersede';
+  const NOW = 11_000_000;
+
+  const enqueue = (
+    over: { kind?: OutboxKind; action?: string; subjectUid?: string } = {},
+  ): Promise<string> =>
+    enqueueOutbox(db, {
+      kind: over.kind ?? 'webhook',
+      action: over.action ?? 'complete',
+      subjectUid: over.subjectUid ?? SUBJECT,
+      accountId: ACCOUNT,
+      payload: JSON.stringify({ ctx: { formId: FORM } }),
+      now: NOW,
+    });
+
+  const supersede = (): Promise<number> =>
+    skipBackoffOutbox(db, { subjectUid: SUBJECT, kind: 'webhook', action: 'complete' });
+
+  const rowById = async (id: string) => (await listOutbox(db)).find((r) => r.id === id);
+
+  /** Drive a row into retry backoff: attempted, claim cleared, due again later. */
+  async function intoBackoff(id: string): Promise<void> {
+    const row = (await claimDueOutbox(db, NOW, { workerId: 'A' })).find((r) => r.id === id);
+    expect(
+      await markOutboxRetry(
+        db,
+        id,
+        {
+          attempts: 3,
+          error: 'HTTP 502 from https://x.test/hook',
+          now: NOW,
+          transcript: { requestBody: '{"a":1}', responseStatus: 502, responseBody: 'bad gateway' },
+        },
+        claimIdentityOf(row!),
+      ),
+    ).toBe(true);
+  }
+
+  it('settles a backoff row as skipped and moves nothing else about it', async () => {
+    const id = await enqueue();
+    await intoBackoff(id);
+
+    expect(await supersede()).toBe(1);
+
+    expect(await rowById(id)).toMatchObject({
+      status: 'skipped',
+      // Everything the attempt recorded survives verbatim: the count, what
+      // crossed the wire, the error the endpoint gave, and when that happened.
+      // The row is a record of a delivery that was tried, and being superseded
+      // is not a second thing that happened to it.
+      attempts: 3,
+      requestBody: '{"a":1}',
+      responseStatus: 502,
+      responseBody: 'bad gateway',
+      lastError: 'HTTP 502 from https://x.test/hook',
+      updatedAt: NOW,
+    });
+  });
+
+  it('does not displace a genuinely newer failure in the delivery history', async () => {
+    // The history is ordered by `updated_at`, so touching that column would
+    // float every superseded row to the top of the admin's list and bury the
+    // failure someone actually needs to see.
+    const superseded = await enqueue();
+    await intoBackoff(superseded);
+    const later = await enqueue({ subjectUid: 'sub-other' });
+    const claimed = (await claimDueOutbox(db, NOW + 1_000, { workerId: 'B' })).find(
+      (r) => r.id === later,
+    );
+    await markOutboxFailed(
+      db,
+      later,
+      { attempts: 5, error: 'gave up', now: NOW + 1_000 },
+      claimIdentityOf(claimed!),
+    );
+
+    expect(await supersede()).toBe(1);
+
+    const history = await listFormDeliveries(db, ACCOUNT, FORM, { limit: 10 });
+    expect(history.map((r) => r.id)).toEqual([later, superseded]);
+  });
+
+  it('leaves a NEVER-STARTED row alone: nothing was attempted, so nothing is superseded', async () => {
+    // This row is the delete's business. `claimed_at IS NULL` is true of it too,
+    // so only the attempt count keeps this statement off it.
+    const id = await enqueue();
+
+    expect(await supersede()).toBe(0);
+
+    expect(await rowById(id)).toMatchObject({ status: 'pending', attempts: 0, lastError: null });
+  });
+
+  it('leaves a CLAIMED row alone even when it already carries attempts', async () => {
+    const id = await enqueue();
+    await intoBackoff(id);
+    const [reclaimed] = await claimDueOutbox(db, NOW + 60_000, { workerId: 'B' });
+    expect(reclaimed?.id).toBe(id);
+    // Attempts survive a reclaim, so the attempt count cannot protect this row.
+    expect(reclaimed!.attempts).toBe(3);
+
+    expect(await supersede()).toBe(0);
+
+    expect(await rowById(id)).toMatchObject({
+      status: 'pending',
+      attempts: 3,
+      claimedBy: reclaimed!.claimedBy,
+    });
+  });
+
+  it('leaves every settled row alone: done, failed and skipped are terminal', async () => {
+    const settle = async (as: 'done' | 'failed' | 'skipped') => {
+      const id = await enqueue();
+      const row = (await claimDueOutbox(db, NOW, { workerId: 'A' })).find((r) => r.id === id);
+      const claim = claimIdentityOf(row!);
+      const applied =
+        as === 'done'
+          ? await markOutboxDone(db, id, NOW, undefined, claim)
+          : as === 'failed'
+            ? await markOutboxFailed(db, id, { attempts: 5, error: 'gave up', now: NOW }, claim)
+            : await markOutboxSkipped(db, id, { reason: 'no target', now: NOW }, claim);
+      expect(applied).toBe(true);
+      return id;
+    };
+    const done = await settle('done');
+    const failed = await settle('failed');
+
+    expect(await supersede()).toBe(0);
+
+    expect(await rowById(done)).toMatchObject({ status: 'done', lastError: null });
+    expect(await rowById(failed)).toMatchObject({ status: 'failed', lastError: 'gave up' });
+  });
+
+  it('settles the whole matching set in one statement and reports how many', async () => {
+    for (const _ of [0, 1, 2]) {
+      const id = await enqueue();
+      await intoBackoff(id);
+      void _;
+    }
+
+    expect(await supersede()).toBe(3);
+    expect((await listOutbox(db)).every((r) => r.status === 'skipped')).toBe(true);
+  });
+
+  it('stays inside the exact subject_uid + kind + action scope', async () => {
+    const target = await enqueue();
+    await intoBackoff(target);
+    const others: string[] = [];
+    for (const over of [
+      { kind: 'hubspot' as OutboxKind },
+      { action: 'partial' },
+      { subjectUid: 'sub-other' },
+      { action: WEBHOOK_PING_ACTION },
+    ]) {
+      const id = await enqueue(over);
+      await intoBackoff(id);
+      others.push(id);
+    }
+
+    expect(await supersede()).toBe(1);
+
+    expect((await rowById(target))?.status).toBe('skipped');
+    for (const id of others) expect((await rowById(id))?.status).toBe('pending');
   });
 });
