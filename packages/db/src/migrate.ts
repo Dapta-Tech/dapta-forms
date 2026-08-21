@@ -2,13 +2,18 @@
  * A tiny, dialect-agnostic forward migrator. Reads the numbered .sql files in
  * migrations/<dialect>/ in filename order and applies each once, tracking
  * applied names in a `_migrations` table. Identical semantics on SQLite and
- * Postgres, with no drizzle-kit or engine binary needed for clone-and-run.
+ * Postgres, with no drizzle-kit / engine binary needed for clone-and-run.
  *
- * Each file and its `_migrations` marker are applied inside the driver's own
- * transaction, so a file that throws leaves neither its statements nor its
- * marker behind. A fork whose migration drives its own transaction, or uses a
- * statement that cannot run inside one, opts out of that and may partially
- * apply. Nothing detects it; see SELF-HOSTING.md.
+ * A script and its `_migrations` marker commit in ONE native transaction, so a
+ * failure can never leave the schema changed with no record of it: SQLite uses
+ * better-sqlite3's synchronous `transaction()`, Postgres its own. When the
+ * whole attempt rolls back, `applyOrObservePeer` re-reads the marker before
+ * reporting failure, which is how a concurrent runner that won the race is told
+ * apart from a migration that is genuinely broken.
+ *
+ * The transaction is also the boundary: a migration that cannot run inside one
+ * (CREATE INDEX CONCURRENTLY, VACUUM) is unsupported here. None of the shipped
+ * scripts need that, and SELF-HOSTING.md documents it for forks.
  */
 import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -31,14 +36,15 @@ function details(error: unknown): DriverError {
 }
 
 /**
- * The SQLite marker INSERT as one literal statement.
+ * The marker INSERT as raw text, for the SQLite path only.
  *
- * The only unparameterized write in the migrator, and it has to be: the marker
- * is written with `sqlite.exec` inside the same `sqlite.txn` as the migration
- * file, so the two commit together, and `exec` takes SQL text with nowhere to
- * bind a parameter. The Postgres path a few lines below binds normally. `file`
- * is a filename read off the repo's own migrations directory, never user input,
- * and the quote doubling is what keeps it a literal regardless.
+ * Everywhere else in this package the marker is a parameterized statement. Here
+ * it cannot be: the script and its marker must commit inside better-sqlite3's
+ * synchronous `transaction()`, and the only way in is `exec()`, which takes a
+ * SQL string and no bindings. `file` is a filename this module just read out of
+ * `migrations/<dialect>/`, never anything a request supplied, so the quote
+ * doubling is belt-and-braces rather than the thing standing between us and an
+ * injection. The Postgres path a few lines down stays parameterized.
  */
 function markerSql(file: string): string {
   return `INSERT INTO _migrations (name, applied_at) VALUES ('${file.replaceAll("'", "''")}', ${Date.now()})`;
@@ -111,6 +117,11 @@ export async function migrate(db: Db, migrationsRoot = MIGRATIONS_ROOT): Promise
       applied.push(file);
     }
   }
+  // Data fixups that portable SQL can't express (random short-code generation,
+  // handle derivation). Idempotent + cheap no-ops once applied, so they run
+  // unconditionally after the SQL migrations on both dialects. Deliberately
+  // OUTSIDE the per-script transactions above: they are not migrations and
+  // own no marker.
   await applyShortLinkFixups(db);
   return applied;
 }
