@@ -1,3 +1,15 @@
+/**
+ * A tiny, dialect-agnostic forward migrator. Reads the numbered .sql files in
+ * migrations/<dialect>/ in filename order and applies each once, tracking
+ * applied names in a `_migrations` table. Identical semantics on SQLite and
+ * Postgres, with no drizzle-kit or engine binary needed for clone-and-run.
+ *
+ * Each file and its `_migrations` marker are applied inside the driver's own
+ * transaction, so a file that throws leaves neither its statements nor its
+ * marker behind. A fork whose migration drives its own transaction, or uses a
+ * statement that cannot run inside one, opts out of that and may partially
+ * apply. Nothing detects it; see SELF-HOSTING.md.
+ */
 import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -5,6 +17,7 @@ import { sql } from 'drizzle-orm';
 import type { Db } from './client';
 import { applyShortLinkFixups } from './short-links';
 
+// src/ at runtime (tsx) or dist/ after build: migrations live one level up.
 const MIGRATIONS_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', 'migrations');
 const SQLITE_LOCK_RETRIES = 20;
 const SQLITE_LOCK_RETRY_DELAY_MS = 10;
@@ -17,6 +30,16 @@ function details(error: unknown): DriverError {
   return (error ?? {}) as DriverError;
 }
 
+/**
+ * The SQLite marker INSERT as one literal statement.
+ *
+ * The only unparameterized write in the migrator, and it has to be: the marker
+ * is written with `sqlite.exec` inside the same `sqlite.txn` as the migration
+ * file, so the two commit together, and `exec` takes SQL text with nowhere to
+ * bind a parameter. The Postgres path a few lines below binds normally. `file`
+ * is a filename read off the repo's own migrations directory, never user input,
+ * and the quote doubling is what keeps it a literal regardless.
+ */
 function markerSql(file: string): string {
   return `INSERT INTO _migrations (name, applied_at) VALUES ('${file.replaceAll("'", "''")}', ${Date.now()})`;
 }
