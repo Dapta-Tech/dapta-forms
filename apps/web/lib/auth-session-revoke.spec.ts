@@ -112,4 +112,24 @@ describe('idpLogoutTarget', () => {
     expect(idpLogoutTarget(null, 'https://forms.example.com')).toBeNull();
     expect(idpLogoutTarget('/relative-not-a-url', 'https://forms.example.com')).toBeNull();
   });
+
+  // The value is the IAM's `logoutUrl` field verbatim and the browser is sent to
+  // it. Parseable is not the same as navigable.
+  it.each([
+    'javascript:alert(document.cookie)',
+    'data:text/html,<script>fetch("//evil.example")</script>',
+    'http://evil.example/user_management/sessions/logout',
+    'file:///etc/passwd',
+  ])('returns null for %s', (logoutUrl) => {
+    expect(idpLogoutTarget(logoutUrl, 'https://forms.example.com')).toBeNull();
+  });
+
+  // The offline harness points at a stub IAM on localhost, so http there has to
+  // keep working.
+  it('allows http on localhost for the offline harness', () => {
+    const target = idpLogoutTarget('http://localhost:4400/auth/logout', 'http://localhost:3400');
+    expect(new URL(target!).searchParams.get('return_to')).toBe(
+      'http://localhost:3400/login?signedout=1',
+    );
+  });
 });

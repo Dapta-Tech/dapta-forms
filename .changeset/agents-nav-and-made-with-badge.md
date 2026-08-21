@@ -1,6 +1,5 @@
 ---
 '@quill/shared': minor
-'@quill/web': patch
 ---
 
 A "Dapta Agents" door in the admin rail, and the public badge signs itself as

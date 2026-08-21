@@ -390,28 +390,28 @@ export async function createForm(
    */
   createdBy?: string | null,
 ): Promise<CrudResult<FormRow>> {
-   const config = input.config ?? { version: 1, steps: [] };
+  const config = input.config ?? { version: 1, steps: [] };
 
-   for (let attempt = 0; attempt < FORM_SLUG_INSERT_ATTEMPTS; attempt++) {
-     const slug = await uniqueFormSlug(db, accountId, input.slug ?? input.name);
-     const id = randomUUID();
-     const now = Date.now();
-     try {
-       await db.run(
-         sql`INSERT INTO form (id, account_id, name, slug, config, created_by, created_at, updated_at)
-             VALUES (${id}, ${accountId}, ${input.name}, ${slug}, ${jsonParam(config)},
-                     ${createdBy ?? null}, ${now}, ${now})`,
-       );
-     } catch (error) {
-       if (attempt + 1 < FORM_SLUG_INSERT_ATTEMPTS && isFormAccountSlugConflict(error)) continue;
-       throw error;
-     }
+  for (let attempt = 0; attempt < FORM_SLUG_INSERT_ATTEMPTS; attempt++) {
+    const slug = await uniqueFormSlug(db, accountId, input.slug ?? input.name);
+    const id = randomUUID();
+    const now = Date.now();
+    try {
+      await db.run(
+        sql`INSERT INTO form (id, account_id, name, slug, config, created_by, created_at, updated_at)
+            VALUES (${id}, ${accountId}, ${input.name}, ${slug}, ${jsonParam(config)},
+                    ${createdBy ?? null}, ${now}, ${now})`,
+      );
+    } catch (error) {
+      if (attempt + 1 < FORM_SLUG_INSERT_ATTEMPTS && isFormAccountSlugConflict(error)) continue;
+      throw error;
+    }
 
-     const created = await getFormById(db, accountId, id);
-     return created ? { ok: true, value: created } : { ok: false, reason: 'CONFLICT' };
-   }
+    const created = await getFormById(db, accountId, id);
+    return created ? { ok: true, value: created } : { ok: false, reason: 'CONFLICT' };
+  }
 
-   throw new Error('unreachable: form slug insert retries must return or rethrow');
+  throw new Error('unreachable: form slug insert retries must return or rethrow');
 }
 
 export async function updateForm(

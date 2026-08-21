@@ -22,6 +22,7 @@ import { sql } from 'drizzle-orm';
 import type { Db } from './client';
 import { applyShortLinkFixups } from './short-links';
 
+// src/ at runtime (tsx) or dist/ after build: migrations live one level up.
 const MIGRATIONS_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', 'migrations');
 const SQLITE_LOCK_RETRIES = 20;
 const SQLITE_LOCK_RETRY_DELAY_MS = 10;
