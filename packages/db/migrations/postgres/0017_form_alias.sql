@@ -8,10 +8,15 @@
 --
 --   form_alias  — a slug this form used to answer to. The public resolver falls
 --                 back to it when no form matches the requested slug directly,
---                 and the page 308s to the canonical URL. A QR code on a
---                 printed flyer, a campaign link in an email already sent, an
---                 iframe embed pasted into someone else's site and a HubSpot
---                 property holding the old URL all keep working.
+--                 and the page then moves the visitor to the canonical URL. A
+--                 QR code on a printed flyer, a campaign link in an email
+--                 already sent, an iframe embed pasted into someone else's site
+--                 and a HubSpot property holding the old URL all keep working.
+--
+-- On the redirect: it resolves in the CLIENT, not as a redirect status. Next 16
+-- has begun streaming by the time the page resolves the form, so the response
+-- is a 200 carrying an RSC redirect. The page emits <link rel="canonical">
+-- alongside it for everything that does not run scripts.
 --
 -- Keyed by (account_id, alias) rather than by alias alone. That is the one
 -- structural difference from `account_alias`, and it follows from

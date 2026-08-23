@@ -66,7 +66,7 @@ export const openapiSpec = {
       put: {
         summary: 'Update a form (host)',
         description:
-          'name/slug apply to the live form immediately; config is stored as an unpublished draft: publish it via POST /v1/forms/{id}/publish. The public renderer keeps serving the previously published config until then. A slug sent here is renamed exactly as PUT /v1/forms/{id}/slug does it, retiring the previous one so shared links keep working.',
+          'name/slug apply to the live form immediately; config is stored as an unpublished draft: publish it via POST /v1/forms/{id}/publish. The public renderer keeps serving the previously published config until then. A slug sent here is renamed through the same code as PUT /v1/forms/{id}/slug, retiring the previous one so shared links keep working, but keeps this endpoint\u2019s older, lenient contract: the value is slugified rather than rejected. It is applied before name and config, so a refused slug leaves the form untouched.',
         security: [{ hostSession: [] }],
         responses: { '200': { description: 'Updated (config changes staged as a draft)' } },
       },
@@ -76,7 +76,7 @@ export const openapiSpec = {
       put: {
         summary: "Rename a form's public URL (host)",
         description:
-          'Body { slug }. Applies to the live form immediately. The previous slug is retired, not dropped: it keeps resolving and the public page redirects it to the new one (308), so links already shared stay valid. 409 SLUG_TAKEN when another form in the account holds it (as its current slug or as one it retired), 409 SLUG_INVALID when the shape is wrong (lowercase letters, digits and single hyphens, up to 80 characters).',
+          'Body { slug }. Applies to the live form immediately. The previous slug is retired, not dropped: it keeps resolving, and the public page sends visitors on to the new URL (a client-side redirect, plus a canonical link tag for non-browser clients), so links already shared stay valid. 409 SLUG_TAKEN when another form in the account holds it (as its current slug or as one it retired), 409 SLUG_INVALID when the shape is wrong (lowercase letters, digits and single hyphens, up to 80 characters).',
         security: [{ hostSession: [] }],
         responses: {
           '200': { description: 'Renamed' },

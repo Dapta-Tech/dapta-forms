@@ -64,12 +64,14 @@ export function LinkActions({
     renameCancel: string;
     renameTaken: string;
     renameInvalid: string;
+    renameTooLong: string;
     renameFailed: string;
   };
 }) {
   const [copied, setCopied] = useState(false);
   const [embedOpen, setEmbedOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
+  const [snippetCopied, setSnippetCopied] = useState(false);
   const [draft, setDraft] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -151,7 +153,6 @@ export function LinkActions({
       `<script src="${window.location.origin}/embed.js" async></script>`,
     ].join('\n');
 
-  const [snippetCopied, setSnippetCopied] = useState(false);
   const copySnippet = async () => {
     try {
       await navigator.clipboard.writeText(buildSnippet());
@@ -212,7 +213,16 @@ export function LinkActions({
 
       <Modal
         open={renameOpen}
-        onClose={() => setRenameOpen(false)}
+        // Escape and a backdrop click are dismissals too, and Cancel is already
+        // disabled while saving. Without the same guard here, dismissing mid
+        // request lets the rename land server-side while `onRenamed` never
+        // fires, so Copy link, Embed, Open form and the prefill example keep
+        // the previous path for the rest of the session. That is precisely the
+        // bug `publicPath`-as-state exists to prevent, reintroduced through the
+        // one exit the button does not cover.
+        onClose={() => {
+          if (!pending) setRenameOpen(false);
+        }}
         title={labels.renameTitle}
         labelId="rename-form-link-title"
       >
@@ -257,7 +267,7 @@ export function LinkActions({
                 once there is something to be wrong about. */}
             {error || (draft.length > 0 && shapeIssue !== null) ? (
               <p id="form-slug-error" role="alert" className="text-xs text-destructive" data-testid="form-slug-error">
-                {error ?? labels.renameInvalid}
+                {error ?? (shapeIssue === 'too-long' ? labels.renameTooLong : labels.renameInvalid)}
               </p>
             ) : null}
           </div>

@@ -235,7 +235,14 @@ export async function uniqueFormSlug(db: Db, accountId: string, base: string): P
     const candidate = n === 1 ? root : `${root}-${n}`;
     if (!(await formSlugInUse(db, accountId, candidate))) return candidate;
   }
-  return `${root}-${randomUUID().slice(0, 6)}`;
+  // 1000 collisions on one root. Unreachable in practice, but the fallback is
+  // the one candidate that would otherwise skip the check above, so it gets a
+  // fresh suffix until it clears rather than being trusted blind.
+  for (let attempt = 0; attempt < 10; attempt++) {
+    const candidate = `${root}-${randomUUID().slice(0, 6)}`;
+    if (!(await formSlugInUse(db, accountId, candidate))) return candidate;
+  }
+  return `${root}-${randomUUID()}`;
 }
 
 /**
@@ -519,16 +526,20 @@ async function addFormAlias(
 /**
  * Follow a renamed slug into every member's public-page selection.
  *
- * A member profile lists the account's published forms BY SLUG
- * (`profile.formSlugs`, see 0008), and the public profile filters with
- * `allowed.includes(form.slug)` against the CANONICAL slug. So a rename that
- * did not come through here would drop the form off every page that listed it,
- * silently, with nothing on screen explaining why. An alias cannot cover this:
- * the filter compares live slugs, never retired ones.
+ * BEST EFFORT, and the distinction matters. A member profile records its form
+ * selection BY SLUG (`profile.formSlugs`, see 0008), so a rename leaves those
+ * entries naming a slug no form currently has. What keeps the form ON the page
+ * is the READ path: `publicProfile` matches a selection against each form's
+ * retired slugs as well as its live one. That is the correctness fix, it needs
+ * no write, and it heals profiles saved before this shipped.
  *
- * Deliberately not aliased away instead. `formSlugs` is an author's explicit
- * selection, so the right behaviour is to follow the rename, not to leave a
- * stale value that resolves through a redirect.
+ * This function exists only so the public-page EDITOR shows a checked box
+ * rather than an entry it no longer recognizes. It is a read-modify-write on a
+ * JSON blob with no compare-and-set, so a concurrent profile save can lose it
+ * (the same shape as `attachOnboardingForm`). Losing it costs a stale checkbox
+ * until the author saves that screen again, never a form vanishing from a page,
+ * which is why it is allowed to be lossy and why the read path must never
+ * depend on it having run.
  */
 async function renameSlugInMemberProfiles(
   db: Db,
@@ -587,6 +598,35 @@ export async function setFormSlug(
     return { ok: false, reason: 'SLUG_TAKEN', message: 'That slug is already in use.' };
   }
 
+  // RETIRE FIRST, then move. The order is the whole safety argument, and the
+  // obvious order is the wrong one.
+  //
+  // Retiring after a successful UPDATE leaves a window in which the old slug is
+  // held by nobody: gone from `form`, not yet in `form_alias`. A second rename
+  // arriving inside that window asks `formSlugInUse` about it, is told it is
+  // free, and takes it. Both writes succeed, the unique index sees no conflict,
+  // and the account ends up with one form LIVE on the slug and the alias
+  // pointing at a different one. A direct match beats an alias, so every link
+  // ever published for the first form now serves the second one, permanently
+  // and silently. The same window loses the slug outright if the process dies
+  // inside it, which is the one promise this feature makes.
+  //
+  // Retiring first closes it: the slug is continuously either live on this form
+  // or retired to it, so a concurrent claim is refused at every instant. If the
+  // UPDATE then fails, the leftover alias row names the form that still holds
+  // the slug live, where the direct match wins and the row is never consulted.
+  // Untidy, never wrong. `setVanitySlug` orders itself the same way for the
+  // same reason, and like it, this runs without a transaction: the portable
+  // `Db` port has no cross-dialect one, and every intermediate state this
+  // ordering can leave behind is inert.
+  await addFormAlias(db, accountId, id, existing.slug);
+  // Re-claiming one of this form's own retired slugs: it is about to be
+  // canonical again, so the alias row would be dead weight nothing consults.
+  await db.run(
+    sql`DELETE FROM form_alias
+        WHERE account_id = ${accountId} AND alias = ${slug} AND form_id = ${id}`,
+  );
+
   try {
     await db.run(
       sql`UPDATE form SET slug = ${slug}, updated_at = ${Date.now()}
@@ -601,13 +641,6 @@ export async function setFormSlug(
     throw error;
   }
 
-  await addFormAlias(db, accountId, id, existing.slug);
-  // Re-claiming one of this form's own retired slugs: it is canonical again, so
-  // the alias row would be dead weight that never gets consulted.
-  await db.run(
-    sql`DELETE FROM form_alias
-        WHERE account_id = ${accountId} AND alias = ${slug} AND form_id = ${id}`,
-  );
   await renameSlugInMemberProfiles(db, accountId, existing.slug, slug);
 
   return { ok: true, value: (await getFormById(db, accountId, id))! };
@@ -775,7 +808,10 @@ export async function deleteForm(db: Db, accountId: string, id: string): Promise
  *
  * The returned `slug` is always the CANONICAL one, never what was asked for.
  * That is what lets the public page notice it was reached through a retired
- * slug and 308 to the real URL, instead of serving two addresses forever.
+ * slug and send the visitor to the real URL instead of serving two addresses
+ * forever. Next resolves that redirect on the client rather than as a redirect
+ * STATUS, so the page also emits a canonical link tag; see the notes in
+ * `apps/web/app/[accountCode]/[handle]/[slug]/page.tsx`.
  *
  * A direct hit wins over an alias, always. `uniqueFormSlug` / `setFormSlug`
  * refuse to hand one form a slug another form retired, so the two can only

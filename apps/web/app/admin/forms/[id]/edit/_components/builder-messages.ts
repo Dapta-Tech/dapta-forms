@@ -60,6 +60,7 @@ export interface BuilderMessages {
     renameCancel: string;
     renameTaken: string;
     renameInvalid: string;
+    renameTooLong: string;
     renameFailed: string;
     /** Accessible name for the per-tab contextual toolbar (topbar row 2). */
     toolbar: string;
@@ -549,6 +550,7 @@ const en: BuilderMessages = {
     renameCancel: 'Cancel',
     renameTaken: 'Another form in this workspace is already using that link.',
     renameInvalid: 'Use lowercase letters, numbers and hyphens, up to 80 characters.',
+    renameTooLong: 'That link is too long. Keep it under 80 characters.',
     renameFailed: 'Could not save the link. Try again.',
     toolbar: 'Tools',
   },
@@ -953,6 +955,7 @@ const es: BuilderMessages = {
     renameCancel: 'Cancelar',
     renameTaken: 'Otro formulario de este espacio ya usa ese enlace.',
     renameInvalid: 'Usa minúsculas, números y guiones, hasta 80 caracteres.',
+    renameTooLong: 'Ese enlace es demasiado largo. Deja menos de 80 caracteres.',
     renameFailed: 'No se pudo guardar el enlace. Inténtalo de nuevo.',
     toolbar: 'Herramientas',
   },

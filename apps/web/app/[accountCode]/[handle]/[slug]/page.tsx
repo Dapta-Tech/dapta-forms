@@ -47,14 +47,25 @@ export async function generateMetadata({
   return {
     title,
     description,
-    // The form's ONE address, resolved against `metadataBase` in the root
-    // layout. On a retired slug this is the ONLY signal a crawler, a link
-    // checker or a social unfurler gets that the URL they fetched is not the
-    // canonical one, since the redirect they would otherwise follow is
-    // client-side. It carries no query string on purpose: a canonical URL
-    // naming `?utm_source=…` would ask crawlers to index a campaign's copy of
-    // the page as the original.
-    alternates: { canonical: `/${accountCode}/${handle}/${form.slug}` },
+    // Emitted ONLY when the requested slug is a retired one, where it is the
+    // only signal a crawler, a link checker or a social unfurler gets that the
+    // URL it fetched is not the current one (the redirect beside it is
+    // client-side). No query string on it: a canonical naming `?utm_source=…`
+    // would ask crawlers to index a campaign's copy of the page as the original.
+    //
+    // NOT emitted on a normal request, which would be the obvious thing to do
+    // and would be actively harmful. `handle` is decorative in a form URL: the
+    // lookup below is `getPublicForm(accountCode, slug)` and nothing validates
+    // the middle segment, so `/acme/anything-at-all/my-form` serves the form
+    // today. A self-referential canonical would then mint a fresh "canonical"
+    // URL for every spelling anyone tries, which is the opposite of the tag's
+    // job. There is no value to put there instead, either: a form belongs to an
+    // account, not to a member, and the builder itself composes this path from
+    // whichever member is LOOKING at it. So the tag only ever corrects the one
+    // segment this page can actually speak to, and forwards the rest.
+    ...(form.slug === slug
+      ? {}
+      : { alternates: { canonical: `/${accountCode}/${handle}/${form.slug}` } }),
     openGraph: { title, description, type: 'website', ...(images ? { images } : {}) },
     twitter: {
       // A generated 1200×630 card deserves the large format; only a form with

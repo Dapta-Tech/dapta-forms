@@ -68,7 +68,7 @@ describe('PUT /v1/forms/:id/slug', () => {
 
     expect((await getPublishedForm(db, 'acme', 'talk-to-sales'))!.id).toBe(formId);
     // The old link still answers, and reports the canonical slug so the public
-    // page knows to 308 rather than serve the form at two addresses.
+    // page knows to send the visitor on rather than serve two addresses.
     expect((await getPublishedForm(db, 'acme', 'lead-qualifier'))!.slug).toBe('talk-to-sales');
   });
 
@@ -120,5 +120,40 @@ describe('PUT /v1/forms/:id with a `slug` field', () => {
     const updated = await controller.updateForm(asOwner(), formId, { name: 'Talk to sales', slug: 'talk-to-sales' });
 
     expect(updated).toMatchObject({ name: 'Talk to sales', slug: 'talk-to-sales' });
+  });
+
+  it('still SLUGIFIES rather than rejecting, unlike the dedicated route', async () => {
+    // The lenient contract this endpoint shipped with. Tightening it would
+    // break the integrations the field is being kept for, and the whole point
+    // of keeping it is that they do not have to change.
+    const updated = await controller.updateForm(asOwner(), formId, { slug: 'Talk To Sales' });
+    expect(updated.slug).toBe('talk-to-sales');
+
+    // The dedicated route, which a person types into, refuses the same value.
+    expect(await conflictCode(controller.updateFormSlug(asOwner(), formId, { slug: 'Talk To Sales' }))).toBe(
+      'SLUG_INVALID',
+    );
+  });
+
+  it('leaves name AND config untouched when the slug is refused', async () => {
+    // The three writes are not a transaction, so the refusable one runs first.
+    // Applying `name` before the slug clash meant a 409 that renamed the form
+    // and silently dropped the config draft: a request that reports failure and
+    // changes the form anyway.
+    const other = await controller.createForm(asOwner(), { name: 'Pricing' });
+    const before = await controller.getForm(asOwner(), formId);
+
+    await expect(
+      controller.updateForm(asOwner(), formId, {
+        name: 'Should not stick',
+        slug: other.slug,
+        config: { version: 1, steps: [{ key: 'x', type: 'text', question: 'Should not stick?' }] },
+      }),
+    ).rejects.toBeInstanceOf(ConflictException);
+
+    const after = await controller.getForm(asOwner(), formId);
+    expect(after.name).toBe(before.name);
+    expect(after.slug).toBe(before.slug);
+    expect(after.draftConfig ?? null).toEqual(before.draftConfig ?? null);
   });
 });

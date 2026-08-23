@@ -80,7 +80,7 @@ describe('setFormSlug', () => {
     const viaOld = await getPublishedForm(db, accountCode, form.slug);
     expect(viaOld?.id).toBe(form.id);
     // And it reports the CANONICAL slug, which is what the public page compares
-    // against to decide whether to 308.
+    // against to decide whether to redirect.
     expect(viaOld?.slug).toBe('talk-to-sales');
   });
 
@@ -168,6 +168,10 @@ describe('setFormSlug', () => {
   });
 
   it('follows the rename into the member pages that list the form', async () => {
+    // Cosmetic, not load-bearing: what keeps the form ON the page is the read
+    // path resolving retired slugs (see `public-profile.spec.ts`). This only
+    // keeps the public-page EDITOR showing a checked box rather than an entry
+    // it no longer recognizes, which is why it is allowed to lose a race.
     const form = await newForm('Lead qualifier');
     const memberId = randomUUID();
     await db.run(
@@ -187,8 +191,8 @@ describe('setFormSlug', () => {
     const row = await db.get<{ profile: unknown }>(sql`SELECT profile FROM member WHERE id = ${memberId}`);
     const profile =
       typeof row?.profile === 'string' ? JSON.parse(row.profile) : (row?.profile as Record<string, unknown>);
-    // Without this the form drops off the page silently: the public profile
-    // filters on the CANONICAL slug, which no longer matches the stored one.
+    // The stored selection follows the rename, so the editor's checkbox for
+    // this form stays checked.
     expect(profile.formSlugs).toEqual(['talk-to-sales', 'something-else']);
   });
 });

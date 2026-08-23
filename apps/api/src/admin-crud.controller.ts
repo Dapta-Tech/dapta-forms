@@ -40,6 +40,7 @@ import {
   resetNotificationTemplate,
   saveDraftConfig,
   setFormSlug,
+  slugify,
   setMemberStatus,
   updateForm,
   upsertNotificationSetting,
@@ -481,18 +482,37 @@ export class AdminCrudController {
    * until POST /v1/forms/:id/publish copies the draft over it.
    *
    * `slug` is still accepted here (it always was, and an API-key integration may
-   * be sending it), but it is routed through `setFormSlug` rather than written
-   * as a column, so it retires the old value into the alias ledger exactly like
-   * the dedicated endpoint below. There is one rename implementation, not two.
+   * be sending it), routed through `setFormSlug` rather than written as a
+   * column, so it retires the old value into the alias ledger exactly like the
+   * dedicated endpoint below. There is one rename implementation, not two.
+   *
+   * Two details keep that from being a breaking change for callers who were
+   * already sending it:
+   *
+   * - **It runs FIRST.** A rename is the only part of this request that can be
+   *   refused, and the three writes are not a transaction. Applying `name`
+   *   first meant a 409 on the slug left the name committed and the config
+   *   draft silently dropped: a request that reported failure and changed the
+   *   form anyway. Refusing before anything is written restores the
+   *   all-or-nothing this endpoint had when the clash check lived inside
+   *   `updateForm`.
+   * - **It is slugified, not validated.** This path used to accept `Talk To
+   *   Sales` and store `talk-to-sales`; `setFormSlug` alone would now 409 it.
+   *   Tightening a field that has been lenient since it shipped would break the
+   *   integrations the field is being kept for, so the leniency stays here.
+   *   `PUT /v1/forms/:id/slug` is the strict one, because a person is typing
+   *   into it and silently rewriting what they typed is the worse answer there.
    */
   @Put('forms/:id')
   async updateForm(@Req() req: ReqLike, @Param('id') id: string, @Body() body: unknown) {
     const p = await this.auth.resolveHost(req);
     const { config, slug, ...meta } = parse(formInputSchema.partial(), body);
-    let updated = unwrapCrud(await updateForm(this.db, p.accountId, id, meta));
     if (slug !== undefined) {
-      updated = unwrapCrud(await setFormSlug(this.db, p.accountId, id, slug));
+      unwrapCrud(await setFormSlug(this.db, p.accountId, id, slugify(slug)));
     }
+    // Returns the row even with nothing to patch, so it stays the single read
+    // that answers NOT_FOUND for this route.
+    let updated = unwrapCrud(await updateForm(this.db, p.accountId, id, meta));
     if (config !== undefined) {
       updated = unwrapCrud(await saveDraftConfig(this.db, p.accountId, id, config));
     }

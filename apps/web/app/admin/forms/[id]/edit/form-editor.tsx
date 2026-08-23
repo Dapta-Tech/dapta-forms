@@ -667,6 +667,7 @@ export function FormEditor({
               renameCancel: bm.shell.renameCancel,
               renameTaken: bm.shell.renameTaken,
               renameInvalid: bm.shell.renameInvalid,
+              renameTooLong: bm.shell.renameTooLong,
               renameFailed: bm.shell.renameFailed,
             }}
           />
