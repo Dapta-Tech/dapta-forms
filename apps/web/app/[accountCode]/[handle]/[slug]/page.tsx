@@ -65,7 +65,7 @@ export async function generateMetadata({
     // segment this page can actually speak to, and forwards the rest.
     ...(form.slug === slug
       ? {}
-      : { alternates: { canonical: `/${accountCode}/${handle}/${form.slug}` } }),
+      : { alternates: { canonical: canonicalPath(accountCode, handle, form.slug) } }),
     openGraph: { title, description, type: 'website', ...(images ? { images } : {}) },
     twitter: {
       // A generated 1200×630 card deserves the large format; only a form with
@@ -119,7 +119,23 @@ function redirectToCanonical(
   query: Record<string, string | string[] | undefined>,
 ): void {
   if (canonical === route.slug) return;
-  permanentRedirect(`/${route.accountCode}/${route.handle}/${canonical}${searchSuffix(query)}`);
+  permanentRedirect(`${canonicalPath(route.accountCode, route.handle, canonical)}${searchSuffix(query)}`);
+}
+
+/**
+ * Build a public form path from segments that arrived in the URL.
+ *
+ * `encodeURIComponent` on each of them, because Next hands over the DECODED
+ * value and two of the three are effectively free text: `handle` is never
+ * validated (nothing routes on it, see the note in `generateMetadata`) and
+ * `accountCode` only has to resolve to some account. A `handle` of `%0d%0a`
+ * therefore arrives as a real CRLF, and interpolating that straight into a
+ * `Location` header makes Node reject the response with ERR_INVALID_CHAR: a
+ * 500 that any visitor can trigger by editing the address bar. The slug is
+ * already `[a-z0-9-]` by the time it gets here and passes through unchanged.
+ */
+function canonicalPath(accountCode: string, handle: string, slug: string): string {
+  return `/${encodeURIComponent(accountCode)}/${encodeURIComponent(handle)}/${encodeURIComponent(slug)}`;
 }
 
 // Public form page. The Server Component fetches the published config; the
