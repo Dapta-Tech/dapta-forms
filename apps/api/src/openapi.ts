@@ -57,6 +57,18 @@ export const openapiSpec = {
         responses: { '202': { description: 'Accepted' }, '400': { description: 'Invalid' } },
       },
     },
+    '/v1/me/locale': {
+      put: {
+        summary: 'Set the language you read the product in (host)',
+        description:
+          "Body { locale }: 'en' or 'es'. Scoped to the caller's own membership, so it is not admin-gated and cannot change a teammate's. Stored on the member row, which is also what selects the language of the submission notification emails this account sends. The web app additionally keeps a cookie, which is what its pages render from.",
+        security: [{ hostSession: [] }],
+        responses: {
+          '200': { description: 'Stored' },
+          '400': { description: 'Not a supported locale' },
+        },
+      },
+    },
     '/v1/forms': {
       get: { summary: 'List forms (host)', security: [{ hostSession: [] }], responses: { '200': { description: 'Forms' } } },
       post: { summary: 'Create a form (host)', security: [{ hostSession: [] }], responses: { '201': { description: 'Created' } } },

@@ -529,6 +529,50 @@ export async function setMemberProfile(
   );
 }
 
+/**
+ * Store the language this person reads the admin in.
+ *
+ * The column is not new and it is not only a UI preference: `email-effects`
+ * already reads the account owner's `locale` to choose the EN/ES copy of the
+ * submission notice. Nothing ever wrote it, so that read has always found NULL
+ * and every one of those emails went out in English. Persisting the choice here
+ * is therefore what makes the setting mean what it says, rather than a second
+ * place to keep the same cookie.
+ *
+ * Scoped to the member row AND the account, like every other write in this file:
+ * one person's language is not the workspace's to set.
+ *
+ * `null` is a real value and means "never chose" — the caller then falls back to
+ * the browser's Accept-Language, which is what a brand-new person gets. Storing
+ * 'en' for someone who never picked would freeze that fallback shut.
+ */
+export async function setMemberLocale(
+  db: Db,
+  accountId: string,
+  memberId: string,
+  locale: 'en' | 'es' | null,
+): Promise<void> {
+  await db.run(
+    sql`UPDATE member SET locale = ${locale}
+        WHERE id = ${memberId} AND account_id = ${accountId}`,
+  );
+}
+
+/** The stored language for one member, or null when they never chose one. */
+export async function getMemberLocale(
+  db: Db,
+  accountId: string,
+  memberId: string,
+): Promise<'en' | 'es' | null> {
+  const r = await db.get<{ locale: string | null }>(
+    sql`SELECT locale FROM member WHERE id = ${memberId} AND account_id = ${accountId} LIMIT 1`,
+  );
+  // Anything else in the column reads as "no choice". The column predates this
+  // feature and is plain text, so a value from a future locale must degrade to
+  // the fallback rather than reach a catalog lookup that has no such key.
+  return r?.locale === 'en' || r?.locale === 'es' ? r.locale : null;
+}
+
 /** The stored public-page blob for one member (account-scoped), or null. */
 export async function getMemberProfileRaw(
   db: Db,

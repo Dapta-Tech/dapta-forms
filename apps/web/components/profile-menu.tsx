@@ -24,6 +24,7 @@ const ACCOUNT_ITEMS: ReadonlyArray<{
   { key: 'brandKit', href: '/admin/account/brand-kit', icon: 'pi-palette', testId: 'profile-nav-brand-kit' },
   { key: 'notifications', href: '/admin/account/notifications', icon: 'pi-bell', testId: 'profile-nav-notifications' },
   { key: 'publicPage', href: '/admin/account/public-page', icon: 'pi-globe', testId: 'profile-nav-public-page' },
+  { key: 'preferences', href: '/admin/account/preferences', icon: 'pi-sliders-h', testId: 'profile-nav-preferences' },
 ];
 
 /**

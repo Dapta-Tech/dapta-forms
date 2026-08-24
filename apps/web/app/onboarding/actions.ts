@@ -4,7 +4,7 @@ import { redirect, unstable_rethrow } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 import { cookies } from 'next/headers';
 import { adminApi, type OnboardingComplete, type OnboardingProgress } from '@/lib/admin-api';
-import { LOCALE_COOKIE } from '@/lib/locale';
+import { LOCALE_COOKIE, LOCALE_COOKIE_MAX_AGE } from '@/lib/locale';
 
 /**
  * Persist one screen's worth of answers.
@@ -89,7 +89,7 @@ export async function completeOnboardingAction(
   if (input.locale === 'es' || input.locale === 'en') {
     (await cookies()).set(LOCALE_COOKIE, input.locale, {
       path: '/',
-      maxAge: 60 * 60 * 24 * 365,
+      maxAge: LOCALE_COOKIE_MAX_AGE,
       sameSite: 'lax',
     });
   }

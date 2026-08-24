@@ -46,6 +46,7 @@ import {
   upsertNotificationSetting,
   type CrudResult,
   getMemberProfileRaw,
+  setMemberLocale,
   setMemberProfile,
 } from '@quill/db';
 import {
@@ -66,6 +67,7 @@ import {
   memberInviteSchema,
   memberPatchSchema,
   notificationSettingPatchSchema,
+  memberLocaleSchema,
   memberProfileSchema,
   onboardingCompleteSchema,
   onboardingProgressSchema,
@@ -403,6 +405,27 @@ export class AdminCrudController {
     const profile = raw == null ? null : parse(memberProfileSchema, raw);
     await setMemberProfile(this.db, p.accountId, p.memberId, profile);
     return { ok: true, profile };
+  }
+
+  /**
+   * The language this person reads the product in.
+   *
+   * Scoped to the CALLER's own member row, like the profile above and for the
+   * same reason: language is personal, and an admin setting a teammate's is a
+   * different feature. That is also why it is not gated on `assertAdmin` - the
+   * plainest member of a workspace still gets to choose what language they read.
+   *
+   * The web app keeps a cookie too, and the cookie is what every page actually
+   * renders from. This row is the durable copy: it survives a new browser, and
+   * it is the value `email-effects` reads to write the owner's submission notice
+   * in the right language.
+   */
+  @Put('me/locale')
+  async setMyLocale(@Req() req: ReqLike, @Body() body: unknown) {
+    const p = await this.auth.resolveHost(req);
+    const { locale } = parse(memberLocaleSchema, body);
+    await setMemberLocale(this.db, p.accountId, p.memberId, locale);
+    return { ok: true, locale };
   }
 
   @Get('vanity')
