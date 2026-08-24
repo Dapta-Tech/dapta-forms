@@ -131,6 +131,8 @@ export class WorkspaceProjection {
     now: number,
   ): Promise<ProjectionState> {
     let workspaces: IamWorkspace[];
+    // Workspace ids that answered and affirmatively no longer name the person.
+    let revoked: string[] = [];
     // Whether a membership the upstream stopped naming may be disabled below.
     // False only when the staff path could not re-read one of the person's
     // known workspaces: then "not in the list" proves nothing.
@@ -147,9 +149,12 @@ export class WorkspaceProjection {
         }),
         this.isStaff(id.email)
           ? this.staffMemberships(id)
-          : this.iam.listMyWorkspaces(id.bearer, id.sub).then((wss) => ({ workspaces: wss, complete: true })),
+          : this.iam
+              .listMyWorkspaces(id.bearer, id.sub)
+              .then((wss) => ({ workspaces: wss, revoked: [] as string[], complete: true })),
       ]);
       workspaces = mine.workspaces;
+      revoked = mine.revoked;
       pruneMissing = mine.complete;
       featureFlags =
         account?.feature_flags && typeof account.feature_flags === 'object' ? account.feature_flags : null;
@@ -188,6 +193,16 @@ export class WorkspaceProjection {
         active: me ? me.is_active !== false : true,
       };
     });
+    for (const wsId of revoked) {
+      memberships.push({
+        workspaceId: wsId,
+        workspaceName: '',
+        iamAccountId: null,
+        workspaceUserId: null,
+        role: 'member',
+        active: false,
+      });
+    }
 
     const inheritOnboarding = await humanHasCompletedOnboarding(this.db, id.sub);
     const result = await projectMemberships(
@@ -315,7 +330,9 @@ export class WorkspaceProjection {
    * from this list might simply not have answered. Only the own-account list
    * failing makes the refresh fail (and degrade to the local copy).
    */
-  private async staffMemberships(id: UpstreamIdentity): Promise<{ workspaces: IamWorkspace[]; complete: boolean }> {
+  private async staffMemberships(
+    id: UpstreamIdentity,
+  ): Promise<{ workspaces: IamWorkspace[]; revoked: string[]; complete: boolean }> {
     const own = await this.iam.listAccountWorkspaces(id.bearer, id.sub, id.iamAccountId);
     const seen = new Set(own.map((w) => w.id));
     const known = (await listWorkspacesForIdentity(this.db, { externalId: id.sub, email: id.email }))
@@ -346,16 +363,22 @@ export class WorkspaceProjection {
       ),
     );
     let complete = known.length <= STAFF_KNOWN_LIMIT;
+    // Workspaces that answered and affirmatively do NOT name the person any
+    // more (revoked, or the workspace was closed): reported as inactive
+    // memberships, which projectMemberships disables on the spot. Mere
+    // absence is not enough once refreshes stop reading the whole estate,
+    // and the prune pass deliberately spares young rows.
+    const revoked: string[] = [];
     for (const r of reads) {
       if (r.failed) complete = false;
       const ws = r.ws;
       if (!ws || typeof ws.id !== 'string' || seen.has(ws.id)) continue;
       seen.add(ws.id);
-      if (ws.is_active === false) continue;
-      const me = membershipOf(ws, id.sub);
-      if (me || ws.isOwner === true) own.push(ws);
+      const me = ws.is_active === false ? null : membershipOf(ws, id.sub);
+      if (ws.is_active !== false && (me || ws.isOwner === true)) own.push(ws);
+      else revoked.push(ws.id);
     }
-    return { workspaces: own, complete };
+    return { workspaces: own, revoked, complete };
   }
 
   /**

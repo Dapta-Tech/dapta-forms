@@ -110,11 +110,13 @@ describe('projectMemberships', () => {
       { workspaceId: a, workspaceName: 'A', iamAccountId: 'acct', workspaceUserId: 'wu-a', role: 'owner' as const, active: true },
       { workspaceId: b, workspaceName: 'B', iamAccountId: 'other', workspaceUserId: 'wu-b', role: 'member' as const, active: true },
     ];
-    const first = await projectMemberships(db, identity, two);
+    // Rows born before the prune grace window, so the drop below disables.
+    const born = Date.now() - 6 * 60_000;
+    const first = await projectMemberships(db, identity, two, { now: born });
     await ids([a, b]);
     expect(first.created.length).toBe(2);
     expect(first.createdAccounts.length).toBe(2);
-    const second = await projectMemberships(db, identity, two);
+    const second = await projectMemberships(db, identity, two, { now: born });
     expect(second.created.length).toBe(0);
     expect(second.createdAccounts.length).toBe(0);
     // Upstream drops B.
@@ -129,6 +131,25 @@ describe('projectMemberships', () => {
       sql`SELECT m.status FROM member m JOIN account acc ON acc.id = m.account_id WHERE acc.external_id = ${b} AND m.external_id = ${SUB}`,
     );
     expect(bRow!.status).toBe('disabled');
+  });
+
+  it('spares a freshly written row from the prune (a lagging list is not evidence), but an affirmative inactive membership disables it', async () => {
+    const a = `ws-${randomUUID()}`, b = `ws-${randomUUID()}`;
+    const identity = { externalId: SUB, email: EMAIL, displayName: 'A' };
+    const two = [
+      { workspaceId: a, workspaceName: 'A', iamAccountId: 'acct', workspaceUserId: 'wu-a', role: 'owner' as const, active: true },
+      { workspaceId: b, workspaceName: 'B', iamAccountId: 'acct', workspaceUserId: 'wu-b', role: 'owner' as const, active: true },
+    ];
+    await projectMemberships(db, identity, two);
+    await ids([a, b]);
+    // The next list does not name B, but B's row is minutes old: kept.
+    await projectMemberships(db, identity, [two[0]!]);
+    let list = await listWorkspacesForIdentity(db, identity);
+    expect(list.map((w) => w.accountName).sort()).toEqual(['A', 'B']);
+    // The workspace was READ and affirmatively does not name them: disabled now.
+    await projectMemberships(db, identity, [two[0]!, { ...two[1]!, active: false }]);
+    list = await listWorkspacesForIdentity(db, identity);
+    expect(list.map((w) => w.accountName)).toEqual(['A']);
   });
 
   it('inherits onboarding completion for accounts it creates when asked', async () => {

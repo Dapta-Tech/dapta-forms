@@ -375,6 +375,10 @@ describe('WorkspaceService (IAM-backed) — staff of the deployment', () => {
   let broken: Set<string>;
   // When set, POST /workspace answers this refusal instead of creating.
   let createRefusal: { status: number; body: string } | null;
+  // When true, a created workspace is NOT added to the search list (the
+  // upstream list lags behind the create); only its single read answers.
+  let lagList: boolean;
+  let lagged: IamWorkspace[];
   const STAFF_SUB = 'sub-staff';
   const staffToken = signJwtHs256({ sub: STAFF_SUB, account_id: 'acc-staff', email: 's@staff.test', name: 'Staff', exp: 4102444800 }, SECRET);
   const staffReq = (workspace?: string): ReqLike => ({
@@ -389,6 +393,8 @@ describe('WorkspaceService (IAM-backed) — staff of the deployment', () => {
     calls = [];
     broken = new Set();
     createRefusal = null;
+    lagList = false;
+    lagged = [];
     workspaces = [
       { id: WS_OWN, name: 'Mine', account_id: IAM_ACCOUNT, is_active: true, users: [{ id: 'wu1', user_id: SUB, type: 'OWNER', is_active: true, roles: [] }] },
       { id: 'ws-staff', name: 'Staff HQ', account_id: 'acc-staff', is_active: true, users: [{ id: 'wu-s', user_id: STAFF_SUB, type: 'OWNER', is_active: true, roles: [] }] },
@@ -411,20 +417,27 @@ describe('WorkspaceService (IAM-backed) — staff of the deployment', () => {
       if (method === 'POST' && url.pathname === '/iam/workspace') {
         if (createRefusal) return new Response(createRefusal.body, { status: createRefusal.status });
         const b = JSON.parse(String(init?.body ?? '{}')) as { name: string; account_id: string };
+        // Owner = whoever the bearer says (the real one does the same).
+        const bearer = String((init?.headers as Record<string, string> | undefined)?.authorization ?? '');
+        const claims = JSON.parse(
+          Buffer.from(bearer.split('.')[1] ?? '', 'base64url').toString() || '{}',
+        ) as { sub?: string };
+        const n = workspaces.length + lagged.length;
         const ws: IamWorkspace = {
-          id: `ws-new-${workspaces.length}`,
+          id: `ws-new-${n}`,
           name: b.name,
           account_id: b.account_id,
           is_active: true,
-          users: [{ id: `wu-new-${workspaces.length}`, user_id: STAFF_SUB, type: 'OWNER', is_active: true, roles: [] }],
+          users: [{ id: `wu-new-${n}`, user_id: claims.sub ?? STAFF_SUB, type: 'OWNER', is_active: true, roles: [] }],
         };
-        workspaces.push(ws);
+        // A lagging upstream: the create answers, the LIST does not name it yet.
+        (lagList ? lagged : workspaces).push(ws);
         return json(ws);
       }
       if (method === 'GET' && url.pathname.startsWith('/iam/workspace/')) {
         const id = url.pathname.split('/').pop() ?? '';
         if (broken.has(id)) return new Response('boom', { status: 500 });
-        const w = workspaces.find((x) => x.id === id);
+        const w = [...workspaces, ...lagged].find((x) => x.id === id);
         return w ? json(w) : new Response('nf', { status: 404 });
       }
       return new Response('nope', { status: 404 });
@@ -569,6 +582,18 @@ describe('WorkspaceService (IAM-backed) — staff of the deployment', () => {
     expect(workspaces.some((w) => w.id === row?.external_id)).toBe(true);
     const me = (await svc.list(staffReq())).find((w) => w.accountId === accountId);
     expect(me?.role).toBe('owner');
+  });
+
+  it('create for a regular member survives an upstream list that lags: the new row stays active', async () => {
+    // The refresh inside create prunes against the upstream list; when that
+    // list does not name the just-created workspace yet, the direct projection
+    // must land AFTER it, or the owner row is disabled the moment it is born.
+    lagList = true;
+    const { accountId } = await svc.create(customerReq(), { name: 'Lagged' });
+    const mine = await svc.list(customerReq());
+    const row = mine.find((w) => w.accountId === accountId);
+    expect(row?.status).toBe('active');
+    expect(row?.role).toBe('owner');
   });
 
   it("create hands the identity service's refusal to the caller instead of a bare 500", async () => {
