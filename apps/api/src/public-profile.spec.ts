@@ -14,6 +14,8 @@
  *   3. only name and slug cross the boundary — never a form's steps, its
  *      destination config, or a draft.
  *   4. a handle is matched case-insensitively (URLs get typed by hand).
+ *   5. a selection made before the author renamed a form's link still lists
+ *      that form (see 0017).
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import {
@@ -21,6 +23,7 @@ import {
   migrate,
   seed,
   getAccountByCode,
+  setFormSlug,
   setMemberProfile,
   sql,
   type Db,
@@ -91,6 +94,28 @@ describe('public member profile', () => {
     await enable();
     const p = await svc.publicProfile(accountCode, handle);
     expect(p!.forms.length).toBeGreaterThan(0);
+  });
+
+  it('keeps listing a form whose link was renamed after it was selected', async () => {
+    // `formSlugs` stores whatever the slug was when the author picked the form,
+    // and nothing rewrites those entries on the read path. Matching only the
+    // LIVE slug would drop the form off this page the moment somebody renamed
+    // its link, silently, with nothing on screen to explain it. Resolving the
+    // form's retired slugs here instead of rewriting every stored profile also
+    // means no read-modify-write on the profile blob can lose the fix, and
+    // pages saved before this shipped heal themselves.
+    const form = await db.get<{ id: string; slug: string }>(
+      sql`SELECT id, slug FROM form WHERE account_id = ${accountId} LIMIT 1`,
+    );
+    await enable({ formSlugs: [String(form!.slug)] });
+    expect((await svc.publicProfile(accountCode, handle))!.forms).toHaveLength(1);
+
+    await setFormSlug(db, accountId, String(form!.id), 'renamed-after-selection');
+
+    const after = await svc.publicProfile(accountCode, handle);
+    expect(after!.forms).toHaveLength(1);
+    // Listed under its CURRENT slug, so the link on the page is the live one.
+    expect(after!.forms[0]!.slug).toBe('renamed-after-selection');
   });
 
   it('lists NONE for an empty formSlugs — not everything', async () => {

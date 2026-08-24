@@ -124,7 +124,7 @@ export function FormEditor({
   id,
   initialName,
   initialConfig,
-  publicPath,
+  publicPath: initialPublicPath,
   locale,
   m,
   initialHasDraft = false,
@@ -144,6 +144,18 @@ export function FormEditor({
   const bm = getBuilderMessages(locale);
   const searchParams = useSearchParams();
   const [name, setName] = useState(initialName);
+  /**
+   * The form's public path, as STATE rather than the prop it arrives as.
+   *
+   * The slug in it is editable now (see `LinkActions`), and everything the
+   * builder derives from this path is a client component holding it in props:
+   * the topbar's Copy link / Embed / Open form, the design panel's preview, the
+   * prefill example URL in question settings. A server `revalidatePath` cannot
+   * reach any of them mid-session, so a rename would leave all four pointing at
+   * a URL that now only 308-redirects, starting with the Copy button the person
+   * is most likely to press next.
+   */
+  const [publicPath, setPublicPath] = useState(initialPublicPath);
   // The builder has ONE reveal model: a `reveal` step in the list. A form
   // authored under the old form-level reveal (Design-tab copy + a draggable
   // position marker) is folded into that shape the moment it opens, so the two
@@ -634,7 +646,9 @@ export function FormEditor({
         <div className="flex min-w-0 items-center justify-end gap-2">
           <LinkActions
             publicPath={publicPath}
+            formId={id}
             formName={name}
+            onRenamed={setPublicPath}
             labels={{
               copyLink: bm.shell.copyLink,
               copied: bm.shell.copied,
@@ -644,6 +658,17 @@ export function FormEditor({
               embedIntro: bm.shell.embedIntro,
               embedCopy: bm.shell.embedCopy,
               embedCopied: bm.shell.embedCopied,
+              renameLink: bm.shell.renameLink,
+              renameTitle: bm.shell.renameTitle,
+              renameIntro: bm.shell.renameIntro,
+              renameLabel: bm.shell.renameLabel,
+              renameSave: bm.shell.renameSave,
+              renameSaving: bm.shell.renameSaving,
+              renameCancel: bm.shell.renameCancel,
+              renameTaken: bm.shell.renameTaken,
+              renameInvalid: bm.shell.renameInvalid,
+              renameTooLong: bm.shell.renameTooLong,
+              renameFailed: bm.shell.renameFailed,
             }}
           />
           <PublishButton

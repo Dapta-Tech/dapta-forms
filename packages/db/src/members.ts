@@ -420,6 +420,14 @@ export interface ProfileFormRow {
   name: string;
   /** The author's public title, when the form has one. */
   title: string | null;
+  /**
+   * Slugs this form used to answer to (see 0017), so a profile that named one
+   * before the author renamed the link still matches. The listing filter runs
+   * on `formSlugs`, which stores whatever slug was current when the author
+   * picked the form; without these a rename would drop the form off every page
+   * that listed it.
+   */
+  retiredSlugs: string[];
 }
 
 /** A member's stored public page + the identity fields it renders alongside. */
@@ -483,12 +491,28 @@ export async function listPublishedFormsForAccount(
   // jsonb on Postgres and TEXT on SQLite, so the extraction happens here in JS
   // rather than in dialect-specific SQL.
   const rows = await db.all<Record<string, unknown>>(
-    sql`SELECT slug, name, config FROM form WHERE account_id = ${account.id} ORDER BY created_at ASC`,
+    sql`SELECT id, slug, name, config FROM form WHERE account_id = ${account.id} ORDER BY created_at ASC`,
   );
+  // One query for the whole account rather than one per form: an account has a
+  // handful of forms and rather fewer retired slugs, and this runs on a public
+  // page render.
+  const aliasRows = await db.all<{ alias: string; form_id: string }>(
+    sql`SELECT alias, form_id FROM form_alias WHERE account_id = ${account.id}`,
+  );
+  const retiredByForm = new Map<string, string[]>();
+  for (const row of aliasRows) {
+    const key = String(row.form_id);
+    retiredByForm.set(key, [...(retiredByForm.get(key) ?? []), String(row.alias)]);
+  }
   return rows.map((r) => {
     const config = parseJsonColumn<{ title?: unknown }>(r.config, {});
     const title = typeof config.title === 'string' && config.title.trim() ? config.title.trim() : null;
-    return { slug: String(r.slug), name: String(r.name), title };
+    return {
+      slug: String(r.slug),
+      name: String(r.name),
+      title,
+      retiredSlugs: retiredByForm.get(String(r.id)) ?? [],
+    };
   });
 }
 

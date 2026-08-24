@@ -14,7 +14,7 @@
  * so anything regenerated from them does not silently drop a uniqueness guard.
  */
 import { sql } from 'drizzle-orm';
-import { sqliteTable, text, integer, uniqueIndex, index } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, integer, primaryKey, uniqueIndex, index } from 'drizzle-orm/sqlite-core';
 
 // --- Platform (identity / delivery) — kept from the shared platform ----------
 
@@ -195,6 +195,26 @@ export const form = sqliteTable(
 );
 
 /**
+ * Slugs a form used to answer to (see 0017) — the ledger that keeps every
+ * already-published link resolving after its form's public URL is renamed.
+ * Keyed by (account_id, alias) because a form slug is unique per account, not
+ * globally like `account_alias`.
+ */
+export const formAlias = sqliteTable(
+  'form_alias',
+  {
+    accountId: text('account_id').notNull(),
+    alias: text('alias').notNull(),
+    formId: text('form_id').notNull(),
+    createdAt: integer('created_at').notNull(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.accountId, t.alias] }),
+    formAliasFormIdx: index('form_alias_form_idx').on(t.formId),
+  }),
+);
+
+/**
  * Workspace brand kit — one row per account. `config` (TEXT JSON) is the brand
  * kit blob (validated by `brandKitSchema` in @quill/types). Forms snapshot it at
  * creation / on explicit apply; the public renderer never reads this table.
@@ -301,6 +321,7 @@ export const sqliteSchema = {
   outbox,
   notificationSetting,
   form,
+  formAlias,
   submission,
   formEvent,
   bookingEvent,

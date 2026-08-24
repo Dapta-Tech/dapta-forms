@@ -5,7 +5,7 @@
  * config/answers blobs and `bigint` epoch-ms instants; production runs here.
  */
 import { sql } from 'drizzle-orm';
-import { pgTable, text, bigint, integer, jsonb, uniqueIndex, index } from 'drizzle-orm/pg-core';
+import { pgTable, text, bigint, integer, jsonb, primaryKey, uniqueIndex, index } from 'drizzle-orm/pg-core';
 
 // --- Platform (identity / delivery) — kept from the shared platform ----------
 
@@ -197,6 +197,29 @@ export const form = pgTable(
 );
 
 /**
+ * Slugs a form used to answer to (see 0017). Renaming a form's public URL
+ * retires the old slug here instead of dropping it, so every already-published
+ * link keeps resolving and 308s to the canonical one.
+ *
+ * Keyed by (account_id, alias) rather than by alias alone — unlike
+ * `account_alias`, whose key IS globally unique. A form slug is unique per
+ * account (`form_account_slug_uq`), so two accounts may each retire a `contact`.
+ */
+export const formAlias = pgTable(
+  'form_alias',
+  {
+    accountId: text('account_id').notNull(),
+    alias: text('alias').notNull(),
+    formId: text('form_id').notNull(),
+    createdAt: bigint('created_at', { mode: 'number' }).notNull(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.accountId, t.alias] }),
+    formAliasFormIdx: index('form_alias_form_idx').on(t.formId),
+  }),
+);
+
+/**
  * Workspace brand kit — one row per account. `config` is the brand kit blob
  * (validated by `brandKitSchema` in @quill/types). Forms snapshot it at
  * creation / on explicit apply; the public renderer never reads this table.
@@ -297,6 +320,7 @@ export const pgSchema = {
   outbox,
   notificationSetting,
   form,
+  formAlias,
   submission,
   formEvent,
   bookingEvent,
