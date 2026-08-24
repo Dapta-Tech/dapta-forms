@@ -4,13 +4,24 @@ import type { Locale } from '@quill/shared';
 /** Persisted admin-UI language choice (F8 parity with the old app's toggle). */
 export const LOCALE_COOKIE = 'quill_locale';
 
+/** One year. Shared by every writer of the cookie so a choice made in the wizard
+ *  and one made in Preferences do not expire on different days. */
+export const LOCALE_COOKIE_MAX_AGE = 60 * 60 * 24 * 365;
+
+/** Narrow an arbitrary string to a locale we ship, or null. The cookie and the
+ *  member column are both plain text written by more than one writer, so every
+ *  read goes through this rather than trusting the stored value. */
+export function asLocale(value: string | null | undefined): Locale | null {
+  return value === 'en' || value === 'es' ? value : null;
+}
+
 /**
  * The admin surface's locale, read from the persisted cookie the language
  * switcher writes. Defaults to English so a bare fork renders with no cookie.
  */
 export async function getLocale(): Promise<Locale> {
   const jar = await cookies();
-  return jar.get(LOCALE_COOKIE)?.value === 'es' ? 'es' : 'en';
+  return asLocale(jar.get(LOCALE_COOKIE)?.value) ?? 'en';
 }
 
 /**
@@ -25,8 +36,8 @@ export async function getLocale(): Promise<Locale> {
  */
 export async function preferredLocale(): Promise<Locale> {
   const jar = await cookies();
-  const saved = jar.get(LOCALE_COOKIE)?.value;
-  if (saved === 'es' || saved === 'en') return saved;
+  const saved = asLocale(jar.get(LOCALE_COOKIE)?.value);
+  if (saved) return saved;
   const accept = (await headers()).get('accept-language') ?? '';
   return accept.trim().toLowerCase().startsWith('es') ? 'es' : 'en';
 }

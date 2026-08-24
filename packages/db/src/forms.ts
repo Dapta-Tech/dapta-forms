@@ -103,6 +103,15 @@ export interface MeView {
   attribution: Attribution | null;
   /** `'staff'` when the caller is in this workspace by access grant, not by membership (0016). */
   accessGrant: 'staff' | null;
+  /**
+   * The language this person chose for the admin, or null when they never did.
+   *
+   * Rides along on this query rather than costing its own round trip, for one
+   * consumer: the login callback, which seeds the render-time cookie from it so
+   * a choice made on one machine is not lost on the next. Pages do NOT read it
+   * per request - they read the cookie (see apps/web/lib/locale.ts).
+   */
+  locale: 'en' | 'es' | null;
 }
 
 /** The authenticated host's identity for the dashboard header + settings. */
@@ -119,9 +128,10 @@ export async function getMe(db: Db, accountId: string, memberId: string): Promis
     onboarding_completed_at: number | null;
     attribution: unknown;
     access_grant: string | null;
+    locale: string | null;
   }>(
     sql`SELECT a.code, a.name, a.vanity_slug, a.onboarding_completed_at, a.attribution,
-               m.handle, m.display_name, m.email, m.role, m.status, m.access_grant
+               m.handle, m.display_name, m.email, m.role, m.status, m.access_grant, m.locale
         FROM account a JOIN member m ON m.account_id = a.id
         WHERE a.id = ${accountId} AND m.id = ${memberId} LIMIT 1`,
   );
@@ -147,6 +157,10 @@ export async function getMe(db: Db, accountId: string, memberId: string): Promis
     // dashboard page. Unreadable tags degrade to "not known", never to a 500.
     attribution: parseAttributionColumn(row.attribution),
     accessGrant: row.access_grant === 'staff' ? 'staff' : null,
+    // Narrowed here, not trusted: the column is plain text and predates this
+    // field, so an unrecognised value reads as "never chose" instead of
+    // reaching a catalog that has no such locale.
+    locale: row.locale === 'en' || row.locale === 'es' ? row.locale : null,
   };
 }
 

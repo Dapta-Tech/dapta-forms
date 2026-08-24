@@ -1011,6 +1011,14 @@ export const memberProfileLinkSchema = z.object({
     .refine(isSafeHttpUrl, { message: 'Link URL must use http(s).' }),
 });
 
+/** The languages the admin UI ships. Kept here so the API, the web app and the
+ *  data layer all narrow against one list rather than three copies of it. */
+export const localeSchema = z.enum(['en', 'es']);
+export type LocaleInput = z.infer<typeof localeSchema>;
+
+/** Body of `PUT /v1/me/locale`. */
+export const memberLocaleSchema = z.object({ locale: localeSchema });
+
 export const memberProfileSchema = z.object({
   version: z.literal(1),
   /** Off until someone turns it on — absent/false keeps today's 404. */

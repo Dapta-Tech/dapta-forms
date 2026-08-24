@@ -183,7 +183,14 @@ export default async function PublicFormPage({
       {embedded ? <EmbedHeightReporter /> : null}
       {/* The wrapper class relaxes the renderers' viewport-height rules so the
           document's height IS the content's — what the reporter measures. */}
-      <div className={embedded ? 'pf-embed-root' : undefined}>
+      {/* The form's OWN language, declared on its subtree.
+          `<html lang>` in the root layout carries the ADMIN's choice, which a
+          respondent never made and usually has no cookie for. Stamping it here
+          means a Spanish form reached with `?lang=es` is announced as Spanish to
+          a screen reader and offered to a translator as Spanish, whatever the
+          document element says, and an author previewing their own form does not
+          relabel it with their dashboard preference. */}
+      <div lang={locale} className={embedded ? 'pf-embed-root' : undefined}>
         {/* The "Made with Dapta Forms" attribution is NOT a document footer:
             the renderers place it inside `.pf` themselves. As a sibling here it
             started exactly where the first `100dvh` viewport ended, so it was

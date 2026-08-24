@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import 'primeicons/primeicons.css';
 import './globals.css';
 import { fontVariables } from '@/lib/fonts';
+import { getLocale } from '@/lib/locale';
 import { getThemePref } from '@/lib/theme.server';
 
 // Customer-facing name comes from the deployment (NEXT_PUBLIC_PRODUCT_NAME,
@@ -40,10 +41,20 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
   // the published page. Read that comment before widening this one — "the viewer's
   // preference" is not what a respondent gets, because a respondent has no cookie.
   const theme = await getThemePref();
+  // The admin's language, for the same reason and from the same kind of store as
+  // the theme above. It was hardcoded 'en' while the app has shipped Spanish
+  // since the first-run wizard, so a Spanish dashboard has been telling screen
+  // readers, translation tools and search engines it is English the whole time.
+  //
+  // ADMIN chrome, like the theme. A respondent has no admin cookie, so a public
+  // form is unaffected and still declares its OWN language on the element it
+  // renders into (see the public form page) - the author's dashboard preference
+  // must not decide what language a stranger's form is announced in.
+  const locale = await getLocale();
   return (
     // Every curated face is declared here so a public form can switch typeface
     // without a rebuild; only the brand face is preloaded (see lib/fonts.ts).
-    <html lang="en" data-theme={theme} className={fontVariables} suppressHydrationWarning>
+    <html lang={locale} data-theme={theme} className={fontVariables} suppressHydrationWarning>
       <body className="min-h-dvh bg-background text-foreground">{children}</body>
     </html>
   );

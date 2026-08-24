@@ -7,7 +7,7 @@ import { test, expect, type APIRequestContext, type Page } from '@playwright/tes
  * the bottom-left profile button (avatar + name) opens a two-item menu,
  * "Account settings" and "Log out", the way Dapta's admin panel does it, and
  * Account settings is its own area at /admin/account with a left sub-nav —
- * Workspaces · Brand kit · Notifications · Public page. Workspaces is new: one
+ * Workspaces · Brand kit · Notifications · Public page · Preferences. Workspaces is new: one
  * card per workspace you belong to, Open (enter it) or Manage (its members and
  * invitations, WITHOUT switching into it). The old URLs redirect so bookmarks
  * and the rest of this harness keep working.
@@ -36,6 +36,7 @@ const ACCOUNT_NAV = [
     label: 'Notifications',
   },
   { testId: 'account-nav-public-page', href: '/admin/account/public-page', label: 'Public page' },
+  { testId: 'account-nav-preferences', href: '/admin/account/preferences', label: 'Preferences' },
 ] as const;
 
 interface Me {
@@ -123,7 +124,7 @@ test.describe('V12: account settings behind the profile menu', () => {
     ).toHaveCount(0);
 
     // The profile button sits in the rail's footer and opens the menu: an
-    // "Account settings" eyebrow, the four account entries, then Log out.
+    // "Account settings" eyebrow, the five account entries, then Log out.
     const trigger = visibleTestId(page, 'profile-menu-trigger');
     await expect(trigger, 'the profile button renders in the rail').toBeVisible();
     await trigger.click();
@@ -139,6 +140,7 @@ test.describe('V12: account settings behind the profile menu', () => {
       ['profile-nav-brand-kit', 'Brand kit'],
       ['profile-nav-notifications', 'Notifications'],
       ['profile-nav-public-page', 'Public page'],
+      ['profile-nav-preferences', 'Preferences'],
     ] as const) {
       await expect(menu.getByTestId(id), `${label} is one tap away`).toContainText(label);
     }
