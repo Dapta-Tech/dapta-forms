@@ -244,7 +244,9 @@ describe('workspace projection (IAM-backed workspaces)', () => {
     await auth.resolveHost(asReq(tokenFor(SUB)));
     // Removed from "Test" upstream.
     iam.workspaces[1]!.users = iam.workspaces[1]!.users!.filter((u) => u.user_id !== SUB);
-    now += 61_000;
+    // Past the prune grace window: a row absent from the list is only
+    // disabled once it is old enough that the list cannot merely be lagging.
+    now += 6 * 60_000;
     await auth.resolveHost(asReq(tokenFor(SUB)));
     const list = await auth.listWorkspaces(asReq(tokenFor(SUB)));
     expect(list.map((w) => w.accountName)).toEqual(['dapta']);

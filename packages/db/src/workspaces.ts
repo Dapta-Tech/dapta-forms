@@ -244,6 +244,13 @@ export async function humanHasCompletedOnboarding(db: Db, externalId: string): P
  * this run, so a person who already finished the wizard is not sent through it
  * again for every workspace they belong to upstream.
  */
+/**
+ * How long a freshly written member row is safe from the prune pass, so a
+ * lagging upstream list cannot disable a membership projected directly
+ * moments ago (see the prune comment inside `projectMemberships`).
+ */
+const PRUNE_GRACE_MS = 5 * 60_000;
+
 export async function projectMemberships(
   db: Db,
   identity: ProjectedIdentity,
@@ -264,7 +271,20 @@ export async function projectMemberships(
   const seenAccountIds = new Set<string>();
 
   for (const m of memberships) {
-    if (!m.active) continue;
+    if (!m.active) {
+      // An AFFIRMATIVE "not a member any more" (the workspace was read and
+      // does not name them) — unlike mere absence from the list, this is
+      // evidence, so it disables regardless of the prune grace window below.
+      const gone = await getAccountByExternalId(db, m.workspaceId);
+      if (gone) {
+        await db.run(
+          sql`UPDATE member SET status = 'disabled'
+              WHERE account_id = ${gone.id} AND external_id = ${identity.externalId}
+                AND status = 'active' AND access_grant IS NULL`,
+        );
+      }
+      continue;
+    }
     const role: AccountRole = (ACCOUNT_ROLES as readonly string[]).includes(m.role) ? m.role : 'member';
     const grant: AccessGrant | null = m.accessGrant === 'staff' ? 'staff' : null;
 
@@ -362,11 +382,20 @@ export async function projectMemberships(
   // local rows this identity holds in PROJECTED accounts only. A purely local
   // account (never synced) is outside the identity service's authority, and so
   // is a grant row: upstream never named it, so its absence says nothing.
+  //
+  // Rows younger than the grace window are also left alone: the upstream
+  // LIST lags its own writes, and a row projected directly moments ago (a
+  // workspace just created, a membership just granted) is routinely absent
+  // from the next list read. Absence proves nothing about a row newer than
+  // the list; disabling it bounced people out of a workspace they had just
+  // created. A genuinely revoked brand-new membership survives at most the
+  // window, which the next refresh past it closes.
   if (opts.pruneMissing !== false) {
+    const bornAfter = now - PRUNE_GRACE_MS;
     const held = await db.all<{ id: string; account_id: string }>(
       sql`SELECT m.id, m.account_id FROM member m JOIN account a ON a.id = m.account_id
           WHERE m.external_id = ${identity.externalId} AND m.status = 'active' AND a.synced_at IS NOT NULL
-            AND m.access_grant IS NULL`,
+            AND m.access_grant IS NULL AND m.created_at < ${bornAfter}`,
     );
     for (const h of held) {
       if (seenAccountIds.has(h.account_id)) continue;

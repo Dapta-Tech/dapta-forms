@@ -83,6 +83,21 @@ export interface WorkspaceSearchRow {
   hint?: { kind: 'email' | 'form'; value: string } | null;
 }
 
+/** The human-readable `message` of an identity-service error body, when it has one. */
+function upstreamReason(body: string): string | null {
+  try {
+    const j = JSON.parse(body) as { message?: unknown; error?: unknown };
+    const m = Array.isArray(j.message)
+      ? j.message.filter((x): x is string => typeof x === 'string').join('; ')
+      : j.message;
+    if (typeof m === 'string' && m.trim()) return m.trim().slice(0, 300);
+    if (typeof j.error === 'string' && j.error.trim()) return j.error.trim().slice(0, 300);
+  } catch {
+    /* not JSON */
+  }
+  return null;
+}
+
 @Injectable()
 export class WorkspaceService {
   private readonly log = new Logger('WorkspaceService');
@@ -134,14 +149,50 @@ export class WorkspaceService {
             message: 'Your account cannot create workspaces.',
           });
         }
+        // Any other refusal (a plan limit, a validation rule, a duplicate):
+        // hand the identity service's own reason to the person instead of a
+        // bare 500 that reads as "try again" and never gets better.
+        if (err instanceof IamHttpError) {
+          this.log.warn(`IAM workspace create refused (${err.status}) for ${up.sub}: ${err.body}`);
+          // No usable upstream reason: send the code alone and let the web
+          // fall back to its own localized copy, instead of an API-authored
+          // English sentence rendered verbatim for every locale.
+          const reason = upstreamReason(err.body);
+          throw new BadRequestException(
+            reason
+              ? { error: 'WORKSPACE_CREATE_REJECTED', message: reason }
+              : { error: 'WORKSPACE_CREATE_REJECTED' },
+          );
+        }
         throw err;
       }
       const wsId =
         (created && 'id' in created && typeof created.id === 'string' && created.id) ||
         (created && 'data' in created && created.data && typeof created.data.id === 'string' && created.data.id) ||
         null;
-      // Re-project so the new workspace (and the caller's owner row in it) exists locally.
-      await this.projection.ensure(up, { force: true });
+      // Refresh the caller's list best-effort FIRST, then project THIS
+      // workspace directly (re-read upstream so the owner row and name are the
+      // identity service's, not the create echo). The direct projection is
+      // what makes create robust: a refresh that degrades (one known
+      // workspace not answering, the list lagging) must not turn a successful
+      // create into "not visible". The ORDER is load-bearing: the refresh
+      // prunes against the upstream list, and when that list lags it does not
+      // name the new workspace yet — run after projectOne it would disable
+      // the very row projectOne just wrote, and the person would be bounced
+      // out of the workspace they just created. projectOne last revives
+      // whatever the lagging refresh disagreed about.
+      await this.projection.ensure(up, { force: true }).catch(() => undefined);
+      if (wsId) {
+        try {
+          const ws = await this.projection.iam.getWorkspace(up.bearer, wsId);
+          await this.projection.projectOne(up, ws);
+        } catch (err) {
+          // Only upstream faults degrade to "not visible" below; a local DB
+          // fault is ours and must surface as the 500 it is.
+          if (!(err instanceof IamHttpError) && !(err instanceof IamUnavailableError)) throw err;
+          this.log.warn(`created workspace ${wsId} could not be re-read upstream: ${String(err)}`);
+        }
+      }
       const local = wsId ? await getAccountByExternalId(this.db, wsId) : null;
       if (!local) {
         // Created upstream but not visible in the caller's memberships yet — a
