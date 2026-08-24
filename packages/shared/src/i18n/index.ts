@@ -646,6 +646,12 @@ export interface FormsMessages {
         valueHelp: string;
         /** V5 — what the visible label is. */
         labelHelp: string;
+        /** Discloses the stored values, which fill themselves from the labels. */
+        advanced: string;
+        /** The typed value is already another option's on this question. */
+        valueTaken: string;
+        /** Why values already in use stay put while their labels change. */
+        valueLocked: string;
         /** Spreadsheet-paste import (option + optional score columns). */
         importer: {
           /** The "Import options" button beside "Add option". */
@@ -2216,7 +2222,11 @@ export const en: FormsMessages = {
         empty: 'No options yet.',
         labelHelp: 'What respondents read on the option. Safe to reword at any time.',
         valueHelp:
-          'What gets stored in the response and sent to HubSpot or a webhook. Keep it stable: changing it breaks past answers and any mapping that points at it.',
+          'What gets stored in the response and sent to HubSpot or a webhook. It follows the label until you write one yourself, and then it stays as you left it.',
+        advanced: 'Stored values',
+        valueTaken: 'Another option on this question already stores that value.',
+        valueLocked:
+          'These values are already in use, so they stay as they are while you reword the labels. Answers collected on the live form carry them, and so does any HubSpot mapping pointing at them.',
         importer: {
           open: 'Import options',
           title: 'Import options from a spreadsheet',
@@ -3669,7 +3679,11 @@ export const es: FormsMessages = {
         pointsHint: 'Se suma al puntaje cuando se elige esta opción. Usa un número negativo para restar.',
         labelHelp: 'Lo que leen los respondientes en la opción. Puedes reescribirlo cuando quieras.',
         valueHelp:
-          'Lo que se guarda en la respuesta y se envía a HubSpot o al webhook. Mantenlo estable: cambiarlo rompe las respuestas anteriores y cualquier mapeo que lo use.',
+          'Lo que se guarda en la respuesta y se envía a HubSpot o al webhook. Sigue a la etiqueta hasta que escribas uno tú, y a partir de ahí se queda como lo dejaste.',
+        advanced: 'Valores guardados',
+        valueTaken: 'Otra opción de esta pregunta ya guarda ese valor.',
+        valueLocked:
+          'Estos valores ya están en uso, así que se quedan como están mientras reescribes las etiquetas. Las respuestas recibidas en el formulario en vivo los llevan, y cualquier mapeo de HubSpot que apunte a ellos también.',
         importer: {
           open: 'Importar opciones',
           title: 'Importar opciones desde una hoja de cálculo',

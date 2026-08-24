@@ -186,6 +186,295 @@ function normalizeOptions(options: FormOption[] | undefined): FormOption[] | und
   });
 }
 
+/**
+ * Does this option's `value` still look derived from its `label`?
+ *
+ * The builder writes `value` for you and gets out of the way the moment you
+ * write it yourself, so every label edit has to answer this first. Three shapes
+ * count as "the builder wrote it":
+ *
+ *  - empty: nothing to protect;
+ *  - the slug of the current label: the last thing that wrote it was a label
+ *    edit, so the next one may write it again;
+ *  - `option_3`: what CREATING an option puts there. This case exists because
+ *    the value used to stop following the label, and the forms that came out of
+ *    that are exactly the ones this is fixing. Their label reads "More than 50"
+ *    while the value still reads `option_3`, so the slug test above calls them
+ *    hand-written and would freeze them that way forever. Treating the created
+ *    placeholder as unwritten is what lets those heal on the next edit.
+ *
+ * Someone who deliberately typed `option_3` as their value loses it on their
+ * next label edit. That is the trade, and it is the right way round: the
+ * placeholder is generated for every option of every form, a hand-typed copy of
+ * it is a curiosity, and the recovery is to type it again.
+ */
+export function isDerivedOptionValue(option: FormOption): boolean {
+  const value = (option.value ?? '').trim();
+  if (!value) return true;
+  if (/^option_\d+$/.test(value)) return true;
+  // A blank label proves NOTHING about the value, so it cannot be evidence the
+  // author wrote one. `slugify` falls back to 'item' on empty input, so
+  // comparing against it would call every value hand-written the moment the
+  // field is empty - and emptying the field is how people reword an option.
+  // Backspace to nothing and the value freezes wherever it had got to, which is
+  // the same label/value divorce this function exists to end, with a stranger
+  // token. `setOptionLabel` declines to rename while the label is blank, so
+  // answering true here holds the value still and resumes tracking on the next
+  // keystroke.
+  const derived = slugify(option.label ?? '', '');
+  if (!derived) return true;
+  return value === derived;
+}
+
+/**
+ * Move an option's `value`, carrying every pointer aimed at it.
+ *
+ * An option value is not decoration: it is the token stored as the answer, so
+ * everything that reasons about "what did they pick" names it by string. Eight
+ * places do, and every one of them is silent when it stops matching, which is
+ * why this is a function and not an assignment at a call site:
+ *
+ *  - `showWhen.values` / `hideWhen.values` on ANY step whose condition reads
+ *    this step (`field === stepKey`);
+ *  - `goto[].values` on the step that owns the options (a jump is defined by
+ *    the answer to its own question);
+ *  - the KEYS of `questionVariants` and `sliderLabelVariants` on any step that
+ *    sources from this one, including the comma-joined composite keys a
+ *    multi-select variant uses;
+ *  - `outcomes[].overrides[].values` whose `field` reads this step;
+ *  - the owning step's `defaultValue`, which seeds the answer with an option
+ *    value and simply stops seeding when it dangles.
+ *
+ * The eighth lives OUTSIDE this config - a HubSpot destination's
+ * `valueMaps[stepKey][value]`, which the draft autosave never writes. It cannot
+ * be migrated from here and it is not attempted; the builder refuses to move a
+ * value that a CRM mapping depends on instead. See `lockedOptionValues`.
+ *
+ * A no-op rename, an empty destination, or a value another option on the same
+ * step already holds all return the config untouched: a collision would merge
+ * two distinct answers into one token, which loses data rather than renaming it.
+ * The option is named by INDEX rather than by its current value, because two
+ * options can legitimately hold the same one - see the note in the body.
+ */
+export function renameOptionValue(
+  config: FormConfig,
+  stepKey: string,
+  optionIndex: number,
+  newValue: string,
+): FormConfig {
+  if (!newValue) return config;
+  const owner = config.steps.find((s) => s.key === stepKey);
+  const target = owner?.options?.[optionIndex];
+  if (!owner || !target) return config;
+  const oldValue = target.value;
+  if (oldValue === newValue) return config;
+  if ((owner.options ?? []).some((o, i) => i !== optionIndex && o.value === newValue)) return config;
+
+  // Two options CAN hold the same value: both editors mint `option_${n}` from
+  // the list length, so deleting a middle option and adding one mints a value a
+  // sibling already has. Renaming every option that matches the string would
+  // move a row nobody touched, and `normalizeOptions` would then dedupe the
+  // collision into `..._2` on save - a token nothing points at, on an option the
+  // author never edited. So the option moves BY POSITION.
+  //
+  // The pointers are a separate question, because they name a token, not a row.
+  // They only follow when the token is actually leaving: if a sibling still
+  // holds `oldValue` the answer it names still exists, and repointing would aim
+  // a branch at a different option than the one it was authored for.
+  const tokenLeaves = !(owner.options ?? []).some((o, i) => i !== optionIndex && o.value === oldValue);
+
+  const repoint = (values: string[] | undefined): string[] | undefined =>
+    values == null ? undefined : values.map((v) => (v === oldValue ? newValue : v));
+
+  // Variant maps are keyed BY the answer, and a multi-select key is the answer's
+  // values joined with commas — so the rename has to reach inside a composite
+  // key rather than only matching a whole one. `*` (the fallback key) contains
+  // no value and passes through untouched.
+  const rekey = (
+    map: Record<string, string> | undefined,
+  ): Record<string, string> | undefined =>
+    map == null
+      ? undefined
+      : Object.fromEntries(
+          Object.entries(map).map(([key, text]) => [
+            key
+              .split(',')
+              .map((part) => (part === oldValue ? newValue : part))
+              .join(','),
+            text,
+          ]),
+        );
+
+  const steps = config.steps.map((s) => {
+    const next: FormStep = { ...s };
+    if (s.key === stepKey && s.options) {
+      next.options = s.options.map((o, i) => (i === optionIndex ? { ...o, value: newValue } : o));
+      // A choice step's `defaultValue` seeds the answer with an option value
+      // (see apps/web/lib/capture-defaults.ts), so it is a pointer like the
+      // rest and stops seeding in silence when it dangles.
+      if (tokenLeaves && s.defaultValue === oldValue) next.defaultValue = newValue;
+      if (tokenLeaves && s.goto) next.goto = s.goto.map((r) => ({ ...r, values: repoint(r.values) ?? [] }));
+    }
+    if (!tokenLeaves) return next;
+    if (s.showWhen?.field === stepKey) {
+      next.showWhen = { ...s.showWhen, values: repoint(s.showWhen.values) };
+    }
+    if (s.hideWhen?.field === stepKey) {
+      next.hideWhen = { ...s.hideWhen, values: repoint(s.hideWhen.values) };
+    }
+    if (s.questionField === stepKey) {
+      if (s.questionVariants) next.questionVariants = rekey(s.questionVariants);
+      if (s.sliderLabelVariants) next.sliderLabelVariants = rekey(s.sliderLabelVariants);
+    }
+    return next;
+  });
+
+  const outcomes = tokenLeaves
+    ? config.outcomes?.map((o) => ({
+        ...o,
+        overrides: o.overrides?.map((r) =>
+          r.field === stepKey ? { ...r, values: repoint(r.values) } : r,
+        ),
+      }))
+    : config.outcomes;
+
+  return { ...config, steps, ...(outcomes ? { outcomes } : {}) };
+}
+
+/**
+ * Write an option's label, and let the value follow it when the value is still
+ * the builder's to write.
+ *
+ * The single entry point for editing an option label, so the canvas and the
+ * settings panel cannot disagree about when the value moves - they did, and
+ * that disagreement IS the bug this fixes: the panel has always kept the value
+ * in step, the canvas never did, and the canvas is where people type. The result
+ * was a form whose labels read properly and whose stored answers all read
+ * `option_1`, `option_2`, `option_3`.
+ *
+ * `locked` names values that must not move whatever they look like: anything
+ * already carried by a published config (renaming those splits the historical
+ * answers in two) and anything a HubSpot `valueMaps` entry points at (renaming
+ * those unmaps the question from the CRM, and this runs per keystroke, so it
+ * cannot migrate the mapping the way a field-key rename does). A locked value
+ * simply stays put while the label changes, which is the pre-existing behaviour
+ * and never loses anything.
+ *
+ * The derived value is deduped against its siblings, so two labels that slugify
+ * alike get `yes` and `yes_2` rather than one of them silently taking the
+ * other's answers.
+ */
+export function setOptionLabel(
+  config: FormConfig,
+  stepKey: string,
+  optionIndex: number,
+  label: string,
+  locked: ReadonlySet<string> = new Set(),
+): FormConfig {
+  const step = config.steps.find((s) => s.key === stepKey);
+  const option = step?.options?.[optionIndex];
+  if (!step || !option) return config;
+
+  const withLabel: FormConfig = {
+    ...config,
+    steps: config.steps.map((s) =>
+      s.key === stepKey
+        ? { ...s, options: s.options!.map((o, i) => (i === optionIndex ? { ...o, label } : o)) }
+        : s,
+    ),
+  };
+
+  if (locked.has(option.value) || !isDerivedOptionValue(option)) return withLabel;
+
+  // An empty label derives nothing usable. Leave the value alone rather than
+  // slugifying to a fallback: the author is mid-typing, and swapping the value
+  // to `item` on the way through would be a rename nobody asked for.
+  const base = slugify(label, '');
+  if (!base) return withLabel;
+  // Deduped against the siblings AND the locked set. Locked values include ones
+  // whose option was deleted from the draft, and those are exactly the tokens
+  // that must not be reissued: a new option landing on a retired value would
+  // inherit every answer already stored against it and any CRM mapping still
+  // pointing at it, which is the whole thing the lock exists to prevent.
+  const taken = new Set([
+    ...(step.options ?? []).filter((_, i) => i !== optionIndex).map((o) => o.value),
+    ...locked,
+  ]);
+  const nextValue = uniqueKey(base, taken);
+  if (nextValue === option.value) return withLabel;
+
+  return renameOptionValue(withLabel, stepKey, optionIndex, nextValue);
+}
+
+/**
+ * What {@link lockedOptionValues} needs from a stored form.
+ *
+ * Structural rather than `FormConfig` because `destinations` is not part of the
+ * engine's config type at all - it lives in `@quill/types`, which this package
+ * must not depend on. Reading it through the narrowest shape that answers the
+ * question keeps the engine free of that edge while still seeing the CRM
+ * mapping, and an unexpected blob degrades to "nothing is locked" instead of
+ * throwing inside the builder's first render.
+ */
+export interface LockSource {
+  steps?: Array<{ key: string; options?: Array<{ value: string }> }>;
+  destinations?: unknown;
+}
+
+/**
+ * The option values on this form that a label edit must NOT move, keyed by step.
+ *
+ * Read from the LIVE config, never the draft being edited, because both reasons
+ * a value becomes untouchable are about what already left the building:
+ *
+ *  - the live config is what the public URL serves, so a respondent could have
+ *    answered with that token already. Renaming it does not relabel the history,
+ *    it orphans it;
+ *  - a HubSpot destination maps that value to a CRM enum. Renaming it unmaps the
+ *    answer silently, and the label edit that would trigger it runs per
+ *    keystroke, so it cannot migrate the mapping on the way past.
+ *
+ * Presence in the live config is the gate rather than a `published_at` stamp,
+ * which looks like the obvious test and is not: `publishForm` returns early
+ * WITHOUT stamping when no draft is pending, so a form created through the API
+ * with a config is publicly serving it while `published_at` is still null.
+ * Gating on the stamp would leave exactly those forms editable.
+ *
+ * It does not over-lock, because the builder creates a form EMPTY: the live
+ * config carries no options until the author publishes, so everything built
+ * before that first publish is free to follow its label. The same goes for an
+ * option added afterwards, which is not in the live config and therefore still
+ * follows - that is what stops adding one option to a live form reproducing the
+ * confusion this exists to remove. A form started from a template locks the
+ * template's own options, and those ship deliberate values (`asap`,
+ * `in_person`) nobody wants rewritten into a slug of their own sentence.
+ */
+export function lockedOptionValues(
+  liveConfig: LockSource | null | undefined,
+): Record<string, string[]> {
+  const locked: Record<string, Set<string>> = {};
+  const add = (stepKey: string, value: string) => {
+    (locked[stepKey] ??= new Set()).add(value);
+  };
+
+  for (const step of liveConfig?.steps ?? []) {
+    for (const option of step.options ?? []) add(step.key, option.value);
+  }
+  const destinations = Array.isArray(liveConfig?.destinations) ? liveConfig.destinations : [];
+  for (const raw of destinations) {
+    const destination = raw as { type?: unknown; valueMaps?: unknown };
+    if (destination.type !== 'hubspot') continue;
+    const maps = destination.valueMaps;
+    if (maps == null || typeof maps !== 'object') continue;
+    for (const [stepKey, map] of Object.entries(maps as Record<string, unknown>)) {
+      if (map == null || typeof map !== 'object') continue;
+      for (const value of Object.keys(map as Record<string, unknown>)) add(stepKey, value);
+    }
+  }
+
+  return Object.fromEntries(Object.entries(locked).map(([key, set]) => [key, [...set]]));
+}
+
 /** True when the config carries any scoring signal (points / ranges / outcomes). */
 export function hasScoringSignal(config: FormConfig): boolean {
   if ((config.outcomes ?? []).length > 0) return true;

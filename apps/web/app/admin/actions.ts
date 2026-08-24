@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { redirect, unstable_rethrow } from 'next/navigation';
+import { lockedOptionValues } from '@quill/engine';
 import { adminApi, ApiError } from '@/lib/admin-api';
 
 /** Create a form and jump straight into its editor. */
@@ -38,6 +39,34 @@ export async function deleteFormAction(id: string): Promise<void> {
  * immediately (metadata is not part of the draft flow). Publishing the draft is
  * a separate, explicit `publishFormAction`.
  */
+/**
+ * Re-read which option values the builder must not move.
+ *
+ * The set is computed at page load from the live config, and one thing can
+ * change it without a reload: saving a HubSpot value map in the Connect tab
+ * writes `valueMaps` to the LIVE config through its own endpoint, which the
+ * form's draft autosave never touches. Without this, mapping a value and
+ * switching straight back to Build leaves the builder still believing that value
+ * is free, and the next label edit renames it out from under the mapping - the
+ * exact outcome the lock exists to prevent. The Build tab already refetches its
+ * HubSpot data on the same trip for the same reason.
+ *
+ * Answers `ok: false` rather than an empty set when the read fails. An empty set
+ * means "nothing is locked", so returning one on a dropped request would UNLOCK
+ * the form, which is the dangerous direction to fail in.
+ */
+export async function optionLocksAction(
+  id: string,
+): Promise<{ ok: true; locks: Record<string, string[]> } | { ok: false }> {
+  try {
+    const form = await adminApi.getForm(id);
+    return { ok: true, locks: lockedOptionValues(form.config) };
+  } catch (e) {
+    unstable_rethrow(e);
+    return { ok: false };
+  }
+}
+
 export async function saveFormAction(
   id: string,
   patch: { name?: string; config?: unknown },
