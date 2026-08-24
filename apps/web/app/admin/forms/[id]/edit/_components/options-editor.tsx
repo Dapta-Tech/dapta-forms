@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import type { FormOption, FormOptionLayout } from '@quill/engine';
-import { isDerivedOptionValue } from '@quill/engine';
+import { isDerivedOptionValue, uniqueKey } from '@quill/engine';
 import { Button } from '@/components/ui/button';
 import { HelpTip } from '@/components/ui/help-tip';
 import { TextField, NumberField } from './fields';
@@ -22,10 +22,12 @@ import type { EditorMessages } from './messages';
  * something they were supposed to fill in. Hiding it makes the row say what the
  * row is for.
  *
- * It opens on its own when any value has stopped tracking its label, so a value
- * somebody chose deliberately - to match a CRM enum, say - is never hidden from
- * the person who chose it, and a form whose values are frozen because it is
- * published shows them rather than implying they still follow.
+ * It opens on its own in the two cases where a closed section would mislead:
+ * when a value has stopped tracking its label, so one somebody chose
+ * deliberately (to match a CRM enum, say) is never hidden from them; and when a
+ * value is LOCKED, because otherwise a form whose values happen to look derived
+ * stays shut, its labels reword without them, and the sentence explaining why is
+ * behind the very toggle nobody was given a reason to press.
  */
 export function OptionsEditor({
   options,
@@ -78,7 +80,9 @@ export function OptionsEditor({
   // stay open once opened. Not derived on every render: an author who opens
   // the section and then edits a label back into alignment should not have the
   // box they are typing in vanish under the cursor.
-  const [advanced, setAdvanced] = useState(() => options.some((o) => !isDerivedOptionValue(o)));
+  const [advanced, setAdvanced] = useState(
+    () => options.some((o) => !isDerivedOptionValue(o) || locked.has(o.value)),
+  );
   // Explains why the values below are not moving with the labels. Only shown
   // when a value on THIS question is actually held, so an unpublished form
   // never reads a warning about a rule that is not applying to it.
@@ -92,7 +96,12 @@ export function OptionsEditor({
   }
   function add() {
     const n = options.length + 1;
-    onChange([...options, { label: `Option ${n}`, value: `option_${n}`, points: 0 }]);
+    // Deduped: `n` counts the CURRENT options, so deleting a middle one and
+    // adding mints a value a sibling already holds. Two options on one token is
+    // not a cosmetic duplicate - it makes "which option did they pick"
+    // unanswerable, for the renamer and for the stored answer alike.
+    const value = uniqueKey(`option_${n}`, new Set(options.map((o) => o.value)));
+    onChange([...options, { label: `Option ${n}`, value, points: 0 }]);
   }
   function reorder(from: number, to: number) {
     const next = [...options];
@@ -289,6 +298,15 @@ function OptionValueField({
   const clean = text.replace(/,/g, '').trim();
 
   function commit() {
+    // A readonly input still fires `blur`, and `clean` strips commas and trims,
+    // so a stored value carrying either would "change" on a bare tab-through and
+    // rename itself with no edit at all. The mutation boundary refuses it too;
+    // this stops the attempt at the field so nothing flickers.
+    if (locked) {
+      setText(value);
+      setRefused(false);
+      return;
+    }
     if (clean === value) {
       setText(value);
       setRefused(false);

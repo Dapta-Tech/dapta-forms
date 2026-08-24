@@ -23,7 +23,7 @@ import {
 } from '@quill/engine';
 import type { FormTracking } from '@quill/types';
 import { formConfigSchema } from '@quill/types';
-import { saveFormAction } from '@/app/admin/actions';
+import { optionLocksAction, saveFormAction } from '@/app/admin/actions';
 import { useToast } from '@/components/toast';
 import { callAction, isTransportError } from '@/lib/call-action';
 import { useAutosave } from '@/lib/use-autosave';
@@ -197,6 +197,24 @@ export function FormEditor({
       // Mappings can change inside Connect — drop the Build settings panel's
       // cached HubSpot data so it refetches fresh on the next Build activation.
       if (next === 'connect') invalidateQuestionHubspotCache(id);
+      // …and a mapping saved in there locks the option values it points at, on
+      // the LIVE config, which this editor's draft autosave never reads. Pick
+      // those up on the way back rather than letting a label edit move a value
+      // the CRM is now keyed by. Unioned, never replaced: a failed read leaves
+      // the set alone, and a step key renamed earlier in this session keeps the
+      // entry that was re-filed under its new name.
+      if (next === 'build') {
+        void callAction(() => optionLocksAction(id)).then((res) => {
+          if (isTransportError(res) || !res.ok) return;
+          setLocks((prev) => {
+            const merged: Record<string, string[]> = { ...prev };
+            for (const [key, values] of Object.entries(res.locks)) {
+              merged[key] = [...new Set([...(merged[key] ?? []), ...values])];
+            }
+            return merged;
+          });
+        });
+      }
       setTabState(next);
       const url = new URL(window.location.href);
       if (next === 'build') url.searchParams.delete('tab');
@@ -365,7 +383,13 @@ export function FormEditor({
     const step = config.steps[stepIndex];
     const current = step?.options?.[optionIndex];
     if (!step || !current) return;
-    mutate((c) => engineRenameOptionValue(c, step.key, current.value, value));
+    // The lock is enforced HERE, not only by the field's `readOnly`. A readonly
+    // input still fires `blur`, so a stored value carrying a comma or stray
+    // whitespace would sanitize to something different and rename itself the
+    // moment somebody tabbed through it - a write on the one path the UI
+    // promises is frozen. The attribute is the affordance; this is the rule.
+    if ((locks[step.key] ?? []).includes(current.value)) return;
+    mutate((c) => engineRenameOptionValue(c, step.key, optionIndex, value));
   }
   /**
    * Rename a step's answer key (V5-A10). The engine's `renameStepKey` moves every
@@ -378,7 +402,15 @@ export function FormEditor({
     const current = config.steps[index];
     if (!current) return;
     const oldKey = current.key;
-    mutate((c) => engineRenameStepKey(c, oldKey, nextKey));
+    // `renameStepKey` returns the config UNCHANGED when it refuses - a key
+    // already taken, a collision with a `name` step's subfield keys, a missing
+    // step. Identity is how that refusal is detectable, and everything below
+    // must not run on one: re-keying the locks after a refused rename would file
+    // them under a key no step has, quietly freeing this step's published
+    // values, and the CRM call would move a mapping the config did not move.
+    const renamed = engineRenameStepKey(config, oldKey, nextKey);
+    if (renamed === config) return;
+    mutate(() => renamed);
     // The locks are filed BY step key, so the key moving would strand them and
     // this step's published values would quietly become editable again.
     setLocks((prev) => {

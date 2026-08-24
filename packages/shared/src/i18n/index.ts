@@ -650,7 +650,7 @@ export interface FormsMessages {
         advanced: string;
         /** The typed value is already another option's on this question. */
         valueTaken: string;
-        /** Why a published form's values stay put while its labels change. */
+        /** Why values already in use stay put while their labels change. */
         valueLocked: string;
         /** Spreadsheet-paste import (option + optional score columns). */
         importer: {
@@ -2226,7 +2226,7 @@ export const en: FormsMessages = {
         advanced: 'Stored values',
         valueTaken: 'Another option on this question already stores that value.',
         valueLocked:
-          'This form is published, so its stored values stay as they are while you reword the labels. Answers already collected carry them, and so does any mapping pointing at them.',
+          'These values are already in use, so they stay as they are while you reword the labels. Answers collected on the live form carry them, and so does any HubSpot mapping pointing at them.',
         importer: {
           open: 'Import options',
           title: 'Import options from a spreadsheet',
@@ -3683,7 +3683,7 @@ export const es: FormsMessages = {
         advanced: 'Valores guardados',
         valueTaken: 'Otra opción de esta pregunta ya guarda ese valor.',
         valueLocked:
-          'Este formulario está publicado, así que sus valores guardados se quedan como están mientras reescribes las etiquetas. Las respuestas ya recibidas los llevan, y cualquier mapeo que apunte a ellos también.',
+          'Estos valores ya están en uso, así que se quedan como están mientras reescribes las etiquetas. Las respuestas recibidas en el formulario en vivo los llevan, y cualquier mapeo de HubSpot que apunte a ellos también.',
         importer: {
           open: 'Importar opciones',
           title: 'Importar opciones desde una hoja de cálculo',

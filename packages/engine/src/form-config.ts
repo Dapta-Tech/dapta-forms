@@ -212,14 +212,25 @@ export function isDerivedOptionValue(option: FormOption): boolean {
   const value = (option.value ?? '').trim();
   if (!value) return true;
   if (/^option_\d+$/.test(value)) return true;
-  return value === slugify(option.label ?? '');
+  // A blank label proves NOTHING about the value, so it cannot be evidence the
+  // author wrote one. `slugify` falls back to 'item' on empty input, so
+  // comparing against it would call every value hand-written the moment the
+  // field is empty - and emptying the field is how people reword an option.
+  // Backspace to nothing and the value freezes wherever it had got to, which is
+  // the same label/value divorce this function exists to end, with a stranger
+  // token. `setOptionLabel` declines to rename while the label is blank, so
+  // answering true here holds the value still and resumes tracking on the next
+  // keystroke.
+  const derived = slugify(option.label ?? '', '');
+  if (!derived) return true;
+  return value === derived;
 }
 
 /**
  * Move an option's `value`, carrying every pointer aimed at it.
  *
  * An option value is not decoration: it is the token stored as the answer, so
- * everything that reasons about "what did they pick" names it by string. Seven
+ * everything that reasons about "what did they pick" names it by string. Eight
  * places do, and every one of them is silent when it stops matching, which is
  * why this is a function and not an assignment at a call site:
  *
@@ -230,9 +241,11 @@ export function isDerivedOptionValue(option: FormOption): boolean {
  *  - the KEYS of `questionVariants` and `sliderLabelVariants` on any step that
  *    sources from this one, including the comma-joined composite keys a
  *    multi-select variant uses;
- *  - `outcomes[].overrides[].values` whose `field` reads this step.
+ *  - `outcomes[].overrides[].values` whose `field` reads this step;
+ *  - the owning step's `defaultValue`, which seeds the answer with an option
+ *    value and simply stops seeding when it dangles.
  *
- * The seventh lives OUTSIDE this config - a HubSpot destination's
+ * The eighth lives OUTSIDE this config - a HubSpot destination's
  * `valueMaps[stepKey][value]`, which the draft autosave never writes. It cannot
  * be migrated from here and it is not attempted; the builder refuses to move a
  * value that a CRM mapping depends on instead. See `lockedOptionValues`.
@@ -240,17 +253,35 @@ export function isDerivedOptionValue(option: FormOption): boolean {
  * A no-op rename, an empty destination, or a value another option on the same
  * step already holds all return the config untouched: a collision would merge
  * two distinct answers into one token, which loses data rather than renaming it.
+ * The option is named by INDEX rather than by its current value, because two
+ * options can legitimately hold the same one - see the note in the body.
  */
 export function renameOptionValue(
   config: FormConfig,
   stepKey: string,
-  oldValue: string,
+  optionIndex: number,
   newValue: string,
 ): FormConfig {
-  if (!newValue || oldValue === newValue) return config;
+  if (!newValue) return config;
   const owner = config.steps.find((s) => s.key === stepKey);
-  if (!owner) return config;
-  if ((owner.options ?? []).some((o) => o.value === newValue)) return config;
+  const target = owner?.options?.[optionIndex];
+  if (!owner || !target) return config;
+  const oldValue = target.value;
+  if (oldValue === newValue) return config;
+  if ((owner.options ?? []).some((o, i) => i !== optionIndex && o.value === newValue)) return config;
+
+  // Two options CAN hold the same value: both editors mint `option_${n}` from
+  // the list length, so deleting a middle option and adding one mints a value a
+  // sibling already has. Renaming every option that matches the string would
+  // move a row nobody touched, and `normalizeOptions` would then dedupe the
+  // collision into `..._2` on save - a token nothing points at, on an option the
+  // author never edited. So the option moves BY POSITION.
+  //
+  // The pointers are a separate question, because they name a token, not a row.
+  // They only follow when the token is actually leaving: if a sibling still
+  // holds `oldValue` the answer it names still exists, and repointing would aim
+  // a branch at a different option than the one it was authored for.
+  const tokenLeaves = !(owner.options ?? []).some((o, i) => i !== optionIndex && o.value === oldValue);
 
   const repoint = (values: string[] | undefined): string[] | undefined =>
     values == null ? undefined : values.map((v) => (v === oldValue ? newValue : v));
@@ -277,9 +308,14 @@ export function renameOptionValue(
   const steps = config.steps.map((s) => {
     const next: FormStep = { ...s };
     if (s.key === stepKey && s.options) {
-      next.options = s.options.map((o) => (o.value === oldValue ? { ...o, value: newValue } : o));
-      if (s.goto) next.goto = s.goto.map((r) => ({ ...r, values: repoint(r.values) ?? [] }));
+      next.options = s.options.map((o, i) => (i === optionIndex ? { ...o, value: newValue } : o));
+      // A choice step's `defaultValue` seeds the answer with an option value
+      // (see apps/web/lib/capture-defaults.ts), so it is a pointer like the
+      // rest and stops seeding in silence when it dangles.
+      if (tokenLeaves && s.defaultValue === oldValue) next.defaultValue = newValue;
+      if (tokenLeaves && s.goto) next.goto = s.goto.map((r) => ({ ...r, values: repoint(r.values) ?? [] }));
     }
+    if (!tokenLeaves) return next;
     if (s.showWhen?.field === stepKey) {
       next.showWhen = { ...s.showWhen, values: repoint(s.showWhen.values) };
     }
@@ -293,12 +329,14 @@ export function renameOptionValue(
     return next;
   });
 
-  const outcomes = config.outcomes?.map((o) => ({
-    ...o,
-    overrides: o.overrides?.map((r) =>
-      r.field === stepKey ? { ...r, values: repoint(r.values) } : r,
-    ),
-  }));
+  const outcomes = tokenLeaves
+    ? config.outcomes?.map((o) => ({
+        ...o,
+        overrides: o.overrides?.map((r) =>
+          r.field === stepKey ? { ...r, values: repoint(r.values) } : r,
+        ),
+      }))
+    : config.outcomes;
 
   return { ...config, steps, ...(outcomes ? { outcomes } : {}) };
 }
@@ -353,13 +391,19 @@ export function setOptionLabel(
   // to `item` on the way through would be a rename nobody asked for.
   const base = slugify(label, '');
   if (!base) return withLabel;
-  const siblings = new Set(
-    (step.options ?? []).filter((_, i) => i !== optionIndex).map((o) => o.value),
-  );
-  const nextValue = uniqueKey(base, siblings);
+  // Deduped against the siblings AND the locked set. Locked values include ones
+  // whose option was deleted from the draft, and those are exactly the tokens
+  // that must not be reissued: a new option landing on a retired value would
+  // inherit every answer already stored against it and any CRM mapping still
+  // pointing at it, which is the whole thing the lock exists to prevent.
+  const taken = new Set([
+    ...(step.options ?? []).filter((_, i) => i !== optionIndex).map((o) => o.value),
+    ...locked,
+  ]);
+  const nextValue = uniqueKey(base, taken);
   if (nextValue === option.value) return withLabel;
 
-  return renameOptionValue(withLabel, stepKey, option.value, nextValue);
+  return renameOptionValue(withLabel, stepKey, optionIndex, nextValue);
 }
 
 /**

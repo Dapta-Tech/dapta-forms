@@ -77,7 +77,7 @@ describe('isDerivedOptionValue', () => {
 
 describe('renameOptionValue', () => {
   it('moves the value and every pointer aimed at it', () => {
-    const out = renameOptionValue(config(), 'size', 'over_50', 'more_than_50');
+    const out = renameOptionValue(config(), 'size', 1, 'more_than_50');
 
     expect(out.steps[0].options?.map((o) => o.value)).toEqual(['under_50', 'more_than_50']);
     expect(out.steps[0].goto?.[0].values).toEqual(['more_than_50']);
@@ -90,8 +90,36 @@ describe('renameOptionValue', () => {
     expect(out.outcomes?.[0].overrides?.[0].values).toEqual(['more_than_50']);
   });
 
+  it('repoints the step default, which seeds the answer and dangles in silence', () => {
+    const base = config();
+    base.steps[0].defaultValue = 'over_50';
+
+    const out = renameOptionValue(base, 'size', 1, 'more_than_50');
+
+    expect(out.steps[0].defaultValue).toBe('more_than_50');
+  });
+
+  it('moves ONE option when two share a value, and leaves the pointers put', () => {
+    // Reachable with no API: both Add buttons mint `option_${length + 1}`, so
+    // deleting a middle option and adding one repeats a sibling's value.
+    // Renaming every match would move a row nobody touched, and the pointers
+    // must stay because the token they name still exists on the other option.
+    const base = config();
+    base.steps[0].options = [
+      { label: 'Option 1', value: 'option_1' },
+      { label: 'Option 3', value: 'option_3' },
+      { label: 'Option 3', value: 'option_3' },
+    ];
+    base.steps[0].goto = [{ values: ['option_3'], target: 'budget' }];
+
+    const out = renameOptionValue(base, 'size', 1, 'yes');
+
+    expect(out.steps[0].options?.map((o) => o.value)).toEqual(['option_1', 'yes', 'option_3']);
+    expect(out.steps[0].goto?.[0].values, 'the surviving token keeps its rule').toEqual(['option_3']);
+  });
+
   it('leaves pointers at OTHER values, and at other steps, alone', () => {
-    const out = renameOptionValue(config(), 'size', 'over_50', 'more_than_50');
+    const out = renameOptionValue(config(), 'size', 1, 'more_than_50');
 
     expect(out.steps[2].hideWhen?.values).toEqual(['under_50']);
     // `budget` has its own option called `yes`; renaming on `size` must not
@@ -105,7 +133,7 @@ describe('renameOptionValue', () => {
     const base = config();
     base.steps[2].questionVariants = { 'under_50,over_50': 'Mixed', over_50: 'Big' };
 
-    const out = renameOptionValue(base, 'size', 'over_50', 'big');
+    const out = renameOptionValue(base, 'size', 1, 'big');
 
     expect(out.steps[2].questionVariants).toEqual({ 'under_50,big': 'Mixed', big: 'Big' });
   });
@@ -114,14 +142,15 @@ describe('renameOptionValue', () => {
     // Not a rename: `under_50` already exists, so this would make two distinct
     // answers indistinguishable. Losing data is worse than refusing.
     const before = config();
-    expect(renameOptionValue(before, 'size', 'over_50', 'under_50')).toBe(before);
+    expect(renameOptionValue(before, 'size', 1, 'under_50')).toBe(before);
   });
 
   it('is a no-op for an empty target, an unchanged value or an unknown step', () => {
     const before = config();
-    expect(renameOptionValue(before, 'size', 'over_50', '')).toBe(before);
-    expect(renameOptionValue(before, 'size', 'over_50', 'over_50')).toBe(before);
-    expect(renameOptionValue(before, 'nope', 'over_50', 'x')).toBe(before);
+    expect(renameOptionValue(before, 'size', 1, '')).toBe(before);
+    expect(renameOptionValue(before, 'size', 1, 'over_50')).toBe(before);
+    expect(renameOptionValue(before, 'nope', 1, 'x')).toBe(before);
+    expect(renameOptionValue(before, 'size', 9, 'x')).toBe(before);
   });
 });
 
@@ -165,6 +194,34 @@ describe('setOptionLabel', () => {
     const out = setOptionLabel(base, 'size', 1, 'Yes');
 
     expect(out.steps[0].options?.map((o) => o.value)).toEqual(['yes', 'yes_2']);
+  });
+
+  it('resumes tracking after the label is cleared and retyped', () => {
+    // The ordinary reword gesture, and the one the e2e cannot see because
+    // Playwright's `fill()` writes the whole string in a single event. Judging
+    // "did the author write this value" against an EMPTY label froze it here
+    // forever, which is the bug this feature exists to end.
+    let out = setOptionLabel(config(), 'size', 1, '');
+    out = setOptionLabel(out, 'size', 1, 'O');
+    out = setOptionLabel(out, 'size', 1, 'Owner');
+
+    expect(out.steps[0].options?.[1]).toMatchObject({ label: 'Owner', value: 'owner' });
+    expect(out.steps[1].showWhen?.values).toEqual(['owner']);
+  });
+
+  it('will not reissue a value the form has retired', () => {
+    // A locked value whose option was deleted from the draft is not a sibling,
+    // so deduping against siblings alone would hand a NEW option every answer
+    // already stored against that token.
+    const base = config();
+    base.steps[0].options = [
+      { label: 'Under 50', value: 'under_50' },
+      { label: 'Option 2', value: 'option_2' },
+    ];
+
+    const out = setOptionLabel(base, 'size', 1, 'Over 50', new Set(['under_50', 'over_50']));
+
+    expect(out.steps[0].options?.[1].value).toBe('over_50_2');
   });
 
   it('holds the value still while the label is empty mid-typing', () => {

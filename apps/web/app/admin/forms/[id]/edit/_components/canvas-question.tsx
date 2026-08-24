@@ -11,6 +11,7 @@ import {
   resolveDesign,
   resolveFormLogos,
   resolveRevealPresentation,
+  uniqueKey,
 } from '@quill/engine';
 import { onAccent, DEFAULT_ACCENT, getMessages } from '@quill/shared';
 import { clientLocale } from '@/lib/client-locale';
@@ -280,7 +281,10 @@ function QuestionEditableBody({
 
   function addOption() {
     const n = (step.options ?? []).length + 1;
-    onUpdate({ options: [...(step.options ?? []), { label: `Option ${n}`, value: `option_${n}`, points: 0 }] });
+    // Deduped for the same reason as the settings panel's Add: `n` counts the
+    // current options, so a delete-then-add mints a value a sibling still holds.
+    const value = uniqueKey(`option_${n}`, new Set((step.options ?? []).map((o) => o.value)));
+    onUpdate({ options: [...(step.options ?? []), { label: `Option ${n}`, value, points: 0 }] });
   }
   function removeOption(i: number) {
     onUpdate({ options: (step.options ?? []).filter((_, oi) => oi !== i) });

@@ -299,6 +299,12 @@ export function QuestionSettings({
             </InlineField>
           ) : null}
           <OptionsEditor
+            // Keyed by the step, so the disclosure and the value fields' local
+            // text are re-evaluated per QUESTION rather than per mount. Without
+            // it, landing on a question whose values are all derived collapses
+            // the section and switching to one with a hand-written value keeps
+            // it hidden - which is the one case it is supposed to open for.
+            key={step.key}
             options={step.options ?? []}
             onChange={(options) => onUpdate({ options })}
             onLabelChange={onOptionLabel}
