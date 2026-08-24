@@ -370,6 +370,22 @@ export interface FormsMessages {
         brandKit: string;
         notifications: string;
         publicPage: string;
+        /**
+         * Personal preferences. The one account entry that is per-PERSON rather
+         * than per-workspace, which is why it sits last: the four before it
+         * describe the workspace everyone in it shares.
+         */
+        preferences: string;
+      };
+      /** Personal preferences (currently: the language this person reads the app in). */
+      preferences: {
+        title: string;
+        subtitle: string;
+        languageLabel: string;
+        /** Says what the choice does and does not reach. */
+        languageHelp: string;
+        /** The write failed, so the app is still in the previous language. */
+        languageError: string;
       };
       /** The workspace list (cards). */
       workspaces: {
@@ -630,6 +646,12 @@ export interface FormsMessages {
         valueHelp: string;
         /** V5 — what the visible label is. */
         labelHelp: string;
+        /** Discloses the stored values, which fill themselves from the labels. */
+        advanced: string;
+        /** The typed value is already another option's on this question. */
+        valueTaken: string;
+        /** Why values already in use stay put while their labels change. */
+        valueLocked: string;
         /** Spreadsheet-paste import (option + optional score columns). */
         importer: {
           /** The "Import options" button beside "Add option". */
@@ -1924,13 +1946,22 @@ export const en: FormsMessages = {
     },
     account: {
       title: 'Account settings',
-      subtitle: 'Your workspaces, brand kit, notifications and public page.',
+      subtitle: 'Your workspaces, brand kit, notifications, public page and preferences.',
       managing: 'Managing',
       nav: {
         workspaces: 'Workspaces',
         brandKit: 'Brand kit',
         notifications: 'Notifications',
         publicPage: 'Public page',
+        preferences: 'Preferences',
+      },
+      preferences: {
+        title: 'Preferences',
+        subtitle: 'Settings that follow you rather than the workspace.',
+        languageLabel: 'Language',
+        languageHelp:
+          'The language you read the app in, and the one your submission emails are written in. It follows your account, so it applies wherever you sign in. Teammates keep their own choice, and people filling in your forms are answered in their own language.',
+        languageError: 'Your language could not be saved. Please try again.',
       },
       workspaces: {
         title: 'Workspaces',
@@ -2191,7 +2222,11 @@ export const en: FormsMessages = {
         empty: 'No options yet.',
         labelHelp: 'What respondents read on the option. Safe to reword at any time.',
         valueHelp:
-          'What gets stored in the response and sent to HubSpot or a webhook. Keep it stable: changing it breaks past answers and any mapping that points at it.',
+          'What gets stored in the response and sent to HubSpot or a webhook. It follows the label until you write one yourself, and then it stays as you left it.',
+        advanced: 'Stored values',
+        valueTaken: 'Another option on this question already stores that value.',
+        valueLocked:
+          'These values are already in use, so they stay as they are while you reword the labels. Answers collected on the live form carry them, and so does any HubSpot mapping pointing at them.',
         importer: {
           open: 'Import options',
           title: 'Import options from a spreadsheet',
@@ -3390,13 +3425,22 @@ export const es: FormsMessages = {
     },
     account: {
       title: 'Ajustes de cuenta',
-      subtitle: 'Tus workspaces, kit de marca, notificaciones y página pública.',
+      subtitle: 'Tus workspaces, kit de marca, notificaciones, página pública y preferencias.',
       managing: 'Administrando',
       nav: {
         workspaces: 'Workspaces',
         brandKit: 'Kit de marca',
         notifications: 'Notificaciones',
         publicPage: 'Página pública',
+        preferences: 'Preferencias',
+      },
+      preferences: {
+        title: 'Preferencias',
+        subtitle: 'Ajustes que te siguen a ti, no al workspace.',
+        languageLabel: 'Idioma',
+        languageHelp:
+          'El idioma en el que lees la aplicación, y en el que se escriben los correos de tus respuestas. Va con tu cuenta, así que aplica en cualquier lugar donde inicies sesión. Tus compañeros conservan su propia elección, y a quienes responden tus formularios se les contesta en el idioma de ellos.',
+        languageError: 'No se pudo guardar tu idioma. Inténtalo de nuevo.',
       },
       workspaces: {
         title: 'Workspaces',
@@ -3635,7 +3679,11 @@ export const es: FormsMessages = {
         pointsHint: 'Se suma al puntaje cuando se elige esta opción. Usa un número negativo para restar.',
         labelHelp: 'Lo que leen los respondientes en la opción. Puedes reescribirlo cuando quieras.',
         valueHelp:
-          'Lo que se guarda en la respuesta y se envía a HubSpot o al webhook. Mantenlo estable: cambiarlo rompe las respuestas anteriores y cualquier mapeo que lo use.',
+          'Lo que se guarda en la respuesta y se envía a HubSpot o al webhook. Sigue a la etiqueta hasta que escribas uno tú, y a partir de ahí se queda como lo dejaste.',
+        advanced: 'Valores guardados',
+        valueTaken: 'Otra opción de esta pregunta ya guarda ese valor.',
+        valueLocked:
+          'Estos valores ya están en uso, así que se quedan como están mientras reescribes las etiquetas. Las respuestas recibidas en el formulario en vivo los llevan, y cualquier mapeo de HubSpot que apunte a ellos también.',
         importer: {
           open: 'Importar opciones',
           title: 'Importar opciones desde una hoja de cálculo',

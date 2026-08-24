@@ -206,6 +206,12 @@ export interface Me {
   accessGrant: 'staff' | null;
   /** Staff of the deployment (by email domain, identity-backed only): may search and enter the whole estate. */
   staff: boolean;
+  /**
+   * The language this person chose, or null when they never did. Read by the
+   * login callback to seed the render-time cookie on a browser that has none;
+   * pages themselves read the cookie, not this.
+   */
+  locale: 'en' | 'es' | null;
 }
 
 /**
@@ -571,8 +577,16 @@ export const adminApi = {
   getForm: (id: string) => req<FormDetail>('GET', `/v1/forms/${id}`),
   createForm: (b: { name: string; slug?: string; config?: unknown }) =>
     req<FormDetail>('POST', '/v1/forms', b),
-  updateForm: (id: string, b: { name?: string; slug?: string; config?: unknown }) =>
+  updateForm: (id: string, b: { name?: string; config?: unknown }) =>
     req<FormDetail>('PUT', `/v1/forms/${id}`, b),
+  /**
+   * Rename the form's public URL. Its own endpoint, not a field on `updateForm`:
+   * that one is the builder's autosave, and retiring a public slug is not
+   * something a keystroke should do. Throws ApiError with `code` SLUG_TAKEN or
+   * SLUG_INVALID (409) for the two ways it can be refused.
+   */
+  setFormSlug: (id: string, slug: string) =>
+    req<FormDetail>('PUT', `/v1/forms/${id}/slug`, { slug }),
   duplicateForm: (id: string) => req<FormDetail>('POST', `/v1/forms/${id}/duplicate`),
   /** Publish the pending draft config (no-op when no draft is pending). */
   publishForm: (id: string) => req<FormDetail>('POST', `/v1/forms/${id}/publish`),
@@ -630,6 +644,10 @@ export const adminApi = {
   /** Replace the caller's own public page; null removes it. */
   saveMyProfile: (profile: MemberProfile | null) =>
     req<{ ok: boolean }>('PUT', '/v1/me/profile', { profile }),
+  /** Store the caller's own language. The cookie is written separately by the
+   *  server action: this is the durable copy, and the one the notification
+   *  emails are rendered from. */
+  setMyLocale: (locale: 'en' | 'es') => req<{ ok: boolean; locale: 'en' | 'es' }>('PUT', '/v1/me/locale', { locale }),
   /** Every workspace the caller can enter, for the switcher. */
   listWorkspaces: () => req<Workspace[]>('GET', '/v1/workspaces'),
   /** Same list after forcing a re-read from the identity service (when there is one). */

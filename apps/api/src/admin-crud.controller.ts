@@ -39,11 +39,14 @@ import {
   removeMember,
   resetNotificationTemplate,
   saveDraftConfig,
+  setFormSlug,
+  slugify,
   setMemberStatus,
   updateForm,
   upsertNotificationSetting,
   type CrudResult,
   getMemberProfileRaw,
+  setMemberLocale,
   setMemberProfile,
 } from '@quill/db';
 import {
@@ -57,12 +60,14 @@ import {
   attributionEventProps,
   attributionSchema,
   formInputSchema,
+  formSlugInputSchema,
   hasExtraHubspotDestination,
   maskConfigSecrets,
   ONE_HUBSPOT_DESTINATION_MESSAGE,
   memberInviteSchema,
   memberPatchSchema,
   notificationSettingPatchSchema,
+  memberLocaleSchema,
   memberProfileSchema,
   onboardingCompleteSchema,
   onboardingProgressSchema,
@@ -402,6 +407,27 @@ export class AdminCrudController {
     return { ok: true, profile };
   }
 
+  /**
+   * The language this person reads the product in.
+   *
+   * Scoped to the CALLER's own member row, like the profile above and for the
+   * same reason: language is personal, and an admin setting a teammate's is a
+   * different feature. That is also why it is not gated on `assertAdmin` - the
+   * plainest member of a workspace still gets to choose what language they read.
+   *
+   * The web app keeps a cookie too, and the cookie is what every page actually
+   * renders from. This row is the durable copy: it survives a new browser, and
+   * it is the value `email-effects` reads to write the owner's submission notice
+   * in the right language.
+   */
+  @Put('me/locale')
+  async setMyLocale(@Req() req: ReqLike, @Body() body: unknown) {
+    const p = await this.auth.resolveHost(req);
+    const { locale } = parse(memberLocaleSchema, body);
+    await setMemberLocale(this.db, p.accountId, p.memberId, locale);
+    return { ok: true, locale };
+  }
+
   @Get('vanity')
   async vanity(@Req() req: ReqLike) {
     const p = await this.auth.resolveHost(req);
@@ -477,16 +503,67 @@ export class AdminCrudController {
    * nothing to stage); `config` is stored as an UNPUBLISHED draft via
    * `saveDraftConfig` — the live config the public renderer serves is untouched
    * until POST /v1/forms/:id/publish copies the draft over it.
+   *
+   * `slug` is still accepted here (it always was, and an API-key integration may
+   * be sending it), routed through `setFormSlug` rather than written as a
+   * column, so it retires the old value into the alias ledger exactly like the
+   * dedicated endpoint below. There is one rename implementation, not two.
+   *
+   * Two details keep that from being a breaking change for callers who were
+   * already sending it:
+   *
+   * - **It runs FIRST.** A rename is the only part of this request that can be
+   *   refused, and the three writes are not a transaction. Applying `name`
+   *   first meant a 409 on the slug left the name committed and the config
+   *   draft silently dropped: a request that reported failure and changed the
+   *   form anyway. Refusing before anything is written restores the
+   *   all-or-nothing this endpoint had when the clash check lived inside
+   *   `updateForm`.
+   * - **It is slugified, not validated.** This path used to accept `Talk To
+   *   Sales` and store `talk-to-sales`; `setFormSlug` alone would now 409 it.
+   *   Tightening a field that has been lenient since it shipped would break the
+   *   integrations the field is being kept for, so the leniency stays here.
+   *   `PUT /v1/forms/:id/slug` is the strict one, because a person is typing
+   *   into it and silently rewriting what they typed is the worse answer there.
    */
   @Put('forms/:id')
   async updateForm(@Req() req: ReqLike, @Param('id') id: string, @Body() body: unknown) {
     const p = await this.auth.resolveHost(req);
-    const { config, ...meta } = parse(formInputSchema.partial(), body);
+    const { config, slug, ...meta } = parse(formInputSchema.partial(), body);
+    if (slug !== undefined) {
+      unwrapCrud(await setFormSlug(this.db, p.accountId, id, slugify(slug)));
+    }
+    // Returns the row even with nothing to patch, so it stays the single read
+    // that answers NOT_FOUND for this route.
     let updated = unwrapCrud(await updateForm(this.db, p.accountId, id, meta));
     if (config !== undefined) {
       updated = unwrapCrud(await saveDraftConfig(this.db, p.accountId, id, config));
     }
     return maskForm(updated);
+  }
+
+  /**
+   * Rename a form's public URL.
+   *
+   * Its own route rather than a field on the autosave above, because the two are
+   * different acts. `PUT /v1/forms/:id` fires on a debounce while somebody types
+   * in the builder; this one runs when they deliberately confirm a new link, and
+   * it has a consequence a keystroke must never trigger: the previous slug is
+   * retired into `form_alias`, where it keeps answering forever.
+   *
+   * Same role gate as editing the form: any resolved member of the account. A
+   * member who can already rewrite every question and publish the result
+   * controls what that URL serves, so gating only the URL would add friction
+   * without adding safety.
+   *
+   * 409 on both failure modes, distinguished by `error`: SLUG_TAKEN (another
+   * form in this account holds it, live or retired) and SLUG_INVALID (shape).
+   */
+  @Put('forms/:id/slug')
+  async updateFormSlug(@Req() req: ReqLike, @Param('id') id: string, @Body() body: unknown) {
+    const p = await this.auth.resolveHost(req);
+    const { slug } = parse(formSlugInputSchema, body);
+    return maskForm(unwrapCrud(await setFormSlug(this.db, p.accountId, id, slug)));
   }
 
   @Post('forms/:id/duplicate')

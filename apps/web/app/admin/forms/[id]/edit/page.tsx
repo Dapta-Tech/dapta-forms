@@ -1,6 +1,7 @@
 import { Suspense } from 'react';
 import { notFound } from 'next/navigation';
 import { getMessages } from '@quill/shared';
+import { lockedOptionValues } from '@quill/engine';
 import { adminApi, ApiError } from '@/lib/admin-api';
 import { getLocale } from '@/lib/locale';
 import { FormEditor } from './form-editor';
@@ -33,6 +34,12 @@ export default async function EditFormPage({ params }: { params: Promise<{ id: s
         // draft, and the explicit Publish action makes it live.
         initialConfig={form.draftConfig ?? form.config}
         initialHasDraft={form.draftConfig != null}
+        // Which option values a label edit must not move, read from the LIVE
+        // config rather than the draft being edited: a value is untouchable
+        // because of what already left the building (answers already stored
+        // against it, or a CRM mapping pointing at it), and the draft knows
+        // neither. Computed here so the builder never pays a request for it.
+        lockedValues={lockedOptionValues(form.config)}
         updatedAt={form.updatedAt}
         publicPath={publicPath}
         locale={locale}

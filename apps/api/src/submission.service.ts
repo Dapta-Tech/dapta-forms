@@ -74,8 +74,20 @@ export class SubmissionService {
     // must stay distinct, or unlisting everything would silently restore
     // everything.
     const allowed = profile.formSlugs;
+    // Matched against the form's retired slugs as well as its current one.
+    // `formSlugs` records whatever the slug was when the author picked the
+    // form, so comparing only against the live slug would drop a form off this
+    // page the moment somebody renamed its link, silently and with nothing on
+    // screen to explain it. Resolving here rather than rewriting every stored
+    // profile on rename also means there is no read-modify-write on the profile
+    // blob to lose a race with, and profiles saved before this shipped heal
+    // themselves.
     const forms =
-      allowed == null ? published : published.filter((f) => allowed.includes(f.slug));
+      allowed == null
+        ? published
+        : published.filter(
+            (f) => allowed.includes(f.slug) || f.retiredSlugs.some((old) => allowed.includes(old)),
+          );
 
     return {
       handle: member.handle ?? handle,

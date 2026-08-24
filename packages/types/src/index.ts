@@ -1011,6 +1011,14 @@ export const memberProfileLinkSchema = z.object({
     .refine(isSafeHttpUrl, { message: 'Link URL must use http(s).' }),
 });
 
+/** The languages the admin UI ships. Kept here so the API, the web app and the
+ *  data layer all narrow against one list rather than three copies of it. */
+export const localeSchema = z.enum(['en', 'es']);
+export type LocaleInput = z.infer<typeof localeSchema>;
+
+/** Body of `PUT /v1/me/locale`. */
+export const memberLocaleSchema = z.object({ locale: localeSchema });
+
 export const memberProfileSchema = z.object({
   version: z.literal(1),
   /** Off until someone turns it on — absent/false keeps today's 404. */
@@ -1117,6 +1125,19 @@ export const formInputSchema = z.object({
   config: formConfigSchema.optional(),
 });
 export type FormInput = z.infer<typeof formInputSchema>;
+
+/**
+ * Body of PUT /v1/forms/:id/slug: the form's new public URL segment.
+ *
+ * Shape validation (the character rules) is `validateFormSlug` in @quill/engine
+ * and runs in the data layer, so a slug that gets past this bound still comes
+ * back as a typed SLUG_INVALID rather than a 500. What this pins is the
+ * CEILING, 80, which the engine's `FORM_SLUG_MAX_LENGTH` mirrors on purpose.
+ */
+export const formSlugInputSchema = z.object({
+  slug: z.string().trim().min(1).max(80),
+});
+export type FormSlugInput = z.infer<typeof formSlugInputSchema>;
 
 export const formViewSchema = z.object({
   id: z.string(),

@@ -57,6 +57,18 @@ export const openapiSpec = {
         responses: { '202': { description: 'Accepted' }, '400': { description: 'Invalid' } },
       },
     },
+    '/v1/me/locale': {
+      put: {
+        summary: 'Set the language you read the product in (host)',
+        description:
+          "Body { locale }: 'en' or 'es'. Scoped to the caller's own membership, so it is not admin-gated and cannot change a teammate's. Stored on the member row, which is also what selects the language of the submission notification emails this account sends. The web app additionally keeps a cookie, which is what its pages render from.",
+        security: [{ hostSession: [] }],
+        responses: {
+          '200': { description: 'Stored' },
+          '400': { description: 'Not a supported locale' },
+        },
+      },
+    },
     '/v1/forms': {
       get: { summary: 'List forms (host)', security: [{ hostSession: [] }], responses: { '200': { description: 'Forms' } } },
       post: { summary: 'Create a form (host)', security: [{ hostSession: [] }], responses: { '201': { description: 'Created' } } },
@@ -66,11 +78,24 @@ export const openapiSpec = {
       put: {
         summary: 'Update a form (host)',
         description:
-          'name/slug apply to the live form immediately; config is stored as an unpublished draft: publish it via POST /v1/forms/{id}/publish. The public renderer keeps serving the previously published config until then.',
+          'name/slug apply to the live form immediately; config is stored as an unpublished draft: publish it via POST /v1/forms/{id}/publish. The public renderer keeps serving the previously published config until then. A slug sent here is renamed through the same code as PUT /v1/forms/{id}/slug, retiring the previous one so shared links keep working, but keeps this endpoint\u2019s older, lenient contract: the value is slugified rather than rejected. It is applied before name and config, so a refused slug leaves the form untouched.',
         security: [{ hostSession: [] }],
         responses: { '200': { description: 'Updated (config changes staged as a draft)' } },
       },
       delete: { summary: 'Delete a form (host)', security: [{ hostSession: [] }], responses: { '204': { description: 'Deleted' } } },
+    },
+    '/v1/forms/{id}/slug': {
+      put: {
+        summary: "Rename a form's public URL (host)",
+        description:
+          'Body { slug }. Applies to the live form immediately. The previous slug is retired, not dropped: it keeps resolving, and the public page sends visitors on to the new URL (a client-side redirect, plus a canonical link tag for non-browser clients), so links already shared stay valid. 409 SLUG_TAKEN when another form in the account holds it (as its current slug or as one it retired), 409 SLUG_INVALID when the shape is wrong (lowercase letters, digits and single hyphens, up to 80 characters).',
+        security: [{ hostSession: [] }],
+        responses: {
+          '200': { description: 'Renamed' },
+          '404': { description: 'No such form in this account' },
+          '409': { description: 'SLUG_TAKEN or SLUG_INVALID' },
+        },
+      },
     },
     '/v1/forms/{id}/publish': {
       post: {

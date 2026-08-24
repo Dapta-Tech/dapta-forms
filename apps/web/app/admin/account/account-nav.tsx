@@ -21,11 +21,14 @@ const ITEMS: AccountNavItem[] = [
   { key: 'brandKit', href: '/admin/account/brand-kit', icon: 'pi-palette', testId: 'account-nav-brand-kit' },
   { key: 'notifications', href: '/admin/account/notifications', icon: 'pi-bell', testId: 'account-nav-notifications' },
   { key: 'publicPage', href: '/admin/account/public-page', icon: 'pi-globe', testId: 'account-nav-public-page' },
+  // Last, and the only one of the five that is about the PERSON rather than the
+  // workspace. See the preferences page.
+  { key: 'preferences', href: '/admin/account/preferences', icon: 'pi-sliders-h', testId: 'account-nav-preferences' },
 ];
 
 /**
  * The account-settings sub-nav. From `xl`: a vertical list to the left of the
- * content; below it: a 2x2 grid above the content, so every entry is visible
+ * content; below it: a grid above the content, so every entry is visible
  * without scrolling even at 375px (a horizontal scroller hid "Public page"
  * off-screen with nothing to say so). Same visual grammar as the rail's
  * NavLinks (bg-muted wash + 2px accent bar for the active item,
@@ -36,7 +39,12 @@ export function AccountNav({ labels, ariaLabel }: { labels: NavLabels; ariaLabel
   const pathname = usePathname();
   return (
     <nav data-testid="account-nav" aria-label={ariaLabel} className="xl:w-52 xl:shrink-0">
-      <ul className="grid grid-cols-2 gap-1 sm:grid-cols-4 xl:flex xl:flex-col">
+      {/* The column counts track the item count. `sm:grid-cols-4` was exact
+          while there were four entries and strands the fifth on a row of its
+          own, stretched to full width and reading as a different kind of thing
+          than its siblings. Five across is too tight below `lg`, so the middle
+          band goes three-then-two, which fills both rows. */}
+      <ul className="grid grid-cols-2 gap-1 sm:grid-cols-3 lg:grid-cols-5 xl:flex xl:flex-col">
         {ITEMS.map((item) => {
           const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
           return (

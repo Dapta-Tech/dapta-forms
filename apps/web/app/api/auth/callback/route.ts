@@ -3,6 +3,7 @@ import { cookies } from 'next/headers';
 import { NextResponse, type NextRequest } from 'next/server';
 import { serverApiUrl } from '@/lib/api-url';
 import { setSession } from '@/lib/auth-session';
+import { asLocale, LOCALE_COOKIE, LOCALE_COOKIE_MAX_AGE } from '@/lib/locale';
 import { requestOrigin } from '@/lib/request-origin';
 
 const OAUTH_STATE_COOKIE = 'quill_oauth_state';
@@ -56,6 +57,51 @@ async function recordAttribution(
     if (res.status < 500) jar.delete(ATTRIBUTION_COOKIE);
   } catch {
     // Kept for a retry — see the note above. Never rethrown: the login succeeded.
+  }
+}
+
+/**
+ * Give this browser the language the person already chose somewhere else.
+ *
+ * Every admin page renders from the cookie, never from the member row, so that
+ * no page pays for a lookup and nothing has to be corrected after hydration.
+ * The cost of that choice is a browser that has no cookie yet: a second laptop,
+ * a private window, or cleared site data. Without this the stored preference is
+ * invisible there and `getLocale` answers English, so somebody who set the
+ * product to Spanish months ago signs in and finds it in English again with no
+ * clue why. Login is the one moment we hold a token and are already talking to
+ * the API, so it is where the two stores get reconciled.
+ *
+ * Only ever FILLS a gap. A cookie already on this browser is this browser's
+ * answer and is left alone, which is what keeps a per-device override possible
+ * and stops a stale row from overwriting a choice made seconds ago.
+ *
+ * Best-effort throughout: no locale stored, a slow API, a 500, junk in the
+ * column - every one of them leaves the cookie unset and the request falls back
+ * to Accept-Language exactly as it does today. A login must not fail over a
+ * language.
+ */
+async function seedLocale(
+  jar: Awaited<ReturnType<typeof cookies>>,
+  accessToken: string,
+): Promise<void> {
+  if (jar.get(LOCALE_COOKIE)?.value) return;
+  try {
+    const res = await fetch(`${serverApiUrl}/v1/me`, {
+      headers: { authorization: `Bearer ${accessToken}` },
+      cache: 'no-store',
+      signal: AbortSignal.timeout(3000),
+    });
+    if (!res.ok) return;
+    const locale = asLocale((await res.json())?.locale);
+    if (!locale) return;
+    jar.set(LOCALE_COOKIE, locale, {
+      path: '/',
+      maxAge: LOCALE_COOKIE_MAX_AGE,
+      sameSite: 'lax',
+    });
+  } catch {
+    // Same posture as the attribution call above: the login already succeeded.
   }
 }
 
@@ -127,5 +173,6 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     sessionId: tokens.session_id,
   });
   await recordAttribution(jar, tokens.access_token);
+  await seedLocale(jar, tokens.access_token);
   return NextResponse.redirect(new URL('/admin', origin));
 }

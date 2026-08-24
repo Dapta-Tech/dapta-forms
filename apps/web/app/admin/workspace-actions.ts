@@ -77,7 +77,9 @@ export async function enterEstateWorkspaceAction(workspaceId: string): Promise<{
 export type CreateWorkspaceState =
   | null
   | { ok: true }
-  | { ok: false; code: 'INVALID' | 'FORBIDDEN' | 'FAILED' };
+  | { ok: false; code: 'INVALID' | 'FORBIDDEN' | 'FAILED' }
+  /** The identity service refused, with its own reason (a plan limit, a rule). */
+  | { ok: false; code: 'REJECTED'; message: string };
 
 /**
  * Create a workspace and enter it. Owner is the caller; with the identity
@@ -99,6 +101,16 @@ export async function createWorkspaceAction(
     unstable_rethrow(e);
     if (e instanceof ApiError) {
       if (e.status === 403) return { ok: false, code: 'FORBIDDEN' };
+      // Upstream said no and said why: show that, it is the only actionable
+      // text. Without a reason (ApiError falls back to the code itself), the
+      // dialog's own localized copy is better than echoing a code.
+      if (e.code === 'WORKSPACE_CREATE_REJECTED') {
+        return e.message && e.message !== e.code
+          ? { ok: false, code: 'REJECTED', message: e.message }
+          : { ok: false, code: 'FAILED' };
+      }
+      // Created upstream, not visible yet: not the name's fault.
+      if (e.code === 'WORKSPACE_NOT_VISIBLE') return { ok: false, code: 'FAILED' };
       if (e.status === 400) return { ok: false, code: 'INVALID' };
     }
     return { ok: false, code: 'FAILED' };

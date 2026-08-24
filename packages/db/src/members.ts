@@ -420,6 +420,14 @@ export interface ProfileFormRow {
   name: string;
   /** The author's public title, when the form has one. */
   title: string | null;
+  /**
+   * Slugs this form used to answer to (see 0017), so a profile that named one
+   * before the author renamed the link still matches. The listing filter runs
+   * on `formSlugs`, which stores whatever slug was current when the author
+   * picked the form; without these a rename would drop the form off every page
+   * that listed it.
+   */
+  retiredSlugs: string[];
 }
 
 /** A member's stored public page + the identity fields it renders alongside. */
@@ -483,12 +491,28 @@ export async function listPublishedFormsForAccount(
   // jsonb on Postgres and TEXT on SQLite, so the extraction happens here in JS
   // rather than in dialect-specific SQL.
   const rows = await db.all<Record<string, unknown>>(
-    sql`SELECT slug, name, config FROM form WHERE account_id = ${account.id} ORDER BY created_at ASC`,
+    sql`SELECT id, slug, name, config FROM form WHERE account_id = ${account.id} ORDER BY created_at ASC`,
   );
+  // One query for the whole account rather than one per form: an account has a
+  // handful of forms and rather fewer retired slugs, and this runs on a public
+  // page render.
+  const aliasRows = await db.all<{ alias: string; form_id: string }>(
+    sql`SELECT alias, form_id FROM form_alias WHERE account_id = ${account.id}`,
+  );
+  const retiredByForm = new Map<string, string[]>();
+  for (const row of aliasRows) {
+    const key = String(row.form_id);
+    retiredByForm.set(key, [...(retiredByForm.get(key) ?? []), String(row.alias)]);
+  }
   return rows.map((r) => {
     const config = parseJsonColumn<{ title?: unknown }>(r.config, {});
     const title = typeof config.title === 'string' && config.title.trim() ? config.title.trim() : null;
-    return { slug: String(r.slug), name: String(r.name), title };
+    return {
+      slug: String(r.slug),
+      name: String(r.name),
+      title,
+      retiredSlugs: retiredByForm.get(String(r.id)) ?? [],
+    };
   });
 }
 
@@ -503,6 +527,50 @@ export async function setMemberProfile(
     sql`UPDATE member SET profile = ${profile == null ? null : JSON.stringify(profile)}
         WHERE id = ${memberId} AND account_id = ${accountId}`,
   );
+}
+
+/**
+ * Store the language this person reads the admin in.
+ *
+ * The column is not new and it is not only a UI preference: `email-effects`
+ * already reads the account owner's `locale` to choose the EN/ES copy of the
+ * submission notice. Nothing ever wrote it, so that read has always found NULL
+ * and every one of those emails went out in English. Persisting the choice here
+ * is therefore what makes the setting mean what it says, rather than a second
+ * place to keep the same cookie.
+ *
+ * Scoped to the member row AND the account, like every other write in this file:
+ * one person's language is not the workspace's to set.
+ *
+ * `null` is a real value and means "never chose" — the caller then falls back to
+ * the browser's Accept-Language, which is what a brand-new person gets. Storing
+ * 'en' for someone who never picked would freeze that fallback shut.
+ */
+export async function setMemberLocale(
+  db: Db,
+  accountId: string,
+  memberId: string,
+  locale: 'en' | 'es' | null,
+): Promise<void> {
+  await db.run(
+    sql`UPDATE member SET locale = ${locale}
+        WHERE id = ${memberId} AND account_id = ${accountId}`,
+  );
+}
+
+/** The stored language for one member, or null when they never chose one. */
+export async function getMemberLocale(
+  db: Db,
+  accountId: string,
+  memberId: string,
+): Promise<'en' | 'es' | null> {
+  const r = await db.get<{ locale: string | null }>(
+    sql`SELECT locale FROM member WHERE id = ${memberId} AND account_id = ${accountId} LIMIT 1`,
+  );
+  // Anything else in the column reads as "no choice". The column predates this
+  // feature and is plain text, so a value from a future locale must degrade to
+  // the fallback rather than reach a catalog lookup that has no such key.
+  return r?.locale === 'en' || r?.locale === 'es' ? r.locale : null;
 }
 
 /** The stored public-page blob for one member (account-scoped), or null. */

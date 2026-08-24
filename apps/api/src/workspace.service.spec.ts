@@ -373,6 +373,12 @@ describe('WorkspaceService (IAM-backed) — staff of the deployment', () => {
   let workspaces: IamWorkspace[];
   // Workspace ids whose single read answers 500 (a flaky upstream row).
   let broken: Set<string>;
+  // When set, POST /workspace answers this refusal instead of creating.
+  let createRefusal: { status: number; body: string } | null;
+  // When true, a created workspace is NOT added to the search list (the
+  // upstream list lags behind the create); only its single read answers.
+  let lagList: boolean;
+  let lagged: IamWorkspace[];
   const STAFF_SUB = 'sub-staff';
   const staffToken = signJwtHs256({ sub: STAFF_SUB, account_id: 'acc-staff', email: 's@staff.test', name: 'Staff', exp: 4102444800 }, SECRET);
   const staffReq = (workspace?: string): ReqLike => ({
@@ -386,6 +392,9 @@ describe('WorkspaceService (IAM-backed) — staff of the deployment', () => {
     await migrate(db);
     calls = [];
     broken = new Set();
+    createRefusal = null;
+    lagList = false;
+    lagged = [];
     workspaces = [
       { id: WS_OWN, name: 'Mine', account_id: IAM_ACCOUNT, is_active: true, users: [{ id: 'wu1', user_id: SUB, type: 'OWNER', is_active: true, roles: [] }] },
       { id: 'ws-staff', name: 'Staff HQ', account_id: 'acc-staff', is_active: true, users: [{ id: 'wu-s', user_id: STAFF_SUB, type: 'OWNER', is_active: true, roles: [] }] },
@@ -405,10 +414,30 @@ describe('WorkspaceService (IAM-backed) — staff of the deployment', () => {
         if (acc) rows = rows.filter((w) => w.account_id === acc);
         return json({ data: rows, total: rows.length, totalPages: 1 });
       }
+      if (method === 'POST' && url.pathname === '/iam/workspace') {
+        if (createRefusal) return new Response(createRefusal.body, { status: createRefusal.status });
+        const b = JSON.parse(String(init?.body ?? '{}')) as { name: string; account_id: string };
+        // Owner = whoever the bearer says (the real one does the same).
+        const bearer = String((init?.headers as Record<string, string> | undefined)?.authorization ?? '');
+        const claims = JSON.parse(
+          Buffer.from(bearer.split('.')[1] ?? '', 'base64url').toString() || '{}',
+        ) as { sub?: string };
+        const n = workspaces.length + lagged.length;
+        const ws: IamWorkspace = {
+          id: `ws-new-${n}`,
+          name: b.name,
+          account_id: b.account_id,
+          is_active: true,
+          users: [{ id: `wu-new-${n}`, user_id: claims.sub ?? STAFF_SUB, type: 'OWNER', is_active: true, roles: [] }],
+        };
+        // A lagging upstream: the create answers, the LIST does not name it yet.
+        (lagList ? lagged : workspaces).push(ws);
+        return json(ws);
+      }
       if (method === 'GET' && url.pathname.startsWith('/iam/workspace/')) {
         const id = url.pathname.split('/').pop() ?? '';
         if (broken.has(id)) return new Response('boom', { status: 500 });
-        const w = workspaces.find((x) => x.id === id);
+        const w = [...workspaces, ...lagged].find((x) => x.id === id);
         return w ? json(w) : new Response('nf', { status: 404 });
       }
       return new Response('nope', { status: 404 });
@@ -530,6 +559,48 @@ describe('WorkspaceService (IAM-backed) — staff of the deployment', () => {
     const byName = await svc.search(staffReq(), { query: 'mine' });
     expect(byName.rows.filter((r) => r.workspaceId === WS_OWN)).toHaveLength(1);
     expect(byName.rows[0]!.hint ?? null).toBeNull();
+  });
+
+  it('a staff refresh keeps going when one known workspace answers 500: the rest still projects', async () => {
+    workspaces[2]!.users!.push({ id: 'wu-s2', user_id: STAFF_SUB, type: 'MEMBER', is_active: true, roles: [] });
+    await svc.enterEstateWorkspace(staffReq(), 'ws-other');
+    broken.add('ws-other');
+    // A new workspace of the staff person's own account appears upstream.
+    workspaces.push({ id: 'ws-staff-2', name: 'Staff Lab', account_id: 'acc-staff', is_active: true, users: [{ id: 'wu-s3', user_id: STAFF_SUB, type: 'OWNER', is_active: true, roles: [] }] });
+    await svc.refresh(staffReq());
+    // Not degraded: the new one is projected; the broken one is kept, not pruned.
+    expect((await svc.list(staffReq())).map((w) => w.accountName).sort()).toEqual(['Other Corp', 'Staff HQ', 'Staff Lab']);
+  });
+
+  it('create projects the new workspace directly, even when the refresh cannot re-read a known one', async () => {
+    workspaces[2]!.users!.push({ id: 'wu-s2', user_id: STAFF_SUB, type: 'MEMBER', is_active: true, roles: [] });
+    await svc.enterEstateWorkspace(staffReq(), 'ws-other');
+    broken.add('ws-other');
+    const { accountId } = await svc.create(staffReq(), { name: 'Fresh' });
+    const row = await db.get<{ external_id: string; name: string }>(sql`SELECT external_id, name FROM account WHERE id = ${accountId}`);
+    expect(row?.name).toBe('Fresh');
+    expect(workspaces.some((w) => w.id === row?.external_id)).toBe(true);
+    const me = (await svc.list(staffReq())).find((w) => w.accountId === accountId);
+    expect(me?.role).toBe('owner');
+  });
+
+  it('create for a regular member survives an upstream list that lags: the new row stays active', async () => {
+    // The refresh inside create prunes against the upstream list; when that
+    // list does not name the just-created workspace yet, the direct projection
+    // must land AFTER it, or the owner row is disabled the moment it is born.
+    lagList = true;
+    const { accountId } = await svc.create(customerReq(), { name: 'Lagged' });
+    const mine = await svc.list(customerReq());
+    const row = mine.find((w) => w.accountId === accountId);
+    expect(row?.status).toBe('active');
+    expect(row?.role).toBe('owner');
+  });
+
+  it("create hands the identity service's refusal to the caller instead of a bare 500", async () => {
+    createRefusal = { status: 422, body: JSON.stringify({ message: 'Plan limit: 1 workspace' }) };
+    await expect(svc.create(staffReq(), { name: 'One more' })).rejects.toMatchObject({
+      response: { error: 'WORKSPACE_CREATE_REJECTED', message: 'Plan limit: 1 workspace' },
+    });
   });
 
   it('a staff refresh never pages the estate: own account scoped, known memberships re-read one by one', async () => {
