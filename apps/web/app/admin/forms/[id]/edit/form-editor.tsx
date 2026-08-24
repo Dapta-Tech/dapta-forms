@@ -15,6 +15,8 @@ import type {
 import {
   normalizeConfig,
   renameStepKey as engineRenameStepKey,
+  setOptionLabel as engineSetOptionLabel,
+  renameOptionValue as engineRenameOptionValue,
   createEmptyStep,
   migrateRevealToStep,
   resolveFormLayout,
@@ -129,6 +131,7 @@ export function FormEditor({
   m,
   initialHasDraft = false,
   updatedAt,
+  lockedValues = {},
 }: {
   id: string;
   initialName: string;
@@ -140,6 +143,12 @@ export function FormEditor({
   initialHasDraft?: boolean;
   /** Server row's last-write stamp — gates the crash-recovery offer. */
   updatedAt?: number;
+  /**
+   * Option values a label edit must leave alone, by step key: everything a
+   * published config already carries, plus everything a HubSpot value map
+   * points at. See `lockedOptionValues`.
+   */
+  lockedValues?: Record<string, string[]>;
 }) {
   const bm = getBuilderMessages(locale);
   const searchParams = useSearchParams();
@@ -156,6 +165,15 @@ export function FormEditor({
    * is most likely to press next.
    */
   const [publicPath, setPublicPath] = useState(initialPublicPath);
+  /**
+   * Locked option values, as STATE rather than the prop they arrive as: a step
+   * key can be renamed in this session and the locks are filed under it.
+   * Publishing from here does not add to them on purpose - the values the
+   * author just published are the ones they were editing a moment ago, and
+   * freezing them mid-session would be a rule that appears out of nowhere. The
+   * next load reads the published config and locks them properly.
+   */
+  const [locks, setLocks] = useState(lockedValues);
   // The builder has ONE reveal model: a `reveal` step in the list. A form
   // authored under the old form-level reveal (Design-tab copy + a draggable
   // position marker) is folded into that shape the moment it opens, so the two
@@ -317,6 +335,39 @@ export function FormEditor({
     }));
   }
   /**
+   * Write an option's label, letting its VALUE follow unless the value is the
+   * author's or already out in the world.
+   *
+   * A dedicated operation rather than another `patchStep({ options })`, because
+   * the value is referenced from OUTSIDE the step that owns it (conditions on
+   * other steps, outcome overrides), so a step-scoped patch cannot carry the
+   * pointers. Both editing surfaces route through here so they cannot disagree
+   * about when the value moves - and that disagreement is the bug: the settings
+   * panel has always kept the value in step and the canvas never did, which is
+   * how forms end up reading properly on screen and storing `option_1`.
+   */
+  function setOptionLabel(stepIndex: number, optionIndex: number, label: string) {
+    const stepKey = config.steps[stepIndex]?.key;
+    if (!stepKey) return;
+    const locked = new Set(locks[stepKey] ?? []);
+    mutate((c) => engineSetOptionLabel(c, stepKey, optionIndex, label, locked));
+  }
+  /**
+   * Rewrite an option's stored value by hand (the Advanced disclosure).
+   *
+   * Goes through the same engine rename as a label-driven one, so a value the
+   * author moves themselves carries its conditions, jumps, variant keys and
+   * outcome overrides exactly as one that moved on its own. The panel commits
+   * this on blur rather than per keystroke and refuses a collision before
+   * calling, so each call here is a whole, valid new name.
+   */
+  function setOptionValue(stepIndex: number, optionIndex: number, value: string) {
+    const step = config.steps[stepIndex];
+    const current = step?.options?.[optionIndex];
+    if (!step || !current) return;
+    mutate((c) => engineRenameOptionValue(c, step.key, current.value, value));
+  }
+  /**
    * Rename a step's answer key (V5-A10). The engine's `renameStepKey` moves every
    * in-config pointer (conditions, goto targets, variant sources, override rules,
    * `[key]` tokens). HubSpot field mappings are stored OUTSIDE this config and
@@ -328,6 +379,14 @@ export function FormEditor({
     if (!current) return;
     const oldKey = current.key;
     mutate((c) => engineRenameStepKey(c, oldKey, nextKey));
+    // The locks are filed BY step key, so the key moving would strand them and
+    // this step's published values would quietly become editable again.
+    setLocks((prev) => {
+      const held = prev[oldKey];
+      if (!held) return prev;
+      const { [oldKey]: _moved, ...rest } = prev;
+      return { ...rest, [nextKey]: held };
+    });
     void callAction(() => renameQuestionMappingAction(id, oldKey, nextKey)).then((res) => {
       if (isTransportError(res) || (!res.ok && res.code === 'error')) {
         // The config rename already applied and autosaved; only the CRM mapping
@@ -845,6 +904,7 @@ export function FormEditor({
                         focusSignal={focusCanvas}
                         onSelect={setSelected}
                         onUpdateStep={patchStep}
+                        onOptionLabel={setOptionLabel}
                         m={bm}
                       />
                     ) : (
@@ -856,6 +916,7 @@ export function FormEditor({
                         total={config.steps.length}
                         device={device}
                         onUpdate={(patch) => patchStep(selected, patch)}
+                        onOptionLabel={(optionIndex, label) => setOptionLabel(selected, optionIndex, label)}
                         m={bm}
                       />
                     )
@@ -907,6 +968,9 @@ export function FormEditor({
                     layout={layout}
                     scoringEnabled={scoringEnabled}
                     onUpdate={(patch) => patchStep(selected, patch)}
+                    onOptionLabel={(optionIndex, label) => setOptionLabel(selected, optionIndex, label)}
+                    onOptionValue={(optionIndex, value) => setOptionValue(selected, optionIndex, value)}
+                    lockedValues={new Set(locks[selectedStep.key] ?? [])}
                     onDelete={() => deleteStep(selected)}
                     bm={bm}
                     em={m}

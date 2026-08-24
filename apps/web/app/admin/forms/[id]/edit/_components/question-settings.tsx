@@ -97,6 +97,9 @@ export function QuestionSettings({
   layout = 'slides',
   scoringEnabled,
   onUpdate,
+  onOptionLabel,
+  onOptionValue,
+  lockedValues,
   onDelete,
   bm,
   em,
@@ -115,6 +118,12 @@ export function QuestionSettings({
   layout?: FormLayout;
   scoringEnabled: boolean;
   onUpdate: (patch: Partial<FormStep>) => void;
+  /** Write one option's label; its value may follow. See `setOptionLabel`. */
+  onOptionLabel: (optionIndex: number, label: string) => void;
+  /** Rewrite one option's stored value by hand, pointers included. */
+  onOptionValue: (optionIndex: number, value: string) => void;
+  /** Values on THIS step that may no longer move (published, or CRM-mapped). */
+  lockedValues: ReadonlySet<string>;
   onDelete: () => void;
   bm: BuilderMessages;
   em: EditorMessages;
@@ -292,6 +301,9 @@ export function QuestionSettings({
           <OptionsEditor
             options={step.options ?? []}
             onChange={(options) => onUpdate({ options })}
+            onLabelChange={onOptionLabel}
+            onValueChange={onOptionValue}
+            locked={lockedValues}
             showPoints={stepScores}
             showIcon={step.type === 'multiple_choice'}
             layout={resolveOptionLayout(step)}

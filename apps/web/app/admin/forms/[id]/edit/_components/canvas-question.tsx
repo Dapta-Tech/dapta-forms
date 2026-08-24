@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useLayoutEffect, useRef } from 'react';
-import type { FormConfig, FormStep, FormOption } from '@quill/engine';
+import type { FormConfig, FormStep } from '@quill/engine';
 import {
   nameFields,
   sliderBounds,
@@ -95,6 +95,7 @@ export function CanvasQuestion({
   total,
   device,
   onUpdate,
+  onOptionLabel,
   m,
 }: {
   config: FormConfig;
@@ -103,6 +104,12 @@ export function CanvasQuestion({
   total: number;
   device: 'desktop' | 'mobile';
   onUpdate: (patch: Partial<FormStep>) => void;
+  /**
+   * Write one option's label. Separate from `onUpdate` because the option's
+   * VALUE may follow the label, and the value is referenced from outside this
+   * step, which a step-scoped patch cannot reach. See `setOptionLabel`.
+   */
+  onOptionLabel: (optionIndex: number, label: string) => void;
   m: BuilderMessages;
 }) {
   // The author's exact color, matching the renderer and the live preview. This
@@ -207,6 +214,7 @@ export function CanvasQuestion({
           index={index}
           accent={accent}
           onUpdate={onUpdate}
+          onOptionLabel={onOptionLabel}
           m={m}
         />
 
@@ -247,6 +255,7 @@ function QuestionEditableBody({
   index,
   accent,
   onUpdate,
+  onOptionLabel,
   m,
 }: {
   config: FormConfig;
@@ -254,6 +263,7 @@ function QuestionEditableBody({
   index: number;
   accent: string;
   onUpdate: (patch: Partial<FormStep>) => void;
+  onOptionLabel: (optionIndex: number, label: string) => void;
   m: BuilderMessages;
 }) {
   const showsPoints =
@@ -268,9 +278,6 @@ function QuestionEditableBody({
     design.radius === 'sharp' ? 'rounded-[2px]' : design.radius === 'round' ? 'rounded-[14px]' : 'rounded-[8px]';
   const centred = design.contentAlign === 'center';
 
-  function updateOption(i: number, patch: Partial<FormOption>) {
-    onUpdate({ options: (step.options ?? []).map((o, oi) => (oi === i ? { ...o, ...patch } : o)) });
-  }
   function addOption() {
     const n = (step.options ?? []).length + 1;
     onUpdate({ options: [...(step.options ?? []), { label: `Option ${n}`, value: `option_${n}`, points: 0 }] });
@@ -363,7 +370,7 @@ function QuestionEditableBody({
                   )}
                   <input
                     value={opt.label}
-                    onChange={(e) => updateOption(i, { label: e.target.value })}
+                    onChange={(e) => onOptionLabel(i, e.target.value)}
                     placeholder={`${m.canvas.optionPlaceholder} ${i + 1}`}
                     aria-label={`${m.canvas.optionPlaceholder} ${i + 1}`}
                     className="w-full min-w-0 bg-transparent text-center text-sm font-medium text-foreground outline-none placeholder:text-muted-foreground/50"
@@ -399,7 +406,7 @@ function QuestionEditableBody({
                   </span>
                   <input
                     value={opt.label}
-                    onChange={(e) => updateOption(i, { label: e.target.value })}
+                    onChange={(e) => onOptionLabel(i, e.target.value)}
                     placeholder={`${m.canvas.optionPlaceholder} ${i + 1}`}
                     aria-label={`${m.canvas.optionPlaceholder} ${i + 1}`}
                     className="min-w-0 flex-1 bg-transparent text-[15px] font-medium text-foreground outline-none placeholder:text-muted-foreground/50"
@@ -487,6 +494,7 @@ export function CanvasPage({
   focusSignal = 0,
   onSelect,
   onUpdateStep,
+  onOptionLabel,
   m,
 }: {
   config: FormConfig;
@@ -496,6 +504,8 @@ export function CanvasPage({
   focusSignal?: number;
   onSelect: (index: number) => void;
   onUpdateStep: (index: number, patch: Partial<FormStep>) => void;
+  /** Write one step's option label; the value may follow it. See `setOptionLabel`. */
+  onOptionLabel: (stepIndex: number, optionIndex: number, label: string) => void;
   m: BuilderMessages;
 }) {
   // The author's exact color, like every other surface — nothing corrects a
@@ -565,6 +575,7 @@ export function CanvasPage({
                   index={i}
                   accent={accent}
                   onUpdate={(patch) => onUpdateStep(i, patch)}
+                  onOptionLabel={(optionIndex, label) => onOptionLabel(i, optionIndex, label)}
                   m={m}
                 />
               )}
