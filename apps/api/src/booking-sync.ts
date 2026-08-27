@@ -8,13 +8,18 @@ import {
   type HubspotDestination,
 } from '@quill/types';
 import { resolveOutcome, INVITEE_FIELDS, type FormConfig } from '@quill/engine';
-import { createDestination } from '@quill/destinations';
+import { createDestination, dayMidnightMs, utcMidnightMs } from '@quill/destinations';
 import type { ServerEnv } from '@quill/config/env';
 import { OutboxSkipError } from './email-effects';
 import { extractUtm } from './destination-effects';
 import { HubspotPortalResolver, mirrorGuidFor } from './hubspot-portal';
 import type { BookingSyncPayload } from './booking-effects';
+import { HubspotPropertiesService } from './integrations.controller';
 import { DB, ENV } from './tokens';
+
+// Re-exported from their shared home (`@quill/destinations`) — the submit-time
+// adapter collapses days the same way, and both sides must agree on the answer.
+export { dayMidnightMs, utcMidnightMs };
 
 /** HubSpot public API base (overridable in tests via `hubspotApiBase`). */
 export const HUBSPOT_API_BASE = 'https://api.hubapi.com';
@@ -153,7 +158,29 @@ export class BookingSyncEffects {
   constructor(
     @Inject(DB) private readonly db: Db,
     @Optional() @Inject(ENV) private readonly env?: ServerEnv,
+    /** Portal property types (cached per account) — how a write knows whether
+     *  its target keeps the instant or only a day. Optional: absent = unknown
+     *  types, and every date write degrades to the day-collapse default. */
+    @Optional()
+    @Inject(HubspotPropertiesService)
+    private readonly hubspotProperties?: HubspotPropertiesService,
   ) {}
+
+  /**
+   * name -> HubSpot property type (`date`, `datetime`, …) for the account's
+   * portal, or null when it cannot be known (no service wired, no token, or
+   * the lookup failed). Null makes every consumer fall back to the legacy
+   * behaviour rather than guessing.
+   */
+  private async propertyTypes(accountId: string): Promise<Map<string, string> | null> {
+    try {
+      const listed = await this.hubspotProperties?.listProperties(accountId);
+      if (!listed?.enabled) return null;
+      return new Map(listed.properties.map((p) => [p.name, p.type]));
+    } catch {
+      return null;
+    }
+  }
 
   /** The worker's executor for a `booking_sync` outbox row. */
   async deliver(_action: string, payloadJson: string): Promise<void> {
@@ -232,6 +259,16 @@ export class BookingSyncEffects {
     }
 
     // --- Build the configured booking properties ------------------------------
+    // What each property receives depends on its TYPE in the portal: a `date`
+    // property only holds a calendar day (named in the destination's day
+    // timezone), a `datetime` property holds the exact instant (the portal
+    // renders it in its own zone). Types unresolvable = legacy defaults: the
+    // booking date collapses to a day, the meeting start stays an instant.
+    const types = await this.propertyTypes(payload.accountId);
+    // The shared destination-level zone; the old per-bookingSync field survives
+    // as the fallback so stored configs keep the zone they were saved with.
+    const dayTimezone = destination.dayTimezone ?? sync?.dateTimezone;
+    const warn = (m: string) => this.log.warn(`booking sync: ${m}`);
     const properties: Record<string, string> = {};
     if (hasStage && sync) properties[sync.stageProperty!.trim()] = sync.stageValue!.trim();
     // The booking DAY — when the lead booked, not when the meeting is. Deliberately
@@ -240,14 +277,22 @@ export class BookingSyncEffects {
     if (sync?.dateProperty?.trim()) {
       const bookedAtMs = payload.bookedAt ?? (await this.bookedAtFallback(payload, submission));
       if (bookedAtMs != null) {
-        properties[sync.dateProperty.trim()] = String(
-          dayMidnightMs(bookedAtMs, sync.dateTimezone, this.log),
-        );
+        const name = sync.dateProperty.trim();
+        properties[name] =
+          types?.get(name) === 'datetime'
+            ? String(bookedAtMs)
+            : String(dayMidnightMs(bookedAtMs, dayTimezone, warn));
       }
     }
     // The meeting START — only knowable once a start time resolved.
     if (sync?.hoursProperty?.trim() && startMs != null && Number.isFinite(startMs)) {
-      properties[sync.hoursProperty.trim()] = String(startMs);
+      const name = sync.hoursProperty.trim();
+      // A `date` target cannot hold an instant — HubSpot rejects non-midnight
+      // values outright — so it gets the MEETING's day instead of nothing.
+      properties[name] =
+        types?.get(name) === 'date'
+          ? String(dayMidnightMs(startMs, dayTimezone, warn))
+          : String(startMs);
     }
 
     // Per-account HubSpot token (connected → decrypted), else the env fallback.
@@ -576,54 +621,6 @@ function adapterResolvableEmail(
   }
   const direct = data.email;
   return typeof direct === 'string' && direct.trim() ? direct.trim() : null;
-}
-
-/** UTC-midnight epoch-ms of the calendar day containing `epochMs` (UTC). */
-export function utcMidnightMs(epochMs: number): number {
-  const d = new Date(epochMs);
-  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
-}
-
-/**
- * UTC-midnight epoch-ms of the calendar day `epochMs` falls on **in `timezone`**
- * — the value a HubSpot `date` property takes, for the day a human in that zone
- * would name. Blank/absent zone = UTC (the platform default; this product is
- * self-hosted and has no business assuming anyone's office).
- *
- * An unrecognised zone WARNS and falls back to UTC rather than throwing: a typo
- * in a config field must not turn a delivery into a retry loop, and a day that
- * is off by hours beats no booking record at all.
- */
-export function dayMidnightMs(epochMs: number, timezone?: string, log?: Logger): number {
-  const zone = timezone?.trim();
-  if (zone) {
-    try {
-      // `formatToParts` and not a formatted string: reading the parts BY TYPE is
-      // locale-independent, where parsing "YYYY-MM-DD" assumes an ICU build that
-      // renders `en-CA` in ISO order. On a small-icu Node it does not, and every
-      // zone would degrade to UTC without anything looking wrong.
-      const parts = new Intl.DateTimeFormat('en-CA', {
-        timeZone: zone,
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-      }).formatToParts(new Date(epochMs));
-      const at = (type: string) => Number(parts.find((p) => p.type === type)?.value);
-      const [y, m, d] = [at('year'), at('month'), at('day')];
-      if (Number.isFinite(y) && Number.isFinite(m) && Number.isFinite(d)) {
-        return Date.UTC(y, m - 1, d);
-      }
-    } catch {
-      // Fall through to UTC.
-    }
-    // The zone is author-entered config, never PII — naming it is what makes the
-    // warning actionable. Quoted through JSON so an author cannot smuggle a
-    // newline into the log and forge a line of their own.
-    log?.warn(
-      `booking sync: unusable dateTimezone ${JSON.stringify(zone)}. Booking day computed in UTC instead`,
-    );
-  }
-  return utcMidnightMs(epochMs);
 }
 
 /** True only for https URLs on the Calendly API host (bearer-token guard). */

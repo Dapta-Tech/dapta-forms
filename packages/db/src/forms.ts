@@ -768,6 +768,37 @@ export async function publishForm(
   return { ok: true, value: (await getFormById(db, accountId, id))!, published: Boolean(fired) };
 }
 
+/**
+ * A duplicated config with each HubSpot destination's OWNED mirror state
+ * stripped. `formGuid` points at the mirror form in the portal that produces
+ * the "Form submission" activity, and it belongs to the ORIGINAL: a copy that
+ * keeps it posts its submissions at the original's form (misattributing every
+ * lead), and the first integrations save on either form PATCHes the shared
+ * mirror's NAME, so the two forms rename it back and forth forever. Stripping
+ * the pair makes the copy's first integrations save mint its own mirror.
+ * `formSignature` goes with it — it describes the form the guid names.
+ *
+ * Duck-typed (no schema parse): a legacy config that fails validation must
+ * still come out with its guid stripped, for the same reason
+ * `storedMirrorState` in the API reads it duck-typed.
+ */
+function withoutOwnedMirrorState(config: unknown): unknown {
+  if (!config || typeof config !== 'object' || Array.isArray(config)) return config;
+  const destinations = (config as { destinations?: unknown }).destinations;
+  if (!Array.isArray(destinations)) return config;
+  const cleaned = destinations.map((entry) => {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return entry;
+    if ((entry as { type?: unknown }).type !== 'hubspot') return entry;
+    const settings = (entry as { settings?: unknown }).settings;
+    if (!settings || typeof settings !== 'object' || Array.isArray(settings)) return entry;
+    const rest = { ...(settings as Record<string, unknown>) };
+    delete rest.formGuid;
+    delete rest.formSignature;
+    return { ...(entry as Record<string, unknown>), settings: rest };
+  });
+  return { ...(config as Record<string, unknown>), destinations: cleaned };
+}
+
 export async function duplicateForm(
   db: Db,
   accountId: string,
@@ -783,7 +814,9 @@ export async function duplicateForm(
     {
       name: `${src.name} (copy)`,
       slug: src.slug,
-      config: src.config,
+      // NOT verbatim: the HubSpot mirror-form pointer is the original's, and a
+      // copy that inherits it delivers its submissions AS the original.
+      config: withoutOwnedMirrorState(src.config),
     },
     createdBy,
   );

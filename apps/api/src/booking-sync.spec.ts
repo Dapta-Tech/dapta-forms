@@ -1071,6 +1071,80 @@ describe('booking date semantics', () => {
     expect(props).not.toHaveProperty('hours_booking');
   });
 
+  // What each property receives follows its TYPE in the portal, resolved
+  // through the (cached) properties service when one is wired: a `datetime`
+  // target keeps the instant, a `date` target gets the day.
+  function withPropertyTypes(types: Record<string, string>) {
+    bookingSync = new BookingSyncEffects(
+      db,
+      { CALENDLY_API_TOKEN: 'cal-token', HUBSPOT_PRIVATE_APP_TOKEN: 'hs-token' } as never,
+      {
+        listProperties: async () => ({
+          enabled: true,
+          cached: true,
+          properties: Object.entries(types).map(([name, type]) => ({ name, label: name, type })),
+        }),
+      } as never,
+    );
+  }
+
+  it('a datetime booking-date target gets the exact booking instant, zone ignored', async () => {
+    withPropertyTypes({ sales_date_booked: 'datetime', hours_booking: 'datetime' });
+    await setHubspotDestination(BOOKING_SYNC_CONFIG, { dayTimezone: 'America/Bogota' });
+    await svc.submit('acme', 'lead-qualifier', {
+      sessionId: 'sess-dt-date',
+      data: { role: 'founder', team_size: 20, email: 'lead@acme.io' },
+    });
+    await svc.booking('acme', 'lead-qualifier', {
+      sessionId: 'sess-dt-date',
+      provider: 'hubspot_meetings',
+      startTime: '2026-08-11T17:30:00Z',
+    });
+    const [row] = await listOutbox(db, { kind: 'booking_sync' });
+    const { bookedAt } = JSON.parse(row!.payload!) as { bookedAt: number };
+
+    const props = await bookingProps();
+    expect(props.sales_date_booked).toBe(String(bookedAt)); // instant, not a midnight
+  });
+
+  it('a date meeting-time target gets the meeting DAY in the shared zone, not nothing', async () => {
+    withPropertyTypes({ sales_date_booked: 'date', hours_booking: 'date' });
+    const startIso = '2026-08-11T17:30:00Z'; // 12 Aug 07:30 in Kiritimati (UTC+14)
+    await setHubspotDestination(BOOKING_SYNC_CONFIG, { dayTimezone: 'Pacific/Kiritimati' });
+    await svc.submit('acme', 'lead-qualifier', {
+      sessionId: 'sess-date-hours',
+      data: { role: 'founder', team_size: 20, email: 'lead@acme.io' },
+    });
+    await svc.booking('acme', 'lead-qualifier', {
+      sessionId: 'sess-date-hours',
+      provider: 'hubspot_meetings',
+      startTime: startIso,
+    });
+
+    const props = await bookingProps();
+    expect(props.hours_booking).toBe(String(Date.UTC(2026, 7, 12)));
+  });
+
+  it('the shared dayTimezone wins over the legacy bookingSync.dateTimezone', async () => {
+    await setHubspotDestination(
+      { ...BOOKING_SYNC_CONFIG, dateTimezone: 'Asia/Tokyo' },
+      { dayTimezone: 'Pacific/Kiritimati' },
+    );
+    await svc.submit('acme', 'lead-qualifier', {
+      sessionId: 'sess-tz-shared',
+      data: { role: 'founder', team_size: 20, email: 'lead@acme.io' },
+    });
+    const bookedAt = Date.now();
+    await svc.booking('acme', 'lead-qualifier', {
+      sessionId: 'sess-tz-shared',
+      provider: 'hubspot_meetings',
+      startTime: '2026-08-11T17:30:00Z',
+    });
+
+    const props = await bookingProps();
+    expect(props.sales_date_booked).toBe(bookedDay(bookedAt, 'Pacific/Kiritimati'));
+  });
+
   // Rows enqueued before `bookedAt` existed are still in the queue at deploy.
   // The booking_event row this sync is anchored to carries the same moment, so
   // a pre-fix row is exact rather than approximated.

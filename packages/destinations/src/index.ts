@@ -13,6 +13,7 @@ export {
   type DnsResolver,
 } from './ssrf-guard';
 export { LogOnlyDestination } from './adapters/log-only';
+export { dayMidnightMs, utcMidnightMs } from './day';
 export {
   WebhookDestination,
   WebhookHttpError,
