@@ -218,11 +218,15 @@ describe('duplicateForm strips the owned mirror state', () => {
     expect(destinations.find((d) => d.type === 'webhook')!.settings.url).toBe(
       'https://example.com/hook',
     );
-    // The ORIGINAL keeps its mirror pointer — only the copy sheds it.
-    const original = await writerOne.get<{ config: string }>(
+    // The ORIGINAL keeps its mirror pointer — only the copy sheds it. The raw
+    // column is text on SQLite and an already-parsed object on Postgres
+    // (jsonb), so normalise to JSON text before the substring check.
+    const original = await writerOne.get<{ config: unknown }>(
       sql`SELECT config FROM form WHERE id = ${src.value.id}`,
     );
-    expect(String(original!.config)).toContain('guid-of-the-original');
+    const rawConfig = original!.config;
+    const configText = typeof rawConfig === 'string' ? rawConfig : JSON.stringify(rawConfig);
+    expect(configText).toContain('guid-of-the-original');
   });
 
   it('leaves a config with no destinations alone', async () => {
