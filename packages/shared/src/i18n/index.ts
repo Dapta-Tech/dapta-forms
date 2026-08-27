@@ -1223,6 +1223,8 @@ export interface FormsMessages {
       bookingDateTimezoneHelp: string;
       /** A sample IANA zone — the same in both locales, but authored not hardcoded. */
       bookingDateTimezonePlaceholder: string;
+      /** The picker's empty option, i.e. what a blank zone means. */
+      bookingDateTimezoneUtc: string;
       /** Shown under the field when the browser cannot resolve the zone typed. */
       bookingDateTimezoneInvalid: string;
       /** Legacy configs only: a stored second HubSpot destination this tab will drop. */
@@ -2712,7 +2714,7 @@ export const en: FormsMessages = {
       scorePropertyHelp:
         'Receives the total score as a number, on completed submissions only.',
       datePropertyHelp:
-        'Receives the submission date. HubSpot date properties store midnight UTC, so the time of day is not kept. A webhook gets the full timestamp instead.',
+        'Receives the submission date. A date-type property gets the calendar day (named in the Day timezone beside it); a datetime property keeps the exact time.',
       outcomeProperty: 'Outcome property',
       outcomePropertyHelp:
         'Receives the HEADING you wrote on the matching score range in Results. The same text the respondent sees. Only on completed submissions, and only when a range matches; with scoring off nothing is sent.',
@@ -2735,11 +2737,13 @@ export const en: FormsMessages = {
       bookingDateProperty: 'Booking date property',
       bookingDatePropertyHelp: 'Calendar day the lead booked (not the meeting day).',
       bookingHoursProperty: 'Meeting time property',
-      bookingHoursPropertyHelp: 'Date and time the meeting starts, from the scheduler.',
+      bookingHoursPropertyHelp:
+        'Date and time the meeting starts, from the scheduler. A date-type property gets the meeting day instead (named in the Day timezone).',
       bookingDateTimezone: 'Day timezone',
       bookingDateTimezoneHelp:
-        'IANA timezone the booking day is computed in (e.g. America/Bogota). Blank = UTC.',
+        'Decides which calendar day a date-type property records (e.g. a 9pm submission is still "today" locally, but already tomorrow in UTC). Shared by every date-type property of this integration. Blank = UTC. Datetime properties keep the exact time and are shown in your portal\u2019s timezone instead.',
       bookingDateTimezonePlaceholder: 'America/Bogota',
+      bookingDateTimezoneUtc: 'UTC (default)',
       bookingDateTimezoneInvalid: 'Not a timezone name we recognise. The day will be computed in UTC.',
       extraHubspotTitle: 'This form has a second HubSpot connection',
       extraHubspotBody:
@@ -4194,7 +4198,7 @@ export const es: FormsMessages = {
       scorePropertyHelp:
         'Recibe el puntaje total como número, solo en respuestas completadas.',
       datePropertyHelp:
-        'Recibe la fecha de envío. Las propiedades de fecha de HubSpot guardan medianoche UTC, así que se pierde la hora. Un webhook recibe la marca de tiempo completa.',
+        'Recibe la fecha de envío. Una propiedad tipo fecha recibe el día calendario (según la zona horaria del día de al lado); una tipo fecha y hora conserva la hora exacta.',
       outcomeProperty: 'Propiedad de resultado',
       outcomePropertyHelp:
         'Recibe el ENCABEZADO que escribiste en el rango de puntaje que coincida, en Resultados. El mismo texto que ve el respondiente. Solo en respuestas completadas y solo si algún rango coincide; con el puntaje apagado no se envía nada.',
@@ -4219,11 +4223,12 @@ export const es: FormsMessages = {
         'Día calendario en que el lead agendó (no el día de la reunión).',
       bookingHoursProperty: 'Propiedad de hora de la reunión',
       bookingHoursPropertyHelp:
-        'Fecha y hora de inicio de la reunión, según el calendario.',
+        'Fecha y hora de inicio de la reunión, según el calendario. Una propiedad tipo fecha recibe solo el día de la reunión (según la zona horaria del día).',
       bookingDateTimezone: 'Zona horaria del día',
       bookingDateTimezoneHelp:
-        'Zona horaria IANA para calcular el día de agendado (ej. America/Bogota). Vacío = UTC.',
+        'Decide a qué día calendario pertenece lo que guarda una propiedad tipo fecha (ej. un envío a las 9pm sigue siendo "hoy" en tu zona, pero en UTC ya es mañana). Compartida por todas las propiedades tipo fecha de esta integración. Vacío = UTC. Las propiedades de fecha y hora conservan la hora exacta y se muestran en la zona horaria del portal.',
       bookingDateTimezonePlaceholder: 'America/Bogota',
+      bookingDateTimezoneUtc: 'UTC (predeterminada)',
       bookingDateTimezoneInvalid:
         'No reconocemos ese nombre de zona horaria. El día se calculará en UTC.',
       extraHubspotTitle: 'Este formulario tiene una segunda conexión con HubSpot',

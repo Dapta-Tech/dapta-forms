@@ -12,7 +12,7 @@ import { join } from 'node:path';
 import { sql, type SQL } from 'drizzle-orm';
 import { createDb, type Db } from './client';
 import { migrate } from './migrate';
-import { createForm } from './forms';
+import { createForm, duplicateForm } from './forms';
 
 let writerOne: Db;
 let writerTwo: Db;
@@ -165,5 +165,78 @@ describe('createForm slug allocation', () => {
       createForm(rejectEveryFormInsert(writerOne, attempts), accountId, { name: 'Bounded Retry' }),
     ).rejects.toBe(attempts.error);
     expect(attempts.count).toBe(3);
+  });
+});
+
+/**
+ * The HubSpot mirror-form pointer is OWNED state: `formGuid` names the mirror
+ * form the API minted for the ORIGINAL, and a copy that inherits it posts its
+ * submissions at the original's form — every lead the copy collects shows up
+ * attributed to the original, and integration saves on either form rename the
+ * shared mirror back and forth. The duplicate must shed the pair so its first
+ * integrations save mints its own mirror. Everything else copies verbatim.
+ */
+describe('duplicateForm strips the owned mirror state', () => {
+  it('drops formGuid + formSignature from a HubSpot destination, keeps the rest', async () => {
+    const src = await createForm(writerOne, accountId, {
+      name: 'Booking Sorteo',
+      config: {
+        version: 1,
+        steps: [],
+        destinations: [
+          {
+            type: 'hubspot',
+            enabled: true,
+            settings: {
+              note: false,
+              formActivity: true,
+              formGuid: 'guid-of-the-original',
+              formSignature: '["Booking Sorteo (Dapta Forms)",["email"]]',
+            },
+            fieldMappings: { email: 'email' },
+          },
+          { type: 'webhook', enabled: true, settings: { url: 'https://example.com/hook' } },
+        ],
+      },
+    });
+    if (!src.ok) throw new Error('createForm failed');
+
+    const copy = await duplicateForm(writerOne, accountId, src.value.id);
+    if (!copy.ok) throw new Error('duplicateForm failed');
+    const destinations = (copy.value.config as {
+      destinations: Array<{ type: string; settings: Record<string, unknown>; fieldMappings?: unknown }>;
+    }).destinations;
+
+    const hubspot = destinations.find((d) => d.type === 'hubspot')!;
+    expect(hubspot.settings.formGuid).toBeUndefined();
+    expect(hubspot.settings.formSignature).toBeUndefined();
+    // The author-owned settings and mappings survive the copy.
+    expect(hubspot.settings.formActivity).toBe(true);
+    expect(hubspot.settings.note).toBe(false);
+    expect(hubspot.fieldMappings).toEqual({ email: 'email' });
+    // Non-HubSpot destinations copy untouched.
+    expect(destinations.find((d) => d.type === 'webhook')!.settings.url).toBe(
+      'https://example.com/hook',
+    );
+    // The ORIGINAL keeps its mirror pointer — only the copy sheds it. The raw
+    // column is text on SQLite and an already-parsed object on Postgres
+    // (jsonb), so normalise to JSON text before the substring check.
+    const original = await writerOne.get<{ config: unknown }>(
+      sql`SELECT config FROM form WHERE id = ${src.value.id}`,
+    );
+    const rawConfig = original!.config;
+    const configText = typeof rawConfig === 'string' ? rawConfig : JSON.stringify(rawConfig);
+    expect(configText).toContain('guid-of-the-original');
+  });
+
+  it('leaves a config with no destinations alone', async () => {
+    const src = await createForm(writerOne, accountId, {
+      name: 'Plain',
+      config: { version: 1, steps: [] },
+    });
+    if (!src.ok) throw new Error('createForm failed');
+    const copy = await duplicateForm(writerOne, accountId, src.value.id);
+    if (!copy.ok) throw new Error('duplicateForm failed');
+    expect(copy.value.config).toEqual({ version: 1, steps: [] });
   });
 });
