@@ -6,7 +6,7 @@ import {
   emailMappingsConflictingWithScheduler,
   type ContactKeyReadiness,
 } from '@quill/engine';
-import { createContext, useCallback, useContext, useMemo, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useId, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import type { FormsMessages, Locale } from '@quill/shared';
 import { WEBHOOK_SECRET_MASK, type DestinationEvent, type FormDestination } from '@quill/types';
@@ -142,6 +142,14 @@ interface HubspotState {
   staticProperties: StaticPropertyRow[];
   inferCompanyFromEmail: boolean;
   bookingSync: BookingSyncState;
+  /**
+   * IANA zone naming the calendar day for every `date`-type property this
+   * destination writes (submitted date, booking date). Blank = UTC. One zone
+   * per destination — the pickers render it beside each date-type target, all
+   * editing this same value. `datetime` targets keep the exact instant and
+   * never use it.
+   */
+  dayTimezone: string;
 }
 
 /** Contact properties stamped when a respondent books a meeting (all optional). */
@@ -150,8 +158,6 @@ interface BookingSyncState {
   stageValue: string;
   dateProperty: string;
   hoursProperty: string;
-  /** IANA zone the booking DAY is computed in. Blank = UTC (server default). */
-  dateTimezone: string;
 }
 
 /**
@@ -168,6 +174,24 @@ function isKnownTimezone(value: string): boolean {
   } catch {
     return false;
   }
+}
+
+/**
+ * The IANA zones this browser can enumerate, for the Day-timezone picker.
+ * Computed once — the list is static for the life of the page. A runtime
+ * without `Intl.supportedValuesOf` yields null, and the field falls back to
+ * the free-text input (the same degradation `PropertyField` uses).
+ */
+let cachedTimezones: string[] | null | undefined;
+function browserTimezones(): string[] | null {
+  if (cachedTimezones !== undefined) return cachedTimezones;
+  try {
+    const zones = Intl.supportedValuesOf('timeZone');
+    cachedTimezones = zones.length > 0 ? zones : null;
+  } catch {
+    cachedTimezones = null;
+  }
+  return cachedTimezones;
 }
 
 /**
@@ -275,8 +299,10 @@ function initialHubspot(destinations: FormDestination[]): HubspotState {
         stageValue: h.bookingSync?.stageValue ?? '',
         dateProperty: h.bookingSync?.dateProperty ?? '',
         hoursProperty: h.bookingSync?.hoursProperty ?? '',
-        dateTimezone: h.bookingSync?.dateTimezone ?? '',
       },
+      // The old per-bookingSync zone is the fallback so a config saved before
+      // the shared field keeps the zone it was saved with.
+      dayTimezone: h.dayTimezone ?? h.bookingSync?.dateTimezone ?? '',
     };
   }
   return {
@@ -296,8 +322,8 @@ function initialHubspot(destinations: FormDestination[]): HubspotState {
       stageValue: '',
       dateProperty: '',
       hoursProperty: '',
-      dateTimezone: '',
     },
+    dayTimezone: '',
   };
 }
 
@@ -469,14 +495,17 @@ export function IntegrationsEditor({
       if (p.key.trim() && p.value.trim()) staticProperties[p.key.trim()] = p.value.trim();
     }
     const bookingSync: Record<string, string> = {};
-    for (const k of [
-      'stageProperty',
-      'stageValue',
-      'dateProperty',
-      'hoursProperty',
-      'dateTimezone',
-    ] as const) {
+    for (const k of ['stageProperty', 'stageValue', 'dateProperty', 'hoursProperty'] as const) {
       if (hs.bookingSync[k].trim()) bookingSync[k] = hs.bookingSync[k].trim();
+    }
+    const dayTimezone = hs.dayTimezone.trim();
+    // Mirrored into the legacy per-bookingSync field whenever booking sync is
+    // in use, so a server that predates the shared zone (a rolling deploy)
+    // still collapses the booking day in it. Cleared together too — the
+    // server-side fallback reads the old field when the new one is absent, and
+    // a stale mirror would resurrect a zone the author removed.
+    if (dayTimezone && Object.keys(bookingSync).length > 0) {
+      bookingSync.dateTimezone = dayTimezone;
     }
     const hasHubspotConfig =
       hs.enabled ||
@@ -509,6 +538,9 @@ export function IntegrationsEditor({
         outcomeProperty: hs.outcomeProperty.trim() || null,
         staticProperties,
         inferCompanyFromEmail: hs.inferCompanyFromEmail,
+        // Blank = UTC; undefined overrides the stored spread so clearing the
+        // zone actually removes it instead of resurrecting the stored value.
+        dayTimezone: dayTimezone || undefined,
         // All fields blank = booking sync off; undefined overrides the stored
         // spread above so clearing the fields actually removes the config.
         bookingSync: Object.keys(bookingSync).length > 0 ? bookingSync : undefined,
@@ -702,6 +734,70 @@ export function IntegrationsEditor({
         </span>
       </div>
     </div>
+  );
+}
+
+/**
+ * The shared Day-timezone control — rendered beside EACH `date`-type property
+ * pick so the zone is discoverable where it matters, every instance editing
+ * the ONE destination-level value. A `datetime` target never shows it: it
+ * keeps the exact instant, which the portal renders in its own zone.
+ */
+function DayTimezoneField({
+  value,
+  onChange,
+  m,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  m: Msgs;
+}) {
+  const locale = useContext(LocaleContext);
+  const errorId = useId();
+  const timezones = browserTimezones();
+  const tzKnown = isKnownTimezone(value);
+  return (
+    <Field label={m.bookingDateTimezone} help={m.bookingDateTimezoneHelp}>
+      {timezones ? (
+        <Select
+          ariaLabel={m.bookingDateTimezone}
+          value={value}
+          // A stored zone the browser cannot enumerate (saved elsewhere, or
+          // before this was a picker) still renders as its own option — the
+          // trigger must show what is actually configured, and picking any
+          // list entry replaces it.
+          options={[
+            { value: '', label: m.bookingDateTimezoneUtc },
+            ...(value && !timezones.includes(value) ? [{ value, label: value }] : []),
+            ...timezones.map((zone) => ({ value: zone, label: zone })),
+          ]}
+          searchable
+          locale={locale}
+          onChange={onChange}
+        />
+      ) : (
+        /* The zone check is advisory — the value still saves, and the SERVER's
+           ICU data is what decides. So the message sits ALONGSIDE the help
+           rather than replacing it: the help carries the format, and a person
+           who has just mistyped a zone is exactly who still needs to read it.
+           The message carries an id because `aria-invalid` with nothing
+           pointed at announces "invalid" and no reason. */
+        <Input
+          value={value}
+          aria-label={m.bookingDateTimezone}
+          // A real zone name, so the format is legible without reading the help.
+          placeholder={m.bookingDateTimezonePlaceholder}
+          aria-invalid={tzKnown ? undefined : true}
+          aria-describedby={tzKnown ? undefined : errorId}
+          onChange={(e) => onChange(e.target.value)}
+        />
+      )}
+      {tzKnown ? null : (
+        <p id={errorId} role="alert" className="text-xs text-destructive">
+          {m.bookingDateTimezoneInvalid}
+        </p>
+      )}
+    </Field>
   );
 }
 
@@ -1412,10 +1508,13 @@ export function HubspotCard({
   formId: string;
   /** Why HubSpot refused to build the mirror form on the last save, if it did. */
   formActivityError?: string | null;
-  /** `options` rides along for the value pickers; absent = not an enumeration. */
+  /** `options` rides along for the value pickers; absent = not an enumeration.
+   *  `type` decides which date controls a pick reveals (`date` needs the day
+   *  timezone; `datetime` keeps the instant and needs nothing). */
   properties: {
     name: string;
     label: string;
+    type?: string;
     options?: HubSpotPropertyOption[];
   }[];
   pickerEnabled: boolean;
@@ -1582,9 +1681,13 @@ export function HubspotCard({
     ...questions.filter((q) => !CHOICE_TYPES.has(q.type)),
   ];
 
-  // Once per render, not once per attribute: the check builds an
-  // `Intl.DateTimeFormat` (and throws, on a bad zone) every time it is called.
-  const tzKnown = isKnownTimezone(state.bookingSync.dateTimezone);
+  // The portal-reported type of one picked property, or undefined when it
+  // cannot be known (picker disabled, or the pick predates the live list).
+  const typeOf = (name: string) => properties.find((p) => p.name === name.trim())?.type;
+  // Whether a DAY-property pick reveals the shared Day-timezone control. Only
+  // a KNOWN `datetime` hides it: the instant needs no zone. An unknown type
+  // shows it, because the server day-collapses when it cannot know either.
+  const revealsDayTimezone = (name: string) => name.trim() !== '' && typeOf(name) !== 'datetime';
 
   function autoMap() {
     const byLower = propertyLookup(properties);
@@ -1893,6 +1996,13 @@ export function HubspotCard({
               onChange={(v) => onChange({ ...state, dateProperty: v })}
             />
           </Field>
+          {revealsDayTimezone(state.dateProperty) ? (
+            <DayTimezoneField
+              value={state.dayTimezone}
+              onChange={(v) => onChange({ ...state, dayTimezone: v })}
+              m={m}
+            />
+          ) : null}
           <Field label={m.outcomeProperty} help={m.outcomePropertyHelp}>
             <PropertyField
               value={state.outcomeProperty}
@@ -1984,8 +2094,8 @@ export function HubspotCard({
       </Field>
 
       {/* Booking sync: contact properties stamped when a meeting is booked.
-          Paired by meaning, not by type: the two date controls sit together
-          because the timezone only qualifies the day above it. */}
+          The Day-timezone control appears beside whichever pick is a `date`-type
+          property (see DayTimezoneField) — a datetime pick needs nothing. */}
       <Field label={m.bookingSync} help={m.bookingSyncHelp}>
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label={m.bookingStageProperty} help={m.bookingStagePropertyHelp}>
@@ -2036,36 +2146,13 @@ export function HubspotCard({
               }
             />
           </Field>
-          {/* The zone check is advisory — the value still saves, and the SERVER's
-              ICU data is what decides. So the message sits ALONGSIDE the help
-              rather than replacing it: the help carries the format, and a person
-              who has just mistyped a zone is exactly who still needs to read it.
-              The message carries an id because `aria-invalid` with nothing
-              pointed at announces "invalid" and no reason. */}
-          <Field label={m.bookingDateTimezone} help={m.bookingDateTimezoneHelp}>
-            <Input
-              value={state.bookingSync.dateTimezone}
-              aria-label={m.bookingDateTimezone}
-              // A real zone name, so the format is legible without reading the help.
-              placeholder={m.bookingDateTimezonePlaceholder}
-              aria-invalid={tzKnown ? undefined : true}
-              aria-describedby={tzKnown ? undefined : 'booking-tz-error'}
-              onChange={(e) =>
-                onChange({
-                  ...state,
-                  bookingSync: {
-                    ...state.bookingSync,
-                    dateTimezone: e.target.value,
-                  },
-                })
-              }
+          {revealsDayTimezone(state.bookingSync.dateProperty) ? (
+            <DayTimezoneField
+              value={state.dayTimezone}
+              onChange={(v) => onChange({ ...state, dayTimezone: v })}
+              m={m}
             />
-            {tzKnown ? null : (
-              <p id="booking-tz-error" role="alert" className="text-xs text-destructive">
-                {m.bookingDateTimezoneInvalid}
-              </p>
-            )}
-          </Field>
+          ) : null}
           <Field label={m.bookingHoursProperty} help={m.bookingHoursPropertyHelp}>
             <PropertyField
               value={state.bookingSync.hoursProperty}
@@ -2082,6 +2169,15 @@ export function HubspotCard({
               }
             />
           </Field>
+          {/* Only a KNOWN `date` pick — the instant default needs no zone, so
+              an unknown type stays quiet here, unlike the two day fields. */}
+          {typeOf(state.bookingSync.hoursProperty) === 'date' ? (
+            <DayTimezoneField
+              value={state.dayTimezone}
+              onChange={(v) => onChange({ ...state, dayTimezone: v })}
+              m={m}
+            />
+          ) : null}
         </div>
       </Field>
 

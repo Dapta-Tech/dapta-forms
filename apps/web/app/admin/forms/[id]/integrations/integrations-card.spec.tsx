@@ -112,8 +112,8 @@ describe('HubspotCard — where the extra-destination notice goes', () => {
             stageValue: '',
             dateProperty: '',
             hoursProperty: '',
-            dateTimezone: '',
           },
+          dayTimezone: '',
         }}
         onChange={() => {}}
         properties={[]}
@@ -150,5 +150,96 @@ describe('HubspotCard — where the extra-destination notice goes', () => {
     for (const enabled of [true, false]) {
       expect(markup({ enabled, extraHubspotStored: false })).not.toContain(NOTICE);
     }
+  });
+});
+
+/**
+ * The Day-timezone control reveals itself beside a `date`-type property pick
+ * and stays hidden for a `datetime` one — the instant needs no zone. One shared
+ * value, so two qualifying picks render two controls editing the same thing.
+ */
+describe('HubspotCard — Day timezone visibility by property type', () => {
+  const im = getMessages('en').admin.integrations;
+  const ready: ContactKeyReadiness = {
+    ok: true,
+    blocker: null,
+    source: { kind: 'question', key: 'email' },
+  } as ContactKeyReadiness;
+
+  const PROPERTIES = [
+    { name: 'submitted_day', label: 'Submitted day', type: 'date' },
+    { name: 'booked_day', label: 'Booked day', type: 'date' },
+    { name: 'meeting_at', label: 'Meeting at', type: 'datetime' },
+  ];
+
+  function markup(over: {
+    dateProperty?: string;
+    bookingDateProperty?: string;
+    hoursProperty?: string;
+  }): string {
+    return renderToStaticMarkup(
+      <HubspotCard
+        state={{
+          enabled: true,
+          fieldMappings: [],
+          utmMappings: {},
+          scoreProperty: '',
+          dateProperty: over.dateProperty ?? '',
+          note: true,
+          formActivity: false,
+          valueMaps: [],
+          outcomeProperty: '',
+          staticProperties: [],
+          inferCompanyFromEmail: false,
+          bookingSync: {
+            stageProperty: '',
+            stageValue: '',
+            dateProperty: over.bookingDateProperty ?? '',
+            hoursProperty: over.hoursProperty ?? '',
+          },
+          dayTimezone: '',
+        }}
+        onChange={() => {}}
+        properties={PROPERTIES}
+        pickerEnabled
+        accountConnected
+        showMapping
+        extraHubspotStored={false}
+        readiness={ready}
+        questions={[{ key: 'email', type: 'email', label: 'Email' }]}
+        formId="form-1"
+        m={im}
+      />,
+    );
+  }
+
+  // The control's own aria-label — the label text alone also appears inside
+  // the day-field help copy, which would count phantom controls.
+  const count = (html: string) =>
+    html.split(`aria-label="${im.bookingDateTimezone}"`).length - 1;
+
+  it('hidden with no day property picked anywhere', () => {
+    expect(count(markup({}))).toBe(0);
+  });
+
+  it('shows beside a date-type submitted-date pick', () => {
+    expect(count(markup({ dateProperty: 'submitted_day' }))).toBeGreaterThan(0);
+  });
+
+  it('hidden for a datetime submitted-date pick — the instant needs no zone', () => {
+    expect(count(markup({ dateProperty: 'meeting_at' }))).toBe(0);
+  });
+
+  it('shows beside a date-type booking-date pick', () => {
+    expect(count(markup({ bookingDateProperty: 'booked_day' }))).toBeGreaterThan(0);
+  });
+
+  it('meeting time: hidden for datetime (the default), shown for a date pick', () => {
+    expect(count(markup({ hoursProperty: 'meeting_at' }))).toBe(0);
+    expect(count(markup({ hoursProperty: 'booked_day' }))).toBeGreaterThan(0);
+  });
+
+  it('an unknown type reveals it for the day fields — the server day-collapses too', () => {
+    expect(count(markup({ dateProperty: 'not_in_the_portal_list' }))).toBeGreaterThan(0);
   });
 });

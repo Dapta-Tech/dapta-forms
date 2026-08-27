@@ -21,6 +21,7 @@ import {
 } from '@quill/types';
 import type { ServerEnv } from '@quill/config/env';
 import { HubspotPortalResolver, mirrorGuidFor } from './hubspot-portal';
+import { HubspotPropertiesService } from './integrations.controller';
 import { DB, ENV } from './tokens';
 
 /** The delivery snapshot serialized into an outbox row (config + context). */
@@ -67,6 +68,12 @@ export class DestinationEffects {
   constructor(
     @Inject(DB) private readonly db: Db,
     @Optional() @Inject(ENV) private readonly env?: ServerEnv,
+    /** Portal property types (cached per account) — resolves whether the
+     *  submitted-date target keeps the instant (`datetime`) or only a day
+     *  (`date`). Optional: absent = unknown, the adapter day-collapses. */
+    @Optional()
+    @Inject(HubspotPropertiesService)
+    private readonly hubspotProperties?: HubspotPropertiesService,
   ) {}
 
   /**
@@ -171,6 +178,29 @@ export class DestinationEffects {
     };
   }
 
+  /**
+   * The portal-reported type of one property (`date` / `datetime` / …), or
+   * undefined when it cannot be known — no property configured, service not
+   * wired, no token, or the lookup failed. Undefined makes the adapter fall
+   * back to the day-collapse default, the only value a `date` property cannot
+   * reject. Backed by the properties service's 5-minute per-account cache, so
+   * a delivery burst does not hammer HubSpot.
+   */
+  private async resolvePropertyType(
+    accountId: string,
+    property: string | null | undefined,
+  ): Promise<string | undefined> {
+    const name = property?.trim();
+    if (!name) return undefined;
+    try {
+      const listed = await this.hubspotProperties?.listProperties(accountId);
+      if (!listed?.enabled) return undefined;
+      return listed.properties.find((p) => p.name === name)?.type;
+    } catch {
+      return undefined;
+    }
+  }
+
   /** Resolve a stored destination config into a delivery spec (inject secrets). */
   private async toSpec(destination: FormDestination, accountId: string): Promise<DestinationSpec> {
     if (destination.type === 'webhook') {
@@ -207,6 +237,8 @@ export class DestinationEffects {
         utmMappings: destination.utmMappings ?? {},
         scoreProperty: destination.scoreProperty ?? undefined,
         dateProperty: destination.dateProperty ?? undefined,
+        datePropertyType: await this.resolvePropertyType(accountId, destination.dateProperty),
+        dayTimezone: destination.dayTimezone ?? destination.bookingSync?.dateTimezone,
         note: destination.settings?.note,
         valueMaps: destination.valueMaps,
         outcomeProperty: destination.outcomeProperty ?? undefined,

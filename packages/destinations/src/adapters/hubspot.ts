@@ -1,4 +1,5 @@
 import { propertiesFor } from '@quill/types';
+import { dayMidnightMs } from '../day';
 import type {
   DestinationContext,
   DestinationResult,
@@ -27,8 +28,26 @@ export interface HubspotDestinationOptions {
   utmMappings?: Record<string, string>;
   /** Contact property to write the server-computed score to (complete only). */
   scoreProperty?: string;
-  /** Contact date property to write the submitted date to (UTC-midnight ms). */
+  /** Contact property to write the submitted date to. What it receives depends
+   *  on `datePropertyType`: a `date` property gets the calendar day (midnight
+   *  UTC of the day named in `dayTimezone`); a `datetime` property gets the
+   *  exact instant. */
   dateProperty?: string;
+  /**
+   * `dateProperty`'s type as the portal reports it (`date` / `datetime`),
+   * resolved by the API at delivery time. `datetime` = send the full instant
+   * and let HubSpot render it in the portal's zone. Anything else (including
+   * unknown — the lookup failed or was never wired) = collapse to a day, the
+   * only value a `date` property accepts.
+   */
+  datePropertyType?: string;
+  /**
+   * IANA zone that names the calendar day for every `date`-type write of this
+   * destination. Blank/absent = UTC. A portal reporting in `America/Bogota`
+   * needs it set, or every submission from 19:00 local onwards lands on
+   * tomorrow.
+   */
+  dayTimezone?: string;
   /** Create a Note engagement on a completed submission (default true). */
   note?: boolean;
   /**
@@ -154,9 +173,19 @@ export class HubspotDestination implements SubmissionDestination {
       }
     }
 
-    // Submitted-date → configurable date property (HubSpot date = UTC-midnight ms).
+    // Submitted-date → configurable property. A `datetime` target keeps the
+    // instant (the portal renders it in its own zone); a `date` target — or an
+    // unknown one, where a day is the only value that cannot be rejected —
+    // gets the calendar day named in the destination's day timezone.
     if (this.opts.dateProperty?.trim()) {
-      props[this.opts.dateProperty.trim()] = toHubSpotDateMs(ctx.submittedAt);
+      props[this.opts.dateProperty.trim()] =
+        this.opts.datePropertyType === 'datetime'
+          ? String(ctx.submittedAt)
+          : String(
+              dayMidnightMs(ctx.submittedAt, this.opts.dayTimezone, (m) =>
+                this.logger.warn(`[destination:hubspot] ${m}`),
+              ),
+            );
     }
 
     // Score → configurable property (complete submissions only, mirroring the pilot).

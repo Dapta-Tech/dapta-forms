@@ -82,8 +82,8 @@ function markup(over: Over = {}): string {
           stageValue: '',
           dateProperty: '',
           hoursProperty: '',
-          dateTimezone: '',
         },
+        dayTimezone: '',
       }}
       onChange={() => {}}
       properties={over.properties ?? PROPERTIES}

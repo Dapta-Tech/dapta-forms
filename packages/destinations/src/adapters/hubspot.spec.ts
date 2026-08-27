@@ -43,6 +43,45 @@ describe('toHubSpotDateMs', () => {
   });
 });
 
+describe('submitted-date property by target type', () => {
+  // 26 Aug 20:38 in Bogotá = 27 Aug 01:38 UTC — the day the two zones disagree on.
+  const eveningBogota = Date.UTC(2026, 7, 27, 1, 38);
+
+  it('names the day in dayTimezone for a date target', () => {
+    const dest = new HubspotDestination({ token: 't', ...MAPPING, dayTimezone: 'America/Bogota' });
+    const props = dest.buildProperties(ctx({ submittedAt: eveningBogota }));
+    expect(props.submitted_date).toBe(String(Date.UTC(2026, 7, 26)));
+  });
+
+  it('still names the day in UTC with no zone configured', () => {
+    const dest = new HubspotDestination({ token: 't', ...MAPPING });
+    const props = dest.buildProperties(ctx({ submittedAt: eveningBogota }));
+    expect(props.submitted_date).toBe(String(Date.UTC(2026, 7, 27)));
+  });
+
+  it('sends the exact instant to a datetime target — no collapse, no zone', () => {
+    const dest = new HubspotDestination({
+      token: 't',
+      ...MAPPING,
+      datePropertyType: 'datetime',
+      dayTimezone: 'America/Bogota',
+    });
+    const props = dest.buildProperties(ctx({ submittedAt: eveningBogota }));
+    expect(props.submitted_date).toBe(String(eveningBogota));
+  });
+
+  it('day-collapses when the type is unknown — the one value a date target cannot reject', () => {
+    const dest = new HubspotDestination({
+      token: 't',
+      ...MAPPING,
+      datePropertyType: undefined,
+      dayTimezone: 'America/Bogota',
+    });
+    const props = dest.buildProperties(ctx({ submittedAt: eveningBogota }));
+    expect(props.submitted_date).toBe(String(Date.UTC(2026, 7, 26)));
+  });
+});
+
 describe('HubspotDestination.buildProperties', () => {
   it('maps fields + UTM + score + date, dropping empty values', () => {
     const dest = new HubspotDestination({ token: 't', ...MAPPING });

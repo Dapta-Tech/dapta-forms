@@ -681,6 +681,20 @@ export const hubspotDestinationSchema = z.object({
   scoreProperty: z.string().max(200).nullable().optional(),
   /** Contact date property to receive the submitted date. */
   dateProperty: z.string().max(200).nullable().optional(),
+  /**
+   * The IANA zone that names the CALENDAR DAY whenever this destination writes
+   * to a `date`-type property (submitted date, booking date — any of them).
+   * Blank/absent = UTC, the platform default.
+   *
+   * One zone per destination, not per property: "which zone are days named in"
+   * is a single question, and two properties answering it differently would be
+   * a config error, not an intent. `datetime`-type targets never use it — they
+   * receive the exact instant and HubSpot renders it in the portal's zone.
+   *
+   * ADDITIVE. Predates `bookingSync.dateTimezone`, which covered only the
+   * booking day; readers fall back to it so stored configs keep their zone.
+   */
+  dayTimezone: z.string().max(64).optional(),
   // --- HubSpot extensions (all optional; back-compat) ------------------------
   /** stepKey -> (answer value -> property value): translate answers on the way out. */
   valueMaps: z
