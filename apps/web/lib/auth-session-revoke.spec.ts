@@ -3,7 +3,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('next/headers', () => ({ cookies: vi.fn() }));
 vi.mock('next/navigation', () => ({ redirect: vi.fn() }));
 
-import { idpLogoutTarget, revokeUpstreamSession, type Session } from './auth-session';
+import {
+  idpLogoutTarget,
+  revokeUpstreamSession,
+  workosSessionIdFromJwt,
+  type Session,
+} from './auth-session';
 
 const workosSession: Session = { provider: 'workos', accessToken: 'tok', sessionId: 'sess_123' };
 
@@ -89,14 +94,37 @@ describe('revokeUpstreamSession', () => {
 describe('idpLogoutTarget', () => {
   it('appends return_to pointing at the local signed-out landing', () => {
     const target = idpLogoutTarget(
-      'https://api.workos.com/user_management/sessions/logout?session_id=sess_123',
+      'https://api.workos.com/user_management/sessions/logout?session_id=session_01ABC',
       'https://forms.example.com',
     );
 
     const url = new URL(target!);
     expect(url.origin + url.pathname).toBe('https://api.workos.com/user_management/sessions/logout');
-    expect(url.searchParams.get('session_id')).toBe('sess_123');
+    expect(url.searchParams.get('session_id')).toBe('session_01ABC');
     expect(url.searchParams.get('return_to')).toBe('https://forms.example.com/login?signedout=1');
+  });
+
+  // WorkOS answers an id it cannot resolve with a blank 200: no redirect, no
+  // revocation. A session_id that is not a WorkOS-shaped id (the IAM's own UUID,
+  // stored by sessions minted before the JWT claim was read) must land locally
+  // instead of on that blank page.
+  it('returns null when the session_id is not a WorkOS session id', () => {
+    expect(
+      idpLogoutTarget(
+        'https://api.workos.com/user_management/sessions/logout?session_id=22d19884-f7f1-4084-90bc-7088229c34b3',
+        'https://forms.example.com',
+      ),
+    ).toBeNull();
+  });
+
+  it('still allows a logout URL that carries no session_id at all', () => {
+    const target = idpLogoutTarget(
+      'https://example.authkit.app/logout',
+      'https://forms.example.com',
+    );
+    expect(new URL(target!).searchParams.get('return_to')).toBe(
+      'https://forms.example.com/login?signedout=1',
+    );
   });
 
   it('overwrites a preexisting return_to', () => {
@@ -131,5 +159,35 @@ describe('idpLogoutTarget', () => {
     expect(new URL(target!).searchParams.get('return_to')).toBe(
       'http://localhost:3400/login?signedout=1',
     );
+  });
+});
+
+describe('workosSessionIdFromJwt', () => {
+  const jwtWith = (claims: Record<string, unknown>) =>
+    `${Buffer.from('{"alg":"HS256","typ":"JWT"}').toString('base64url')}.${Buffer.from(
+      JSON.stringify(claims),
+    ).toString('base64url')}.signature`;
+
+  it('reads the workos_session_id claim', () => {
+    const token = jwtWith({
+      sub: 'a4d2b7a0-0000-0000-0000-000000000000',
+      session_id: '22d19884-f7f1-4084-90bc-7088229c34b3',
+      workos_session_id: 'session_01JQEXAMPLE',
+    });
+
+    expect(workosSessionIdFromJwt(token)).toBe('session_01JQEXAMPLE');
+  });
+
+  it('returns null when the claim is absent, empty, or not a string', () => {
+    expect(workosSessionIdFromJwt(jwtWith({ sub: 'u' }))).toBeNull();
+    expect(workosSessionIdFromJwt(jwtWith({ workos_session_id: '' }))).toBeNull();
+    expect(workosSessionIdFromJwt(jwtWith({ workos_session_id: 42 }))).toBeNull();
+  });
+
+  it('returns null for a malformed token instead of throwing', () => {
+    expect(workosSessionIdFromJwt('not-a-jwt')).toBeNull();
+    expect(workosSessionIdFromJwt('a.%%%not-base64%%%.c')).toBeNull();
+    expect(workosSessionIdFromJwt(`a.${Buffer.from('[1,2]').toString('base64url')}.c`)).toBeNull();
+    expect(workosSessionIdFromJwt('')).toBeNull();
   });
 });

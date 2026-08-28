@@ -114,6 +114,38 @@ export async function revokeUpstreamSession(session: Session | null): Promise<st
 }
 
 /**
+ * The WorkOS session id, read from the IAM access token's claims.
+ *
+ * The callback's `?session=` blob carries `session_id` = the IAM's OWN session
+ * row id (a UUID), and no `workos_session_id` field at all: the only place the
+ * IAM puts the real WorkOS id (`session_01...`) is inside the JWT it mints
+ * (`create-unified-session` adds the claim for the workos provider). Orbit
+ * reads it from exactly this claim. Sending the IAM's UUID to WorkOS's logout
+ * endpoint is a silent no-op: WorkOS answers 200 with an empty body for an id
+ * it cannot resolve, so the browser strands on a blank api.workos.com page and
+ * the AuthKit cookie survives, silently re-authenticating the next sign-in.
+ *
+ * Decoded WITHOUT verifying the signature, deliberately: this runs in the
+ * callback on a token the IAM just handed over a state-checked redirect, the
+ * API re-verifies the token (HS256) on every request that uses it, and the web
+ * holds no JWT secret to verify with. A malformed token yields null, never a
+ * throw.
+ */
+export function workosSessionIdFromJwt(accessToken: string): string | null {
+  const payload = accessToken.split('.')[1];
+  if (!payload) return null;
+  try {
+    const claims = JSON.parse(Buffer.from(payload, 'base64url').toString('utf-8')) as {
+      workos_session_id?: unknown;
+    };
+    const id = claims?.workos_session_id;
+    return typeof id === 'string' && id ? id : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * The IdP logout redirect for the sign-out button: the IAM's logout URL with
  * return_to pointing back at our login landing, so WorkOS ends the browser
  * session and sends the person to /login?signedout=1 instead of stranding
@@ -121,12 +153,21 @@ export async function revokeUpstreamSession(session: Session | null): Promise<st
  * "Logout redirect URIs" in the WorkOS dashboard or WorkOS ignores it.
  * Null when the logout URL is absent or unparseable (NextResponse.redirect
  * and the action redirect would both throw on it): callers land locally.
+ *
+ * Also null when the URL's session_id does not look like a WorkOS session id
+ * (`session_...`). The IAM builds the logout URL by echoing whatever id it was
+ * sent, without resolving it, and WorkOS answers an unresolvable id with a
+ * blank 200: no redirect back, nothing revoked. That is precisely the sessions
+ * minted before `workosSessionIdFromJwt` existed (30-day cookies carrying the
+ * IAM's UUID), so those land locally instead of on the blank page.
  */
 export function idpLogoutTarget(logoutUrl: string | null, origin: string): string | null {
   if (!logoutUrl) return null;
   try {
     const target = new URL(logoutUrl);
     if (!isBrowserNavigable(target)) return null;
+    const sessionId = target.searchParams.get('session_id');
+    if (sessionId !== null && !sessionId.startsWith('session_')) return null;
     target.searchParams.set('return_to', new URL('/login?signedout=1', origin).toString());
     return target.toString();
   } catch {

@@ -31,7 +31,7 @@ vi.mock('next/headers', () => ({
 
 import { signOutAction } from './actions';
 
-const workosSession = { provider: 'workos', accessToken: 'tok', sessionId: 'sess_123' };
+const workosSession = { provider: 'workos', accessToken: 'tok', sessionId: 'session_123' };
 
 describe('signOutAction', () => {
   beforeEach(() => {
@@ -47,10 +47,10 @@ describe('signOutAction', () => {
   it('workos: follows the IdP logout URL with return_to back to the local landing', async () => {
     authProvider.mockReturnValue('workos');
     getSession.mockResolvedValue(workosSession);
-    revokeUpstreamSession.mockResolvedValue('https://api.workos.com/user_management/sessions/logout?session_id=sess_123');
+    revokeUpstreamSession.mockResolvedValue('https://api.workos.com/user_management/sessions/logout?session_id=session_123');
 
     await expect(signOutAction()).rejects.toThrow(
-      `NEXT_REDIRECT:https://api.workos.com/user_management/sessions/logout?session_id=sess_123&return_to=${encodeURIComponent('https://forms.example.com/login?signedout=1')}`,
+      `NEXT_REDIRECT:https://api.workos.com/user_management/sessions/logout?session_id=session_123&return_to=${encodeURIComponent('https://forms.example.com/login?signedout=1')}`,
     );
 
     // Read-then-clear: clearing first hands the revoke a null session (the
