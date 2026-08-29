@@ -86,11 +86,11 @@ export async function getSession(): Promise<Session | null> {
  * Returns the WorkOS logout URL (the IAM serializes it as logoutUrl or
  * logoutURL) or null. Server-side revocation alone is NOT a browser logout:
  * the AuthKit session cookie lives on WorkOS's domain and only dies when the
- * browser visits this URL. Callers choose per Orbit's skipIdpRedirect switch:
- * the explicit sign-out button follows it (a Forms logout must also end the
- * shared Dapta session, or the next "sign in" silently re-authenticates the
- * same person); the 401 expiry paths ignore it (a Forms token expiring must
- * not log the person out of the whole Dapta platform).
+ * browser visits this URL. Per Orbit's contract NO current caller follows it
+ * (skipIdpRedirect = true everywhere: sign-out stays inside Forms and the
+ * shared Dapta session deliberately survives, same as the Dapta platform app). The URL
+ * is returned for the one flow that would need Orbit's skipIdpRedirect =
+ * false mode, a future switch-account (`idpLogoutTarget` shapes it).
  *
  * Never throws and never hangs past its timeout: the caller's local cleanup
  * must not be hostage to the IAM being up.
@@ -146,13 +146,16 @@ export function workosSessionIdFromJwt(accessToken: string): string | null {
 }
 
 /**
- * The IdP logout redirect for the sign-out button: the IAM's logout URL with
- * return_to pointing back at our login landing, so WorkOS ends the browser
- * session and sends the person to /login?signedout=1 instead of stranding
- * them on a blank api.workos.com page. The URL must be allowlisted under
- * "Logout redirect URIs" in the WorkOS dashboard or WorkOS ignores it.
- * Null when the logout URL is absent or unparseable (NextResponse.redirect
- * and the action redirect would both throw on it): callers land locally.
+ * The IdP logout redirect for Orbit's skipIdpRedirect = false mode (a full
+ * logout that also ends the shared Dapta session, e.g. a future
+ * switch-account): the IAM's logout URL with return_to pointing back at our
+ * login landing. UNUSED by the sign-out button and the logout route on
+ * purpose: per Orbit's contract those never send the browser to WorkOS, which
+ * is also what keeps them independent of the WorkOS dashboard's
+ * "Logout redirect URIs" allowlist (return_to is only honored when
+ * allowlisted). Null when the logout URL is absent or unparseable
+ * (NextResponse.redirect and the action redirect would both throw on it):
+ * callers land locally.
  *
  * Also null when the URL's session_id does not look like a WorkOS session id
  * (`session_...`). The IAM builds the logout URL by echoing whatever id it was
@@ -263,10 +266,10 @@ export async function hostFetch(path: string, init?: RequestInit): Promise<Respo
     // best-effort. Inline rather than via /api/auth/logout, because an action
     // `redirect()` into a route handler strands the URL bar there. And per the
     // contract, a 401 anywhere never re-enters logout: one revoke, then /login.
-    // The returned IdP logout URL is deliberately ignored here (Orbit's
-    // skipIdpRedirect = true): a Forms token expiring must not bounce the
-    // browser through WorkOS and end the person's whole Dapta session. Only
-    // the explicit sign-out button does that.
+    // The returned IdP logout URL is deliberately ignored (Orbit's
+    // skipIdpRedirect = true, like every logout path): the browser never
+    // bounces through WorkOS, so a Forms logout can never end the person's
+    // whole Dapta session.
     const session = await getSession();
     await clearSession();
     await revokeUpstreamSession(session);

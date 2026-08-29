@@ -44,17 +44,15 @@ describe('signOutAction', () => {
     vi.unstubAllEnvs();
   });
 
-  it('workos: follows the IdP logout URL with return_to back to the local landing', async () => {
+  it('workos: never follows the IdP logout URL (Orbit contract, skipIdpRedirect = true)', async () => {
     authProvider.mockReturnValue('workos');
     getSession.mockResolvedValue(workosSession);
     revokeUpstreamSession.mockResolvedValue('https://api.workos.com/user_management/sessions/logout?session_id=session_123');
 
-    await expect(signOutAction()).rejects.toThrow(
-      `NEXT_REDIRECT:https://api.workos.com/user_management/sessions/logout?session_id=session_123&return_to=${encodeURIComponent('https://forms.example.com/login?signedout=1')}`,
-    );
+    await expect(signOutAction()).rejects.toThrow('NEXT_REDIRECT:/login?signedout=1');
 
     // Read-then-clear: clearing first hands the revoke a null session (the
-    // pre-#82 bug that left the upstream WorkOS session alive).
+    // pre-#82 bug that left the upstream session alive).
     expect(getSession.mock.invocationCallOrder[0]).toBeLessThan(clearSession.mock.invocationCallOrder[0]!);
     expect(revokeUpstreamSession).toHaveBeenCalledWith(workosSession);
     expect(clearSession).toHaveBeenCalled();
@@ -68,14 +66,6 @@ describe('signOutAction', () => {
     await expect(signOutAction()).rejects.toThrow('NEXT_REDIRECT:/login?signedout=1');
 
     expect(clearSession).toHaveBeenCalled();
-  });
-
-  it('workos: lands locally on an unparseable logout URL instead of failing the sign-out', async () => {
-    authProvider.mockReturnValue('workos');
-    getSession.mockResolvedValue(workosSession);
-    revokeUpstreamSession.mockResolvedValue('/relative-not-a-url');
-
-    await expect(signOutAction()).rejects.toThrow('NEXT_REDIRECT:/login?signedout=1');
   });
 
   it('workos: still clears and lands locally when the session is already gone', async () => {
