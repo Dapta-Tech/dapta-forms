@@ -59,15 +59,14 @@ async function req<T>(method: string, path: string, body?: unknown, opts: ReqOpt
     cache: 'no-store',
   });
   if (res.status === 401) {
-    // Workos: leave the cookie alone. /api/auth/logout reads the session id off
-    // it to revoke upstream and then clears it itself — deleting it here first
-    // hands that route a null session and silently skips the single-logout (see
-    // `signOutAction`). This path only appeared to work because `delete()` throws
-    // during a Server Component render; from a Server Action it lands and breaks.
-    // ?reason=expired: this is a token expiring mid-render, not a person asking
-    // to leave, so the route must not bounce the browser through the WorkOS
-    // logout and end their whole Dapta platform session.
-    if (authProvider() === 'workos') redirect('/api/auth/logout?reason=expired');
+    // Workos: leave the cookie alone. A render cannot write cookies (`set()`
+    // and `delete()` both throw here), so the token exchange happens in the
+    // /api/auth/refresh route handler: it trades the refresh token for a new
+    // access token and returns to /admin, or hands off to the logout route
+    // when the refresh token itself is dead. Deleting the cookie first would
+    // hand both routes a null session (see `signOutAction`'s read-then-clear
+    // note).
+    if (authProvider() === 'workos') redirect('/api/auth/refresh');
     try {
       await clearSession();
     } catch {

@@ -85,12 +85,35 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     });
   }
 
+  // `prompt=login` makes AuthKit show its sign-in screen even when the shared
+  // WorkOS session cookie is still alive, which is what turns the button on
+  // the signed-out landing into a real "sign in as someone" instead of a
+  // silent re-authentication (Orbit's promptLogin contract). Allowlisted to
+  // the one value we mean: this route is directly reachable and the value
+  // ends up on a WorkOS URL. The bare auto-redirect from /login sends no
+  // prompt, keeping the arriving-from-Dapta silent SSO.
+  const prompt = sp.get('prompt') === 'login' ? 'login' : null;
+
   const returnTo = `${origin}/api/auth/callback`;
   const res = await fetch(
-    `${iam}/auth/login-url?returnTo=${encodeURIComponent(returnTo)}&state=${encodeURIComponent(state)}`,
+    `${iam}/auth/login-url?returnTo=${encodeURIComponent(returnTo)}&state=${encodeURIComponent(state)}` +
+      (prompt ? `&prompt=${prompt}` : ''),
     { cache: 'no-store' },
   ).catch(() => null);
   const loginUrl = res && res.ok ? ((await res.json().catch(() => ({}))) as { loginUrl?: string }).loginUrl : undefined;
   if (!loginUrl) return NextResponse.redirect(new URL('/login?error=login', origin));
+  // The IAM currently drops the prompt param instead of forwarding it to the
+  // authorize URL, so patch it on ourselves, exactly like Orbit's
+  // enforcePromptOnLoginUrl ("if IAM forgets to propagate prompt to WorkOS,
+  // patch the returned loginUrl"). Harmless once the IAM learns to forward it.
+  if (prompt) {
+    try {
+      const patched = new URL(loginUrl);
+      patched.searchParams.set('prompt', prompt);
+      return NextResponse.redirect(patched.toString());
+    } catch {
+      return NextResponse.redirect(new URL('/login?error=login', origin));
+    }
+  }
   return NextResponse.redirect(loginUrl);
 }
