@@ -247,19 +247,80 @@ export async function setWorkspace(accountId: string | null): Promise<void> {
 }
 
 /**
+ * Trade the refresh token for a fresh access token (Orbit's refreshToken()
+ * flow): POST {IAM}/auth/refresh, a public route like login/logout, no Bearer.
+ * The IAM ROTATES the refresh token on every call, so the returned session
+ * must always be stored: keeping the old one guarantees the next refresh 401s.
+ * The workos_session_id claim is re-read from the new JWT (the IAM re-mints it
+ * with the claim intact); the old id is kept as fallback so a logout after a
+ * refresh still revokes.
+ *
+ * Concurrent server actions can race this (no single process to single-flight
+ * in, unlike Orbit's in-memory refreshPromise); the IAM's rotation grace
+ * window is what makes that safe, with both racers ending on valid tokens.
+ *
+ * Returns null and never throws on anything short of success: a 401 (refresh
+ * expired or revoked), a down IAM, a timeout, a local session, or a session
+ * that never carried a refresh token. Callers treat null as "sign in again".
+ */
+export async function refreshUpstreamSession(session: Session | null): Promise<Session | null> {
+  const iam = process.env.IAM_BASE_URL?.replace(/\/$/, '');
+  if (!iam || session?.provider !== 'workos' || !session.refreshToken) return null;
+  const res = await fetch(`${iam}/auth/refresh`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ refresh_token: session.refreshToken }),
+    cache: 'no-store',
+    signal: AbortSignal.timeout(5000),
+  }).catch(() => null);
+  if (!res?.ok) return null;
+  const out = (await res.json().catch(() => null)) as {
+    access_token?: unknown;
+    refresh_token?: unknown;
+  } | null;
+  if (typeof out?.access_token !== 'string' || !out.access_token) return null;
+  return {
+    provider: 'workos',
+    accessToken: out.access_token,
+    refreshToken:
+      typeof out.refresh_token === 'string' && out.refresh_token
+        ? out.refresh_token
+        : session.refreshToken,
+    sessionId: workosSessionIdFromJwt(out.access_token) ?? session.sessionId,
+  };
+}
+
+/**
  * Authenticated host fetch for SERVER ACTIONS (AUTH-WEB-CONTRACT §1 + §4):
- * attaches identity, and on a `401` clears the (now-invalid) session and bounces
- * to /login — so a mid-session expiry logs the user out instead of a dead-end
- * "Failed" toast. The thrown redirect must be re-thrown past any action catch
- * (use `unstable_rethrow(e)` first in the catch). Only call from an action/route
- * handler (it may clear the cookie).
+ * attaches identity, and on a `401` first tries to refresh the session in
+ * place (Orbit's interceptor contract: 401 -> refresh -> retry once) before
+ * treating it as a logout. Only when the refresh fails, or the retried
+ * request 401s again, does it clear the session and bounce to /login. The
+ * thrown redirect must be re-thrown past any action catch (use
+ * `unstable_rethrow(e)` first in the catch). Only call from an action/route
+ * handler (it may write the cookie).
  */
 export async function hostFetch(path: string, init?: RequestInit): Promise<Response> {
-  const res = await fetch(`${API_URL}${path}`, {
+  let res = await fetch(`${API_URL}${path}`, {
     ...init,
     headers: { ...((init?.headers as Record<string, string>) ?? {}), ...(await hostHeaders()) },
     cache: 'no-store',
   });
+  if (res.status === 401) {
+    // One refresh attempt, never a loop: a 401 on the RETRIED request means
+    // the token the IAM just minted is being rejected, and refreshing again
+    // cannot fix that.
+    const expired = await getSession();
+    const refreshed = await refreshUpstreamSession(expired);
+    if (refreshed) {
+      await setSession(refreshed);
+      res = await fetch(`${API_URL}${path}`, {
+        ...init,
+        headers: { ...((init?.headers as Record<string, string>) ?? {}), ...(await hostHeaders()) },
+        cache: 'no-store',
+      });
+    }
+  }
   if (res.status === 401) {
     // Same shape as `signOutAction` (Orbit contract): read the session BEFORE
     // clearing (the revoke needs its id), clear unconditionally, revoke
