@@ -19,7 +19,7 @@ vi.mock('@/lib/auth-session', async () => {
 import { GET } from './route';
 
 const req = (path = '/api/auth/logout') => new NextRequest(`https://forms.example.com${path}`);
-const workosSession = { provider: 'workos', accessToken: 'tok', sessionId: 'sess_123' };
+const workosSession = { provider: 'workos', accessToken: 'tok', sessionId: 'session_123' };
 
 describe('GET /api/auth/logout', () => {
   beforeEach(() => {
@@ -28,24 +28,22 @@ describe('GET /api/auth/logout', () => {
     revokeUpstreamSession.mockResolvedValue(null);
   });
 
-  it('follows the IdP logout URL with return_to so WorkOS ends the browser session too', async () => {
+  it('never follows the IdP logout URL (Orbit contract, skipIdpRedirect = true)', async () => {
     getSession.mockResolvedValue(workosSession);
-    revokeUpstreamSession.mockResolvedValue('https://api.workos.com/user_management/sessions/logout?session_id=sess_123');
+    revokeUpstreamSession.mockResolvedValue('https://api.workos.com/user_management/sessions/logout?session_id=session_123');
 
     const res = await GET(req());
 
-    const target = new URL(res.headers.get('location')!);
-    expect(target.origin + target.pathname).toBe('https://api.workos.com/user_management/sessions/logout');
-    expect(target.searchParams.get('return_to')).toBe('https://forms.example.com/login?signedout=1');
+    expect(res.headers.get('location')).toBe('https://forms.example.com/login?signedout=1');
     // Read-then-clear: the revoke needs the session id the cookie carried.
     expect(getSession.mock.invocationCallOrder[0]).toBeLessThan(clearSession.mock.invocationCallOrder[0]!);
     expect(revokeUpstreamSession).toHaveBeenCalledWith(workosSession);
     expect(clearSession).toHaveBeenCalled();
   });
 
-  it('reason=expired skips the WorkOS hop: an expiry must not end the whole Dapta session', async () => {
+  it('reason=expired behaves identically: revoke, clear, local landing', async () => {
     getSession.mockResolvedValue(workosSession);
-    revokeUpstreamSession.mockResolvedValue('https://api.workos.com/user_management/sessions/logout?session_id=sess_123');
+    revokeUpstreamSession.mockResolvedValue('https://api.workos.com/user_management/sessions/logout?session_id=session_123');
 
     const res = await GET(req('/api/auth/logout?reason=expired'));
 

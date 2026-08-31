@@ -2,7 +2,7 @@ import { timingSafeEqual } from 'node:crypto';
 import { cookies } from 'next/headers';
 import { NextResponse, type NextRequest } from 'next/server';
 import { serverApiUrl } from '@/lib/api-url';
-import { setSession } from '@/lib/auth-session';
+import { setSession, workosSessionIdFromJwt } from '@/lib/auth-session';
 import { asLocale, LOCALE_COOKIE, LOCALE_COOKIE_MAX_AGE } from '@/lib/locale';
 import { requestOrigin } from '@/lib/request-origin';
 
@@ -166,11 +166,14 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     return NextResponse.redirect(new URL('/login?error=callback', origin));
   }
 
+  // The blob's session_id is the IAM's own row id, not WorkOS's. The claim
+  // inside the JWT is the id WorkOS actually resolves at logout, so prefer it;
+  // the blob id stays as a fallback for an IAM that stops minting the claim.
   await setSession({
     provider: 'workos',
     accessToken: tokens.access_token,
     refreshToken: tokens.refresh_token,
-    sessionId: tokens.session_id,
+    sessionId: workosSessionIdFromJwt(tokens.access_token) ?? tokens.session_id,
   });
   await recordAttribution(jar, tokens.access_token);
   await seedLocale(jar, tokens.access_token);

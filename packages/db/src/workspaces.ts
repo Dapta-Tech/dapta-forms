@@ -181,6 +181,14 @@ export async function rebindLegacyAccount(
   const projected = await db.get<{ id: string }>(
     sql`SELECT id FROM account WHERE external_id = ${args.workspaceId} LIMIT 1`,
   );
+  // A personal workspace can arrive with ws.id === ws.account_id, so both
+  // lookups match the SAME row: it is already bound to the right workspace and
+  // must never be treated as its own stale twin — parking itself (and locking
+  // the person out on the next login, when the parked external_id collides),
+  // or, with no forms, deleting itself in the absorb branch below.
+  if (projected && projected.id === legacy.id) {
+    return { accountId: legacy.id, parkedLegacyId: null };
+  }
   if (!projected) {
     await db.run(
       sql`UPDATE account SET external_id = ${args.workspaceId}, iam_account_id = ${args.iamAccountId}
