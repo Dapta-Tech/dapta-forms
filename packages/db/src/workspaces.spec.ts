@@ -13,7 +13,10 @@
  *      (no upstream membership id) — the owner survives a roster read.
  *   4. `rebindLegacyAccount` keeps the legacy row's id when it can, absorbs an
  *      EMPTY projected row, and parks a legacy row (disabled, renamed) when the
- *      projected one already has forms.
+ *      projected one already has forms — but NEVER acts on itself: a personal
+ *      workspace whose upstream id equals its account id resolves both lookups
+ *      to one row, which used to self-park (forms and members stranded) and
+ *      then crash every later login on the parked row's UNIQUE external_id.
  *   5. `pickHomeAccount` prefers the requested workspace, else most recent.
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
@@ -237,6 +240,33 @@ describe('rebindLegacyAccount', () => {
     // Parked = unreachable from the switcher.
     const list = await listWorkspacesForIdentity(db, { externalId: SUB, email: null });
     expect(list.some((w) => w.accountId === legacy3)).toBe(false);
+  });
+
+  it('never parks a row against itself when workspaceId === iamAccountId (personal workspace)', async () => {
+    // The IAM hands some personal workspaces an id equal to their account id,
+    // so the legacy and projected lookups resolve to the SAME row.
+    const acct = `acct-${randomUUID()}`;
+    const selfId = randomUUID();
+    await db.run(sql`INSERT INTO account (id, code, name, external_id, iam_account_id, created_at) VALUES (${selfId}, ${'s' + selfId.slice(0, 5)}, 'Mine', ${acct}, ${acct}, 1)`);
+    await db.run(sql`INSERT INTO member (id, account_id, external_id, email, handle, role, status, created_at) VALUES (${randomUUID()}, ${selfId}, ${SUB}, ${EMAIL}, 'me', 'owner', 'active', 1)`);
+    await db.run(sql`INSERT INTO form (id, account_id, slug, name, config, created_at, updated_at) VALUES (${randomUUID()}, ${selfId}, 'f', 'F', '{}', 1, 1)`);
+    created.push(selfId);
+    const r = await rebindLegacyAccount(db, { iamAccountId: acct, workspaceId: acct, workspaceName: 'Mine' });
+    expect(r).toEqual({ accountId: selfId, parkedLegacyId: null });
+    const row = await db.get<{ external_id: string; name: string }>(sql`SELECT external_id, name FROM account WHERE id = ${selfId}`);
+    expect(row).toEqual({ external_id: acct, name: 'Mine' });
+    const mem = await db.get<{ status: string }>(sql`SELECT status FROM member WHERE account_id = ${selfId}`);
+    expect(mem!.status).toBe('active');
+  });
+
+  it('does not delete a form-less row through the absorb branch when it is its own projection', async () => {
+    const acct = `acct-${randomUUID()}`;
+    const selfId = randomUUID();
+    await db.run(sql`INSERT INTO account (id, code, name, external_id, iam_account_id, created_at) VALUES (${selfId}, ${'t' + selfId.slice(0, 5)}, 'Empty', ${acct}, ${acct}, 1)`);
+    created.push(selfId);
+    const r = await rebindLegacyAccount(db, { iamAccountId: acct, workspaceId: acct, workspaceName: 'Empty' });
+    expect(r).toEqual({ accountId: selfId, parkedLegacyId: null });
+    expect(await db.get(sql`SELECT id FROM account WHERE id = ${selfId}`)).toBeDefined();
   });
 });
 
