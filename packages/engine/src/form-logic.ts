@@ -1319,6 +1319,17 @@ export function isInputlessStep(step: Pick<FormStep, 'type'>): boolean {
   return step.type === 'message' || step.type === 'reveal';
 }
 
+/**
+ * Keep missing v1 bounds open-ended while matching the UI's handling of an
+ * explicitly inverted pair.
+ */
+function normalizedSliderValidationBounds(
+  step: Pick<FormStep, 'min' | 'max'>,
+): { min?: number; max?: number } {
+  const { min, max } = step;
+  return min != null && max != null && min > max ? { min: max, max: min } : { min, max };
+}
+
 /** Validate one answer against its step. Pure; used on both client and server. */
 export function validateAnswer(step: FormStep, value: AnswerValue): ValidationResult {
   // Info + reveal steps never carry input.
@@ -1359,8 +1370,9 @@ export function validateAnswer(step: FormStep, value: AnswerValue): ValidationRe
     case 'slider': {
       const n = Number(value);
       if (Number.isNaN(n)) return { ok: false, error: 'Enter a number.' };
-      if (step.min != null && n < step.min) return { ok: false, error: 'Value is too low.' };
-      if (step.max != null && n > step.max) return { ok: false, error: 'Value is too high.' };
+      const { min, max } = normalizedSliderValidationBounds(step);
+      if (min != null && n < min) return { ok: false, error: 'Value is too low.' };
+      if (max != null && n > max) return { ok: false, error: 'Value is too high.' };
       return { ok: true };
     }
     case 'dropdown':
@@ -1932,8 +1944,9 @@ export function validateAnswerCode(
     case 'slider': {
       const n = Number(value);
       if (Number.isNaN(n)) return { ok: false, code: 'number' };
-      if (step.min != null && n < step.min) return { ok: false, code: 'too_low' };
-      if (step.max != null && n > step.max) return { ok: false, code: 'too_high' };
+      const { min, max } = normalizedSliderValidationBounds(step);
+      if (min != null && n < min) return { ok: false, code: 'too_low' };
+      if (max != null && n > max) return { ok: false, code: 'too_high' };
       return { ok: true };
     }
     case 'dropdown':
