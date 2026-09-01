@@ -1,8 +1,9 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import {
-  deletePendingOutbox,
+  deleteUnstartedOutbox,
   enqueueOutbox,
   resolveProviderToken,
+  skipBackoffOutbox,
   type Db,
   type OutboxKind,
 } from '@quill/db';
@@ -15,6 +16,7 @@ import {
 } from '@quill/destinations';
 import {
   destinationFiresForPhase,
+  destinationType,
   formConfigSchema,
   formDestinationSchema,
   type FormDestination,
@@ -23,6 +25,16 @@ import type { ServerEnv } from '@quill/config/env';
 import { HubspotPortalResolver, mirrorGuidFor } from './hubspot-portal';
 import { HubspotPropertiesService } from './integrations.controller';
 import { DB, ENV } from './tokens';
+
+/**
+ * Every destination kind the form config can name, as queue kinds.
+ *
+ * Read off the destination contract instead of restated here, so the two cannot
+ * drift: `satisfies` proves at COMPILE TIME that each destination type is a kind
+ * the queue accepts, and a destination kind added to the contract joins the
+ * cancellation pass below without anyone remembering to widen a list.
+ */
+const DESTINATION_OUTBOX_KINDS = destinationType satisfies readonly OutboxKind[];
 
 /** The delivery snapshot serialized into an outbox row (config + context). */
 interface DestinationOutboxPayload {
@@ -95,24 +107,58 @@ export class DestinationEffects {
         // keeps each destination's ORIGINAL config-array index.
         .filter(({ destination }) => destinationFiresForPhase(destination, input.phase));
 
-      // A re-submit of the same session+phase replaces every not-yet-sent
-      // delivery: cancel pending rows ONCE per kind BEFORE the enqueue loop.
-      // Deleting inside the loop would cancel a sibling destination of the same
-      // type that was just enqueued (two webhooks are legal — only the last one
-      // would ever deliver).
-      const kinds = new Set<OutboxKind>(
-        enabled.map(({ destination }) => destination.type as OutboxKind),
-      );
-      for (const kind of kinds) {
-        await deletePendingOutbox(this.db, {
-          subjectUid: input.submissionId,
-          kind,
-          action: input.phase,
-        });
+      // A re-submit of the same session+phase reconsiders what the PREVIOUS
+      // pass left queued, for EVERY destination kind rather than the ones
+      // firing now. Deriving the set from `enabled` asked the one question that
+      // cannot describe the previous pass: a destination disabled, deleted, or
+      // narrowed to another phase drops out of `enabled`, so its leftovers were
+      // never looked at and delivered under a config nobody had any more.
+      //
+      // The three pending states are three different facts and get three
+      // different answers, in this order:
+      //
+      //   NEVER HANDED OFF   deleted. Nothing happened, so nothing is lost.
+      //   WAITING TO RETRY   settled `skipped`, if it is unclaimed at the
+      //                      moment this pass runs. It DID happen, so it keeps
+      //                      everything it recorded, but its payload is a
+      //                      snapshot this pass has just replaced and every
+      //                      remaining retry would deliver stale content.
+      //   IN FLIGHT          untouched. A worker holds it and may already have
+      //                      reached the endpoint, so settling it belongs to
+      //                      the worker side, not to this pass. If that worker
+      //                      abandons its lease the row stays claimed and
+      //                      another may reclaim it; either way, not us.
+      //
+      // THIS PASS SPEAKS FOR THE QUEUE AS IT FINDS IT, not for what the queue
+      // becomes afterwards, and it cannot bound what a held row does next. That
+      // attempt may succeed and finish `done`, may fail and drop back into
+      // backoff unclaimed, or may lose its lease and stay claimed for another
+      // worker. Because the row queued just below is due immediately and a
+      // backed-off retry is not, Dapta Forms can send the OLDER payload after
+      // this pass's newer one and then mark that older row done. `max_attempts`
+      // caps how many further retries follow; it does not un-send the ones
+      // already made. A later pass for the same submission and phase settles
+      // such a row if it is unclaimed by then, but there may be no later pass:
+      // partials can come round again, while a re-landed complete does not
+      // re-enqueue at all. What a receiver makes of the two is outside Dapta
+      // Forms. The residual is the price of not touching a row somebody else
+      // owns, and it is deliberate.
+      //
+      // Running both writes per kind BEFORE the enqueue loop is what keeps a
+      // sibling destination of the same kind safe: doing it inside the loop
+      // would clear a row this same pass had just written.
+      for (const kind of DESTINATION_OUTBOX_KINDS) {
+        const scope = { subjectUid: input.submissionId, kind, action: input.phase };
+        await deleteUnstartedOutbox(this.db, scope);
+        await skipBackoffOutbox(this.db, scope);
       }
 
       for (const { destination, index } of enabled) {
-        const kind = destination.type as OutboxKind;
+        // Every firing destination is queued, unconditionally. The answers this
+        // pass carries are the ones the respondent actually left, and declining
+        // to queue them because an older delivery is still on the wire would
+        // discard the newer of the two for good.
+        //
         // Per-destination identity: the config-array index disambiguates two
         // destinations of the same type, so each delivery carries its own
         // idempotency key (receivers de-dup per destination, not per type).
@@ -133,7 +179,7 @@ export class DestinationEffects {
         };
         const payload: DestinationOutboxPayload = { destination, ctx };
         await enqueueOutbox(this.db, {
-          kind,
+          kind: destination.type,
           action: input.phase,
           subjectUid: input.submissionId,
           accountId: input.accountId,
