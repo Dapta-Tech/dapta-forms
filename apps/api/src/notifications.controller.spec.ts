@@ -73,6 +73,7 @@ describe('GET /v1/notifications', () => {
       'score',
       'outcomeLabel',
       'formLink',
+      'answers',
     ]);
   });
 });

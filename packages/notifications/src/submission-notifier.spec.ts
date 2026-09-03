@@ -97,7 +97,104 @@ describe('SubmissionNotifier', () => {
     const m = provider.sent[0]!;
     expect(m.subject).toBe('New lead on Lead Qualifier (15)');
     expect(m.text).toBe('lead@acme.io scored 15\nForm: Lead Qualifier');
-    expect(m.html).toBe('<p>lead@acme.io scored 15<br/>Form: Lead Qualifier</p>');
+    expect(m.html).toContain('lead@acme.io scored 15<br/>Form: Lead Qualifier');
+  });
+
+  it('sends a complete HTML document (doctype, lang, viewport, closing body)', async () => {
+    const provider = new CaptureProvider();
+    const notifier = new SubmissionNotifier(provider);
+    await notifier.sendSubmissionReceived({
+      accountId: 'acc-1',
+      submissionId: 'sub-doc',
+      formName: 'Survey',
+      to: ['owner@example.com'],
+      locale: 'es',
+    });
+    const html = provider.sent[0]!.html!;
+    expect(html.startsWith('<!DOCTYPE html>')).toBe(true);
+    expect(html).toContain('<html lang="es">');
+    expect(html).toContain('name="viewport"');
+    expect(html.trimEnd().endsWith('</body></html>')).toBe(true);
+  });
+
+  it('puts the answers in the owner notice: "Label: value" in text, a table in HTML, escaped', async () => {
+    const provider = new CaptureProvider();
+    const notifier = new SubmissionNotifier(provider);
+    await notifier.sendSubmissionReceived({
+      accountId: 'acc-1',
+      submissionId: 'sub-ans',
+      formName: 'Lead Qualifier',
+      to: ['owner@example.com'],
+      score: 15,
+      outcomeLabel: 'Qualified',
+      formLink: 'https://forms.example.com/admin/forms/f1/submissions',
+      answers: [
+        { label: 'Role', value: 'Founder' },
+        { label: 'Why', value: '<script>alert(1)</script>' },
+      ],
+    });
+    const m = provider.sent[0]!;
+    expect(m.text).toBe(
+      [
+        'You have a new submission on "Lead Qualifier".',
+        'Score: 15',
+        'Outcome: Qualified',
+        '',
+        'Role: Founder',
+        'Why: <script>alert(1)</script>',
+        '',
+        'View submissions: https://forms.example.com/admin/forms/f1/submissions',
+      ].join('\n'),
+    );
+    expect(m.html).toContain('<table');
+    expect(m.html).toContain('Founder');
+    expect(m.html).not.toContain('<script>');
+    expect(m.html).toContain('&lt;script&gt;alert(1)&lt;/script&gt;');
+    expect(m.html).toContain('View submissions: https://forms.example.com/admin/forms/f1/submissions');
+  });
+
+  it('a custom body can place {{answers}} anywhere, in both emails', async () => {
+    const provider = new CaptureProvider();
+    const notifier = new SubmissionNotifier(provider);
+    const answers = [{ label: 'Role', value: 'Founder' }];
+    await notifier.sendSubmissionReceived({
+      accountId: 'acc-1',
+      submissionId: 'sub-c1',
+      formName: 'Survey',
+      to: ['owner@example.com'],
+      bodyTemplate: 'Top\n{{answers}}\nBottom',
+      answers,
+    });
+    await notifier.sendSubmissionConfirmed({
+      accountId: 'acc-1',
+      submissionId: 'sub-c2',
+      formName: 'Survey',
+      to: [],
+      respondentEmail: 'lead@acme.io',
+      bodyTemplate: 'Your answers:\n{{answers}}',
+      answers,
+    });
+    expect(provider.sent[0]!.text).toBe('Top\nRole: Founder\nBottom');
+    expect(provider.sent[0]!.html).toContain('Top<br/><table');
+    expect(provider.sent[1]!.text).toBe('Your answers:\nRole: Founder');
+    expect(provider.sent[1]!.html).toContain('<table');
+  });
+
+  it('the invitation email is a complete HTML document too', async () => {
+    const provider = new CaptureProvider();
+    const notifier = new SubmissionNotifier(provider);
+    await notifier.sendMemberInvited({
+      accountId: 'acc-1',
+      memberId: 'm-1',
+      to: 'new@example.com',
+      accountName: '<Acme>',
+      signInLink: 'https://forms.example.com/login',
+    });
+    const m = provider.sent[0]!;
+    expect(m.html!.startsWith('<!DOCTYPE html>')).toBe(true);
+    expect(m.html).toContain('&lt;Acme&gt;');
+    expect(m.html).not.toContain('<Acme>');
+    expect(m.text).toContain('Sign in: https://forms.example.com/login');
   });
 
   it('ESCAPES interpolated values in a custom body (E8 — the boundary holds)', async () => {

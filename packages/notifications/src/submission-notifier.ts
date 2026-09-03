@@ -1,18 +1,12 @@
 import type { EmailProvider, EmailResult } from './email.port';
 import { escapeHtml } from './util';
+import { emailDocument, type AnswerRow } from './render-html';
 import {
-  applyCopyOverride,
   normalizeLocale,
   renderMemberInvited,
-  renderSubmissionConfirmed,
-  renderSubmissionReceived,
+  renderSubmissionEmail,
   type NotificationLocale,
 } from './templates';
-
-/** Render plaintext lines to a safe HTML body — every line HTML-escaped (E8). */
-function htmlBody(lines: string[]): string {
-  return `<p>${lines.filter(Boolean).map(escapeHtml).join('<br/>')}</p>`;
-}
 
 /** Everything a submission notification needs to render, provider-agnostic. */
 /** Everything the invitation email needs, resolved before it is enqueued. */
@@ -46,8 +40,13 @@ export interface SubmissionNotification {
   respondentEmail?: string | null;
   score?: number | null;
   outcomeLabel?: string | null;
-  /** A public link back to the form (book-again style). */
+  /** Where the owner reads the answers (the admin submissions page). Never set on the receipt. */
   formLink?: string | null;
+  /**
+   * The answers, resolved to `{label, value}` rows in step order by the caller
+   * (the API, via the engine). Printed by the `{{answers}}` token.
+   */
+  answers?: AnswerRow[] | null;
   /**
    * Language for the rendered copy. Accepts a bare `en`/`es` or any locale-ish
    * value (e.g. `es-CO`, an Accept-Language fragment) — normalized to one of the
@@ -66,9 +65,10 @@ export interface SubmissionNotification {
 }
 
 /**
- * Renders and sends submission emails through the EmailProvider port — plain
- * text + escaped HTML, no attachments. The app only ever calls these methods;
- * the transport is whatever adapter is wired (log-only by default). Copy is
+ * Renders and sends submission emails through the EmailProvider port — a plain
+ * text body plus a complete HTML document (escaped line by line, the answers as
+ * a table), no attachments. The app only ever calls these methods; the
+ * transport is whatever adapter is wired (log-only by default). Copy is
  * bilingual (EN/ES) via the templates module; the caller supplies `locale`.
  */
 export class SubmissionNotifier {
@@ -76,19 +76,19 @@ export class SubmissionNotifier {
 
   /** Internal notice to the account: a new submission landed. */
   sendSubmissionReceived(n: SubmissionNotification): Promise<EmailResult> {
-    const base = renderSubmissionReceived(normalizeLocale(n.locale), n);
-    const { subject, lines } = applyCopyOverride(
-      base,
+    const locale = normalizeLocale(n.locale);
+    const { subject, text, html } = renderSubmissionEmail(
+      'submission_received',
+      locale,
       { subject: n.subjectTemplate, body: n.bodyTemplate },
       n,
     );
-    const body = lines.filter(Boolean);
     return this.email.send({
       accountId: n.accountId,
       to: n.to,
       subject,
-      text: body.join('\n'),
-      html: htmlBody(body),
+      text: text.join('\n'),
+      html: emailDocument({ lang: locale, lines: html }),
       headers: { 'X-Submission-Id': n.submissionId },
       idempotencyKey: `submission:${n.submissionId}:received`,
     });
@@ -99,14 +99,16 @@ export class SubmissionNotifier {
    * copy, not the per-account submission templates an owner can edit.
    */
   sendMemberInvited(n: MemberInvitedNotification): Promise<EmailResult> {
-    const { subject, lines } = renderMemberInvited(normalizeLocale(n.locale), n);
+    const locale = normalizeLocale(n.locale);
+    const { subject, lines } = renderMemberInvited(locale, n);
     const body = lines.filter(Boolean);
     return this.email.send({
       accountId: n.accountId,
       to: [n.to],
       subject,
       text: body.join('\n'),
-      html: htmlBody(body),
+      // Platform copy with interpolated names: escape every line (E8).
+      html: emailDocument({ lang: locale, lines: body.map(escapeHtml) }),
       // One invite per member row — a retried delivery must not read as a second
       // invitation to a managed service that de-duplicates on this key.
       idempotencyKey: `member:${n.memberId}:invited`,
@@ -115,19 +117,19 @@ export class SubmissionNotifier {
 
   /** Confirmation to the respondent that their answers were recorded. */
   sendSubmissionConfirmed(n: SubmissionNotification): Promise<EmailResult> {
-    const base = renderSubmissionConfirmed(normalizeLocale(n.locale), n);
-    const { subject, lines } = applyCopyOverride(
-      base,
+    const locale = normalizeLocale(n.locale);
+    const { subject, text, html } = renderSubmissionEmail(
+      'submission_confirmed',
+      locale,
       { subject: n.subjectTemplate, body: n.bodyTemplate },
       n,
     );
-    const body = lines.filter(Boolean);
     return this.email.send({
       accountId: n.accountId,
       to: n.respondentEmail ? [n.respondentEmail] : n.to,
       subject,
-      text: body.join('\n'),
-      html: htmlBody(body),
+      text: text.join('\n'),
+      html: emailDocument({ lang: locale, lines: html }),
       headers: { 'X-Submission-Id': n.submissionId },
       idempotencyKey: `submission:${n.submissionId}:confirmed`,
     });

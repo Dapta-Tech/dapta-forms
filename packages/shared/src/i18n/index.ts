@@ -464,6 +464,9 @@ export interface FormsMessages {
       tokenScore: string;
       tokenOutcomeLabel: string;
       tokenFormLink: string;
+      tokenAnswers: string;
+      /** Permanent warning when the owner notice body lacks `{{answers}}`. */
+      answersMissing: string;
       /** Muted pointer: forms can override these from their Connect tab. */
       formOverrideNote: string;
     };
@@ -2033,7 +2036,10 @@ export const en: FormsMessages = {
       tokenRespondentEmail: 'Respondent email',
       tokenScore: 'Score',
       tokenOutcomeLabel: 'Outcome',
-      tokenFormLink: 'Form link',
+      tokenFormLink: 'Submissions link',
+      tokenAnswers: 'Answers',
+      answersMissing:
+        'This email does not include {{answers}}, so the answers will not be in it. Insert the Answers variable to add them.',
       formOverrideNote: 'Each form can override these emails from its Connect tab in the editor.',
     },
     login: {
@@ -3514,7 +3520,10 @@ export const es: FormsMessages = {
       tokenRespondentEmail: 'Correo del encuestado',
       tokenScore: 'Puntuación',
       tokenOutcomeLabel: 'Resultado',
-      tokenFormLink: 'Enlace del formulario',
+      tokenFormLink: 'Enlace a las respuestas',
+      tokenAnswers: 'Respuestas',
+      answersMissing:
+        'Este correo no incluye {{answers}}, así que las respuestas no aparecerán en él. Inserta la variable Respuestas para agregarlas.',
       formOverrideNote:
         'Cada formulario puede personalizar estos correos desde su pestaña Conectar en el editor.',
     },

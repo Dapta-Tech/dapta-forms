@@ -86,6 +86,12 @@ export class EmailEffects {
             ORDER BY created_at ASC LIMIT 1`,
       );
       const to = n.to ?? (owner?.email ? [owner.email] : []);
+      // Nobody to tell: every adapter throws on an empty recipient list, so a
+      // row enqueued here would burn its whole retry schedule for nothing.
+      if (to.length === 0) {
+        this.log.warn(`submission_received for account ${accountId} has no recipient: not enqueued`);
+        return;
+      }
       // Snapshot the toggle AND the custom copy, already merged form → account →
       // stock (absent rows = enabled with the stock template, the fork-friendly
       // default). Snapshotting here means the worker renders the copy the owner
@@ -95,6 +101,10 @@ export class EmailEffects {
       const payload: SubmissionNotification = {
         ...n,
         accountId,
+        // Where the owner reads the answers. Absent in a bare fork with no
+        // PUBLIC_APP_URL, or when the caller carries no form: the template
+        // drops the line rather than printing a broken link.
+        formLink: n.formLink ?? this.submissionsLink(formId),
         // Stamped into the payload, not merely used to resolve the template
         // above: `outbox` has no form column, so a row that does not NAME its
         // form cannot be attributed to one, and every email this queue has ever
@@ -158,6 +168,17 @@ export class EmailEffects {
     }
   }
 
+  /** An absolute app URL for `path`, or null in a bare fork with no PUBLIC_APP_URL. */
+  private appUrl(path: string): string | null {
+    const base = this.env?.PUBLIC_APP_URL;
+    return base ? `${base.replace(/\/$/, '')}${path}` : null;
+  }
+
+  /** Where the owner reads the answers; null without a form or an app URL. */
+  private submissionsLink(formId: string | null | undefined): string | null {
+    return formId ? this.appUrl(`/admin/forms/${formId}/submissions`) : null;
+  }
+
   /**
    * Tell an invited person they were invited.
    *
@@ -190,7 +211,7 @@ export class EmailEffects {
         invitedBy: input.invitedBy ?? null,
         // Empty in a bare fork with no PUBLIC_APP_URL — the template drops the
         // line rather than printing a broken link.
-        signInLink: this.env?.PUBLIC_APP_URL ? `${this.env!.PUBLIC_APP_URL.replace(/\/$/, '')}/login` : null,
+        signInLink: this.appUrl('/login'),
         locale: input.locale ?? null,
       };
       await enqueueOutbox(this.db, {
@@ -203,6 +224,19 @@ export class EmailEffects {
     } catch (err) {
       this.log.error(`failed to enqueue member_invited: ${String(err)}`);
     }
+  }
+
+  /**
+   * A row with nobody to address is a DECISION (skip once), not a transport
+   * failure to retry: rows enqueued before the producer guarded against an
+   * empty recipient list would otherwise fail five times each. Mirrors how
+   * the notifier addresses each email: the owner notice goes to `to` only,
+   * the receipt to `respondentEmail` with `to` as the fallback.
+   */
+  private assertRecipient(action: EmailKind, n: SubmissionNotification): void {
+    const to = Array.isArray(n.to) ? n.to.filter(Boolean) : [];
+    const addressed = action === 'submission_confirmed' ? Boolean(n.respondentEmail) || to.length > 0 : to.length > 0;
+    if (!addressed) throw new OutboxSkipError('no recipient');
   }
 
   /**
@@ -229,9 +263,11 @@ export class EmailEffects {
         );
         return;
       case 'submission_received':
+        this.assertRecipient(action, n);
         await this.notifier.sendSubmissionReceived(n);
         return;
       case 'submission_confirmed':
+        this.assertRecipient(action, n);
         await this.notifier.sendSubmissionConfirmed(n);
         return;
       default:

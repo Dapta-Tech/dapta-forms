@@ -39,6 +39,7 @@ export function NotificationEmailFields({
   tokens,
   labels,
   testIdPrefix,
+  notice,
 }: {
   value: NotificationEmailValue;
   onChange: (next: NotificationEmailValue) => void;
@@ -46,6 +47,11 @@ export function NotificationEmailFields({
   labels: NotificationFieldsLabels;
   /** Optional data-testid prefix for the subject/body controls. */
   testIdPrefix?: string;
+  /**
+   * A permanent, non-blocking warning about the current draft (e.g. the owner
+   * notice lacks `{{answers}}`), shown above the token chips. Null hides it.
+   */
+  notice?: string | null;
 }) {
   const subjectRef = useRef<HTMLInputElement>(null);
   const bodyRef = useRef<HTMLTextAreaElement>(null);
@@ -120,6 +126,17 @@ export function NotificationEmailFields({
           className="w-full resize-y rounded-md border border-input bg-background px-3 py-2 font-mono text-xs leading-relaxed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
         />
       </label>
+
+      {notice ? (
+        <p
+          role="status"
+          data-testid={testIdPrefix ? `${testIdPrefix}-notice` : undefined}
+          className="mt-3 flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-foreground"
+        >
+          <i aria-hidden className="pi pi-exclamation-triangle mt-0.5 shrink-0" style={{ fontSize: 12 }} />
+          <span>{notice}</span>
+        </p>
+      ) : null}
 
       {/* Token chips */}
       <div className="mt-3">
