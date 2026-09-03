@@ -18,6 +18,7 @@ import { Switch } from '@/components/ui/switch';
 import { GoogleSheetsLogo, ProviderLogo } from '@/components/ui/provider-logo';
 import { useToast } from '@/components/toast';
 import { callAction, isTransportError } from '@/lib/call-action';
+import { browserTimezones, isKnownTimezone } from '@/lib/timezones';
 import { useAutosave } from '@/lib/use-autosave';
 import { cn } from '@/lib/cn';
 import { bookingLabel } from '@/lib/booking-fields';
@@ -158,40 +159,6 @@ interface BookingSyncState {
   stageValue: string;
   dateProperty: string;
   hoursProperty: string;
-}
-
-/**
- * Whether the browser can resolve this IANA zone name. Advisory only: it warns
- * the author at the moment they mistype, but the value still saves — the SERVER
- * decides, and its ICU data is the one that matters. Blank is always fine (UTC).
- */
-function isKnownTimezone(value: string): boolean {
-  const zone = value.trim();
-  if (!zone) return true;
-  try {
-    new Intl.DateTimeFormat('en-CA', { timeZone: zone });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/**
- * The IANA zones this browser can enumerate, for the Day-timezone picker.
- * Computed once — the list is static for the life of the page. A runtime
- * without `Intl.supportedValuesOf` yields null, and the field falls back to
- * the free-text input (the same degradation `PropertyField` uses).
- */
-let cachedTimezones: string[] | null | undefined;
-function browserTimezones(): string[] | null {
-  if (cachedTimezones !== undefined) return cachedTimezones;
-  try {
-    const zones = Intl.supportedValuesOf('timeZone');
-    cachedTimezones = zones.length > 0 ? zones : null;
-  } catch {
-    cachedTimezones = null;
-  }
-  return cachedTimezones;
 }
 
 /**

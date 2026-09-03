@@ -5,20 +5,34 @@
  * framework-agnostic so both controllers parse identically.
  */
 import { OUTBOX_KINDS, OUTBOX_STATUSES, type OutboxKind, type OutboxStatus, type SubmissionStatus } from '@quill/db';
+import { dayBoundsInZone, isValidTimeZone } from '@quill/shared';
 
-/** Parse a date bound: epoch-ms passthrough, or a YYYY-MM-DD / ISO string. */
-export function parseBound(v: string | undefined, endOfDay: boolean): number | null {
+/**
+ * Parse a date bound: epoch-ms passthrough, or a YYYY-MM-DD / ISO string. A
+ * bare date names a whole calendar day in `zone` (UTC when absent): its first
+ * instant, or its last with `endOfDay`.
+ */
+export function parseBound(v: string | undefined, endOfDay: boolean, zone: string = 'UTC'): number | null {
   if (!v) return null;
   if (/^\d+$/.test(v)) return Number(v);
   const t = Date.parse(v);
   if (Number.isNaN(t)) return null;
   if (/^\d{4}-\d{2}-\d{2}$/.test(v)) {
-    const d = new Date(t);
-    if (endOfDay) d.setUTCHours(23, 59, 59, 999);
-    else d.setUTCHours(0, 0, 0, 0);
-    return d.getTime();
+    const bounds = dayBoundsInZone(v, zone);
+    return endOfDay ? bounds.to : bounds.from;
   }
   return t;
+}
+
+/**
+ * Narrow a `?tz=` query to a zone this server can resolve. Absent → null (the
+ * caller falls back to the workspace's zone); unknown → UTC, never an error,
+ * so a stale link cannot 400 an analytics page.
+ */
+export function parseTimeZone(v: string | undefined): string | null {
+  const zone = v?.trim();
+  if (!zone) return null;
+  return isValidTimeZone(zone) ? zone : 'UTC';
 }
 
 /** Narrow a raw status query to the allowed filter (defaults to `all`). */

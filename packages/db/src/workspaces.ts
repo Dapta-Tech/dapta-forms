@@ -611,3 +611,33 @@ export async function getMemberUpstreamRef(
   if (!r) return null;
   return { externalId: r.external_id ?? null, workspaceUserId: r.iam_workspace_user_id ?? null, email: r.email ?? null };
 }
+
+// --- Workspace timezone (0020) ---------------------------------------------
+
+/** The workspace's IANA zone, or null (= UTC) when nobody has set one. */
+export async function getAccountTimezone(db: Db, accountId: string): Promise<string | null> {
+  const row = await db.get<{ timezone: string | null }>(
+    sql`SELECT timezone FROM account WHERE id = ${accountId} LIMIT 1`,
+  );
+  return row?.timezone ?? null;
+}
+
+/** Set (or clear, with null) the workspace's zone. Validation is the API's job. */
+export async function setAccountTimezone(db: Db, accountId: string, timezone: string | null): Promise<void> {
+  await db.run(sql`UPDATE account SET timezone = ${timezone} WHERE id = ${accountId}`);
+}
+
+/**
+ * Write-once seed: the first admin to load the dashboard offers their
+ * browser's zone, and it sticks only while the column is still NULL, so two
+ * teammates in different zones cannot flip it back and forth. Same
+ * UPDATE ... WHERE IS NULL discipline as the milestone claims.
+ */
+export async function claimAccountTimezone(db: Db, accountId: string, timezone: string): Promise<boolean> {
+  const claimed = await db.get<{ id: string }>(
+    sql`UPDATE account SET timezone = ${timezone}
+        WHERE id = ${accountId} AND timezone IS NULL
+        RETURNING id`,
+  );
+  return Boolean(claimed);
+}

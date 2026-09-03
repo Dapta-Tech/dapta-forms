@@ -1298,7 +1298,10 @@ export type DropoffRow = z.infer<typeof dropoffRowSchema>;
  * (a missing day would draw a misleading straight line across it).
  */
 export const trendPointSchema = z.object({
-  /** Epoch ms at the START of the day bucket (UTC). */
+  /**
+   * Epoch ms of UTC midnight of the CALENDAR DAY this bucket names, in the
+   * zone the response was resolved in (`range.timeZone`). Render it in UTC.
+   */
   t: z.number().int(),
   /** Unique sessions that viewed the form that day. */
   views: z.number().int(),
@@ -1353,7 +1356,12 @@ export const analyticsResponseSchema = z.object({
   /** Gap-filled per-day series for the Trends chart (oldest → newest). */
   trends: z.array(trendPointSchema),
   /** Echoes the resolved range (epoch ms) so the client can render it. */
-  range: z.object({ from: z.number().nullable(), to: z.number().nullable() }),
+  range: z.object({
+    from: z.number().nullable(),
+    to: z.number().nullable(),
+    /** The zone the day buckets were named in (absent on older responses = UTC). */
+    timeZone: z.string().optional(),
+  }),
 });
 export type AnalyticsResponse = z.infer<typeof analyticsResponseSchema>;
 
@@ -1386,6 +1394,38 @@ export const workspaceRenameSchema = z.object({
   name: z.string().trim().min(1, 'A name is required.').max(80),
 });
 export type WorkspaceRenameInput = z.infer<typeof workspaceRenameSchema>;
+
+/**
+ * An IANA timezone name the runtime knows (`America/Bogota`, `UTC`). The
+ * regex keeps the shape honest before `Intl` is asked, and `Intl` is the
+ * source of truth: a zone this server cannot resolve is rejected here rather
+ * than silently read as UTC everywhere later.
+ */
+export const timeZoneSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(64)
+  .regex(/^[A-Za-z0-9_+\-]+(?:\/[A-Za-z0-9_+\-]+)*$/, 'Not a timezone name.')
+  .refine(
+    (zone) => {
+      try {
+        new Intl.DateTimeFormat('en-US', { timeZone: zone });
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    { message: 'Unknown timezone.' },
+  );
+
+/** PATCH /v1/workspaces/current/timezone: set, clear (null), or seed only while unset. */
+export const workspaceTimezoneSchema = z.object({
+  timezone: timeZoneSchema.nullable(),
+  /** True = a write-once claim from the browser's zone; false/absent = an explicit choice. */
+  onlyIfUnset: z.boolean().optional(),
+});
+export type WorkspaceTimezoneInput = z.infer<typeof workspaceTimezoneSchema>;
 
 export const memberInviteSchema = z.object({
   email: z.string().email().max(320),

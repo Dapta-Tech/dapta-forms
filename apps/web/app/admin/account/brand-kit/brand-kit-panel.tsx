@@ -3,7 +3,8 @@
 import { useMemo, useState, useTransition } from 'react';
 import type { FormBranding, FormButtonStyle, FormFont, FormRadius } from '@quill/engine';
 import { DEFAULT_FORM_FONT } from '@quill/engine';
-import { DEFAULT_ACCENT, DEFAULT_CANVAS, onAccent, readableOn, t, type FormsMessages } from '@quill/shared';
+import { DEFAULT_ACCENT, DEFAULT_CANVAS, formatDateTime, onAccent, readableOn, t, type FormsMessages } from '@quill/shared';
+import { useWorkspaceTimeZone } from '@/components/workspace-timezone';
 import type { BrandKit, FormSummary } from '@/lib/admin-api';
 import { formDesignProps } from '@/lib/form-design';
 import { callAction, isTransportError } from '@/lib/call-action';
@@ -40,6 +41,7 @@ export function BrandKitPanel({
   design: DesignMessages;
   locale: string;
 }) {
+  const timeZone = useWorkspaceTimeZone();
   const [kit, setKit] = useState<BrandKit>(initialKit);
   const [savedAt, setSavedAt] = useState<number | null>(updatedAt);
   const [applied, setApplied] = useState<Record<string, boolean>>(() =>
@@ -339,7 +341,7 @@ export function BrandKitPanel({
           </button>
           {savedAt ? (
             <span className="text-xs text-muted-foreground">
-              {t(bk.updatedAt, { date: new Date(savedAt).toLocaleString(locale) })}
+              {t(bk.updatedAt, { date: formatDateTime(savedAt, { locale, timeZone }) })}
             </span>
           ) : null}
           {toast ? <span className="text-sm text-primary">{toast}</span> : null}

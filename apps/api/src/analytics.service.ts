@@ -1,4 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { localDayIndex, resolveTimeZone, utcOffsetSegments } from '@quill/shared';
 import { resolveFormLayout } from '@quill/engine';
 import type { Db } from '@quill/db';
 import {
@@ -20,6 +21,8 @@ import {
   type DateRange,
   type DeleteSubmissionResult,
   type SubmissionQuery,
+  firstEventAt,
+  type DayBucketing,
 } from '@quill/db';
 import type {
   AnalyticsResponse,
@@ -93,6 +96,8 @@ const MAX_TREND_DAYS = 366;
  */
 function buildTrends(input: {
   range: DateRange;
+  /** The zone the day buckets were named in (`'UTC'` = the historical behavior). */
+  zone: string;
   dailyViews: { day: number; n: number }[];
   dailyStarts: { day: number; n: number }[];
   completed: CompletedSubmission[];
@@ -119,8 +124,11 @@ function buildTrends(input: {
 
   // Bound by the explicit range when one was given (so "last 30 days" plots 30
   // points even where nothing happened), else by the observed activity span.
-  const fromDay = input.range.from != null ? Math.floor(input.range.from / DAY_MS) : Math.min(...observed);
-  const toDay = input.range.to != null ? Math.floor(input.range.to / DAY_MS) : Math.max(...observed);
+  // The same day naming as the SQL buckets: `localDayIndex` is the JS twin of
+  // the `(col + offset) / 86400000` expression, so the window's edges and the
+  // buckets agree in every zone.
+  const fromDay = input.range.from != null ? localDayIndex(input.range.from, input.zone) : Math.min(...observed);
+  const toDay = input.range.to != null ? localDayIndex(input.range.to, input.zone) : Math.max(...observed);
   if (toDay < fromDay) return [];
 
   const span = Math.min(toDay - fromDay, MAX_TREND_DAYS - 1);
@@ -152,10 +160,34 @@ function buildTrends(input: {
 export class AnalyticsService {
   constructor(@Inject(DB) private readonly db: Db) {}
 
-  /** Funnel summary + question-by-question drop-off for a form over a range. */
-  async funnel(accountId: string, formId: string, range: DateRange): Promise<AnalyticsResponse | null> {
+  /**
+   * The offset segments that let SQL name calendar days in `zone` across the
+   * queried window (one day of slack on each side, so an edge event whose
+   * local day differs from its UTC day is still covered). UTC needs none: the
+   * absent bucketing is the exact SQL this always ran.
+   */
+  private async bucketingFor(formId: string, range: DateRange, zone: string): Promise<DayBucketing | undefined> {
+    if (zone === 'UTC') return undefined;
+    const from = range.from ?? (await firstEventAt(this.db, formId)) ?? Date.now();
+    const to = range.to ?? Date.now();
+    return { segments: utcOffsetSegments(from - DAY_MS, to + DAY_MS, zone) };
+  }
+
+  /**
+   * Funnel summary + question-by-question drop-off for a form over a range.
+   * `timeZone` names the calendar days of the trend buckets (and is echoed
+   * back as `range.timeZone`); absent or unknown = UTC, the historical rule.
+   */
+  async funnel(
+    accountId: string,
+    formId: string,
+    range: DateRange,
+    timeZone?: string | null,
+  ): Promise<AnalyticsResponse | null> {
     const form = await getFormById(this.db, accountId, formId);
     if (!form) return null;
+    const zone = resolveTimeZone(timeZone);
+    const bucketing = await this.bucketingFor(formId, range, zone);
     const config = form.config as FormConfig;
     const steps = config.steps ?? [];
     // Vertical shows every question on one page, so "viewed step X" fires for
@@ -173,9 +205,9 @@ export class AnalyticsService {
           : stepViewCounts(this.db, formId, range),
         partialCount(this.db, formId, range),
         bookingCount(this.db, formId, range),
-        completedSubmissions(this.db, formId, range),
-        dailyViewSessions(this.db, formId, range),
-        dailyStartSessions(this.db, formId, range),
+        completedSubmissions(this.db, formId, range, bucketing),
+        dailyViewSessions(this.db, formId, range, bucketing),
+        dailyStartSessions(this.db, formId, range, bucketing),
       ]);
 
     // One completed-submission read feeds the total, the median and the trend.
@@ -187,7 +219,7 @@ export class AnalyticsService {
     // Median open→complete in whole seconds, or null when no session in range
     // had a derivable open time (never 0 — that would be a fabricated fact).
     const timeToComplete = medianSeconds(durations);
-    const trends = buildTrends({ range, dailyViews, dailyStarts, completed });
+    const trends = buildTrends({ range, zone, dailyViews, dailyStarts, completed });
 
     // rowViews[0] = form views (the cover/landing); rowViews[i+1] = views of
     // step i. Looked up by the step's KEY first (V5-D3) — stable regardless of
@@ -249,7 +281,7 @@ export class AnalyticsService {
       dropoffMode,
       dropoff,
       trends,
-      range: { from: range.from ?? null, to: range.to ?? null },
+      range: { from: range.from ?? null, to: range.to ?? null, timeZone: zone },
     };
   }
 

@@ -211,6 +211,8 @@ export interface Me {
    * pages themselves read the cookie, not this.
    */
   locale: 'en' | 'es' | null;
+  /** The workspace's IANA timezone, or null while nobody has set one (UTC). */
+  timezone: string | null;
 }
 
 /**
@@ -602,7 +604,7 @@ export const adminApi = {
     req<{ reverted: string[] }>('POST', '/v1/branding/revert', { formIds }),
 
   // Analytics + submissions (this track)
-  getAnalytics: (id: string, range: { from?: number; to?: number } = {}) =>
+  getAnalytics: (id: string, range: { from?: number; to?: number; tz?: string } = {}) =>
     req<AnalyticsResponse>('GET', `/v1/forms/${id}/analytics${qs(range)}`),
   listSubmissions: (id: string, q: SubmissionsQuery = {}) =>
     req<SubmissionsPage>('GET', `/v1/forms/${id}/submissions${qs({ ...q })}`),
@@ -656,6 +658,14 @@ export const adminApi = {
   /** Rename the workspace the caller is acting in (admin/owner), or `opts.workspace`. */
   renameWorkspace: (name: string, opts?: ReqOptions) =>
     req<{ accountId: string; name: string }>('PATCH', '/v1/workspaces/current', { name }, opts),
+  /** Set (null = UTC) or, with `onlyIfUnset`, seed the workspace's timezone. */
+  setWorkspaceTimezone: (input: { timezone: string | null; onlyIfUnset?: boolean }, opts?: ReqOptions) =>
+    req<{ accountId: string; timezone: string | null; applied: boolean }>(
+      'PATCH',
+      '/v1/workspaces/current/timezone',
+      input,
+      opts,
+    ),
   /** Tell the API the caller is about to open this workspace (membership re-checked; remembered upstream). */
   enterWorkspace: (accountId: string) => req<{ ok: true }>('POST', `/v1/workspaces/${accountId}/enter`),
   /** Type-to-find: own workspaces filtered by name; staff also get the estate. */

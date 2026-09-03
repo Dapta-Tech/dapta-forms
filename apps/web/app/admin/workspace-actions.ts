@@ -167,3 +167,43 @@ export async function renameWorkspaceAction(
   revalidatePath('/admin', 'layout');
   return { ok: true };
 }
+
+/** Outcome of a timezone write, machine-readable so the client can localize. */
+export type WorkspaceTimezoneState = { ok: true; timezone: string | null } | { ok: false } | null;
+
+/**
+ * Set the workspace's timezone (admin/owner), for the settings page and the
+ * submissions dropdown. `accountId` names the workspace so Account settings
+ * can change any workspace the caller administers without switching into it.
+ */
+export async function setWorkspaceTimezoneAction(
+  accountId: string,
+  timezone: string | null,
+): Promise<WorkspaceTimezoneState> {
+  try {
+    const res = await adminApi.setWorkspaceTimezone({ timezone }, { workspace: accountId });
+    revalidatePath('/admin', 'layout');
+    return { ok: true, timezone: res.timezone };
+  } catch (e) {
+    unstable_rethrow(e);
+    return { ok: false };
+  }
+}
+
+/**
+ * The write-once seed: the first admin's browser offers its zone, and the API
+ * keeps it only while the workspace has none. `applied` tells the caller
+ * whether THIS call was the one that set it (and so whether to say so).
+ */
+export async function claimWorkspaceTimezoneAction(
+  timezone: string,
+): Promise<{ applied: boolean; timezone: string | null }> {
+  try {
+    const res = await adminApi.setWorkspaceTimezone({ timezone, onlyIfUnset: true });
+    if (res.applied) revalidatePath('/admin', 'layout');
+    return { applied: res.applied, timezone: res.timezone };
+  } catch (e) {
+    unstable_rethrow(e);
+    return { applied: false, timezone: null };
+  }
+}

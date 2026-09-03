@@ -299,3 +299,38 @@ describe('step-view attribution — by authored key vs legacy index', () => {
     expect((await stepViewCounts(db, formId)).byKey.get('q1')).toBe(2);
   });
 });
+
+describe('day buckets in a zone (offset segments)', () => {
+  // 2026-03-08: New York goes from -05:00 to -04:00 at 07:00Z.
+  const NY_SPRING = Date.UTC(2026, 2, 8, 7, 0, 0);
+  const HOUR = 3_600_000;
+  const bucketing = {
+    segments: [
+      { from: NY_SPRING - 3 * 86_400_000, offsetMs: -5 * HOUR },
+      { from: NY_SPRING, offsetMs: -4 * HOUR },
+    ],
+  };
+
+  it('keeps 04:30Z and 08:30Z on the same New York day, while UTC splits them from 23:30Z', async () => {
+    // 04:30Z Mar 8 = 23:30 EST Mar 7; 08:30Z Mar 8 = 04:30 EDT Mar 8.
+    await ev('a', 'view', Date.UTC(2026, 2, 8, 4, 30));
+    await ev('b', 'view', Date.UTC(2026, 2, 8, 8, 30));
+    await ev('c', 'view', Date.UTC(2026, 2, 7, 23, 30));
+    const utc = await dailyViewSessions(db, formId);
+    expect(utc.map((d) => d.n)).toEqual([1, 2]); // Mar 7 (c), Mar 8 (a, b)
+    const ny = await dailyViewSessions(db, formId, undefined, bucketing);
+    expect(ny.map((d) => d.n)).toEqual([2, 1]); // Mar 7 (c, a), Mar 8 (b)
+    const mar7 = Math.floor((Date.UTC(2026, 2, 7) - 5 * HOUR + 5 * HOUR) / 86_400_000);
+    expect(ny[0]!.day).toBe(mar7);
+  });
+
+  it('a single segment is a plain shifted bucket, and completed submissions bucket the same way', async () => {
+    const bogota = { segments: [{ from: 0, offsetMs: -5 * HOUR }] };
+    // 2026-09-04T03:30Z is Sep 3 in Bogota.
+    await sub('s1', { startedAt: Date.UTC(2026, 8, 4, 3, 0), completedAt: Date.UTC(2026, 8, 4, 3, 30) });
+    const utc = await completedSubmissions(db, formId);
+    const bog = await completedSubmissions(db, formId, undefined, bogota);
+    expect(utc[0]!.day).toBe(Math.floor(Date.UTC(2026, 8, 4) / 86_400_000));
+    expect(bog[0]!.day).toBe(Math.floor(Date.UTC(2026, 8, 3) / 86_400_000));
+  });
+});

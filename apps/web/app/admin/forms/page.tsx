@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { getMessages, t } from '@quill/shared';
+import { formatDate, getMessages, t } from '@quill/shared';
 import { adminApi } from '@/lib/admin-api';
 import { getLocale } from '@/lib/locale';
 import { CopyLinkIcon } from '@/components/copy-link';
@@ -89,7 +89,7 @@ export default async function FormsList() {
                       value without competing with it. */}
                   <p className="mt-0.5 flex min-w-0 items-center gap-2 text-xs">
                     <span className="shrink-0 text-faint">
-                      {t(m.updated, { when: new Date(f.updatedAt).toLocaleDateString(locale) })}
+                      {t(m.updated, { when: formatDate(f.updatedAt, { locale, timeZone: me.timezone ?? 'UTC' }) })}
                     </span>
                     <span aria-hidden className="shrink-0 text-faint">
                       ·

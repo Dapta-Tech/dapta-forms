@@ -1,7 +1,7 @@
 import { Suspense } from 'react';
 import { notFound } from 'next/navigation';
 import type { AnalyticsResponse } from '@quill/types';
-import { getMessages, type FormsMessages } from '@quill/shared';
+import { dayBoundsInZone, getMessages, isoDateInZone, t, type FormsMessages } from '@quill/shared';
 import { adminApi, ApiError } from '@/lib/admin-api';
 import { getLocale } from '@/lib/locale';
 import { FormTabs } from '@/components/ui/form-tabs';
@@ -15,40 +15,38 @@ const DAY_MS = 86_400_000;
 
 type SP = { preset?: string; from?: string; to?: string };
 
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
 /**
  * Resolve the URL query into an epoch-ms range the API understands.
  *
- * Day boundaries are UTC and resolved HERE, on the server, deliberately: an
- * analytics number has to be the same for every teammate reading it, so it
- * cannot depend on the viewer's local clock. (A per-account timezone is the
- * follow-up; until then UTC is the one shared reference.) "Last week/month/year"
- * are rolling 7/30/365-day windows, matching how the presets read in Typeform.
+ * Day boundaries are resolved HERE, on the server, in the WORKSPACE's zone:
+ * an analytics number has to be the same for every teammate reading it, so
+ * it depends on the one zone the team shares, never on the viewer's clock.
+ * "Last week/month/year" are rolling 7/30/365-day windows, matching how the
+ * presets read in Typeform.
  */
-function resolveRange(sp: SP): { from?: number; to?: number } {
+function resolveRange(sp: SP, zone: string): { from?: number; to?: number } {
   if (sp.preset === 'custom') {
-    const from = sp.from ? Date.parse(`${sp.from}T00:00:00.000Z`) : NaN;
-    const to = sp.to ? Date.parse(`${sp.to}T23:59:59.999Z`) : NaN;
     return {
-      from: Number.isNaN(from) ? undefined : from,
-      to: Number.isNaN(to) ? undefined : to,
+      from: sp.from && ISO_DATE.test(sp.from) ? dayBoundsInZone(sp.from, zone).from : undefined,
+      to: sp.to && ISO_DATE.test(sp.to) ? dayBoundsInZone(sp.to, zone).to : undefined,
     };
   }
   const now = Date.now();
-  if (sp.preset === 'today') {
-    const startOfDay = Math.floor(now / DAY_MS) * DAY_MS;
-    return { from: startOfDay, to: startOfDay + DAY_MS - 1 };
-  }
+  const today = dayBoundsInZone(isoDateInZone(now, zone), zone);
+  if (sp.preset === 'today') return { from: today.from, to: today.to };
   const days = sp.preset === 'week' ? 7 : sp.preset === 'month' ? 30 : sp.preset === 'year' ? 365 : null;
   // Send BOTH bounds for a rolling window. With only `from`, the trend series
   // ended at the last day that happened to have data, so a quiet stretch made
   // the chart stop short of today and silently misrepresent the window.
   //
-  // `from` snaps to a whole UTC day so the window is N COMPLETE days ending
+  // `from` snaps to a whole local day so the window is N COMPLETE days ending
   // today. Cutting at `now - N days` (an intra-day instant) left the oldest
   // bucket holding only part of its day while the chart drew it as a full one.
   if (days) {
-    const startOfToday = Math.floor(now / DAY_MS) * DAY_MS;
-    return { from: startOfToday - (days - 1) * DAY_MS, to: now };
+    const firstDay = isoDateInZone(today.from - (days - 1) * DAY_MS + DAY_MS / 2, zone);
+    return { from: dayBoundsInZone(firstDay, zone).from, to: now };
   }
   return {};
 }
@@ -64,8 +62,10 @@ export default async function AnalyticsPage({
   const sp = await searchParams;
   const locale = await getLocale();
   const m = getMessages(locale).admin;
-  const range = resolveRange(sp);
-  const rangeKey = `${sp.preset ?? 'all'}:${sp.from ?? ''}:${sp.to ?? ''}`;
+  // The workspace zone names the days: the range cuts, the buckets, the picker's "today".
+  const zone = (await adminApi.me()).timezone ?? 'UTC';
+  const range = resolveRange(sp, zone);
+  const rangeKey = `${sp.preset ?? 'all'}:${sp.from ?? ''}:${sp.to ?? ''}:${zone}`;
 
   return (
     <div className="mx-auto max-w-[1100px] px-6 py-8">
@@ -77,6 +77,7 @@ export default async function AnalyticsPage({
         </div>
         <AnalyticsFilter
           locale={locale}
+          todayIso={isoDateInZone(Date.now(), zone)}
           labels={{
             today: m.analytics.rangeToday,
             week: m.analytics.rangeWeek,
@@ -92,7 +93,7 @@ export default async function AnalyticsPage({
       </div>
 
       <Suspense key={rangeKey} fallback={<AnalyticsSkeleton />}>
-        <AnalyticsData id={id} range={range} m={m.analytics} locale={locale} />
+        <AnalyticsData id={id} range={range} zone={zone} m={m.analytics} locale={locale} />
       </Suspense>
     </div>
   );
@@ -120,17 +121,19 @@ function formatDuration(seconds: number, unit: string): string {
 async function AnalyticsData({
   id,
   range,
+  zone,
   m,
   locale,
 }: {
   id: string;
   range: { from?: number; to?: number };
+  zone: string;
   m: FormsMessages['admin']['analytics'];
   locale: string;
 }) {
   let a: AnalyticsResponse;
   try {
-    a = await adminApi.getAnalytics(id, range);
+    a = await adminApi.getAnalytics(id, { ...range, tz: zone });
   } catch (e) {
     if (e instanceof ApiError && e.status === 404) notFound();
     throw e;
@@ -214,6 +217,10 @@ async function AnalyticsData({
           },
         }}
       />
+      {/* Which zone the days above are cut in; the API echoes the one it used. */}
+      <p className="mt-2 text-xs text-muted-foreground" data-testid="analytics-timezone-note">
+        {t(m.timezoneNote, { zone: a.range.timeZone ?? 'UTC' })}
+      </p>
 
       <section>
         <h2 className="text-lg font-semibold">{m.dropoffTitle}</h2>
