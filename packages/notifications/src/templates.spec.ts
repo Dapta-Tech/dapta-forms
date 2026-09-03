@@ -6,6 +6,8 @@ import {
   isSubmissionEmailKey,
   normalizeLocale,
   notificationTokenValues,
+  NOTIFICATION_TOKENS,
+  renderBodyLines,
   renderSubmissionConfirmed,
   renderSubmissionReceived,
   SUBMISSION_EMAIL_KEYS,
@@ -60,6 +62,29 @@ describe('renderSubmissionReceived', () => {
     const { lines } = renderSubmissionReceived('en', { formName: 'Survey' });
     expect(lines.filter(Boolean)).toHaveLength(1);
   });
+
+  it('prints the answers as "Label: value" lines between the outcome and the link', () => {
+    const { lines } = renderSubmissionReceived('en', {
+      formName: 'Survey',
+      outcomeLabel: 'Hot',
+      formLink: 'https://forms.example.com/admin/forms/f1/submissions',
+      answers: [
+        { label: 'Role', value: 'Founder' },
+        { label: 'Team size', value: '20' },
+      ],
+    });
+    expect(lines.join('\n')).toBe(
+      [
+        'You have a new submission on "Survey".',
+        'Outcome: Hot',
+        '',
+        'Role: Founder',
+        'Team size: 20',
+        '',
+        'View submissions: https://forms.example.com/admin/forms/f1/submissions',
+      ].join('\n'),
+    );
+  });
 });
 
 describe('renderSubmissionConfirmed', () => {
@@ -98,7 +123,62 @@ describe('notificationTokenValues', () => {
       score: '0',
       outcomeLabel: '',
       formLink: '',
+      answers: '',
     });
+  });
+
+  it('renders the answers as one "Label: value" line each', () => {
+    expect(
+      notificationTokenValues({
+        formName: 'F',
+        answers: [
+          { label: 'Role', value: 'Founder' },
+          { label: 'Why', value: 'Speed' },
+        ],
+      }).answers,
+    ).toBe('Role: Founder\nWhy: Speed');
+  });
+
+  it('offers {{answers}} as a token', () => {
+    expect(NOTIFICATION_TOKENS).toContain('answers');
+  });
+});
+
+describe('renderBodyLines', () => {
+  const text = { formName: 'Survey', score: '', outcomeLabel: '', answers: 'Role: Founder' };
+  const html = { formName: 'Survey', score: '', outcomeLabel: '', answers: '<table></table>' };
+
+  it('keeps a line with no tokens, even a blank one', () => {
+    const out = renderBodyLines('Hello', text, html);
+    expect(out.text).toEqual(['Hello']);
+    expect(out.html).toEqual(['Hello']);
+  });
+
+  it('drops a line only when it has tokens and every token resolved empty', () => {
+    const out = renderBodyLines('Score: {{score}}\nName: {{formName}}\n{{score}} / {{outcomeLabel}}', text, html);
+    expect(out.text).toEqual(['Name: Survey']);
+  });
+
+  it('keeps a line where at least one token resolved', () => {
+    const out = renderBodyLines('{{score}} on {{formName}}', text, html);
+    expect(out.text).toEqual([' on Survey']);
+  });
+
+  it('keeps an unknown token literal and does not count it as empty', () => {
+    const out = renderBodyLines('{{nope}}', text, html);
+    expect(out.text).toEqual(['{{nope}}']);
+  });
+
+  it('escapes the template text on the html side but substitutes html token values raw', () => {
+    const out = renderBodyLines('<b>{{formName}}</b>\n{{answers}}', { ...text, formName: 'A & B' }, { ...html, formName: 'A &amp; B' });
+    expect(out.text).toEqual(['<b>A & B</b>', 'Role: Founder']);
+    expect(out.html).toEqual(['&lt;b&gt;A &amp; B&lt;/b&gt;', '<table></table>']);
+  });
+
+  it('collapses runs of blank lines left behind and trims blank ends', () => {
+    const out = renderBodyLines('\nA\n\n{{score}}\n\nB\n', text, html);
+    expect(out.text).toEqual(['A', '', 'B']);
+    expect(out.html).toEqual(['A', '', 'B']);
   });
 });
 
@@ -140,7 +220,15 @@ describe('defaultSubmissionTemplate (stays in sync with the code templates)', ()
     score: 15,
     outcomeLabel: 'Qualified',
     formLink: 'https://forms.example.com/x',
+    answers: [{ label: 'Role', value: 'Founder' }],
   };
+
+  it('the owner default carries {{answers}}; the respondent default does not', () => {
+    for (const locale of ['en', 'es'] as const) {
+      expect(defaultSubmissionTemplate('submission_received', locale).body).toContain('{{answers}}');
+      expect(defaultSubmissionTemplate('submission_confirmed', locale).body).not.toContain('{{answers}}');
+    }
+  });
 
   it('SUBMISSION_EMAIL_KEYS are exactly the two customizable emails', () => {
     expect([...SUBMISSION_EMAIL_KEYS]).toEqual(['submission_received', 'submission_confirmed']);
@@ -153,9 +241,7 @@ describe('defaultSubmissionTemplate (stays in sync with the code templates)', ()
       const def = defaultSubmissionTemplate('submission_received', locale);
       const stock = renderSubmissionReceived(locale, full);
       expect(interpolateTokens(def.subject, notificationTokenValues(full))).toBe(stock.subject);
-      expect(interpolateTokens(def.body, notificationTokenValues(full)).split('\n')).toEqual(
-        stock.lines.filter(Boolean),
-      );
+      expect(interpolateTokens(def.body, notificationTokenValues(full))).toBe(stock.lines.join('\n'));
     }
   });
 
@@ -164,9 +250,7 @@ describe('defaultSubmissionTemplate (stays in sync with the code templates)', ()
       const def = defaultSubmissionTemplate('submission_confirmed', locale);
       const stock = renderSubmissionConfirmed(locale, full);
       expect(interpolateTokens(def.subject, notificationTokenValues(full))).toBe(stock.subject);
-      expect(interpolateTokens(def.body, notificationTokenValues(full)).split('\n')).toEqual(
-        stock.lines.filter(Boolean),
-      );
+      expect(interpolateTokens(def.body, notificationTokenValues(full))).toBe(stock.lines.join('\n'));
     }
   });
 });

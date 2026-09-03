@@ -13,7 +13,7 @@ import {
   getAccountOwner,
   type SubmissionRow,
 } from '@quill/db';
-import { computeScore, resolveOutcome, type FormConfig } from '@quill/engine';
+import { computeScore, resolveOutcome, summarizeAnswers, type FormConfig } from '@quill/engine';
 import {
   memberProfileSchema,
   submissionSchema,
@@ -149,6 +149,11 @@ export class SubmissionService {
 
     if (!input.partial && !reCompleted) {
       const respondentEmail = pickEmail(input.data);
+      // The answers as the owner reads them (labels, option labels, step
+      // order): resolved once here, printed by the `{{answers}}` token in
+      // either email. The respondent copy carries them too so a custom receipt
+      // can echo what was submitted.
+      const answers = summarizeAnswers(config, input.data);
       // form.id lets the effect apply any per-form template override
       // (precedence form → account → stock, resolved inside the effect).
       void this.email.enqueueSubmissionReceived(
@@ -159,6 +164,7 @@ export class SubmissionService {
           respondentEmail,
           score,
           outcomeLabel: outcome?.label ?? null,
+          answers,
         },
         form.id,
       );
@@ -172,6 +178,7 @@ export class SubmissionService {
             submissionId: row.id,
             formName: form.name,
             respondentEmail,
+            answers,
           },
           form.id,
         );

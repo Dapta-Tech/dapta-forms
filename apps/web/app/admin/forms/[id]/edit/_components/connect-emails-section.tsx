@@ -10,7 +10,7 @@ import {
   type NotificationEmailValue,
 } from '@/components/notification-email-fields';
 import type { DeliveryKind, FormNotificationView, NotificationEmailKey } from '@/lib/admin-api';
-import { interpolate, NOTIFICATION_SAMPLE as SAMPLE } from '@/lib/notification-preview';
+import { hasToken, interpolate, NOTIFICATION_SAMPLE as SAMPLE } from '@/lib/notification-preview';
 import { DeliveryHistory } from '../../integrations/delivery-history';
 import {
   loadFormNotificationsAction,
@@ -132,6 +132,11 @@ export function ConnectEmailsSection({
   );
 }
 
+/** `{{formLink}}` is produced for the owner notice only; do not offer a dead chip on the receipt. */
+function visibleTokens(key: NotificationEmailKey, tokens: string[]): string[] {
+  return key === 'submission_confirmed' ? tokens.filter((t) => t !== 'formLink') : tokens;
+}
+
 /** One email's per-form card: inherit state or the expanded override editor. */
 function FormEmailCard({
   formId,
@@ -186,7 +191,11 @@ function FormEmailCard({
     score: nm.tokenScore,
     outcomeLabel: nm.tokenOutcomeLabel,
     formLink: nm.tokenFormLink,
+    answers: nm.tokenAnswers,
   };
+  // The owner notice exists to carry the answers; a body without the token
+  // silently sends an email with nothing useful in it, so say so permanently.
+  const answersMissing = key === 'submission_received' && !hasToken(value.body, 'answers');
 
   function openEditor() {
     setValue({
@@ -292,7 +301,7 @@ function FormEmailCard({
           <NotificationEmailFields
             value={value}
             onChange={setValue}
-            tokens={setting.tokens}
+            tokens={visibleTokens(key, setting.tokens)}
             labels={{
               enabledLabel: nm.enabledLabel,
               enabledHint: nm.enabledHint,
@@ -305,6 +314,7 @@ function FormEmailCard({
               tokenLabels,
             }}
             testIdPrefix={`connect-email-${key}`}
+            notice={answersMissing ? nm.answersMissing : null}
           />
           <div className="mt-4 flex items-center justify-end gap-2">
             <Button

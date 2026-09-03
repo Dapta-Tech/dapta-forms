@@ -87,6 +87,30 @@ describe('submit', () => {
     expect(payload.respondentEmail).toBe('lead@acme.io');
   });
 
+  it('both emails carry the answers as resolved {label, value} rows in step order', async () => {
+    await svc.submit('acme', 'lead-qualifier', {
+      sessionId: 'sess-answers',
+      data: { role: 'founder', team_size: 20, company: 'Acme', email: 'lead@acme.io' },
+    });
+    await flushEffects();
+    const outbox = await listOutbox(db, { kind: 'email' });
+    expect(outbox).toHaveLength(2);
+    for (const row of outbox) {
+      const payload = JSON.parse(row.payload!) as { answers: Array<{ label: string; value: string }> };
+      expect(payload.answers.map((a) => a.label)).toEqual([
+        'What best describes you?',
+        'How big is your team?',
+        'What company do you work at?',
+        'Where should we send the results?',
+      ]);
+      // Option VALUE → option LABEL, numbers stringified.
+      expect(payload.answers[0]!.value).not.toBe('founder');
+      expect(payload.answers[1]!.value).toBe('20');
+      expect(payload.answers[2]!.value).toBe('Acme');
+      expect(payload.answers[3]!.value).toBe('lead@acme.io');
+    }
+  });
+
   it('a re-landed complete enqueues NO second round of effects', async () => {
     // `callActionWithRetry` cannot abort an in-flight request, so a complete
     // that landed slowly IS retried and this method runs twice for one real
