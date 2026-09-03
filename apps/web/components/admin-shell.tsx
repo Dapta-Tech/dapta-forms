@@ -21,7 +21,7 @@ type ChromeMessages = FormsMessages['admin']['chrome'];
  *  a desktop collapse rail (cookie-persisted, no FOUC), and a <768px off-canvas
  *  drawer with a hamburger top bar. Tokens only; R22 press/hover; R27/R28. */
 
-type IconName = 'home' | 'forms' | 'submissions' | 'analytics' | 'integrations' | 'agents';
+type IconName = 'home' | 'forms' | 'submissions' | 'analytics' | 'integrations' | 'docs' | 'agents';
 
 interface NavItem {
   key: keyof ChromeMessages['nav'];
@@ -31,6 +31,11 @@ interface NavItem {
   match?: string[];
   /** Leaves the app: plain anchor in a new tab, never `aria-current`. */
   external?: true;
+  /**
+   * The href comes from the localized catalog instead of `href` (the docs
+   * site has one page per language). `NavLinks` resolves it from `docsHref`.
+   */
+  localizedHref?: 'docsHref';
 }
 
 // Forms information architecture: Home, Forms, Submissions, Analytics,
@@ -39,6 +44,10 @@ interface NavItem {
 // ACCOUNT (workspaces, brand kit, notifications, public page) lives behind the
 // profile button at the bottom of the rail, under /admin/account, the same
 // place Dapta's admin panel keeps it, so no rail item is active on those pages.
+//
+// Then "Docs": the product documentation, always present, in the reader's
+// language (the URL lives in the message catalog, see `docsHref`). External
+// like the platform door below, and tagged the same way.
 //
 // Last, and only on a deployment that has a platform: "Dapta Agents", the door
 // to the wider platform. It sits IN the nav rather than in a separate block so
@@ -53,6 +62,7 @@ const NAV: NavItem[] = [
   { key: 'submissions', href: '/admin/submissions', icon: 'submissions' },
   { key: 'analytics', href: '/admin/analytics', icon: 'analytics' },
   { key: 'integrations', href: '/admin/integrations', icon: 'integrations' },
+  { key: 'docs', href: '', icon: 'docs', external: true, localizedHref: 'docsHref' },
   ...(PLATFORM_URL
     ? [{ key: 'agents', href: suiteHref(PLATFORM_URL, 'sidebar'), icon: 'agents', external: true } as const]
     : []),
@@ -68,6 +78,7 @@ const PI_BY_NAME: Record<IconName, string> = {
   submissions: 'pi-inbox',
   analytics: 'pi-chart-bar',
   integrations: 'pi-link',
+  docs: 'pi-book',
   agents: 'pi-microchip-ai',
 };
 
@@ -84,11 +95,14 @@ function Icon({ name, className }: { name: IconName; className?: string }) {
 function NavLinks({
   collapsed,
   nav,
+  docsHref,
   newTab,
   onNavigate,
 }: {
   collapsed: boolean;
   nav: ChromeMessages['nav'];
+  /** The localized documentation URL, already UTM-tagged by the caller. */
+  docsHref: string;
   /** "(opens in a new tab)" — read out after an external item's label. */
   newTab: string;
   onNavigate?: () => void;
@@ -97,10 +111,11 @@ function NavLinks({
   return (
     <ul className="flex flex-col gap-1">
       {NAV.map((item) => {
+        const href = item.localizedHref ? docsHref : item.href;
         // An external item is never "here": its href is another origin, so the
         // prefix rule could not match anyway, but the intent should not depend
         // on that accident.
-        const active = !item.external && isNavItemActive(pathname, item.href, item.match);
+        const active = !item.external && isNavItemActive(pathname, href, item.match);
         const label = nav[item.key];
         const className = [
           'relative flex items-center gap-3 rounded-md text-sm transition-colors active:scale-[0.99]',
@@ -128,10 +143,10 @@ function NavLinks({
           </>
         );
         return (
-          <li key={item.href}>
+          <li key={item.key}>
             {item.external ? (
               <a
-                href={item.href}
+                href={href}
                 target="_blank"
                 rel="noopener noreferrer"
                 onClick={onNavigate}
@@ -154,7 +169,7 @@ function NavLinks({
               </a>
             ) : (
               <Link
-                href={item.href}
+                href={href}
                 onClick={onNavigate}
                 title={collapsed ? label : undefined}
                 aria-current={active ? 'page' : undefined}
@@ -354,7 +369,12 @@ export function AdminShell({
           />
         ) : null}
         <nav aria-label="Primary">
-          <NavLinks collapsed={railCollapsed} nav={messages.nav} newTab={messages.switcher.opensNewTab} />
+          <NavLinks
+            collapsed={railCollapsed}
+            nav={messages.nav}
+            docsHref={suiteHref(messages.docsHref, 'sidebar')}
+            newTab={messages.switcher.opensNewTab}
+          />
         </nav>
         {renderFooter(railCollapsed)}
       </aside>
@@ -404,6 +424,7 @@ export function AdminShell({
           <NavLinks
             collapsed={false}
             nav={messages.nav}
+            docsHref={suiteHref(messages.docsHref, 'sidebar')}
             newTab={messages.switcher.opensNewTab}
             onNavigate={() => setDrawerOpen(false)}
           />

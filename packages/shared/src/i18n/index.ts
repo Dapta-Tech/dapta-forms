@@ -134,6 +134,12 @@ export interface FormsMessages {
         light: string;
         next: string;
       };
+      /**
+       * Where the "Docs" nav item goes: the Forms documentation in THIS
+       * language. Lives in the catalog because the shell only receives the
+       * localized messages, never the locale itself. Always an absolute URL.
+       */
+      docsHref: string;
       /** Left-nav item labels (icon + label). */
       nav: {
         home: string;
@@ -141,6 +147,8 @@ export interface FormsMessages {
         submissions: string;
         analytics: string;
         integrations: string;
+        /** The product documentation, an EXTERNAL link (see `docsHref`). */
+        docs: string;
         /**
          * The door to the wider platform (agents), an EXTERNAL link. Rendered
          * only when the deployment configures a platform URL, so a fork's rail
@@ -1752,12 +1760,14 @@ export const en: FormsMessages = {
         light: 'Light',
         next: 'Switch to',
       },
+      docsHref: 'https://docs.dapta.ai/dapta-forms/forms',
       nav: {
         home: 'Home',
         forms: 'Forms',
         submissions: 'Submissions',
         analytics: 'Analytics',
         integrations: 'Integrations',
+        docs: 'Docs',
         agents: 'Dapta Agents',
       },
       profileMenu: {
@@ -3232,12 +3242,14 @@ export const es: FormsMessages = {
         light: 'Claro',
         next: 'Cambiar a',
       },
+      docsHref: 'https://docs.dapta.ai/dapta-docs-es/dapta-forms/forms',
       nav: {
         home: 'Inicio',
         forms: 'Formularios',
         submissions: 'Respuestas',
         analytics: 'Analíticas',
         integrations: 'Integraciones',
+        docs: 'Documentación',
         agents: 'Dapta Agents',
       },
       profileMenu: {
