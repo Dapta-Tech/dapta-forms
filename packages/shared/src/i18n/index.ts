@@ -58,6 +58,13 @@ export interface FormsMessages {
     dropdownEmpty: string;
     trustedBy: string;
     newTab: string;
+    /** The public error boundary and the 404, in the visitor's language. */
+    errorTitle: string;
+    errorBody: string;
+    errorRetry: string;
+    notFoundTitle: string;
+    notFoundBody: string;
+    notFoundHome: string;
     /** Scheduler step (V6): copy for an unconfigured embed + the optional skip. */
     schedulerUnconfigured: string;
     schedulerSkip: string;
@@ -937,6 +944,17 @@ export interface FormsMessages {
       };
       /** The Design tab: everything about how the form looks. */
       design: {
+        /** Form language (Auto / English / Spanish) and the button copy overrides. */
+        languageTitle: string;
+        languageHint: string;
+        languageAuto: string;
+        languageEn: string;
+        languageEs: string;
+        labelsTitle: string;
+        labelsHint: string;
+        labelBack: string;
+        labelNext: string;
+        labelSubmit: string;
         publicTitle: string;
         publicTitleHint: string;
         presetsTitle: string;
@@ -1693,6 +1711,12 @@ export const en: FormsMessages = {
     dropdownEmpty: 'No results found',
     trustedBy: 'Trusted by',
     newTab: '(opens in a new tab)',
+    errorTitle: 'This page didn\u2019t load',
+    errorBody: 'Something went wrong reaching the forms service.',
+    errorRetry: 'Try again',
+    notFoundTitle: 'Not found',
+    notFoundBody: 'This page doesn\u2019t exist.',
+    notFoundHome: 'Go home',
     schedulerUnconfigured: 'This scheduler has not been set up yet.',
     schedulerSkip: 'Skip for now',
     booking: {
@@ -2461,6 +2485,17 @@ export const en: FormsMessages = {
         next: 'Next screen',
       },
       design: {
+        languageTitle: 'Language',
+        languageHint:
+          'The language of the buttons, progress and thank-you copy visitors see. Auto follows each visitor\u2019s browser. A ?lang= link still wins.',
+        languageAuto: 'Auto (visitor\u2019s browser)',
+        languageEn: 'English',
+        languageEs: 'Spanish',
+        labelsTitle: 'Button text',
+        labelsHint: 'Replace the default button copy for this form. Leave empty to keep the default for the language. A question\u2019s own button text still wins on that question.',
+        labelBack: 'Back',
+        labelNext: 'Next',
+        labelSubmit: 'Submit',
         publicTitle: 'Form title',
         publicTitleHint:
           'What visitors see. The browser tab, share previews, and the cover heading. Leave empty to use the form\u2019s internal name.',
@@ -3173,6 +3208,12 @@ export const es: FormsMessages = {
     dropdownEmpty: 'No se encontraron resultados',
     trustedBy: 'Confían en nosotros',
     newTab: '(se abre en una pestaña nueva)',
+    errorTitle: 'Esta página no cargó',
+    errorBody: 'Algo falló al conectar con el servicio de formularios.',
+    errorRetry: 'Intentar de nuevo',
+    notFoundTitle: 'No encontrado',
+    notFoundBody: 'Esta página no existe.',
+    notFoundHome: 'Ir al inicio',
     schedulerUnconfigured: 'Este agendador aún no está configurado.',
     schedulerSkip: 'Omitir por ahora',
     booking: {
@@ -3943,6 +3984,17 @@ export const es: FormsMessages = {
         next: 'Pantalla siguiente',
       },
       design: {
+        languageTitle: 'Idioma',
+        languageHint:
+          'El idioma de los botones, el progreso y el mensaje de gracias que ven los visitantes. Auto sigue el navegador de cada visitante. Un enlace con ?lang= sigue ganando.',
+        languageAuto: 'Auto (navegador del visitante)',
+        languageEn: 'Inglés',
+        languageEs: 'Español',
+        labelsTitle: 'Texto de los botones',
+        labelsHint: 'Reemplaza el texto predeterminado de los botones de este formulario. Déjalo vacío para usar el predeterminado del idioma. El texto propio de una pregunta sigue ganando en esa pregunta.',
+        labelBack: 'Atrás',
+        labelNext: 'Siguiente',
+        labelSubmit: 'Enviar',
         publicTitle: 'Título del formulario',
         publicTitleHint:
           'Lo que ven los visitantes: la pestaña del navegador, las vistas previas al compartir y el encabezado de portada. Déjalo vacío para usar el nombre interno del formulario.',

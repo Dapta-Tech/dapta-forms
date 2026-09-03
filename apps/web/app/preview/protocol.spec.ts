@@ -171,3 +171,23 @@ describe('isBlockedPreviewRequest — the inertness matrix', () => {
     expect(isBlockedPreviewRequest('/v1/x', { method: 'get' }, BASE)).toBe(false);
   });
 });
+
+describe('config message: locale is narrowed to a shipped language', () => {
+  const post = (locale: unknown) =>
+    readPreviewMessage(
+      {
+        origin: ORIGIN,
+        source: parentWindow,
+        data: { channel: PREVIEW_CHANNEL, type: 'config', config: validConfig, locale },
+      } as unknown as MessageEvent,
+      parentWindow,
+      ORIGIN,
+    );
+
+  it('keeps en and es, and folds anything else to en', () => {
+    expect(post('es')).toMatchObject({ type: 'config', locale: 'es' });
+    expect(post('en')).toMatchObject({ type: 'config', locale: 'en' });
+    expect(post('fr')).toMatchObject({ type: 'config', locale: 'en' });
+    expect(post(undefined)).toMatchObject({ type: 'config', locale: 'en' });
+  });
+});

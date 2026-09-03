@@ -17,12 +17,16 @@ import { VerticalFormRenderer } from './vertical-form-renderer';
  */
 export async function generateMetadata({
   params,
+  searchParams,
 }: {
-  params: Promise<{ accountCode: string; handle: string; slug: string; lang?: string }>;
+  params: Promise<{ accountCode: string; handle: string; slug: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }): Promise<Metadata> {
   const { accountCode, handle, slug } = await params;
   const form = await getPublicForm(accountCode, slug);
   if (!form) return {};
+  const query = await searchParams;
+  const lang = typeof query.lang === 'string' ? query.lang : undefined;
   // NOTE: this function deliberately does NOT redirect, even though it runs
   // before the page and looks like the earlier, better place to do it. Next 16
   // has already begun streaming by the time either one resolves, so a redirect
@@ -32,7 +36,9 @@ export async function generateMetadata({
   // returning metadata at all. So the redirect stays in the page (for people,
   // whose browsers follow it) and this function keeps naming the canonical URL
   // (for everything that does not run scripts).
-  const locale = await publicLocale();
+  // The same rule as the page body: ?lang, then the form's language, then
+  // the browser. The description must agree with the page it describes.
+  const locale = await publicLocale(lang, form.config.language ?? null);
   // The author-set public title wins over the private dashboard name.
   const title = publicTitle(form.config, form.name);
   const description =
@@ -152,13 +158,14 @@ export default async function PublicFormPage({
   const { accountCode, handle, slug } = await params;
   const query = await searchParams;
   const lang = typeof query.lang === 'string' ? query.lang : undefined;
-  const locale = await publicLocale(lang);
   // Embedded render (?embed=1): same form, sized by its content instead of the
   // viewport, reporting its height to the host page's embed.js (iframe embeds).
   const embedded = query.embed === '1';
 
   const form = await getPublicForm(accountCode, slug);
   if (!form) notFound();
+  // ?lang, then the form's own language (Auto = absent), then the browser.
+  const locale = await publicLocale(lang, form.config.language ?? null);
 
   // Reached through a slug this form USED to answer to: the author renamed the
   // link and the alias ledger resolved the old one (see migration 0017). Move

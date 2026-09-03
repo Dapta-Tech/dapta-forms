@@ -87,6 +87,7 @@ export function DevicePreviewModal({
             config={config}
             name={name}
             locale={locale}
+            formLocale={config.language ?? locale}
             layout={layout}
             m={m}
             hideAddressBar

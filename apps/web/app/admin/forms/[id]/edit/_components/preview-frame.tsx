@@ -78,6 +78,7 @@ export function PreviewFrame({
   config,
   name,
   locale,
+  formLocale,
   layout,
   hideAddressBar = false,
   endSlot,
@@ -90,8 +91,14 @@ export function PreviewFrame({
   config: FormConfig;
   /** The form's dashboard name; the public title is resolved here. */
   name: string;
-  /** Drives both the renderer's chrome copy and this frame's own strings. */
+  /** This frame's own strings (the editor's language). */
   locale: string;
+  /**
+   * The language the FORM renders in (its `language`, else the editor's), so
+   * the preview shows what a visitor will see rather than the author's own
+   * dashboard preference. Absent = `locale`.
+   */
+  formLocale?: string;
   layout: FormLayout;
   /**
    * Drop the address bar. The Preview modal already sits above the editor
@@ -151,9 +158,17 @@ export function PreviewFrame({
             : 0
         : screen;
 
+  const rendererLocale = (formLocale ?? locale) === 'es' ? 'es' : 'en';
   const payload = useMemo<Omit<PreviewConfigMessage, 'channel' | 'type'>>(
-    () => ({ revision, config, name: publicTitle(config, name), locale, layout, screen: effectiveScreen }),
-    [revision, config, name, locale, layout, effectiveScreen],
+    () => ({
+      revision,
+      config,
+      name: publicTitle(config, name),
+      locale: rendererLocale,
+      layout,
+      screen: effectiveScreen,
+    }),
+    [revision, config, name, rendererLocale, layout, effectiveScreen],
   );
 
   useEffect(() => {

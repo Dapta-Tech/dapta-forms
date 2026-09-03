@@ -53,7 +53,7 @@ export interface SubmitResult {
 export async function postSubmission(
   accountCode: string,
   slug: string,
-  body: { sessionId: string; data: Record<string, unknown>; partial?: boolean },
+  body: { sessionId: string; data: Record<string, unknown>; partial?: boolean; locale?: 'en' | 'es' },
 ): Promise<SubmitResult> {
   const res = await fetch(
     `${API_URL}/v1/public/forms/${encodeURIComponent(accountCode)}/${encodeURIComponent(slug)}/submissions`,

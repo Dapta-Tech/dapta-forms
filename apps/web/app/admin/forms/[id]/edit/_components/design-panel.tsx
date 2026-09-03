@@ -1,7 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import type { FormBranding, FormConfig, FormCover, FormLayout } from '@quill/engine';
+import type { FormBranding, FormConfig, FormCover, FormLabels, FormLanguage, FormLayout } from '@quill/engine';
+import { getMessages } from '@quill/shared';
 import {
   DEFAULT_FORM_FONT,
   FORM_BACKGROUND_STYLES,
@@ -24,7 +25,7 @@ import {
   t,
 } from '@quill/shared';
 import { Switch } from '@/components/ui/switch';
-import { Field, InlineField, NumberField, PanelSection, SegmentedToggle, TextField } from './fields';
+import { Field, InlineField, NumberField, PanelSection, SegmentedToggle, SelectField, TextField } from './fields';
 import { ColorPicker } from './color-picker';
 import { FontPicker } from './font-picker';
 import { ThemePresets } from './theme-presets';
@@ -53,6 +54,8 @@ export function DesignPanel({
   locale,
   layout,
   onTitleChange,
+  onLanguageChange,
+  onLabelsChange,
   onLayoutChange,
   hasReveal,
   onEndRevealChange,
@@ -70,6 +73,10 @@ export function DesignPanel({
   layout: FormLayout;
   /** Set/clear the PUBLIC title (empty = fall back to the dashboard name). */
   onTitleChange: (title: string) => void;
+  /** The form's language; null = Auto (the visitor's browser). */
+  onLanguageChange: (language: FormLanguage | null) => void;
+  /** Patch the form-level button copy (null clears a field back to stock). */
+  onLabelsChange: (patch: Partial<FormLabels>) => void;
   onLayoutChange: (next: FormLayout) => void;
   /** Vertical's single end-of-form reveal (a form-level fact, not a question). */
   hasReveal: boolean;
@@ -90,6 +97,11 @@ export function DesignPanel({
   const vertical = layout === 'vertical';
 
   const d = m.design;
+  // The stock button copy of the language the form will render in, shown as
+  // placeholders so an author sees exactly what an empty field falls back to.
+  const stockLabels = getMessages(config.language ?? (locale === 'es' ? 'es' : 'en')).renderer;
+  // One page has no Back/Next: only Submit is offered there.
+  const labelKeys: Array<'back' | 'next' | 'submit'> = vertical ? ['submit'] : ['back', 'next', 'submit'];
   const branding = config.branding ?? {};
   const design = resolveDesign(branding);
   const cover = config.cover ?? {};
@@ -115,6 +127,43 @@ export function DesignPanel({
     <div className="grid h-full min-h-0 gap-4 px-4 py-6 sm:px-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,46%)] lg:overflow-hidden">
       {/* ── Controls ───────────────────────────────────────────────────── */}
       <div className="flex min-w-0 flex-col gap-4 lg:overflow-y-auto lg:pr-1">
+        <PanelSection title={d.languageTitle} subtitle={d.languageHint}>
+          <div className="max-w-[520px]">
+            <SelectField
+              aria-label={d.languageTitle}
+              value={config.language ?? ''}
+              onChange={(e) => {
+                const v = e.target.value;
+                onLanguageChange(v === 'en' || v === 'es' ? v : null);
+              }}
+            >
+              <option value="">{d.languageAuto}</option>
+              <option value="en">{d.languageEn}</option>
+              <option value="es">{d.languageEs}</option>
+            </SelectField>
+          </div>
+        </PanelSection>
+
+        <PanelSection title={d.labelsTitle} subtitle={d.labelsHint}>
+          <div className={cn('grid max-w-[520px] gap-3', !vertical && 'sm:grid-cols-3')}>
+            {labelKeys.map((key) => (
+              <Field
+                key={key}
+                htmlFor={`form-label-${key}`}
+                label={key === 'back' ? d.labelBack : key === 'next' ? d.labelNext : d.labelSubmit}
+              >
+                <TextField
+                  id={`form-label-${key}`}
+                  value={config.labels?.[key] ?? ''}
+                  placeholder={stockLabels[key]}
+                  maxLength={80}
+                  onChange={(e) => onLabelsChange({ [key]: e.target.value.trim() ? e.target.value : null })}
+                />
+              </Field>
+            ))}
+          </div>
+        </PanelSection>
+
         <PanelSection title={d.publicTitle} subtitle={d.publicTitleHint}>
           <div className="max-w-[520px]">
             <TextField
@@ -531,6 +580,7 @@ export function DesignPanel({
           config={config}
           name={name}
           locale={locale}
+          formLocale={config.language ?? locale}
           layout={layout}
           m={m.preview}
         />

@@ -1089,6 +1089,26 @@ export const formConfigSchema = z.object({
    * config, which then renders as `'slides'`, exactly as it always has).
    */
   layout: z.enum(FORM_LAYOUTS).optional(),
+  /**
+   * The language the public form renders its chrome in: buttons, progress,
+   * thank-you copy, the confirmation email. ADDITIVE: absent or null = Auto,
+   * the visitor's browser decides, exactly as before this field existed. An
+   * explicit `?lang` on the URL still wins over both.
+   */
+  language: localeSchema.nullable().optional(),
+  /**
+   * Form-level button copy overriding the localized defaults (ADDITIVE).
+   * A step's own `buttonText` still wins for that step; the cover CTA keeps
+   * `cover.ctaText`. Blank or null = the stock label for the language.
+   */
+  labels: z
+    .object({
+      back: z.string().max(80).nullable().optional(),
+      next: z.string().max(80).nullable().optional(),
+      submit: z.string().max(80).nullable().optional(),
+    })
+    .nullable()
+    .optional(),
   steps: z.array(formStepSchema).default([]),
   scoring: z.object({ enabled: z.boolean().optional() }).nullable().optional(),
   outcomes: z.array(formOutcomeSchema).optional(),
@@ -1203,6 +1223,12 @@ export const submissionSchema = z.object({
   data: submissionAnswersSchema,
   /** True for an intermediate (partial) save; false/absent = final submit. */
   partial: z.boolean().optional(),
+  /**
+   * The language the respondent actually saw (the page resolved `?lang`, the
+   * form language and the browser; the API knows none of those). Drives the
+   * confirmation email. Absent = the form language, then English.
+   */
+  locale: localeSchema.optional(),
 });
 export type SubmissionInput = z.infer<typeof submissionSchema>;
 
