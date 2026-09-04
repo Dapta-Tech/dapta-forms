@@ -1406,7 +1406,7 @@ export const timeZoneSchema = z
   .trim()
   .min(1)
   .max(64)
-  .regex(/^[A-Za-z0-9_+\-]+(?:\/[A-Za-z0-9_+\-]+)*$/, 'Not a timezone name.')
+  .regex(/^[A-Za-z0-9_+-]+(?:\/[A-Za-z0-9_+-]+)*$/, 'Not a timezone name.')
   .refine(
     (zone) => {
       try {
