@@ -376,6 +376,7 @@ export function FormRenderer({
               sessionId,
               data: withData(nextAnswers),
               partial: true,
+              locale: formLocale,
             }),
           );
         }

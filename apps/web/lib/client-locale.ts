@@ -1,4 +1,5 @@
 import type { Locale } from '@quill/shared';
+import { shippedLocale } from './form-locale';
 
 /**
  * Client-side twin of lib/locale.ts#getLocale (that one reads next/headers and
@@ -14,8 +15,8 @@ import type { Locale } from '@quill/shared';
 export function publicClientLocale(): Locale {
   const pick = (v: string): Locale => (v.trim().toLowerCase().startsWith('es') ? 'es' : 'en');
   if (typeof location !== 'undefined' && location?.search) {
-    const lang = new URLSearchParams(location.search).get('lang');
-    if (lang) return pick(lang);
+    const asked = shippedLocale(new URLSearchParams(location.search).get('lang'));
+    if (asked) return asked;
   }
   if (typeof navigator !== 'undefined' && navigator?.language) return pick(navigator.language);
   return 'en';

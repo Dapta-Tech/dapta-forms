@@ -157,7 +157,7 @@ export function DesignPanel({
                   value={config.labels?.[key] ?? ''}
                   placeholder={stockLabels[key]}
                   maxLength={80}
-                  onChange={(e) => onLabelsChange({ [key]: e.target.value.trim() ? e.target.value : null })}
+                  onChange={(e) => onLabelsChange({ [key]: e.target.value === '' ? null : e.target.value })}
                 />
               </Field>
             ))}

@@ -416,6 +416,7 @@ export function VerticalFormRenderer({
             sessionId,
             data: withData(nextAnswers),
             partial: true,
+            locale: formLocale,
           }),
         );
       }

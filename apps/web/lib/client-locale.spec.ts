@@ -17,6 +17,10 @@ describe("publicClientLocale (the public error boundary has no request to read)"
 
     vi.stubGlobal("navigator", { language: "de-DE" });
     expect(publicClientLocale()).toBe("en");
+    // An unshipped ?lang is ignored, the browser still decides.
+    vi.stubGlobal("location", { search: "?lang=fr" });
+    vi.stubGlobal("navigator", { language: "es-CO" });
+    expect(publicClientLocale()).toBe("es");
   });
 
   it("is safe without a window (server render of the boundary shell)", () => {

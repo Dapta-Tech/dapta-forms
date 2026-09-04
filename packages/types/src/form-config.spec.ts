@@ -198,7 +198,7 @@ describe('hasExtraHubspotDestination', () => {
   });
 });
 
-describe('formConfigSchema — form language and button labels (additive)', () => {
+describe('formConfigSchema: form language and button labels (additive)', () => {
   it('a legacy config parses with neither field set (Auto language, stock labels)', () => {
     const parsed = formConfigSchema.parse(baseConfig());
     expect(parsed.language).toBeUndefined();
@@ -227,7 +227,7 @@ describe('formConfigSchema — form language and button labels (additive)', () =
   });
 });
 
-describe('submissionSchema — the locale the respondent saw (additive)', () => {
+describe('submissionSchema: the locale the respondent saw (additive)', () => {
   it('carries an optional locale and rejects an unknown one', () => {
     expect(submissionSchema.parse({ sessionId: 's', data: {} }).locale).toBeUndefined();
     expect(submissionSchema.parse({ sessionId: 's', data: {}, locale: 'es' }).locale).toBe('es');

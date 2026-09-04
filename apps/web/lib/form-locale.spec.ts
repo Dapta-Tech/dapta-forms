@@ -18,7 +18,9 @@ describe("resolveFormLocale: ?lang, then the form language, then the browser", (
       }),
     ).toBe("en");
     expect(resolveFormLocale({ lang: "ES-mx" })).toBe("es");
-    expect(resolveFormLocale({ lang: "fr", configLanguage: "es" })).toBe("en");
+    // A ?lang we do not ship is noise, not an ask: the author's language still wins.
+    expect(resolveFormLocale({ lang: "fr", configLanguage: "es" })).toBe("es");
+    expect(resolveFormLocale({ lang: "fr", acceptLanguage: "en-US" })).toBe("en");
   });
 
   it("the form language beats the browser", () => {
