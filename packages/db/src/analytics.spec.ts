@@ -311,7 +311,7 @@ describe('day buckets in a zone (offset segments)', () => {
     ],
   };
 
-  it('keeps 04:30Z and 08:30Z on the same New York day, while UTC splits them from 23:30Z', async () => {
+  it('splits 04:30Z (still Mar 7 in New York) from 08:30Z (Mar 8), where UTC puts both on Mar 8', async () => {
     // 04:30Z Mar 8 = 23:30 EST Mar 7; 08:30Z Mar 8 = 04:30 EDT Mar 8.
     await ev('a', 'view', Date.UTC(2026, 2, 8, 4, 30));
     await ev('b', 'view', Date.UTC(2026, 2, 8, 8, 30));

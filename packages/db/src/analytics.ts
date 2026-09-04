@@ -491,10 +491,17 @@ export async function deleteSubmissionForAccount(
   return exists ? 'forbidden' : 'absent';
 }
 
-/** The earliest `form_event` of a form (epoch-ms), or null with no events yet. */
+/**
+ * The earliest activity of a form (epoch-ms): its first `form_event` or its
+ * first submission, whichever is older (a submission can predate every event
+ * when the beacons were lost). Null with nothing yet. Bounds the offset
+ * segments of an unbounded analytics range, so every row falls inside one.
+ */
 export async function firstEventAt(db: Db, formId: string): Promise<number | null> {
-  const row = await db.get<{ t: number | string | null }>(
-    sql`SELECT MIN(created_at) AS t FROM form_event WHERE form_id = ${formId}`,
+  const row = await db.get<{ e: number | string | null; s: number | string | null }>(
+    sql`SELECT (SELECT MIN(created_at) FROM form_event WHERE form_id = ${formId}) AS e,
+               (SELECT MIN(started_at) FROM submission WHERE form_id = ${formId}) AS s`,
   );
-  return row?.t == null ? null : Number(row.t);
+  const candidates = [row?.e, row?.s].filter((v): v is number | string => v != null).map(Number);
+  return candidates.length ? Math.min(...candidates) : null;
 }

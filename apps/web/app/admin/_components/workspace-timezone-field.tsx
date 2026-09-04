@@ -61,7 +61,7 @@ export function WorkspaceTimezoneField({
     setCurrent(next);
     start(async () => {
       const res = await callAction(() => setWorkspaceTimezoneAction(accountId, next || null));
-      if (res && 'ok' in res && res.ok) {
+      if ('ok' in res && res.ok) {
         toast.success(labels.saved);
         router.refresh();
       } else {

@@ -86,6 +86,7 @@ export default async function AdminLayout({ children }: { children: ReactNode })
           bootstrap). Staff entering an estate workspace never seed it: the
           zone belongs to the team that works there, not to whoever looked. */}
       <WorkspaceTimezoneBootstrap
+        accountId={me.accountId}
         timezone={me.timezone}
         canClaim={isAdminRole(me.role) && me.accessGrant !== 'staff'}
         message={chrome.timezoneAutoSet}

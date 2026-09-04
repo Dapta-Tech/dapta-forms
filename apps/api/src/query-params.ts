@@ -25,14 +25,15 @@ export function parseBound(v: string | undefined, endOfDay: boolean, zone: strin
 }
 
 /**
- * Narrow a `?tz=` query to a zone this server can resolve. Absent → null (the
- * caller falls back to the workspace's zone); unknown → UTC, never an error,
- * so a stale link cannot 400 an analytics page.
+ * Narrow a `?tz=` query to a zone this server can resolve. Absent or unknown
+ * → null, so the caller falls back to the workspace's zone: a mistyped or
+ * stale `tz` must neither 400 the page nor silently turn the team's days into
+ * UTC days.
  */
 export function parseTimeZone(v: string | undefined): string | null {
   const zone = v?.trim();
   if (!zone) return null;
-  return isValidTimeZone(zone) ? zone : 'UTC';
+  return isValidTimeZone(zone) ? zone : null;
 }
 
 /** Narrow a raw status query to the allowed filter (defaults to `all`). */

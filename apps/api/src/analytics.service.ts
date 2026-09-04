@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { localDayIndex, resolveTimeZone, utcOffsetSegments } from '@quill/shared';
 import { resolveFormLayout } from '@quill/engine';
 import type { Db } from '@quill/db';
@@ -158,6 +158,8 @@ function buildTrends(input: {
  */
 @Injectable()
 export class AnalyticsService {
+  private readonly log = new Logger('AnalyticsService');
+
   constructor(@Inject(DB) private readonly db: Db) {}
 
   /**
@@ -186,7 +188,7 @@ export class AnalyticsService {
   ): Promise<AnalyticsResponse | null> {
     const form = await getFormById(this.db, accountId, formId);
     if (!form) return null;
-    const zone = resolveTimeZone(timeZone);
+    const zone = resolveTimeZone(timeZone, (m) => this.log.warn(m));
     const bucketing = await this.bucketingFor(formId, range, zone);
     const config = form.config as FormConfig;
     const steps = config.steps ?? [];

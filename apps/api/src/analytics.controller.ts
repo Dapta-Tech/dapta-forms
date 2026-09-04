@@ -4,6 +4,7 @@ import {
   Get,
   HttpCode,
   Inject,
+  Logger,
   NotFoundException,
   Param,
   Query,
@@ -39,6 +40,8 @@ function iso(ms: number | null): string {
  */
 @Controller('v1')
 export class AnalyticsController {
+  private readonly log = new Logger('AnalyticsController');
+
   constructor(
     @Inject(DB) private readonly db: Db,
     @Inject(AuthService) private readonly auth: AuthService,
@@ -59,7 +62,9 @@ export class AnalyticsController {
     @Query('tz') tz?: string,
   ) {
     const p = await this.auth.resolveHost(req);
-    const zone = resolveTimeZone(parseTimeZone(tz) ?? (await getAccountTimezone(this.db, p.accountId)));
+    const zone = resolveTimeZone(parseTimeZone(tz) ?? (await getAccountTimezone(this.db, p.accountId)), (m) =>
+      this.log.warn(m),
+    );
     const result = await this.analytics.funnel(
       p.accountId,
       id,
@@ -97,7 +102,7 @@ export class AnalyticsController {
     const stepKeys = (config.steps ?? []).map((s) => s.key);
     const filename = `${form.slug || 'submissions'}-submissions.csv`;
     // An unknown stored zone exports as UTC (+00:00) rather than failing the download.
-    const zone = resolveTimeZone(await getAccountTimezone(this.db, p.accountId));
+    const zone = resolveTimeZone(await getAccountTimezone(this.db, p.accountId), (m) => this.log.warn(m));
     const local = (ms: number | null) => (ms == null ? '' : formatIsoWithOffset(ms, zone));
 
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');

@@ -27,9 +27,9 @@ describe("parseBound", () => {
 });
 
 describe("parseTimeZone", () => {
-  it("returns a known zone, UTC for an unknown one, and null when absent", () => {
+  it("returns a known zone, and null for an unknown or absent one (the workspace zone applies)", () => {
     expect(parseTimeZone("America/Bogota")).toBe("America/Bogota");
-    expect(parseTimeZone("Mars/Olympus")).toBe("UTC");
+    expect(parseTimeZone("Mars/Olympus")).toBeNull();
     expect(parseTimeZone(undefined)).toBeNull();
     expect(parseTimeZone("")).toBeNull();
   });

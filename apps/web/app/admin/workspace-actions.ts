@@ -169,7 +169,7 @@ export async function renameWorkspaceAction(
 }
 
 /** Outcome of a timezone write, machine-readable so the client can localize. */
-export type WorkspaceTimezoneState = { ok: true; timezone: string | null } | { ok: false } | null;
+export type WorkspaceTimezoneState = { ok: true; timezone: string | null } | { ok: false };
 
 /**
  * Set the workspace's timezone (admin/owner), for the settings page and the

@@ -8,8 +8,8 @@ import { browserTimezone } from '@/lib/timezones';
 import { callAction } from '@/lib/call-action';
 import { claimWorkspaceTimezoneAction } from '@/app/admin/workspace-actions';
 
-/** One attempt per tab session, so a refused or slow claim is not retried on every page. */
-const CLAIM_KEY = 'forms.timezone.claimed';
+/** One attempt per tab session AND workspace, so a refused or slow claim is not retried on every page. */
+const claimKey = (accountId: string) => `forms.timezone.claimed:${accountId}`;
 
 /**
  * Seeds the workspace timezone from the first admin's browser. Renders
@@ -19,10 +19,12 @@ const CLAIM_KEY = 'forms.timezone.claimed';
  * (naming where to change it) only when THIS browser's zone was the one kept.
  */
 export function WorkspaceTimezoneBootstrap({
+  accountId,
   timezone,
   canClaim,
   message,
 }: {
+  accountId: string;
   timezone: string | null;
   canClaim: boolean;
   /** `admin.chrome.timezoneAutoSet`, with a `{zone}` placeholder. */
@@ -33,8 +35,8 @@ export function WorkspaceTimezoneBootstrap({
   useEffect(() => {
     if (timezone != null || !canClaim) return;
     try {
-      if (sessionStorage.getItem(CLAIM_KEY)) return;
-      sessionStorage.setItem(CLAIM_KEY, '1');
+      if (sessionStorage.getItem(claimKey(accountId))) return;
+      sessionStorage.setItem(claimKey(accountId), '1');
     } catch {
       // No storage (private mode, hardened browser): still try once per mount.
     }
@@ -49,6 +51,6 @@ export function WorkspaceTimezoneBootstrap({
     return () => {
       cancelled = true;
     };
-  }, [timezone, canClaim, message, toast, router]);
+  }, [accountId, timezone, canClaim, message, toast, router]);
   return null;
 }
