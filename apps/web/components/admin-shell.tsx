@@ -218,6 +218,8 @@ export function AdminShell({
   staff?: boolean;
   children: ReactNode;
 }) {
+  // Tagged once for both rails (desktop and drawer), like the other suite doors.
+  const docsHref = suiteHref(messages.docsHref, 'sidebar');
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(initialCollapsed);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -372,7 +374,7 @@ export function AdminShell({
           <NavLinks
             collapsed={railCollapsed}
             nav={messages.nav}
-            docsHref={suiteHref(messages.docsHref, 'sidebar')}
+            docsHref={docsHref}
             newTab={messages.switcher.opensNewTab}
           />
         </nav>
@@ -424,7 +426,7 @@ export function AdminShell({
           <NavLinks
             collapsed={false}
             nav={messages.nav}
-            docsHref={suiteHref(messages.docsHref, 'sidebar')}
+            docsHref={docsHref}
             newTab={messages.switcher.opensNewTab}
             onNavigate={() => setDrawerOpen(false)}
           />
