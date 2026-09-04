@@ -510,6 +510,44 @@ export interface FormsMessages {
       open: string;
       connect: string;
       openForm: string;
+      /** Search box over the loaded list (name or slug, no case, no accents). */
+      searchPlaceholder: string;
+      searchLabel: string;
+      searchClear: string;
+      searchEmpty: string;
+      /** "{count} results" live announcement. */
+      searchResults: string;
+      /** The keyboard hint shown inside the search box. */
+      searchShortcut: string;
+      /** Folders: sections of the list. */
+      unfiled: string;
+      folderCount: string; // {count}
+      folderCountOne: string;
+      newFolder: string;
+      newFolderTitle: string;
+      folderCreate: string;
+      renameFolder: string;
+      renameFolderTitle: string;
+      folderSave: string;
+      folderNameLabel: string;
+      folderNamePlaceholder: string;
+      folderNameRequired: string;
+      folderNameTaken: string;
+      deleteFolder: string;
+      deleteFolderConfirm: string; // {name} {count}
+      folderMenu: string;
+      collapse: string;
+      expand: string;
+      /** "New form" on a folder header, creating straight into it. */
+      createIn: string;
+      folderLabel: string;
+      folderNone: string;
+      moveTo: string;
+      moveBack: string;
+      moveFailed: string;
+      dragHandle: string;
+      dropHere: string;
+      actionFailed: string;
     };
     /** The form editor (builder). */
     editor: {
@@ -1653,6 +1691,7 @@ export interface FormsMessages {
     cancel: string;
     /** Per-surface dialog titles (the body reuses each surface's *Confirm copy). */
     deleteFormTitle: string;
+    deleteFolderTitle: string;
     deleteQuestionTitle: string;
     deleteSubmissionTitle: string;
     removeMemberTitle: string;
@@ -2078,6 +2117,39 @@ export const en: FormsMessages = {
       open: 'Open',
       connect: 'Connect',
       openForm: 'Open form',
+      searchPlaceholder: 'Search forms',
+      searchLabel: 'Search forms by name or link',
+      searchClear: 'Clear search',
+      searchEmpty: 'No forms match your search.',
+      searchResults: '{count} forms match',
+      searchShortcut: 'Ctrl K',
+      unfiled: 'Unfiled',
+      folderCount: '{count} forms',
+      folderCountOne: '1 form',
+      newFolder: 'New folder',
+      newFolderTitle: 'Create a folder',
+      folderCreate: 'Create folder',
+      renameFolder: 'Rename',
+      renameFolderTitle: 'Rename folder',
+      folderSave: 'Save',
+      folderNameLabel: 'Folder name',
+      folderNamePlaceholder: 'e.g. Sales',
+      folderNameRequired: 'Give the folder a name.',
+      folderNameTaken: 'A folder with that name already exists.',
+      deleteFolder: 'Delete folder',
+      deleteFolderConfirm: 'Delete “{name}”? Its {count} forms are kept and move to Unfiled.',
+      folderMenu: 'Folder actions',
+      collapse: 'Collapse',
+      expand: 'Expand',
+      createIn: 'New form',
+      folderLabel: 'Folder',
+      folderNone: 'No folder',
+      moveTo: 'Move to folder',
+      moveBack: 'No folder',
+      moveFailed: 'Could not move the form. Please try again.',
+      dragHandle: 'Drag to a folder',
+      dropHere: 'Drop to move here',
+      actionFailed: 'Something went wrong. Please try again.',
     },
     editor: {
       back: 'Back to forms',
@@ -3133,6 +3205,7 @@ export const en: FormsMessages = {
     confirm: 'Confirm',
     cancel: 'Cancel',
     deleteFormTitle: 'Delete form',
+    deleteFolderTitle: 'Delete folder',
     deleteQuestionTitle: 'Delete question',
     deleteSubmissionTitle: 'Delete submission',
     removeMemberTitle: 'Remove member',
@@ -3560,6 +3633,39 @@ export const es: FormsMessages = {
       open: 'Abrir',
       connect: 'Conectar',
       openForm: 'Abrir formulario',
+      searchPlaceholder: 'Buscar formularios',
+      searchLabel: 'Buscar formularios por nombre o enlace',
+      searchClear: 'Limpiar búsqueda',
+      searchEmpty: 'Ningún formulario coincide con tu búsqueda.',
+      searchResults: '{count} formularios coinciden',
+      searchShortcut: 'Ctrl K',
+      unfiled: 'Sin carpeta',
+      folderCount: '{count} formularios',
+      folderCountOne: '1 formulario',
+      newFolder: 'Nueva carpeta',
+      newFolderTitle: 'Crear una carpeta',
+      folderCreate: 'Crear carpeta',
+      renameFolder: 'Renombrar',
+      renameFolderTitle: 'Renombrar carpeta',
+      folderSave: 'Guardar',
+      folderNameLabel: 'Nombre de la carpeta',
+      folderNamePlaceholder: 'p. ej. Ventas',
+      folderNameRequired: 'Ponle un nombre a la carpeta.',
+      folderNameTaken: 'Ya existe una carpeta con ese nombre.',
+      deleteFolder: 'Eliminar carpeta',
+      deleteFolderConfirm: '¿Eliminar “{name}”? Sus {count} formularios se conservan y pasan a Sin carpeta.',
+      folderMenu: 'Acciones de la carpeta',
+      collapse: 'Contraer',
+      expand: 'Expandir',
+      createIn: 'Nuevo formulario',
+      folderLabel: 'Carpeta',
+      folderNone: 'Sin carpeta',
+      moveTo: 'Mover a carpeta',
+      moveBack: 'Sin carpeta',
+      moveFailed: 'No se pudo mover el formulario. Inténtalo de nuevo.',
+      dragHandle: 'Arrastra a una carpeta',
+      dropHere: 'Suelta para mover aquí',
+      actionFailed: 'Algo salió mal. Inténtalo de nuevo.',
     },
     editor: {
       back: 'Volver a formularios',
@@ -4622,6 +4728,7 @@ export const es: FormsMessages = {
     confirm: 'Confirmar',
     cancel: 'Cancelar',
     deleteFormTitle: 'Eliminar formulario',
+    deleteFolderTitle: 'Eliminar carpeta',
     deleteQuestionTitle: 'Eliminar pregunta',
     deleteSubmissionTitle: 'Eliminar respuesta',
     removeMemberTitle: 'Quitar miembro',

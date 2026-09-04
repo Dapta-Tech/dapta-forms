@@ -6,6 +6,7 @@
 export * from './client';
 export * from './crud';
 export * from './forms';
+export * from './folders';
 export * from './bookings';
 export * from './account-integrations';
 export * from './account-branding';

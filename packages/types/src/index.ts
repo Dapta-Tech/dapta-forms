@@ -1140,6 +1140,32 @@ export const formInputSchema = z.object({
 });
 export type FormInput = z.infer<typeof formInputSchema>;
 
+// --- Form folders (0021) -------------------------------------------------------
+
+/** A folder name: trimmed, 1 to 80 characters. Unique per account without regard to case (the API answers 409 NAME_TAKEN). */
+export const folderNameSchema = z.string().trim().min(1).max(80);
+/** Body of POST /v1/folders and PATCH /v1/folders/:id. */
+export const folderInputSchema = z.object({ name: folderNameSchema });
+export type FolderInput = z.infer<typeof folderInputSchema>;
+
+export const folderViewSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  createdAt: z.number(),
+  updatedAt: z.number(),
+});
+export type FolderView = z.infer<typeof folderViewSchema>;
+
+/** Body of PATCH /v1/forms/:id/folder: the key is required, null unfiles. */
+export const formFolderPatchSchema = z.object({ folderId: z.string().min(1).nullable() });
+export type FormFolderPatch = z.infer<typeof formFolderPatchSchema>;
+
+/** POST /v1/forms may file the new form straight into a folder (PUT /v1/forms/:id never moves it). */
+export const formCreateInputSchema = formInputSchema.extend({
+  folderId: z.string().min(1).nullable().optional(),
+});
+export type FormCreateInput = z.infer<typeof formCreateInputSchema>;
+
 /**
  * Body of PUT /v1/forms/:id/slug: the form's new public URL segment.
  *
@@ -1163,6 +1189,8 @@ export const formViewSchema = z.object({
   draftConfig: formConfigSchema.nullable().optional(),
   /** Epoch-ms of the last publish (ADDITIVE; null when never published). */
   publishedAt: z.number().nullable().optional(),
+  /** The folder the form is filed in (ADDITIVE, 0021; null = unfiled). */
+  folderId: z.string().nullable().optional(),
   createdAt: z.number(),
   updatedAt: z.number(),
 });

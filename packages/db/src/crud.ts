@@ -7,6 +7,13 @@ export type CrudResult<T> =
   | { ok: true; value: T }
   | {
       ok: false;
-      reason: 'NOT_FOUND' | 'SLUG_TAKEN' | 'SLUG_INVALID' | 'CONFLICT' | 'LAST_OWNER' | 'EMAIL_TAKEN';
+      reason:
+        | 'NOT_FOUND'
+        | 'SLUG_TAKEN'
+        | 'SLUG_INVALID'
+        | 'CONFLICT'
+        | 'LAST_OWNER'
+        | 'EMAIL_TAKEN'
+        | 'NAME_TAKEN';
       message?: string;
     };
