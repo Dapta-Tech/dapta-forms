@@ -214,7 +214,11 @@ export class AdminService {
       p.accountId,
       {
         name: this.templateFormName(templateId, template.name, input.locale),
-        ...(template.config ? { config: template.config } : {}),
+        // The wizard's language becomes the form's (Auto only for forms that
+        // predate the field), the same rule as "New form" in the dashboard.
+        ...(template.config || input.locale
+          ? { config: { ...(template.config ?? { version: 1 as const, steps: [] }), ...(input.locale ? { language: input.locale } : {}) } }
+          : {}),
       },
       p.memberId,
     );

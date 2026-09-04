@@ -31,7 +31,7 @@ import {
   type FormStep,
   type FormOutcome,
 } from '@quill/engine';
-import { getMessages } from '@quill/shared';
+import { getMessages, resolveFormLabels } from '@quill/shared';
 import type { FormConfig } from '@quill/types';
 import { formDesignProps } from '@/lib/form-design';
 import { FormLogo } from '@/components/public/form-logo';
@@ -80,6 +80,9 @@ export function FormRenderer({
   startAt?: number | 'cover';
 }) {
   const m = getMessages(locale).renderer;
+  // The form's button copy: author overrides, else the stock copy of `locale`.
+  const formLocale = locale === 'es' ? 'es' : 'en';
+  const labels = resolveFormLabels(config, formLocale);
   const sessionId = useSessionId(`quill-form-${accountCode}-${slug}`);
   // The cover SCREEN: null when switched off, which is what gates the `cover`
   // phase, the Start CTA and the back-to-cover step.
@@ -253,6 +256,8 @@ export function FormRenderer({
           submitFormAction(accountCode, slug, {
             sessionId,
             data: withData(finalAnswers),
+            // What the respondent SAW, so the confirmation email matches.
+            locale: formLocale,
           }),
         { timeoutMs: 8_000 },
       );
@@ -371,6 +376,7 @@ export function FormRenderer({
               sessionId,
               data: withData(nextAnswers),
               partial: true,
+              locale: formLocale,
             }),
           );
         }
@@ -664,7 +670,7 @@ export function FormRenderer({
         </div>
         <div className="pf__cover-footer">
           <button type="button" className="pf__btn" onClick={start}>
-            {coverScreen.ctaText ?? m.start}
+            {labels.start}
           </button>
           {/* Under the CTA: every respondent sees the cover, so this is the
               highest-value slot for the attribution and it displaces nothing. */}
@@ -743,7 +749,7 @@ export function FormRenderer({
         <header className="pf__topbar">
           <div className="pf__topbar-inner">
             {index > 0 || coverScreen ? (
-              <button type="button" className="pf__back" onClick={back} aria-label={m.back}>
+              <button type="button" className="pf__back" onClick={back} aria-label={labels.back}>
                 ←
               </button>
             ) : (
@@ -812,7 +818,7 @@ export function FormRenderer({
       <header className="pf__topbar">
         <div className="pf__topbar-inner">
           {index > 0 || coverScreen ? (
-            <button type="button" className="pf__back" onClick={back} aria-label={m.back}>
+            <button type="button" className="pf__back" onClick={back} aria-label={labels.back}>
               ←
             </button>
           ) : (
@@ -861,7 +867,7 @@ export function FormRenderer({
 
               {showContinue ? (
                 <button type="button" className="pf__btn pf__btn--inline" onClick={submitCurrent}>
-                  {step.buttonText ?? (index + 1 === steps.length ? m.submit : m.next)}
+                  {step.buttonText ?? (index + 1 === steps.length ? labels.submit : labels.next)}
                 </button>
               ) : null}
             </div>

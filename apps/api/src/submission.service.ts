@@ -172,6 +172,9 @@ export class SubmissionService {
             submissionId: row.id,
             formName: form.name,
             respondentEmail,
+            // The language the respondent saw (the page resolved ?lang and the
+            // browser), else the form's own language; null = English.
+            locale: input.locale ?? config.language ?? null,
           },
           form.id,
         );

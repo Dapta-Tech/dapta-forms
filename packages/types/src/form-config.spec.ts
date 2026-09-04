@@ -9,7 +9,7 @@
  * has somewhere obvious to prove the same thing.
  */
 import { describe, expect, it } from 'vitest';
-import { formConfigSchema, hasExtraHubspotDestination } from './index';
+import { formConfigSchema, hasExtraHubspotDestination, submissionSchema } from './index';
 
 /** The smallest config the schema accepts — one step, nothing configured. */
 function baseConfig() {
@@ -195,5 +195,42 @@ describe('hasExtraHubspotDestination', () => {
     it('still ignores webhooks on both sides', () => {
       expect(hasExtraHubspotDestination([webhook, webhook, hubspot], [hubspot])).toBe(false);
     });
+  });
+});
+
+describe('formConfigSchema: form language and button labels (additive)', () => {
+  it('a legacy config parses with neither field set (Auto language, stock labels)', () => {
+    const parsed = formConfigSchema.parse(baseConfig());
+    expect(parsed.language).toBeUndefined();
+    expect(parsed.labels).toBeUndefined();
+  });
+
+  it('keeps an explicit language and partial labels', () => {
+    const parsed = formConfigSchema.parse({
+      ...baseConfig(),
+      language: 'es',
+      labels: { next: 'Siguiente' },
+    });
+    expect(parsed.language).toBe('es');
+    expect(parsed.labels).toEqual({ next: 'Siguiente' });
+  });
+
+  it('accepts null for both (the editor clears back to Auto / stock this way)', () => {
+    const parsed = formConfigSchema.parse({ ...baseConfig(), language: null, labels: null });
+    expect(parsed.language).toBeNull();
+    expect(parsed.labels).toBeNull();
+  });
+
+  it('rejects a language the product does not ship and a label over 80 characters', () => {
+    expect(() => formConfigSchema.parse({ ...baseConfig(), language: 'fr' })).toThrow();
+    expect(() => formConfigSchema.parse({ ...baseConfig(), labels: { submit: 'x'.repeat(81) } })).toThrow();
+  });
+});
+
+describe('submissionSchema: the locale the respondent saw (additive)', () => {
+  it('carries an optional locale and rejects an unknown one', () => {
+    expect(submissionSchema.parse({ sessionId: 's', data: {} }).locale).toBeUndefined();
+    expect(submissionSchema.parse({ sessionId: 's', data: {}, locale: 'es' }).locale).toBe('es');
+    expect(() => submissionSchema.parse({ sessionId: 's', data: {}, locale: 'fr' })).toThrow();
   });
 });

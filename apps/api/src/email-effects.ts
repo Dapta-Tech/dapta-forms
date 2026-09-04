@@ -122,8 +122,8 @@ export class EmailEffects {
    * notification_setting mechanism (`submission_confirmed`; absent rows =
    * enabled, the fork-friendly default), merged form → account → stock. No
    * respondent email in the answers → nothing to address, so it no-ops. Locale:
-   * the public surface does not persist the respondent's language yet, so the
-   * caller's value is used as-is (unset normalizes to English in the notifier).
+   * the caller resolves it (the language the respondent saw, else the form's
+   * own); unset normalizes to English in the notifier.
    * Never rejects — the caller fire-and-forgets with `void`.
    */
   async enqueueSubmissionConfirmed(

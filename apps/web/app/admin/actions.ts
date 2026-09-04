@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { redirect, unstable_rethrow } from 'next/navigation';
 import { lockedOptionValues } from '@quill/engine';
 import { adminApi, ApiError } from '@/lib/admin-api';
+import { getLocale } from '@/lib/locale';
 
 /** Create a form and jump straight into its editor. */
 export async function createFormAction(formData: FormData): Promise<void> {
@@ -12,9 +13,13 @@ export async function createFormAction(formData: FormData): Promise<void> {
   // `layout` already means slides (the engine's back-compat default), so a
   // slides form keeps the exact config shape every existing form has.
   const layout = String(formData.get('layout') ?? '');
+  // A new form speaks its author's language explicitly (Auto stays for forms
+  // that predate the field): the person building it in Spanish expects Spanish
+  // buttons, not whatever each visitor's browser asks for.
+  const language = await getLocale();
   const created = await adminApi.createForm({
     name,
-    ...(layout === 'vertical' ? { config: { version: 1, steps: [], layout: 'vertical' } } : {}),
+    config: { version: 1, steps: [], language, ...(layout === 'vertical' ? { layout: 'vertical' } : {}) },
   });
   revalidatePath('/admin');
   revalidatePath('/admin/forms');
