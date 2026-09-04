@@ -47,6 +47,16 @@ describe("matchForm", () => {
     });
   });
 
+  it("keeps a decomposed accent inside the highlight and survives a no-break space", () => {
+    // "o" + combining acute, the NFD form some inputs produce.
+    const decomposed = { name: "Satisfaccio\u0301n total", slug: "x" };
+    expect(matchForm(decomposed, "satisfaccion")).toEqual({ matched: true, nameRanges: [[0, 13]] });
+    expect(matchForm({ name: "Lead\u00a0Qualifier", slug: "x" }, "qualifier")).toEqual({
+      matched: true,
+      nameRanges: [[5, 14]],
+    });
+  });
+
   it("an empty query matches everything with no ranges", () => {
     expect(matchForm(forms[2]!, "   ")).toEqual({
       matched: true,

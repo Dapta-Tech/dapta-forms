@@ -185,9 +185,9 @@ export const formFolder = pgTable(
     createdAt: bigint('created_at', { mode: 'number' }).notNull(),
     updatedAt: bigint('updated_at', { mode: 'number' }).notNull(),
   },
-  (t) => ({
-    formFolderAccountIdx: index('form_folder_account_idx').on(t.accountId),
-  }),
+  // The (account_id, lower(name)) unique index lives in the migration only:
+  // Drizzle cannot express an expression index, and this file declares what
+  // the migration creates, nothing more.
 );
 
 export const form = pgTable(
@@ -208,13 +208,14 @@ export const form = pgTable(
     brandAppliedAt: bigint('brand_applied_at', { mode: 'number' }),
     /** member.id of the author; NULL for pre-0010 forms and API-key creates. Authorship, never authorization. */
     createdBy: text('created_by'),
-    /** The folder this form is filed in (see 0021); NULL = unfiled. */
-    folderId: text('folder_id'),
+    /** The folder this form is filed in (see 0021); NULL = unfiled, and a deleted folder unfiles. */
+    folderId: text('folder_id').references(() => formFolder.id, { onDelete: 'set null' }),
     createdAt: bigint('created_at', { mode: 'number' }).notNull(),
     updatedAt: bigint('updated_at', { mode: 'number' }).notNull(),
   },
   (t) => ({
     formAccountSlugUq: uniqueIndex('form_account_slug_uq').on(t.accountId, t.slug),
+    formAccountFolderIdx: index('form_account_folder_idx').on(t.accountId, t.folderId),
   }),
 );
 

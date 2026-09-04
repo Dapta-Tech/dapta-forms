@@ -20,7 +20,6 @@ const iconBtn =
   "inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
 export interface FormRowLabels {
-  updated: string;
   edit: string;
   submissions: string;
   analytics: string;

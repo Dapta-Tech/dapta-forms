@@ -35,7 +35,6 @@ const labels: FormsExplorerProps["labels"] = {
   createIn: "New form",
   moveFailed: "Could not move",
   dropHere: "Drop here",
-  updated: "Updated {when}",
 };
 
 function render(overrides: Partial<FormsExplorerProps> = {}) {
@@ -67,7 +66,6 @@ function render(overrides: Partial<FormsExplorerProps> = {}) {
     updatedByForm: { a: "Updated today", b: "Updated today" },
     labels,
     rowLabels: {
-      updated: "Updated {when}",
       edit: "Edit",
       submissions: "Submissions",
       analytics: "Analytics",
@@ -164,6 +162,10 @@ describe("FormsExplorer", () => {
     });
     expect(html).not.toContain('data-testid="folder-section"');
     expect(html).not.toContain('data-testid="folder-menu"');
+
+    expect(html).not.toContain('data-testid="unfiled-section"');
+
+    expect(html).not.toContain('data-testid="form-row-grip"');
     expect((html.match(/data-testid="form-row"/g) ?? []).length).toBe(1);
   });
 });

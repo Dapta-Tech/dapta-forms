@@ -534,7 +534,7 @@ export interface FormsMessages {
       folderNameRequired: string;
       folderNameTaken: string;
       deleteFolder: string;
-      deleteFolderConfirm: string; // {name} {count}
+      deleteFolderConfirm: string; // {name} {forms} (the already-pluralised count label)
       folderMenu: string;
       collapse: string;
       expand: string;
@@ -2137,7 +2137,7 @@ export const en: FormsMessages = {
       folderNameRequired: 'Give the folder a name.',
       folderNameTaken: 'A folder with that name already exists.',
       deleteFolder: 'Delete folder',
-      deleteFolderConfirm: 'Delete “{name}”? Its {count} forms are kept and move to Unfiled.',
+      deleteFolderConfirm: 'Delete “{name}”? The forms inside ({forms}) are kept and move to Unfiled.',
       folderMenu: 'Folder actions',
       collapse: 'Collapse',
       expand: 'Expand',
@@ -3653,7 +3653,7 @@ export const es: FormsMessages = {
       folderNameRequired: 'Ponle un nombre a la carpeta.',
       folderNameTaken: 'Ya existe una carpeta con ese nombre.',
       deleteFolder: 'Eliminar carpeta',
-      deleteFolderConfirm: '¿Eliminar “{name}”? Sus {count} formularios se conservan y pasan a Sin carpeta.',
+      deleteFolderConfirm: '¿Eliminar “{name}”? Los formularios que contiene ({forms}) se conservan y pasan a Sin carpeta.',
       folderMenu: 'Acciones de la carpeta',
       collapse: 'Contraer',
       expand: 'Expandir',

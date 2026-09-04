@@ -27,7 +27,11 @@ export interface FormMatch {
 
 /** Lower-case, accents stripped, trimmed. Same recipe as `slugify`'s first steps. */
 export function normalize(value: string): string {
-  return value.normalize("NFKD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
+  return value
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
 }
 
 /**
@@ -43,7 +47,14 @@ function rangesOnOriginal(
   if (!normalizedQuery) return ranges;
   // Per-character normalized forms, so the map back is exact.
   const chars = [...original];
-  const normChars = chars.map((c) => normalize(c) || (c === " " ? " " : ""));
+  // Not `normalize` itself: that trims, and a space (or a no-break space) in
+  // the middle of a name must stay a character or every index after it drifts.
+  const normChars = chars.map((c) =>
+    c
+      .normalize("NFKD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase(),
+  );
   const flat = normChars.join("");
   // Offsets: the original char index at which each normalized char starts.
   const origIndexAt: number[] = [];
@@ -55,7 +66,10 @@ function rangesOnOriginal(
     const at = flat.indexOf(normalizedQuery, from);
     if (at < 0) break;
     const startChar = origIndexAt[at]!;
-    const endChar = origIndexAt[at + normalizedQuery.length - 1]! + 1;
+    let endChar = origIndexAt[at + normalizedQuery.length - 1]! + 1;
+    // A decomposed accent (a base letter followed by a combining mark) has no
+    // normalized form of its own; keep it inside the highlight of its letter.
+    while (endChar < chars.length && normChars[endChar] === '') endChar += 1;
     // Convert char (code point) indexes to string indexes.
     const start = chars.slice(0, startChar).join("").length;
     const end = chars.slice(0, endChar).join("").length;

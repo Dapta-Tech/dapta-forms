@@ -72,6 +72,8 @@ export const openapiSpec = {
     '/v1/forms': {
       get: { summary: 'List forms (host)', security: [{ hostSession: [] }], responses: { '200': { description: 'Forms' } } },
       post: { summary: 'Create a form (host)', security: [{ hostSession: [] }], responses: { '201': { description: 'Created' } } },
+        description:
+          'Body { name, slug?, config?, folderId? }. `folderId` files the new form in one of the workspace folders (404 for a folder outside it); absent = unfiled.',
     },
     '/v1/forms/{id}': {
       get: { summary: 'Get a form (host)', security: [{ hostSession: [] }], responses: { '200': { description: 'Form' } } },

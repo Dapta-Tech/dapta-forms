@@ -106,10 +106,8 @@ export default async function FormsList() {
             createIn: m.createIn,
             moveFailed: m.moveFailed,
             dropHere: m.dropHere,
-            updated: m.updated,
           }}
           rowLabels={{
-            updated: m.updated,
             edit: m.edit,
             submissions: messages.nav.submissions,
             analytics: messages.nav.analytics,

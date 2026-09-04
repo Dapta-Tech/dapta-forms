@@ -69,7 +69,6 @@ export interface FormsExplorerLabels {
   createIn: string;
   moveFailed: string;
   dropHere: string;
-  updated: string;
 }
 
 export interface FormsExplorerProps {
@@ -123,8 +122,15 @@ export function FormsExplorer(props: FormsExplorerProps) {
     }
   }, []);
 
-  // Fresh server data supersedes any optimistic move still recorded here.
-  useEffect(() => setOverrides(new Map()), [forms]);
+  // Fresh server data supersedes an optimistic move once it SHOWS that move;
+  // one still in flight keeps its override, so two moves in a row do not
+  // snap the second back while the first refresh lands.
+  useEffect(() => {
+    setOverrides((prev) => {
+      const next = new Map([...prev].filter(([id, folderId]) => forms.find((f) => f.id === id)?.folderId !== folderId));
+      return next.size === prev.size ? prev : next;
+    });
+  }, [forms]);
 
   const effectiveForms = useMemo(
     () =>
@@ -186,11 +192,15 @@ export function FormsExplorer(props: FormsExplorerProps) {
     }, []),
   );
 
-  // Roving focus over the row titles: arrows walk them, Enter opens (a link).
+  // Roving focus over the VISIBLE row titles: arrows walk them, Enter opens
+  // (a link). Keys inside a dialog, a menu or a listbox belong to that widget.
   function onListKeyDown(e: ReactKeyboardEvent<HTMLDivElement>) {
     if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+    const target = e.target as HTMLElement | null;
+    if (target?.closest('[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"], input, textarea, select'))
+      return;
     const items = Array.from(
-      listRef.current?.querySelectorAll<HTMLElement>("[data-form-link]") ?? [],
+      listRef.current?.querySelectorAll<HTMLElement>("ul:not([hidden]) [data-form-link]") ?? [],
     );
     if (items.length === 0) return;
     const active = document.activeElement as HTMLElement | null;
@@ -224,6 +234,12 @@ export function FormsExplorer(props: FormsExplorerProps) {
   };
 
   const searchId = useId();
+  // The chord's glyph follows the platform; read after mount (the server has no platform).
+  const [shortcutLabel, setShortcutLabel] = useState(labels.searchShortcut);
+  useEffect(() => {
+    if (/Mac|iPhone|iPad/.test(navigator.platform)) setShortcutLabel('\u2318 K');
+  }, []);
+  const flat = folders.length === 0;
   return (
     <DndContext
       id={dndId}
@@ -259,7 +275,7 @@ export function FormsExplorer(props: FormsExplorerProps) {
               if (e.key === "ArrowDown") {
                 e.preventDefault();
                 listRef.current
-                  ?.querySelector<HTMLElement>("[data-form-link]")
+                  ?.querySelector<HTMLElement>("ul:not([hidden]) [data-form-link]")
                   ?.focus();
               }
             }}
@@ -268,7 +284,7 @@ export function FormsExplorer(props: FormsExplorerProps) {
           <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5 text-2xs text-faint">
             {query ? null : (
               <kbd className="rounded border border-border px-1.5 py-0.5 font-mono">
-                {labels.searchShortcut}
+                {shortcutLabel}
               </kbd>
             )}
           </span>
@@ -311,7 +327,26 @@ export function FormsExplorer(props: FormsExplorerProps) {
             {labels.searchEmpty}
           </p>
         ) : null}
-        {sections.map((section) => (
+        {flat && !searching && sections[0] ? (
+          /* No folders yet: the flat list this page always had, no section chrome, no grip. */
+          <ul role="list" className="flex flex-col gap-3">
+            {sections[0].forms.map((f) => (
+              <FormRow
+                key={f.id}
+                form={f}
+                publicPath={`/${props.accountCode}/${props.handle}/${f.slug}`}
+                updatedLabel={props.updatedByForm[f.id] ?? ''}
+                nameRanges={f.match.nameRanges}
+                folders={folders}
+                labels={props.rowLabels}
+                actionLabels={props.actionLabels}
+                onMove={move}
+                draggable={false}
+              />
+            ))}
+          </ul>
+        ) : null}
+        {(flat && !searching ? [] : sections).map((section) => (
           <FolderSection
             key={section.id ?? UNFILED}
             section={section}
@@ -399,7 +434,7 @@ function FolderSection({
     setMenuOpen(false);
     const ok = await confirmDialog({
       title: getMessages(clientLocale()).dialog.deleteFolderTitle,
-      message: t(labels.deleteFolderConfirm, { name, count: section.total }),
+      message: t(labels.deleteFolderConfirm, { name, forms: count }),
       confirmLabel: labels.deleteFolder,
       destructive: true,
     });

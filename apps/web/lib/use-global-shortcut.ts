@@ -51,7 +51,7 @@ export function useGlobalShortcut(
     const onKeyDown = (e: KeyboardEvent) => {
       const shortcut = shortcutFor(e, {
         editable: isEditableTarget(e.target),
-        dialogOpen: document.querySelector('[role="dialog"]') != null,
+        dialogOpen: document.querySelector('[role="dialog"], [role="alertdialog"]') != null,
       });
       if (!shortcut) return;
       e.preventDefault();
