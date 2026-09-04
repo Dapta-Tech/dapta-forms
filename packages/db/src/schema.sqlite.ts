@@ -166,6 +166,26 @@ export const notificationSetting = sqliteTable(
 // --- Forms domain ------------------------------------------------------------
 
 /** A form: one versioned JSON `config` blob drives the whole public flow. */
+/**
+ * A form folder (see 0021): flat, one level, named only, unique per account
+ * without regard to case (the lower(name) expression index lives in the
+ * migration, since Drizzle's index builder cannot express it). Declared before
+ * `form`, which points at it.
+ */
+export const formFolder = sqliteTable(
+  'form_folder',
+  {
+    id: text('id').primaryKey(),
+    accountId: text('account_id').notNull(),
+    name: text('name').notNull(),
+    createdAt: integer('created_at').notNull(),
+    updatedAt: integer('updated_at').notNull(),
+  },
+  // The (account_id, lower(name)) unique index lives in the migration only:
+  // Drizzle cannot express an expression index, and this file declares what
+  // the migration creates, nothing more.
+);
+
 export const form = sqliteTable(
   'form',
   {
@@ -186,11 +206,14 @@ export const form = sqliteTable(
     brandAppliedAt: integer('brand_applied_at'),
     /** member.id of the author; NULL for pre-0010 forms and API-key creates. Authorship, never authorization. */
     createdBy: text('created_by'),
+    /** The folder this form is filed in (see 0021); NULL = unfiled, and a deleted folder unfiles. */
+    folderId: text('folder_id').references(() => formFolder.id, { onDelete: 'set null' }),
     createdAt: integer('created_at').notNull(),
     updatedAt: integer('updated_at').notNull(),
   },
   (t) => ({
     formAccountSlugUq: uniqueIndex('form_account_slug_uq').on(t.accountId, t.slug),
+    formAccountFolderIdx: index('form_account_folder_idx').on(t.accountId, t.folderId),
   }),
 );
 
@@ -321,6 +344,7 @@ export const sqliteSchema = {
   outbox,
   notificationSetting,
   form,
+  formFolder,
   formAlias,
   submission,
   formEvent,

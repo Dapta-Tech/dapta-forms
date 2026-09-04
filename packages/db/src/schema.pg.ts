@@ -170,6 +170,26 @@ export const notificationSetting = pgTable(
 
 // --- Forms domain ------------------------------------------------------------
 
+/**
+ * A form folder (see 0021): flat, one level, named only, unique per account
+ * without regard to case (the lower(name) expression index lives in the
+ * migration, since Drizzle's index builder cannot express it). Declared before
+ * `form`, which points at it.
+ */
+export const formFolder = pgTable(
+  'form_folder',
+  {
+    id: text('id').primaryKey(),
+    accountId: text('account_id').notNull(),
+    name: text('name').notNull(),
+    createdAt: bigint('created_at', { mode: 'number' }).notNull(),
+    updatedAt: bigint('updated_at', { mode: 'number' }).notNull(),
+  },
+  // The (account_id, lower(name)) unique index lives in the migration only:
+  // Drizzle cannot express an expression index, and this file declares what
+  // the migration creates, nothing more.
+);
+
 export const form = pgTable(
   'form',
   {
@@ -188,11 +208,14 @@ export const form = pgTable(
     brandAppliedAt: bigint('brand_applied_at', { mode: 'number' }),
     /** member.id of the author; NULL for pre-0010 forms and API-key creates. Authorship, never authorization. */
     createdBy: text('created_by'),
+    /** The folder this form is filed in (see 0021); NULL = unfiled, and a deleted folder unfiles. */
+    folderId: text('folder_id').references(() => formFolder.id, { onDelete: 'set null' }),
     createdAt: bigint('created_at', { mode: 'number' }).notNull(),
     updatedAt: bigint('updated_at', { mode: 'number' }).notNull(),
   },
   (t) => ({
     formAccountSlugUq: uniqueIndex('form_account_slug_uq').on(t.accountId, t.slug),
+    formAccountFolderIdx: index('form_account_folder_idx').on(t.accountId, t.folderId),
   }),
 );
 
@@ -320,6 +343,7 @@ export const pgSchema = {
   outbox,
   notificationSetting,
   form,
+  formFolder,
   formAlias,
   submission,
   formEvent,

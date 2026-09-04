@@ -12,8 +12,11 @@ export async function createFormAction(formData: FormData): Promise<void> {
   // `layout` already means slides (the engine's back-compat default), so a
   // slides form keeps the exact config shape every existing form has.
   const layout = String(formData.get('layout') ?? '');
+  // The folder preselected by a section's "New form" (or picked in the dialog).
+  const folderId = String(formData.get('folderId') ?? '').trim() || null;
   const created = await adminApi.createForm({
     name,
+    ...(folderId ? { folderId } : {}),
     ...(layout === 'vertical' ? { config: { version: 1, steps: [], layout: 'vertical' } } : {}),
   });
   revalidatePath('/admin');

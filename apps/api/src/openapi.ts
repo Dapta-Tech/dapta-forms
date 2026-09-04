@@ -72,6 +72,8 @@ export const openapiSpec = {
     '/v1/forms': {
       get: { summary: 'List forms (host)', security: [{ hostSession: [] }], responses: { '200': { description: 'Forms' } } },
       post: { summary: 'Create a form (host)', security: [{ hostSession: [] }], responses: { '201': { description: 'Created' } } },
+        description:
+          'Body { name, slug?, config?, folderId? }. `folderId` files the new form in one of the workspace folders (404 for a folder outside it); absent = unfiled.',
     },
     '/v1/forms/{id}': {
       get: { summary: 'Get a form (host)', security: [{ hostSession: [] }], responses: { '200': { description: 'Form' } } },
@@ -94,6 +96,53 @@ export const openapiSpec = {
           '200': { description: 'Renamed' },
           '404': { description: 'No such form in this account' },
           '409': { description: 'SLUG_TAKEN or SLUG_INVALID' },
+        },
+      },
+    },
+    '/v1/folders': {
+      get: {
+        summary: "The workspace's form folders, alphabetically (host)",
+        security: [{ hostSession: [] }],
+        responses: { '200': { description: 'Array of { id, name, createdAt, updatedAt }' } },
+      },
+      post: {
+        summary: 'Create a form folder (host)',
+        description:
+          'Body { name } (1 to 80 characters, trimmed). Folders are flat and named only; a name is unique per workspace without regard to case. Any active member may create one, the same rule as creating a form.',
+        security: [{ hostSession: [] }],
+        responses: {
+          '201': { description: 'Created' },
+          '409': { description: 'NAME_TAKEN' },
+        },
+      },
+    },
+    '/v1/folders/{id}': {
+      patch: {
+        summary: 'Rename a form folder (host)',
+        description: 'Body { name }. 404 for a folder of another workspace, 409 NAME_TAKEN on a clash.',
+        security: [{ hostSession: [] }],
+        responses: {
+          '200': { description: 'Renamed' },
+          '404': { description: 'No such folder in this workspace' },
+          '409': { description: 'NAME_TAKEN' },
+        },
+      },
+      delete: {
+        summary: 'Delete a form folder (host)',
+        description: 'The forms inside are unfiled, never deleted. Idempotent: deleting an absent folder is still 204.',
+        security: [{ hostSession: [] }],
+        responses: { '204': { description: 'Deleted (or already gone)' } },
+      },
+    },
+    '/v1/forms/{id}/folder': {
+      patch: {
+        summary: 'Move a form into a folder, or unfile it (host)',
+        description:
+          'Body { folderId } where null unfiles. The key is required. 404 when the form or the folder is not in this workspace. The form\'s updated_at is untouched.',
+        security: [{ hostSession: [] }],
+        responses: {
+          '200': { description: '{ id, folderId }' },
+          '404': { description: 'No such form or folder in this workspace' },
         },
       },
     },
