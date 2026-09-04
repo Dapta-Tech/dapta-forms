@@ -73,6 +73,7 @@ import {
   onboardingProgressSchema,
   workspaceCreateSchema,
   workspaceRenameSchema,
+  workspaceTimezoneSchema,
 } from '@quill/types';
 import { ZodError } from 'zod';
 import { AdminService } from './admin.service';
@@ -336,6 +337,17 @@ export class AdminCrudController {
   async renameWorkspace(@Req() req: ReqLike, @Body() body: unknown) {
     const input = parse(workspaceRenameSchema, body);
     return this.ws().rename(req, input);
+  }
+
+  /**
+   * Set the workspace's timezone (admin/owner). Its own route rather than a
+   * field on `PATCH workspaces/current`: that one goes upstream to the identity
+   * service, which has no zone, and this one never leaves this database.
+   */
+  @Patch('workspaces/current/timezone')
+  async setWorkspaceTimezone(@Req() req: ReqLike, @Body() body: unknown) {
+    const input = parse(workspaceTimezoneSchema, body);
+    return this.ws().setTimezone(req, input);
   }
 
   /**

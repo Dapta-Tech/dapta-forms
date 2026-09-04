@@ -24,6 +24,12 @@ export const account = pgTable('account', {
   /** Milestone CLAIM: epoch-ms of the first form view. Same write-once discipline. */
   firstViewedAt: bigint('first_viewed_at', { mode: 'number' }),
   /**
+   * The workspace's IANA timezone (0020): the zone every date in the admin,
+   * the analytics day buckets and the CSV local columns are read in. NULL =
+   * UTC until the first admin's browser claims it (`claimAccountTimezone`).
+   */
+  timezone: text('timezone'),
+  /**
    * Onboarding wizard state AND result (see 0011) — `accountOnboardingSchema` in
    * @quill/types. Written on every step advance, so a row with a `lastStep` and
    * no `onboardingCompletedAt` IS the drop-off record.

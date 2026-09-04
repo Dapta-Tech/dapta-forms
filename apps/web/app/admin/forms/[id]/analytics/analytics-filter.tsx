@@ -22,8 +22,11 @@ type Preset = 'all' | 'today' | 'week' | 'month' | 'year' | 'custom';
 export function AnalyticsFilter({
   labels,
   locale,
+  todayIso,
 }: {
   locale: string;
+  /** Today in the WORKSPACE's zone (the server resolves ranges in it). Defaults to UTC. */
+  todayIso?: string;
   labels: {
     today: string;
     week: string;
@@ -58,9 +61,10 @@ export function AnalyticsFilter({
     push(next);
   };
 
-  // Today in UTC — the same reference the server resolves ranges against, so the
-  // picker cannot offer a "future" that is only future in the viewer's timezone.
-  const todayUtc = todayUtcIso();
+  // Today in the workspace zone, the same reference the server resolves ranges
+  // against, so the picker cannot offer a "future" that is only future in the
+  // viewer's own timezone.
+  const todayUtc = todayIso ?? todayUtcIso();
 
   const applyCustom = () => {
     if (!from && !to) return;

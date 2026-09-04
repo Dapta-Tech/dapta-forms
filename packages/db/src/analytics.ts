@@ -18,6 +18,40 @@ export interface DateRange {
 }
 
 /**
+ * How to name the CALENDAR DAY an epoch-ms instant falls on. Absent = UTC
+ * days, byte-for-byte the SQL this module always ran. Otherwise the UTC
+ * offset of the workspace's zone across the queried window, as segments that
+ * start where the offset changes (`utcOffsetSegments` in @quill/shared): one
+ * for a fixed-offset zone, two or three across a DST year. The day expression
+ * becomes `(col + offset) / 86400000` with the offset picked by a CASE over
+ * the segment starts, so bucketing stays inside SQL (COUNT DISTINCT needs it
+ * there) and stays dialect-neutral.
+ */
+export interface DayBucketing {
+  segments: Array<{ from: number; offsetMs: number }>;
+}
+
+/** The whole-day index of `col` under `bucketing` (UTC days when absent). */
+function localDayExpr(col: SQL, bucketing?: DayBucketing): SQL {
+  const segments = bucketing?.segments ?? [];
+  // 86400000 is a SQL literal (not a bound param) so both engines do INTEGER
+  // division and bucket to a whole day.
+  if (segments.length === 0) return sql`(${col} / 86400000)`;
+  // Offsets and boundaries are inlined as INTEGER literals, like the day
+  // length: a bound number reaches SQLite as a REAL and the division stops
+  // truncating, which splits one day into fractional buckets. They are
+  // computed integers (whole minutes of offset, epoch-ms instants), never
+  // caller input, so inlining is safe.
+  const int = (n: number) => sql.raw(String(Math.trunc(n)));
+  if (segments.length === 1) return sql`((${col} + ${int(segments[0]!.offsetMs)}) / 86400000)`;
+  const branches = segments
+    .slice(0, -1)
+    .map((seg, i) => sql`WHEN ${col} < ${int(segments[i + 1]!.from)} THEN ${int(seg.offsetMs)}`);
+  const last = segments[segments.length - 1]!;
+  return sql`((${col} + (CASE ${sql.join(branches, sql` `)} ELSE ${int(last.offsetMs)} END)) / 86400000)`;
+}
+
+/**
  * Build the `AND col >= from AND col <= to` fragment for an optional range.
  * Each bound is independent; an empty range contributes no SQL. `col` is a
  * fixed internal identifier fragment (never user input).
@@ -257,6 +291,7 @@ export async function completedSubmissions(
   db: Db,
   formId: string,
   range?: DateRange,
+  bucketing?: DayBucketing,
 ): Promise<CompletedSubmission[]> {
   const rows = await db.all<{
     day: number | string;
@@ -268,7 +303,7 @@ export async function completedSubmissions(
     // do INTEGER division and bucket to a whole day. The open timestamp comes
     // back RAW (not COALESCEd in SQL) so the caller can tell "no open signal"
     // apart from "opened and completed instantly" — see below.
-    sql`SELECT (${submissionAnchor()} / 86400000) AS day,
+    sql`SELECT ${localDayExpr(submissionAnchor(), bucketing)} AS day,
                s.completed_at AS completed_at,
                s.started_at AS started_at,
                (SELECT MIN(e.created_at) FROM form_event e
@@ -303,8 +338,9 @@ export async function completedSubmissions(
  * lands in exactly one bucket, in every metric, instead of splitting its views
  * into one day and its start into another.
  */
-function dailySessionsQuery(formId: string, eventFilter: SQL, range?: DateRange): SQL {
-  return sql`SELECT (a.anchor / 86400000) AS day, COUNT(DISTINCT a.session_id) AS n
+function dailySessionsQuery(formId: string, eventFilter: SQL, range?: DateRange, bucketing?: DayBucketing): SQL {
+  const day = localDayExpr(sql`a.anchor`, bucketing);
+  return sql`SELECT ${day} AS day, COUNT(DISTINCT a.session_id) AS n
       FROM (
         SELECT session_id, MIN(created_at) AS anchor FROM form_event
         WHERE form_id = ${formId} GROUP BY session_id
@@ -313,7 +349,7 @@ function dailySessionsQuery(formId: string, eventFilter: SQL, range?: DateRange)
         SELECT session_id FROM form_event WHERE form_id = ${formId} AND ${eventFilter}
       )
       ${andRange(sql`a.anchor`, range)}
-      GROUP BY (a.anchor / 86400000)`;
+      GROUP BY ${day}`;
 }
 
 /** Per-day unique sessions that viewed the form (trend series for Views). */
@@ -321,9 +357,10 @@ export async function dailyViewSessions(
   db: Db,
   formId: string,
   range?: DateRange,
+  bucketing?: DayBucketing,
 ): Promise<{ day: number; n: number }[]> {
   const rows = await db.all<{ day: number | string; n: number | string }>(
-    dailySessionsQuery(formId, sql`type = 'view'`, range),
+    dailySessionsQuery(formId, sql`type = 'view'`, range, bucketing),
   );
   return rows.map((r) => ({ day: Number(r.day), n: Number(r.n) }));
 }
@@ -334,9 +371,10 @@ export async function dailyStartSessions(
   db: Db,
   formId: string,
   range?: DateRange,
+  bucketing?: DayBucketing,
 ): Promise<{ day: number; n: number }[]> {
   const rows = await db.all<{ day: number | string; n: number | string }>(
-    dailySessionsQuery(formId, sql`type IN ('start', 'step_complete')`, range),
+    dailySessionsQuery(formId, sql`type IN ('start', 'step_complete')`, range, bucketing),
   );
   return rows.map((r) => ({ day: Number(r.day), n: Number(r.n) }));
 }
@@ -451,4 +489,19 @@ export async function deleteSubmissionForAccount(
     sql`SELECT id FROM submission WHERE id = ${submissionId} LIMIT 1`,
   );
   return exists ? 'forbidden' : 'absent';
+}
+
+/**
+ * The earliest activity of a form (epoch-ms): its first `form_event` or its
+ * first submission, whichever is older (a submission can predate every event
+ * when the beacons were lost). Null with nothing yet. Bounds the offset
+ * segments of an unbounded analytics range, so every row falls inside one.
+ */
+export async function firstEventAt(db: Db, formId: string): Promise<number | null> {
+  const row = await db.get<{ e: number | string | null; s: number | string | null }>(
+    sql`SELECT (SELECT MIN(created_at) FROM form_event WHERE form_id = ${formId}) AS e,
+               (SELECT MIN(started_at) FROM submission WHERE form_id = ${formId}) AS s`,
+  );
+  const candidates = [row?.e, row?.s].filter((v): v is number | string => v != null).map(Number);
+  return candidates.length ? Math.min(...candidates) : null;
 }

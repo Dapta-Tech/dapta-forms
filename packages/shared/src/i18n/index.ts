@@ -126,6 +126,8 @@ export interface FormsMessages {
       collapse: string;
       expand: string;
       openNav: string;
+      /** Toast when the first admin's browser seeds the workspace zone. // {zone} */
+      timezoneAutoSet: string;
       /** The colour-scheme toggle. `next` names what one more click will do, so an
        *  icon-only control still announces its effect rather than only its state. */
       theme: {
@@ -288,6 +290,13 @@ export interface FormsMessages {
       subtitle: string;
       /** The renameable workspace name (admin/owner). */
       workspaceName: string;
+      /** The shared IANA zone every date in this workspace is read in. */
+      workspaceTimezone: string;
+      workspaceTimezoneHelp: string;
+      workspaceTimezoneSaved: string;
+      workspaceTimezoneError: string;
+      workspaceTimezoneUnset: string;
+      workspaceTimezoneUtc: string;
       workspaceNameSave: string;
       workspaceNameSaved: string;
       workspaceNameError: string;
@@ -1087,6 +1096,8 @@ export interface FormsMessages {
       rangeFrom: string;
       rangeTo: string;
       rangeApply: string;
+      /** Under the trends chart: which zone the days are cut in. // {zone} */
+      timezoneNote: string;
       /** Trends chart (per-day series, metric switchable). */
       trendsTitle: string;
       trendsSubtitle: string;
@@ -1114,6 +1125,10 @@ export interface FormsMessages {
       title: string;
       subtitle: string;
       statusAll: string;
+      /** The shared workspace zone, editable from the table by admins. */
+      timezoneLabel: string;
+      timezoneHint: string;
+      timezoneReadOnly: string;
       statusCompleted: string;
       statusPartial: string;
       badgeCompleted: string;
@@ -1744,6 +1759,7 @@ export const en: FormsMessages = {
     },
     chrome: {
       collapse: 'Collapse sidebar',
+      timezoneAutoSet: 'Workspace timezone set to {zone}. Change it in Account settings or on the submissions page.',
       expand: 'Expand sidebar',
       openNav: 'Open navigation',
       theme: {
@@ -1883,6 +1899,13 @@ export const en: FormsMessages = {
       title: 'Settings',
       subtitle: 'Your workspace and team.',
       workspaceName: 'Workspace name',
+      workspaceTimezone: 'Workspace timezone',
+      workspaceTimezoneHelp:
+        'Shared by everyone in this workspace. Every date in the dashboard, the analytics day cuts and the local columns of the CSV export are read in this zone.',
+      workspaceTimezoneSaved: 'Workspace timezone saved.',
+      workspaceTimezoneError: 'Could not save the timezone. Please try again.',
+      workspaceTimezoneUnset: 'Not set (UTC)',
+      workspaceTimezoneUtc: 'UTC',
       workspaceNameSave: 'Save',
       workspaceNameSaved: 'Workspace renamed.',
       workspaceNameError: 'Could not rename the workspace.',
@@ -2609,6 +2632,7 @@ export const en: FormsMessages = {
       rangeFrom: 'From',
       rangeTo: 'To',
       rangeApply: 'Apply',
+      timezoneNote: 'Days in {zone}',
       trendsTitle: 'Trends',
       trendsSubtitle: 'Daily movement over the selected range.',
       trendsMetricLabel: 'Metric',
@@ -2634,6 +2658,9 @@ export const en: FormsMessages = {
       title: 'Submissions',
       subtitle: 'Every response to this form.',
       statusAll: 'All',
+      timezoneLabel: 'Workspace timezone',
+      timezoneHint: 'Dates below are read in this zone. It is shared by the whole workspace.',
+      timezoneReadOnly: 'Only an admin can change it.',
       statusCompleted: 'Completed',
       statusPartial: 'Partial',
       badgeCompleted: 'Completed',
@@ -3224,6 +3251,7 @@ export const es: FormsMessages = {
     },
     chrome: {
       collapse: 'Contraer barra lateral',
+      timezoneAutoSet: 'Zona horaria del workspace fijada en {zone}. Cámbiala en Ajustes de cuenta o en la página de respuestas.',
       expand: 'Expandir barra lateral',
       openNav: 'Abrir navegación',
       theme: {
@@ -3364,6 +3392,13 @@ export const es: FormsMessages = {
       title: 'Ajustes',
       subtitle: 'Tu espacio de trabajo y tu equipo.',
       workspaceName: 'Nombre del workspace',
+      workspaceTimezone: 'Zona horaria del workspace',
+      workspaceTimezoneHelp:
+        'La comparten todos en este workspace. Cada fecha del panel, los cortes por día de las analíticas y las columnas locales del CSV se leen en esta zona.',
+      workspaceTimezoneSaved: 'Zona horaria del workspace guardada.',
+      workspaceTimezoneError: 'No se pudo guardar la zona horaria. Inténtalo de nuevo.',
+      workspaceTimezoneUnset: 'Sin definir (UTC)',
+      workspaceTimezoneUtc: 'UTC',
       workspaceNameSave: 'Guardar',
       workspaceNameSaved: 'Workspace renombrado.',
       workspaceNameError: 'No se pudo renombrar el workspace.',
@@ -4093,6 +4128,7 @@ export const es: FormsMessages = {
       rangeFrom: 'Desde',
       rangeTo: 'Hasta',
       rangeApply: 'Aplicar',
+      timezoneNote: 'Días en {zone}',
       trendsTitle: 'Tendencias',
       trendsSubtitle: 'Movimiento diario en el rango seleccionado.',
       trendsMetricLabel: 'Métrica',
@@ -4118,6 +4154,9 @@ export const es: FormsMessages = {
       title: 'Respuestas',
       subtitle: 'Todas las respuestas a este formulario.',
       statusAll: 'Todas',
+      timezoneLabel: 'Zona horaria del workspace',
+      timezoneHint: 'Las fechas de abajo se leen en esta zona. La comparte todo el workspace.',
+      timezoneReadOnly: 'Solo un administrador puede cambiarla.',
       statusCompleted: 'Completadas',
       statusPartial: 'Parciales',
       badgeCompleted: 'Completada',

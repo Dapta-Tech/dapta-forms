@@ -2,7 +2,9 @@ import type { ReactNode } from 'react';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { getMessages } from '@quill/shared';
-import { adminApi, ApiError } from '@/lib/admin-api';
+import { adminApi, ApiError, isAdminRole } from '@/lib/admin-api';
+import { WorkspaceTimeZoneProvider } from '@/components/workspace-timezone';
+import { WorkspaceTimezoneBootstrap } from './_components/workspace-timezone-bootstrap';
 import { AdminShell } from '@/components/admin-shell';
 import { getLocale } from '@/lib/locale';
 import { getThemePref } from '@/lib/theme.server';
@@ -79,6 +81,16 @@ export default async function AdminLayout({ children }: { children: ReactNode })
           landingDistinctId: sanitizeLandingDistinctId(jar.get(PH_ID_COOKIE)?.value),
         }}
       />
+      {/* The workspace's zone for every client component that prints a date,
+          and the one-time seed from the first admin's browser (see the
+          bootstrap). Staff entering an estate workspace never seed it: the
+          zone belongs to the team that works there, not to whoever looked. */}
+      <WorkspaceTimezoneBootstrap
+        accountId={me.accountId}
+        timezone={me.timezone}
+        canClaim={isAdminRole(me.role) && me.accessGrant !== 'staff'}
+        message={chrome.timezoneAutoSet}
+      />
       <AdminShell
         initialCollapsed={initialCollapsed}
         themePref={await getThemePref()}
@@ -89,7 +101,7 @@ export default async function AdminLayout({ children }: { children: ReactNode })
         staff={me.staff}
         user={{ displayName: me.displayName, email: me.email }}
       >
-        {children}
+        <WorkspaceTimeZoneProvider timeZone={me.timezone}>{children}</WorkspaceTimeZoneProvider>
       </AdminShell>
     </ToastProvider>
   );
