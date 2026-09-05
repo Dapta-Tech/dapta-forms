@@ -191,6 +191,8 @@ export interface FormRow {
    * `accountId`, never by this.
    */
   createdBy: string | null;
+  /** The folder this form is filed in (0021); null = unfiled. */
+  folderId: string | null;
   createdAt: number;
   updatedAt: number;
 }
@@ -201,6 +203,8 @@ export interface FormSummary {
   slug: string;
   /** Epoch-ms of the last brand-kit apply; null when never applied or reverted. */
   brandAppliedAt: number | null;
+  /** The folder this form is filed in (0021); null = unfiled. */
+  folderId: string | null;
   createdAt: number;
   updatedAt: number;
 }
@@ -216,6 +220,7 @@ function mapForm(r: Record<string, unknown>): FormRow {
     publishedAt: r.published_at == null ? null : Number(r.published_at),
     brandAppliedAt: r.brand_applied_at == null ? null : Number(r.brand_applied_at),
     createdBy: r.created_by == null ? null : String(r.created_by),
+    folderId: r.folder_id == null ? null : String(r.folder_id),
     createdAt: Number(r.created_at),
     updatedAt: Number(r.updated_at),
   };
@@ -328,7 +333,7 @@ function isFormAccountSlugConflict(error: unknown): boolean {
 
 export async function listForms(db: Db, accountId: string): Promise<FormSummary[]> {
   const rows = await db.all<Record<string, unknown>>(
-    sql`SELECT id, name, slug, brand_applied_at, created_at, updated_at FROM form
+    sql`SELECT id, name, slug, brand_applied_at, folder_id, created_at, updated_at FROM form
         WHERE account_id = ${accountId} ORDER BY updated_at DESC, created_at DESC`,
   );
   return rows.map((r) => ({
@@ -336,6 +341,7 @@ export async function listForms(db: Db, accountId: string): Promise<FormSummary[
     name: String(r.name),
     slug: String(r.slug),
     brandAppliedAt: r.brand_applied_at == null ? null : Number(r.brand_applied_at),
+    folderId: r.folder_id == null ? null : String(r.folder_id),
     createdAt: Number(r.created_at),
     updatedAt: Number(r.updated_at),
   }));
@@ -430,7 +436,7 @@ export async function getFormById(db: Db, accountId: string, id: string): Promis
 export async function createForm(
   db: Db,
   accountId: string,
-  input: { name: string; slug?: string; config?: unknown },
+  input: { name: string; slug?: string; config?: unknown; folderId?: string | null },
   /**
    * `member.id` of the author, for per-user analytics (migration 0010).
    * MUST come from the resolved principal, never from request input — this is
@@ -440,6 +446,15 @@ export async function createForm(
   createdBy?: string | null,
 ): Promise<CrudResult<FormRow>> {
   const config = input.config ?? { version: 1, steps: [] };
+  // A folder is named by id and must be this account's: filing a form into a
+  // stranger's folder would leak its existence and misfile the form.
+  const folderId = input.folderId ?? null;
+  if (folderId != null) {
+    const folder = await db.get<{ id: string }>(
+      sql`SELECT id FROM form_folder WHERE account_id = ${accountId} AND id = ${folderId} LIMIT 1`,
+    );
+    if (!folder) return { ok: false, reason: 'NOT_FOUND', message: 'No such folder.' };
+  }
 
   for (let attempt = 0; attempt < FORM_SLUG_INSERT_ATTEMPTS; attempt++) {
     const slug = await uniqueFormSlug(db, accountId, input.slug ?? input.name);
@@ -447,9 +462,9 @@ export async function createForm(
     const now = Date.now();
     try {
       await db.run(
-        sql`INSERT INTO form (id, account_id, name, slug, config, created_by, created_at, updated_at)
+        sql`INSERT INTO form (id, account_id, name, slug, config, created_by, folder_id, created_at, updated_at)
             VALUES (${id}, ${accountId}, ${input.name}, ${slug}, ${jsonParam(config)},
-                    ${createdBy ?? null}, ${now}, ${now})`,
+                    ${createdBy ?? null}, ${folderId}, ${now}, ${now})`,
       );
     } catch (error) {
       if (attempt + 1 < FORM_SLUG_INSERT_ATTEMPTS && isFormAccountSlugConflict(error)) continue;
@@ -814,6 +829,8 @@ export async function duplicateForm(
     {
       name: `${src.name} (copy)`,
       slug: src.slug,
+      // The copy lands on the same shelf as the original.
+      folderId: src.folderId,
       // NOT verbatim: the HubSpot mirror-form pointer is the original's, and a
       // copy that inherits it delivers its submissions AS the original.
       config: withoutOwnedMirrorState(src.config),

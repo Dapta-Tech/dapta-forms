@@ -5,7 +5,9 @@ import { useFormStatus } from 'react-dom';
 import { Modal } from '@/components/modal';
 import { cn } from '@/lib/cn';
 import { Button } from '@/components/ui/button';
+import { Select } from '@/components/ui/select';
 import { createFormAction } from '@/app/admin/actions';
+import type { Folder } from '@/lib/admin-api';
 
 interface Labels {
   create: string;
@@ -21,6 +23,9 @@ interface Labels {
   layoutSlidesDesc: string;
   layoutVertical: string;
   layoutVerticalDesc: string;
+  /** Folder picker (only when the surface has folders). */
+  folderLabel?: string;
+  folderNone?: string;
 }
 
 function SubmitButton({ label }: { label: string }) {
@@ -45,17 +50,32 @@ function SubmitButton({ label }: { label: string }) {
 export function CreateForm({
   labels,
   variant = 'button',
+  size,
+  triggerLabel,
   cardTitle,
   cardDesc,
+  folders = [],
+  defaultFolderId = null,
+  locale = 'en',
 }: {
   labels: Labels;
   variant?: 'button' | 'outline' | 'card';
+  /** Button size override (a folder header uses `sm`). */
+  size?: 'sm' | 'default';
+  /** Trigger text override (the header says "New form", the dialog keeps its title). */
+  triggerLabel?: string;
   cardTitle?: string;
   cardDesc?: string;
+  /** The workspace's folders; with any, the dialog offers a folder picker. */
+  folders?: Folder[];
+  /** Preselected folder (a section's own "New form"). */
+  defaultFolderId?: string | null;
+  locale?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [nameError, setNameError] = useState(false);
   const [layout, setLayout] = useState<'slides' | 'vertical'>('slides');
+  const [folderId, setFolderId] = useState<string>(defaultFolderId ?? '');
 
   // Every open starts clean and every dismissal clears the error, so a Cancel
   // (or ESC, or overlay click) can't leave a stale "name required" on the next,
@@ -63,6 +83,7 @@ export function CreateForm({
   const openDialog = () => {
     setNameError(false);
     setLayout('slides');
+    setFolderId(defaultFolderId ?? '');
     setOpen(true);
   };
   const closeDialog = () => {
@@ -84,8 +105,8 @@ export function CreateForm({
         {cardDesc ? <span className="text-sm text-muted-foreground">{cardDesc}</span> : null}
       </button>
     ) : (
-      <Button variant={variant === 'outline' ? 'outline' : 'default'} onClick={openDialog}>
-        <i aria-hidden className="pi pi-plus" style={{ fontSize: 12 }} /> {labels.create}
+      <Button variant={variant === 'outline' ? 'outline' : 'default'} size={size} onClick={openDialog}>
+        <i aria-hidden className="pi pi-plus" style={{ fontSize: 12 }} /> {triggerLabel ?? labels.create}
       </Button>
     );
 
@@ -135,6 +156,22 @@ export function CreateForm({
               </span>
             ) : null}
           </label>
+          {folders.length > 0 && labels.folderLabel ? (
+            <label className="flex flex-col gap-1.5 text-sm">
+              <span className="font-medium">{labels.folderLabel}</span>
+              <input type="hidden" name="folderId" value={folderId} />
+              <Select
+                ariaLabel={labels.folderLabel}
+                value={folderId}
+                locale={locale}
+                options={[
+                  { value: '', label: labels.folderNone ?? '' },
+                  ...folders.map((f) => ({ value: f.id, label: f.name })),
+                ]}
+                onChange={setFolderId}
+              />
+            </label>
+          ) : null}
 
           {/* Layout picker: two visual cards. Rides the form as a hidden input
               so the server action reads one flat FormData — no client fetch. */}

@@ -48,6 +48,11 @@ import {
   getMemberProfileRaw,
   setMemberLocale,
   setMemberProfile,
+  createFolder,
+  deleteFolder,
+  listFolders,
+  renameFolder,
+  setFormFolder,
 } from '@quill/db';
 import {
   defaultSubmissionTemplate,
@@ -73,6 +78,9 @@ import {
   onboardingProgressSchema,
   workspaceCreateSchema,
   workspaceRenameSchema,
+  folderInputSchema,
+  formCreateInputSchema,
+  formFolderPatchSchema,
 } from '@quill/types';
 import { ZodError } from 'zod';
 import { AdminService } from './admin.service';
@@ -116,6 +124,11 @@ function maskForm<T extends { config: unknown; draftConfig?: unknown }>(form: T)
     config: maskConfigSecrets(form.config),
     ...(form.draftConfig != null ? { draftConfig: maskConfigSecrets(form.draftConfig) } : {}),
   };
+}
+
+/** The client shape of a folder: the account id never leaves the server. */
+function folderView(f: { id: string; name: string; createdAt: number; updatedAt: number }) {
+  return { id: f.id, name: f.name, createdAt: f.createdAt, updatedAt: f.updatedAt };
 }
 
 /** Host-authed CRUD for forms + submissions + members, and identity/vanity. */
@@ -462,7 +475,9 @@ export class AdminCrudController {
   @HttpCode(201)
   async createForm(@Req() req: ReqLike, @Body() body: unknown) {
     const p = await this.auth.resolveHost(req);
-    const input = parse(formInputSchema, body);
+    // The create schema (not the shared input one): only creation may name a
+    // folder; PUT /v1/forms/:id never moves a form, PATCH /forms/:id/folder does.
+    const input = parse(formCreateInputSchema, body);
     // The other path that AUTHORS a `destinations` array (PUT /forms/:id stages
     // a draft, and drafts strip the key; duplicate copies stored state and is
     // exempt — see `hasExtraHubspotDestination`). Same one-HubSpot rule as
@@ -621,6 +636,51 @@ export class AdminCrudController {
     const existing = await getFormById(this.db, p.accountId, id);
     if (!existing) return; // idempotent — already gone (204)
     await deleteForm(this.db, p.accountId, id);
+  }
+
+  // --- Form folders (0021) ----------------------------------------------------
+  //
+  // Organising forms is the same right as creating them: any active member of
+  // the workspace, no admin gate (mirrors POST /v1/forms above).
+
+  /** The account's folders, alphabetically. */
+  @Get('folders')
+  async listFolders(@Req() req: ReqLike) {
+    const p = await this.auth.resolveHost(req);
+    return (await listFolders(this.db, p.accountId)).map(folderView);
+  }
+
+  /** Create a folder. 409 NAME_TAKEN when the account already has that name (case-insensitively). */
+  @Post('folders')
+  @HttpCode(201)
+  async createFolder(@Req() req: ReqLike, @Body() body: unknown) {
+    const p = await this.auth.resolveHost(req);
+    const input = parse(folderInputSchema, body);
+    return folderView(unwrapCrud(await createFolder(this.db, p.accountId, input.name)));
+  }
+
+  /** Rename a folder. 404 for another account's folder, 409 NAME_TAKEN on a clash. */
+  @Patch('folders/:id')
+  async renameFolder(@Req() req: ReqLike, @Param('id') id: string, @Body() body: unknown) {
+    const p = await this.auth.resolveHost(req);
+    const input = parse(folderInputSchema, body);
+    return folderView(unwrapCrud(await renameFolder(this.db, p.accountId, id, input.name)));
+  }
+
+  /** Delete a folder: its forms are unfiled, never deleted. Idempotent (204 either way). */
+  @Delete('folders/:id')
+  @HttpCode(204)
+  async deleteFolder(@Req() req: ReqLike, @Param('id') id: string) {
+    const p = await this.auth.resolveHost(req);
+    await deleteFolder(this.db, p.accountId, id);
+  }
+
+  /** File a form in a folder (null unfiles). 404 for a form or folder outside the account. */
+  @Patch('forms/:id/folder')
+  async setFormFolder(@Req() req: ReqLike, @Param('id') id: string, @Body() body: unknown) {
+    const p = await this.auth.resolveHost(req);
+    const input = parse(formFolderPatchSchema, body);
+    return unwrapCrud(await setFormFolder(this.db, p.accountId, id, input.folderId));
   }
 
   /**
