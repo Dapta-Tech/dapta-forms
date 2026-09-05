@@ -101,6 +101,8 @@ export interface MeView {
    * un-sliceable by campaign, which is most of the reason to measure it.
    */
   attribution: Attribution | null;
+  /** The workspace's IANA timezone (0020), or null for UTC. */
+  timezone: string | null;
   /** `'staff'` when the caller is in this workspace by access grant, not by membership (0016). */
   accessGrant: 'staff' | null;
   /**
@@ -129,8 +131,9 @@ export async function getMe(db: Db, accountId: string, memberId: string): Promis
     attribution: unknown;
     access_grant: string | null;
     locale: string | null;
+    timezone: string | null;
   }>(
-    sql`SELECT a.code, a.name, a.vanity_slug, a.onboarding_completed_at, a.attribution,
+    sql`SELECT a.code, a.name, a.vanity_slug, a.onboarding_completed_at, a.attribution, a.timezone,
                m.handle, m.display_name, m.email, m.role, m.status, m.access_grant, m.locale
         FROM account a JOIN member m ON m.account_id = a.id
         WHERE a.id = ${accountId} AND m.id = ${memberId} LIMIT 1`,
@@ -157,6 +160,7 @@ export async function getMe(db: Db, accountId: string, memberId: string): Promis
     // dashboard page. Unreadable tags degrade to "not known", never to a 500.
     attribution: parseAttributionColumn(row.attribution),
     accessGrant: row.access_grant === 'staff' ? 'staff' : null,
+    timezone: row.timezone ?? null,
     // Narrowed here, not trusted: the column is plain text and predates this
     // field, so an unrecognised value reads as "never chose" instead of
     // reaching a catalog that has no such locale.

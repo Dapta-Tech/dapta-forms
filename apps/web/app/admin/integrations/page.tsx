@@ -23,6 +23,7 @@ export const dynamic = 'force-dynamic';
 export default async function ConnectionsPage() {
   const locale = await getLocale();
   const c = getMessages(locale).admin.connections;
+  const timeZone = (await adminApi.me()).timezone ?? 'UTC';
 
   let data: IntegrationsResponse = { encryptionAvailable: false, providers: [] };
   let loadError = false;
@@ -58,6 +59,7 @@ export default async function ConnectionsPage() {
       />
       <WebhooksSection
         items={webhooks}
+        timeZone={timeZone}
         loadError={webhooksLoadError}
         m={c.webhooks}
         locale={locale}

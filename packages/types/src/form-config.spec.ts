@@ -17,6 +17,7 @@ import {
   formFolderPatchSchema,
   hasExtraHubspotDestination,
   submissionSchema,
+  workspaceTimezoneSchema,
 } from './index';
 
 /** The smallest config the schema accepts — one step, nothing configured. */
@@ -203,6 +204,19 @@ describe('hasExtraHubspotDestination', () => {
     it('still ignores webhooks on both sides', () => {
       expect(hasExtraHubspotDestination([webhook, webhook, hubspot], [hubspot])).toBe(false);
     });
+  });
+});
+
+describe('workspace timezone input', () => {
+  it('accepts a known IANA zone or null, rejects garbage and an unknown zone', () => {
+    expect(workspaceTimezoneSchema.parse({ timezone: 'America/Bogota' })).toEqual({ timezone: 'America/Bogota' });
+    expect(workspaceTimezoneSchema.parse({ timezone: null, onlyIfUnset: true })).toEqual({
+      timezone: null,
+      onlyIfUnset: true,
+    });
+    expect(() => workspaceTimezoneSchema.parse({ timezone: 'Mars/Olympus' })).toThrow();
+    expect(() => workspaceTimezoneSchema.parse({ timezone: 'drop table' })).toThrow();
+    expect(() => workspaceTimezoneSchema.parse({})).toThrow();
   });
 });
 

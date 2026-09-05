@@ -46,6 +46,9 @@ import {
   type MemberStatus,
   type MemberView,
   type WorkspaceRow,
+  claimAccountTimezone,
+  getAccountTimezone,
+  setAccountTimezone,
 } from '@quill/db';
 import { AUTH_PROVIDER, DB, WORKSPACE_PROJECTION } from './tokens';
 import type { AuthProvider, HostPrincipal, ReqLike, UpstreamIdentity } from './auth.provider';
@@ -243,6 +246,26 @@ export class WorkspaceService {
     }
     await renameAccount(this.db, p.accountId, name);
     return { accountId: p.accountId, name };
+  }
+
+  /**
+   * Set the workspace's timezone (admin/owner), a LOCAL fact: the identity
+   * service has no notion of a zone, so nothing goes upstream. `onlyIfUnset`
+   * is the dashboard's write-once seed from the first admin's browser: it
+   * applies only while the column is still NULL and reports whether it did.
+   */
+  async setTimezone(
+    req: ReqLike,
+    input: { timezone: string | null; onlyIfUnset?: boolean },
+  ): Promise<{ accountId: string; timezone: string | null; applied: boolean }> {
+    const p = await this.auth.resolveHost(req);
+    assertAdmin(p);
+    if (input.onlyIfUnset) {
+      const applied = input.timezone != null && (await claimAccountTimezone(this.db, p.accountId, input.timezone));
+      return { accountId: p.accountId, timezone: await getAccountTimezone(this.db, p.accountId), applied };
+    }
+    await setAccountTimezone(this.db, p.accountId, input.timezone);
+    return { accountId: p.accountId, timezone: input.timezone, applied: true };
   }
 
   /**

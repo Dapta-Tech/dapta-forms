@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useId, useState } from 'react';
-import type { FormsMessages, Locale } from '@quill/shared';
+import { formatDateTime, type FormsMessages, type Locale } from '@quill/shared';
+import { useWorkspaceTimeZone } from '@/components/workspace-timezone';
 import { Button } from '@/components/ui/button';
 import { Modal } from '@/components/modal';
 import { cn } from '@/lib/cn';
@@ -263,6 +264,7 @@ function DeliveryRow({
   locale: Locale;
   m: Msgs;
 }) {
+  const timeZone = useWorkspaceTimeZone();
   const [open, setOpen] = useState(false);
   const failed = isFailure(d);
   const isTest = d.action === WEBHOOK_PING_ACTION;
@@ -333,7 +335,7 @@ function DeliveryRow({
           ) : null}
         </div>
         <span className="shrink-0 text-[11px] text-muted-foreground">
-          {new Date(d.updatedAt).toLocaleString(locale)}
+          {formatDateTime(d.updatedAt, { locale, timeZone })}
         </span>
       </button>
 

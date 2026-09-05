@@ -1,4 +1,4 @@
-import { getMessages, t } from '@quill/shared';
+import { formatDate, getMessages, t } from '@quill/shared';
 import { adminApi } from '@/lib/admin-api';
 import { getLocale } from '@/lib/locale';
 import { PageHeader } from '@/components/ui/page-header';
@@ -47,10 +47,13 @@ export default async function FormsList() {
     actionFailed: m.actionFailed,
     cancel: m.cancel,
   };
-  // Formatted once on the server clock, the same way the flat list did; the
-  // workspace-timezone change switches this to the shared formatter.
+  // Formatted once on the server, in the workspace's zone (UTC until it is
+  // set), so every teammate reads the same day.
   const updatedByForm = Object.fromEntries(
-    forms.map((f) => [f.id, t(m.updated, { when: new Date(f.updatedAt).toLocaleDateString(locale) })]),
+    forms.map((f) => [
+      f.id,
+      t(m.updated, { when: formatDate(f.updatedAt, { locale, timeZone: me.timezone ?? 'UTC' }) }),
+    ]),
   );
 
   return (

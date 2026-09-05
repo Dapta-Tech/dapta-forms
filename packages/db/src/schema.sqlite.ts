@@ -32,6 +32,8 @@ export const account = sqliteTable('account', {
   activatedAt: integer('activated_at'),
   /** Milestone CLAIM: epoch-ms of the first form view. Same write-once discipline. */
   firstViewedAt: integer('first_viewed_at'),
+  /** The workspace's IANA timezone (0020); NULL = UTC. See the Postgres twin. */
+  timezone: text('timezone'),
   /**
    * Onboarding wizard state AND result (TEXT JSON, see 0011) —
    * `accountOnboardingSchema` in @quill/types. Written on every step advance, so

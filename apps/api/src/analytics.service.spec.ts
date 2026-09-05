@@ -594,3 +594,77 @@ describe('parseIntParam (NaN guard for limit/offset)', () => {
     expect(page.items.length).toBeGreaterThan(0);
   });
 });
+
+describe('workspace timezone: day cuts and the CSV local columns', () => {
+  const HOUR = 3_600_000;
+  // D1 = a UTC midnight; a submission at D1 + 2h is the PREVIOUS day in Bogota.
+  const D1 = Math.floor(NOW / DAY) * DAY + 10 * DAY;
+
+  it('buckets a submission at D1+2h into the previous day in Bogota, and names the zone', async () => {
+    await insertSubmission({
+      session: 'tz-1',
+      data: { role: 'founder' },
+      score: 10,
+      startedAt: D1 + HOUR,
+      completedAt: D1 + 2 * HOUR,
+    });
+    const utc = await svc.funnel(accountId, formId, { from: D1 - DAY, to: D1 + DAY - 1 });
+    const bogota = await svc.funnel(accountId, formId, { from: D1 - DAY, to: D1 + DAY - 1 }, 'America/Bogota');
+    const dayOf = (r: typeof utc, t: number) => r!.trends.find((p) => p.t === t)?.submissions ?? 0;
+    expect(dayOf(utc, D1)).toBe(1);
+    expect(dayOf(utc, D1 - DAY)).toBe(0);
+    expect(dayOf(bogota, D1 - DAY)).toBe(1);
+    expect(dayOf(bogota, D1)).toBe(0);
+    expect(bogota!.range.timeZone).toBe('America/Bogota');
+    expect(utc!.range.timeZone).toBe('UTC');
+  });
+
+  it('an unknown zone resolves as UTC rather than failing the request', async () => {
+    const r = await svc.funnel(accountId, formId, {}, 'Mars/Olympus');
+    expect(r!.range.timeZone).toBe('UTC');
+  });
+
+  it('the CSV keeps the UTC columns and adds started_at_local / completed_at_local in the zone', async () => {
+    await db.run(sql`UPDATE account SET timezone = 'America/Bogota' WHERE id = ${accountId}`);
+    await insertSubmission({
+      session: 'tz-csv',
+      data: { role: 'founder' },
+      score: 10,
+      startedAt: Date.UTC(2026, 8, 3, 23, 30),
+      completedAt: Date.UTC(2026, 8, 4, 0, 15),
+    });
+    const auth = {
+      resolveHost: async () => ({ accountId, memberId: 'test-member', role: 'owner' as const }),
+    } as unknown as AuthService;
+    const ctrl = new AnalyticsController(db, auth, svc);
+    const chunks: string[] = [];
+    const res = { setHeader: () => {}, write: (c: string) => void chunks.push(c), end: () => {} };
+    await ctrl.exportCsv({ headers: {} }, res, formId, undefined, undefined, undefined);
+    const lines = chunks.join('').trimEnd().split('\r\n');
+    expect(lines[0]).toMatch(/^id,session_id,status,score,started_at,completed_at,started_at_local,completed_at_local,/);
+    const row = lines.find((l) => l.includes('tz-csv'))!;
+    expect(row).toContain('2026-09-03T23:30:00.000Z');
+    expect(row).toContain('2026-09-03T18:30:00-05:00');
+    expect(row).toContain('2026-09-03T19:15:00-05:00');
+  });
+
+  it('an invalid workspace zone exports local columns as +00:00', async () => {
+    await db.run(sql`UPDATE account SET timezone = 'Mars/Olympus' WHERE id = ${accountId}`);
+    await insertSubmission({
+      session: 'tz-bad',
+      data: { role: 'founder' },
+      score: 10,
+      startedAt: Date.UTC(2026, 8, 3, 23, 30),
+      completedAt: Date.UTC(2026, 8, 3, 23, 45),
+    });
+    const auth = {
+      resolveHost: async () => ({ accountId, memberId: 'test-member', role: 'owner' as const }),
+    } as unknown as AuthService;
+    const ctrl = new AnalyticsController(db, auth, svc);
+    const chunks: string[] = [];
+    const res = { setHeader: () => {}, write: (c: string) => void chunks.push(c), end: () => {} };
+    await ctrl.exportCsv({ headers: {} }, res, formId, undefined, undefined, undefined);
+    const row = chunks.join('').split('\r\n').find((l) => l.includes('tz-bad'))!;
+    expect(row).toContain('2026-09-03T23:30:00+00:00');
+  });
+});

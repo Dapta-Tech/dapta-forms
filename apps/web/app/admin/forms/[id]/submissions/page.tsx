@@ -2,8 +2,9 @@ import { Suspense } from 'react';
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import type { FormConfig, SubmissionsPage } from '@quill/types';
-import { getMessages, t, type FormsMessages, type Locale } from '@quill/shared';
-import { adminApi, ApiError } from '@/lib/admin-api';
+import { formatDateTime, getMessages, t, type FormsMessages, type Locale } from '@quill/shared';
+import { adminApi, ApiError, isAdminRole } from '@/lib/admin-api';
+import { WorkspaceTimezoneField } from '@/app/admin/_components/workspace-timezone-field';
 import { getLocale } from '@/lib/locale';
 import { FormTabs } from '@/components/ui/form-tabs';
 import { Skeleton } from '@/components/skeleton';
@@ -34,6 +35,9 @@ export default async function SubmissionsPage({
   const status = parseStatus(sp.status);
   const offset = Math.max(0, Number(sp.offset ?? 0) || 0);
   const key = `${status}:${offset}`;
+  // The workspace zone every timestamp below is read in, and who may change it.
+  const me = await adminApi.me();
+  const timeZone = me.timezone ?? 'UTC';
 
   const exportQuery = status === 'all' ? '' : `?status=${status}`;
 
@@ -54,17 +58,37 @@ export default async function SubmissionsPage({
             {m.submissions.export}
           </a>
         </div>
-        <SubmissionsFilter
-          labels={{
-            all: m.submissions.statusAll,
-            completed: m.submissions.statusCompleted,
-            partial: m.submissions.statusPartial,
-          }}
-        />
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <SubmissionsFilter
+            labels={{
+              all: m.submissions.statusAll,
+              completed: m.submissions.statusCompleted,
+              partial: m.submissions.statusPartial,
+            }}
+          />
+          {/* The SHARED workspace zone, right where the timestamps are: an
+              admin can fix it here, a member sees which zone applies. */}
+          <WorkspaceTimezoneField
+            accountId={me.accountId}
+            value={me.timezone}
+            canEdit={isAdminRole(me.role)}
+            variant="inline"
+            locale={locale}
+            labels={{
+              label: m.submissions.timezoneLabel,
+              help: m.submissions.timezoneHint,
+              saved: m.settings.workspaceTimezoneSaved,
+              error: m.settings.workspaceTimezoneError,
+              unset: m.settings.workspaceTimezoneUnset,
+              utc: m.settings.workspaceTimezoneUtc,
+              readOnly: m.submissions.timezoneReadOnly,
+            }}
+          />
+        </div>
       </div>
 
       <Suspense key={key} fallback={<Skeleton className="h-80 w-full" />}>
-        <SubmissionsData id={id} status={status} offset={offset} locale={locale} m={m} />
+        <SubmissionsData id={id} status={status} offset={offset} locale={locale} timeZone={timeZone} m={m} />
       </Suspense>
     </div>
   );
@@ -83,12 +107,14 @@ async function SubmissionsData({
   status,
   offset,
   locale,
+  timeZone,
   m,
 }: {
   id: string;
   status: 'all' | 'completed' | 'partial';
   offset: number;
   locale: Locale;
+  timeZone: string;
   m: FormsMessages['admin'];
 }) {
   let form: Awaited<ReturnType<typeof adminApi.getForm>>;
@@ -163,7 +189,7 @@ async function SubmissionsData({
               return (
                 <tr key={row.id} className="border-b border-border last:border-b-0 align-top">
                   <td className="whitespace-nowrap px-4 py-3 text-muted-foreground">
-                    {new Date(when).toLocaleString(locale)}
+                    {formatDateTime(when, { locale, timeZone })}
                   </td>
                   <td className="whitespace-nowrap px-4 py-3">
                     <span
