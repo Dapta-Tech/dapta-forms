@@ -55,7 +55,8 @@ export interface PreviewConfigMessage {
   config: FormConfig;
   /** Already resolved through `publicTitle` by the sender. */
   name: string;
-  locale: string;
+  /** The FORM's language (its `language`, else the editor's), never free text. */
+  locale: 'en' | 'es';
   layout: FormLayout;
   /**
    * Where the renderer should START: a runtime step index, or `'cover'` for the
@@ -120,7 +121,7 @@ export function readPreviewMessage(
       revision: typeof body.revision === 'number' ? body.revision : 0,
       config: config as FormConfig,
       name: typeof body.name === 'string' ? body.name : '',
-      locale: typeof body.locale === 'string' ? body.locale : 'en',
+      locale: body.locale === 'es' ? 'es' : 'en',
       layout: body.layout === 'vertical' ? 'vertical' : 'slides',
       screen,
     };

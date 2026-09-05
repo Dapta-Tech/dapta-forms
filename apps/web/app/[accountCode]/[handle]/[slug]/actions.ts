@@ -12,7 +12,7 @@ import type { BookingCallbackInput } from '@quill/types';
 export async function submitFormAction(
   accountCode: string,
   slug: string,
-  payload: { sessionId: string; data: Record<string, unknown>; partial?: boolean },
+  payload: { sessionId: string; data: Record<string, unknown>; partial?: boolean; locale?: 'en' | 'es' },
 ): Promise<{ ok: boolean; score?: number; outcome?: string | null; message?: string }> {
   const res = await postSubmission(accountCode, slug, payload);
   return { ok: res.ok, score: res.score, outcome: res.outcome, message: res.message };

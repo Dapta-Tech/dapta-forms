@@ -64,7 +64,9 @@ export function PreviewDocument() {
       <style>{SCROLLBAR_RESET}</style>
       {/* Same wrapper depth as the public page (`page.tsx` renders the renderer
           inside one plain div), so nothing about the box tree differs. */}
-      <div data-testid="live-preview" data-preview-state={input ? 'ready' : 'waiting'}>
+      {/* `lang` mirrors the public page's wrapper: the FORM's language, not the
+          editor's, so the preview is announced the way the real page will be. */}
+      <div data-testid="live-preview" data-preview-state={input ? 'ready' : 'waiting'} lang={input?.locale}>
         {input ? (
           input.layout === 'vertical' ? (
             // One page scrolls — there is no screen to start at, so no `startAt`.

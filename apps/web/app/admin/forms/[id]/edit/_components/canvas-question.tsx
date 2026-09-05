@@ -14,6 +14,7 @@ import {
   uniqueKey,
 } from '@quill/engine';
 import { onAccent, DEFAULT_ACCENT, getMessages } from '@quill/shared';
+import { resolveFormLabels } from '@quill/shared';
 import { clientLocale } from '@/lib/client-locale';
 import { cn } from '@/lib/cn';
 import { iconForStep, hasOptions } from './question-types';
@@ -165,6 +166,9 @@ export function CanvasQuestion({
         : { background: accent, color: accentText };
   const progress = total > 0 ? Math.round(((index + 1) / total) * 100) : 0;
   const isLast = index + 1 >= total;
+  // The same resolver the public form and the preview use: the author's
+  // overrides, else the stock copy of the FORM's language (not the editor's).
+  const formLabels = resolveFormLabels(config, config.language ?? (clientLocale() === 'es' ? 'es' : 'en'));
 
   // A reveal is not a question — it asks nothing, has no title, no description
   // and no Next button, and the respondent sees a spinner over the configured
@@ -234,7 +238,7 @@ export function CanvasQuestion({
               )}
               style={btnStyle}
             >
-              {step.buttonText || (isLast ? m.canvas.submit : m.canvas.next)}
+              {step.buttonText || (isLast ? formLabels.submit : formLabels.next)}
               <i aria-hidden className="pi pi-arrow-right" style={{ fontSize: 12 }} />
             </button>
           </div>
