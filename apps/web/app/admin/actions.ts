@@ -17,8 +17,11 @@ export async function createFormAction(formData: FormData): Promise<void> {
   // that predate the field): the person building it in Spanish expects Spanish
   // buttons, not whatever each visitor's browser asks for.
   const language = await getLocale();
+  // The folder preselected by a section's "New form" (or picked in the dialog).
+  const folderId = String(formData.get('folderId') ?? '').trim() || null;
   const created = await adminApi.createForm({
     name,
+    ...(folderId ? { folderId } : {}),
     config: { version: 1, steps: [], language, ...(layout === 'vertical' ? { layout: 'vertical' } : {}) },
   });
   revalidatePath('/admin');

@@ -12,6 +12,7 @@ import {
 import type { NotificationSettingView } from '@/lib/admin-api';
 import { saveNotificationAction, resetNotificationAction } from './actions';
 import { callAction } from '@/lib/call-action';
+import { hasToken } from '@/lib/notification-preview';
 
 export interface NotificationLabels {
   heading: string;
@@ -42,7 +43,14 @@ export interface NotificationLabels {
   tokenScore: string;
   tokenOutcomeLabel: string;
   tokenFormLink: string;
+  tokenAnswers: string;
+  answersMissing: string;
   formOverrideNote: string;
+}
+
+/** `{{formLink}}` is produced for the owner notice only; do not offer a dead chip on the receipt. */
+function visibleTokens(key: string, tokens: string[]): string[] {
+  return key === 'submission_confirmed' ? tokens.filter((t) => t !== 'formLink') : tokens;
 }
 
 /**
@@ -126,7 +134,11 @@ function NotificationEmailCard({
     score: labels.tokenScore,
     outcomeLabel: labels.tokenOutcomeLabel,
     formLink: labels.tokenFormLink,
+    answers: labels.tokenAnswers,
   };
+  // The owner notice exists to carry the answers; a body without the token
+  // silently sends an email with nothing useful in it, so say so permanently.
+  const answersMissing = setting.emailKey === 'submission_received' && !hasToken(value.body, 'answers');
 
   /** Reconcile local state with a freshly-persisted setting. */
   function applyPersisted(next: NotificationSettingView) {
@@ -199,7 +211,7 @@ function NotificationEmailCard({
       <NotificationEmailFields
         value={value}
         onChange={setValue}
-        tokens={setting.tokens}
+        tokens={visibleTokens(setting.emailKey, setting.tokens)}
         labels={{
           enabledLabel: labels.enabledLabel,
           enabledHint: labels.enabledHint,
@@ -211,6 +223,7 @@ function NotificationEmailCard({
           previewSubject: labels.previewSubject,
           tokenLabels,
         }}
+        notice={answersMissing ? labels.answersMissing : null}
       />
 
       {/* Actions */}

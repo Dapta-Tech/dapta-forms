@@ -260,6 +260,16 @@ export interface FormSummary {
   slug: string;
   /** Epoch-ms of the last brand-kit apply; null when never applied or reverted. */
   brandAppliedAt: number | null;
+  /** The folder the form is filed in; null = unfiled. */
+  folderId: string | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+/** A form folder: flat, named only, unique per workspace without regard to case. */
+export interface Folder {
+  id: string;
+  name: string;
   createdAt: number;
   updatedAt: number;
 }
@@ -574,7 +584,7 @@ export const adminApi = {
   // Forms
   listForms: () => req<FormSummary[]>('GET', '/v1/forms'),
   getForm: (id: string) => req<FormDetail>('GET', `/v1/forms/${id}`),
-  createForm: (b: { name: string; slug?: string; config?: unknown }) =>
+  createForm: (b: { name: string; slug?: string; config?: unknown; folderId?: string | null }) =>
     req<FormDetail>('POST', '/v1/forms', b),
   updateForm: (id: string, b: { name?: string; config?: unknown }) =>
     req<FormDetail>('PUT', `/v1/forms/${id}`, b),
@@ -590,6 +600,15 @@ export const adminApi = {
   /** Publish the pending draft config (no-op when no draft is pending). */
   publishForm: (id: string) => req<FormDetail>('POST', `/v1/forms/${id}/publish`),
   deleteForm: (id: string) => req<void>('DELETE', `/v1/forms/${id}`),
+
+  // Form folders
+  listFolders: () => req<Folder[]>('GET', '/v1/folders'),
+  createFolder: (name: string) => req<Folder>('POST', '/v1/folders', { name }),
+  renameFolder: (id: string, name: string) => req<Folder>('PATCH', `/v1/folders/${id}`, { name }),
+  deleteFolder: (id: string) => req<void>('DELETE', `/v1/folders/${id}`),
+  /** File a form in a folder; null unfiles it. */
+  setFormFolder: (id: string, folderId: string | null) =>
+    req<{ id: string; folderId: string | null }>('PATCH', `/v1/forms/${id}/folder`, { folderId }),
 
   // Workspace brand kit (reads open to members; writes + apply/revert admin/owner)
   getBranding: () => req<BrandingResponse>('GET', '/v1/branding'),

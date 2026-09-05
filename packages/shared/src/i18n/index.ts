@@ -141,6 +141,12 @@ export interface FormsMessages {
         light: string;
         next: string;
       };
+      /**
+       * Where the "Docs" nav item goes: the Forms documentation in THIS
+       * language. Lives in the catalog because the shell only receives the
+       * localized messages, never the locale itself. Always an absolute URL.
+       */
+      docsHref: string;
       /** Left-nav item labels (icon + label). */
       nav: {
         home: string;
@@ -148,6 +154,8 @@ export interface FormsMessages {
         submissions: string;
         analytics: string;
         integrations: string;
+        /** The product documentation, an EXTERNAL link (see `docsHref`). */
+        docs: string;
         /**
          * The door to the wider platform (agents), an EXTERNAL link. Rendered
          * only when the deployment configures a platform URL, so a fork's rail
@@ -471,6 +479,9 @@ export interface FormsMessages {
       tokenScore: string;
       tokenOutcomeLabel: string;
       tokenFormLink: string;
+      tokenAnswers: string;
+      /** Permanent warning when the owner notice body lacks `{{answers}}`. */
+      answersMissing: string;
       /** Muted pointer: forms can override these from their Connect tab. */
       formOverrideNote: string;
     };
@@ -517,6 +528,44 @@ export interface FormsMessages {
       open: string;
       connect: string;
       openForm: string;
+      /** Search box over the loaded list (name or slug, no case, no accents). */
+      searchPlaceholder: string;
+      searchLabel: string;
+      searchClear: string;
+      searchEmpty: string;
+      /** "{count} results" live announcement. */
+      searchResults: string;
+      /** The keyboard hint shown inside the search box. */
+      searchShortcut: string;
+      /** Folders: sections of the list. */
+      unfiled: string;
+      folderCount: string; // {count}
+      folderCountOne: string;
+      newFolder: string;
+      newFolderTitle: string;
+      folderCreate: string;
+      renameFolder: string;
+      renameFolderTitle: string;
+      folderSave: string;
+      folderNameLabel: string;
+      folderNamePlaceholder: string;
+      folderNameRequired: string;
+      folderNameTaken: string;
+      deleteFolder: string;
+      deleteFolderConfirm: string; // {name} {forms} (the already-pluralised count label)
+      folderMenu: string;
+      collapse: string;
+      expand: string;
+      /** "New form" on a folder header, creating straight into it. */
+      createIn: string;
+      folderLabel: string;
+      folderNone: string;
+      moveTo: string;
+      moveBack: string;
+      moveFailed: string;
+      dragHandle: string;
+      dropHere: string;
+      actionFailed: string;
     };
     /** The form editor (builder). */
     editor: {
@@ -1671,6 +1720,7 @@ export interface FormsMessages {
     cancel: string;
     /** Per-surface dialog titles (the body reuses each surface's *Confirm copy). */
     deleteFormTitle: string;
+    deleteFolderTitle: string;
     deleteQuestionTitle: string;
     deleteSubmissionTitle: string;
     removeMemberTitle: string;
@@ -1776,12 +1826,14 @@ export const en: FormsMessages = {
         light: 'Light',
         next: 'Switch to',
       },
+      docsHref: 'https://docs.dapta.ai/dapta-forms/forms',
       nav: {
         home: 'Home',
         forms: 'Forms',
         submissions: 'Submissions',
         analytics: 'Analytics',
         integrations: 'Integrations',
+        docs: 'Docs',
         agents: 'Dapta Agents',
       },
       profileMenu: {
@@ -2057,7 +2109,10 @@ export const en: FormsMessages = {
       tokenRespondentEmail: 'Respondent email',
       tokenScore: 'Score',
       tokenOutcomeLabel: 'Outcome',
-      tokenFormLink: 'Form link',
+      tokenFormLink: 'Submissions link',
+      tokenAnswers: 'Answers',
+      answersMissing:
+        'This email does not include {{answers}}, so the answers will not be in it. Insert the Answers variable to add them.',
       formOverrideNote: 'Each form can override these emails from its Connect tab in the editor.',
     },
     login: {
@@ -2102,6 +2157,39 @@ export const en: FormsMessages = {
       open: 'Open',
       connect: 'Connect',
       openForm: 'Open form',
+      searchPlaceholder: 'Search forms',
+      searchLabel: 'Search forms by name or link',
+      searchClear: 'Clear search',
+      searchEmpty: 'No forms match your search.',
+      searchResults: '{count} forms match',
+      searchShortcut: 'Ctrl K',
+      unfiled: 'Unfiled',
+      folderCount: '{count} forms',
+      folderCountOne: '1 form',
+      newFolder: 'New folder',
+      newFolderTitle: 'Create a folder',
+      folderCreate: 'Create folder',
+      renameFolder: 'Rename',
+      renameFolderTitle: 'Rename folder',
+      folderSave: 'Save',
+      folderNameLabel: 'Folder name',
+      folderNamePlaceholder: 'e.g. Sales',
+      folderNameRequired: 'Give the folder a name.',
+      folderNameTaken: 'A folder with that name already exists.',
+      deleteFolder: 'Delete folder',
+      deleteFolderConfirm: 'Delete “{name}”? The forms inside ({forms}) are kept and move to Unfiled.',
+      folderMenu: 'Folder actions',
+      collapse: 'Collapse',
+      expand: 'Expand',
+      createIn: 'New form',
+      folderLabel: 'Folder',
+      folderNone: 'No folder',
+      moveTo: 'Move to folder',
+      moveBack: 'No folder',
+      moveFailed: 'Could not move the form. Please try again.',
+      dragHandle: 'Drag to a folder',
+      dropHere: 'Drop to move here',
+      actionFailed: 'Something went wrong. Please try again.',
     },
     editor: {
       back: 'Back to forms',
@@ -3168,6 +3256,7 @@ export const en: FormsMessages = {
     confirm: 'Confirm',
     cancel: 'Cancel',
     deleteFormTitle: 'Delete form',
+    deleteFolderTitle: 'Delete folder',
     deleteQuestionTitle: 'Delete question',
     deleteSubmissionTitle: 'Delete submission',
     removeMemberTitle: 'Remove member',
@@ -3273,12 +3362,14 @@ export const es: FormsMessages = {
         light: 'Claro',
         next: 'Cambiar a',
       },
+      docsHref: 'https://docs.dapta.ai/dapta-docs-es/dapta-forms/forms',
       nav: {
         home: 'Inicio',
         forms: 'Formularios',
         submissions: 'Respuestas',
         analytics: 'Analíticas',
         integrations: 'Integraciones',
+        docs: 'Documentación',
         agents: 'Dapta Agents',
       },
       profileMenu: {
@@ -3555,7 +3646,10 @@ export const es: FormsMessages = {
       tokenRespondentEmail: 'Correo del encuestado',
       tokenScore: 'Puntuación',
       tokenOutcomeLabel: 'Resultado',
-      tokenFormLink: 'Enlace del formulario',
+      tokenFormLink: 'Enlace a las respuestas',
+      tokenAnswers: 'Respuestas',
+      answersMissing:
+        'Este correo no incluye {{answers}}, así que las respuestas no aparecerán en él. Inserta la variable Respuestas para agregarlas.',
       formOverrideNote:
         'Cada formulario puede personalizar estos correos desde su pestaña Conectar en el editor.',
     },
@@ -3601,6 +3695,39 @@ export const es: FormsMessages = {
       open: 'Abrir',
       connect: 'Conectar',
       openForm: 'Abrir formulario',
+      searchPlaceholder: 'Buscar formularios',
+      searchLabel: 'Buscar formularios por nombre o enlace',
+      searchClear: 'Limpiar búsqueda',
+      searchEmpty: 'Ningún formulario coincide con tu búsqueda.',
+      searchResults: '{count} formularios coinciden',
+      searchShortcut: 'Ctrl K',
+      unfiled: 'Sin carpeta',
+      folderCount: '{count} formularios',
+      folderCountOne: '1 formulario',
+      newFolder: 'Nueva carpeta',
+      newFolderTitle: 'Crear una carpeta',
+      folderCreate: 'Crear carpeta',
+      renameFolder: 'Renombrar',
+      renameFolderTitle: 'Renombrar carpeta',
+      folderSave: 'Guardar',
+      folderNameLabel: 'Nombre de la carpeta',
+      folderNamePlaceholder: 'p. ej. Ventas',
+      folderNameRequired: 'Ponle un nombre a la carpeta.',
+      folderNameTaken: 'Ya existe una carpeta con ese nombre.',
+      deleteFolder: 'Eliminar carpeta',
+      deleteFolderConfirm: '¿Eliminar “{name}”? Los formularios que contiene ({forms}) se conservan y pasan a Sin carpeta.',
+      folderMenu: 'Acciones de la carpeta',
+      collapse: 'Contraer',
+      expand: 'Expandir',
+      createIn: 'Nuevo formulario',
+      folderLabel: 'Carpeta',
+      folderNone: 'Sin carpeta',
+      moveTo: 'Mover a carpeta',
+      moveBack: 'Sin carpeta',
+      moveFailed: 'No se pudo mover el formulario. Inténtalo de nuevo.',
+      dragHandle: 'Arrastra a una carpeta',
+      dropHere: 'Suelta para mover aquí',
+      actionFailed: 'Algo salió mal. Inténtalo de nuevo.',
     },
     editor: {
       back: 'Volver a formularios',
@@ -4674,6 +4801,7 @@ export const es: FormsMessages = {
     confirm: 'Confirmar',
     cancel: 'Cancelar',
     deleteFormTitle: 'Eliminar formulario',
+    deleteFolderTitle: 'Eliminar carpeta',
     deleteQuestionTitle: 'Eliminar pregunta',
     deleteSubmissionTitle: 'Eliminar respuesta',
     removeMemberTitle: 'Quitar miembro',

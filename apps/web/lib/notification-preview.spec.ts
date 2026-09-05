@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { interpolate, NOTIFICATION_SAMPLE } from './notification-preview';
+import { hasToken, interpolate, NOTIFICATION_SAMPLE } from './notification-preview';
 
 describe('notification preview interpolate', () => {
   it('substitutes known {{tokens}} from the sample and tolerates whitespace', () => {
@@ -16,6 +16,11 @@ describe('notification preview interpolate', () => {
     expect(interpolate('{{formName}}', { formName: '{{score}}', score: '9' })).toBe('{{score}}');
   });
 
+  it('carries a multi-line answers sample so the preview shows the block as the email will', () => {
+    expect(NOTIFICATION_SAMPLE.answers).toContain('\n');
+    expect(NOTIFICATION_SAMPLE.answers!.split('\n').every((line) => /: /.test(line))).toBe(true);
+  });
+
   it('renders the default owner template with all five tokens filled', () => {
     const body = [
       'You have a new submission on "{{formName}}".',
@@ -30,8 +35,18 @@ describe('notification preview interpolate', () => {
         'From: lead@acme.io',
         'Score: 15',
         'Outcome: Qualified',
-        'View submissions: https://forms.example.com/acme/lead-qualifier',
+        'View submissions: https://forms.example.com/admin/forms/lead-qualifier/submissions',
       ].join('\n'),
     );
+  });
+});
+
+describe('hasToken', () => {
+  it('finds the token with or without inner whitespace, and not another token', () => {
+    expect(hasToken('A\n{{answers}}', 'answers')).toBe(true);
+    expect(hasToken('{{ answers }}', 'answers')).toBe(true);
+    expect(hasToken('{{answers }}', 'answers')).toBe(true);
+    expect(hasToken('{{formName}} answers', 'answers')).toBe(false);
+    expect(hasToken('', 'answers')).toBe(false);
   });
 });
