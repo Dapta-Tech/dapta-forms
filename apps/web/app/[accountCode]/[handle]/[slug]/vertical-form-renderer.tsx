@@ -46,7 +46,7 @@ import {
   type FormOutcome,
   type FormReveal,
 } from '@quill/engine';
-import { getMessages, t } from '@quill/shared';
+import { getMessages, resolveFormLabels, t } from '@quill/shared';
 import type { FormConfig } from '@quill/types';
 import { FormLogo } from '@/components/public/form-logo';
 import { ClientLogosMarquee } from '@/components/public/client-logos-marquee';
@@ -165,6 +165,9 @@ export function VerticalFormRenderer({
   locale?: string;
 }) {
   const m = getMessages(locale).renderer;
+  // The form's button copy: author overrides, else the stock copy of `locale`.
+  const formLocale = locale === 'es' ? 'es' : 'en';
+  const labels = resolveFormLabels(config, formLocale);
   const sessionId = useSessionId(`quill-form-${accountCode}-${slug}`);
   // The cover HERO: null when switched off, which is what gates the hero block.
   const coverScreen = config.cover && config.cover.enabled !== false ? config.cover : null;
@@ -312,6 +315,8 @@ export function VerticalFormRenderer({
           submitFormAction(accountCode, slug, {
             sessionId,
             data: withData(finalAnswers),
+            // What the respondent SAW, so the confirmation email matches.
+            locale: formLocale,
           }),
         { timeoutMs: 8_000 },
       );
@@ -411,6 +416,7 @@ export function VerticalFormRenderer({
             sessionId,
             data: withData(nextAnswers),
             partial: true,
+            locale: formLocale,
           }),
         );
       }
@@ -774,7 +780,7 @@ export function VerticalFormRenderer({
                 </p>
               ) : null}
               <button type="button" className="pf__btn" onClick={() => void submitAll()}>
-                {m.submit}
+                {labels.submit}
               </button>
             </div>
           ) : null}

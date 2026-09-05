@@ -3,15 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import type {
-  FormConfig,
-  FormStep,
-  FormCover,
-  FormBranding,
-  FormOutcome,
-  FormEnding,
-  FormLayout,
-} from '@quill/engine';
+import type { FormBranding, FormConfig, FormCover, FormEnding, FormLabels, FormLanguage, FormLayout, FormOutcome, FormStep } from '@quill/engine';
 import {
   normalizeConfig,
   renameStepKey as engineRenameStepKey,
@@ -502,6 +494,10 @@ export function FormEditor({
 
   // Public title (V7): what the tab/OG/cover show. Empty clears back to `name`.
   const setTitle = (title: string) => mutate((c) => ({ ...c, title: title.trim() ? title : null }));
+  // Form language (null = Auto) and the form-level button copy.
+  const setLanguage = (language: FormLanguage | null) => mutate((c) => ({ ...c, language }));
+  const patchLabels = (patch: Partial<FormLabels>) =>
+    mutate((c) => ({ ...c, labels: { ...c.labels, ...patch } }));
   const patchCover = (patch: Partial<FormCover>) =>
     mutate((c) => ({ ...c, cover: { ...c.cover, ...patch } }));
   const patchBranding = (patch: Partial<FormBranding>) =>
@@ -1063,6 +1059,8 @@ export function FormEditor({
             locale={locale}
             layout={layout}
             onTitleChange={setTitle}
+            onLanguageChange={setLanguage}
+            onLabelsChange={patchLabels}
             onLayoutChange={setLayout}
             hasReveal={hasReveal}
             onEndRevealChange={setEndReveal}

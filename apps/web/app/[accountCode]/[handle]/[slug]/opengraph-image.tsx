@@ -105,15 +105,12 @@ export default async function OgImage({
   const config = form?.config;
   const cover = config?.cover;
   const style = resolveCardStyle(config?.branding);
-  // The same locale rule the page uses, which for a social crawler means English:
-  // they send no `Accept-Language`, and neither does a respondent with no
-  // preference — who would land on the English page too. So the card agrees with
-  // the page it opens, which is the property worth holding. It is NOT the same as
-  // being right: a Spanish form shared into a Spanish channel still says "Start".
-  // Fixing that needs a language ON THE FORM. The account has none, and the
-  // owner's `member.locale` is their dashboard language rather than their
-  // audience's, so guessing from it would trade one wrong answer for another.
-  const messages = getMessages(await publicLocale());
+  // The same locale rule the page uses: the form's own language when the author
+  // set one, else the browser, which for a social crawler means English (they
+  // send no `Accept-Language`). So the card agrees with the page it opens. A
+  // form left on Auto and shared into a Spanish channel still says "Start";
+  // setting the language in Design is the fix, not guessing from the owner.
+  const messages = getMessages(await publicLocale(undefined, config?.language ?? null));
 
   const headline =
     cover?.headline?.trim() ||

@@ -87,6 +87,34 @@ describe('submit', () => {
     expect(payload.respondentEmail).toBe('lead@acme.io');
   });
 
+  it('the respondent receipt renders in the language the respondent saw, then the form language, then none', async () => {
+    const localeOf = async (sessionId: string, extra: Record<string, unknown>, language?: 'en' | 'es') => {
+      if (language) {
+        const form = await db.get<{ id: string; config: string }>(
+          sql`SELECT id, config FROM form WHERE slug = 'lead-qualifier' LIMIT 1`,
+        );
+        const config = JSON.parse(form!.config) as Record<string, unknown>;
+        await db.run(
+          sql`UPDATE form SET config = ${JSON.stringify({ ...config, language })} WHERE id = ${form!.id}`,
+        );
+      }
+      await svc.submit('acme', 'lead-qualifier', {
+        sessionId,
+        data: { role: 'founder', team_size: 20, email: 'lead@acme.io' },
+        ...extra,
+      });
+      await flushEffects();
+      const rows = await listOutbox(db, { kind: 'email' });
+      const confirmed = rows.filter((r) => r.action === 'submission_confirmed').pop()!;
+      return (JSON.parse(confirmed.payload!) as { locale: string | null }).locale;
+    };
+    expect(await localeOf('sess-loc-none', {})).toBeNull();
+    expect(await localeOf('sess-loc-seen', { locale: 'es' })).toBe('es');
+    expect(await localeOf('sess-loc-form', {}, 'es')).toBe('es');
+    // What the respondent SAW wins over the form default (a ?lang=en link on a Spanish form).
+    expect(await localeOf('sess-loc-both', { locale: 'en' }, 'es')).toBe('en');
+  });
+
   it('both emails carry the answers as resolved {label, value} rows in step order', async () => {
     await svc.submit('acme', 'lead-qualifier', {
       sessionId: 'sess-answers',
