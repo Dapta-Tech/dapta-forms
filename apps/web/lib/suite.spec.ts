@@ -21,6 +21,13 @@ describe('suiteHref — the in-app doors to the suite', () => {
     expect(url.searchParams.get('utm_source')).toBe('forms');
   });
 
+  it('tags the documentation link without disturbing its path (the docs site routes on it)', () => {
+    const url = new URL(suiteHref('https://docs.dapta.ai/dapta-docs-es/dapta-forms/forms', 'sidebar'));
+    expect(url.pathname).toBe('/dapta-docs-es/dapta-forms/forms');
+    expect(url.searchParams.get('utm_source')).toBe('forms');
+    expect(url.searchParams.get('utm_medium')).toBe('sidebar');
+  });
+
   it('returns an unparseable base verbatim rather than hiding it', () => {
     // A suite link that looks broken is a bug worth seeing; only the public
     // badge hides, because a fork may legitimately have no destination.

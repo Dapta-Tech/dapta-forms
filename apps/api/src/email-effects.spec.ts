@@ -22,7 +22,8 @@ import {
   type Db,
 } from '@quill/db';
 import { SubmissionNotifier, LogOnlyEmailProvider } from '@quill/notifications';
-import { EmailEffects } from './email-effects';
+import type { ServerEnv } from '@quill/config/env';
+import { EmailEffects, OutboxSkipError } from './email-effects';
 
 let db: Db;
 let effects: EmailEffects;
@@ -214,5 +215,76 @@ describe('submission_received uses the same merge', () => {
       formId,
     );
     expect(await listOutbox(db, { kind: 'email' })).toHaveLength(1); // unchanged
+  });
+});
+
+describe('formLink (owner notice only)', () => {
+  it('points the owner at the submissions page when PUBLIC_APP_URL is set', async () => {
+    const withEnv = new EmailEffects(
+      new SubmissionNotifier(new LogOnlyEmailProvider()),
+      db,
+      undefined,
+      { PUBLIC_APP_URL: 'https://forms.example.com/' } as ServerEnv,
+    );
+    await withEnv.enqueueSubmissionReceived(
+      accountId,
+      { submissionId: 'sub-link', formName: 'Lead Qualifier', respondentEmail: null },
+      formId,
+    );
+    const rows = await listOutbox(db, { kind: 'email' });
+    const p = JSON.parse(rows[0]!.payload!) as { formLink: string | null };
+    expect(p.formLink).toBe(`https://forms.example.com/admin/forms/${formId}/submissions`);
+  });
+
+  it('carries no link in a bare fork without PUBLIC_APP_URL, and never on the respondent receipt', async () => {
+    await effects.enqueueSubmissionReceived(
+      accountId,
+      { submissionId: 'sub-nolink', formName: 'Lead Qualifier', respondentEmail: null },
+      formId,
+    );
+    await enqueueConfirmed();
+    const rows = await listOutbox(db, { kind: 'email' });
+    for (const row of rows) {
+      const p = JSON.parse(row.payload!) as { formLink?: string | null };
+      expect(p.formLink ?? null).toBeNull();
+    }
+  });
+});
+
+describe('no recipient', () => {
+  it('an account whose owner has no email enqueues nothing (instead of a row that fails 5 times)', async () => {
+    const lonely = 'acc-lonely';
+    await db.run(
+      sql`INSERT INTO account (id, code, name, created_at) VALUES (${lonely}, 'lonely', 'Lonely', ${Date.now()})`,
+    );
+    await effects.enqueueSubmissionReceived(lonely, {
+      submissionId: 'sub-lonely',
+      formName: 'Orphan',
+      respondentEmail: null,
+    });
+    expect(await listOutbox(db, { kind: 'email' })).toHaveLength(0);
+  });
+
+  it('deliver() skips (never retries) an owner notice already enqueued with an empty `to`', async () => {
+    // The typical stuck row: the respondent left an email, the owner has none.
+    // The owner notice is addressed to `to` alone, so that email is no recipient.
+    const payload = JSON.stringify({
+      accountId,
+      submissionId: 'sub-empty',
+      formName: 'Orphan',
+      to: [],
+      respondentEmail: 'lead@acme.io',
+    });
+    await expect(effects.deliver('submission_received', payload)).rejects.toBeInstanceOf(OutboxSkipError);
+  });
+
+  it('deliver() skips a receipt with neither a respondent email nor a `to`, but sends one addressed by respondentEmail', async () => {
+    const base = { accountId, submissionId: 'sub-r', formName: 'Orphan', to: [] };
+    await expect(
+      effects.deliver('submission_confirmed', JSON.stringify(base)),
+    ).rejects.toBeInstanceOf(OutboxSkipError);
+    await expect(
+      effects.deliver('submission_confirmed', JSON.stringify({ ...base, respondentEmail: 'lead@acme.io' })),
+    ).resolves.toBeUndefined();
   });
 });

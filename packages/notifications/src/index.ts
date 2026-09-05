@@ -15,10 +15,15 @@ export {
   isSubmissionEmailKey,
   NOTIFICATION_TOKENS,
   notificationTokenValues,
+  htmlTokenValues,
   interpolateTokens,
+  renderBodyLines,
+  renderSubmissionEmail,
   applyCopyOverride,
   defaultSubmissionTemplate,
   type NotificationLocale,
+  type RenderedBodyLines,
+  type RenderedSubmissionEmail,
   type ReceivedCopyVars,
   type ConfirmedCopyVars,
   type MemberInvitedCopyVars,
@@ -26,6 +31,7 @@ export {
   type SubmissionEmailKey,
   type NotificationToken,
 } from './templates';
+export { answersTableHtml, emailDocument, type AnswerRow } from './render-html';
 export { LogOnlyEmailProvider } from './adapters/log-only';
 export { NoopEmailProvider } from './adapters/noop';
 export { SmtpEmailProvider, type SmtpOptions } from './adapters/smtp';

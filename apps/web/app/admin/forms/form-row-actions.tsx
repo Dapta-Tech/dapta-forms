@@ -1,11 +1,22 @@
 'use client';
 
-import { useEffect, useRef, useState, useTransition } from 'react';
+import { useEffect, useRef, useState, useTransition, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { getMessages } from '@quill/shared';
 import { duplicateFormAction, deleteFormAction } from '@/app/admin/actions';
 import { clientLocale } from '@/lib/client-locale';
 import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import { callAction } from '@/lib/call-action';
+import type { Folder } from '@/lib/admin-api';
+
+export interface FormRowActionLabels {
+  menu: string;
+  duplicate: string;
+  delete: string;
+  deleteConfirm: string;
+  /** "Move to folder" group + the unfile choice; absent = no folders on this surface. */
+  moveTo?: string;
+  moveBack?: string;
+}
 
 /**
  * Overflow menu for a form row (WAI-ARIA menu-button). The cross-links
@@ -17,14 +28,16 @@ import { callAction } from '@/lib/call-action';
 export function FormRowActions({
   id,
   labels,
+  folders = [],
+  currentFolderId = null,
+  onMove,
 }: {
   id: string;
-  labels: {
-    menu: string;
-    duplicate: string;
-    delete: string;
-    deleteConfirm: string;
-  };
+  labels: FormRowActionLabels;
+  /** The workspace's folders, for the "Move to folder" radio group (keyboard fallback to drag). */
+  folders?: Folder[];
+  currentFolderId?: string | null;
+  onMove?: (folderId: string | null) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [pending, start] = useTransition();
@@ -50,6 +63,21 @@ export function FormRowActions({
     if (open) menuRef.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus();
   }, [open]);
 
+  // Arrows walk every item (Duplicate, the folder radios, Delete) so "Move to
+  // folder" is reachable from the keyboard, which is the whole point of it.
+  function onMenuKeyDown(e: ReactKeyboardEvent<HTMLDivElement>) {
+    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+    const items = Array.from(
+      menuRef.current?.querySelectorAll<HTMLElement>('[role="menuitem"], [role="menuitemradio"]') ?? [],
+    );
+    if (items.length === 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const at = items.indexOf(document.activeElement as HTMLElement);
+    if (e.key === 'ArrowDown') items[at < 0 || at === items.length - 1 ? 0 : at + 1]?.focus();
+    else items[at <= 0 ? items.length - 1 : at - 1]?.focus();
+  }
+
   const itemClass =
     'flex w-full items-center gap-2.5 rounded-sm px-2 py-2 text-left text-sm transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent focus-visible:outline-none';
 
@@ -73,6 +101,7 @@ export function FormRowActions({
           ref={menuRef}
           role="menu"
           aria-label={labels.menu}
+          onKeyDown={onMenuKeyDown}
           className="absolute right-0 z-50 mt-2 w-52 rounded-md border border-border bg-popover p-1.5 text-popover-foreground shadow-lg"
         >
           <button
@@ -89,6 +118,36 @@ export function FormRowActions({
             <i aria-hidden className="pi pi-copy text-muted-foreground" style={{ fontSize: 13 }} />
             {labels.duplicate}
           </button>
+          {onMove && labels.moveTo && folders.length > 0 ? (
+            <div role="group" aria-label={labels.moveTo} className="my-1 border-y border-border py-1">
+              <p className="px-2 pb-1 pt-0.5 text-2xs font-medium uppercase tracking-wide text-faint">{labels.moveTo}</p>
+              {[{ id: null as string | null, name: labels.moveBack ?? '' }, ...folders].map((folder) => {
+                const checked = (folder.id ?? null) === (currentFolderId ?? null);
+                return (
+                  <button
+                    key={folder.id ?? 'none'}
+                    type="button"
+                    role="menuitemradio"
+                    aria-checked={checked}
+                    tabIndex={-1}
+                    data-testid={`form-row-move-${folder.id ?? 'none'}`}
+                    onClick={() => {
+                      setOpen(false);
+                      if (!checked) onMove(folder.id);
+                    }}
+                    className={itemClass}
+                  >
+                    <i
+                      aria-hidden
+                      className={`pi ${checked ? 'pi-check' : 'pi-folder'} text-muted-foreground`}
+                      style={{ fontSize: 13 }}
+                    />
+                    <span className="truncate">{folder.name}</span>
+                  </button>
+                );
+              })}
+            </div>
+          ) : null}
           <button
             type="button"
             role="menuitem"

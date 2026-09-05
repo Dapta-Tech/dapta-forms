@@ -9,7 +9,15 @@
  * has somewhere obvious to prove the same thing.
  */
 import { describe, expect, it } from 'vitest';
-import { formConfigSchema, hasExtraHubspotDestination, workspaceTimezoneSchema } from './index';
+import {
+  folderInputSchema,
+  folderViewSchema,
+  formConfigSchema,
+  formCreateInputSchema,
+  formFolderPatchSchema,
+  hasExtraHubspotDestination,
+  workspaceTimezoneSchema,
+} from './index';
 
 /** The smallest config the schema accepts — one step, nothing configured. */
 function baseConfig() {
@@ -208,5 +216,22 @@ describe('workspace timezone input', () => {
     expect(() => workspaceTimezoneSchema.parse({ timezone: 'Mars/Olympus' })).toThrow();
     expect(() => workspaceTimezoneSchema.parse({ timezone: 'drop table' })).toThrow();
     expect(() => workspaceTimezoneSchema.parse({})).toThrow();
+  });
+});
+
+describe('folder schemas', () => {
+  it('trims and bounds a folder name, and the move patch requires the key', () => {
+    expect(folderInputSchema.parse({ name: '  Sales  ' })).toEqual({ name: 'Sales' });
+    expect(() => folderInputSchema.parse({ name: '   ' })).toThrow();
+    expect(() => folderInputSchema.parse({ name: 'x'.repeat(81) })).toThrow();
+    expect(formFolderPatchSchema.parse({ folderId: null })).toEqual({ folderId: null });
+    expect(formFolderPatchSchema.parse({ folderId: 'f1' })).toEqual({ folderId: 'f1' });
+    expect(() => formFolderPatchSchema.parse({})).toThrow();
+  });
+
+  it('create input carries an optional folderId; the view carries it too', () => {
+    expect(formCreateInputSchema.parse({ name: 'Quiz', folderId: 'f1' }).folderId).toBe('f1');
+    expect(formCreateInputSchema.parse({ name: 'Quiz' }).folderId).toBeUndefined();
+    expect(folderViewSchema.parse({ id: 'f1', name: 'Sales', createdAt: 1, updatedAt: 1 }).name).toBe('Sales');
   });
 });

@@ -11,6 +11,9 @@
  * text bodies read naturally while the HTML path stays XSS-safe (E8).
  */
 
+import { answersTableHtml, type AnswerRow } from './render-html';
+import { escapeHtml } from './util';
+
 /** The two supported notification languages. Mirrors @quill/shared `Locale`. */
 export type NotificationLocale = 'en' | 'es';
 
@@ -30,15 +33,23 @@ export interface ReceivedCopyVars {
   respondentEmail?: string | null;
   score?: number | null;
   outcomeLabel?: string | null;
-  /** A link back to the submissions view (owner) — optional. */
+  /** A link to the admin submissions page (owner notice only). */
   formLink?: string | null;
+  /**
+   * The answers as the owner reads them (label + value, in step order), already
+   * resolved by the caller. Rendered by the `{{answers}}` token: one
+   * `Label: value` line each in text, a two-column table in HTML.
+   */
+  answers?: AnswerRow[] | null;
 }
 
 /** Everything the "we got your responses" (respondent) copy can interpolate. */
 export interface ConfirmedCopyVars {
   formName: string;
-  /** A public link back to the form (view/edit) — optional. */
+  /** Reserved: no producer sets it on the receipt today, so the stock line drops. */
   formLink?: string | null;
+  /** The respondent's own answers, for a custom template that wants to echo them. */
+  answers?: AnswerRow[] | null;
 }
 
 /** A rendered email: a plain subject + the body lines (blank entries dropped). */
@@ -51,33 +62,15 @@ export interface RenderedCopy {
  * The internal notice to the account owner: "a new submission landed on your
  * form." This is the primary Forms notification — the equivalent of the
  * host-notification email a Calendly/Bookings flow emits when someone books.
+ * Rendered from the same token-bearing default an owner sees in Settings, so
+ * the stock email and the editable default can never drift.
  */
 export function renderSubmissionReceived(
   locale: NotificationLocale,
   v: ReceivedCopyVars,
 ): RenderedCopy {
-  if (locale === 'es') {
-    return {
-      subject: `Nueva respuesta: ${v.formName}`,
-      lines: [
-        `Recibiste una nueva respuesta en "${v.formName}".`,
-        v.respondentEmail ? `De: ${v.respondentEmail}` : '',
-        v.score != null ? `Puntuación: ${v.score}` : '',
-        v.outcomeLabel ? `Resultado: ${v.outcomeLabel}` : '',
-        v.formLink ? `Ver las respuestas: ${v.formLink}` : '',
-      ],
-    };
-  }
-  return {
-    subject: `New submission: ${v.formName}`,
-    lines: [
-      `You have a new submission on "${v.formName}".`,
-      v.respondentEmail ? `From: ${v.respondentEmail}` : '',
-      v.score != null ? `Score: ${v.score}` : '',
-      v.outcomeLabel ? `Outcome: ${v.outcomeLabel}` : '',
-      v.formLink ? `View submissions: ${v.formLink}` : '',
-    ],
-  };
+  const { subject, text } = renderSubmissionEmail('submission_received', locale, {}, v);
+  return { subject, lines: text };
 }
 
 /**
@@ -89,22 +82,8 @@ export function renderSubmissionConfirmed(
   locale: NotificationLocale,
   v: ConfirmedCopyVars,
 ): RenderedCopy {
-  if (locale === 'es') {
-    return {
-      subject: `Recibimos tus respuestas: ${v.formName}`,
-      lines: [
-        `Gracias: registramos tus respuestas de "${v.formName}".`,
-        v.formLink ? `Ver o editar: ${v.formLink}` : '',
-      ],
-    };
-  }
-  return {
-    subject: `We got your responses: ${v.formName}`,
-    lines: [
-      `Thanks: we've recorded your responses to "${v.formName}".`,
-      v.formLink ? `View or edit: ${v.formLink}` : '',
-    ],
-  };
+  const { subject, text } = renderSubmissionEmail('submission_confirmed', locale, {}, v);
+  return { subject, lines: text };
 }
 
 /** What an invitation email needs to say. */
@@ -185,6 +164,7 @@ export const NOTIFICATION_TOKENS = [
   'score',
   'outcomeLabel',
   'formLink',
+  'answers',
 ] as const;
 export type NotificationToken = (typeof NOTIFICATION_TOKENS)[number];
 
@@ -196,8 +176,29 @@ export function notificationTokenValues(v: ReceivedCopyVars): Record<Notificatio
     score: v.score != null ? String(v.score) : '',
     outcomeLabel: v.outcomeLabel ?? '',
     formLink: v.formLink ?? '',
+    answers: (v.answers ?? []).map((row) => `${row.label}: ${row.value}`).join('\n'),
   };
 }
+
+/**
+ * The same map for the HTML body: every value escaped, except `answers`, which
+ * is the already-escaped table (see render-html.ts). This is the ONLY place a
+ * token value reaches HTML unescaped, and only because the table escaped its
+ * cells itself.
+ */
+export function htmlTokenValues(v: ReceivedCopyVars): Record<NotificationToken, string> {
+  const text = notificationTokenValues(v);
+  return {
+    formName: escapeHtml(text.formName),
+    respondentEmail: escapeHtml(text.respondentEmail),
+    score: escapeHtml(text.score),
+    outcomeLabel: escapeHtml(text.outcomeLabel),
+    formLink: escapeHtml(text.formLink),
+    answers: answersTableHtml(v.answers ?? []),
+  };
+}
+
+const TOKEN_RE = /\{\{\s*([a-zA-Z][A-Za-z0-9_]*)\s*\}\}/g;
 
 /**
  * Substitute `{{token}}` markers in ONE pass. Single-pass matters: a value that
@@ -207,10 +208,78 @@ export function notificationTokenValues(v: ReceivedCopyVars): Record<Notificatio
  * inside the braces is tolerated (`{{ formName }}`).
  */
 export function interpolateTokens(template: string, values: Record<string, string>): string {
-  return template.replace(/\{\{\s*([a-zA-Z][A-Za-z0-9_]*)\s*\}\}/g, (whole, name: string) => {
+  return template.replace(TOKEN_RE, (whole, name: string) => {
     const value = values[name];
     return value === undefined ? whole : value;
   });
+}
+
+/** A rendered body: the text lines and their HTML twins, index for index. */
+export interface RenderedBodyLines {
+  text: string[];
+  html: string[];
+}
+
+/**
+ * Render a body template line by line, for the text and the HTML body at once.
+ * ONE rule for stock and custom copy alike: a line is dropped only when it
+ * carries tokens and every one of them resolved to nothing (`Score: {{score}}`
+ * with no score), so an absent optional never leaves a dangling label, while a
+ * line with no tokens (a blank spacer, a sign-off) is always kept. Runs of
+ * blank lines left behind collapse to one and blank ends are trimmed.
+ *
+ * The HTML twin escapes the TEMPLATE text first (the owner's own copy is plain
+ * text) and then substitutes `htmlValues`, which the caller has escaped per
+ * token; `escapeHtml` never touches `{{`, so the markers survive the escape.
+ * An unknown token stays literal on both sides and counts as visible content.
+ */
+export function renderBodyLines(
+  template: string,
+  textValues: Record<string, string>,
+  htmlValues: Record<string, string>,
+): RenderedBodyLines {
+  const text: string[] = [];
+  const html: string[] = [];
+  for (const line of template.replace(/\r\n?/g, '\n').split('\n')) {
+    const names = [...line.matchAll(TOKEN_RE)].map((m) => m[1]!);
+    if (names.length > 0 && names.every((name) => textValues[name] === '')) continue;
+    const rendered = interpolateTokens(line, textValues);
+    // A blank spacer stays; a run of blanks (from dropped lines) collapses.
+    if (rendered.trim() === '' && (text.length === 0 || text[text.length - 1]!.trim() === '')) continue;
+    text.push(rendered);
+    html.push(interpolateTokens(escapeHtml(line), htmlValues));
+  }
+  while (text.length > 0 && text[text.length - 1]!.trim() === '') {
+    text.pop();
+    html.pop();
+  }
+  return { text, html };
+}
+
+/** A fully rendered submission email: the subject plus text and HTML lines. */
+export interface RenderedSubmissionEmail extends RenderedBodyLines {
+  subject: string;
+}
+
+/**
+ * Render one submission email from its effective template: the account/form
+ * override where set, the shipped default otherwise, each field independent.
+ * The subject collapses any newlines to spaces (a header is single-line; this
+ * closes off subject header-injection).
+ */
+export function renderSubmissionEmail(
+  key: SubmissionEmailKey,
+  locale: NotificationLocale,
+  override: { subject?: string | null; body?: string | null },
+  vars: ReceivedCopyVars,
+): RenderedSubmissionEmail {
+  const def = defaultSubmissionTemplate(key, locale);
+  const values = notificationTokenValues(vars);
+  const subject = interpolateTokens(override.subject ?? def.subject, values)
+    .replace(/[\r\n]+/g, ' ')
+    .trim();
+  const body = renderBodyLines(override.body ?? def.body, values, htmlTokenValues(vars));
+  return { subject, ...body };
 }
 
 /**
@@ -218,8 +287,8 @@ export function interpolateTokens(template: string, values: Record<string, strin
  * is independent: a non-null override replaces it (interpolated), a null/absent
  * override keeps the stock text. The subject collapses any newlines to spaces
  * (a header is single-line — closes off subject header-injection). The returned
- * lines are RAW (unescaped) exactly like the stock render, so the notifier's
- * `htmlBody` remains the single escaping boundary.
+ * lines are the TEXT lines (unescaped), exactly like the stock render; the HTML
+ * twin comes from `renderSubmissionEmail`.
  */
 export function applyCopyOverride(
   base: RenderedCopy,
@@ -232,7 +301,9 @@ export function applyCopyOverride(
       ? interpolateTokens(override.subject, values).replace(/[\r\n]+/g, ' ').trim()
       : base.subject;
   const lines =
-    override.body != null ? interpolateTokens(override.body, values).split('\n') : base.lines;
+    override.body != null
+      ? renderBodyLines(override.body, values, htmlTokenValues(vars)).text
+      : base.lines;
   return { subject, lines };
 }
 
@@ -255,6 +326,9 @@ export function defaultSubmissionTemplate(
             'De: {{respondentEmail}}',
             'Puntuación: {{score}}',
             'Resultado: {{outcomeLabel}}',
+            '',
+            '{{answers}}',
+            '',
             'Ver las respuestas: {{formLink}}',
           ].join('\n'),
         }
@@ -265,6 +339,9 @@ export function defaultSubmissionTemplate(
             'From: {{respondentEmail}}',
             'Score: {{score}}',
             'Outcome: {{outcomeLabel}}',
+            '',
+            '{{answers}}',
+            '',
             'View submissions: {{formLink}}',
           ].join('\n'),
         };
