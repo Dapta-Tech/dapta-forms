@@ -28,7 +28,11 @@ echo "== publish-gate: internal-token scan =="
 # that must never reach public history. Extend as needed.
 # Matched case-insensitively (grep -i) so "Aurora"/"aurora" both trip it.
 PATTERN='[a-z0-9-]+\.dapta\.(ai|dev|com)|daptatech|amazonaws|aurora|\bdapta_forms\b|\bforms_ms\b|dapta_lab|dapta-iam|integration\.app|apps-configs-flux2|DO[ -]NOT[ -]MERGE|(client|org)_01[0-9a-z]{22,}|AKIA[0-9A-Z]{16}|(sk|rk)_(live|test)_[0-9a-z]{16,}'
-PUBLIC_HOST_ALLOW='^\./(README\.md|\.env\.example|apps/web/lib/growth\.ts|packages/shared/src/growth\.(ts|spec\.ts))\b.*\b(app|www)\.dapta\.ai'
+# Public hosts the product legitimately links to, pinned to the files that may
+# carry them: the marketing site in the growth helpers, and the documentation
+# site (docs.dapta.ai, a public page in either language, the rail's "Docs"
+# item) in the message catalog and the two specs that pin those URLs.
+PUBLIC_HOST_ALLOW='^\./(README\.md|\.env\.example|apps/web/lib/growth\.ts|packages/shared/src/growth\.(ts|spec\.ts))\b.*\b(app|www)\.dapta\.ai|^\./(packages/shared/src/i18n/(index|chrome\.spec)\.ts|apps/web/lib/suite\.spec\.ts)\b.*\bdocs\.dapta\.ai'
 
 # Scan tracked/working files, excluding vendored/build/self paths. The deploy/
 # overlay is gitignored (never in public history) so it is not scanned here.
