@@ -26,12 +26,15 @@ import type { SubmissionsPage as SubmissionsPageData } from '@quill/types';
 
 const getForm = vi.fn();
 const listSubmissions = vi.fn();
+const me = vi.fn();
 
 vi.mock('@/lib/admin-api', () => ({
   adminApi: {
     getForm: (...a: unknown[]) => getForm(...a),
     listSubmissions: (...a: unknown[]) => listSubmissions(...a),
+    me: (...a: unknown[]) => me(...a),
   },
+  isAdminRole: (role: string) => role === 'owner' || role === 'admin',
   // Declared in the factory: `vi.mock` is hoisted above every top-level binding,
   // and the page imports this one eagerly.
   ApiError: class ApiError extends Error {
@@ -166,6 +169,7 @@ async function visit(opts: {
 
   getForm.mockResolvedValue({ id: FORM_ID, config: { version: 1, steps: [] } });
   listSubmissions.mockResolvedValue(page);
+  me.mockResolvedValue({ accountId: 'acc-1', role: 'owner', timezone: 'America/Bogota' });
 
   const shell = await SubmissionsRoute({
     params: Promise.resolve({ id: FORM_ID }),
@@ -314,5 +318,14 @@ describe('submissions pagination — offset past the last row', () => {
     expect(text).toContain('No submissions yet');
     // Still the filtered question — the empty state is not a fallback to `all`.
     expect(queries).toEqual([query({ status: 'completed', offset: 25 })]);
+  });
+});
+
+describe('workspace timezone', () => {
+  it('prints every timestamp in the workspace zone, not the server clock', async () => {
+    // completedAt 2024-05-01T10:05Z reads as 5:05 AM in Bogota (UTC-5).
+    const { text } = await visit({ total: 1, offset: 0, items: 1 });
+    expect(text.replace(/\u202f/g, ' ')).toContain('May 1, 2024, 5:05 AM');
+    expect(text).not.toContain('10:05');
   });
 });

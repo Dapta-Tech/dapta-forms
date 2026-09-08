@@ -186,6 +186,27 @@ describe('WorkspaceService (IAM-backed)', () => {
     await expect(svc.rename(req(), { name: 'Nope' })).rejects.toBeInstanceOf(ForbiddenException);
   });
 
+  it('sets the workspace timezone locally (admin), claims only while unset, and refuses a plain member', async () => {
+    await svc.list(req());
+    const set = await svc.setTimezone(req(), { timezone: 'America/Bogota' });
+    expect(set).toEqual({ accountId: set.accountId, timezone: 'America/Bogota', applied: true });
+    const row = await db.get<{ timezone: string | null }>(sql`SELECT timezone FROM account WHERE id = ${set.accountId}`);
+    expect(row!.timezone).toBe('America/Bogota');
+
+    // A browser's write-once seed does not overwrite an explicit choice.
+    const claim = await svc.setTimezone(req(), { timezone: 'Europe/Madrid', onlyIfUnset: true });
+    expect(claim).toEqual({ accountId: set.accountId, timezone: 'America/Bogota', applied: false });
+
+    // Clearing goes back to UTC (null).
+    expect((await svc.setTimezone(req(), { timezone: null })).timezone).toBeNull();
+  });
+
+  it('a plain member cannot set the workspace timezone', async () => {
+    // Demoted upstream before the first projection, so the guard sees `member`.
+    workspaces[0]!.users![0]!.type = 'MEMBER';
+    await expect(svc.setTimezone(req(), { timezone: 'Asia/Tokyo' })).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
   it('enter re-checks membership and writes last_workspace upstream; a stranger account is a 403', async () => {
     const list = await svc.list(req());
     await svc.enter(req(), list[0]!.accountId);

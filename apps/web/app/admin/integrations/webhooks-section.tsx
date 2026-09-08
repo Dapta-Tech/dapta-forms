@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { t, type FormsMessages, type Locale } from '@quill/shared';
+import { formatDateTime, t, type FormsMessages, type Locale } from '@quill/shared';
 import type { AccountWebhook } from '@/lib/admin-api';
 
 type Msgs = FormsMessages['admin']['connections']['webhooks'];
@@ -27,11 +27,14 @@ export function WebhooksSection({
   loadError,
   m,
   locale,
+  timeZone,
 }: {
   items: AccountWebhook[];
   loadError?: boolean;
   m: Msgs;
   locale: Locale;
+  /** The workspace zone the failure timestamp is read in. */
+  timeZone: string;
 }) {
   return (
     <section
@@ -52,7 +55,7 @@ export function WebhooksSection({
       ) : items.length === 0 ? (
         <EmptyState m={m} />
       ) : (
-        <WebhookTable items={items} m={m} locale={locale} />
+        <WebhookTable timeZone={timeZone} items={items} m={m} locale={locale} />
       )}
     </section>
   );
@@ -76,7 +79,17 @@ function EmptyState({ m }: { m: Msgs }) {
   );
 }
 
-function WebhookTable({ items, m, locale }: { items: AccountWebhook[]; m: Msgs; locale: Locale }) {
+function WebhookTable({
+  items,
+  m,
+  locale,
+  timeZone,
+}: {
+  items: AccountWebhook[];
+  m: Msgs;
+  locale: Locale;
+  timeZone: string;
+}) {
   return (
     <>
       {/* Horizontal scroll lives INSIDE this container: a long endpoint must not
@@ -170,7 +183,7 @@ function WebhookTable({ items, m, locale }: { items: AccountWebhook[]; m: Msgs; 
                       <span
                         data-testid="webhook-health"
                         title={`${t(m.lastFailure, {
-                          date: new Date(w.failures.lastAt).toLocaleString(locale),
+                          date: formatDateTime(w.failures.lastAt, { locale, timeZone }),
                         })}${w.failures.lastError ? `\n${w.failures.lastError}` : ''}`}
                         className="inline-flex items-center gap-1.5 rounded-full border border-destructive/40 bg-destructive/10 px-2.5 py-0.5 text-xs font-medium text-destructive"
                       >

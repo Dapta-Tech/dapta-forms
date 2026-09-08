@@ -570,6 +570,16 @@ export function publicTitle(config: { title?: string | null } | null | undefined
   return t ? t : name;
 }
 
+/** The languages the public form ships. Mirrors @quill/shared `Locale`. */
+export type FormLanguage = 'en' | 'es';
+
+/** Form-level overrides for the renderer's navigation buttons. */
+export interface FormLabels {
+  back?: string | null;
+  next?: string | null;
+  submit?: string | null;
+}
+
 export interface FormConfig {
   version: 1;
   /**
@@ -584,6 +594,10 @@ export interface FormConfig {
   cover?: FormCover | null;
   /** Presentation layout for the public form. Absent = `'slides'` (back-compat). */
   layout?: FormLayout;
+  /** Public chrome language. Absent/null = Auto (the visitor's browser). */
+  language?: FormLanguage | null;
+  /** Form-level button copy; a step's `buttonText` still wins for that step. */
+  labels?: FormLabels | null;
   steps: FormStep[];
   scoring?: { enabled?: boolean } | null;
   outcomes?: FormOutcome[];

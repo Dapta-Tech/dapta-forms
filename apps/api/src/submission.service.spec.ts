@@ -87,6 +87,58 @@ describe('submit', () => {
     expect(payload.respondentEmail).toBe('lead@acme.io');
   });
 
+  it('the respondent receipt renders in the language the respondent saw, then the form language, then none', async () => {
+    const localeOf = async (sessionId: string, extra: Record<string, unknown>, language?: 'en' | 'es') => {
+      if (language) {
+        const form = await db.get<{ id: string; config: string }>(
+          sql`SELECT id, config FROM form WHERE slug = 'lead-qualifier' LIMIT 1`,
+        );
+        const config = JSON.parse(form!.config) as Record<string, unknown>;
+        await db.run(
+          sql`UPDATE form SET config = ${JSON.stringify({ ...config, language })} WHERE id = ${form!.id}`,
+        );
+      }
+      await svc.submit('acme', 'lead-qualifier', {
+        sessionId,
+        data: { role: 'founder', team_size: 20, email: 'lead@acme.io' },
+        ...extra,
+      });
+      await flushEffects();
+      const rows = await listOutbox(db, { kind: 'email' });
+      const confirmed = rows.filter((r) => r.action === 'submission_confirmed').pop()!;
+      return (JSON.parse(confirmed.payload!) as { locale: string | null }).locale;
+    };
+    expect(await localeOf('sess-loc-none', {})).toBeNull();
+    expect(await localeOf('sess-loc-seen', { locale: 'es' })).toBe('es');
+    expect(await localeOf('sess-loc-form', {}, 'es')).toBe('es');
+    // What the respondent SAW wins over the form default (a ?lang=en link on a Spanish form).
+    expect(await localeOf('sess-loc-both', { locale: 'en' }, 'es')).toBe('en');
+  });
+
+  it('both emails carry the answers as resolved {label, value} rows in step order', async () => {
+    await svc.submit('acme', 'lead-qualifier', {
+      sessionId: 'sess-answers',
+      data: { role: 'founder', team_size: 20, company: 'Acme', email: 'lead@acme.io' },
+    });
+    await flushEffects();
+    const outbox = await listOutbox(db, { kind: 'email' });
+    expect(outbox).toHaveLength(2);
+    for (const row of outbox) {
+      const payload = JSON.parse(row.payload!) as { answers: Array<{ label: string; value: string }> };
+      expect(payload.answers.map((a) => a.label)).toEqual([
+        'What best describes you?',
+        'How big is your team?',
+        'What company do you work at?',
+        'Where should we send the results?',
+      ]);
+      // Option VALUE → option LABEL, numbers stringified.
+      expect(payload.answers[0]!.value).not.toBe('founder');
+      expect(payload.answers[1]!.value).toBe('20');
+      expect(payload.answers[2]!.value).toBe('Acme');
+      expect(payload.answers[3]!.value).toBe('lead@acme.io');
+    }
+  });
+
   it('a re-landed complete enqueues NO second round of effects', async () => {
     // `callActionWithRetry` cannot abort an in-flight request, so a complete
     // that landed slowly IS retried and this method runs twice for one real

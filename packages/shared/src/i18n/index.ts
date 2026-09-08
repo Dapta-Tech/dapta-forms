@@ -58,6 +58,13 @@ export interface FormsMessages {
     dropdownEmpty: string;
     trustedBy: string;
     newTab: string;
+    /** The public error boundary and the 404, in the visitor's language. */
+    errorTitle: string;
+    errorBody: string;
+    errorRetry: string;
+    notFoundTitle: string;
+    notFoundBody: string;
+    notFoundHome: string;
     /** Scheduler step (V6): copy for an unconfigured embed + the optional skip. */
     schedulerUnconfigured: string;
     schedulerSkip: string;
@@ -126,6 +133,8 @@ export interface FormsMessages {
       collapse: string;
       expand: string;
       openNav: string;
+      /** Toast when the first admin's browser seeds the workspace zone. // {zone} */
+      timezoneAutoSet: string;
       /** The colour-scheme toggle. `next` names what one more click will do, so an
        *  icon-only control still announces its effect rather than only its state. */
       theme: {
@@ -134,6 +143,12 @@ export interface FormsMessages {
         light: string;
         next: string;
       };
+      /**
+       * Where the "Docs" nav item goes: the Forms documentation in THIS
+       * language. Lives in the catalog because the shell only receives the
+       * localized messages, never the locale itself. Always an absolute URL.
+       */
+      docsHref: string;
       /** Left-nav item labels (icon + label). */
       nav: {
         home: string;
@@ -141,6 +156,8 @@ export interface FormsMessages {
         submissions: string;
         analytics: string;
         integrations: string;
+        /** The product documentation, an EXTERNAL link (see `docsHref`). */
+        docs: string;
         /**
          * The door to the wider platform (agents), an EXTERNAL link. Rendered
          * only when the deployment configures a platform URL, so a fork's rail
@@ -288,6 +305,13 @@ export interface FormsMessages {
       subtitle: string;
       /** The renameable workspace name (admin/owner). */
       workspaceName: string;
+      /** The shared IANA zone every date in this workspace is read in. */
+      workspaceTimezone: string;
+      workspaceTimezoneHelp: string;
+      workspaceTimezoneSaved: string;
+      workspaceTimezoneError: string;
+      workspaceTimezoneUnset: string;
+      workspaceTimezoneUtc: string;
       workspaceNameSave: string;
       workspaceNameSaved: string;
       workspaceNameError: string;
@@ -464,6 +488,9 @@ export interface FormsMessages {
       tokenScore: string;
       tokenOutcomeLabel: string;
       tokenFormLink: string;
+      tokenAnswers: string;
+      /** Permanent warning when the owner notice body lacks `{{answers}}`. */
+      answersMissing: string;
       /** Muted pointer: forms can override these from their Connect tab. */
       formOverrideNote: string;
     };
@@ -510,6 +537,44 @@ export interface FormsMessages {
       open: string;
       connect: string;
       openForm: string;
+      /** Search box over the loaded list (name or slug, no case, no accents). */
+      searchPlaceholder: string;
+      searchLabel: string;
+      searchClear: string;
+      searchEmpty: string;
+      /** "{count} results" live announcement. */
+      searchResults: string;
+      /** The keyboard hint shown inside the search box. */
+      searchShortcut: string;
+      /** Folders: sections of the list. */
+      unfiled: string;
+      folderCount: string; // {count}
+      folderCountOne: string;
+      newFolder: string;
+      newFolderTitle: string;
+      folderCreate: string;
+      renameFolder: string;
+      renameFolderTitle: string;
+      folderSave: string;
+      folderNameLabel: string;
+      folderNamePlaceholder: string;
+      folderNameRequired: string;
+      folderNameTaken: string;
+      deleteFolder: string;
+      deleteFolderConfirm: string; // {name} {forms} (the already-pluralised count label)
+      folderMenu: string;
+      collapse: string;
+      expand: string;
+      /** "New form" on a folder header, creating straight into it. */
+      createIn: string;
+      folderLabel: string;
+      folderNone: string;
+      moveTo: string;
+      moveBack: string;
+      moveFailed: string;
+      dragHandle: string;
+      dropHere: string;
+      actionFailed: string;
     };
     /** The form editor (builder). */
     editor: {
@@ -937,6 +1002,17 @@ export interface FormsMessages {
       };
       /** The Design tab: everything about how the form looks. */
       design: {
+        /** Form language (Auto / English / Spanish) and the button copy overrides. */
+        languageTitle: string;
+        languageHint: string;
+        languageAuto: string;
+        languageEn: string;
+        languageEs: string;
+        labelsTitle: string;
+        labelsHint: string;
+        labelBack: string;
+        labelNext: string;
+        labelSubmit: string;
         publicTitle: string;
         publicTitleHint: string;
         presetsTitle: string;
@@ -1087,6 +1163,8 @@ export interface FormsMessages {
       rangeFrom: string;
       rangeTo: string;
       rangeApply: string;
+      /** Under the trends chart: which zone the days are cut in. // {zone} */
+      timezoneNote: string;
       /** Trends chart (per-day series, metric switchable). */
       trendsTitle: string;
       trendsSubtitle: string;
@@ -1114,6 +1192,10 @@ export interface FormsMessages {
       title: string;
       subtitle: string;
       statusAll: string;
+      /** The shared workspace zone, editable from the table by admins. */
+      timezoneLabel: string;
+      timezoneHint: string;
+      timezoneReadOnly: string;
       statusCompleted: string;
       statusPartial: string;
       badgeCompleted: string;
@@ -1653,6 +1735,7 @@ export interface FormsMessages {
     cancel: string;
     /** Per-surface dialog titles (the body reuses each surface's *Confirm copy). */
     deleteFormTitle: string;
+    deleteFolderTitle: string;
     deleteQuestionTitle: string;
     deleteSubmissionTitle: string;
     removeMemberTitle: string;
@@ -1693,6 +1776,12 @@ export const en: FormsMessages = {
     dropdownEmpty: 'No results found',
     trustedBy: 'Trusted by',
     newTab: '(opens in a new tab)',
+    errorTitle: 'This page didn\u2019t load',
+    errorBody: 'Something went wrong reaching the forms service.',
+    errorRetry: 'Try again',
+    notFoundTitle: 'Not found',
+    notFoundBody: 'This page doesn\u2019t exist.',
+    notFoundHome: 'Go home',
     schedulerUnconfigured: 'This scheduler has not been set up yet.',
     schedulerSkip: 'Skip for now',
     booking: {
@@ -1744,6 +1833,7 @@ export const en: FormsMessages = {
     },
     chrome: {
       collapse: 'Collapse sidebar',
+      timezoneAutoSet: 'Workspace timezone set to {zone}. Change it in Account settings or on the submissions page.',
       expand: 'Expand sidebar',
       openNav: 'Open navigation',
       theme: {
@@ -1752,12 +1842,14 @@ export const en: FormsMessages = {
         light: 'Light',
         next: 'Switch to',
       },
+      docsHref: 'https://docs.dapta.ai/dapta-forms/forms',
       nav: {
         home: 'Home',
         forms: 'Forms',
         submissions: 'Submissions',
         analytics: 'Analytics',
         integrations: 'Integrations',
+        docs: 'Docs',
         agents: 'Dapta Agents',
       },
       profileMenu: {
@@ -1883,6 +1975,13 @@ export const en: FormsMessages = {
       title: 'Settings',
       subtitle: 'Your workspace and team.',
       workspaceName: 'Workspace name',
+      workspaceTimezone: 'Workspace timezone',
+      workspaceTimezoneHelp:
+        'Shared by everyone in this workspace. Every date in the dashboard, the analytics day cuts and the local columns of the CSV export are read in this zone.',
+      workspaceTimezoneSaved: 'Workspace timezone saved.',
+      workspaceTimezoneError: 'Could not save the timezone. Please try again.',
+      workspaceTimezoneUnset: 'Not set (UTC)',
+      workspaceTimezoneUtc: 'UTC',
       workspaceNameSave: 'Save',
       workspaceNameSaved: 'Workspace renamed.',
       workspaceNameError: 'Could not rename the workspace.',
@@ -2033,7 +2132,10 @@ export const en: FormsMessages = {
       tokenRespondentEmail: 'Respondent email',
       tokenScore: 'Score',
       tokenOutcomeLabel: 'Outcome',
-      tokenFormLink: 'Form link',
+      tokenFormLink: 'Submissions link',
+      tokenAnswers: 'Answers',
+      answersMissing:
+        'This email does not include {{answers}}, so the answers will not be in it. Insert the Answers variable to add them.',
       formOverrideNote: 'Each form can override these emails from its Connect tab in the editor.',
     },
     login: {
@@ -2078,6 +2180,39 @@ export const en: FormsMessages = {
       open: 'Open',
       connect: 'Connect',
       openForm: 'Open form',
+      searchPlaceholder: 'Search forms',
+      searchLabel: 'Search forms by name or link',
+      searchClear: 'Clear search',
+      searchEmpty: 'No forms match your search.',
+      searchResults: '{count} forms match',
+      searchShortcut: 'Ctrl K',
+      unfiled: 'Unfiled',
+      folderCount: '{count} forms',
+      folderCountOne: '1 form',
+      newFolder: 'New folder',
+      newFolderTitle: 'Create a folder',
+      folderCreate: 'Create folder',
+      renameFolder: 'Rename',
+      renameFolderTitle: 'Rename folder',
+      folderSave: 'Save',
+      folderNameLabel: 'Folder name',
+      folderNamePlaceholder: 'e.g. Sales',
+      folderNameRequired: 'Give the folder a name.',
+      folderNameTaken: 'A folder with that name already exists.',
+      deleteFolder: 'Delete folder',
+      deleteFolderConfirm: 'Delete “{name}”? The forms inside ({forms}) are kept and move to Unfiled.',
+      folderMenu: 'Folder actions',
+      collapse: 'Collapse',
+      expand: 'Expand',
+      createIn: 'New form',
+      folderLabel: 'Folder',
+      folderNone: 'No folder',
+      moveTo: 'Move to folder',
+      moveBack: 'No folder',
+      moveFailed: 'Could not move the form. Please try again.',
+      dragHandle: 'Drag to a folder',
+      dropHere: 'Drop to move here',
+      actionFailed: 'Something went wrong. Please try again.',
     },
     editor: {
       back: 'Back to forms',
@@ -2461,6 +2596,17 @@ export const en: FormsMessages = {
         next: 'Next screen',
       },
       design: {
+        languageTitle: 'Language',
+        languageHint:
+          'The language of the buttons, progress and thank-you copy visitors see. Auto follows each visitor\u2019s browser. A ?lang= link still wins.',
+        languageAuto: 'Auto (visitor\u2019s browser)',
+        languageEn: 'English',
+        languageEs: 'Spanish',
+        labelsTitle: 'Button text',
+        labelsHint: 'Replace the default button copy for this form. Leave empty to keep the default for the language. A question\u2019s own button text still wins on that question.',
+        labelBack: 'Back',
+        labelNext: 'Next',
+        labelSubmit: 'Submit',
         publicTitle: 'Form title',
         publicTitleHint:
           'What visitors see. The browser tab, share previews, and the cover heading. Leave empty to use the form\u2019s internal name.',
@@ -2609,6 +2755,7 @@ export const en: FormsMessages = {
       rangeFrom: 'From',
       rangeTo: 'To',
       rangeApply: 'Apply',
+      timezoneNote: 'Days in {zone}',
       trendsTitle: 'Trends',
       trendsSubtitle: 'Daily movement over the selected range.',
       trendsMetricLabel: 'Metric',
@@ -2634,6 +2781,9 @@ export const en: FormsMessages = {
       title: 'Submissions',
       subtitle: 'Every response to this form.',
       statusAll: 'All',
+      timezoneLabel: 'Workspace timezone',
+      timezoneHint: 'Dates below are read in this zone. It is shared by the whole workspace.',
+      timezoneReadOnly: 'Only an admin can change it.',
       statusCompleted: 'Completed',
       statusPartial: 'Partial',
       badgeCompleted: 'Completed',
@@ -3133,6 +3283,7 @@ export const en: FormsMessages = {
     confirm: 'Confirm',
     cancel: 'Cancel',
     deleteFormTitle: 'Delete form',
+    deleteFolderTitle: 'Delete folder',
     deleteQuestionTitle: 'Delete question',
     deleteSubmissionTitle: 'Delete submission',
     removeMemberTitle: 'Remove member',
@@ -3173,6 +3324,12 @@ export const es: FormsMessages = {
     dropdownEmpty: 'No se encontraron resultados',
     trustedBy: 'Confían en nosotros',
     newTab: '(se abre en una pestaña nueva)',
+    errorTitle: 'Esta página no cargó',
+    errorBody: 'Algo falló al conectar con el servicio de formularios.',
+    errorRetry: 'Intentar de nuevo',
+    notFoundTitle: 'No encontrado',
+    notFoundBody: 'Esta página no existe.',
+    notFoundHome: 'Ir al inicio',
     schedulerUnconfigured: 'Este agendador aún no está configurado.',
     schedulerSkip: 'Omitir por ahora',
     booking: {
@@ -3224,6 +3381,7 @@ export const es: FormsMessages = {
     },
     chrome: {
       collapse: 'Contraer barra lateral',
+      timezoneAutoSet: 'Zona horaria del workspace fijada en {zone}. Cámbiala en Ajustes de cuenta o en la página de respuestas.',
       expand: 'Expandir barra lateral',
       openNav: 'Abrir navegación',
       theme: {
@@ -3232,12 +3390,14 @@ export const es: FormsMessages = {
         light: 'Claro',
         next: 'Cambiar a',
       },
+      docsHref: 'https://docs.dapta.ai/dapta-docs-es/dapta-forms/forms',
       nav: {
         home: 'Inicio',
         forms: 'Formularios',
         submissions: 'Respuestas',
         analytics: 'Analíticas',
         integrations: 'Integraciones',
+        docs: 'Documentación',
         agents: 'Dapta Agents',
       },
       profileMenu: {
@@ -3364,6 +3524,13 @@ export const es: FormsMessages = {
       title: 'Ajustes',
       subtitle: 'Tu espacio de trabajo y tu equipo.',
       workspaceName: 'Nombre del workspace',
+      workspaceTimezone: 'Zona horaria del workspace',
+      workspaceTimezoneHelp:
+        'La comparten todos en este workspace. Cada fecha del panel, los cortes por día de las analíticas y las columnas locales del CSV se leen en esta zona.',
+      workspaceTimezoneSaved: 'Zona horaria del workspace guardada.',
+      workspaceTimezoneError: 'No se pudo guardar la zona horaria. Inténtalo de nuevo.',
+      workspaceTimezoneUnset: 'Sin definir (UTC)',
+      workspaceTimezoneUtc: 'UTC',
       workspaceNameSave: 'Guardar',
       workspaceNameSaved: 'Workspace renombrado.',
       workspaceNameError: 'No se pudo renombrar el workspace.',
@@ -3514,7 +3681,10 @@ export const es: FormsMessages = {
       tokenRespondentEmail: 'Correo del encuestado',
       tokenScore: 'Puntuación',
       tokenOutcomeLabel: 'Resultado',
-      tokenFormLink: 'Enlace del formulario',
+      tokenFormLink: 'Enlace a las respuestas',
+      tokenAnswers: 'Respuestas',
+      answersMissing:
+        'Este correo no incluye {{answers}}, así que las respuestas no aparecerán en él. Inserta la variable Respuestas para agregarlas.',
       formOverrideNote:
         'Cada formulario puede personalizar estos correos desde su pestaña Conectar en el editor.',
     },
@@ -3560,6 +3730,39 @@ export const es: FormsMessages = {
       open: 'Abrir',
       connect: 'Conectar',
       openForm: 'Abrir formulario',
+      searchPlaceholder: 'Buscar formularios',
+      searchLabel: 'Buscar formularios por nombre o enlace',
+      searchClear: 'Limpiar búsqueda',
+      searchEmpty: 'Ningún formulario coincide con tu búsqueda.',
+      searchResults: '{count} formularios coinciden',
+      searchShortcut: 'Ctrl K',
+      unfiled: 'Sin carpeta',
+      folderCount: '{count} formularios',
+      folderCountOne: '1 formulario',
+      newFolder: 'Nueva carpeta',
+      newFolderTitle: 'Crear una carpeta',
+      folderCreate: 'Crear carpeta',
+      renameFolder: 'Renombrar',
+      renameFolderTitle: 'Renombrar carpeta',
+      folderSave: 'Guardar',
+      folderNameLabel: 'Nombre de la carpeta',
+      folderNamePlaceholder: 'p. ej. Ventas',
+      folderNameRequired: 'Ponle un nombre a la carpeta.',
+      folderNameTaken: 'Ya existe una carpeta con ese nombre.',
+      deleteFolder: 'Eliminar carpeta',
+      deleteFolderConfirm: '¿Eliminar “{name}”? Los formularios que contiene ({forms}) se conservan y pasan a Sin carpeta.',
+      folderMenu: 'Acciones de la carpeta',
+      collapse: 'Contraer',
+      expand: 'Expandir',
+      createIn: 'Nuevo formulario',
+      folderLabel: 'Carpeta',
+      folderNone: 'Sin carpeta',
+      moveTo: 'Mover a carpeta',
+      moveBack: 'Sin carpeta',
+      moveFailed: 'No se pudo mover el formulario. Inténtalo de nuevo.',
+      dragHandle: 'Arrastra a una carpeta',
+      dropHere: 'Suelta para mover aquí',
+      actionFailed: 'Algo salió mal. Inténtalo de nuevo.',
     },
     editor: {
       back: 'Volver a formularios',
@@ -3943,6 +4146,17 @@ export const es: FormsMessages = {
         next: 'Pantalla siguiente',
       },
       design: {
+        languageTitle: 'Idioma',
+        languageHint:
+          'El idioma de los botones, el progreso y el mensaje de gracias que ven los visitantes. Auto sigue el navegador de cada visitante. Un enlace con ?lang= sigue ganando.',
+        languageAuto: 'Auto (navegador del visitante)',
+        languageEn: 'Inglés',
+        languageEs: 'Español',
+        labelsTitle: 'Texto de los botones',
+        labelsHint: 'Reemplaza el texto predeterminado de los botones de este formulario. Déjalo vacío para usar el predeterminado del idioma. El texto propio de una pregunta sigue ganando en esa pregunta.',
+        labelBack: 'Atrás',
+        labelNext: 'Siguiente',
+        labelSubmit: 'Enviar',
         publicTitle: 'Título del formulario',
         publicTitleHint:
           'Lo que ven los visitantes: la pestaña del navegador, las vistas previas al compartir y el encabezado de portada. Déjalo vacío para usar el nombre interno del formulario.',
@@ -4093,6 +4307,7 @@ export const es: FormsMessages = {
       rangeFrom: 'Desde',
       rangeTo: 'Hasta',
       rangeApply: 'Aplicar',
+      timezoneNote: 'Días en {zone}',
       trendsTitle: 'Tendencias',
       trendsSubtitle: 'Movimiento diario en el rango seleccionado.',
       trendsMetricLabel: 'Métrica',
@@ -4118,6 +4333,9 @@ export const es: FormsMessages = {
       title: 'Respuestas',
       subtitle: 'Todas las respuestas a este formulario.',
       statusAll: 'Todas',
+      timezoneLabel: 'Zona horaria del workspace',
+      timezoneHint: 'Las fechas de abajo se leen en esta zona. La comparte todo el workspace.',
+      timezoneReadOnly: 'Solo un administrador puede cambiarla.',
       statusCompleted: 'Completadas',
       statusPartial: 'Parciales',
       badgeCompleted: 'Completada',
@@ -4622,6 +4840,7 @@ export const es: FormsMessages = {
     confirm: 'Confirmar',
     cancel: 'Cancelar',
     deleteFormTitle: 'Eliminar formulario',
+    deleteFolderTitle: 'Eliminar carpeta',
     deleteQuestionTitle: 'Eliminar pregunta',
     deleteSubmissionTitle: 'Eliminar respuesta',
     removeMemberTitle: 'Quitar miembro',

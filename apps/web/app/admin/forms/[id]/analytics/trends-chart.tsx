@@ -113,8 +113,9 @@ export function TrendsChart({
   const [metric, setMetric] = useState<MetricKey>('submissions');
   const [plotRef, W] = useMeasuredWidth<HTMLDivElement>();
 
-  // Buckets are whole UTC days, so render their labels in UTC too — otherwise a
-  // point would be titled with the day before/after the data it holds.
+  // Each point's `t` is UTC midnight of the CALENDAR DAY it names (in the
+  // workspace's zone, resolved server-side), so its label is read in UTC:
+  // any other zone could title a point with the day before/after its data.
   const fmtDate = useMemo(
     () => new Intl.DateTimeFormat(locale, { month: 'short', day: 'numeric', timeZone: 'UTC' }),
     [locale],

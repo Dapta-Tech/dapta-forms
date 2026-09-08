@@ -16,6 +16,7 @@ import { InvitationsTable } from './invitations-table';
 import { MembersTable } from './members-table';
 import { WorkspaceId } from './workspace-id';
 import { WorkspaceName } from './workspace-name';
+import { WorkspaceTimezoneField } from '@/app/admin/_components/workspace-timezone-field';
 
 export const dynamic = 'force-dynamic';
 
@@ -126,6 +127,22 @@ export default async function WorkspacePage({
             workspaceNameSave: s.workspaceNameSave,
             workspaceNameSaved: s.workspaceNameSaved,
             workspaceNameError: s.workspaceNameError,
+          }}
+        />
+        <WorkspaceTimezoneField
+          accountId={accountId}
+          value={me.timezone}
+          canEdit={canManage}
+          variant="settings"
+          locale={locale}
+          labels={{
+            label: s.workspaceTimezone,
+            help: s.workspaceTimezoneHelp,
+            saved: s.workspaceTimezoneSaved,
+            error: s.workspaceTimezoneError,
+            unset: s.workspaceTimezoneUnset,
+            utc: s.workspaceTimezoneUtc,
+            readOnly: messages.submissions.timezoneReadOnly,
           }}
         />
         {canManage ? (

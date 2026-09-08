@@ -1,5 +1,6 @@
 import { cookies, headers } from 'next/headers';
 import type { Locale } from '@quill/shared';
+import { resolveFormLocale } from './form-locale';
 
 /** Persisted admin-UI language choice (F8 parity with the old app's toggle). */
 export const LOCALE_COOKIE = 'quill_locale';
@@ -43,11 +44,14 @@ export async function preferredLocale(): Promise<Locale> {
 }
 
 /**
- * Public-surface locale (no admin cookie there): an explicit ?lang= wins,
- * otherwise the browser's Accept-Language decides. Defaults to English.
+ * Public-surface locale (no admin cookie there): an explicit ?lang= wins, then
+ * the form's own language, then the browser's Accept-Language. Defaults to
+ * English. See `resolveFormLocale` for the matrix.
  */
-export async function publicLocale(lang?: string): Promise<Locale> {
-  const pick = (v: string) => (v.trim().toLowerCase().startsWith('es') ? 'es' : 'en') as Locale;
-  if (lang) return pick(lang);
-  return pick((await headers()).get('accept-language') ?? '');
+export async function publicLocale(lang?: string, configLanguage?: Locale | null): Promise<Locale> {
+  return resolveFormLocale({
+    lang,
+    configLanguage,
+    acceptLanguage: (await headers()).get('accept-language'),
+  });
 }

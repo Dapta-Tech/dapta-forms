@@ -211,6 +211,8 @@ export interface Me {
    * pages themselves read the cookie, not this.
    */
   locale: 'en' | 'es' | null;
+  /** The workspace's IANA timezone, or null while nobody has set one (UTC). */
+  timezone: string | null;
 }
 
 /**
@@ -260,6 +262,16 @@ export interface FormSummary {
   slug: string;
   /** Epoch-ms of the last brand-kit apply; null when never applied or reverted. */
   brandAppliedAt: number | null;
+  /** The folder the form is filed in; null = unfiled. */
+  folderId: string | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+/** A form folder: flat, named only, unique per workspace without regard to case. */
+export interface Folder {
+  id: string;
+  name: string;
   createdAt: number;
   updatedAt: number;
 }
@@ -574,7 +586,7 @@ export const adminApi = {
   // Forms
   listForms: () => req<FormSummary[]>('GET', '/v1/forms'),
   getForm: (id: string) => req<FormDetail>('GET', `/v1/forms/${id}`),
-  createForm: (b: { name: string; slug?: string; config?: unknown }) =>
+  createForm: (b: { name: string; slug?: string; config?: unknown; folderId?: string | null }) =>
     req<FormDetail>('POST', '/v1/forms', b),
   updateForm: (id: string, b: { name?: string; config?: unknown }) =>
     req<FormDetail>('PUT', `/v1/forms/${id}`, b),
@@ -591,6 +603,15 @@ export const adminApi = {
   publishForm: (id: string) => req<FormDetail>('POST', `/v1/forms/${id}/publish`),
   deleteForm: (id: string) => req<void>('DELETE', `/v1/forms/${id}`),
 
+  // Form folders
+  listFolders: () => req<Folder[]>('GET', '/v1/folders'),
+  createFolder: (name: string) => req<Folder>('POST', '/v1/folders', { name }),
+  renameFolder: (id: string, name: string) => req<Folder>('PATCH', `/v1/folders/${id}`, { name }),
+  deleteFolder: (id: string) => req<void>('DELETE', `/v1/folders/${id}`),
+  /** File a form in a folder; null unfiles it. */
+  setFormFolder: (id: string, folderId: string | null) =>
+    req<{ id: string; folderId: string | null }>('PATCH', `/v1/forms/${id}/folder`, { folderId }),
+
   // Workspace brand kit (reads open to members; writes + apply/revert admin/owner)
   getBranding: () => req<BrandingResponse>('GET', '/v1/branding'),
   saveBranding: (config: BrandKit) => req<BrandingResponse>('PUT', '/v1/branding', config),
@@ -602,7 +623,7 @@ export const adminApi = {
     req<{ reverted: string[] }>('POST', '/v1/branding/revert', { formIds }),
 
   // Analytics + submissions (this track)
-  getAnalytics: (id: string, range: { from?: number; to?: number } = {}) =>
+  getAnalytics: (id: string, range: { from?: number; to?: number; tz?: string } = {}) =>
     req<AnalyticsResponse>('GET', `/v1/forms/${id}/analytics${qs(range)}`),
   listSubmissions: (id: string, q: SubmissionsQuery = {}) =>
     req<SubmissionsPage>('GET', `/v1/forms/${id}/submissions${qs({ ...q })}`),
@@ -656,6 +677,14 @@ export const adminApi = {
   /** Rename the workspace the caller is acting in (admin/owner), or `opts.workspace`. */
   renameWorkspace: (name: string, opts?: ReqOptions) =>
     req<{ accountId: string; name: string }>('PATCH', '/v1/workspaces/current', { name }, opts),
+  /** Set (null = UTC) or, with `onlyIfUnset`, seed the workspace's timezone. */
+  setWorkspaceTimezone: (input: { timezone: string | null; onlyIfUnset?: boolean }, opts?: ReqOptions) =>
+    req<{ accountId: string; timezone: string | null; applied: boolean }>(
+      'PATCH',
+      '/v1/workspaces/current/timezone',
+      input,
+      opts,
+    ),
   /** Tell the API the caller is about to open this workspace (membership re-checked; remembered upstream). */
   enterWorkspace: (accountId: string) => req<{ ok: true }>('POST', `/v1/workspaces/${accountId}/enter`),
   /** Type-to-find: own workspaces filtered by name; staff also get the estate. */

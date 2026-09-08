@@ -37,7 +37,7 @@ const webhook = (over: Partial<AccountWebhook> = {}): AccountWebhook => ({
 
 const render = (items: AccountWebhook[], loadError = false): string =>
   renderToStaticMarkup(
-    <WebhooksSection items={items} loadError={loadError} m={m} locale="en" />,
+    <WebhooksSection items={items} loadError={loadError} m={m} locale="en" timeZone="UTC" />,
   );
 
 describe('WebhooksSection', () => {
