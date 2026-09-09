@@ -36,14 +36,5 @@
     "prettier": "^3.4.2",
     "turbo": "^2.3.3",
     "typescript": "^5.7.2"
-  },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "better-sqlite3",
-      "esbuild",
-      "@tailwindcss/oxide",
-      "sharp",
-      "unrs-resolver"
-    ]
   }
 }
