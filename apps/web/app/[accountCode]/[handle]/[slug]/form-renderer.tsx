@@ -44,6 +44,7 @@ import { MadeWithBadge } from '@/components/made-with-badge';
 import { warmBookingEmbed, type BookingScheduledDetails } from '@/lib/booking-embed';
 import { resolveSchedulerPrefill } from '@/lib/booking-prefill';
 import { callAction, callActionWithRetry, isTransportError } from '@/lib/call-action';
+import { navigateTop } from '@/lib/top-navigate';
 import { submitFormAction, recordEventAction, recordBookingAction } from './actions';
 import {
   useSessionId,
@@ -154,7 +155,7 @@ export function FormRenderer({
     const url = ending.redirectUrl;
     const timer = setTimeout(() => {
       redirected.current = true;
-      window.location.href = url;
+      navigateTop(url);
     }, ending.redirectDelayMs);
     return () => clearTimeout(timer);
   }, [phase, done, engineConfig, answers]);
@@ -307,7 +308,7 @@ export function FormRenderer({
             setPhase('done');
             return;
           }
-          window.location.href = ending.redirectUrl;
+          navigateTop(ending.redirectUrl);
           return;
         }
         console.warn('[forms] ignored non-http(s) redirectUrl');
@@ -340,7 +341,7 @@ export function FormRenderer({
       );
       if (isTransportError(rec)) console.warn('[forms] post-submit booking record failed');
       if (outcome?.redirectUrl && isSafeHttpUrl(outcome.redirectUrl)) {
-        window.location.href = outcome.redirectUrl;
+        navigateTop(outcome.redirectUrl);
         return;
       }
       setPhase('done'); // `done` state was set in finalize
