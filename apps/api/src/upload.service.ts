@@ -158,7 +158,23 @@ export class UploadService {
       originalName: input.name,
     });
     const contentType = sanitizeMime(input.mime);
-    const url = await this.storage.presignPut(key, contentType);
+
+    // Signing reaches AWS for credentials, and that is the one step here that
+    // can fail for a reason the visitor did not cause: no role on the pod, a
+    // role whose session expired, a bucket in another account. Unwrapped, those
+    // surface as a bare 500 with a stack in the log and "the upload did not
+    // finish" on screen, which describes neither the cause nor who can fix it.
+    let url: string;
+    try {
+      url = await this.storage.presignPut(key, contentType);
+    } catch (err) {
+      this.log.error(`failed to sign an upload for form ${form.id}: ${String(err)}`);
+      return {
+        error: 'UPLOAD_UNAVAILABLE',
+        message: 'File uploads are temporarily unavailable.',
+        status: 503,
+      };
+    }
     return { url, key, contentType, expiresInSec: this.env.UPLOAD_PRESIGN_TTL_SEC };
   }
 
@@ -247,8 +263,17 @@ export class UploadService {
     const file = parseFileAnswer(answers[stepKey] as never);
     if (!file) return { error: 'NOT_FOUND', message: 'No file on that question.', status: 404 };
 
-    const url = await this.storage.presignGet(file.key, file.name);
-    return { url, name: file.name };
+    try {
+      const url = await this.storage.presignGet(file.key, file.name);
+      return { url, name: file.name };
+    } catch (err) {
+      this.log.error(`failed to sign a download for submission ${submissionId}: ${String(err)}`);
+      return {
+        error: 'UPLOAD_UNAVAILABLE',
+        message: 'That file cannot be reached right now.',
+        status: 503,
+      };
+    }
   }
 
   /** The object exists, is within the limit, and its bytes match the name it arrived under. */

@@ -92,6 +92,7 @@ import { WorkspaceService } from './workspace.service';
 import { EmailEffects } from './email-effects';
 import { AnalyticsEffects } from './analytics-effects';
 import { UploadService } from './upload.service';
+import { unwrap } from './http';
 import type { ServerEnv } from '@quill/config/env';
 import { assertAdmin, assertCanManageTarget, assertNotSelf, assertOwner } from './permissions';
 import { parseBound, parseIntParam, parseKinds, parseOutboxStatuses, parseStatus } from './query-params';
@@ -733,9 +734,10 @@ export class AdminCrudController {
   ) {
     const p = await this.auth.resolveHost(req);
     if (!this.uploads) throw new NotFoundException({ error: 'NOT_FOUND', message: 'File uploads are not enabled.' });
-    const r = await this.uploads.downloadUrl(p.accountId, submissionId, stepKey);
-    if ('error' in r) throw new NotFoundException({ error: r.error, message: r.message });
-    return r;
+    // `unwrap`, not a blanket NotFoundException: "no such file" and "storage is
+    // unreachable" are different answers, and collapsing them would tell an
+    // owner their file is gone during an outage.
+    return unwrap(await this.uploads.downloadUrl(p.accountId, submissionId, stepKey));
   }
 
   @Get('forms/:id/submissions')
