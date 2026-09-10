@@ -1225,6 +1225,13 @@ export const publicFormSchema = z.object({
   slug: z.string(),
   name: z.string(),
   config: formConfigSchema,
+  /**
+   * The deployment's per-file ceiling in MB, for a form that asks for a file.
+   * The renderer needs it to tell a visitor "up to 10 MB" before they pick a
+   * 40 MB video, and only the API knows the number. Absent on a deployment
+   * with no storage, which is also one that cannot have published such a form.
+   */
+  uploadMaxMb: z.number().int().positive().optional(),
 });
 export type PublicForm = z.infer<typeof publicFormSchema>;
 

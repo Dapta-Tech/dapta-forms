@@ -4,7 +4,7 @@
  * decoupled.
  */
 import { cache } from 'react';
-import type { PublicForm, PublicProfile } from '@quill/types';
+import type { PublicForm, PublicProfile, UploadPresignInput, UploadPresignResult } from '@quill/types';
 import { serverApiUrl } from './api-url';
 import { forwardedForHeader } from './forwarded-for';
 
@@ -91,4 +91,43 @@ export async function postFormEvent(
       cache: 'no-store',
     },
   ).catch(() => undefined);
+}
+
+export type PresignResult =
+  | { ok: true; upload: UploadPresignResult }
+  | { ok: false; status: number; error: string; message: string };
+
+/**
+ * Ask the API to authorize one file upload.
+ *
+ * Server-side like every other call here, and for the same reason: it forwards
+ * the visitor's own `X-Forwarded-For`, so the API's per-IP rate limit still
+ * sees the visitor rather than this web server. A browser calling the API
+ * directly would need the API's CORS allowlist to name every embed origin;
+ * going through the server action keeps that surface at zero.
+ */
+export async function postUploadPresign(
+  accountCode: string,
+  slug: string,
+  body: UploadPresignInput,
+): Promise<PresignResult> {
+  const res = await fetch(
+    `${API_URL}/v1/public/forms/${encodeURIComponent(accountCode)}/${encodeURIComponent(slug)}/uploads`,
+    {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...(await forwardedForHeader()) },
+      body: JSON.stringify(body),
+      cache: 'no-store',
+    },
+  );
+  const json = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+  if (res.ok && typeof json.url === 'string') {
+    return { ok: true, upload: json as unknown as UploadPresignResult };
+  }
+  return {
+    ok: false,
+    status: res.status,
+    error: (json.error as string) ?? 'UPLOAD_FAILED',
+    message: (json.message as string) ?? 'Could not upload that file.',
+  };
 }

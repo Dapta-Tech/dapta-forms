@@ -469,6 +469,8 @@ function QuestionEditableBody({
           <NamePreview step={step} m={m} />
         ) : step.type === 'scheduler' ? (
           <SchedulerEmbedPreview step={step} m={m} />
+        ) : step.type === 'file' ? (
+          <FileDropPreview step={step} m={m} />
         ) : (
           <div className="rounded-xl border border-border bg-background px-4 py-3 text-[15px] text-muted-foreground/60">
             {step.placeholder ||
@@ -891,6 +893,27 @@ function RevealCanvas({
  * else the localized default) — so typing a placeholder in the settings panel
  * updates the canvas immediately, exactly as it will publish.
  */
+/**
+ * What the visitor will see: the idle drop zone, not a text placeholder.
+ *
+ * The builder canvas is the only place an author checks their work before
+ * publishing, so a file question that previewed as an empty input would be
+ * lying about the question it is. The accepted types come from the step so
+ * changing them in the settings panel is visible here immediately.
+ */
+function FileDropPreview({ step, m }: { step: FormStep; m: BuilderMessages }) {
+  const types = (step.allowedTypes ?? []).map((t) => t.toUpperCase()).join(', ');
+  return (
+    <div className="flex flex-col items-center gap-1.5 rounded-xl border border-dashed border-border bg-background px-4 py-6 text-center">
+      <i aria-hidden className="pi pi-paperclip text-muted-foreground/60" style={{ fontSize: 16 }} />
+      <span className="text-[15px] text-muted-foreground/60">
+        {step.placeholder || m.canvas.filePlaceholder}
+      </span>
+      {types ? <span className="text-xs text-muted-foreground/50">{types}</span> : null}
+    </div>
+  );
+}
+
 function NamePreview({ step, m }: { step: FormStep; m: BuilderMessages }) {
   const [firstField, secondField] = nameFields(step);
   const firstLabel = (firstField && step.placeholders?.[firstField]) || m.canvas.nameFirstPlaceholder;

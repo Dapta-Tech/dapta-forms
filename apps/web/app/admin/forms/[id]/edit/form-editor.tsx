@@ -124,6 +124,7 @@ export function FormEditor({
   initialHasDraft = false,
   updatedAt,
   lockedValues = {},
+  uploads,
 }: {
   id: string;
   initialName: string;
@@ -141,6 +142,12 @@ export function FormEditor({
    * points at. See `lockedOptionValues`.
    */
   lockedValues?: Record<string, string[]>;
+  /**
+   * What this deployment can do with file answers. Absent or disabled hides the
+   * file question from the gallery: offering an author a question the server
+   * would refuse to accept an answer to is worse than not offering it.
+   */
+  uploads?: { enabled: boolean; maxFileMb: number };
 }) {
   const bm = getBuilderMessages(locale);
   const searchParams = useSearchParams();
@@ -988,6 +995,7 @@ export function FormEditor({
                 {selectedStep && selected != null ? (
                   <QuestionSettings
                     formId={id}
+                    uploads={uploads}
                     onOpenConnect={() => setTab('connect')}
                     publicUrl={publicPath}
                     step={selectedStep}
@@ -1086,11 +1094,12 @@ export function FormEditor({
         m={bm}
         // Vertical: one reveal, always at the end — a second tile pick would
         // create a card the renderer ignores, so it's offered exactly once.
-        disabled={
-          layout === 'vertical' && hasReveal
-            ? { reveal: bm.gallery.revealVerticalTaken }
-            : undefined
-        }
+        disabled={{
+          // One reveal, always at the end: a second tile pick would create a
+          // card the vertical renderer ignores.
+          ...(layout === 'vertical' && hasReveal ? { reveal: bm.gallery.revealVerticalTaken } : {}),
+          ...(uploads?.enabled ? {} : { file: bm.gallery.fileStorageOff }),
+        }}
       />
       {/* The three form-wide views. Branching edits INLINE (R7) — same
           LogicRules/LogicConditions the per-question dialog hosts, same

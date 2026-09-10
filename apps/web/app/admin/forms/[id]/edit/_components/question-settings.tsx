@@ -27,6 +27,7 @@ import { describeCondition, liveGotoRules, liveRuleCount, optionLabel, splitGoto
 import { QuestionHubspotSection } from './question-hubspot';
 import { QuestionVariants } from './question-variants';
 import { SchedulerPanel } from './scheduler-panel';
+import { FileSettings } from './file-settings';
 import { tokenOptionsBefore } from './token-textarea';
 import { HelpTip } from '@/components/ui/help-tip';
 import {
@@ -109,6 +110,7 @@ export function QuestionSettings({
   onRenameKey,
   publicUrl,
   onOpenConnect,
+  uploads,
 }: {
   formId: string;
   step: FormStep;
@@ -138,6 +140,8 @@ export function QuestionSettings({
   publicUrl?: string | null;
   /** Switch the editor to the Connect tab (the mapping's other home). */
   onOpenConnect: () => void;
+  /** The deployment's file-answer ceiling, for the size field's own limit. */
+  uploads?: { enabled: boolean; maxFileMb: number };
 }) {
   const contact = isContactType(step.type);
   // Form-wide "highest possible" total (same math as Results). Drives the
@@ -586,6 +590,15 @@ export function QuestionSettings({
             </p>
           ) : null}
         </section>
+      ) : null}
+
+      {step.type === 'file' ? (
+        <FileSettings
+          step={step}
+          onUpdate={onUpdate}
+          em={em}
+          maxFileMb={uploads?.maxFileMb ?? 10}
+        />
       ) : null}
 
       {step.type === 'email' ? (

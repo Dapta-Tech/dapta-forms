@@ -91,9 +91,11 @@ import { AuthService, type ReqLike } from './auth.service';
 import { WorkspaceService } from './workspace.service';
 import { EmailEffects } from './email-effects';
 import { AnalyticsEffects } from './analytics-effects';
+import { UploadService } from './upload.service';
+import type { ServerEnv } from '@quill/config/env';
 import { assertAdmin, assertCanManageTarget, assertNotSelf, assertOwner } from './permissions';
 import { parseBound, parseIntParam, parseKinds, parseOutboxStatuses, parseStatus } from './query-params';
-import { DB } from './tokens';
+import { DB, ENV } from './tokens';
 
 function parse<T>(schema: { parse: (v: unknown) => T }, body: unknown): T {
   try {
@@ -152,6 +154,11 @@ export class AdminCrudController {
     @Optional() @Inject(AnalyticsEffects) private readonly productAnalytics?: AnalyticsEffects,
     // Last on purpose: existing tests construct this controller positionally.
     @Optional() @Inject(WorkspaceService) private readonly workspacesSvc?: WorkspaceService,
+    // Deployment capability reporting only (`me`): whether file answers are
+    // possible here at all. Optional for the same positional-construction
+    // reason, and absent reads as "no uploads", which is the safe answer.
+    @Optional() @Inject(UploadService) private readonly uploads?: UploadService,
+    @Optional() @Inject(ENV) private readonly env?: ServerEnv,
   ) {}
 
   private ws(): WorkspaceService {
@@ -168,7 +175,17 @@ export class AdminCrudController {
     // Staff of the deployment (by email domain, identity-backed only): the
     // switcher offers them the whole estate to search.
     const staff = this.workspacesSvc ? await this.workspacesSvc.isStaff(req) : false;
-    return { ...view, staff };
+    // Whether this DEPLOYMENT can accept file answers, and how big. The builder
+    // must not offer a question it cannot fulfil, and the size field has to show
+    // the real ceiling rather than a number the API would then refuse. Reported
+    // here, next to `staff`, because the editor already fetches this and a
+    // capability the dashboard reads from its own env would be a second copy of
+    // a switch that lives in the API.
+    const uploads = {
+      enabled: this.uploads?.enabled ?? false,
+      maxFileMb: this.env?.UPLOAD_MAX_FILE_MB ?? 10,
+    };
+    return { ...view, staff, uploads };
   }
 
   /**
@@ -701,6 +718,26 @@ export class AdminCrudController {
    * startedAt), `limit`/`offset`. Returns a paginated envelope `{ items, total,
    * limit, offset }` so the admin table can render page counts.
    */
+  /**
+   * A signed, short-lived URL for one uploaded file on one submission.
+   *
+   * Returns the URL rather than redirecting: the dashboard opens it itself, so
+   * the link never lands in the browser's history or in a referrer, and a stale
+   * page cannot re-follow a redirect whose signature has since expired.
+   */
+  @Get('forms/:id/submissions/:submissionId/files/:stepKey')
+  async submissionFile(
+    @Req() req: ReqLike,
+    @Param('submissionId') submissionId: string,
+    @Param('stepKey') stepKey: string,
+  ) {
+    const p = await this.auth.resolveHost(req);
+    if (!this.uploads) throw new NotFoundException({ error: 'NOT_FOUND', message: 'File uploads are not enabled.' });
+    const r = await this.uploads.downloadUrl(p.accountId, submissionId, stepKey);
+    if ('error' in r) throw new NotFoundException({ error: r.error, message: r.message });
+    return r;
+  }
+
   @Get('forms/:id/submissions')
   async formSubmissions(
     @Req() req: ReqLike,
