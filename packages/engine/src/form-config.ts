@@ -75,6 +75,13 @@ export function createEmptyStep(
   if (type === 'multiple_choice') {
     base.selectionMode = 'single';
   }
+  if (type === 'file') {
+    // Documents by default: the common case is a CV or a signed form, and a
+    // narrow list is the safer starting point than "anything". The size stays
+    // unset so the step inherits the deployment ceiling rather than pinning a
+    // number the deployment may not allow.
+    base.allowedTypes = ['pdf', 'doc', 'docx', 'jpg', 'png'];
+  }
   if (type === 'slider') {
     base.min = 0;
     base.max = 100;

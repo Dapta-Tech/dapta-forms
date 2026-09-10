@@ -240,9 +240,62 @@ export const serverEnvSchema = z.object({
   IAM_API_KEY: z.string().optional(),
   DAPTA_SYNC_FLOW_URL: z.string().url().optional(),
   DAPTA_SYNC_FLOW_KEY: z.string().optional(),
+
+  // Object storage for the `file` question type. Uploads NEVER pass through
+  // this process: the browser PUTs straight to the bucket with a short-lived
+  // presigned URL the API mints, and the API verifies the object on submit.
+  //
+  // STORAGE_BUCKET is the switch. Unset, which is the default and every bare
+  // fork, means the feature does not exist: it is refused at publish time and
+  // the presign endpoint 404s, so a clone with no bucket boots and runs end to
+  // end. Set it and storage turns on with the pod's own AWS credentials; there
+  // is no key to configure in the normal case.
+  //
+  // STORAGE_PROVIDER exists only as an explicit kill switch (`none`) for a
+  // deployment that wants the bucket configured but the feature off. It is NOT
+  // how you turn storage ON. The bucket is.
+  STORAGE_PROVIDER: z.enum(['none', 's3']).optional(),
+  STORAGE_BUCKET: z.string().optional(),
+  // Defaults to the region our own clusters run in, so a deployment whose
+  // bucket lives beside its pods needs one variable, not two. Any other
+  // deployment sets it; a mismatch fails the request, it does not misroute.
+  STORAGE_REGION: z.string().default('us-east-2'),
+  // Unset = AWS. Set for an S3-compatible endpoint (R2, MinIO), which also
+  // needs STORAGE_FORCE_PATH_STYLE=true on most self-hosted servers.
+  STORAGE_ENDPOINT: z.string().url().optional(),
+  STORAGE_FORCE_PATH_STYLE: boolish.default('false'),
+  // Unset on a pod with an instance/IRSA role, whose credentials the SDK's
+  // default chain finds. These exist for a deployment with no role to attach.
+  STORAGE_ACCESS_KEY_ID: z.string().optional(),
+  STORAGE_SECRET_ACCESS_KEY: z.string().optional(),
+
+  // Hard ceiling per file, in MB. A form owner may lower the limit on their own
+  // question but never raise it past this; the presign call and the post-upload
+  // HeadObject both enforce it, so a client that lies about `size` still fails.
+  UPLOAD_MAX_FILE_MB: z.coerce.number().int().positive().max(1024).default(10),
+  // Life of the upload URL. Long enough for a slow connection to finish a
+  // 10 MB PUT, short enough that a leaked URL is worthless by the time it
+  // travels. Note that with role credentials the URL also dies with the role
+  // session, whichever comes first.
+  UPLOAD_PRESIGN_TTL_SEC: z.coerce.number().int().positive().max(3600).default(600),
+  // Life of the owner's download URL. Minted per click, never stored, never
+  // mailed. A link with a longer life than this is a bug, not a feature.
+  UPLOAD_DOWNLOAD_TTL_SEC: z.coerce.number().int().positive().max(3600).default(300),
 });
 
 export type ServerEnv = z.infer<typeof serverEnvSchema>;
+
+/**
+ * True when the `file` question type is available on this deployment.
+ *
+ * The bucket is the switch (see STORAGE_BUCKET); `STORAGE_PROVIDER=none` is an
+ * explicit override that keeps a configured bucket but turns the feature off.
+ * Every caller asks this, and nothing branches on the raw variables, so a
+ * fork with no bucket takes exactly one path.
+ */
+export function isStorageEnabled(env: Pick<ServerEnv, 'STORAGE_BUCKET' | 'STORAGE_PROVIDER'>): boolean {
+  return Boolean(env.STORAGE_BUCKET) && env.STORAGE_PROVIDER !== 'none';
+}
 
 export const clientEnvSchema = z.object({
   NEXT_PUBLIC_API_URL: z.string().url().default('http://localhost:4000'),

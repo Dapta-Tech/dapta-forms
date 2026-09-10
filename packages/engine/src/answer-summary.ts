@@ -10,6 +10,7 @@
 import {
   isInputlessStep,
   nameFields,
+  parseFileAnswer,
   resolveQuestion,
   type Answers,
   type AnswerValue,
@@ -57,6 +58,12 @@ function formatValue(step: FormStep, value: AnswerValue): string {
     return value.trim();
   }
   if (typeof value === "object" && value !== null) {
+    // An uploaded file prints as its name and nothing else. The generic object
+    // branch below would join every field, which would put the object key into
+    // the owner's email and into the CSV. The key is not secret, but a link
+    // built from it would be, and a summary row is the wrong place for either.
+    const file = parseFileAnswer(value);
+    if (file) return file.name;
     return Object.values(value)
       .filter((v) => typeof v === "string" && v.trim())
       .join(" ");

@@ -12,8 +12,10 @@ import {
 } from '@nestjs/common';
 import { ZodError } from 'zod';
 import { SubmissionService } from './submission.service';
+import { UploadService } from './upload.service';
 import { unwrap } from './http';
 import { RateLimitGuard } from './rate-limit';
+import { uploadPresignSchema } from '@quill/types';
 
 function badReq(err: unknown): never {
   if (err instanceof ZodError)
@@ -29,7 +31,10 @@ function badReq(err: unknown): never {
 @UseGuards(RateLimitGuard)
 @Controller('v1/public')
 export class PublicController {
-  constructor(@Inject(SubmissionService) private readonly svc: SubmissionService) {}
+  constructor(
+    @Inject(SubmissionService) private readonly svc: SubmissionService,
+    @Inject(UploadService) private readonly uploads: UploadService,
+  ) {}
 
   /** The published form config for the public renderer. */
   @Get('forms/:accountCode/:slug')
@@ -45,6 +50,30 @@ export class PublicController {
     const p = await this.svc.publicProfile(accountCode, handle);
     if (!p) throw new NotFoundException({ error: 'NOT_FOUND', message: 'Page not found.' });
     return p;
+  }
+
+  /**
+   * Authorize one file upload: returns a presigned PUT the browser uses to send
+   * the file straight to the bucket.
+   *
+   * Behind the same per-IP rate limit as the rest of this controller, which is
+   * what keeps an anonymous client from minting signatures in a loop. The URL
+   * it hands back can write exactly one key, for minutes, with one content
+   * type; the object is checked again when the submission arrives.
+   */
+  @Post('forms/:accountCode/:slug/uploads')
+  @HttpCode(200)
+  async presignUpload(
+    @Param('accountCode') accountCode: string,
+    @Param('slug') slug: string,
+    @Body() body: unknown,
+  ) {
+    try {
+      const input = uploadPresignSchema.parse(body);
+      return unwrap(await this.uploads.presign(accountCode, slug, input));
+    } catch (err) {
+      badReq(err);
+    }
   }
 
   /** Persist a submission (partial or complete); the score is recomputed server-side. */

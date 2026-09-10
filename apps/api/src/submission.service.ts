@@ -26,6 +26,7 @@ import { EmailEffects } from './email-effects';
 import { DestinationEffects } from './destination-effects';
 import { BookingEffects } from './booking-effects';
 import { AnalyticsEffects } from './analytics-effects';
+import { UploadService } from './upload.service';
 import { DB } from './tokens';
 
 export type ServiceError = { error: string; message: string; status: number };
@@ -49,6 +50,9 @@ export class SubmissionService {
     @Optional() @Inject(BookingEffects) private readonly bookings?: BookingEffects,
     // Product analytics about the form OWNER (activation), not the respondent.
     @Optional() @Inject(AnalyticsEffects) private readonly productAnalytics?: AnalyticsEffects,
+    // Verifies + promotes `file` answers. Optional for the same reason as the
+    // rest: a form with no file question never reaches it.
+    @Optional() @Inject(UploadService) private readonly uploads?: UploadService,
   ) {}
 
   /**
@@ -125,15 +129,27 @@ export class SubmissionService {
     if (!form) return { error: 'NOT_FOUND', message: 'Form not found.', status: 404 };
 
     const config = form.config as FormConfig;
-    const score = computeScore(config, input.data);
+
+    // File answers are checked against the bucket BEFORE anything is persisted
+    // or scored: an unverified answer must never reach the row, the score, or
+    // an outbound effect. What comes back has its keys rewritten out of the
+    // staging prefix, which lifecycle deletes.
+    let data = input.data;
+    if (this.uploads) {
+      const verified = await this.uploads.verifyAnswers(form, input.sessionId, data);
+      if ('error' in verified) return verified;
+      data = verified.answers;
+    }
+
+    const score = computeScore(config, data);
     // Pass the answers so answer-forced outcome overrides resolve identically
     // to the client renderer (a score-only resolution would disagree with the
     // redirect the visitor actually saw).
-    const outcome = resolveOutcome(config, score, input.data);
+    const outcome = resolveOutcome(config, score, data);
     const row = await upsertSubmission(this.db, {
       formId: form.id,
       sessionId: input.sessionId,
-      data: input.data,
+      data,
       score,
       partial: input.partial,
     });
@@ -148,12 +164,12 @@ export class SubmissionService {
     const reCompleted = !input.partial && row.wasCompletedBefore;
 
     if (!input.partial && !reCompleted) {
-      const respondentEmail = pickEmail(input.data);
+      const respondentEmail = pickEmail(data);
       // The answers as the owner reads them (labels, option labels, step
       // order): resolved once here, printed by the `{{answers}}` token in
       // either email. The respondent copy carries them too so a custom receipt
       // can echo what was submitted.
-      const answers = summarizeAnswers(config, input.data);
+      const answers = summarizeAnswers(config, data);
       // form.id lets the effect apply any per-form template override
       // (precedence form → account → stock, resolved inside the effect).
       void this.email.enqueueSubmissionReceived(
@@ -207,7 +223,7 @@ export class SubmissionService {
       outcomeLabel: outcome?.label ?? null,
       phase: input.partial ? 'partial' : 'complete',
       submittedAt: Date.now(),
-      data: input.data,
+      data,
       config,
     });
 
