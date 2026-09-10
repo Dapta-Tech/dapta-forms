@@ -53,6 +53,16 @@ class FakeStorage implements ObjectStorage {
   }
 }
 
+/** Signing reaches AWS, so it can fail for reasons the visitor did not cause. */
+class UnsignableStorage extends FakeStorage {
+  override async presignPut(): Promise<string> {
+    throw new Error('Could not load credentials from any providers');
+  }
+  override async presignGet(): Promise<string> {
+    throw new Error('Could not load credentials from any providers');
+  }
+}
+
 const ENV = {
   UPLOAD_MAX_FILE_MB: 10,
   UPLOAD_PRESIGN_TTL_SEC: 600,
@@ -159,6 +169,21 @@ describe('presign', () => {
     const greedy = { version: 1, steps: [{ ...FILE_STEP, maxSizeMb: 500 }] };
     await db.run(sql`UPDATE form SET config = ${JSON.stringify(greedy)} WHERE slug = 'lead-qualifier'`);
     expect(await ask({ size: 11_000_000 })).toMatchObject({ error: 'FILE_TOO_LARGE' });
+  });
+
+  it('reports a signing failure as a typed 503, not a bare 500', async () => {
+    // The shape of a pod with no role attached, or a role whose session died.
+    // Left unguarded this surfaced as an Internal Server Error with a stack in
+    // the log, which names neither the cause nor who can fix it.
+    const broken = new UploadService(db, ENV, new UnsignableStorage());
+    const r = await broken.presign('acme', 'lead-qualifier', {
+      sessionId: 'sess-1',
+      stepKey: 'cv',
+      name: 'resume.pdf',
+      size: 1000,
+      mime: 'application/pdf',
+    } as never);
+    expect(r).toMatchObject({ error: 'UPLOAD_UNAVAILABLE', status: 503 });
   });
 
   it('normalizes a junk mime instead of signing it', async () => {
