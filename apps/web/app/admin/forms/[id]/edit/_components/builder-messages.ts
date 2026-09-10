@@ -198,6 +198,8 @@ export interface BuilderMessages {
     /** "{n} pts" */
     pts: string;
     messagePlaceholder: string;
+    /** File step preview: the drop zone's own call to action. */
+    filePlaceholder: string;
     /** The reveal card's in-place copy editing + "plays for {ms} ms" caption. */
     revealHeadlinePlaceholder: string;
     revealSubtitlePlaceholder: string;
@@ -380,6 +382,8 @@ export interface BuilderMessages {
     noResults: string;
     /** Vertical layout: why the reveal tile is off once the form has one. */
     revealVerticalTaken: string;
+    /** Why the file tile is unavailable: this deployment stores no files. */
+    fileStorageOff: string;
     items: Record<GalleryItemId, { title: string; desc: string }>;
   };
   map: {
@@ -497,6 +501,7 @@ export type GalleryItemId =
   | 'long'
   | 'url'
   | 'slider'
+  | 'file'
   | 'message'
   | 'reveal'
   | 'scheduler';
@@ -634,6 +639,7 @@ const en: BuilderMessages = {
     submit: 'Submit',
     pts: '{n} pts',
     messagePlaceholder: 'Write your message…',
+    filePlaceholder: 'Choose a file',
     revealHeadlinePlaceholder: 'Reviewing your answers…',
     revealSubtitlePlaceholder: 'Add a line of reassurance (optional)',
     revealPlays: 'Plays for {ms} ms, then the form continues on its own.',
@@ -795,6 +801,7 @@ const en: BuilderMessages = {
     close: 'Close',
     noResults: 'No matching types.',
     revealVerticalTaken: 'Already added. A one-page form plays its reveal once, after Submit.',
+    fileStorageOff: 'File uploads are not set up on this deployment.',
     items: {
       name: { title: 'Name', desc: 'Full name field' },
       email: { title: 'Email', desc: 'Validated email' },
@@ -806,6 +813,7 @@ const en: BuilderMessages = {
       long: { title: 'Long text', desc: 'Paragraph' },
       url: { title: 'Website', desc: 'Validated URL' },
       slider: { title: 'Slider', desc: 'Rating scale' },
+      file: { title: 'File upload', desc: 'A document or image' },
       message: { title: 'Message', desc: 'Text, no input' },
       reveal: { title: 'Reveal screen', desc: 'A short processing pause' },
       scheduler: {
@@ -1039,6 +1047,7 @@ const es: BuilderMessages = {
     next: 'Siguiente',
     submit: 'Enviar',
     pts: '{n} pts',
+    filePlaceholder: 'Elige un archivo',
     messagePlaceholder: 'Escribe tu mensaje…',
     revealHeadlinePlaceholder: 'Revisando tus respuestas…',
     revealSubtitlePlaceholder: 'Añade una línea que tranquilice (opcional)',
@@ -1202,6 +1211,7 @@ const es: BuilderMessages = {
     close: 'Cerrar',
     noResults: 'No hay tipos que coincidan.',
     revealVerticalTaken: 'Ya añadida. Un formulario de una página muestra su revelación una vez, después de Enviar.',
+    fileStorageOff: 'Este despliegue no tiene configurada la subida de archivos.',
     items: {
       name: { title: 'Nombre', desc: 'Campo de nombre completo' },
       email: { title: 'Correo', desc: 'Correo validado' },
@@ -1213,6 +1223,7 @@ const es: BuilderMessages = {
       long: { title: 'Texto largo', desc: 'Párrafo' },
       url: { title: 'Sitio web', desc: 'URL validada' },
       slider: { title: 'Deslizador', desc: 'Escala de valoración' },
+      file: { title: 'Subir archivo', desc: 'Un documento o imagen' },
       message: { title: 'Mensaje', desc: 'Texto, sin campo' },
       reveal: {
         title: 'Pantalla de revelación',

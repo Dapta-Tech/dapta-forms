@@ -111,7 +111,12 @@ export class SubmissionService {
     if (!f) return null;
     // NEVER leak destination config (webhook URLs/secrets, CRM mappings) to the
     // public renderer — it is server-only integration config.
-    return { slug: f.slug, name: f.name, config: toPublicConfig(f.config) };
+    return {
+      slug: f.slug,
+      name: f.name,
+      config: toPublicConfig(f.config),
+      ...(this.uploads?.enabled ? { uploadMaxMb: this.uploads.maxFileMb } : {}),
+    };
   }
 
   /**

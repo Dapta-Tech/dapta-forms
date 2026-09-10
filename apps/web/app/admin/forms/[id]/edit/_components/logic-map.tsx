@@ -273,6 +273,8 @@ function galleryIdForStep(step: FormStep): GalleryItemId {
       return 'long';
     case 'url':
       return 'url';
+    case 'file':
+      return 'file';
     case 'message':
       return 'message';
     case 'text':

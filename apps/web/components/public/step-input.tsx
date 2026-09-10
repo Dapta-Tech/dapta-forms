@@ -15,6 +15,7 @@ import {
 import { getMessages } from '@quill/shared';
 import { SearchableDropdown } from './searchable-dropdown';
 import { PhoneInput } from './phone-input';
+import { FileUploadInput, type RequestTicket } from './file-upload-input';
 
 interface StepInputProps {
   step: FormStep;
@@ -43,6 +44,15 @@ interface StepInputProps {
    * fire the `start`/`step_complete` funnel events a real interaction fires.
    */
   onSeed?: (value: AnswerValue) => void;
+  /**
+   * Authorizes one file upload, for a `file` step. Supplied by the renderers,
+   * which know the form's public coordinates; the input itself stays ignorant
+   * of routing. Absent means the step renders nothing to upload with, which is
+   * correct: a deployment with no storage cannot have published this question.
+   */
+  onRequestUpload?: (stepKey: string, file: Parameters<RequestTicket>[0]) => ReturnType<RequestTicket>;
+  /** The deployment's per-file ceiling in MB, for the accepted-files line. */
+  uploadMaxMb?: number;
 }
 
 /** The current multi-select answer as a string[] (defensive against scalars). */
@@ -106,6 +116,8 @@ export function StepInput({
   locale = 'en',
   autoFocus = true,
   onSeed,
+  onRequestUpload,
+  uploadMaxMb,
 }: StepInputProps) {
   switch (step.type) {
     case 'name': {
@@ -194,6 +206,22 @@ export function StepInput({
           placeholder={step.placeholder ?? ''}
           aria-label={step.question ?? step.key}
           autoFocus={autoFocus}
+        />
+      );
+
+    case 'file':
+      // No upload route means the deployment has no storage, and a form with
+      // this question could not have been published there. Rendering nothing
+      // beats rendering a control that would fail on the first click.
+      if (!onRequestUpload) return null;
+      return (
+        <FileUploadInput
+          step={step}
+          value={value}
+          onChange={onChange}
+          requestTicket={(file) => onRequestUpload(step.key, file)}
+          locale={locale}
+          maxSizeMb={uploadMaxMb ?? 10}
         />
       );
 

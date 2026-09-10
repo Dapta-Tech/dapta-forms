@@ -76,3 +76,20 @@ describe('suggestProperty', () => {
     expect(suggestProperty(q({ key: 'company' }), propertyLookup([{ name: 'email' }]))).toBeNull();
   });
 });
+
+describe('file questions', () => {
+  it('suggests no property: a file answer has none it could fill', () => {
+    expect(suggestProperty(q({ key: 'cv', label: 'Upload your CV', type: 'file' }), HUBSPOT)).toBeNull();
+  });
+
+  it('is not dragged into a mapping by the words in its question', () => {
+    // "company logo" would otherwise match the `company` sweep and put a PDF
+    // into a text property.
+    expect(
+      suggestProperty(q({ key: 'logo', label: 'Upload your company logo', type: 'file' }), HUBSPOT),
+    ).toBeNull();
+    expect(
+      suggestProperty(q({ key: 'site', label: 'Attach your website export', type: 'file' }), HUBSPOT),
+    ).toBeNull();
+  });
+});

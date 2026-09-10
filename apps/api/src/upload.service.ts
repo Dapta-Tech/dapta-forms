@@ -16,7 +16,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { fileTypeFromBuffer } from 'file-type';
 import type { Db } from '@quill/db';
-import { getPublishedForm } from '@quill/db';
+import { getPublishedForm, getSubmissionAnswersForAccount } from '@quill/db';
 import { parseFileAnswer, type FormConfig, type FormStep } from '@quill/engine';
 import type { SubmissionAnswers, UploadPresignInput, UploadPresignResult } from '@quill/types';
 import { type ServerEnv } from '@quill/config/env';
@@ -109,6 +109,11 @@ export class UploadService {
   /** False on a deployment with no bucket: the question type does not exist here. */
   get enabled(): boolean {
     return this.storage.enabled;
+  }
+
+  /** The deployment's hard per-file ceiling, in MB. An owner may only go lower. */
+  get maxFileMb(): number {
+    return this.env.UPLOAD_MAX_FILE_MB;
   }
 
   /**
@@ -217,6 +222,33 @@ export class UploadService {
     }
 
     return { answers: out };
+  }
+
+  /**
+   * A short-lived download URL for one file answer, or an error.
+   *
+   * Account-scoped at the database (invariant 3): the submission is read
+   * through a JOIN on the caller's own account, so a guessed submission id from
+   * another workspace resolves to nothing rather than to a signed URL. The URL
+   * itself is minted per call, lives minutes, and is never stored or mailed.
+   */
+  async downloadUrl(
+    accountId: string,
+    submissionId: string,
+    stepKey: string,
+  ): Promise<{ url: string; name: string } | UploadError> {
+    if (!this.storage.enabled) {
+      return { error: 'NOT_FOUND', message: 'File uploads are not enabled.', status: 404 };
+    }
+    const row = await getSubmissionAnswersForAccount(this.db, accountId, submissionId);
+    if (!row) return { error: 'NOT_FOUND', message: 'Submission not found.', status: 404 };
+
+    const answers = (row.data ?? {}) as Record<string, unknown>;
+    const file = parseFileAnswer(answers[stepKey] as never);
+    if (!file) return { error: 'NOT_FOUND', message: 'No file on that question.', status: 404 };
+
+    const url = await this.storage.presignGet(file.key, file.name);
+    return { url, name: file.name };
   }
 
   /** The object exists, is within the limit, and its bytes match the name it arrived under. */
