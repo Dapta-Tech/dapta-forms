@@ -11,7 +11,7 @@ import { FormTabs } from '@/components/ui/form-tabs';
 import { Skeleton } from '@/components/skeleton';
 import { SubmissionsFilter } from './submissions-filter';
 import { DeleteSubmissionButton } from './row-actions';
-import { DownloadFileButton } from './download-file-button';
+import { SubmissionFileButton } from './submission-file-button';
 
 export const dynamic = 'force-dynamic';
 
@@ -224,14 +224,20 @@ async function SubmissionsData({
                         title={formatCell(data[s.key], '')}
                       >
                         {file ? (
-                          <DownloadFileButton
+                          <SubmissionFileButton
                             formId={id}
                             submissionId={row.id}
                             stepKey={s.key}
                             name={file.name}
                             labels={{
                               download: m.submissions.download,
-                              failed: m.submissions.downloadFailed,
+                              downloadFailed: m.submissions.downloadFailed,
+                              loading: m.submissions.previewLoading,
+                              failed: m.submissions.previewFailed,
+                              reload: m.submissions.previewReload,
+                              unavailable: m.submissions.previewUnavailable,
+                              approx: m.submissions.previewApprox,
+                              close: m.submissions.previewClose,
                             }}
                           />
                         ) : (

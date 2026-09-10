@@ -13,7 +13,8 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { createDb, migrate, seed, sql, type Db } from '@quill/db';
 import { UploadService } from './upload.service';
-import type { ObjectStorage, StoredObject } from './storage';
+import { PREVIEW_MAX_BYTES } from './file-preview';
+import type { InlineDisposition, ObjectStorage, StoredObject } from './storage';
 import type { ServerEnv } from '@quill/config/env';
 
 const PDF_MAGIC = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x37]); // "%PDF-1.7"
@@ -25,6 +26,8 @@ class FakeStorage implements ObjectStorage {
   objects = new Map<string, { size: number; head: Uint8Array; contentType?: string }>();
   copies: Array<{ from: string; to: string }> = [];
   signed: Array<{ key: string; contentType: string }> = [];
+  /** Every presignGet, so a test can see the disposition each URL was asked for. */
+  reads: Array<{ key: string; filename: string; inline: InlineDisposition | undefined }> = [];
 
   constructor(readonly enabled = true) {}
 
@@ -32,8 +35,12 @@ class FakeStorage implements ObjectStorage {
     this.signed.push({ key, contentType });
     return `https://bucket.example/${key}?sig=test`;
   }
-  async presignGet(key: string): Promise<string> {
-    return `https://bucket.example/${key}?sig=get`;
+  async presignGet(key: string, filename: string, inline?: InlineDisposition): Promise<string> {
+    this.reads.push({ key, filename, inline });
+    // The disposition rides in the fake URL so a test can assert on the value
+    // the caller gets back, not only on what the adapter was asked for.
+    const how = inline ? `inline&type=${encodeURIComponent(inline.contentType)}` : 'attachment';
+    return `https://bucket.example/${key}?sig=get&as=${how}`;
   }
   async head(key: string): Promise<StoredObject | null> {
     const o = this.objects.get(key);
@@ -299,5 +306,134 @@ describe('verifyAnswers', () => {
     expect(await svc.verifyAnswers(form, 'sess-1', { cv: { name: 'x.pdf' } })).toMatchObject({
       status: 400,
     });
+  });
+});
+
+/**
+ * Reading one file back, which had no coverage at all before this block.
+ *
+ * The interesting decision is not "does it sign a URL" but "which URL": an
+ * upload is only ever rendered in place when the API itself decided the type is
+ * safe, and it decides from the EXTENSION rather than from the `mime` on the
+ * answer, because the mime is a string the browser typed and nothing checked.
+ * So a mime that lies has to change nothing about what comes back.
+ */
+describe('submissionFile', () => {
+  /** Plant one stored submission carrying one file answer. */
+  async function plant(
+    file: Record<string, string>,
+    over: { accountId?: string } = {},
+  ): Promise<string> {
+    const id = `sub-${Math.random().toString(36).slice(2)}`;
+    let formId = form.id;
+    if (over.accountId) {
+      // A form belonging to somebody else, so the join has something to refuse.
+      formId = `form-${id}`;
+      await db.run(
+        sql`INSERT INTO form (id, account_id, slug, name, config, created_at, updated_at)
+            VALUES (${formId}, ${over.accountId}, ${`slug-${id}`}, 'Theirs', ${JSON.stringify(CONFIG)}, 1, 1)`,
+      );
+    }
+    await db.run(
+      sql`INSERT INTO submission (id, form_id, session_id, data, score, started_at, completed_at)
+          VALUES (${id}, ${formId}, ${`sess-${id}`}, ${JSON.stringify({ cv: file })}, 0, 1, 1)`,
+    );
+    return id;
+  }
+
+  const CV_PDF = {
+    key: 'uploads/acct/form/sess/9f3c.pdf',
+    name: 'Ada Lovelace CV.pdf',
+    size: '40211',
+    mime: 'application/pdf',
+  };
+
+  it('mints a download URL and a separate one to render a PDF in place', async () => {
+    const id = await plant(CV_PDF);
+    const r = await svc.submissionFile(form.accountId, id, 'cv');
+
+    expect(r).toMatchObject({ name: 'Ada Lovelace CV.pdf', size: '40211', kind: 'pdf' });
+    const ok = r as { url: string; previewUrl: string };
+    expect(ok.url).toContain('as=attachment');
+    expect(ok.previewUrl).toContain('as=inline');
+    expect(ok.previewUrl).toContain(encodeURIComponent('application/pdf'));
+  });
+
+  it('forces the image type on the inline URL instead of trusting the stored one', async () => {
+    // A real PNG whose answer claims text/html. The magic-byte check passed it
+    // because the bytes agree with .png; only the mime lies. Served inline
+    // under that mime it would render as a page, so the type is overridden.
+    const id = await plant({ ...CV_PDF, key: 'uploads/a/f/s/1.png', name: 'logo.png', mime: 'text/html' });
+    const r = (await svc.submissionFile(form.accountId, id, 'cv')) as { kind: string; previewUrl: string };
+
+    expect(r.kind).toBe('image');
+    expect(r.previewUrl).toContain(encodeURIComponent('image/png'));
+    expect(r.previewUrl).not.toContain('text%2Fhtml');
+    expect(storage.reads.some((x) => x.inline?.contentType === 'text/html')).toBe(false);
+  });
+
+  it('gives a .docx one URL for both jobs, since the dashboard reads its bytes', async () => {
+    const id = await plant({ ...CV_PDF, key: 'uploads/a/f/s/2.docx', name: 'CV.docx' });
+    const r = (await svc.submissionFile(form.accountId, id, 'cv')) as {
+      kind: string;
+      url: string;
+      previewUrl: string;
+    };
+
+    expect(r.kind).toBe('docx');
+    expect(r.previewUrl).toBe(r.url);
+    // A fetch ignores the disposition, so asking for a second signature would
+    // have been a round trip that bought nothing.
+    expect(storage.reads).toHaveLength(1);
+  });
+
+  it('offers no preview for a type no browser draws, and still downloads it', async () => {
+    const id = await plant({ ...CV_PDF, key: 'uploads/a/f/s/3.zip', name: 'portfolio.zip' });
+    const r = (await svc.submissionFile(form.accountId, id, 'cv')) as {
+      kind: string;
+      url: string;
+      previewUrl: null;
+    };
+
+    expect(r.kind).toBe('none');
+    expect(r.previewUrl).toBeNull();
+    expect(r.url).toContain('as=attachment');
+  });
+
+  it('refuses to preview something too big to open in a dialog', async () => {
+    const id = await plant({ ...CV_PDF, size: String(PREVIEW_MAX_BYTES + 1) });
+    const r = (await svc.submissionFile(form.accountId, id, 'cv')) as { kind: string; previewUrl: null };
+    expect(r.kind).toBe('none');
+    expect(r.previewUrl).toBeNull();
+  });
+
+  it("answers 404 for another workspace's submission, never a working link", async () => {
+    await db.run(sql`INSERT INTO account (id, code, name, created_at) VALUES ('other', 'other', 'Other', 1)`);
+    const id = await plant(CV_PDF, { accountId: 'other' });
+
+    expect(await svc.submissionFile(form.accountId, id, 'cv')).toMatchObject({ status: 404 });
+    // And the real owner does get it, so the 404 above is the scoping working
+    // rather than the fixture being broken.
+    expect(await svc.submissionFile('other', id, 'cv')).toMatchObject({ kind: 'pdf' });
+  });
+
+  it('answers 404 for a question with no file on it', async () => {
+    const id = await plant(CV_PDF);
+    expect(await svc.submissionFile(form.accountId, id, 'work_email')).toMatchObject({ status: 404 });
+  });
+
+  it('reports a signing failure as 503, not as a missing file', async () => {
+    svc = new UploadService(db, ENV, new UnsignableStorage());
+    const id = await plant(CV_PDF);
+    expect(await svc.submissionFile(form.accountId, id, 'cv')).toMatchObject({
+      error: 'UPLOAD_UNAVAILABLE',
+      status: 503,
+    });
+  });
+
+  it('says the feature does not exist on a deployment with no bucket', async () => {
+    svc = new UploadService(db, ENV, new FakeStorage(false));
+    const id = await plant(CV_PDF);
+    expect(await svc.submissionFile(form.accountId, id, 'cv')).toMatchObject({ status: 404 });
   });
 });

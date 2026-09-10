@@ -13,14 +13,19 @@ import { useEffect, useRef, type ReactNode } from 'react';
  * default so every existing call site renders identically. `lg`/`xl` exist
  * because some dialogs are editors, not confirmations: the per-question logic
  * dialog packs two condition editors and a rule list, and at 448px those wrap
- * into an unreadable column. Before this prop the only way out was to hand-roll
- * a dialog next to this one (see `device-preview-modal.tsx`), which forfeits the
- * focus trap and the aria-hidden handling below.
+ * into an unreadable column. `2xl` is for a dialog whose content is a document
+ * rather than a form: an uploaded PDF at 896px is readable but cramped, and the
+ * next step up is the width the device preview already chose for itself.
+ *
+ * Before this prop the only way out was to hand-roll a dialog next to this one
+ * (see `device-preview-modal.tsx`), which forfeits the focus trap and the
+ * aria-hidden handling below.
  */
 const SIZES = {
   md: 'max-w-md',
   lg: 'max-w-2xl',
   xl: 'max-w-4xl',
+  '2xl': 'max-w-5xl',
 } as const;
 
 export function Modal({
