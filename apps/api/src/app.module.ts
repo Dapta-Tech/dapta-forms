@@ -12,6 +12,7 @@ import {
   ONBOARDING_ENABLED,
   PREMIUM_MODE,
   RATE_LIMITER,
+  STORAGE,
   WORKSPACE_PROJECTION,
 } from './tokens';
 import { SubmissionService } from './submission.service';
@@ -27,6 +28,8 @@ import { DaptaSyncEffects } from './dapta-sync-effects';
 import { DaptaSyncDelivery } from './dapta-sync';
 import { OutboxWorker } from './outbox.worker';
 import { RateLimitGuard, createRateLimiter } from './rate-limit';
+import { createObjectStorage } from './storage';
+import { UploadService } from './upload.service';
 import { resolveEntitlementsProvider } from './entitlements.provider';
 import { createAuthProvider, type SignupObserver } from './auth.provider';
 import { WorkspaceProjection } from './workspace-projection';
@@ -156,6 +159,11 @@ function signupObserver(productAnalytics: AnalyticsEffects): SignupObserver {
     // when RATE_LIMIT_ENABLED=false; swappable for a distributed limiter.
     { provide: RATE_LIMITER, useFactory: (env: ServerEnv) => createRateLimiter(env), inject: [ENV] },
     RateLimitGuard,
+    // Object storage for the `file` question type. With STORAGE_BUCKET unset,
+    // the default and every bare fork, this is the noop adapter and the
+    // question type reports itself unavailable rather than half-working.
+    { provide: STORAGE, useFactory: (env: ServerEnv) => createObjectStorage(env), inject: [ENV] },
+    UploadService,
     SubmissionService,
     AnalyticsService,
     AdminService,

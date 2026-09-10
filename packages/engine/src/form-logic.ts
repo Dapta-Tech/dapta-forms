@@ -41,6 +41,7 @@ export const FORM_FIELD_TYPES = [
   'message',
   'reveal',
   'scheduler',
+  'file',
 ] as const;
 export type FormFieldType = (typeof FORM_FIELD_TYPES)[number];
 
@@ -162,6 +163,20 @@ export interface FormStep {
   corporateEmailOnly?: boolean;
   /** Phone validation: minimum digit count. */
   phoneMinDigits?: number;
+  /**
+   * `file` step: the extensions the owner accepts, lowercase and without the
+   * dot. Absent means "whatever the deployment allows", which is how a form
+   * saved before this setting existed keeps working. The ceiling is enforced
+   * server-side either way, so this is the owner's preference, not the
+   * security boundary.
+   */
+  allowedTypes?: string[];
+  /**
+   * `file` step: the owner's own size limit in MB. Clamped down to the
+   * deployment's UPLOAD_MAX_FILE_MB, never up. An owner can ask for less than
+   * the deployment allows but never for more.
+   */
+  maxSizeMb?: number;
   // --- Builder + runtime extensions (all optional; back-compat) -------------
   /** `name` step: the two fields collected on one slide (default firstname+lastname). */
   fields?: string[];
@@ -1347,6 +1362,10 @@ export function validateAnswer(step: FormStep, value: AnswerValue): ValidationRe
     return step.required ? { ok: false, error: 'This field is required.' } : { ok: true };
   }
 
+  if (step.type === 'file' && !parseFileAnswer(value)) {
+    return { ok: false, error: 'Upload a file to continue.' };
+  }
+
   switch (step.type) {
     case 'email': {
       const email = String(value).trim().toLowerCase();
@@ -1896,7 +1915,8 @@ export type ValidationCode =
   | 'number'
   | 'too_low'
   | 'too_high'
-  | 'option';
+  | 'option'
+  | 'file';
 
 export type ValidationCodeResult = { ok: true } | { ok: false; code: ValidationCode };
 
@@ -1956,9 +1976,49 @@ export function validateAnswerCode(
       if (tokens(value).some((t) => !allowed.has(t))) return { ok: false, code: 'option' };
       return { ok: true };
     }
+    case 'file': {
+      // Shape only. Whether the object actually exists in the bucket, and
+      // whether its bytes are what the name claims, is decided server-side on
+      // submit. A check here would be advisory, because this same function
+      // runs in the browser where the answer comes from.
+      if (!parseFileAnswer(value)) return { ok: false, code: 'file' };
+      return { ok: true };
+    }
     default:
       return { ok: true };
   }
+}
+
+/** One uploaded file, as it is stored inside the answers JSON. */
+export interface FileAnswer {
+  /** Object key in the bucket. Never shown to anyone; the download is minted from it. */
+  key: string;
+  /** The name the respondent's own file had, which is the only name worth showing. */
+  name: string;
+  /** Size in bytes, as a string because the answers map holds string values. */
+  size: string;
+  mime: string;
+}
+
+/**
+ * Read a `file` answer, or null when the value is not one.
+ *
+ * The answers map is a free-form record shared by every question type, so this
+ * is the single place that decides what counts as a file answer. Callers that
+ * render answers (CSV, email, webhook) go through it rather than duck-typing
+ * the object themselves.
+ */
+export function parseFileAnswer(value: AnswerValue): FileAnswer | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const v = value as Record<string, string>;
+  if (typeof v.key !== 'string' || v.key.trim() === '') return null;
+  if (typeof v.name !== 'string' || v.name.trim() === '') return null;
+  return {
+    key: v.key,
+    name: v.name,
+    size: typeof v.size === 'string' ? v.size : '0',
+    mime: typeof v.mime === 'string' ? v.mime : 'application/octet-stream',
+  };
 }
 
 /** The sub-fields a `name` step collects (default firstname + lastname). */

@@ -88,6 +88,7 @@ export interface FormsMessages {
       too_low: string;
       too_high: string;
       option: string;
+      file: string;
       submit: string;
     };
     /** The phone step's country-code picker (searchable dial-code selector). */
@@ -1802,6 +1803,7 @@ export const en: FormsMessages = {
       too_low: 'Value is too low.',
       too_high: 'Value is too high.',
       option: 'Choose one of the available options.',
+      file: 'Upload a file to continue.',
       submit: 'Could not submit. Please try again.',
     },
     phonePicker: {
@@ -3350,6 +3352,7 @@ export const es: FormsMessages = {
       too_low: 'El valor es muy bajo.',
       too_high: 'El valor es muy alto.',
       option: 'Elige una de las opciones disponibles.',
+      file: 'Sube un archivo para continuar.',
       submit: 'No se pudo enviar. Inténtalo de nuevo.',
     },
     phonePicker: {
