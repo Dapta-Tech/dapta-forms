@@ -720,9 +720,10 @@ export class AdminCrudController {
    * limit, offset }` so the admin table can render page counts.
    */
   /**
-   * A signed, short-lived URL for one uploaded file on one submission.
+   * One uploaded file on one submission: a signed, short-lived download URL,
+   * and a second one to render it in place when its type allows that.
    *
-   * Returns the URL rather than redirecting: the dashboard opens it itself, so
+   * Returns URLs rather than redirecting: the dashboard opens them itself, so
    * the link never lands in the browser's history or in a referrer, and a stale
    * page cannot re-follow a redirect whose signature has since expired.
    */
@@ -737,7 +738,7 @@ export class AdminCrudController {
     // `unwrap`, not a blanket NotFoundException: "no such file" and "storage is
     // unreachable" are different answers, and collapsing them would tell an
     // owner their file is gone during an outage.
-    return unwrap(await this.uploads.downloadUrl(p.accountId, submissionId, stepKey));
+    return unwrap(await this.uploads.submissionFile(p.accountId, submissionId, stepKey));
   }
 
   @Get('forms/:id/submissions')

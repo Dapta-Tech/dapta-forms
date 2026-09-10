@@ -1292,6 +1292,35 @@ export const uploadPresignResultSchema = z.object({
 });
 export type UploadPresignResult = z.infer<typeof uploadPresignResultSchema>;
 
+/**
+ * How a stored file may be shown. Decided by the API from the file's extension,
+ * which is the one thing about an upload that was verified (the magic-byte
+ * check compares the bytes against it). Never from the answer's `mime`, which
+ * is whatever the browser typed and nothing ever checked.
+ */
+export const previewKindSchema = z.enum(['image', 'pdf', 'text', 'docx', 'none']);
+export type PreviewKind = z.infer<typeof previewKindSchema>;
+
+/**
+ * What the dashboard gets when it asks for one uploaded file.
+ *
+ * `url` always downloads, and is what the download control uses. `previewUrl`
+ * exists only for a type the API decided is safe to render, and `kind` says
+ * which viewer to point at it. The dashboard is TOLD what it may show rather
+ * than asking, so nothing on the client can turn an upload into a page by
+ * naming a type.
+ */
+export const submissionFileSchema = z.object({
+  /** The respondent's own filename, the only name worth showing. */
+  name: z.string(),
+  /** Size in bytes as a string, matching how it rides in the answers map. */
+  size: z.string(),
+  kind: previewKindSchema,
+  url: z.string(),
+  previewUrl: z.string().nullable(),
+});
+export type SubmissionFile = z.infer<typeof submissionFileSchema>;
+
 export const submissionSchema = z.object({
   /** Per-session id (sessionStorage) tying events + the submission together. */
   sessionId: z.string().min(1).max(200),

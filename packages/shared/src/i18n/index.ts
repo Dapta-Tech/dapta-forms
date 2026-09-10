@@ -1237,9 +1237,18 @@ export interface FormsMessages {
       export: string;
       delete: string;
       deleteConfirm: string;
-      /** File answer: opens the uploaded file in a new tab. */
+      /** File answer: the control on the cell, and the dialog behind it. */
       download: string;
       downloadFailed: string;
+      /** Between the click and the first pixel of the file. */
+      previewLoading: string;
+      previewFailed: string;
+      previewReload: string;
+      /** A type with no viewer. Reachable only if one is ever added. */
+      previewUnavailable: string;
+      /** Word: the conversion is readable, not the document. Say so. */
+      previewApprox: string;
+      previewClose: string;
       emptyTitle: string;
       emptyBody: string;
       prev: string;
@@ -2852,6 +2861,12 @@ export const en: FormsMessages = {
       deleteConfirm: 'Delete this submission? This cannot be undone.',
       download: 'Download',
       downloadFailed: 'That file could not be opened.',
+      previewLoading: 'Opening the file',
+      previewFailed: 'The preview could not load.',
+      previewReload: 'Try again',
+      previewUnavailable: 'This kind of file cannot be shown here. Download it to open it.',
+      previewApprox: 'Approximate view. Download the file to see its exact layout.',
+      previewClose: 'Close',
       emptyTitle: 'No submissions yet',
       emptyBody: 'Responses will show up here as people complete the form.',
       prev: 'Previous',
@@ -4428,6 +4443,12 @@ export const es: FormsMessages = {
       deleteConfirm: '¿Eliminar esta respuesta? No se puede deshacer.',
       download: 'Descargar',
       downloadFailed: 'No se pudo abrir ese archivo.',
+      previewLoading: 'Abriendo el archivo',
+      previewFailed: 'No se pudo cargar la vista previa.',
+      previewReload: 'Intenta de nuevo',
+      previewUnavailable: 'Este tipo de archivo no se puede mostrar aquí. Descárgalo para abrirlo.',
+      previewApprox: 'Vista aproximada. Descarga el archivo para ver su formato exacto.',
+      previewClose: 'Cerrar',
       emptyTitle: 'Aún no hay respuestas',
       emptyBody: 'Las respuestas aparecerán aquí a medida que las personas completen el formulario.',
       prev: 'Anterior',

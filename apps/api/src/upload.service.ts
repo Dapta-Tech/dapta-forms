@@ -18,9 +18,16 @@ import { fileTypeFromBuffer } from 'file-type';
 import type { Db } from '@quill/db';
 import { getPublishedForm, getSubmissionAnswersForAccount } from '@quill/db';
 import { parseFileAnswer, type FormConfig, type FormStep } from '@quill/engine';
-import type { SubmissionAnswers, UploadPresignInput, UploadPresignResult } from '@quill/types';
+import type {
+  SubmissionAnswers,
+  SubmissionFile,
+  UploadPresignInput,
+  UploadPresignResult,
+} from '@quill/types';
 import { type ServerEnv } from '@quill/config/env';
+import { previewFor } from './file-preview';
 import {
+  canonicalExt,
   extensionOf,
   incomingKey,
   storedBasename,
@@ -36,9 +43,10 @@ export type UploadError = { error: string; message: string; status: number };
  *
  * Two families. Executables and scripts, because a bucket of them is a malware
  * host with our name on it. And active documents (html, svg, xhtml), because
- * they run script in whatever origin serves them. We always serve as an
- * attachment, which defuses that, but a deployment that ever changes its mind
- * about `Content-Disposition` should not silently become an XSS surface.
+ * they run script in whatever origin serves them, and some files ARE now served
+ * inline so the dashboard can show them. `file-preview.ts` will not render
+ * these types even if one somehow reached a stored answer, but this list is why
+ * that never has to be the only thing standing in the way.
  */
 const DENIED_EXTENSIONS = new Set([
   'exe',
@@ -81,18 +89,6 @@ const DENIED_EXTENSIONS = new Set([
  * everything else must produce a signature that agrees with its name.
  */
 const SIGNATURELESS_EXTENSIONS = new Set(['txt', 'csv', 'tsv', 'md', 'log', 'json', 'xml', 'yml', 'yaml']);
-
-/** Extensions that are really one format wearing several names. */
-const EXTENSION_ALIASES: Record<string, string> = {
-  jpeg: 'jpg',
-  tif: 'tiff',
-  htm: 'html',
-  yaml: 'yml',
-};
-
-function canonicalExt(ext: string): string {
-  return EXTENSION_ALIASES[ext] ?? ext;
-}
 
 const MAGIC_BYTES_SAMPLE = 4100;
 
@@ -241,18 +237,23 @@ export class UploadService {
   }
 
   /**
-   * A short-lived download URL for one file answer, or an error.
+   * One file answer as the dashboard needs it: how to download it, and whether
+   * it can be shown in place first.
    *
    * Account-scoped at the database (invariant 3): the submission is read
    * through a JOIN on the caller's own account, so a guessed submission id from
-   * another workspace resolves to nothing rather than to a signed URL. The URL
-   * itself is minted per call, lives minutes, and is never stored or mailed.
+   * another workspace resolves to nothing rather than to a signed URL. Both
+   * URLs are minted per call, live minutes, and are never stored or mailed.
+   *
+   * The download URL is always minted, even when there is a preview, because
+   * the control that uses it sits inside the preview and the alternative is a
+   * second round trip for the person who decides to keep the file.
    */
-  async downloadUrl(
+  async submissionFile(
     accountId: string,
     submissionId: string,
     stepKey: string,
-  ): Promise<{ url: string; name: string } | UploadError> {
+  ): Promise<SubmissionFile | UploadError> {
     if (!this.storage.enabled) {
       return { error: 'NOT_FOUND', message: 'File uploads are not enabled.', status: 404 };
     }
@@ -263,9 +264,21 @@ export class UploadService {
     const file = parseFileAnswer(answers[stepKey] as never);
     if (!file) return { error: 'NOT_FOUND', message: 'No file on that question.', status: 404 };
 
+    const plan = previewFor(file.name, Number(file.size));
     try {
       const url = await this.storage.presignGet(file.key, file.name);
-      return { url, name: file.name };
+      // A .docx is the one previewable kind with no inline type: the dashboard
+      // reads its bytes and renders them itself, and a fetch does not care what
+      // disposition the URL carries, so one URL does both jobs there.
+      let previewUrl: string | null = null;
+      if (plan.inlineContentType) {
+        previewUrl = await this.storage.presignGet(file.key, file.name, {
+          contentType: plan.inlineContentType,
+        });
+      } else if (plan.kind !== 'none') {
+        previewUrl = url;
+      }
+      return { name: file.name, size: file.size, kind: plan.kind, url, previewUrl };
     } catch (err) {
       this.log.error(`failed to sign a download for submission ${submissionId}: ${String(err)}`);
       return {

@@ -44,13 +44,31 @@ export interface StoredObject {
   contentType: string | null;
 }
 
+/**
+ * Ask for a URL the browser renders instead of saving.
+ *
+ * `contentType` is not optional, and that is the whole point. S3 has a stored
+ * Content-Type for every object, but it is the string the browser typed at
+ * upload time and nothing ever checked it, so a real PNG can sit in the bucket
+ * claiming to be text/html. Serving that inline under its stored type would
+ * render an uploaded file as a page. The caller passes the type derived from
+ * the extension, which IS checked, against the file's own magic bytes.
+ */
+export interface InlineDisposition {
+  contentType: string;
+}
+
 export interface ObjectStorage {
   /** False on a deployment with no bucket: the whole question type is off. */
   readonly enabled: boolean;
   /** Upload URL, valid for the configured TTL. `contentType` is SIGNED: the client must send it back exactly. */
   presignPut(key: string, contentType: string): Promise<string>;
-  /** Download URL, always as an attachment so an HTML or SVG upload cannot execute on our origin. */
-  presignGet(key: string, filename: string): Promise<string>;
+  /**
+   * Download URL. An attachment by default; `inline` asks for a URL the browser
+   * will render in place, and is only ever passed for a type the API itself
+   * decided is safe to render (see `file-preview.ts`).
+   */
+  presignGet(key: string, filename: string, inline?: InlineDisposition): Promise<string>;
   /** Object metadata, or null when the key does not exist. */
   head(key: string): Promise<StoredObject | null>;
   /** The first `bytes` of the object, for magic-byte sniffing. Null when absent. */
@@ -136,15 +154,21 @@ export class S3Storage implements ObjectStorage {
     );
   }
 
-  presignGet(key: string, filename: string): Promise<string> {
+  presignGet(key: string, filename: string, inline?: InlineDisposition): Promise<string> {
+    const safe = headerSafeFilename(filename);
     return getSignedUrl(
       this.client,
       new GetObjectCommand({
         Bucket: this.bucket,
         Key: key,
-        // Never inline. An uploaded .html or .svg served inline from a domain
-        // we control would execute in that origin; as an attachment it cannot.
-        ResponseContentDisposition: `attachment; filename="${headerSafeFilename(filename)}"`,
+        ResponseContentDisposition: inline
+          ? `inline; filename="${safe}"`
+          : `attachment; filename="${safe}"`,
+        // Overriding the type is what makes `inline` safe to offer at all. The
+        // stored type is an unverified claim from upload time; this one comes
+        // from the extension, which the magic-byte check agreed with before the
+        // object was promoted out of staging.
+        ...(inline ? { ResponseContentType: inline.contentType } : {}),
       }),
       { expiresIn: this.opts.getTtlSec },
     );
@@ -269,6 +293,26 @@ export function storedBasename(originalName: string): string {
 /** The extension a filename claims, lowercased and without the dot; '' when it claims none. */
 export function extensionOf(name: string): string {
   return /\.([A-Za-z0-9]{1,12})$/.exec(name.trim())?.[1]?.toLowerCase() ?? '';
+}
+
+/** Extensions that are really one format wearing several names. */
+const EXTENSION_ALIASES: Record<string, string> = {
+  jpeg: 'jpg',
+  tif: 'tiff',
+  htm: 'html',
+  yaml: 'yml',
+};
+
+/**
+ * One spelling per format.
+ *
+ * It lives here rather than beside either of its callers because both the
+ * upload check and the preview decision key off an extension, and two tables
+ * that drifted apart would mean a file accepted as one format and shown as
+ * another.
+ */
+export function canonicalExt(ext: string): string {
+  return EXTENSION_ALIASES[ext] ?? ext;
 }
 
 /**

@@ -11,6 +11,7 @@ import type {
   FormConfig,
   FormDestination,
   MemberProfile,
+  SubmissionFile,
   SubmissionsPage,
 } from '@quill/types';
 import { serverApiUrl } from './api-url';
@@ -592,9 +593,12 @@ export const adminApi = {
   // Forms
   listForms: () => req<FormSummary[]>('GET', '/v1/forms'),
   getForm: (id: string) => req<FormDetail>('GET', `/v1/forms/${id}`),
-  /** A short-lived signed URL for one uploaded file. Minted per click, never stored. */
+  /**
+   * One uploaded file: how to download it, and whether it can be shown in
+   * place. Both URLs are short-lived, minted per click and never stored.
+   */
   submissionFile: (formId: string, submissionId: string, stepKey: string) =>
-    req<{ url: string; name: string }>(
+    req<SubmissionFile>(
       'GET',
       `/v1/forms/${formId}/submissions/${submissionId}/files/${encodeURIComponent(stepKey)}`,
     ),
