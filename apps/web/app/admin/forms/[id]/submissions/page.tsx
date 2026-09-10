@@ -2,6 +2,7 @@ import { Suspense } from 'react';
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import type { FormConfig, SubmissionsPage } from '@quill/types';
+import { parseFileAnswer } from '@quill/engine';
 import { formatDateTime, getMessages, t, type FormsMessages, type Locale } from '@quill/shared';
 import { adminApi, ApiError, isAdminRole } from '@/lib/admin-api';
 import { WorkspaceTimezoneField } from '@/app/admin/_components/workspace-timezone-field';
@@ -10,6 +11,7 @@ import { FormTabs } from '@/components/ui/form-tabs';
 import { Skeleton } from '@/components/skeleton';
 import { SubmissionsFilter } from './submissions-filter';
 import { DeleteSubmissionButton } from './row-actions';
+import { DownloadFileButton } from './download-file-button';
 
 export const dynamic = 'force-dynamic';
 
@@ -99,6 +101,10 @@ function formatCell(v: unknown, na: string): string {
   if (v == null || v === '') return na;
   if (Array.isArray(v)) return v.length ? v.join(', ') : na;
   if (typeof v === 'boolean') return v ? '✓' : '';
+  // A file answer is an object. Without this it stringified to [object Object],
+  // and the title attribute of every file cell said so.
+  const file = parseFileAnswer(v as never);
+  if (file) return file.name;
   return String(v);
 }
 
@@ -207,11 +213,33 @@ async function SubmissionsData({
                     </span>
                   </td>
                   <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums">{row.score}</td>
-                  {steps.map((s) => (
-                    <td key={s.key} className="max-w-[240px] truncate px-4 py-3" title={formatCell(data[s.key], '')}>
-                      {formatCell(data[s.key], m.submissions.na)}
-                    </td>
-                  ))}
+                  {steps.map((s) => {
+                    // A file cell is the one answer that is not text: it opens
+                    // the thing rather than describing it.
+                    const file = s.type === 'file' ? parseFileAnswer(data[s.key] as never) : null;
+                    return (
+                      <td
+                        key={s.key}
+                        className="max-w-[240px] truncate px-4 py-3"
+                        title={formatCell(data[s.key], '')}
+                      >
+                        {file ? (
+                          <DownloadFileButton
+                            formId={id}
+                            submissionId={row.id}
+                            stepKey={s.key}
+                            name={file.name}
+                            labels={{
+                              download: m.submissions.download,
+                              failed: m.submissions.downloadFailed,
+                            }}
+                          />
+                        ) : (
+                          formatCell(data[s.key], m.submissions.na)
+                        )}
+                      </td>
+                    );
+                  })}
                   <td className="whitespace-nowrap px-4 py-3 text-right">
                     <DeleteSubmissionButton
                       formId={id}

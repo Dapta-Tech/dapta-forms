@@ -1059,6 +1059,16 @@ function sampleAnswers(steps: { key: string; type: string }[]): Record<string, u
       case 'slider':
         out[s.key] = 5;
         break;
+      case 'file':
+        // The object shape a real file answer has, so an endpoint author wires
+        // against `name` and not against a string that never arrives.
+        out[s.key] = {
+          key: 'uploads/acct/form/session/9f3c.pdf',
+          name: 'sample.pdf',
+          size: '40211',
+          mime: 'application/pdf',
+        };
+        break;
       case 'multiple_choice':
       case 'dropdown':
         out[s.key] = 'sample-option';

@@ -35,6 +35,7 @@ export const GALLERY: Record<GalleryGroup, GalleryItem[]> = {
     { id: 'long', type: 'textarea', icon: 'pi-align-left' },
     { id: 'url', type: 'url', icon: 'pi-globe' },
     { id: 'slider', type: 'slider', icon: 'pi-sliders-h' },
+    { id: 'file', type: 'file', icon: 'pi-paperclip' },
   ],
   content: [
     { id: 'message', type: 'message', icon: 'pi-comment' },
@@ -64,6 +65,8 @@ export function iconForStep(step: Pick<FormStep, 'type' | 'selectionMode'>): str
       return 'pi-align-left';
     case 'text':
       return 'pi-minus';
+    case 'file':
+      return 'pi-paperclip';
     case 'url':
       return 'pi-globe';
     case 'message':

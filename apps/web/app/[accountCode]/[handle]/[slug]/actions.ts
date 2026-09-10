@@ -1,9 +1,9 @@
 'use server';
 
-import { postSubmission, postFormEvent } from '@/lib/api';
+import { postSubmission, postFormEvent, postUploadPresign, type PresignResult } from '@/lib/api';
 import { postBookingCallback } from '@/lib/booking-embed';
 import { forwardedForChain } from '@/lib/forwarded-for';
-import type { BookingCallbackInput } from '@quill/types';
+import type { BookingCallbackInput, UploadPresignInput } from '@quill/types';
 
 /**
  * Submit a form — partial (past the lead-capture threshold) or complete. The
@@ -34,4 +34,19 @@ export async function recordBookingAction(
   payload: BookingCallbackInput,
 ): Promise<void> {
   await postBookingCallback(accountCode, slug, payload, await forwardedForChain());
+}
+
+/**
+ * Authorize one file upload and hand the browser the URL to PUT to.
+ *
+ * The bytes never come through here: this returns a signed URL and the browser
+ * uploads straight to the bucket. That is the whole point of the flow, because
+ * a Server Action body is capped at 1 MB and a real document is not.
+ */
+export async function presignUploadAction(
+  accountCode: string,
+  slug: string,
+  payload: UploadPresignInput,
+): Promise<PresignResult> {
+  return postUploadPresign(accountCode, slug, payload);
 }

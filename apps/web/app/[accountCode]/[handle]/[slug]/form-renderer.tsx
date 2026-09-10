@@ -45,7 +45,12 @@ import { warmBookingEmbed, type BookingScheduledDetails } from '@/lib/booking-em
 import { resolveSchedulerPrefill } from '@/lib/booking-prefill';
 import { callAction, callActionWithRetry, isTransportError } from '@/lib/call-action';
 import { navigateTop } from '@/lib/top-navigate';
-import { submitFormAction, recordEventAction, recordBookingAction } from './actions';
+import {
+  submitFormAction,
+  recordEventAction,
+  recordBookingAction,
+  presignUploadAction,
+} from './actions';
 import {
   useSessionId,
   captureUtm,
@@ -65,6 +70,7 @@ export function FormRenderer({
   name,
   config,
   locale = 'en',
+  uploadMaxMb,
   startAt,
 }: {
   accountCode: string;
@@ -72,6 +78,8 @@ export function FormRenderer({
   name: string;
   config: FormConfig;
   locale?: string;
+  /** The deployment's per-file ceiling in MB, for `file` steps. */
+  uploadMaxMb?: number;
   /**
    * Start-position hint: a runtime step index, or `'cover'` for the default
    * entry (cover when it exists, else the first step). The builder preview
@@ -85,6 +93,36 @@ export function FormRenderer({
   const formLocale = locale === 'es' ? 'es' : 'en';
   const labels = resolveFormLabels(config, formLocale);
   const sessionId = useSessionId(`quill-form-${accountCode}-${slug}`);
+
+  /**
+   * Authorize one upload for a `file` step.
+   *
+   * The session id is what scopes the object key, and the server checks on
+   * submit that the key it is handed sits under THIS session's prefix. So the
+   * value passed here is not a detail: it is the thing that stops one visitor
+   * from claiming another's upload.
+   */
+  const requestUploadTicket = useCallback(
+    async (stepKey: string, file: { name: string; size: number; mime: string }) => {
+      // Through `callAction`, never a bare await: a deploy rotating action ids
+      // mid-session rejects the call, and an unguarded await here would leave
+      // the control stuck on its progress bar with no error and no retry.
+      const r = await callAction(() =>
+        presignUploadAction(accountCode, slug, {
+          sessionId,
+          stepKey,
+          name: file.name,
+          size: file.size,
+          mime: file.mime,
+        }),
+      );
+      if (isTransportError(r)) return { ok: false, message: r.message } as const;
+      return r.ok
+        ? ({ ok: true, ticket: { url: r.upload.url, key: r.upload.key, contentType: r.upload.contentType } } as const)
+        : ({ ok: false, message: r.message } as const);
+    },
+    [accountCode, slug, sessionId],
+  );
   // The cover SCREEN: null when switched off, which is what gates the `cover`
   // phase, the Start CTA and the back-to-cover step.
   const coverScreen = config.cover && config.cover.enabled !== false ? config.cover : null;
@@ -858,6 +896,8 @@ export function FormRenderer({
                 dropdownPlaceholder={m.dropdownPlaceholder}
                 dropdownEmpty={m.dropdownEmpty}
                 locale={locale}
+                onRequestUpload={requestUploadTicket}
+                uploadMaxMb={uploadMaxMb}
               />
 
               {error ? (
