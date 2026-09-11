@@ -256,6 +256,8 @@ export interface BuilderMessages {
     schedulerLoading: string;
     schedulerConnect: string;
     schedulerConnectCta: string;
+    /** Whose event types the picker lists — `{email}` is the connected Calendly user. */
+    schedulerScopedTo: string;
     schedulerShowDetails: string;
     schedulerMapTitle: string;
     schedulerMapHint: string;
@@ -702,6 +704,8 @@ const en: BuilderMessages = {
     schedulerLoading: 'Loading event types…',
     schedulerConnect: 'Connect Calendly in Integrations to pick an event type.',
     schedulerConnectCta: 'Go to Integrations',
+    schedulerScopedTo:
+      'Showing the event types {email} owns or hosts. A team event only appears if that account is one of its hosts.',
     schedulerShowDetails: 'Show event details',
     schedulerMapTitle: 'Autofill the booking form',
     schedulerMapHint: 'Send answers from earlier questions into the fields this event asks for.',
@@ -1111,6 +1115,8 @@ const es: BuilderMessages = {
     schedulerLoading: 'Cargando tipos de evento…',
     schedulerConnect: 'Conecta Calendly en Integraciones para elegir un tipo de evento.',
     schedulerConnectCta: 'Ir a Integraciones',
+    schedulerScopedTo:
+      'Se muestran los tipos de evento que {email} tiene o de los que es host. Un evento de equipo solo aparece si esa cuenta es uno de sus hosts.',
     schedulerShowDetails: 'Mostrar detalles del evento',
     schedulerMapTitle: 'Autocompletar el formulario de agendamiento',
     schedulerMapHint: 'Envía respuestas de preguntas anteriores a los campos que pide este evento.',
