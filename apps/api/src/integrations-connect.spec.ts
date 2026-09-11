@@ -393,6 +393,26 @@ describe('HubSpot property picker token resolution', () => {
     expect(second.enabled && second.cached).toBe(true);
     expect(second.enabled && second.properties).toEqual(first.enabled && first.properties);
   });
+
+  it('re-connecting HubSpot drops the cached property list', async () => {
+    const byToken = (async (_url: string, init?: RequestInit) => {
+      const auth = ((init?.headers ?? {}) as Record<string, string>).authorization;
+      const second = auth === 'Bearer hs-second-2222';
+      return jsonResponse({
+        results: [{ name: second ? 'portal_b_prop' : 'portal_a_prop', label: 'P', type: 'string' }],
+      });
+    }) as unknown as typeof fetch;
+    build(makeEnv(), byToken);
+
+    await controller.connect(asOwner(), 'hubspot', { token: 'hs-first-1111' });
+    const before = await controller.hubspotProperties(asOwner());
+    expect(before.enabled && before.properties.map((p) => p.name)).toEqual(['portal_a_prop']);
+
+    await controller.connect(asOwner(), 'hubspot', { token: 'hs-second-2222' });
+    const after = await controller.hubspotProperties(asOwner());
+    expect(after.enabled && after.cached).toBe(false);
+    expect(after.enabled && after.properties.map((p) => p.name)).toEqual(['portal_b_prop']);
+  });
 });
 
 describe('Calendly event-type picker token resolution', () => {
@@ -472,6 +492,61 @@ describe('Calendly event-type picker token resolution', () => {
 
   it('reports disabled when no Calendly token exists', async () => {
     build(makeEnv({ CALENDLY_API_TOKEN: undefined }), noopFetch);
+    const res = await controller.calendlyEventTypes(asOwner());
+    expect(res.enabled).toBe(false);
+  });
+
+  it('names the Calendly user the list is scoped to, on a live read and on a cache hit', async () => {
+    const calls: RecordedCall[] = [];
+    build(makeEnv(), calendlyFetch(calls, ME, EVENT_TYPES));
+    await controller.connect(asOwner(), 'calendly', { token: 'cal-account-8888' });
+
+    const first = await controller.calendlyEventTypes(asOwner());
+    const second = await controller.calendlyEventTypes(asOwner());
+    expect(first.enabled && first.cached).toBe(false);
+    expect(second.enabled && second.cached).toBe(true);
+    // The email comes from /users/me — the user Calendly actually scoped to.
+    expect(first.enabled && first.connectedAs).toBe('rep@acme.io');
+    expect(second.enabled && second.connectedAs).toBe('rep@acme.io');
+  });
+
+  it('re-connecting as a different user drops the cached list — the picker never shows the old user', async () => {
+    // Two Calendly users behind two tokens: the list depends on the bearer.
+    const OTHER_ME = { resource: { uri: 'https://api.calendly.com/users/U2', email: 'ops@acme.io' } };
+    const OTHER_TYPES = {
+      collection: [
+        { uri: 'et/9', name: 'Onboarding (round robin)', scheduling_url: 'https://calendly.com/acme-team/onboarding', active: true, duration: 50 },
+      ],
+    };
+    const byToken = (async (url: string, init?: RequestInit) => {
+      const auth = ((init?.headers ?? {}) as Record<string, string>).authorization;
+      const second = auth === 'Bearer cal-second-2222';
+      if (url === CALENDLY_ME_URL) return jsonResponse(second ? OTHER_ME : ME);
+      if (url.startsWith(CALENDLY_EVENT_TYPES_BASE)) return jsonResponse(second ? OTHER_TYPES : EVENT_TYPES);
+      return new Response('{}', { status: 404 });
+    }) as unknown as typeof fetch;
+    build(makeEnv(), byToken);
+
+    await controller.connect(asOwner(), 'calendly', { token: 'cal-first-1111' });
+    const before = await controller.calendlyEventTypes(asOwner());
+    expect(before.enabled && before.connectedAs).toBe('rep@acme.io');
+
+    // Re-connect as the other user WITHIN the cache TTL.
+    await controller.connect(asOwner(), 'calendly', { token: 'cal-second-2222' });
+    const after = await controller.calendlyEventTypes(asOwner());
+    expect(after.enabled && after.cached).toBe(false);
+    expect(after.enabled && after.connectedAs).toBe('ops@acme.io');
+    expect(after.enabled && after.eventTypes.map((e) => e.name)).toEqual(['Onboarding (round robin)']);
+  });
+
+  it('disconnecting drops the cached list — the next read reports disabled, not the stale list', async () => {
+    const calls: RecordedCall[] = [];
+    build(makeEnv({ CALENDLY_API_TOKEN: undefined }), calendlyFetch(calls, ME, EVENT_TYPES));
+    await controller.connect(asOwner(), 'calendly', { token: 'cal-account-8888' });
+    const warm = await controller.calendlyEventTypes(asOwner());
+    expect(warm.enabled).toBe(true);
+
+    await controller.disconnect(asOwner(), 'calendly');
     const res = await controller.calendlyEventTypes(asOwner());
     expect(res.enabled).toBe(false);
   });

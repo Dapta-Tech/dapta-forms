@@ -504,10 +504,14 @@ export interface CalendlyEventType {
   customQuestions: CalendlyBookingField[];
 }
 
-/** The event-type-picker response: disabled (no token) or the cached list. */
+/**
+ * The event-type-picker response: disabled (no token) or the cached list.
+ * `connectedAs` is the Calendly user the list is scoped to (Calendly only
+ * returns what that user owns or hosts).
+ */
 export type CalendlyEventTypesResponse =
   | { enabled: false; reason: string }
-  | { enabled: true; cached: boolean; eventTypes: CalendlyEventType[] };
+  | { enabled: true; cached: boolean; connectedAs: string | null; eventTypes: CalendlyEventType[] };
 
 export type { FormDestination };
 
