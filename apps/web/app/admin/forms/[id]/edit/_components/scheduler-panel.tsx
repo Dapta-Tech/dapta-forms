@@ -173,6 +173,13 @@ export function SchedulerPanel({
           aria-label={s.schedulerLinkLabel}
           aria-invalid={linkInvalid || undefined}
           onChange={(e) => applyLink(e.target.value)}
+          // Once the author leaves the field, show what was actually stored:
+          // a pasted embed snippet collapses to its clean event link. Not on
+          // every keystroke, or typing a bare host would jump the caret.
+          onBlur={() => {
+            const link = parseCalendlyLink(linkText);
+            if (link && link.url !== linkText) setLinkText(link.url);
+          }}
         />
         {linkInvalid ? (
           <p
