@@ -256,6 +256,9 @@ export interface BuilderMessages {
     schedulerLoading: string;
     schedulerConnect: string;
     schedulerConnectCta: string;
+    /** The list request failed (network, API down): not "connect", a retry. */
+    schedulerListError: string;
+    schedulerRetry: string;
     /** Whose event types the picker lists — `{email}` is the connected Calendly user. */
     schedulerScopedTo: string;
     /** The picker's last option: configure the step by pasting the event's link. */
@@ -714,6 +717,8 @@ const en: BuilderMessages = {
     schedulerLoading: 'Loading event types…',
     schedulerConnect: 'Connect Calendly in Integrations to pick an event type.',
     schedulerConnectCta: 'Go to Integrations',
+    schedulerListError: 'Could not load your event types.',
+    schedulerRetry: 'Try again',
     schedulerScopedTo:
       'Showing the event types {email} owns or hosts. A team event only appears if that account is one of its hosts.',
     schedulerOtherEvent: 'Other event: paste its link',
@@ -1135,6 +1140,8 @@ const es: BuilderMessages = {
     schedulerLoading: 'Cargando tipos de evento…',
     schedulerConnect: 'Conecta Calendly en Integraciones para elegir un tipo de evento.',
     schedulerConnectCta: 'Ir a Integraciones',
+    schedulerListError: 'No se pudieron cargar tus tipos de evento.',
+    schedulerRetry: 'Reintentar',
     schedulerScopedTo:
       'Se muestran los tipos de evento que {email} tiene o de los que es host. Un evento de equipo solo aparece si esa cuenta es uno de sus hosts.',
     schedulerOtherEvent: 'Otro evento: pegar su link',

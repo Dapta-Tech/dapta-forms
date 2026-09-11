@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import type { FormStep } from '@quill/engine';
-import type { CalendlyEventType } from '@/lib/admin-api';
+import type { CalendlyEventType, CalendlyEventTypesResponse } from '@/lib/admin-api';
 import { Select } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
 import { GOTO_END, GOTO_NEXT, buildGoto } from './logic-util';
@@ -13,7 +13,6 @@ import { ProviderLogo } from '@/components/ui/provider-logo';
 import { cn } from '@/lib/cn';
 import { fill } from '@/lib/onboarding';
 import { Field } from './fields';
-import { loadCalendlyEventTypesAction } from './scheduler-actions';
 import { isLinkConfigured, parseCalendlyLink } from './scheduler-link';
 import type { BuilderMessages } from './builder-messages';
 
@@ -22,7 +21,24 @@ type FormScheduler = NonNullable<FormStep['scheduler']>;
 type LoadState =
   | { status: 'loading' }
   | { status: 'disabled'; reason: string }
+  | { status: 'error' }
   | { status: 'ready'; connectedAs: string | null; eventTypes: CalendlyEventType[] };
+
+/**
+ * The list comes over a plain same-origin GET, not a server action. A server
+ * action called from this mount effect was lost whenever the step had just
+ * been added from the gallery (see the route's comment), and a read has no
+ * business queueing behind autosaves anyway. The timeout turns a hung request
+ * into the error state with a retry, never an endless skeleton.
+ */
+async function fetchEventTypes(): Promise<CalendlyEventTypesResponse> {
+  const res = await fetch('/admin/integrations/calendly/event-types', {
+    cache: 'no-store',
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (!res.ok) throw new Error(`event types: HTTP ${res.status}`);
+  return (await res.json()) as CalendlyEventTypesResponse;
+}
 
 /**
  * The scheduler step's settings: pick a Calendly event type (the account's, via
@@ -74,11 +90,13 @@ export function SchedulerPanel({
   const [linkText, setLinkText] = useState(() => (isLinkConfigured(scheduler) ? (scheduler.url ?? '') : ''));
   const [linkInvalid, setLinkInvalid] = useState(false);
 
-  // Event types are account-level, so fetch once when the panel mounts.
+  // Event types are account-level, so fetch once when the panel mounts, and
+  // again on an explicit retry.
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     let cancelled = false;
     setState({ status: 'loading' });
-    loadCalendlyEventTypesAction()
+    fetchEventTypes()
       .then((res) => {
         if (cancelled) return;
         setState(
@@ -88,13 +106,12 @@ export function SchedulerPanel({
         );
       })
       .catch(() => {
-        if (!cancelled) setState({ status: 'disabled', reason: s.schedulerConnect });
+        if (!cancelled) setState({ status: 'error' });
       });
     return () => {
       cancelled = true;
     };
-    // s is a stable catalog subtree — intentionally not a dependency (fetch once).
-  }, [s.schedulerConnect]);
+  }, [attempt]);
 
   const options =
     state.status === 'ready'
@@ -214,8 +231,51 @@ export function SchedulerPanel({
       <p className="text-xs text-muted-foreground">{s.schedulerHint}</p>
 
       {state.status === 'loading' ? (
-        // A saved link is shown at once — it never depended on the list.
-        linkMode ? linkField : <p className="text-xs text-muted-foreground">{s.schedulerLoading}</p>
+        // A saved link is shown at once — it never depended on the list. The
+        // skeleton is the picker's own shape (label + control), so the panel
+        // does not jump when the list lands.
+        linkMode ? (
+          linkField
+        ) : (
+          <div
+            className="flex flex-col gap-1.5"
+            role="status"
+            aria-busy="true"
+            data-testid="scheduler-list-loading"
+          >
+            <span className="text-sm font-medium text-foreground">{s.schedulerEventType}</span>
+            <div aria-hidden className="h-9 animate-pulse rounded-md bg-muted" />
+            <span className="sr-only">{s.schedulerLoading}</span>
+          </div>
+        )
+      ) : state.status === 'error' ? (
+        <>
+          <div
+            className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2"
+            data-testid="scheduler-list-error"
+          >
+            <p className="text-xs text-destructive">{s.schedulerListError}</p>
+            <button
+              type="button"
+              className="text-xs font-medium text-foreground underline-offset-2 hover:underline"
+              onClick={() => setAttempt((n) => n + 1)}
+            >
+              {s.schedulerRetry}
+            </button>
+          </div>
+          {/* The link never needed the list, so it stays reachable. */}
+          {linkMode ? (
+            linkField
+          ) : (
+            <button
+              type="button"
+              className="self-start text-xs font-medium text-primary underline-offset-2 hover:underline"
+              onClick={() => pickEventType(OTHER_EVENT)}
+            >
+              {s.schedulerLinkInstead}
+            </button>
+          )}
+        </>
       ) : state.status === 'disabled' ? (
         <>
           <div
