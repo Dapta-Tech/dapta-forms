@@ -109,10 +109,18 @@ export interface CalendlyEventTypeDto {
   customQuestions: CalendlyBookingFieldDto[];
 }
 
-/** The event-type-picker response: disabled (no token) or the cached list. */
+/**
+ * The event-type-picker response: disabled (no token) or the cached list.
+ *
+ * `connectedAs` names the Calendly user the list is scoped to (its email, else
+ * its name). Calendly only returns event types that user owns or hosts, so a
+ * team round robin the user is not a host of is simply absent — the builder
+ * shows this so an author knows whose events they are looking at instead of
+ * concluding the picker is broken.
+ */
 export type CalendlyEventTypesResponse =
   | { enabled: false; reason: string }
-  | { enabled: true; cached: boolean; eventTypes: CalendlyEventTypeDto[] };
+  | { enabled: true; cached: boolean; connectedAs: string | null; eventTypes: CalendlyEventTypeDto[] };
 
 const PLACEHOLDER_TOKENS = new Set(['', 'your_private_app_token_here', 'your_token_here']);
 const CACHE_TTL_MS = 5 * 60 * 1000;
@@ -180,6 +188,15 @@ export class HubspotPropertiesService {
   ) {}
 
   /**
+   * Drop the account's cached list. Called on connect/disconnect: the cache is
+   * keyed by ACCOUNT, not by token, so without this a re-connect kept serving
+   * the previous token's properties for up to the TTL.
+   */
+  invalidate(accountId: string): void {
+    this.cache.delete(accountId);
+  }
+
+  /**
    * The live HubSpot token for an account: its connected (decrypted) token if
    * present, else the single-tenant env fallback. Placeholder env values count
    * as absent so a bare clone reports disabled instead of 401-ing HubSpot.
@@ -236,7 +253,7 @@ export class HubspotPropertiesService {
 }
 
 interface CalendlyMeApiResponse {
-  resource?: { uri?: string };
+  resource?: { uri?: string; email?: string; name?: string };
 }
 interface CalendlyCustomQuestionApi {
   name?: string;
@@ -282,13 +299,27 @@ function toBookingFields(questions: CalendlyCustomQuestionApi[] | undefined): Ca
 @Injectable()
 export class CalendlyEventTypesService {
   // Per-ACCOUNT cache: event types are portal-specific to the connected token.
-  private readonly cache = new Map<string, { data: CalendlyEventTypeDto[]; expires: number }>();
+  // `connectedAs` is cached alongside so a cache hit still says whose list it is.
+  private readonly cache = new Map<
+    string,
+    { data: CalendlyEventTypeDto[]; connectedAs: string | null; expires: number }
+  >();
 
   constructor(
     @Inject(ENV) private readonly env: ServerEnv,
     @Inject(DB) private readonly db: Db,
     private readonly fetchImpl: typeof fetch = fetch,
   ) {}
+
+  /**
+   * Drop the account's cached list. Called on connect/disconnect — see
+   * {@link HubspotPropertiesService.invalidate}. This is the one that bit: an
+   * author re-connected Calendly as a different user and the picker kept
+   * showing the previous user's event types for five minutes.
+   */
+  invalidate(accountId: string): void {
+    this.cache.delete(accountId);
+  }
 
   /** The live Calendly token for an account: connected (decrypted) else env fallback. */
   private async resolveToken(accountId: string): Promise<string | null> {
@@ -313,7 +344,7 @@ export class CalendlyEventTypesService {
     }
     const cached = this.cache.get(accountId);
     if (cached && cached.expires > now) {
-      return { enabled: true, cached: true, eventTypes: cached.data };
+      return { enabled: true, cached: true, connectedAs: cached.connectedAs, eventTypes: cached.data };
     }
     const headers = { authorization: `Bearer ${token}`, 'content-type': 'application/json' };
     // Calendly scopes event types by user, so resolve the token's own user first.
@@ -322,6 +353,9 @@ export class CalendlyEventTypesService {
     const me = (await meRes.json().catch(() => ({}))) as CalendlyMeApiResponse;
     const userUri = me.resource?.uri;
     if (!userUri) return { enabled: false, reason: 'Calendly did not return a user for this token.' };
+    // From the token itself, not the stored connection label: this is the user
+    // Calendly actually scoped the list to.
+    const connectedAs = me.resource?.email?.trim() || me.resource?.name?.trim() || null;
 
     const url = `${CALENDLY_EVENT_TYPES_URL}?user=${encodeURIComponent(userUri)}&active=true&count=100`;
     const res = await this.fetchImpl(url, { headers });
@@ -338,8 +372,8 @@ export class CalendlyEventTypesService {
         customQuestions: toBookingFields(e.custom_questions),
       }))
       .sort((a, b) => a.name.localeCompare(b.name));
-    this.cache.set(accountId, { data: eventTypes, expires: now + CACHE_TTL_MS });
-    return { enabled: true, cached: false, eventTypes };
+    this.cache.set(accountId, { data: eventTypes, connectedAs, expires: now + CACHE_TTL_MS });
+    return { enabled: true, cached: false, connectedAs, eventTypes };
   }
 }
 
@@ -539,7 +573,11 @@ export class IntegrationsController {
       });
     }
 
-    return upsertIntegration(this.db, p.accountId, provider, token, key!, validation.label);
+    const status = await upsertIntegration(this.db, p.accountId, provider, token, key!, validation.label);
+    // The picker caches are keyed by account, so a new token must not keep
+    // serving the old one's list for the rest of the TTL.
+    this.invalidatePickerCache(p.accountId, provider);
+    return status;
   }
 
   /** Disconnect a provider for this account. Idempotent → 204. */
@@ -550,6 +588,13 @@ export class IntegrationsController {
     assertAdmin(p);
     const provider = parseProvider(providerParam);
     await deleteIntegration(this.db, p.accountId, provider);
+    this.invalidatePickerCache(p.accountId, provider);
+  }
+
+  /** Drop the one provider's picker cache for this account (see the services). */
+  private invalidatePickerCache(accountId: string, provider: IntegrationProvider): void {
+    if (provider === 'hubspot') this.hubspot.invalidate(accountId);
+    else this.calendly.invalidate(accountId);
   }
 
   /** HubSpot contact-property picker (per-account token, 5-min cache). */

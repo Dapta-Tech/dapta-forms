@@ -189,7 +189,14 @@ function ProviderCard({
             </div>
           </div>
         ) : connected && status ? (
-          <ConnectedView status={status} onDisconnect={disconnect} pending={pending} m={m} locale={locale} />
+          <ConnectedView
+            status={status}
+            onDisconnect={disconnect}
+            pending={pending}
+            m={m}
+            locale={locale}
+            note={meta.id === 'calendly' ? m.calendlyScopeNote : null}
+          />
         ) : showConnect ? (
           // Connecting stays available while the server supplies a token — an
           // account can override the shared one with its own.
@@ -314,30 +321,40 @@ function ConnectedView({
   pending,
   m,
   locale,
+  note,
 }: {
   status: IntegrationStatus;
   onDisconnect: () => void;
   pending: boolean;
   m: Msgs;
   locale: Locale;
+  /** A provider-specific line under the identity (what this connection can see). */
+  note?: string | null;
 }) {
   const date = new Intl.DateTimeFormat(locale, { dateStyle: 'medium' }).format(
     new Date(status.connectedAt),
   );
   return (
-    <div className="flex flex-wrap items-end justify-between gap-3">
-      <dl className="min-w-0 space-y-0.5 text-sm">
-        {status.label ? (
-          <dd className="font-medium text-foreground">{fill(m.connectedAs, { label: status.label })}</dd>
-        ) : null}
-        <dd className="text-xs text-muted-foreground">
-          {status.last4 ? `${fill(m.endingIn, { last4: status.last4 })} · ` : ''}
-          {fill(m.connectedOn, { date })}
-        </dd>
-      </dl>
-      <Button variant="destructive" size="sm" onClick={onDisconnect} disabled={pending}>
-        {pending ? m.disconnecting : m.disconnect}
-      </Button>
+    <div className="flex flex-col gap-2">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <dl className="min-w-0 space-y-0.5 text-sm">
+          {status.label ? (
+            <dd className="font-medium text-foreground">{fill(m.connectedAs, { label: status.label })}</dd>
+          ) : null}
+          <dd className="text-xs text-muted-foreground">
+            {status.last4 ? `${fill(m.endingIn, { last4: status.last4 })} · ` : ''}
+            {fill(m.connectedOn, { date })}
+          </dd>
+        </dl>
+        <Button variant="destructive" size="sm" onClick={onDisconnect} disabled={pending}>
+          {pending ? m.disconnecting : m.disconnect}
+        </Button>
+      </div>
+      {note ? (
+        <p className="text-xs text-muted-foreground" data-testid="connection-scope-note">
+          {note}
+        </p>
+      ) : null}
     </div>
   );
 }

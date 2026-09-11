@@ -10,6 +10,7 @@ import { Switch } from '@/components/ui/switch';
 import { buttonVariants } from '@/components/ui/button';
 import { ProviderLogo } from '@/components/ui/provider-logo';
 import { cn } from '@/lib/cn';
+import { fill } from '@/lib/onboarding';
 import { Field } from './fields';
 import { loadCalendlyEventTypesAction } from './scheduler-actions';
 import type { BuilderMessages } from './builder-messages';
@@ -19,7 +20,7 @@ type FormScheduler = NonNullable<FormStep['scheduler']>;
 type LoadState =
   | { status: 'loading' }
   | { status: 'disabled'; reason: string }
-  | { status: 'ready'; eventTypes: CalendlyEventType[] };
+  | { status: 'ready'; connectedAs: string | null; eventTypes: CalendlyEventType[] };
 
 /**
  * The scheduler step's settings: pick a Calendly event type (the account's, via
@@ -61,7 +62,7 @@ export function SchedulerPanel({
         if (cancelled) return;
         setState(
           res.enabled
-            ? { status: 'ready', eventTypes: res.eventTypes }
+            ? { status: 'ready', connectedAs: res.connectedAs, eventTypes: res.eventTypes }
             : { status: 'disabled', reason: res.reason },
         );
       })
@@ -140,6 +141,14 @@ export function SchedulerPanel({
               }}
             />
           </div>
+          {/* Whose list this is. Calendly scopes event types to the token's
+              user, so a team round robin that user does not host is simply
+              absent — say so here, where the author is looking for it. */}
+          {state.connectedAs ? (
+            <p className="mt-1.5 text-xs text-muted-foreground" data-testid="scheduler-scoped-to">
+              {fill(s.schedulerScopedTo, { email: state.connectedAs })}
+            </p>
+          ) : null}
         </Field>
       )}
 
