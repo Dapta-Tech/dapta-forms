@@ -1514,6 +1514,8 @@ export interface FormsMessages {
       connectedAs: string;
       endingIn: string;
       connectedOn: string;
+      /** Calendly only: the picker lists what the connected user owns or hosts. */
+      calendlyScopeNote: string;
       connectSuccess: string;
       connectError: string;
       tokenRequired: string;
@@ -3108,6 +3110,8 @@ export const en: FormsMessages = {
       connectedAs: 'Connected as {label}',
       endingIn: 'ending in {last4}',
       connectedOn: 'Connected {date}',
+      calendlyScopeNote:
+        'Forms can pick the event types this account owns or hosts. To use a team event, connect an account that is one of its hosts.',
       connectSuccess: '{provider} connected.',
       connectError: 'Could not connect. Check the token and try again.',
       tokenRequired: 'Paste a token first.',
@@ -4693,6 +4697,8 @@ export const es: FormsMessages = {
       connectedAs: 'Conectado como {label}',
       endingIn: 'termina en {last4}',
       connectedOn: 'Conectado el {date}',
+      calendlyScopeNote:
+        'Los formularios pueden elegir los tipos de evento que esta cuenta tiene o de los que es host. Para usar un evento de equipo, conecta una cuenta que sea uno de sus hosts.',
       connectSuccess: '{provider} conectado.',
       connectError: 'No se pudo conectar. Revisa el token e inténtalo de nuevo.',
       tokenRequired: 'Pega un token primero.',
