@@ -240,6 +240,10 @@ export const formStepSchema = z.object({
   flowGroup: z.enum(['qualification', 'lead_capture']).optional(),
   corporateEmailOnly: z.boolean().optional(),
   phoneMinDigits: z.number().int().positive().optional(),
+  /** `file` step: extensions the owner accepts, lowercase, no dot. Absent = the deployment's own list. */
+  allowedTypes: z.array(z.string().min(1).max(12)).max(40).optional(),
+  /** `file` step: the owner's size limit in MB, clamped down to UPLOAD_MAX_FILE_MB server-side. */
+  maxSizeMb: z.number().int().positive().max(1024).optional(),
   // --- Builder + runtime extensions (all optional; back-compat) -------------
   /** Dynamic question: pick the text from the answer to this earlier field. */
   questionField: z.string().min(1).max(64).nullable().optional(),
@@ -1221,6 +1225,13 @@ export const publicFormSchema = z.object({
   slug: z.string(),
   name: z.string(),
   config: formConfigSchema,
+  /**
+   * The deployment's per-file ceiling in MB, for a form that asks for a file.
+   * The renderer needs it to tell a visitor "up to 10 MB" before they pick a
+   * 40 MB video, and only the API knows the number. Absent on a deployment
+   * with no storage, which is also one that cannot have published such a form.
+   */
+  uploadMaxMb: z.number().int().positive().optional(),
 });
 export type PublicForm = z.infer<typeof publicFormSchema>;
 
@@ -1231,6 +1242,11 @@ export type PublicForm = z.infer<typeof publicFormSchema>;
  * string[] for multi-select); the reserved `utm` key carries a flat string map
  * of the URL's `utm_*` params (additive — captured from the public URL, never a
  * new column: it rides inside the free-form answers JSON).
+ *
+ * A `file` answer rides in that same string map as
+ * `{ key, name, size, mime }`. `size` is a string because this record holds
+ * strings, which is exactly why the shape needed no migration and no column.
+ * `parseFileAnswer` in @quill/engine is the only thing that should read it.
  */
 export const submissionAnswersSchema = z.record(
   z.string(),
@@ -1244,6 +1260,66 @@ export const submissionAnswersSchema = z.record(
   ]),
 );
 export type SubmissionAnswers = z.infer<typeof submissionAnswersSchema>;
+
+/**
+ * Body of POST /v1/public/forms/:accountCode/:slug/uploads: the browser asking
+ * for permission to upload one file.
+ *
+ * Everything here is a CLAIM by an anonymous client, including `size` and
+ * `mime`. The API checks the claim against the published config before signing
+ * anything, and checks the object itself again on submit. A client that lies
+ * gets a signature it cannot use.
+ */
+export const uploadPresignSchema = z.object({
+  /** Same per-session id the submission will carry; it scopes the object key. */
+  sessionId: z.string().min(1).max(200),
+  /** Which question this file answers. Must be a `file` step on the published form. */
+  stepKey: z.string().min(1).max(64),
+  /** The respondent's own filename. Stored in the answer, never in the key. */
+  name: z.string().min(1).max(255),
+  size: z.number().int().positive(),
+  mime: z.string().min(1).max(200),
+});
+export type UploadPresignInput = z.infer<typeof uploadPresignSchema>;
+
+/** What the browser gets back: where to PUT, and what the answer must carry. */
+export const uploadPresignResultSchema = z.object({
+  url: z.string(),
+  key: z.string(),
+  /** Header the PUT must send verbatim; it is inside the signature. */
+  contentType: z.string(),
+  expiresInSec: z.number().int().positive(),
+});
+export type UploadPresignResult = z.infer<typeof uploadPresignResultSchema>;
+
+/**
+ * How a stored file may be shown. Decided by the API from the file's extension,
+ * which is the one thing about an upload that was verified (the magic-byte
+ * check compares the bytes against it). Never from the answer's `mime`, which
+ * is whatever the browser typed and nothing ever checked.
+ */
+export const previewKindSchema = z.enum(['image', 'pdf', 'text', 'docx', 'none']);
+export type PreviewKind = z.infer<typeof previewKindSchema>;
+
+/**
+ * What the dashboard gets when it asks for one uploaded file.
+ *
+ * `url` always downloads, and is what the download control uses. `previewUrl`
+ * exists only for a type the API decided is safe to render, and `kind` says
+ * which viewer to point at it. The dashboard is TOLD what it may show rather
+ * than asking, so nothing on the client can turn an upload into a page by
+ * naming a type.
+ */
+export const submissionFileSchema = z.object({
+  /** The respondent's own filename, the only name worth showing. */
+  name: z.string(),
+  /** Size in bytes as a string, matching how it rides in the answers map. */
+  size: z.string(),
+  kind: previewKindSchema,
+  url: z.string(),
+  previewUrl: z.string().nullable(),
+});
+export type SubmissionFile = z.infer<typeof submissionFileSchema>;
 
 export const submissionSchema = z.object({
   /** Per-session id (sessionStorage) tying events + the submission together. */

@@ -209,6 +209,7 @@ export default async function PublicFormPage({
           name={publicTitle(form.config, form.name)}
           config={form.config}
           locale={locale}
+          uploadMaxMb={form.uploadMaxMb}
         />
       </div>
     </>

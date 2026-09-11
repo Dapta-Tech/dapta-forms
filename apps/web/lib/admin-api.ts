@@ -11,6 +11,7 @@ import type {
   FormConfig,
   FormDestination,
   MemberProfile,
+  SubmissionFile,
   SubmissionsPage,
 } from '@quill/types';
 import { serverApiUrl } from './api-url';
@@ -201,6 +202,12 @@ export interface Me {
    * campaign, which is most of the reason to measure it.
    */
   attribution: Record<string, string | number | null | undefined> | null;
+  /**
+   * What this DEPLOYMENT can do with file answers. `enabled` is false wherever
+   * no bucket is configured, which is every bare fork: the builder hides the
+   * question type rather than offering one that could never be answered.
+   */
+  uploads: { enabled: boolean; maxFileMb: number };
   /** `'staff'` when the caller is in this workspace by access grant, not by membership. */
   accessGrant: 'staff' | null;
   /** Staff of the deployment (by email domain, identity-backed only): may search and enter the whole estate. */
@@ -586,6 +593,15 @@ export const adminApi = {
   // Forms
   listForms: () => req<FormSummary[]>('GET', '/v1/forms'),
   getForm: (id: string) => req<FormDetail>('GET', `/v1/forms/${id}`),
+  /**
+   * One uploaded file: how to download it, and whether it can be shown in
+   * place. Both URLs are short-lived, minted per click and never stored.
+   */
+  submissionFile: (formId: string, submissionId: string, stepKey: string) =>
+    req<SubmissionFile>(
+      'GET',
+      `/v1/forms/${formId}/submissions/${submissionId}/files/${encodeURIComponent(stepKey)}`,
+    ),
   createForm: (b: { name: string; slug?: string; config?: unknown; folderId?: string | null }) =>
     req<FormDetail>('POST', '/v1/forms', b),
   updateForm: (id: string, b: { name?: string; config?: unknown }) =>

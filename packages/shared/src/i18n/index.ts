@@ -88,6 +88,7 @@ export interface FormsMessages {
       too_low: string;
       too_high: string;
       option: string;
+      file: string;
       submit: string;
     };
     /** The phone step's country-code picker (searchable dial-code selector). */
@@ -100,6 +101,23 @@ export interface FormsMessages {
       noResults: string;
       /** Inline hint when the typed number is shorter than the country issues. */
       invalid: string;
+    };
+    /** The `file` step's upload control. */
+    upload: {
+      /** The idle drop zone's own call to action. */
+      choose: string;
+      /** Sub-line under it: what is accepted and how big. `{types}` and `{max}`. */
+      accepts: string;
+      /** Progress label while the bytes are moving. `{percent}`. */
+      uploading: string;
+      /** Removes the uploaded file and returns the control to idle. */
+      remove: string;
+      /** The upload did not finish. Offers another try. */
+      failed: string;
+      retry: string;
+      /** Refused before anything was sent. `{max}` is the limit in MB. */
+      tooLarge: string;
+      wrongType: string;
     };
     /** The `name` step's two inputs — localized defaults rendered when the
      *  builder leaves a placeholder empty (also the editor preview fallback). */
@@ -638,6 +656,7 @@ export interface FormsMessages {
         slider: string;
         textarea: string;
         message: string;
+        file: string;
       };
       props: {
         type: string;
@@ -654,6 +673,18 @@ export interface FormsMessages {
         flowGroupHint: string;
         corporateEmailOnly: string;
         corporateEmailHint: string;
+        /** File step: the extensions this question accepts. */
+        fileAllowedTypes: string;
+        fileAllowedTypesHint: string;
+        /** File step: preset groups the owner picks from instead of typing extensions. */
+        filePresetDocuments: string;
+        filePresetImages: string;
+        filePresetSheets: string;
+        filePresetArchives: string;
+        /** File step: the owner's own size limit, capped by the deployment. */
+        fileMaxSize: string;
+        fileMaxSizeHint: string;
+        fileNoTypes: string;
         phoneMinDigits: string;
         /** Phone step: label for the per-form default-country picker (V4-14). */
         phoneDefaultCountry: string;
@@ -1206,6 +1237,18 @@ export interface FormsMessages {
       export: string;
       delete: string;
       deleteConfirm: string;
+      /** File answer: the control on the cell, and the dialog behind it. */
+      download: string;
+      downloadFailed: string;
+      /** Between the click and the first pixel of the file. */
+      previewLoading: string;
+      previewFailed: string;
+      previewReload: string;
+      /** A type with no viewer. Reachable only if one is ever added. */
+      previewUnavailable: string;
+      /** Word: the conversion is readable, not the document. Say so. */
+      previewApprox: string;
+      previewClose: string;
       emptyTitle: string;
       emptyBody: string;
       prev: string;
@@ -1802,6 +1845,7 @@ export const en: FormsMessages = {
       too_low: 'Value is too low.',
       too_high: 'Value is too high.',
       option: 'Choose one of the available options.',
+      file: 'Upload a file to continue.',
       submit: 'Could not submit. Please try again.',
     },
     phonePicker: {
@@ -1809,6 +1853,16 @@ export const en: FormsMessages = {
       search: 'Search country or code',
       noResults: 'No countries found',
       invalid: 'Enter a valid phone number.',
+    },
+    upload: {
+      choose: 'Choose a file',
+      accepts: '{types}, up to {max} MB',
+      uploading: 'Uploading {percent}%',
+      remove: 'Remove',
+      failed: 'That upload did not finish.',
+      retry: 'Try again',
+      tooLarge: 'That file is bigger than {max} MB.',
+      wrongType: 'That kind of file is not accepted here.',
     },
     name: {
       firstPlaceholder: 'First name',
@@ -2297,6 +2351,7 @@ export const en: FormsMessages = {
         slider: 'Slider',
         textarea: 'Long text',
         message: 'Message (no input)',
+        file: 'File upload',
       },
       props: {
         type: 'Type',
@@ -2313,6 +2368,16 @@ export const en: FormsMessages = {
         flowGroupHint: 'Lead-capture fields (name, email, phone) never contribute to the score.',
         corporateEmailOnly: 'Require work email',
         corporateEmailHint: 'Blocks Gmail, Hotmail, Yahoo and other personal domains.',
+        fileAllowedTypes: 'Accepted files',
+        fileAllowedTypesHint:
+          'Pick the groups you accept, or type extensions separated by commas. Programs and web pages are never accepted.',
+        filePresetDocuments: 'Documents',
+        filePresetImages: 'Images',
+        filePresetSheets: 'Spreadsheets',
+        filePresetArchives: 'Archives',
+        fileMaxSize: 'Largest file (MB)',
+        fileMaxSizeHint: 'Up to {max} MB on this deployment. Leave empty to allow the full {max} MB.',
+        fileNoTypes: 'Choose at least one kind of file, or nobody can answer this question.',
         phoneMinDigits: 'Minimum digits',
         phoneMinDigitsHelp:
           'The shortest number accepted, not counting the country code. Phone lengths vary by country, so this is the floor that catches an obviously incomplete number.',
@@ -2794,6 +2859,14 @@ export const en: FormsMessages = {
       export: 'Download CSV',
       delete: 'Delete',
       deleteConfirm: 'Delete this submission? This cannot be undone.',
+      download: 'Download',
+      downloadFailed: 'That file could not be opened.',
+      previewLoading: 'Opening the file',
+      previewFailed: 'The preview could not load.',
+      previewReload: 'Try again',
+      previewUnavailable: 'This kind of file cannot be shown here. Download it to open it.',
+      previewApprox: 'Approximate view. Download the file to see its exact layout.',
+      previewClose: 'Close',
       emptyTitle: 'No submissions yet',
       emptyBody: 'Responses will show up here as people complete the form.',
       prev: 'Previous',
@@ -3350,6 +3423,7 @@ export const es: FormsMessages = {
       too_low: 'El valor es muy bajo.',
       too_high: 'El valor es muy alto.',
       option: 'Elige una de las opciones disponibles.',
+      file: 'Sube un archivo para continuar.',
       submit: 'No se pudo enviar. Inténtalo de nuevo.',
     },
     phonePicker: {
@@ -3357,6 +3431,16 @@ export const es: FormsMessages = {
       search: 'Busca país o código',
       noResults: 'No se encontraron países',
       invalid: 'Introduce un número de teléfono válido.',
+    },
+    upload: {
+      choose: 'Elige un archivo',
+      accepts: '{types}, hasta {max} MB',
+      uploading: 'Subiendo {percent}%',
+      remove: 'Quitar',
+      failed: 'La subida no terminó.',
+      retry: 'Intenta de nuevo',
+      tooLarge: 'Ese archivo pesa más de {max} MB.',
+      wrongType: 'Ese tipo de archivo no se acepta aquí.',
     },
     name: {
       firstPlaceholder: 'Nombre',
@@ -3847,6 +3931,7 @@ export const es: FormsMessages = {
         slider: 'Deslizador',
         textarea: 'Texto largo',
         message: 'Mensaje (sin campo)',
+        file: 'Subir archivo',
       },
       props: {
         type: 'Tipo',
@@ -3863,6 +3948,16 @@ export const es: FormsMessages = {
         flowGroupHint: 'Los campos de captura (nombre, correo, teléfono) nunca suman al puntaje.',
         corporateEmailOnly: 'Exigir correo corporativo',
         corporateEmailHint: 'Bloquea Gmail, Hotmail, Yahoo y otros dominios personales.',
+        fileAllowedTypes: 'Archivos aceptados',
+        fileAllowedTypesHint:
+          'Elige los grupos que aceptas, o escribe extensiones separadas por comas. Los programas y las páginas web nunca se aceptan.',
+        filePresetDocuments: 'Documentos',
+        filePresetImages: 'Imágenes',
+        filePresetSheets: 'Hojas de cálculo',
+        filePresetArchives: 'Comprimidos',
+        fileMaxSize: 'Archivo más grande (MB)',
+        fileMaxSizeHint: 'Hasta {max} MB en este despliegue. Déjalo vacío para permitir los {max} MB completos.',
+        fileNoTypes: 'Elige al menos un tipo de archivo, o nadie podrá responder esta pregunta.',
         phoneMinDigits: 'Dígitos mínimos',
         phoneMinDigitsHelp:
           'El número más corto que se acepta, sin contar el código de país. La longitud varía según el país, así que este es el piso que atrapa un número claramente incompleto.',
@@ -4346,6 +4441,14 @@ export const es: FormsMessages = {
       export: 'Descargar CSV',
       delete: 'Eliminar',
       deleteConfirm: '¿Eliminar esta respuesta? No se puede deshacer.',
+      download: 'Descargar',
+      downloadFailed: 'No se pudo abrir ese archivo.',
+      previewLoading: 'Abriendo el archivo',
+      previewFailed: 'No se pudo cargar la vista previa.',
+      previewReload: 'Intenta de nuevo',
+      previewUnavailable: 'Este tipo de archivo no se puede mostrar aquí. Descárgalo para abrirlo.',
+      previewApprox: 'Vista aproximada. Descarga el archivo para ver su formato exacto.',
+      previewClose: 'Cerrar',
       emptyTitle: 'Aún no hay respuestas',
       emptyBody: 'Las respuestas aparecerán aquí a medida que las personas completen el formulario.',
       prev: 'Anterior',

@@ -45,6 +45,19 @@ export const openapiSpec = {
         responses: { '201': { description: 'Recorded' }, '400': { description: 'Invalid' } },
       },
     },
+    '/v1/public/forms/{accountCode}/{slug}/uploads': {
+      post: {
+        summary: 'Authorize one file upload (presigned)',
+        description:
+          'Body { sessionId, stepKey, name, size, mime }. Returns { url, key, contentType, expiresInSec }: PUT the bytes straight to `url` with that exact Content-Type header, then send `key` as the answer. Every field in the body is a claim and is checked again against the object itself on submit. 404 when the deployment stores no files, 400 for a type or size the published question does not accept, 503 when the URL cannot be signed.',
+        responses: {
+          '200': { description: 'Where to PUT, and what the answer must carry' },
+          '400': { description: 'Invalid, or a type or size the question refuses' },
+          '404': { description: 'No such form, or uploads are not enabled here' },
+          '503': { description: 'UPLOAD_UNAVAILABLE' },
+        },
+      },
+    },
     '/v1/public/forms/{accountCode}/{slug}/events': {
       post: {
         summary: 'Record a funnel event',
@@ -96,6 +109,19 @@ export const openapiSpec = {
           '200': { description: 'Renamed' },
           '404': { description: 'No such form in this account' },
           '409': { description: 'SLUG_TAKEN or SLUG_INVALID' },
+        },
+      },
+    },
+    '/v1/forms/{id}/submissions/{submissionId}/files/{stepKey}': {
+      get: {
+        summary: 'Open one uploaded file on one submission (host)',
+        description:
+          'Returns { name, size, kind, url, previewUrl }. `url` downloads; `previewUrl` is present only for a type the API judged safe to render in place, and `kind` names the viewer. Both are signed and expire in minutes. Scoped by a join on the caller own account, so a submission id from another workspace is 404 rather than a working link.',
+        security: [{ hostSession: [] }],
+        responses: {
+          '200': { description: 'Short-lived URLs for that file' },
+          '404': { description: 'No such submission in this workspace, or no file on that question' },
+          '503': { description: 'UPLOAD_UNAVAILABLE' },
         },
       },
     },

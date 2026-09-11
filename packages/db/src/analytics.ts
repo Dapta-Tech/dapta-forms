@@ -470,6 +470,32 @@ export type DeleteSubmissionResult = 'deleted' | 'absent' | 'forbidden';
  * are distinguished (a second existence probe) so the HTTP layer can idempotent-
  * 204 a genuine already-gone row while 404-ing a cross-account id.
  */
+/**
+ * One submission's answers, but only if the caller's account owns it.
+ *
+ * The JOIN is the whole point: a submission id is guessable enough that reading
+ * one by id alone would let any signed-in account read any other account's
+ * answers. Returns null for "not yours" and for "does not exist" alike, because
+ * the caller must not be able to tell those apart either.
+ */
+export async function getSubmissionAnswersForAccount(
+  db: Db,
+  accountId: string,
+  submissionId: string,
+): Promise<{ formId: string; data: unknown } | null> {
+  const row = await db.get<{ form_id: string; data: unknown }>(
+    sql`SELECT s.form_id, s.data FROM submission s
+        JOIN form f ON f.id = s.form_id
+        WHERE s.id = ${submissionId} AND f.account_id = ${accountId} LIMIT 1`,
+  );
+  if (!row) return null;
+  return {
+    formId: row.form_id,
+    // Postgres hands back parsed jsonb; SQLite hands back the JSON text.
+    data: typeof row.data === 'string' ? JSON.parse(row.data) : row.data,
+  };
+}
+
 export async function deleteSubmissionForAccount(
   db: Db,
   accountId: string,

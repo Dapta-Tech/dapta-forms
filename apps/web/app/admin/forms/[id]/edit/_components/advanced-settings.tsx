@@ -129,6 +129,9 @@ export function PrefillRow({
     if (step.type === 'email') return 'ana%40acme.com';
     if (step.type === 'phone') return '%2B15555550123';
     if (step.type === 'url') return 'https%3A%2F%2Facme.com';
+    // A file answer is an object written by the upload, not a string, so there
+    // is nothing a prefill URL could carry for it.
+    if (step.type === 'file') return '';
     if (step.type === 'slider') return '5';
     const option = step.options?.[0];
     if (option) return encodeURIComponent(option.value ?? option.label ?? 'value');

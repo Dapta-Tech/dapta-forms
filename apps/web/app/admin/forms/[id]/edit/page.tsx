@@ -40,6 +40,10 @@ export default async function EditFormPage({ params }: { params: Promise<{ id: s
         // against it, or a CRM mapping pointing at it), and the draft knows
         // neither. Computed here so the builder never pays a request for it.
         lockedValues={lockedOptionValues(form.config)}
+        // A DEPLOYMENT capability, reported by the API rather than read from
+        // the dashboard's own env: two copies of this switch that disagreed
+        // would offer a question whose answers the API refuses.
+        uploads={me.uploads}
         updatedAt={form.updatedAt}
         publicPath={publicPath}
         locale={locale}
