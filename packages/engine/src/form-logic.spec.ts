@@ -678,6 +678,105 @@ describe('validateAnswerCode', () => {
   });
 });
 
+describe('slider validation bounds', () => {
+  const inverted = step({ key: 's', type: 'slider', min: 90, max: 10 });
+
+  it('accepts a value inside UI-normalized inverted bounds in validateAnswer', () => {
+    expect(validateAnswer(inverted, 50)).toEqual({ ok: true });
+  });
+
+  it('accepts a value inside UI-normalized inverted bounds in validateAnswerCode', () => {
+    expect(validateAnswerCode(inverted, 50)).toEqual({ ok: true });
+  });
+
+  it('enforces the normalized inverted boundary matrix in both validators', () => {
+    const invertedBounds = step({ key: 'inverted-bounds', type: 'slider', min: 90, max: 10 });
+    const cases = [
+      [9, { ok: false, error: 'Value is too low.' }, { ok: false, code: 'too_low' }],
+      [10, { ok: true }, { ok: true }],
+      [90, { ok: true }, { ok: true }],
+      [91, { ok: false, error: 'Value is too high.' }, { ok: false, code: 'too_high' }],
+    ] as const;
+
+    for (const [value, expectedAnswer, expectedCode] of cases) {
+      expect(validateAnswer(invertedBounds, value)).toEqual(expectedAnswer);
+      expect(validateAnswerCode(invertedBounds, value)).toEqual(expectedCode);
+    }
+  });
+
+  it('enforces an equal-bound slider in both validators', () => {
+    const equalBounds = step({ key: 'equal-bounds', type: 'slider', min: 10, max: 10 });
+    const cases = [
+      [9, { ok: false, error: 'Value is too low.' }, { ok: false, code: 'too_low' }],
+      [10, { ok: true }, { ok: true }],
+      [11, { ok: false, error: 'Value is too high.' }, { ok: false, code: 'too_high' }],
+    ] as const;
+
+    for (const [value, expectedAnswer, expectedCode] of cases) {
+      expect(validateAnswer(equalBounds, value)).toEqual(expectedAnswer);
+      expect(validateAnswerCode(equalBounds, value)).toEqual(expectedCode);
+    }
+  });
+
+  it('matches displayed bounds at every present-bound edge in both validators', () => {
+    const sliders = [
+      step({ key: 'inverted-pair', type: 'slider', min: 100, max: 10 }),
+      step({ key: 'equal-pair', type: 'slider', min: 7, max: 7 }),
+      step({ key: 'normal-pair', type: 'slider', min: -20, max: 40 }),
+    ];
+
+    for (const slider of sliders) {
+      const { min, max } = sliderBounds(slider);
+      const cases = [
+        [min - 1, { ok: false, error: 'Value is too low.' }, { ok: false, code: 'too_low' }],
+        [min, { ok: true }, { ok: true }],
+        [max, { ok: true }, { ok: true }],
+        [max + 1, { ok: false, error: 'Value is too high.' }, { ok: false, code: 'too_high' }],
+      ] as const;
+
+      for (const [value, expectedAnswer, expectedCode] of cases) {
+        expect(validateAnswer(slider, value)).toEqual(expectedAnswer);
+        expect(validateAnswerCode(slider, value)).toEqual(expectedCode);
+      }
+    }
+  });
+
+  it('leaves absent, single, and normal bounds behavior unchanged', () => {
+    const cases = [
+      [step({ key: 'absent', type: 'slider' }), -1_000, true],
+      [step({ key: 'absent', type: 'slider' }), 1_000, true],
+      [step({ key: 'min-only', type: 'slider', min: 10 }), 9, false],
+      [step({ key: 'min-only', type: 'slider', min: 10 }), 10, true],
+      [step({ key: 'max-only', type: 'slider', max: 10 }), 11, false],
+      [step({ key: 'max-only', type: 'slider', max: 10 }), 10, true],
+      [step({ key: 'normal', type: 'slider', min: 10, max: 90 }), 9, false],
+      [step({ key: 'normal', type: 'slider', min: 10, max: 90 }), 50, true],
+      [step({ key: 'normal', type: 'slider', min: 10, max: 90 }), 91, false],
+    ] as const;
+
+    for (const [slider, value, expectedOk] of cases) {
+      expect(validateAnswer(slider, value).ok).toBe(expectedOk);
+      expect(validateAnswerCode(slider, value).ok).toBe(expectedOk);
+    }
+  });
+
+  it('keeps missing slider sides open in both validators', () => {
+    const minOnly = step({ key: 'min-only-open', type: 'slider', min: 10 });
+    const maxOnly = step({ key: 'max-only-open', type: 'slider', max: 10 });
+    const absent = step({ key: 'absent-open', type: 'slider' });
+
+    expect(validateAnswer(minOnly, 11)).toEqual({ ok: true });
+    expect(validateAnswerCode(minOnly, 11)).toEqual({ ok: true });
+    expect(validateAnswer(maxOnly, 9)).toEqual({ ok: true });
+    expect(validateAnswerCode(maxOnly, 9)).toEqual({ ok: true });
+
+    for (const value of [-1_000_000, 1_000_000]) {
+      expect(validateAnswer(absent, value)).toEqual({ ok: true });
+      expect(validateAnswerCode(absent, value)).toEqual({ ok: true });
+    }
+  });
+});
+
 describe('normalizeUrl / canonicalizeAnswer', () => {
   it('trims and prepends https:// only when no http(s) scheme is present', () => {
     expect(normalizeUrl('  acme.com ')).toBe('https://acme.com');
