@@ -15,9 +15,11 @@ import { fileURLToPath } from 'node:url';
  *   1. events:['complete'] → a COMPLETE submit enqueues one `outbox` webhook row
  *      (kind='webhook', action='complete'); a PARTIAL submit enqueues NONE.
  *   2. events:['partial']  → the reverse: PARTIAL enqueues one row, COMPLETE none.
- *      (The pre-loop cleanup in enqueueSubmissionDeliveries only deletes pending
- *      rows for the *firing* kind+action, so the surviving row is never clobbered
- *      by the other phase — asserted per action.)
+ *      (The pre-loop reconsideration in enqueueSubmissionDeliveries runs for
+ *      every destination kind, but both of its moves are scoped to the phase
+ *      being enqueued, so the complete pass can only reach `action='complete'`
+ *      rows and the partial row survives on that action scoping, asserted per
+ *      action.)
  *   3. UI — /admin/forms/:id/integrations: the webhook card shows Partial/Complete
  *      checkboxes; unchecking one is allowed, unchecking the LAST one is blocked
  *      (≥1 stays checked).
@@ -219,9 +221,11 @@ test.describe('N6 — webhook per-event triggers', () => {
         message: 'partial phase must enqueue exactly one webhook row',
       })
       .toBe(1);
-    // ...and the COMPLETE phase enqueued NONE. Because the complete phase does
-    // not fire, its enqueue path never runs the pre-loop cleanup, so the partial
-    // row above survives untouched (distinct action, distinct row).
+    // ...and the COMPLETE phase enqueued NONE. The complete pass still runs the
+    // pre-loop reconsideration (it runs for every destination kind, whether or
+    // not one fires), but both of its moves are scoped to `action='complete'`,
+    // so neither can reach the partial row above: distinct action,
+    // distinct row.
     expect(countByAction(submissionId, 'complete'), 'complete phase must enqueue no webhook row').toBe(
       0,
     );

@@ -165,18 +165,135 @@ export async function enqueueOutbox(db: Db, input: EnqueueOutboxInput): Promise<
 }
 
 /**
- * Delete still-PENDING rows matching a subject + kind + action — used to cancel
- * scheduled sends before they fire. Never touches rows already `done`/`failed`.
+ * NEVER HANDED OFF: the row is still exactly as `enqueueOutbox` wrote it.
+ *
+ * `status = 'pending'` on its own does not mean that. It is equally true of a
+ * row a worker is delivering RIGHT NOW (claimed, lease held) and of a row
+ * waiting out its retry backoff (attempted, claim cleared, due again later).
+ * Two more columns separate the three:
+ *
+ *   claimed_at IS NULL   nobody holds the lease, so no attempt is in flight
+ *   attempts = 0         no attempt was ever made, so nothing can have landed
+ *                        at the far end
+ *
+ * Both are load-bearing and neither implies the other: a FIRST claim charges no
+ * attempt (`claimed_at` is set while `attempts` stays 0), and `markOutboxRetry`
+ * clears the claim while leaving `attempts` above 0. Drop either column and one
+ * of the two live states starts looking cancellable.
  */
-export async function deletePendingOutbox(
+const UNSTARTED_OUTBOX = sql`status = 'pending' AND claimed_at IS NULL AND attempts = 0`;
+
+/**
+ * DELETE queued work that has not been started yet, scoped to one subject +
+ * kind + action. The first of the three moves a re-enqueue pass makes.
+ *
+ * This is the only state where deleting is honest. Nothing was attempted, so
+ * there is nothing to record and nothing anyone could have received: the row
+ * leaves no trace because it produced no event. The other two pending states
+ * are handled elsewhere and on purpose, because both have already done
+ * something: {@link skipBackoffOutbox} settles an attempted row that is waiting
+ * to retry, keeping everything it recorded, and a row a worker is currently
+ * holding is left strictly alone, because settling it belongs to the worker
+ * side and not to this path. If the worker that took the lease abandons it, the
+ * row stays claimed and another worker may reclaim it; what none of them is is
+ * a caller of this function.
+ *
+ * WHERE THE SETTINGS BOUNDARY SITS. Configuration decides what is queued and
+ * what stops being retried. It does not reach a request that is in flight. An
+ * edit to a destination is never a synchronous cancel: it takes effect on this
+ * path only when the subject comes round again, and even then a delivery a
+ * worker has already picked up is settled on the worker side, because it may
+ * already have crossed the wire and this row is the only record that it did.
+ * Where such a row goes next, and whether a later call ever gets to settle it,
+ * is spelled out under {@link skipBackoffOutbox}.
+ */
+export async function deleteUnstartedOutbox(
   db: Db,
   filter: { subjectUid: string; kind: OutboxKind; action: string },
 ): Promise<void> {
   await db.run(
     sql`DELETE FROM outbox
-        WHERE status = 'pending' AND subject_uid = ${filter.subjectUid}
+        WHERE ${UNSTARTED_OUTBOX} AND subject_uid = ${filter.subjectUid}
           AND kind = ${filter.kind} AND action = ${filter.action}`,
   );
+}
+
+/**
+ * WAITING OUT A BACKOFF: attempted at least once, nobody holding it, due again
+ * later.
+ *
+ * The mirror image of {@link UNSTARTED_OUTBOX}, and the reason both columns are
+ * named twice. `attempts > 0` is what keeps this off a never-started row, which
+ * belongs to the delete and must survive this statement untouched.
+ * `claimed_at IS NULL` is what keeps it off a row a worker holds right now,
+ * which is not waiting for anything: it is running, it may already have crossed
+ * the wire, and its settlement belongs to the worker side rather than here.
+ */
+const RETRY_BACKOFF_OUTBOX = sql`status = 'pending' AND claimed_at IS NULL AND attempts > 0`;
+
+/**
+ * Settle every backoff row in one scope as `skipped`, and report how many.
+ *
+ * A queued row carries a FROZEN snapshot of the config and the answers it was
+ * built from. That is what makes retrying safe, and it is also what makes a
+ * retry go stale: once the same subject, kind and action come round again, the
+ * snapshot describes something the caller has already replaced, so every retry
+ * still on the schedule would deliver superseded content. A destination that
+ * was switched off or deleted in the meantime is the sharper version of the
+ * same problem, because nothing in its own config will stop it retrying.
+ *
+ * WHAT THIS SETTLES IS WHAT IS UNCLAIMED WHEN IT RUNS, and nothing beyond that.
+ * A row a worker holds is not in this set and cannot be put in it, and this
+ * statement has no say in what becomes of it afterwards. That attempt may
+ * SUCCEED, in which case its snapshot is delivered and the row finishes `done`.
+ * It may FAIL, in which case `markOutboxRetry` clears the claim and the row
+ * waits out a backoff, unclaimed but due again later. Its LEASE MAY EXPIRE
+ * without either, in which case the row stays claimed and another worker may
+ * reclaim it. All three happen after this statement has returned.
+ *
+ * SO THE OLDER SNAPSHOT CAN BE SENT AFTER THE NEWER ONE. The row a caller
+ * queues alongside this cleanup is due immediately, while a held row that fails
+ * is not due again until its backoff elapses, so a form really can produce this
+ * sequence: the newer payload delivered, then the older one delivered on a
+ * later retry, then that older row marked `done`. `max_attempts` does not
+ * prevent it. It stops FURTHER retries after attempts have already been made,
+ * which is a ceiling on how many go out, not a veto on any of them. What a
+ * receiver makes of the two is outside this repository.
+ *
+ * A later call for the same subject, kind and action settles such a row if it
+ * is back in backoff and unclaimed by then, but nothing guarantees a later call
+ * arrives, and for the submission `complete` action there is none by
+ * construction: a re-landed complete does not re-enqueue. That residual is
+ * bounded and deliberate: closing it would mean letting configuration settle a
+ * row a worker owns, which is the one thing this boundary exists to prevent.
+ *
+ * `skipped` rather than deleted, and rather than `failed`. The attempt really
+ * happened and the record of it is the point of the table, so `failed` would
+ * claim the retries ran out, which is not what happened.
+ *
+ * ONLY `status` MOVES. The row is the record of a delivery that was attempted,
+ * and being superseded is not a second thing that happened to it: `last_error`
+ * still holds the reason the attempt failed, which is what an admin opening the
+ * delivery log came to read, and `updated_at` still holds when that happened,
+ * which is what the history is ordered by. Restamping either one would bury a
+ * genuinely newer failure under every row a busy form supersedes. `attempts`
+ * and the transcript are left alone for the same reason.
+ *
+ * One statement, whatever the size of the set, so a caller cannot interleave a
+ * claim between reading the rows and settling them.
+ */
+export async function skipBackoffOutbox(
+  db: Db,
+  filter: { subjectUid: string; kind: OutboxKind; action: string },
+): Promise<number> {
+  const settled = await db.all<{ id: string }>(
+    sql`UPDATE outbox
+        SET status = 'skipped'
+        WHERE ${RETRY_BACKOFF_OUTBOX} AND subject_uid = ${filter.subjectUid}
+          AND kind = ${filter.kind} AND action = ${filter.action}
+        RETURNING id`,
+  );
+  return settled.length;
 }
 
 function mapRow(r: Record<string, unknown>): OutboxRow {
