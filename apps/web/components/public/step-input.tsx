@@ -166,6 +166,7 @@ export function StepInput({
           locale={locale}
           ariaLabel={step.question ?? step.key}
           defaultCountry={step.phoneDefaultCountry ?? undefined}
+          autoFocus={autoFocus}
         />
       );
 

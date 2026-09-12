@@ -66,6 +66,7 @@ export function PhoneInput({
   locale = 'en',
   ariaLabel,
   defaultCountry,
+  autoFocus = true,
 }: {
   /** Full number including the dial code ('+525512345678'), or ''. */
   value: string;
@@ -76,6 +77,13 @@ export function PhoneInput({
   ariaLabel?: string;
   /** Per-form default country (ISO alpha-2, e.g. "CO"); falls back to locale. */
   defaultCountry?: string | null;
+  /**
+   * Focus the number input on mount. Default `true` — the slides layout shows
+   * one question per screen, so focusing it is always right. The vertical
+   * layout renders every question at once and passes `false`: competing
+   * autofocused inputs would fight, and the winner would scroll the page.
+   */
+  autoFocus?: boolean;
 }) {
   const m = getMessages(locale).renderer.phonePicker;
   const listId = useId();
@@ -210,7 +218,7 @@ export function PhoneInput({
           placeholder={formatPhoneDigits(country.dial, '0'.repeat(minLen))}
           aria-label={ariaLabel}
           aria-invalid={tooShort || undefined}
-          autoFocus
+          autoFocus={autoFocus}
         />
       </div>
 
