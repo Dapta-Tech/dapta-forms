@@ -14,6 +14,7 @@ import {
 import type { Db } from '@quill/db';
 import { getAccountTimezone, getFormById } from '@quill/db';
 import { formatIsoWithOffset, resolveTimeZone } from '@quill/shared';
+import { nameAnswer } from '@quill/engine';
 import type { FormConfig } from '@quill/types';
 import { AuthService, type ReqLike } from './auth.service';
 import { AnalyticsService } from './analytics.service';
@@ -99,7 +100,8 @@ export class AnalyticsController {
     if (!form) throw new NotFoundException({ error: 'NOT_FOUND', message: 'Not found.' });
 
     const config = form.config as FormConfig;
-    const stepKeys = (config.steps ?? []).map((s) => s.key);
+    const steps = config.steps ?? [];
+    const stepKeys = steps.map((s) => s.key);
     const filename = `${form.slug || 'submissions'}-submissions.csv`;
     // An unknown stored zone exports as UTC (+00:00) rather than failing the download.
     const zone = resolveTimeZone(await getAccountTimezone(this.db, p.accountId), (m) => this.log.warn(m));
@@ -141,7 +143,8 @@ export class AnalyticsController {
           iso(s.completedAt),
           local(s.startedAt),
           local(s.completedAt),
-          ...stepKeys.map((k) => data[k]),
+          // A name step stores firstname/lastname flat, never under its key.
+          ...steps.map((st) => (st.type === 'name' ? nameAnswer(st, data) : data[st.key])),
         ]),
       );
     }
