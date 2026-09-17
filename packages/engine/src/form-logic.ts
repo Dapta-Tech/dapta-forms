@@ -2027,6 +2027,20 @@ export function nameFields(step: FormStep): string[] {
   return [step.key];
 }
 
+/**
+ * The stored answer of a `name` step as one printable string ("First Last").
+ * A name step never writes under its own key: it stores each sub-field flat
+ * (`firstname`, `lastname`), so any reader indexing `answers[step.key]` finds
+ * nothing. Empty string when no sub-field was answered.
+ */
+export function nameAnswer(step: FormStep, answers: Record<string, unknown>): string {
+  return nameFields(step)
+    .map((field) => answers[field])
+    .filter((v): v is string => typeof v === 'string' && v.trim().length > 0)
+    .map((v) => v.trim())
+    .join(' ');
+}
+
 /** Resolve one `[field]` token to its substitution text (arrays join with `, `). */
 function resolveToken(value: AnswerValue): string {
   if (value == null) return '';

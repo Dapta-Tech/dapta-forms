@@ -329,3 +329,51 @@ describe('workspace timezone', () => {
     expect(text).not.toContain('10:05');
   });
 });
+
+/**
+ * A `name` step stores its answer as flat `firstname`/`lastname` entries and
+ * never under its own key, so a table cell that reads `data[step.key]` was
+ * always "n/a" for it — from the first release, on every form with a name
+ * question, regardless of what the step's key happens to be.
+ */
+describe('name step column', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  async function renderWith(steps: unknown[], data: Record<string, unknown>) {
+    getForm.mockResolvedValue({ id: FORM_ID, config: { version: 1, steps } });
+    listSubmissions.mockResolvedValue({
+      items: [{ ...submission('s1'), data }],
+      total: 1,
+      limit: PAGE_SIZE,
+      offset: 0,
+    });
+    me.mockResolvedValue({ accountId: 'acc-1', role: 'owner', timezone: 'America/Bogota' });
+    const shell = await SubmissionsRoute({
+      params: Promise.resolve({ id: FORM_ID }),
+      searchParams: Promise.resolve({}),
+    });
+    const boundary = find(shell, (el) => el.type === Suspense);
+    const child = boundary?.props?.children as AnyElement;
+    return textOf(await (child.type as (p: unknown) => Promise<unknown>)(child.props));
+  }
+
+  it('prints first and last name from the flat sub-fields, whatever the step key is', async () => {
+    const text = await renderWith(
+      [
+        { key: 'name_4', type: 'name', question: 'Nombre Completo' },
+        { key: 'email', type: 'email', question: 'Correo' },
+      ],
+      { firstname: 'Ada', lastname: 'Lovelace', email: 'ada@example.com' },
+    );
+    expect(text).toContain('Ada Lovelace');
+    expect(text).toContain('ada@example.com');
+  });
+
+  it('does not invent a name when nobody answered the step', async () => {
+    const text = await renderWith([{ key: 'name', type: 'name', question: 'Nombre' }], { name: 'stray' });
+    // Neither the sub-fields nor a stray value under the step key can show.
+    expect(text).not.toContain('stray');
+  });
+});
