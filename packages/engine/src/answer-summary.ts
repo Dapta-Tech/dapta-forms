@@ -9,7 +9,7 @@
  */
 import {
   isInputlessStep,
-  nameFields,
+  nameAnswer,
   parseFileAnswer,
   resolveQuestion,
   type Answers,
@@ -81,13 +81,7 @@ export function summarizeAnswers(
     if (isInputlessStep(step)) continue;
     let value: string;
     if (step.type === "name") {
-      value = nameFields(step)
-        .map((field) => answers[field])
-        .filter(
-          (v): v is string => typeof v === "string" && v.trim().length > 0,
-        )
-        .map((v) => v.trim())
-        .join(" ");
+      value = nameAnswer(step, answers);
       if (!value) continue;
     } else {
       const raw = answers[step.key];

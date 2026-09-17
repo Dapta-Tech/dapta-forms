@@ -2,7 +2,7 @@ import { Suspense } from 'react';
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import type { FormConfig, SubmissionsPage } from '@quill/types';
-import { parseFileAnswer } from '@quill/engine';
+import { nameAnswer, parseFileAnswer } from '@quill/engine';
 import { formatDateTime, getMessages, t, type FormsMessages, type Locale } from '@quill/shared';
 import { adminApi, ApiError, isAdminRole } from '@/lib/admin-api';
 import { WorkspaceTimezoneField } from '@/app/admin/_components/workspace-timezone-field';
@@ -217,11 +217,15 @@ async function SubmissionsData({
                     // A file cell is the one answer that is not text: it opens
                     // the thing rather than describing it.
                     const file = s.type === 'file' ? parseFileAnswer(data[s.key] as never) : null;
+                    // A name step stores its sub-fields flat (firstname,
+                    // lastname), never under its own key: read it the way the
+                    // email summary does, or the column is always n/a.
+                    const cell = s.type === 'name' ? nameAnswer(s, data) : data[s.key];
                     return (
                       <td
                         key={s.key}
                         className="max-w-[240px] truncate px-4 py-3"
-                        title={formatCell(data[s.key], '')}
+                        title={formatCell(cell, '')}
                       >
                         {file ? (
                           <SubmissionFileButton
@@ -241,7 +245,7 @@ async function SubmissionsData({
                             }}
                           />
                         ) : (
-                          formatCell(data[s.key], m.submissions.na)
+                          formatCell(cell, m.submissions.na)
                         )}
                       </td>
                     );

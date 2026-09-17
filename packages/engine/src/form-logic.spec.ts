@@ -18,6 +18,7 @@ import {
   partialSubmitKey,
   revealAfterKey,
   nameFields,
+  nameAnswer,
   isSafeHttpUrl,
   isSafeImageUrl,
   isImageIcon,
@@ -675,6 +676,17 @@ describe('validateAnswerCode', () => {
     expect(validateAnswerCode(s, undefined, { firstname: 'Ada', lastname: '' }).ok).toBe(false);
     expect(validateAnswerCode(s, undefined, { firstname: 'Ada', lastname: 'Lovelace' }).ok).toBe(true);
     expect(nameFields(s)).toEqual(['firstname', 'lastname']);
+  });
+  it('reads a name answer from its flat sub-fields, never from the step key', () => {
+    // The step key is deliberately NOT where the name lives: a repurposed
+    // template step ends up with any key (`name_4`) and the data is unaffected.
+    const s = step({ key: 'name_4', type: 'name' });
+    expect(nameAnswer(s, { firstname: ' Ada ', lastname: 'Lovelace', name_4: 'ignored' })).toBe('Ada Lovelace');
+    expect(nameAnswer(s, { firstname: 'Ada' })).toBe('Ada');
+    expect(nameAnswer(s, { lastname: 'Lovelace' })).toBe('Lovelace');
+    expect(nameAnswer(s, { name_4: 'Ada Lovelace' })).toBe('');
+    expect(nameAnswer(s, {})).toBe('');
+    expect(nameAnswer(step({ key: 'n', type: 'name', fields: ['given'] }), { given: 'Ada', lastname: 'x' })).toBe('Ada');
   });
 });
 
