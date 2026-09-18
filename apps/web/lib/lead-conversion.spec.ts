@@ -133,6 +133,22 @@ describe('reportLeadConversion', () => {
     expect(calls).toHaveLength(2);
   });
 
+  it('never writes the mark into another form\'s session key', () => {
+    // Slugs carry hyphens and are editable, so `demo` and `demo-lead` can both
+    // exist in one account. With a `-` separator the first form's mark WAS the
+    // second form's session key, and reporting a lead on `demo` overwrote the
+    // live session id of `demo-lead` in the same tab.
+    const { storage } = stubWindow();
+    const demo = 'quill-form-acct1-demo';
+    const demoLead = 'quill-form-acct1-demo-lead';
+    storage.setItem(demoLead, 'the-other-forms-session');
+
+    mod.reportLeadConversion({ sessionKey: demo, sessionId: SESSION_ID });
+
+    expect(leadReportedKey(demo)).not.toBe(demoLead);
+    expect(storage.store.get(demoLead)).toBe('the-other-forms-session');
+  });
+
   it('still locks within the document when storage is blocked outright', () => {
     const { calls } = stubWindow({ storage: stubStorage({ blocked: true }) });
     expect(mod.reportLeadConversion({ sessionKey: SESSION_KEY, sessionId: SESSION_ID })).toBe(true);

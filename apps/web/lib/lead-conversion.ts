@@ -64,9 +64,17 @@ export const LEAD_PIXEL_EVENT = 'Lead';
  */
 export const LEAD_DATALAYER_EVENT = 'form_lead';
 
-/** Where the "this session already reported" mark lives, next to the session id. */
+/**
+ * Where the "this session already reported" mark lives, next to the session id.
+ *
+ * The separator is `#` because a slug may contain hyphens (`^[a-z0-9]+(-[a-z0-9]+)*$`,
+ * `packages/shared/src/handle.ts`) and slugs are editable. With a `-` separator the
+ * mark for the form `demo` would BE the session key of the form `demo-lead`, so in
+ * one tab each would overwrite the other's session id. `#` cannot occur in a slug,
+ * so the two namespaces can never meet.
+ */
 export function leadReportedKey(sessionKey: string): string {
-  return `${sessionKey}-lead`;
+  return `${sessionKey}#lead`;
 }
 
 type Fbq = (...args: unknown[]) => void;
