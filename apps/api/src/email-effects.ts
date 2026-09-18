@@ -16,6 +16,26 @@ import { DB, EMAIL, ENV, NOTIFIER } from './tokens';
  */
 export class OutboxSkipError extends Error {}
 
+/**
+ * Trim, drop blanks, and keep the first spelling of each mailbox. The patch
+ * contract already rejects duplicates, so this guards the paths that do not go
+ * through it: a caller-supplied `to` and rows stored before that rule existed.
+ * Two copies of one address would share an idempotency key and the managed
+ * transport would drop the second without a word.
+ */
+function dedupeAddresses(list: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of list) {
+    const address = raw.trim();
+    const key = address.toLowerCase();
+    if (address.length === 0 || seen.has(key)) continue;
+    seen.add(key);
+    out.push(address);
+  }
+  return out;
+}
+
 /** The submission emails the outbox can carry. */
 export type EmailKind = 'submission_received' | 'submission_confirmed';
 
@@ -25,6 +45,12 @@ interface ResolvedEmailSetting {
   /** NULL = stock template (nothing to snapshot). */
   subject: string | null;
   body: string | null;
+  /**
+   * Who the owner notice goes to. NULL = nothing configured at either layer
+   * (the owner inbox); [] = configured as "the owner only". Read on
+   * `submission_received` alone: the receipt addresses the respondent.
+   */
+  recipients: string[] | null;
 }
 
 /**
@@ -49,6 +75,8 @@ export class EmailEffects {
   /**
    * Merge one email's settings across the three layers, PER FIELD:
    *   subject/body — form override ?? account override ?? null (stock template)
+   *   recipients   — same per-field chain; [] is a stored "owner only", so it
+   *                  STOPS the inheritance instead of reading as absent
    *   enabled      — a form row EXISTS → its toggle wins; else the account row;
    *                  else the fork-friendly default (on).
    * Absent rows mean "inherit", so a form with no override behaves exactly as
@@ -67,6 +95,7 @@ export class EmailEffects {
       enabled: formRow ? formRow.enabled : (accountRow?.enabled ?? true),
       subject: formRow?.subject ?? accountRow?.subject ?? null,
       body: formRow?.body ?? accountRow?.body ?? null,
+      recipients: formRow?.recipients ?? accountRow?.recipients ?? null,
     };
   }
 
@@ -77,27 +106,33 @@ export class EmailEffects {
     formId?: string | null,
   ): Promise<void> {
     try {
-      // The account-side notice goes to the owner inbox; a fork with no member
-      // email just carries no recipient and the notifier no-ops on empty `to`.
-      // The owner's `locale` selects the EN/ES copy (absent = English default).
+      // The owner row is still the fallback audience and, either way, the source
+      // of the `locale` that selects the EN/ES copy (absent = English default).
       const owner = await this.db.get<{ email: string | null; locale: string | null }>(
         sql`SELECT email, locale FROM member
             WHERE account_id = ${accountId} AND role = 'owner' AND status = 'active'
             ORDER BY created_at ASC LIMIT 1`,
       );
-      const to = n.to ?? (owner?.email ? [owner.email] : []);
-      // Nobody to tell: every adapter throws on an empty recipient list, so a
-      // row enqueued here would burn its whole retry schedule for nothing.
-      if (to.length === 0) {
-        this.log.warn(`submission_received for account ${accountId} has no recipient: not enqueued`);
-        return;
-      }
       // Snapshot the toggle AND the custom copy, already merged form → account →
       // stock (absent rows = enabled with the stock template, the fork-friendly
       // default). Snapshotting here means the worker renders the copy the owner
       // had configured at the moment of the submission, toggle included.
       const setting = await this.resolveSetting(accountId, formId, 'submission_received');
       if (!setting.enabled) return;
+      // Who hears about it: an explicit `to` from the caller, else the stored
+      // list. A stored EMPTY list is the deliberate "owner only" and falls
+      // through to the owner inbox, exactly like no list at all, which is also
+      // what a fork with no member email gets.
+      const configured = n.to ?? setting.recipients;
+      const to = dedupeAddresses(
+        configured && configured.length > 0 ? configured : owner?.email ? [owner.email] : [],
+      );
+      // Nobody to tell: every adapter throws on an empty recipient list, so a
+      // row enqueued here would burn its whole retry schedule for nothing.
+      if (to.length === 0) {
+        this.log.warn(`submission_received for account ${accountId} has no recipient: not enqueued`);
+        return;
+      }
       const payload: SubmissionNotification = {
         ...n,
         accountId,
@@ -110,17 +145,26 @@ export class EmailEffects {
         // form cannot be attributed to one, and every email this queue has ever
         // carried was invisible to the per-form delivery history for that reason.
         formId: formId ?? null,
+        // Replaced per row below; the shape stays honest for a reader.
         to,
         locale: n.locale ?? owner?.locale ?? null,
         subjectTemplate: setting.subject,
         bodyTemplate: setting.body,
       };
-      await enqueueOutbox(this.db, {
-        kind: 'email',
-        action: 'submission_received',
-        accountId,
-        payload: JSON.stringify(payload),
-      });
+      // ONE ROW PER RECIPIENT, not one row addressed to all of them. Each copy
+      // then retries, bounces and shows up in the delivery history on its own:
+      // an address that rejects the mail no longer costs the other four their
+      // delivery, and the idempotency key the notifier derives from `to` stays
+      // distinct per copy (a single shared key would have the managed transport
+      // drop every copy but the first, silently).
+      for (const recipient of to) {
+        await enqueueOutbox(this.db, {
+          kind: 'email',
+          action: 'submission_received',
+          accountId,
+          payload: JSON.stringify({ ...payload, to: [recipient] }),
+        });
+      }
     } catch (err) {
       this.log.error(`failed to enqueue submission_received: ${String(err)}`);
     }
