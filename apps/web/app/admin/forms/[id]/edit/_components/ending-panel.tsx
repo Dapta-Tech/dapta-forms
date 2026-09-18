@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect, useState } from 'react';
 import type { FormConfig, FormEnding } from '@quill/engine';
 import { Field, TextField, TextArea, NumberField, PanelSection } from './fields';
+import { RedirectField } from './redirect-field';
 import { HelpTip } from '@/components/ui/help-tip';
 import type { EditorMessages } from './messages';
 
@@ -67,6 +67,7 @@ export function EndingPanel({
           <RedirectField
             value={ending.redirectUrl ?? null}
             placeholder={em.redirectPlaceholder}
+            testId="ending-redirect"
             onCommit={(url) => onEndingChange({ redirectUrl: url })}
           />
         </Field>
@@ -106,54 +107,5 @@ export function EndingPanel({
         ) : null}
       </PanelSection>
     </div>
-  );
-}
-
-/**
- * A redirect URL with local text state, normalized to `https://` on blur so a
- * schemeless entry ("example.com") does not fail the schema's `.url()` check and
- * block the autosave. Empty commits `null` (= show the thank-you screen).
- * Mirrors the per-outcome field in Results so both behave identically.
- */
-function RedirectField({
-  value,
-  placeholder,
-  onCommit,
-}: {
-  value: string | null;
-  placeholder: string;
-  onCommit: (url: string | null) => void;
-}) {
-  const [text, setText] = useState(value ?? '');
-  useEffect(() => setText(value ?? ''), [value]);
-
-  function commit() {
-    const raw = text.trim();
-    if (!raw) {
-      setText('');
-      onCommit(null);
-      return;
-    }
-    const normalized = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
-    setText(normalized);
-    onCommit(normalized);
-  }
-
-  return (
-    <TextField
-      type="url"
-      inputMode="url"
-      value={text}
-      placeholder={placeholder}
-      data-testid="ending-redirect"
-      onChange={(e) => setText(e.target.value)}
-      onBlur={commit}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter') {
-          e.preventDefault();
-          e.currentTarget.blur();
-        }
-      }}
-    />
   );
 }

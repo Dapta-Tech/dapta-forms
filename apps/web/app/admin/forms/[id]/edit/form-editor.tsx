@@ -234,6 +234,9 @@ export function FormEditor({
   const [previewOpen, setPreviewOpen] = useState(false);
   const [focusCanvas, setFocusCanvas] = useState(0);
   const [saveCount, setSaveCount] = useState(0);
+  // Same count, readable synchronously by Publish right after it awaits the
+  // flush (the state value it rendered with is one save behind by then).
+  const saveCountRef = useRef(0);
   // Freshest name/config for save/flush/backup paths (no stale closures).
   const latest = useRef<EditorSnapshot>({ name, config });
   const toast = useToast();
@@ -359,7 +362,10 @@ export function FormEditor({
         kind === 'transport' ? m.saveOffline : tb(m.saveErrorReason, { reason: message }),
       );
     },
-    onSaved: () => setSaveCount((n) => n + 1),
+    onSaved: () => {
+      saveCountRef.current += 1;
+      setSaveCount(saveCountRef.current);
+    },
     // `migrateRevealToStep` returns the SAME object when there was nothing
     // legacy to fold in, so an identity check is an exact "did we migrate?" —
     // start dirty in that case and the first autosave persists the new shape.
@@ -841,6 +847,8 @@ export function FormEditor({
             initialHasDraft={initialHasDraft}
             saveCount={saveCount}
             locale={locale}
+            flush={autosave.flush}
+            getSaveCount={() => saveCountRef.current}
             getStamp={() => stampRef.current}
             onPublished={(stamp, saved) => {
               stampRef.current = stamp;
