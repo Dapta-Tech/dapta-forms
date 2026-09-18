@@ -103,6 +103,77 @@ function OptionIcon({
   );
 }
 
+/**
+ * A long-text input that carries length limits: the native cap, plus the live
+ * counter that keeps the minimum from being an invisible wall. Without the
+ * counter a respondent types, presses Continue, and is bounced without ever
+ * having been told how much was missing.
+ *
+ * `maxLength` stops typing at the ceiling; the engine still checks it, because
+ * a value can also arrive prefilled from the URL, and the API checks it again
+ * on submit. The floor is browser-side only (same parity as `required`).
+ *
+ * Styling is inline on purpose: the public stylesheet is shared and this is two
+ * elements. The colors come from the form design's own CSS variables, so the
+ * counter follows the theme like everything else on the page.
+ */
+function LongTextInput({
+  step,
+  text,
+  minChars,
+  maxChars,
+  onChange,
+  locale,
+  autoFocus,
+}: {
+  step: FormStep;
+  text: string;
+  minChars?: number;
+  maxChars?: number;
+  onChange: (value: AnswerValue) => void;
+  locale: string;
+  autoFocus: boolean;
+}) {
+  const m = getMessages(locale).renderer.charCounter;
+  // The floor counts TRIMMED characters, matching the engine, so fifty spaces
+  // never reads as a met minimum. The displayed count is the raw length, which
+  // is what the ceiling it sits next to measures.
+  const underMin = minChars != null && text.trim().length < minChars;
+  const count =
+    maxChars != null
+      ? `${text.length} / ${maxChars}`
+      : m.characters.replace('{count}', String(text.length));
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <textarea
+        className="pf-input pf-textarea"
+        value={text}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={step.placeholder ?? ''}
+        aria-label={step.question ?? step.key}
+        rows={4}
+        maxLength={maxChars}
+        autoFocus={autoFocus}
+      />
+      <span
+        data-testid="char-counter"
+        aria-live="polite"
+        style={{
+          alignSelf: 'flex-end',
+          fontSize: 12,
+          lineHeight: 1.4,
+          color: 'var(--muted-foreground)',
+          fontVariantNumeric: 'tabular-nums',
+        }}
+      >
+        {count}
+        {underMin ? ` \u00b7 ${m.minimum.replace('{min}', String(minChars))}` : ''}
+      </span>
+    </div>
+  );
+}
+
 /** Renders the input for a single step. `message` renders info copy, no input. */
 export function StepInput({
   step,
@@ -225,18 +296,36 @@ export function StepInput({
         />
       );
 
-    case 'textarea':
+    case 'textarea': {
+      // A question with neither limit renders exactly the bare textarea it
+      // always has — same element, same classes, no wrapper, no counter.
+      const text = String(value ?? '');
+      const { minChars, maxChars } = step;
+      if (minChars == null && maxChars == null) {
+        return (
+          <textarea
+            className="pf-input pf-textarea"
+            value={text}
+            onChange={(e) => onChange(e.target.value)}
+            placeholder={step.placeholder ?? ''}
+            aria-label={step.question ?? step.key}
+            rows={4}
+            autoFocus={autoFocus}
+          />
+        );
+      }
       return (
-        <textarea
-          className="pf-input pf-textarea"
-          value={String(value ?? '')}
-          onChange={(e) => onChange(e.target.value)}
-          placeholder={step.placeholder ?? ''}
-          aria-label={step.question ?? step.key}
-          rows={4}
+        <LongTextInput
+          step={step}
+          text={text}
+          minChars={minChars}
+          maxChars={maxChars}
+          onChange={onChange}
+          locale={locale}
           autoFocus={autoFocus}
         />
       );
+    }
 
     case 'dropdown':
       return (
