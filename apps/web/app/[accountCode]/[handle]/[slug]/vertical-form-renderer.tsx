@@ -59,6 +59,7 @@ import { warmBookingEmbed, type BookingScheduledDetails } from '@/lib/booking-em
 import { resolveSchedulerPrefill } from '@/lib/booking-prefill';
 import { callAction, callActionWithRetry, isTransportError } from '@/lib/call-action';
 import { navigateTop } from '@/lib/top-navigate';
+import { reportLeadConversion } from '@/lib/lead-conversion';
 import {
   submitFormAction,
   recordEventAction,
@@ -177,7 +178,11 @@ export function VerticalFormRenderer({
   // The form's button copy: author overrides, else the stock copy of `locale`.
   const formLocale = locale === 'es' ? 'es' : 'en';
   const labels = resolveFormLabels(config, formLocale);
-  const sessionId = useSessionId(`quill-form-${accountCode}-${slug}`);
+  // Named rather than inlined because the conversion reporter locks against it
+  // too: its "this session already reported" mark lives beside this id, under
+  // the same storage key, so both survive a reload together.
+  const sessionKey = `quill-form-${accountCode}-${slug}`;
+  const sessionId = useSessionId(sessionKey);
 
   /**
    * Authorize one upload for a `file` step.
@@ -366,6 +371,13 @@ export function VerticalFormRenderer({
         setPhase('form');
         return;
       }
+      // The submission is now confirmed, so this is a lead. Reported BEFORE the
+      // await below, for the same reason the slides layout does it: `fbq` is
+      // fire-and-forget, a zero-delay redirect ending assigns `window.location`
+      // a few lines down and cancels the pixel's in-flight request, and the
+      // `submit` event right after is already awaited to survive exactly that.
+      // That existing wait is the pixel's way out, so nothing new is timed.
+      reportLeadConversion({ sessionKey, sessionId });
       // Await the `submit` funnel event (best-effort) BEFORE any outcome
       // redirect — a fire-and-forget request would be aborted by the immediate
       // window.location navigation (same pattern as the slides layout).
@@ -402,7 +414,7 @@ export function VerticalFormRenderer({
       setDone({ score, outcome: res.outcome ?? null });
       setPhase('done');
     },
-    [accountCode, slug, sessionId, engineConfig],
+    [accountCode, slug, sessionKey, sessionId, engineConfig],
   );
   const finalizeRef = useRef(finalize);
   finalizeRef.current = finalize;
