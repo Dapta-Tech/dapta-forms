@@ -325,4 +325,45 @@ describe('callAction', () => {
     if (isTransportError(res)) expect(res.message).toContain('timed out');
     vi.useRealTimers();
   });
+
+  it('a conflict stops the loop: status conflict, no retry, edits stay dirty', async () => {
+    let attempts = 0;
+    const h = harness({
+      save: async () => {
+        attempts++;
+        return { ok: false, conflict: true, message: 'saved elsewhere' };
+      },
+    });
+    h.controller.markDirty();
+    await vi.advanceTimersByTimeAsync(100);
+    expect(attempts).toBe(1);
+    expect(h.lastStatus()).toBe('conflict');
+    expect(h.failures).toEqual([{ message: 'saved elsewhere', kind: 'conflict' }]);
+    expect(h.controller.dirty).toBe(true);
+
+    // No backoff retry ever fires on its own.
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(attempts).toBe(1);
+    expect(h.lastStatus()).toBe('conflict');
+  });
+
+  it('after a conflict, the next edit tries again (the person may have taken the newer stamp)', async () => {
+    let conflictOnce = true;
+    const h = harness({
+      save: async () => {
+        if (conflictOnce) {
+          conflictOnce = false;
+          return { ok: false, conflict: true };
+        }
+        return { ok: true };
+      },
+    });
+    h.controller.markDirty();
+    await vi.advanceTimersByTimeAsync(100);
+    expect(h.lastStatus()).toBe('conflict');
+    h.controller.markDirty();
+    await vi.advanceTimersByTimeAsync(100);
+    expect(h.lastStatus()).toBe('saved');
+    expect(h.controller.dirty).toBe(false);
+  });
 });

@@ -26,6 +26,13 @@ export interface BuilderMessages {
     recoveryBody: string;
     recoveryRestore: string;
     recoveryDiscard: string;
+    /** The server refused a save because the form was written elsewhere since
+     *  this editor loaded it (another person, another tab). */
+    conflict: string;
+    conflictTitle: string;
+    conflictBody: string;
+    conflictReload: string;
+    conflictOverwrite: string;
     preview: string;
     publish: string;
     publishing: string;
@@ -540,6 +547,12 @@ const en: BuilderMessages = {
       'This form has edits from a previous session that never reached the server. Restore them, or keep the saved version?',
     recoveryRestore: 'Restore edits',
     recoveryDiscard: 'Discard',
+    conflict: 'Saved elsewhere',
+    conflictTitle: 'This form was saved from somewhere else',
+    conflictBody:
+      'Another person, or another tab, saved this form while you were editing. Your edits here are not saved yet.',
+    conflictReload: 'See saved version',
+    conflictOverwrite: 'Keep mine',
     preview: 'Preview',
     publish: 'Publish',
     publishing: 'Publishing…',
@@ -962,6 +975,12 @@ const es: BuilderMessages = {
       'Este formulario tiene cambios de una sesión anterior que nunca llegaron al servidor. ¿Restaurarlos o quedarte con la versión guardada?',
     recoveryRestore: 'Restaurar cambios',
     recoveryDiscard: 'Descartar',
+    conflict: 'Guardado en otro lado',
+    conflictTitle: 'Este formulario se guardó desde otro lugar',
+    conflictBody:
+      'Otra persona, u otra pestaña, guardó este formulario mientras lo editabas. Tus cambios de acá todavía no están guardados.',
+    conflictReload: 'Ver la versión guardada',
+    conflictOverwrite: 'Quedarme con lo mío',
     preview: 'Vista previa',
     publish: 'Publicar',
     publishing: 'Publicando…',

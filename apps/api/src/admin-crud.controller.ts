@@ -65,6 +65,7 @@ import {
   attributionEventProps,
   attributionSchema,
   formInputSchema,
+  publishFormInputSchema,
   formSlugInputSchema,
   hasExtraHubspotDestination,
   maskConfigSecrets,
@@ -112,6 +113,30 @@ function unwrapCrud<T>(r: CrudResult<T>): T {
   if (r.ok) return r.value;
   if (r.reason === 'NOT_FOUND') throw new NotFoundException({ error: 'NOT_FOUND', message: 'Not found.' });
   throw new ConflictException({ error: r.reason, message: r.message ?? 'Conflict.' });
+}
+
+/**
+ * `unwrapCrud` for the editor's guarded writes: a STALE refusal carries the
+ * row as it is NOW, so the client can tell "someone else changed the content"
+ * from "only the stamp moved" (its own slug rename, a CRM mapping save) in one
+ * round trip, and adopt the stamp or show the conflict accordingly.
+ */
+async function unwrapGuarded<T>(
+  db: Db,
+  accountId: string,
+  id: string,
+  r: CrudResult<T>,
+): Promise<T> {
+  if (!r.ok && r.reason === 'STALE') {
+    const current = await getFormById(db, accountId, id);
+    throw new ConflictException({
+      error: 'STALE',
+      message: r.message ?? 'This form was saved elsewhere since you loaded it.',
+      updatedAt: current?.updatedAt ?? null,
+      current: current ? maskForm(current) : null,
+    });
+  }
+  return unwrapCrud(r);
 }
 
 /**
@@ -574,15 +599,32 @@ export class AdminCrudController {
   @Put('forms/:id')
   async updateForm(@Req() req: ReqLike, @Param('id') id: string, @Body() body: unknown) {
     const p = await this.auth.resolveHost(req);
-    const { config, slug, ...meta } = parse(formInputSchema.partial(), body);
+    const { config, slug, expectedUpdatedAt, ...meta } = parse(formInputSchema.partial(), body);
     if (slug !== undefined) {
       unwrapCrud(await setFormSlug(this.db, p.accountId, id, slugify(slug)));
     }
     // Returns the row even with nothing to patch, so it stays the single read
-    // that answers NOT_FOUND for this route.
-    let updated = unwrapCrud(await updateForm(this.db, p.accountId, id, meta));
+    // that answers NOT_FOUND for this route. Guarded by the client's stamp. A
+    // metadata write that LANDS moves the stamp, so the draft write on the same
+    // request checks against the one it just produced; a request with no
+    // metadata wrote nothing, and the draft still checks the client's own
+    // stamp (reading it off the row here would wave every stale draft through).
+    let updated = await unwrapGuarded(
+      this.db,
+      p.accountId,
+      id,
+      await updateForm(this.db, p.accountId, id, meta, expectedUpdatedAt),
+    );
     if (config !== undefined) {
-      updated = unwrapCrud(await saveDraftConfig(this.db, p.accountId, id, config));
+      const metaWrote = meta.name !== undefined;
+      const stamp =
+        expectedUpdatedAt === undefined ? undefined : metaWrote ? updated.updatedAt : expectedUpdatedAt;
+      updated = await unwrapGuarded(
+        this.db,
+        p.accountId,
+        id,
+        await saveDraftConfig(this.db, p.accountId, id, config, stamp),
+      );
     }
     return maskForm(updated);
   }
@@ -631,8 +673,9 @@ export class AdminCrudController {
    * PUT /v1/forms/:id — any resolved host member, scoped to their account.
    */
   @Post('forms/:id/publish')
-  async publishForm(@Req() req: ReqLike, @Param('id') id: string) {
+  async publishForm(@Req() req: ReqLike, @Param('id') id: string, @Body() body?: unknown) {
     const p = await this.auth.resolveHost(req);
+    const { expectedUpdatedAt } = parse(publishFormInputSchema, body ?? {});
     // Read the PRIOR state before publishing: `published_at` is about to be
     // stamped, so after the call every publish looks like the first one.
     // Republishing an existing form is not a new conversion, and counting it as
@@ -641,8 +684,8 @@ export class AdminCrudController {
     const before = this.productAnalytics?.enabled
       ? await getFormById(this.db, p.accountId, id)
       : null;
-    const result = await publishForm(this.db, p.accountId, id);
-    const published = unwrapCrud(result);
+    const result = await publishForm(this.db, p.accountId, id, expectedUpdatedAt);
+    const published = await unwrapGuarded(this.db, p.accountId, id, result);
     // `result.published` comes from the UPDATE's own RETURNING, so it is true
     // exactly on the call that copied the draft over. Reading the row BEFORE and
     // deciding here would be a read-then-act: two concurrent publishes both saw

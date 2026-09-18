@@ -1156,13 +1156,26 @@ export const EMPTY_FORM_CONFIG: FormConfig = { version: 1, steps: [] };
 
 // --- Form CRUD (admin) -------------------------------------------------------
 
+/**
+ * Optimistic lock for the editor's writes: the `updatedAt` the client loaded
+ * or last received. The API answers 409 `STALE` (with the current row) when
+ * the form was written since. Absent = no check, which is what a client built
+ * before this field existed sends.
+ */
+export const expectedUpdatedAtSchema = z.number().int().nonnegative().optional();
+
 export const formInputSchema = z.object({
   name: z.string().min(1).max(200),
   /** Optional; auto-slugified from name (unique per account) when omitted. */
   slug: z.string().min(1).max(80).optional(),
   config: formConfigSchema.optional(),
+  expectedUpdatedAt: expectedUpdatedAtSchema,
 });
 export type FormInput = z.infer<typeof formInputSchema>;
+
+/** Body of POST /v1/forms/:id/publish (all optional; an empty body publishes unguarded). */
+export const publishFormInputSchema = z.object({ expectedUpdatedAt: expectedUpdatedAtSchema });
+export type PublishFormInput = z.infer<typeof publishFormInputSchema>;
 
 // --- Form folders (0021) -------------------------------------------------------
 

@@ -11,6 +11,7 @@
  *   4. publish with NO pending draft is an idempotent no-op.
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { ConflictException } from '@nestjs/common';
 import { createDb, migrate, seed, getPublishedForm, sql, type Db } from '@quill/db';
 import { AdminCrudController } from './admin-crud.controller';
 import { AdminService } from './admin.service';
@@ -102,5 +103,90 @@ describe('POST /v1/forms/:id/publish', () => {
 
     const pub = await getPublishedForm(db, 'acme', 'lead-qualifier');
     expect(pub!.config).toEqual(liveConfig);
+  });
+});
+
+/**
+ * The optimistic lock on the editor's writes (PUT and publish). A 409 STALE
+ * carries the row as it is now, so the client can compare content and either
+ * adopt the new stamp silently or show the conflict.
+ */
+describe('expectedUpdatedAt (optimistic lock)', () => {
+  const stampOf = async () => (await controller.getForm(asOwner(), formId)).updatedAt;
+  const tick = () => new Promise((r) => setTimeout(r, 2));
+
+  it('PUT with the current stamp lands and returns the new stamp', async () => {
+    const before = await stampOf();
+    await tick();
+    const updated = await controller.updateForm(asOwner(), formId, {
+      config: DRAFT_CONFIG,
+      expectedUpdatedAt: before,
+    });
+    expect(updated.draftConfig).toEqual(DRAFT_CONFIG);
+    expect(updated.updatedAt).toBeGreaterThan(before);
+  });
+
+  it('PUT with a stale stamp answers 409 STALE with the current row, and writes nothing', async () => {
+    const before = await stampOf();
+    await tick();
+    await controller.updateForm(asOwner(), formId, { config: DRAFT_CONFIG }); // someone else
+    const now = await stampOf();
+
+    let thrown: unknown;
+    try {
+      await controller.updateForm(asOwner(), formId, {
+        config: { ...DRAFT_CONFIG, steps: [] },
+        expectedUpdatedAt: before,
+      });
+    } catch (e) {
+      thrown = e;
+    }
+    expect(thrown).toBeInstanceOf(ConflictException);
+    const body = (thrown as ConflictException).getResponse() as Record<string, unknown>;
+    expect(body.error).toBe('STALE');
+    expect(body.updatedAt).toBe(now);
+    expect((body.current as { draftConfig: unknown }).draftConfig).toEqual(DRAFT_CONFIG);
+    expect((await controller.getForm(asOwner(), formId)).draftConfig).toEqual(DRAFT_CONFIG);
+  });
+
+  it('name + config on one PUT: the draft write checks the stamp the rename just produced', async () => {
+    const before = await stampOf();
+    await tick();
+    const updated = await controller.updateForm(asOwner(), formId, {
+      name: 'Both at once',
+      config: DRAFT_CONFIG,
+      expectedUpdatedAt: before,
+    });
+    expect(updated.name).toBe('Both at once');
+    expect(updated.draftConfig).toEqual(DRAFT_CONFIG);
+  });
+
+  it('publish with a stale stamp answers 409 STALE and leaves the draft pending', async () => {
+    const before = await stampOf();
+    await tick();
+    await controller.updateForm(asOwner(), formId, { config: DRAFT_CONFIG });
+    await expect(
+      controller.publishForm(asOwner(), formId, { expectedUpdatedAt: before }),
+    ).rejects.toBeInstanceOf(ConflictException);
+    const row = await controller.getForm(asOwner(), formId);
+    expect(row.draftConfig).toEqual(DRAFT_CONFIG);
+    expect(row.publishedAt).toBeNull();
+  });
+
+  it('publish with the current stamp goes live', async () => {
+    await controller.updateForm(asOwner(), formId, { config: DRAFT_CONFIG });
+    const published = await controller.publishForm(asOwner(), formId, {
+      expectedUpdatedAt: await stampOf(),
+    });
+    expect(published.config).toEqual(DRAFT_CONFIG);
+    expect(published.draftConfig == null).toBe(true);
+  });
+
+  it('a body without the stamp is the old unguarded behavior', async () => {
+    await controller.updateForm(asOwner(), formId, { config: DRAFT_CONFIG });
+    await tick();
+    await controller.updateForm(asOwner(), formId, { config: DRAFT_CONFIG }); // stamp moved
+    const published = await controller.publishForm(asOwner(), formId);
+    expect(published.config).toEqual(DRAFT_CONFIG);
   });
 });

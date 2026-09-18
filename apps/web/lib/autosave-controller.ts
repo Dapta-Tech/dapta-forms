@@ -16,13 +16,21 @@
 
 import { isTransportError, type TransportError } from './call-action';
 
-export type AutosaveStatus = 'saved' | 'saving' | 'retrying' | 'error';
+export type AutosaveStatus = 'saved' | 'saving' | 'retrying' | 'error' | 'conflict';
 
-export type AutosaveFailureKind = 'invalid' | 'server' | 'transport';
+export type AutosaveFailureKind = 'invalid' | 'server' | 'transport' | 'conflict';
+
+/** The server refused the write because the row was written since this
+ *  editor's stamp (optimistic lock). Never retried on its own: only a person
+ *  can decide between the two versions. */
+export type ConflictOutcome = { ok: false; conflict: true; message?: string };
 
 /** What a save attempt produced, as the controller sees it. `ok` is a plain
  *  boolean (not a discriminant) because server actions type it that way. */
-export type SaveOutcome = { ok: boolean; message?: string } | TransportError;
+export type SaveOutcome = { ok: boolean; message?: string } | TransportError | ConflictOutcome;
+
+export const isConflictOutcome = (r: unknown): r is ConflictOutcome =>
+  typeof r === 'object' && r !== null && (r as ConflictOutcome).conflict === true;
 
 export interface AutosaveOptions<T> {
   /** Latest data to persist. Called at save time — never a stale closure. */
@@ -183,6 +191,19 @@ export class AutosaveController<T> {
       } else {
         this.opts.onStatus('saved', null);
         this.opts.onSaved?.();
+      }
+      return;
+    }
+
+    if (isConflictOutcome(outcome)) {
+      // Someone else's write is on the server. Retrying would just lose again
+      // (or, worse, win): the editor shows the conflict and the person picks.
+      // Dirty stays set so the edits are still here when they do.
+      const message = outcome.message ?? 'saved elsewhere';
+      this.opts.onStatus('conflict', message);
+      if (!this.failureNotified) {
+        this.failureNotified = true;
+        this.opts.onFailure?.(message, 'conflict');
       }
       return;
     }
