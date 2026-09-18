@@ -671,6 +671,31 @@ describe('validateAnswerCode', () => {
     expect(validateAnswerCode(step({ key: 'p', type: 'phone', phoneMinDigits: 8 }), '+525512345678').ok).toBe(true);
     expect(validateAnswerCode(step({ key: 's', type: 'slider', min: 0, max: 5 }), 9).code).toBe('too_high');
   });
+  it('bounds a long-text answer by its own character limits', () => {
+    const bounded = step({ key: 'why', type: 'textarea', minChars: 20, maxChars: 40 });
+    expect(validateAnswerCode(bounded, 'too short').code).toBe('too_short');
+    expect(validateAnswerCode(bounded, 'a'.repeat(41)).code).toBe('too_long');
+    expect(validateAnswerCode(bounded, 'a'.repeat(30)).ok).toBe(true);
+    // The floor ignores whitespace: spaces are not an answer.
+    expect(validateAnswerCode(bounded, ' '.repeat(30)).code).toBe('too_short');
+    // Only one limit set leaves the other end open.
+    expect(validateAnswerCode(step({ key: 'w', type: 'textarea', minChars: 20 }), 'a'.repeat(999)).ok).toBe(true);
+    expect(validateAnswerCode(step({ key: 'w', type: 'textarea', maxChars: 40 }), 'hi').ok).toBe(true);
+    // English twin agrees, code for code.
+    expect(validateAnswer(bounded, 'too short').ok).toBe(false);
+    expect(validateAnswer(bounded, 'a'.repeat(41)).ok).toBe(false);
+    expect(validateAnswer(bounded, 'a'.repeat(30)).ok).toBe(true);
+  });
+  it('leaves a long-text question with no limits exactly as it was', () => {
+    // The whole back-compat promise: every textarea published before this
+    // setting existed carries neither field, so nothing new can reject it.
+    const legacy = step({ key: 'why', type: 'textarea', required: true });
+    expect(validateAnswerCode(legacy, 'x').ok).toBe(true);
+    expect(validateAnswerCode(legacy, 'a'.repeat(100000)).ok).toBe(true);
+    expect(validateAnswerCode(legacy, '').code).toBe('required');
+    // `min`/`max` on the step are the SLIDER's bounds and must never leak here.
+    expect(validateAnswerCode(step({ key: 'w', type: 'textarea', min: 50, max: 60 }), 'hi').ok).toBe(true);
+  });
   it('checks both name sub-fields', () => {
     const s = step({ key: 'name', type: 'name', required: true });
     expect(validateAnswerCode(s, undefined, { firstname: 'Ada', lastname: '' }).ok).toBe(false);
