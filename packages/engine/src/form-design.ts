@@ -57,6 +57,17 @@ export const FORM_LOGO_POSITIONS = ['left', 'center'] as const;
 export type FormLogoPosition = (typeof FORM_LOGO_POSITIONS)[number];
 
 /**
+ * Scale of the "Made with Dapta Forms" attribution pill.
+ *
+ * Two values, not three. `logoSize` carries a `lg` because a host's own logo is
+ * the point of the page; this pill is the opposite — nobody has ever wanted the
+ * attribution BIGGER than it already is, and every value is CSS plus a toggle
+ * segment forever.
+ */
+export const FORM_BADGE_SIZES = ['sm', 'md'] as const;
+export type FormBadgeSize = (typeof FORM_BADGE_SIZES)[number];
+
+/**
  * The curated typeface list.
  *
  * A curated set rather than "any Google font" is a deliberate product call:
@@ -131,6 +142,7 @@ export interface FormDesignInput {
   progressStyle?: FormProgressStyle;
   logoSize?: FormLogoSize;
   logoPosition?: FormLogoPosition;
+  badgeSize?: FormBadgeSize;
   contentAlign?: FormContentAlign;
   contentWidth?: FormContentWidth;
   transition?: FormTransition;
@@ -155,6 +167,7 @@ export interface ResolvedFormDesign {
   customFont: FormCustomFont | null;
   logoSize: FormLogoSize;
   logoPosition: FormLogoPosition;
+  badgeSize: FormBadgeSize;
   contentAlign: FormContentAlign;
   contentWidth: FormContentWidth;
   transition: FormTransition;
@@ -193,6 +206,9 @@ export const LEGACY_FORM_DESIGN: ResolvedFormDesign = {
   customFont: null,
   logoSize: 'md',
   logoPosition: 'center',
+  // `md` is the size the attribution has always rendered at, so an absent value
+  // keeps every published form pixel-identical — the whole point of this table.
+  badgeSize: 'md',
   // The renderer has always centred the question and helper (`public-form.css`
   // → `.pf__question`). Defaulting this to `left` would silently re-align every
   // form ever published, which is exactly the kind of change the legacy table
@@ -264,6 +280,7 @@ export function resolveDesign(design: FormDesignInput | null | undefined): Resol
     customFont,
     logoSize: d.logoSize ?? LEGACY_FORM_DESIGN.logoSize,
     logoPosition: d.logoPosition ?? LEGACY_FORM_DESIGN.logoPosition,
+    badgeSize: d.badgeSize ?? LEGACY_FORM_DESIGN.badgeSize,
     contentAlign: d.contentAlign ?? LEGACY_FORM_DESIGN.contentAlign,
     contentWidth: d.contentWidth ?? LEGACY_FORM_DESIGN.contentWidth,
     transition: d.transition ?? LEGACY_FORM_DESIGN.transition,
@@ -285,6 +302,9 @@ export function designAttributes(design: ResolvedFormDesign): Record<string, str
     'data-pf-bg': design.backgroundStyle,
     'data-pf-logo-size': design.logoSize,
     'data-pf-logo-pos': design.logoPosition,
+    // The attribution pill is a descendant of `.pf` on all five of its call
+    // sites, so it needs no props of its own to follow this.
+    'data-pf-badge-size': design.badgeSize,
     'data-pf-align': design.contentAlign,
     'data-pf-width': design.contentWidth,
     'data-pf-transition': design.transition,
