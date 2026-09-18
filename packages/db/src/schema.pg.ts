@@ -156,6 +156,8 @@ export const notificationSetting = pgTable(
     subject: text('subject'),
     body: text('body'),
     reminderLeadMinutes: text('reminder_lead_minutes'),
+    /** JSON array of addresses in TEXT; NULL = inherit, [] = the owner only. */
+    recipients: text('recipients'),
     createdAt: bigint('created_at', { mode: 'number' }).notNull(),
     updatedAt: bigint('updated_at', { mode: 'number' }).notNull(),
   },
