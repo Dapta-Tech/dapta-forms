@@ -185,7 +185,12 @@ describe('per-form overrides (/v1/forms/:id/notifications)', () => {
       'submission_confirmed',
     ]);
     const confirmedBefore = res.settings.find((s) => s.emailKey === 'submission_confirmed')!;
-    expect(confirmedBefore.account).toEqual({ enabled: true, subject: 'ACCT {{formName}}', body: null });
+    expect(confirmedBefore.account).toEqual({
+      enabled: true,
+      subject: 'ACCT {{formName}}',
+      body: null,
+      recipients: null,
+    });
     expect(confirmedBefore.override).toBeNull();
     expect(confirmedBefore.defaults.en.subject).toBe('We got your responses: {{formName}}');
     expect(confirmedBefore.tokens).toContain('formName');
@@ -283,5 +288,106 @@ describe('account scoping', () => {
     expect(acmeAfter.settings.find((s) => s.emailKey === 'submission_received')!.subject).toBe(
       'ACME only {{formName}}',
     );
+  });
+});
+
+/**
+ * The recipient list on the owner notice. The browser disables its add button
+ * at five and marks a malformed row, but the API is the gate that matters: it
+ * is the same PUT a script or a stale tab can reach.
+ */
+describe('recipients', () => {
+  async function createTestForm(req: ReqLike, name: string): Promise<string> {
+    const form = (await controller.createForm(req, {
+      name,
+      config: { version: 1, steps: [{ key: 'email', type: 'email', question: 'Email?' }] },
+    })) as { id: string };
+    return form.id;
+  }
+
+  it('persists a list and reports it back, defaulting to null', async () => {
+    const before = await controller.notifications(asOwner());
+    expect(before.settings.find((s) => s.emailKey === 'submission_received')!.recipients).toBeNull();
+
+    const updated = await controller.updateNotification(asOwner(), 'submission_received', {
+      recipients: ['ceo@acme.io', 'sales@example.com'],
+    });
+    expect(updated.recipients).toEqual(['ceo@acme.io', 'sales@example.com']);
+  });
+
+  it('keeps an empty list distinct from no list at all', async () => {
+    const emptied = await controller.updateNotification(asOwner(), 'submission_received', {
+      recipients: [],
+    });
+    expect(emptied.recipients).toEqual([]);
+
+    const cleared = await controller.updateNotification(asOwner(), 'submission_received', {
+      recipients: null,
+    });
+    expect(cleared.recipients).toBeNull();
+  });
+
+  it('refuses a malformed address, a sixth one, and the same mailbox twice', async () => {
+    const five = ['a@example.com', 'b@example.com', 'c@example.com', 'd@example.com', 'e@example.com'];
+    await expect(
+      controller.updateNotification(asOwner(), 'submission_received', { recipients: ['not-an-email'] }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(
+      controller.updateNotification(asOwner(), 'submission_received', {
+        recipients: [...five, 'f@example.com'],
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(
+      controller.updateNotification(asOwner(), 'submission_received', {
+        recipients: ['ceo@acme.io', 'CEO@Acme.io'],
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+
+    // Nothing partial was written by the refused calls.
+    const after = await controller.notifications(asOwner());
+    expect(after.settings.find((s) => s.emailKey === 'submission_received')!.recipients).toBeNull();
+  });
+
+  it('refuses a list on the respondent receipt, which addresses the respondent', async () => {
+    await expect(
+      controller.updateNotification(asOwner(), 'submission_confirmed', {
+        recipients: ['ceo@acme.io'],
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('the per-form view carries both layers, and null override means "following the account"', async () => {
+    const formId = await createTestForm(asOwner(), 'Recipients A');
+    await controller.updateNotification(asOwner(), 'submission_received', {
+      recipients: ['ceo@acme.io'],
+    });
+
+    // A row pinned for its copy alone still follows the account list.
+    await controller.updateFormNotification(asOwner(), formId, 'submission_received', {
+      subject: 'FORM {{formName}}',
+    });
+    let view = (await controller.formNotifications(asOwner(), formId)).settings.find(
+      (s) => s.emailKey === 'submission_received',
+    )!;
+    expect(view.account.recipients).toEqual(['ceo@acme.io']);
+    expect(view.override!.recipients).toBeNull();
+
+    // An empty list on the form is a decision, and the view has to show it.
+    await controller.updateFormNotification(asOwner(), formId, 'submission_received', {
+      recipients: [],
+    });
+    view = (await controller.formNotifications(asOwner(), formId)).settings.find(
+      (s) => s.emailKey === 'submission_received',
+    )!;
+    expect(view.account.recipients).toEqual(['ceo@acme.io']);
+    expect(view.override!.recipients).toEqual([]);
+  });
+
+  it('one account’s list never leaks into another', async () => {
+    await controller.updateNotification(asOwner(), 'submission_received', {
+      recipients: ['ceo@acme.io'],
+    });
+    const other = await controller.notifications(asEmail('owner@other.test'));
+    expect(other.settings.find((s) => s.emailKey === 'submission_received')!.recipients).toBeNull();
   });
 });
