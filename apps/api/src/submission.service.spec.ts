@@ -275,6 +275,53 @@ describe('submit', () => {
     expect(out.score).toBe(10);
     expect(out.outcome).toBe('p0');
   });
+
+  it('rejects a long-text answer over the ceiling its question sets', async () => {
+    const account = await getAccountByCode(db, 'acme');
+    const created = await createForm(db, account!.id, {
+      name: 'Long text form',
+      config: {
+        version: 1,
+        steps: [
+          { key: 'why', type: 'textarea', question: 'Why?', minChars: 20, maxChars: 50 },
+          { key: 'other', type: 'textarea', question: 'Anything else?' },
+        ],
+      },
+    });
+    if (!created.ok) throw new Error('createForm failed');
+    const slug = created.value.slug;
+
+    const over = await svc.submit('acme', slug, {
+      sessionId: 'sess-too-long',
+      data: { why: 'a'.repeat(51) },
+    });
+    expect('error' in over).toBe(true);
+    if (!('error' in over)) return;
+    expect(over.error).toBe('ANSWER_TOO_LONG');
+    expect(over.status).toBe(400);
+    // Nothing was persisted: the check runs before the row is written.
+    expect(await listSubmissions(db, created.value.id)).toHaveLength(0);
+
+    // A partial save carries the same ceiling — a giant string is the same
+    // problem whichever phase sends it.
+    const partial = await svc.submit('acme', slug, {
+      sessionId: 'sess-too-long-partial',
+      data: { why: 'a'.repeat(51) },
+      partial: true,
+    });
+    expect('error' in partial).toBe(true);
+
+    // The FLOOR is browser-side only, on purpose: a short answer still lands.
+    const short = await svc.submit('acme', slug, { sessionId: 'sess-short', data: { why: 'hi' } });
+    expect('error' in short).toBe(false);
+
+    // A long-text question with NO ceiling is not measured at all.
+    const unbounded = await svc.submit('acme', slug, {
+      sessionId: 'sess-unbounded',
+      data: { why: 'a'.repeat(30), other: 'b'.repeat(5000) },
+    });
+    expect('error' in unbounded).toBe(false);
+  });
 });
 
 describe('events', () => {
