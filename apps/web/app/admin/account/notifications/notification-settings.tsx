@@ -145,7 +145,15 @@ function NotificationEmailCard({
   const savedSubject = saved.subject ?? def.subject;
   const savedBody = saved.body ?? def.body;
   const savedRecipients = saved.recipients ?? [];
-  const isCustom = saved.subject !== null || saved.body !== null;
+  // Two different questions, so two different flags. The BADGE answers "has this
+  // account changed anything here", and a saved recipient list is a change: with
+  // only the template counted, an account that notifies five people still read
+  // "Using default". RESET answers "is there a template to restore", and it must
+  // stay template-only, because `resetNotificationTemplate` NULLs subject and
+  // body and nothing else. Wiring the recipients into it would arm a button
+  // labelled "restore the default wording" to silently drop five addresses.
+  const isCustomTemplate = saved.subject !== null || saved.body !== null;
+  const isCustom = isCustomTemplate || savedRecipients.length > 0;
   // The receipt addresses the respondent, so it has no list to edit.
   const hasRecipients = setting.emailKey === 'submission_received';
   const draftRecipients = value.recipients ?? [];
@@ -275,7 +283,12 @@ function NotificationEmailCard({
 
       {/* Actions */}
       <div className="mt-4 flex items-center justify-end gap-2">
-        <Button type="button" variant="ghost" onClick={onReset} disabled={pending || !isCustom}>
+        <Button
+          type="button"
+          variant="ghost"
+          onClick={onReset}
+          disabled={pending || !isCustomTemplate}
+        >
           {labels.reset}
         </Button>
         <Button

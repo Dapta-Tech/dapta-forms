@@ -75,7 +75,7 @@ export class EmailEffects {
   /**
    * Merge one email's settings across the three layers, PER FIELD:
    *   subject/body — form override ?? account override ?? null (stock template)
-   *   recipients   — same per-field chain; [] is a stored "owner only", so it
+   *   recipients:    same per-field chain; [] is a stored "owner only", so it
    *                  STOPS the inheritance instead of reading as absent
    *   enabled      — a form row EXISTS → its toggle wins; else the account row;
    *                  else the fork-friendly default (on).
@@ -157,13 +157,31 @@ export class EmailEffects {
       // delivery, and the idempotency key the notifier derives from `to` stays
       // distinct per copy (a single shared key would have the managed transport
       // drop every copy but the first, silently).
+      // Each row is enqueued under its OWN try/catch. One shared one would make
+      // the promise above a lie: a throw on the third of five left two rows
+      // written, three addresses with nothing queued, and a single log line that
+      // named neither. A row that fails is now the only row that fails, and the
+      // count is reported rather than inferred from the logs.
+      let queued = 0;
       for (const recipient of to) {
-        await enqueueOutbox(this.db, {
-          kind: 'email',
-          action: 'submission_received',
-          accountId,
-          payload: JSON.stringify({ ...payload, to: [recipient] }),
-        });
+        try {
+          await enqueueOutbox(this.db, {
+            kind: 'email',
+            action: 'submission_received',
+            accountId,
+            payload: JSON.stringify({ ...payload, to: [recipient] }),
+          });
+          queued += 1;
+        } catch (err) {
+          this.log.error(
+            `failed to enqueue submission_received for one recipient: ${String(err)}`,
+          );
+        }
+      }
+      if (queued < to.length) {
+        this.log.error(
+          `submission_received queued ${queued}/${to.length} recipients for account ${accountId}`,
+        );
       }
     } catch (err) {
       this.log.error(`failed to enqueue submission_received: ${String(err)}`);
