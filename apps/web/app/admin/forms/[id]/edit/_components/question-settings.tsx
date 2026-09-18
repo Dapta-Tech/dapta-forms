@@ -54,6 +54,25 @@ const PLACEHOLDER_TYPES: ReadonlySet<FormStep['type']> = new Set([
   'dropdown',
 ]);
 
+/** The long-text length ceiling — mirrors `formStepSchema`'s cap on both fields. */
+const MAX_CHAR_LIMIT = 10_000;
+
+/**
+ * Commit one of the long-text length limits. The schema refuses a floor above
+ * the ceiling, so the editor never WRITES that pair: each field is squeezed
+ * against its sibling on the way in. Clamping here rather than on keystroke is
+ * safe because `NumberField` owns its display string while focused — typing is
+ * never yanked back, the field only settles to the committed value on blur.
+ *
+ * An empty box (or a zero) means "no limit on this end", which is stored as
+ * absent, exactly how a question saved before this setting existed reads.
+ */
+export function clampCharLimit(raw: string, floor?: number, ceiling?: number): number | undefined {
+  const n = Math.round(Number(raw));
+  if (!Number.isFinite(n) || n < 1) return undefined;
+  return Math.min(Math.max(n, floor ?? 1), ceiling ?? MAX_CHAR_LIMIT);
+}
+
 /** The reveal card's play-time bounds — mirrors `formRevealSchema`. */
 const DEFAULT_REVEAL_MS = 2200;
 const MIN_REVEAL_MS = 500;
@@ -599,6 +618,40 @@ export function QuestionSettings({
           em={em}
           maxFileMb={uploads?.maxFileMb ?? 10}
         />
+      ) : null}
+
+      {/* Long text: how long the answer has to be. Only here — a one-line text
+          question has no such problem, and the slider's own `min`/`max` are a
+          different pair entirely, which is why these carry their own names. */}
+      {step.type === 'textarea' ? (
+        <section className="flex flex-col gap-3 border-t border-border pt-4">
+          <p className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wide text-faint">
+            {em.props.charLimits}
+            <HelpTip text={em.props.charLimitsHelp} label={em.props.charLimits} side="bottom" />
+          </p>
+          <div className="grid grid-cols-2 gap-2.5">
+            <Field label={em.props.minChars}>
+              <NumberField
+                aria-label={em.props.minChars}
+                value={step.minChars ?? ''}
+                min={1}
+                max={step.maxChars ?? MAX_CHAR_LIMIT}
+                data-testid="step-min-chars"
+                onChange={(e) => onUpdate({ minChars: clampCharLimit(e.target.value, undefined, step.maxChars) })}
+              />
+            </Field>
+            <Field label={em.props.maxChars}>
+              <NumberField
+                aria-label={em.props.maxChars}
+                value={step.maxChars ?? ''}
+                min={step.minChars ?? 1}
+                max={MAX_CHAR_LIMIT}
+                data-testid="step-max-chars"
+                onChange={(e) => onUpdate({ maxChars: clampCharLimit(e.target.value, step.minChars, undefined) })}
+              />
+            </Field>
+          </div>
+        </section>
       ) : null}
 
       {step.type === 'email' ? (
