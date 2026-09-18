@@ -1,8 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
+import { getMessages } from '@quill/shared';
 import type { FormBranding, FormConfig, FormCover, FormEnding, FormLabels, FormLanguage, FormLayout, FormOutcome, FormStep } from '@quill/engine';
 import {
   normalizeConfig,
@@ -36,6 +36,7 @@ import { BranchingDialog } from './_components/branching-dialog';
 import { ScoringDialog } from './_components/scoring-dialog';
 import { OutcomesDialog } from './_components/outcomes-dialog';
 import { useIsDesktop } from '@/lib/use-media-query';
+import { FormTabs } from '@/components/ui/form-tabs';
 import { EmptyState } from './_components/empty-state';
 import { DesignPanel } from './_components/design-panel';
 import { FlowPanel } from './_components/flow-panel';
@@ -151,6 +152,12 @@ export function FormEditor({
   uploads?: { enabled: boolean; maxFileMb: number };
 }) {
   const bm = getBuilderMessages(locale);
+  // The cross-surface tab labels live in the SHARED catalog under `admin.nav`,
+  // one level up from the `admin.editor` slice this component is handed. Read
+  // straight from the catalog rather than threaded through a new prop: the
+  // strings are already translated, `@quill/shared` is framework-free, and the
+  // editor already holds the locale.
+  const nav = getMessages(locale).admin.nav;
   const searchParams = useSearchParams();
   const [name, setName] = useState(initialName);
   /**
@@ -738,6 +745,28 @@ export function FormEditor({
 
   return (
     <div className="flex h-[100dvh] flex-col overflow-hidden bg-background">
+      {/* Topbar, row 0: the form's SURFACES, the same Edit / Analytics /
+          Submissions bar the analytics and submissions screens already carry.
+          The editor was the one surface with no way out of itself, so reading
+          per-question drop-off meant knowing to leave through the side menu.
+
+          Outermost scope goes outermost: this row says which surface of the
+          form you are looking at, row 1 says which editor section, row 2 acts
+          on that section. Above the existing bars rather than woven into them,
+          so not one control moves.
+
+          The wrapper zeroes the component's `mb-6`: that margin is page-flow
+          spacing for the two scrolling screens, and here it would be dead
+          pixels inside a `100dvh` shell. `form-tabs.tsx` itself is shared with
+          those screens and stays untouched.
+
+          The back-to-forms link this row brings is why row 1 no longer carries
+          its own chevron: same destination, one affordance, no pair of links
+          15px apart. */}
+      <div className="shrink-0 px-3 pt-2 sm:px-4 [&>div]:mb-0">
+        <FormTabs formId={id} active="edit" labels={nav} />
+      </div>
+
       {/* Topbar, row 1 — everything true of the WHOLE form.
           A three-column grid rather than a flex row: the tabs sit in the middle
           cell, so they stay centred no matter how long the form's name is or how
@@ -748,13 +777,6 @@ export function FormEditor({
           `md` up at every width. */}
       <header className="grid h-14 shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 border-b border-border px-3 sm:px-4">
         <div className="flex min-w-0 items-center gap-2">
-          <Link
-            href="/admin/forms"
-            className="inline-flex shrink-0 items-center gap-1.5 rounded-md px-1 text-sm text-muted-foreground transition-colors hover:text-foreground"
-          >
-            <i aria-hidden className="pi pi-chevron-left" style={{ fontSize: 12 }} />
-            <span className="hidden sm:inline">{bm.shell.back}</span>
-          </Link>
           <input
             value={name}
             onChange={(e) => rename(e.target.value)}
