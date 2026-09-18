@@ -23,10 +23,11 @@ import {
   AutosaveController,
   type AutosaveFailureKind,
   type AutosaveStatus,
+  type FlushResult,
   type SaveOutcome,
 } from './autosave-controller';
 
-export type { AutosaveFailureKind, AutosaveStatus } from './autosave-controller';
+export type { AutosaveFailureKind, AutosaveStatus, FlushResult } from './autosave-controller';
 
 export interface UseAutosaveOptions<T> {
   getSnapshot: () => T;
@@ -50,7 +51,9 @@ export interface Autosave {
   detail: string | null;
   /** Call on every edit, after updating state. */
   markDirty: () => void;
-  flush: () => void;
+  /** Save pending edits now; resolves once the server holds them (or with the
+   *  first failure). Publish awaits this so it never publishes a stale draft. */
+  flush: () => Promise<FlushResult>;
 }
 
 export function useAutosave<T>(options: UseAutosaveOptions<T>): Autosave {
@@ -98,7 +101,7 @@ export function useAutosave<T>(options: UseAutosaveOptions<T>): Autosave {
     const onVisibility = () => {
       if (document.visibilityState === 'hidden' && controller.dirty) {
         optsRef.current.backup?.write(optsRef.current.getSnapshot());
-        controller.flush();
+        void controller.flush();
       }
     };
     const onBeforeUnload = (e: BeforeUnloadEvent) => {
@@ -125,6 +128,9 @@ export function useAutosave<T>(options: UseAutosaveOptions<T>): Autosave {
   }, []);
 
   const markDirty = useCallback(() => controllerRef.current?.markDirty(), []);
-  const flush = useCallback(() => controllerRef.current?.flush(), []);
+  const flush = useCallback(
+    () => controllerRef.current?.flush() ?? Promise.resolve<FlushResult>({ ok: true }),
+    [],
+  );
   return { status, detail, markDirty, flush };
 }

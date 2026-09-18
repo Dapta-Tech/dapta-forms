@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input';
 import { HelpTip } from '@/components/ui/help-tip';
 import { cn } from '@/lib/cn';
 import { TextField, NumberField } from './fields';
+import { RedirectField } from './redirect-field';
 import { TokenTextarea, tokenOptionsBefore, allTokenKeys } from './token-textarea';
 import { maxScore } from './scoring-util';
 import { tb } from './builder-messages';
@@ -273,6 +274,8 @@ export function OutcomesDialog({
                         id={`outcome-redirect-${o.id}`}
                         value={o.redirectUrl ?? null}
                         placeholder={bm.results.redirectPlaceholder}
+                        className="text-xs"
+                        testId="outcome-redirect"
                         onCommit={(url) => update(index, { redirectUrl: url })}
                       />
                       <p className="text-xs text-muted-foreground">{rm.redirectHelp}</p>
@@ -650,57 +653,5 @@ export function ScoreBar({ outcomes, top }: { outcomes: FormOutcome[]; top: numb
         <span>{top}</span>
       </div>
     </div>
-  );
-}
-
-/**
- * Normalize a user-typed redirect: prepend `https://` when the scheme is omitted
- * (so `example.com` becomes a valid URL the schema accepts instead of 400-ing);
- * an empty value → null (no redirect → the respondent sees the thank-you screen).
- */
-function normalizeRedirect(raw: string): string | null {
-  const v = raw.trim();
-  if (!v) return null;
-  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(v)) return v; // already carries a scheme
-  return `https://${v}`;
-}
-
-/**
- * Redirect input that holds a local draft while typing and only commits a
- * NORMALIZED URL on blur — so autosave never fires a schemeless (doomed) URL,
- * and `example.com` is silently upgraded to `https://example.com`.
- */
-function RedirectField({
-  id,
-  value,
-  placeholder,
-  onCommit,
-}: {
-  id: string;
-  value: string | null;
-  placeholder: string;
-  onCommit: (url: string | null) => void;
-}) {
-  const [draft, setDraft] = useState(value ?? '');
-  // Re-sync when the stored value changes elsewhere (e.g. ranges re-sorted).
-  useEffect(() => {
-    setDraft(value ?? '');
-  }, [value]);
-  return (
-    <TextField
-      id={id}
-      type="url"
-      inputMode="url"
-      value={draft}
-      placeholder={placeholder}
-      onChange={(e) => setDraft(e.target.value)}
-      onBlur={() => {
-        const normalized = normalizeRedirect(draft);
-        if (normalized !== (value ?? null)) onCommit(normalized);
-        setDraft(normalized ?? '');
-      }}
-      className="text-xs"
-      data-testid="outcome-redirect"
-    />
   );
 }

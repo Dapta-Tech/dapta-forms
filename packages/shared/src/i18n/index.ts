@@ -1571,6 +1571,8 @@ export interface FormsMessages {
       publishing: string;
       published: string;
       publishError: string;
+      /** The pending autosave failed, so nothing was published. */
+      saveFirst: string;
       unpublishedChanges: string;
       noChanges: string;
     };
@@ -3159,6 +3161,7 @@ export const en: FormsMessages = {
       publishing: 'Publishing…',
       published: 'Changes published. Your form is live.',
       publishError: 'Could not publish. Please try again.',
+      saveFirst: 'Your latest changes could not be saved, so nothing was published. Try again once they save.',
       unpublishedChanges: 'Unpublished changes',
       noChanges: 'All changes are published',
     },
@@ -4748,6 +4751,7 @@ export const es: FormsMessages = {
       publishing: 'Publicando…',
       published: 'Cambios publicados: tu formulario está en línea.',
       publishError: 'No se pudo publicar. Inténtalo de nuevo.',
+      saveFirst: 'Tus últimos cambios no se pudieron guardar, así que no se publicó nada. Inténtalo cuando se guarden.',
       unpublishedChanges: 'Cambios sin publicar',
       noChanges: 'Todos los cambios están publicados',
     },
