@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { getMessages } from '@quill/shared';
-import { publishFormAction } from '@/app/admin/actions';
+import { publishFormAction, type StaleConflict } from '@/app/admin/actions';
 import { useToast } from '@/components/toast';
 import { callAction, isTransportError } from '@/lib/call-action';
 import { cn } from '@/lib/cn';
@@ -25,11 +25,21 @@ export function PublishButton({
   initialHasDraft = false,
   saveCount = 0,
   locale,
+  getStamp,
+  onPublished,
+  onStale,
 }: {
   formId: string;
   initialHasDraft?: boolean;
   saveCount?: number;
   locale: string;
+  /** The editor's optimistic-lock stamp at click time (undefined = unguarded). */
+  getStamp?: () => number | undefined;
+  /** A publish landed: the row's new stamp and the content the server now holds. */
+  onPublished?: (updatedAt: number, saved: { name: string; config: unknown }) => void;
+  /** The server refused the publish as STALE. `retry` = only the stamp moved
+   *  and the editor adopted the new one; `stop` = a real conflict, shown by the editor. */
+  onStale?: (res: StaleConflict) => 'retry' | 'stop';
 }) {
   const m = getMessages(locale).admin.publish;
   const toast = useToast();
@@ -49,10 +59,17 @@ export function PublishButton({
     try {
       // Transport-safe: a rejected invocation (network drop, deploy-rotated
       // action id) must re-enable the button, not strand it on "Publishing…".
-      const res = await callAction(() => publishFormAction(formId));
+      let res = await callAction(() => publishFormAction(formId, getStamp?.()));
+      // One silent retry when only the stamp moved (the editor decides that).
+      if (!isTransportError(res) && !res.ok && 'conflict' in res && onStale?.(res) === 'retry') {
+        res = await callAction(() => publishFormAction(formId, getStamp?.()));
+      }
       if (res.ok) {
         setPublishedAtCount(snapshot);
+        onPublished?.(res.updatedAt, res.saved);
         toast.success(m.published);
+      } else if (!isTransportError(res) && 'conflict' in res) {
+        // The editor's banner owns this one; the button just comes back.
       } else {
         toast.error((isTransportError(res) ? null : res.message) ?? m.publishError);
       }

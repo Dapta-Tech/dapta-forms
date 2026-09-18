@@ -75,18 +75,60 @@ export async function optionLocksAction(
   }
 }
 
+/**
+ * A guarded write refused because the form was written since the caller's
+ * stamp. Carries what the server holds NOW so the editor can tell "someone
+ * changed the content" from "only the stamp moved" without a second request.
+ */
+export type StaleConflict = {
+  ok: false;
+  conflict: true;
+  message: string;
+  updatedAt: number | null;
+  current: { name: string; config: unknown } | null;
+};
+
+/** What the server holds after a write that landed: the row's stamp and the
+ *  content as the API canonicalized it (its own parse, not the bytes sent), so
+ *  a later STALE comparison is server-then against server-now. */
+export type SaveFormResult =
+  | { ok: true; updatedAt: number; saved: { name: string; config: unknown } }
+  | { ok: false; message: string }
+  | StaleConflict;
+
+function staleConflict(e: ApiError): StaleConflict {
+  const body = e.body ?? {};
+  const current = body.current as { name?: unknown; config?: unknown; draftConfig?: unknown } | null | undefined;
+  return {
+    ok: false,
+    conflict: true,
+    message: e.message,
+    updatedAt: typeof body.updatedAt === 'number' ? body.updatedAt : null,
+    // What the editor would load right now: the pending draft, else the live config.
+    current: current
+      ? { name: String(current.name ?? ''), config: current.draftConfig ?? current.config }
+      : null,
+  };
+}
+
 export async function saveFormAction(
   id: string,
   patch: { name?: string; config?: unknown },
-): Promise<{ ok: boolean; message?: string }> {
+  expectedUpdatedAt?: number,
+): Promise<SaveFormResult> {
   try {
-    await adminApi.updateForm(id, patch);
+    const saved = await adminApi.updateForm(id, { ...patch, expectedUpdatedAt });
     // No revalidatePath here on purpose: this fires on every debounced
     // keystroke, every admin read is already `cache: 'no-store'`, and the
     // draft it writes is visible only to this editor. Publish revalidates.
-    return { ok: true };
+    return {
+      ok: true,
+      updatedAt: saved.updatedAt,
+      saved: { name: saved.name, config: saved.draftConfig ?? saved.config },
+    };
   } catch (e) {
     unstable_rethrow(e);
+    if (e instanceof ApiError && e.status === 409 && e.code === 'STALE') return staleConflict(e);
     return {
       ok: false,
       message: e instanceof Error ? e.message : 'Failed to save.',
@@ -99,14 +141,21 @@ export async function saveFormAction(
  * over the live config, stamps published_at, and clears the draft (a no-op when
  * nothing is pending).
  */
-export async function publishFormAction(id: string): Promise<{ ok: boolean; message?: string }> {
+export type PublishFormResult = SaveFormResult;
+
+export async function publishFormAction(id: string, expectedUpdatedAt?: number): Promise<PublishFormResult> {
   try {
-    await adminApi.publishForm(id);
+    const published = await adminApi.publishForm(id, { expectedUpdatedAt });
     revalidatePath(`/admin/forms/${id}/edit`);
     revalidatePath('/admin');
-    return { ok: true };
+    return {
+      ok: true,
+      updatedAt: published.updatedAt,
+      saved: { name: published.name, config: published.draftConfig ?? published.config },
+    };
   } catch (e) {
     unstable_rethrow(e);
+    if (e instanceof ApiError && e.status === 409 && e.code === 'STALE') return staleConflict(e);
     return {
       ok: false,
       message: e instanceof Error ? e.message : 'Failed to publish.',

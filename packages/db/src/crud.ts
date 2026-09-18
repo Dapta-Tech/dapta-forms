@@ -14,6 +14,9 @@ export type CrudResult<T> =
         | 'CONFLICT'
         | 'LAST_OWNER'
         | 'EMAIL_TAKEN'
-        | 'NAME_TAKEN';
+        | 'NAME_TAKEN'
+        /** The caller's `expectedUpdatedAt` no longer matches the row: someone
+         *  else wrote it since the caller last read it (optimistic lock). */
+        | 'STALE';
       message?: string;
     };
