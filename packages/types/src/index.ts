@@ -240,6 +240,10 @@ export const formStepSchema = z.object({
   flowGroup: z.enum(['qualification', 'lead_capture']).optional(),
   corporateEmailOnly: z.boolean().optional(),
   phoneMinDigits: z.number().int().positive().optional(),
+  /** `textarea` step: shortest answer accepted, in characters. Absent = no floor. */
+  minChars: z.number().int().positive().max(10000).optional(),
+  /** `textarea` step: longest answer accepted, in characters. Absent = no ceiling. */
+  maxChars: z.number().int().positive().max(10000).optional(),
   /** `file` step: extensions the owner accepts, lowercase, no dot. Absent = the deployment's own list. */
   allowedTypes: z.array(z.string().min(1).max(12)).max(40).optional(),
   /** `file` step: the owner's size limit in MB, clamped down to UPLOAD_MAX_FILE_MB server-side. */
@@ -293,6 +297,18 @@ export const formStepSchema = z.object({
    * event-type scheduling URL + prefill/display options. See formSchedulerSchema.
    */
   scheduler: formSchedulerSchema.nullable().optional(),
+}).superRefine((stepValue, ctx) => {
+  // A floor above the ceiling describes a question nobody can answer. The
+  // editor already refuses to write the pair; this is the gate for anything
+  // that reaches the API by another road (import, a hand-written PUT).
+  const { minChars, maxChars } = stepValue;
+  if (minChars != null && maxChars != null && minChars > maxChars) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['maxChars'],
+      message: 'maxChars must be greater than or equal to minChars.',
+    });
+  }
 });
 export type FormStepInput = z.infer<typeof formStepSchema>;
 

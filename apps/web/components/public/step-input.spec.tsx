@@ -88,3 +88,43 @@ describe('url', () => {
     expect(html).toContain('class="pf-input"');
   });
 });
+
+/**
+ * Long text with length limits. The promise pinned here is the back-compat one:
+ * a question with neither limit renders the same bare textarea it always has:
+ * no wrapper, no counter, no `maxlength`.
+ */
+describe('textarea: character limits + live counter', () => {
+  const longText: FormStep = { key: 'why', type: 'textarea', question: 'Tell us more' };
+
+  it('renders nothing new when no limit is configured', () => {
+    const html = render(longText, 'hello');
+    expect(html).toContain('pf-input pf-textarea');
+    expect(html).not.toContain('char-counter');
+    expect(html).not.toContain('maxLength');
+  });
+
+  it('caps typing and counts against the maximum', () => {
+    const html = render({ ...longText, maxChars: 200 }, 'hello');
+    expect(html).toContain('maxLength="200"');
+    expect(html).toContain('data-testid="char-counter"');
+    expect(html).toContain('5 / 200');
+  });
+
+  it('shows the floor as a hint until it is met, then drops it', () => {
+    const short = render({ ...longText, minChars: 20 }, 'hello');
+    expect(short).toContain('5 characters');
+    expect(short).toContain('20 minimum');
+    const met = render({ ...longText, minChars: 20 }, 'a'.repeat(25));
+    expect(met).toContain('25 characters');
+    expect(met).not.toContain('20 minimum');
+    // Whitespace does not meet the floor, the same rule the engine applies.
+    expect(render({ ...longText, minChars: 20 }, ' '.repeat(25))).toContain('20 minimum');
+  });
+
+  it('a minimum alone still counts, with no ceiling to count against', () => {
+    const html = render({ ...longText, minChars: 20 }, 'hello');
+    expect(html).toContain('data-testid="char-counter"');
+    expect(html).not.toContain('maxLength');
+  });
+});

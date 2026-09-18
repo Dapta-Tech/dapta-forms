@@ -164,6 +164,19 @@ export interface FormStep {
   /** Phone validation: minimum digit count. */
   phoneMinDigits?: number;
   /**
+   * `textarea` step: the shortest answer accepted, in characters. Absent (which
+   * every config saved before this existed is) means no floor, which is why a published
+   * long-text question keeps behaving exactly as it did. Enforced in the browser
+   * (same parity as `required` and `phoneMinDigits`), not on submit.
+   */
+  minChars?: number;
+  /**
+   * `textarea` step: the longest answer accepted, in characters. Absent means no
+   * ceiling. Unlike the floor this one IS enforced server-side on submit, because
+   * an unbounded string in the payload was an open door before this setting.
+   */
+  maxChars?: number;
+  /**
    * `file` step: the extensions the owner accepts, lowercase and without the
    * dot. Absent means "whatever the deployment allows", which is how a form
    * saved before this setting existed keeps working. The ceiling is enforced
@@ -1396,6 +1409,17 @@ export function validateAnswer(step: FormStep, value: AnswerValue): ValidationRe
       if (step.max != null && n > step.max) return { ok: false, error: 'Value is too high.' };
       return { ok: true };
     }
+    case 'textarea': {
+      const text = String(value);
+      // The floor counts TRIMMED characters: fifty spaces is not an answer.
+      // The ceiling counts the raw string, because that is what rides in the
+      // payload and what the API checks again on submit.
+      if (step.minChars != null && text.trim().length < step.minChars)
+        return { ok: false, error: 'Your answer is too short.' };
+      if (step.maxChars != null && text.length > step.maxChars)
+        return { ok: false, error: 'Your answer is too long.' };
+      return { ok: true };
+    }
     case 'dropdown':
     case 'multiple_choice': {
       const allowed = new Set((step.options ?? []).map((o) => o.value));
@@ -1915,6 +1939,8 @@ export type ValidationCode =
   | 'number'
   | 'too_low'
   | 'too_high'
+  | 'too_short'
+  | 'too_long'
   | 'option'
   | 'file';
 
@@ -1968,6 +1994,16 @@ export function validateAnswerCode(
       if (Number.isNaN(n)) return { ok: false, code: 'number' };
       if (step.min != null && n < step.min) return { ok: false, code: 'too_low' };
       if (step.max != null && n > step.max) return { ok: false, code: 'too_high' };
+      return { ok: true };
+    }
+    case 'textarea': {
+      // `min`/`max` on the step are the SLIDER's bounds; long text carries its
+      // own `minChars`/`maxChars` so the two settings can never collide.
+      const text = String(value);
+      if (step.minChars != null && text.trim().length < step.minChars)
+        return { ok: false, code: 'too_short' };
+      if (step.maxChars != null && text.length > step.maxChars)
+        return { ok: false, code: 'too_long' };
       return { ok: true };
     }
     case 'dropdown':

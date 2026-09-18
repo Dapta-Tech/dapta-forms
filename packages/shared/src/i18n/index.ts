@@ -87,9 +87,24 @@ export interface FormsMessages {
       number: string;
       too_low: string;
       too_high: string;
+      /** Long text under its configured `minChars`. */
+      too_short: string;
+      /** Long text over its configured `maxChars`. */
+      too_long: string;
       option: string;
       file: string;
       submit: string;
+    };
+    /**
+     * The live character counter on a long-text question. Rendered ONLY when
+     * the step configures a minimum or a maximum, so a question with no limits
+     * shows nothing at all.
+     */
+    charCounter: {
+      /** No maximum configured, so only the running count. `{count}`. */
+      characters: string;
+      /** Trailing hint, shown until the floor is met. `{min}` is the floor. */
+      minimum: string;
     };
     /** The phone step's country-code picker (searchable dial-code selector). */
     phonePicker: {
@@ -705,6 +720,14 @@ export interface FormsMessages {
         phoneDefaultCountryAuto: string;
         /** Explains what the minimum-digit floor is for (V5-B5). */
         phoneMinDigitsHelp: string;
+        /** Long text: the shortest answer accepted, in characters (GF-32). */
+        minChars: string;
+        /** Long text: the longest answer accepted, in characters (GF-32). */
+        maxChars: string;
+        /** Section header over the long-text length pair. */
+        charLimits: string;
+        /** What the pair does, and that leaving one empty removes that end. */
+        charLimitsHelp: string;
         sliderMin: string;
         sliderMax: string;
         sliderStep: string;
@@ -1861,9 +1884,15 @@ export const en: FormsMessages = {
       number: 'Enter a number.',
       too_low: 'Value is too low.',
       too_high: 'Value is too high.',
+      too_short: 'Your answer is too short.',
+      too_long: 'Your answer is too long.',
       option: 'Choose one of the available options.',
       file: 'Upload a file to continue.',
       submit: 'Could not submit. Please try again.',
+    },
+    charCounter: {
+      characters: '{count} characters',
+      minimum: '{min} minimum',
     },
     phonePicker: {
       countryLabel: 'Select country code',
@@ -2407,6 +2436,11 @@ export const en: FormsMessages = {
         phoneMinDigits: 'Minimum digits',
         phoneMinDigitsHelp:
           'The shortest number accepted, not counting the country code. Phone lengths vary by country, so this is the floor that catches an obviously incomplete number.',
+        charLimits: 'Answer length',
+        charLimitsHelp:
+          'Respondents see a live counter and cannot continue until the minimum is met. Leave a box empty to drop that end.',
+        minChars: 'Minimum characters',
+        maxChars: 'Maximum characters',
         phoneDefaultCountry: 'Default country',
         phoneDefaultCountryAuto: 'Automatic (based on visitor language)',
         sliderMin: 'Min',
@@ -3451,9 +3485,15 @@ export const es: FormsMessages = {
       number: 'Introduce un número.',
       too_low: 'El valor es muy bajo.',
       too_high: 'El valor es muy alto.',
+      too_short: 'Tu respuesta es muy corta.',
+      too_long: 'Tu respuesta es muy larga.',
       option: 'Elige una de las opciones disponibles.',
       file: 'Sube un archivo para continuar.',
       submit: 'No se pudo enviar. Inténtalo de nuevo.',
+    },
+    charCounter: {
+      characters: '{count} caracteres',
+      minimum: 'mínimo {min}',
     },
     phonePicker: {
       countryLabel: 'Selecciona el código de país',
@@ -4000,6 +4040,11 @@ export const es: FormsMessages = {
         phoneMinDigits: 'Dígitos mínimos',
         phoneMinDigitsHelp:
           'El número más corto que se acepta, sin contar el código de país. La longitud varía según el país, así que este es el piso que atrapa un número claramente incompleto.',
+        charLimits: 'Longitud de la respuesta',
+        charLimitsHelp:
+          'Quien responde ve un contador en vivo y no puede continuar hasta llegar al mínimo. Deja una casilla vacía para quitar ese extremo.',
+        minChars: 'Caracteres mínimos',
+        maxChars: 'Caracteres máximos',
         phoneDefaultCountry: 'País predeterminado',
         phoneDefaultCountryAuto: 'Automático (según el idioma del visitante)',
         sliderMin: 'Mín',

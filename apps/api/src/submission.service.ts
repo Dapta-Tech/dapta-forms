@@ -135,6 +135,21 @@ export class SubmissionService {
 
     const config = form.config as FormConfig;
 
+    // The ceiling a long-text question sets is enforced HERE as well as in the
+    // browser, because `submissionSchema` puts no bound on an answer string at
+    // all, and an unbounded payload was an open door before this setting existed.
+    // Checked for partial saves too: a giant string is the same problem either
+    // way. The FLOOR is deliberately not checked here; per-answer validation on
+    // the server is a different, larger job (see `validateAnswerCode`, which
+    // this app never calls) and a short answer keeps being accepted.
+    const tooLong = overLongAnswer(config, input.data);
+    if (tooLong)
+      return {
+        error: 'ANSWER_TOO_LONG',
+        message: `Answer for "${tooLong.key}" is longer than the ${tooLong.maxChars} characters this question allows.`,
+        status: 400,
+      };
+
     // File answers are checked against the bucket BEFORE anything is persisted
     // or scored: an unverified answer must never reach the row, the score, or
     // an outbound effect. What comes back has its keys rewritten out of the
@@ -403,6 +418,26 @@ function toPublicConfig(config: unknown): FormConfig {
   const c = (config ?? { version: 1, steps: [] }) as Record<string, unknown>;
   const { destinations: _destinations, ...rest } = c;
   return rest as unknown as FormConfig;
+}
+
+/**
+ * The first answer that overruns its question's `maxChars`, or null.
+ *
+ * Only `textarea` steps carry the setting, and only when the owner configured
+ * one. A question with no ceiling is not measured, which is how every form
+ * published before this existed keeps submitting whatever it always did.
+ */
+function overLongAnswer(
+  config: FormConfig,
+  data: Record<string, unknown>,
+): { key: string; maxChars: number } | null {
+  for (const step of config.steps ?? []) {
+    if (step.type !== 'textarea' || step.maxChars == null) continue;
+    const answer = data[step.key];
+    if (typeof answer !== 'string') continue;
+    if (answer.length > step.maxChars) return { key: step.key, maxChars: step.maxChars };
+  }
+  return null;
 }
 
 /** Best-effort pick the respondent's email out of the answers for the receipt. */
