@@ -61,7 +61,7 @@ function stubWindow(
 
 /**
  * The module holds a per-document lock in module scope, so every test gets its
- * own copy — a fresh import IS a fresh document. Re-importing mid-test is
+ * own copy: a fresh import IS a fresh document. Re-importing mid-test is
  * therefore how a reload is simulated: module state gone, `sessionStorage` kept.
  */
 type Module = typeof import('./lead-conversion');

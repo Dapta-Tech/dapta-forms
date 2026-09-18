@@ -4,7 +4,7 @@
  * The form page loads a Meta Pixel (`components/tracking/tracking-scripts.tsx`)
  * that fires a single `PageView` on init, which tells Meta who LOOKED at the
  * form. It never told Meta who FINISHED it, so a campaign could only optimize
- * against visits — and the thank-you screen cannot supply the missing signal on
+ * against visits, and the thank-you screen cannot supply the missing signal on
  * its own, because it is not a page load at all: the public form is one document
  * changing phase, so no pixel notices it. Hence this module.
  *
@@ -27,7 +27,7 @@
  *     lead and inflate the campaign's conversion count.
  *
  *  3. BEFORE the caller navigates. `fbq` is fire-and-forget over the network, so
- *     an immediate `window.location` assignment cancels its request — which is
+ *     an immediate `window.location` assignment cancels its request, which is
  *     exactly what a redirect ending with a zero delay does. Callers fire this
  *     BEFORE the `submit` funnel event they already await, so that existing wait
  *     doubles as the window for the pixel's request to leave. No new timer, no
@@ -35,8 +35,8 @@
  *
  * Nothing here is required: a form with no pixel and no GTM container has no
  * `window.fbq` and no `window.dataLayer`, so this makes zero requests and
- * touches nothing. Both dispatches are also wrapped — a third-party stub that
- * throws must never strand a visitor mid-submit.
+ * touches nothing. Both dispatches are also wrapped, because a third-party stub
+ * that throws must never strand a visitor mid-submit.
  *
  * EMBEDDED FORMS (decided, v1 scope): inside an iframe this fires the form's OWN
  * pixel, from inside the frame, and tells the host page nothing. That works with
@@ -45,7 +45,7 @@
  * the host to fire ITS pixel: that would need a new message type in
  * `public/embed.js` (which today carries only height and redirect), it would run
  * on pages we do not control, and we could not know whether the host already
- * fires a Lead of its own — double counting is the precise failure this module
+ * fires a Lead of its own. Double counting is the precise failure this module
  * exists to prevent. The honest limitation: in a cross-site frame the pixel
  * request is a third-party context that Safari partitions, so embedded
  * attribution is weaker than top-level, and a silent host-side event would hide
@@ -90,7 +90,7 @@ function claimLead(sessionKey: string, sessionId: string): boolean {
     if (window.sessionStorage.getItem(key) === sessionId) return false;
     window.sessionStorage.setItem(key, sessionId);
   } catch {
-    /* storage blocked — the in-document mark above is the whole lock */
+    /* storage blocked: the in-document mark above is the whole lock */
   }
   return true;
 }
@@ -107,7 +107,7 @@ export function reportLeadConversion({
 }: {
   /** The renderer's session-storage key, `quill-form-<accountCode>-<slug>`. */
   sessionKey: string;
-  /** The id stored under it — the identity of THIS attempt at the form. */
+  /** The id stored under it: the identity of THIS attempt at the form. */
   sessionId: string;
 }): boolean {
   if (typeof window === 'undefined') return false;
@@ -121,8 +121,8 @@ export function reportLeadConversion({
     /* a broken vendor stub cannot be allowed to strand the submit */
   }
   try {
-    // Guarded, never created: the PUBLIC page initializes `dataLayer` nowhere —
-    // the only init lives inside the GTM snippet — so with no container
+    // Guarded, never created: the PUBLIC page initializes `dataLayer` nowhere
+    // (the only init lives inside the GTM snippet), so with no container
     // configured the array simply does not exist. Creating one here would push
     // into something no container will ever read.
     if (Array.isArray(w.dataLayer)) w.dataLayer.push({ event: LEAD_DATALAYER_EVENT });

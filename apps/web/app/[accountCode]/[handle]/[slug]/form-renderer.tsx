@@ -45,6 +45,7 @@ import { warmBookingEmbed, type BookingScheduledDetails } from '@/lib/booking-em
 import { resolveSchedulerPrefill } from '@/lib/booking-prefill';
 import { callAction, callActionWithRetry, isTransportError } from '@/lib/call-action';
 import { navigateTop } from '@/lib/top-navigate';
+import { reportLeadConversion } from '@/lib/lead-conversion';
 import {
   submitFormAction,
   recordEventAction,
@@ -92,7 +93,11 @@ export function FormRenderer({
   // The form's button copy: author overrides, else the stock copy of `locale`.
   const formLocale = locale === 'es' ? 'es' : 'en';
   const labels = resolveFormLabels(config, formLocale);
-  const sessionId = useSessionId(`quill-form-${accountCode}-${slug}`);
+  // Named rather than inlined because the conversion reporter locks against it
+  // too: its "this session already reported" mark lives beside this id, under
+  // the same storage key, so both survive a reload together.
+  const sessionKey = `quill-form-${accountCode}-${slug}`;
+  const sessionId = useSessionId(sessionKey);
 
   /**
    * Authorize one upload for a `file` step.
@@ -307,6 +312,14 @@ export function FormRenderer({
         setPhase('steps');
         return;
       }
+      // The submission is now confirmed, so this is a lead. Report the
+      // conversion BEFORE the await below, deliberately. `fbq` is
+      // fire-and-forget over the network, and an ending that redirects with a
+      // zero delay assigns `window.location` a few lines down, which cancels
+      // the pixel's in-flight request. The `submit` event right after is
+      // already awaited for exactly that reason, so that existing wait doubles
+      // as the pixel's way out: no new timer, no latency added to the redirect.
+      reportLeadConversion({ sessionKey, sessionId });
       // Await the `submit` funnel event (best-effort) BEFORE any outcome
       // redirect: a fire-and-forget request here is aborted by the immediate
       // window.location navigation, silently losing the submit event for every
@@ -354,7 +367,7 @@ export function FormRenderer({
       setDone({ score, outcome: res.outcome ?? null });
       setPhase('done');
     },
-    [accountCode, slug, sessionId, engineConfig],
+    [accountCode, slug, sessionKey, sessionId, engineConfig],
   );
 
   // Report the booked meeting to the API (best-effort), THEN redirect/finish.
