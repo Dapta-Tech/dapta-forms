@@ -91,7 +91,7 @@ describe('url', () => {
 
 /**
  * Long text with length limits. The promise pinned here is the back-compat one:
- * a question with neither limit renders the same bare textarea it always has —
+ * a question with neither limit renders the same bare textarea it always has:
  * no wrapper, no counter, no `maxlength`.
  */
 describe('textarea: character limits + live counter', () => {
@@ -118,7 +118,7 @@ describe('textarea: character limits + live counter', () => {
     const met = render({ ...longText, minChars: 20 }, 'a'.repeat(25));
     expect(met).toContain('25 characters');
     expect(met).not.toContain('20 minimum');
-    // Whitespace does not meet the floor — same rule the engine applies.
+    // Whitespace does not meet the floor, the same rule the engine applies.
     expect(render({ ...longText, minChars: 20 }, ' '.repeat(25))).toContain('20 minimum');
   });
 

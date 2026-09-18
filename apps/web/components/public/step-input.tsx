@@ -298,7 +298,7 @@ export function StepInput({
 
     case 'textarea': {
       // A question with neither limit renders exactly the bare textarea it
-      // always has — same element, same classes, no wrapper, no counter.
+      // always has: same element, same classes, no wrapper, no counter.
       const text = String(value ?? '');
       const { minChars, maxChars } = step;
       if (minChars == null && maxChars == null) {

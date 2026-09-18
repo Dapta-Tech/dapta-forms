@@ -164,8 +164,8 @@ export interface FormStep {
   /** Phone validation: minimum digit count. */
   phoneMinDigits?: number;
   /**
-   * `textarea` step: the shortest answer accepted, in characters. Absent — every
-   * config saved before this existed — means no floor, which is why a published
+   * `textarea` step: the shortest answer accepted, in characters. Absent (which
+   * every config saved before this existed is) means no floor, which is why a published
    * long-text question keeps behaving exactly as it did. Enforced in the browser
    * (same parity as `required` and `phoneMinDigits`), not on submit.
    */
@@ -1411,7 +1411,7 @@ export function validateAnswer(step: FormStep, value: AnswerValue): ValidationRe
     }
     case 'textarea': {
       const text = String(value);
-      // The floor counts TRIMMED characters — fifty spaces is not an answer.
+      // The floor counts TRIMMED characters: fifty spaces is not an answer.
       // The ceiling counts the raw string, because that is what rides in the
       // payload and what the API checks again on submit.
       if (step.minChars != null && text.trim().length < step.minChars)

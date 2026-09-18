@@ -101,7 +101,7 @@ export interface FormsMessages {
      * shows nothing at all.
      */
     charCounter: {
-      /** No maximum configured — just the running count. `{count}`. */
+      /** No maximum configured, so only the running count. `{count}`. */
       characters: string;
       /** Trailing hint, shown until the floor is met. `{min}` is the floor. */
       minimum: string;

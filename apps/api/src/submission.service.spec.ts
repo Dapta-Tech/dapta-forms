@@ -302,7 +302,7 @@ describe('submit', () => {
     // Nothing was persisted: the check runs before the row is written.
     expect(await listSubmissions(db, created.value.id)).toHaveLength(0);
 
-    // A partial save carries the same ceiling — a giant string is the same
+    // A partial save carries the same ceiling: a giant string is the same
     // problem whichever phase sends it.
     const partial = await svc.submit('acme', slug, {
       sessionId: 'sess-too-long-partial',

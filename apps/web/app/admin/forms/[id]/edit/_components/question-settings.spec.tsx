@@ -1,7 +1,7 @@
 /**
  * The long-text length pair is the one place in the panel where two fields can
  * contradict each other. `formStepSchema` refuses a floor above a ceiling, so
- * the editor must never WRITE that pair in the first place — otherwise a stray
+ * the editor must never WRITE that pair in the first place; otherwise a stray
  * keystroke fails the whole form's autosave.
  */
 import { describe, expect, it } from 'vitest';

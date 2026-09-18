@@ -54,14 +54,14 @@ const PLACEHOLDER_TYPES: ReadonlySet<FormStep['type']> = new Set([
   'dropdown',
 ]);
 
-/** The long-text length ceiling — mirrors `formStepSchema`'s cap on both fields. */
+/** The long-text length ceiling, mirroring `formStepSchema`'s cap on both fields. */
 const MAX_CHAR_LIMIT = 10_000;
 
 /**
  * Commit one of the long-text length limits. The schema refuses a floor above
  * the ceiling, so the editor never WRITES that pair: each field is squeezed
  * against its sibling on the way in. Clamping here rather than on keystroke is
- * safe because `NumberField` owns its display string while focused — typing is
+ * safe because `NumberField` owns its display string while focused: typing is
  * never yanked back, the field only settles to the committed value on blur.
  *
  * An empty box (or a zero) means "no limit on this end", which is stored as
@@ -620,7 +620,7 @@ export function QuestionSettings({
         />
       ) : null}
 
-      {/* Long text: how long the answer has to be. Only here — a one-line text
+      {/* Long text: how long the answer has to be. Only here, because a one-line text
           question has no such problem, and the slider's own `min`/`max` are a
           different pair entirely, which is why these carry their own names. */}
       {step.type === 'textarea' ? (

@@ -137,7 +137,7 @@ export class SubmissionService {
 
     // The ceiling a long-text question sets is enforced HERE as well as in the
     // browser, because `submissionSchema` puts no bound on an answer string at
-    // all — an unbounded payload was an open door before this setting existed.
+    // all, and an unbounded payload was an open door before this setting existed.
     // Checked for partial saves too: a giant string is the same problem either
     // way. The FLOOR is deliberately not checked here; per-answer validation on
     // the server is a different, larger job (see `validateAnswerCode`, which
@@ -424,7 +424,7 @@ function toPublicConfig(config: unknown): FormConfig {
  * The first answer that overruns its question's `maxChars`, or null.
  *
  * Only `textarea` steps carry the setting, and only when the owner configured
- * one — a question with no ceiling is not measured, which is how every form
+ * one. A question with no ceiling is not measured, which is how every form
  * published before this existed keeps submitting whatever it always did.
  */
 function overLongAnswer(
