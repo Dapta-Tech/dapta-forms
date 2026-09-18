@@ -8,6 +8,7 @@ import { z } from 'zod';
 import {
   CONDITION_OPS,
   FORM_BACKGROUND_STYLES,
+  FORM_BADGE_SIZES,
   FORM_BANNER_SCOPES,
   FORM_BANNER_SIZES,
   FORM_BUTTON_STYLES,
@@ -395,6 +396,7 @@ export const formBrandingSchema = z.object({
   // Layout.
   logoSize: z.enum(FORM_LOGO_SIZES).optional(),
   logoPosition: z.enum(FORM_LOGO_POSITIONS).optional(),
+  badgeSize: z.enum(FORM_BADGE_SIZES).optional(),
   contentAlign: z.enum(FORM_CONTENT_ALIGNS).optional(),
   contentWidth: z.enum(FORM_CONTENT_WIDTHS).optional(),
   transition: z.enum(FORM_TRANSITIONS).optional(),

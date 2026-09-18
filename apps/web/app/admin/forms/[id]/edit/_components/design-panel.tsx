@@ -507,6 +507,28 @@ export function DesignPanel({
               </InlineField>
             </>
           )}
+          {/* Deliberately OUTSIDE the `vertical` gate above: unlike the logo,
+              the attribution pill renders on the one-page layout too (it is the
+              in-flow footer at the end of the column), so hiding this control
+              there would be hiding a control that DOES something.
+
+              Not gated on whether the badge renders either. It disappears when
+              the deployment leaves `NEXT_PUBLIC_SIGNUP_URL` unset, which is
+              exactly what the local QA harness does, so gating on it would make
+              the control invisible on the only surface an author can check it
+              on. A fork that sets `NEXT_PUBLIC_HIDE_BADGE` keeps hiding the
+              badge regardless of what is stored here. */}
+          <InlineField label={d.badgeSize} hint={d.badgeSizeHint}>
+            <SegmentedToggle
+              value={design.badgeSize}
+              onChange={(badgeSize) => onBrandingChange({ badgeSize })}
+              options={[
+                { value: 'sm' as const, label: d.sizeSm },
+                { value: 'md' as const, label: d.sizeMd },
+              ]}
+              ariaLabel={d.badgeSize}
+            />
+          </InlineField>
           {vertical ? null : (
           <InlineField label={d.contentAlign}>
             <SegmentedToggle

@@ -1141,6 +1141,8 @@ export interface FormsMessages {
         sizeMd: string;
         sizeLg: string;
         logoPosition: string;
+        badgeSize: string;
+        badgeSizeHint: string;
         alignLeft: string;
         alignCenter: string;
         contentAlign: string;
@@ -2795,6 +2797,8 @@ export const en: FormsMessages = {
         sizeMd: 'Medium',
         sizeLg: 'Large',
         logoPosition: 'Logo position',
+        badgeSize: 'Attribution badge',
+        badgeSizeHint: 'The "Made with" pill under the form.',
         alignLeft: 'Left',
         alignCenter: 'Center',
         contentAlign: 'Question alignment',
@@ -4400,6 +4404,8 @@ export const es: FormsMessages = {
         sizeMd: 'Mediano',
         sizeLg: 'Grande',
         logoPosition: 'Posición del logo',
+        badgeSize: 'Insignia de atribución',
+        badgeSizeHint: 'La píldora «Hecho con» que aparece debajo del formulario.',
         alignLeft: 'Izquierda',
         alignCenter: 'Centro',
         contentAlign: 'Alineación de la pregunta',
