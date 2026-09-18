@@ -249,6 +249,47 @@ describe('formConfigSchema: form language and button labels (additive)', () => {
   });
 });
 
+describe('long-text character limits (additive)', () => {
+  const longText = (extra: Record<string, unknown>) => ({
+    version: 1 as const,
+    steps: [{ key: 'why', type: 'textarea' as const, question: 'Tell us more', ...extra }],
+  });
+
+  it('carries both limits and leaves them undefined when nothing is configured', () => {
+    const parsed = formConfigSchema.parse(longText({ minChars: 20, maxChars: 400 }));
+    expect(parsed.steps[0].minChars).toBe(20);
+    expect(parsed.steps[0].maxChars).toBe(400);
+    const legacy = formConfigSchema.parse(longText({}));
+    expect(legacy.steps[0].minChars).toBeUndefined();
+    expect(legacy.steps[0].maxChars).toBeUndefined();
+  });
+
+  it('rejects a floor above the ceiling', () => {
+    expect(() => formConfigSchema.parse(longText({ minChars: 400, maxChars: 20 }))).toThrow();
+    // Equal is a question with exactly one acceptable length. Odd, not invalid.
+    expect(() => formConfigSchema.parse(longText({ minChars: 20, maxChars: 20 }))).not.toThrow();
+    // One limit alone has nothing to contradict.
+    expect(() => formConfigSchema.parse(longText({ minChars: 400 }))).not.toThrow();
+    expect(() => formConfigSchema.parse(longText({ maxChars: 20 }))).not.toThrow();
+  });
+
+  it('rejects a zero, a fraction and a limit past the cap', () => {
+    expect(() => formConfigSchema.parse(longText({ minChars: 0 }))).toThrow();
+    expect(() => formConfigSchema.parse(longText({ maxChars: 12.5 }))).toThrow();
+    expect(() => formConfigSchema.parse(longText({ maxChars: 10001 }))).toThrow();
+  });
+
+  it('does not disturb the slider bounds that share the step', () => {
+    // `min`/`max` are the slider's and stay untouched by the new pair.
+    const parsed = formConfigSchema.parse({
+      version: 1 as const,
+      steps: [{ key: 's', type: 'slider' as const, min: 0, max: 100 }],
+    });
+    expect(parsed.steps[0].min).toBe(0);
+    expect(parsed.steps[0].max).toBe(100);
+  });
+});
+
 describe('submissionSchema: the locale the respondent saw (additive)', () => {
   it('carries an optional locale and rejects an unknown one', () => {
     expect(submissionSchema.parse({ sessionId: 's', data: {} }).locale).toBeUndefined();
