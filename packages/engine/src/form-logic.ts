@@ -11,6 +11,7 @@
 
 import type {
   FormBackgroundStyle,
+  FormBadgeSize,
   FormButtonStyle,
   FormContentAlign,
   FormContentWidth,
@@ -442,6 +443,8 @@ export interface FormBranding {
   // --- Layout ------------------------------------------------------------
   logoSize?: FormLogoSize;
   logoPosition?: FormLogoPosition;
+  /** Scale of the "Made with" attribution pill. Absent = the size it always was. */
+  badgeSize?: FormBadgeSize;
   contentAlign?: FormContentAlign;
   contentWidth?: FormContentWidth;
   transition?: FormTransition;
