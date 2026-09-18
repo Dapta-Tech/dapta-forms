@@ -5,7 +5,9 @@ import { getMessages, type Locale } from '@quill/shared';
 import { Button } from '@/components/ui/button';
 import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useToast } from '@/components/toast';
+import { NOTIFICATION_RECIPIENTS_MAX } from '@quill/types';
 import {
+  looksLikeEmail,
   NotificationEmailFields,
   type NotificationEmailValue,
 } from '@/components/notification-email-fields';
@@ -46,6 +48,23 @@ export interface NotificationLabels {
   tokenAnswers: string;
   answersMissing: string;
   formOverrideNote: string;
+  recipientsLabel: string;
+  recipientsHint: string;
+  recipientsEmpty: string;
+  recipientsAdd: string;
+  recipientsRemove: string;
+  recipientsPlaceholder: string;
+  recipientsInvalid: string;
+}
+
+/** Same list, same order: what "dirty" means for the recipient rows. */
+function sameList(a: string[], b: string[]): boolean {
+  return a.length === b.length && a.every((v, i) => v === b[i]);
+}
+
+/** Blank rows are dropped on save; a filled row that is not an address blocks it. */
+function cleanRecipients(list: string[]): string[] {
+  return list.map((r) => r.trim()).filter((r) => r.length > 0);
 }
 
 /** `{{formLink}}` is produced for the owner notice only; do not offer a dead chip on the receipt. */
@@ -120,13 +139,26 @@ function NotificationEmailCard({
     enabled: setting.enabled,
     subject: setting.subject ?? def.subject,
     body: setting.body ?? def.body,
+    recipients: setting.recipients ?? [],
   });
 
   const savedSubject = saved.subject ?? def.subject;
   const savedBody = saved.body ?? def.body;
+  const savedRecipients = saved.recipients ?? [];
   const isCustom = saved.subject !== null || saved.body !== null;
+  // The receipt addresses the respondent, so it has no list to edit.
+  const hasRecipients = setting.emailKey === 'submission_received';
+  const draftRecipients = value.recipients ?? [];
+  // A row typed as "ceo@" is not savable, and the browser says which one rather
+  // than waiting for the API to say "one of them failed".
+  const recipientsInvalid = draftRecipients.some(
+    (r) => r.trim().length > 0 && !looksLikeEmail(r),
+  );
   const dirty =
-    value.enabled !== saved.enabled || value.subject !== savedSubject || value.body !== savedBody;
+    value.enabled !== saved.enabled ||
+    value.subject !== savedSubject ||
+    value.body !== savedBody ||
+    (hasRecipients && !sameList(cleanRecipients(draftRecipients), savedRecipients));
 
   const tokenLabels: Record<string, string> = {
     formName: labels.tokenFormName,
@@ -147,10 +179,12 @@ function NotificationEmailCard({
       enabled: next.enabled,
       subject: next.subject ?? def.subject,
       body: next.body ?? def.body,
+      recipients: next.recipients ?? [],
     });
   }
 
   function onSave() {
+    const cleaned = cleanRecipients(draftRecipients);
     startTransition(async () => {
       // Fields equal to the shipped default persist as `null` (stay on default),
       // so editing back to the default cleanly reverts "Customized".
@@ -159,6 +193,11 @@ function NotificationEmailCard({
           enabled: value.enabled,
           subject: value.subject === def.subject ? null : value.subject,
           body: value.body === def.body ? null : value.body,
+          // An empty list persists as null, not []: at the ACCOUNT layer the two
+          // mean the same thing (the owner inbox), and null is what a form row
+          // then inherits. [] only has to be storable per form, where it is the
+          // way to say "this one goes to me alone".
+          ...(hasRecipients ? { recipients: cleaned.length > 0 ? cleaned : null } : {}),
         }),
       );
       if (res.ok) {
@@ -222,8 +261,16 @@ function NotificationEmailCard({
           previewLabel: labels.previewLabel,
           previewSubject: labels.previewSubject,
           tokenLabels,
+          recipientsLabel: labels.recipientsLabel,
+          recipientsHint: labels.recipientsHint,
+          recipientsEmpty: labels.recipientsEmpty,
+          recipientsAdd: labels.recipientsAdd,
+          recipientsRemove: labels.recipientsRemove,
+          recipientsPlaceholder: labels.recipientsPlaceholder,
+          recipientsInvalid: labels.recipientsInvalid,
         }}
         notice={answersMissing ? labels.answersMissing : null}
+        recipients={hasRecipients ? { max: NOTIFICATION_RECIPIENTS_MAX } : undefined}
       />
 
       {/* Actions */}
@@ -231,7 +278,12 @@ function NotificationEmailCard({
         <Button type="button" variant="ghost" onClick={onReset} disabled={pending || !isCustom}>
           {labels.reset}
         </Button>
-        <Button type="button" onClick={onSave} disabled={pending || !dirty} className="min-w-[130px]">
+        <Button
+          type="button"
+          onClick={onSave}
+          disabled={pending || !dirty || recipientsInvalid}
+          className="min-w-[130px]"
+        >
           {pending ? labels.saving : labels.save}
         </Button>
       </div>

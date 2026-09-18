@@ -511,6 +511,19 @@ export interface FormsMessages {
       answersMissing: string;
       /** Muted pointer: forms can override these from their Connect tab. */
       formOverrideNote: string;
+      /** The owner notice's recipient list (owner notice only). */
+      recipientsLabel: string;
+      recipientsHint: string;
+      /** Shown with no addresses listed: the notice falls back to the owner. */
+      recipientsEmpty: string;
+      recipientsAdd: string;
+      /** Accessible name of the per-row remove button. */
+      recipientsRemove: string;
+      recipientsPlaceholder: string;
+      /** Per-row validation, so the editor can point at WHICH address is wrong. */
+      recipientsInvalid: string;
+      /** Per-form card: this form has no list of its own and follows the account. */
+      recipientsFollowingAccount: string;
     };
     login: {
       title: string;
@@ -2195,6 +2208,15 @@ export const en: FormsMessages = {
       answersMissing:
         'This email does not include {{answers}}, so the answers will not be in it. Insert the Answers variable to add them.',
       formOverrideNote: 'Each form can override these emails from its Connect tab in the editor.',
+      recipientsLabel: 'Send to',
+      recipientsHint:
+        'Each address receives its own copy of this email. Up to five addresses.',
+      recipientsEmpty: 'No addresses yet, so this email goes to the workspace owner.',
+      recipientsAdd: 'Add address',
+      recipientsRemove: 'Remove address',
+      recipientsPlaceholder: 'name@example.com',
+      recipientsInvalid: 'Enter a valid email address.',
+      recipientsFollowingAccount: 'Following the account list. Editing it here sets one for this form only.',
     },
     login: {
       title: 'Sign in',
@@ -3778,6 +3800,16 @@ export const es: FormsMessages = {
         'Este correo no incluye {{answers}}, así que las respuestas no aparecerán en él. Inserta la variable Respuestas para agregarlas.',
       formOverrideNote:
         'Cada formulario puede personalizar estos correos desde su pestaña Conectar en el editor.',
+      recipientsLabel: 'Enviar a',
+      recipientsHint:
+        'Cada dirección recibe su propia copia de este correo. Hasta cinco direcciones.',
+      recipientsEmpty: 'Sin direcciones, así que este correo llega al propietario del workspace.',
+      recipientsAdd: 'Añadir dirección',
+      recipientsRemove: 'Quitar dirección',
+      recipientsPlaceholder: 'nombre@example.com',
+      recipientsInvalid: 'Escribe una dirección de correo válida.',
+      recipientsFollowingAccount:
+        'Siguiendo la lista de la cuenta. Si la editas aquí, defines una solo para este formulario.',
     },
     login: {
       title: 'Iniciar sesión',
