@@ -27,7 +27,7 @@ describe('SubmissionNotifier', () => {
     const m = provider.sent[0]!;
     expect(m.to).toEqual(['owner@example.com']);
     expect(m.subject).toContain('Lead Qualifier');
-    expect(m.idempotencyKey).toBe('submission:sub-1:received');
+    expect(m.idempotencyKey).toBe('submission:sub-1:received:owner@example.com');
     // Submission emails carry no attachments by design.
     expect(m.attachments).toBeUndefined();
     expect(m.text).toContain('Score: 15');
@@ -50,8 +50,8 @@ describe('SubmissionNotifier', () => {
     expect(m.subject).toBe('Nueva respuesta: Calificador');
     expect(m.text).toContain('Puntuación: 9');
     expect(m.text).toContain('De: lead@acme.io');
-    // Idempotency key is language-independent.
-    expect(m.idempotencyKey).toBe('submission:sub-es:received');
+    // Idempotency key is language-independent (but not addressee-independent).
+    expect(m.idempotencyKey).toBe('submission:sub-es:received:owner@example.com');
   });
 
   it('confirms to the respondent when their email was captured', async () => {
@@ -65,7 +65,7 @@ describe('SubmissionNotifier', () => {
       respondentEmail: 'lead@acme.io',
     });
     expect(provider.sent[0]!.to).toEqual(['lead@acme.io']);
-    expect(provider.sent[0]!.idempotencyKey).toBe('submission:sub-2:confirmed');
+    expect(provider.sent[0]!.idempotencyKey).toBe('submission:sub-2:confirmed:lead@acme.io');
   });
 
   it('HTML-escapes user-provided values (E8)', async () => {
@@ -232,5 +232,48 @@ describe('SubmissionNotifier', () => {
     expect(m.to).toEqual(['lead@acme.io']);
     expect(m.subject).toBe('Thanks for Survey');
     expect(m.text).toBe('We got it, see https://forms.example.com/x');
+  });
+});
+
+/**
+ * The managed transport de-duplicates on `idempotencyKey` and says nothing when
+ * it drops a duplicate. A notice addressed to several people is enqueued one
+ * row per recipient, so a key that named only the submission would have made
+ * every copy after the first vanish with no error and no log.
+ */
+describe('idempotency key by addressee', () => {
+  it('two recipients of the same submission get DIFFERENT keys', async () => {
+    const provider = new CaptureProvider();
+    const notifier = new SubmissionNotifier(provider);
+    for (const who of ['ceo@acme.io', 'sales@example.com']) {
+      await notifier.sendSubmissionReceived({
+        accountId: 'acc-1',
+        submissionId: 'sub-fan',
+        formName: 'Lead Qualifier',
+        to: [who],
+      });
+    }
+    const keys = provider.sent.map((m) => m.idempotencyKey);
+    expect(keys).toEqual([
+      'submission:sub-fan:received:ceo@acme.io',
+      'submission:sub-fan:received:sales@example.com',
+    ]);
+    expect(new Set(keys).size).toBe(2);
+  });
+
+  it('the same address retried keeps ONE key, whatever its casing or padding', async () => {
+    const provider = new CaptureProvider();
+    const notifier = new SubmissionNotifier(provider);
+    for (const who of ['ceo@acme.io', '  CEO@Acme.io ']) {
+      await notifier.sendSubmissionReceived({
+        accountId: 'acc-1',
+        submissionId: 'sub-retry',
+        formName: 'Lead Qualifier',
+        to: [who],
+      });
+    }
+    const keys = provider.sent.map((m) => m.idempotencyKey);
+    expect(new Set(keys).size).toBe(1);
+    expect(keys[0]).toBe('submission:sub-retry:received:ceo@acme.io');
   });
 });

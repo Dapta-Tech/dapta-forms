@@ -288,3 +288,143 @@ describe('no recipient', () => {
     ).resolves.toBeUndefined();
   });
 });
+
+/**
+ * Who the owner notice reaches. The list merges per field like subject/body
+ * (form ?? account ?? none), with one deliberate asymmetry: an EMPTY stored
+ * list is a decision ("the owner only"), so it stops the inheritance instead
+ * of reading as absent. Every address gets its OWN outbox row, so one bounce
+ * cannot cost the others their delivery and each copy carries a distinct
+ * idempotency key.
+ */
+describe('recipients', () => {
+  /** The `to` of every enqueued owner notice, in enqueue order. */
+  async function notified(): Promise<string[][]> {
+    const rows = await listOutbox(db, { kind: 'email' });
+    return rows
+      .filter((r) => r.action === 'submission_received')
+      .map((r) => (JSON.parse(r.payload!) as { to: string[] }).to);
+  }
+
+  async function enqueueReceived(id: string, withFormId: string | null = formId): Promise<void> {
+    await effects.enqueueSubmissionReceived(
+      accountId,
+      { submissionId: id, formName: 'Lead Qualifier', respondentEmail: null },
+      withFormId,
+    );
+  }
+
+  it('no list anywhere → the owner, in one row, exactly as before this existed', async () => {
+    await enqueueReceived('sub-owner');
+    expect(await notified()).toEqual([['alex@example.com']]);
+  });
+
+  it('an account list fans out ONE row per address', async () => {
+    await upsertNotificationSetting(db, accountId, 'submission_received', {
+      recipients: ['ceo@acme.io', 'sales@example.com', 'ops@example.com'],
+    });
+    await enqueueReceived('sub-fan');
+    expect(await notified()).toEqual([['ceo@acme.io'], ['sales@example.com'], ['ops@example.com']]);
+  });
+
+  it('five addresses produce five rows, and the owner is not added on top', async () => {
+    const five = ['a@example.com', 'b@example.com', 'c@example.com', 'd@example.com', 'e@example.com'];
+    await upsertNotificationSetting(db, accountId, 'submission_received', { recipients: five });
+    await enqueueReceived('sub-five');
+    expect(await notified()).toEqual(five.map((a) => [a]));
+  });
+
+  it('a form list WINS over the account list (it replaces, never accumulates)', async () => {
+    await upsertNotificationSetting(db, accountId, 'submission_received', {
+      recipients: ['ceo@acme.io', 'sales@example.com'],
+    });
+    await upsertNotificationSetting(
+      db,
+      accountId,
+      'submission_received',
+      { recipients: ['just-me@example.com'] },
+      Date.now(),
+      formId,
+    );
+    await enqueueReceived('sub-form');
+    expect(await notified()).toEqual([['just-me@example.com']]);
+  });
+
+  it('a form row with NO list of its own inherits the account list', async () => {
+    await upsertNotificationSetting(db, accountId, 'submission_received', {
+      recipients: ['ceo@acme.io'],
+    });
+    // A row that exists for another reason (pinned copy) must not read as "[]".
+    await upsertNotificationSetting(
+      db,
+      accountId,
+      'submission_received',
+      { subject: 'Pinned copy' },
+      Date.now(),
+      formId,
+    );
+    await enqueueReceived('sub-inherit');
+    expect(await notified()).toEqual([['ceo@acme.io']]);
+  });
+
+  it('a form list stored EMPTY stops inheriting and falls back to the owner', async () => {
+    await upsertNotificationSetting(db, accountId, 'submission_received', {
+      recipients: ['ceo@acme.io', 'sales@example.com'],
+    });
+    await upsertNotificationSetting(
+      db,
+      accountId,
+      'submission_received',
+      { recipients: [] },
+      Date.now(),
+      formId,
+    );
+    await enqueueReceived('sub-owner-only');
+    expect(await notified()).toEqual([['alex@example.com']]);
+  });
+
+  it('the disabled toggle still wins: a configured list sends nothing', async () => {
+    await upsertNotificationSetting(db, accountId, 'submission_received', {
+      enabled: false,
+      recipients: ['ceo@acme.io', 'sales@example.com'],
+    });
+    await enqueueReceived('sub-off');
+    expect(await notified()).toEqual([]);
+  });
+
+  it('the same mailbox listed twice is enqueued once (one key, one delivery)', async () => {
+    await effects.enqueueSubmissionReceived(
+      accountId,
+      {
+        submissionId: 'sub-dup',
+        formName: 'Lead Qualifier',
+        respondentEmail: null,
+        to: ['ceo@acme.io', '  CEO@Acme.io ', ''],
+      },
+      formId,
+    );
+    expect(await notified()).toEqual([['ceo@acme.io']]);
+  });
+
+  it('changing the list does not rewrite a notice already enqueued', async () => {
+    await upsertNotificationSetting(db, accountId, 'submission_received', {
+      recipients: ['ceo@acme.io'],
+    });
+    await enqueueReceived('sub-snapshot');
+    await upsertNotificationSetting(db, accountId, 'submission_received', {
+      recipients: ['someone-else@example.com'],
+    });
+    expect(await notified()).toEqual([['ceo@acme.io']]);
+  });
+
+  it('the respondent receipt ignores the list entirely', async () => {
+    await upsertNotificationSetting(db, accountId, 'submission_confirmed', {
+      recipients: ['ceo@acme.io', 'sales@example.com'],
+    });
+    await enqueueConfirmed();
+    const rows = await listOutbox(db, { kind: 'email' });
+    const confirmed = rows.filter((r) => r.action === 'submission_confirmed');
+    expect(confirmed).toHaveLength(1);
+    expect((JSON.parse(confirmed[0]!.payload!) as { to: string[] }).to).toEqual(['lead@acme.io']);
+  });
+});

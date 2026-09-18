@@ -1,0 +1,18 @@
+-- Notification recipients: additive.
+--
+-- The new-submission notice always went to exactly one address: the account
+-- owner, resolved by a query in the send path with nothing to configure.
+-- A team that runs on email instead of a CRM needs that notice to reach the
+-- people who act on it, so `notification_setting.recipients` holds that list.
+--
+-- Stored as a JSON array inside TEXT, like `reminder_lead_minutes` on this same
+-- table: the two dialects share no array type, and a column that parses the
+-- same way on both is worth more here than a native one on one of them.
+--
+-- NULL means INHERIT, which is what every existing row is: a form row falls
+-- back to its account row, and an account row with no list falls back to the
+-- owner inbox, exactly as before this column existed. An EMPTY array is a
+-- deliberate choice and does NOT inherit -- it means "this scope notifies the
+-- owner only", the only way to express "the account tells five people, this one
+-- form tells just me".
+ALTER TABLE notification_setting ADD COLUMN IF NOT EXISTS recipients TEXT;

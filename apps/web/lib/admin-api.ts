@@ -534,6 +534,12 @@ export interface NotificationSettingView {
   /** Custom override; null = using the shipped default template. */
   subject: string | null;
   body: string | null;
+  /**
+   * The owner notice's audience. null = nothing stored (it goes to the account
+   * owner); [] = stored as "the owner only". Always null on the receipt, which
+   * is addressed to the respondent.
+   */
+  recipients: string[] | null;
   updatedAt: number | null;
   tokens: string[];
   defaults: { en: NotificationDefault; es: NotificationDefault };
@@ -548,6 +554,12 @@ export interface NotificationPatch {
   enabled?: boolean;
   subject?: string | null;
   body?: string | null;
+  /**
+   * Up to five distinct, valid addresses, each of which gets its own copy.
+   * null restores inheritance (account list, then the owner inbox); [] pins
+   * "the owner only". Rejected on `submission_confirmed`.
+   */
+  recipients?: string[] | null;
 }
 
 /** One email's stored values at one layer (account baseline or form override). */
@@ -555,6 +567,8 @@ export interface NotificationLayer {
   enabled: boolean;
   subject: string | null;
   body: string | null;
+  /** null = this layer stores no list (inherit); [] = "the owner only". */
+  recipients: string[] | null;
 }
 
 /**

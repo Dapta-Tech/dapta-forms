@@ -5,7 +5,9 @@ import { getMessages, type Locale } from '@quill/shared';
 import { Button } from '@/components/ui/button';
 import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useToast } from '@/components/toast';
+import { NOTIFICATION_RECIPIENTS_MAX } from '@quill/types';
 import {
+  looksLikeEmail,
   NotificationEmailFields,
   type NotificationEmailValue,
 } from '@/components/notification-email-fields';
@@ -22,6 +24,16 @@ import { callAction } from '@/lib/call-action';
 
 /** Stable identity so the history's fetch effect does not re-fire each render. */
 const EMAIL_HISTORY_KINDS: DeliveryKind[] = ['email'];
+
+/** Same list, same order: what "dirty" means for the recipient rows. */
+function sameList(a: string[], b: string[]): boolean {
+  return a.length === b.length && a.every((v, i) => v === b[i]);
+}
+
+/** Blank rows are dropped on save; a filled row that is not an address blocks it. */
+function cleanRecipients(list: string[]): string[] {
+  return list.map((r) => r.trim()).filter((r) => r.length > 0);
+}
 
 /**
  * Emails on the Connect tab — PER-FORM template overrides (Typeform's per-form
@@ -163,6 +175,9 @@ function FormEmailCard({
   // The effective ACCOUNT layer this form inherits (account override or stock).
   const accountSubject = setting.account.subject ?? def.subject;
   const accountBody = setting.account.body ?? def.body;
+  // Recipients belong to the owner notice; the receipt addresses the respondent.
+  const hasRecipients = key === 'submission_received';
+  const accountRecipients = setting.account.recipients ?? [];
 
   // `override` = the last PERSISTED form row (null = inheriting); `value` = the
   // editor draft. The editor is open whenever an override exists, or after
@@ -173,17 +188,25 @@ function FormEmailCard({
     enabled: setting.override?.enabled ?? setting.account.enabled,
     subject: setting.override?.subject ?? accountSubject,
     body: setting.override?.body ?? accountBody,
+    recipients: setting.override?.recipients ?? accountRecipients,
   });
 
   const savedValue: NotificationEmailValue = {
     enabled: override?.enabled ?? setting.account.enabled,
     subject: override?.subject ?? accountSubject,
     body: override?.body ?? accountBody,
+    recipients: override?.recipients ?? accountRecipients,
   };
+  const draftRecipients = value.recipients ?? [];
+  const recipientsInvalid = draftRecipients.some(
+    (r) => r.trim().length > 0 && !looksLikeEmail(r),
+  );
   const dirty =
     value.enabled !== savedValue.enabled ||
     value.subject !== savedValue.subject ||
-    value.body !== savedValue.body;
+    value.body !== savedValue.body ||
+    (hasRecipients &&
+      !sameList(cleanRecipients(draftRecipients), savedValue.recipients ?? []));
 
   const tokenLabels: Record<string, string> = {
     formName: nm.tokenFormName,
@@ -202,6 +225,7 @@ function FormEmailCard({
       enabled: override?.enabled ?? setting.account.enabled,
       subject: override?.subject ?? accountSubject,
       body: override?.body ?? accountBody,
+      recipients: override?.recipients ?? accountRecipients,
     });
     setEditing(true);
   }
@@ -216,10 +240,22 @@ function FormEmailCard({
           enabled: value.enabled,
           subject: value.subject,
           body: value.body,
+          // Recipients are the one field that does NOT pin by default: a draft
+          // still equal to the account list saves as null, so the form keeps
+          // following the account. Emptying the rows saves [], which is the
+          // deliberate "this form notifies the owner only" and stops inheriting.
+          ...(hasRecipients
+            ? {
+                recipients: sameList(cleanRecipients(draftRecipients), accountRecipients)
+                  ? null
+                  : cleanRecipients(draftRecipients),
+              }
+            : {}),
         }),
       );
       if (res.ok) {
         setOverride(res.setting.override);
+        setValue((v) => ({ ...v, recipients: res.setting.override?.recipients ?? accountRecipients }));
         toast.success(nm.saveSuccess);
       } else {
         toast.error(nm.saveError);
@@ -312,9 +348,26 @@ function FormEmailCard({
               previewLabel: nm.previewLabel,
               previewSubject: nm.previewSubject,
               tokenLabels,
+              recipientsLabel: nm.recipientsLabel,
+              recipientsHint: nm.recipientsHint,
+              recipientsEmpty: nm.recipientsEmpty,
+              recipientsAdd: nm.recipientsAdd,
+              recipientsRemove: nm.recipientsRemove,
+              recipientsPlaceholder: nm.recipientsPlaceholder,
+              recipientsInvalid: nm.recipientsInvalid,
             }}
             testIdPrefix={`connect-email-${key}`}
             notice={answersMissing ? nm.answersMissing : null}
+            recipients={
+              hasRecipients
+                ? {
+                    max: NOTIFICATION_RECIPIENTS_MAX,
+                    // Which layer is winning, said out loud: a stored override of
+                    // null means the rows below are the account's, not this form's.
+                    note: (override?.recipients ?? null) === null ? nm.recipientsFollowingAccount : null,
+                  }
+                : undefined
+            }
           />
           <div className="mt-4 flex items-center justify-end gap-2">
             <Button
@@ -330,7 +383,7 @@ function FormEmailCard({
               type="button"
               data-testid={`connect-email-save-${key}`}
               onClick={onSave}
-              disabled={pending || (override !== null && !dirty)}
+              disabled={pending || recipientsInvalid || (override !== null && !dirty)}
               className="min-w-[130px]"
             >
               {pending ? nm.saving : nm.save}

@@ -187,3 +187,61 @@ describe('form scope', () => {
     expect(await rowCount(accountId)).toBe(1);
   });
 });
+
+/**
+ * `recipients` is a JSON array inside TEXT (like `reminder_lead_minutes`), and
+ * it is the one field where an EMPTY array is not the same as NULL: NULL means
+ * "inherit the next layer", [] means "this scope notifies the owner only".
+ * Collapsing the two, which `parseLeads` does for its own field, would make
+ * that decision unstorable.
+ */
+describe('recipients storage', () => {
+  it('defaults to null and round-trips a list', async () => {
+    expect(defaultNotificationSetting(KEY).recipients).toBeNull();
+    expect((await getNotificationSetting(db, accountId, KEY)).recipients).toBeNull();
+
+    const saved = await upsertNotificationSetting(db, accountId, KEY, {
+      recipients: ['ceo@acme.io', 'sales@example.com'],
+    });
+    expect(saved.recipients).toEqual(['ceo@acme.io', 'sales@example.com']);
+    expect((await getNotificationSettings(db, accountId)).get(KEY)?.recipients).toEqual([
+      'ceo@acme.io',
+      'sales@example.com',
+    ]);
+  });
+
+  it('an empty list is STORED as empty, not collapsed back to null', async () => {
+    await upsertNotificationSetting(db, accountId, KEY, { recipients: ['ceo@acme.io'] });
+    const emptied = await upsertNotificationSetting(db, accountId, KEY, { recipients: [] });
+    expect(emptied.recipients).toEqual([]);
+    expect((await getNotificationSetting(db, accountId, KEY)).recipients).toEqual([]);
+  });
+
+  it('null restores inheritance, undefined leaves the stored list untouched', async () => {
+    await upsertNotificationSetting(db, accountId, KEY, { recipients: ['ceo@acme.io'] });
+
+    // A patch that does not mention recipients must not clear them.
+    const afterSubject = await upsertNotificationSetting(db, accountId, KEY, { subject: 'hi' });
+    expect(afterSubject.recipients).toEqual(['ceo@acme.io']);
+
+    const cleared = await upsertNotificationSetting(db, accountId, KEY, { recipients: null });
+    expect(cleared.recipients).toBeNull();
+  });
+
+  it('the form scope stores its own list without touching the account row', async () => {
+    await upsertNotificationSetting(db, accountId, KEY, { recipients: ['ceo@acme.io'] });
+    await upsertNotificationSetting(db, accountId, KEY, { recipients: [] }, Date.now(), formA);
+
+    expect((await getNotificationSettings(db, accountId, formA)).get(KEY)?.recipients).toEqual([]);
+    expect((await getNotificationSettings(db, accountId)).get(KEY)?.recipients).toEqual(['ceo@acme.io']);
+  });
+
+  it('a row written before this column existed reads as null (inherit)', async () => {
+    await upsertNotificationSetting(db, accountId, KEY, { subject: 'legacy' });
+    await db.run(
+      sql`UPDATE notification_setting SET recipients = NULL
+          WHERE account_id = ${accountId} AND email_key = ${KEY} AND form_id IS NULL`,
+    );
+    expect((await getNotificationSetting(db, accountId, KEY)).recipients).toBeNull();
+  });
+});

@@ -974,7 +974,7 @@ export class AdminCrudController {
     const p = await this.auth.resolveHost(req);
     assertAdmin(p);
     const key = this.parseEmailKey(emailKey);
-    const patch = parse(notificationSettingPatchSchema, body);
+    const patch = this.parseNotificationPatch(key, body);
     const updated = await upsertNotificationSetting(this.db, p.accountId, key, patch);
     return this.notificationView(key, updated);
   }
@@ -1019,7 +1019,7 @@ export class AdminCrudController {
     assertAdmin(p);
     await this.assertOwnForm(p.accountId, id);
     const key = this.parseEmailKey(emailKey);
-    const patch = parse(notificationSettingPatchSchema, body);
+    const patch = this.parseNotificationPatch(key, body);
     await upsertNotificationSetting(this.db, p.accountId, key, patch, Date.now(), id);
     return (await this.formNotificationViews(p.accountId, id)).find((v) => v.emailKey === key)!;
   }
@@ -1060,10 +1060,25 @@ export class AdminCrudController {
       return {
         emailKey,
         /** The account layer this form inherits when it has no override. */
-        account: { enabled: a.enabled, subject: a.subject, body: a.body },
-        /** The form's pinned copy; null = using the account template. */
+        account: {
+          enabled: a.enabled,
+          subject: a.subject,
+          body: a.body,
+          recipients: a.recipients,
+        },
+        /**
+         * The form's pinned copy; null = using the account template. A stored
+         * `recipients` of null means this form still follows the account list
+         * even though the row exists for some other pinned field.
+         */
         override: o
-          ? { enabled: o.enabled, subject: o.subject, body: o.body, updatedAt: o.updatedAt }
+          ? {
+              enabled: o.enabled,
+              subject: o.subject,
+              body: o.body,
+              recipients: o.recipients,
+              updatedAt: o.updatedAt,
+            }
           : null,
         tokens: [...NOTIFICATION_TOKENS],
         defaults: {
@@ -1072,6 +1087,24 @@ export class AdminCrudController {
         },
       };
     });
+  }
+
+  /**
+   * The shared write body for both scopes, plus the one rule the contract
+   * cannot express: `recipients` belongs to the OWNER NOTICE only. The receipt
+   * addresses the respondent who submitted the form, so a list stored against
+   * it would never be read. Saying so with a 400 beats accepting a write that
+   * echoes back happily and then does nothing.
+   */
+  private parseNotificationPatch(key: SubmissionEmailKey, body: unknown) {
+    const patch = parse(notificationSettingPatchSchema, body);
+    if (key === 'submission_confirmed' && patch.recipients !== undefined) {
+      throw new BadRequestException({
+        error: 'BAD_REQUEST',
+        message: 'This email is addressed to the respondent and takes no recipient list.',
+      });
+    }
+    return patch;
   }
 
   /** 400 unless the path key is one of the two customizable emails. */
@@ -1091,6 +1124,8 @@ export class AdminCrudController {
       enabled: s.enabled,
       subject: s.subject,
       body: s.body,
+      /** null = nothing stored (the owner inbox); [] = "the owner only". */
+      recipients: s.recipients,
       updatedAt: s.updatedAt,
       tokens: [...NOTIFICATION_TOKENS],
       defaults: {

@@ -147,6 +147,8 @@ export const notificationSetting = sqliteTable(
     subject: text('subject'),
     body: text('body'),
     reminderLeadMinutes: text('reminder_lead_minutes'),
+    /** JSON array of addresses in TEXT; NULL = inherit, [] = the owner only. */
+    recipients: text('recipients'),
     createdAt: integer('created_at').notNull(),
     updatedAt: integer('updated_at').notNull(),
   },
