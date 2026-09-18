@@ -1993,7 +1993,7 @@
    what shipped before the axis existed.
 
    Shrinking the pill ALONE would leave the wrapper it used to fill, and a 40px
-   hole reads worse than the big badge did — so the wrapper comes down with it.
+   hole reads worse than the big badge did, so the wrapper comes down with it.
    `.pf__attribution` carries FOUR paddings, one per context (base, cover
    footer, vertical page, and the desktop band where the pill rides the centred
    card), and each needs its own `sm` twin or the gap survives exactly where the

@@ -27,7 +27,8 @@ under the centred card), and all four come down together.
 
 The badge needs no new props: the design attributes are stamped on the form root
 and the pill is a descendant of it on all five of its call sites, so the live
-preview, the builder canvas and the public page pick the size up at once.
+preview and the public page pick the size up at once. The builder canvas is not
+one of them, because it never draws the badge at all.
 
 It stays a per-form setting rather than joining the workspace brand kit, which
 carries identity (logo, colors, type, shape) and deliberately excludes every

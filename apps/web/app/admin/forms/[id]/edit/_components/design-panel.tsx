@@ -513,7 +513,7 @@ export function DesignPanel({
               there would be hiding a control that DOES something.
 
               Not gated on whether the badge renders either. It disappears when
-              the deployment leaves `NEXT_PUBLIC_SIGNUP_URL` unset — which is
+              the deployment leaves `NEXT_PUBLIC_SIGNUP_URL` unset, which is
               exactly what the local QA harness does, so gating on it would make
               the control invisible on the only surface an author can check it
               on. A fork that sets `NEXT_PUBLIC_HIDE_BADGE` keeps hiding the

@@ -60,7 +60,7 @@ export type FormLogoPosition = (typeof FORM_LOGO_POSITIONS)[number];
  * Scale of the "Made with Dapta Forms" attribution pill.
  *
  * Two values, not three. `logoSize` carries a `lg` because a host's own logo is
- * the point of the page; this pill is the opposite — nobody has ever wanted the
+ * the point of the page; this pill is the opposite. Nobody has ever wanted the
  * attribution BIGGER than it already is, and every value is CSS plus a toggle
  * segment forever.
  */
@@ -207,7 +207,7 @@ export const LEGACY_FORM_DESIGN: ResolvedFormDesign = {
   logoSize: 'md',
   logoPosition: 'center',
   // `md` is the size the attribution has always rendered at, so an absent value
-  // keeps every published form pixel-identical — the whole point of this table.
+  // keeps every published form pixel-identical, the whole point of this table.
   badgeSize: 'md',
   // The renderer has always centred the question and helper (`public-form.css`
   // → `.pf__question`). Defaulting this to `left` would silently re-align every
