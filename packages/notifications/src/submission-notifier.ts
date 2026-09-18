@@ -65,6 +65,21 @@ export interface SubmissionNotification {
 }
 
 /**
+ * The addressee half of an idempotency key. The managed transport de-duplicates
+ * on that key and reports nothing when it drops a duplicate, so the one key per
+ * (submission, event) this used to carry would have silently discarded every
+ * copy but the first once the notice started reaching more than one address.
+ *
+ * The producer enqueues ONE outbox row per recipient, so this is normally a
+ * single address; joining the whole list keeps a row that carries several (a
+ * caller passing its own `to`, or a row queued before the fan-out existed) on
+ * one stable key instead of colliding with its siblings.
+ */
+function addresseeKey(to: string[]): string {
+  return to.map((a) => a.trim().toLowerCase()).join(',');
+}
+
+/**
  * Renders and sends submission emails through the EmailProvider port — a plain
  * text body plus a complete HTML document (escaped line by line, the answers as
  * a table), no attachments. The app only ever calls these methods; the
@@ -90,7 +105,7 @@ export class SubmissionNotifier {
       text: text.join('\n'),
       html: emailDocument({ lang: locale, lines: html }),
       headers: { 'X-Submission-Id': n.submissionId },
-      idempotencyKey: `submission:${n.submissionId}:received`,
+      idempotencyKey: `submission:${n.submissionId}:received:${addresseeKey(n.to)}`,
     });
   }
 
@@ -131,7 +146,11 @@ export class SubmissionNotifier {
       text: text.join('\n'),
       html: emailDocument({ lang: locale, lines: html }),
       headers: { 'X-Submission-Id': n.submissionId },
-      idempotencyKey: `submission:${n.submissionId}:confirmed`,
+      // The receipt has exactly one addressee (the respondent), so its key is
+      // already unique per send; it is qualified for symmetry with the notice.
+      idempotencyKey: `submission:${n.submissionId}:confirmed:${addresseeKey(
+        n.respondentEmail ? [n.respondentEmail] : n.to,
+      )}`,
     });
   }
 }

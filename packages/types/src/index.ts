@@ -1589,19 +1589,40 @@ export type MemberPatch = z.infer<typeof memberPatchSchema>;
 
 // --- Notification settings (Settings → Notifications) ------------------------
 
+/** Hard ceiling on the notice's recipient list, enforced here and in the editor. */
+export const NOTIFICATION_RECIPIENTS_MAX = 5;
+
+/**
+ * Who the new-submission notice goes to. `null` restores inheritance (a form
+ * falls back to its account, an account falls back to the owner inbox); an
+ * EMPTY array is a deliberate "notify the owner only" and stops inheriting.
+ *
+ * Duplicates are rejected rather than tolerated: one email is enqueued per
+ * address with a per-address idempotency key, so two rows holding the same
+ * mailbox would collide on that key and the managed transport would drop the
+ * second copy with no error and no log.
+ */
+const notificationRecipientsSchema = z
+  .array(z.string().trim().email().max(320))
+  .max(NOTIFICATION_RECIPIENTS_MAX)
+  .refine((list) => new Set(list.map((a) => a.toLowerCase())).size === list.length, {
+    message: 'Each address can only be listed once.',
+  });
+
 /**
  * The write body for a notification email's per-account settings: toggle it on/
- * off and/or override the subject/body. `subject`/`body` are PLAIN TEXT with
- * `{{token}}` markers; passing `null` resets that field to the shipped default,
- * `undefined` (absent) leaves it untouched. The `emailKey` itself is a path
- * param the API validates against the notifications catalog (kept out of this
- * contract so the package boundary stays one-directional). Every field is
- * optional — an empty patch is a harmless no-op.
+ * off, override the subject/body, and set who the notice goes to. `subject`/
+ * `body` are PLAIN TEXT with `{{token}}` markers; passing `null` resets that
+ * field to the shipped default, `undefined` (absent) leaves it untouched. The
+ * `emailKey` itself is a path param the API validates against the notifications
+ * catalog (kept out of this contract so the package boundary stays
+ * one-directional). Every field is optional: an empty patch is a harmless no-op.
  */
 export const notificationSettingPatchSchema = z.object({
   enabled: z.boolean().optional(),
   subject: z.string().max(300).nullable().optional(),
   body: z.string().max(8000).nullable().optional(),
+  recipients: notificationRecipientsSchema.nullable().optional(),
 });
 export type NotificationSettingPatchInput = z.infer<typeof notificationSettingPatchSchema>;
 
