@@ -10,6 +10,7 @@
 
 export interface BuilderMessages {
   shell: {
+    back: string;
     formNamePlaceholder: string;
     tabBuild: string;
     tabLogic: string;
@@ -531,6 +532,7 @@ export type TemplateId = 'lead' | 'contact' | 'feedback' | 'rsvp';
 
 const en: BuilderMessages = {
   shell: {
+    back: 'Forms',
     formNamePlaceholder: 'Untitled form',
     tabBuild: 'Build',
     tabLogic: 'Logic',
@@ -958,6 +960,7 @@ const en: BuilderMessages = {
 
 const es: BuilderMessages = {
   shell: {
+    back: 'Formularios',
     formNamePlaceholder: 'Formulario sin título',
     tabBuild: 'Construir',
     tabLogic: 'Lógica',

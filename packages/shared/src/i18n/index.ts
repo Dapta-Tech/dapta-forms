@@ -2833,9 +2833,11 @@ export const en: FormsMessages = {
         trackingDraftNote:
           'These IDs are staged with the rest of your draft: click Publish to put them on the live form. Integrations above save to the live form immediately.',
         gtmLabel: 'Google Tag Manager ID',
-        gtmHelp: 'Loads your GTM container on the form page so your tags fire.',
+        gtmHelp:
+          'Loads your GTM container so your tags fire, and pushes a form_lead event when someone completes the form.',
         metaLabel: 'Meta Pixel ID',
-        metaHelp: 'Fires a PageView on your Meta pixel to measure campaigns.',
+        metaHelp:
+          'Fires a PageView when the form loads, and a Lead when someone completes it.',
         posthogKeyLabel: 'PostHog project key',
         posthogKeyHelp: 'Captures a pageview in PostHog for product analytics.',
         posthogHostLabel: 'PostHog host (optional)',
@@ -4440,9 +4442,11 @@ export const es: FormsMessages = {
         trackingDraftNote:
           'Estos IDs se guardan con el resto de tu borrador: haz clic en Publicar para ponerlos en el formulario público. Las integraciones de arriba se guardan en vivo de inmediato.',
         gtmLabel: 'ID de Google Tag Manager',
-        gtmHelp: 'Carga tu contenedor de GTM en la página del formulario para que se disparen tus etiquetas.',
+        gtmHelp:
+          'Carga tu contenedor de GTM para que se disparen tus etiquetas, y empuja un evento form_lead cuando alguien completa el formulario.',
         metaLabel: 'ID del píxel de Meta',
-        metaHelp: 'Dispara un PageView en tu píxel de Meta para medir campañas.',
+        metaHelp:
+          'Dispara un PageView al cargar el formulario y un Lead cuando alguien lo completa.',
         posthogKeyLabel: 'Clave del proyecto de PostHog',
         posthogKeyHelp: 'Captura una pageview en PostHog para analítica de producto.',
         posthogHostLabel: 'Host de PostHog (opcional)',
