@@ -16,13 +16,31 @@
 
 import { isTransportError, type TransportError } from './call-action';
 
-export type AutosaveStatus = 'saved' | 'saving' | 'retrying' | 'error';
+export type AutosaveStatus = 'saved' | 'saving' | 'retrying' | 'error' | 'conflict';
 
-export type AutosaveFailureKind = 'invalid' | 'server' | 'transport';
+export type AutosaveFailureKind = 'invalid' | 'server' | 'transport' | 'conflict';
+
+/** The server refused the write because the row was written since this
+ *  editor's stamp (optimistic lock). Never retried on its own: only a person
+ *  can decide between the two versions. */
+export type ConflictOutcome = { ok: false; conflict: true; message?: string };
 
 /** What a save attempt produced, as the controller sees it. `ok` is a plain
  *  boolean (not a discriminant) because server actions type it that way. */
-export type SaveOutcome = { ok: boolean; message?: string } | TransportError;
+export type SaveOutcome = { ok: boolean; message?: string } | TransportError | ConflictOutcome;
+
+export const isConflictOutcome = (r: unknown): r is ConflictOutcome =>
+  typeof r === 'object' && r !== null && (r as ConflictOutcome).conflict === true;
+
+/**
+ * What `flush()` resolves with once the pending edits have either landed on
+ * the server or failed to. `ok` means the server now holds the LATEST edits;
+ * a failure carries the same kind/message `onFailure` would have reported.
+ * A transport/server failure still schedules the usual background retry; the
+ * promise just does not wait for it, so a caller (Publish) can tell the person
+ * right away instead of hanging on a 30s backoff.
+ */
+export type FlushResult = { ok: true } | { ok: false; kind: AutosaveFailureKind; message: string };
 
 export interface AutosaveOptions<T> {
   /** Latest data to persist. Called at save time — never a stale closure. */
@@ -62,6 +80,8 @@ export class AutosaveController<T> {
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
   private backoffMs: number;
   private failureNotified = false;
+  /** `flush()` callers waiting for the pending edits to settle. */
+  private waiters: Array<(result: FlushResult) => void> = [];
 
   constructor(private readonly opts: AutosaveOptions<T>) {
     this.backoffMs = opts.initialBackoffMs ?? DEFAULT_INITIAL_BACKOFF_MS;
@@ -89,15 +109,34 @@ export class AutosaveController<T> {
     }, this.opts.debounceMs ?? DEFAULT_DEBOUNCE_MS);
   }
 
-  /** Save now if there are unsaved edits (nav-away, tab hidden, unmount). */
-  flush(): void {
-    if (this.disposed || !this.dirty) return;
+  /**
+   * Save now if there are unsaved edits (nav-away, tab hidden, unmount, and
+   * Publish). Resolves once the server holds the latest edits, or with the
+   * first failure on the way there. Clean and idle: resolves `ok` at once.
+   * A save already in flight is awaited rather than duplicated; edits made
+   * while waiting are saved too before the promise resolves, so Publish never
+   * publishes a draft the server has not seen yet.
+   */
+  flush(): Promise<FlushResult> {
+    if (this.disposed) {
+      return Promise.resolve({ ok: false, kind: 'transport', message: 'editor closed' });
+    }
+    if (!this.dirty) return Promise.resolve({ ok: true });
     if (this.debounceTimer) {
       clearTimeout(this.debounceTimer);
       this.debounceTimer = null;
     }
     this.clearRetry();
+    const settled = new Promise<FlushResult>((resolve) => this.waiters.push(resolve));
     void this.run();
+    return settled;
+  }
+
+  private settle(result: FlushResult): void {
+    if (this.waiters.length === 0) return;
+    const waiters = this.waiters;
+    this.waiters = [];
+    for (const resolve of waiters) resolve(result);
   }
 
   /**
@@ -116,6 +155,7 @@ export class AutosaveController<T> {
     this.disposed = true;
     if (this.debounceTimer) clearTimeout(this.debounceTimer);
     this.clearRetry();
+    this.settle({ ok: false, kind: 'transport', message: 'editor closed' });
     if (!this.dirty) return;
     const snapshot = this.opts.getSnapshot();
     if (!this.opts.validate(snapshot).ok) return; // backup (hook cleanup) still holds it
@@ -154,6 +194,7 @@ export class AutosaveController<T> {
         this.failureNotified = true;
         this.opts.onFailure?.(valid.reason, 'invalid');
       }
+      this.settle({ ok: false, kind: 'invalid', message: valid.reason });
       return;
     }
 
@@ -168,7 +209,7 @@ export class AutosaveController<T> {
       outcome = { ok: false, transport: true, message: e instanceof Error ? e.message : 'save failed' };
     }
     this.inFlight = false;
-    if (this.disposed) return;
+    if (this.disposed) return; // dispose() already settled any waiters
 
     if (outcome.ok) {
       this.savedGeneration = attempted;
@@ -183,7 +224,22 @@ export class AutosaveController<T> {
       } else {
         this.opts.onStatus('saved', null);
         this.opts.onSaved?.();
+        this.settle({ ok: true });
       }
+      return;
+    }
+
+    if (isConflictOutcome(outcome)) {
+      // Someone else's write is on the server. Retrying would just lose again
+      // (or, worse, win): the editor shows the conflict and the person picks.
+      // Dirty stays set so the edits are still here when they do.
+      const message = outcome.message ?? 'saved elsewhere';
+      this.opts.onStatus('conflict', message);
+      if (!this.failureNotified) {
+        this.failureNotified = true;
+        this.opts.onFailure?.(message, 'conflict');
+      }
+      this.settle({ ok: false, kind: 'conflict', message });
       return;
     }
 
@@ -197,6 +253,7 @@ export class AutosaveController<T> {
       this.failureNotified = true;
       this.opts.onFailure?.(message, transport ? 'transport' : 'server');
     }
+    this.settle({ ok: false, kind: transport ? 'transport' : 'server', message });
     this.scheduleRetry();
   }
 }

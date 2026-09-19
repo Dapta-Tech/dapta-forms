@@ -9,6 +9,7 @@ import { randomUUID } from 'node:crypto';
 import { validateFormSlug } from '@quill/engine';
 import { attributionSchema, mergeWebhookSecrets, type Attribution } from '@quill/types';
 import { sql, type Db } from './client';
+import type { SQL } from 'drizzle-orm';
 import { canonicalPublicCode } from './short-links';
 import type { CrudResult } from './crud';
 
@@ -497,6 +498,7 @@ export async function updateForm(
   accountId: string,
   id: string,
   patch: { name?: string; config?: unknown },
+  expectedUpdatedAt?: number,
 ): Promise<CrudResult<FormRow>> {
   const existing = await getFormById(db, accountId, id);
   if (!existing) return { ok: false, reason: 'NOT_FOUND' };
@@ -526,11 +528,31 @@ export async function updateForm(
   }
   if (sets.length > 0) {
     sets.push(sql`updated_at = ${Date.now()}`);
-    await db.run(
-      sql`UPDATE form SET ${sql.join(sets, sql`, `)} WHERE account_id = ${accountId} AND id = ${id}`,
+    const written = await db.get<{ id: string }>(
+      sql`UPDATE form SET ${sql.join(sets, sql`, `)}
+          WHERE account_id = ${accountId} AND id = ${id} ${staleGuard(expectedUpdatedAt)}
+          RETURNING id`,
     );
+    if (!written) return stale();
   }
   return { ok: true, value: (await getFormById(db, accountId, id))! };
+}
+
+/**
+ * Optimistic lock for the editor's writes. The editor sends the `updated_at`
+ * it loaded (or last received); a write only lands when the row still carries
+ * it. Two editors open on one form used to be last-writer-wins with no
+ * warning: each autosave sent its whole snapshot, so whichever saved last
+ * silently threw away the other's edits (a redirect URL lost this way on
+ * 2026-09-17). A caller that sends no stamp keeps the old behavior: tabs
+ * already open when this shipped never send one, and must keep saving.
+ */
+function staleGuard(expectedUpdatedAt: number | undefined): SQL {
+  return expectedUpdatedAt === undefined ? sql`` : sql`AND updated_at = ${expectedUpdatedAt}`;
+}
+
+function stale(): Extract<CrudResult<never>, { ok: false }> {
+  return { ok: false, reason: 'STALE', message: 'This form was saved elsewhere since you loaded it.' };
 }
 
 // --- Form slug (the public URL's third segment) ------------------------------
@@ -724,6 +746,7 @@ export async function saveDraftConfig(
   accountId: string,
   id: string,
   config: unknown,
+  expectedUpdatedAt?: number,
 ): Promise<CrudResult<FormRow>> {
   const existing = await getFormById(db, accountId, id);
   if (!existing) return { ok: false, reason: 'NOT_FOUND' };
@@ -737,10 +760,12 @@ export async function saveDraftConfig(
     delete cfg.destinations;
     nextConfig = cfg;
   }
-  await db.run(
+  const written = await db.get<{ id: string }>(
     sql`UPDATE form SET draft_config = ${jsonParam(nextConfig)}, updated_at = ${Date.now()}
-        WHERE account_id = ${accountId} AND id = ${id}`,
+        WHERE account_id = ${accountId} AND id = ${id} ${staleGuard(expectedUpdatedAt)}
+        RETURNING id`,
   );
+  if (!written) return stale();
   return { ok: true, value: (await getFormById(db, accountId, id))! };
 }
 
@@ -755,9 +780,14 @@ export async function publishForm(
   db: Db,
   accountId: string,
   id: string,
+  expectedUpdatedAt?: number,
 ): Promise<PublishResult> {
   const existing = await getFormById(db, accountId, id);
   if (!existing) return { ok: false, reason: 'NOT_FOUND' };
+  // Checked BEFORE the no-draft shortcut: a publisher whose stamp is stale is
+  // about to make someone else's draft live without having seen it, and that
+  // is the same silent overwrite the guard exists for, draft or no draft.
+  if (expectedUpdatedAt !== undefined && existing.updatedAt !== expectedUpdatedAt) return stale();
   // No draft pending — a successful no-op. `published: false` is what stops a
   // caller counting this as a conversion.
   if (existing.draftConfig == null) return { ok: true, value: existing, published: false };
@@ -782,8 +812,12 @@ export async function publishForm(
         SET config = ${jsonParam(next)}, draft_config = NULL,
             published_at = ${now}, updated_at = ${now}
         WHERE account_id = ${accountId} AND id = ${id} AND draft_config IS NOT NULL
+          ${staleGuard(expectedUpdatedAt)}
         RETURNING id`,
   );
+  // Nothing fired AND a stamp was given: the draft was still pending, so the
+  // only way the guarded UPDATE misses is a write that landed after the read.
+  if (!fired && expectedUpdatedAt !== undefined) return stale();
   return { ok: true, value: (await getFormById(db, accountId, id))!, published: Boolean(fired) };
 }
 

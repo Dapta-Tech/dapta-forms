@@ -36,6 +36,9 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     name?: string;
     config?: unknown;
     destinations?: unknown;
+    /** The editor's optimistic-lock stamp; forwarded so a late unload flush
+     *  cannot overwrite a newer save from elsewhere. */
+    expectedUpdatedAt?: number;
   };
   try {
     body = (await req.json()) as typeof body;
@@ -54,7 +57,11 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
         : await hostFetch(`/v1/forms/${id}`, {
             method: 'PUT',
             headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ name: body.name, config: body.config }),
+            body: JSON.stringify({
+              name: body.name,
+              config: body.config,
+              ...(typeof body.expectedUpdatedAt === 'number' ? { expectedUpdatedAt: body.expectedUpdatedAt } : {}),
+            }),
           });
     return Response.json({ ok: upstream.ok }, { status: upstream.ok ? 200 : upstream.status });
   } catch {

@@ -226,7 +226,7 @@ export const openapiSpec = {
       get: {
         summary: "List the account's submission-email settings (host, admin/owner)",
         description:
-          'The two submission emails (owner notice + respondent confirmation): each carries its enabled toggle, any custom subject/body override (null = shipped default), the shipped default copy for both locales, and the available {{tokens}}.',
+          'The two submission emails (owner notice + respondent confirmation): each carries its enabled toggle, any custom subject/body override (null = shipped default), the recipient list on the owner notice (null = the owner inbox, [] = the owner only), the shipped default copy for both locales, and the available {{tokens}}.',
         security: [{ hostSession: [] }],
         responses: {
           '200': { description: '{ settings[] }' },
@@ -238,7 +238,7 @@ export const openapiSpec = {
       put: {
         summary: 'Toggle or override one submission email (host, admin/owner)',
         description:
-          'Body { enabled?, subject?, body? }. subject/body are plain text with {{token}} markers; passing null resets that field to the shipped default. emailKey ∈ (submission_received, submission_confirmed).',
+          'Body { enabled?, subject?, body?, recipients? }. subject/body are plain text with {{token}} markers; passing null resets that field to the shipped default. recipients is the owner notice’s audience: at most 5 valid, distinct addresses, each of which receives its own copy; null means the owner inbox and [] means the owner only. It is rejected on submission_confirmed, which is addressed to the respondent. emailKey ∈ (submission_received, submission_confirmed).',
         parameters: [
           {
             name: 'emailKey',
@@ -279,7 +279,7 @@ export const openapiSpec = {
       get: {
         summary: "List a form's submission-email settings (host, admin/owner)",
         description:
-          'Per email: the effective account-level template this form inherits, whether a per-form override exists, and the override values (Typeform-style per-form Follow-ups). Send-time precedence is form → account → stock, per field. The form must belong to the caller’s account.',
+          'Per email: the effective account-level template this form inherits, whether a per-form override exists, and the override values (Typeform-style per-form Follow-ups). Send-time precedence is form → account → stock, per field, recipients included. The form must belong to the caller’s account.',
         security: [{ hostSession: [] }],
         responses: {
           '200': { description: '{ settings[] }: each { emailKey, account, override|null, defaults, tokens }' },
@@ -292,7 +292,7 @@ export const openapiSpec = {
       put: {
         summary: 'Create/update a form’s override for one submission email (host, admin/owner)',
         description:
-          'Body { enabled?, subject?, body? }: same contract as the account-level PUT, stored against this form. While an override exists its enabled toggle wins; a null subject/body inherits that field from the account template.',
+          'Body { enabled?, subject?, body?, recipients? }: same contract as the account-level PUT, stored against this form. While an override exists its enabled toggle wins; a null subject/body/recipients inherits that field from the account template, while an empty recipients list deliberately stops inheriting and notifies the owner only.',
         parameters: [
           {
             name: 'emailKey',

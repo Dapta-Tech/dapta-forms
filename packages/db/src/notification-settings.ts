@@ -12,6 +12,9 @@
  * setting". `subject`/`body` NULL = inherit that FIELD from the next layer
  * (account row, then the stock template) — so "reset to default" is just
  * NULLing them, and send-time precedence is form → account → stock per field.
+ * `recipients` follows the same per-FIELD chain: NULL = inherit, while an EMPTY
+ * array is a deliberate "this scope notifies the owner only" that stops the
+ * inheritance. Stored as JSON inside TEXT, like `reminder_lead_minutes`.
  *
  * This module is pure storage and deliberately does NOT know the catalog of
  * valid keys or the shipped template copy — those live in @quill/notifications
@@ -32,6 +35,8 @@ export interface NotificationSetting {
   body: string | null;
   /** Minutes before start, ascending not required; NULL = shipped default leads. */
   reminderLeadMinutes: number[] | null;
+  /** Who the notice goes to. NULL = inherit; [] = the owner only. */
+  recipients: string[] | null;
   updatedAt: number | null;
 }
 
@@ -41,6 +46,8 @@ export interface NotificationSettingPatch {
   subject?: string | null;
   body?: string | null;
   reminderLeadMinutes?: number[] | null;
+  /** NULL restores inheritance; [] pins "the owner only"; undefined leaves it. */
+  recipients?: string[] | null;
 }
 
 /** A safe default when no row exists (fork/default behavior: everything ON). */
@@ -52,6 +59,7 @@ export function defaultNotificationSetting(emailKey: string): NotificationSettin
     subject: null,
     body: null,
     reminderLeadMinutes: null,
+    recipients: null,
     updatedAt: null,
   };
 }
@@ -73,6 +81,24 @@ function parseLeads(raw: unknown): number[] | null {
   }
 }
 
+/**
+ * Unlike `parseLeads`, an empty array is KEPT: for recipients it is a stored
+ * decision ("the owner only"), not an absent override, and collapsing it to
+ * NULL would silently turn it back into "inherit".
+ */
+function parseRecipients(raw: unknown): string[] | null {
+  if (typeof raw !== 'string' || raw.length === 0) return null;
+  try {
+    const arr = JSON.parse(raw) as unknown;
+    if (!Array.isArray(arr)) return null;
+    return arr
+      .filter((v): v is string => typeof v === 'string' && v.trim().length > 0)
+      .map((v) => v.trim());
+  } catch {
+    return null;
+  }
+}
+
 function mapRow(r: Record<string, unknown>): NotificationSetting {
   return {
     emailKey: String(r.email_key),
@@ -81,6 +107,7 @@ function mapRow(r: Record<string, unknown>): NotificationSetting {
     subject: (r.subject as string | null) ?? null,
     body: (r.body as string | null) ?? null,
     reminderLeadMinutes: parseLeads(r.reminder_lead_minutes),
+    recipients: parseRecipients(r.recipients),
     updatedAt: r.updated_at == null ? null : Number(r.updated_at),
   };
 }
@@ -96,7 +123,7 @@ export async function getNotificationSettings(
   formId?: string | null,
 ): Promise<Map<string, NotificationSetting>> {
   const rows = await db.all<Record<string, unknown>>(
-    sql`SELECT email_key, form_id, enabled, subject, body, reminder_lead_minutes, updated_at
+    sql`SELECT email_key, form_id, enabled, subject, body, reminder_lead_minutes, recipients, updated_at
         FROM notification_setting
         WHERE account_id = ${accountId} AND ${scopeFilter(formId)}`,
   );
@@ -111,7 +138,7 @@ export async function getNotificationSetting(
   formId?: string | null,
 ): Promise<NotificationSetting> {
   const row = await db.get<Record<string, unknown>>(
-    sql`SELECT email_key, form_id, enabled, subject, body, reminder_lead_minutes, updated_at
+    sql`SELECT email_key, form_id, enabled, subject, body, reminder_lead_minutes, recipients, updated_at
         FROM notification_setting
         WHERE account_id = ${accountId} AND email_key = ${emailKey} AND ${scopeFilter(formId)}
         LIMIT 1`,
@@ -143,6 +170,8 @@ export async function upsertNotificationSetting(
     sets.push(
       sql`reminder_lead_minutes = ${patch.reminderLeadMinutes == null ? null : JSON.stringify(patch.reminderLeadMinutes)}`,
     );
+  if (patch.recipients !== undefined)
+    sets.push(sql`recipients = ${patch.recipients == null ? null : JSON.stringify(patch.recipients)}`);
 
   if (sets.length > 0) {
     sets.push(sql`updated_at = ${now}`);
@@ -151,7 +180,7 @@ export async function upsertNotificationSetting(
           WHERE account_id = ${accountId} AND email_key = ${emailKey} AND ${scopeFilter(formId)}`,
     );
     const updated = await db.get<Record<string, unknown>>(
-      sql`SELECT email_key, form_id, enabled, subject, body, reminder_lead_minutes, updated_at
+      sql`SELECT email_key, form_id, enabled, subject, body, reminder_lead_minutes, recipients, updated_at
           FROM notification_setting
           WHERE account_id = ${accountId} AND email_key = ${emailKey} AND ${scopeFilter(formId)}
           LIMIT 1`,
@@ -161,11 +190,12 @@ export async function upsertNotificationSetting(
     // No existing row — insert defaults merged with the patch.
     await db.run(
       sql`INSERT INTO notification_setting
-            (id, account_id, email_key, form_id, enabled, subject, body, reminder_lead_minutes, created_at, updated_at)
+            (id, account_id, email_key, form_id, enabled, subject, body, reminder_lead_minutes, recipients, created_at, updated_at)
           VALUES (${randomUUID()}, ${accountId}, ${emailKey}, ${formId ?? null},
             ${patch.enabled === undefined ? 1 : patch.enabled ? 1 : 0},
             ${patch.subject ?? null}, ${patch.body ?? null},
             ${patch.reminderLeadMinutes == null ? null : JSON.stringify(patch.reminderLeadMinutes)},
+            ${patch.recipients == null ? null : JSON.stringify(patch.recipients)},
             ${now}, ${now})`,
     );
   }

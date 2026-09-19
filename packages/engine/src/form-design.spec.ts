@@ -61,6 +61,7 @@ describe('resolveDesign — explicit axes', () => {
       progressStyle: 'dots',
       logoSize: 'lg',
       logoPosition: 'left',
+      badgeSize: 'sm',
       contentAlign: 'left',
       contentWidth: 'wide',
       transition: 'fade',
@@ -72,6 +73,7 @@ describe('resolveDesign — explicit axes', () => {
       progressStyle: 'dots',
       logoSize: 'lg',
       logoPosition: 'left',
+      badgeSize: 'sm',
       contentAlign: 'left',
       contentWidth: 'wide',
       transition: 'fade',
@@ -83,6 +85,14 @@ describe('resolveDesign — explicit axes', () => {
     // every published form silently re-aligns.
     expect(resolveDesign({}).contentAlign).toBe('center');
     expect(designAttributes(resolveDesign({}))['data-pf-align']).toBe('center');
+  });
+
+  it('defaults the attribution badge to the size it has always rendered at', () => {
+    // A form published before this axis existed carries no `badgeSize`, and must
+    // keep the exact pill it had. `sm` is opt-in, never inherited.
+    expect(resolveDesign({}).badgeSize).toBe('md');
+    expect(designAttributes(resolveDesign({}))['data-pf-badge-size']).toBe('md');
+    expect(designAttributes(resolveDesign({ badgeSize: 'sm' }))['data-pf-badge-size']).toBe('sm');
   });
 
   it('honours an explicit false for buttonFullWidth', () => {
@@ -181,6 +191,7 @@ describe('designAttributes', () => {
       'data-pf-bg': 'solid',
       'data-pf-logo-size': 'md',
       'data-pf-logo-pos': 'center',
+      'data-pf-badge-size': 'md',
       'data-pf-align': 'center',
       'data-pf-width': 'narrow',
       'data-pf-transition': 'slide',

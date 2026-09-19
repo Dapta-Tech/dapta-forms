@@ -8,6 +8,7 @@ import { z } from 'zod';
 import {
   CONDITION_OPS,
   FORM_BACKGROUND_STYLES,
+  FORM_BADGE_SIZES,
   FORM_BANNER_SCOPES,
   FORM_BANNER_SIZES,
   FORM_BUTTON_STYLES,
@@ -240,6 +241,10 @@ export const formStepSchema = z.object({
   flowGroup: z.enum(['qualification', 'lead_capture']).optional(),
   corporateEmailOnly: z.boolean().optional(),
   phoneMinDigits: z.number().int().positive().optional(),
+  /** `textarea` step: shortest answer accepted, in characters. Absent = no floor. */
+  minChars: z.number().int().positive().max(10000).optional(),
+  /** `textarea` step: longest answer accepted, in characters. Absent = no ceiling. */
+  maxChars: z.number().int().positive().max(10000).optional(),
   /** `file` step: extensions the owner accepts, lowercase, no dot. Absent = the deployment's own list. */
   allowedTypes: z.array(z.string().min(1).max(12)).max(40).optional(),
   /** `file` step: the owner's size limit in MB, clamped down to UPLOAD_MAX_FILE_MB server-side. */
@@ -293,6 +298,18 @@ export const formStepSchema = z.object({
    * event-type scheduling URL + prefill/display options. See formSchedulerSchema.
    */
   scheduler: formSchedulerSchema.nullable().optional(),
+}).superRefine((stepValue, ctx) => {
+  // A floor above the ceiling describes a question nobody can answer. The
+  // editor already refuses to write the pair; this is the gate for anything
+  // that reaches the API by another road (import, a hand-written PUT).
+  const { minChars, maxChars } = stepValue;
+  if (minChars != null && maxChars != null && minChars > maxChars) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['maxChars'],
+      message: 'maxChars must be greater than or equal to minChars.',
+    });
+  }
 });
 export type FormStepInput = z.infer<typeof formStepSchema>;
 
@@ -379,6 +396,7 @@ export const formBrandingSchema = z.object({
   // Layout.
   logoSize: z.enum(FORM_LOGO_SIZES).optional(),
   logoPosition: z.enum(FORM_LOGO_POSITIONS).optional(),
+  badgeSize: z.enum(FORM_BADGE_SIZES).optional(),
   contentAlign: z.enum(FORM_CONTENT_ALIGNS).optional(),
   contentWidth: z.enum(FORM_CONTENT_WIDTHS).optional(),
   transition: z.enum(FORM_TRANSITIONS).optional(),
@@ -1156,13 +1174,26 @@ export const EMPTY_FORM_CONFIG: FormConfig = { version: 1, steps: [] };
 
 // --- Form CRUD (admin) -------------------------------------------------------
 
+/**
+ * Optimistic lock for the editor's writes: the `updatedAt` the client loaded
+ * or last received. The API answers 409 `STALE` (with the current row) when
+ * the form was written since. Absent = no check, which is what a client built
+ * before this field existed sends.
+ */
+export const expectedUpdatedAtSchema = z.number().int().nonnegative().optional();
+
 export const formInputSchema = z.object({
   name: z.string().min(1).max(200),
   /** Optional; auto-slugified from name (unique per account) when omitted. */
   slug: z.string().min(1).max(80).optional(),
   config: formConfigSchema.optional(),
+  expectedUpdatedAt: expectedUpdatedAtSchema,
 });
 export type FormInput = z.infer<typeof formInputSchema>;
+
+/** Body of POST /v1/forms/:id/publish (all optional; an empty body publishes unguarded). */
+export const publishFormInputSchema = z.object({ expectedUpdatedAt: expectedUpdatedAtSchema });
+export type PublishFormInput = z.infer<typeof publishFormInputSchema>;
 
 // --- Form folders (0021) -------------------------------------------------------
 
@@ -1576,19 +1607,40 @@ export type MemberPatch = z.infer<typeof memberPatchSchema>;
 
 // --- Notification settings (Settings → Notifications) ------------------------
 
+/** Hard ceiling on the notice's recipient list, enforced here and in the editor. */
+export const NOTIFICATION_RECIPIENTS_MAX = 5;
+
+/**
+ * Who the new-submission notice goes to. `null` restores inheritance (a form
+ * falls back to its account, an account falls back to the owner inbox); an
+ * EMPTY array is a deliberate "notify the owner only" and stops inheriting.
+ *
+ * Duplicates are rejected rather than tolerated: one email is enqueued per
+ * address with a per-address idempotency key, so two rows holding the same
+ * mailbox would collide on that key and the managed transport would drop the
+ * second copy with no error and no log.
+ */
+const notificationRecipientsSchema = z
+  .array(z.string().trim().email().max(320))
+  .max(NOTIFICATION_RECIPIENTS_MAX)
+  .refine((list) => new Set(list.map((a) => a.toLowerCase())).size === list.length, {
+    message: 'Each address can only be listed once.',
+  });
+
 /**
  * The write body for a notification email's per-account settings: toggle it on/
- * off and/or override the subject/body. `subject`/`body` are PLAIN TEXT with
- * `{{token}}` markers; passing `null` resets that field to the shipped default,
- * `undefined` (absent) leaves it untouched. The `emailKey` itself is a path
- * param the API validates against the notifications catalog (kept out of this
- * contract so the package boundary stays one-directional). Every field is
- * optional — an empty patch is a harmless no-op.
+ * off, override the subject/body, and set who the notice goes to. `subject`/
+ * `body` are PLAIN TEXT with `{{token}}` markers; passing `null` resets that
+ * field to the shipped default, `undefined` (absent) leaves it untouched. The
+ * `emailKey` itself is a path param the API validates against the notifications
+ * catalog (kept out of this contract so the package boundary stays
+ * one-directional). Every field is optional: an empty patch is a harmless no-op.
  */
 export const notificationSettingPatchSchema = z.object({
   enabled: z.boolean().optional(),
   subject: z.string().max(300).nullable().optional(),
   body: z.string().max(8000).nullable().optional(),
+  recipients: notificationRecipientsSchema.nullable().optional(),
 });
 export type NotificationSettingPatchInput = z.infer<typeof notificationSettingPatchSchema>;
 

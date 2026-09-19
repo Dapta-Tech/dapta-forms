@@ -87,9 +87,24 @@ export interface FormsMessages {
       number: string;
       too_low: string;
       too_high: string;
+      /** Long text under its configured `minChars`. */
+      too_short: string;
+      /** Long text over its configured `maxChars`. */
+      too_long: string;
       option: string;
       file: string;
       submit: string;
+    };
+    /**
+     * The live character counter on a long-text question. Rendered ONLY when
+     * the step configures a minimum or a maximum, so a question with no limits
+     * shows nothing at all.
+     */
+    charCounter: {
+      /** No maximum configured, so only the running count. `{count}`. */
+      characters: string;
+      /** Trailing hint, shown until the floor is met. `{min}` is the floor. */
+      minimum: string;
     };
     /** The phone step's country-code picker (searchable dial-code selector). */
     phonePicker: {
@@ -511,6 +526,19 @@ export interface FormsMessages {
       answersMissing: string;
       /** Muted pointer: forms can override these from their Connect tab. */
       formOverrideNote: string;
+      /** The owner notice's recipient list (owner notice only). */
+      recipientsLabel: string;
+      recipientsHint: string;
+      /** Shown with no addresses listed: the notice falls back to the owner. */
+      recipientsEmpty: string;
+      recipientsAdd: string;
+      /** Accessible name of the per-row remove button. */
+      recipientsRemove: string;
+      recipientsPlaceholder: string;
+      /** Per-row validation, so the editor can point at WHICH address is wrong. */
+      recipientsInvalid: string;
+      /** Per-form card: this form has no list of its own and follows the account. */
+      recipientsFollowingAccount: string;
     };
     login: {
       title: string;
@@ -692,6 +720,14 @@ export interface FormsMessages {
         phoneDefaultCountryAuto: string;
         /** Explains what the minimum-digit floor is for (V5-B5). */
         phoneMinDigitsHelp: string;
+        /** Long text: the shortest answer accepted, in characters (GF-32). */
+        minChars: string;
+        /** Long text: the longest answer accepted, in characters (GF-32). */
+        maxChars: string;
+        /** Section header over the long-text length pair. */
+        charLimits: string;
+        /** What the pair does, and that leaving one empty removes that end. */
+        charLimitsHelp: string;
         sliderMin: string;
         sliderMax: string;
         sliderStep: string;
@@ -1105,6 +1141,8 @@ export interface FormsMessages {
         sizeMd: string;
         sizeLg: string;
         logoPosition: string;
+        badgeSize: string;
+        badgeSizeHint: string;
         alignLeft: string;
         alignCenter: string;
         contentAlign: string;
@@ -1571,6 +1609,8 @@ export interface FormsMessages {
       publishing: string;
       published: string;
       publishError: string;
+      /** The pending autosave failed, so nothing was published. */
+      saveFirst: string;
       unpublishedChanges: string;
       noChanges: string;
     };
@@ -1846,9 +1886,15 @@ export const en: FormsMessages = {
       number: 'Enter a number.',
       too_low: 'Value is too low.',
       too_high: 'Value is too high.',
+      too_short: 'Your answer is too short.',
+      too_long: 'Your answer is too long.',
       option: 'Choose one of the available options.',
       file: 'Upload a file to continue.',
       submit: 'Could not submit. Please try again.',
+    },
+    charCounter: {
+      characters: '{count} characters',
+      minimum: '{min} minimum',
     },
     phonePicker: {
       countryLabel: 'Select country code',
@@ -2193,6 +2239,15 @@ export const en: FormsMessages = {
       answersMissing:
         'This email does not include {{answers}}, so the answers will not be in it. Insert the Answers variable to add them.',
       formOverrideNote: 'Each form can override these emails from its Connect tab in the editor.',
+      recipientsLabel: 'Send to',
+      recipientsHint:
+        'Each address receives its own copy of this email. Up to five addresses.',
+      recipientsEmpty: 'No addresses yet, so this email goes to the workspace owner.',
+      recipientsAdd: 'Add address',
+      recipientsRemove: 'Remove address',
+      recipientsPlaceholder: 'name@example.com',
+      recipientsInvalid: 'Enter a valid email address.',
+      recipientsFollowingAccount: 'Following the account list. Editing it here sets one for this form only.',
     },
     login: {
       title: 'Sign in',
@@ -2383,6 +2438,11 @@ export const en: FormsMessages = {
         phoneMinDigits: 'Minimum digits',
         phoneMinDigitsHelp:
           'The shortest number accepted, not counting the country code. Phone lengths vary by country, so this is the floor that catches an obviously incomplete number.',
+        charLimits: 'Answer length',
+        charLimitsHelp:
+          'Respondents see a live counter and cannot continue until the minimum is met. Leave a box empty to drop that end.',
+        minChars: 'Minimum characters',
+        maxChars: 'Maximum characters',
         phoneDefaultCountry: 'Default country',
         phoneDefaultCountryAuto: 'Automatic (based on visitor language)',
         sliderMin: 'Min',
@@ -2737,6 +2797,8 @@ export const en: FormsMessages = {
         sizeMd: 'Medium',
         sizeLg: 'Large',
         logoPosition: 'Logo position',
+        badgeSize: 'Attribution badge',
+        badgeSizeHint: 'The "Made with" pill under the form.',
         alignLeft: 'Left',
         alignCenter: 'Center',
         contentAlign: 'Question alignment',
@@ -2771,9 +2833,11 @@ export const en: FormsMessages = {
         trackingDraftNote:
           'These IDs are staged with the rest of your draft: click Publish to put them on the live form. Integrations above save to the live form immediately.',
         gtmLabel: 'Google Tag Manager ID',
-        gtmHelp: 'Loads your GTM container on the form page so your tags fire.',
+        gtmHelp:
+          'Loads your GTM container so your tags fire, and pushes a form_lead event when someone completes the form.',
         metaLabel: 'Meta Pixel ID',
-        metaHelp: 'Fires a PageView on your Meta pixel to measure campaigns.',
+        metaHelp:
+          'Fires a PageView when the form loads, and a Lead when someone completes it.',
         posthogKeyLabel: 'PostHog project key',
         posthogKeyHelp: 'Captures a pageview in PostHog for product analytics.',
         posthogHostLabel: 'PostHog host (optional)',
@@ -3159,6 +3223,7 @@ export const en: FormsMessages = {
       publishing: 'Publishing…',
       published: 'Changes published. Your form is live.',
       publishError: 'Could not publish. Please try again.',
+      saveFirst: 'Your latest changes could not be saved, so nothing was published. Try again once they save.',
       unpublishedChanges: 'Unpublished changes',
       noChanges: 'All changes are published',
     },
@@ -3426,9 +3491,15 @@ export const es: FormsMessages = {
       number: 'Introduce un número.',
       too_low: 'El valor es muy bajo.',
       too_high: 'El valor es muy alto.',
+      too_short: 'Tu respuesta es muy corta.',
+      too_long: 'Tu respuesta es muy larga.',
       option: 'Elige una de las opciones disponibles.',
       file: 'Sube un archivo para continuar.',
       submit: 'No se pudo enviar. Inténtalo de nuevo.',
+    },
+    charCounter: {
+      characters: '{count} caracteres',
+      minimum: 'mínimo {min}',
     },
     phonePicker: {
       countryLabel: 'Selecciona el código de país',
@@ -3775,6 +3846,16 @@ export const es: FormsMessages = {
         'Este correo no incluye {{answers}}, así que las respuestas no aparecerán en él. Inserta la variable Respuestas para agregarlas.',
       formOverrideNote:
         'Cada formulario puede personalizar estos correos desde su pestaña Conectar en el editor.',
+      recipientsLabel: 'Enviar a',
+      recipientsHint:
+        'Cada dirección recibe su propia copia de este correo. Hasta cinco direcciones.',
+      recipientsEmpty: 'Sin direcciones, así que este correo llega al propietario del workspace.',
+      recipientsAdd: 'Añadir dirección',
+      recipientsRemove: 'Quitar dirección',
+      recipientsPlaceholder: 'nombre@example.com',
+      recipientsInvalid: 'Escribe una dirección de correo válida.',
+      recipientsFollowingAccount:
+        'Siguiendo la lista de la cuenta. Si la editas aquí, defines una solo para este formulario.',
     },
     login: {
       title: 'Iniciar sesión',
@@ -3965,6 +4046,11 @@ export const es: FormsMessages = {
         phoneMinDigits: 'Dígitos mínimos',
         phoneMinDigitsHelp:
           'El número más corto que se acepta, sin contar el código de país. La longitud varía según el país, así que este es el piso que atrapa un número claramente incompleto.',
+        charLimits: 'Longitud de la respuesta',
+        charLimitsHelp:
+          'Quien responde ve un contador en vivo y no puede continuar hasta llegar al mínimo. Deja una casilla vacía para quitar ese extremo.',
+        minChars: 'Caracteres mínimos',
+        maxChars: 'Caracteres máximos',
         phoneDefaultCountry: 'País predeterminado',
         phoneDefaultCountryAuto: 'Automático (según el idioma del visitante)',
         sliderMin: 'Mín',
@@ -4320,6 +4406,8 @@ export const es: FormsMessages = {
         sizeMd: 'Mediano',
         sizeLg: 'Grande',
         logoPosition: 'Posición del logo',
+        badgeSize: 'Insignia de atribución',
+        badgeSizeHint: 'La píldora «Hecho con» que aparece debajo del formulario.',
         alignLeft: 'Izquierda',
         alignCenter: 'Centro',
         contentAlign: 'Alineación de la pregunta',
@@ -4354,9 +4442,11 @@ export const es: FormsMessages = {
         trackingDraftNote:
           'Estos IDs se guardan con el resto de tu borrador: haz clic en Publicar para ponerlos en el formulario público. Las integraciones de arriba se guardan en vivo de inmediato.',
         gtmLabel: 'ID de Google Tag Manager',
-        gtmHelp: 'Carga tu contenedor de GTM en la página del formulario para que se disparen tus etiquetas.',
+        gtmHelp:
+          'Carga tu contenedor de GTM para que se disparen tus etiquetas, y empuja un evento form_lead cuando alguien completa el formulario.',
         metaLabel: 'ID del píxel de Meta',
-        metaHelp: 'Dispara un PageView en tu píxel de Meta para medir campañas.',
+        metaHelp:
+          'Dispara un PageView al cargar el formulario y un Lead cuando alguien lo completa.',
         posthogKeyLabel: 'Clave del proyecto de PostHog',
         posthogKeyHelp: 'Captura una pageview en PostHog para analítica de producto.',
         posthogHostLabel: 'Host de PostHog (opcional)',
@@ -4748,6 +4838,7 @@ export const es: FormsMessages = {
       publishing: 'Publicando…',
       published: 'Cambios publicados: tu formulario está en línea.',
       publishError: 'No se pudo publicar. Inténtalo de nuevo.',
+      saveFirst: 'Tus últimos cambios no se pudieron guardar, así que no se publicó nada. Inténtalo cuando se guarden.',
       unpublishedChanges: 'Cambios sin publicar',
       noChanges: 'Todos los cambios están publicados',
     },

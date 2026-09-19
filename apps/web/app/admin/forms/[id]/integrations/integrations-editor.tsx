@@ -582,8 +582,14 @@ export function IntegrationsEditor({
     debounceMs: AUTOSAVE_MS,
   });
   const { markDirty } = autosave;
+  // This screen sends no lock stamp, so `conflict` cannot happen here; the
+  // union still has to be closed, and an error is the honest rendering of it.
   const status: 'saved' | 'saving' | 'retrying' | 'error' | 'partial' =
-    autosave.status === 'saved' && partialBlocked ? 'partial' : autosave.status;
+    autosave.status === 'saved' && partialBlocked
+      ? 'partial'
+      : autosave.status === 'conflict'
+        ? 'error'
+        : autosave.status;
   const statusDetail =
     autosave.status === 'error' || autosave.status === 'retrying'
       ? autosave.detail

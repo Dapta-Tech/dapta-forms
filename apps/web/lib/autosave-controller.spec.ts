@@ -184,6 +184,98 @@ describe('AutosaveController', () => {
     expect(h.statuses).toEqual([]);
   });
 
+  describe('flush() resolves once the pending edits settle (Publish waits on it)', () => {
+    it('resolves ok at once when clean', async () => {
+      const h = harness();
+      await expect(h.controller.flush()).resolves.toEqual({ ok: true });
+    });
+
+    it('resolves ok after the debounced save lands, with onSaved already fired', async () => {
+      const h = harness();
+      h.controller.markDirty();
+      let result: unknown;
+      let savedWhenResolved = -1;
+      void h.controller.flush().then((r) => {
+        result = r;
+        savedWhenResolved = h.savedCount();
+      });
+      await settle();
+      expect(result).toEqual({ ok: true });
+      expect(savedWhenResolved).toBe(1); // the badge count is current by then
+      expect(h.saves).toEqual(['v1']);
+    });
+
+    it('waits for the save in flight AND for edits made meanwhile', async () => {
+      const h = harness({
+        save: async (s) => {
+          h.saves.push(s);
+          await new Promise((r) => setTimeout(r, 50));
+          return { ok: true };
+        },
+      });
+      h.controller.markDirty();
+      await vi.advanceTimersByTimeAsync(100); // v1 save in flight
+      h.state.snapshot = 'v2';
+      h.controller.markDirty();
+      let result: unknown;
+      void h.controller.flush().then((r) => (result = r));
+      await vi.advanceTimersByTimeAsync(40);
+      expect(result).toBeUndefined(); // v1 still in flight
+      await vi.advanceTimersByTimeAsync(20);
+      expect(result).toBeUndefined(); // v1 landed, v2 now in flight
+      await vi.advanceTimersByTimeAsync(60);
+      expect(result).toEqual({ ok: true });
+      expect(h.saves).toEqual(['v1', 'v2']); // the server holds the latest
+    });
+
+    it('resolves with the failure on transport, while the background retry still runs', async () => {
+      let calls = 0;
+      const h = harness({
+        save: async () => {
+          calls++;
+          return calls === 1 ? { ok: false, transport: true, message: 'timed out' } : { ok: true };
+        },
+      });
+      h.controller.markDirty();
+      const result = h.controller.flush();
+      await settle();
+      await expect(result).resolves.toEqual({ ok: false, kind: 'transport', message: 'timed out' });
+      expect(h.controller.dirty).toBe(true);
+      await vi.advanceTimersByTimeAsync(1000); // first backoff
+      expect(calls).toBe(2);
+      expect(h.lastStatus()).toBe('saved');
+    });
+
+    it('resolves with conflict and does not retry', async () => {
+      const h = harness({ save: async () => ({ ok: false, conflict: true, message: 'saved elsewhere' }) });
+      h.controller.markDirty();
+      const result = h.controller.flush();
+      await settle();
+      await expect(result).resolves.toEqual({ ok: false, kind: 'conflict', message: 'saved elsewhere' });
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(h.lastStatus()).toBe('conflict');
+    });
+
+    it('resolves with invalid when the snapshot fails validation', async () => {
+      const h = harness({ validate: () => ({ ok: false, reason: 'steps.0: bad' }) });
+      h.controller.markDirty();
+      await expect(h.controller.flush()).resolves.toEqual({ ok: false, kind: 'invalid', message: 'steps.0: bad' });
+    });
+
+    it('a flush pending at dispose resolves as a failure instead of hanging', async () => {
+      const h = harness({
+        save: async () => {
+          await new Promise((r) => setTimeout(r, 50));
+          return { ok: true };
+        },
+      });
+      h.controller.markDirty();
+      const result = h.controller.flush();
+      h.controller.dispose();
+      await expect(result).resolves.toMatchObject({ ok: false, kind: 'transport' });
+    });
+  });
+
   it('dispose stops the retry loop after one terminal attempt', async () => {
     let attempts = 0;
     const h = harness({
@@ -324,5 +416,46 @@ describe('callAction', () => {
     expect(isTransportError(res)).toBe(true);
     if (isTransportError(res)) expect(res.message).toContain('timed out');
     vi.useRealTimers();
+  });
+
+  it('a conflict stops the loop: status conflict, no retry, edits stay dirty', async () => {
+    let attempts = 0;
+    const h = harness({
+      save: async () => {
+        attempts++;
+        return { ok: false, conflict: true, message: 'saved elsewhere' };
+      },
+    });
+    h.controller.markDirty();
+    await vi.advanceTimersByTimeAsync(100);
+    expect(attempts).toBe(1);
+    expect(h.lastStatus()).toBe('conflict');
+    expect(h.failures).toEqual([{ message: 'saved elsewhere', kind: 'conflict' }]);
+    expect(h.controller.dirty).toBe(true);
+
+    // No backoff retry ever fires on its own.
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(attempts).toBe(1);
+    expect(h.lastStatus()).toBe('conflict');
+  });
+
+  it('after a conflict, the next edit tries again (the person may have taken the newer stamp)', async () => {
+    let conflictOnce = true;
+    const h = harness({
+      save: async () => {
+        if (conflictOnce) {
+          conflictOnce = false;
+          return { ok: false, conflict: true };
+        }
+        return { ok: true };
+      },
+    });
+    h.controller.markDirty();
+    await vi.advanceTimersByTimeAsync(100);
+    expect(h.lastStatus()).toBe('conflict');
+    h.controller.markDirty();
+    await vi.advanceTimersByTimeAsync(100);
+    expect(h.lastStatus()).toBe('saved');
+    expect(h.controller.dirty).toBe(false);
   });
 });

@@ -15,7 +15,8 @@ import {
 } from '@quill/engine';
 import type { FormTracking } from '@quill/types';
 import { formConfigSchema } from '@quill/types';
-import { optionLocksAction, saveFormAction } from '@/app/admin/actions';
+import { optionLocksAction, saveFormAction, type SaveFormResult, type StaleConflict } from '@/app/admin/actions';
+import { sameSavedContent, type SavedContent } from '@/lib/stale-save';
 import { useToast } from '@/components/toast';
 import { callAction, isTransportError } from '@/lib/call-action';
 import { useAutosave } from '@/lib/use-autosave';
@@ -233,6 +234,9 @@ export function FormEditor({
   const [previewOpen, setPreviewOpen] = useState(false);
   const [focusCanvas, setFocusCanvas] = useState(0);
   const [saveCount, setSaveCount] = useState(0);
+  // Same count, readable synchronously by Publish right after it awaits the
+  // flush (the state value it rendered with is one save behind by then).
+  const saveCountRef = useRef(0);
   // Freshest name/config for save/flush/backup paths (no stale closures).
   const latest = useRef<EditorSnapshot>({ name, config });
   const toast = useToast();
@@ -242,6 +246,71 @@ export function FormEditor({
   useEffect(() => {
     latest.current = { name, config };
   }, [name, config]);
+
+  // --- Optimistic lock ---------------------------------------------------------
+  // The row's `updated_at` as this editor last saw it: loaded with the page,
+  // then taken from every write that landed. Every save and the publish carry
+  // it, and the server refuses a write whose stamp is behind (409 STALE). Two
+  // editors on one form used to be last-writer-wins with no warning.
+  const stampRef = useRef<number | undefined>(updatedAt);
+  // What this editor last got the server to hold, to tell a moved stamp
+  // (own slug rename, CRM mapping save) from someone else's content edit.
+  // Always the server's OWN canonical copy (the row as loaded, then each
+  // write's response), never the bytes this editor sent: the API parses what
+  // it stores, and a comparison against our pre-parse snapshot would read its
+  // added defaults as someone else's edit.
+  const lastSavedRef = useRef<SavedContent>({ name: initialName, config: initialConfig });
+  /** A refused save whose server content differs from ours: the person decides. */
+  const [conflict, setConflict] = useState<{ updatedAt: number | null } | null>(null);
+
+  /**
+   * One guarded write, with the one resolution that needs no human: a 409
+   * whose server content is exactly what we last saved means only the stamp
+   * moved, so adopt it and go again. Anything else comes back as a conflict
+   * for the autosave controller (status, no retry) and the banner.
+   */
+  async function guardedSave(body: { name: string; config: FormConfig }): Promise<SaveFormResult> {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const res = await callAction(() => saveFormAction(id, body, stampRef.current));
+      if (isTransportError(res)) return res;
+      if (res.ok) {
+        stampRef.current = res.updatedAt;
+        lastSavedRef.current = res.saved;
+        setConflict(null);
+        return res;
+      }
+      if (!('conflict' in res)) return res;
+      if (attempt === 0 && sameSavedContent(res.current, lastSavedRef.current) && res.updatedAt != null) {
+        stampRef.current = res.updatedAt;
+        continue;
+      }
+      setConflict({ updatedAt: res.updatedAt });
+      return res;
+    }
+    // Unreachable: the loop returns on every path; TypeScript wants a tail.
+    return { ok: false, message: 'save failed' };
+  }
+  /** Same resolution for the publish button, which runs its own action. */
+  function resolveStale(res: StaleConflict): 'retry' | 'stop' {
+    if (sameSavedContent(res.current, lastSavedRef.current) && res.updatedAt != null) {
+      stampRef.current = res.updatedAt;
+      return 'retry';
+    }
+    setConflict({ updatedAt: res.updatedAt });
+    return 'stop';
+  }
+  /** "See saved version": the backup already holds this tab's edits (written
+   *  before every save), so a reload offers them back over the newer row. */
+  function reloadForConflict() {
+    writeDraftBackup(id, latest.current.name, latest.current.config);
+    window.location.reload();
+  }
+  /** "Keep mine": take the newer stamp and let the next save overwrite. */
+  function overwriteConflict() {
+    if (conflict?.updatedAt != null) stampRef.current = conflict.updatedAt;
+    setConflict(null);
+    autosave.markDirty();
+  }
 
   // --- Autosave (each successful save stores an unpublished draft) -----------
   // The debounce/serialize/retry machinery lives in `useAutosave` (shared with
@@ -262,8 +331,7 @@ export function FormEditor({
         reason: `${field}: ${issue?.message ?? 'invalid value'}`,
       };
     }, []),
-    save: (s) =>
-      callAction(() => saveFormAction(id, { name: s.name, config: normalizeConfig(s.config) })),
+    save: (s) => guardedSave({ name: s.name, config: normalizeConfig(s.config) }),
     beacon: (s) => {
       try {
         void fetch(`/admin/forms/${id}/flush`, {
@@ -273,6 +341,7 @@ export function FormEditor({
             kind: 'config',
             name: s.name,
             config: normalizeConfig(s.config),
+            expectedUpdatedAt: stampRef.current,
           }),
           keepalive: true,
         });
@@ -284,13 +353,19 @@ export function FormEditor({
       write: (s) => writeDraftBackup(id, s.name, s.config),
       clear: () => clearDraftBackup(id),
     },
-    onFailure: (message, transport) => {
+    onFailure: (message, kind) => {
       console.error('[forms] autosave failed:', message);
+      // A conflict has its own banner with the two ways out; a toast on top
+      // of it would only say the same thing louder.
+      if (kind === 'conflict') return;
       toastRef.current.error(
-        transport ? m.saveOffline : tb(m.saveErrorReason, { reason: message }),
+        kind === 'transport' ? m.saveOffline : tb(m.saveErrorReason, { reason: message }),
       );
     },
-    onSaved: () => setSaveCount((n) => n + 1),
+    onSaved: () => {
+      saveCountRef.current += 1;
+      setSaveCount(saveCountRef.current);
+    },
     // `migrateRevealToStep` returns the SAME object when there was nothing
     // legacy to fold in, so an identity check is an exact "did we migrate?" —
     // start dirty in that case and the first autosave persists the new shape.
@@ -647,11 +722,13 @@ export function FormEditor({
         ? bm.shell.retrying
         : status === 'error'
           ? bm.shell.saveError
-          : hasQuestions
-            ? bm.shell.saved
-            : bm.shell.draft;
+          : status === 'conflict'
+            ? bm.shell.conflict
+            : hasQuestions
+              ? bm.shell.saved
+              : bm.shell.draft;
   const statusDot =
-    status === 'error'
+    status === 'error' || status === 'conflict'
       ? 'bg-destructive'
       : status === 'saving' || status === 'retrying'
         ? 'bg-muted-foreground'
@@ -770,6 +847,14 @@ export function FormEditor({
             initialHasDraft={initialHasDraft}
             saveCount={saveCount}
             locale={locale}
+            flush={autosave.flush}
+            getSaveCount={() => saveCountRef.current}
+            getStamp={() => stampRef.current}
+            onPublished={(stamp, saved) => {
+              stampRef.current = stamp;
+              lastSavedRef.current = saved;
+            }}
+            onStale={resolveStale}
           />
         </div>
       </header>
@@ -804,6 +889,38 @@ export function FormEditor({
               className="inline-flex h-8 items-center rounded-md border border-border px-3 text-xs font-medium text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               {bm.shell.recoveryDiscard}
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {/* Save conflict: the server holds a newer version written elsewhere and
+          refused ours. Fixed, not a toast: nothing saves until the person picks. */}
+      {conflict ? (
+        <div
+          data-testid="save-conflict-banner"
+          role="alert"
+          className="flex flex-wrap items-center gap-3 border-b border-destructive/40 bg-destructive/10 px-3 py-2 text-sm sm:px-4"
+        >
+          <i aria-hidden className="pi pi-exclamation-triangle shrink-0 text-destructive" style={{ fontSize: 14 }} />
+          <p className="min-w-0 flex-1">
+            <span className="font-medium">{bm.shell.conflictTitle}</span>{' '}
+            <span className="text-muted-foreground">{bm.shell.conflictBody}</span>
+          </p>
+          <div className="flex shrink-0 items-center gap-2">
+            <button
+              type="button"
+              onClick={reloadForConflict}
+              className="inline-flex h-8 items-center rounded-md bg-primary px-3 text-xs font-semibold text-primary-foreground hover:brightness-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              {bm.shell.conflictReload}
+            </button>
+            <button
+              type="button"
+              onClick={overwriteConflict}
+              className="inline-flex h-8 items-center rounded-md border border-border px-3 text-xs font-medium text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              {bm.shell.conflictOverwrite}
             </button>
           </div>
         </div>

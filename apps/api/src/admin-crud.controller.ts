@@ -65,6 +65,7 @@ import {
   attributionEventProps,
   attributionSchema,
   formInputSchema,
+  publishFormInputSchema,
   formSlugInputSchema,
   hasExtraHubspotDestination,
   maskConfigSecrets,
@@ -112,6 +113,30 @@ function unwrapCrud<T>(r: CrudResult<T>): T {
   if (r.ok) return r.value;
   if (r.reason === 'NOT_FOUND') throw new NotFoundException({ error: 'NOT_FOUND', message: 'Not found.' });
   throw new ConflictException({ error: r.reason, message: r.message ?? 'Conflict.' });
+}
+
+/**
+ * `unwrapCrud` for the editor's guarded writes: a STALE refusal carries the
+ * row as it is NOW, so the client can tell "someone else changed the content"
+ * from "only the stamp moved" (its own slug rename, a CRM mapping save) in one
+ * round trip, and adopt the stamp or show the conflict accordingly.
+ */
+async function unwrapGuarded<T>(
+  db: Db,
+  accountId: string,
+  id: string,
+  r: CrudResult<T>,
+): Promise<T> {
+  if (!r.ok && r.reason === 'STALE') {
+    const current = await getFormById(db, accountId, id);
+    throw new ConflictException({
+      error: 'STALE',
+      message: r.message ?? 'This form was saved elsewhere since you loaded it.',
+      updatedAt: current?.updatedAt ?? null,
+      current: current ? maskForm(current) : null,
+    });
+  }
+  return unwrapCrud(r);
 }
 
 /**
@@ -574,15 +599,32 @@ export class AdminCrudController {
   @Put('forms/:id')
   async updateForm(@Req() req: ReqLike, @Param('id') id: string, @Body() body: unknown) {
     const p = await this.auth.resolveHost(req);
-    const { config, slug, ...meta } = parse(formInputSchema.partial(), body);
+    const { config, slug, expectedUpdatedAt, ...meta } = parse(formInputSchema.partial(), body);
     if (slug !== undefined) {
       unwrapCrud(await setFormSlug(this.db, p.accountId, id, slugify(slug)));
     }
     // Returns the row even with nothing to patch, so it stays the single read
-    // that answers NOT_FOUND for this route.
-    let updated = unwrapCrud(await updateForm(this.db, p.accountId, id, meta));
+    // that answers NOT_FOUND for this route. Guarded by the client's stamp. A
+    // metadata write that LANDS moves the stamp, so the draft write on the same
+    // request checks against the one it just produced; a request with no
+    // metadata wrote nothing, and the draft still checks the client's own
+    // stamp (reading it off the row here would wave every stale draft through).
+    let updated = await unwrapGuarded(
+      this.db,
+      p.accountId,
+      id,
+      await updateForm(this.db, p.accountId, id, meta, expectedUpdatedAt),
+    );
     if (config !== undefined) {
-      updated = unwrapCrud(await saveDraftConfig(this.db, p.accountId, id, config));
+      const metaWrote = meta.name !== undefined;
+      const stamp =
+        expectedUpdatedAt === undefined ? undefined : metaWrote ? updated.updatedAt : expectedUpdatedAt;
+      updated = await unwrapGuarded(
+        this.db,
+        p.accountId,
+        id,
+        await saveDraftConfig(this.db, p.accountId, id, config, stamp),
+      );
     }
     return maskForm(updated);
   }
@@ -631,8 +673,9 @@ export class AdminCrudController {
    * PUT /v1/forms/:id — any resolved host member, scoped to their account.
    */
   @Post('forms/:id/publish')
-  async publishForm(@Req() req: ReqLike, @Param('id') id: string) {
+  async publishForm(@Req() req: ReqLike, @Param('id') id: string, @Body() body?: unknown) {
     const p = await this.auth.resolveHost(req);
+    const { expectedUpdatedAt } = parse(publishFormInputSchema, body ?? {});
     // Read the PRIOR state before publishing: `published_at` is about to be
     // stamped, so after the call every publish looks like the first one.
     // Republishing an existing form is not a new conversion, and counting it as
@@ -641,8 +684,8 @@ export class AdminCrudController {
     const before = this.productAnalytics?.enabled
       ? await getFormById(this.db, p.accountId, id)
       : null;
-    const result = await publishForm(this.db, p.accountId, id);
-    const published = unwrapCrud(result);
+    const result = await publishForm(this.db, p.accountId, id, expectedUpdatedAt);
+    const published = await unwrapGuarded(this.db, p.accountId, id, result);
     // `result.published` comes from the UPDATE's own RETURNING, so it is true
     // exactly on the call that copied the draft over. Reading the row BEFORE and
     // deciding here would be a read-then-act: two concurrent publishes both saw
@@ -931,7 +974,7 @@ export class AdminCrudController {
     const p = await this.auth.resolveHost(req);
     assertAdmin(p);
     const key = this.parseEmailKey(emailKey);
-    const patch = parse(notificationSettingPatchSchema, body);
+    const patch = this.parseNotificationPatch(key, body);
     const updated = await upsertNotificationSetting(this.db, p.accountId, key, patch);
     return this.notificationView(key, updated);
   }
@@ -976,7 +1019,7 @@ export class AdminCrudController {
     assertAdmin(p);
     await this.assertOwnForm(p.accountId, id);
     const key = this.parseEmailKey(emailKey);
-    const patch = parse(notificationSettingPatchSchema, body);
+    const patch = this.parseNotificationPatch(key, body);
     await upsertNotificationSetting(this.db, p.accountId, key, patch, Date.now(), id);
     return (await this.formNotificationViews(p.accountId, id)).find((v) => v.emailKey === key)!;
   }
@@ -1017,10 +1060,25 @@ export class AdminCrudController {
       return {
         emailKey,
         /** The account layer this form inherits when it has no override. */
-        account: { enabled: a.enabled, subject: a.subject, body: a.body },
-        /** The form's pinned copy; null = using the account template. */
+        account: {
+          enabled: a.enabled,
+          subject: a.subject,
+          body: a.body,
+          recipients: a.recipients,
+        },
+        /**
+         * The form's pinned copy; null = using the account template. A stored
+         * `recipients` of null means this form still follows the account list
+         * even though the row exists for some other pinned field.
+         */
         override: o
-          ? { enabled: o.enabled, subject: o.subject, body: o.body, updatedAt: o.updatedAt }
+          ? {
+              enabled: o.enabled,
+              subject: o.subject,
+              body: o.body,
+              recipients: o.recipients,
+              updatedAt: o.updatedAt,
+            }
           : null,
         tokens: [...NOTIFICATION_TOKENS],
         defaults: {
@@ -1029,6 +1087,24 @@ export class AdminCrudController {
         },
       };
     });
+  }
+
+  /**
+   * The shared write body for both scopes, plus the one rule the contract
+   * cannot express: `recipients` belongs to the OWNER NOTICE only. The receipt
+   * addresses the respondent who submitted the form, so a list stored against
+   * it would never be read. Saying so with a 400 beats accepting a write that
+   * echoes back happily and then does nothing.
+   */
+  private parseNotificationPatch(key: SubmissionEmailKey, body: unknown) {
+    const patch = parse(notificationSettingPatchSchema, body);
+    if (key === 'submission_confirmed' && patch.recipients !== undefined) {
+      throw new BadRequestException({
+        error: 'BAD_REQUEST',
+        message: 'This email is addressed to the respondent and takes no recipient list.',
+      });
+    }
+    return patch;
   }
 
   /** 400 unless the path key is one of the two customizable emails. */
@@ -1048,6 +1124,8 @@ export class AdminCrudController {
       enabled: s.enabled,
       subject: s.subject,
       body: s.body,
+      /** null = nothing stored (the owner inbox); [] = "the owner only". */
+      recipients: s.recipients,
       updatedAt: s.updatedAt,
       tokens: [...NOTIFICATION_TOKENS],
       defaults: {

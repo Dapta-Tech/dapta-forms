@@ -25,6 +25,8 @@ export class ApiError extends Error {
     readonly status: number,
     message: string,
     readonly code?: string,
+    /** The parsed error body, for refusals that carry more than a code (409 STALE carries the current row). */
+    readonly body?: Record<string, unknown>,
   ) {
     super(message);
     this.name = 'ApiError';
@@ -92,8 +94,8 @@ async function req<T>(method: string, path: string, body?: unknown, opts: ReqOpt
     if (j.error === 'WORKSPACE_FORBIDDEN') redirect('/api/workspace/reset');
   }
   if (!res.ok) {
-    const j = (await res.json().catch(() => ({}))) as { message?: string; error?: string };
-    throw new ApiError(res.status, j.message ?? j.error ?? `${method} ${path} → ${res.status}`, j.error);
+    const j = (await res.json().catch(() => ({}))) as { message?: string; error?: string } & Record<string, unknown>;
+    throw new ApiError(res.status, j.message ?? j.error ?? `${method} ${path} → ${res.status}`, j.error, j);
   }
   if (res.status === 204) return undefined as T;
   return (await res.json().catch(() => ({}))) as T;
@@ -532,6 +534,12 @@ export interface NotificationSettingView {
   /** Custom override; null = using the shipped default template. */
   subject: string | null;
   body: string | null;
+  /**
+   * The owner notice's audience. null = nothing stored (it goes to the account
+   * owner); [] = stored as "the owner only". Always null on the receipt, which
+   * is addressed to the respondent.
+   */
+  recipients: string[] | null;
   updatedAt: number | null;
   tokens: string[];
   defaults: { en: NotificationDefault; es: NotificationDefault };
@@ -546,6 +554,12 @@ export interface NotificationPatch {
   enabled?: boolean;
   subject?: string | null;
   body?: string | null;
+  /**
+   * Up to five distinct, valid addresses, each of which gets its own copy.
+   * null restores inheritance (account list, then the owner inbox); [] pins
+   * "the owner only". Rejected on `submission_confirmed`.
+   */
+  recipients?: string[] | null;
 }
 
 /** One email's stored values at one layer (account baseline or form override). */
@@ -553,6 +567,8 @@ export interface NotificationLayer {
   enabled: boolean;
   subject: string | null;
   body: string | null;
+  /** null = this layer stores no list (inherit); [] = "the owner only". */
+  recipients: string[] | null;
 }
 
 /**
@@ -608,7 +624,7 @@ export const adminApi = {
     ),
   createForm: (b: { name: string; slug?: string; config?: unknown; folderId?: string | null }) =>
     req<FormDetail>('POST', '/v1/forms', b),
-  updateForm: (id: string, b: { name?: string; config?: unknown }) =>
+  updateForm: (id: string, b: { name?: string; config?: unknown; expectedUpdatedAt?: number }) =>
     req<FormDetail>('PUT', `/v1/forms/${id}`, b),
   /**
    * Rename the form's public URL. Its own endpoint, not a field on `updateForm`:
@@ -620,7 +636,8 @@ export const adminApi = {
     req<FormDetail>('PUT', `/v1/forms/${id}/slug`, { slug }),
   duplicateForm: (id: string) => req<FormDetail>('POST', `/v1/forms/${id}/duplicate`),
   /** Publish the pending draft config (no-op when no draft is pending). */
-  publishForm: (id: string) => req<FormDetail>('POST', `/v1/forms/${id}/publish`),
+  publishForm: (id: string, b?: { expectedUpdatedAt?: number }) =>
+    req<FormDetail>('POST', `/v1/forms/${id}/publish`, b?.expectedUpdatedAt === undefined ? undefined : b),
   deleteForm: (id: string) => req<void>('DELETE', `/v1/forms/${id}`),
 
   // Form folders

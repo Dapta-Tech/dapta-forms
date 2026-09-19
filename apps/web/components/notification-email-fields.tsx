@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useRef } from 'react';
+import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { interpolate, NOTIFICATION_SAMPLE as SAMPLE } from '@/lib/notification-preview';
@@ -17,6 +18,12 @@ export interface NotificationEmailValue {
   enabled: boolean;
   subject: string;
   body: string;
+  /**
+   * Who the email goes to. Only the owner notice has one (the receipt is
+   * addressed to the respondent), so it is absent on the surfaces that do not
+   * pass the `recipients` prop below.
+   */
+  recipients?: string[];
 }
 
 /** Field-level copy (a subset of the `admin.notifications` catalog). */
@@ -31,6 +38,23 @@ export interface NotificationFieldsLabels {
   previewSubject: string;
   /** Human label per {{token}} chip. */
   tokenLabels: Record<string, string>;
+  /** Recipient-list copy; required only when the `recipients` prop is passed. */
+  recipientsLabel?: string;
+  recipientsHint?: string;
+  recipientsEmpty?: string;
+  recipientsAdd?: string;
+  recipientsRemove?: string;
+  recipientsPlaceholder?: string;
+  recipientsInvalid?: string;
+}
+
+/**
+ * Good enough to tell a typo from an address, deliberately not a parser. The
+ * API runs the real check (`notificationSettingPatchSchema`); this exists so
+ * the editor can point at WHICH row is wrong before a save round-trip.
+ */
+export function looksLikeEmail(value: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
 }
 
 export function NotificationEmailFields({
@@ -40,6 +64,7 @@ export function NotificationEmailFields({
   labels,
   testIdPrefix,
   notice,
+  recipients,
 }: {
   value: NotificationEmailValue;
   onChange: (next: NotificationEmailValue) => void;
@@ -52,6 +77,12 @@ export function NotificationEmailFields({
    * notice lacks `{{answers}}`), shown above the token chips. Null hides it.
    */
   notice?: string | null;
+  /**
+   * Renders the recipient-list editor. Omitted entirely on an email that
+   * addresses itself (the respondent receipt), which has no list to edit.
+   * `note` says which layer the current list comes from.
+   */
+  recipients?: { max: number; note?: string | null };
 }) {
   const subjectRef = useRef<HTMLInputElement>(null);
   const bodyRef = useRef<HTMLTextAreaElement>(null);
@@ -84,6 +115,18 @@ export function NotificationEmailFields({
     }
   }
 
+  const recipientList = value.recipients ?? [];
+  /** Update/remove/add BY INDEX, so two identical drafts stay independently editable. */
+  function updateRecipient(index: number, address: string) {
+    onChange({ ...value, recipients: recipientList.map((r, i) => (i === index ? address : r)) });
+  }
+  function removeRecipient(index: number) {
+    onChange({ ...value, recipients: recipientList.filter((_, i) => i !== index) });
+  }
+  function addRecipient() {
+    onChange({ ...value, recipients: [...recipientList, ''] });
+  }
+
   return (
     <>
       {/* Enable toggle */}
@@ -98,6 +141,90 @@ export function NotificationEmailFields({
           <p className="text-xs text-muted-foreground">{labels.enabledHint}</p>
         </div>
       </div>
+
+      {/* Recipients (owner notice only) */}
+      {recipients ? (
+        <div className="mt-4" data-testid={testIdPrefix ? `${testIdPrefix}-recipients` : undefined}>
+          <span className="text-sm font-medium">{labels.recipientsLabel}</span>
+          <p className="mt-0.5 text-xs text-muted-foreground">{labels.recipientsHint}</p>
+          {recipients.note ? (
+            <p className="mt-1 text-xs text-muted-foreground">
+              <i aria-hidden className="pi pi-info-circle" style={{ fontSize: 11 }} />{' '}
+              {recipients.note}
+            </p>
+          ) : null}
+          {recipientList.length === 0 ? (
+            <p
+              className="mt-2 text-xs text-muted-foreground"
+              data-testid={testIdPrefix ? `${testIdPrefix}-recipients-empty` : undefined}
+            >
+              {labels.recipientsEmpty}
+            </p>
+          ) : (
+            <div className="mt-2 flex flex-col gap-2">
+              {recipientList.map((address, index) => {
+                // A row being typed into is not yet wrong; only a filled row is.
+                const invalid = address.trim().length > 0 && !looksLikeEmail(address);
+                return (
+                  <div key={index} className="flex items-start gap-2">
+                    <div className="min-w-0 flex-1">
+                      <Input
+                        type="email"
+                        value={address}
+                        onChange={(e) => updateRecipient(index, e.target.value)}
+                        placeholder={labels.recipientsPlaceholder}
+                        disabled={!value.enabled}
+                        aria-invalid={invalid || undefined}
+                        aria-label={labels.recipientsLabel}
+                        data-testid={
+                          testIdPrefix ? `${testIdPrefix}-recipient-${index}` : undefined
+                        }
+                        className={invalid ? 'border-destructive' : undefined}
+                      />
+                      {invalid ? (
+                        <p
+                          role="alert"
+                          className="mt-1 text-xs text-destructive"
+                          data-testid={
+                            testIdPrefix ? `${testIdPrefix}-recipient-${index}-invalid` : undefined
+                          }
+                        >
+                          {labels.recipientsInvalid}
+                        </p>
+                      ) : null}
+                    </div>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      aria-label={labels.recipientsRemove}
+                      title={labels.recipientsRemove}
+                      onClick={() => removeRecipient(index)}
+                      disabled={!value.enabled}
+                      data-testid={
+                        testIdPrefix ? `${testIdPrefix}-recipient-remove-${index}` : undefined
+                      }
+                    >
+                      <i aria-hidden className="pi pi-times" style={{ fontSize: 11 }} />
+                    </Button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="mt-2"
+            onClick={addRecipient}
+            disabled={!value.enabled || recipientList.length >= recipients.max}
+            data-testid={testIdPrefix ? `${testIdPrefix}-recipient-add` : undefined}
+          >
+            <i aria-hidden className="pi pi-plus" style={{ fontSize: 11 }} /> {labels.recipientsAdd}
+          </Button>
+        </div>
+      ) : null}
 
       {/* Subject */}
       <label className="mt-4 flex flex-col gap-1.5 text-sm">
