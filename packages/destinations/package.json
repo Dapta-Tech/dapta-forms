@@ -1,6 +1,6 @@
 {
   "name": "@quill/destinations",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "description": "Pluggable submission destinations — a SubmissionDestination port with adapters (log-only default, webhook with optional HMAC, HubSpot contact upsert). A bare fork 'delivers' to the log. Failures never crash submission handling.",
@@ -8,7 +8,10 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
-    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" }
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
