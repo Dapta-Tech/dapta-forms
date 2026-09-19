@@ -14,6 +14,10 @@ import { test, expect, type APIRequestContext, type Page } from '@playwright/tes
  * document.body — and so does the bottom-left profile menu (Account settings /
  * Log out) that replaced the Settings and Brand kit rail links.
  *
+ * The editor's hover-peek rail is the newest member of that family: it overlays
+ * the canvas at `z-30`, deliberately BELOW the portal's 55, so the panels still
+ * win against the rail that opened them. See v16-editor-rail-peek.spec.ts.
+ *
  * Under test: apps/web/components/ui/anchored-menu.tsx, app-switcher.tsx,
  * workspace-switcher.tsx, profile-menu.tsx, admin-shell.tsx.
  *
@@ -24,10 +28,10 @@ import { test, expect, type APIRequestContext, type Page } from '@playwright/tes
  * route.
  *
  * Coverage: every admin route in the nav, the account-settings area behind the
- * profile menu, and the builder, in the expanded rail, the collapsed rail, and
- * the <768px drawer. Requires two workspaces for the workspace switcher to
- * render at all; the suite seeds them if the QA database only has the single
- * seeded account.
+ * profile menu, and the builder, in the expanded rail, the collapsed rail, the
+ * editor's peeked rail, and the <768px drawer. Requires two workspaces for the
+ * workspace switcher to render at all; the suite seeds them if the QA database
+ * only has the single seeded account.
  */
 
 const API = 'http://localhost:4400';
@@ -148,6 +152,38 @@ async function openAndCheck(page: Page, which: Switcher, where: string) {
   await expect(menu, `${which} closes on Escape on ${where}`).toBeHidden();
 }
 
+/**
+ * When `path` lands in the form EDITOR, open its hover-peek rail and wait for
+ * it to settle before anything touches a trigger.
+ *
+ * The editor rests on a 64px rail that widens on pointer-enter. Playwright's
+ * click moves the pointer onto the trigger first, so the rail starts widening a
+ * moment BEFORE the click lands: the trigger slides out from under the cursor
+ * and the click misses, or it lands and AnchoredMenu places the panel against a
+ * trigger that is still moving. Either way the failure is intermittent.
+ *
+ * `/admin/forms/:id/integrations` belongs on that list: it resolves to
+ * `edit?tab=connect`. The decision is made from the REQUESTED path rather than
+ * from `page.url()`, because that redirect lands on the client, so the url
+ * still reads `integrations` when `goto` resolves.
+ *
+ * Which is also why this waits for `position: fixed` rather than assuming the
+ * editor is up. Only the studio branch of the rail is out of flow, so that
+ * property is the honest "the editor has mounted" signal, and a click fired
+ * before it would be swallowed by the navigation.
+ */
+async function settleEditorPeek(page: Page, path: string) {
+  if (!/\/admin\/forms\/[^/]+\/(edit|integrations)/.test(path)) return;
+  // `bg-popover` narrows this to the SHELL's rail: the editor renders two
+  // asides of its own, so the bare tag selector is ambiguous on this route.
+  const rail = page.locator('aside.bg-popover:not([role="dialog"])');
+  await expect
+    .poll(() => rail.evaluate((el) => getComputedStyle(el).position), { timeout: 25_000 })
+    .toBe('fixed');
+  await rail.hover();
+  await expect.poll(async () => (await rail.boundingBox())?.width ?? 0).toBe(240);
+}
+
 /** The workspace switcher only renders for someone with two or more accounts. */
 async function seedSecondWorkspace(request: APIRequestContext) {
   const res = await request.get(`${API}/v1/workspaces`);
@@ -200,6 +236,7 @@ test.describe('V9 — rail menus open above the page on every admin surface', ()
    */
   async function checkRoute(page: Page, path: string, state: string) {
     await page.goto(path);
+    await settleEditorPeek(page, path);
     const where = `${path} (${state})`;
     await openAndCheck(page, 'app-switcher', where);
     if (hasWorkspaces) await openAndCheck(page, 'workspace-switcher', where);
@@ -226,11 +263,19 @@ test.describe('V9 — rail menus open above the page on every admin surface', ()
 
   test('the builder — the canvas must not paint over the menus', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
-    // The editor force-collapses the rail and fills <main> with positioned
-    // question cards. This is the screenshot in the bug report.
+    // The editor RESTS collapsed and fills <main> with positioned question
+    // cards. This is the screenshot in the bug report.
+    //
+    // `checkRoute` peeks the rail open and waits for it before touching a
+    // trigger (see settleEditorPeek), so the menus are exercised here at
+    // EXPANDED-rail geometry, which the `expanded rail` test above already
+    // covers on its own routes. What stays unique to this one is the thing the
+    // ticket was about: the question cards under the panel. The peeked rail is
+    // deliberately `z-30`, below the portal's 55, so it must not paint over its
+    // own menus either.
     await page.goto(`/admin/forms/${formId}/edit`);
     await expect(triggerFor(page, 'app-switcher')).toBeVisible({ timeout: 25_000 });
-    await checkRoute(page, `/admin/forms/${formId}/edit`, 'builder');
+    await checkRoute(page, `/admin/forms/${formId}/edit`, 'builder, peeked rail');
   });
 
   test('per-form tabs — submissions, analytics and integrations', async ({ page }) => {

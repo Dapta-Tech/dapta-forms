@@ -1,6 +1,13 @@
 'use client';
 
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import {
+  useEffect,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+  type TransitionEvent as ReactTransitionEvent,
+} from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { isNavItemActive, type FormsMessages } from '@quill/shared';
@@ -69,6 +76,13 @@ const NAV: NavItem[] = [
 ];
 
 const NAV_COLLAPSED_KEY = 'forms.nav.collapsed';
+
+/** Hover intent for the editor's peek rail. Opening is quick: the 64px strip is
+ *  a deliberate target, not somewhere a pointer crosses on its way elsewhere.
+ *  Closing is slower and re-checked, so a diagonal exit towards a menu that was
+ *  opened FROM the rail does not snap the rail shut mid-travel. */
+const PEEK_OPEN_MS = 120;
+const PEEK_CLOSE_MS = 160;
 
 // Dapta's icon system is PrimeIcons (pi pi-*) — the same set Calendars + the
 // production admin panel use. Sized at the design-system's 20px sidebar icon.
@@ -224,11 +238,22 @@ export function AdminShell({
   const [collapsed, setCollapsed] = useState(initialCollapsed);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const drawerRef = useRef<HTMLElement>(null);
+  const railRef = useRef<HTMLElement>(null);
+  const [peeking, setPeeking] = useState(false);
+  const peekTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // The form builder wants the widest canvas → force the rail collapsed on the
+  // The form builder wants the widest canvas → the rail RESTS collapsed on the
   // editor route (Calendars' studio parity), without touching the saved pref.
   const studio = /^\/admin\/forms\/[^/]+\/edit/.test(pathname);
-  const railCollapsed = collapsed || studio;
+  // In the studio the rail's 64px footprint is what the layout reserves, and
+  // `peeking` is the only thing that widens it: the saved preference is
+  // neither read nor written on that route. Everywhere else this is exactly
+  // `collapsed`, so the toggle and the cookie behave as they always have.
+  //
+  // `peeking` starts false and `studio` is known during SSR, so the server
+  // render, the hydration render and the first paint all agree on 64px. That
+  // is the same no-FOUC contract the cookie buys everywhere else.
+  const railCollapsed = studio ? !peeking : collapsed;
 
   // Persist the desktop rail preference to a cookie so the SERVER renders the
   // correct width on the next load (no flash) — see AdminLayout.
@@ -246,10 +271,91 @@ export function AdminShell({
     });
   };
 
+  const cancelPeek = () => {
+    if (peekTimer.current) clearTimeout(peekTimer.current);
+    peekTimer.current = null;
+  };
+
+  const onRailPointerEnter = (e: ReactPointerEvent<HTMLElement>) => {
+    // Touch has no hover: a tap must not smear a 240px panel over the very
+    // link it is about to follow.
+    if (e.pointerType !== 'mouse' && e.pointerType !== 'pen') return;
+    // Mid-drag. dnd-kit's PointerSensor listens on the document rather than
+    // capturing the pointer, so dragging a question past the canvas's left
+    // edge really does enter the rail.
+    if (e.buttons !== 0) return;
+    cancelPeek();
+    peekTimer.current = setTimeout(() => setPeeking(true), PEEK_OPEN_MS);
+  };
+
+  /** Focus is deliberate, so it opens with no intent delay. */
+  const onRailFocus = () => {
+    cancelPeek();
+    setPeeking(true);
+  };
+
+  // Deferred AND self-rescheduling, for two situations that are really one:
+  //   · the pointer leaves the rail to reach a menu the rail opened, whose
+  //     panel is portalled to <body> (anchored-menu.tsx). Collapsing under an
+  //     open panel STRANDS it: AnchoredMenu places once and re-places only on
+  //     scroll/resize, never on its anchor moving, so the panel would be left
+  //     pointing at where the trigger used to be.
+  //   · that panel is then dismissed by a click on the canvas, after which no
+  //     further pointer or focus event ever reaches the rail. The re-check
+  //     closes the peek on the next tick instead of leaving it open forever.
+  //
+  // The marker is asked for globally rather than per-menu because on this route
+  // the only AnchoredMenus in the tree ARE the rail's three (the fourth caller,
+  // member-row-actions, lives under /admin/account). If one ever opens from the
+  // canvas, the worst it does is hold the peek open while it is up.
+  const closePeek = () => {
+    cancelPeek();
+    const tick = () => {
+      const keep =
+        !!document.querySelector('[data-anchored-menu]') ||
+        !!railRef.current?.contains(document.activeElement);
+      if (keep) {
+        peekTimer.current = setTimeout(tick, PEEK_CLOSE_MS);
+        return;
+      }
+      peekTimer.current = null;
+      setPeeking(false);
+    };
+    peekTimer.current = setTimeout(tick, PEEK_CLOSE_MS);
+  };
+
+  // The width flip moves an open menu's trigger without firing a resize, and
+  // resize is one of the two signals AnchoredMenu re-measures on. Hand it one.
+  const onRailTransitionEnd = (e: ReactTransitionEvent<HTMLElement>) => {
+    if (e.propertyName !== 'width' || e.target !== e.currentTarget) return;
+    window.dispatchEvent(new Event('resize'));
+  };
+
+  useEffect(() => cancelPeek, []);
+
+  // Leaving the editor drops the peek, and it has to be done here because
+  // nothing else would: clicking a rail link navigates away with the pointer
+  // and the focus both still INSIDE the rail, so neither `pointerleave` nor
+  // `blur` ever fires. Off the editor route `peeking` is not read, so it would
+  // sit there as a stale `true` and the next editor opened from the list would
+  // start 240px wide over its own canvas, with the pointer nowhere near the
+  // rail and therefore no `pointerleave` coming to close it.
+  useEffect(() => {
+    if (!studio) setPeeking(false);
+  }, [studio]);
+
   // Lock body scroll + close on Escape + move focus into the drawer on open (R28).
   useEffect(() => {
     document.body.style.overflow = drawerOpen ? 'hidden' : '';
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setDrawerOpen(false);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      setDrawerOpen(false);
+      // WCAG 1.4.13 Dismissible, for the pointer case it is written about.
+      // With the caret INSIDE the rail, Escape leaves the peek alone on
+      // purpose: collapsing a rail whose focus ring is on an icon-only link
+      // is worse than not dismissing.
+      if (!railRef.current?.contains(document.activeElement)) setPeeking(false);
+    };
     window.addEventListener('keydown', onKey);
     if (drawerOpen) drawerRef.current?.querySelector<HTMLElement>('a,button')?.focus();
     return () => {
@@ -271,21 +377,32 @@ export function AdminShell({
         <BrandWordmark className="h-6 w-auto text-foreground" labelled />
       )}
       <AppSwitcher messages={messages.switcher} />
-      {/* The rail toggle is a desktop pref; hidden on the editor route where the
-          rail is force-collapsed for canvas. */}
-      {!studio ? (
-        <button
-          type="button"
-          onClick={toggleCollapse}
-          data-testid="rail-toggle"
-          aria-expanded={!collapsed}
-          aria-label={collapsed ? messages.expand : messages.collapse}
-          title={collapsed ? messages.expand : messages.collapse}
-          className={`hidden rounded-md p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground active:scale-[0.98] md:inline-flex ${collapsed ? '' : 'ml-auto'}`}
-        >
-          <i aria-hidden className={`pi ${collapsed ? 'pi-angle-double-right' : 'pi-angle-double-left'}`} style={{ fontSize: 16 }} />
-        </button>
-      ) : null}
+      {/* Outside the editor this is the desktop preference, saved to the cookie.
+          Inside it, it drives the peek and nothing else: hover is the primary
+          way in, but hover is not available to a touch device wide enough to
+          get the desktop rail instead of the drawer (an iPad, a touch laptop),
+          and it is not available from the keyboard either. Without this button
+          those two have no way to read the rail at all, which is the state the
+          editor was in before: the toggle was not merely hidden here, it was
+          absent from the DOM. */}
+      <button
+        type="button"
+        onClick={
+          studio
+            ? () => {
+                cancelPeek();
+                setPeeking((p) => !p);
+              }
+            : toggleCollapse
+        }
+        data-testid="rail-toggle"
+        aria-expanded={!railCollapsed}
+        aria-label={railCollapsed ? messages.expand : messages.collapse}
+        title={railCollapsed ? messages.expand : messages.collapse}
+        className={`hidden rounded-md p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground active:scale-[0.98] md:inline-flex ${railCollapsed ? '' : 'ml-auto'}`}
+      >
+        <i aria-hidden className={`pi ${railCollapsed ? 'pi-angle-double-right' : 'pi-angle-double-left'}`} style={{ fontSize: 16 }} />
+      </button>
     </div>
   );
 
@@ -351,10 +468,34 @@ export function AdminShell({
           editor never showed the bug only because that route is its own
           `h-[100dvh] overflow-hidden` shell. `overflow-y-auto` keeps the rail
           usable if the nav ever outgrows a short viewport. */}
+      {/* In the editor the rail leaves the flow and this spacer holds its
+          column, so `<main>`'s box is identical at every peek state: the rail
+          widens OVER the canvas rather than pushing it. Reflowing a
+          `h-[100dvh] overflow-hidden` three-column builder every time the
+          pointer passes the left edge is not something anyone could work in. */}
+      {studio ? <div aria-hidden className="hidden w-[64px] shrink-0 md:block" /> : null}
       <aside
-        className={`hidden shrink-0 flex-col gap-6 border-r border-border bg-popover py-4 transition-[width] md:sticky md:top-0 md:flex md:h-dvh md:overflow-y-auto ${
-          railCollapsed ? 'w-[64px] px-2' : 'w-60 px-4'
-        }`}
+        ref={railRef}
+        onPointerEnter={studio ? onRailPointerEnter : undefined}
+        onPointerLeave={studio ? closePeek : undefined}
+        // React's onFocus/onBlur are focusin/focusout, which bubble, so tabbing
+        // into any control in the rail expands it and tabbing out collapses it.
+        onFocus={studio ? onRailFocus : undefined}
+        onBlur={studio ? closePeek : undefined}
+        onTransitionEnd={studio ? onRailTransitionEnd : undefined}
+        // `md:z-30` is load-bearing, not decoration. The rail is a stacking
+        // context at `z-auto` sitting BEFORE <main> in the DOM, so overlaying
+        // the canvas at auto would let every `relative` question card paint
+        // over it (the bug anchored-menu.tsx exists to work around). 30 is the
+        // shell-chrome tier already: above the canvas, below the pickers and
+        // modals inside <main> (50) and below the rail's own portalled menus
+        // (55), which therefore still win against the rail that opened them.
+        //
+        // The width transition needs no `motion-reduce:` variant: globals.css
+        // already zeroes every transition under prefers-reduced-motion.
+        className={`hidden shrink-0 flex-col gap-6 border-r border-border bg-popover py-4 transition-[width] md:flex md:h-dvh md:overflow-y-auto ${
+          studio ? 'md:fixed md:left-0 md:top-0 md:z-30' : 'md:sticky md:top-0'
+        } ${railCollapsed ? 'w-[64px] px-2' : 'w-60 px-4'}`}
       >
         {brand}
         {/* Directly under the wordmark and above the nav: which tenant every

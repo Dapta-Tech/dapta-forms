@@ -257,6 +257,13 @@ export function AnchoredMenu({
       role="menu"
       aria-label={label}
       data-testid={testId}
+      // A single DOM question the rest of the app can ask: "is one of these
+      // panels open right now?". The shell's hover-peek rail needs it, because
+      // this panel is portalled to <body> and reaching it with the pointer
+      // therefore LEAVES the rail. Every rail popup goes through this one
+      // component, so one attribute here beats threading an `onOpenChange`
+      // prop through each switcher and its drawer twin.
+      data-anchored-menu=""
       style={{
         zIndex: Z_INDEX,
         top: box?.top ?? 0,
