@@ -137,6 +137,18 @@
   summary {
     cursor: pointer;
   }
+
+  /* Chrome and Safari paint their own clear button inside type="search"
+     inputs, and Tailwind's preflight only hides the decoration. Next to our
+     branded clear button that made two x's in the forms search. Hide the
+     native one everywhere; each search box brings its own (SearchClearButton).
+     Firefox never paints one. The inputs stay type="search" for the mobile
+     keyboard's Search key and the searchbox role. */
+  input[type='search']::-webkit-search-cancel-button,
+  input[type='search']::-webkit-search-decoration {
+    -webkit-appearance: none;
+    appearance: none;
+  }
 }
 
 /* Point the accent-as-TEXT utility at `--primary-ink` instead of `--primary`.

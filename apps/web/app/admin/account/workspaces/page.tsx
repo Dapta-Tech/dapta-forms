@@ -29,6 +29,7 @@ export default async function WorkspacesPage() {
         title: a.title,
         subtitle: a.subtitle,
         search: a.search,
+        searchClear: a.searchClear,
         searchEmpty: a.searchEmpty,
         newWorkspace: a.newWorkspace,
         current: a.current,
