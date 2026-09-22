@@ -567,9 +567,15 @@ describe('csvField formula-injection neutralization', () => {
     expect(csvField('=HYPERLINK("http://e.x","y")')).toBe('"\'=HYPERLINK(""http://e.x"",""y"")"');
   });
 
-  it('exports an E.164 phone raw, separators allowed, but not a + followed by anything else', () => {
-    expect(csvField('+573180087175')).toBe('+573180087175');
-    expect(csvField('+1 (305) 555-0100')).toBe('+1 (305) 555-0100');
+  it('exports an E.164 phone as a text formula so Excel neither rounds nor subtracts it', () => {
+    // Bare, Excel would show 5.73E+11; with dashes it would evaluate a subtraction.
+    expect(csvField('+573180087175')).toBe('"=""+573180087175"""');
+    expect(csvField('+57 318 008 7175')).toBe('"=""+57 318 008 7175"""');
+    expect(csvField('+57-318-008-7175')).toBe('"=""+57-318-008-7175"""');
+    expect(csvField('+1 (305) 555-0100')).toBe('"=""+1 (305) 555-0100"""');
+  });
+
+  it('keeps the quote guard on a + followed by anything that is not a phone', () => {
     expect(csvField('+SUM(A1)')).toBe("'+SUM(A1)");
     expect(csvField('+1+cmd|calc')).toBe("'+1+cmd|calc");
     expect(csvField('+')).toBe("'+");
@@ -653,7 +659,7 @@ describe('workspace timezone: day cuts and the CSV local columns', () => {
     const lines = chunks.join('').trimEnd().split('\r\n');
     expect(lines[0]).toMatch(/,Submitted at,Status,Score,Submission id$/);
     const row = lines.find((l) => l.includes('tz-csv'))!;
-    expect(row).toContain(',2026-09-03T19:15:00-05:00,completed,10,');
+    expect(row).toContain(',2026-09-03T19:15:00-05:00,Completed,10,');
     // The start instant and the UTC twins are gone.
     expect(row).not.toContain('2026-09-03T18:30:00-05:00');
     expect(row).not.toContain('Z,');
@@ -770,7 +776,7 @@ describe('CSV export: readable columns (BUGS-2310)', () => {
     await answer(id, answers);
     const row = (await exportOf(id)).split('\r\n')[1]!;
     expect(row).toMatch(
-      /^Laura,Pérez,\+573180087175,Lyown Consulting LLC,Miami,Doral,LLC multimiembro,EIN; Bienes raíces,pasaporte\.pdf,x,[^,]+,completed,7,sub-1$/,
+      /^Laura,Pérez,"=""\+573180087175""",Lyown Consulting LLC,Miami,Doral,LLC multimiembro,EIN; Bienes raíces,pasaporte\.pdf,x,[^,]+,Completed,7,sub-1$/,
     );
     expect(row).not.toContain('uploads/');
     expect(row).not.toContain('{');
@@ -801,7 +807,46 @@ describe('CSV export: readable columns (BUGS-2310)', () => {
     await answer(id, answers);
     const [header, row] = (await exportOf(id)).split('\r\n');
     expect(header).toMatch(/,Submitted at,Status,Submission id$/);
-    expect(row).toMatch(/,completed,sub-1$/);
+    expect(row).toMatch(/,Completed,sub-1$/);
+  });
+
+  it('dates a partial row by its partial instant and names its status like the table', async () => {
+    const id = await makeForm();
+    await db.run(
+      sql`INSERT INTO submission (id, form_id, session_id, data, score, started_at, completed_at, partial_at)
+          VALUES (${'sub-p'}, ${id}, ${'sess-p'}, ${jsonParam({ text_21: 'Parcial LLC' })}, ${0},
+            ${Date.UTC(2026, 8, 3, 10, 0)}, ${null}, ${Date.UTC(2026, 8, 3, 10, 5)})`,
+    );
+    await db.run(
+      sql`INSERT INTO submission (id, form_id, session_id, data, score, started_at, completed_at, partial_at)
+          VALUES (${'sub-s'}, ${id}, ${'sess-s'}, ${jsonParam({ text_21: 'Solo inicio' })}, ${0},
+            ${Date.UTC(2026, 8, 2, 10, 0)}, ${null}, ${null})`,
+    );
+    const lines = (await exportOf(id)).split('\r\n');
+    expect(lines.find((l) => l.includes('Parcial LLC'))).toMatch(/,2026-09-03T10:05:00\+00:00,Partial,0,sub-p$/);
+    expect(lines.find((l) => l.includes('Solo inicio'))).toMatch(/,2026-09-02T10:00:00\+00:00,Partial,0,sub-s$/);
+  });
+
+  it('reads a booking in the workspace zone', async () => {
+    await db.run(sql`UPDATE account SET timezone = 'America/Bogota' WHERE id = ${accountId}`);
+    const created = await createForm(db, accountId, {
+      name: 'booking',
+      config: { version: 1, steps: [{ key: 'call', type: 'scheduler', question: 'Agenda' }] },
+    });
+    if (!created.ok) throw new Error('form creation failed');
+    await answer(created.value.id, { call: '2026-09-03T14:30:00.000Z' });
+    const row = (await exportOf(created.value.id)).split('\r\n')[1]!;
+    expect(row).toMatch(/^2026-09-03 09:30 GMT-5,/);
+  });
+
+  it('keeps one column under the question when the name step has its own two fields', async () => {
+    const steps = lyownSteps.map((s) => (s.type === 'name' ? { ...s, fields: ['nombre', 'apellido'] } : s));
+    const created = await createForm(db, accountId, { name: 'two-custom', config: { version: 1, steps } });
+    if (!created.ok) throw new Error('form creation failed');
+    await answer(created.value.id, { nombre: 'Laura', apellido: 'Pérez' });
+    const [header, row] = (await exportOf(created.value.id)).split('\r\n');
+    expect(header).toMatch(/^\uFEFFTu nombre,Phone number,/);
+    expect(row).toMatch(/^Laura Pérez,/);
   });
 
   it('keeps the joined name under the question when the step does not have two fields', async () => {
@@ -816,10 +861,13 @@ describe('CSV export: readable columns (BUGS-2310)', () => {
 
   it('names the technical columns in the member language, then the form language, then English', async () => {
     const id = await makeForm({ language: 'es' });
-    // No member locale: the form's language decides.
-    expect((await exportOf(id)).split('\r\n')[0]).toMatch(
-      /,Fecha de envío,Estado,Puntaje,ID de respuesta$/,
-    );
+    await answer(id, answers);
+    // No member locale: the form's language decides, for every header that is
+    // not a question and for the status.
+    const [esHeader, esRow] = (await exportOf(id)).split('\r\n');
+    expect(esHeader).toMatch(/^\uFEFFNombre,Apellido,/);
+    expect(esHeader).toMatch(/,Fecha de envío,Estado,Puntaje,ID de respuesta$/);
+    expect(esRow).toMatch(/,Completada,7,sub-1$/);
     // A member who chose English wins over a Spanish form.
     const member = await db.get<{ id: string }>(
       sql`SELECT id FROM member WHERE account_id = ${accountId} LIMIT 1`,

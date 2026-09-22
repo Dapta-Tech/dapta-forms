@@ -75,11 +75,12 @@ export class AnalyticsController {
    * Stream the form's submissions as a CSV a person can open in a spreadsheet:
    * one column per answering step headed by its question (message and reveal
    * steps have none), option labels rather than stored values, a file as its
-   * name, the name split into First/Last name up front, and the technical
-   * columns at the end. `Submitted at` is the completion instant read in the
-   * workspace's zone with its offset. Technical headers follow the downloading
-   * member's language, then the form's, then English. Starts with a UTF-8 BOM
-   * so Excel keeps the accents.
+   * name, a booking and `Submitted at` read in the workspace's zone, the name
+   * split into first and last name up front, and the technical columns at the
+   * end. `Submitted at` is the completion instant, else the partial, else the
+   * start, so no row goes without a date. Every header that is not a question,
+   * and the status, follow the downloading member's language, then the form's,
+   * then English. Starts with a UTF-8 BOM so Excel keeps the accents.
    * Uses the un-paginated export query (`allSubmissionsForExport`): the table
    * query caps `limit` at 200, so paging through it would silently truncate and
    * skip rows on large exports. Rows are still written incrementally.
@@ -106,7 +107,10 @@ export class AnalyticsController {
     const m = getMessages(locale).admin.submissions;
     const columns = exportColumns(config.steps ?? [], {
       scoring: config.scoring?.enabled !== false,
+      timeZone: zone,
       labels: {
+        firstName: m.colFirstName,
+        lastName: m.colLastName,
         submittedAt: m.colSubmittedAt,
         status: m.colStatus,
         score: m.colScore,
@@ -130,8 +134,10 @@ export class AnalyticsController {
         id: s.id,
         data: (s.data ?? {}) as Record<string, unknown>,
         score: s.score,
-        status: s.completedAt != null ? 'completed' : s.partialAt != null ? 'partial' : 'in_progress',
-        submittedAt: local(s.completedAt),
+        // Same reading as the submissions table: completed, else partial.
+        status: s.completedAt != null ? m.badgeCompleted : m.badgePartial,
+        // Latest instant known, as the table shows it: a partial row still has a date.
+        submittedAt: local(s.completedAt ?? s.partialAt ?? s.startedAt),
       };
       res.write(csvRow(columns.map((c) => c.value(row))));
     }

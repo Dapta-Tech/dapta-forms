@@ -8,13 +8,17 @@
  * by Excel/Sheets on open (e.g. `=HYPERLINK(...)`). Such fields are neutralized
  * by prefixing a single quote AFTER stringification, BEFORE quoting. Genuine
  * numbers/booleans can't carry a formula and are left untouched (so a negative
- * score exports as `-5`, not `'-5`). A phone number in E.164 form (`+57 318...`,
- * digits and separators only) is inert too and exports raw: a `+` followed by a
- * digit and nothing but digits, spaces, dots, dashes and parentheses is a
- * number or an arithmetic sum at worst, never a function call.
+ * score exports as `-5`, not `'-5`).
+ *
+ * A phone number in E.164 form (`+57 318...`, digits and separators only) gets
+ * neither the quote nor a raw pass: Excel turns a bare `+573180087175` into
+ * `5.73E+11` and evaluates `+57-318-008-7175` as a subtraction. It exports as
+ * the text formula `="+573180087175"`, which every spreadsheet shows as the
+ * number as typed. The pattern admits no quote, so nothing can break out of
+ * the string literal.
  */
 import {
-  formatAnswerValue,
+  formatAnswerCell,
   isInputlessStep,
   nameAnswer,
   nameFields,
@@ -37,8 +41,9 @@ export function csvField(value: unknown): string {
   else s = String(value);
   // Neutralize user-controlled strings that would execute as a spreadsheet
   // formula; real numbers/booleans are inert and stay verbatim.
-  if (typeof value !== 'number' && typeof value !== 'boolean' && FORMULA_TRIGGER.test(s) && !PHONE_NUMBER.test(s)) {
-    s = `'${s}`;
+  if (typeof value !== 'number' && typeof value !== 'boolean') {
+    if (PHONE_NUMBER.test(s)) s = `="${s}"`;
+    else if (FORMULA_TRIGGER.test(s)) s = `'${s}`;
   }
   if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
   return s;
@@ -57,8 +62,9 @@ export interface ExportRow {
   id: string;
   data: Record<string, unknown>;
   score: number | null;
+  /** Already localized. */
   status: string;
-  /** Completion instant already rendered in the workspace zone ('' when absent). */
+  /** Latest known instant (completed, else partial, else started) in the workspace zone. */
   submittedAt: string;
 }
 
@@ -69,6 +75,8 @@ export interface ExportColumn {
 
 /** The localized headers of the columns that are not questions. */
 export interface ExportLabels {
+  firstName: string;
+  lastName: string;
   submittedAt: string;
   status: string;
   score: string;
@@ -77,14 +85,15 @@ export interface ExportLabels {
 
 /**
  * The columns of the submissions CSV, in order: the name split in two when the
- * form has a two-field name step, every other answering step in form order
+ * form has a name step with the stock `firstname` / `lastname` fields (a step
+ * with its own fields keeps one column under its question), every other answering step in form order
  * headed by its question, then the technical columns. Message and reveal steps
  * collect nothing and get no column. A header that repeats gets ` (2)`, ` (3)`
  * so a spreadsheet can still tell the columns apart.
  */
 export function exportColumns(
   steps: FormStep[],
-  opts: { scoring: boolean; labels: ExportLabels },
+  opts: { scoring: boolean; labels: ExportLabels; timeZone?: string },
 ): ExportColumn[] {
   const answering = steps.filter((s) => !isInputlessStep(s));
   const nameStep = answering.find((s) => s.type === 'name');
@@ -92,11 +101,10 @@ export function exportColumns(
 
   if (nameStep) {
     const fields = nameFields(nameStep);
-    if (fields.length === 2) {
-      const [first, last] = fields as [string, string];
+    if (fields.length === 2 && fields[0] === 'firstname' && fields[1] === 'lastname') {
       cols.push(
-        { header: 'First name', value: (r) => formatAnswerValue(nameStep, r.data[first]) },
-        { header: 'Last name', value: (r) => formatAnswerValue(nameStep, r.data[last]) },
+        { header: opts.labels.firstName, value: (r) => formatAnswerCell(nameStep, r.data.firstname) },
+        { header: opts.labels.lastName, value: (r) => formatAnswerCell(nameStep, r.data.lastname) },
       );
     } else {
       cols.push({ header: stepLabel(nameStep), value: (r) => nameAnswer(nameStep, r.data) });
@@ -112,7 +120,7 @@ export function exportColumns(
         const raw = r.data[step.key];
         // A real number stays a number so csvField keeps a negative slider
         // value as `-5` instead of neutralizing it to `'-5`.
-        return typeof raw === 'number' ? raw : formatAnswerValue(step, raw);
+        return typeof raw === 'number' ? raw : formatAnswerCell(step, raw, { timeZone: opts.timeZone });
       },
     });
   }
