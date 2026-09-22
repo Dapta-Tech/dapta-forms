@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  formatAnswerCell,
   formatAnswerValue,
   stepLabel,
   summarizeAnswers,
@@ -179,9 +180,9 @@ describe("formatAnswerValue", () => {
     expect(formatAnswerValue(choice, ["single", "multi"])).toBe(
       "LLC de un solo miembro; LLC multimiembro",
     );
-    expect(formatAnswerValue(choice, ["single", "multi"], ", ")).toBe(
-      "LLC de un solo miembro, LLC multimiembro",
-    );
+    expect(
+      formatAnswerValue(choice, ["single", "multi"], { separator: ", " }),
+    ).toBe("LLC de un solo miembro, LLC multimiembro");
   });
 
   it("keeps an unknown option token verbatim and skips blank tokens", () => {
@@ -226,5 +227,34 @@ describe("formatAnswerValue", () => {
         "2026-09-03T14:30:00.000Z",
       ),
     ).toBe("2026-09-03 14:30 UTC");
+  });
+});
+
+describe("formatAnswerValue booking time zone", () => {
+  const call = step({ key: "call", type: "scheduler" });
+  it("reads a booking in the workspace zone with its offset", () => {
+    expect(
+      formatAnswerValue(call, "2026-09-03T14:30:00.000Z", {
+        timeZone: "America/Bogota",
+      }),
+    ).toBe("2026-09-03 09:30 GMT-5");
+  });
+  it("falls back to UTC for an unknown zone", () => {
+    expect(
+      formatAnswerValue(call, "2026-09-03T14:30:00.000Z", {
+        timeZone: "Mars/Olympus",
+      }),
+    ).toBe("2026-09-03 14:30 UTC");
+  });
+});
+
+describe("formatAnswerCell", () => {
+  const t = step({ key: "t", type: "text" });
+  it("prints true as a check and false as nothing", () => {
+    expect(formatAnswerCell(t, true)).toBe("\u2713");
+    expect(formatAnswerCell(t, false)).toBe("");
+  });
+  it("defers everything else to formatAnswerValue", () => {
+    expect(formatAnswerCell(t, "  hi ")).toBe("hi");
   });
 });
