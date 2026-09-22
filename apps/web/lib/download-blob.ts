@@ -5,21 +5,6 @@
  * Browser only. Nothing here runs during render: both are called from a click.
  */
 
-/**
- * Give an SVG explicit `width` and `height` on its root element.
- *
- * Generators such as `uqr` emit only a `viewBox`. That is enough for a page to
- * scale it, but an `<img>` loading it from a data URL has no intrinsic size to
- * go on, and Safari then draws it at 0 x 0, which turns the PNG export into an
- * empty white square. Any size already on the root is replaced, never doubled.
- */
-export function sizeSvg(svg: string, px: number): string {
-  return svg.replace(/<svg\b([^>]*)>/, (_, attrs: string) => {
-    const rest = attrs.replace(/\s(?:width|height)="[^"]*"/g, '');
-    return `<svg width="${px}" height="${px}"${rest}>`;
-  });
-}
-
 /** An SVG as a URL an `<img>` can load, with no request and no blob to revoke. */
 export function svgDataUrl(svg: string): string {
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
@@ -65,12 +50,16 @@ async function loadImage(src: string): Promise<HTMLImageElement> {
 /**
  * Rasterize an SVG to a `px` x `px` PNG on an opaque white background.
  *
+ * The SVG must already carry `width` and `height` on its root: Safari draws an
+ * SVG with only a `viewBox` at 0 x 0. Sizing it is the caller's job (see
+ * `qrSvg`), so there is one place that decides what the file looks like.
+ *
  * White rather than transparent on purpose: a transparent PNG dropped onto a
  * dark slide or flyer turns a QR code's light modules dark, and scanners need
  * dark on light.
  */
 export async function svgToPngBlob(svg: string, px: number): Promise<Blob> {
-  const img = await loadImage(svgDataUrl(sizeSvg(svg, px)));
+  const img = await loadImage(svgDataUrl(svg));
   const canvas = document.createElement('canvas');
   canvas.width = px;
   canvas.height = px;

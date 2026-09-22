@@ -114,36 +114,30 @@ export function QrModalView({
 }
 
 /**
- * Mounted only while open, so `window.location.origin` is read in the browser
- * and always reflects the current `publicPath`, including one a rename just
- * handed back.
+ * The link and its copy come from `LinkActions`, the one place that builds the
+ * public URL, so the code, the row under it and the header's Copy link can
+ * never disagree. Mounted only while open, so the URL is always read in the
+ * browser and reflects a path a rename just handed back.
  */
 export function QrModal({
-  publicPath,
+  url,
   slug,
+  copied,
   labels,
+  onCopy,
   onClose,
 }: {
-  publicPath: string;
+  /** The absolute public URL, exactly what Copy link copies. */
+  url: string;
   slug: string;
+  copied: boolean;
   labels: QrLabels;
+  onCopy: () => void;
   onClose: () => void;
 }) {
-  const url = `${window.location.origin}${publicPath}`;
   const svg = useMemo(() => qrSvg(url), [url]);
-  const [copied, setCopied] = useState(false);
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
-
-  const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(url);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      /* clipboard blocked: the link stays selectable in the row */
-    }
-  };
 
   const downloadSvg = () => {
     saveBlob(new Blob([svg], { type: 'image/svg+xml' }), qrFilename(slug, 'svg'));
@@ -172,7 +166,7 @@ export function QrModal({
         busy={busy}
         failed={failed}
         labels={labels}
-        onCopy={() => void copy()}
+        onCopy={onCopy}
         onDownloadPng={() => void downloadPng()}
         onDownloadSvg={downloadSvg}
       />

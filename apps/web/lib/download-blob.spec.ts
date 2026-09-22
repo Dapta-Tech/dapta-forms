@@ -5,35 +5,11 @@
  * those are checked by the e2e run in Chromium and WebKit.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { saveBlob, sizeSvg, svgDataUrl, svgToPngBlob } from './download-blob';
+import { saveBlob, svgDataUrl, svgToPngBlob } from './download-blob';
 
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.useRealTimers();
-});
-
-describe('sizeSvg', () => {
-  it('adds width and height to a root that only has a viewBox', () => {
-    const out = sizeSvg(
-      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect/></svg>',
-      64,
-    );
-    expect(out).toBe(
-      '<svg width="64" height="64" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect/></svg>',
-    );
-  });
-
-  it('replaces a size already on the root instead of doubling the attribute', () => {
-    const out = sizeSvg('<svg width="10" height="10" viewBox="0 0 10 10"></svg>', 32);
-    expect(out.match(/width=/g)).toHaveLength(1);
-    expect(out).toContain('width="32"');
-    expect(out).toContain('height="32"');
-  });
-
-  it('leaves the size of child elements alone', () => {
-    const out = sizeSvg('<svg viewBox="0 0 10 10"><rect width="10" height="10"/></svg>', 32);
-    expect(out).toContain('<rect width="10" height="10"/>');
-  });
 });
 
 describe('svgDataUrl', () => {
@@ -138,10 +114,13 @@ describe('svgToPngBlob', () => {
     expect(b.fetchMock).not.toHaveBeenCalled();
   });
 
-  it('hands the image a sized SVG, so WebKit has something to rasterize', async () => {
+  it('draws the SVG exactly as handed over, without reshaping it', async () => {
+    // Sizing belongs to the caller (`qrSvg`); a second pass here once meant two
+    // places deciding what the file looks like.
+    const svg = '<svg width="512" height="512" viewBox="0 0 10 10"></svg>';
     const b = stubBrowser(new Blob(['png']));
-    await svgToPngBlob('<svg viewBox="0 0 10 10"></svg>', 512);
-    expect(decodeURIComponent(b.src())).toContain('<svg width="512" height="512"');
+    await svgToPngBlob(svg, 512);
+    expect(decodeURIComponent(b.src().slice(b.src().indexOf(',') + 1))).toBe(svg);
   });
 
   it('falls back to the data URL when toBlob yields null', async () => {

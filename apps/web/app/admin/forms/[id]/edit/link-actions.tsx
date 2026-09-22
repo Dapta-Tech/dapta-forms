@@ -138,9 +138,12 @@ export function LinkActions({
     });
   };
 
+  /** The absolute public URL. Browser only: read on click or in an open dialog. */
+  const publicUrl = () => `${window.location.origin}${publicPath}`;
+
   const copy = async () => {
     try {
-      await navigator.clipboard.writeText(`${window.location.origin}${publicPath}`);
+      await navigator.clipboard.writeText(publicUrl());
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
@@ -322,8 +325,10 @@ export function LinkActions({
 
       {qrOpen ? (
         <QrModal
-          publicPath={publicPath}
+          url={publicUrl()}
           slug={slug}
+          copied={copied}
+          onCopy={() => void copy()}
           labels={{
             qrTitle: labels.qrTitle,
             qrIntro: labels.qrIntro,
