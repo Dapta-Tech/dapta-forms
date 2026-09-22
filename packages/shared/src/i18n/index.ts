@@ -238,6 +238,7 @@ export interface FormsMessages {
         search: string;
         searching: string;
         searchEmpty: string;
+        searchClear: string;
         /** Marks a workspace the person is in by access grant (deployment staff), or an estate row. */
         staff: string;
         /** Eyebrow over estate rows the person never opened here (staff only). */
@@ -450,6 +451,7 @@ export interface FormsMessages {
         subtitle: string;
         search: string;
         searchEmpty: string;
+        searchClear: string;
         newWorkspace: string;
         current: string;
         open: string;
@@ -1986,6 +1988,7 @@ export const en: FormsMessages = {
         search: 'Find a workspace',
         searching: 'Searching',
         searchEmpty: 'No workspace matches that.',
+        searchClear: 'Clear search',
         staff: 'Staff',
         estate: 'All workspaces',
         hintForm: 'Form: {name}',
@@ -2171,6 +2174,7 @@ export const en: FormsMessages = {
         subtitle: 'Every workspace you belong to. Open one to work in it, or manage its members and invitations.',
         search: 'Search workspaces',
         searchEmpty: 'No workspace matches that.',
+        searchClear: 'Clear search',
         newWorkspace: 'New workspace',
         current: 'Current',
         open: 'Open',
@@ -3591,6 +3595,7 @@ export const es: FormsMessages = {
         search: 'Buscar workspace',
         searching: 'Buscando',
         searchEmpty: 'Ningún workspace coincide.',
+        searchClear: 'Limpiar búsqueda',
         staff: 'Staff',
         estate: 'Todos los workspaces',
         hintForm: 'Formulario: {name}',
@@ -3777,6 +3782,7 @@ export const es: FormsMessages = {
         subtitle: 'Todos los workspaces a los que perteneces. Abre uno para trabajar en él, o administra sus miembros e invitaciones.',
         search: 'Buscar workspaces',
         searchEmpty: 'Ningún workspace coincide.',
+        searchClear: 'Limpiar búsqueda',
         newWorkspace: 'Nuevo workspace',
         current: 'Actual',
         open: 'Abrir',

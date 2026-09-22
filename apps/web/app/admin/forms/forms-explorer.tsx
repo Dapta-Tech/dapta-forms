@@ -38,6 +38,7 @@ import { useGlobalShortcut } from "@/lib/use-global-shortcut";
 import type { Folder, FormSummary } from "@/lib/admin-api";
 import { useToast } from "@/components/toast";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
+import { SearchClearButton } from "@/components/ui/search-clear-button";
 import { CreateForm } from "./create-form";
 import { FolderDialog, type FolderDialogLabels } from "./folder-dialog";
 import { FormRow, type FormRowLabels } from "./form-row";
@@ -288,19 +289,15 @@ export function FormsExplorer(props: FormsExplorerProps) {
               </kbd>
             )}
           </span>
-          {query ? (
-            <button
-              type="button"
-              aria-label={labels.searchClear}
-              onClick={() => {
-                setQuery("");
-                searchRef.current?.focus();
-              }}
-              className="absolute right-2 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
-            >
-              <i aria-hidden className="pi pi-times" style={{ fontSize: 12 }} />
-            </button>
-          ) : null}
+          <SearchClearButton
+            query={query}
+            label={labels.searchClear}
+            testId="forms-search-clear"
+            onClear={() => {
+              setQuery("");
+              searchRef.current?.focus();
+            }}
+          />
         </div>
         <p
           role="status"

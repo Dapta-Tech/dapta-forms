@@ -18,6 +18,7 @@ import {
   switchWorkspaceAction,
 } from '@/app/admin/workspace-actions';
 import { AnchoredMenu } from '@/components/ui/anchored-menu';
+import { SearchClearButton } from '@/components/ui/search-clear-button';
 import { CreateWorkspaceDialog } from '@/components/create-workspace-dialog';
 import { callAction, isTransportError } from '@/lib/call-action';
 
@@ -406,7 +407,17 @@ export function WorkspaceSwitcher({
                 autoComplete="off"
                 spellCheck={false}
                 data-testid="workspace-search-input"
-                className="w-full rounded-md border border-input bg-background py-1.5 pl-7 pr-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="w-full rounded-md border border-input bg-background py-1.5 pl-7 pr-8 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              />
+              <SearchClearButton
+                query={query}
+                label={m.searchClear}
+                testId="workspace-switcher-clear"
+                onClear={() => {
+                  setQuery('');
+                  inputRef.current?.focus();
+                }}
+                className="right-1 h-6 w-6"
               />
             </label>
           ) : null}
