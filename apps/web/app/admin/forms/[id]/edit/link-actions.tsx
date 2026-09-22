@@ -7,10 +7,12 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/cn';
 import { callAction, isTransportError } from '@/lib/call-action';
 import { renameFormSlugAction } from '@/app/admin/actions';
+import { QrModal } from './qr-modal';
 
 /**
- * The topbar's sharing controls: Copy link, Edit link, Embed and Open form as
- * FOUR visible icon-only buttons.
+ * The topbar's sharing controls: Copy link, Edit link, Embed, QR code and Open
+ * form as FIVE visible icon-only buttons. Open form stays last because it is
+ * the only one that is a link rather than a button.
  *
  * They were labelled buttons once (which crowded the tab labels out of the
  * header), then briefly a single popover menu — which tested as one hop too
@@ -55,6 +57,13 @@ export function LinkActions({
     embedIntro: string;
     embedCopy: string;
     embedCopied: string;
+    qr: string;
+    qrTitle: string;
+    qrIntro: string;
+    qrAlt: string;
+    qrDownloadPng: string;
+    qrDownloadSvg: string;
+    qrPngFailed: string;
     renameLink: string;
     renameTitle: string;
     renameIntro: string;
@@ -70,6 +79,7 @@ export function LinkActions({
 }) {
   const [copied, setCopied] = useState(false);
   const [embedOpen, setEmbedOpen] = useState(false);
+  const [qrOpen, setQrOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
   const [snippetCopied, setSnippetCopied] = useState(false);
   const [draft, setDraft] = useState('');
@@ -199,6 +209,16 @@ export function LinkActions({
       >
         <i aria-hidden className="pi pi-code" style={{ fontSize: 13 }} />
       </button>
+      <button
+        type="button"
+        onClick={() => setQrOpen(true)}
+        className={icon}
+        aria-label={labels.qr}
+        title={labels.qr}
+        data-testid="editor-qr"
+      >
+        <i aria-hidden className="pi pi-qrcode" style={{ fontSize: 13 }} />
+      </button>
       <a
         href={publicPath}
         target="_blank"
@@ -299,6 +319,24 @@ export function LinkActions({
           </div>
         </div>
       </Modal>
+
+      {qrOpen ? (
+        <QrModal
+          publicPath={publicPath}
+          slug={slug}
+          labels={{
+            qrTitle: labels.qrTitle,
+            qrIntro: labels.qrIntro,
+            qrAlt: labels.qrAlt,
+            qrDownloadPng: labels.qrDownloadPng,
+            qrDownloadSvg: labels.qrDownloadSvg,
+            qrPngFailed: labels.qrPngFailed,
+            copyLink: labels.copyLink,
+            copied: labels.copied,
+          }}
+          onClose={() => setQrOpen(false)}
+        />
+      ) : null}
     </div>
   );
 }
