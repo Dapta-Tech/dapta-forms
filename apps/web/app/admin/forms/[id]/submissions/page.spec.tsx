@@ -377,3 +377,68 @@ describe('name step column', () => {
     expect(text).not.toContain('stray');
   });
 });
+
+/**
+ * The table reads answers through the same engine helpers as the CSV export,
+ * so what the owner sees on screen is what the download says (BUGS-2310).
+ */
+describe('cells agree with the CSV export', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  async function renderWith(steps: unknown[], data: Record<string, unknown>) {
+    getForm.mockResolvedValue({ id: FORM_ID, config: { version: 1, steps } });
+    listSubmissions.mockResolvedValue({
+      items: [{ ...submission('s1'), data }],
+      total: 1,
+      limit: PAGE_SIZE,
+      offset: 0,
+    });
+    me.mockResolvedValue({ accountId: 'acc-1', role: 'owner', timezone: 'America/Bogota' });
+    const shell = await SubmissionsRoute({
+      params: Promise.resolve({ id: FORM_ID }),
+      searchParams: Promise.resolve({}),
+    });
+    const boundary = find(shell, (el) => el.type === Suspense);
+    const child = boundary?.props?.children as AnyElement;
+    return textOf(await (child.type as (p: unknown) => Promise<unknown>)(child.props));
+  }
+
+  const kind = {
+    key: 'kind',
+    type: 'multiple_choice',
+    question: 'Tipo de sociedad',
+    options: [
+      { label: 'LLC de un solo miembro', value: 'single' },
+      { label: 'LLC multimiembro', value: 'multi' },
+    ],
+  };
+
+  it('shows the option label, not the stored value, and joins a multi-select with "; "', async () => {
+    const text = await renderWith(
+      [kind, { ...kind, key: 'kinds', question: 'Varias', selectionMode: 'multiple' }],
+      { kind: 'multi', kinds: ['single', 'multi'] },
+    );
+    expect(text).toContain('LLC multimiembro');
+    expect(text).toContain('LLC de un solo miembro; LLC multimiembro');
+    expect(text).not.toMatch(/\bmulti\b(?!miembro)/);
+  });
+
+  it('has no column for message or reveal steps and heads the rest with the trimmed question', async () => {
+    const text = await renderWith(
+      [
+        { key: 'intro', type: 'message', question: 'Bienvenido al formulario' },
+        { key: 'city', type: 'text', question: '  City/Town  ' },
+        { key: 'done', type: 'reveal', question: 'Listo el resultado' },
+        { key: 'nolabel', type: 'text', question: '' },
+      ],
+      { city: '  Miami ' },
+    );
+    expect(text).not.toContain('Bienvenido al formulario');
+    expect(text).not.toContain('Listo el resultado');
+    expect(text).toContain('City/Town');
+    expect(text).toContain('nolabel');
+    expect(text).toContain('Miami');
+  });
+});

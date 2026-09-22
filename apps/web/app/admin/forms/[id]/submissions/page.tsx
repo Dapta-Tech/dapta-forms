@@ -2,7 +2,14 @@ import { Suspense } from 'react';
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import type { FormConfig, SubmissionsPage } from '@quill/types';
-import { nameAnswer, parseFileAnswer } from '@quill/engine';
+import {
+  formatAnswerValue,
+  isInputlessStep,
+  nameAnswer,
+  parseFileAnswer,
+  stepLabel,
+  type FormStep,
+} from '@quill/engine';
 import { formatDateTime, getMessages, t, type FormsMessages, type Locale } from '@quill/shared';
 import { adminApi, ApiError, isAdminRole } from '@/lib/admin-api';
 import { WorkspaceTimezoneField } from '@/app/admin/_components/workspace-timezone-field';
@@ -96,16 +103,14 @@ export default async function SubmissionsPage({
   );
 }
 
-/** Flatten one answer value for a table cell. */
-function formatCell(v: unknown, na: string): string {
-  if (v == null || v === '') return na;
-  if (Array.isArray(v)) return v.length ? v.join(', ') : na;
-  if (typeof v === 'boolean') return v ? '✓' : '';
-  // A file answer is an object. Without this it stringified to [object Object],
-  // and the title attribute of every file cell said so.
-  const file = parseFileAnswer(v as never);
-  if (file) return file.name;
-  return String(v);
+/**
+ * One answer as the cell text, through the same helper the CSV export uses so
+ * the screen and the download agree: option labels, a file as its name,
+ * multi-selects joined with `; `, values trimmed. A name step stores its
+ * sub-fields flat (firstname, lastname), never under its own key.
+ */
+function cellText(step: FormStep, data: Record<string, unknown>): string {
+  return step.type === 'name' ? nameAnswer(step, data) : formatAnswerValue(step, data[step.key]);
 }
 
 async function SubmissionsData({
@@ -135,7 +140,8 @@ async function SubmissionsData({
     throw e;
   }
 
-  const steps = (form.config as FormConfig).steps ?? [];
+  // Message and reveal steps collect nothing: no column, as in the CSV.
+  const steps = ((form.config as FormConfig).steps ?? []).filter((s) => !isInputlessStep(s));
 
   if (page.total === 0) {
     return (
@@ -181,7 +187,7 @@ async function SubmissionsData({
               <th className="whitespace-nowrap px-4 py-3 text-right font-medium">{m.submissions.colScore}</th>
               {steps.map((s) => (
                 <th key={s.key} className="whitespace-nowrap px-4 py-3 font-medium">
-                  {s.question?.trim() || s.key}
+                  {stepLabel(s)}
                 </th>
               ))}
               <th className="px-4 py-3" aria-label="actions" />
@@ -217,16 +223,9 @@ async function SubmissionsData({
                     // A file cell is the one answer that is not text: it opens
                     // the thing rather than describing it.
                     const file = s.type === 'file' ? parseFileAnswer(data[s.key] as never) : null;
-                    // A name step stores its sub-fields flat (firstname,
-                    // lastname), never under its own key: read it the way the
-                    // email summary does, or the column is always n/a.
-                    const cell = s.type === 'name' ? nameAnswer(s, data) : data[s.key];
+                    const text = cellText(s, data);
                     return (
-                      <td
-                        key={s.key}
-                        className="max-w-[240px] truncate px-4 py-3"
-                        title={formatCell(cell, '')}
-                      >
+                      <td key={s.key} className="max-w-[240px] truncate px-4 py-3" title={text}>
                         {file ? (
                           <SubmissionFileButton
                             formId={id}
@@ -245,7 +244,7 @@ async function SubmissionsData({
                             }}
                           />
                         ) : (
-                          formatCell(cell, m.submissions.na)
+                          text || m.submissions.na
                         )}
                       </td>
                     );
