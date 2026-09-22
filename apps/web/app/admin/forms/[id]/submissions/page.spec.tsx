@@ -387,8 +387,8 @@ describe('cells agree with the CSV export', () => {
     vi.clearAllMocks();
   });
 
-  async function renderWith(steps: unknown[], data: Record<string, unknown>) {
-    getForm.mockResolvedValue({ id: FORM_ID, config: { version: 1, steps } });
+  async function renderWith(steps: unknown[], data: Record<string, unknown>, extra: Record<string, unknown> = {}) {
+    getForm.mockResolvedValue({ id: FORM_ID, config: { version: 1, steps, ...extra } });
     listSubmissions.mockResolvedValue({
       items: [{ ...submission('s1'), data }],
       total: 1,
@@ -440,5 +440,27 @@ describe('cells agree with the CSV export', () => {
     expect(text).toContain('City/Town');
     expect(text).toContain('nolabel');
     expect(text).toContain('Miami');
+  });
+
+  it('hides Score when the form does not score, and shows it when it does', async () => {
+    const steps = [{ key: 'city', type: 'text', question: 'City' }];
+    expect(await renderWith(steps, { city: 'Miami' }, { scoring: { enabled: false } })).not.toContain(
+      'Score',
+    );
+    expect(await renderWith(steps, { city: 'Miami' })).toContain('Score');
+  });
+
+  it('shows true as a check and false as nothing, and a booking in the workspace zone', async () => {
+    const text = await renderWith(
+      [
+        { key: 'ok', type: 'text', question: 'Ok' },
+        { key: 'no', type: 'text', question: 'No' },
+        { key: 'call', type: 'scheduler', question: 'Agenda' },
+      ],
+      { ok: true, no: false, call: '2026-09-03T14:30:00.000Z' },
+    );
+    expect(text).toContain('✓');
+    expect(text).not.toContain('false');
+    expect(text).toContain('2026-09-03 09:30 GMT-5');
   });
 });

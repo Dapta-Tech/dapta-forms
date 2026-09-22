@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import type { FormConfig, SubmissionsPage } from '@quill/types';
 import {
-  formatAnswerValue,
+  formatAnswerCell,
   isInputlessStep,
   nameAnswer,
   parseFileAnswer,
@@ -106,11 +106,12 @@ export default async function SubmissionsPage({
 /**
  * One answer as the cell text, through the same helper the CSV export uses so
  * the screen and the download agree: option labels, a file as its name,
- * multi-selects joined with `; `, values trimmed. A name step stores its
- * sub-fields flat (firstname, lastname), never under its own key.
+ * multi-selects joined with `; `, a booking in the workspace zone, a boolean
+ * as a check, values trimmed. A name step stores its sub-fields flat
+ * (firstname, lastname), never under its own key.
  */
-function cellText(step: FormStep, data: Record<string, unknown>): string {
-  return step.type === 'name' ? nameAnswer(step, data) : formatAnswerValue(step, data[step.key]);
+function cellText(step: FormStep, data: Record<string, unknown>, timeZone: string): string {
+  return step.type === 'name' ? nameAnswer(step, data) : formatAnswerCell(step, data[step.key], { timeZone });
 }
 
 async function SubmissionsData({
@@ -140,8 +141,11 @@ async function SubmissionsData({
     throw e;
   }
 
+  const config = form.config as FormConfig;
   // Message and reveal steps collect nothing: no column, as in the CSV.
-  const steps = ((form.config as FormConfig).steps ?? []).filter((s) => !isInputlessStep(s));
+  const steps = (config.steps ?? []).filter((s) => !isInputlessStep(s));
+  // Score only exists when the form scores, as in the CSV.
+  const scoring = config.scoring?.enabled !== false;
 
   if (page.total === 0) {
     return (
@@ -184,7 +188,9 @@ async function SubmissionsData({
             <tr className="border-b border-border text-left text-2xs uppercase tracking-wide text-faint">
               <th className="whitespace-nowrap px-4 py-3 font-medium">{m.submissions.colSubmitted}</th>
               <th className="whitespace-nowrap px-4 py-3 font-medium">{m.submissions.colStatus}</th>
-              <th className="whitespace-nowrap px-4 py-3 text-right font-medium">{m.submissions.colScore}</th>
+              {scoring ? (
+                <th className="whitespace-nowrap px-4 py-3 text-right font-medium">{m.submissions.colScore}</th>
+              ) : null}
               {steps.map((s) => (
                 <th key={s.key} className="whitespace-nowrap px-4 py-3 font-medium">
                   {stepLabel(s)}
@@ -218,12 +224,14 @@ async function SubmissionsData({
                       {completed ? m.submissions.badgeCompleted : m.submissions.badgePartial}
                     </span>
                   </td>
-                  <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums">{row.score}</td>
+                  {scoring ? (
+                    <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums">{row.score}</td>
+                  ) : null}
                   {steps.map((s) => {
                     // A file cell is the one answer that is not text: it opens
                     // the thing rather than describing it.
                     const file = s.type === 'file' ? parseFileAnswer(data[s.key] as never) : null;
-                    const text = cellText(s, data);
+                    const text = cellText(s, data, timeZone);
                     return (
                       <td key={s.key} className="max-w-[240px] truncate px-4 py-3" title={text}>
                         {file ? (
