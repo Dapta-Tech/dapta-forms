@@ -12,14 +12,13 @@ import {
   Res,
 } from '@nestjs/common';
 import type { Db } from '@quill/db';
-import { getAccountTimezone, getFormById } from '@quill/db';
-import { formatIsoWithOffset, resolveTimeZone } from '@quill/shared';
-import { nameAnswer } from '@quill/engine';
+import { getAccountTimezone, getFormById, getMemberLocale } from '@quill/db';
+import { formatIsoWithOffset, getMessages, resolveTimeZone } from '@quill/shared';
 import type { FormConfig } from '@quill/types';
 import { AuthService, type ReqLike } from './auth.service';
 import { AnalyticsService } from './analytics.service';
 import { DB } from './tokens';
-import { csvRow } from './csv';
+import { csvRow, exportColumns, UTF8_BOM } from './csv';
 import { parseBound, parseStatus, parseTimeZone } from './query-params';
 
 /** A minimal response shape (structurally satisfied by the express Response). */
@@ -27,10 +26,6 @@ interface StreamRes {
   setHeader(name: string, value: string): void;
   write(chunk: string): void;
   end(): void;
-}
-
-function iso(ms: number | null): string {
-  return ms == null ? '' : new Date(ms).toISOString();
 }
 
 /**
@@ -77,12 +72,15 @@ export class AnalyticsController {
   }
 
   /**
-   * Stream the form's submissions as CSV. Answers flatten to one column per
-   * configured step key (form config order), after the fixed metadata columns.
-   * `started_at` / `completed_at` stay UTC ISO (`Z`), and `*_local` twins carry
-   * the same instants read in the workspace's zone with their offset, so a
-   * spreadsheet shows the team's clock without losing the machine one.
-   * Uses the un-paginated export query (`allSubmissionsForExport`) — the table
+   * Stream the form's submissions as a CSV a person can open in a spreadsheet:
+   * one column per answering step headed by its question (message and reveal
+   * steps have none), option labels rather than stored values, a file as its
+   * name, the name split into First/Last name up front, and the technical
+   * columns at the end. `Submitted at` is the completion instant read in the
+   * workspace's zone with its offset. Technical headers follow the downloading
+   * member's language, then the form's, then English. Starts with a UTF-8 BOM
+   * so Excel keeps the accents.
+   * Uses the un-paginated export query (`allSubmissionsForExport`): the table
    * query caps `limit` at 200, so paging through it would silently truncate and
    * skip rows on large exports. Rows are still written incrementally.
    */
@@ -100,30 +98,27 @@ export class AnalyticsController {
     if (!form) throw new NotFoundException({ error: 'NOT_FOUND', message: 'Not found.' });
 
     const config = form.config as FormConfig;
-    const steps = config.steps ?? [];
-    const stepKeys = steps.map((s) => s.key);
     const filename = `${form.slug || 'submissions'}-submissions.csv`;
     // An unknown stored zone exports as UTC (+00:00) rather than failing the download.
     const zone = resolveTimeZone(await getAccountTimezone(this.db, p.accountId), (m) => this.log.warn(m));
     const local = (ms: number | null) => (ms == null ? '' : formatIsoWithOffset(ms, zone));
+    const locale = (await getMemberLocale(this.db, p.accountId, p.memberId)) ?? config.language ?? 'en';
+    const m = getMessages(locale).admin.submissions;
+    const columns = exportColumns(config.steps ?? [], {
+      scoring: config.scoring?.enabled !== false,
+      labels: {
+        submittedAt: m.colSubmittedAt,
+        status: m.colStatus,
+        score: m.colScore,
+        submissionId: m.colSubmissionId,
+      },
+    });
 
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.setHeader('Cache-Control', 'no-store');
 
-    res.write(
-      csvRow([
-        'id',
-        'session_id',
-        'status',
-        'score',
-        'started_at',
-        'completed_at',
-        'started_at_local',
-        'completed_at_local',
-        ...stepKeys,
-      ]),
-    );
+    res.write(UTF8_BOM + csvRow(columns.map((c) => c.header)));
 
     const rows = await this.analytics.exportSubmissions(id, {
       status: parseStatus(status),
@@ -131,22 +126,14 @@ export class AnalyticsController {
       to: parseBound(to, true, zone),
     });
     for (const s of rows) {
-      const data = (s.data ?? {}) as Record<string, unknown>;
-      const st = s.completedAt != null ? 'completed' : s.partialAt != null ? 'partial' : 'in_progress';
-      res.write(
-        csvRow([
-          s.id,
-          s.sessionId,
-          st,
-          s.score,
-          iso(s.startedAt),
-          iso(s.completedAt),
-          local(s.startedAt),
-          local(s.completedAt),
-          // A name step stores firstname/lastname flat, never under its key.
-          ...steps.map((st) => (st.type === 'name' ? nameAnswer(st, data) : data[st.key])),
-        ]),
-      );
+      const row = {
+        id: s.id,
+        data: (s.data ?? {}) as Record<string, unknown>,
+        score: s.score,
+        status: s.completedAt != null ? 'completed' : s.partialAt != null ? 'partial' : 'in_progress',
+        submittedAt: local(s.completedAt),
+      };
+      res.write(csvRow(columns.map((c) => c.value(row))));
     }
     res.end();
   }

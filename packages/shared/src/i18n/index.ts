@@ -1272,6 +1272,9 @@ export interface FormsMessages {
       colSubmitted: string;
       colStatus: string;
       colScore: string;
+      /** CSV-only technical headers (the table shows the date under `colSubmitted`). */
+      colSubmittedAt: string;
+      colSubmissionId: string;
       export: string;
       delete: string;
       deleteConfirm: string;
@@ -2922,6 +2925,8 @@ export const en: FormsMessages = {
       colSubmitted: 'Submitted',
       colStatus: 'Status',
       colScore: 'Score',
+      colSubmittedAt: 'Submitted at',
+      colSubmissionId: 'Submission id',
       export: 'Download CSV',
       delete: 'Delete',
       deleteConfirm: 'Delete this submission? This cannot be undone.',
@@ -4532,6 +4537,8 @@ export const es: FormsMessages = {
       colSubmitted: 'Enviada',
       colStatus: 'Estado',
       colScore: 'Puntaje',
+      colSubmittedAt: 'Fecha de envío',
+      colSubmissionId: 'ID de respuesta',
       export: 'Descargar CSV',
       delete: 'Eliminar',
       deleteConfirm: '¿Eliminar esta respuesta? No se puede deshacer.',

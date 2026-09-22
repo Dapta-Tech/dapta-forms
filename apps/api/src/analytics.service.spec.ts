@@ -532,7 +532,9 @@ describe('CSV export (large sets, un-paginated)', () => {
     expect((await querySubmissions(db, formId, {})).total).toBe(250);
 
     const lines = await runExport();
-    expect(lines[0]).toMatch(/^id,session_id,status,score,started_at,completed_at/);
+    expect(lines[0]).toBe(
+      '\uFEFFWhat best describes you?,How big is your team?,What company do you work at?,Where should we send the results?,Submitted at,Status,Score,Submission id',
+    );
     expect(lines.length - 1).toBe(250); // header + one row per submission
   });
 
@@ -563,6 +565,14 @@ describe('csvField formula-injection neutralization', () => {
   it('still RFC-4180-quotes when the neutralized value needs it', () => {
     // Leading `=` AND a comma: neutralize first, then quote.
     expect(csvField('=HYPERLINK("http://e.x","y")')).toBe('"\'=HYPERLINK(""http://e.x"",""y"")"');
+  });
+
+  it('exports an E.164 phone raw, separators allowed, but not a + followed by anything else', () => {
+    expect(csvField('+573180087175')).toBe('+573180087175');
+    expect(csvField('+1 (305) 555-0100')).toBe('+1 (305) 555-0100');
+    expect(csvField('+SUM(A1)')).toBe("'+SUM(A1)");
+    expect(csvField('+1+cmd|calc')).toBe("'+1+cmd|calc");
+    expect(csvField('+')).toBe("'+");
   });
 
   it('leaves genuine numbers/booleans and plain strings untouched', () => {
@@ -624,11 +634,11 @@ describe('workspace timezone: day cuts and the CSV local columns', () => {
     expect(r!.range.timeZone).toBe('UTC');
   });
 
-  it('the CSV keeps the UTC columns and adds started_at_local / completed_at_local in the zone', async () => {
+  it('the CSV reads Submitted at in the workspace zone with its offset, and nothing in UTC', async () => {
     await db.run(sql`UPDATE account SET timezone = 'America/Bogota' WHERE id = ${accountId}`);
     await insertSubmission({
       session: 'tz-csv',
-      data: { role: 'founder' },
+      data: { role: 'founder', company: 'tz-csv' },
       score: 10,
       startedAt: Date.UTC(2026, 8, 3, 23, 30),
       completedAt: Date.UTC(2026, 8, 4, 0, 15),
@@ -641,18 +651,19 @@ describe('workspace timezone: day cuts and the CSV local columns', () => {
     const res = { setHeader: () => {}, write: (c: string) => void chunks.push(c), end: () => {} };
     await ctrl.exportCsv({ headers: {} }, res, formId, undefined, undefined, undefined);
     const lines = chunks.join('').trimEnd().split('\r\n');
-    expect(lines[0]).toMatch(/^id,session_id,status,score,started_at,completed_at,started_at_local,completed_at_local,/);
+    expect(lines[0]).toMatch(/,Submitted at,Status,Score,Submission id$/);
     const row = lines.find((l) => l.includes('tz-csv'))!;
-    expect(row).toContain('2026-09-03T23:30:00.000Z');
-    expect(row).toContain('2026-09-03T18:30:00-05:00');
-    expect(row).toContain('2026-09-03T19:15:00-05:00');
+    expect(row).toContain(',2026-09-03T19:15:00-05:00,completed,10,');
+    // The start instant and the UTC twins are gone.
+    expect(row).not.toContain('2026-09-03T18:30:00-05:00');
+    expect(row).not.toContain('Z,');
   });
 
   it('an invalid workspace zone exports local columns as +00:00', async () => {
     await db.run(sql`UPDATE account SET timezone = 'Mars/Olympus' WHERE id = ${accountId}`);
     await insertSubmission({
       session: 'tz-bad',
-      data: { role: 'founder' },
+      data: { role: 'founder', company: 'tz-bad' },
       score: 10,
       startedAt: Date.UTC(2026, 8, 3, 23, 30),
       completedAt: Date.UTC(2026, 8, 3, 23, 45),
@@ -665,6 +676,163 @@ describe('workspace timezone: day cuts and the CSV local columns', () => {
     const res = { setHeader: () => {}, write: (c: string) => void chunks.push(c), end: () => {} };
     await ctrl.exportCsv({ headers: {} }, res, formId, undefined, undefined, undefined);
     const row = chunks.join('').split('\r\n').find((l) => l.includes('tz-bad'))!;
-    expect(row).toContain('2026-09-03T23:30:00+00:00');
+    expect(row).toContain('2026-09-03T23:45:00+00:00');
+  });
+});
+
+describe('CSV export: readable columns (BUGS-2310)', () => {
+  const lyownSteps = [
+    { key: 'intro', type: 'message', question: 'Bienvenido' },
+    { key: 'name_18', type: 'name', question: 'Tu nombre' },
+    { key: 'phone_3', type: 'phone', question: 'Phone number' },
+    { key: 'text_21', type: 'text', question: '  *Nombre Completo de tu LLC*  ' },
+    { key: 'text_22', type: 'text', question: 'City/Town' },
+    { key: 'text_23', type: 'text', question: 'City/Town' },
+    {
+      key: 'multiple_choice_13',
+      type: 'multiple_choice',
+      question: 'Selecciona el tipo de sociedad',
+      options: [
+        { label: 'LLC de un solo miembro', value: 'single' },
+        { label: 'LLC multimiembro', value: 'multi' },
+      ],
+    },
+    {
+      key: 'services',
+      type: 'multiple_choice',
+      selectionMode: 'multiple',
+      question: 'Servicios',
+      options: [
+        { label: 'EIN', value: 'ein' },
+        { label: 'Bienes raíces', value: 'real_estate' },
+      ],
+    },
+    { key: 'passport', type: 'file', question: 'Pasaporte' },
+    { key: 'done', type: 'reveal' },
+    { key: 'nolabel', type: 'text', question: '' },
+  ];
+
+  async function makeForm(extra: Record<string, unknown> = {}): Promise<string> {
+    const created = await createForm(db, accountId, {
+      name: `csv-${crypto.randomUUID().slice(0, 8)}`,
+      config: { version: 1, steps: lyownSteps, ...extra },
+    });
+    if (!created.ok) throw new Error('form creation failed');
+    return created.value.id;
+  }
+
+  async function exportOf(id: string, memberId = 'test-member'): Promise<string> {
+    const auth = {
+      resolveHost: async () => ({ accountId, memberId, role: 'owner' as const }),
+    } as unknown as AuthService;
+    const ctrl = new AnalyticsController(db, auth, svc);
+    const chunks: string[] = [];
+    const res = { setHeader: () => {}, write: (c: string) => void chunks.push(c), end: () => {} };
+    await ctrl.exportCsv({ headers: {} }, res, id, undefined, undefined, undefined);
+    return chunks.join('');
+  }
+
+  async function answer(id: string, data: Record<string, unknown>) {
+    await db.run(
+      sql`INSERT INTO submission (id, form_id, session_id, data, score, started_at, completed_at, partial_at)
+          VALUES (${'sub-1'}, ${id}, ${'sess-1'}, ${jsonParam(data)}, ${7}, ${NOW}, ${NOW + 1000}, ${null})`,
+    );
+  }
+
+  const answers = {
+    firstname: '  Laura ',
+    lastname: 'Pérez',
+    phone_3: '+573180087175',
+    text_21: ' Lyown Consulting LLC ',
+    text_22: 'Miami',
+    text_23: 'Doral',
+    multiple_choice_13: 'multi',
+    services: ['ein', 'real_estate'],
+    passport: {
+      key: 'uploads/acc/form/sub/passport/pasaporte.pdf',
+      mime: 'application/pdf',
+      name: 'pasaporte.pdf',
+      size: '2048',
+    },
+    nolabel: 'x',
+  };
+
+  it('starts with a BOM and heads each answering step with its question, technical columns last', async () => {
+    const id = await makeForm();
+    const [header] = (await exportOf(id)).split('\r\n');
+    expect(header).toBe(
+      '\uFEFFFirst name,Last name,Phone number,*Nombre Completo de tu LLC*,City/Town,City/Town (2),Selecciona el tipo de sociedad,Servicios,Pasaporte,nolabel,Submitted at,Status,Score,Submission id',
+    );
+  });
+
+  it('writes labels, file names, a raw phone and trimmed values, and no message or reveal column', async () => {
+    const id = await makeForm();
+    await answer(id, answers);
+    const row = (await exportOf(id)).split('\r\n')[1]!;
+    expect(row).toMatch(
+      /^Laura,Pérez,\+573180087175,Lyown Consulting LLC,Miami,Doral,LLC multimiembro,EIN; Bienes raíces,pasaporte\.pdf,x,[^,]+,completed,7,sub-1$/,
+    );
+    expect(row).not.toContain('uploads/');
+    expect(row).not.toContain('{');
+  });
+
+  it('keeps a negative slider value numeric and never repeats a header', async () => {
+    const created = await createForm(db, accountId, {
+      name: 'edge',
+      config: {
+        version: 1,
+        steps: [
+          { key: 'a', type: 'email', question: 'Email' },
+          { key: 'b', type: 'email', question: 'Email' },
+          { key: 'c', type: 'email', question: 'Email (2)' },
+          { key: 'd', type: 'slider', question: 'Balance', min: -10, max: 10 },
+        ],
+      },
+    });
+    if (!created.ok) throw new Error('form creation failed');
+    await answer(created.value.id, { d: -5 });
+    const [header, row] = (await exportOf(created.value.id)).split('\r\n');
+    expect(header).toMatch(/^\uFEFFEmail,Email \(3\),Email \(2\),Balance,/);
+    expect(row).toMatch(/^,,,-5,/);
+  });
+
+  it('drops Score when the form has scoring off', async () => {
+    const id = await makeForm({ scoring: { enabled: false } });
+    await answer(id, answers);
+    const [header, row] = (await exportOf(id)).split('\r\n');
+    expect(header).toMatch(/,Submitted at,Status,Submission id$/);
+    expect(row).toMatch(/,completed,sub-1$/);
+  });
+
+  it('keeps the joined name under the question when the step does not have two fields', async () => {
+    const steps = lyownSteps.map((s) => (s.type === 'name' ? { ...s, fields: ['fullname'] } : s));
+    const created = await createForm(db, accountId, { name: 'one-field', config: { version: 1, steps } });
+    if (!created.ok) throw new Error('form creation failed');
+    await answer(created.value.id, { fullname: ' Laura Pérez ' });
+    const [header, row] = (await exportOf(created.value.id)).split('\r\n');
+    expect(header).toMatch(/^\uFEFFTu nombre,Phone number,/);
+    expect(row).toMatch(/^Laura Pérez,/);
+  });
+
+  it('names the technical columns in the member language, then the form language, then English', async () => {
+    const id = await makeForm({ language: 'es' });
+    // No member locale: the form's language decides.
+    expect((await exportOf(id)).split('\r\n')[0]).toMatch(
+      /,Fecha de envío,Estado,Puntaje,ID de respuesta$/,
+    );
+    // A member who chose English wins over a Spanish form.
+    const member = await db.get<{ id: string }>(
+      sql`SELECT id FROM member WHERE account_id = ${accountId} LIMIT 1`,
+    );
+    await db.run(sql`UPDATE member SET locale = 'en' WHERE id = ${member!.id}`);
+    expect((await exportOf(id, member!.id)).split('\r\n')[0]).toMatch(
+      /,Submitted at,Status,Score,Submission id$/,
+    );
+    // And one who chose Spanish wins over an English default.
+    const enForm = await makeForm();
+    await db.run(sql`UPDATE member SET locale = 'es' WHERE id = ${member!.id}`);
+    expect((await exportOf(enForm, member!.id)).split('\r\n')[0]).toMatch(
+      /,Fecha de envío,Estado,Puntaje,ID de respuesta$/,
+    );
   });
 });
