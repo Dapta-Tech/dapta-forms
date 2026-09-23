@@ -261,6 +261,14 @@ export function ResponsesViewer({
     if (openId && index < 0) show(null, null);
   }, [openId, index, show]);
 
+  // The same on load: the table is mounted afresh after a delete, and a
+  // `?response=` naming a row that is gone opens nothing, so drop it from the
+  // address bar too rather than leave a link to a deleted response.
+  useEffect(() => {
+    if (initialId && !items.some((i) => i.id === initialId)) writeParam(RESPONSE_PARAM, null);
+    // Once, on mount: later changes are the effect above's.
+  }, []);
+
   // Up / Down walk the page, like the arrows in the header. Not while a dialog
   // opened from the panel has the keys (a file preview, the delete confirm),
   // and not inside the scrolling body, where the arrows scroll the answers.

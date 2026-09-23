@@ -1,7 +1,6 @@
 'use client';
 
 import { useTransition } from 'react';
-import { useRouter } from 'next/navigation';
 import { getMessages } from '@quill/shared';
 import { clientLocale } from '@/lib/client-locale';
 import { useConfirmDialog } from '@/components/ui/confirm-dialog';
@@ -31,7 +30,6 @@ export function DeleteSubmissionButton({
   size?: keyof typeof PILL;
 }) {
   const [pending, start] = useTransition();
-  const router = useRouter();
   const { confirm: confirmDialog, dialog } = useConfirmDialog();
   return (
     <>
@@ -45,13 +43,8 @@ export function DeleteSubmissionButton({
             confirmLabel: labels.delete,
             destructive: true,
           }).then((ok) => {
-            if (!ok) return;
-            // `revalidatePath` in the action alone left the deleted row on
-            // screen in a production build; the refresh redraws the table.
-            start(async () => {
-              await callAction(() => deleteSubmissionAction(formId, submissionId));
-              router.refresh();
-            });
+            if (ok)
+              start(() => void callAction(() => deleteSubmissionAction(formId, submissionId)));
           });
         }}
         className={`inline-flex shrink-0 items-center rounded-full border border-destructive/40 bg-destructive/10 font-medium text-destructive transition-colors hover:border-destructive/60 hover:bg-destructive/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive/50 disabled:opacity-50 ${PILL[size]}`}

@@ -92,8 +92,13 @@ export default async function SubmissionsPage({
   const status = parseStatus(sp.status);
   const offset = Math.max(0, Number(sp.offset ?? 0) || 0);
   const size = parsePageSize(sp.size);
-  // A new page, size or filter is a new table: the viewer (and its selection) starts over.
-  const key = `${status}:${offset}:${size}`;
+  // A new page, size or filter is a new table: the viewer (and its selection)
+  // starts over. The render time is in the key too, so every server render
+  // mounts a new boundary. A refresh that kept the key (the one a delete's
+  // `revalidatePath` triggers, or `router.refresh()`) fetched the new rows and
+  // never put them on screen: the deleted row stayed in the table until a
+  // reload, in Chrome and Safari, in a production build.
+  const key = `${status}:${offset}:${size}:${Date.now()}`;
   // The workspace zone every timestamp below is read in, and who may change it.
   const me = await adminApi.me();
   const timeZone = me.timezone ?? 'UTC';

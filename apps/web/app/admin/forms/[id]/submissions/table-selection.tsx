@@ -20,7 +20,6 @@ import {
   useState,
   useTransition,
 } from 'react';
-import { useRouter } from 'next/navigation';
 import { t } from '@quill/shared';
 import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import { callAction, isTransportError } from '@/lib/call-action';
@@ -144,10 +143,13 @@ const BAR_BUTTON =
  * "3 selected · Export CSV · Delete · Clear". Nothing at all without a
  * selection. Export is a plain link to the CSV route with `?ids=`, so the file
  * is the same as the full export, only shorter.
+ *
+ * One line always: in the sheet the bar takes the top bar's place beside the
+ * close button, so on a phone Export and Clear drop to their icons (named for
+ * screen readers and on hover) rather than wrap out of it.
  */
 export function SelectionBar({ formId, labels }: { formId: string; labels: SelectionLabels }) {
   const selection = useContext(SelectionContext);
-  const router = useRouter();
   const { confirm, dialog } = useConfirmDialog();
   const [pending, start] = useTransition();
   const [failed, setFailed] = useState(false);
@@ -167,14 +169,8 @@ export function SelectionBar({ formId, labels }: { formId: string; labels: Selec
       if (!ok) return;
       start(async () => {
         const res = await callAction(() => deleteSubmissionsAction(formId, ids));
-        if (isTransportError(res) || !res.ok) {
-          setFailed(true);
-          return;
-        }
-        selection.clear();
-        // `revalidatePath` in the action does not redraw the page on its own
-        // in a production build: the rows stayed on screen after the delete.
-        router.refresh();
+        if (isTransportError(res) || !res.ok) setFailed(true);
+        else selection.clear();
       });
     });
   };
@@ -187,7 +183,7 @@ export function SelectionBar({ formId, labels }: { formId: string; labels: Selec
         role="toolbar"
         aria-label={count === 1 ? labels.selectedCountOne : t(labels.selectedCount, { n: count })}
         data-testid="selection-bar"
-        className="flex min-w-0 animate-response-in flex-wrap items-center gap-1"
+        className="flex min-w-0 animate-response-in items-center gap-1"
       >
         <span
           className="mr-1 whitespace-nowrap text-sm font-semibold tabular-nums"
@@ -198,10 +194,12 @@ export function SelectionBar({ formId, labels }: { formId: string; labels: Selec
         <a
           href={`/admin/forms/${formId}/submissions/export?ids=${ids.map(encodeURIComponent).join(',')}`}
           data-testid="selection-export"
+          aria-label={labels.exportSelected}
+          title={labels.exportSelected}
           className={`${BAR_BUTTON} text-foreground hover:bg-accent`}
         >
           <i aria-hidden className="pi pi-download" style={{ fontSize: 12 }} />
-          {labels.exportSelected}
+          <span className="hidden sm:inline">{labels.exportSelected}</span>
         </a>
         <button
           type="button"
@@ -217,13 +215,15 @@ export function SelectionBar({ formId, labels }: { formId: string; labels: Selec
           type="button"
           onClick={selection.clear}
           data-testid="selection-clear"
+          aria-label={labels.clearSelection}
+          title={labels.clearSelection}
           className={`${BAR_BUTTON} text-muted-foreground hover:bg-accent hover:text-foreground`}
         >
           <i aria-hidden className="pi pi-times" style={{ fontSize: 11 }} />
-          {labels.clearSelection}
+          <span className="hidden sm:inline">{labels.clearSelection}</span>
         </button>
         {failed ? (
-          <span role="alert" className="ml-1 text-sm text-destructive">
+          <span role="alert" className="ml-1 min-w-0 truncate text-sm text-destructive">
             {labels.bulkDeleteFailed}
           </span>
         ) : null}

@@ -12,9 +12,6 @@ vi.mock('./actions', () => ({
   submissionFileUrlAction: vi.fn(),
 }));
 
-// The delete controls refresh the page after deleting.
-vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: () => {}, push: () => {} }) }));
-
 import { ResponseDetailView, ResponsesViewer, type PanelLabels } from './response-panel';
 import type { ResponseDetail } from './response-detail';
 
