@@ -106,6 +106,15 @@ export function isTextSummaryStep(step: Pick<FormStep, 'type'>): boolean {
 }
 
 /**
+ * Whether the submissions table can filter by a step's answers: the steps
+ * whose answer is one of a fixed set of options (single or multiple choice,
+ * dropdown). Free text, contact and URL steps are searched, not filtered.
+ */
+export function isFilterableChoiceStep(step: Pick<FormStep, 'type'>): boolean {
+  return step.type === 'multiple_choice' || step.type === 'dropdown';
+}
+
+/**
  * The answer keys a text step's value is stored under: its own key, or a name
  * step's sub-fields (firstname, lastname), which are stored flat.
  */
@@ -155,7 +164,12 @@ function choiceTokens(value: unknown): string[] {
   return list.map((v) => (v == null ? '' : String(v).trim())).filter((v) => v.length > 0);
 }
 
-function summarizeChoice(step: FormStep, rows: SummaryRow[]) {
+/**
+ * How many responses chose each option of a choice step, in the form's option
+ * order, then any stored value no option carries any more (a removed option),
+ * which keeps its raw value as label.
+ */
+function choiceCounts(step: FormStep, rows: SummaryRow[]): { answered: number; options: SummaryOption[] } {
   const counts = new Map<string, number>();
   for (const o of step.options ?? []) counts.set(o.value, 0);
   let answered = 0;
@@ -166,18 +180,19 @@ function summarizeChoice(step: FormStep, rows: SummaryRow[]) {
     answered++;
     for (const t of tokens) counts.set(t, (counts.get(t) ?? 0) + 1);
   }
-  // Map order is the form's option order, then any stored value no option
-  // carries any more (a removed option), which keeps its raw value as label.
-  const options = [...counts.entries()]
-    .map(([value, count], order) => ({
-      value,
-      label: formatAnswerValue(step, value),
-      count,
-      percent: percentOf(count, answered),
-      order,
-    }))
-    .sort((a, b) => b.count - a.count || a.order - b.order)
-    .map(({ order: _order, ...o }) => o);
+  const options = [...counts.entries()].map(([value, count]) => ({
+    value,
+    label: formatAnswerValue(step, value),
+    count,
+    percent: percentOf(count, answered),
+  }));
+  return { answered, options };
+}
+
+function summarizeChoice(step: FormStep, rows: SummaryRow[]) {
+  const { answered, options } = choiceCounts(step, rows);
+  // Most chosen first; the sort is stable, so ties keep the form's order.
+  options.sort((a, b) => b.count - a.count);
   const multiple = step.type === 'multiple_choice' && step.selectionMode === 'multiple';
   return { answered, multiple, options };
 }
@@ -264,7 +279,7 @@ export function summarizeSubmissions(
   const total = rows.length;
   const questions = answering.map((step): QuestionSummary => {
     const base = { key: step.key, type: step.type, label: stepLabel(step), total };
-    if (step.type === 'multiple_choice' || step.type === 'dropdown')
+    if (isFilterableChoiceStep(step))
       return { ...base, kind: 'choice', ...summarizeChoice(step, rows) };
     if (step.type === 'slider') return { ...base, kind: 'scale', ...summarizeScale(step, rows) };
     if (step.type === 'file' || step.type === 'scheduler') {
@@ -290,4 +305,38 @@ export function summarizeSubmissions(
     return { ...base, kind: 'text', answered, recent };
   });
   return { total, questions };
+}
+
+/**
+ * A response as the table's filter menus count it: its answers, and its
+ * status by the table's rule (completed, else partial when a partial was
+ * saved; a row with neither is in the total but under no status).
+ */
+export interface FacetRow {
+  data: Record<string, unknown>;
+  completedAt: number | null;
+  partialAt: number | null;
+}
+
+/**
+ * What the table's header filters offer, counted over every response (the
+ * distribution before filtering): how many are completed and partial, and
+ * per choice step how many picked each option, in the form's option order.
+ */
+export interface SubmissionFacets {
+  total: number;
+  completed: number;
+  partial: number;
+  choices: Record<string, SummaryOption[]>;
+}
+
+export function summarizeFacets(steps: FormStep[], rows: FacetRow[]): SubmissionFacets {
+  const summaryRows = rows.map((r, i) => ({ id: String(i), data: r.data, at: 0 }));
+  const choices: Record<string, SummaryOption[]> = {};
+  for (const step of steps) {
+    if (isFilterableChoiceStep(step)) choices[step.key] = choiceCounts(step, summaryRows).options;
+  }
+  const completed = rows.filter((r) => r.completedAt != null).length;
+  const partial = rows.filter((r) => r.completedAt == null && r.partialAt != null).length;
+  return { total: rows.length, completed, partial, choices };
 }

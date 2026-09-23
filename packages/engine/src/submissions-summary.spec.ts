@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { FormStep } from './form-logic';
 import {
+  isFilterableChoiceStep,
+  summarizeFacets,
   isTextSummaryStep,
   summarizeSubmissions,
   summaryAnswer,
@@ -265,5 +267,33 @@ describe('summary helpers', () => {
     expect(steps.filter(isTextSummaryStep).map((s) => s.key)).toEqual(['name', 'email', 'notes']);
     expect(summaryAnswerFields(steps[1]!)).toEqual(['firstname', 'lastname']);
     expect(summaryAnswerFields(steps[2]!)).toEqual(['email']);
+  });
+
+  it('knows which steps the table can filter by: the ones answered from a set of options', () => {
+    const types = ['multiple_choice', 'dropdown', 'text', 'name', 'email', 'url', 'slider', 'file'] as const;
+    expect(types.filter((type) => isFilterableChoiceStep({ type }))).toEqual(['multiple_choice', 'dropdown']);
+  });
+
+  it('counts the filter menus over every response: status, and each option in form order', () => {
+    const facetSteps = [
+      { key: 'kind', type: 'dropdown', question: 'Kind', options: [
+        { value: 'a', label: 'Alpha' }, { value: 'b', label: 'Beta' }, { value: 'c', label: 'Gamma' },
+      ] },
+      { key: 'notes', type: 'text', question: 'Notes' },
+    ] as unknown as FormStep[];
+    const facets = summarizeFacets(facetSteps, [
+      { data: { kind: 'b' }, completedAt: 1, partialAt: null },
+      { data: { kind: 'b' }, completedAt: null, partialAt: 2 },
+      { data: { kind: ' old ' }, completedAt: 3, partialAt: null },
+      { data: {}, completedAt: null, partialAt: null },
+    ]);
+    expect(facets).toMatchObject({ total: 4, completed: 2, partial: 1 });
+    expect(Object.keys(facets.choices)).toEqual(['kind']);
+    expect(facets.choices.kind!.map((o) => [o.value, o.label, o.count, o.percent])).toEqual([
+      ['a', 'Alpha', 0, 0],
+      ['b', 'Beta', 2, 67],
+      ['c', 'Gamma', 0, 0],
+      ['old', 'old', 1, 33],
+    ]);
   });
 });

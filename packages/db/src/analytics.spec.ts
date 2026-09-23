@@ -441,3 +441,82 @@ describe('per-question answer search (Summary tab)', () => {
     expect(await getSubmissionAnswersForAccount(db, accountId, 'nope')).toBeNull();
   });
 });
+
+describe('header filters and sort (one filter for the table, the CSV and the Summary)', () => {
+  /** Insert one submission with `data` and `score`. */
+  async function row(
+    id: string,
+    startedAt: number,
+    data: Record<string, unknown>,
+    score: number,
+    completed = true,
+  ): Promise<void> {
+    await db.run(
+      sql`INSERT INTO submission (id, form_id, session_id, data, score, started_at, completed_at, partial_at)
+          VALUES (${id}, ${formId}, ${id}, ${JSON.stringify(data)}, ${score}, ${startedAt},
+                  ${completed ? startedAt + 1 : null}, ${completed ? null : startedAt + 2})`,
+    );
+  }
+
+  beforeEach(async () => {
+    await row('f1', D1 + 1, { kind: 'llc', tools: ['crm', 'ads'] }, 9);
+    await row('f2', D1 + 2, { kind: 'corp', tools: ['ads'] }, 4);
+    await row('f3', D1 + 3, { kind: ' llc ', tools: 'crm' }, 7, false);
+    await row('f4', D1 + 4, { kind: 'sole', tools: [] }, 7);
+    await row('f5', D0 + 5, { tools: ['email'] }, 2);
+  });
+
+  const ids = (rows: { id: string }[]) => rows.map((r) => r.id);
+  const page = async (q: Parameters<typeof querySubmissions>[2]) => ids((await querySubmissions(db, formId, q)).items);
+
+  it('matches a single stored value, trimmed, and widens across values of one key', async () => {
+    expect(await page({ answers: { kind: ['llc'] } })).toEqual(['f3', 'f1']);
+    expect(await page({ answers: { kind: ['llc', 'corp'] } })).toEqual(['f3', 'f2', 'f1']);
+    expect((await querySubmissions(db, formId, { answers: { kind: ['llc'] } })).total).toBe(2);
+  });
+
+  it('matches a multi-select when any pick is accepted, and a scalar stored under the same key', async () => {
+    expect(await page({ answers: { tools: ['crm'] } })).toEqual(['f3', 'f1']);
+    expect(await page({ answers: { tools: ['ads', 'email'] } })).toEqual(['f2', 'f1', 'f5']);
+    expect(await page({ answers: { tools: ['nothing'] } })).toEqual([]);
+  });
+
+  it('narrows across keys, and with the score, status and date window', async () => {
+    expect(await page({ answers: { kind: ['llc'], tools: ['ads'] } })).toEqual(['f1']);
+    expect(await page({ answers: { kind: ['llc'] }, scoreMin: 8 })).toEqual(['f1']);
+    expect(await page({ answers: { kind: ['llc'] }, status: 'partial' })).toEqual(['f3']);
+    expect(await page({ scoreMin: 4, scoreMax: 7 })).toEqual(['f4', 'f3', 'f2']);
+    expect(await page({ ...WINDOW, answers: { tools: ['email', 'crm'] } })).toEqual(['f3', 'f1']);
+  });
+
+  it('treats a key with no values as no filter, and a key never answered as no match', async () => {
+    expect((await querySubmissions(db, formId, { answers: { kind: [] } })).total).toBe(5);
+    expect((await querySubmissions(db, formId, { answers: { kind: ['  '] } })).total).toBe(5);
+    expect((await querySubmissions(db, formId, { answers: { missing: ['llc'] } })).total).toBe(0);
+  });
+
+  it('binds keys and values: quotes and SQL in them match literally or not at all', async () => {
+    await row('f6', D1 + 6, { "it's": "o'brien", 'a"b': 'x' }, 1);
+    expect(await page({ answers: { "it's": ["o'brien"] } })).toEqual(['f6']);
+    expect(await page({ answers: { kind: ["llc') OR 1=1 --"] } })).toEqual([]);
+    // A double quote cannot be a SQLite JSON path: it matches nothing there.
+    if (db.dialect === 'sqlite') expect(await page({ answers: { 'a"b': ['x'] } })).toEqual([]);
+    else expect(await page({ answers: { 'a"b': ['x'] } })).toEqual(['f6']);
+  });
+
+  it('sorts by date or score in both directions, ties broken by id', async () => {
+    expect(await page({ sort: 'oldest' })).toEqual(['f5', 'f1', 'f2', 'f3', 'f4']);
+    expect(await page({ sort: 'score_desc' })).toEqual(['f1', 'f4', 'f3', 'f2', 'f5']);
+    expect(await page({ sort: 'score_asc' })).toEqual(['f5', 'f2', 'f4', 'f3', 'f1']);
+    expect(await page({ sort: 'score_desc', limit: 2, offset: 1 })).toEqual(['f4', 'f3']);
+  });
+
+  it('exports and summarizes exactly the filtered set, the export in the table order', async () => {
+    const q = { answers: { tools: ['crm', 'ads'] }, sort: 'score_asc' as const };
+    expect(ids(await allSubmissionsForExport(db, formId, q))).toEqual(['f2', 'f3', 'f1']);
+    // The Summary reads newest first whatever the table's sort.
+    expect(ids(await submissionsForSummary(db, formId, q))).toEqual(['f3', 'f2', 'f1']);
+    const search = await searchSubmissionAnswers(db, formId, ['kind'], { answers: { tools: ['ads'] } });
+    expect(ids(search.items)).toEqual(['f2', 'f1']);
+  });
+});
