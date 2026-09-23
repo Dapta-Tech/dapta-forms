@@ -1321,6 +1321,11 @@ export interface FormsMessages {
       utmTitle: string;
       /** "{n} of {total} answered": how much of the form this response covers. */
       answeredCount: string;
+      /** The table as a full-screen sheet, over the whole app. */
+      sheetOpen: string;
+      sheetClose: string;
+      /** First column header when the form collects a contact: who answered, then when. */
+      colResponse: string;
     };
     integrations: {
       title: string;
@@ -2985,6 +2990,9 @@ export const en: FormsMessages = {
       responseId: 'Response ID',
       utmTitle: 'Campaign (UTM)',
       answeredCount: '{n} of {total} answered',
+      sheetOpen: 'Full screen',
+      sheetClose: 'Exit full screen',
+      colResponse: 'Response',
     },
     integrations: {
       title: 'Integrations',
@@ -4614,6 +4622,9 @@ export const es: FormsMessages = {
       responseId: 'ID de respuesta',
       utmTitle: 'Campaña (UTM)',
       answeredCount: '{n} de {total} respondidas',
+      sheetOpen: 'Pantalla completa',
+      sheetClose: 'Salir de pantalla completa',
+      colResponse: 'Respuesta',
     },
     integrations: {
       title: 'Integraciones',

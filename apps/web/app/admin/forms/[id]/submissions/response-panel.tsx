@@ -12,7 +12,17 @@
  * Everything the panel prints is formatted on the server (`buildResponseDetail`);
  * this file only lays it out and handles opening, closing and walking.
  */
-import { useCallback, useEffect, useState, type MouseEvent, type ReactNode } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  type MouseEvent,
+  type ReactNode,
+} from 'react';
+import Link from 'next/link';
 import { t } from '@quill/shared';
 import { Drawer } from '@/components/drawer';
 import { inNestedDialog } from '@/components/modal';
@@ -20,6 +30,7 @@ import type { AnswerView, ResponseDetail } from './response-detail';
 import { StatusBadge } from './status-badge';
 import { SubmissionFileButton, type FileButtonLabels } from './submission-file-button';
 import { DeleteSubmissionButton } from './row-actions';
+import { RESPONSE_PARAM, SHEET_VIEW, VIEW_PARAM } from './viewer-params';
 
 export interface PanelLabels {
   responseTitle: string;
@@ -43,55 +54,114 @@ export interface PanelLabels {
   badgePartial: string;
   delete: string;
   deleteConfirm: string;
+  sheetOpen: string;
+  sheetClose: string;
 }
-
-/** The query parameter that names the open response, so it survives a reload and can be shared. */
-export const RESPONSE_PARAM = 'response';
 
 const LABEL_ID = 'response-panel-title';
 
 /**
- * Put the open response in the address bar without a navigation. Native
+ * Put the viewer's state in the address bar without a navigation. Native
  * `replaceState`, never `router.replace`: the router would re-run the server
  * page (and its API calls) just to move a panel. Replace rather than push, so
  * walking twenty responses does not leave twenty Back steps behind.
  */
-function writeResponseParam(id: string | null): void {
+function writeParam(name: string, value: string | null): void {
   const url = new URL(window.location.href);
-  if (id) url.searchParams.set(RESPONSE_PARAM, id);
-  else url.searchParams.delete(RESPONSE_PARAM);
+  if (value) url.searchParams.set(name, value);
+  else url.searchParams.delete(name);
   window.history.replaceState(null, '', url);
 }
 
+/** Whether the table is open as the full-screen sheet; read by `PagerLink`. */
+const SheetContext = createContext(false);
+
+/**
+ * A pager link that keeps the sheet open on the next page. The hrefs are built
+ * on the server, which cannot know the sheet was opened after the page loaded
+ * (the toggle only rewrites the address bar), so the view is added here.
+ */
+export function PagerLink({
+  href,
+  className,
+  children,
+}: {
+  href: string;
+  className: string;
+  children: ReactNode;
+}) {
+  const sheet = useContext(SheetContext);
+  let to = href;
+  if (sheet) {
+    const q = new URLSearchParams(href.replace(/^\?/, ''));
+    q.set(VIEW_PARAM, SHEET_VIEW);
+    to = `?${q.toString()}`;
+  }
+  return (
+    <Link href={to} scroll={false} className={className}>
+      {children}
+    </Link>
+  );
+}
+
+const TOOLBAR_BUTTON =
+  'inline-flex h-9 items-center gap-2 rounded-md border border-border bg-transparent px-3 text-sm font-medium text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
+
 /**
  * Wraps the submissions table: a click on a row (or on its "View response"
- * button) opens that response in the panel.
+ * button) opens that response in the panel, and a click on one answer cell
+ * opens it scrolled to that question.
  *
  * The rows stay server-rendered; one delegated handler here reads the row's
- * `data-response-id`. A click that lands on something that already does a job
- * (a file button, the delete button, a link, a dialog opened from the row)
- * keeps doing that job and opens nothing, and so does a drag that selected text:
- * copying an answer out of the table must not throw a panel over it.
+ * `data-response-id` and the cell's `data-answer-key`. A click that lands on
+ * something that already does a job (a file button, the delete button, a link,
+ * a dialog opened from the row) keeps doing that job and opens nothing, and so
+ * does a drag that selected text: copying an answer out of the table must not
+ * throw a panel over it.
+ *
+ * The same table can be opened as a full-screen sheet over the whole app. The
+ * markup does not change: the wrapper carries `data-sheet`, and the table's
+ * own `in-data-sheet:` classes take the room (sticky header, wider cells, three
+ * lines per cell). The panel opens over the sheet exactly as over the page.
  */
 export function ResponsesViewer({
   formId,
+  title,
   items,
   initialId,
+  initialSheet = false,
   labels,
   fileLabels,
+  pager,
   children,
 }: {
   formId: string;
+  /** The form's name, on the sheet's top bar. */
+  title: string;
   items: ResponseDetail[];
   /** `?response=` on load. Ignored when that response is not on this page. */
   initialId?: string;
+  /** `?view=sheet` on load. */
+  initialSheet?: boolean;
   labels: PanelLabels;
   fileLabels: FileButtonLabels;
+  /** The range and the page links, under the table in both views. */
+  pager?: ReactNode;
   children: ReactNode;
 }) {
   const [openId, setOpenId] = useState<string | null>(() =>
     initialId && items.some((i) => i.id === initialId) ? initialId : null,
   );
+  /**
+   * The question the panel should land on: the cell that was clicked. Walking
+   * to the next response keeps it, so the same question can be compared down
+   * the page; a click on the row itself, away from any answer, clears it.
+   */
+  const [focusKey, setFocusKey] = useState<string | null>(null);
+  const [sheet, setSheet] = useState(initialSheet);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const openSheetRef = useRef<HTMLButtonElement>(null);
+  const closeSheetRef = useRef<HTMLButtonElement>(null);
   const index = openId ? items.findIndex((i) => i.id === openId) : -1;
   const current = index >= 0 ? items[index]! : null;
   /**
@@ -104,10 +174,17 @@ export function ResponsesViewer({
   const shown = current ?? (shownIndex >= 0 ? items[shownIndex]! : null);
   const shownAt = current ? index : shownIndex;
 
-  const show = useCallback((id: string | null) => {
+  /** Open (or close, with null) a response. `key` names the question to land on; omitted, it is kept. */
+  const show = useCallback((id: string | null, key?: string | null) => {
     setOpenId(id);
     if (id) setShownId(id);
-    writeResponseParam(id);
+    if (key !== undefined) setFocusKey(key);
+    writeParam(RESPONSE_PARAM, id);
+  }, []);
+
+  const toggleSheet = useCallback((on: boolean) => {
+    setSheet(on);
+    writeParam(VIEW_PARAM, on ? SHEET_VIEW : null);
   }, []);
 
   const go = useCallback(
@@ -118,17 +195,47 @@ export function ResponsesViewer({
     [items, index, show],
   );
 
-  // A new response starts at its first question, not at the scroll depth of
-  // the one before it.
+  // Land on the clicked question, or at the top: never at the scroll depth of
+  // the response before.
   useEffect(() => {
     if (!openId) return;
-    document.querySelector('[data-drawer-body]')?.parentElement?.scrollTo({ top: 0 });
-  }, [openId]);
+    const body = document.querySelector<HTMLElement>('[data-drawer-body]');
+    const scroller = body?.parentElement;
+    if (!body || !scroller) return;
+    const target = focusKey
+      ? body.querySelector<HTMLElement>(`[data-answer-key="${CSS.escape(focusKey)}"]`)
+      : null;
+    if (!target) {
+      scroller.scrollTo({ top: 0 });
+      return;
+    }
+    // Measured, not `scrollIntoView`: that would also scroll the panel's
+    // clipped ancestors and shift the whole drawer.
+    const top =
+      target.getBoundingClientRect().top -
+      scroller.getBoundingClientRect().top +
+      scroller.scrollTop;
+    scroller.scrollTo({ top: Math.max(0, top - 16) });
+  }, [openId, focusKey]);
+
+  // Mark the open response's row, and keep it in view while walking the sheet.
+  useEffect(() => {
+    const rows = [
+      ...(rootRef.current?.querySelectorAll<HTMLElement>('tr[data-response-id]') ?? []),
+    ];
+    let active: HTMLElement | null = null;
+    for (const row of rows) {
+      const on = row.dataset.responseId === openId;
+      row.toggleAttribute('data-active', on);
+      if (on) active = row;
+    }
+    if (sheet && active) active.scrollIntoView({ block: 'nearest' });
+  }, [openId, sheet]);
 
   // The open response left the page (deleted from the panel, or by someone
   // else before a refresh): close rather than show a record that is gone.
   useEffect(() => {
-    if (openId && index < 0) show(null);
+    if (openId && index < 0) show(null, null);
   }, [openId, index, show]);
 
   // Up / Down walk the page, like the arrows in the header. Not while a dialog
@@ -154,11 +261,36 @@ export function ResponsesViewer({
     return () => window.removeEventListener('keydown', onKey);
   }, [current, go]);
 
+  // While the sheet is up: the page behind it does not scroll, focus starts on
+  // the way out, and Esc leaves it. Esc belongs to any dialog first (the panel,
+  // a file preview, a delete confirm): the sheet only takes one nobody else is
+  // showing, so the first Esc closes the panel and the second the sheet.
+  useEffect(() => {
+    if (!sheet) return;
+    const overflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    closeSheetRef.current?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      // `aria-modal`, not `role="dialog"`: every open dialog here (Modal,
+      // Drawer, ConfirmDialog) is modal, while the admin shell's mobile nav
+      // is a `role="dialog"` that lives in the DOM even when shut.
+      if (document.querySelector('[aria-modal="true"]')) return;
+      toggleSheet(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      document.body.style.overflow = overflow;
+      openSheetRef.current?.focus();
+    };
+  }, [sheet, toggleSheet]);
+
   const onClick = (e: MouseEvent<HTMLDivElement>) => {
     const target = e.target as Element;
     const trigger = target.closest<HTMLElement>('[data-open-response]');
     if (trigger?.dataset.openResponse) {
-      show(trigger.dataset.openResponse);
+      show(trigger.dataset.openResponse, null);
       return;
     }
     if (
@@ -169,15 +301,80 @@ export function ResponsesViewer({
       return;
     if (window.getSelection()?.toString()) return;
     const row = target.closest<HTMLElement>('tr[data-response-id]');
-    if (row?.dataset.responseId) show(row.dataset.responseId);
+    if (!row?.dataset.responseId) return;
+    const cell = target.closest<HTMLElement>('td[data-answer-key]');
+    show(row.dataset.responseId, cell?.dataset.answerKey ?? null);
   };
 
   return (
-    <>
-      <div onClick={onClick}>{children}</div>
+    <SheetContext.Provider value={sheet}>
+      <div
+        ref={rootRef}
+        data-sheet={sheet ? '' : undefined}
+        data-testid="responses-viewer"
+        className={
+          sheet
+            ? 'fixed inset-0 z-40 flex animate-backdrop-in flex-col bg-background'
+            : 'flex flex-col gap-3'
+        }
+      >
+        {sheet ? (
+          <div className="flex h-14 shrink-0 items-center justify-between gap-3 border-b border-border bg-popover px-4 sm:px-5">
+            <div className="flex min-w-0 items-center gap-2.5">
+              <span
+                aria-hidden
+                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground ring-1 ring-primary-edge"
+              >
+                <i className="pi pi-table" style={{ fontSize: 12 }} />
+              </span>
+              <h2 className="truncate text-base font-semibold">{title}</h2>
+            </div>
+            <button
+              ref={closeSheetRef}
+              type="button"
+              onClick={() => toggleSheet(false)}
+              aria-label={labels.sheetClose}
+              title={labels.sheetClose}
+              data-testid="sheet-close"
+              className={TOOLBAR_BUTTON}
+            >
+              <i aria-hidden className="pi pi-window-minimize" style={{ fontSize: 12 }} />
+              <span className="hidden sm:inline">{labels.sheetClose}</span>
+            </button>
+          </div>
+        ) : (
+          <div className="flex justify-end">
+            <button
+              ref={openSheetRef}
+              type="button"
+              onClick={() => toggleSheet(true)}
+              data-testid="sheet-open"
+              className={TOOLBAR_BUTTON}
+            >
+              <i aria-hidden className="pi pi-expand" style={{ fontSize: 12 }} />
+              {labels.sheetOpen}
+            </button>
+          </div>
+        )}
+        <div
+          onClick={onClick}
+          className={sheet ? 'flex min-h-0 flex-1 flex-col p-3 sm:p-4' : undefined}
+        >
+          {children}
+        </div>
+        {pager ? (
+          <div
+            className={
+              sheet ? 'shrink-0 border-t border-border bg-popover px-4 py-2.5 sm:px-5' : undefined
+            }
+          >
+            {pager}
+          </div>
+        ) : null}
+      </div>
       <Drawer
         open={current != null}
-        onClose={() => show(null)}
+        onClose={() => show(null, null)}
         labelId={LABEL_ID}
         header={
           shown ? (
@@ -191,7 +388,7 @@ export function ResponsesViewer({
               hasNext={shownAt < items.length - 1}
               onPrev={() => go(-1)}
               onNext={() => go(1)}
-              onClose={() => show(null)}
+              onClose={() => show(null, null)}
               labels={labels}
             />
           ) : null
@@ -217,10 +414,11 @@ export function ResponsesViewer({
             formId={formId}
             labels={labels}
             fileLabels={fileLabels}
+            focusKey={focusKey}
           />
         ) : null}
       </Drawer>
-    </>
+    </SheetContext.Provider>
   );
 }
 
@@ -457,17 +655,36 @@ function AnswerValueView({
   }
 }
 
+/**
+ * One answer's card. An unanswered step is dashed and bare; the question opened
+ * from a table cell is outlined in the accent. One border colour per state, so
+ * no two border utilities ever compete on the same element.
+ */
+function answerCardClass(empty: boolean, focused: boolean): string {
+  const edge = focused
+    ? 'border-primary-edge ring-2 ring-primary-edge/40'
+    : empty
+      ? 'border-border'
+      : 'border-border hover:border-primary-edge/40';
+  return empty
+    ? `rounded-lg border border-dashed px-4 py-3 ${edge}`
+    : `rounded-lg border bg-card px-4 py-3.5 transition-colors ${edge}`;
+}
+
 /** The panel body: the answers, then the facts about the response. Static, so it renders without a DOM. */
 export function ResponseDetailView({
   detail,
   formId,
   labels,
   fileLabels,
+  focusKey = null,
 }: {
   detail: ResponseDetail;
   formId: string;
   labels: PanelLabels;
   fileLabels: FileButtonLabels;
+  /** The question opened from a table cell: outlined in the accent so the eye lands on it. */
+  focusKey?: string | null;
 }) {
   const heading = 'mb-3 text-2xs font-medium uppercase tracking-wide text-faint';
   const card = 'rounded-lg border border-border bg-card';
@@ -484,12 +701,10 @@ export function ResponseDetailView({
           {detail.answers.map((a, i) => (
             <li
               key={a.key}
-              className={
-                a.kind === 'empty'
-                  ? 'rounded-lg border border-dashed border-border px-4 py-3'
-                  : `${card} px-4 py-3.5 transition-colors hover:border-primary-edge/40`
-              }
+              className={answerCardClass(a.kind === 'empty', a.key === focusKey)}
               data-answer-kind={a.kind}
+              data-answer-key={a.key}
+              data-focused={a.key === focusKey ? '' : undefined}
             >
               <div className="flex items-start gap-2.5">
                 <span

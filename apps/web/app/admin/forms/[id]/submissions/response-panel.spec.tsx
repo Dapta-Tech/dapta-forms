@@ -11,7 +11,7 @@ vi.mock('./actions', () => ({
   submissionFileUrlAction: vi.fn(),
 }));
 
-import { ResponsesViewer, type PanelLabels } from './response-panel';
+import { ResponseDetailView, ResponsesViewer, type PanelLabels } from './response-panel';
 import type { ResponseDetail } from './response-detail';
 
 const labels: PanelLabels = {
@@ -34,6 +34,8 @@ const labels: PanelLabels = {
   badgePartial: 'Partial',
   delete: 'Delete',
   deleteConfirm: 'Delete this submission?',
+  sheetOpen: 'Full screen',
+  sheetClose: 'Exit full screen',
 };
 
 const fileLabels = {
@@ -77,19 +79,22 @@ const detail = (over: Partial<ResponseDetail> = {}): ResponseDetail => ({
   ...over,
 });
 
-const render = (items: ResponseDetail[], initialId?: string) =>
+const render = (items: ResponseDetail[], initialId?: string, initialSheet = false) =>
   renderToStaticMarkup(
     <ResponsesViewer
       formId="form_1"
+      title="Brief"
       items={items}
       initialId={initialId}
+      initialSheet={initialSheet}
       labels={labels}
       fileLabels={fileLabels}
+      pager={<p>page 1</p>}
     >
       <table>
         <tbody>
           <tr data-response-id="sub_1">
-            <td>row</td>
+            <td data-answer-key="story">row</td>
           </tr>
         </tbody>
       </table>
@@ -180,7 +185,60 @@ describe('ResponsesViewer', () => {
     expect(anonymous).toMatch(/<h2 id="response-panel-title"[^>]*>Anonymous response</);
   });
 
+  it('shows the table in place with a way to full screen, and the pager under it', () => {
+    const html = render([detail()]);
+    expect(html).not.toContain('data-sheet');
+    expect(html).toMatch(/data-testid="sheet-open"[^>]*>.*Full screen/);
+    expect(html).toContain('page 1');
+  });
+
+  it('opens as the full-screen sheet from ?view=sheet, titled with the form and with a way out', () => {
+    const html = render([detail()], undefined, true);
+    expect(html).toMatch(/data-sheet=""[^>]*class="fixed inset-0/);
+    expect(html).toContain('>Brief<');
+    const exit = html.match(/<button[^>]*data-testid="sheet-close"[^>]*>/)?.[0] ?? '';
+    expect(exit).toContain('aria-label="Exit full screen"');
+    expect(html).not.toContain('data-testid="sheet-open"');
+    // The table and the pager ride along into the sheet.
+    expect(html).toContain('data-answer-key="story"');
+    expect(html).toContain('page 1');
+  });
+
+  it('opens the panel over the sheet', () => {
+    const html = render([detail()], 'sub_1', true);
+    expect(html).toContain('data-sheet=""');
+    expect(html).toContain('role="dialog"');
+  });
+
   it('offers delete from the panel', () => {
     expect(render([detail()], 'sub_1')).toContain('>Delete<');
+  });
+});
+
+describe('ResponseDetailView', () => {
+  const view = (focusKey?: string | null) =>
+    renderToStaticMarkup(
+      <ResponseDetailView
+        detail={detail()}
+        formId="form_1"
+        labels={labels}
+        fileLabels={fileLabels}
+        focusKey={focusKey}
+      />,
+    );
+
+  it('marks each answer with its question, so a table cell can land on it', () => {
+    const html = view();
+    for (const key of ['story', 'role', 'site', 'id_doc', 'budget'])
+      expect(html).toContain(`data-answer-key="${key}"`);
+    expect(html).not.toContain('data-focused');
+  });
+
+  it('outlines only the question opened from a cell, answered or not', () => {
+    const focused = (html: string) =>
+      [...html.matchAll(/<li[^>]*data-answer-key="([^"]+)"[^>]*data-focused=""/g)].map((m) => m[1]);
+    expect(focused(view('role'))).toEqual(['role']);
+    expect(focused(view('budget'))).toEqual(['budget']);
+    expect(view('role')).toMatch(/<li class="[^"]*ring-2[^"]*"[^>]*data-answer-key="role"/);
   });
 });

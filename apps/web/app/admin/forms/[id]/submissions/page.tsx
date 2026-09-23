@@ -1,5 +1,4 @@
 import { Suspense } from 'react';
-import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import type { FormConfig, SubmissionsPage } from '@quill/types';
 import {
@@ -20,14 +19,26 @@ import { SubmissionsFilter } from './submissions-filter';
 import { DeleteSubmissionButton } from './row-actions';
 import { SubmissionFileButton } from './submission-file-button';
 import { buildResponseDetail } from './response-detail';
-import { ResponsesViewer } from './response-panel';
+import { PagerLink, ResponsesViewer } from './response-panel';
+import { SHEET_VIEW } from './viewer-params';
 import { StatusBadge } from './status-badge';
 
 export const dynamic = 'force-dynamic';
 
 const PAGE_SIZE = 25;
 
-type SP = { status?: string; offset?: string; response?: string };
+/**
+ * Header and body cell chrome. The table is `border-separate` rather than
+ * `border-collapse` because a collapsed border belongs to the table, not the
+ * cell, and scrolls away from a sticky header or first column; so the row
+ * rule is drawn on each cell instead. The header ground is opaque for the
+ * same reason: in the sheet it stays put over the rows scrolling under it.
+ */
+const TH =
+  'sticky top-0 z-10 whitespace-nowrap border-b border-border bg-card px-4 py-3 font-medium in-data-sheet:align-bottom in-data-sheet:shadow-[0_1px_0_var(--color-border)]';
+const TD = 'border-b border-border px-4 py-3 group-last:border-b-0';
+
+type SP = { status?: string; offset?: string; response?: string; view?: string };
 
 function parseStatus(v: string | undefined): 'all' | 'completed' | 'partial' {
   return v === 'completed' || v === 'partial' ? v : 'all';
@@ -107,6 +118,7 @@ export default async function SubmissionsPage({
           locale={locale}
           timeZone={timeZone}
           responseId={sp.response}
+          sheet={sp.view === SHEET_VIEW}
           m={m}
         />
       </Suspense>
@@ -132,6 +144,7 @@ async function SubmissionsData({
   locale,
   timeZone,
   responseId,
+  sheet,
   m,
 }: {
   id: string;
@@ -141,6 +154,8 @@ async function SubmissionsData({
   timeZone: string;
   /** `?response=`: the response to open in the panel on load. */
   responseId?: string;
+  /** `?view=sheet`: open the table as the full-screen sheet on load. */
+  sheet: boolean;
   m: FormsMessages['admin'];
 }) {
   let form: Awaited<ReturnType<typeof adminApi.getForm>>;
@@ -204,6 +219,13 @@ async function SubmissionsData({
   // Every response on this page, formatted for the side panel: the rows open
   // it, and its arrows walk this same list.
   const details = page.items.map((row) => buildResponseDetail(row, steps, { locale, timeZone, scoring }));
+  // A form that collects a contact leads each row with who answered; one that
+  // does not leads with when, as before.
+  const hasContact = steps.some((s) => s.type === 'name' || s.type === 'email' || s.type === 'phone');
+  const pagerButton =
+    'inline-flex h-9 items-center rounded-md border border-border px-3 font-medium text-foreground transition-colors hover:bg-accent';
+  const pagerOff =
+    'inline-flex h-9 cursor-not-allowed items-center rounded-md border border-border px-3 font-medium text-muted-foreground opacity-50';
 
   return (
     <div className="flex flex-col gap-4">
@@ -211,8 +233,10 @@ async function SubmissionsData({
           the page body never scrolls sideways even with many step columns. */}
       <ResponsesViewer
         formId={id}
+        title={form.name}
         items={details}
         initialId={responseId}
+        initialSheet={sheet}
         fileLabels={fileLabels}
         labels={{
           responseTitle: m.submissions.responseTitle,
@@ -234,39 +258,84 @@ async function SubmissionsData({
           badgePartial: m.submissions.badgePartial,
           delete: m.submissions.delete,
           deleteConfirm: m.submissions.deleteConfirm,
+          sheetOpen: m.submissions.sheetOpen,
+          sheetClose: m.submissions.sheetClose,
         }}
+        pager={
+          <div className="flex items-center justify-between gap-3 text-sm">
+            <span className="text-muted-foreground tabular-nums">
+              {t(m.submissions.showing, { from, to, total: page.total })}
+            </span>
+            <div className="flex items-center gap-2">
+              {hasPrev ? (
+                <PagerLink href={`?${statusParam}offset=${Math.max(0, offset - page.limit)}`} className={pagerButton}>
+                  {m.submissions.prev}
+                </PagerLink>
+              ) : (
+                <span className={pagerOff}>{m.submissions.prev}</span>
+              )}
+              {hasNext ? (
+                <PagerLink href={`?${statusParam}offset=${offset + page.limit}`} className={pagerButton}>
+                  {m.submissions.next}
+                </PagerLink>
+              ) : (
+                <span className={pagerOff}>{m.submissions.next}</span>
+              )}
+            </div>
+          </div>
+        }
       >
-        <div className="overflow-x-auto rounded-lg border border-border bg-card">
-        <table className="w-full min-w-[720px] border-collapse text-sm">
+        {/* In the sheet (`data-sheet` on the viewer) this container takes the
+            screen and scrolls both ways, under a header that stays put and
+            beside a first column that stays put. */}
+        <div className="overflow-x-auto rounded-lg border border-border bg-card in-data-sheet:min-h-0 in-data-sheet:overflow-auto">
+        <table className="w-full min-w-[720px] border-separate border-spacing-0 text-sm">
           <thead>
-            <tr className="border-b border-border text-left text-2xs uppercase tracking-wide text-faint">
-              <th className="whitespace-nowrap px-4 py-3 font-medium">{m.submissions.colSubmitted}</th>
-              <th className="whitespace-nowrap px-4 py-3 font-medium">{m.submissions.colStatus}</th>
-              {scoring ? (
-                <th className="whitespace-nowrap px-4 py-3 text-right font-medium">{m.submissions.colScore}</th>
-              ) : null}
+            <tr className="text-left text-2xs uppercase tracking-wide text-faint">
+              <th className={`${TH} sticky left-0 z-20 shadow-[1px_0_0_var(--color-border)]`}>
+                {hasContact ? m.submissions.colResponse : m.submissions.colSubmitted}
+              </th>
+              <th className={TH}>{m.submissions.colStatus}</th>
+              {scoring ? <th className={`${TH} text-right`}>{m.submissions.colScore}</th> : null}
               {steps.map((s) => (
-                <th key={s.key} className="whitespace-nowrap px-4 py-3 font-medium">
+                <th
+                  key={s.key}
+                  className={`${TH} in-data-sheet:min-w-56 in-data-sheet:max-w-80 in-data-sheet:whitespace-normal`}
+                >
                   {stepLabel(s)}
                 </th>
               ))}
-              <th className="px-4 py-3" aria-label="actions" />
+              <th className={TH} aria-label="actions" />
             </tr>
           </thead>
           <tbody>
-            {page.items.map((row) => {
+            {page.items.map((row, rowIndex) => {
               const completed = row.completedAt != null;
               const when = row.completedAt ?? row.partialAt ?? row.startedAt;
               const data = (row.data ?? {}) as Record<string, unknown>;
+              const who = details[rowIndex]!.respondent;
+              const identity = who.name ?? who.email ?? who.phone;
               return (
                 <tr
                   key={row.id}
                   data-response-id={row.id}
-                  className="group cursor-pointer border-b border-border align-top transition-colors last:border-b-0 hover:bg-accent/70"
+                  className="group cursor-pointer align-top transition-colors hover:bg-accent/70 data-active:bg-primary/10 data-active:hover:bg-primary/15"
                 >
-                  <td className="whitespace-nowrap px-4 py-3 text-muted-foreground">
-                    <span className="inline-flex items-center gap-2">
-                      {formatDateTime(when, { locale, timeZone })}
+                  {/* Sticky, so it needs an opaque ground: the card colour, with the
+                      row's hover or active tint laid over it as an image. The lime
+                      bar on its left edge marks the response open in the panel. */}
+                  <td
+                    className={`${TD} sticky left-0 z-1 whitespace-nowrap bg-card shadow-[1px_0_0_var(--color-border)] before:absolute before:inset-y-0 before:left-0 before:w-0.75 group-hover:bg-linear-to-r group-hover:from-accent/70 group-hover:to-accent/70 group-data-active:bg-linear-to-r group-data-active:from-primary/10 group-data-active:to-primary/10 group-data-active:before:bg-primary`}
+                  >
+                    <span className="inline-flex items-start gap-2">
+                      <span className="flex flex-col">
+                        {identity ? (
+                          <span className="max-w-56 truncate font-medium text-foreground">{identity}</span>
+                        ) : null}
+                        <span className={identity ? 'text-xs text-muted-foreground' : 'text-muted-foreground'}>
+                          {formatDateTime(when, { locale, timeZone })}
+                        </span>
+                      </span>
                       {/* The keyboard way in: the row itself is clickable, but a
                           row is not focusable, so each one carries a real button. */}
                       <button
@@ -281,14 +350,14 @@ async function SubmissionsData({
                       </button>
                     </span>
                   </td>
-                  <td className="whitespace-nowrap px-4 py-3">
+                  <td className={`${TD} whitespace-nowrap`}>
                     <StatusBadge
                       completed={completed}
                       label={completed ? m.submissions.badgeCompleted : m.submissions.badgePartial}
                     />
                   </td>
                   {scoring ? (
-                    <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums">{row.score}</td>
+                    <td className={`${TD} whitespace-nowrap text-right tabular-nums`}>{row.score}</td>
                   ) : null}
                   {steps.map((s) => {
                     // A file cell is the one answer that is not text: it opens
@@ -296,7 +365,12 @@ async function SubmissionsData({
                     const file = s.type === 'file' ? parseFileAnswer(data[s.key] as never) : null;
                     const text = cellText(s, data, timeZone);
                     return (
-                      <td key={s.key} className="max-w-[240px] truncate px-4 py-3" title={text}>
+                      <td
+                        key={s.key}
+                        data-answer-key={s.key}
+                        className={`${TD} max-w-[240px] truncate transition-colors hover:bg-primary/10 in-data-sheet:max-w-80 in-data-sheet:whitespace-normal`}
+                        title={text}
+                      >
                         {file ? (
                           <SubmissionFileButton
                             formId={id}
@@ -306,12 +380,12 @@ async function SubmissionsData({
                             labels={fileLabels}
                           />
                         ) : (
-                          text || m.submissions.na
+                          <span className="in-data-sheet:line-clamp-3">{text || m.submissions.na}</span>
                         )}
                       </td>
                     );
                   })}
-                  <td className="whitespace-nowrap px-4 py-3 text-right">
+                  <td className={`${TD} whitespace-nowrap text-right`}>
                     <DeleteSubmissionButton
                       formId={id}
                       submissionId={row.id}
@@ -325,40 +399,6 @@ async function SubmissionsData({
         </table>
         </div>
       </ResponsesViewer>
-
-      <div className="flex items-center justify-between gap-3 text-sm">
-        <span className="text-muted-foreground tabular-nums">
-          {t(m.submissions.showing, { from, to, total: page.total })}
-        </span>
-        <div className="flex items-center gap-2">
-          {hasPrev ? (
-            <Link
-              href={`?${statusParam}offset=${Math.max(0, offset - page.limit)}`}
-              scroll={false}
-              className="inline-flex h-9 items-center rounded-md border border-border px-3 font-medium text-foreground transition-colors hover:bg-accent"
-            >
-              {m.submissions.prev}
-            </Link>
-          ) : (
-            <span className="inline-flex h-9 cursor-not-allowed items-center rounded-md border border-border px-3 font-medium text-muted-foreground opacity-50">
-              {m.submissions.prev}
-            </span>
-          )}
-          {hasNext ? (
-            <Link
-              href={`?${statusParam}offset=${offset + page.limit}`}
-              scroll={false}
-              className="inline-flex h-9 items-center rounded-md border border-border px-3 font-medium text-foreground transition-colors hover:bg-accent"
-            >
-              {m.submissions.next}
-            </Link>
-          ) : (
-            <span className="inline-flex h-9 cursor-not-allowed items-center rounded-md border border-border px-3 font-medium text-muted-foreground opacity-50">
-              {m.submissions.next}
-            </span>
-          )}
-        </div>
-      </div>
     </div>
   );
 }

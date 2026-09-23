@@ -96,7 +96,9 @@ function textOf(node: unknown): string {
   if (node == null || typeof node === 'boolean') return '';
   if (typeof node === 'string' || typeof node === 'number') return String(node);
   if (Array.isArray(node)) return node.map(textOf).join(' ');
-  if (isElement(node)) return textOf(node.props?.children);
+  // The pager rides into the viewer as a prop (it moves into the full-screen
+  // sheet with the table), so it is read alongside the children.
+  if (isElement(node)) return [textOf(node.props?.children), textOf((node.props as { pager?: unknown }).pager)].join(' ');
   return '';
 }
 
@@ -511,6 +513,27 @@ describe('response panel', () => {
 
   it('opens the response named in ?response=', async () => {
     expect(viewer(await tree({ response: 's1' }))?.props.initialId).toBe('s1');
+  });
+
+  it('opens the full-screen sheet from ?view=sheet, and only from that value', async () => {
+    const sheet = (t: unknown) => (viewer(t)?.props as { initialSheet?: boolean }).initialSheet;
+    expect(sheet(await tree({ view: 'sheet' }))).toBe(true);
+    expect(sheet(await tree({}))).toBe(false);
+    expect(sheet(await tree({ view: 'grid' }))).toBe(false);
+  });
+
+  it('names each answer cell after its question, so a click lands the panel on it', async () => {
+    const t = await tree({});
+    const keys: string[] = [];
+    const walk = (n: unknown) => {
+      if (Array.isArray(n)) return n.forEach(walk);
+      if (!isElement(n)) return;
+      const p = n.props as Record<string, unknown>;
+      if (n.type === 'td' && typeof p['data-answer-key'] === 'string') keys.push(p['data-answer-key']);
+      walk(p.children);
+    };
+    walk(t);
+    expect(keys).toEqual(['story', 'story']);
   });
 
   it('marks every row with its response and gives it a keyboard way in', async () => {
