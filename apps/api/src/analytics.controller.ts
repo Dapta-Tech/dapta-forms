@@ -105,7 +105,7 @@ export class AnalyticsController {
     const ids = parseIdList(idsParam);
     // Checked before any header is written: once the stream starts, the
     // status is 200 whatever happens next.
-    if (ids && (ids.length === 0 || ids.length > MAX_BULK_SUBMISSIONS)) {
+    if (ids && (ids.length === 0 || ids.length > MAX_BULK_SUBMISSIONS || !ids.every(isSubmissionId))) {
       throw new BadRequestException({
         error: 'BAD_REQUEST',
         message: `ids must name 1 to ${MAX_BULK_SUBMISSIONS} submissions.`,
@@ -193,11 +193,13 @@ export class AnalyticsController {
     @Body() body: unknown,
   ): Promise<{ deleted: number }> {
     const raw = (body as { ids?: unknown } | null)?.ids;
+    // Deduplicated before the cap is checked: a selection that names one row
+    // twice is still one row, and 100 distinct ids plus a repeat is not 101.
+    const ids = Array.isArray(raw) ? [...new Set(raw)] : [];
     if (
-      !Array.isArray(raw) ||
-      raw.length === 0 ||
-      raw.length > MAX_BULK_SUBMISSIONS ||
-      !raw.every((v): v is string => typeof v === 'string' && v.length > 0)
+      ids.length === 0 ||
+      ids.length > MAX_BULK_SUBMISSIONS ||
+      !ids.every(isSubmissionId)
     ) {
       throw new BadRequestException({
         error: 'BAD_REQUEST',
@@ -207,6 +209,14 @@ export class AnalyticsController {
     const p = await this.auth.resolveHost(req);
     const form = await getFormById(this.db, p.accountId, id);
     if (!form) throw new NotFoundException({ error: 'NOT_FOUND', message: 'Not found.' });
-    return this.analytics.deleteSubmissions(p.accountId, id, raw);
+    return this.analytics.deleteSubmissions(p.accountId, id, ids);
   }
+}
+
+/** Longest id a caller may name. Submission ids are UUIDs (36); this is headroom, not a format check. */
+const MAX_ID_LENGTH = 64;
+
+/** A plausible submission id: a non-empty string of bounded length. Ownership is the query's job. */
+function isSubmissionId(v: unknown): v is string {
+  return typeof v === 'string' && v.length > 0 && v.length <= MAX_ID_LENGTH;
 }

@@ -299,7 +299,7 @@ export class AnalyticsService {
     };
   }
 
-  /** Every submission matching the filter (CSV export — no pagination), or only `ids`. */
+  /** Every submission matching the filter (CSV export: no pagination), or only `ids`. */
   exportSubmissions(
     formId: string,
     q: Omit<SubmissionQuery, 'limit' | 'offset'> & { ids?: readonly string[] },

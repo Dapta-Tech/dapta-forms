@@ -521,10 +521,20 @@ describe('bulk delete (controller HTTP semantics)', () => {
     expect((await querySubmissions(db, formId, {})).total).toBe(5);
   });
 
+  it('counts the cap after dropping repeats', async () => {
+    const [one] = (await querySubmissions(db, formId, { limit: 1 })).items.map((s) => s.id);
+    // 100 distinct ids plus a repeat of one of them: 101 entries, 100 ids, allowed.
+    const ids = [one!, ...Array.from({ length: 99 }, (_, i) => `gone-${i}`), one!];
+    await expect(ctrlFor(accountId).deleteSubmissions({} as never, formId, { ids })).resolves.toEqual({
+      deleted: 1,
+    });
+  });
+
   it('400s an empty, oversized or malformed id list before touching anything', async () => {
     const ctrl = ctrlFor(accountId);
     const tooMany = Array.from({ length: 101 }, (_, i) => `id-${i}`);
-    for (const body of [{}, { ids: [] }, { ids: tooMany }, { ids: ['ok', 7] }, { ids: 'a,b' }, null]) {
+    const tooLong = 'x'.repeat(65);
+    for (const body of [{}, { ids: [] }, { ids: tooMany }, { ids: ['ok', 7] }, { ids: 'a,b' }, null, { ids: [tooLong] }]) {
       await expect(ctrl.deleteSubmissions({} as never, formId, body)).rejects.toMatchObject({ status: 400 });
     }
     expect((await querySubmissions(db, formId, {})).total).toBe(5);
@@ -583,7 +593,7 @@ describe('CSV export (large sets, un-paginated)', () => {
 
   it('400s an empty or oversized `?ids=` before streaming anything', async () => {
     const tooMany = Array.from({ length: 101 }, (_, i) => `id-${i}`).join(',');
-    for (const ids of ['', ' , ', tooMany]) {
+    for (const ids of ['', ' , ', tooMany, 'x'.repeat(65)]) {
       await expect(runExport(ids)).rejects.toMatchObject({ status: 400 });
     }
   });

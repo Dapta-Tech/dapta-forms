@@ -92,15 +92,23 @@ export default async function SubmissionsPage({
   const status = parseStatus(sp.status);
   const offset = Math.max(0, Number(sp.offset ?? 0) || 0);
   const size = parsePageSize(sp.size);
+  // The workspace zone every timestamp below is read in, and who may change
+  // it; and the page of rows, fetched here because the table's key needs it.
+  const [me, page] = await Promise.all([
+    adminApi.me(),
+    adminApi.listSubmissions(id, { status, limit: size, offset }).catch((e: unknown) => {
+      if (e instanceof ApiError && e.status === 404) notFound();
+      throw e;
+    }),
+  ]);
   // A new page, size or filter is a new table: the viewer (and its selection)
-  // starts over. The render time is in the key too, so every server render
-  // mounts a new boundary. A refresh that kept the key (the one a delete's
-  // `revalidatePath` triggers, or `router.refresh()`) fetched the new rows and
-  // never put them on screen: the deleted row stayed in the table until a
-  // reload, in Chrome and Safari, in a production build.
-  const key = `${status}:${offset}:${size}:${Date.now()}`;
-  // The workspace zone every timestamp below is read in, and who may change it.
-  const me = await adminApi.me();
+  // starts over. So is a new set of rows. A refresh that changed them (a
+  // delete's `revalidatePath`) fetched the new rows but never put them on
+  // screen while the boundary kept its key, in Chrome and Safari, in a
+  // production build; keying the viewer inside it was not enough. Keyed by
+  // the rows, only a change of rows remounts: walking, the panel and the
+  // cursor keep their state otherwise.
+  const key = `${status}:${offset}:${size}:${page.items.map((row) => row.id).join(',')}`;
   const timeZone = me.timezone ?? 'UTC';
 
   const exportQuery = status === 'all' ? '' : `?status=${status}`;
@@ -154,6 +162,7 @@ export default async function SubmissionsPage({
       <Suspense key={key} fallback={<Skeleton className="h-80 w-full" />}>
         <SubmissionsData
           id={id}
+          page={page}
           status={status}
           offset={offset}
           size={size}
@@ -181,6 +190,7 @@ function cellText(step: FormStep, data: Record<string, unknown>, timeZone: strin
 
 async function SubmissionsData({
   id,
+  page,
   status,
   offset,
   size,
@@ -191,6 +201,8 @@ async function SubmissionsData({
   m,
 }: {
   id: string;
+  /** This page of rows, fetched by the shell. */
+  page: SubmissionsPage;
   status: 'all' | 'completed' | 'partial';
   offset: number;
   /** `?size=`: rows per page. */
@@ -204,12 +216,8 @@ async function SubmissionsData({
   m: FormsMessages['admin'];
 }) {
   let form: Awaited<ReturnType<typeof adminApi.getForm>>;
-  let page: SubmissionsPage;
   try {
-    [form, page] = await Promise.all([
-      adminApi.getForm(id),
-      adminApi.listSubmissions(id, { status, limit: size, offset }),
-    ]);
+    form = await adminApi.getForm(id);
   } catch (e) {
     if (e instanceof ApiError && e.status === 404) notFound();
     throw e;

@@ -1344,6 +1344,7 @@ export interface FormsMessages {
       /** "Delete {n} responses?": the confirm for a bulk delete. `One` is n = 1. */
       bulkDeleteTitle: string;
       bulkDeleteTitleOne: string;
+      /** Worded to read the same for one response or many. */
       bulkDeleteBody: string;
       bulkDeleteFailed: string;
       /** Tooltip on a question column's resize handle. */
@@ -3026,8 +3027,8 @@ export const en: FormsMessages = {
       clearSelection: 'Clear',
       bulkDeleteTitle: 'Delete {n} responses?',
       bulkDeleteTitleOne: 'Delete 1 response?',
-      bulkDeleteBody: 'They are removed for good. This cannot be undone.',
-      bulkDeleteFailed: 'Could not delete them. Try again.',
+      bulkDeleteBody: 'This cannot be undone.',
+      bulkDeleteFailed: 'Could not delete. Try again.',
       resizeColumn: 'Drag to resize. Double-click to reset.',
     },
     integrations: {
@@ -4672,8 +4673,8 @@ export const es: FormsMessages = {
       clearSelection: 'Limpiar',
       bulkDeleteTitle: '¿Eliminar {n} respuestas?',
       bulkDeleteTitleOne: '¿Eliminar 1 respuesta?',
-      bulkDeleteBody: 'Se eliminan para siempre. No se puede deshacer.',
-      bulkDeleteFailed: 'No se pudieron eliminar. Inténtalo de nuevo.',
+      bulkDeleteBody: 'No se puede deshacer.',
+      bulkDeleteFailed: 'No se pudo eliminar. Inténtalo de nuevo.',
       resizeColumn: 'Arrastra para cambiar el ancho. Doble clic para restablecer.',
     },
     integrations: {

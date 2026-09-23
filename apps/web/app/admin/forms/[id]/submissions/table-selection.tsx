@@ -54,13 +54,27 @@ const SelectionContext = createContext<Selection | null>(null);
 export const SelectionProvider = SelectionContext.Provider;
 
 /**
- * The selection over one page of rows. Held as a set, but read through the
- * page: an id that is no longer on it (deleted here or elsewhere) is simply
- * not selected any more.
+ * The selected ids that are still on the page, in page order. An id that left
+ * it (deleted, or the page changed under it) is not selected any more.
+ */
+export function pruneSelection(picked: ReadonlySet<string>, pageIds: readonly string[]): string[] {
+  return pageIds.filter((id) => picked.has(id));
+}
+
+/**
+ * The selection over one page of rows. Whenever the page's rows change, the
+ * set is pruned to them, so another page starts empty and a deleted row does
+ * not come back selected if it ever reappears.
  */
 export function useSelection(pageIds: string[]): Selection {
   const [picked, setPicked] = useState<ReadonlySet<string>>(() => new Set());
-  const ids = useMemo(() => pageIds.filter((id) => picked.has(id)), [pageIds, picked]);
+  const [seenPage, setSeenPage] = useState(() => pageIds.join(','));
+  const pageKey = pageIds.join(',');
+  if (seenPage !== pageKey) {
+    setSeenPage(pageKey);
+    setPicked((prev) => new Set(pruneSelection(prev, pageIds)));
+  }
+  const ids = useMemo(() => pruneSelection(picked, pageIds), [pageIds, picked]);
   const toggle = useCallback((id: string, on: boolean) => {
     setPicked((prev) => {
       const next = new Set(prev);
