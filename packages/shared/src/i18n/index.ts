@@ -1303,6 +1303,33 @@ export interface FormsMessages {
       na: string;
       error: string;
       retry: string;
+      /** The side panel that shows one response in full. */
+      viewResponse: string;
+      /** The panel title when the form asked for no name, email or phone. */
+      responseTitle: string;
+      prevResponse: string;
+      nextResponse: string;
+      closeResponse: string;
+      /** "{n} of {total}": where the open response sits in the current page. */
+      responsePosition: string;
+      answersTitle: string;
+      detailsTitle: string;
+      /** A step the respondent never reached (a partial response). */
+      noAnswer: string;
+      colStarted: string;
+      responseId: string;
+      utmTitle: string;
+      /** "{n} of {total} answered": how much of the form this response covers. */
+      answeredCount: string;
+      /** The table as a full-screen sheet, over the whole app. */
+      sheetOpen: string;
+      sheetClose: string;
+      /** First column header when the form collects a contact: who answered, then when. */
+      colResponse: string;
+      /** The row actions column, for screen readers (it has no visible heading). */
+      colActions: string;
+      /** "Score {score}": the score chip in the response panel header. */
+      scoreValue: string;
     };
     integrations: {
       title: string;
@@ -2954,6 +2981,24 @@ export const en: FormsMessages = {
       na: '',
       error: 'Couldn’t load submissions.',
       retry: 'Try again',
+      viewResponse: 'View response',
+      responseTitle: 'Anonymous response',
+      prevResponse: 'Previous response',
+      nextResponse: 'Next response',
+      closeResponse: 'Close',
+      responsePosition: '{n} of {total}',
+      answersTitle: 'Answers',
+      detailsTitle: 'Details',
+      noAnswer: 'No answer',
+      colStarted: 'Started',
+      responseId: 'Response ID',
+      utmTitle: 'Campaign (UTM)',
+      answeredCount: '{n} of {total} answered',
+      sheetOpen: 'Full screen',
+      sheetClose: 'Exit full screen',
+      colResponse: 'Response',
+      colActions: 'Actions',
+      scoreValue: 'Score {score}',
     },
     integrations: {
       title: 'Integrations',
@@ -4570,6 +4615,24 @@ export const es: FormsMessages = {
       na: '',
       error: 'No se pudieron cargar las respuestas.',
       retry: 'Reintentar',
+      viewResponse: 'Ver respuesta',
+      responseTitle: 'Respuesta anónima',
+      prevResponse: 'Respuesta anterior',
+      nextResponse: 'Respuesta siguiente',
+      closeResponse: 'Cerrar',
+      responsePosition: '{n} de {total}',
+      answersTitle: 'Respuestas',
+      detailsTitle: 'Detalles',
+      noAnswer: 'Sin respuesta',
+      colStarted: 'Iniciada',
+      responseId: 'ID de respuesta',
+      utmTitle: 'Campaña (UTM)',
+      answeredCount: '{n} de {total} respondidas',
+      sheetOpen: 'Pantalla completa',
+      sheetClose: 'Salir de pantalla completa',
+      colResponse: 'Respuesta',
+      colActions: 'Acciones',
+      scoreValue: 'Puntaje {score}',
     },
     integrations: {
       title: 'Integraciones',

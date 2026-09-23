@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, type ReactNode } from 'react';
+import { useEffect, useRef, type ReactNode, type RefObject } from 'react';
 
 /**
  * Accessible modal dialog: backdrop, Esc-to-close, role=dialog + aria-labelledby,
@@ -47,83 +47,7 @@ export function Modal({
   const ref = useRef<HTMLDivElement>(null);
   /** The whole overlay — used to spare it (and its subtree) from aria-hidden. */
   const rootRef = useRef<HTMLDivElement>(null);
-  const restoreRef = useRef<HTMLElement | null>(null);
-  /**
-   * `onClose` behind a ref so the setup effect below can depend on `open` ALONE.
-   *
-   * Every call site passes an inline arrow (`onClose={() => setLogicView(null)}`),
-   * so `onClose` gets a new identity on each render of the parent. With it in the
-   * dep array the whole effect tore down and set up again on every keystroke the
-   * dialog fed back to the editor — and its last setup line focuses the FIRST
-   * control in the dialog. Editing a score in the outcomes list therefore moved
-   * focus to the top row, and the browser scrolled that row into view, throwing
-   * the author back to the top of a list they were working halfway down.
-   * The handler reads through the ref, so Esc still calls the current `onClose`.
-   */
-  const onCloseRef = useRef(onClose);
-  useEffect(() => {
-    onCloseRef.current = onClose;
-  });
-
-  useEffect(() => {
-    if (!open) return;
-    restoreRef.current = document.activeElement as HTMLElement | null;
-    const FOCUSABLE =
-      'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
-    /** Visible, focusable controls inside the dialog, in DOM order. */
-    const focusable = (): HTMLElement[] =>
-      [...(ref.current?.querySelectorAll<HTMLElement>(FOCUSABLE) ?? [])].filter(
-        (el) => el.offsetParent !== null || el === document.activeElement,
-      );
-
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        onCloseRef.current();
-        return;
-      }
-      // Trap Tab inside the dialog. Without this, the third Tab left the modal
-      // and walked the row actions of the list BEHIND it — a keyboard user
-      // ended up typing into a page they could not see was focused.
-      if (e.key !== 'Tab') return;
-      const items = focusable();
-      if (items.length === 0) return;
-      const first = items[0]!;
-      const last = items[items.length - 1]!;
-      const active = document.activeElement as HTMLElement | null;
-      if (!ref.current?.contains(active)) {
-        e.preventDefault();
-        (e.shiftKey ? last : first).focus();
-        return;
-      }
-      if (e.shiftKey && active === first) {
-        e.preventDefault();
-        last.focus();
-      } else if (!e.shiftKey && active === last) {
-        e.preventDefault();
-        first.focus();
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    ref.current?.querySelector<HTMLElement>('input, select, textarea, button')?.focus();
-
-    // Hide the rest of the page from assistive tech while the dialog is up, so
-    // a screen reader cannot wander into content the pointer cannot reach.
-    const siblings = [...document.body.children].filter(
-      (el) => el !== rootRef.current && !el.contains(rootRef.current as Node),
-    ) as HTMLElement[];
-    const previous = siblings.map((el) => el.getAttribute('aria-hidden'));
-    siblings.forEach((el) => el.setAttribute('aria-hidden', 'true'));
-
-    return () => {
-      window.removeEventListener('keydown', onKey);
-      siblings.forEach((el, i) => {
-        const prev = previous[i];
-        if (prev == null) el.removeAttribute('aria-hidden');
-        else el.setAttribute('aria-hidden', prev);
-      });
-      restoreRef.current?.focus?.();
-    };
-  }, [open]);
+  useDialogA11y(open, ref, rootRef, onClose);
 
   if (!open) return null;
   return (
@@ -143,4 +67,120 @@ export function Modal({
       </div>
     </div>
   );
+}
+
+/**
+ * What makes an overlay a dialog rather than a floating box, shared by `Modal`
+ * and `Drawer`: Esc closes, Tab is trapped inside `panelRef`, the first control
+ * takes focus on open, focus goes back to the opener on close, and the rest of
+ * the page is `aria-hidden` while it is up.
+ *
+ * A dialog opened INSIDE this one (a file preview opened from a drawer, a
+ * confirm opened from a modal) owns its own keys: an Escape or a Tab whose
+ * target sits in a nested dialog is left to that dialog, so Esc closes the
+ * preview and not the drawer underneath it.
+ */
+export function useDialogA11y(
+  open: boolean,
+  panelRef: RefObject<HTMLElement | null>,
+  rootRef: RefObject<HTMLElement | null>,
+  onClose: () => void,
+): void {
+  const restoreRef = useRef<HTMLElement | null>(null);
+  /**
+   * `onClose` behind a ref so the setup effect below can depend on `open` ALONE.
+   *
+   * Every call site passes an inline arrow (`onClose={() => setLogicView(null)}`),
+   * so `onClose` gets a new identity on each render of the parent. With it in the
+   * dep array the whole effect tore down and set up again on every keystroke the
+   * dialog fed back to the editor, and its last setup line focuses the FIRST
+   * control in the dialog. Editing a score in the outcomes list therefore moved
+   * focus to the top row, and the browser scrolled that row into view, throwing
+   * the author back to the top of a list they were working halfway down.
+   * The handler reads through the ref, so Esc still calls the current `onClose`.
+   */
+  const onCloseRef = useRef(onClose);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  });
+
+  useEffect(() => {
+    if (!open) return;
+    restoreRef.current = document.activeElement as HTMLElement | null;
+    const FOCUSABLE =
+      'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+    /** Visible, focusable controls inside the dialog, in DOM order. */
+    const focusable = (): HTMLElement[] =>
+      [...(panelRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE) ?? [])].filter(
+        (el) => el.offsetParent !== null || el === document.activeElement,
+      );
+
+    const onKey = (e: KeyboardEvent) => {
+      if (inNestedDialog(e.target, panelRef.current)) return;
+      if (e.key === 'Escape') {
+        onCloseRef.current();
+        return;
+      }
+      // Trap Tab inside the dialog. Without this, the third Tab left the modal
+      // and walked the row actions of the list BEHIND it: a keyboard user
+      // ended up typing into a page they could not see was focused.
+      if (e.key !== 'Tab') return;
+      const items = focusable();
+      if (items.length === 0) return;
+      const first = items[0]!;
+      const last = items[items.length - 1]!;
+      const active = document.activeElement as HTMLElement | null;
+      if (!panelRef.current?.contains(active)) {
+        e.preventDefault();
+        (e.shiftKey ? last : first).focus();
+        return;
+      }
+      if (e.shiftKey && active === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && active === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    // First ENABLED control: the drawer's first button is "previous response",
+    // disabled on the first row, and focusing a disabled button is a no-op that
+    // leaves focus on the page behind the dialog.
+    panelRef.current
+      ?.querySelector<HTMLElement>(
+        'input:not([disabled]), select:not([disabled]), textarea:not([disabled]), button:not([disabled])',
+      )
+      ?.focus();
+
+    // Hide the rest of the page from assistive tech while the dialog is up, so
+    // a screen reader cannot wander into content the pointer cannot reach.
+    const siblings = [...document.body.children].filter(
+      (el) => el !== rootRef.current && !el.contains(rootRef.current as Node),
+    ) as HTMLElement[];
+    const previous = siblings.map((el) => el.getAttribute('aria-hidden'));
+    siblings.forEach((el) => el.setAttribute('aria-hidden', 'true'));
+
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      siblings.forEach((el, i) => {
+        const prev = previous[i];
+        if (prev == null) el.removeAttribute('aria-hidden');
+        else el.setAttribute('aria-hidden', prev);
+      });
+      restoreRef.current?.focus?.();
+    };
+    // panelRef and rootRef are stable ref objects; `open` is the only real input.
+  }, [open]);
+}
+
+/**
+ * True when `target` sits inside a dialog (`role="dialog"` or a confirm's
+ * `role="alertdialog"`) that is itself inside `panel`: a dialog opened from
+ * this one, which handles its own keys.
+ */
+export function inNestedDialog(target: EventTarget | null, panel: HTMLElement | null): boolean {
+  if (!panel || !(target instanceof Element)) return false;
+  const owner = target.closest('[role="dialog"], [role="alertdialog"]');
+  return owner != null && owner !== panel && panel.contains(owner);
 }
