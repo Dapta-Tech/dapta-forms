@@ -37,6 +37,8 @@ export interface PanelLabels {
   colScore: string;
   responseId: string;
   utmTitle: string;
+  /** "{n} of {total} answered" */
+  answeredCount: string;
   badgeCompleted: string;
   badgePartial: string;
   delete: string;
@@ -92,9 +94,19 @@ export function ResponsesViewer({
   );
   const index = openId ? items.findIndex((i) => i.id === openId) : -1;
   const current = index >= 0 ? items[index]! : null;
+  /**
+   * The last response opened. Closing clears `openId` at once (the dialog
+   * contract ends there), but the drawer keeps drawing this one while it
+   * slides out, instead of emptying mid-animation.
+   */
+  const [shownId, setShownId] = useState(openId);
+  const shownIndex = shownId ? items.findIndex((i) => i.id === shownId) : -1;
+  const shown = current ?? (shownIndex >= 0 ? items[shownIndex]! : null);
+  const shownAt = current ? index : shownIndex;
 
   const show = useCallback((id: string | null) => {
     setOpenId(id);
+    if (id) setShownId(id);
     writeResponseParam(id);
   }, []);
 
@@ -105,6 +117,13 @@ export function ResponsesViewer({
     },
     [items, index, show],
   );
+
+  // A new response starts at its first question, not at the scroll depth of
+  // the one before it.
+  useEffect(() => {
+    if (!openId) return;
+    document.querySelector('[data-drawer-body]')?.parentElement?.scrollTo({ top: 0 });
+  }, [openId]);
 
   // The open response left the page (deleted from the panel, or by someone
   // else before a refresh): close rather than show a record that is gone.
@@ -161,15 +180,15 @@ export function ResponsesViewer({
         onClose={() => show(null)}
         labelId={LABEL_ID}
         header={
-          current ? (
+          shown ? (
             <PanelHeader
-              detail={current}
+              detail={shown}
               position={t(labels.responsePosition, {
-                n: index + 1,
+                n: shownAt + 1,
                 total: items.length,
               })}
-              hasPrev={index > 0}
-              hasNext={index < items.length - 1}
+              hasPrev={shownAt > 0}
+              hasNext={shownAt < items.length - 1}
               onPrev={() => go(-1)}
               onNext={() => go(1)}
               onClose={() => show(null)}
@@ -178,11 +197,11 @@ export function ResponsesViewer({
           ) : null
         }
         footer={
-          current ? (
+          shown ? (
             <div className="flex justify-end">
               <DeleteSubmissionButton
                 formId={formId}
-                submissionId={current.id}
+                submissionId={shown.id}
                 labels={{
                   delete: labels.delete,
                   confirm: labels.deleteConfirm,
@@ -192,9 +211,9 @@ export function ResponsesViewer({
           ) : null
         }
       >
-        {current ? (
+        {shown ? (
           <ResponseDetailView
-            detail={current}
+            detail={shown}
             formId={formId}
             labels={labels}
             fileLabels={fileLabels}
@@ -233,6 +252,17 @@ function IconButton({
   );
 }
 
+/** Up to two initials for the avatar: from the name, else the email's first letter. */
+function initials(respondent: ResponseDetail['respondent']): string | null {
+  const words = respondent.name?.split(/\s+/).filter(Boolean) ?? [];
+  if (words.length > 0)
+    return words
+      .slice(0, 2)
+      .map((w) => w[0]!.toUpperCase())
+      .join('');
+  return respondent.email ? respondent.email[0]!.toUpperCase() : null;
+}
+
 function PanelHeader({
   detail,
   position,
@@ -252,49 +282,96 @@ function PanelHeader({
   onClose: () => void;
   labels: PanelLabels;
 }) {
+  const { name, email } = detail.respondent;
+  const mark = initials(detail.respondent);
+  const total = detail.answers.length;
+  const answered = detail.answers.filter((a) => a.kind !== 'empty').length;
+  const pct = total > 0 ? Math.round((answered / total) * 100) : 0;
   return (
-    <div className="flex items-start justify-between gap-3">
-      <div className="min-w-0">
-        <div className="flex items-baseline gap-2">
-          <h2 id={LABEL_ID} className="text-lg font-semibold tracking-tight">
-            {labels.responseTitle}
-          </h2>
-          <span
-            className="text-sm tabular-nums text-muted-foreground"
-            data-testid="response-position"
-          >
-            {position}
-          </span>
-        </div>
-        <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-          <StatusBadge
-            completed={detail.completed}
-            label={detail.completed ? labels.badgeCompleted : labels.badgePartial}
+    <div className="flex flex-col gap-4">
+      <div className="flex items-center justify-between gap-3">
+        <span
+          className="text-xs font-medium tabular-nums text-muted-foreground"
+          data-testid="response-position"
+        >
+          {position}
+        </span>
+        <div className="flex shrink-0 items-center gap-1">
+          <IconButton
+            icon="pi-chevron-up"
+            label={labels.prevResponse}
+            onClick={onPrev}
+            disabled={!hasPrev}
+            testId="response-prev"
           />
-          <span>{detail.submittedAt}</span>
+          <IconButton
+            icon="pi-chevron-down"
+            label={labels.nextResponse}
+            onClick={onNext}
+            disabled={!hasNext}
+            testId="response-next"
+          />
+          <IconButton
+            icon="pi-times"
+            label={labels.closeResponse}
+            onClick={onClose}
+            testId="response-close"
+          />
         </div>
       </div>
-      <div className="flex shrink-0 items-center gap-1">
-        <IconButton
-          icon="pi-chevron-up"
-          label={labels.prevResponse}
-          onClick={onPrev}
-          disabled={!hasPrev}
-          testId="response-prev"
+
+      <div key={detail.id} className="flex animate-response-in items-center gap-3.5">
+        <span
+          aria-hidden
+          className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-primary text-base font-semibold text-primary-foreground shadow-sm ring-1 ring-primary-edge"
+          data-testid="response-avatar"
+        >
+          {mark ?? <i className="pi pi-user" style={{ fontSize: 18 }} />}
+        </span>
+        <div className="min-w-0">
+          <h2 id={LABEL_ID} className="truncate text-lg font-semibold tracking-tight">
+            {name ?? email ?? labels.responseTitle}
+          </h2>
+          <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+            {name && email ? <span className="truncate">{email}</span> : null}
+            {name && email ? (
+              <span aria-hidden className="text-faint">
+                ·
+              </span>
+            ) : null}
+            <span>{detail.submittedAt}</span>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <StatusBadge
+          completed={detail.completed}
+          label={detail.completed ? labels.badgeCompleted : labels.badgePartial}
         />
-        <IconButton
-          icon="pi-chevron-down"
-          label={labels.nextResponse}
-          onClick={onNext}
-          disabled={!hasNext}
-          testId="response-next"
-        />
-        <IconButton
-          icon="pi-times"
-          label={labels.closeResponse}
-          onClick={onClose}
-          testId="response-close"
-        />
+        {detail.score != null ? (
+          <span
+            className="inline-flex items-center gap-1.5 rounded-full bg-primary px-2.5 py-0.5 text-xs font-semibold text-primary-foreground ring-1 ring-primary-edge"
+            data-testid="response-score"
+          >
+            <i aria-hidden className="pi pi-star-fill" style={{ fontSize: 10 }} />
+            {labels.colScore} {detail.score}
+          </span>
+        ) : null}
+        <div className="ml-auto flex min-w-36 flex-1 items-center justify-end gap-2.5">
+          <div aria-hidden className="h-1.5 max-w-32 flex-1 overflow-hidden rounded-full bg-muted">
+            <div
+              className="h-full rounded-full bg-primary transition-[width] duration-500 ease-out"
+              style={{ width: `${pct}%` }}
+            />
+          </div>
+          <span
+            className="shrink-0 text-xs tabular-nums text-muted-foreground"
+            data-testid="response-answered"
+          >
+            {t(labels.answeredCount, { n: answered, total })}
+          </span>
+        </div>
       </div>
     </div>
   );
@@ -315,12 +392,14 @@ function AnswerValueView({
 }) {
   switch (answer.kind) {
     case 'empty':
-      return <p className="text-muted-foreground">{labels.noAnswer}</p>;
+      return <p className="text-sm italic text-faint">{labels.noAnswer}</p>;
     case 'text':
       return (
         <p
           className={
-            answer.long ? 'whitespace-pre-wrap break-words leading-relaxed' : 'break-words'
+            answer.long
+              ? 'whitespace-pre-wrap break-words text-base leading-relaxed text-foreground'
+              : 'break-words text-base font-medium text-foreground'
           }
         >
           {answer.text}
@@ -328,12 +407,13 @@ function AnswerValueView({
       );
     case 'choices':
       return (
-        <ul className="flex flex-wrap gap-1.5">
+        <ul className="flex flex-wrap gap-2">
           {answer.choices.map((c, i) => (
             <li
               key={`${c}-${i}`}
-              className="rounded-md border border-border bg-accent/40 px-2 py-0.5 text-xs font-medium"
+              className="inline-flex items-center gap-1.5 rounded-full border border-primary-edge/40 bg-primary/15 px-3 py-1 text-sm font-medium text-foreground"
             >
+              <i aria-hidden className="pi pi-check text-primary" style={{ fontSize: 10 }} />
               {c}
             </li>
           ))}
@@ -345,9 +425,10 @@ function AnswerValueView({
           href={answer.href}
           target="_blank"
           rel="noopener noreferrer"
-          className="break-all text-foreground underline decoration-border underline-offset-2 hover:decoration-foreground"
+          className="inline-flex items-center gap-1.5 break-all text-base font-medium text-primary underline decoration-primary-edge/40 underline-offset-4 hover:decoration-primary-edge"
         >
           {answer.text}
+          <i aria-hidden className="pi pi-external-link shrink-0" style={{ fontSize: 11 }} />
         </a>
       );
     case 'file':
@@ -375,26 +456,48 @@ export function ResponseDetailView({
   labels: PanelLabels;
   fileLabels: FileButtonLabels;
 }) {
-  const heading = 'mb-2 text-2xs font-medium uppercase tracking-wide text-faint';
+  const heading = 'mb-3 text-2xs font-medium uppercase tracking-wide text-faint';
+  const card = 'rounded-lg border border-border bg-card';
   return (
-    <div data-drawer-body tabIndex={-1} className="flex flex-col gap-6 text-sm outline-none">
+    <div
+      key={detail.id}
+      data-drawer-body
+      tabIndex={-1}
+      className="flex animate-response-in flex-col gap-7 text-sm outline-none"
+    >
       <section>
         <h3 className={heading}>{labels.answersTitle}</h3>
-        <ol className="flex flex-col divide-y divide-border" data-testid="response-answers">
-          {detail.answers.map((a) => (
+        <ol className="flex flex-col gap-2.5" data-testid="response-answers">
+          {detail.answers.map((a, i) => (
             <li
               key={a.key}
-              className="flex flex-col gap-1.5 py-3 first:pt-1"
+              className={
+                a.kind === 'empty'
+                  ? 'rounded-lg border border-dashed border-border px-4 py-3'
+                  : `${card} px-4 py-3.5 transition-colors hover:border-primary-edge/40`
+              }
               data-answer-kind={a.kind}
             >
-              <p className="font-medium text-muted-foreground">{a.label}</p>
-              <AnswerValueView
-                answer={a}
-                responseId={detail.id}
-                formId={formId}
-                labels={labels}
-                fileLabels={fileLabels}
-              />
+              <div className="flex items-start gap-2.5">
+                <span
+                  aria-hidden
+                  className={`mt-px flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-2xs font-semibold tabular-nums ${
+                    a.kind === 'empty' ? 'bg-muted text-faint' : 'bg-primary/15 text-primary'
+                  }`}
+                >
+                  {i + 1}
+                </span>
+                <p className="text-xs font-medium leading-5 text-muted-foreground">{a.label}</p>
+              </div>
+              <div className="mt-2 pl-7.5">
+                <AnswerValueView
+                  answer={a}
+                  responseId={detail.id}
+                  formId={formId}
+                  labels={labels}
+                  fileLabels={fileLabels}
+                />
+              </div>
             </li>
           ))}
         </ol>
@@ -403,7 +506,7 @@ export function ResponseDetailView({
       <section>
         <h3 className={heading}>{labels.detailsTitle}</h3>
         <dl
-          className="grid grid-cols-[minmax(0,auto)_minmax(0,1fr)] gap-x-6 gap-y-2"
+          className={`${card} grid grid-cols-[minmax(0,auto)_minmax(0,1fr)] gap-x-6 gap-y-2.5 px-4 py-3.5`}
           data-testid="response-details"
         >
           <dt className="text-muted-foreground">{labels.colStatus}</dt>
@@ -420,7 +523,7 @@ export function ResponseDetailView({
           {detail.score != null ? (
             <>
               <dt className="text-muted-foreground">{labels.colScore}</dt>
-              <dd className="tabular-nums">{detail.score}</dd>
+              <dd className="font-semibold tabular-nums text-primary">{detail.score}</dd>
             </>
           ) : null}
           <dt className="text-muted-foreground">{labels.responseId}</dt>
@@ -431,17 +534,19 @@ export function ResponseDetailView({
       {detail.utm.length > 0 ? (
         <section>
           <h3 className={heading}>{labels.utmTitle}</h3>
-          <dl
-            className="grid grid-cols-[minmax(0,auto)_minmax(0,1fr)] gap-x-6 gap-y-2"
-            data-testid="response-utm"
-          >
+          <ul className="flex flex-wrap gap-2" data-testid="response-utm">
             {detail.utm.map(([k, v]) => (
-              <div key={k} className="contents">
-                <dt className="font-mono text-xs text-muted-foreground">{k}</dt>
-                <dd className="break-all">{v}</dd>
-              </div>
+              <li
+                key={k}
+                className="inline-flex max-w-full items-center overflow-hidden rounded-md border border-border bg-card text-xs"
+              >
+                <span className="border-r border-border bg-muted px-2 py-1 font-mono text-muted-foreground">
+                  {k}
+                </span>
+                <span className="break-all px-2 py-1 font-medium">{v}</span>
+              </li>
             ))}
-          </dl>
+          </ul>
         </section>
       ) : null}
     </div>

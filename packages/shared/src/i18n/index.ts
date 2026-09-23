@@ -1318,6 +1318,8 @@ export interface FormsMessages {
       colStarted: string;
       responseId: string;
       utmTitle: string;
+      /** "{n} of {total} answered": how much of the form this response covers. */
+      answeredCount: string;
     };
     integrations: {
       title: string;
@@ -2981,6 +2983,7 @@ export const en: FormsMessages = {
       colStarted: 'Started',
       responseId: 'Response ID',
       utmTitle: 'Campaign (UTM)',
+      answeredCount: '{n} of {total} answered',
     },
     integrations: {
       title: 'Integrations',
@@ -4609,6 +4612,7 @@ export const es: FormsMessages = {
       colStarted: 'Iniciada',
       responseId: 'ID de respuesta',
       utmTitle: 'Campaña (UTM)',
+      answeredCount: '{n} de {total} respondidas',
     },
     integrations: {
       title: 'Integraciones',

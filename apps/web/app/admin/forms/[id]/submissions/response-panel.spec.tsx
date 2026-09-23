@@ -29,6 +29,7 @@ const labels: PanelLabels = {
   colScore: 'Score',
   responseId: 'Response ID',
   utmTitle: 'Campaign (UTM)',
+  answeredCount: '{n} of {total} answered',
   badgeCompleted: 'Completed',
   badgePartial: 'Partial',
   delete: 'Delete',
@@ -72,6 +73,7 @@ const detail = (over: Partial<ResponseDetail> = {}): ResponseDetail => ({
     { key: 'budget', label: 'Budget?', kind: 'empty' },
   ],
   utm: [['utm_source', 'qr']],
+  respondent: { name: null, email: null },
   ...over,
 });
 
@@ -152,6 +154,21 @@ describe('ResponsesViewer', () => {
     const plain = render([detail({ score: null, utm: [] })], 'sub_1');
     expect(plain).not.toContain('>Score<');
     expect(plain).not.toContain('Campaign (UTM)');
+  });
+
+  it('titles the panel with who answered, and says how much of the form they covered', () => {
+    const named = render(
+      [detail({ respondent: { name: 'Clara Restrepo', email: 'clara@example.com' } })],
+      'sub_1',
+    );
+    expect(named).toMatch(/<h2 id="response-panel-title"[^>]*>Clara Restrepo</);
+    expect(named).toContain('clara@example.com');
+    expect(named).toMatch(/data-testid="response-avatar"[^>]*>CR</);
+    // Four of the five fixture answers have a value; the fifth was never reached.
+    expect(named).toContain('4 of 5 answered');
+
+    const anonymous = render([detail()], 'sub_1');
+    expect(anonymous).toMatch(/<h2 id="response-panel-title"[^>]*>Response</);
   });
 
   it('offers delete from the panel', () => {

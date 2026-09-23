@@ -35,6 +35,12 @@ export interface ResponseDetail {
   answers: AnswerView[];
   /** The `utm_*` parameters the respondent arrived with, in capture order. */
   utm: Array<[string, string]>;
+  /**
+   * Who answered, when the form asked: the first name step and the first email
+   * step. The panel is titled with them, the way a CRM record is titled with
+   * the contact rather than with "Response".
+   */
+  respondent: { name: string | null; email: string | null };
 }
 
 /** A text answer this long, or with a line break, reads as a paragraph rather than a value. */
@@ -108,13 +114,23 @@ export function buildResponseDetail(
   const data = (row.data ?? {}) as Record<string, unknown>;
   const when = row.completedAt ?? row.partialAt ?? row.startedAt;
   const at = (ms: number) => formatDateTime(ms, { locale: opts.locale, timeZone: opts.timeZone });
+  const answers = steps.map((s) => answerView(s, data, opts.timeZone));
+  /** The text of the first answered step of this type, if any. */
+  const firstText = (type: FormStep['type']): string | null => {
+    for (let i = 0; i < steps.length; i++) {
+      const a = answers[i]!;
+      if (steps[i]!.type === type && a.kind === 'text') return a.text;
+    }
+    return null;
+  };
   return {
     id: row.id,
     completed: row.completedAt != null,
     submittedAt: at(when),
     startedAt: at(row.startedAt),
     score: opts.scoring ? row.score : null,
-    answers: steps.map((s) => answerView(s, data, opts.timeZone)),
+    answers,
     utm: utmPairs(data),
+    respondent: { name: firstText('name'), email: firstText('email') },
   };
 }

@@ -1,7 +1,10 @@
 'use client';
 
-import { useRef, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useDialogA11y } from './modal';
+
+/** The exit animation's length (`--animate-drawer-out` in globals.css). */
+const EXIT_MS = 220;
 
 /**
  * A dialog that slides in from the right edge and runs the full height of the
@@ -12,6 +15,12 @@ import { useDialogA11y } from './modal';
  * Same dialog contract as `Modal` (Esc, Tab trap, focus in and back out,
  * `aria-hidden` behind it), through the shared `useDialogA11y`. The header and
  * footer stay put; only the body scrolls.
+ *
+ * It slides in from the right edge and back out to it. Closing keeps the panel
+ * mounted for the exit animation only: the dialog contract (focus back to the
+ * opener, the page un-hidden) ends the moment `open` goes false, and the
+ * leaving panel is `inert`, so nothing can be clicked or focused in it on its
+ * way out. The caller must keep passing the last content while it leaves.
  */
 export function Drawer({
   open,
@@ -33,15 +42,35 @@ export function Drawer({
   const rootRef = useRef<HTMLDivElement>(null);
   useDialogA11y(open, ref, rootRef, onClose);
 
-  if (!open) return null;
+  // Closing starts the exit animation; the panel unmounts once it has played.
+  const [prevOpen, setPrevOpen] = useState(open);
+  const [leaving, setLeaving] = useState(false);
+  if (prevOpen !== open) {
+    setPrevOpen(open);
+    setLeaving(!open);
+  }
+  useEffect(() => {
+    if (!leaving) return;
+    const t = window.setTimeout(() => setLeaving(false), EXIT_MS);
+    return () => window.clearTimeout(t);
+  }, [leaving]);
+
+  if (!open && !leaving) return null;
   return (
-    <div ref={rootRef} className="fixed inset-0 z-50 flex justify-end">
+    <div
+      ref={rootRef}
+      inert={leaving}
+      data-state={leaving ? 'closed' : 'open'}
+      className="fixed inset-0 z-50 flex justify-end"
+    >
       <button
         type="button"
         aria-hidden
         tabIndex={-1}
         onClick={onClose}
-        className="absolute inset-0 bg-background/60"
+        className={`absolute inset-0 bg-background/70 backdrop-blur-xs ${
+          leaving ? 'animate-backdrop-out' : 'animate-backdrop-in'
+        }`}
       />
       <div
         ref={ref}
@@ -49,11 +78,22 @@ export function Drawer({
         aria-modal="true"
         aria-labelledby={labelId}
         data-testid="drawer"
-        className="relative flex h-full w-full max-w-xl flex-col border-l border-border bg-popover shadow-xl"
+        className={`relative flex h-full w-full max-w-xl flex-col overflow-hidden border-l border-border bg-popover shadow-2xl ${
+          leaving ? 'animate-drawer-out' : 'animate-drawer-in'
+        }`}
       >
-        <div className="shrink-0 border-b border-border px-5 py-4">{header}</div>
-        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">{children}</div>
-        {footer ? <div className="shrink-0 border-t border-border px-5 py-3">{footer}</div> : null}
+        {/* A faint wash of the accent behind the header: the panel's one splash of color. */}
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-x-0 top-0 h-48 bg-linear-to-b from-primary/12 to-transparent"
+        />
+        <div className="relative shrink-0 border-b border-border px-5 py-4">{header}</div>
+        <div className="relative min-h-0 flex-1 overflow-y-auto px-5 py-5">{children}</div>
+        {footer ? (
+          <div className="relative shrink-0 border-t border-border bg-popover px-5 py-3">
+            {footer}
+          </div>
+        ) : null}
       </div>
     </div>
   );

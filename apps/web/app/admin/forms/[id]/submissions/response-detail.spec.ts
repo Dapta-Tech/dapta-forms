@@ -191,6 +191,23 @@ describe('buildResponseDetail', () => {
     expect(d.submittedAt).toContain('9:02');
   });
 
+  it('names the respondent from the first name and email steps, when the form asked', () => {
+    const withContact = [
+      step({ key: 'name_1', type: 'name', question: 'Your name' }),
+      step({ key: 'mail', type: 'email', question: 'Email' }),
+      step({ key: 'company', type: 'text', question: 'Company' }),
+    ];
+    const d = buildResponseDetail(
+      row({ data: { firstname: 'Clara', lastname: 'Restrepo', mail: 'clara@example.com' } }),
+      withContact,
+      { locale: 'en', timeZone: TZ, scoring: true },
+    );
+    expect(d.respondent).toEqual({ name: 'Clara Restrepo', email: 'clara@example.com' });
+    expect(
+      buildResponseDetail(row(), steps, { locale: 'en', timeZone: TZ, scoring: true }).respondent,
+    ).toEqual({ name: null, email: null });
+  });
+
   it('has no UTM section when the respondent arrived without parameters', () => {
     expect(
       buildResponseDetail(row({ data: { company: 'Acme' } }), steps, {

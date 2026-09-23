@@ -229,6 +229,7 @@ async function SubmissionsData({
           colScore: m.submissions.colScore,
           responseId: m.submissions.responseId,
           utmTitle: m.submissions.utmTitle,
+          answeredCount: m.submissions.answeredCount,
           badgeCompleted: m.submissions.badgeCompleted,
           badgePartial: m.submissions.badgePartial,
           delete: m.submissions.delete,
