@@ -97,8 +97,12 @@ function textOf(node: unknown): string {
   if (typeof node === 'string' || typeof node === 'number') return String(node);
   if (Array.isArray(node)) return node.map(textOf).join(' ');
   // The pager rides into the viewer as a prop (it moves into the full-screen
-  // sheet with the table), so it is read alongside the children.
-  if (isElement(node)) return [textOf(node.props?.children), textOf((node.props as { pager?: unknown }).pager)].join(' ');
+  // sheet with the table), and a column heading takes its question as `text`,
+  // so both are read alongside the children.
+  if (isElement(node)) {
+    const p = node.props as { children?: unknown; pager?: unknown; text?: unknown };
+    return [textOf(p.children), textOf(p.pager), textOf(p.text)].join(' ');
+  }
   return '';
 }
 

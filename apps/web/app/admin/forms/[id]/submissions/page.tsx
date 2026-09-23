@@ -22,6 +22,7 @@ import { buildResponseDetail } from './response-detail';
 import { PagerLink, ResponsesViewer } from './response-panel';
 import { SHEET_VIEW } from './viewer-params';
 import { StatusBadge } from './status-badge';
+import { ColumnHeading } from './column-heading';
 
 export const dynamic = 'force-dynamic';
 
@@ -35,7 +36,7 @@ const PAGE_SIZE = 25;
  * same reason: in the sheet it stays put over the rows scrolling under it.
  */
 const TH =
-  'sticky top-0 z-10 whitespace-nowrap border-b border-border bg-card px-4 py-3 font-medium in-data-sheet:align-bottom in-data-sheet:shadow-[0_1px_0_var(--color-border)]';
+  'sticky top-0 z-10 border-b border-border bg-card px-4 py-3 align-bottom font-medium in-data-sheet:shadow-[0_1px_0_var(--color-border)]';
 const TD = 'border-b border-border px-4 py-3 group-last:border-b-0';
 
 type SP = { status?: string; offset?: string; response?: string; view?: string };
@@ -291,18 +292,20 @@ async function SubmissionsData({
         <div className="overflow-x-auto rounded-lg border border-border bg-card in-data-sheet:min-h-0 in-data-sheet:overflow-auto">
         <table className="w-full min-w-[720px] border-separate border-spacing-0 text-sm">
           <thead>
-            <tr className="text-left text-2xs uppercase tracking-wide text-faint">
-              <th className={`${TH} sticky left-0 z-20 shadow-[1px_0_0_var(--color-border)]`}>
+            {/* Sentence case at the label step, not the uppercase telemetry
+                eyebrow: these are questions people read, often two lines long. */}
+            <tr className="text-left text-xs leading-4 text-muted-foreground">
+              <th className={`${TH} sticky left-0 z-20 whitespace-nowrap shadow-[1px_0_0_var(--color-border)]`}>
                 {hasContact ? m.submissions.colResponse : m.submissions.colSubmitted}
               </th>
-              <th className={TH}>{m.submissions.colStatus}</th>
-              {scoring ? <th className={`${TH} text-right`}>{m.submissions.colScore}</th> : null}
+              <th className={`${TH} whitespace-nowrap`}>{m.submissions.colStatus}</th>
+              {scoring ? <th className={`${TH} whitespace-nowrap text-right`}>{m.submissions.colScore}</th> : null}
               {steps.map((s) => (
                 <th
                   key={s.key}
-                  className={`${TH} in-data-sheet:min-w-56 in-data-sheet:max-w-80 in-data-sheet:whitespace-normal`}
+                  className={`${TH} min-w-40 max-w-60 in-data-sheet:min-w-56 in-data-sheet:max-w-80`}
                 >
-                  {stepLabel(s)}
+                  <ColumnHeading text={stepLabel(s)} />
                 </th>
               ))}
               <th className={TH} aria-label="actions" />
