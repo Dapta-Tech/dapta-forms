@@ -23,6 +23,7 @@ import { PagerLink, ResponsesViewer } from './response-panel';
 import { SHEET_VIEW } from './viewer-params';
 import { StatusBadge } from './status-badge';
 import { ColumnHeading } from './column-heading';
+import { SubmissionsViewTabs } from './submissions-view-tabs';
 
 export const dynamic = 'force-dynamic';
 
@@ -82,6 +83,7 @@ export default async function SubmissionsPage({
             {m.submissions.export}
           </a>
         </div>
+        <SubmissionsViewTabs formId={id} active="responses" labels={m.submissions.summary} />
         <div className="flex flex-wrap items-end justify-between gap-4">
           <SubmissionsFilter
             labels={{

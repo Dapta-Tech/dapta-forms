@@ -506,7 +506,7 @@ function initials(respondent: ResponseDetail['respondent']): string | null {
   return respondent.email ? respondent.email[0]!.toUpperCase() : null;
 }
 
-function PanelHeader({
+export function PanelHeader({
   detail,
   position,
   hasPrev,
