@@ -15,7 +15,7 @@ import { ResponsesViewer, type PanelLabels } from './response-panel';
 import type { ResponseDetail } from './response-detail';
 
 const labels: PanelLabels = {
-  responseTitle: 'Response',
+  responseTitle: 'Anonymous response',
   prevResponse: 'Previous response',
   nextResponse: 'Next response',
   closeResponse: 'Close',
@@ -73,7 +73,7 @@ const detail = (over: Partial<ResponseDetail> = {}): ResponseDetail => ({
     { key: 'budget', label: 'Budget?', kind: 'empty' },
   ],
   utm: [['utm_source', 'qr']],
-  respondent: { name: null, email: null },
+  respondent: { name: null, email: null, phone: null },
   ...over,
 });
 
@@ -158,7 +158,7 @@ describe('ResponsesViewer', () => {
 
   it('titles the panel with who answered, and says how much of the form they covered', () => {
     const named = render(
-      [detail({ respondent: { name: 'Clara Restrepo', email: 'clara@example.com' } })],
+      [detail({ respondent: { name: 'Clara Restrepo', email: 'clara@example.com', phone: null } })],
       'sub_1',
     );
     expect(named).toMatch(/<h2 id="response-panel-title"[^>]*>Clara Restrepo</);
@@ -167,8 +167,17 @@ describe('ResponsesViewer', () => {
     // Four of the five fixture answers have a value; the fifth was never reached.
     expect(named).toContain('4 of 5 answered');
 
+    // Only a phone: it becomes the title, and the avatar falls back to the icon.
+    const phoneOnly = render(
+      [detail({ respondent: { name: null, email: null, phone: '+573001234567' } })],
+      'sub_1',
+    );
+    expect(phoneOnly).toMatch(/<h2 id="response-panel-title"[^>]*>\+573001234567</);
+    expect(phoneOnly).toMatch(/data-testid="response-avatar"[^>]*><i[^>]*pi-user/);
+
+    // No contact step at all: same header, anonymous title.
     const anonymous = render([detail()], 'sub_1');
-    expect(anonymous).toMatch(/<h2 id="response-panel-title"[^>]*>Response</);
+    expect(anonymous).toMatch(/<h2 id="response-panel-title"[^>]*>Anonymous response</);
   });
 
   it('offers delete from the panel', () => {

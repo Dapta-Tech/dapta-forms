@@ -202,10 +202,14 @@ describe('buildResponseDetail', () => {
       withContact,
       { locale: 'en', timeZone: TZ, scoring: true },
     );
-    expect(d.respondent).toEqual({ name: 'Clara Restrepo', email: 'clara@example.com' });
+    expect(d.respondent).toEqual({
+      name: 'Clara Restrepo',
+      email: 'clara@example.com',
+      phone: null,
+    });
     expect(
       buildResponseDetail(row(), steps, { locale: 'en', timeZone: TZ, scoring: true }).respondent,
-    ).toEqual({ name: null, email: null });
+    ).toEqual({ name: null, email: null, phone: null });
   });
 
   it('has no UTM section when the respondent arrived without parameters', () => {

@@ -36,11 +36,12 @@ export interface ResponseDetail {
   /** The `utm_*` parameters the respondent arrived with, in capture order. */
   utm: Array<[string, string]>;
   /**
-   * Who answered, when the form asked: the first name step and the first email
-   * step. The panel is titled with them, the way a CRM record is titled with
-   * the contact rather than with "Response".
+   * Who answered, when the form asked: the first answered name, email and phone
+   * steps. The panel is titled with the first of them that exists, the way a
+   * CRM record is titled with the contact; a form that asks none of them gets
+   * the same header with an anonymous title.
    */
-  respondent: { name: string | null; email: string | null };
+  respondent: { name: string | null; email: string | null; phone: string | null };
 }
 
 /** A text answer this long, or with a line break, reads as a paragraph rather than a value. */
@@ -131,6 +132,6 @@ export function buildResponseDetail(
     score: opts.scoring ? row.score : null,
     answers,
     utm: utmPairs(data),
-    respondent: { name: firstText('name'), email: firstText('email') },
+    respondent: { name: firstText('name'), email: firstText('email'), phone: firstText('phone') },
   };
 }

@@ -1305,6 +1305,7 @@ export interface FormsMessages {
       retry: string;
       /** The side panel that shows one response in full. */
       viewResponse: string;
+      /** The panel title when the form asked for no name, email or phone. */
       responseTitle: string;
       prevResponse: string;
       nextResponse: string;
@@ -2972,7 +2973,7 @@ export const en: FormsMessages = {
       error: 'Couldn’t load submissions.',
       retry: 'Try again',
       viewResponse: 'View response',
-      responseTitle: 'Response',
+      responseTitle: 'Anonymous response',
       prevResponse: 'Previous response',
       nextResponse: 'Next response',
       closeResponse: 'Close',
@@ -4601,7 +4602,7 @@ export const es: FormsMessages = {
       error: 'No se pudieron cargar las respuestas.',
       retry: 'Reintentar',
       viewResponse: 'Ver respuesta',
-      responseTitle: 'Respuesta',
+      responseTitle: 'Respuesta anónima',
       prevResponse: 'Respuesta anterior',
       nextResponse: 'Respuesta siguiente',
       closeResponse: 'Cerrar',

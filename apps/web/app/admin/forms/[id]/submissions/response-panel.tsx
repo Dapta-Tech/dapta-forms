@@ -252,6 +252,19 @@ function IconButton({
   );
 }
 
+/**
+ * The header's identity, by one rule for every form: the title is the first
+ * contact the form collected (name, then email, then phone), the line under it
+ * the next one. A form that asks for none of them keeps the same layout with an
+ * anonymous title and a person icon in the avatar.
+ */
+function identity(respondent: ResponseDetail['respondent'], anonymous: string) {
+  const [title, contact] = [respondent.name, respondent.email, respondent.phone].filter(
+    (v): v is string => v != null,
+  );
+  return { title: title ?? anonymous, contact: contact ?? null };
+}
+
 /** Up to two initials for the avatar: from the name, else the email's first letter. */
 function initials(respondent: ResponseDetail['respondent']): string | null {
   const words = respondent.name?.split(/\s+/).filter(Boolean) ?? [];
@@ -282,7 +295,7 @@ function PanelHeader({
   onClose: () => void;
   labels: PanelLabels;
 }) {
-  const { name, email } = detail.respondent;
+  const { title, contact } = identity(detail.respondent, labels.responseTitle);
   const mark = initials(detail.respondent);
   const total = detail.answers.length;
   const answered = detail.answers.filter((a) => a.kind !== 'empty').length;
@@ -330,11 +343,11 @@ function PanelHeader({
         </span>
         <div className="min-w-0">
           <h2 id={LABEL_ID} className="truncate text-lg font-semibold tracking-tight">
-            {name ?? email ?? labels.responseTitle}
+            {title}
           </h2>
           <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-            {name && email ? <span className="truncate">{email}</span> : null}
-            {name && email ? (
+            {contact ? <span className="truncate">{contact}</span> : null}
+            {contact ? (
               <span aria-hidden className="text-faint">
                 ·
               </span>
