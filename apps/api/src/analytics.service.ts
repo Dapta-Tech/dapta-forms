@@ -26,6 +26,7 @@ import {
   querySubmissions,
   allSubmissionsForExport,
   deleteSubmissionForAccount,
+  deleteSubmissionsForAccount,
   searchSubmissionAnswers,
   submissionsForSummary,
   type AnswerSearchQuery,
@@ -322,8 +323,11 @@ export class AnalyticsService {
     };
   }
 
-  /** Every submission matching the filter (CSV export — no pagination). */
-  exportSubmissions(formId: string, q: Omit<SubmissionQuery, 'limit' | 'offset'>) {
+  /** Every submission matching the filter (CSV export: no pagination), or only `ids`. */
+  exportSubmissions(
+    formId: string,
+    q: Omit<SubmissionQuery, 'limit' | 'offset'> & { ids?: readonly string[] },
+  ) {
     return allSubmissionsForExport(this.db, formId, q);
   }
 
@@ -371,5 +375,10 @@ export class AnalyticsService {
    */
   deleteSubmission(accountId: string, submissionId: string): Promise<DeleteSubmissionResult> {
     return deleteSubmissionForAccount(this.db, accountId, submissionId);
+  }
+
+  /** Delete the account's own submissions among `ids`, on one form. Foreign ids are left alone. */
+  deleteSubmissions(accountId: string, formId: string, ids: readonly string[]): Promise<{ deleted: number }> {
+    return deleteSubmissionsForAccount(this.db, accountId, formId, ids);
   }
 }

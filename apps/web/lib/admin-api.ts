@@ -691,6 +691,9 @@ export const adminApi = {
       'GET',
       `/v1/forms/${id}/summary/${encodeURIComponent(stepKey)}/answers${qs({ ...q })}`,
     ),
+  /** Delete a selection of one form's submissions (1 to 100 ids); only the account's own go. */
+  deleteSubmissions: (formId: string, ids: string[]) =>
+    req<{ deleted: number }>('POST', `/v1/forms/${formId}/submissions/bulk-delete`, { ids }),
 
   // Integrations
   hubspotProperties: () =>

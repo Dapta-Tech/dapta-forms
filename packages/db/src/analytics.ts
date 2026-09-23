@@ -442,9 +442,15 @@ export async function querySubmissions(
 export async function allSubmissionsForExport(
   db: Db,
   formId: string,
-  q: Omit<SubmissionQuery, 'limit' | 'offset'> = {},
+  q: Omit<SubmissionQuery, 'limit' | 'offset'> & {
+    /** Only these submissions ("Export selected"). An empty list exports nothing. */
+    ids?: readonly string[];
+  } = {},
 ): Promise<SubmissionRow[]> {
-  const where = sql`WHERE form_id = ${formId} ${statusClause(q.status)} ${andRange(sql`started_at`, q)}`;
+  // `IN ()` is a syntax error on both dialects; no id asked for is no row.
+  if (q.ids?.length === 0) return [];
+  const only = q.ids ? sql`AND id IN (${bindIds(q.ids)})` : sql``;
+  const where = sql`WHERE form_id = ${formId} ${statusClause(q.status)} ${andRange(sql`started_at`, q)} ${only}`;
   const rows = await db.all<Record<string, unknown>>(
     sql`SELECT * FROM submission ${where} ORDER BY started_at DESC, id DESC`,
   );
@@ -613,6 +619,50 @@ export async function deleteSubmissionForAccount(
     sql`SELECT id FROM submission WHERE id = ${submissionId} LIMIT 1`,
   );
   return exists ? 'forbidden' : 'absent';
+}
+
+/** The most submissions one bulk delete (or one "Export selected") may name. */
+export const MAX_BULK_SUBMISSIONS = 100;
+
+/** A list of ids as bound parameters for `IN (...)`. Never call it with an empty list. */
+function bindIds(ids: readonly string[]): SQL {
+  return sql.join(
+    ids.map((id) => sql`${id}`),
+    sql`, `,
+  );
+}
+
+/**
+ * Delete several submissions of one form, but ONLY the ones the account owns:
+ * the same scope as `deleteSubmissionForAccount`, enforced in the same SQL
+ * join, so an id from another account (or another form) is never touched, and
+ * one forged id in the list does not spoil the rest.
+ *
+ * One statement, so a failure deletes nothing rather than half the selection.
+ * Returns how many rows were actually removed. That count only ever covers the
+ * caller's own rows, so it says nothing about whether a foreign id exists.
+ * Duplicates collapse; more than `MAX_BULK_SUBMISSIONS` distinct ids throws
+ * (the controller answers 400 before it gets here).
+ */
+export async function deleteSubmissionsForAccount(
+  db: Db,
+  accountId: string,
+  formId: string,
+  ids: readonly string[],
+): Promise<{ deleted: number }> {
+  const unique = [...new Set(ids)];
+  if (unique.length === 0) return { deleted: 0 };
+  if (unique.length > MAX_BULK_SUBMISSIONS) {
+    throw new RangeError(`At most ${MAX_BULK_SUBMISSIONS} submissions per call.`);
+  }
+  const gone = await db.all<{ id: string }>(
+    sql`DELETE FROM submission
+        WHERE id IN (${bindIds(unique)})
+          AND form_id = ${formId}
+          AND form_id IN (SELECT id FROM form WHERE id = ${formId} AND account_id = ${accountId})
+        RETURNING id`,
+  );
+  return { deleted: gone.length };
 }
 
 /**

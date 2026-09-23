@@ -1,4 +1,6 @@
 import {
+  BadRequestException,
+  Body,
   Controller,
   Delete,
   Get,
@@ -7,6 +9,7 @@ import {
   Logger,
   NotFoundException,
   Param,
+  Post,
   Query,
   Req,
   Res,
@@ -17,6 +20,7 @@ import {
   getFormById,
   getMemberLocale,
   getSubmissionAnswersForAccount,
+  MAX_BULK_SUBMISSIONS,
 } from '@quill/db';
 import { isTextSummaryStep } from '@quill/engine';
 import { formatIsoWithOffset, getMessages, resolveTimeZone } from '@quill/shared';
@@ -25,7 +29,7 @@ import { AuthService, type ReqLike } from './auth.service';
 import { AnalyticsService } from './analytics.service';
 import { DB } from './tokens';
 import { csvRow, exportColumns, UTF8_BOM } from './csv';
-import { parseBound, parseIntParam, parseStatus, parseTimeZone } from './query-params';
+import { parseBound, parseIdList, parseIntParam, parseStatus, parseTimeZone } from './query-params';
 
 /** A minimal response shape (structurally satisfied by the express Response). */
 interface StreamRes {
@@ -90,6 +94,10 @@ export class AnalyticsController {
    * Uses the un-paginated export query (`allSubmissionsForExport`): the table
    * query caps `limit` at 200, so paging through it would silently truncate and
    * skip rows on large exports. Rows are still written incrementally.
+   *
+   * `?ids=a,b,c` narrows the file to those submissions ("Export selected" on a
+   * table selection), same columns and format, at most `MAX_BULK_SUBMISSIONS`.
+   * Ids outside this form match nothing.
    */
   @Get('forms/:id/submissions.csv')
   async exportCsv(
@@ -99,7 +107,17 @@ export class AnalyticsController {
     @Query('status') status?: string,
     @Query('from') from?: string,
     @Query('to') to?: string,
+    @Query('ids') idsParam?: string,
   ): Promise<void> {
+    const ids = parseIdList(idsParam);
+    // Checked before any header is written: once the stream starts, the
+    // status is 200 whatever happens next.
+    if (ids && (ids.length === 0 || ids.length > MAX_BULK_SUBMISSIONS || !ids.every(isSubmissionId))) {
+      throw new BadRequestException({
+        error: 'BAD_REQUEST',
+        message: `ids must name 1 to ${MAX_BULK_SUBMISSIONS} submissions.`,
+      });
+    }
     const p = await this.auth.resolveHost(req);
     const form = await getFormById(this.db, p.accountId, id);
     if (!form) throw new NotFoundException({ error: 'NOT_FOUND', message: 'Not found.' });
@@ -134,6 +152,7 @@ export class AnalyticsController {
       status: parseStatus(status),
       from: parseBound(from, false, zone),
       to: parseBound(to, true, zone),
+      ids,
     });
     for (const s of rows) {
       const row = {
@@ -243,4 +262,46 @@ export class AnalyticsController {
       throw new NotFoundException({ error: 'NOT_FOUND', message: 'Not found.' });
     // 'deleted' | 'absent' → idempotent 204.
   }
+
+  /**
+   * Delete several of a form's submissions at once (the table's selection),
+   * body `{ ids: string[] }`, 1 to `MAX_BULK_SUBMISSIONS` ids. Account-scoped
+   * like the single delete: a form outside the account is a 404, and an id
+   * from another account or form is never touched. Answers `{ deleted }`, the
+   * rows actually removed, so a repeat after a partial race is harmless.
+   */
+  @Post('forms/:id/submissions/bulk-delete')
+  @HttpCode(200)
+  async deleteSubmissions(
+    @Req() req: ReqLike,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ): Promise<{ deleted: number }> {
+    const raw = (body as { ids?: unknown } | null)?.ids;
+    // Deduplicated before the cap is checked: a selection that names one row
+    // twice is still one row, and 100 distinct ids plus a repeat is not 101.
+    const ids = Array.isArray(raw) ? [...new Set(raw)] : [];
+    if (
+      ids.length === 0 ||
+      ids.length > MAX_BULK_SUBMISSIONS ||
+      !ids.every(isSubmissionId)
+    ) {
+      throw new BadRequestException({
+        error: 'BAD_REQUEST',
+        message: `ids must be 1 to ${MAX_BULK_SUBMISSIONS} submission ids.`,
+      });
+    }
+    const p = await this.auth.resolveHost(req);
+    const form = await getFormById(this.db, p.accountId, id);
+    if (!form) throw new NotFoundException({ error: 'NOT_FOUND', message: 'Not found.' });
+    return this.analytics.deleteSubmissions(p.accountId, id, ids);
+  }
+}
+
+/** Longest id a caller may name. Submission ids are UUIDs (36); this is headroom, not a format check. */
+const MAX_ID_LENGTH = 64;
+
+/** A plausible submission id: a non-empty string of bounded length. Ownership is the query's job. */
+function isSubmissionId(v: unknown): v is string {
+  return typeof v === 'string' && v.length > 0 && v.length <= MAX_ID_LENGTH;
 }
