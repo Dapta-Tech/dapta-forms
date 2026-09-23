@@ -144,7 +144,14 @@ export function useDialogA11y(
       }
     };
     window.addEventListener('keydown', onKey);
-    panelRef.current?.querySelector<HTMLElement>('input, select, textarea, button')?.focus();
+    // First ENABLED control: the drawer's first button is "previous response",
+    // disabled on the first row, and focusing a disabled button is a no-op that
+    // leaves focus on the page behind the dialog.
+    panelRef.current
+      ?.querySelector<HTMLElement>(
+        'input:not([disabled]), select:not([disabled]), textarea:not([disabled]), button:not([disabled])',
+      )
+      ?.focus();
 
     // Hide the rest of the page from assistive tech while the dialog is up, so
     // a screen reader cannot wander into content the pointer cannot reach.

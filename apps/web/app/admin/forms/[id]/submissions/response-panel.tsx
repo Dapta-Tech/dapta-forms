@@ -56,6 +56,8 @@ export interface PanelLabels {
   deleteConfirm: string;
   sheetOpen: string;
   sheetClose: string;
+  /** "Score {score}" */
+  scoreValue: string;
 }
 
 const LABEL_ID = 'response-panel-title';
@@ -271,12 +273,41 @@ export function ResponsesViewer({
     document.body.style.overflow = 'hidden';
     closeSheetRef.current?.focus();
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return;
       // `aria-modal`, not `role="dialog"`: every open dialog here (Modal,
       // Drawer, ConfirmDialog) is modal, while the admin shell's mobile nav
-      // is a `role="dialog"` that lives in the DOM even when shut.
+      // is a `role="dialog"` that lives in the DOM even when shut. An open
+      // modal owns Esc and Tab; the sheet only takes the keys nobody else is.
       if (document.querySelector('[aria-modal="true"]')) return;
-      toggleSheet(false);
+      if (e.key === 'Escape') {
+        toggleSheet(false);
+        return;
+      }
+      // Tab stays inside the sheet: it covers the rail and the page header,
+      // and focus wandering onto controls nobody can see is what the trap in
+      // `useDialogA11y` exists to stop. Not `aria-modal` on the sheet itself,
+      // since that is what the check above reads to hand the keys to a dialog.
+      if (e.key !== 'Tab') return;
+      const root = rootRef.current;
+      if (!root) return;
+      const items = [
+        ...root.querySelectorAll<HTMLElement>(
+          'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ),
+      ].filter((el) => el.offsetParent !== null);
+      if (items.length === 0) return;
+      const first = items[0]!;
+      const last = items[items.length - 1]!;
+      const active = document.activeElement as HTMLElement | null;
+      if (!active || !root.contains(active)) {
+        e.preventDefault();
+        (e.shiftKey ? last : first).focus();
+      } else if (e.shiftKey && active === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && active === last) {
+        e.preventDefault();
+        first.focus();
+      }
     };
     window.addEventListener('keydown', onKey);
     return () => {
@@ -567,7 +598,7 @@ function PanelHeader({
             data-testid="response-score"
           >
             <i aria-hidden className="pi pi-star-fill" style={{ fontSize: 10 }} />
-            {labels.colScore} {detail.score}
+            {t(labels.scoreValue, { score: detail.score })}
           </span>
         ) : null}
         <div className="ml-auto flex min-w-36 flex-1 items-center justify-end gap-2.5">

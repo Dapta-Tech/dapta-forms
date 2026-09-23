@@ -1326,6 +1326,10 @@ export interface FormsMessages {
       sheetClose: string;
       /** First column header when the form collects a contact: who answered, then when. */
       colResponse: string;
+      /** The row actions column, for screen readers (it has no visible heading). */
+      colActions: string;
+      /** "Score {score}": the score chip in the response panel header. */
+      scoreValue: string;
     };
     integrations: {
       title: string;
@@ -2993,6 +2997,8 @@ export const en: FormsMessages = {
       sheetOpen: 'Full screen',
       sheetClose: 'Exit full screen',
       colResponse: 'Response',
+      colActions: 'Actions',
+      scoreValue: 'Score {score}',
     },
     integrations: {
       title: 'Integrations',
@@ -4625,6 +4631,8 @@ export const es: FormsMessages = {
       sheetOpen: 'Pantalla completa',
       sheetClose: 'Salir de pantalla completa',
       colResponse: 'Respuesta',
+      colActions: 'Acciones',
+      scoreValue: 'Puntaje {score}',
     },
     integrations: {
       title: 'Integraciones',

@@ -261,6 +261,7 @@ async function SubmissionsData({
           deleteConfirm: m.submissions.deleteConfirm,
           sheetOpen: m.submissions.sheetOpen,
           sheetClose: m.submissions.sheetClose,
+          scoreValue: m.submissions.scoreValue,
         }}
         pager={
           <div className="flex items-center justify-between gap-3 text-sm">
@@ -308,7 +309,7 @@ async function SubmissionsData({
                   <ColumnHeading text={stepLabel(s)} />
                 </th>
               ))}
-              <th className={TH} aria-label="actions" />
+              <th className={TH} aria-label={m.submissions.colActions} />
             </tr>
           </thead>
           <tbody>

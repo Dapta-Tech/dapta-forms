@@ -36,6 +36,7 @@ const labels: PanelLabels = {
   deleteConfirm: 'Delete this submission?',
   sheetOpen: 'Full screen',
   sheetClose: 'Exit full screen',
+  scoreValue: 'Score {score}',
 };
 
 const fileLabels = {
