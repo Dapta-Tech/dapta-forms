@@ -388,7 +388,10 @@ async function SubmissionsData({
                       </td>
                     );
                   })}
-                  <td className={`${TD} whitespace-nowrap text-right`}>
+                  {/* Its own padding, not TD's: a notch less on top so the taller pill
+                      lines up with the first line of the row, and room on the right
+                      so it does not sit against the table edge. */}
+                  <td className="whitespace-nowrap border-b border-border py-2.5 pl-4 pr-5 text-right group-last:border-b-0">
                     <DeleteSubmissionButton
                       formId={id}
                       submissionId={row.id}

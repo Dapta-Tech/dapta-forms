@@ -399,6 +399,7 @@ export function ResponsesViewer({
               <DeleteSubmissionButton
                 formId={formId}
                 submissionId={shown.id}
+                size="md"
                 labels={{
                   delete: labels.delete,
                   confirm: labels.deleteConfirm,
