@@ -451,6 +451,74 @@ export async function allSubmissionsForExport(
   return rows.map(mapSubmission);
 }
 
+// --- Per-question answer search (Summary tab) --------------------------------
+
+export interface AnswerSearchQuery extends DateRange {
+  status?: SubmissionStatus;
+  /** Matched anywhere in the answer, ignoring case. Blank lists every answer. */
+  query?: string;
+  limit?: number;
+  offset?: number;
+}
+
+/** `%needle%` for LIKE, with the needle's own `%`, `_` and `\` taken literally. */
+function containsPattern(q: string): string {
+  return `%${q.toLowerCase().replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+}
+
+/**
+ * One answer key's stored text, as SQL. The key is always a bound parameter,
+ * never spliced into the statement: Postgres takes it as the `->>` operand, and
+ * SQLite as a JSON path (`$."key"`). A key with a quote in it cannot be written
+ * as a SQLite path, so it matches nothing rather than a different key.
+ */
+function answerFieldText(db: Db, field: string): SQL {
+  if (db.dialect === 'postgres') return sql`COALESCE(data ->> (${field}::text), '')`;
+  if (field.includes('"')) return sql`''`;
+  return sql`COALESCE(json_extract(data, ${`$."${field}"`}), '')`;
+}
+
+/**
+ * A page of one question's answers, newest first (the table's order), with the
+ * number that match before pagination. `fields` are the answer keys the
+ * question stores its value under: its own key, or a name step's sub-fields,
+ * which are joined with a space the way the name reads.
+ *
+ * The match is a case-insensitive substring. Accents are NOT folded: "gomez"
+ * does not find "Gómez". Case folding is `lower()` on both dialects, which on
+ * Postgres covers every letter and on SQLite only A to Z; the needle is lowered
+ * in JS, so an accented capital only differs between the two when it is stored
+ * in capitals.
+ */
+export async function searchSubmissionAnswers(
+  db: Db,
+  formId: string,
+  fields: string[],
+  q: AnswerSearchQuery = {},
+): Promise<{ items: SubmissionRow[]; total: number; limit: number; offset: number }> {
+  const limit = Math.min(Math.max(q.limit ?? 10, 1), 50);
+  const offset = Math.max(q.offset ?? 0, 0);
+  if (fields.length === 0) return { items: [], total: 0, limit, offset };
+  const text = sql.join(
+    fields.map((f) => answerFieldText(db, f)),
+    sql` || ' ' || `,
+  );
+  const needle = q.query?.trim() ?? '';
+  const match = needle ? sql`AND lower(${text}) LIKE ${containsPattern(needle)} ESCAPE '\\'` : sql``;
+  const where = sql`WHERE form_id = ${formId} ${statusClause(q.status)} ${andRange(sql`started_at`, q)}
+    AND TRIM(${text}) <> '' ${match}`;
+
+  const totalRow = await db.get<{ n: number | string }>(
+    sql`SELECT COUNT(*) AS n FROM submission ${where}`,
+  );
+  const rows = await db.all<Record<string, unknown>>(
+    sql`SELECT * FROM submission ${where}
+        ORDER BY started_at DESC, id DESC
+        LIMIT ${limit} OFFSET ${offset}`,
+  );
+  return { items: rows.map(mapSubmission), total: Number(totalRow?.n ?? 0), limit, offset };
+}
+
 // --- Account-scoped submission delete ----------------------------------------
 
 /**
@@ -471,7 +539,8 @@ export type DeleteSubmissionResult = 'deleted' | 'absent' | 'forbidden';
  * 204 a genuine already-gone row while 404-ing a cross-account id.
  */
 /**
- * One submission's answers, but only if the caller's account owns it.
+ * One submission, but only if the caller's account owns it: its answers, plus
+ * the status, dates and score the response panel shows around them.
  *
  * The JOIN is the whole point: a submission id is guessable enough that reading
  * one by id alone would let any signed-in account read any other account's
@@ -482,18 +551,14 @@ export async function getSubmissionAnswersForAccount(
   db: Db,
   accountId: string,
   submissionId: string,
-): Promise<{ formId: string; data: unknown } | null> {
-  const row = await db.get<{ form_id: string; data: unknown }>(
-    sql`SELECT s.form_id, s.data FROM submission s
+): Promise<SubmissionRow | null> {
+  const row = await db.get<Record<string, unknown>>(
+    sql`SELECT s.* FROM submission s
         JOIN form f ON f.id = s.form_id
         WHERE s.id = ${submissionId} AND f.account_id = ${accountId} LIMIT 1`,
   );
-  if (!row) return null;
-  return {
-    formId: row.form_id,
-    // Postgres hands back parsed jsonb; SQLite hands back the JSON text.
-    data: typeof row.data === 'string' ? JSON.parse(row.data) : row.data,
-  };
+  // Postgres hands back parsed jsonb; SQLite hands back the JSON text.
+  return row ? mapSubmission(row) : null;
 }
 
 export async function deleteSubmissionForAccount(

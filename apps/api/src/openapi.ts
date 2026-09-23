@@ -125,6 +125,36 @@ export const openapiSpec = {
         },
       },
     },
+    '/v1/forms/{id}/summary': {
+      get: {
+        summary: "A form's responses summarized question by question (host)",
+        description:
+          'Returns { total, questions }: one entry per answering step, in form order, with how many responses answered it. Choices carry a count and percent per option (most chosen first; a multi-select can add past 100); a slider its average and distribution; text questions their five latest answers; files and bookings how many answered. Optional status (all|completed|partial) and from/to (epoch ms or YYYY-MM-DD, bound by startedAt), the same filter as the submissions table.',
+        security: [{ hostSession: [] }],
+        responses: { '200': { description: 'The summary' }, '404': { description: 'No such form in this account' } },
+      },
+    },
+    '/v1/forms/{id}/summary/{stepKey}/answers': {
+      get: {
+        summary: "Search one text question's answers (host)",
+        description:
+          'Returns { items, total, limit, offset }, newest first; each item is { id, text, respondent, at }. `q` matches anywhere in the answer, ignoring case but not accents; blank lists every answer. Optional limit (up to 50), offset, and the same status/from/to filter as the summary.',
+        security: [{ hostSession: [] }],
+        responses: {
+          '200': { description: 'A page of matching answers' },
+          '404': { description: 'No such form in this account, or not a text question of it' },
+        },
+      },
+    },
+    '/v1/forms/{id}/submissions/{submissionId}': {
+      get: {
+        summary: 'Get one submission in full (host)',
+        description:
+          'Returns { id, formId, sessionId, data, score, startedAt, completedAt, partialAt }. Scoped by a join on the caller own account, so a submission id from another workspace is 404, like one that does not exist.',
+        security: [{ hostSession: [] }],
+        responses: { '200': { description: 'The submission' }, '404': { description: 'No such submission on this form in this workspace' } },
+      },
+    },
     '/v1/folders': {
       get: {
         summary: "The workspace's form folders, alphabetically (host)",
