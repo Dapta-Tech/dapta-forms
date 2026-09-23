@@ -30,6 +30,7 @@ import {
 } from './viewer-params';
 import { StatusBadge } from './status-badge';
 import { ColumnHeading } from './column-heading';
+import { SubmissionsViewTabs } from './submissions-view-tabs';
 import { ColumnResizeHandle } from './column-resize';
 import { PageSelect, RowSelect } from './table-selection';
 import { PageSizeSelect } from './page-size-select';
@@ -130,6 +131,7 @@ export default async function SubmissionsPage({
             {m.submissions.export}
           </a>
         </div>
+        <SubmissionsViewTabs formId={id} active="responses" labels={m.submissions.summary} />
         <div className="flex flex-wrap items-end justify-between gap-4">
           <SubmissionsFilter
             labels={{

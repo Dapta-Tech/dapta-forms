@@ -1303,6 +1303,35 @@ export interface FormsMessages {
       na: string;
       error: string;
       retry: string;
+      /** The Summary tab: the form's responses read question by question. */
+      summary: {
+        tabSummary: string;
+        tabResponses: string;
+        /** The Summary | Responses switch, for screen readers. */
+        tabsLabel: string;
+        /** Under a multi-select's bars: why they can add past 100%. */
+        multiNote: string;
+        average: string;
+        /** A range bar of a slider's distribution: "{from}–{to}". */
+        range: string;
+        filesUploaded: string;
+        meetingsBooked: string;
+        noAnswers: string;
+        latest: string;
+        searchLabel: string;
+        searchPlaceholder: string;
+        searchClear: string;
+        /** "Matches: {n}" */
+        matches: string;
+        /** "{query}" is what was typed. */
+        noMatches: string;
+        showMore: string;
+        /** Who answered, when the form asked no name, email or phone. */
+        anonymous: string;
+        openAnswer: string;
+        openFailed: string;
+        searchFailed: string;
+      };
       /** The side panel that shows one response in full. */
       viewResponse: string;
       /** The panel title when the form asked for no name, email or phone. */
@@ -3000,6 +3029,28 @@ export const en: FormsMessages = {
       na: '',
       error: 'Couldn’t load submissions.',
       retry: 'Try again',
+      summary: {
+        tabSummary: 'Summary',
+        tabResponses: 'Responses',
+        tabsLabel: 'Submissions views',
+        multiNote: 'People could choose more than one option, so the percentages can add up to more than 100%.',
+        average: 'Average',
+        range: '{from}–{to}',
+        filesUploaded: 'Files uploaded',
+        meetingsBooked: 'Meetings booked',
+        noAnswers: 'Nobody has answered this question yet.',
+        latest: 'Latest answers',
+        searchLabel: 'Search the answers to this question',
+        searchPlaceholder: 'Search answers',
+        searchClear: 'Clear search',
+        matches: 'Matches: {n}',
+        noMatches: 'No answer contains “{query}”.',
+        showMore: 'Show more',
+        anonymous: 'Anonymous',
+        openAnswer: 'Open this response',
+        openFailed: 'That response could not be opened. It may have been deleted.',
+        searchFailed: 'The search did not finish. Try again.',
+      },
       viewResponse: 'View response',
       responseTitle: 'Anonymous response',
       prevResponse: 'Previous response',
@@ -4646,6 +4697,28 @@ export const es: FormsMessages = {
       na: '',
       error: 'No se pudieron cargar las respuestas.',
       retry: 'Reintentar',
+      summary: {
+        tabSummary: 'Resumen',
+        tabResponses: 'Respuestas',
+        tabsLabel: 'Vistas de respuestas',
+        multiNote: 'Se podía elegir más de una opción, así que los porcentajes pueden sumar más de 100%.',
+        average: 'Promedio',
+        range: '{from}–{to}',
+        filesUploaded: 'Archivos subidos',
+        meetingsBooked: 'Reuniones agendadas',
+        noAnswers: 'Nadie ha respondido esta pregunta todavía.',
+        latest: 'Últimas respuestas',
+        searchLabel: 'Busca en las respuestas a esta pregunta',
+        searchPlaceholder: 'Buscar respuestas',
+        searchClear: 'Borrar búsqueda',
+        matches: 'Coincidencias: {n}',
+        noMatches: 'Ninguna respuesta contiene «{query}».',
+        showMore: 'Ver más',
+        anonymous: 'Anónimo',
+        openAnswer: 'Abrir esta respuesta',
+        openFailed: 'No se pudo abrir esa respuesta. Puede que la hayan eliminado.',
+        searchFailed: 'La búsqueda no terminó. Intenta de nuevo.',
+      },
       viewResponse: 'Ver respuesta',
       responseTitle: 'Respuesta anónima',
       prevResponse: 'Respuesta anterior',

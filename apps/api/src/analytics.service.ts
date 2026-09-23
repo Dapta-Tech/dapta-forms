@@ -1,6 +1,16 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { localDayIndex, resolveTimeZone, utcOffsetSegments } from '@quill/shared';
-import { resolveFormLayout } from '@quill/engine';
+import {
+  isInputlessStep,
+  resolveFormLayout,
+  summarizeSubmissions,
+  summaryAnswer,
+  summaryAnswerFields,
+  type FormStep,
+  type SubmissionsSummary,
+  type SummaryAnswer,
+  type SummaryRow,
+} from '@quill/engine';
 import type { Db } from '@quill/db';
 import {
   uniqueViewCount,
@@ -17,6 +27,11 @@ import {
   allSubmissionsForExport,
   deleteSubmissionForAccount,
   deleteSubmissionsForAccount,
+  searchSubmissionAnswers,
+  submissionsForSummary,
+  type AnswerSearchQuery,
+  type SummarySubmissionRow,
+  type SubmissionRow,
   getFormById,
   type CompletedSubmission,
   type DateRange,
@@ -34,6 +49,15 @@ import type {
   TrendPoint,
 } from '@quill/types';
 import { DB } from './tokens';
+
+/** A stored submission as the summary reads it: answers, and the instant the table shows. */
+function summaryRow(r: SummarySubmissionRow | SubmissionRow): SummaryRow {
+  return {
+    id: r.id,
+    data: (r.data ?? {}) as Record<string, unknown>,
+    at: r.completedAt ?? r.partialAt ?? r.startedAt,
+  };
+}
 
 /** Round to one decimal place (e.g. a completion/drop-off percentage). */
 function pct1(numerator: number, denominator: number): number {
@@ -305,6 +329,43 @@ export class AnalyticsService {
     q: Omit<SubmissionQuery, 'limit' | 'offset'> & { ids?: readonly string[] },
   ) {
     return allSubmissionsForExport(this.db, formId, q);
+  }
+
+  /**
+   * The Summary tab: every answering step of `steps` summarized over the
+   * submissions matching the filter (the same status and date filter as the
+   * table, so a filtered summary describes the filtered rows).
+   */
+  async summary(
+    formId: string,
+    steps: FormStep[],
+    q: Omit<SubmissionQuery, 'limit' | 'offset'>,
+  ): Promise<SubmissionsSummary> {
+    const rows = await submissionsForSummary(this.db, formId, q);
+    return summarizeSubmissions(steps, rows.map(summaryRow));
+  }
+
+  /**
+   * A page of one text question's answers matching `q.query`, newest first,
+   * each with who answered and when. `steps` is the whole form, for the
+   * respondent; `step` is the question searched.
+   */
+  async searchAnswers(
+    formId: string,
+    steps: FormStep[],
+    step: FormStep,
+    q: AnswerSearchQuery,
+  ): Promise<{ items: SummaryAnswer[]; total: number; limit: number; offset: number }> {
+    const page = await searchSubmissionAnswers(this.db, formId, summaryAnswerFields(step), q);
+    const answering = steps.filter((s) => !isInputlessStep(s));
+    return {
+      items: page.items
+        .map((r) => summaryAnswer(answering, step, summaryRow(r)))
+        .filter((a): a is SummaryAnswer => a != null),
+      total: page.total,
+      limit: page.limit,
+      offset: page.offset,
+    };
   }
 
   /**

@@ -29,6 +29,9 @@ import {
   DAY_MS,
   querySubmissions,
   allSubmissionsForExport,
+  getSubmissionAnswersForAccount,
+  searchSubmissionAnswers,
+  submissionsForSummary,
 } from './analytics';
 
 let db: Db;
@@ -332,5 +335,109 @@ describe('day buckets in a zone (offset segments)', () => {
     const bog = await completedSubmissions(db, formId, undefined, bogota);
     expect(utc[0]!.day).toBe(Math.floor(Date.UTC(2026, 8, 4) / 86_400_000));
     expect(bog[0]!.day).toBe(Math.floor(Date.UTC(2026, 8, 3) / 86_400_000));
+  });
+});
+
+describe('per-question answer search (Summary tab)', () => {
+  /** Insert one submission carrying `data`. */
+  async function answered(
+    id: string,
+    startedAt: number,
+    data: Record<string, unknown>,
+    completedAt: number | null = startedAt + 1,
+  ): Promise<void> {
+    await db.run(
+      sql`INSERT INTO submission (id, form_id, session_id, data, score, started_at, completed_at, partial_at)
+          VALUES (${id}, ${formId}, ${id}, ${JSON.stringify(data)}, ${7}, ${startedAt},
+                  ${completedAt}, ${completedAt == null ? startedAt + 2 : null})`,
+    );
+  }
+
+  beforeEach(async () => {
+    await answered('a1', D1 + 1, { notes: 'Call me AFTER 5', firstname: 'Ana', lastname: 'Gómez' });
+    await answered('a2', D1 + 2, { notes: 'after lunch works', firstname: 'Bo' });
+    await answered('a3', D1 + 3, { notes: '   ', lastname: 'Solo' }, null);
+    await answered('a4', D1 + 4, { notes: 'Discount 50% off_now \\ please' });
+    await answered('a5', D0 + 5, { notes: 'Old answer, after hours' });
+  });
+
+  const ids = (page: { items: { id: string }[] }) => page.items.map((r) => r.id);
+
+  it('lists every non-blank answer newest first when there is no query', async () => {
+    const page = await searchSubmissionAnswers(db, formId, ['notes']);
+    expect(page.total).toBe(4);
+    expect(ids(page)).toEqual(['a4', 'a2', 'a1', 'a5']);
+  });
+
+  it('matches a substring ignoring case, and paginates with the total before paging', async () => {
+    const first = await searchSubmissionAnswers(db, formId, ['notes'], { query: 'After', limit: 2 });
+    expect(first.total).toBe(3);
+    expect(ids(first)).toEqual(['a2', 'a1']);
+    const second = await searchSubmissionAnswers(db, formId, ['notes'], {
+      query: 'After',
+      limit: 2,
+      offset: 2,
+    });
+    expect(ids(second)).toEqual(['a5']);
+  });
+
+  it('takes LIKE wildcards and backslashes in the query literally', async () => {
+    expect(ids(await searchSubmissionAnswers(db, formId, ['notes'], { query: '50%' }))).toEqual(['a4']);
+    expect(ids(await searchSubmissionAnswers(db, formId, ['notes'], { query: 'f_n' }))).toEqual(['a4']);
+    expect(ids(await searchSubmissionAnswers(db, formId, ['notes'], { query: '%' }))).toEqual(['a4']);
+    expect(ids(await searchSubmissionAnswers(db, formId, ['notes'], { query: '\\' }))).toEqual(['a4']);
+    expect((await searchSubmissionAnswers(db, formId, ['notes'], { query: '5_%' })).total).toBe(0);
+  });
+
+  it('does not fold accents', async () => {
+    const fields = ['firstname', 'lastname'];
+    expect(ids(await searchSubmissionAnswers(db, formId, fields, { query: 'gómez' }))).toEqual(['a1']);
+    expect((await searchSubmissionAnswers(db, formId, fields, { query: 'gomez' })).total).toBe(0);
+  });
+
+  it('searches a name across its sub-fields, joined the way the name reads', async () => {
+    const fields = ['firstname', 'lastname'];
+    expect(ids(await searchSubmissionAnswers(db, formId, fields))).toEqual(['a3', 'a2', 'a1']);
+    expect(ids(await searchSubmissionAnswers(db, formId, fields, { query: 'ana g' }))).toEqual(['a1']);
+  });
+
+  it('applies the same status and date filter as the table', async () => {
+    const completed = await searchSubmissionAnswers(db, formId, ['firstname', 'lastname'], {
+      status: 'completed',
+    });
+    expect(ids(completed)).toEqual(['a2', 'a1']);
+    const windowed = await searchSubmissionAnswers(db, formId, ['notes'], { ...WINDOW, query: 'after' });
+    expect(ids(windowed)).toEqual(['a2', 'a1']);
+  });
+
+  it('matches nothing for a key that is never answered, or no keys at all', async () => {
+    expect((await searchSubmissionAnswers(db, formId, ['missing'])).total).toBe(0);
+    expect((await searchSubmissionAnswers(db, formId, [])).total).toBe(0);
+  });
+
+  it('reads every row for the Summary, newest first, with only the columns it aggregates', async () => {
+    const rows = await submissionsForSummary(db, formId);
+    expect(rows.map((r) => r.id)).toEqual(['a4', 'a3', 'a2', 'a1', 'a5']);
+    expect(Object.keys(rows[0]!).sort()).toEqual(['completedAt', 'data', 'id', 'partialAt', 'startedAt']);
+    expect(rows.find((r) => r.id === 'a3')).toMatchObject({ completedAt: null, partialAt: D1 + 5 });
+    expect(rows.find((r) => r.id === 'a1')?.data).toMatchObject({ firstname: 'Ana' });
+    const filtered = await submissionsForSummary(db, formId, { status: 'partial' });
+    expect(filtered.map((r) => r.id)).toEqual(['a3']);
+    expect((await submissionsForSummary(db, formId, WINDOW)).map((r) => r.id)).toEqual(['a4', 'a3', 'a2', 'a1']);
+  });
+
+  it('reads one submission with its dates and score, only for the owning account', async () => {
+    const row = await getSubmissionAnswersForAccount(db, accountId, 'a1');
+    expect(row).toMatchObject({
+      id: 'a1',
+      formId,
+      score: 7,
+      startedAt: D1 + 1,
+      completedAt: D1 + 2,
+      partialAt: null,
+    });
+    expect(row?.data).toMatchObject({ firstname: 'Ana', lastname: 'Gómez' });
+    expect(await getSubmissionAnswersForAccount(db, randomUUID(), 'a1')).toBeNull();
+    expect(await getSubmissionAnswersForAccount(db, accountId, 'nope')).toBeNull();
   });
 });

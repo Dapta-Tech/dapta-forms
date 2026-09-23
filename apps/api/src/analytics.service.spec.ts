@@ -497,6 +497,72 @@ describe('delete submission (controller HTTP semantics)', () => {
   });
 });
 
+describe('Summary tab (controller)', () => {
+  function ctrlFor(actAccount: string) {
+    const auth = {
+      resolveHost: async () => ({ accountId: actAccount, memberId: 'm', role: 'owner' as const }),
+    } as unknown as AuthService;
+    return new AnalyticsController(db, auth, svc);
+  }
+
+  it('summarizes every answering step over the filtered rows', async () => {
+    const all = await ctrlFor(accountId).formSummary({ headers: {} }, formId);
+    expect(all.total).toBe(5);
+    expect(all.questions.map((q) => q.key)).toEqual(['role', 'team_size', 'company', 'email']);
+    const role = all.questions[0]!;
+    expect(role.kind).toBe('choice');
+    if (role.kind !== 'choice') return;
+    expect(role.answered).toBe(5);
+    expect(role.options.map((o) => [o.label, o.count, o.percent])).toEqual([
+      ['Founder / Owner', 2, 40],
+      ['Team lead', 2, 40],
+      ['Individual', 1, 20],
+    ]);
+
+    const completed = await ctrlFor(accountId).formSummary({ headers: {} }, formId, 'completed');
+    expect(completed.total).toBe(3);
+    expect(completed.questions.find((q) => q.key === 'email')!.answered).toBe(3);
+  });
+
+  it('searches one text question, ignoring case, with who answered', async () => {
+    const page = await ctrlFor(accountId).summaryAnswers({ headers: {} }, formId, 'email', 'B@X');
+    expect(page.total).toBe(1);
+    expect(page.items[0]).toMatchObject({ text: 'b@x.io', respondent: 'b@x.io' });
+  });
+
+  it('404s a search on a question that is not text, and on another account', async () => {
+    await expect(ctrlFor(accountId).summaryAnswers({ headers: {} }, formId, 'role')).rejects.toMatchObject({
+      status: 404,
+    });
+    await expect(ctrlFor(accountId).summaryAnswers({ headers: {} }, formId, 'nope')).rejects.toMatchObject({
+      status: 404,
+    });
+    await expect(ctrlFor('attacker-account').formSummary({ headers: {} }, formId)).rejects.toMatchObject({
+      status: 404,
+    });
+  });
+
+  it('404s a search of another account, even on a real text question and a query that matches', async () => {
+    // The same call answers for the owner, so the 404 is the account scope and nothing else.
+    expect((await ctrlFor(accountId).summaryAnswers({ headers: {} }, formId, 'email', 'x.io')).total).toBe(3);
+    await expect(
+      ctrlFor('attacker-account').summaryAnswers({ headers: {} }, formId, 'email', 'x.io'),
+    ).rejects.toMatchObject({ status: 404 });
+  });
+
+  it('opens one submission by id for its own account and form only', async () => {
+    const one = (await querySubmissions(db, formId, { status: 'completed', limit: 1 })).items[0]!;
+    const got = await ctrlFor(accountId).submission({ headers: {} }, formId, one.id);
+    expect(got).toMatchObject({ id: one.id, formId, score: one.score, completedAt: one.completedAt });
+    await expect(ctrlFor('attacker-account').submission({ headers: {} }, formId, one.id)).rejects.toMatchObject({
+      status: 404,
+    });
+    await expect(ctrlFor(accountId).submission({ headers: {} }, 'other-form', one.id)).rejects.toMatchObject({
+      status: 404,
+    });
+  });
+});
+
 describe('bulk delete (controller HTTP semantics)', () => {
   function ctrlFor(actAccount: string) {
     const auth = {

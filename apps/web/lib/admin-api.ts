@@ -13,7 +13,9 @@ import type {
   MemberProfile,
   SubmissionFile,
   SubmissionsPage,
+  SubmissionView,
 } from '@quill/types';
+import type { SubmissionsSummary, SummaryAnswer } from '@quill/engine';
 import { serverApiUrl } from './api-url';
 import { getSession, clearSession, authProvider, getWorkspace } from './auth-session';
 
@@ -348,6 +350,14 @@ export interface SubmissionsQuery {
   offset?: number;
 }
 
+/** A page of one question's answers, as the Summary's search lists them. */
+export interface SummaryAnswersPage {
+  items: SummaryAnswer[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
 /** Build a `?a=b&…` string from defined params only. */
 function qs(params: Record<string, string | number | undefined | null>): string {
   const sp = new URLSearchParams();
@@ -665,6 +675,22 @@ export const adminApi = {
   listSubmissions: (id: string, q: SubmissionsQuery = {}) =>
     req<SubmissionsPage>('GET', `/v1/forms/${id}/submissions${qs({ ...q })}`),
   deleteSubmission: (id: string) => req<void>('DELETE', `/v1/submissions/${id}`),
+  /** One submission in full (the panel opened from the Summary). 404 when it is not this form's. */
+  getSubmission: (formId: string, submissionId: string) =>
+    req<SubmissionView>('GET', `/v1/forms/${formId}/submissions/${encodeURIComponent(submissionId)}`),
+  /** The Summary tab: the responses matching the filter, question by question. */
+  getSummary: (id: string, q: Omit<SubmissionsQuery, 'limit' | 'offset'> = {}) =>
+    req<SubmissionsSummary>('GET', `/v1/forms/${id}/summary${qs({ ...q })}`),
+  /** A page of one text question's answers containing `q` (all of them when blank). */
+  searchSummaryAnswers: (
+    id: string,
+    stepKey: string,
+    q: SubmissionsQuery & { q?: string } = {},
+  ) =>
+    req<SummaryAnswersPage>(
+      'GET',
+      `/v1/forms/${id}/summary/${encodeURIComponent(stepKey)}/answers${qs({ ...q })}`,
+    ),
   /** Delete a selection of one form's submissions (1 to 100 ids); only the account's own go. */
   deleteSubmissions: (formId: string, ids: string[]) =>
     req<{ deleted: number }>('POST', `/v1/forms/${formId}/submissions/bulk-delete`, { ids }),
