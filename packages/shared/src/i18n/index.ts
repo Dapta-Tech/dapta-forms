@@ -1330,6 +1330,24 @@ export interface FormsMessages {
       colActions: string;
       /** "Score {score}": the score chip in the response panel header. */
       scoreValue: string;
+      /** Table tools: how many rows a page shows (25, 50, 100). */
+      pageSize: string;
+      /** The checkbox on one row, and the one in the header that takes the whole page. */
+      selectResponse: string;
+      selectPage: string;
+      /** "{n} selected", on the bar that appears with a selection. `One` is n = 1. */
+      selectedCount: string;
+      selectedCountOne: string;
+      /** Download only the selected rows, same CSV as the full export. */
+      exportSelected: string;
+      clearSelection: string;
+      /** "Delete {n} responses?": the confirm for a bulk delete. `One` is n = 1. */
+      bulkDeleteTitle: string;
+      bulkDeleteTitleOne: string;
+      bulkDeleteBody: string;
+      bulkDeleteFailed: string;
+      /** Tooltip on a question column's resize handle. */
+      resizeColumn: string;
     };
     integrations: {
       title: string;
@@ -2999,6 +3017,18 @@ export const en: FormsMessages = {
       colResponse: 'Response',
       colActions: 'Actions',
       scoreValue: 'Score {score}',
+      pageSize: 'Rows per page',
+      selectResponse: 'Select this response',
+      selectPage: 'Select every response on this page',
+      selectedCount: '{n} selected',
+      selectedCountOne: '1 selected',
+      exportSelected: 'Export CSV',
+      clearSelection: 'Clear',
+      bulkDeleteTitle: 'Delete {n} responses?',
+      bulkDeleteTitleOne: 'Delete 1 response?',
+      bulkDeleteBody: 'They are removed for good. This cannot be undone.',
+      bulkDeleteFailed: 'Could not delete them. Try again.',
+      resizeColumn: 'Drag to resize. Double-click to reset.',
     },
     integrations: {
       title: 'Integrations',
@@ -4633,6 +4663,18 @@ export const es: FormsMessages = {
       colResponse: 'Respuesta',
       colActions: 'Acciones',
       scoreValue: 'Puntaje {score}',
+      pageSize: 'Filas por página',
+      selectResponse: 'Seleccionar esta respuesta',
+      selectPage: 'Seleccionar todas las respuestas de esta página',
+      selectedCount: '{n} seleccionadas',
+      selectedCountOne: '1 seleccionada',
+      exportSelected: 'Exportar CSV',
+      clearSelection: 'Limpiar',
+      bulkDeleteTitle: '¿Eliminar {n} respuestas?',
+      bulkDeleteTitleOne: '¿Eliminar 1 respuesta?',
+      bulkDeleteBody: 'Se eliminan para siempre. No se puede deshacer.',
+      bulkDeleteFailed: 'No se pudieron eliminar. Inténtalo de nuevo.',
+      resizeColumn: 'Arrastra para cambiar el ancho. Doble clic para restablecer.',
     },
     integrations: {
       title: 'Integraciones',

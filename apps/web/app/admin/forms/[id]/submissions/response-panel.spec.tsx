@@ -8,8 +8,12 @@ import { renderToStaticMarkup } from 'react-dom/server';
 // The file and delete controls reach server actions; the panel test only needs them to render.
 vi.mock('./actions', () => ({
   deleteSubmissionAction: vi.fn(),
+  deleteSubmissionsAction: vi.fn(),
   submissionFileUrlAction: vi.fn(),
 }));
+
+// The delete controls refresh the page after deleting.
+vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: () => {}, push: () => {} }) }));
 
 import { ResponseDetailView, ResponsesViewer, type PanelLabels } from './response-panel';
 import type { ResponseDetail } from './response-detail';
@@ -37,6 +41,18 @@ const labels: PanelLabels = {
   sheetOpen: 'Full screen',
   sheetClose: 'Exit full screen',
   scoreValue: 'Score {score}',
+};
+
+const selectionLabels = {
+  selectedCount: '{n} selected',
+  selectedCountOne: '1 selected',
+  exportSelected: 'Export CSV',
+  delete: 'Delete',
+  clearSelection: 'Clear',
+  bulkDeleteTitle: 'Delete {n} responses?',
+  bulkDeleteTitleOne: 'Delete 1 response?',
+  bulkDeleteBody: 'This cannot be undone.',
+  bulkDeleteFailed: 'Could not delete them.',
 };
 
 const fileLabels = {
@@ -90,6 +106,7 @@ const render = (items: ResponseDetail[], initialId?: string, initialSheet = fals
       initialSheet={initialSheet}
       labels={labels}
       fileLabels={fileLabels}
+      selectionLabels={selectionLabels}
       pager={<p>page 1</p>}
     >
       <table>

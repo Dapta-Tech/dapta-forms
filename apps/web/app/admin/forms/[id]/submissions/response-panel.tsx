@@ -17,6 +17,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type MouseEvent,
@@ -31,6 +32,8 @@ import { StatusBadge } from './status-badge';
 import { SubmissionFileButton, type FileButtonLabels } from './submission-file-button';
 import { DeleteSubmissionButton } from './row-actions';
 import { RESPONSE_PARAM, SHEET_VIEW, VIEW_PARAM } from './viewer-params';
+import { SelectionBar, SelectionProvider, useSelection, type SelectionLabels } from './table-selection';
+import { arrowDirection, cellGrid, clampCursor, moveCursor, revealCell, type Cursor } from './sheet-cursor';
 
 export interface PanelLabels {
   responseTitle: string;
@@ -125,6 +128,11 @@ const TOOLBAR_BUTTON =
  * markup does not change: the wrapper carries `data-sheet`, and the table's
  * own `in-data-sheet:` classes take the room (sticky header, wider cells, three
  * lines per cell). The panel opens over the sheet exactly as over the page.
+ *
+ * It also holds the page's selection (the row checkboxes and the bar that acts
+ * on it) and, in the sheet, the keyboard cursor: the arrows move a cell
+ * outline, Enter opens that response on that question, and with the panel open
+ * Up/Down walk responses and Left/Right walk questions, the cursor following.
  */
 export function ResponsesViewer({
   formId,
@@ -134,6 +142,7 @@ export function ResponsesViewer({
   initialSheet = false,
   labels,
   fileLabels,
+  selectionLabels,
   pager,
   children,
 }: {
@@ -147,6 +156,8 @@ export function ResponsesViewer({
   initialSheet?: boolean;
   labels: PanelLabels;
   fileLabels: FileButtonLabels;
+  /** The bar that appears over the table with a selection. */
+  selectionLabels: SelectionLabels;
   /** The range and the page links, under the table in both views. */
   pager?: ReactNode;
   children: ReactNode;
@@ -175,6 +186,15 @@ export function ResponsesViewer({
   const shownIndex = shownId ? items.findIndex((i) => i.id === shownId) : -1;
   const shown = current ?? (shownIndex >= 0 ? items[shownIndex]! : null);
   const shownAt = current ? index : shownIndex;
+  const pageIds = useMemo(() => items.map((i) => i.id), [items]);
+  const selection = useSelection(pageIds);
+  /**
+   * The sheet's cell cursor. It is only drawn once an arrow key has been
+   * pressed: a pointer or a touch screen never sees it, even though it quietly
+   * follows the panel, so Esc can hand the keyboard back where it left off.
+   */
+  const [cursor, setCursor] = useState<Cursor | null>(null);
+  const [cursorOn, setCursorOn] = useState(false);
 
   /** Open (or close, with null) a response. `key` names the question to land on; omitted, it is kept. */
   const show = useCallback((id: string | null, key?: string | null) => {
@@ -186,6 +206,7 @@ export function ResponsesViewer({
 
   const toggleSheet = useCallback((on: boolean) => {
     setSheet(on);
+    if (!on) setCursorOn(false);
     writeParam(VIEW_PARAM, on ? SHEET_VIEW : null);
   }, []);
 
@@ -243,10 +264,12 @@ export function ResponsesViewer({
   // Up / Down walk the page, like the arrows in the header. Not while a dialog
   // opened from the panel has the keys (a file preview, the delete confirm),
   // and not inside the scrolling body, where the arrows scroll the answers.
+  // In the sheet, Left / Right walk the questions of the open response too.
   useEffect(() => {
     if (!current) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+      const dir = arrowDirection(e.key);
+      if (!dir || ((dir === 'left' || dir === 'right') && !sheet)) return;
       if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
       const panel =
         document.getElementById(LABEL_ID)?.closest<HTMLElement>('[role="dialog"]') ?? null;
@@ -257,11 +280,82 @@ export function ResponsesViewer({
       )
         return;
       e.preventDefault();
-      go(e.key === 'ArrowUp' ? -1 : 1);
+      if (dir === 'up' || dir === 'down') {
+        go(dir === 'up' ? -1 : 1);
+        return;
+      }
+      const keys = current.answers.map((a) => a.key);
+      const at = focusKey ? keys.indexOf(focusKey) : -1;
+      const next = at < 0 ? 0 : Math.min(Math.max(at + (dir === 'left' ? -1 : 1), 0), keys.length - 1);
+      if (keys[next] !== undefined) setFocusKey(keys[next]);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [current, go]);
+  }, [current, go, sheet, focusKey]);
+
+  // The cursor follows the panel: onto the open response's row, and onto the
+  // question the panel highlights (when it names one, else the column stays).
+  useEffect(() => {
+    if (!sheet || index < 0) return;
+    const grid = cellGrid(rootRef.current);
+    const cells = grid[index] ?? [];
+    const col = focusKey ? cells.findIndex((c) => c.dataset.answerKey === focusKey) : -1;
+    setCursor((prev) => ({ row: index, col: col >= 0 ? col : (prev?.col ?? 0) }));
+  }, [sheet, index, focusKey]);
+
+  // The arrows move the cursor and Enter opens the cell under it: in the
+  // sheet only (on the page the arrows scroll), and only while no dialog is up
+  // (the panel has its own keys) and no text field or menu has the focus.
+  useEffect(() => {
+    if (!sheet) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (document.querySelector('[aria-modal="true"]')) return;
+      if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+      const dir = arrowDirection(e.key);
+      if (!dir && e.key !== 'Enter') return;
+      if (
+        e.target instanceof Element &&
+        e.target.closest('input:not([type="checkbox"]), textarea, select, [contenteditable="true"]')
+      )
+        return;
+      const grid = cellGrid(rootRef.current);
+      if (dir) {
+        e.preventDefault();
+        setCursorOn(true);
+        setCursor((prev) => moveCursor(prev, dir, grid.length, grid[0]?.length ?? 0));
+        return;
+      }
+      // Enter belongs to whatever has the focus (a button, a link), unless
+      // that is the cursor's own cell.
+      const cell = cursor ? grid[cursor.row]?.[cursor.col] : undefined;
+      if (!cursorOn || !cell || document.activeElement !== cell) return;
+      const id = cell.closest<HTMLElement>('tr[data-response-id]')?.dataset.responseId;
+      if (!id) return;
+      e.preventDefault();
+      show(id, cell.dataset.answerKey ?? null);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [sheet, cursor, cursorOn, show]);
+
+  // Draw the cursor, keep it in view, and give it the focus while no panel is
+  // open (so Enter lands on it, and Esc from the panel comes back to it).
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!root) return;
+    for (const el of root.querySelectorAll('[data-cursor]')) el.removeAttribute('data-cursor');
+    if (!sheet || !cursorOn || !cursor) return;
+    const grid = cellGrid(root);
+    const at = clampCursor(cursor, grid.length, grid[0]?.length ?? 0);
+    const cell = grid[at.row]?.[at.col];
+    if (!cell) return;
+    cell.setAttribute('data-cursor', '');
+    revealCell(cell);
+    if (!current) {
+      cell.tabIndex = -1;
+      cell.focus({ preventScroll: true });
+    }
+  }, [sheet, cursor, cursorOn, current, items]);
 
   // While the sheet is up: the page behind it does not scroll, focus starts on
   // the way out, and Esc leaves it. Esc belongs to any dialog first (the panel,
@@ -295,19 +389,29 @@ export function ResponsesViewer({
         ),
       ].filter((el) => el.offsetParent !== null);
       if (items.length === 0) return;
-      const first = items[0]!;
-      const last = items[items.length - 1]!;
+      // Every Tab is moved by hand, not only the one at either end. Safari
+      // does not Tab to links, so the pager's last link never took the focus
+      // there, the wrap never ran, and focus fell out to the page behind.
+      // By hand, the order is this list in every browser. From a cell the
+      // cursor focused (not in the list), Tab goes to the next control after
+      // it in the page, as it would natively.
+      e.preventDefault();
       const active = document.activeElement as HTMLElement | null;
-      if (!active || !root.contains(active)) {
-        e.preventDefault();
-        (e.shiftKey ? last : first).focus();
-      } else if (e.shiftKey && active === first) {
-        e.preventDefault();
-        last.focus();
-      } else if (!e.shiftKey && active === last) {
-        e.preventDefault();
-        first.focus();
+      const n = items.length;
+      let at = active ? items.indexOf(active) : -1;
+      if (at >= 0) {
+        items[(at + (e.shiftKey ? n - 1 : 1)) % n]!.focus();
+        return;
       }
+      if (!active || !root.contains(active)) {
+        items[e.shiftKey ? n - 1 : 0]!.focus();
+        return;
+      }
+      at = items.findIndex(
+        (el) => (active.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0,
+      );
+      if (e.shiftKey) items[at <= 0 ? n - 1 : at - 1]!.focus();
+      else items[at < 0 ? 0 : at]!.focus();
     };
     window.addEventListener('keydown', onKey);
     return () => {
@@ -337,7 +441,11 @@ export function ResponsesViewer({
     show(row.dataset.responseId, cell?.dataset.answerKey ?? null);
   };
 
+  const bar = <SelectionBar formId={formId} labels={selectionLabels} />;
+  const selecting = selection.ids.length > 0;
+
   return (
+    <SelectionProvider value={selection}>
     <SheetContext.Provider value={sheet}>
       <div
         ref={rootRef}
@@ -351,15 +459,21 @@ export function ResponsesViewer({
       >
         {sheet ? (
           <div className="flex h-14 shrink-0 items-center justify-between gap-3 border-b border-border bg-popover px-4 sm:px-5">
-            <div className="flex min-w-0 items-center gap-2.5">
-              <span
-                aria-hidden
-                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground ring-1 ring-primary-edge"
-              >
-                <i className="pi pi-table" style={{ fontSize: 12 }} />
-              </span>
-              <h2 className="truncate text-base font-semibold">{title}</h2>
-            </div>
+            {/* With a selection, the bar takes the title's place: the sheet
+                keeps its height, and the table does not jump. */}
+            {selecting ? (
+              bar
+            ) : (
+              <div className="flex min-w-0 items-center gap-2.5">
+                <span
+                  aria-hidden
+                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground ring-1 ring-primary-edge"
+                >
+                  <i className="pi pi-table" style={{ fontSize: 12 }} />
+                </span>
+                <h2 className="truncate text-base font-semibold">{title}</h2>
+              </div>
+            )}
             <button
               ref={closeSheetRef}
               type="button"
@@ -374,13 +488,14 @@ export function ResponsesViewer({
             </button>
           </div>
         ) : (
-          <div className="flex justify-end">
+          <div className="flex min-h-9 flex-wrap items-center justify-between gap-2">
+            {bar}
             <button
               ref={openSheetRef}
               type="button"
               onClick={() => toggleSheet(true)}
               data-testid="sheet-open"
-              className={TOOLBAR_BUTTON}
+              className={`${TOOLBAR_BUTTON} ml-auto`}
             >
               <i aria-hidden className="pi pi-expand" style={{ fontSize: 12 }} />
               {labels.sheetOpen}
@@ -451,6 +566,7 @@ export function ResponsesViewer({
         ) : null}
       </Drawer>
     </SheetContext.Provider>
+    </SelectionProvider>
   );
 }
 

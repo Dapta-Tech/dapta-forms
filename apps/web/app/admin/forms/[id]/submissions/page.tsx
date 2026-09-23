@@ -20,13 +20,21 @@ import { DeleteSubmissionButton } from './row-actions';
 import { SubmissionFileButton } from './submission-file-button';
 import { buildResponseDetail } from './response-detail';
 import { PagerLink, ResponsesViewer } from './response-panel';
-import { SHEET_VIEW } from './viewer-params';
+import {
+  columnWidthVar,
+  DEFAULT_PAGE_SIZE,
+  parsePageSize,
+  SHEET_VIEW,
+  SIZE_PARAM,
+  type PageSize,
+} from './viewer-params';
 import { StatusBadge } from './status-badge';
 import { ColumnHeading } from './column-heading';
+import { ColumnResizeHandle } from './column-resize';
+import { PageSelect, RowSelect } from './table-selection';
+import { PageSizeSelect } from './page-size-select';
 
 export const dynamic = 'force-dynamic';
-
-const PAGE_SIZE = 25;
 
 /**
  * Header and body cell chrome. The table is `border-separate` rather than
@@ -37,9 +45,34 @@ const PAGE_SIZE = 25;
  */
 const TH =
   'sticky top-0 z-10 border-b border-border bg-card px-4 py-3 align-bottom font-medium in-data-sheet:shadow-[0_1px_0_var(--color-border)]';
-const TD = 'border-b border-border px-4 py-3 group-last:border-b-0';
+/** `data-cursor`: the sheet's keyboard cursor, drawn inside the cell so no neighbour clips it. */
+const TD =
+  'border-b border-border px-4 py-3 group-last:border-b-0 data-cursor:outline-2 data-cursor:-outline-offset-2 data-cursor:outline-primary-edge';
 
-type SP = { status?: string; offset?: string; response?: string; view?: string };
+/**
+ * A question column's width: the one the reader dragged it to (a CSS variable
+ * the resize handle sets on the table, per column), else the default range for
+ * the view, which the table sets as `--q-min`/`--q-max`. Heading and cells read
+ * the same variable, so the column moves as one.
+ */
+function questionWidth(index: number, cell: boolean): { minWidth?: string; maxWidth: string } {
+  const own = `var(${columnWidthVar(index)}`;
+  return cell
+    ? { maxWidth: `${own}, var(--q-max))` }
+    : { minWidth: `${own}, var(--q-min))`, maxWidth: `${own}, var(--q-max))` };
+}
+
+/**
+ * The two pinned columns: the checkbox at the left edge, and the response
+ * right after it, offset by the checkbox column's width. Both need an opaque
+ * ground since the rows scroll under them.
+ */
+const SELECT_COL = 'w-11 min-w-11 max-w-11';
+const PINNED_RESPONSE = 'sticky left-11';
+const PINNED_TINT =
+  'bg-card group-has-checked:bg-linear-to-r group-has-checked:from-primary/5 group-has-checked:to-primary/5 group-hover:bg-linear-to-r group-hover:from-accent/70 group-hover:to-accent/70 group-data-active:bg-linear-to-r group-data-active:from-primary/10 group-data-active:to-primary/10';
+
+type SP = { status?: string; offset?: string; response?: string; view?: string; size?: string };
 
 function parseStatus(v: string | undefined): 'all' | 'completed' | 'partial' {
   return v === 'completed' || v === 'partial' ? v : 'all';
@@ -58,7 +91,9 @@ export default async function SubmissionsPage({
   const m = getMessages(locale).admin;
   const status = parseStatus(sp.status);
   const offset = Math.max(0, Number(sp.offset ?? 0) || 0);
-  const key = `${status}:${offset}`;
+  const size = parsePageSize(sp.size);
+  // A new page, size or filter is a new table: the viewer (and its selection) starts over.
+  const key = `${status}:${offset}:${size}`;
   // The workspace zone every timestamp below is read in, and who may change it.
   const me = await adminApi.me();
   const timeZone = me.timezone ?? 'UTC';
@@ -116,6 +151,7 @@ export default async function SubmissionsPage({
           id={id}
           status={status}
           offset={offset}
+          size={size}
           locale={locale}
           timeZone={timeZone}
           responseId={sp.response}
@@ -142,6 +178,7 @@ async function SubmissionsData({
   id,
   status,
   offset,
+  size,
   locale,
   timeZone,
   responseId,
@@ -151,6 +188,8 @@ async function SubmissionsData({
   id: string;
   status: 'all' | 'completed' | 'partial';
   offset: number;
+  /** `?size=`: rows per page. */
+  size: PageSize;
   locale: Locale;
   timeZone: string;
   /** `?response=`: the response to open in the panel on load. */
@@ -164,7 +203,7 @@ async function SubmissionsData({
   try {
     [form, page] = await Promise.all([
       adminApi.getForm(id),
-      adminApi.listSubmissions(id, { status, limit: PAGE_SIZE, offset }),
+      adminApi.listSubmissions(id, { status, limit: size, offset }),
     ]);
   } catch (e) {
     if (e instanceof ApiError && e.status === 404) notFound();
@@ -197,7 +236,9 @@ async function SubmissionsData({
     const lastOffset = Math.floor((page.total - 1) / page.limit) * page.limit;
     const q = new URLSearchParams();
     if (status !== 'all') q.set('status', status);
+    if (size !== DEFAULT_PAGE_SIZE) q.set(SIZE_PARAM, String(size));
     if (lastOffset > 0) q.set('offset', String(lastOffset));
+    if (sheet) q.set('view', SHEET_VIEW);
     const query = q.toString();
     redirect(`/admin/forms/${id}/submissions${query ? `?${query}` : ''}`);
   }
@@ -206,7 +247,14 @@ async function SubmissionsData({
   const to = Math.min(offset + page.items.length, page.total);
   const hasPrev = offset > 0;
   const hasNext = offset + page.limit < page.total;
-  const statusParam = status === 'all' ? '' : `status=${status}&`;
+  /** A page link: the filter and the page size ride along; the sheet is added client-side. */
+  const pageHref = (to: number) => {
+    const q = new URLSearchParams();
+    if (status !== 'all') q.set('status', status);
+    if (size !== DEFAULT_PAGE_SIZE) q.set(SIZE_PARAM, String(size));
+    q.set('offset', String(to));
+    return `?${q.toString()}`;
+  };
   const fileLabels = {
     download: m.submissions.download,
     downloadFailed: m.submissions.downloadFailed,
@@ -263,21 +311,35 @@ async function SubmissionsData({
           sheetClose: m.submissions.sheetClose,
           scoreValue: m.submissions.scoreValue,
         }}
+        selectionLabels={{
+          selectedCount: m.submissions.selectedCount,
+          selectedCountOne: m.submissions.selectedCountOne,
+          exportSelected: m.submissions.exportSelected,
+          delete: m.submissions.delete,
+          clearSelection: m.submissions.clearSelection,
+          bulkDeleteTitle: m.submissions.bulkDeleteTitle,
+          bulkDeleteTitleOne: m.submissions.bulkDeleteTitleOne,
+          bulkDeleteBody: m.submissions.bulkDeleteBody,
+          bulkDeleteFailed: m.submissions.bulkDeleteFailed,
+        }}
         pager={
-          <div className="flex items-center justify-between gap-3 text-sm">
-            <span className="text-muted-foreground tabular-nums">
-              {t(m.submissions.showing, { from, to, total: page.total })}
-            </span>
+          <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
+            <div className="flex items-center gap-3">
+              <PageSizeSelect value={size} label={m.submissions.pageSize} />
+              <span className="text-muted-foreground tabular-nums" data-testid="page-range">
+                {t(m.submissions.showing, { from, to, total: page.total })}
+              </span>
+            </div>
             <div className="flex items-center gap-2">
               {hasPrev ? (
-                <PagerLink href={`?${statusParam}offset=${Math.max(0, offset - page.limit)}`} className={pagerButton}>
+                <PagerLink href={pageHref(Math.max(0, offset - page.limit))} className={pagerButton}>
                   {m.submissions.prev}
                 </PagerLink>
               ) : (
                 <span className={pagerOff}>{m.submissions.prev}</span>
               )}
               {hasNext ? (
-                <PagerLink href={`?${statusParam}offset=${offset + page.limit}`} className={pagerButton}>
+                <PagerLink href={pageHref(offset + page.limit)} className={pagerButton}>
                   {m.submissions.next}
                 </PagerLink>
               ) : (
@@ -290,23 +352,34 @@ async function SubmissionsData({
         {/* In the sheet (`data-sheet` on the viewer) this container takes the
             screen and scrolls both ways, under a header that stays put and
             beside a first column that stays put. */}
-        <div className="overflow-x-auto rounded-lg border border-border bg-card in-data-sheet:min-h-0 in-data-sheet:overflow-auto">
-        <table className="w-full min-w-[720px] border-separate border-spacing-0 text-sm">
+        <div
+          data-table-scroll
+          className="overflow-x-auto rounded-lg border border-border bg-card in-data-sheet:min-h-0 in-data-sheet:overflow-auto"
+        >
+        {/* `--q-min`/`--q-max`: a question column's default width range in
+            each view, for the columns the reader has not resized. */}
+        <table className="w-full min-w-[720px] border-separate border-spacing-0 text-sm [--q-max:15rem] [--q-min:10rem] in-data-sheet:[--q-max:20rem] in-data-sheet:[--q-min:14rem]">
           <thead>
             {/* Sentence case at the label step, not the uppercase telemetry
                 eyebrow: these are questions people read, often two lines long. */}
             <tr className="text-left text-xs leading-4 text-muted-foreground">
-              <th className={`${TH} sticky left-0 z-20 whitespace-nowrap shadow-[1px_0_0_var(--color-border)]`}>
+              <th className={`${TH} sticky left-0 z-20 px-0 ${SELECT_COL}`}>
+                <PageSelect label={m.submissions.selectPage} />
+              </th>
+              <th className={`${TH} ${PINNED_RESPONSE} z-20 whitespace-nowrap shadow-[1px_0_0_var(--color-border)]`}>
                 {hasContact ? m.submissions.colResponse : m.submissions.colSubmitted}
               </th>
               <th className={`${TH} whitespace-nowrap`}>{m.submissions.colStatus}</th>
               {scoring ? <th className={`${TH} whitespace-nowrap text-right`}>{m.submissions.colScore}</th> : null}
-              {steps.map((s) => (
-                <th
-                  key={s.key}
-                  className={`${TH} min-w-40 max-w-60 in-data-sheet:min-w-56 in-data-sheet:max-w-80`}
-                >
+              {steps.map((s, i) => (
+                <th key={s.key} className={`${TH} group/th`} style={questionWidth(i, false)}>
                   <ColumnHeading text={stepLabel(s)} />
+                  <ColumnResizeHandle
+                    formId={id}
+                    stepKey={s.key}
+                    index={i}
+                    label={m.submissions.resizeColumn}
+                  />
                 </th>
               ))}
               <th className={TH} aria-label={m.submissions.colActions} />
@@ -323,13 +396,20 @@ async function SubmissionsData({
                 <tr
                   key={row.id}
                   data-response-id={row.id}
-                  className="group cursor-pointer align-top transition-colors hover:bg-accent/70 data-active:bg-primary/10 data-active:hover:bg-primary/15"
+                  className="group cursor-pointer align-top transition-colors hover:bg-accent/70 has-checked:bg-primary/5 data-active:bg-primary/10 data-active:hover:bg-primary/15"
                 >
-                  {/* Sticky, so it needs an opaque ground: the card colour, with the
-                      row's hover or active tint laid over it as an image. The lime
-                      bar on its left edge marks the response open in the panel. */}
+                  {/* Sticky, so both pinned cells need an opaque ground: the card
+                      colour, with the row's selected, hover or active tint laid over
+                      it as an image. The lime bar on the checkbox cell's left edge
+                      marks the response open in the panel. */}
                   <td
-                    className={`${TD} sticky left-0 z-1 whitespace-nowrap bg-card shadow-[1px_0_0_var(--color-border)] before:absolute before:inset-y-0 before:left-0 before:w-0.75 group-hover:bg-linear-to-r group-hover:from-accent/70 group-hover:to-accent/70 group-data-active:bg-linear-to-r group-data-active:from-primary/10 group-data-active:to-primary/10 group-data-active:before:bg-primary`}
+                    className={`${TD} ${SELECT_COL} ${PINNED_TINT} sticky left-0 z-1 p-0 before:absolute before:inset-y-0 before:left-0 before:w-0.75 group-data-active:before:bg-primary`}
+                  >
+                    <RowSelect id={row.id} label={m.submissions.selectResponse} />
+                  </td>
+                  <td
+                    data-cell
+                    className={`${TD} ${PINNED_RESPONSE} ${PINNED_TINT} z-1 whitespace-nowrap shadow-[1px_0_0_var(--color-border)]`}
                   >
                     <span className="inline-flex items-start gap-2">
                       <span className="flex flex-col">
@@ -354,16 +434,18 @@ async function SubmissionsData({
                       </button>
                     </span>
                   </td>
-                  <td className={`${TD} whitespace-nowrap`}>
+                  <td data-cell className={`${TD} whitespace-nowrap`}>
                     <StatusBadge
                       completed={completed}
                       label={completed ? m.submissions.badgeCompleted : m.submissions.badgePartial}
                     />
                   </td>
                   {scoring ? (
-                    <td className={`${TD} whitespace-nowrap text-right tabular-nums`}>{row.score}</td>
+                    <td data-cell className={`${TD} whitespace-nowrap text-right tabular-nums`}>
+                      {row.score}
+                    </td>
                   ) : null}
-                  {steps.map((s) => {
+                  {steps.map((s, i) => {
                     // A file cell is the one answer that is not text: it opens
                     // the thing rather than describing it.
                     const file = s.type === 'file' ? parseFileAnswer(data[s.key] as never) : null;
@@ -371,8 +453,10 @@ async function SubmissionsData({
                     return (
                       <td
                         key={s.key}
+                        data-cell
                         data-answer-key={s.key}
-                        className={`${TD} max-w-[240px] truncate transition-colors hover:bg-primary/10 in-data-sheet:max-w-80 in-data-sheet:whitespace-normal`}
+                        className={`${TD} truncate transition-colors hover:bg-primary/10 in-data-sheet:whitespace-normal`}
+                        style={questionWidth(i, true)}
                         title={text}
                       >
                         {file ? (
