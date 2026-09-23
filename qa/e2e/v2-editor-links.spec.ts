@@ -9,7 +9,7 @@ import { test, expect, type APIRequestContext, type BrowserContext } from '@play
  * here from GET /v1/me so the QA principal's real account code is never
  * hardcoded (it is NOT necessarily `acme`).
  *
- * The three actions are ICON-ONLY buttons, visible in the header (labels live
+ * The actions are ICON-ONLY buttons, visible in the header (labels live
  * on title/aria-label). They were labelled buttons once, then briefly a single
  * popover menu — which tested as one hop too many and was reverted.
  *
@@ -127,5 +127,42 @@ test.describe('N4 — editor header link actions', () => {
       await copyLink.click();
       await expect(icon).toHaveClass(/pi-check/, { timeout: 1_000 });
     }).toPass({ timeout: 12_000 });
+  });
+
+  test('qr opens a dialog with the code, the public URL and both downloads', async ({ page, request }, testInfo) => {
+    const form = await createForm(request, 'qr', testInfo.workerIndex);
+    const expectedPath = await publicPath(request, form.slug);
+    await page.goto(`/admin/forms/${form.id}/edit`);
+
+    // Between Embed and Open form, which stays last (it is the only anchor).
+    const qr = page.locator('button[data-testid="editor-qr"]');
+    await expect(qr).toBeVisible({ timeout: 25_000 });
+    const order = await page
+      .locator('[data-testid^="editor-"]')
+      .evaluateAll((els) => els.map((el) => el.getAttribute('data-testid')));
+    expect(order.indexOf('editor-qr')).toBe(order.indexOf('editor-embed') + 1);
+    expect(order.indexOf('editor-open-form')).toBe(order.indexOf('editor-qr') + 1);
+
+    const dialog = page.getByRole('dialog');
+    await expect(async () => {
+      await qr.click();
+      await expect(dialog).toBeVisible({ timeout: 1_000 });
+    }).toPass({ timeout: 12_000 });
+
+    await expect(dialog.getByTestId('qr-image')).toBeVisible();
+    // The code encodes what Copy link copies: the bare public URL, no UTM.
+    await expect(dialog.getByTestId('qr-url')).toHaveText(`${ORIGIN}${expectedPath}`);
+
+    const [svg] = await Promise.all([
+      page.waitForEvent('download'),
+      dialog.getByTestId('qr-download-svg').click(),
+    ]);
+    expect(svg.suggestedFilename()).toBe(`${form.slug}-qr.svg`);
+
+    const [png] = await Promise.all([
+      page.waitForEvent('download'),
+      dialog.getByTestId('qr-download-png').click(),
+    ]);
+    expect(png.suggestedFilename()).toBe(`${form.slug}-qr.png`);
   });
 });

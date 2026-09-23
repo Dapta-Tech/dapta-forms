@@ -55,6 +55,17 @@ export interface BuilderMessages {
     copied: string;
     openForm: string;
     /**
+     * QR code dialog: the public link as a scannable code for print and
+     * screens, with PNG and SVG downloads. Same URL Copy link copies.
+     */
+    qr: string;
+    qrTitle: string;
+    qrIntro: string;
+    qrAlt: string;
+    qrDownloadPng: string;
+    qrDownloadSvg: string;
+    qrPngFailed: string;
+    /**
      * Rename-the-public-link dialog. Its own control beside Copy link, because
      * the link is the thing being changed and this is where people look at it.
      */
@@ -573,6 +584,14 @@ const en: BuilderMessages = {
     embedCopied: 'Copied',
     copied: 'Copied',
     openForm: 'Open form',
+    qr: 'QR code',
+    qrTitle: 'QR code for this form',
+    qrIntro:
+      'Print it on a flyer or put it on a slide. Scanning it opens the same link Copy link gives you, and it keeps working if you edit the link later.',
+    qrAlt: 'QR code that opens this form',
+    qrDownloadPng: 'Download PNG',
+    qrDownloadSvg: 'Download SVG',
+    qrPngFailed: 'Could not create the PNG. Try the SVG instead.',
     renameLink: 'Edit link',
     renameTitle: 'Edit this form\u2019s link',
     renameIntro:
@@ -1001,6 +1020,14 @@ const es: BuilderMessages = {
     embedCopied: 'Copiado',
     copied: 'Copiado',
     openForm: 'Abrir formulario',
+    qr: 'Código QR',
+    qrTitle: 'Código QR de este formulario',
+    qrIntro:
+      'Imprímelo en un volante o ponlo en una diapositiva. Al escanearlo abre el mismo enlace que Copiar enlace, y sigue funcionando si luego editas el enlace.',
+    qrAlt: 'Código QR que abre este formulario',
+    qrDownloadPng: 'Descargar PNG',
+    qrDownloadSvg: 'Descargar SVG',
+    qrPngFailed: 'No se pudo crear el PNG. Prueba con el SVG.',
     renameLink: 'Editar enlace',
     renameTitle: 'Edita el enlace de este formulario',
     renameIntro:

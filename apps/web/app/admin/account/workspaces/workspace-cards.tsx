@@ -12,6 +12,7 @@ import {
   switchWorkspaceAction,
 } from '@/app/admin/workspace-actions';
 import { Button, buttonVariants } from '@/components/ui/button';
+import { SearchClearButton } from '@/components/ui/search-clear-button';
 import { CreateWorkspaceDialog } from '@/components/create-workspace-dialog';
 import { useToast } from '@/components/toast';
 import { callAction, isTransportError } from '@/lib/call-action';
@@ -21,6 +22,7 @@ export interface WorkspaceCardsLabels {
   title: string;
   subtitle: string;
   search: string;
+  searchClear: string;
   searchEmpty: string;
   newWorkspace: string;
   current: string;
@@ -85,6 +87,7 @@ export function WorkspaceCards({
   const [results, setResults] = useState<{ q: string; rows: WorkspaceSearchRow[] } | null>(null);
   const [searching, setSearching] = useState(false);
   const requestRef = useRef(0);
+  const searchRef = useRef<HTMLInputElement>(null);
 
   const roleLabel: Record<AccountRole, string> = {
     owner: labels.roleOwner,
@@ -201,6 +204,7 @@ export function WorkspaceCards({
             style={{ fontSize: 13 }}
           />
           <input
+            ref={searchRef}
             type="search"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -208,7 +212,17 @@ export function WorkspaceCards({
             aria-label={labels.search}
             autoComplete="off"
             data-testid="workspace-search"
-            className="w-full rounded-md border border-input bg-background py-2 pl-9 pr-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="w-full rounded-md border border-input bg-background py-2 pl-9 pr-10 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          />
+          <SearchClearButton
+            query={query}
+            label={labels.searchClear}
+            testId="workspace-search-clear"
+            onClear={() => {
+              setQuery('');
+              searchRef.current?.focus();
+            }}
+            className="right-1.5"
           />
         </label>
       ) : null}
