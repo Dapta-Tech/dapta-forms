@@ -150,7 +150,7 @@ export const openapiSpec = {
       get: {
         summary: 'Get one submission in full (host)',
         description:
-          'Returns { id, formId, sessionId, data, score, startedAt, completedAt, partialAt }. Scoped by a join on the caller own account, so a submission id from another workspace is 404, like one that does not exist.',
+          'Returns { id, formId, sessionId, data, score, startedAt, completedAt, partialAt }. Scoped by a join on the caller\u2019s own account, so a submission id from another workspace is 404, like one that does not exist.',
         security: [{ hostSession: [] }],
         responses: { '200': { description: 'The submission' }, '404': { description: 'No such submission on this form in this workspace' } },
       },

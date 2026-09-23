@@ -451,6 +451,39 @@ export async function allSubmissionsForExport(
   return rows.map(mapSubmission);
 }
 
+/** A submission as the Summary reads it: the answers and the three instants, nothing else. */
+export interface SummarySubmissionRow {
+  id: string;
+  data: unknown;
+  startedAt: number;
+  completedAt: number | null;
+  partialAt: number | null;
+}
+
+/**
+ * Every submission matching the filter, newest first (the table's order), with
+ * only the columns the Summary aggregates. Unpaginated like the CSV export,
+ * since every response counts, but it leaves out what the Summary never reads.
+ */
+export async function submissionsForSummary(
+  db: Db,
+  formId: string,
+  q: Omit<SubmissionQuery, 'limit' | 'offset'> = {},
+): Promise<SummarySubmissionRow[]> {
+  const where = sql`WHERE form_id = ${formId} ${statusClause(q.status)} ${andRange(sql`started_at`, q)}`;
+  const rows = await db.all<Record<string, unknown>>(
+    sql`SELECT id, data, started_at, completed_at, partial_at FROM submission ${where}
+        ORDER BY started_at DESC, id DESC`,
+  );
+  return rows.map((r) => ({
+    id: String(r.id),
+    data: parseJsonColumn(r.data, {}),
+    startedAt: Number(r.started_at),
+    completedAt: r.completed_at == null ? null : Number(r.completed_at),
+    partialAt: r.partial_at == null ? null : Number(r.partial_at),
+  }));
+}
+
 // --- Per-question answer search (Summary tab) --------------------------------
 
 export interface AnswerSearchQuery extends DateRange {

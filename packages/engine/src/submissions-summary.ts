@@ -275,10 +275,17 @@ export function summarizeSubmissions(
     const recent: SummaryAnswer[] = [];
     let answered = 0;
     for (const row of rows) {
-      const hit = summaryAnswer(answering, step, row);
-      if (!hit) continue;
+      const text = answerText(step, row.data);
+      if (!text) continue;
       answered++;
-      if (recent.length < recentMax) recent.push(hit);
+      // Who answered is only worked out for the answers the card shows.
+      if (recent.length < recentMax)
+        recent.push({
+          id: row.id,
+          text,
+          respondent: summaryRespondent(answering, row.data),
+          at: row.at,
+        });
     }
     return { ...base, kind: 'text', answered, recent };
   });

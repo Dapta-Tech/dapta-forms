@@ -9,11 +9,13 @@ import type { ReactElement } from 'react';
 import type { SubmissionsSummary } from '@quill/engine';
 
 const getSummary = vi.fn();
+const getForm = vi.fn();
 const me = vi.fn();
 
 vi.mock('@/lib/admin-api', () => ({
   adminApi: {
     getSummary: (...a: unknown[]) => getSummary(...a),
+    getForm: (...a: unknown[]) => getForm(...a),
     me: (...a: unknown[]) => me(...a),
   },
   ApiError: class ApiError extends Error {
@@ -139,6 +141,8 @@ beforeEach(() => {
   getSummary.mockReset();
   me.mockReset();
   me.mockResolvedValue({ timezone: 'America/Bogota' });
+  getForm.mockReset();
+  getForm.mockResolvedValue({ id: 'form_1' });
 });
 
 describe('Summary tab', () => {
@@ -191,6 +195,15 @@ describe('Summary tab', () => {
     const html = await render();
     expect(html).toContain('No submissions yet');
     expect(html).not.toContain('data-testid="summary-card"');
+  });
+
+  it('answers 404 before rendering anything for a form outside the workspace', async () => {
+    const { ApiError } = await import('@/lib/admin-api');
+    getForm.mockRejectedValue(new ApiError(404, 'Not found.'));
+    await expect(SummaryRoute({ params: Promise.resolve({ id: 'form_x' }) })).rejects.toThrow(
+      'NEXT_NOT_FOUND',
+    );
+    expect(getSummary).not.toHaveBeenCalled();
   });
 
   it('switches between Summary and Responses, marking the one open', async () => {

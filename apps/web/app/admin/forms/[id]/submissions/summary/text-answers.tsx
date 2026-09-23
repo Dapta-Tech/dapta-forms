@@ -80,6 +80,14 @@ export function TextAnswers({
   const [applied, setApplied] = useState('');
   const [items, setItems] = useState<SummaryHit[]>(recent);
   const [total, setTotal] = useState(answered);
+  /**
+   * Where the next "Show more" starts, as the server counted it (its offset
+   * plus its limit), never the length of the list: the list drops repeats, so
+   * its length can lag behind the rows the server already handed over.
+   */
+  const [nextOffset, setNextOffset] = useState(recent.length);
+  /** The last page came back short: there is nothing more to ask for. */
+  const [exhausted, setExhausted] = useState(recent.length >= answered);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [opening, setOpening] = useState<string | null>(null);
@@ -99,7 +107,18 @@ export function TextAnswers({
     }
     setApplied(q);
     setTotal(res.total);
-    setItems((prev) => (offset === 0 ? res.items : [...prev, ...res.items]));
+    setNextOffset(res.offset + res.limit);
+    // A short page is the end, even when `total` says otherwise: the count is
+    // taken before the rows are read, and a response can arrive, or a row the
+    // server counted can turn out to hold no answer, in between.
+    setExhausted(res.items.length < res.limit || res.offset + res.limit >= res.total);
+    setItems((prev) => {
+      if (offset === 0) return res.items;
+      // A response that arrived between pages shifts the next page by one, so
+      // its first row is one already listed: keep the first copy only.
+      const seen = new Set(prev.map((i) => i.id));
+      return [...prev, ...res.items.filter((i) => !seen.has(i.id))];
+    });
   }
 
   // Search as the person types, once they pause. Every keystroke retires the
@@ -114,6 +133,8 @@ export function TextAnswers({
       setApplied('');
       setItems(recent);
       setTotal(answered);
+      setNextOffset(recent.length);
+      setExhausted(recent.length >= answered);
       setError(null);
       return;
     }
@@ -139,7 +160,7 @@ export function TextAnswers({
   }
 
   const searching = applied.length > 0;
-  const more = items.length < total;
+  const more = !exhausted;
 
   return (
     <div className="flex flex-col gap-3">
@@ -253,7 +274,7 @@ export function TextAnswers({
       {more ? (
         <button
           type="button"
-          onClick={() => void fetchPage(applied, items.length)}
+          onClick={() => void fetchPage(applied, nextOffset)}
           disabled={loading}
           data-testid="summary-show-more"
           className="inline-flex h-9 w-fit items-center gap-2 self-center rounded-md border border-border px-4 text-sm font-medium text-foreground transition-colors hover:bg-accent disabled:opacity-50"

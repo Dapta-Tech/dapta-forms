@@ -23,6 +23,7 @@ import {
 } from 'react';
 import { t } from '@quill/shared';
 import { Drawer } from '@/components/drawer';
+import { inNestedDialog } from '@/components/modal';
 import { callAction, isTransportError } from '@/lib/call-action';
 import type { ResponseDetail } from '../response-detail';
 import { PanelHeader, ResponseDetailView, type PanelLabels } from '../response-panel';
@@ -81,11 +82,33 @@ export function SummaryResponsePanel({
     [formId],
   );
 
+  /**
+   * Every open and every step is numbered, and only the latest may show its
+   * response: a slow read that lands late must not cover the one asked for
+   * after it (a second answer clicked, or the arrows pressed again).
+   */
+  const seq = useRef(0);
+  /**
+   * Where the panel is headed: moved at once by each step, so two quick
+   * presses go two responses on even while the first is still being read.
+   */
+  const target = useRef<Omit<Walk, 'detail'> | null>(null);
+  /** Where the panel actually is: what `target` falls back to when a read fails. */
+  const shownRef = useRef<Omit<Walk, 'detail'> | null>(null);
+
   const openAt = useCallback<OpenResponse>(
     async (ids, index, stepKey) => {
+      const mine = ++seq.current;
+      target.current = { ids, index, stepKey };
       const id = ids[index];
       const detail = id ? await load(id) : null;
-      if (!detail) return false;
+      // Overtaken by a later open: not a failure, just no longer wanted.
+      if (mine !== seq.current) return true;
+      if (!detail) {
+        target.current = shownRef.current;
+        return false;
+      }
+      shownRef.current = { ids, index, stepKey };
       setWalk({ ids, index, stepKey, detail });
       setOpen(true);
       return true;
@@ -95,19 +118,52 @@ export function SummaryResponsePanel({
 
   const go = useCallback(
     async (delta: number) => {
-      if (!walk) return;
-      const index = walk.index + delta;
-      const id = walk.ids[index];
-      // A response deleted since the card loaded leaves the panel where it is.
-      const detail = id ? await load(id) : null;
-      if (detail) setWalk({ ...walk, index, detail });
+      const from = target.current;
+      if (!from) return;
+      const index = from.index + delta;
+      const id = from.ids[index];
+      if (!id) return;
+      const mine = ++seq.current;
+      target.current = { ...from, index };
+      const detail = await load(id);
+      if (mine !== seq.current) return;
+      // A response deleted since the card loaded leaves the panel where it was.
+      if (!detail) {
+        target.current = shownRef.current;
+        return;
+      }
+      shownRef.current = { ...from, index };
+      setWalk({ ...from, index, detail });
     },
-    [walk, load],
+    [load],
   );
 
   // Closing keeps `walk`, so the drawer keeps drawing this response while it slides out.
   const shown = walk?.detail ?? null;
   const shownId = shown?.id;
+
+  // Up / Down walk the card's answers, like the arrows in the header and like
+  // the Responses view. Not while a dialog opened from the panel has the keys
+  // (a file preview), and not inside the scrolling body, where they scroll.
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+      if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+      const panel =
+        document.getElementById(LABEL_ID)?.closest<HTMLElement>('[role="dialog"]') ?? null;
+      if (inNestedDialog(e.target, panel)) return;
+      if (
+        e.target instanceof Element &&
+        e.target.closest('[data-drawer-body], input, textarea, select')
+      )
+        return;
+      e.preventDefault();
+      void go(e.key === 'ArrowUp' ? -1 : 1);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open, go]);
 
   // Land on the card's question, never at the scroll depth of the response before.
   useEffect(() => {

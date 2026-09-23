@@ -31,6 +31,7 @@ import {
   allSubmissionsForExport,
   getSubmissionAnswersForAccount,
   searchSubmissionAnswers,
+  submissionsForSummary,
 } from './analytics';
 
 let db: Db;
@@ -412,6 +413,17 @@ describe('per-question answer search (Summary tab)', () => {
   it('matches nothing for a key that is never answered, or no keys at all', async () => {
     expect((await searchSubmissionAnswers(db, formId, ['missing'])).total).toBe(0);
     expect((await searchSubmissionAnswers(db, formId, [])).total).toBe(0);
+  });
+
+  it('reads every row for the Summary, newest first, with only the columns it aggregates', async () => {
+    const rows = await submissionsForSummary(db, formId);
+    expect(rows.map((r) => r.id)).toEqual(['a4', 'a3', 'a2', 'a1', 'a5']);
+    expect(Object.keys(rows[0]!).sort()).toEqual(['completedAt', 'data', 'id', 'partialAt', 'startedAt']);
+    expect(rows.find((r) => r.id === 'a3')).toMatchObject({ completedAt: null, partialAt: D1 + 5 });
+    expect(rows.find((r) => r.id === 'a1')?.data).toMatchObject({ firstname: 'Ana' });
+    const filtered = await submissionsForSummary(db, formId, { status: 'partial' });
+    expect(filtered.map((r) => r.id)).toEqual(['a3']);
+    expect((await submissionsForSummary(db, formId, WINDOW)).map((r) => r.id)).toEqual(['a4', 'a3', 'a2', 'a1']);
   });
 
   it('reads one submission with its dates and score, only for the owning account', async () => {

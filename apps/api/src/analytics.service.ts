@@ -27,7 +27,9 @@ import {
   allSubmissionsForExport,
   deleteSubmissionForAccount,
   searchSubmissionAnswers,
+  submissionsForSummary,
   type AnswerSearchQuery,
+  type SummarySubmissionRow,
   type SubmissionRow,
   getFormById,
   type CompletedSubmission,
@@ -48,7 +50,7 @@ import type {
 import { DB } from './tokens';
 
 /** A stored submission as the summary reads it: answers, and the instant the table shows. */
-function summaryRow(r: SubmissionRow): SummaryRow {
+function summaryRow(r: SummarySubmissionRow | SubmissionRow): SummaryRow {
   return {
     id: r.id,
     data: (r.data ?? {}) as Record<string, unknown>,
@@ -335,7 +337,7 @@ export class AnalyticsService {
     steps: FormStep[],
     q: Omit<SubmissionQuery, 'limit' | 'offset'>,
   ): Promise<SubmissionsSummary> {
-    const rows = await allSubmissionsForExport(this.db, formId, q);
+    const rows = await submissionsForSummary(this.db, formId, q);
     return summarizeSubmissions(steps, rows.map(summaryRow));
   }
 

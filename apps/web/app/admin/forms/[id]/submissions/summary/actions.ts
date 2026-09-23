@@ -20,7 +20,9 @@ export async function searchSummaryAnswersAction(
   stepKey: string,
   query: string,
   offset: number,
-): Promise<{ ok: true; items: SummaryHit[]; total: number } | { ok: false }> {
+): Promise<
+  { ok: true; items: SummaryHit[]; total: number; offset: number; limit: number } | { ok: false }
+> {
   try {
     const [page, me, locale] = await Promise.all([
       adminApi.searchSummaryAnswers(formId, stepKey, { q: query, offset, limit: PAGE }),
@@ -32,6 +34,8 @@ export async function searchSummaryAnswersAction(
       ok: true,
       items: page.items.map((a) => toSummaryHit(a, { locale, timeZone })),
       total: page.total,
+      offset: page.offset,
+      limit: page.limit,
     };
   } catch {
     return { ok: false };

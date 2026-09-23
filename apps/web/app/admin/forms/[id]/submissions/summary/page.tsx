@@ -34,6 +34,17 @@ export default async function SubmissionsSummaryPage({
   const { id } = await params;
   const locale = await getLocale();
   const m = getMessages(locale).admin;
+  // The form is checked before the Suspense below: a form from another
+  // workspace (or none at all) gets the not-found page, not the header, the
+  // tabs and a skeleton first. The HTTP status is still 200, as on every admin
+  // page: `admin/loading.tsx` wraps the whole admin in a Suspense, so the
+  // response has started before any page runs.
+  try {
+    await adminApi.getForm(id);
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 404) notFound();
+    throw e;
+  }
 
   return (
     <div className="mx-auto max-w-[1100px] px-6 py-8">

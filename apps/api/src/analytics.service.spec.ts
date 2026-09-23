@@ -542,6 +542,14 @@ describe('Summary tab (controller)', () => {
     });
   });
 
+  it('404s a search of another account, even on a real text question and a query that matches', async () => {
+    // The same call answers for the owner, so the 404 is the account scope and nothing else.
+    expect((await ctrlFor(accountId).summaryAnswers({ headers: {} }, formId, 'email', 'x.io')).total).toBe(3);
+    await expect(
+      ctrlFor('attacker-account').summaryAnswers({ headers: {} }, formId, 'email', 'x.io'),
+    ).rejects.toMatchObject({ status: 404 });
+  });
+
   it('opens one submission by id for its own account and form only', async () => {
     const one = (await querySubmissions(db, formId, { status: 'completed', limit: 1 })).items[0]!;
     const got = await ctrlFor(accountId).submission({ headers: {} }, formId, one.id);
