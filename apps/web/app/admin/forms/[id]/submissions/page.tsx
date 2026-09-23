@@ -19,12 +19,15 @@ import { Skeleton } from '@/components/skeleton';
 import { SubmissionsFilter } from './submissions-filter';
 import { DeleteSubmissionButton } from './row-actions';
 import { SubmissionFileButton } from './submission-file-button';
+import { buildResponseDetail } from './response-detail';
+import { ResponsesViewer } from './response-panel';
+import { StatusBadge } from './status-badge';
 
 export const dynamic = 'force-dynamic';
 
 const PAGE_SIZE = 25;
 
-type SP = { status?: string; offset?: string };
+type SP = { status?: string; offset?: string; response?: string };
 
 function parseStatus(v: string | undefined): 'all' | 'completed' | 'partial' {
   return v === 'completed' || v === 'partial' ? v : 'all';
@@ -97,7 +100,15 @@ export default async function SubmissionsPage({
       </div>
 
       <Suspense key={key} fallback={<Skeleton className="h-80 w-full" />}>
-        <SubmissionsData id={id} status={status} offset={offset} locale={locale} timeZone={timeZone} m={m} />
+        <SubmissionsData
+          id={id}
+          status={status}
+          offset={offset}
+          locale={locale}
+          timeZone={timeZone}
+          responseId={sp.response}
+          m={m}
+        />
       </Suspense>
     </div>
   );
@@ -120,6 +131,7 @@ async function SubmissionsData({
   offset,
   locale,
   timeZone,
+  responseId,
   m,
 }: {
   id: string;
@@ -127,6 +139,8 @@ async function SubmissionsData({
   offset: number;
   locale: Locale;
   timeZone: string;
+  /** `?response=`: the response to open in the panel on load. */
+  responseId?: string;
   m: FormsMessages['admin'];
 }) {
   let form: Awaited<ReturnType<typeof adminApi.getForm>>;
@@ -177,12 +191,51 @@ async function SubmissionsData({
   const hasPrev = offset > 0;
   const hasNext = offset + page.limit < page.total;
   const statusParam = status === 'all' ? '' : `status=${status}&`;
+  const fileLabels = {
+    download: m.submissions.download,
+    downloadFailed: m.submissions.downloadFailed,
+    loading: m.submissions.previewLoading,
+    failed: m.submissions.previewFailed,
+    reload: m.submissions.previewReload,
+    unavailable: m.submissions.previewUnavailable,
+    approx: m.submissions.previewApprox,
+    close: m.submissions.previewClose,
+  };
+  // Every response on this page, formatted for the side panel: the rows open
+  // it, and its arrows walk this same list.
+  const details = page.items.map((row) => buildResponseDetail(row, steps, { locale, timeZone, scoring }));
 
   return (
     <div className="flex flex-col gap-4">
       {/* Horizontal scroll lives INSIDE this container (themed scrollbar, global);
           the page body never scrolls sideways even with many step columns. */}
-      <div className="overflow-x-auto rounded-lg border border-border bg-card">
+      <ResponsesViewer
+        formId={id}
+        items={details}
+        initialId={responseId}
+        fileLabels={fileLabels}
+        labels={{
+          responseTitle: m.submissions.responseTitle,
+          prevResponse: m.submissions.prevResponse,
+          nextResponse: m.submissions.nextResponse,
+          closeResponse: m.submissions.closeResponse,
+          responsePosition: m.submissions.responsePosition,
+          answersTitle: m.submissions.answersTitle,
+          detailsTitle: m.submissions.detailsTitle,
+          noAnswer: m.submissions.noAnswer,
+          colStatus: m.submissions.colStatus,
+          colSubmitted: m.submissions.colSubmitted,
+          colStarted: m.submissions.colStarted,
+          colScore: m.submissions.colScore,
+          responseId: m.submissions.responseId,
+          utmTitle: m.submissions.utmTitle,
+          badgeCompleted: m.submissions.badgeCompleted,
+          badgePartial: m.submissions.badgePartial,
+          delete: m.submissions.delete,
+          deleteConfirm: m.submissions.deleteConfirm,
+        }}
+      >
+        <div className="overflow-x-auto rounded-lg border border-border bg-card">
         <table className="w-full min-w-[720px] border-collapse text-sm">
           <thead>
             <tr className="border-b border-border text-left text-2xs uppercase tracking-wide text-faint">
@@ -205,24 +258,33 @@ async function SubmissionsData({
               const when = row.completedAt ?? row.partialAt ?? row.startedAt;
               const data = (row.data ?? {}) as Record<string, unknown>;
               return (
-                <tr key={row.id} className="border-b border-border last:border-b-0 align-top">
+                <tr
+                  key={row.id}
+                  data-response-id={row.id}
+                  className="group cursor-pointer border-b border-border align-top transition-colors last:border-b-0 hover:bg-accent/70"
+                >
                   <td className="whitespace-nowrap px-4 py-3 text-muted-foreground">
-                    {formatDateTime(when, { locale, timeZone })}
+                    <span className="inline-flex items-center gap-2">
+                      {formatDateTime(when, { locale, timeZone })}
+                      {/* The keyboard way in: the row itself is clickable, but a
+                          row is not focusable, so each one carries a real button. */}
+                      <button
+                        type="button"
+                        data-open-response={row.id}
+                        data-testid="open-response"
+                        aria-label={m.submissions.viewResponse}
+                        title={m.submissions.viewResponse}
+                        className="inline-flex h-6 w-6 items-center justify-center rounded text-foreground opacity-0 transition-opacity hover:bg-accent focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring group-hover:opacity-100"
+                      >
+                        <i aria-hidden className="pi pi-window-maximize" style={{ fontSize: 11 }} />
+                      </button>
+                    </span>
                   </td>
                   <td className="whitespace-nowrap px-4 py-3">
-                    <span
-                      className={
-                        completed
-                          ? 'inline-flex items-center gap-1.5 rounded-full bg-primary/20 px-2.5 py-0.5 text-xs font-medium text-foreground'
-                          : 'inline-flex items-center gap-1.5 rounded-full bg-secondary/20 px-2.5 py-0.5 text-xs font-medium text-foreground'
-                      }
-                    >
-                      <span
-                        aria-hidden
-                        className={`h-1.5 w-1.5 rounded-full ${completed ? 'bg-primary-edge' : 'bg-secondary'}`}
-                      />
-                      {completed ? m.submissions.badgeCompleted : m.submissions.badgePartial}
-                    </span>
+                    <StatusBadge
+                      completed={completed}
+                      label={completed ? m.submissions.badgeCompleted : m.submissions.badgePartial}
+                    />
                   </td>
                   {scoring ? (
                     <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums">{row.score}</td>
@@ -240,16 +302,7 @@ async function SubmissionsData({
                             submissionId={row.id}
                             stepKey={s.key}
                             name={file.name}
-                            labels={{
-                              download: m.submissions.download,
-                              downloadFailed: m.submissions.downloadFailed,
-                              loading: m.submissions.previewLoading,
-                              failed: m.submissions.previewFailed,
-                              reload: m.submissions.previewReload,
-                              unavailable: m.submissions.previewUnavailable,
-                              approx: m.submissions.previewApprox,
-                              close: m.submissions.previewClose,
-                            }}
+                            labels={fileLabels}
                           />
                         ) : (
                           text || m.submissions.na
@@ -269,7 +322,8 @@ async function SubmissionsData({
             })}
           </tbody>
         </table>
-      </div>
+        </div>
+      </ResponsesViewer>
 
       <div className="flex items-center justify-between gap-3 text-sm">
         <span className="text-muted-foreground tabular-nums">

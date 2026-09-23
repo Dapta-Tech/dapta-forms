@@ -464,3 +464,69 @@ describe('cells agree with the CSV export', () => {
     expect(text).toContain('2026-09-03 09:30 GMT-5');
   });
 });
+
+describe('response panel', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  /** Render the data child for one URL and return its element tree. */
+  async function tree(searchParams: Record<string, string>): Promise<unknown> {
+    getForm.mockResolvedValue({
+      id: FORM_ID,
+      config: {
+        version: 1,
+        steps: [{ key: 'story', type: 'textarea', question: 'Tell us', required: false }],
+      },
+    });
+    listSubmissions.mockResolvedValue({
+      items: [
+        { ...submission('s0'), data: { story: 'A long answer.\nWith a second line.' } },
+        submission('s1'),
+      ],
+      total: 2,
+      limit: PAGE_SIZE,
+      offset: 0,
+    });
+    me.mockResolvedValue({ accountId: 'acc-1', role: 'owner', timezone: 'UTC' });
+    const shell = await SubmissionsRoute({
+      params: Promise.resolve({ id: FORM_ID }),
+      searchParams: Promise.resolve(searchParams),
+    });
+    const data = find(shell, (el) => el.type === Suspense)?.props?.children as AnyElement;
+    return (data.type as (p: unknown) => Promise<unknown>)(data.props);
+  }
+
+  const viewer = (t: unknown) =>
+    find(t, (el) => typeof el.props === 'object' && el.props !== null && 'items' in el.props) as
+      | ReactElement<{ items: Array<{ id: string; answers: unknown[] }>; initialId?: string }>
+      | undefined;
+
+  it('hands the panel every response on the page, with the full answer', async () => {
+    const v = viewer(await tree({}));
+    expect(v?.props.items.map((i) => i.id)).toEqual(['s0', 's1']);
+    expect(v?.props.items[0]!.answers).toEqual([
+      { key: 'story', label: 'Tell us', kind: 'text', text: 'A long answer.\nWith a second line.', long: true },
+    ]);
+    expect(v?.props.initialId).toBeUndefined();
+  });
+
+  it('opens the response named in ?response=', async () => {
+    expect(viewer(await tree({ response: 's1' }))?.props.initialId).toBe('s1');
+  });
+
+  it('marks every row with its response and gives it a keyboard way in', async () => {
+    const t = await tree({});
+    const rows: string[] = [];
+    const buttons: string[] = [];
+    const walk = (n: unknown) => {
+      if (Array.isArray(n)) return n.forEach(walk);
+      if (!isElement(n)) return;
+      const p = n.props as Record<string, unknown>;
+      if (n.type === 'tr' && typeof p['data-response-id'] === 'string') rows.push(p['data-response-id']);
+      if (n.type === 'button' && typeof p['data-open-response'] === 'string') buttons.push(p['data-open-response']);
+      walk(p.children);
+    };
+    walk(t);
+    expect(rows).toEqual(['s0', 's1']);
+    expect(buttons).toEqual(['s0', 's1']);
+  });
+});

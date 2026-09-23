@@ -1303,6 +1303,21 @@ export interface FormsMessages {
       na: string;
       error: string;
       retry: string;
+      /** The side panel that shows one response in full. */
+      viewResponse: string;
+      responseTitle: string;
+      prevResponse: string;
+      nextResponse: string;
+      closeResponse: string;
+      /** "{n} of {total}": where the open response sits in the current page. */
+      responsePosition: string;
+      answersTitle: string;
+      detailsTitle: string;
+      /** A step the respondent never reached (a partial response). */
+      noAnswer: string;
+      colStarted: string;
+      responseId: string;
+      utmTitle: string;
     };
     integrations: {
       title: string;
@@ -2954,6 +2969,18 @@ export const en: FormsMessages = {
       na: '',
       error: 'Couldn’t load submissions.',
       retry: 'Try again',
+      viewResponse: 'View response',
+      responseTitle: 'Response',
+      prevResponse: 'Previous response',
+      nextResponse: 'Next response',
+      closeResponse: 'Close',
+      responsePosition: '{n} of {total}',
+      answersTitle: 'Answers',
+      detailsTitle: 'Details',
+      noAnswer: 'No answer',
+      colStarted: 'Started',
+      responseId: 'Response ID',
+      utmTitle: 'Campaign (UTM)',
     },
     integrations: {
       title: 'Integrations',
@@ -4570,6 +4597,18 @@ export const es: FormsMessages = {
       na: '',
       error: 'No se pudieron cargar las respuestas.',
       retry: 'Reintentar',
+      viewResponse: 'Ver respuesta',
+      responseTitle: 'Respuesta',
+      prevResponse: 'Respuesta anterior',
+      nextResponse: 'Respuesta siguiente',
+      closeResponse: 'Cerrar',
+      responsePosition: '{n} de {total}',
+      answersTitle: 'Respuestas',
+      detailsTitle: 'Detalles',
+      noAnswer: 'Sin respuesta',
+      colStarted: 'Iniciada',
+      responseId: 'ID de respuesta',
+      utmTitle: 'Campaña (UTM)',
     },
     integrations: {
       title: 'Integraciones',
