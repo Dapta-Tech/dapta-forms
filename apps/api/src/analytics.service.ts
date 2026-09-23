@@ -3,10 +3,12 @@ import { localDayIndex, resolveTimeZone, utcOffsetSegments } from '@quill/shared
 import {
   isInputlessStep,
   resolveFormLayout,
+  summarizeFacets,
   summarizeSubmissions,
   summaryAnswer,
   summaryAnswerFields,
   type FormStep,
+  type SubmissionFacets,
   type SubmissionsSummary,
   type SummaryAnswer,
   type SummaryRow,
@@ -36,6 +38,7 @@ import {
   type CompletedSubmission,
   type DateRange,
   type DeleteSubmissionResult,
+  type SubmissionFilter,
   type SubmissionQuery,
   firstEventAt,
   type DayBucketing,
@@ -333,16 +336,25 @@ export class AnalyticsService {
 
   /**
    * The Summary tab: every answering step of `steps` summarized over the
-   * submissions matching the filter (the same status and date filter as the
-   * table, so a filtered summary describes the filtered rows).
+   * submissions matching the filter (the table's own filter object, so a
+   * filtered summary describes exactly the filtered rows).
    */
-  async summary(
-    formId: string,
-    steps: FormStep[],
-    q: Omit<SubmissionQuery, 'limit' | 'offset'>,
-  ): Promise<SubmissionsSummary> {
+  async summary(formId: string, steps: FormStep[], q: SubmissionFilter): Promise<SubmissionsSummary> {
     const rows = await submissionsForSummary(this.db, formId, q);
     return summarizeSubmissions(steps, rows.map(summaryRow));
+  }
+
+  /** The header filters' counts, over every response of the form. */
+  async facets(formId: string, steps: FormStep[]): Promise<SubmissionFacets> {
+    const rows = await submissionsForSummary(this.db, formId);
+    return summarizeFacets(
+      steps,
+      rows.map((r) => ({
+        data: (r.data ?? {}) as Record<string, unknown>,
+        completedAt: r.completedAt,
+        partialAt: r.partialAt,
+      })),
+    );
   }
 
   /**

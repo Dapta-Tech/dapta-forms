@@ -83,6 +83,7 @@ import {
   formCreateInputSchema,
   formFolderPatchSchema,
   workspaceTimezoneSchema,
+  type FormConfig,
 } from '@quill/types';
 import { ZodError } from 'zod';
 import { AdminService } from './admin.service';
@@ -96,7 +97,8 @@ import { UploadService } from './upload.service';
 import { unwrap } from './http';
 import type { ServerEnv } from '@quill/config/env';
 import { assertAdmin, assertCanManageTarget, assertNotSelf, assertOwner } from './permissions';
-import { parseBound, parseIntParam, parseKinds, parseOutboxStatuses, parseStatus } from './query-params';
+import { parseIntParam, parseKinds, parseOutboxStatuses } from './query-params';
+import { parseSort, parseSubmissionFilter, workspaceZone, type FilterQuery } from './submission-filter';
 import { DB, ENV } from './tokens';
 
 function parse<T>(schema: { parse: (v: unknown) => T }, body: unknown): T {
@@ -784,25 +786,27 @@ export class AdminCrudController {
     return unwrap(await this.uploads.submissionFile(p.accountId, submissionId, stepKey));
   }
 
+  /**
+   * A page of the form's submissions under the table's filter and sort (see
+   * `parseSubmissionFilter`): status, a `started_at` window in the workspace's
+   * zone, score bounds, and answer filters checked against this form's steps.
+   */
   @Get('forms/:id/submissions')
   async formSubmissions(
     @Req() req: ReqLike,
     @Param('id') id: string,
-    @Query('status') status?: string,
-    @Query('from') from?: string,
-    @Query('to') to?: string,
-    @Query('limit') limit?: string,
-    @Query('offset') offset?: string,
+    @Query() query: FilterQuery & { limit?: string; offset?: string },
   ) {
     const p = await this.auth.resolveHost(req);
     const f = await getFormById(this.db, p.accountId, id);
     if (!f) throw new NotFoundException({ error: 'NOT_FOUND', message: 'Not found.' });
+    const config = f.config as FormConfig;
+    const zone = await workspaceZone(this.db, p.accountId, (m) => this.log.warn(m));
     return this.analytics.submissionsPage(id, {
-      status: parseStatus(status),
-      from: parseBound(from, false),
-      to: parseBound(to, true),
-      limit: parseIntParam(limit),
-      offset: parseIntParam(offset),
+      ...parseSubmissionFilter(query, config, zone),
+      sort: parseSort(query.sort, config),
+      limit: parseIntParam(typeof query.limit === 'string' ? query.limit : undefined),
+      offset: parseIntParam(typeof query.offset === 'string' ? query.offset : undefined),
     });
   }
 
