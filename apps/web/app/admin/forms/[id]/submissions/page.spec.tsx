@@ -159,17 +159,21 @@ async function visit(opts: {
   offset: number;
   total: number;
   items?: number;
+  /** `?size=` as typed in the address bar. */
+  size?: string;
 }): Promise<{
+  tree?: unknown;
   redirectedTo: string | null;
   text: string;
   queries: Query[];
   formLookups: unknown[];
 }> {
-  const items = opts.items ?? Math.max(0, Math.min(PAGE_SIZE, opts.total - opts.offset));
+  const limit = [25, 50, 100].includes(Number(opts.size)) ? Number(opts.size) : PAGE_SIZE;
+  const items = opts.items ?? Math.max(0, Math.min(limit, opts.total - opts.offset));
   const page: SubmissionsPageData = {
     items: Array.from({ length: items }, (_, i) => submission(`s${opts.offset + i}`)),
     total: opts.total,
-    limit: PAGE_SIZE,
+    limit,
     offset: opts.offset,
   } as unknown as SubmissionsPageData;
 
@@ -181,6 +185,7 @@ async function visit(opts: {
     params: Promise.resolve({ id: FORM_ID }),
     searchParams: Promise.resolve({
       ...(opts.status ? { status: opts.status } : {}),
+      ...(opts.size ? { size: opts.size } : {}),
       offset: String(opts.offset),
     }),
   });
@@ -192,6 +197,7 @@ async function visit(opts: {
   try {
     const tree = await (data.type as (p: unknown) => Promise<unknown>)(data.props);
     return {
+      tree,
       redirectedTo: null,
       text: textOf(tree),
       queries: queriesSoFar(),
@@ -227,8 +233,10 @@ async function reenter(url: string, total: number) {
   if (status !== null && status !== 'completed' && status !== 'partial') {
     throw new Error(`redirect wrote an unusable status: ${status}`);
   }
+  const size = target.searchParams.get('size');
   return visit({
     ...(status ? { status } : {}),
+    ...(size ? { size } : {}),
     offset: Number(target.searchParams.get('offset') ?? 0),
     total,
   });
@@ -324,6 +332,54 @@ describe('submissions pagination — offset past the last row', () => {
     expect(text).toContain('No submissions yet');
     // Still the filtered question — the empty state is not a fallback to `all`.
     expect(queries).toEqual([query({ status: 'completed', offset: 25 })]);
+  });
+});
+
+/** Every element of the tree that satisfies `match`, depth-first, props included. */
+function findAll(node: unknown, match: (el: AnyElement) => boolean, out: AnyElement[] = []): AnyElement[] {
+  if (Array.isArray(node)) {
+    for (const child of node) findAll(child, match, out);
+    return out;
+  }
+  if (!isElement(node)) return out;
+  if (match(node)) out.push(node);
+  const p = node.props as { children?: unknown; pager?: unknown };
+  findAll(p.children, match, out);
+  findAll(p.pager, match, out);
+  return out;
+}
+
+describe('submissions page size (`?size=`)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  const pagerHrefs = (tree: unknown) =>
+    findAll(tree, (el) => typeof (el.props as { href?: unknown }).href === 'string' && 'className' in el.props).map(
+      (el) => (el.props as { href: string }).href,
+    );
+
+  it('asks the API for the chosen size and keeps it on every page link', async () => {
+    const { tree, text, queries } = await visit({ size: '50', offset: 50, total: 160 });
+    expect(queries).toEqual([query({ limit: 50, offset: 50 })]);
+    expect(text).toContain('51–100 of 160');
+    expect(pagerHrefs(tree)).toEqual(['?size=50&offset=0', '?size=50&offset=100']);
+    const [select] = findAll(tree, (el) => (el.props as { label?: unknown }).label === 'Rows per page');
+    expect((select?.props as { value?: unknown } | undefined)?.value).toBe(50);
+  });
+
+  it('reads an unknown size as the default, and leaves the default out of the links', async () => {
+    const { tree, queries } = await visit({ size: '37', offset: 25, total: 80 });
+    expect(queries).toEqual([query({ offset: 25 })]);
+    expect(pagerHrefs(tree)).toEqual(['?offset=0', '?offset=50']);
+  });
+
+  it('keeps the size across the clamp past the last row', async () => {
+    const { redirectedTo } = await visit({ size: '100', offset: 300, total: 150, items: 0 });
+    expect(redirectedTo).toBe(`/admin/forms/${FORM_ID}/submissions?size=100&offset=100`);
+    const back = await reenter(redirectedTo!, 150);
+    expect(back.redirectedTo).toBeNull();
+    expect(back.text).toContain('101–150 of 150');
   });
 });
 
