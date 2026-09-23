@@ -497,9 +497,43 @@ describe('delete submission (controller HTTP semantics)', () => {
   });
 });
 
+describe('bulk delete (controller HTTP semantics)', () => {
+  function ctrlFor(actAccount: string) {
+    const auth = {
+      resolveHost: async () => ({ accountId: actAccount, memberId: 'm', role: 'owner' as const }),
+    } as unknown as AuthService;
+    return new AnalyticsController(db, auth, svc);
+  }
+
+  it('deletes the owned selection and answers with the count', async () => {
+    const two = (await querySubmissions(db, formId, { limit: 2 })).items.map((s) => s.id);
+    await expect(ctrlFor(accountId).deleteSubmissions({} as never, formId, { ids: two })).resolves.toEqual({
+      deleted: 2,
+    });
+    expect((await querySubmissions(db, formId, {})).total).toBe(3);
+  });
+
+  it('404s a form of another account and leaves its rows alone', async () => {
+    const ids = (await querySubmissions(db, formId, {})).items.map((s) => s.id);
+    await expect(
+      ctrlFor('attacker-account').deleteSubmissions({} as never, formId, { ids }),
+    ).rejects.toMatchObject({ status: 404 });
+    expect((await querySubmissions(db, formId, {})).total).toBe(5);
+  });
+
+  it('400s an empty, oversized or malformed id list before touching anything', async () => {
+    const ctrl = ctrlFor(accountId);
+    const tooMany = Array.from({ length: 101 }, (_, i) => `id-${i}`);
+    for (const body of [{}, { ids: [] }, { ids: tooMany }, { ids: ['ok', 7] }, { ids: 'a,b' }, null]) {
+      await expect(ctrl.deleteSubmissions({} as never, formId, body)).rejects.toMatchObject({ status: 400 });
+    }
+    expect((await querySubmissions(db, formId, {})).total).toBe(5);
+  });
+});
+
 describe('CSV export (large sets, un-paginated)', () => {
   /** Drive the real controller with a stub auth + capture-only response. */
-  async function runExport(): Promise<string[]> {
+  async function runExport(ids?: string): Promise<string[]> {
     const auth = {
       resolveHost: async () => ({ accountId, memberId: 'test-member', role: 'owner' as const }),
     } as unknown as AuthService;
@@ -512,7 +546,7 @@ describe('CSV export (large sets, un-paginated)', () => {
       },
       end: () => {},
     };
-    await ctrl.exportCsv({ headers: {} }, res, formId, undefined, undefined, undefined);
+    await ctrl.exportCsv({ headers: {} }, res, formId, undefined, undefined, undefined, ids);
     return chunks.join('').trimEnd().split('\r\n');
   }
 
@@ -536,6 +570,22 @@ describe('CSV export (large sets, un-paginated)', () => {
       '\uFEFFWhat best describes you?,How big is your team?,What company do you work at?,Where should we send the results?,Submitted at,Status,Score,Submission id',
     );
     expect(lines.length - 1).toBe(250); // header + one row per submission
+  });
+
+  it('exports only the selected rows with `?ids=`, same header', async () => {
+    const all = await runExport();
+    const picked = (await querySubmissions(db, formId, { limit: 2 })).items.map((s) => s.id);
+    const lines = await runExport(`${picked[0]}, ${picked[1]},,${picked[0]}`);
+    expect(lines[0]).toBe(all[0]);
+    expect(lines).toHaveLength(3);
+    for (const id of picked) expect(lines.some((l) => l.endsWith(`,${id}`))).toBe(true);
+  });
+
+  it('400s an empty or oversized `?ids=` before streaming anything', async () => {
+    const tooMany = Array.from({ length: 101 }, (_, i) => `id-${i}`).join(',');
+    for (const ids of ['', ' , ', tooMany]) {
+      await expect(runExport(ids)).rejects.toMatchObject({ status: 400 });
+    }
   });
 
   it('neutralizes a formula payload end-to-end in the exported CSV', async () => {

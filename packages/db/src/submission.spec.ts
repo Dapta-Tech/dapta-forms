@@ -11,6 +11,7 @@ import { sql, type SQL } from 'drizzle-orm';
 import { createDb, type Db } from './client';
 import { migrate } from './migrate';
 import { upsertSubmission, listSubmissions } from './forms';
+import { allSubmissionsForExport, deleteSubmissionsForAccount, MAX_BULK_SUBMISSIONS } from './analytics';
 
 let db: Db;
 let accountId: string;
@@ -172,5 +173,94 @@ describe('submission upsert', () => {
       threw = true;
     }
     expect(threw).toBe(true);
+  });
+});
+
+/**
+ * The table's bulk tools: delete a selection, export a selection. Both are
+ * `IN (...)` lists of bound ids, and the delete joins the form to the account
+ * the same way the single delete does, so they run here, on both dialects.
+ */
+describe('bulk delete and export by ids', () => {
+  /** A second tenant with its own form and one submission, to aim forged ids at. */
+  async function otherTenant() {
+    const acc = randomUUID();
+    const form = randomUUID();
+    const now = Date.now();
+    await db.run(
+      sql`INSERT INTO account (id, code, name, created_at) VALUES (${acc}, ${'o' + acc.slice(0, 5)}, ${'Other'}, ${now})`,
+    );
+    await db.run(
+      sql`INSERT INTO form (id, account_id, name, slug, config, created_at, updated_at)
+          VALUES (${form}, ${acc}, ${'G'}, ${'g'}, ${'{"version":1,"steps":[]}'}, ${now}, ${now})`,
+    );
+    const sub = await upsertSubmission(db, { formId: form, sessionId: 'foreign', data: {}, score: 0 });
+    return {
+      accountId: acc,
+      formId: form,
+      submissionId: sub.id,
+      cleanup: async () => {
+        await db.run(sql`DELETE FROM submission WHERE form_id = ${form}`);
+        await db.run(sql`DELETE FROM form WHERE id = ${form}`);
+        await db.run(sql`DELETE FROM account WHERE id = ${acc}`);
+      },
+    };
+  }
+
+  async function seedSessions(n: number): Promise<string[]> {
+    const ids: string[] = [];
+    for (let i = 0; i < n; i++) {
+      ids.push((await upsertSubmission(db, { formId, sessionId: `bulk-${i}`, data: {}, score: 0 })).id);
+    }
+    return ids;
+  }
+
+  it('deletes only the named rows of the caller and reports how many', async () => {
+    const [a, b, c] = await seedSessions(3);
+    expect(await deleteSubmissionsForAccount(db, accountId, formId, [a!, b!, a!])).toEqual({ deleted: 2 });
+    expect((await listSubmissions(db, formId)).map((r) => r.id)).toEqual([c]);
+    // A repeat names rows that are gone: nothing to do, nothing thrown.
+    expect(await deleteSubmissionsForAccount(db, accountId, formId, [a!, b!])).toEqual({ deleted: 0 });
+  });
+
+  it('never touches another account, even mixed into an owned selection', async () => {
+    const other = await otherTenant();
+    try {
+      const [mine] = await seedSessions(1);
+      // Forged id alongside a real one: the real one goes, the foreign one stays.
+      expect(await deleteSubmissionsForAccount(db, accountId, formId, [mine!, other.submissionId])).toEqual({
+        deleted: 1,
+      });
+      // Aimed at the other tenant's own form, from this account: still nothing.
+      expect(
+        await deleteSubmissionsForAccount(db, accountId, other.formId, [other.submissionId]),
+      ).toEqual({ deleted: 0 });
+      expect(await listSubmissions(db, other.formId)).toHaveLength(1);
+    } finally {
+      await other.cleanup();
+    }
+  });
+
+  it('refuses more than the limit and deletes nothing', async () => {
+    const [kept] = await seedSessions(1);
+    const tooMany = [kept!, ...Array.from({ length: MAX_BULK_SUBMISSIONS }, () => randomUUID())];
+    await expect(deleteSubmissionsForAccount(db, accountId, formId, tooMany)).rejects.toThrow(RangeError);
+    expect(await listSubmissions(db, formId)).toHaveLength(1);
+    // Exactly the limit is allowed.
+    expect(await deleteSubmissionsForAccount(db, accountId, formId, tooMany.slice(0, MAX_BULK_SUBMISSIONS))).toEqual({
+      deleted: 1,
+    });
+  });
+
+  it('exports only the named rows of this form, newest first', async () => {
+    const other = await otherTenant();
+    try {
+      const [a, , c] = await seedSessions(3);
+      const rows = await allSubmissionsForExport(db, formId, { ids: [a!, c!, other.submissionId] });
+      expect(rows.map((r) => r.id).sort()).toEqual([a!, c!].sort());
+      expect(await allSubmissionsForExport(db, formId, { ids: [] })).toEqual([]);
+    } finally {
+      await other.cleanup();
+    }
   });
 });
