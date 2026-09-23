@@ -27,12 +27,14 @@ import type { SubmissionsPage as SubmissionsPageData } from '@quill/types';
 const getForm = vi.fn();
 const listSubmissions = vi.fn();
 const me = vi.fn();
+const getSubmissionFacets = vi.fn(async () => ({ total: 0, completed: 0, partial: 0, choices: {} }));
 
 vi.mock('@/lib/admin-api', () => ({
   adminApi: {
     getForm: (...a: unknown[]) => getForm(...a),
     listSubmissions: (...a: unknown[]) => listSubmissions(...a),
     me: (...a: unknown[]) => me(...a),
+    getSubmissionFacets: (...a: unknown[]) => getSubmissionFacets(...(a as [])),
   },
   isAdminRole: (role: string) => role === 'owner' || role === 'admin',
   // Declared in the factory: `vi.mock` is hoisted above every top-level binding,
@@ -115,8 +117,8 @@ const submission = (id: string) => ({
   completedAt: '2024-05-01T10:05:00.000Z',
 });
 
-/** One submissions query as the page actually issued it. */
-type Query = { formId: string; status: string; limit: number; offset: number };
+/** One submissions query as the page actually issued it. No status is every response. */
+type Query = { formId: string; status: string | undefined; limit: number; offset: number };
 
 /**
  * Every submissions query issued so far in the current test, in order.
@@ -140,7 +142,7 @@ const formLookupsSoFar = (): unknown[] => getForm.mock.calls.map(([id]) => id);
 
 const query = (over: Partial<Query> = {}): Query => ({
   formId: FORM_ID,
-  status: 'all',
+  status: undefined,
   limit: PAGE_SIZE,
   offset: 0,
   ...over,
@@ -320,8 +322,10 @@ describe('submissions pagination — offset past the last row', () => {
     expect(queries).toEqual([query({ offset: 0 })]);
   });
 
-  it('still shows the empty state when the filter matches nothing', async () => {
-    // total 0 has no last page to clamp to; the empty state owns this case.
+  it('keeps the table, with a way out, when the filter matches nothing', async () => {
+    // total 0 has no last page to clamp to. With a filter on it is the filter
+    // that matched nothing: the headings stay so it can be changed, and the
+    // one row says so.
     const { redirectedTo, text, queries } = await visit({
       status: 'completed',
       offset: 25,
@@ -329,9 +333,16 @@ describe('submissions pagination — offset past the last row', () => {
     });
 
     expect(redirectedTo).toBeNull();
-    expect(text).toContain('No submissions yet');
-    // Still the filtered question — the empty state is not a fallback to `all`.
+    expect(text).toContain('No responses match these filters');
+    expect(text).not.toContain('No submissions yet');
+    // Still the filtered question: the empty state is not a fallback to every response.
     expect(queries).toEqual([query({ status: 'completed', offset: 25 })]);
+  });
+
+  it('shows the empty state for a form with no responses at all', async () => {
+    const { redirectedTo, text } = await visit({ offset: 0, total: 0 });
+    expect(redirectedTo).toBeNull();
+    expect(text).toContain('No submissions yet');
   });
 });
 
@@ -611,5 +622,104 @@ describe('response panel', () => {
     walk(t);
     expect(rows).toEqual(['s0', 's1']);
     expect(buttons).toEqual(['s0', 's1']);
+  });
+});
+
+/**
+ * The header filters: read from the URL, sent to the API as one filter, and
+ * carried by everything that links out of the table (the CSV, the pager, the
+ * Summary tab), so each describes the same responses.
+ */
+describe('header filters', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  const STEPS = [
+    {
+      key: 'kind',
+      type: 'dropdown',
+      question: 'Company type',
+      options: [
+        { value: 'llc', label: 'Multi-member LLC' },
+        { value: 'corp', label: 'Corporation' },
+      ],
+    },
+    { key: 'notes', type: 'text', question: 'Notes' },
+  ];
+
+  async function renderShell(sp: Record<string, string | string[]>, total = 60) {
+    getForm.mockResolvedValue({ id: FORM_ID, config: { version: 1, steps: STEPS } });
+    getSubmissionFacets.mockResolvedValue({
+      total: 90,
+      completed: 70,
+      partial: 20,
+      choices: { kind: [{ value: 'llc', label: 'Multi-member LLC', count: 40, percent: 44 }] },
+    } as never);
+    listSubmissions.mockResolvedValue({
+      items: Array.from({ length: Math.min(PAGE_SIZE, total) }, (_, i) => submission(`s${i}`)),
+      total,
+      limit: PAGE_SIZE,
+      offset: 0,
+    });
+    me.mockResolvedValue({ accountId: 'acc-1', role: 'owner', timezone: 'America/Bogota' });
+    const shell = await SubmissionsRoute({ params: Promise.resolve({ id: FORM_ID }), searchParams: Promise.resolve(sp) });
+    const boundary = find(shell, (el) => el.type === Suspense);
+    const child = boundary?.props?.children as AnyElement;
+    const tree = await (child.type as (p: unknown) => Promise<unknown>)(child.props);
+    return { shell, boundary: boundary!, tree };
+  }
+
+  it('asks the API for the filtered rows, with answer keys it can check against the form', async () => {
+    await renderShell({ 'f.kind': ['llc', 'corp'], 'f.notes': 'x', status: 'completed', sort: 'oldest' });
+    expect(listSubmissions).toHaveBeenCalledWith(FORM_ID, {
+      status: 'completed',
+      from: undefined,
+      to: undefined,
+      scoreMin: undefined,
+      scoreMax: undefined,
+      // A text question is not a filter: it never reaches the API.
+      answers: JSON.stringify({ kind: ['llc', 'corp'] }),
+      sort: 'oldest',
+      limit: PAGE_SIZE,
+      offset: 0,
+    });
+  });
+
+  it('exports exactly what is shown, and keeps the filter on the pager and the Summary tab', async () => {
+    const { shell, tree } = await renderShell({ 'f.kind': 'llc', sort: 'oldest', offset: '0' });
+    const exportLink = find(shell, (el) => typeof (el.props as { href?: string }).href === 'string' && String((el.props as { href: string }).href).includes('/export'));
+    const href = new URL((exportLink!.props as { href: string }).href, 'https://x.test');
+    expect(href.searchParams.get('answers')).toBe(JSON.stringify({ kind: ['llc'] }));
+    expect(href.searchParams.get('sort')).toBe('oldest');
+
+    const tabs = find(shell, (el) => (el.props as { active?: string }).active === 'responses');
+    expect((tabs!.props as { query: string }).query).toBe('?f.kind=llc&sort=oldest');
+
+    const viewer = find(tree, (el) => (el.props as { pager?: unknown }).pager !== undefined);
+    const next = find((viewer!.props as { pager: unknown }).pager, (el) => typeof (el.props as { href?: string }).href === 'string');
+    expect((next!.props as { href: string }).href).toBe('?f.kind=llc&sort=oldest&offset=25');
+  });
+
+  it('keys the table by the filter, so a new filter is a new table', async () => {
+    const a = (await renderShell({ 'f.kind': 'llc' })).boundary.key;
+    const b = (await renderShell({ 'f.kind': 'corp' })).boundary.key;
+    expect(a).not.toBe(b);
+  });
+
+  it('hands the column menus the unfiltered counts and the filter they edit', async () => {
+    const { shell } = await renderShell({ 'f.kind': 'llc', status: 'partial' });
+    const host = find(shell, (el) => Array.isArray((el.props as { columns?: unknown }).columns));
+    const props = host!.props as {
+      columns: { id: string; kind: string; options?: unknown[] }[];
+      filter: { statuses: string[]; answers: Record<string, string[]> };
+      statusCounts: unknown;
+      total: number;
+    };
+    expect(props.columns.map((c) => c.id)).toEqual(['date', 'status', 'score', 'q:kind']);
+    expect(props.columns[3]!.options).toHaveLength(1);
+    expect(props.filter).toMatchObject({ statuses: ['partial'], answers: { kind: ['llc'] } });
+    expect(props.statusCounts).toEqual({ completed: 70, partial: 20 });
+    expect(props.total).toBe(90);
   });
 });

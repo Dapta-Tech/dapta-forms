@@ -118,6 +118,10 @@ export function useDialogA11y(
     const onKey = (e: KeyboardEvent) => {
       if (inNestedDialog(e.target, panelRef.current)) return;
       if (e.key === 'Escape') {
+        // Consumed, for a surface underneath that also closes on Esc (the
+        // full-screen table sheet): by the time its listener runs, this
+        // dialog may already be gone from the page, so it cannot look for it.
+        e.preventDefault();
         onCloseRef.current();
         return;
       }

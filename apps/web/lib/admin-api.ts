@@ -15,7 +15,7 @@ import type {
   SubmissionsPage,
   SubmissionView,
 } from '@quill/types';
-import type { SubmissionsSummary, SummaryAnswer } from '@quill/engine';
+import type { SubmissionFacets, SubmissionsSummary, SummaryAnswer } from '@quill/engine';
 import { serverApiUrl } from './api-url';
 import { getSession, clearSession, authProvider, getWorkspace } from './auth-session';
 
@@ -342,10 +342,21 @@ export interface PendingInvitation {
 
 export type { AnalyticsResponse, SubmissionsPage } from '@quill/types';
 
+/**
+ * The submissions filter the API reads (see `submissions/filters.ts`, which
+ * builds it from the page's URL): `from`/`to` as epoch ms or as `YYYY-MM-DD`
+ * days in the workspace's zone, and the answer filters as one JSON param.
+ */
 export interface SubmissionsQuery {
-  status?: 'all' | 'completed' | 'partial';
-  from?: number;
-  to?: number;
+  /** `completed` or `partial`; anything else is every response. */
+  status?: string;
+  from?: number | string;
+  to?: number | string;
+  scoreMin?: string;
+  scoreMax?: string;
+  /** `{"questionKey": ["value", …]}` as JSON. */
+  answers?: string;
+  sort?: string;
   limit?: number;
   offset?: number;
 }
@@ -679,8 +690,10 @@ export const adminApi = {
   getSubmission: (formId: string, submissionId: string) =>
     req<SubmissionView>('GET', `/v1/forms/${formId}/submissions/${encodeURIComponent(submissionId)}`),
   /** The Summary tab: the responses matching the filter, question by question. */
-  getSummary: (id: string, q: Omit<SubmissionsQuery, 'limit' | 'offset'> = {}) =>
+  getSummary: (id: string, q: Omit<SubmissionsQuery, 'limit' | 'offset' | 'sort'> = {}) =>
     req<SubmissionsSummary>('GET', `/v1/forms/${id}/summary${qs({ ...q })}`),
+  /** What the header filters offer, counted over every response of the form. */
+  getSubmissionFacets: (id: string) => req<SubmissionFacets>('GET', `/v1/forms/${id}/submissions-facets`),
   /** A page of one text question's answers containing `q` (all of them when blank). */
   searchSummaryAnswers: (
     id: string,

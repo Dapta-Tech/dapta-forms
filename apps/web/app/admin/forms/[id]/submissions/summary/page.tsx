@@ -1,5 +1,7 @@
 import { Suspense } from 'react';
 import { notFound } from 'next/navigation';
+import type { FormConfig } from '@quill/types';
+import { isInputlessStep, type SubmissionFacets } from '@quill/engine';
 import { getMessages, type FormsMessages, type Locale } from '@quill/shared';
 import { adminApi, ApiError } from '@/lib/admin-api';
 import { getLocale } from '@/lib/locale';
@@ -17,21 +19,39 @@ import {
 import { SummaryResponsePanel } from './summary-response-panel';
 import { TextAnswers } from './text-answers';
 import { toSummaryHit } from './summary-hit';
+import {
+  apiFilterQuery,
+  filterParams,
+  isFiltered,
+  parseViewFilter,
+  queryString,
+  withFilter,
+  type ViewFilter,
+} from '../filters';
+import { filterColumns, filterScope } from '../filter-columns';
+import { ClearFiltersButton, FilterBar, FilterHost } from '../column-filter';
 
 export const dynamic = 'force-dynamic';
+
+/** Contact questions: their card is the count and a search, never a list of people. */
+const CONTACT_TYPES = new Set(['name', 'email', 'phone']);
 
 /**
  * Submissions, read question by question: one card per answering step, in
  * form order. Typeform calls it Summary; it is what owners were rebuilding in
- * a spreadsheet from the CSV. No filter yet: it describes every response, and
- * the API already takes the table's filter for when the header filters land.
+ * a spreadsheet from the CSV. It describes the responses the table's header
+ * filters leave (they ride along in the URL between the two views), and a bar
+ * of a choice question opens the table filtered by that option.
  */
 export default async function SubmissionsSummaryPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const { id } = await params;
+  const sp = await searchParams;
   const locale = await getLocale();
   const m = getMessages(locale).admin;
   // The form is checked before the Suspense below: a form from another
@@ -39,12 +59,30 @@ export default async function SubmissionsSummaryPage({
   // tabs and a skeleton first. The HTTP status is still 200, as on every admin
   // page: `admin/loading.tsx` wraps the whole admin in a Suspense, so the
   // response has started before any page runs.
+  let form: Awaited<ReturnType<typeof adminApi.getForm>>;
   try {
-    await adminApi.getForm(id);
+    form = await adminApi.getForm(id);
   } catch (e) {
     if (e instanceof ApiError && e.status === 404) notFound();
     throw e;
   }
+  const config = form.config as FormConfig;
+  const steps = (config.steps ?? []).filter((st) => !isInputlessStep(st));
+  const scoring = config.scoring?.enabled !== false;
+  const filter = parseViewFilter(sp, filterScope(steps, scoring));
+  const hasContact = steps.some((st) => CONTACT_TYPES.has(st.type));
+  // Labels only: the Summary has no headings to open a menu from, just the
+  // chips that say what it is filtered by.
+  const columns = filterColumns({
+    steps,
+    scoring,
+    facets: null,
+    labels: {
+      date: hasContact ? m.submissions.colResponse : m.submissions.colSubmitted,
+      status: m.submissions.colStatus,
+      score: m.submissions.colScore,
+    },
+  });
 
   return (
     <div className="mx-auto max-w-[1100px] px-6 py-8">
@@ -54,11 +92,27 @@ export default async function SubmissionsSummaryPage({
           <h1 className="text-3xl font-semibold tracking-tight">{m.submissions.title}</h1>
           <p className="mt-1 text-muted-foreground">{m.submissions.subtitle}</p>
         </div>
-        <SubmissionsViewTabs formId={id} active="summary" labels={m.submissions.summary} />
+        <SubmissionsViewTabs
+          formId={id}
+          active="summary"
+          labels={m.submissions.summary}
+          query={queryString(filterParams(filter))}
+        />
       </div>
-      <Suspense fallback={<SummarySkeleton />}>
-        <SummaryData id={id} locale={locale} m={m} />
-      </Suspense>
+      <FilterHost
+        columns={columns}
+        filter={filter}
+        statusCounts={{ completed: 0, partial: 0 }}
+        total={0}
+        labels={{ ...m.submissions.filters, completed: m.submissions.badgeCompleted, partial: m.submissions.badgePartial }}
+        locale={locale}
+      >
+        {/* Keyed by the filter: a text card's answers and search are its own
+            state, and must start over on another set of responses. */}
+        <Suspense key={filterParams(filter).toString()} fallback={<SummarySkeleton />}>
+          <SummaryData id={id} filter={filter} locale={locale} m={m} />
+        </Suspense>
+      </FilterHost>
     </div>
   );
 }
@@ -103,32 +157,63 @@ function panelLabels(s: FormsMessages['admin']['submissions']): PanelLabels {
 
 async function SummaryData({
   id,
+  filter,
   locale,
   m,
 }: {
   id: string;
+  filter: ViewFilter;
   locale: Locale;
   m: FormsMessages['admin'];
 }) {
+  const filtered = isFiltered(filter);
+  const me = await adminApi.me();
+  const timeZone = me.timezone ?? 'UTC';
+  // The table's filter, minus its order: the Summary reads newest first.
+  const { sort: _sort, ...apiQuery } = apiFilterQuery(filter, timeZone);
   let summary: Awaited<ReturnType<typeof adminApi.getSummary>>;
-  let me: Awaited<ReturnType<typeof adminApi.me>>;
+  let facets: SubmissionFacets | null = null;
   try {
-    [summary, me] = await Promise.all([adminApi.getSummary(id), adminApi.me()]);
+    // Filtered, it also needs every response's count, for "12 of 30".
+    [summary, facets] = await Promise.all([
+      adminApi.getSummary(id, apiQuery),
+      filtered ? adminApi.getSubmissionFacets(id) : Promise.resolve(null),
+    ]);
   } catch (e) {
     if (e instanceof ApiError && e.status === 404) notFound();
     throw e;
   }
   const s = m.submissions;
-  const timeZone = me.timezone ?? 'UTC';
+  const bar = <FilterBar shown={summary.total} total={facets?.total ?? summary.total} sorted={false} />;
 
   if (summary.total === 0) {
-    return (
+    return filtered ? (
+      <div className="flex flex-col gap-4">
+        {bar}
+        <div
+          className="rounded-xl border border-dashed border-border bg-card/40 p-12 text-center"
+          data-testid="filter-empty"
+        >
+          <p className="text-lg font-medium">{s.filters.noMatchesTitle}</p>
+          <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">{s.filters.noMatchesBody}</p>
+          <div className="mt-4">
+            <ClearFiltersButton />
+          </div>
+        </div>
+      </div>
+    ) : (
       <div className="rounded-xl border border-dashed border-border bg-card/40 p-12 text-center">
         <p className="text-lg font-medium">{s.emptyTitle}</p>
         <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">{s.emptyBody}</p>
       </div>
     );
   }
+
+  /** The table, filtered as now plus this one option of this question. */
+  const optionHref = (key: string) => (value: string) =>
+    `/admin/forms/${id}/submissions${queryString(
+      withFilter('', { ...filter, answers: { ...filter.answers, [key]: [value] } }),
+    )}`;
 
   const cardLabels: SummaryCardLabels = {
     answered: s.answeredCount,
@@ -138,6 +223,7 @@ async function SummaryData({
     filesUploaded: s.summary.filesUploaded,
     meetingsBooked: s.summary.meetingsBooked,
     noAnswers: s.summary.noAnswers,
+    showResponses: s.filters.showResponses,
   };
   const fileLabels = {
     download: s.download,
@@ -153,10 +239,11 @@ async function SummaryData({
   return (
     <SummaryResponsePanel formId={id} labels={panelLabels(s)} fileLabels={fileLabels}>
       <div className="flex flex-col gap-4" data-testid="summary">
+        {bar}
         {summary.questions.map((q, i) => (
           <QuestionCard key={q.key} question={q} index={i + 1} labels={cardLabels}>
             {q.kind === 'choice' ? (
-              <ChoiceBody question={q} labels={cardLabels} />
+              <ChoiceBody question={q} labels={cardLabels} hrefFor={optionHref(q.key)} />
             ) : q.kind === 'scale' ? (
               <ScaleBody question={q} labels={cardLabels} locale={locale} />
             ) : q.kind === 'count' ? (
@@ -167,6 +254,8 @@ async function SummaryData({
                 stepKey={q.key}
                 answered={q.answered}
                 recent={q.recent.map((a) => toSummaryHit(a, { locale, timeZone }))}
+                filter={apiQuery}
+                compact={CONTACT_TYPES.has(q.type)}
                 labels={s.summary}
               />
             )}

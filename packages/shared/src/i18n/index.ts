@@ -1262,13 +1262,10 @@ export interface FormsMessages {
     submissions: {
       title: string;
       subtitle: string;
-      statusAll: string;
       /** The shared workspace zone, editable from the table by admins. */
       timezoneLabel: string;
       timezoneHint: string;
       timezoneReadOnly: string;
-      statusCompleted: string;
-      statusPartial: string;
       badgeCompleted: string;
       badgePartial: string;
       colSubmitted: string;
@@ -1378,6 +1375,52 @@ export interface FormsMessages {
       bulkDeleteFailed: string;
       /** Tooltip on a question column's resize handle. */
       resizeColumn: string;
+      /** The filters and sort in the table's column headings, and the chips above it. */
+      filters: {
+        /** The funnel button's name: "Filter by {column}". */
+        filterColumn: string;
+        /** The same with a filter on: "Filter by {column}, {n} active". */
+        filterColumnActive: string;
+        /** Search box on top of a long option list. */
+        searchOptions: string;
+        noOptions: string;
+        /** Removes this column's filter (and sort). */
+        clear: string;
+        clearAll: string;
+        close: string;
+        sortTitle: string;
+        sortNewest: string;
+        sortOldest: string;
+        sortScoreDesc: string;
+        sortScoreAsc: string;
+        /** The date window's section in the menu. */
+        rangeTitle: string;
+        rangeToday: string;
+        range7d: string;
+        range30d: string;
+        rangeCustom: string;
+        rangeFrom: string;
+        rangeTo: string;
+        scoreRange: string;
+        scoreMin: string;
+        scoreMax: string;
+        /** "{n} of {total} responses": how many the filters leave. */
+        showing: string;
+        /** The chip list, for screen readers. */
+        chipsLabel: string;
+        /** "Remove filter: {filter}" on a chip's x. */
+        removeChip: string;
+        /** Chip values. `{from}–{to}` is a range. */
+        chipBetween: string;
+        chipAtLeast: string;
+        chipAtMost: string;
+        chipFrom: string;
+        chipUntil: string;
+        noMatchesTitle: string;
+        noMatchesBody: string;
+        /** Title on a Summary bar: "See the responses that chose {option}". */
+        showResponses: string;
+      };
     };
     integrations: {
       title: string;
@@ -2995,12 +3038,9 @@ export const en: FormsMessages = {
     submissions: {
       title: 'Submissions',
       subtitle: 'Every response to this form.',
-      statusAll: 'All',
       timezoneLabel: 'Workspace timezone',
       timezoneHint: 'Dates below are read in this zone. It is shared by the whole workspace.',
       timezoneReadOnly: 'Only an admin can change it.',
-      statusCompleted: 'Completed',
-      statusPartial: 'Partial',
       badgeCompleted: 'Completed',
       badgePartial: 'Partial',
       colSubmitted: 'Submitted',
@@ -3081,6 +3121,41 @@ export const en: FormsMessages = {
       bulkDeleteBody: 'This cannot be undone.',
       bulkDeleteFailed: 'Could not delete. Try again.',
       resizeColumn: 'Drag to resize. Double-click to reset.',
+      filters: {
+        filterColumn: 'Filter by {column}',
+        filterColumnActive: 'Filter by {column}, {n} active',
+        searchOptions: 'Search options',
+        noOptions: 'No option matches.',
+        clear: 'Clear',
+        clearAll: 'Clear all',
+        close: 'Close',
+        sortTitle: 'Sort',
+        sortNewest: 'Newest first',
+        sortOldest: 'Oldest first',
+        sortScoreDesc: 'Highest first',
+        sortScoreAsc: 'Lowest first',
+        rangeTitle: 'Date',
+        rangeToday: 'Today',
+        range7d: 'Last 7 days',
+        range30d: 'Last 30 days',
+        rangeCustom: 'Custom range',
+        rangeFrom: 'From',
+        rangeTo: 'To',
+        scoreRange: 'Score range',
+        scoreMin: 'Min',
+        scoreMax: 'Max',
+        showing: '{n} of {total} responses',
+        chipsLabel: 'Active filters',
+        removeChip: 'Remove filter: {filter}',
+        chipBetween: '{from}–{to}',
+        chipAtLeast: '{min} or more',
+        chipAtMost: '{max} or less',
+        chipFrom: 'From {from}',
+        chipUntil: 'Until {to}',
+        noMatchesTitle: 'No responses match these filters',
+        noMatchesBody: 'Remove a filter, or clear them all, to see more.',
+        showResponses: 'See the responses that chose {option}',
+      },
     },
     integrations: {
       title: 'Integrations',
@@ -4663,12 +4738,9 @@ export const es: FormsMessages = {
     submissions: {
       title: 'Respuestas',
       subtitle: 'Todas las respuestas a este formulario.',
-      statusAll: 'Todas',
       timezoneLabel: 'Zona horaria del workspace',
       timezoneHint: 'Las fechas de abajo se leen en esta zona. La comparte todo el workspace.',
       timezoneReadOnly: 'Solo un administrador puede cambiarla.',
-      statusCompleted: 'Completadas',
-      statusPartial: 'Parciales',
       badgeCompleted: 'Completada',
       badgePartial: 'Parcial',
       colSubmitted: 'Enviada',
@@ -4749,6 +4821,41 @@ export const es: FormsMessages = {
       bulkDeleteBody: 'No se puede deshacer.',
       bulkDeleteFailed: 'No se pudo eliminar. Inténtalo de nuevo.',
       resizeColumn: 'Arrastra para cambiar el ancho. Doble clic para restablecer.',
+      filters: {
+        filterColumn: 'Filtrar por {column}',
+        filterColumnActive: 'Filtrar por {column}, {n} activos',
+        searchOptions: 'Buscar opciones',
+        noOptions: 'Ninguna opción coincide.',
+        clear: 'Limpiar',
+        clearAll: 'Limpiar todo',
+        close: 'Cerrar',
+        sortTitle: 'Ordenar',
+        sortNewest: 'Más recientes primero',
+        sortOldest: 'Más antiguas primero',
+        sortScoreDesc: 'Mayor primero',
+        sortScoreAsc: 'Menor primero',
+        rangeTitle: 'Fecha',
+        rangeToday: 'Hoy',
+        range7d: 'Últimos 7 días',
+        range30d: 'Últimos 30 días',
+        rangeCustom: 'Rango personalizado',
+        rangeFrom: 'Desde',
+        rangeTo: 'Hasta',
+        scoreRange: 'Rango de puntaje',
+        scoreMin: 'Mín.',
+        scoreMax: 'Máx.',
+        showing: '{n} de {total} respuestas',
+        chipsLabel: 'Filtros activos',
+        removeChip: 'Quitar filtro: {filter}',
+        chipBetween: '{from}–{to}',
+        chipAtLeast: '{min} o más',
+        chipAtMost: '{max} o menos',
+        chipFrom: 'Desde {from}',
+        chipUntil: 'Hasta {to}',
+        noMatchesTitle: 'Ninguna respuesta coincide con estos filtros',
+        noMatchesBody: 'Quita un filtro, o límpialos todos, para ver más.',
+        showResponses: 'Ver las respuestas que eligieron {option}',
+      },
     },
     integrations: {
       title: 'Integraciones',

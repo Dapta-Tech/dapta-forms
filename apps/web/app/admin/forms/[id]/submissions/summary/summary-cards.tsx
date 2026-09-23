@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import Link from 'next/link';
 import type { QuestionSummary, SummaryBucket } from '@quill/engine';
 import { t, type Locale } from '@quill/shared';
 
@@ -19,6 +20,8 @@ export interface SummaryCardLabels {
   filesUploaded: string;
   meetingsBooked: string;
   noAnswers: string;
+  /** "See the responses that chose {option}", on a choice bar. */
+  showResponses: string;
 }
 
 /** An icon per kind of question, as the builder draws them. */
@@ -118,15 +121,20 @@ function Bar({
   percent,
   count,
   lead,
+  href,
+  title,
 }: {
   label: string;
   percent: number;
   count: number;
   /** The most chosen: its bar at full strength, the rest a step down. */
   lead: boolean;
+  /** The table filtered by this option, when the bar leads there. */
+  href?: string;
+  title?: string;
 }) {
-  return (
-    <li data-testid="summary-option">
+  const body = (
+    <>
       <div className="mb-1.5 flex items-baseline justify-between gap-4 text-sm">
         <span className="min-w-0 break-words text-foreground" data-testid="summary-option-label">
           {label}
@@ -148,6 +156,22 @@ function Bar({
           style={{ width: `${percent}%` }}
         />
       </div>
+    </>
+  );
+  return (
+    <li data-testid="summary-option">
+      {href ? (
+        <Link
+          href={href}
+          title={title}
+          data-testid="summary-option-link"
+          className="-mx-2 -my-1.5 block rounded-lg px-2 py-1.5 transition-colors hover:bg-accent focus-visible:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          {body}
+        </Link>
+      ) : (
+        body
+      )}
     </li>
   );
 }
@@ -155,9 +179,12 @@ function Bar({
 export function ChoiceBody({
   question,
   labels,
+  hrefFor,
 }: {
   question: Extract<QuestionSummary, { kind: 'choice' }>;
   labels: SummaryCardLabels;
+  /** The table filtered by an option. An option nobody chose leads nowhere. */
+  hrefFor?: (value: string) => string;
 }) {
   const top = question.options[0]?.count ?? 0;
   return (
@@ -170,6 +197,8 @@ export function ChoiceBody({
             percent={o.percent}
             count={o.count}
             lead={top > 0 && o.count === top}
+            href={hrefFor && o.count > 0 ? hrefFor(o.value) : undefined}
+            title={t(labels.showResponses, { option: o.label })}
           />
         ))}
       </ul>

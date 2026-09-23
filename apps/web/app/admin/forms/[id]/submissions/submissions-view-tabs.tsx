@@ -11,21 +11,24 @@ export function SubmissionsViewTabs({
   formId,
   active,
   labels,
+  query = '',
 }: {
   formId: string;
   active: SubmissionsView;
   labels: { tabSummary: string; tabResponses: string; tabsLabel: string };
+  /** The filters (`?…`), carried across so both views describe the same responses. */
+  query?: string;
 }) {
   const tabs: { key: SubmissionsView; href: string; label: string; icon: string }[] = [
     {
       key: 'summary',
-      href: `/admin/forms/${formId}/submissions/summary`,
+      href: `/admin/forms/${formId}/submissions/summary${query}`,
       label: labels.tabSummary,
       icon: 'pi-chart-bar',
     },
     {
       key: 'responses',
-      href: `/admin/forms/${formId}/submissions`,
+      href: `/admin/forms/${formId}/submissions${query}`,
       label: labels.tabResponses,
       icon: 'pi-table',
     },

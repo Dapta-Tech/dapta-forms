@@ -11,10 +11,12 @@ import type { SubmissionsSummary } from '@quill/engine';
 const getSummary = vi.fn();
 const getForm = vi.fn();
 const me = vi.fn();
+const getSubmissionFacets = vi.fn();
 
 vi.mock('@/lib/admin-api', () => ({
   adminApi: {
     getSummary: (...a: unknown[]) => getSummary(...a),
+    getSubmissionFacets: (...a: unknown[]) => getSubmissionFacets(...a),
     getForm: (...a: unknown[]) => getForm(...a),
     me: (...a: unknown[]) => me(...a),
   },
@@ -32,6 +34,8 @@ vi.mock('next/navigation', () => ({
   notFound: () => {
     throw new Error('NEXT_NOT_FOUND');
   },
+  // The filter chips navigate; rendering never does.
+  useRouter: () => ({ push: () => {} }),
 }));
 // The search and the panel reach server actions; rendering needs neither.
 vi.mock('./actions', () => ({
@@ -63,8 +67,8 @@ function find(node: unknown, match: (el: AnyElement) => boolean): AnyElement | u
 }
 
 /** The page's HTML with its async data part resolved (static render cannot await). */
-async function render(): Promise<string> {
-  const page = await SummaryRoute({ params: Promise.resolve({ id: 'form_1' }) });
+async function render(sp: Record<string, string | string[]> = {}): Promise<string> {
+  const page = await SummaryRoute({ params: Promise.resolve({ id: 'form_1' }), searchParams: Promise.resolve(sp) });
   const data = find(page, (el) => typeof el.type === 'function' && el.type.name === 'SummaryData');
   if (!data) throw new Error('no SummaryData');
   const resolved = await (data.type as (p: unknown) => Promise<ReactElement>)(data.props);
@@ -137,19 +141,44 @@ const summary: SubmissionsSummary = {
   ],
 };
 
+/** The form behind `summary`: a multi-select, a slider, text, a file and a URL. */
+const FORM_CONFIG = {
+  version: 1,
+  steps: [
+    {
+      key: 'services',
+      type: 'multiple_choice',
+      selectionMode: 'multiple',
+      question: 'Services',
+      options: [
+        { value: 'ein', label: 'EIN' },
+        { value: 'bank', label: 'Bank account' },
+      ],
+    },
+    { key: 'size', type: 'slider', question: 'Size' },
+    { key: 'notes', type: 'textarea', question: 'Notes' },
+    { key: 'deck', type: 'file', question: 'Deck' },
+    { key: 'website', type: 'url', question: 'Website' },
+  ],
+};
+
 beforeEach(() => {
   getSummary.mockReset();
   me.mockReset();
   me.mockResolvedValue({ timezone: 'America/Bogota' });
   getForm.mockReset();
-  getForm.mockResolvedValue({ id: 'form_1' });
+  getForm.mockResolvedValue({ id: 'form_1', config: FORM_CONFIG });
+  getSubmissionFacets.mockReset();
+  getSubmissionFacets.mockResolvedValue({ total: 30, completed: 20, partial: 10, choices: {} });
 });
 
 describe('Summary tab', () => {
   it('asks the API for this form and draws one card per question, in order', async () => {
     getSummary.mockResolvedValue(summary);
     const html = await render();
-    expect(getSummary).toHaveBeenCalledWith('form_1');
+    expect(getSummary).toHaveBeenCalledWith('form_1', {});
+    // Unfiltered, every response is the total: nothing else to count.
+    expect(getSubmissionFacets).not.toHaveBeenCalled();
     const keys = [...html.matchAll(/data-question-key="([^"]+)"/g)].map((m) => m[1]);
     expect(keys).toEqual(['services', 'size', 'notes', 'deck', 'website']);
     expect(html).toContain('18 of 30 answered');
@@ -200,7 +229,7 @@ describe('Summary tab', () => {
   it('answers 404 before rendering anything for a form outside the workspace', async () => {
     const { ApiError } = await import('@/lib/admin-api');
     getForm.mockRejectedValue(new ApiError(404, 'Not found.'));
-    await expect(SummaryRoute({ params: Promise.resolve({ id: 'form_x' }) })).rejects.toThrow(
+    await expect(SummaryRoute({ params: Promise.resolve({ id: 'form_x' }), searchParams: Promise.resolve({}) })).rejects.toThrow(
       'NEXT_NOT_FOUND',
     );
     expect(getSummary).not.toHaveBeenCalled();
@@ -213,5 +242,54 @@ describe('Summary tab', () => {
       /<a aria-current="page" data-view="summary"[^>]*href="\/admin\/forms\/form_1\/submissions\/summary"/,
     );
     expect(html).toMatch(/<a data-view="responses"[^>]*href="\/admin\/forms\/form_1\/submissions"/);
+  });
+
+  it('describes the filtered responses, and every link out keeps the filter', async () => {
+    getSummary.mockResolvedValue(summary);
+    const html = await render({ 'f.services': 'bank', status: 'completed', 'f.ghost': 'x' });
+    expect(getSummary).toHaveBeenCalledWith('form_1', {
+      status: 'completed',
+      answers: JSON.stringify({ services: ['bank'] }),
+    });
+    // Filtered, "12 of 30" needs every response's count.
+    expect(getSubmissionFacets).toHaveBeenCalledWith('form_1');
+    // A bar opens the table filtered as now, plus that one option.
+    expect(html).toContain('href="/admin/forms/form_1/submissions?status=completed&amp;f.services=ein"');
+    expect(html).toContain('title="See the responses that chose EIN"');
+    expect(html).toMatch(/data-view="responses"[^>]*href="\/admin\/forms\/form_1\/submissions\?status=completed&amp;f.services=bank"/);
+  });
+
+  it('says so when the filter matches nothing, with a way out', async () => {
+    getSummary.mockResolvedValue({ total: 0, questions: [] });
+    const html = await render({ status: 'partial' });
+    expect(html).toContain('No responses match these filters');
+    expect(html).not.toContain('No submissions yet');
+  });
+
+  it('keeps a contact question to its count and search, with no list of people', async () => {
+    getForm.mockResolvedValue({
+      id: 'form_1',
+      config: { version: 1, steps: [...FORM_CONFIG.steps, { key: 'email', type: 'email', question: 'Email' }] },
+    });
+    getSummary.mockResolvedValue({
+      total: 30,
+      questions: [
+        {
+          kind: 'text',
+          key: 'email',
+          type: 'email',
+          label: 'Email',
+          answered: 12,
+          total: 30,
+          recent: [{ id: 'sub_1', text: 'ana@x.io', respondent: 'ana@x.io', at: Date.UTC(2026, 0, 1) }],
+        },
+      ],
+    });
+    const html = await render();
+    expect(html).toContain('12 of 30 answered');
+    expect(html).toContain('data-testid="summary-search"');
+    expect(html).not.toContain('ana@x.io');
+    expect(html).not.toContain('data-testid="summary-answers"');
+    expect(html).not.toContain('data-testid="summary-show-more"');
   });
 });
