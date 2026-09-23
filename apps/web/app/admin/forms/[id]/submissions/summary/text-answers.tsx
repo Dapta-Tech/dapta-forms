@@ -124,7 +124,9 @@ export function TextAnswers({
 
   async function open(index: number) {
     const id = items[index]?.id;
-    if (!id) return;
+    // One at a time. The button is never disabled for it: a disabled button
+    // drops focus, and the panel hands focus back to whatever had it on open.
+    if (!id || opening) return;
     setOpening(id);
     setError(null);
     const ok = await openResponse(
@@ -208,24 +210,28 @@ export function TextAnswers({
               <button
                 type="button"
                 onClick={() => void open(i)}
-                disabled={opening != null}
                 aria-busy={opening === item.id || undefined}
                 title={labels.openAnswer}
                 data-testid="summary-answer"
                 data-response-id={item.id}
-                className="group flex w-full items-start gap-3 bg-background/40 px-4 py-3 text-left transition-colors hover:bg-accent/70 focus-visible:bg-accent/70 focus-visible:outline-none disabled:cursor-wait"
+                className="group flex w-full items-start gap-3 bg-background/40 px-4 py-3 text-left transition-colors hover:bg-accent/70 focus-visible:bg-accent/70 focus-visible:outline-none aria-busy:cursor-wait"
               >
                 <span className="min-w-0 flex-1">
                   <span className="line-clamp-3 whitespace-pre-line break-words text-sm text-foreground">
                     {searching ? highlight(item.text, applied) : item.text}
                   </span>
                   <span className="mt-1 flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
-                    <span className="max-w-full truncate font-medium">
-                      {item.respondent ?? labels.anonymous}
-                    </span>
-                    <span aria-hidden className="text-faint">
-                      ·
-                    </span>
+                    {/* On the name or email card the answer already says who. */}
+                    {item.respondent !== item.text ? (
+                      <>
+                        <span className="max-w-full truncate font-medium">
+                          {item.respondent ?? labels.anonymous}
+                        </span>
+                        <span aria-hidden className="text-faint">
+                          ·
+                        </span>
+                      </>
+                    ) : null}
                     <span>{item.when}</span>
                   </span>
                 </span>
