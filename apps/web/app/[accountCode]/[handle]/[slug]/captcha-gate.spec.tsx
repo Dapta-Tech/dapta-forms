@@ -1,0 +1,350 @@
+// @vitest-environment happy-dom
+/**
+ * The human check both public layouts share: `useCaptchaGate` (the widget's
+ * life cycle on the submitting screen, and strict mode's hidden field) and
+ * `submitFinal` (what a final submit does with each outcome). Driven through a
+ * stand-in for the provider's browser API, so no request leaves the test.
+ */
+import { act, useEffect } from 'react';
+import { createRoot, type Root } from 'react-dom/client';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { getMessages } from '@quill/shared';
+import type { PublicCaptcha } from '@quill/types';
+import { resetTurnstileLoaderForTests, type TurnstileRenderOptions } from '@/lib/captcha';
+import {
+  submitErrorMessage,
+  submitFinal,
+  useCaptchaGate,
+  type CaptchaGate,
+  type CaptchaResult,
+  type SubmitActionResult,
+} from './renderer-shared';
+
+(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
+interface Rendered {
+  el: HTMLElement;
+  opts: TurnstileRenderOptions;
+  id: string;
+}
+let renders: Rendered[];
+let removed: string[];
+let root: Root;
+let host: HTMLDivElement;
+let gate: CaptchaGate;
+
+const AUTO: PublicCaptcha = { provider: 'turnstile', siteKey: 'site-key' };
+const STRICT: PublicCaptcha = { provider: 'turnstile', siteKey: 'site-key', strict: true };
+
+function Harness({ captcha }: { captcha: PublicCaptcha | undefined }) {
+  const g = useCaptchaGate(captcha, { sessionId: 'sess-123', locale: 'es', theme: 'dark' });
+  useEffect(() => {
+    gate = g;
+  });
+  gate = g;
+  return (
+    <div>
+      <div data-testid="step">{g.honeypot}</div>
+      <div data-testid="submitting">{g.widget}</div>
+    </div>
+  );
+}
+
+async function mount(captcha: PublicCaptcha | undefined) {
+  host = document.createElement('div');
+  document.body.append(host);
+  root = createRoot(host);
+  await act(async () => root.render(<Harness captcha={captcha} />));
+}
+
+/**
+ * Start a check and let the widget mount and render. The pending result comes
+ * back boxed: an async function returning a bare promise would await it.
+ */
+async function startChallenge(): Promise<{ result: Promise<CaptchaResult> }> {
+  let result!: Promise<CaptchaResult>;
+  await act(async () => {
+    result = gate.challenge();
+  });
+  await act(async () => {
+    await Promise.resolve();
+  });
+  return { result };
+}
+
+beforeEach(() => {
+  resetTurnstileLoaderForTests();
+  renders = [];
+  removed = [];
+  window.turnstile = {
+    render: (el, opts) => {
+      const id = `w${renders.length + 1}`;
+      renders.push({ el, opts, id });
+      return id;
+    },
+    reset: () => {},
+    remove: (id) => {
+      if (id) removed.push(id);
+    },
+  };
+});
+
+afterEach(async () => {
+  await act(async () => root?.unmount());
+  host?.remove();
+  delete window.turnstile;
+  vi.useRealTimers();
+});
+
+describe('useCaptchaGate: a form served without a check', () => {
+  it('renders nothing, adds no field and loads nothing', async () => {
+    const appended = vi.spyOn(document.head, 'appendChild');
+    delete window.turnstile;
+    await mount(undefined);
+    expect(gate.enabled).toBe(false);
+    expect(gate.widget).toBeNull();
+    expect(gate.honeypot).toBeNull();
+    gate.prewarm();
+    expect(appended).not.toHaveBeenCalled();
+    expect(gate.submitFields()).toEqual({});
+    expect(document.querySelector('[name="pf_hp"]')).toBeNull();
+  });
+});
+
+describe('useCaptchaGate: automatic mode', () => {
+  it('renders one widget per run, with everything the API later checks', async () => {
+    await mount(AUTO);
+    const { result } = await startChallenge();
+    expect(renders).toHaveLength(1);
+    expect(renders[0]!.opts).toMatchObject({
+      sitekey: 'site-key',
+      action: 'submit',
+      cData: 'sess-123',
+      appearance: 'interaction-only',
+      language: 'es',
+      theme: 'dark',
+      size: 'flexible',
+      retry: 'never',
+    });
+    // Mounted on the submitting screen, nowhere else.
+    expect(host.querySelector('[data-testid="submitting"] [data-testid="captcha-widget"]')).not.toBeNull();
+
+    await act(async () => renders[0]!.opts.callback!('tok-1'));
+    await expect(result).resolves.toEqual({ status: 'token', token: 'tok-1' });
+  });
+
+  it('reports the check unavailable when the widget errors or the browser is unsupported', async () => {
+    await mount(AUTO);
+    const { result: errored } = await startChallenge();
+    let handled: boolean | void = false;
+    await act(async () => {
+      handled = renders[0]!.opts['error-callback']!('300030');
+    });
+    await expect(errored).resolves.toMatchObject({ status: 'unavailable' });
+    // Handled: the provider neither throws into the page nor logs.
+    expect(handled).toBe(true);
+
+    const { result: unsupported } = await startChallenge();
+    await act(async () => renders[1]!.opts['unsupported-callback']!());
+    await expect(unsupported).resolves.toMatchObject({ status: 'unavailable', reason: 'unsupported' });
+  });
+
+  it('gives up when nothing at all happens, but never while a person is on the checkbox', async () => {
+    vi.useFakeTimers();
+    await mount(AUTO);
+    const { result: silent } = await startChallenge();
+    await act(async () => {
+      vi.advanceTimersByTime(15_000);
+    });
+    await expect(silent).resolves.toMatchObject({ status: 'unavailable', reason: 'timeout' });
+
+    const { result: human } = await startChallenge();
+    await act(async () => renders[1]!.opts['before-interactive-callback']!());
+    expect(gate.interactive).toBe(true);
+    let settled = false;
+    void human.then(() => {
+      settled = true;
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(120_000);
+    });
+    expect(settled).toBe(false);
+    await act(async () => renders[1]!.opts['after-interactive-callback']!());
+    expect(gate.interactive).toBe(false);
+    await act(async () => renders[1]!.opts.callback!('tok-after-click'));
+    await expect(human).resolves.toEqual({ status: 'token', token: 'tok-after-click' });
+  });
+
+  it('a second run replaces the first widget, and a late answer from the first is ignored', async () => {
+    await mount(AUTO);
+    const { result: first } = await startChallenge();
+    const { result: second } = await startChallenge();
+    await expect(first).resolves.toMatchObject({ status: 'unavailable', reason: 'superseded' });
+    expect(removed).toEqual(['w1']);
+    await act(async () => renders[0]!.opts.callback!('stale-token'));
+    await act(async () => renders[1]!.opts.callback!('fresh-token'));
+    await expect(second).resolves.toEqual({ status: 'token', token: 'fresh-token' });
+  });
+
+  it('a renderer that goes away mid-check releases the waiting submit', async () => {
+    await mount(AUTO);
+    const { result: pending } = await startChallenge();
+    await act(async () => root.unmount());
+    await expect(pending).resolves.toMatchObject({ status: 'unavailable' });
+  });
+
+  it('adds no hidden field: that belongs to strict mode only', async () => {
+    await mount(AUTO);
+    expect(document.querySelector('[name="pf_hp"]')).toBeNull();
+    expect(gate.submitFields()).toEqual({});
+  });
+});
+
+describe('useCaptchaGate: strict mode', () => {
+  it('shows the widget to everyone', async () => {
+    await mount(STRICT);
+    await startChallenge();
+    expect(renders[0]!.opts.appearance).toBe('always');
+  });
+
+  it('renders a hidden field no person can reach, and sends what a bot wrote into it', async () => {
+    await mount(STRICT);
+    const input = document.querySelector<HTMLInputElement>('[name="pf_hp"]')!;
+    expect(input).not.toBeNull();
+    expect(input.type).toBe('text');
+    expect(input.getAttribute('tabindex')).toBe('-1');
+    expect(input.getAttribute('aria-hidden')).toBe('true');
+    expect(input.getAttribute('autocomplete')).toBe('off');
+    expect(input.className).toBe('pf-hp');
+    // No label text anywhere near it: nothing to announce, nothing to read.
+    expect(input.closest('[data-testid="step"]')!.textContent).toBe('');
+    expect(gate.submitFields()).toEqual({ hp: '' });
+
+    // A bot writing straight into the DOM fires no input event.
+    input.value = 'https://spam.example.com';
+    expect(gate.submitFields()).toEqual({ hp: 'https://spam.example.com' });
+  });
+});
+
+describe('submitFinal', () => {
+  const m = getMessages('es').renderer;
+  const ok: SubmitActionResult = { ok: true, score: 5, outcome: 'hot' };
+
+  /** A gate whose runs answer from a script, recording how often it ran. */
+  function fakeGate(results: CaptchaResult[], fields: { hp?: string } = {}): CaptchaGate & { runs: number } {
+    const g = {
+      enabled: true,
+      strict: false,
+      interactive: false,
+      runs: 0,
+      prewarm: () => {},
+      challenge: async () => results[Math.min(g.runs++, results.length - 1)]!,
+      widget: null,
+      honeypot: null,
+      submitFields: () => fields,
+    };
+    return g;
+  }
+
+  it('without a check, submits once with no token', async () => {
+    const send = vi.fn(async () => ok);
+    const res = await submitFinal({
+      gate: { ...fakeGate([]), enabled: false },
+      m,
+      send,
+      savePartial: vi.fn(),
+    });
+    expect(res).toEqual({ ok: true, score: 5, outcome: 'hot' });
+    expect(send).toHaveBeenCalledWith({});
+  });
+
+  it('sends the token and the hidden field with the complete', async () => {
+    const send = vi.fn(async () => ok);
+    await submitFinal({
+      gate: fakeGate([{ status: 'token', token: 'tok' }], { hp: '' }),
+      m,
+      send,
+      savePartial: vi.fn(),
+    });
+    expect(send).toHaveBeenCalledWith({ captchaToken: 'tok', hp: '' });
+  });
+
+  it('a refused token gets ONE fresh try before the refusal is shown', async () => {
+    const refused: SubmitActionResult = { ok: false, error: 'CAPTCHA_FAILED', message: 'English message' };
+    const passesSecond = vi.fn().mockResolvedValueOnce(refused).mockResolvedValueOnce(ok);
+    const gate1 = fakeGate([
+      { status: 'token', token: 'a' },
+      { status: 'token', token: 'b' },
+    ]);
+    expect(await submitFinal({ gate: gate1, m, send: passesSecond, savePartial: vi.fn() })).toMatchObject({
+      ok: true,
+    });
+    expect(gate1.runs).toBe(2);
+    expect(passesSecond.mock.calls.map((c) => (c[0] as { captchaToken: string }).captchaToken)).toEqual(['a', 'b']);
+
+    const alwaysRefused = vi.fn(async () => refused);
+    const gate2 = fakeGate([{ status: 'token', token: 'a' }]);
+    expect(await submitFinal({ gate: gate2, m, send: alwaysRefused, savePartial: vi.fn() })).toEqual({
+      ok: false,
+      message: m.errors.captcha,
+    });
+    expect(alwaysRefused).toHaveBeenCalledTimes(2);
+  });
+
+  it('with no token, saves the answers as a partial and says so, without submitting the complete', async () => {
+    const send = vi.fn(async () => ok);
+    const savePartial = vi.fn(async () => ok);
+    const res = await submitFinal({
+      gate: fakeGate([{ status: 'unavailable', reason: 'script' }]),
+      m,
+      send,
+      savePartial,
+    });
+    expect(res).toEqual({ ok: false, message: m.captcha.unavailable });
+    expect(savePartial).toHaveBeenCalledTimes(1);
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('never claims the answers are saved when that save failed too', async () => {
+    const res = await submitFinal({
+      gate: fakeGate([{ status: 'unavailable', reason: 'timeout' }]),
+      m,
+      send: vi.fn(),
+      savePartial: async () => ({ ok: false, transport: true as const, message: 'network' }),
+    });
+    expect(res).toEqual({ ok: false, message: m.errors.submit });
+  });
+
+  it('an outage on the API side (503) is shown as such and not retried: the API kept the answers', async () => {
+    const send = vi.fn(async () => ({ ok: false, error: 'CAPTCHA_UNAVAILABLE', message: 'English' }));
+    const gate = fakeGate([{ status: 'token', token: 'a' }]);
+    expect(await submitFinal({ gate, m, send, savePartial: vi.fn() })).toEqual({
+      ok: false,
+      message: m.captcha.unavailable,
+    });
+    expect(gate.runs).toBe(1);
+  });
+});
+
+describe('submitErrorMessage', () => {
+  it('localizes every code the API sends, in both languages, and never shows its English', () => {
+    for (const locale of ['en', 'es'] as const) {
+      const m = getMessages(locale).renderer;
+      const english = { message: 'English server text' };
+      expect(submitErrorMessage({ ...english, error: 'CAPTCHA_FAILED' }, m)).toBe(m.errors.captcha);
+      expect(submitErrorMessage({ ...english, error: 'CAPTCHA_REQUIRED' }, m)).toBe(m.errors.captcha);
+      expect(submitErrorMessage({ ...english, error: 'CAPTCHA_UNAVAILABLE' }, m)).toBe(m.captcha.unavailable);
+      expect(submitErrorMessage({ ...english, error: 'RATE_LIMITED' }, m)).toBe(m.errors.rate_limited);
+      expect(submitErrorMessage({ ...english, error: 'ANSWER_TOO_LONG' }, m)).toBe(m.errors.answer_too_long);
+    }
+    expect(getMessages('es').renderer.errors.captcha).toBe(
+      'No pudimos verificar que eres una persona. Inténtalo de nuevo.',
+    );
+  });
+
+  it('keeps today’s behavior for a code it does not know', () => {
+    const m = getMessages('en').renderer;
+    expect(submitErrorMessage({ error: 'NOT_FOUND', message: 'Form not found.' }, m)).toBe('Form not found.');
+    expect(submitErrorMessage({}, m)).toBe(m.errors.submit);
+  });
+});

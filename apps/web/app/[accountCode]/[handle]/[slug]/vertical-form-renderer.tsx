@@ -47,7 +47,7 @@ import {
   type FormReveal,
 } from '@quill/engine';
 import { getMessages, resolveFormLabels, t } from '@quill/shared';
-import type { FormConfig } from '@quill/types';
+import type { FormConfig, PublicCaptcha } from '@quill/types';
 import { FormLogo } from '@/components/public/form-logo';
 import { ClientLogosMarquee } from '@/components/public/client-logos-marquee';
 import { StepInput } from '@/components/public/step-input';
@@ -68,6 +68,8 @@ import {
 } from './actions';
 import {
   useSessionId,
+  useCaptchaGate,
+  submitFinal,
   captureUtm,
   captureDefaults,
   capturePrefill,
@@ -165,6 +167,7 @@ export function VerticalFormRenderer({
   config,
   locale = 'en',
   uploadMaxMb,
+  captcha,
 }: {
   accountCode: string;
   slug: string;
@@ -173,6 +176,12 @@ export function VerticalFormRenderer({
   locale?: string;
   /** The deployment's per-file ceiling in MB, for `file` steps. */
   uploadMaxMb?: number;
+  /**
+   * The human check the final submit must pass (spam protection), exactly as
+   * the API served it. Only the public page passes it; the builder preview
+   * never does. It runs on the submitting screen, never inside the page.
+   */
+  captcha?: PublicCaptcha;
 }) {
   const m = getMessages(locale).renderer;
   // The form's button copy: author overrides, else the stock copy of `locale`.
@@ -303,6 +312,16 @@ export function VerticalFormRenderer({
   // author who set a background, a font or a corner radius saw none of it here.
   const design = useMemo(() => formDesignProps(config.branding), [config.branding]);
 
+  // Spam protection's human check, shared with the slides layout. Inert
+  // without `captcha`. Read through a ref inside the async flows below.
+  const gate = useCaptchaGate(captcha, {
+    sessionId,
+    locale: formLocale,
+    theme: design.themeMode ?? 'dark',
+  });
+  const gateRef = useRef(gate);
+  gateRef.current = gate;
+
   const err = (code: string) => m.errors[code as keyof typeof m.errors] ?? m.errors.required;
 
   const track = useCallback(
@@ -349,25 +368,39 @@ export function VerticalFormRenderer({
   const finalize = useCallback(
     async (finalAnswers: Answers) => {
       setPhase('submitting');
+      const data = withData(finalAnswers);
       // Transport-safe with retries: a submit whose INVOCATION fails (network
       // drop, deploy-rotated action id) used to reject unhandled, stranding the
       // visitor on the "submitting" spinner with the submission silently lost.
       // Retrying is safe — the server dedupes submissions by session.
       // 8s per attempt: worst case ~27s on the spinner, not the old forever.
-      const res = await callActionWithRetry(
-        () =>
-          submitFormAction(accountCode, slug, {
-            sessionId,
-            data: withData(finalAnswers),
-            // What the respondent SAW, so the confirmation email matches.
-            locale: formLocale,
-          }),
-        { timeoutMs: 8_000 },
-      );
+      // With spam protection on, the human check runs first, on this screen
+      // (see `submitFinal`, shared with the slides layout).
+      const res = await submitFinal({
+        gate: gateRef.current,
+        m,
+        send: (fields) =>
+          callActionWithRetry(
+            () =>
+              submitFormAction(accountCode, slug, {
+                sessionId,
+                data,
+                // What the respondent SAW, so the confirmation email matches.
+                locale: formLocale,
+                ...fields,
+              }),
+            { timeoutMs: 8_000 },
+          ),
+        savePartial: () =>
+          callActionWithRetry(
+            () => submitFormAction(accountCode, slug, { sessionId, data, partial: true, locale: formLocale }),
+            { timeoutMs: 8_000 },
+          ),
+      });
       if (!res.ok) {
-        // Back to the page with every answer intact; transport messages are
-        // technical noise, so those show the localized submit error instead.
-        setSubmitError((isTransportError(res) ? null : res.message) ?? err('submit'));
+        // Back to the page with every answer intact and the message next to
+        // Submit, which is also how the person tries again.
+        setSubmitError(res.message);
         setPhase('form');
         return;
       }
@@ -481,6 +514,9 @@ export function VerticalFormRenderer({
     if (!startTracked.current) {
       startTracked.current = true;
       track('start');
+      // The first answer, not the view: a visitor who only looks and leaves
+      // never reaches the challenge provider.
+      gateRef.current.prewarm();
     }
     const next = { ...answersRef.current, [key]: value };
     // Keep the ref fresh SYNCHRONOUSLY: a blur handler can run before React
@@ -692,6 +728,9 @@ export function VerticalFormRenderer({
   }
 
   if (phase === 'submitting') {
+    // The human check shows here when it needs the person (or always, in
+    // strict mode, where the widget itself is the progress indicator).
+    const showSpinner = !gate.interactive && !(gate.enabled && gate.strict);
     return (
       <PhaseShell
         className="pf pf--reveal"
@@ -709,8 +748,9 @@ export function VerticalFormRenderer({
               <FormLogo src={logos.form} name={name} fallback="none" />
             </div>
           ) : null}
-          <div className="pf-reveal__spinner" aria-hidden="true" />
-          <p className="pf-reveal__subtitle">{m.submitting}</p>
+          {showSpinner ? <div className="pf-reveal__spinner" aria-hidden="true" /> : null}
+          <p className="pf-reveal__subtitle">{gate.interactive ? m.captcha.prompt : m.submitting}</p>
+          {gate.widget}
         </div>
       </PhaseShell>
     );
@@ -824,6 +864,9 @@ export function VerticalFormRenderer({
               </VerticalQuestion>
             ))
           )}
+
+          {/* Strict mode's hidden field (spam protection); nothing otherwise. */}
+          {gate.honeypot}
 
           {questions.length > 0 ? (
             <div className="pf-v__footer">

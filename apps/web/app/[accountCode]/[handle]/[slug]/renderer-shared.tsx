@@ -7,13 +7,18 @@
  * mapping, the banner shell, or the thank-you screen. Pure presentation +
  * browser-only capture helpers; every flow decision stays in `@quill/engine`.
  */
-import { useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Answers, FormCover, FormStep, ResolvedEnding } from '@quill/engine';
 import { nameFields, isSafeHttpUrl, interpolate, showBanner } from '@quill/engine';
-import type { OutcomeBooking } from '@quill/types';
+import { captchaCData, type OutcomeBooking, type PublicCaptcha } from '@quill/types';
 import type { getMessages } from '@quill/shared';
 import type { FormDesignProps } from '@/lib/form-design';
 import { signupHref } from '@/lib/growth';
+import { warmTurnstile } from '@/lib/captcha';
+import { isTransportError, type TransportError } from '@/lib/call-action';
+import { CaptchaChallenge } from '@/components/public/captcha-challenge';
+
+type RendererMessages = ReturnType<typeof getMessages>['renderer'];
 
 export function useSessionId(key: string): string {
   const [id] = useState(() => {
@@ -250,4 +255,217 @@ export function DoneScreen({
       </div>
     </PhaseShell>
   );
+}
+
+/* ── Spam protection ───────────────────────────────────────────────────────
+ * Shared by both layouts so they can never disagree on when the human check
+ * runs, what a failure means, or what the respondent is told. The check runs
+ * on the SUBMITTING screen only: it is the one point every way of finishing a
+ * form passes through (a button, a single-choice auto-advance, a terminal
+ * step, a reveal or a scheduler as the last step, Enter, the one-page Submit).
+ * ------------------------------------------------------------------------- */
+
+/** What one run of the check produced. */
+export type CaptchaResult = { status: 'token'; token: string } | { status: 'unavailable'; reason: string };
+
+export interface CaptchaGate {
+  /** True only when the API served this form with a check: never in the builder preview. */
+  enabled: boolean;
+  /** Strict mode: the check is visible to everyone and the hidden field rides the submit. */
+  strict: boolean;
+  /** The check is waiting for the person (a checkbox is showing): show the prompt. */
+  interactive: boolean;
+  /** Load the provider script ahead of the submit. Call at the first start or answer. */
+  prewarm: () => void;
+  /** Run the check once, on a fresh widget. Resolves with a token or `unavailable`. */
+  challenge: () => Promise<CaptchaResult>;
+  /** The widget block for the submitting screen; null until the first run. */
+  widget: React.ReactNode;
+  /** Strict mode's hidden field, for every screen a respondent answers on; else null. */
+  honeypot: React.ReactNode;
+  /** The top-level submit fields the check adds: `hp` in strict mode, nothing otherwise. */
+  submitFields: () => { hp?: string };
+}
+
+/**
+ * The human check for one form session. Inert (and loads nothing) unless the
+ * page handed it `captcha`, which only `page.tsx` does, and only when the API
+ * served the form with one; the builder preview never passes it.
+ */
+export function useCaptchaGate(
+  captcha: PublicCaptcha | undefined,
+  opts: { sessionId: string; locale: 'en' | 'es'; theme: 'light' | 'dark' },
+): CaptchaGate {
+  const strict = captcha?.strict === true;
+  const [run, setRun] = useState(0);
+  const [state, setState] = useState<'running' | 'interactive' | 'done' | 'failed'>('running');
+  const runRef = useRef(0);
+  const pending = useRef<{ id: number; resolve: (r: CaptchaResult) => void } | null>(null);
+
+  const settle = useCallback((id: number, result: CaptchaResult) => {
+    const waiting = pending.current;
+    // A widget from a superseded run can still report; only the current one counts.
+    if (!waiting || waiting.id !== id) return;
+    pending.current = null;
+    setState(result.status === 'token' ? 'done' : 'failed');
+    waiting.resolve(result);
+  }, []);
+
+  const challenge = useCallback((): Promise<CaptchaResult> => {
+    if (!captcha) return Promise.resolve({ status: 'unavailable', reason: 'disabled' });
+    return new Promise<CaptchaResult>((resolve) => {
+      pending.current?.resolve({ status: 'unavailable', reason: 'superseded' });
+      const id = runRef.current + 1;
+      runRef.current = id;
+      pending.current = { id, resolve };
+      setState('running');
+      setRun(id);
+    });
+  }, [captcha]);
+
+  // A renderer that goes away mid-check must not leave its submit awaiting forever.
+  useEffect(
+    () => () => {
+      pending.current?.resolve({ status: 'unavailable', reason: 'unmounted' });
+      pending.current = null;
+    },
+    [],
+  );
+
+  const prewarm = useCallback(() => {
+    if (captcha) warmTurnstile();
+  }, [captcha]);
+
+  // The hidden field is uncontrolled on purpose: a bot that writes `.value`
+  // straight into the DOM fires no event, and a controlled input would wipe
+  // that value on the next render. Its last value is kept when a step screen
+  // unmounts, so the submitting screen (where none is mounted) still has it.
+  const hpEl = useRef<HTMLInputElement | null>(null);
+  const hpLast = useRef('');
+  const hpRef = useCallback((el: HTMLInputElement | null) => {
+    if (hpEl.current && hpEl.current !== el && hpEl.current.value) hpLast.current = hpEl.current.value;
+    hpEl.current = el;
+  }, []);
+  const submitFields = useCallback((): { hp?: string } => {
+    if (!strict) return {};
+    return { hp: hpEl.current?.value || hpLast.current || '' };
+  }, [strict]);
+
+  const widget =
+    captcha && run > 0 ? (
+      <div className="pf-captcha" data-captcha-mode={strict ? 'strict' : 'auto'} data-captcha-state={state}>
+        <CaptchaChallenge
+          key={run}
+          siteKey={captcha.siteKey}
+          strict={strict}
+          cData={captchaCData(opts.sessionId)}
+          language={opts.locale}
+          theme={opts.theme}
+          onToken={(token) => settle(run, { status: 'token', token })}
+          onUnavailable={(reason) => settle(run, { status: 'unavailable', reason })}
+          onInteractive={(on) => setState((s) => (s === 'done' || s === 'failed' ? s : on ? 'interactive' : 'running'))}
+        />
+      </div>
+    ) : null;
+
+  const honeypot = strict ? (
+    <input
+      ref={hpRef}
+      type="text"
+      name="pf_hp"
+      className="pf-hp"
+      defaultValue=""
+      autoComplete="off"
+      tabIndex={-1}
+      aria-hidden="true"
+    />
+  ) : null;
+
+  return {
+    enabled: Boolean(captcha),
+    strict,
+    interactive: state === 'interactive',
+    prewarm,
+    challenge,
+    widget,
+    honeypot,
+    submitFields,
+  };
+}
+
+/** What the submit server action answers (see `submitFormAction`). */
+export interface SubmitActionResult {
+  ok: boolean;
+  score?: number;
+  outcome?: string | null;
+  message?: string;
+  /** The API's stable code, when it refused: what the copy below is chosen by. */
+  error?: string;
+}
+
+/**
+ * The respondent's copy for a refused submit, in their language, chosen by the
+ * API's CODE and never by its message: every API message is English, and
+ * respondents in Spanish used to read them verbatim. A code this map does not
+ * know keeps today's behavior (the server message, else the generic line).
+ */
+export function submitErrorMessage(res: { error?: string; message?: string }, m: RendererMessages): string {
+  switch (res.error) {
+    case 'CAPTCHA_FAILED':
+    case 'CAPTCHA_REQUIRED':
+      return m.errors.captcha;
+    case 'CAPTCHA_UNAVAILABLE':
+      return m.captcha.unavailable;
+    case 'RATE_LIMITED':
+      return m.errors.rate_limited;
+    case 'ANSWER_TOO_LONG':
+      return m.errors.answer_too_long;
+    default:
+      return res.message ?? m.errors.submit;
+  }
+}
+
+export type FinalSubmit =
+  | { ok: true; score?: number; outcome?: string | null }
+  | { ok: false; message: string };
+
+function toFinal(res: SubmitActionResult | TransportError, m: RendererMessages): FinalSubmit {
+  // Transport messages are technical noise; the respondent gets the generic line.
+  if (isTransportError(res)) return { ok: false, message: m.errors.submit };
+  if (res.ok) return { ok: true, score: res.score, outcome: res.outcome };
+  return { ok: false, message: submitErrorMessage(res, m) };
+}
+
+/**
+ * The final submit, with the human check when the form has one. Both layouts'
+ * `finalize` call this and differ only in what they do with the answer.
+ *
+ * - No check: submit, as always.
+ * - A token: submit with it. A refused token is retried ONCE on a fresh widget
+ *   (it may simply have expired while the person looked away); a second
+ *   refusal is shown.
+ * - No token (the widget did not load, errored, timed out, or the browser is
+ *   unsupported): fail closed WITHOUT losing anything. The answers are saved
+ *   as a partial, which the API never delivers while protection is on, and the
+ *   person is told they are saved and asked to try again.
+ */
+export async function submitFinal(args: {
+  gate: CaptchaGate;
+  m: RendererMessages;
+  send: (fields: { captchaToken?: string; hp?: string }) => Promise<SubmitActionResult | TransportError>;
+  savePartial: () => Promise<SubmitActionResult | TransportError>;
+}): Promise<FinalSubmit> {
+  const { gate, m, send, savePartial } = args;
+  if (!gate.enabled) return toFinal(await send({}), m);
+  for (let attempt = 0; ; attempt++) {
+    const check = await gate.challenge();
+    if (check.status === 'unavailable') {
+      const saved = await savePartial();
+      if (!isTransportError(saved) && saved.ok) return { ok: false, message: m.captcha.unavailable };
+      return toFinal(saved, m);
+    }
+    const res = await send({ captchaToken: check.token, ...gate.submitFields() });
+    if (attempt === 0 && !isTransportError(res) && !res.ok && res.error === 'CAPTCHA_FAILED') continue;
+    return toFinal(res, m);
+  }
 }

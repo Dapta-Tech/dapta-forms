@@ -1543,6 +1543,58 @@
   }
 }
 
+/* ── Spam protection: the human check on the submitting screen ──
+   The provider draws its widget (an iframe) inside `.pf-captcha__widget`. In
+   automatic mode it stays invisible and takes no room unless the provider
+   needs a click; in strict mode it is always shown. The renderer asks for the
+   `flexible` widget (fills its box, 300px minimum) and falls back to `compact`
+   below 300px, so a 320px phone or a narrow embed never scrolls sideways. An
+   embed grows to fit on its own: the height reporter watches the document. */
+.pf-captcha {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+}
+.pf-captcha__widget {
+  width: 100%;
+  max-width: 400px;
+  display: flex;
+  justify-content: center;
+}
+/* Strict: hold the widget's height from the start, so the screen does not
+   jump when the iframe paints. */
+.pf-captcha[data-captcha-mode='strict'] .pf-captcha__widget {
+  min-height: 65px;
+}
+/* Automatic: once the check has passed the widget has nothing left to say,
+   and the spinner above carries the rest of the submit. */
+.pf-captcha[data-captcha-mode='auto'][data-captcha-state='done'] {
+  display: none;
+}
+/* A final submit that failed on this screen (a reveal or a scheduler as the
+   last step has no step to go back to): the message and a way to try again. */
+.pf-reveal__inner .pf__error {
+  margin: 0;
+}
+.pf-reveal__inner .pf__btn--inline {
+  max-width: 320px;
+  margin-top: 20px;
+}
+
+/* Strict mode's hidden field. Out of sight and out of reach for a person,
+   but NOT `display: none`, which some bots know to skip. Every property is
+   pinned so no form theme can bring it back into view. */
+.pf-hp {
+  position: absolute !important;
+  left: -10000px !important;
+  top: auto !important;
+  width: 1px !important;
+  height: 1px !important;
+  overflow: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
 @media (max-width: 480px) {
   /* The row does NOT wrap. It used to, which dropped the meter to its own line
      and left the two marks sitting against each other — the pairing reads as
