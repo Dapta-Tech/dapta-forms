@@ -173,9 +173,12 @@ test.describe('Neutral public form URL', () => {
     await page.keyboard.press('Escape');
     await expect(slugInput).toBeHidden();
 
-    // The prefill example in the selected question's Advanced settings.
-    const advanced = page.getByTestId('advanced-settings');
-    await advanced.locator('button').first().click();
+    // The prefill example in the selected question's Advanced settings. The
+    // group opens on its own when the step already has an advanced setting, so
+    // it is toggled only while closed: a blind click would collapse it.
+    const advancedHeader = page.getByTestId('advanced-settings').getByRole('button', { name: /Advanced/ });
+    if ((await advancedHeader.getAttribute('aria-expanded')) !== 'true') await advancedHeader.click();
+    await expect(advancedHeader).toHaveAttribute('aria-expanded', 'true');
     const prefill = page.getByTestId('prefill-row').locator('code');
     await expect(prefill).toContainText(`${neutralPath}?q1=`);
     handedOut.push(await prefill.innerText());
