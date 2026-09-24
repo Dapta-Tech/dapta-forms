@@ -6,6 +6,7 @@ import {
   useLayoutEffect,
   useRef,
   useState,
+  type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
   type RefObject,
 } from 'react';
@@ -94,13 +95,15 @@ export function AnchoredMenu({
   autoFocus = false,
   className = '',
   testId,
+  role = 'menu',
+  onKeyDown,
   children,
 }: {
   /** The trigger the panel is positioned against and toggled by. */
   anchorRef: RefObject<HTMLElement | null>;
   open: boolean;
   onClose: () => void;
-  /** Accessible name for the `role="menu"` panel. */
+  /** Accessible name for the panel. */
   label: string;
   /** Panel width in px, or `'anchor'` to match the trigger. */
   width?: number | 'anchor';
@@ -112,6 +115,13 @@ export function AnchoredMenu({
   className?: string;
   /** The panel leaves the trigger's subtree, so QA needs its own handle on it. */
   testId?: string;
+  /**
+   * `menu` for a list of actions (the rail's switchers); `dialog` for a panel
+   * of form controls (a column filter's checkboxes and fields), which a menu
+   * role would tell a screen reader to treat as menu items.
+   */
+  role?: 'menu' | 'dialog';
+  onKeyDown?: (e: ReactKeyboardEvent<HTMLDivElement>) => void;
   children: ReactNode;
 }) {
   const menuRef = useRef<HTMLDivElement>(null);
@@ -212,7 +222,12 @@ export function AnchoredMenu({
       onClose();
     };
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key !== 'Escape') return;
+      // Consumed: a surface underneath that also closes on Esc (the full-screen
+      // table sheet) checks `defaultPrevented`. It cannot check for the panel
+      // instead, since the panel is already gone by the time its listener runs.
+      e.preventDefault();
+      onClose();
     };
     document.addEventListener('mousedown', onDown);
     document.addEventListener('keydown', onKey);
@@ -254,8 +269,9 @@ export function AnchoredMenu({
   return createPortal(
     <div
       ref={menuRef}
-      role="menu"
+      role={role}
       aria-label={label}
+      onKeyDown={onKeyDown}
       data-testid={testId}
       // A single DOM question the rest of the app can ask: "is one of these
       // panels open right now?". The shell's hover-peek rail needs it, because

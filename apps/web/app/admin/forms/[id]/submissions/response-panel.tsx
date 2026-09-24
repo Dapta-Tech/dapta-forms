@@ -78,6 +78,16 @@ function writeParam(name: string, value: string | null): void {
   window.history.replaceState(null, '', url);
 }
 
+/**
+ * Whether a popup anchored over the table is open (a column's filter menu).
+ * It is portalled out of the sheet, so the sheet's keys (arrows, Enter, Esc,
+ * Tab) must leave it alone while it is up: Esc closes the menu, not the sheet
+ * (the Esc that closes it is also marked consumed, see `AnchoredMenu`).
+ */
+function popupOpen(): boolean {
+  return document.querySelector('[data-anchored-menu]') != null;
+}
+
 /** Whether the table is open as the full-screen sheet; read by `PagerLink`. */
 const SheetContext = createContext(false);
 
@@ -172,6 +182,13 @@ export function ResponsesViewer({
    */
   const [focusKey, setFocusKey] = useState<string | null>(null);
   const [sheet, setSheet] = useState(initialSheet);
+  /**
+   * The sheet fades in only when the person opens it. Mounted already open
+   * (a reload, a page link, a filter change: each one remounts the viewer)
+   * it is simply there; replaying the fade on every filter check flashed the
+   * page behind the sheet.
+   */
+  const [fadeIn, setFadeIn] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const openSheetRef = useRef<HTMLButtonElement>(null);
   const closeSheetRef = useRef<HTMLButtonElement>(null);
@@ -206,6 +223,7 @@ export function ResponsesViewer({
 
   const toggleSheet = useCallback((on: boolean) => {
     setSheet(on);
+    setFadeIn(on);
     if (!on) setCursorOn(false);
     writeParam(VIEW_PARAM, on ? SHEET_VIEW : null);
   }, []);
@@ -317,7 +335,7 @@ export function ResponsesViewer({
   useEffect(() => {
     if (!sheet) return;
     const onKey = (e: KeyboardEvent) => {
-      if (document.querySelector('[aria-modal="true"]')) return;
+      if (e.defaultPrevented || document.querySelector('[aria-modal="true"]') || popupOpen()) return;
       if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
       const dir = arrowDirection(e.key);
       if (!dir && e.key !== 'Enter') return;
@@ -379,7 +397,9 @@ export function ResponsesViewer({
       // Drawer, ConfirmDialog) is modal, while the admin shell's mobile nav
       // is a `role="dialog"` that lives in the DOM even when shut. An open
       // modal owns Esc and Tab; the sheet only takes the keys nobody else is.
-      if (document.querySelector('[aria-modal="true"]')) return;
+      // So does a column's filter menu, which is not modal but is on top; the
+      // Esc that closed it arrives here consumed, the menu already gone.
+      if (e.defaultPrevented || document.querySelector('[aria-modal="true"]') || popupOpen()) return;
       if (e.key === 'Escape') {
         toggleSheet(false);
         return;
@@ -461,7 +481,7 @@ export function ResponsesViewer({
         data-testid="responses-viewer"
         className={
           sheet
-            ? 'fixed inset-0 z-40 flex animate-backdrop-in flex-col bg-background'
+            ? `fixed inset-0 z-40 flex flex-col bg-background ${fadeIn ? 'animate-backdrop-in' : ''}`
             : 'flex flex-col gap-3'
         }
       >

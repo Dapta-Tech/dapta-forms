@@ -7,6 +7,20 @@ import { getLocale } from '@/lib/locale';
 import { buildResponseDetail, type ResponseDetail } from '../response-detail';
 import { toSummaryHit, type SummaryHit } from './summary-hit';
 
+/** The filter params a search carries, and nothing else a caller might slip in. */
+export type SummaryFilterQuery = Partial<
+  Record<'status' | 'from' | 'to' | 'scoreMin' | 'scoreMax' | 'answers', string>
+>;
+
+function pickFilter(f: SummaryFilterQuery): SummaryFilterQuery {
+  const out: SummaryFilterQuery = {};
+  for (const k of ['status', 'from', 'to', 'scoreMin', 'scoreMax', 'answers'] as const) {
+    const v = f[k];
+    if (typeof v === 'string' && v !== '') out[k] = v;
+  }
+  return out;
+}
+
 /** How many answers one "Show more" (or one search) brings. */
 const PAGE = 10;
 
@@ -20,12 +34,14 @@ export async function searchSummaryAnswersAction(
   stepKey: string,
   query: string,
   offset: number,
+  /** The Summary's filter as the API reads it; the API checks it against the form. */
+  filter: SummaryFilterQuery = {},
 ): Promise<
   { ok: true; items: SummaryHit[]; total: number; offset: number; limit: number } | { ok: false }
 > {
   try {
     const [page, me, locale] = await Promise.all([
-      adminApi.searchSummaryAnswers(formId, stepKey, { q: query, offset, limit: PAGE }),
+      adminApi.searchSummaryAnswers(formId, stepKey, { ...pickFilter(filter), q: query, offset, limit: PAGE }),
       adminApi.me(),
       getLocale(),
     ]);

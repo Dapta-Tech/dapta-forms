@@ -29,7 +29,8 @@ import { AuthService, type ReqLike } from './auth.service';
 import { AnalyticsService } from './analytics.service';
 import { DB } from './tokens';
 import { csvRow, exportColumns, UTF8_BOM } from './csv';
-import { parseBound, parseIdList, parseIntParam, parseStatus, parseTimeZone } from './query-params';
+import { parseBound, parseIdList, parseIntParam, parseTimeZone } from './query-params';
+import { parseSort, parseSubmissionFilter, workspaceZone, type FilterQuery } from './submission-filter';
 
 /** A minimal response shape (structurally satisfied by the express Response). */
 interface StreamRes {
@@ -104,9 +105,7 @@ export class AnalyticsController {
     @Req() req: ReqLike,
     @Res() res: StreamRes,
     @Param('id') id: string,
-    @Query('status') status?: string,
-    @Query('from') from?: string,
-    @Query('to') to?: string,
+    @Query() query: FilterQuery,
     @Query('ids') idsParam?: string,
   ): Promise<void> {
     const ids = parseIdList(idsParam);
@@ -125,7 +124,9 @@ export class AnalyticsController {
     const config = form.config as FormConfig;
     const filename = `${form.slug || 'submissions'}-submissions.csv`;
     // An unknown stored zone exports as UTC (+00:00) rather than failing the download.
-    const zone = resolveTimeZone(await getAccountTimezone(this.db, p.accountId), (m) => this.log.warn(m));
+    const zone = await workspaceZone(this.db, p.accountId, (m) => this.log.warn(m));
+    // Parsed before any header is written, so a malformed filter is still a 400.
+    const filter = { ...parseSubmissionFilter(query, config, zone), sort: parseSort(query.sort, config) };
     const local = (ms: number | null) => (ms == null ? '' : formatIsoWithOffset(ms, zone));
     const locale = (await getMemberLocale(this.db, p.accountId, p.memberId)) ?? config.language ?? 'en';
     const m = getMessages(locale).admin.submissions;
@@ -148,12 +149,7 @@ export class AnalyticsController {
 
     res.write(UTF8_BOM + csvRow(columns.map((c) => c.header)));
 
-    const rows = await this.analytics.exportSubmissions(id, {
-      status: parseStatus(status),
-      from: parseBound(from, false, zone),
-      to: parseBound(to, true, zone),
-      ids,
-    });
+    const rows = await this.analytics.exportSubmissions(id, { ...filter, ids });
     for (const s of rows) {
       const row = {
         id: s.id,
@@ -176,22 +172,26 @@ export class AnalyticsController {
    * filtered summary describes exactly the filtered rows.
    */
   @Get('forms/:id/summary')
-  async formSummary(
-    @Req() req: ReqLike,
-    @Param('id') id: string,
-    @Query('status') status?: string,
-    @Query('from') from?: string,
-    @Query('to') to?: string,
-  ) {
+  async formSummary(@Req() req: ReqLike, @Param('id') id: string, @Query() query: FilterQuery) {
     const p = await this.auth.resolveHost(req);
     const form = await getFormById(this.db, p.accountId, id);
     if (!form) throw new NotFoundException({ error: 'NOT_FOUND', message: 'Not found.' });
-    const steps = (form.config as FormConfig).steps ?? [];
-    return this.analytics.summary(id, steps, {
-      status: parseStatus(status),
-      from: parseBound(from, false),
-      to: parseBound(to, true),
-    });
+    const config = form.config as FormConfig;
+    const zone = await workspaceZone(this.db, p.accountId, (m) => this.log.warn(m));
+    return this.analytics.summary(id, config.steps ?? [], parseSubmissionFilter(query, config, zone));
+  }
+
+  /**
+   * What the table's header filters offer, counted over every response of the
+   * form (the distribution before filtering): the total, completed and partial,
+   * and each choice question's options with how many picked them.
+   */
+  @Get('forms/:id/submissions-facets')
+  async submissionFacets(@Req() req: ReqLike, @Param('id') id: string) {
+    const p = await this.auth.resolveHost(req);
+    const form = await getFormById(this.db, p.accountId, id);
+    if (!form) throw new NotFoundException({ error: 'NOT_FOUND', message: 'Not found.' });
+    return this.analytics.facets(id, (form.config as FormConfig).steps ?? []);
   }
 
   /**
@@ -205,25 +205,23 @@ export class AnalyticsController {
     @Req() req: ReqLike,
     @Param('id') id: string,
     @Param('stepKey') stepKey: string,
+    @Query() query: FilterQuery,
     @Query('q') q?: string,
-    @Query('status') status?: string,
-    @Query('from') from?: string,
-    @Query('to') to?: string,
     @Query('limit') limit?: string,
     @Query('offset') offset?: string,
   ) {
     const p = await this.auth.resolveHost(req);
     const form = await getFormById(this.db, p.accountId, id);
     if (!form) throw new NotFoundException({ error: 'NOT_FOUND', message: 'Not found.' });
-    const steps = (form.config as FormConfig).steps ?? [];
+    const config = form.config as FormConfig;
+    const steps = config.steps ?? [];
     const step = steps.find((s) => s.key === stepKey);
     if (!step || !isTextSummaryStep(step))
       throw new NotFoundException({ error: 'NOT_FOUND', message: 'Not found.' });
+    const zone = await workspaceZone(this.db, p.accountId, (m) => this.log.warn(m));
     return this.analytics.searchAnswers(id, steps, step, {
+      ...parseSubmissionFilter(query, config, zone),
       query: typeof q === 'string' ? q.slice(0, 200) : undefined,
-      status: parseStatus(status),
-      from: parseBound(from, false),
-      to: parseBound(to, true),
       limit: parseIntParam(limit),
       offset: parseIntParam(offset),
     });

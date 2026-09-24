@@ -12,7 +12,7 @@ import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { t } from '@quill/shared';
 import { SearchClearButton } from '@/components/ui/search-clear-button';
 import { callAction, isTransportError } from '@/lib/call-action';
-import { searchSummaryAnswersAction } from './actions';
+import { searchSummaryAnswersAction, type SummaryFilterQuery } from './actions';
 import type { SummaryHit } from './summary-hit';
 import { useOpenResponse } from './summary-response-panel';
 
@@ -62,6 +62,8 @@ export function TextAnswers({
   stepKey,
   recent,
   answered,
+  filter,
+  compact = false,
   labels,
 }: {
   formId: string;
@@ -70,6 +72,14 @@ export function TextAnswers({
   recent: SummaryHit[];
   /** How many responses answered this question: what "Show more" can reach. */
   answered: number;
+  /** The Summary's filter, so a search looks only through the filtered responses. */
+  filter: SummaryFilterQuery;
+  /**
+   * A contact question (name, email, phone): the card is its count and the
+   * search box, and lists answers only for a search. A list of people is the
+   * least useful thing to read in a summary, and it took the most room.
+   */
+  compact?: boolean;
   labels: TextAnswersLabels;
 }) {
   const openResponse = useOpenResponse();
@@ -98,7 +108,7 @@ export function TextAnswers({
     const mine = ++seq.current;
     setLoading(true);
     setError(null);
-    const res = await callAction(() => searchSummaryAnswersAction(formId, stepKey, q, offset));
+    const res = await callAction(() => searchSummaryAnswersAction(formId, stepKey, q, offset, filter));
     if (mine !== seq.current) return;
     setLoading(false);
     if (isTransportError(res) || !res.ok) {
@@ -161,6 +171,8 @@ export function TextAnswers({
 
   const searching = applied.length > 0;
   const more = !exhausted;
+  // Compact, the list (and its "latest" caption) only exists for a search.
+  const listed = !compact || searching;
 
   return (
     <div className="flex flex-col gap-3">
@@ -200,9 +212,13 @@ export function TextAnswers({
         />
       </div>
 
-      <div className="flex min-h-5 items-center justify-between gap-3 text-xs text-muted-foreground">
+      <div
+        className={`flex items-center justify-between gap-3 text-xs text-muted-foreground ${
+          listed || loading ? 'min-h-5' : 'hidden'
+        }`}
+      >
         <span aria-live="polite" data-testid="summary-search-status">
-          {searching ? t(labels.matches, { n: total }) : labels.latest}
+          {searching ? t(labels.matches, { n: total }) : listed ? labels.latest : null}
         </span>
         {loading ? (
           <i aria-hidden className="pi pi-spin pi-spinner text-faint" style={{ fontSize: 12 }} />
@@ -215,7 +231,7 @@ export function TextAnswers({
         </p>
       ) : null}
 
-      {searching && items.length === 0 && !loading ? (
+      {!listed ? null : searching && items.length === 0 && !loading ? (
         <p className="rounded-lg border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
           {t(labels.noMatches, { query: applied })}
         </p>
@@ -271,7 +287,7 @@ export function TextAnswers({
         </ul>
       )}
 
-      {more ? (
+      {more && listed ? (
         <button
           type="button"
           onClick={() => void fetchPage(applied, nextOffset)}

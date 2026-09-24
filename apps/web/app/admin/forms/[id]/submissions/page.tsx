@@ -15,7 +15,7 @@ import { WorkspaceTimezoneField } from '@/app/admin/_components/workspace-timezo
 import { getLocale } from '@/lib/locale';
 import { FormTabs } from '@/components/ui/form-tabs';
 import { Skeleton } from '@/components/skeleton';
-import { SubmissionsFilter } from './submissions-filter';
+import { HeldFallback, SwapHold } from '@/components/swap-hold';
 import { DeleteSubmissionButton } from './row-actions';
 import { SubmissionFileButton } from './submission-file-button';
 import { buildResponseDetail } from './response-detail';
@@ -34,6 +34,18 @@ import { SubmissionsViewTabs } from './submissions-view-tabs';
 import { ColumnResizeHandle } from './column-resize';
 import { PageSelect, RowSelect } from './table-selection';
 import { PageSizeSelect } from './page-size-select';
+import {
+  apiFilterQuery,
+  apiQueryString,
+  filterParams,
+  isFiltered,
+  parseViewFilter,
+  queryString,
+  withFilter,
+  type ViewFilter,
+} from './filters';
+import { choiceColumnId, filterColumns, filterScope } from './filter-columns';
+import { ClearFiltersButton, FilterBar, FilterHost, FilterTh } from './column-filter';
 
 export const dynamic = 'force-dynamic';
 
@@ -73,10 +85,17 @@ const PINNED_RESPONSE = 'sticky left-11';
 const PINNED_TINT =
   'bg-card group-has-checked:bg-linear-to-r group-has-checked:from-primary/5 group-has-checked:to-primary/5 group-hover:bg-linear-to-r group-hover:from-accent/70 group-hover:to-accent/70 group-data-active:bg-linear-to-r group-data-active:from-primary/10 group-data-active:to-primary/10';
 
-type SP = { status?: string; offset?: string; response?: string; view?: string; size?: string };
+/** The query as Next hands it over: a param given twice (a filter's options) is a list. */
+type SP = Record<string, string | string[] | undefined>;
 
-function parseStatus(v: string | undefined): 'all' | 'completed' | 'partial' {
-  return v === 'completed' || v === 'partial' ? v : 'all';
+function one(v: string | string[] | undefined): string | undefined {
+  return Array.isArray(v) ? v[0] : v;
+}
+
+/** The form's own 404 is the page's 404; anything else is an error. */
+function orNotFound(e: unknown): never {
+  if (e instanceof ApiError && e.status === 404) notFound();
+  throw e;
 }
 
 export default async function SubmissionsPage({
@@ -90,17 +109,35 @@ export default async function SubmissionsPage({
   const sp = await searchParams;
   const locale = await getLocale();
   const m = getMessages(locale).admin;
-  const status = parseStatus(sp.status);
-  const offset = Math.max(0, Number(sp.offset ?? 0) || 0);
-  const size = parsePageSize(sp.size);
+  const offset = Math.max(0, Number(one(sp.offset) ?? 0) || 0);
+  const size = parsePageSize(one(sp.size));
+  // The unfiltered counts the column menus show need nothing else: asked
+  // first, they run alongside everything below, the rows included. (Handled
+  // here too, so a form that 404s below leaves no rejection unobserved.)
+  const facetsRequest = adminApi.getSubmissionFacets(id);
+  facetsRequest.catch(() => undefined);
   // The workspace zone every timestamp below is read in, and who may change
-  // it; and the page of rows, fetched here because the table's key needs it.
-  const [me, page] = await Promise.all([
-    adminApi.me(),
-    adminApi.listSubmissions(id, { status, limit: size, offset }).catch((e: unknown) => {
-      if (e instanceof ApiError && e.status === 404) notFound();
-      throw e;
-    }),
+  // it; and the form, whose questions decide what can be filtered.
+  const [me, form] = await Promise.all([adminApi.me(), adminApi.getForm(id).catch(orNotFound)]);
+  const timeZone = me.timezone ?? 'UTC';
+  const config = form.config as FormConfig;
+  // Message and reveal steps collect nothing: no column, as in the CSV.
+  const steps = (config.steps ?? []).filter((s) => !isInputlessStep(s));
+  // Score only exists when the form scores, as in the CSV.
+  const scoring = config.scoring?.enabled !== false;
+  // A form that collects a contact leads each row with who answered; one that
+  // does not leads with when, as before.
+  const hasContact = steps.some((s) => s.type === 'name' || s.type === 'email' || s.type === 'phone');
+  // The header filters, from the URL (an old `?status=` link reads as the
+  // Status filter). The API takes the same filter, so the table, the CSV and
+  // the Summary always describe the same rows.
+  const filter = parseViewFilter(sp, filterScope(steps, scoring));
+  const apiQuery = apiFilterQuery(filter, timeZone);
+  // The page of rows, fetched here because the table's key needs it, while
+  // the counts finish.
+  const [page, facets] = await Promise.all([
+    adminApi.listSubmissions(id, { ...apiQuery, limit: size, offset }).catch(orNotFound),
+    facetsRequest.catch(orNotFound),
   ]);
   // A new page, size or filter is a new table: the viewer (and its selection)
   // starts over. So is a new set of rows. A refresh that changed them (a
@@ -109,10 +146,17 @@ export default async function SubmissionsPage({
   // production build; keying the viewer inside it was not enough. Keyed by
   // the rows, only a change of rows remounts: walking, the panel and the
   // cursor keep their state otherwise.
-  const key = `${status}:${offset}:${size}:${page.items.map((row) => row.id).join(',')}`;
-  const timeZone = me.timezone ?? 'UTC';
-
-  const exportQuery = status === 'all' ? '' : `?status=${status}`;
+  const key = `${filterParams(filter).toString()}:${offset}:${size}:${page.items.map((row) => row.id).join(',')}`;
+  const columns = filterColumns({
+    steps,
+    scoring,
+    facets,
+    labels: {
+      date: hasContact ? m.submissions.colResponse : m.submissions.colSubmitted,
+      status: m.submissions.colStatus,
+      score: m.submissions.colScore,
+    },
+  });
 
   return (
     <div className="mx-auto max-w-[1100px] px-6 py-8">
@@ -123,22 +167,21 @@ export default async function SubmissionsPage({
             <h1 className="text-3xl font-semibold tracking-tight">{m.submissions.title}</h1>
             <p className="mt-1 text-muted-foreground">{m.submissions.subtitle}</p>
           </div>
+          {/* The export downloads exactly what the filters show, in the same order. */}
           <a
-            href={`/admin/forms/${id}/submissions/export${exportQuery}`}
+            href={`/admin/forms/${id}/submissions/export${apiQueryString(apiQuery)}`}
             className="inline-flex h-10 items-center gap-2 rounded-md border border-border bg-transparent px-4 text-sm font-semibold text-foreground transition-colors hover:bg-accent"
           >
             <i aria-hidden className="pi pi-download" style={{ fontSize: 13 }} />
             {m.submissions.export}
           </a>
         </div>
-        <SubmissionsViewTabs formId={id} active="responses" labels={m.submissions.summary} />
         <div className="flex flex-wrap items-end justify-between gap-4">
-          <SubmissionsFilter
-            labels={{
-              all: m.submissions.statusAll,
-              completed: m.submissions.statusCompleted,
-              partial: m.submissions.statusPartial,
-            }}
+          <SubmissionsViewTabs
+            formId={id}
+            active="responses"
+            labels={m.submissions.summary}
+            query={queryString(filterParams(filter))}
           />
           {/* The SHARED workspace zone, right where the timestamps are: an
               admin can fix it here, a member sees which zone applies. */}
@@ -161,20 +204,48 @@ export default async function SubmissionsPage({
         </div>
       </div>
 
-      <Suspense key={key} fallback={<Skeleton className="h-80 w-full" />}>
-        <SubmissionsData
-          id={id}
-          page={page}
-          status={status}
-          offset={offset}
-          size={size}
-          locale={locale}
-          timeZone={timeZone}
-          responseId={sp.response}
-          sheet={sp.view === SHEET_VIEW}
-          m={m}
-        />
-      </Suspense>
+      {/* Outside the keyed Suspense on purpose: a column's filter menu stays
+          open while the rows it filters change under it. */}
+      <FilterHost
+        columns={columns}
+        filter={filter}
+        statusCounts={{ completed: facets.completed, partial: facets.partial }}
+        total={facets.total}
+        labels={{ ...m.submissions.filters, completed: m.submissions.badgeCompleted, partial: m.submissions.badgePartial }}
+        locale={locale}
+      >
+        {/* A new key is a new boundary, whose fallback React shows for a
+            moment even with the rows at hand: it holds the old picture then,
+            so the table (and the full-screen sheet) do not blink. */}
+        <SwapHold>
+          <Suspense
+            key={key}
+            fallback={
+              <HeldFallback>
+                <Skeleton className="h-80 w-full" />
+              </HeldFallback>
+            }
+          >
+            <SubmissionsData
+              id={id}
+              title={form.name}
+              steps={steps}
+              scoring={scoring}
+              hasContact={hasContact}
+              page={page}
+              filter={filter}
+              total={facets.total}
+              offset={offset}
+              size={size}
+              locale={locale}
+              timeZone={timeZone}
+              responseId={one(sp.response)}
+              sheet={one(sp.view) === SHEET_VIEW}
+              m={m}
+            />
+          </Suspense>
+        </SwapHold>
+      </FilterHost>
     </div>
   );
 }
@@ -190,10 +261,15 @@ function cellText(step: FormStep, data: Record<string, unknown>, timeZone: strin
   return step.type === 'name' ? nameAnswer(step, data) : formatAnswerCell(step, data[step.key], { timeZone });
 }
 
-async function SubmissionsData({
+function SubmissionsData({
   id,
+  title,
+  steps,
+  scoring,
+  hasContact,
   page,
-  status,
+  filter,
+  total,
   offset,
   size,
   locale,
@@ -203,9 +279,17 @@ async function SubmissionsData({
   m,
 }: {
   id: string;
+  /** The form's name, on the sheet's top bar. */
+  title: string;
+  /** The answering steps, one column each. */
+  steps: FormStep[];
+  scoring: boolean;
+  hasContact: boolean;
   /** This page of rows, fetched by the shell. */
   page: SubmissionsPage;
-  status: 'all' | 'completed' | 'partial';
+  filter: ViewFilter;
+  /** Every response of the form, whatever the filter. */
+  total: number;
   offset: number;
   /** `?size=`: rows per page. */
   size: PageSize;
@@ -217,21 +301,10 @@ async function SubmissionsData({
   sheet: boolean;
   m: FormsMessages['admin'];
 }) {
-  let form: Awaited<ReturnType<typeof adminApi.getForm>>;
-  try {
-    form = await adminApi.getForm(id);
-  } catch (e) {
-    if (e instanceof ApiError && e.status === 404) notFound();
-    throw e;
-  }
-
-  const config = form.config as FormConfig;
-  // Message and reveal steps collect nothing: no column, as in the CSV.
-  const steps = (config.steps ?? []).filter((s) => !isInputlessStep(s));
-  // Score only exists when the form scores, as in the CSV.
-  const scoring = config.scoring?.enabled !== false;
-
-  if (page.total === 0) {
+  const filtered = isFiltered(filter);
+  // No responses at all. With a filter on, an empty page is a filter that
+  // matches nothing: the table stays, headings and all, so it can be undone.
+  if (page.total === 0 && !filtered) {
     return (
       <div className="rounded-xl border border-dashed border-border bg-card/40 p-12 text-center">
         <p className="text-lg font-medium">{m.submissions.emptyTitle}</p>
@@ -247,10 +320,9 @@ async function SubmissionsData({
   // range ("26–25 of 25"), with Next disabled. `total` is authoritative — it
   // counts every row matching the filter, before pagination — so it is what
   // decides where the last page starts. Send the reader there, filter intact.
-  if (offset >= page.total) {
+  if (page.total > 0 && offset >= page.total) {
     const lastOffset = Math.floor((page.total - 1) / page.limit) * page.limit;
-    const q = new URLSearchParams();
-    if (status !== 'all') q.set('status', status);
+    const q = withFilter('', filter);
     if (size !== DEFAULT_PAGE_SIZE) q.set(SIZE_PARAM, String(size));
     if (lastOffset > 0) q.set('offset', String(lastOffset));
     if (sheet) q.set('view', SHEET_VIEW);
@@ -264,8 +336,7 @@ async function SubmissionsData({
   const hasNext = offset + page.limit < page.total;
   /** A page link: the filter and the page size ride along; the sheet is added client-side. */
   const pageHref = (to: number) => {
-    const q = new URLSearchParams();
-    if (status !== 'all') q.set('status', status);
+    const q = withFilter('', filter);
     if (size !== DEFAULT_PAGE_SIZE) q.set(SIZE_PARAM, String(size));
     q.set('offset', String(to));
     return `?${q.toString()}`;
@@ -283,9 +354,8 @@ async function SubmissionsData({
   // Every response on this page, formatted for the side panel: the rows open
   // it, and its arrows walk this same list.
   const details = page.items.map((row) => buildResponseDetail(row, steps, { locale, timeZone, scoring }));
-  // A form that collects a contact leads each row with who answered; one that
-  // does not leads with when, as before.
-  const hasContact = steps.some((s) => s.type === 'name' || s.type === 'email' || s.type === 'phone');
+  // Every column, for the one cell that says a filter matched nothing.
+  const columnCount = 4 + (scoring ? 1 : 0) + steps.length;
   const pagerButton =
     'inline-flex h-9 items-center rounded-md border border-border px-3 font-medium text-foreground transition-colors hover:bg-accent';
   const pagerOff =
@@ -297,7 +367,7 @@ async function SubmissionsData({
           the page body never scrolls sideways even with many step columns. */}
       <ResponsesViewer
         formId={id}
-        title={form.name}
+        title={title}
         items={details}
         initialId={responseId}
         initialSheet={sheet}
@@ -338,6 +408,7 @@ async function SubmissionsData({
           bulkDeleteFailed: m.submissions.bulkDeleteFailed,
         }}
         pager={
+          page.total === 0 ? undefined : (
           <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
             <div className="flex items-center gap-3">
               <PageSizeSelect value={size} label={m.submissions.pageSize} />
@@ -362,8 +433,13 @@ async function SubmissionsData({
               )}
             </div>
           </div>
+          )
         }
       >
+        {/* What the view is filtered by, above the table in both views. */}
+        <div className="mb-3 empty:hidden">
+          <FilterBar shown={page.total} total={total} />
+        </div>
         {/* In the sheet (`data-sheet` on the viewer) this container takes the
             screen and scrolls both ways, under a header that stays put and
             beside a first column that stays put. */}
@@ -381,26 +457,55 @@ async function SubmissionsData({
               <th className={`${TH} sticky left-0 z-20 px-0 ${SELECT_COL}`}>
                 <PageSelect label={m.submissions.selectPage} />
               </th>
-              <th className={`${TH} ${PINNED_RESPONSE} z-20 whitespace-nowrap shadow-[1px_0_0_var(--color-border)]`}>
+              {/* A funnel on every column that filters (the date, the status,
+                  the score, each choice question); the heading opens it. */}
+              <FilterTh columnId="date" className={`${TH} ${PINNED_RESPONSE} z-20 whitespace-nowrap shadow-[1px_0_0_var(--color-border)]`}>
                 {hasContact ? m.submissions.colResponse : m.submissions.colSubmitted}
-              </th>
-              <th className={`${TH} whitespace-nowrap`}>{m.submissions.colStatus}</th>
-              {scoring ? <th className={`${TH} whitespace-nowrap text-right`}>{m.submissions.colScore}</th> : null}
+              </FilterTh>
+              <FilterTh columnId="status" className={`${TH} whitespace-nowrap`}>
+                {m.submissions.colStatus}
+              </FilterTh>
+              {scoring ? (
+                <FilterTh columnId="score" align="end" className={`${TH} whitespace-nowrap text-right`}>
+                  {m.submissions.colScore}
+                </FilterTh>
+              ) : null}
               {steps.map((s, i) => (
-                <th key={s.key} className={`${TH} group/th`} style={questionWidth(i, false)}>
+                <FilterTh
+                  key={s.key}
+                  columnId={choiceColumnId(s.key)}
+                  className={`${TH} group/th`}
+                  style={questionWidth(i, false)}
+                  extra={
+                    <ColumnResizeHandle
+                      formId={id}
+                      stepKey={s.key}
+                      index={i}
+                      label={m.submissions.resizeColumn}
+                    />
+                  }
+                >
                   <ColumnHeading text={stepLabel(s)} />
-                  <ColumnResizeHandle
-                    formId={id}
-                    stepKey={s.key}
-                    index={i}
-                    label={m.submissions.resizeColumn}
-                  />
-                </th>
+                </FilterTh>
               ))}
               <th className={TH} aria-label={m.submissions.colActions} />
             </tr>
           </thead>
           <tbody>
+            {page.items.length === 0 ? (
+              <tr>
+                <td colSpan={columnCount} className="p-0">
+                  {/* Pinned to the visible left edge: the table can be far wider than the screen. */}
+                  <div className="sticky left-0 w-[min(28rem,calc(100vw-3.5rem))] px-6 py-12" data-testid="filter-empty">
+                    <p className="text-base font-medium">{m.submissions.filters.noMatchesTitle}</p>
+                    <p className="mt-1 text-sm text-muted-foreground">{m.submissions.filters.noMatchesBody}</p>
+                    <div className="mt-4">
+                      <ClearFiltersButton />
+                    </div>
+                  </div>
+                </td>
+              </tr>
+            ) : null}
             {page.items.map((row, rowIndex) => {
               const completed = row.completedAt != null;
               const when = row.completedAt ?? row.partialAt ?? row.startedAt;

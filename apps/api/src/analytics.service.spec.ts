@@ -506,7 +506,7 @@ describe('Summary tab (controller)', () => {
   }
 
   it('summarizes every answering step over the filtered rows', async () => {
-    const all = await ctrlFor(accountId).formSummary({ headers: {} }, formId);
+    const all = await ctrlFor(accountId).formSummary({ headers: {} }, formId, {});
     expect(all.total).toBe(5);
     expect(all.questions.map((q) => q.key)).toEqual(['role', 'team_size', 'company', 'email']);
     const role = all.questions[0]!;
@@ -519,34 +519,34 @@ describe('Summary tab (controller)', () => {
       ['Individual', 1, 20],
     ]);
 
-    const completed = await ctrlFor(accountId).formSummary({ headers: {} }, formId, 'completed');
+    const completed = await ctrlFor(accountId).formSummary({ headers: {} }, formId, { status: 'completed' });
     expect(completed.total).toBe(3);
     expect(completed.questions.find((q) => q.key === 'email')!.answered).toBe(3);
   });
 
   it('searches one text question, ignoring case, with who answered', async () => {
-    const page = await ctrlFor(accountId).summaryAnswers({ headers: {} }, formId, 'email', 'B@X');
+    const page = await ctrlFor(accountId).summaryAnswers({ headers: {} }, formId, 'email', {}, 'B@X');
     expect(page.total).toBe(1);
     expect(page.items[0]).toMatchObject({ text: 'b@x.io', respondent: 'b@x.io' });
   });
 
   it('404s a search on a question that is not text, and on another account', async () => {
-    await expect(ctrlFor(accountId).summaryAnswers({ headers: {} }, formId, 'role')).rejects.toMatchObject({
+    await expect(ctrlFor(accountId).summaryAnswers({ headers: {} }, formId, 'role', {})).rejects.toMatchObject({
       status: 404,
     });
-    await expect(ctrlFor(accountId).summaryAnswers({ headers: {} }, formId, 'nope')).rejects.toMatchObject({
+    await expect(ctrlFor(accountId).summaryAnswers({ headers: {} }, formId, 'nope', {})).rejects.toMatchObject({
       status: 404,
     });
-    await expect(ctrlFor('attacker-account').formSummary({ headers: {} }, formId)).rejects.toMatchObject({
+    await expect(ctrlFor('attacker-account').formSummary({ headers: {} }, formId, {})).rejects.toMatchObject({
       status: 404,
     });
   });
 
   it('404s a search of another account, even on a real text question and a query that matches', async () => {
     // The same call answers for the owner, so the 404 is the account scope and nothing else.
-    expect((await ctrlFor(accountId).summaryAnswers({ headers: {} }, formId, 'email', 'x.io')).total).toBe(3);
+    expect((await ctrlFor(accountId).summaryAnswers({ headers: {} }, formId, 'email', {}, 'x.io')).total).toBe(3);
     await expect(
-      ctrlFor('attacker-account').summaryAnswers({ headers: {} }, formId, 'email', 'x.io'),
+      ctrlFor('attacker-account').summaryAnswers({ headers: {} }, formId, 'email', {}, 'x.io'),
     ).rejects.toMatchObject({ status: 404 });
   });
 
@@ -558,6 +558,72 @@ describe('Summary tab (controller)', () => {
       status: 404,
     });
     await expect(ctrlFor(accountId).submission({ headers: {} }, 'other-form', one.id)).rejects.toMatchObject({
+      status: 404,
+    });
+  });
+});
+
+describe('header filters (controller)', () => {
+  function ctrlFor(actAccount: string) {
+    const auth = {
+      resolveHost: async () => ({ accountId: actAccount, memberId: 'm', role: 'owner' as const }),
+    } as unknown as AuthService;
+    return new AnalyticsController(db, auth, svc);
+  }
+  async function csv(query: Record<string, string>): Promise<string[]> {
+    const chunks: string[] = [];
+    const res = { setHeader: () => {}, write: (c: string) => void chunks.push(c), end: () => {} };
+    await ctrlFor(accountId).exportCsv({ headers: {} }, res, formId, query);
+    return chunks.join('').trimEnd().split('\r\n').slice(1);
+  }
+  const answers = (a: Record<string, unknown>) => JSON.stringify(a);
+
+  it('summarizes, exports and searches only the rows the filter keeps', async () => {
+    const q = { answers: answers({ role: ['lead', 'individual'] }) };
+    const summary = await ctrlFor(accountId).formSummary({ headers: {} }, formId, q);
+    expect(summary.total).toBe(3);
+    expect(await csv(q)).toHaveLength(3);
+    const narrowed = { ...q, status: 'completed', scoreMin: '5' };
+    expect((await ctrlFor(accountId).formSummary({ headers: {} }, formId, narrowed)).total).toBe(1);
+    expect(await csv(narrowed)).toHaveLength(1);
+    const search = await ctrlFor(accountId).summaryAnswers({ headers: {} }, formId, 'email', q, 'x.io');
+    expect(search.items.map((i) => i.text)).toEqual(['b@x.io']);
+  });
+
+  it('exports in the sort the table shows', async () => {
+    const rows = await csv({ sort: 'score_asc' });
+    expect(rows.map((r) => r.split(',').at(-2))).toEqual(['2', '6', '6', '10', '10']);
+  });
+
+  it('drops keys that are not choice questions of this form, and refuses a malformed filter', async () => {
+    // `email` is a question, but not a choice one; `ghost` is none at all.
+    const loose = { answers: answers({ email: ['a@x.io'], ghost: ['x'] }) };
+    expect((await ctrlFor(accountId).formSummary({ headers: {} }, formId, loose)).total).toBe(5);
+    for (const bad of ['{', '[]', answers({ role: 'lead' }), answers({ role: [1] })]) {
+      await expect(
+        ctrlFor(accountId).formSummary({ headers: {} }, formId, { answers: bad }),
+      ).rejects.toMatchObject({ status: 400 });
+      await expect(
+        ctrlFor(accountId).exportCsv(
+          { headers: {} },
+          { setHeader: () => {}, write: () => {}, end: () => {} },
+          formId,
+          { answers: bad },
+        ),
+      ).rejects.toMatchObject({ status: 400 });
+    }
+  });
+
+  it('counts the menus over every response, for the owning account only', async () => {
+    const facets = await ctrlFor(accountId).submissionFacets({ headers: {} }, formId);
+    expect(facets).toMatchObject({ total: 5, completed: 3, partial: 2 });
+    expect(Object.keys(facets.choices)).toEqual(['role']);
+    expect(facets.choices.role!.map((o) => [o.value, o.count])).toEqual([
+      ['founder', 2],
+      ['lead', 2],
+      ['individual', 1],
+    ]);
+    await expect(ctrlFor('attacker-account').submissionFacets({ headers: {} }, formId)).rejects.toMatchObject({
       status: 404,
     });
   });
@@ -622,7 +688,7 @@ describe('CSV export (large sets, un-paginated)', () => {
       },
       end: () => {},
     };
-    await ctrl.exportCsv({ headers: {} }, res, formId, undefined, undefined, undefined, ids);
+    await ctrl.exportCsv({ headers: {} }, res, formId, {}, ids);
     return chunks.join('').trimEnd().split('\r\n');
   }
 
@@ -781,7 +847,7 @@ describe('workspace timezone: day cuts and the CSV local columns', () => {
     const ctrl = new AnalyticsController(db, auth, svc);
     const chunks: string[] = [];
     const res = { setHeader: () => {}, write: (c: string) => void chunks.push(c), end: () => {} };
-    await ctrl.exportCsv({ headers: {} }, res, formId, undefined, undefined, undefined);
+    await ctrl.exportCsv({ headers: {} }, res, formId, {});
     const lines = chunks.join('').trimEnd().split('\r\n');
     expect(lines[0]).toMatch(/,Submitted at,Status,Score,Submission id$/);
     const row = lines.find((l) => l.includes('tz-csv'))!;
@@ -806,7 +872,7 @@ describe('workspace timezone: day cuts and the CSV local columns', () => {
     const ctrl = new AnalyticsController(db, auth, svc);
     const chunks: string[] = [];
     const res = { setHeader: () => {}, write: (c: string) => void chunks.push(c), end: () => {} };
-    await ctrl.exportCsv({ headers: {} }, res, formId, undefined, undefined, undefined);
+    await ctrl.exportCsv({ headers: {} }, res, formId, {});
     const row = chunks.join('').split('\r\n').find((l) => l.includes('tz-bad'))!;
     expect(row).toContain('2026-09-03T23:45:00+00:00');
   });
@@ -860,7 +926,7 @@ describe('CSV export: readable columns (BUGS-2310)', () => {
     const ctrl = new AnalyticsController(db, auth, svc);
     const chunks: string[] = [];
     const res = { setHeader: () => {}, write: (c: string) => void chunks.push(c), end: () => {} };
-    await ctrl.exportCsv({ headers: {} }, res, id, undefined, undefined, undefined);
+    await ctrl.exportCsv({ headers: {} }, res, id, {});
     return chunks.join('');
   }
 

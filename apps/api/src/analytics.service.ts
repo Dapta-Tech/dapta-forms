@@ -3,10 +3,13 @@ import { localDayIndex, resolveTimeZone, utcOffsetSegments } from '@quill/shared
 import {
   isInputlessStep,
   resolveFormLayout,
+  isFilterableChoiceStep,
+  summarizeFacets,
   summarizeSubmissions,
   summaryAnswer,
   summaryAnswerFields,
   type FormStep,
+  type SubmissionFacets,
   type SubmissionsSummary,
   type SummaryAnswer,
   type SummaryRow,
@@ -29,6 +32,7 @@ import {
   deleteSubmissionsForAccount,
   searchSubmissionAnswers,
   submissionsForSummary,
+  submissionFacetCounts,
   type AnswerSearchQuery,
   type SummarySubmissionRow,
   type SubmissionRow,
@@ -36,6 +40,7 @@ import {
   type CompletedSubmission,
   type DateRange,
   type DeleteSubmissionResult,
+  type SubmissionFilter,
   type SubmissionQuery,
   firstEventAt,
   type DayBucketing,
@@ -333,16 +338,22 @@ export class AnalyticsService {
 
   /**
    * The Summary tab: every answering step of `steps` summarized over the
-   * submissions matching the filter (the same status and date filter as the
-   * table, so a filtered summary describes the filtered rows).
+   * submissions matching the filter (the table's own filter object, so a
+   * filtered summary describes exactly the filtered rows).
    */
-  async summary(
-    formId: string,
-    steps: FormStep[],
-    q: Omit<SubmissionQuery, 'limit' | 'offset'>,
-  ): Promise<SubmissionsSummary> {
+  async summary(formId: string, steps: FormStep[], q: SubmissionFilter): Promise<SubmissionsSummary> {
     const rows = await submissionsForSummary(this.db, formId, q);
     return summarizeSubmissions(steps, rows.map(summaryRow));
+  }
+
+  /**
+   * The header filters' counts, over every response of the form. Counted in
+   * the database: the table asks for them on every load and every check, so
+   * they must not cost a read of every response's answers.
+   */
+  async facets(formId: string, steps: FormStep[]): Promise<SubmissionFacets> {
+    const keys = steps.filter(isFilterableChoiceStep).map((s) => s.key);
+    return summarizeFacets(steps, await submissionFacetCounts(this.db, formId, keys));
   }
 
   /**

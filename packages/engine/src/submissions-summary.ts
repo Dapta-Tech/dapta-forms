@@ -106,6 +106,15 @@ export function isTextSummaryStep(step: Pick<FormStep, 'type'>): boolean {
 }
 
 /**
+ * Whether the submissions table can filter by a step's answers: the steps
+ * whose answer is one of a fixed set of options (single or multiple choice,
+ * dropdown). Free text, contact and URL steps are searched, not filtered.
+ */
+export function isFilterableChoiceStep(step: Pick<FormStep, 'type'>): boolean {
+  return step.type === 'multiple_choice' || step.type === 'dropdown';
+}
+
+/**
  * The answer keys a text step's value is stored under: its own key, or a name
  * step's sub-fields (firstname, lastname), which are stored flat.
  */
@@ -155,7 +164,12 @@ function choiceTokens(value: unknown): string[] {
   return list.map((v) => (v == null ? '' : String(v).trim())).filter((v) => v.length > 0);
 }
 
-function summarizeChoice(step: FormStep, rows: SummaryRow[]) {
+/**
+ * How many responses chose each option of a choice step, in the form's option
+ * order, then any stored value no option carries any more (a removed option),
+ * which keeps its raw value as label.
+ */
+function choiceCounts(step: FormStep, rows: SummaryRow[]): { answered: number; options: SummaryOption[] } {
   const counts = new Map<string, number>();
   for (const o of step.options ?? []) counts.set(o.value, 0);
   let answered = 0;
@@ -166,18 +180,19 @@ function summarizeChoice(step: FormStep, rows: SummaryRow[]) {
     answered++;
     for (const t of tokens) counts.set(t, (counts.get(t) ?? 0) + 1);
   }
-  // Map order is the form's option order, then any stored value no option
-  // carries any more (a removed option), which keeps its raw value as label.
-  const options = [...counts.entries()]
-    .map(([value, count], order) => ({
-      value,
-      label: formatAnswerValue(step, value),
-      count,
-      percent: percentOf(count, answered),
-      order,
-    }))
-    .sort((a, b) => b.count - a.count || a.order - b.order)
-    .map(({ order: _order, ...o }) => o);
+  const options = [...counts.entries()].map(([value, count]) => ({
+    value,
+    label: formatAnswerValue(step, value),
+    count,
+    percent: percentOf(count, answered),
+  }));
+  return { answered, options };
+}
+
+function summarizeChoice(step: FormStep, rows: SummaryRow[]) {
+  const { answered, options } = choiceCounts(step, rows);
+  // Most chosen first; the sort is stable, so ties keep the form's order.
+  options.sort((a, b) => b.count - a.count);
   const multiple = step.type === 'multiple_choice' && step.selectionMode === 'multiple';
   return { answered, multiple, options };
 }
@@ -264,7 +279,7 @@ export function summarizeSubmissions(
   const total = rows.length;
   const questions = answering.map((step): QuestionSummary => {
     const base = { key: step.key, type: step.type, label: stepLabel(step), total };
-    if (step.type === 'multiple_choice' || step.type === 'dropdown')
+    if (isFilterableChoiceStep(step))
       return { ...base, kind: 'choice', ...summarizeChoice(step, rows) };
     if (step.type === 'slider') return { ...base, kind: 'scale', ...summarizeScale(step, rows) };
     if (step.type === 'file' || step.type === 'scheduler') {
@@ -290,4 +305,53 @@ export function summarizeSubmissions(
     return { ...base, kind: 'text', answered, recent };
   });
   return { total, questions };
+}
+
+/**
+ * The raw counts the column menus are built from, aggregated where the
+ * responses live (the database), never the responses themselves: the
+ * statuses, and per choice question how many answered it and how many picked
+ * each trimmed value.
+ */
+export interface FacetCounts {
+  total: number;
+  completed: number;
+  partial: number;
+  choices: Record<string, { answered: number; values: Record<string, number> }>;
+}
+
+/**
+ * What the table's header filters offer, counted over every response (the
+ * distribution before filtering): how many are completed and partial, and
+ * per choice step how many picked each option, in the form's option order.
+ */
+export interface SubmissionFacets {
+  total: number;
+  completed: number;
+  partial: number;
+  choices: Record<string, SummaryOption[]>;
+}
+
+/**
+ * The menus' options from `counts`: every option of each choice step in the
+ * form's order (an option nobody picked shows 0), then any stored value no
+ * option carries any more (a removed option, labelled with its raw value),
+ * most picked first. Percentages are of the responses that answered.
+ */
+export function summarizeFacets(steps: FormStep[], counts: FacetCounts): SubmissionFacets {
+  const choices: Record<string, SummaryOption[]> = {};
+  for (const step of steps) {
+    if (!isFilterableChoiceStep(step)) continue;
+    const { answered, values } = counts.choices[step.key] ?? { answered: 0, values: {} };
+    const own = (step.options ?? []).map((o) => o.value);
+    const known = new Set(own);
+    const extra = Object.keys(values)
+      .filter((v) => !known.has(v))
+      .sort((a, b) => values[b]! - values[a]! || a.localeCompare(b));
+    choices[step.key] = [...own, ...extra].map((value) => {
+      const count = values[value] ?? 0;
+      return { value, label: formatAnswerValue(step, value), count, percent: percentOf(count, answered) };
+    });
+  }
+  return { total: counts.total, completed: counts.completed, partial: counts.partial, choices };
 }
