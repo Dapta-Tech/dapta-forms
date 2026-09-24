@@ -5,9 +5,9 @@ import { test, expect, type APIRequestContext, type BrowserContext } from '@play
  *
  * Under test: apps/web/app/admin/forms/[id]/edit/link-actions.tsx, rendered by
  * form-editor.tsx in the topbar's first row beside Publish. The public path is
- * `/${accountCode}/${handle ?? 'me'}/${slug}` (see edit/page.tsx) — resolved
- * here from GET /v1/me so the QA principal's real account code is never
- * hardcoded (it is NOT necessarily `acme`).
+ * the neutral `/${accountCode}/f/${slug}` (see lib/public-form-path.ts), with
+ * the account code resolved here from GET /v1/me so the QA principal's real
+ * account code is never hardcoded (it is NOT necessarily `acme`).
  *
  * The actions are ICON-ONLY buttons, visible in the header (labels live
  * on title/aria-label). They were labelled buttons once, then briefly a single
@@ -53,12 +53,12 @@ async function createForm(request: APIRequestContext, label: string, workerIndex
   return body;
 }
 
-/** Same derivation the editor page uses — never hardcode the account code. */
+/** Same derivation the editor page uses; never hardcode the account code. */
 async function publicPath(request: APIRequestContext, slug: string) {
   const res = await request.get(`${API}/v1/me`);
   expect(res.ok(), 'GET /v1/me should resolve the principal').toBeTruthy();
-  const me = (await res.json()) as { accountCode: string; handle: string | null };
-  return `/${me.accountCode}/${me.handle ?? 'me'}/${slug}`;
+  const me = (await res.json()) as { accountCode: string };
+  return `/${me.accountCode}/f/${slug}`;
 }
 
 /**
