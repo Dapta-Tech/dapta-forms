@@ -12,7 +12,7 @@ for the internals see [`ARCHITECTURE.md`](ARCHITECTURE.md).
 A self-contained, self-hostable forms platform — two deployable apps over seven
 packages, no third-party SaaS required to run:
 
-- A **public form page** (`/[accountCode]/[handle]/[slug]`) that server-renders
+- A **public form page** (`/{accountCode}/f/{slug}`) that server-renders
   the published config and walks the visible steps client-side.
 - An **admin dashboard + form builder** (multi-step forms, skip-logic, lead
   scoring, outcome buckets, short links).

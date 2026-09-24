@@ -25,8 +25,8 @@ pnpm dev              # builds packages, creates + seeds a SQLite DB, starts bot
 
 Then open (`pnpm dev` binds web **3000** and api **4000**):
 
-- **Web** → http://localhost:3000 — a seeded demo form at
-  [`/acme/alex-rivera/lead-qualifier`](http://localhost:3000/acme/alex-rivera/lead-qualifier)
+- **Web** → http://localhost:3000, with a seeded demo form at
+  [`/acme/f/lead-qualifier`](http://localhost:3000/acme/f/lead-qualifier)
 - **API** → http://localhost:4000/health
 
 > Relocating ports: set `API_PORT` (the API reads it) and point the web app at it
@@ -85,7 +85,7 @@ Changelog with screenshots: [`docs/feedback-v3/`](docs/feedback-v3/README.md).
 
 ## What you get
 
-- A **public form page** (`/[accountCode]/[handle]/[slug]`) that server-renders
+- A **public form page** (`/{accountCode}/f/{slug}`) that server-renders
   the published config and walks the visible steps client-side.
 - A **pure forms engine** (`@quill/engine`) — skip-logic (`showWhen`/`hideWhen`),
   server-side field validation, option/slider scoring, outcome resolution,

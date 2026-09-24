@@ -52,8 +52,8 @@ pnpm dev         # builds packages, migrates + seeds a SQLite DB, starts web + a
 `pnpm dev` runs `db:setup` (migrate + seed) **before** launching the apps, so the
 schema always exists. Then open:
 
-- **Web** → http://localhost:3000 — seeded demo form at
-  `/acme/alex-rivera/lead-qualifier`
+- **Web** → http://localhost:3000, seeded demo form at
+  `/acme/f/lead-qualifier`
 - **API** → http://localhost:4000/health → `{"status":"ok",…,"dialect":"sqlite"}`
 
 No Docker, no Postgres, no accounts. The DB is a file at `.data/dev.db`; email is

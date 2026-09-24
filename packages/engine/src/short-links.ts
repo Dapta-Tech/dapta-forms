@@ -63,9 +63,10 @@ export function validateVanitySlug(slug: string): VanitySlugIssue {
 }
 
 /**
- * A FORM slug is the third path segment (`/{accountCode}/{handle}/{slug}`), and
- * that position is the whole reason it validates differently from a vanity
- * account slug:
+ * A FORM slug is the third path segment (`/{accountCode}/f/{slug}`; links handed
+ * out before the fixed `f` carry a member handle in the middle, and still
+ * resolve), and that position is the whole reason it validates differently from
+ * a vanity account slug:
  *
  *   - **No reserved-word blocklist.** A vanity slug sits at the root, where
  *     `signup` or `admin` would shadow a real route. Nothing is routed under

@@ -4,7 +4,7 @@
  *
  * Drop next to any iframe carrying the `data-dapta-forms` attribute:
  *
- *   <iframe data-dapta-forms src="https://your-host/acct/handle/slug?embed=1"
+ *   <iframe data-dapta-forms src="https://your-host/acct/f/slug?embed=1"
  *           title="My form" loading="lazy"
  *           style="width:100%;border:0;min-height:480px;"></iframe>
  *   <script src="https://your-host/embed.js" async></script>
