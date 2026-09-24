@@ -15,6 +15,7 @@ import { WorkspaceTimezoneField } from '@/app/admin/_components/workspace-timezo
 import { getLocale } from '@/lib/locale';
 import { FormTabs } from '@/components/ui/form-tabs';
 import { Skeleton } from '@/components/skeleton';
+import { HeldFallback, SwapHold } from '@/components/swap-hold';
 import { DeleteSubmissionButton } from './row-actions';
 import { SubmissionFileButton } from './submission-file-button';
 import { buildResponseDetail } from './response-detail';
@@ -209,25 +210,37 @@ export default async function SubmissionsPage({
         labels={{ ...m.submissions.filters, completed: m.submissions.badgeCompleted, partial: m.submissions.badgePartial }}
         locale={locale}
       >
-        <Suspense key={key} fallback={<Skeleton className="h-80 w-full" />}>
-          <SubmissionsData
-            id={id}
-            title={form.name}
-            steps={steps}
-            scoring={scoring}
-            hasContact={hasContact}
-            page={page}
-            filter={filter}
-            total={facets.total}
-            offset={offset}
-            size={size}
-            locale={locale}
-            timeZone={timeZone}
-            responseId={one(sp.response)}
-            sheet={one(sp.view) === SHEET_VIEW}
-            m={m}
-          />
-        </Suspense>
+        {/* A new key is a new boundary, whose fallback React shows for a
+            moment even with the rows at hand: it holds the old picture then,
+            so the table (and the full-screen sheet) do not blink. */}
+        <SwapHold>
+          <Suspense
+            key={key}
+            fallback={
+              <HeldFallback>
+                <Skeleton className="h-80 w-full" />
+              </HeldFallback>
+            }
+          >
+            <SubmissionsData
+              id={id}
+              title={form.name}
+              steps={steps}
+              scoring={scoring}
+              hasContact={hasContact}
+              page={page}
+              filter={filter}
+              total={facets.total}
+              offset={offset}
+              size={size}
+              locale={locale}
+              timeZone={timeZone}
+              responseId={one(sp.response)}
+              sheet={one(sp.view) === SHEET_VIEW}
+              m={m}
+            />
+          </Suspense>
+        </SwapHold>
       </FilterHost>
     </div>
   );

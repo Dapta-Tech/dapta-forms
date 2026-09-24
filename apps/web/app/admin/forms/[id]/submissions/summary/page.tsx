@@ -7,6 +7,7 @@ import { adminApi, ApiError } from '@/lib/admin-api';
 import { getLocale } from '@/lib/locale';
 import { FormTabs } from '@/components/ui/form-tabs';
 import { Skeleton } from '@/components/skeleton';
+import { HeldFallback, SwapHold } from '@/components/swap-hold';
 import type { PanelLabels } from '../response-panel';
 import { SubmissionsViewTabs } from '../submissions-view-tabs';
 import {
@@ -108,10 +109,21 @@ export default async function SubmissionsSummaryPage({
         locale={locale}
       >
         {/* Keyed by the filter: a text card's answers and search are its own
-            state, and must start over on another set of responses. */}
-        <Suspense key={filterParams(filter).toString()} fallback={<SummarySkeleton />}>
-          <SummaryData id={id} filter={filter} locale={locale} m={m} />
-        </Suspense>
+            state, and must start over on another set of responses. While the
+            new cards load, the old ones stay up (see `SwapHold`) rather than
+            a skeleton blinking in. */}
+        <SwapHold>
+          <Suspense
+            key={filterParams(filter).toString()}
+            fallback={
+              <HeldFallback>
+                <SummarySkeleton />
+              </HeldFallback>
+            }
+          >
+            <SummaryData id={id} filter={filter} locale={locale} m={m} />
+          </Suspense>
+        </SwapHold>
       </FilterHost>
     </div>
   );
