@@ -1,10 +1,11 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useState } from 'react';
 import { contactKeyReadiness, type ContactKeyReadiness, type FormConfig } from '@quill/engine';
-import type { FormTracking } from '@quill/types';
+import type { FormSpamProtection, FormTracking } from '@quill/types';
 import { getMessages, type Locale } from '@quill/shared';
 import { Button } from '@/components/ui/button';
+import { Switch } from '@/components/ui/switch';
 import { awaitPendingDestinationWrite } from '@/lib/connect-sync';
 import { IntegrationsEditor, type QuestionMeta } from '../../integrations/integrations-editor';
 import { loadConnectIntegrationsAction, type ConnectIntegrationsData } from './connect-actions';
@@ -13,7 +14,9 @@ import { Field, PanelSection, TextField } from './fields';
 import type { EditorMessages } from './messages';
 
 /**
- * The editor's Connect tab (Typeform parity): per-form Integrations (webhook +
+ * The editor's Connect tab (Typeform parity): Spam protection (the human check
+ * before the final submit, `config.spamProtection`, staged with the draft like
+ * Tracking), per-form Integrations (webhook +
  * HubSpot mapping, the existing IntegrationsEditor embedded as-is), Tracking &
  * Pixels (writes `config.tracking` through the editor's autosave/publish flow),
  * and Emails (per-form template overrides — form → account → stock precedence,
@@ -35,6 +38,8 @@ export function ConnectPanel({
   formId,
   config,
   onTrackingChange,
+  onSpamProtectionChange,
+  captchaAvailable = false,
   m,
   locale,
 }: {
@@ -42,6 +47,13 @@ export function ConnectPanel({
   /** The LIVE editor config state — questions and tracking read from here. */
   config: FormConfig;
   onTrackingChange: (tracking: FormTracking | undefined) => void;
+  onSpamProtectionChange: (spamProtection: FormSpamProtection | undefined) => void;
+  /**
+   * Whether this DEPLOYMENT can run the human check (`/v1/me`). Reported by the
+   * API, never read from the dashboard's env: two copies of the switch that
+   * disagreed would offer a check the API then ignores.
+   */
+  captchaAvailable?: boolean;
   m: EditorMessages;
   locale: string;
 }) {
@@ -64,12 +76,25 @@ export function ConnectPanel({
 
 
 
+  const spamProtection = readSpamProtection(config);
+  // Partials are held only where the check actually runs: the owner's switch
+  // AND a deployment with keys. Anywhere else the integrations below behave,
+  // and are described, exactly as they always were.
+  const partialsHeld = captchaAvailable && spamProtection?.captcha === true;
+
   return (
     <div data-testid="connect-panel" className="mx-auto flex w-full max-w-[900px] flex-col gap-4">
+      <SpamProtectionSection
+        value={spamProtection}
+        available={captchaAvailable}
+        onChange={onSpamProtectionChange}
+        mc={mc}
+      />
       <IntegrationsSection
         formId={formId}
         questions={questions}
         config={config}
+        partialsHeld={partialsHeld}
         mc={mc}
         im={im}
         locale={loc}
@@ -98,6 +123,7 @@ function IntegrationsSection({
   formId,
   questions,
   config,
+  partialsHeld,
   mc,
   im,
   locale,
@@ -107,6 +133,8 @@ function IntegrationsSection({
   /** The LIVE editor config — readiness is derived here, next to the fetched
    *  connection state, so both halves of the answer come from one place. */
   config: FormConfig;
+  /** Spam protection holds this form's partial deliveries (see ConnectPanel). */
+  partialsHeld: boolean;
   mc: EditorMessages['connect'];
   im: ReturnType<typeof getMessages>['admin']['integrations'];
   locale: Locale;
@@ -180,11 +208,131 @@ function IntegrationsSection({
           hubspotConnected={state.data.hubspotConnected}
           questions={questions}
           readiness={readiness}
+          partialsHeld={partialsHeld}
           messages={im}
           locale={locale}
         />
       )}
     </section>
+  );
+}
+
+// --- Spam protection (the human check before the final submit) --------------
+
+/** The engine's FormConfig omits additive keys; `spamProtection` round-trips like `tracking`. */
+const readSpamProtection = (config: FormConfig): FormSpamProtection | null | undefined =>
+  (config as FormConfig & { spamProtection?: FormSpamProtection | null }).spamProtection;
+
+/**
+ * The owner's switch for spam protection, and its mode.
+ *
+ * Writes through the editor's DRAFT (like Tracking): nothing reaches the live
+ * form until Publish. Off is stored as ABSENT, never `{ captcha: false }`, so a
+ * form switched on and back off keeps the exact config shape of every form
+ * before this existed; the mode resets with it, to the recommended Automatic.
+ *
+ * On a deployment without challenge keys the switch cannot be turned on, and
+ * says why. A switch already saved on there (a copied or imported form) says it
+ * is not active here and can still be turned off: the API ignores it anyway,
+ * but the owner should be able to clean it up.
+ */
+export function SpamProtectionSection({
+  value,
+  available,
+  onChange,
+  mc,
+}: {
+  value: FormSpamProtection | null | undefined;
+  available: boolean;
+  onChange: (next: FormSpamProtection | undefined) => void;
+  mc: EditorMessages['connect'];
+}) {
+  const on = value?.captcha === true;
+  // `strict` means nothing without the switch, so it is never shown on its own.
+  const strict = on && value?.strict === true;
+  const group = useId();
+  const radio = 'mt-0.5 size-4 shrink-0 cursor-pointer accent-primary-edge disabled:cursor-not-allowed';
+
+  return (
+    <PanelSection title={mc.spamTitle}>
+      <div data-testid="connect-spam" className="flex flex-col gap-3">
+        <div className="flex items-start gap-3">
+          <Switch
+            checked={on}
+            onCheckedChange={(next) => onChange(next ? { captcha: true } : undefined)}
+            disabled={!available && !on}
+            aria-label={mc.spamToggle}
+            data-testid="spam-toggle"
+            className="mt-0.5"
+          />
+          <div className="min-w-0">
+            <p className="text-sm text-foreground">{mc.spamToggle}</p>
+            <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">{mc.spamHelp}</p>
+          </div>
+        </div>
+
+        {!available ? (
+          <p
+            data-testid="spam-unavailable"
+            className="rounded-md border border-border bg-muted/40 px-2.5 py-2 text-xs leading-relaxed text-muted-foreground"
+          >
+            {on ? mc.spamInactiveHere : mc.spamUnavailable}
+          </p>
+        ) : null}
+
+        {on ? (
+          <fieldset className="flex flex-col gap-2 pl-12">
+            <legend className="sr-only">{mc.spamModeGroup}</legend>
+            <label className="flex cursor-pointer items-start gap-2 text-sm text-foreground">
+              <input
+                type="radio"
+                name={group}
+                checked={!strict}
+                disabled={!available}
+                onChange={() => onChange({ captcha: true })}
+                data-testid="spam-mode-auto"
+                className={radio}
+              />
+              <span>{mc.spamModeAuto}</span>
+            </label>
+            <label className="flex cursor-pointer items-start gap-2 text-sm text-foreground">
+              <input
+                type="radio"
+                name={group}
+                checked={strict}
+                disabled={!available}
+                onChange={() => onChange({ captcha: true, strict: true })}
+                data-testid="spam-mode-strict"
+                className={radio}
+              />
+              <span>
+                {mc.spamModeStrict}
+                <span className="mt-0.5 block text-xs leading-relaxed text-muted-foreground">
+                  {mc.spamModeStrictHelp}
+                </span>
+              </span>
+            </label>
+          </fieldset>
+        ) : null}
+
+        {on && available ? (
+          <>
+            <p data-testid="spam-partial-note" className="text-xs leading-relaxed text-muted-foreground">
+              {mc.spamPartialNote}
+            </p>
+            {/* Same note, same place, as Tracking's: this rides the draft, while
+                the integrations below save to the live form as you type. */}
+            <p
+              data-testid="spam-draft-note"
+              className="flex items-start gap-1.5 rounded-md border border-secondary/40 bg-secondary/10 px-2.5 py-2 text-xs leading-relaxed text-foreground"
+            >
+              <i aria-hidden className="pi pi-info-circle mt-0.5 shrink-0 text-secondary" style={{ fontSize: 11 }} />
+              {mc.spamDraftNote}
+            </p>
+          </>
+        ) : null}
+      </div>
+    </PanelSection>
   );
 }
 

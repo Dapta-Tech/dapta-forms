@@ -151,7 +151,10 @@ function WebhookTable({
                       ) : null}
                     </div>
                   </td>
-                  <td className="whitespace-nowrap px-4 py-3 text-muted-foreground">
+                  <td
+                    className="whitespace-nowrap px-4 py-3 text-muted-foreground"
+                    title={w.partialsHeld && w.firesPartial ? m.partialsHeldNote : undefined}
+                  >
                     {eventsLabel(w, m)}
                   </td>
                   <td className="whitespace-nowrap px-4 py-3">
@@ -219,6 +222,9 @@ function WebhookTable({
  * back-compat rule (absent triggers = both), so this only names the answer.
  */
 function eventsLabel(w: AccountWebhook, m: Msgs): string {
+  // Spam protection on the form holds every partial delivery: the trigger is
+  // still stored (and comes back when protection is off), but it sends nothing.
+  if (w.partialsHeld && w.firesPartial) return w.firesComplete ? m.eventsCompleteHeld : m.eventsPartialHeld;
   if (w.firesPartial && w.firesComplete) return m.eventsBoth;
   if (w.firesComplete) return m.eventsComplete;
   return m.eventsPartial;
