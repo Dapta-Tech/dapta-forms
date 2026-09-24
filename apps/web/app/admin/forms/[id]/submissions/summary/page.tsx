@@ -265,7 +265,11 @@ async function SummaryData({
                 formId={id}
                 stepKey={q.key}
                 answered={q.answered}
-                recent={q.recent.map((a) => toSummaryHit(a, { locale, timeZone }))}
+                // A contact card is a count and a search: it lists no one until
+                // searched, so no names or emails are sent to the browser for it.
+                recent={
+                  CONTACT_TYPES.has(q.type) ? [] : q.recent.map((a) => toSummaryHit(a, { locale, timeZone }))
+                }
                 filter={apiQuery}
                 compact={CONTACT_TYPES.has(q.type)}
                 labels={s.summary}

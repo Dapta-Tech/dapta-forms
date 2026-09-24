@@ -43,18 +43,27 @@ export function SwapHold({ children }: { children: ReactNode }) {
 }
 
 interface Snapshot {
-  html: string;
-  /** Scroll offsets by element position in document order, only the scrolled ones. */
-  scrolls: Array<[number, number, number]>;
+  /** A deep clone of what the region showed, not yet attached anywhere. */
+  nodes: Node[];
+  /** The clones of the scrolled elements, with the offsets to put back. */
+  scrolls: Array<[Element, number, number]>;
 }
 
+/**
+ * The region's content, cloned node by node (no markup is re-parsed: the copy
+ * carries exactly the nodes and attributes on screen, form state included),
+ * and where each scrolled element was scrolled to.
+ */
 export function capture(region: HTMLElement | null): Snapshot | null {
   if (!region || region.childElementCount === 0) return null;
+  const clone = region.cloneNode(true) as HTMLElement;
+  const from = region.querySelectorAll('*');
+  const to = clone.querySelectorAll('*');
   const scrolls: Snapshot['scrolls'] = [];
-  region.querySelectorAll('*').forEach((el, i) => {
-    if (el.scrollTop || el.scrollLeft) scrolls.push([i, el.scrollTop, el.scrollLeft]);
+  from.forEach((el, i) => {
+    if (el.scrollTop || el.scrollLeft) scrolls.push([to[i]!, el.scrollTop, el.scrollLeft]);
   });
-  return { html: region.innerHTML, scrolls };
+  return { nodes: [...clone.childNodes], scrolls };
 }
 
 /** The fallback: the region as it last looked, or `children` when there is nothing to copy. */
@@ -65,16 +74,14 @@ export function HeldFallback({ children }: { children: ReactNode }) {
   const [snapshot] = useState(() => capture(region?.current ?? null));
   const copy = useRef<HTMLDivElement>(null);
 
-  // Before paint, so the copy never shows at the top of a table that was scrolled.
+  // Before paint: the clone goes in, and every scrolled element is put back
+  // where it was, so the copy never shows at the top of a scrolled table.
   useLayoutEffect(() => {
     if (!snapshot || !copy.current) return;
-    const all = copy.current.querySelectorAll('*');
-    for (const [i, top, left] of snapshot.scrolls) {
-      const el = all[i];
-      if (el) {
-        el.scrollTop = top;
-        el.scrollLeft = left;
-      }
+    copy.current.append(...snapshot.nodes);
+    for (const [el, top, left] of snapshot.scrolls) {
+      el.scrollTop = top;
+      el.scrollLeft = left;
     }
   }, [snapshot]);
 
@@ -88,7 +95,6 @@ export function HeldFallback({ children }: { children: ReactNode }) {
       inert
       aria-hidden
       data-testid="held-fallback"
-      dangerouslySetInnerHTML={{ __html: snapshot.html }}
     />
   );
 }

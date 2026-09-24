@@ -47,6 +47,18 @@ vi.mock('../actions', () => ({
   submissionFileUrlAction: vi.fn(),
 }));
 
+// What each text card is handed: its props are what travels to the browser.
+const textCards = vi.hoisted(() => [] as Array<{ stepKey: string; recent: unknown[]; compact?: boolean }>);
+vi.mock('./text-answers', async (importOriginal) => {
+  const real = await importOriginal<typeof import('./text-answers')>();
+  return {
+    TextAnswers: (props: Parameters<typeof real.TextAnswers>[0]) => {
+      textCards.push(props);
+      return real.TextAnswers(props);
+    },
+  };
+});
+
 import SummaryRoute from './page';
 
 type AnyElement = ReactElement<{ children?: unknown }>;
@@ -289,6 +301,8 @@ describe('Summary tab', () => {
     expect(html).toContain('12 of 30 answered');
     expect(html).toContain('data-testid="summary-search"');
     expect(html).not.toContain('ana@x.io');
+    // Not in the page, and not in the card's props either: no email travels.
+    expect(textCards.find((c) => c.stepKey === 'email')).toMatchObject({ compact: true, recent: [] });
     expect(html).not.toContain('data-testid="summary-answers"');
     expect(html).not.toContain('data-testid="summary-show-more"');
   });
