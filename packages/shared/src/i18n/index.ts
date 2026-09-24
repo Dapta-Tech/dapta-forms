@@ -100,6 +100,11 @@ export interface FormsMessages {
        * `CAPTCHA_FAILED` / `CAPTCHA_REQUIRED` codes, never by its message.
        */
       captcha: string;
+      /**
+       * The API's `CAPTCHA_REQUIRED` reaching a page loaded before the owner
+       * turned protection on: it has no check to run, so only a reload helps.
+       */
+      captcha_required: string;
       /** The API's `RATE_LIMITED`: too many requests from this connection. */
       rate_limited: string;
       /** The API's `ANSWER_TOO_LONG`: an answer over its question's ceiling. */
@@ -2070,6 +2075,7 @@ export const en: FormsMessages = {
       file: 'Upload a file to continue.',
       submit: 'Could not submit. Please try again.',
       captcha: 'We couldn’t verify that you’re human. Please try again.',
+      captcha_required: 'This form now checks that you’re human. Refresh the page and submit again.',
       rate_limited: 'Too many attempts from your connection. Wait a moment and try again.',
       answer_too_long: 'One of your answers is longer than this form allows. Shorten it and try again.',
     },
@@ -3796,6 +3802,8 @@ export const es: FormsMessages = {
       file: 'Sube un archivo para continuar.',
       submit: 'No se pudo enviar. Inténtalo de nuevo.',
       captcha: 'No pudimos verificar que eres una persona. Inténtalo de nuevo.',
+      captcha_required:
+        'Este formulario ahora verifica que eres una persona. Recarga la página y vuelve a enviar tus respuestas.',
       rate_limited: 'Demasiados intentos desde tu conexión. Espera un momento e inténtalo de nuevo.',
       answer_too_long: 'Una de tus respuestas es más larga de lo que permite este formulario. Acórtala e inténtalo de nuevo.',
     },

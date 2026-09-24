@@ -412,8 +412,11 @@ export interface SubmitActionResult {
 export function submitErrorMessage(res: { error?: string; message?: string }, m: RendererMessages): string {
   switch (res.error) {
     case 'CAPTCHA_FAILED':
-    case 'CAPTCHA_REQUIRED':
       return m.errors.captcha;
+    // Only a page loaded before the owner turned protection on sends no token:
+    // it has no check to run, so trying again would loop. It has to reload.
+    case 'CAPTCHA_REQUIRED':
+      return m.errors.captcha_required;
     case 'CAPTCHA_UNAVAILABLE':
       return m.captcha.unavailable;
     case 'RATE_LIMITED':
@@ -427,7 +430,9 @@ export function submitErrorMessage(res: { error?: string; message?: string }, m:
 
 export type FinalSubmit =
   | { ok: true; score?: number; outcome?: string | null }
-  | { ok: false; message: string };
+  | { ok: false; message: string }
+  /** A newer run took over, or the page went away: the caller does nothing. */
+  | { ok: false; aborted: true };
 
 function toFinal(res: SubmitActionResult | TransportError, m: RendererMessages): FinalSubmit {
   // Transport messages are technical noise; the respondent gets the generic line.
@@ -441,13 +446,17 @@ function toFinal(res: SubmitActionResult | TransportError, m: RendererMessages):
  * `finalize` call this and differ only in what they do with the answer.
  *
  * - No check: submit, as always.
- * - A token: submit with it. A refused token is retried ONCE on a fresh widget
- *   (it may simply have expired while the person looked away); a second
- *   refusal is shown.
- * - No token (the widget did not load, errored, timed out, or the browser is
- *   unsupported): fail closed WITHOUT losing anything. The answers are saved
- *   as a partial, which the API never delivers while protection is on, and the
- *   person is told they are saved and asked to try again.
+ * - A token: submit with it.
+ * - One automatic retry on a fresh widget, shared by two cases: a token the API
+ *   refused (it may simply have expired while the person looked away) and a
+ *   widget error, which the provider documents as worth retrying. A second
+ *   failure of either kind is the one the person sees.
+ * - No token (the widget did not load, errored twice, timed out, or the
+ *   browser is unsupported): fail closed WITHOUT losing anything. The answers
+ *   are saved as a partial, which the API never delivers while protection is
+ *   on, and the person is told they are saved and asked to try again.
+ * - A run cut short by a newer one (or by the page going away) is dropped:
+ *   whoever superseded it owns the screen now.
  */
 export async function submitFinal(args: {
   gate: CaptchaGate;
@@ -460,6 +469,8 @@ export async function submitFinal(args: {
   for (let attempt = 0; ; attempt++) {
     const check = await gate.challenge();
     if (check.status === 'unavailable') {
+      if (check.reason === 'superseded' || check.reason === 'unmounted') return { ok: false, aborted: true };
+      if (attempt === 0 && check.reason.startsWith('error')) continue;
       const saved = await savePartial();
       if (!isTransportError(saved) && saved.ok) return { ok: false, message: m.captcha.unavailable };
       return toFinal(saved, m);

@@ -397,6 +397,8 @@ export function VerticalFormRenderer({
             { timeoutMs: 8_000 },
           ),
       });
+      // A newer run owns the screen now (see `submitFinal`).
+      if ('aborted' in res) return;
       if (!res.ok) {
         // Back to the page with every answer intact and the message next to
         // Submit, which is also how the person tries again.

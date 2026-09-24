@@ -344,6 +344,8 @@ export function FormRenderer({
             { timeoutMs: 8_000 },
           ),
       });
+      // A newer run owns the screen now (see `submitFinal`).
+      if ('aborted' in res) return;
       if (!res.ok) {
         // Back to the step with every answer intact, the message beside its
         // button. A reveal or a scheduler as the last step has neither: going

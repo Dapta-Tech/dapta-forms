@@ -20,11 +20,13 @@ API is the gate: a complete without a valid token is refused with 403 and nothin
 is written, whoever sends it. When the check cannot run (the widget fails, or the
 provider is down), the answers are kept as a partial and the respondent is asked
 to try again. The booking callback can no longer upsert a CRM contact for a session
-that never completed, unless the booking provider itself returned the invitee.
+that has not completed when the sync runs, unless the booking provider itself
+returned the invitee.
 
 - `@quill/types`: `formConfigSchema.spamProtection` (additive, absent is off),
   `publicFormSchema.captcha`, `submissionSchema.captchaToken` and `hp`, and
-  `captchaCData`, the session stamp both halves compare.
+  `captchaCData` and `CAPTCHA_ACTION`, the session stamp and the action both
+  halves compare.
 - `@quill/config`: `CAPTCHA_SITE_KEY`, `CAPTCHA_SECRET_KEY`, `CAPTCHA_PROVIDER`
   (`none` is a kill switch) and `CAPTCHA_VERIFY_TIMEOUT_MS`, plus `captchaSettings`.
   Both keys unset is the default and means the feature does not exist; one key
@@ -32,5 +34,6 @@ that never completed, unless the booking provider itself returned the invitee.
 - `@quill/db`: the account webhook inventory says whether the owning form has the
   switch on, and `firstSessionViewAt` reads a session's first view.
 - `@quill/shared`: the respondent copy (the check's prompt, its failure and outage
-  messages, and localized `RATE_LIMITED` and `ANSWER_TOO_LONG`, which respondents
-  used to read in English) and the editor copy, in English and Spanish.
+  messages, the reload notice for a page opened before protection was turned on,
+  and localized `RATE_LIMITED` and `ANSWER_TOO_LONG`, which respondents used to
+  read in English) and the editor copy, in English and Spanish.

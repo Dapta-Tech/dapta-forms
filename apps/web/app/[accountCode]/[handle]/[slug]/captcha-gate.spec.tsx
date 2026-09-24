@@ -175,6 +175,21 @@ describe('useCaptchaGate: automatic mode', () => {
     await expect(human).resolves.toEqual({ status: 'token', token: 'tok-after-click' });
   });
 
+  it('counts again once the click is done: a widget that then goes quiet does not spin forever', async () => {
+    vi.useFakeTimers();
+    await mount(AUTO);
+    const { result } = await startChallenge();
+    await act(async () => renders[0]!.opts['before-interactive-callback']!());
+    await act(async () => {
+      vi.advanceTimersByTime(60_000);
+    });
+    await act(async () => renders[0]!.opts['after-interactive-callback']!());
+    await act(async () => {
+      vi.advanceTimersByTime(15_000);
+    });
+    await expect(result).resolves.toMatchObject({ status: 'unavailable', reason: 'timeout' });
+  });
+
   it('a second run replaces the first widget, and a late answer from the first is ignored', async () => {
     await mount(AUTO);
     const { result: first } = await startChallenge();
@@ -291,6 +306,49 @@ describe('submitFinal', () => {
     expect(alwaysRefused).toHaveBeenCalledTimes(2);
   });
 
+  it('a widget error gets ONE fresh widget before the answers are kept as a partial', async () => {
+    const send = vi.fn(async () => ok);
+    const recovers = fakeGate([
+      { status: 'unavailable', reason: 'error 300030' },
+      { status: 'token', token: 'second' },
+    ]);
+    expect(await submitFinal({ gate: recovers, m, send, savePartial: vi.fn() })).toMatchObject({ ok: true });
+    expect(recovers.runs).toBe(2);
+    expect(send).toHaveBeenCalledWith({ captchaToken: 'second' });
+
+    const savePartial = vi.fn(async () => ok);
+    const keepsFailing = fakeGate([{ status: 'unavailable', reason: 'error 600010' }]);
+    expect(await submitFinal({ gate: keepsFailing, m, send: vi.fn(), savePartial })).toEqual({
+      ok: false,
+      message: m.captcha.unavailable,
+    });
+    expect(keepsFailing.runs).toBe(2);
+    expect(savePartial).toHaveBeenCalledTimes(1);
+  });
+
+  it('shares that one retry: a refused token after a widget error is shown, not retried again', async () => {
+    const refused: SubmitActionResult = { ok: false, error: 'CAPTCHA_FAILED' };
+    const gate = fakeGate([
+      { status: 'unavailable', reason: 'error 300030' },
+      { status: 'token', token: 'b' },
+    ]);
+    const send = vi.fn(async () => refused);
+    expect(await submitFinal({ gate, m, send, savePartial: vi.fn() })).toEqual({ ok: false, message: m.errors.captcha });
+    expect(gate.runs).toBe(2);
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  it('a run cut short by a newer one, or by the page going away, is dropped without a trace', async () => {
+    for (const reason of ['superseded', 'unmounted']) {
+      const send = vi.fn();
+      const savePartial = vi.fn();
+      const res = await submitFinal({ gate: fakeGate([{ status: 'unavailable', reason }]), m, send, savePartial });
+      expect(res).toEqual({ ok: false, aborted: true });
+      expect(send).not.toHaveBeenCalled();
+      expect(savePartial).not.toHaveBeenCalled();
+    }
+  });
+
   it('with no token, saves the answers as a partial and says so, without submitting the complete', async () => {
     const send = vi.fn(async () => ok);
     const savePartial = vi.fn(async () => ok);
@@ -332,7 +390,9 @@ describe('submitErrorMessage', () => {
       const m = getMessages(locale).renderer;
       const english = { message: 'English server text' };
       expect(submitErrorMessage({ ...english, error: 'CAPTCHA_FAILED' }, m)).toBe(m.errors.captcha);
-      expect(submitErrorMessage({ ...english, error: 'CAPTCHA_REQUIRED' }, m)).toBe(m.errors.captcha);
+      // A page loaded before protection was turned on has no check to run:
+      // "try again" would loop, so this one says to reload.
+      expect(submitErrorMessage({ ...english, error: 'CAPTCHA_REQUIRED' }, m)).toBe(m.errors.captcha_required);
       expect(submitErrorMessage({ ...english, error: 'CAPTCHA_UNAVAILABLE' }, m)).toBe(m.captcha.unavailable);
       expect(submitErrorMessage({ ...english, error: 'RATE_LIMITED' }, m)).toBe(m.errors.rate_limited);
       expect(submitErrorMessage({ ...english, error: 'ANSWER_TOO_LONG' }, m)).toBe(m.errors.answer_too_long);

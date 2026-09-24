@@ -14,16 +14,15 @@
  *
  * `onInteractive` tracks the one moment the person has to act: the widget is
  * asking for a click. The caller shows its prompt then, and the own timeout
- * stops counting, because a person reading the checkbox is not an outage.
+ * stops counting, because a person reading the checkbox is not an outage. It
+ * starts again once the click is done: a widget that goes quiet after it is.
  *
  * Nothing here decides what happens with the outcome; the renderers' shared
  * `useCaptchaGate` and `submitFinal` do, identically for both layouts.
  */
 import { useEffect, useRef } from 'react';
+import { CAPTCHA_ACTION } from '@quill/types';
 import { loadTurnstile } from '@/lib/captcha';
-
-/** The action the API expects the token to carry. Keep in sync with `CAPTCHA_ACTION` in the API. */
-export const CAPTCHA_ACTION = 'submit';
 
 /** No callback at all for this long means the widget is not coming. */
 export const CAPTCHA_TIMEOUT_MS = 15_000;
@@ -71,7 +70,8 @@ export function CaptchaChallenge({
       clearTimeout(timer);
       report();
     };
-    const timer = setTimeout(() => settle(() => handlers.current.onUnavailable('timeout')), timeoutMs);
+    const arm = () => setTimeout(() => settle(() => handlers.current.onUnavailable('timeout')), timeoutMs);
+    let timer = arm();
 
     loadTurnstile()
       .then((turnstile) => {
@@ -104,7 +104,10 @@ export function CaptchaChallenge({
               handlers.current.onInteractive(true);
             },
             'after-interactive-callback': () => {
-              if (!unmounted) handlers.current.onInteractive(false);
+              if (settled || unmounted) return;
+              handlers.current.onInteractive(false);
+              clearTimeout(timer);
+              timer = arm();
             },
           }) ?? undefined;
       })
