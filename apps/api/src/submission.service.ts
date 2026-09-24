@@ -7,6 +7,7 @@ import {
   insertBookingEvent,
   upsertSubmission,
   recordFormEvent,
+  firstSessionViewAt,
   listSubmissions,
   claimAccountActivation,
   claimAccountFirstView,
@@ -27,9 +28,35 @@ import { DestinationEffects } from './destination-effects';
 import { BookingEffects } from './booking-effects';
 import { AnalyticsEffects } from './analytics-effects';
 import { UploadService } from './upload.service';
-import { DB } from './tokens';
+import { captchaActive, captchaStrict, type CaptchaVerifier } from './captcha';
+import { CAPTCHA, DB } from './tokens';
 
 export type ServiceError = { error: string; message: string; status: number };
+
+/** What the public controller knows about the request that the body cannot say. */
+export interface SubmitContext {
+  /** The visitor's address as the rate limiter resolved it (see `clientKey`). */
+  remoteIp?: string | null;
+}
+
+/**
+ * Strict mode's minimum fill time: a complete landing sooner than this after
+ * the session's first `view` is a bot. Deliberately low, so a one-question
+ * form with a prefilled answer (view, glance, submit, then the challenge
+ * itself) never trips it for a person.
+ */
+export const STRICT_MIN_FILL_MS = 2_000;
+
+/**
+ * Every refusal the challenge produces reads the same to the client, whatever
+ * tripped it: a bot learns nothing from the answer about which check it failed.
+ * English on purpose, like every API message; the renderer localizes by `error`.
+ */
+const CAPTCHA_FAILED: ServiceError = {
+  error: 'CAPTCHA_FAILED',
+  message: 'We could not verify that you are human. Please try again.',
+  status: 403,
+};
 
 /**
  * The public forms surface: fetch a published form, accept a submission (server-
@@ -53,6 +80,10 @@ export class SubmissionService {
     // Verifies + promotes `file` answers. Optional for the same reason as the
     // rest: a form with no file question never reaches it.
     @Optional() @Inject(UploadService) private readonly uploads?: UploadService,
+    // Spam protection's verifier. LAST on purpose: every spec builds this
+    // service positionally. Absent reads as a deployment without keys, so the
+    // check never runs and every form behaves exactly as it did before.
+    @Optional() @Inject(CAPTCHA) private readonly captcha?: CaptchaVerifier,
   ) {}
 
   /**
@@ -116,6 +147,20 @@ export class SubmissionService {
       name: f.name,
       config: toPublicConfig(f.config),
       ...(this.uploads?.enabled ? { uploadMaxMb: this.uploads.maxFileMb } : {}),
+      // The challenge travels here, in the payload the page is rendered from,
+      // and never in a NEXT_PUBLIC_ variable: that would be frozen into the web
+      // build and could not follow the deployment's keys. Absent unless the
+      // deployment has keys AND the owner turned the check on, so every other
+      // form loads nothing from the challenge provider.
+      ...(captchaActive(f.config, this.captcha) && this.captcha?.provider && this.captcha.siteKey
+        ? {
+            captcha: {
+              provider: this.captcha.provider,
+              siteKey: this.captcha.siteKey,
+              ...(captchaStrict(f.config, this.captcha) ? { strict: true } : {}),
+            },
+          }
+        : {}),
     };
   }
 
@@ -128,6 +173,7 @@ export class SubmissionService {
     accountCode: string,
     slug: string,
     raw: unknown,
+    ctx: SubmitContext = {},
   ): Promise<{ id: string; score: number; outcome: string | null } | ServiceError> {
     const input = submissionSchema.parse(raw);
     const form = await getPublishedForm(this.db, accountCode, slug);
@@ -150,6 +196,27 @@ export class SubmissionService {
         status: 400,
       };
 
+    // SPAM PROTECTION. With it on, one rule: a partial is saved and never
+    // delivered; a complete is verified, then saved and delivered. So only a
+    // COMPLETE meets the challenge, and it meets it here: before the uploads
+    // below (copying objects is already a side effect) and before anything is
+    // written. A refusal writes nothing but a server-side event. An outage of
+    // the check does not lose the answers: they go through as a partial, which
+    // this same rule keeps from reaching any destination, and the client is
+    // told to try again.
+    const isProtected = captchaActive(form.config, this.captcha);
+    let partial = input.partial === true;
+    let checkUnavailable = false;
+    if (isProtected && !partial) {
+      const gate = await this.challengeGate(form, input, ctx);
+      if (gate === 'unavailable') {
+        partial = true;
+        checkUnavailable = true;
+      } else if (gate) {
+        return gate;
+      }
+    }
+
     // File answers are checked against the bucket BEFORE anything is persisted
     // or scored: an unverified answer must never reach the row, the score, or
     // an outbound effect. What comes back has its keys rewritten out of the
@@ -171,7 +238,7 @@ export class SubmissionService {
       sessionId: input.sessionId,
       data,
       score,
-      partial: input.partial,
+      partial,
     });
 
     // A transport retry whose first attempt actually landed re-runs this whole
@@ -181,9 +248,9 @@ export class SubmissionService {
     // each get a second email, and a drained CRM delivery duplicates (the
     // HubSpot mirror activity has no idempotency key). The first landing
     // already owes every effect, so a re-landed complete enqueues nothing.
-    const reCompleted = !input.partial && row.wasCompletedBefore;
+    const reCompleted = !partial && row.wasCompletedBefore;
 
-    if (!input.partial && !reCompleted) {
+    if (!partial && !reCompleted) {
       const respondentEmail = pickEmail(data);
       // The answers as the owner reads them (labels, option labels, step
       // order): resolved once here, printed by the `{{answers}}` token in
@@ -232,7 +299,11 @@ export class SubmissionService {
     // Skipped on a re-landed complete (same reasoning as the emails above):
     // enqueue cancels only PENDING rows, so once the worker drained the first
     // delivery a second enqueue is a duplicate webhook/CRM activity, not a retry.
-    if (!reCompleted)
+    // Skipped, too, for a partial of a protected form: a partial never meets the
+    // challenge, so it must never reach a webhook or the CRM. The destinations'
+    // own `events` are left exactly as saved, so turning protection off
+    // restores what each one did before.
+    if (!reCompleted && !(isProtected && partial))
       await this.destinations?.enqueueSubmissionDeliveries({
       formId: form.id,
       formName: form.name,
@@ -241,7 +312,7 @@ export class SubmissionService {
       sessionId: input.sessionId,
       score,
       outcomeLabel: outcome?.label ?? null,
-      phase: input.partial ? 'partial' : 'complete',
+      phase: partial ? 'partial' : 'complete',
       submittedAt: Date.now(),
       data,
       config,
@@ -286,7 +357,7 @@ export class SubmissionService {
     // migration 0010 (every milestone silently missing until the deploy
     // completes). Both are invisible without this line, and the first thing
     // anyone does with this feature is ask why activation reads zero.
-    if (!input.partial) {
+    if (!partial) {
       const first = await claimAccountActivation(this.db, form.accountId).catch((err) => {
         this.log.warn(`activation claim failed for account ${form.accountId}: ${String(err)}`);
         return false;
@@ -308,7 +379,87 @@ export class SubmissionService {
       }
     }
 
+    // The check could not be completed, so the answers above were kept as a
+    // partial. Say so with a status the renderer turns into "your answers are
+    // saved, try again": a retry that passes completes this same row.
+    if (checkUnavailable) {
+      await this.recordBlocked(form.id, input.sessionId, 'captcha_unavailable');
+      return {
+        error: 'CAPTCHA_UNAVAILABLE',
+        message: 'We could not complete the security check. Your answers are saved. Please try again.',
+        status: 503,
+      };
+    }
+
     return { id: row.id, score, outcome: outcome?.id ?? null };
+  }
+
+  /**
+   * The challenge for a COMPLETE submit of a protected form: null lets it
+   * through, `'unavailable'` means no verdict could be had (the caller keeps
+   * the answers as a partial), anything else is the refusal to answer with.
+   *
+   * The token is checked FIRST, whatever else is wrong, so the cheap strict
+   * checks can never be probed without spending a real token. Those two run
+   * only after it passes, and answer exactly like a bad token.
+   */
+  private async challengeGate(
+    form: { id: string; config: unknown },
+    input: { sessionId: string; captchaToken?: string; hp?: string },
+    ctx: SubmitContext,
+  ): Promise<ServiceError | 'unavailable' | null> {
+    if (!input.captchaToken) {
+      // Also what a tab opened before the owner turned protection on sends: its
+      // renderer predates the check and prints `message` as is, so the message
+      // has to be something a person can act on.
+      return {
+        error: 'CAPTCHA_REQUIRED',
+        message: 'This form now checks that you are human. Refresh the page and submit again.',
+        status: 403,
+      };
+    }
+    const verdict = await this.captcha!.verify({
+      token: input.captchaToken,
+      sessionId: input.sessionId,
+      remoteIp: ctx.remoteIp ?? null,
+    });
+    if (verdict.outcome === 'unavailable') return 'unavailable';
+    if (verdict.outcome === 'failed') {
+      await this.recordBlocked(form.id, input.sessionId, 'captcha_failed');
+      return CAPTCHA_FAILED;
+    }
+
+    if (captchaStrict(form.config, this.captcha)) {
+      // The hidden field: no person can see it, so any value is a bot's.
+      if (input.hp) {
+        await this.recordBlocked(form.id, input.sessionId, 'spam_honeypot');
+        return CAPTCHA_FAILED;
+      }
+      // The minimum fill time, from the session's first recorded view. A lost
+      // view never blocks anyone: the beacon is fire-and-forget, and the token
+      // above already covered this session.
+      const viewedAt = await firstSessionViewAt(this.db, form.id, input.sessionId);
+      if (viewedAt == null) {
+        this.log.log(`strict check: no recorded view for a session of form ${form.id}; fill time not applied`);
+      } else if (Date.now() - viewedAt < STRICT_MIN_FILL_MS) {
+        await this.recordBlocked(form.id, input.sessionId, 'spam_too_fast');
+        return CAPTCHA_FAILED;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * A blocked attempt, as a `form_event` written by this service. These types
+   * are deliberately NOT in `formEventType`, so no client can send them through
+   * the events endpoint; no metric counts them either (every funnel query names
+   * the types it reads). Best-effort: losing the record must never turn a
+   * refusal into a 500.
+   */
+  private async recordBlocked(formId: string, sessionId: string, type: string): Promise<void> {
+    await recordFormEvent(this.db, { formId, sessionId, type }).catch((err) => {
+      this.log.warn(`could not record ${type} for form ${formId}: ${String(err)}`);
+    });
   }
 
   /** Record a funnel event (view/start/step_view/…) for a form + session. */
@@ -413,10 +564,14 @@ export class SubmissionService {
  * Strip server-only sections (submission `destinations`: webhook URLs/secrets,
  * CRM property mappings) from a stored config before it is served to the public
  * renderer. The renderer only needs cover/steps/scoring/outcomes.
+ *
+ * `spamProtection` goes too: it is the owner's switch, and whether it RUNS also
+ * depends on the deployment. The renderer acts on `PublicForm.captcha` alone,
+ * which is the API's answer to both, so it can never act on half of it.
  */
 function toPublicConfig(config: unknown): FormConfig {
   const c = (config ?? { version: 1, steps: [] }) as Record<string, unknown>;
-  const { destinations: _destinations, ...rest } = c;
+  const { destinations: _destinations, spamProtection: _spamProtection, ...rest } = c;
   return rest as unknown as FormConfig;
 }
 

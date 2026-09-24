@@ -947,6 +947,54 @@ export const formTrackingSchema = z.object({
 });
 export type FormTracking = z.infer<typeof formTrackingSchema>;
 
+// --- Spam protection (a challenge before the final submit) -------------------
+
+/**
+ * Per-form spam protection. Absent, null or `captcha: false` is OFF, which is
+ * every config saved before this existed, so all of them keep rendering and
+ * submitting exactly as they did.
+ *
+ * `captcha` asks the respondent's browser for a human check on the FINAL submit
+ * and has the API verify it before anything is written. While it is on, a
+ * partial answer is still saved but no destination is sent it: only a verified
+ * complete submission is delivered.
+ *
+ * `strict` (ignored unless `captcha` is true) shows the check to everyone and
+ * adds two server-side checks, a hidden field and a minimum fill time.
+ *
+ * Nothing here takes effect on a deployment without challenge keys: the API is
+ * the only authority on whether the check can run at all.
+ */
+export const formSpamProtectionSchema = z.object({
+  captcha: z.boolean().optional(),
+  strict: z.boolean().optional(),
+});
+export type FormSpamProtection = z.infer<typeof formSpamProtectionSchema>;
+
+/**
+ * The challenge a public form must pass before its final submit, as the API
+ * hands it to the renderer. Present only when the deployment has keys AND the
+ * published form turned the check on; the renderer runs nothing without it.
+ * The site key is public by design (the widget cannot run without it).
+ */
+export const publicCaptchaSchema = z.object({
+  provider: z.literal('turnstile'),
+  siteKey: z.string().min(1),
+  /** Strict mode: the check is visible to everyone and a hidden field rides the submit. */
+  strict: z.boolean().optional(),
+});
+export type PublicCaptcha = z.infer<typeof publicCaptchaSchema>;
+
+/**
+ * The value the browser stamps on its challenge and the API expects back from
+ * the verifier: the session id, reduced to what the widget accepts (letters,
+ * digits, `_` and `-`, at most 255). A token minted for one session therefore
+ * cannot complete another. Both halves call this so they can never disagree.
+ */
+export function captchaCData(sessionId: string): string {
+  return sessionId.replace(/[^A-Za-z0-9_-]/g, '').slice(0, 255);
+}
+
 // --- Acquisition attribution (first touch, persisted on the account) ---------
 
 /**
@@ -1149,6 +1197,12 @@ export const formConfigSchema = z.object({
   /** Third-party tracking ids (ADDITIVE — absent on every legacy config). */
   tracking: formTrackingSchema.nullable().optional(),
   /**
+   * Spam protection (ADDITIVE: absent on every legacy config, which means off).
+   * Staged with the draft and applied on Publish, like `tracking`. The public
+   * API strips it: the renderer only ever acts on `PublicForm.captcha`.
+   */
+  spamProtection: formSpamProtectionSchema.nullable().optional(),
+  /**
    * BUILDER-ONLY node positions for the Logic canvas, keyed by step key
    * (ADDITIVE — absent on every legacy config and on every form whose author
    * never dragged a node). The engine and both renderers ignore it entirely.
@@ -1263,6 +1317,12 @@ export const publicFormSchema = z.object({
    * with no storage, which is also one that cannot have published such a form.
    */
   uploadMaxMb: z.number().int().positive().optional(),
+  /**
+   * The human check the final submit must pass. Absent on a form that did not
+   * turn it on and on a deployment with no challenge keys; the renderer loads
+   * nothing from the challenge provider without it.
+   */
+  captcha: publicCaptchaSchema.optional(),
 });
 export type PublicForm = z.infer<typeof publicFormSchema>;
 
@@ -1364,6 +1424,18 @@ export const submissionSchema = z.object({
    * confirmation email. Absent = the form language, then English.
    */
   locale: localeSchema.optional(),
+  /**
+   * The challenge token for a form with spam protection on. Required by the API
+   * on a COMPLETE submit of such a form, ignored everywhere else. Never stored
+   * and never logged. 2048 is the provider's own ceiling.
+   */
+  captchaToken: z.string().max(2048).optional(),
+  /**
+   * The hidden field of a form in strict mode. A person never sees it, so any
+   * value is a bot's. Top-level on purpose: it must never reach `data`, the
+   * stored answers.
+   */
+  hp: z.string().max(1024).optional(),
 });
 export type SubmissionInput = z.infer<typeof submissionSchema>;
 

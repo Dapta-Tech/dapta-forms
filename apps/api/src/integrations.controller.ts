@@ -47,7 +47,8 @@ import type { ServerEnv } from '@quill/config/env';
 import { AuthService, type ReqLike } from './auth.service';
 import { assertAdmin } from './permissions';
 import { RateLimitGuard } from './rate-limit';
-import { DB, ENV } from './tokens';
+import { captchaActive, type CaptchaVerifier } from './captcha';
+import { CAPTCHA, DB, ENV } from './tokens';
 
 /**
  * One allowed value of an enumeration property, as HubSpot defines it.
@@ -417,6 +418,13 @@ export interface AccountWebhookDto {
   /** Resolved, not stored: absent `events` means both phases fire. */
   firesPartial: boolean;
   firesComplete: boolean;
+  /**
+   * True while the owning form's spam protection is on AND this deployment can
+   * run the check: the API then delivers no partial to any destination, so a
+   * partial trigger here is paused. `firesPartial` keeps saying what the owner
+   * saved, which is what comes back when protection is turned off.
+   */
+  partialsHeld: boolean;
   hasSecret: boolean;
   /** Null when nothing has failed — never a claim that anything succeeded. */
   failures: { count: number; lastError: string | null; lastAt: number } | null;
@@ -437,6 +445,9 @@ export class IntegrationsController {
     @Inject(CalendlyEventTypesService) private readonly calendly: CalendlyEventTypesService,
     @Inject(DB) private readonly db: Db,
     @Inject(ENV) private readonly env: ServerEnv,
+    // Only to say whether a form's partials are held on THIS deployment. Last,
+    // and optional: specs build this controller positionally.
+    @Optional() @Inject(CAPTCHA) private readonly captcha?: CaptchaVerifier,
   ) {}
 
   /**
@@ -519,6 +530,8 @@ export class IntegrationsController {
             { type: 'webhook', events: events ?? undefined },
             'complete',
           ),
+          // The same answer the submit path acts on, from the same published config.
+          partialsHeld: captchaActive({ spamProtection: { captcha: w.captcha } }, this.captcha),
           hasSecret: w.hasSecret,
           // Per FORM, not per webhook — the queue records `ctx.formId`, never the
           // destination id, so two webhooks on one form share one figure.

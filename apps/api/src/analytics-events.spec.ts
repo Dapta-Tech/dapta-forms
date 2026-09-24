@@ -134,6 +134,19 @@ describe('forms_form_published', () => {
     // must not read as a new account reaching the stage.
     expect(publishes.map((p) => p.props.is_first_publish)).toEqual([true, false]);
   });
+
+  it('says whether the published form has spam protection on, in snake_case', async () => {
+    await controller.updateForm(asOwner(), formId, { config: { version: 1, steps: [] } });
+    await controller.publishForm(asOwner(), formId);
+    await controller.updateForm(asOwner(), formId, {
+      config: { version: 1, steps: [], spamProtection: { captcha: true, strict: true } },
+    });
+    await controller.publishForm(asOwner(), formId);
+
+    const publishes = (await captured()).filter((c) => c.event === 'forms_form_published');
+    expect(publishes.map((p) => p.props.has_captcha)).toEqual([false, true]);
+    expect(publishes[1]!.props).not.toHaveProperty('hasCaptcha');
+  });
 });
 
 describe('forms_activation — the north star', () => {

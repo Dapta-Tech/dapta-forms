@@ -281,6 +281,28 @@ export const serverEnvSchema = z.object({
   // Life of the owner's download URL. Minted per click, never stored, never
   // mailed. A link with a longer life than this is a bug, not a feature.
   UPLOAD_DOWNLOAD_TTL_SEC: z.coerce.number().int().positive().max(3600).default(300),
+
+  // Spam protection: a human check (Cloudflare Turnstile) a form owner can turn
+  // on per form, verified by THIS service before a final submit is written.
+  //
+  // The two keys are the switch, and they come as a pair: both unset (the
+  // default, and every bare fork) means the feature does not exist here, the
+  // editor shows the toggle disabled and no form ever loads a third-party
+  // script. One set without the other refuses to boot. The site key is public
+  // (it travels to the browser inside the public form payload, never through a
+  // NEXT_PUBLIC_ build-time variable); the secret never leaves this process.
+  //
+  // CAPTCHA_PROVIDER is an explicit kill switch (`none`) for a deployment that
+  // keeps its keys loaded but wants the check off everywhere. It is NOT how the
+  // check is turned on: with both keys set and this unset, the provider is
+  // `turnstile`.
+  CAPTCHA_PROVIDER: z.enum(['none', 'turnstile']).optional(),
+  CAPTCHA_SITE_KEY: z.string().optional(),
+  CAPTCHA_SECRET_KEY: z.string().optional(),
+  // Per-attempt timeout of the server-side token check, in ms. One short retry
+  // follows an outage, inside a total budget of 4 s, so a submit is never held
+  // past the browser's own 8 s per-attempt limit.
+  CAPTCHA_VERIFY_TIMEOUT_MS: z.coerce.number().int().positive().max(4000).default(2500),
 });
 
 export type ServerEnv = z.infer<typeof serverEnvSchema>;
@@ -295,6 +317,57 @@ export type ServerEnv = z.infer<typeof serverEnvSchema>;
  */
 export function isStorageEnabled(env: Pick<ServerEnv, 'STORAGE_BUCKET' | 'STORAGE_PROVIDER'>): boolean {
   return Boolean(env.STORAGE_BUCKET) && env.STORAGE_PROVIDER !== 'none';
+}
+
+/** What the spam-protection check needs on a deployment where it exists. */
+export interface CaptchaSettings {
+  provider: 'turnstile';
+  siteKey: string;
+  secretKey: string;
+  timeoutMs: number;
+}
+
+type CaptchaEnv = Pick<
+  ServerEnv,
+  'CAPTCHA_PROVIDER' | 'CAPTCHA_SITE_KEY' | 'CAPTCHA_SECRET_KEY' | 'CAPTCHA_VERIFY_TIMEOUT_MS'
+>;
+
+/**
+ * The spam-protection settings, or null when the check does not exist on this
+ * deployment: no keys (every bare fork) or the `none` kill switch. Every caller
+ * asks this and nothing branches on the raw variables, so a fork with no keys
+ * takes exactly one path. A blank value reads as unset, the way an empty line
+ * in `.env` does.
+ */
+export function captchaSettings(env: CaptchaEnv): CaptchaSettings | null {
+  if (env.CAPTCHA_PROVIDER === 'none') return null;
+  const siteKey = env.CAPTCHA_SITE_KEY?.trim() ?? '';
+  const secretKey = env.CAPTCHA_SECRET_KEY?.trim() ?? '';
+  if (!siteKey || !secretKey) return null;
+  return { provider: 'turnstile', siteKey, secretKey, timeoutMs: env.CAPTCHA_VERIFY_TIMEOUT_MS };
+}
+
+/**
+ * Fail loud on a half-configured check rather than run without it: one key
+ * without the other is a typo, not a choice, and quietly treating it as "off"
+ * would ship an unprotected form its owner believes is protected. The kill
+ * switch is exempt, so reaching for it can never be what stops a pod booting.
+ */
+function assertCaptchaEnv(env: CaptchaEnv): void {
+  if (env.CAPTCHA_PROVIDER === 'none') return;
+  const site = Boolean(env.CAPTCHA_SITE_KEY?.trim());
+  const secret = Boolean(env.CAPTCHA_SECRET_KEY?.trim());
+  if (site && !secret) {
+    throw new Error('Refusing to boot: CAPTCHA_SITE_KEY is set without CAPTCHA_SECRET_KEY. Set both, or neither.');
+  }
+  if (secret && !site) {
+    throw new Error('Refusing to boot: CAPTCHA_SECRET_KEY is set without CAPTCHA_SITE_KEY. Set both, or neither.');
+  }
+  if (env.CAPTCHA_PROVIDER === 'turnstile' && !site) {
+    throw new Error(
+      'Refusing to boot: CAPTCHA_PROVIDER=turnstile needs CAPTCHA_SITE_KEY and CAPTCHA_SECRET_KEY.',
+    );
+  }
 }
 
 export const clientEnvSchema = z.object({
@@ -339,6 +412,7 @@ export function loadServerEnv(source: NodeJS.ProcessEnv = process.env): ServerEn
         'production. Set AUTH_PROVIDER=workos (with the private auth overlay) or another real provider.',
     );
   }
+  assertCaptchaEnv(parsed.data);
   return parsed.data;
 }
 

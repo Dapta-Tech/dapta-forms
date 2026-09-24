@@ -99,7 +99,8 @@ import type { ServerEnv } from '@quill/config/env';
 import { assertAdmin, assertCanManageTarget, assertNotSelf, assertOwner } from './permissions';
 import { parseIntParam, parseKinds, parseOutboxStatuses } from './query-params';
 import { parseSort, parseSubmissionFilter, workspaceZone, type FilterQuery } from './submission-filter';
-import { DB, ENV } from './tokens';
+import type { CaptchaVerifier } from './captcha';
+import { CAPTCHA, DB, ENV } from './tokens';
 
 function parse<T>(schema: { parse: (v: unknown) => T }, body: unknown): T {
   try {
@@ -157,6 +158,12 @@ function maskForm<T extends { config: unknown; draftConfig?: unknown }>(form: T)
   };
 }
 
+/** Whether a stored config has spam protection switched on (strictly `true`). */
+function hasCaptchaSwitch(config: unknown): boolean {
+  const sp = (config as { spamProtection?: unknown } | null)?.spamProtection;
+  return !!sp && typeof sp === 'object' && (sp as { captcha?: unknown }).captcha === true;
+}
+
 /** The client shape of a folder: the account id never leaves the server. */
 function folderView(f: { id: string; name: string; createdAt: number; updatedAt: number }) {
   return { id: f.id, name: f.name, createdAt: f.createdAt, updatedAt: f.updatedAt };
@@ -187,6 +194,10 @@ export class AdminCrudController {
     // reason, and absent reads as "no uploads", which is the safe answer.
     @Optional() @Inject(UploadService) private readonly uploads?: UploadService,
     @Optional() @Inject(ENV) private readonly env?: ServerEnv,
+    // Deployment capability reporting only (`me`): whether spam protection can
+    // run here. Last and optional for the positional-construction reason; absent
+    // reads as "not available", which is the safe answer.
+    @Optional() @Inject(CAPTCHA) private readonly captcha?: CaptchaVerifier,
   ) {}
 
   private ws(): WorkspaceService {
@@ -213,7 +224,11 @@ export class AdminCrudController {
       enabled: this.uploads?.enabled ?? false,
       maxFileMb: this.env?.UPLOAD_MAX_FILE_MB ?? 10,
     };
-    return { ...view, staff, uploads };
+    // Whether spam protection can run on this DEPLOYMENT (it has challenge
+    // keys). The editor disables the switch without it, for the same reason the
+    // file question hides without a bucket: the API is the one authority.
+    const captcha = { available: this.captcha?.enabled === true };
+    return { ...view, staff, uploads, captcha };
   }
 
   /**
@@ -699,6 +714,9 @@ export class AdminCrudController {
       await this.productAnalytics?.captureForMember('form_published', p, {
         form_id: id,
         is_first_publish: before?.publishedAt == null,
+        // The owner's switch as published, whether or not this deployment can
+        // run it: adoption of the feature, not coverage.
+        has_captcha: hasCaptchaSwitch(published.config),
       });
     }
     return maskForm(published);
