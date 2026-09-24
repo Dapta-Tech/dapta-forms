@@ -32,6 +32,7 @@ import {
   getSubmissionAnswersForAccount,
   searchSubmissionAnswers,
   submissionsForSummary,
+  submissionFacetCounts,
 } from './analytics';
 
 let db: Db;
@@ -495,13 +496,27 @@ describe('header filters and sort (one filter for the table, the CSV and the Sum
     expect((await querySubmissions(db, formId, { answers: { missing: ['llc'] } })).total).toBe(0);
   });
 
-  it('binds keys and values: quotes and SQL in them match literally or not at all', async () => {
-    await row('f6', D1 + 6, { "it's": "o'brien", 'a"b': 'x' }, 1);
+  it('binds keys and values: quotes, backslashes and SQL in them match literally, on both dialects', async () => {
+    await row('f6', D1 + 6, { "it's": "o'brien", 'a"b': 'x', 'c\\d': ['y'], '$.kind': 'z' }, 1);
     expect(await page({ answers: { "it's": ["o'brien"] } })).toEqual(['f6']);
     expect(await page({ answers: { kind: ["llc') OR 1=1 --"] } })).toEqual([]);
-    // A double quote cannot be a SQLite JSON path: it matches nothing there.
-    if (db.dialect === 'sqlite') expect(await page({ answers: { 'a"b': ['x'] } })).toEqual([]);
-    else expect(await page({ answers: { 'a"b': ['x'] } })).toEqual(['f6']);
+    expect(await page({ answers: { 'a"b': ['x'] } })).toEqual(['f6']);
+    expect(await page({ answers: { 'c\\d': ['y'] } })).toEqual(['f6']);
+    // A key that looks like a path is only ever a key.
+    expect(await page({ answers: { '$.kind': ['z'] } })).toEqual(['f6']);
+    expect(await page({ answers: { '$.kind': ['llc'] } })).toEqual([]);
+  });
+
+  it('reads a fractional or huge score bound as the integer column does, never a failed query', async () => {
+    expect(await page({ scoreMin: 6.5 })).toEqual(['f4', 'f3', 'f1']);
+    expect(await page({ scoreMax: 6.5 })).toEqual(['f2', 'f5']);
+    expect(await page({ scoreMin: 4.2, scoreMax: 7.9 })).toEqual(['f4', 'f3']);
+    expect(await page({ scoreMin: 1e20 })).toEqual([]);
+    expect(await page({ scoreMax: 1e20 })).toHaveLength(5);
+    expect(await page({ scoreMin: -1e20 })).toHaveLength(5);
+    const exported = await allSubmissionsForExport(db, formId, { scoreMin: 5.5, scoreMax: 1e20 });
+    expect(ids(exported)).toEqual(['f4', 'f3', 'f1']);
+    expect(ids(await submissionsForSummary(db, formId, { scoreMin: 5.5 }))).toEqual(['f4', 'f3', 'f1']);
   });
 
   it('sorts by date or score in both directions, ties broken by id', async () => {
@@ -509,6 +524,28 @@ describe('header filters and sort (one filter for the table, the CSV and the Sum
     expect(await page({ sort: 'score_desc' })).toEqual(['f1', 'f4', 'f3', 'f2', 'f5']);
     expect(await page({ sort: 'score_asc' })).toEqual(['f5', 'f2', 'f4', 'f3', 'f1']);
     expect(await page({ sort: 'score_desc', limit: 2, offset: 1 })).toEqual(['f4', 'f3']);
+  });
+
+  it('counts the column menus in SQL: statuses, answered, and each trimmed pick once per response', async () => {
+    await row('f7', D1 + 7, { tools: ['crm', 'crm', ' ', null, { x: 1 }], kind: null, 'a"b\\c': 'q' }, 3);
+    const counts = await submissionFacetCounts(db, formId, ['kind', 'tools', 'a"b\\c', 'never']);
+    expect(counts).toMatchObject({ total: 6, completed: 5, partial: 1 });
+    expect(counts.choices.kind).toEqual({ answered: 4, values: { llc: 2, corp: 1, sole: 1 } });
+    expect(counts.choices.tools).toEqual({ answered: 5, values: { crm: 3, ads: 2, email: 1 } });
+    expect(counts.choices['a"b\\c']).toEqual({ answered: 1, values: { q: 1 } });
+    expect(counts.choices.never).toEqual({ answered: 0, values: {} });
+    expect(await submissionFacetCounts(db, formId, [])).toEqual({
+      total: 6,
+      completed: 5,
+      partial: 1,
+      choices: {},
+    });
+    expect(await submissionFacetCounts(db, randomUUID(), ['kind'])).toEqual({
+      total: 0,
+      completed: 0,
+      partial: 0,
+      choices: { kind: { answered: 0, values: {} } },
+    });
   });
 
   it('exports and summarizes exactly the filtered set, the export in the table order', async () => {

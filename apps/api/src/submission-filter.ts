@@ -51,12 +51,22 @@ function bad(message: string): BadRequestException {
   return new BadRequestException({ error: 'BAD_REQUEST', message });
 }
 
-/** A score bound: a finite number, else no bound. */
-function parseScore(v: unknown): number | null {
+const INT32_MIN = -2_147_483_648;
+const INT32_MAX = 2_147_483_647;
+
+/**
+ * A score bound as the integer column compares it: a finite number, rounded
+ * inward (a score is a whole number, so `>= 5.5` is `>= 6` and `<= 5.5` is
+ * `<= 5`) and held to int32, else no bound. Postgres binds it as an integer:
+ * `5.5` or `1e20` sent as-is is a 500, not an empty result.
+ */
+export function parseScore(v: unknown, side: 'min' | 'max'): number | null {
   const s = str(v)?.trim();
   if (!s) return null;
   const n = Number(s);
-  return Number.isFinite(n) ? n : null;
+  if (!Number.isFinite(n)) return null;
+  const whole = side === 'min' ? Math.ceil(n) : Math.floor(n);
+  return Math.min(INT32_MAX, Math.max(INT32_MIN, whole));
 }
 
 /**
@@ -110,8 +120,8 @@ export function parseSubmissionFilter(
     status: parseStatus(str(q.status)),
     from: parseBound(str(q.from), false, zone),
     to: parseBound(str(q.to), true, zone),
-    scoreMin: scoring ? parseScore(q.scoreMin) : null,
-    scoreMax: scoring ? parseScore(q.scoreMax) : null,
+    scoreMin: scoring ? parseScore(q.scoreMin, 'min') : null,
+    scoreMax: scoring ? parseScore(q.scoreMax, 'max') : null,
     answers: parseAnswerFilters(q.answers, config),
   };
 }

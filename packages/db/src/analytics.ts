@@ -426,8 +426,8 @@ function statusClause(status?: SubmissionStatus): SQL {
  * are trimmed, the way the Summary counts a choice. The key and every value
  * are bound parameters. Postgres wraps a scalar in an array so one expansion
  * reads both shapes; SQLite's `json_each` already yields a scalar as one row.
- * A key with a quote in it cannot be written as a SQLite path, so there it
- * matches nothing rather than a different key.
+ * The key is compared as a value, never written into a JSON path, so a key
+ * with a quote or a backslash in it matches the same on both dialects.
  */
 function answerMatch(db: Db, key: string, values: readonly string[]): SQL {
   const list = sql.join(
@@ -443,11 +443,23 @@ function answerMatch(db: Db, key: string, values: readonly string[]): SQL {
       WHERE TRIM(picked.v) IN (${list})
     )`;
   }
-  if (key.includes('"')) return sql`1 = 0`;
   return sql`EXISTS (
-    SELECT 1 FROM json_each(submission.data, ${`$."${key}"`}) AS picked
-    WHERE picked.type NOT IN ('object', 'null') AND TRIM(CAST(picked.value AS TEXT)) IN (${list})
+    SELECT 1 FROM json_each(submission.data) AS field
+    JOIN json_each(CASE WHEN field.type = 'array' THEN field.value ELSE json_array(field.value) END) AS picked
+    WHERE field.key = ${key} AND field.type NOT IN ('object', 'null')
+      AND picked.type NOT IN ('object', 'null') AND TRIM(CAST(picked.value AS TEXT)) IN (${list})
   )`;
+}
+
+/**
+ * A score bound as the integer column compares it: rounded inward (`>= 5.5`
+ * is `>= 6`, `<= 5.5` is `<= 5`) and held to int32. Postgres binds the value
+ * as an integer, so `5.5` or `1e20` as-is fails the whole query.
+ */
+function scoreBound(v: number | null | undefined, side: 'min' | 'max'): number | null {
+  if (v == null || !Number.isFinite(v)) return null;
+  const whole = side === 'min' ? Math.ceil(v) : Math.floor(v);
+  return Math.min(2_147_483_647, Math.max(-2_147_483_648, whole));
 }
 
 /**
@@ -457,8 +469,10 @@ function answerMatch(db: Db, key: string, values: readonly string[]): SQL {
  */
 function filterWhere(db: Db, formId: string, f: SubmissionFilter = {}): SQL {
   const parts: SQL[] = [sql`form_id = ${formId}`];
-  if (f.scoreMin != null) parts.push(sql`score >= ${f.scoreMin}`);
-  if (f.scoreMax != null) parts.push(sql`score <= ${f.scoreMax}`);
+  const scoreMin = scoreBound(f.scoreMin, 'min');
+  const scoreMax = scoreBound(f.scoreMax, 'max');
+  if (scoreMin != null) parts.push(sql`score >= ${scoreMin}`);
+  if (scoreMax != null) parts.push(sql`score <= ${scoreMax}`);
   for (const [key, values] of Object.entries(f.answers ?? {})) {
     const wanted = values.filter((v) => v.trim() !== '');
     if (wanted.length > 0) parts.push(answerMatch(db, key, wanted));
@@ -570,6 +584,99 @@ export async function submissionsForSummary(
     completedAt: r.completed_at == null ? null : Number(r.completed_at),
     partialAt: r.partial_at == null ? null : Number(r.partial_at),
   }));
+}
+
+// --- Header filter counts (the column menus) ---------------------------------
+
+/** What the column menus count, over every response of a form, straight from SQL. */
+export interface SubmissionFacetCounts {
+  total: number;
+  completed: number;
+  partial: number;
+  /**
+   * Per question key asked for: how many responses answered it (at least one
+   * non-blank pick), and how many responses picked each trimmed value. A
+   * response counts once per value even if a stored list repeats it.
+   */
+  choices: Record<string, { answered: number; values: Record<string, number> }>;
+}
+
+/**
+ * The picks of the `keys` answers, one row per (response, key, trimmed pick).
+ * A single stored value and a multi-select list read the same; blanks, nulls
+ * and objects are no pick. The key is compared as a value (bound), never
+ * written into a JSON path.
+ */
+function picksFrom(db: Db, formId: string, keys: readonly string[]): SQL {
+  const list = sql.join(
+    keys.map((k) => sql`${k}`),
+    sql`, `,
+  );
+  if (db.dialect === 'postgres') {
+    return sql`FROM submission
+      CROSS JOIN LATERAL jsonb_each(
+        CASE WHEN jsonb_typeof(submission.data) = 'object' THEN submission.data ELSE '{}'::jsonb END
+      ) AS field(key, value)
+      CROSS JOIN LATERAL jsonb_array_elements(
+        CASE WHEN jsonb_typeof(field.value) = 'array' THEN field.value ELSE jsonb_build_array(field.value) END
+      ) AS picked(value)
+      WHERE submission.form_id = ${formId} AND field.key IN (${list})
+        AND jsonb_typeof(picked.value) IN ('string', 'number', 'boolean')
+        AND TRIM(picked.value #>> '{}') <> ''`;
+  }
+  return sql`FROM submission
+    JOIN json_each(submission.data) AS field
+    JOIN json_each(CASE WHEN field.type = 'array' THEN field.value ELSE json_array(field.value) END) AS picked
+    WHERE submission.form_id = ${formId} AND field.key IN (${list})
+      AND picked.type NOT IN ('object', 'array', 'null')
+      AND TRIM(CAST(picked.value AS TEXT)) <> ''`;
+}
+
+/**
+ * The header filters' counts for a form, aggregated in the database: the
+ * statuses by the table's rule, and per choice question in `keys` the
+ * responses that answered it and that picked each value. Nothing but counts
+ * leaves the database, however many responses there are.
+ */
+export async function submissionFacetCounts(
+  db: Db,
+  formId: string,
+  keys: readonly string[],
+): Promise<SubmissionFacetCounts> {
+  const pick =
+    db.dialect === 'postgres' ? sql`TRIM(picked.value #>> '{}')` : sql`TRIM(CAST(picked.value AS TEXT))`;
+  const [totals, values, answered] = await Promise.all([
+    db.get<{ total: number | string; completed: number | string | null; partial: number | string | null }>(
+      sql`SELECT COUNT(*) AS total,
+            SUM(CASE WHEN completed_at IS NOT NULL THEN 1 ELSE 0 END) AS completed,
+            SUM(CASE WHEN completed_at IS NULL AND partial_at IS NOT NULL THEN 1 ELSE 0 END) AS partial
+          FROM submission WHERE form_id = ${formId}`,
+    ),
+    keys.length === 0
+      ? Promise.resolve([])
+      : db.all<{ key: string; value: string; n: number | string }>(
+          sql`SELECT field.key AS key, ${pick} AS value, COUNT(DISTINCT submission.id) AS n
+              ${picksFrom(db, formId, keys)}
+              GROUP BY field.key, ${pick}`,
+        ),
+    keys.length === 0
+      ? Promise.resolve([])
+      : db.all<{ key: string; n: number | string }>(
+          sql`SELECT field.key AS key, COUNT(DISTINCT submission.id) AS n
+              ${picksFrom(db, formId, keys)}
+              GROUP BY field.key`,
+        ),
+  ]);
+  const choices: SubmissionFacetCounts['choices'] = {};
+  for (const key of keys) choices[key] = { answered: 0, values: {} };
+  for (const r of answered) choices[r.key]!.answered = Number(r.n);
+  for (const r of values) choices[r.key]!.values[r.value] = Number(r.n);
+  return {
+    total: Number(totals?.total ?? 0),
+    completed: Number(totals?.completed ?? 0),
+    partial: Number(totals?.partial ?? 0),
+    choices,
+  };
 }
 
 // --- Per-question answer search (Summary tab) --------------------------------
