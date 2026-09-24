@@ -258,6 +258,35 @@ write a "first" form into the same account.
 Webhook destinations are configured **per form in the admin UI** (URL + optional
 HMAC secret) — no environment variable.
 
+### Spam protection (optional)
+
+A form owner can turn on a human check before the final submit (Connect tab →
+Spam protection). The check is [Cloudflare Turnstile](https://developers.cloudflare.com/turnstile/),
+and the **API** verifies every token before a complete submission is written.
+While a form has it on, its partial answers are saved but delivered to no
+webhook or CRM; only verified complete submissions are. All three unset (the
+default) means the feature does not exist on this deployment: the editor shows
+the switch disabled, and no form loads anything from Cloudflare.
+
+| Var | Default | Required when | Secret |
+|---|---|---|---|
+| `CAPTCHA_SITE_KEY` | _(unset)_ | to enable the check (API only; it reaches the browser inside the public form payload, never as a build arg) | no |
+| `CAPTCHA_SECRET_KEY` | _(unset)_ | to enable the check (API only) | yes |
+| `CAPTCHA_PROVIDER` | _(unset)_ | `none` turns the check off everywhere while keeping the keys loaded; unset with both keys means `turnstile` | no |
+| `CAPTCHA_VERIFY_TIMEOUT_MS` | `2500` | per-attempt timeout of the server-side check (one retry, 4 s budget; max 4000) | no |
+
+The two keys come as a pair: one without the other refuses to boot, and so does
+`CAPTCHA_PROVIDER=turnstile` without them. Create a **Managed** widget in the
+Cloudflare dashboard and list the host your forms are served from (the host of
+`PUBLIC_APP_URL`); forms embedded on other sites need nothing more, because the
+widget runs inside the form's own iframe. The token's host is checked against
+`PUBLIC_APP_URL` when it is set. Nothing is needed on the web container. If a
+proxy in front of the web app adds a Content-Security-Policy, allow
+`https://challenges.cloudflare.com` in `script-src` and `frame-src`. For CI and
+local runs, Cloudflare publishes test keys (for example site key
+`1x00000000000000000000AA` with secret `1x0000000000000000000000000000000AA`,
+which always pass); a production secret refuses their tokens.
+
 ### Premium entitlements (optional; Forms itself is always free)
 
 | Var | Default | Required when | Secret |
