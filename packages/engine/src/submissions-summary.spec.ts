@@ -281,12 +281,12 @@ describe('summary helpers', () => {
       ] },
       { key: 'notes', type: 'text', question: 'Notes' },
     ] as unknown as FormStep[];
-    const facets = summarizeFacets(facetSteps, [
-      { data: { kind: 'b' }, completedAt: 1, partialAt: null },
-      { data: { kind: 'b' }, completedAt: null, partialAt: 2 },
-      { data: { kind: ' old ' }, completedAt: 3, partialAt: null },
-      { data: {}, completedAt: null, partialAt: null },
-    ]);
+    const facets = summarizeFacets(facetSteps, {
+      total: 4,
+      completed: 2,
+      partial: 1,
+      choices: { kind: { answered: 3, values: { b: 2, old: 1 } }, notes: { answered: 9, values: { x: 9 } } },
+    });
     expect(facets).toMatchObject({ total: 4, completed: 2, partial: 1 });
     expect(Object.keys(facets.choices)).toEqual(['kind']);
     expect(facets.choices.kind!.map((o) => [o.value, o.label, o.count, o.percent])).toEqual([

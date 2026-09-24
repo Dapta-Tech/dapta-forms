@@ -308,14 +308,16 @@ export function summarizeSubmissions(
 }
 
 /**
- * A response as the table's filter menus count it: its answers, and its
- * status by the table's rule (completed, else partial when a partial was
- * saved; a row with neither is in the total but under no status).
+ * The raw counts the column menus are built from, aggregated where the
+ * responses live (the database), never the responses themselves: the
+ * statuses, and per choice question how many answered it and how many picked
+ * each trimmed value.
  */
-export interface FacetRow {
-  data: Record<string, unknown>;
-  completedAt: number | null;
-  partialAt: number | null;
+export interface FacetCounts {
+  total: number;
+  completed: number;
+  partial: number;
+  choices: Record<string, { answered: number; values: Record<string, number> }>;
 }
 
 /**
@@ -330,13 +332,26 @@ export interface SubmissionFacets {
   choices: Record<string, SummaryOption[]>;
 }
 
-export function summarizeFacets(steps: FormStep[], rows: FacetRow[]): SubmissionFacets {
-  const summaryRows = rows.map((r, i) => ({ id: String(i), data: r.data, at: 0 }));
+/**
+ * The menus' options from `counts`: every option of each choice step in the
+ * form's order (an option nobody picked shows 0), then any stored value no
+ * option carries any more (a removed option, labelled with its raw value),
+ * most picked first. Percentages are of the responses that answered.
+ */
+export function summarizeFacets(steps: FormStep[], counts: FacetCounts): SubmissionFacets {
   const choices: Record<string, SummaryOption[]> = {};
   for (const step of steps) {
-    if (isFilterableChoiceStep(step)) choices[step.key] = choiceCounts(step, summaryRows).options;
+    if (!isFilterableChoiceStep(step)) continue;
+    const { answered, values } = counts.choices[step.key] ?? { answered: 0, values: {} };
+    const own = (step.options ?? []).map((o) => o.value);
+    const known = new Set(own);
+    const extra = Object.keys(values)
+      .filter((v) => !known.has(v))
+      .sort((a, b) => values[b]! - values[a]! || a.localeCompare(b));
+    choices[step.key] = [...own, ...extra].map((value) => {
+      const count = values[value] ?? 0;
+      return { value, label: formatAnswerValue(step, value), count, percent: percentOf(count, answered) };
+    });
   }
-  const completed = rows.filter((r) => r.completedAt != null).length;
-  const partial = rows.filter((r) => r.completedAt == null && r.partialAt != null).length;
-  return { total: rows.length, completed, partial, choices };
+  return { total: counts.total, completed: counts.completed, partial: counts.partial, choices };
 }

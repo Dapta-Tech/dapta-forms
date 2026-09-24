@@ -3,6 +3,7 @@ import { localDayIndex, resolveTimeZone, utcOffsetSegments } from '@quill/shared
 import {
   isInputlessStep,
   resolveFormLayout,
+  isFilterableChoiceStep,
   summarizeFacets,
   summarizeSubmissions,
   summaryAnswer,
@@ -31,6 +32,7 @@ import {
   deleteSubmissionsForAccount,
   searchSubmissionAnswers,
   submissionsForSummary,
+  submissionFacetCounts,
   type AnswerSearchQuery,
   type SummarySubmissionRow,
   type SubmissionRow,
@@ -344,17 +346,14 @@ export class AnalyticsService {
     return summarizeSubmissions(steps, rows.map(summaryRow));
   }
 
-  /** The header filters' counts, over every response of the form. */
+  /**
+   * The header filters' counts, over every response of the form. Counted in
+   * the database: the table asks for them on every load and every check, so
+   * they must not cost a read of every response's answers.
+   */
   async facets(formId: string, steps: FormStep[]): Promise<SubmissionFacets> {
-    const rows = await submissionsForSummary(this.db, formId);
-    return summarizeFacets(
-      steps,
-      rows.map((r) => ({
-        data: (r.data ?? {}) as Record<string, unknown>,
-        completedAt: r.completedAt,
-        partialAt: r.partialAt,
-      })),
-    );
+    const keys = steps.filter(isFilterableChoiceStep).map((s) => s.key);
+    return summarizeFacets(steps, await submissionFacetCounts(this.db, formId, keys));
   }
 
   /**

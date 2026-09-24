@@ -111,14 +111,14 @@ export default async function SubmissionsPage({
   const m = getMessages(locale).admin;
   const offset = Math.max(0, Number(one(sp.offset) ?? 0) || 0);
   const size = parsePageSize(one(sp.size));
+  // The unfiltered counts the column menus show need nothing else: asked
+  // first, they run alongside everything below, the rows included. (Handled
+  // here too, so a form that 404s below leaves no rejection unobserved.)
+  const facetsRequest = adminApi.getSubmissionFacets(id);
+  facetsRequest.catch(() => undefined);
   // The workspace zone every timestamp below is read in, and who may change
-  // it; the form, whose questions decide what can be filtered; and the
-  // unfiltered counts the column menus show.
-  const [me, form, facets] = await Promise.all([
-    adminApi.me(),
-    adminApi.getForm(id).catch(orNotFound),
-    adminApi.getSubmissionFacets(id).catch(orNotFound),
-  ]);
+  // it; and the form, whose questions decide what can be filtered.
+  const [me, form] = await Promise.all([adminApi.me(), adminApi.getForm(id).catch(orNotFound)]);
   const timeZone = me.timezone ?? 'UTC';
   const config = form.config as FormConfig;
   // Message and reveal steps collect nothing: no column, as in the CSV.
@@ -133,8 +133,12 @@ export default async function SubmissionsPage({
   // the Summary always describe the same rows.
   const filter = parseViewFilter(sp, filterScope(steps, scoring));
   const apiQuery = apiFilterQuery(filter, timeZone);
-  // The page of rows, fetched here because the table's key needs it.
-  const page = await adminApi.listSubmissions(id, { ...apiQuery, limit: size, offset }).catch(orNotFound);
+  // The page of rows, fetched here because the table's key needs it, while
+  // the counts finish.
+  const [page, facets] = await Promise.all([
+    adminApi.listSubmissions(id, { ...apiQuery, limit: size, offset }).catch(orNotFound),
+    facetsRequest.catch(orNotFound),
+  ]);
   // A new page, size or filter is a new table: the viewer (and its selection)
   // starts over. So is a new set of rows. A refresh that changed them (a
   // delete's `revalidatePath`) fetched the new rows but never put them on
