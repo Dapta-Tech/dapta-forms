@@ -23,12 +23,16 @@ import { Logger } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import { isIP } from 'node:net';
 import { captchaSettings, type ServerEnv } from '@quill/config/env';
-import { captchaCData } from '@quill/types';
+import { CAPTCHA_ACTION, captchaCData } from '@quill/types';
 
 export const TURNSTILE_SITEVERIFY_URL = 'https://challenges.cloudflare.com/turnstile/v0/siteverify';
 
-/** The action the renderer stamps on its widget; a token for anything else is refused. */
-export const CAPTCHA_ACTION = 'submit';
+/**
+ * The provider's published TEST secrets (always pass, always fail, already
+ * spent). Harmless in CI and local runs, and a hole anywhere real: the
+ * always-pass one accepts any token at all, the public dummy one included.
+ */
+const TEST_SECRET = /^[123]x0{31}AA$/;
 
 export type CaptchaVerdict =
   | { outcome: 'passed' }
@@ -206,6 +210,11 @@ export function createCaptchaVerifier(
 ): CaptchaVerifier {
   const settings = captchaSettings(env);
   if (!settings) return new NoopCaptchaVerifier();
+  if (TEST_SECRET.test(settings.secretKey)) {
+    new Logger('Captcha').warn(
+      'CAPTCHA_SECRET_KEY is one of the provider’s public test keys: every token is decided by the key, not by a person. Use real keys outside CI and local runs.',
+    );
+  }
   return new TurnstileVerifier({
     siteKey: settings.siteKey,
     secretKey: settings.secretKey,

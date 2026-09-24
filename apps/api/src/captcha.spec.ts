@@ -309,6 +309,19 @@ describe('the deployment switch (env)', () => {
     expect(createCaptchaVerifier(env({ CAPTCHA_SITE_KEY: '', CAPTCHA_SECRET_KEY: '' })).enabled).toBe(false);
   });
 
+  it('warns loudly when the secret is one of the provider’s public test keys', () => {
+    const warned: string[] = [];
+    vi.spyOn(Logger.prototype, 'warn').mockImplementation((...args: unknown[]) => {
+      warned.push(args.map(String).join(' '));
+    });
+    // The always-pass test secret accepts ANY token, the public dummy one included.
+    createCaptchaVerifier(env({ CAPTCHA_SITE_KEY: '1x00000000000000000000AA', CAPTCHA_SECRET_KEY: '1x0000000000000000000000000000000AA' }));
+    expect(warned.some((w) => /test key/i.test(w))).toBe(true);
+    warned.length = 0;
+    createCaptchaVerifier(env({ CAPTCHA_SITE_KEY: 'real-site', CAPTCHA_SECRET_KEY: '0x4AAAAAAAreal-secret' }));
+    expect(warned).toEqual([]);
+  });
+
   it('compares the token host with the deployment public URL', async () => {
     const calls: Call[] = [];
     const v = createCaptchaVerifier(

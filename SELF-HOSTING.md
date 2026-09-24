@@ -264,7 +264,7 @@ A form owner can turn on a human check before the final submit (Connect tab →
 Spam protection). The check is [Cloudflare Turnstile](https://developers.cloudflare.com/turnstile/),
 and the **API** verifies every token before a complete submission is written.
 While a form has it on, its partial answers are saved but delivered to no
-webhook or CRM; only verified complete submissions are. All three unset (the
+webhook or CRM; only verified complete submissions are. Both keys unset (the
 default) means the feature does not exist on this deployment: the editor shows
 the switch disabled, and no form loads anything from Cloudflare.
 
@@ -285,7 +285,8 @@ proxy in front of the web app adds a Content-Security-Policy, allow
 `https://challenges.cloudflare.com` in `script-src` and `frame-src`. For CI and
 local runs, Cloudflare publishes test keys (for example site key
 `1x00000000000000000000AA` with secret `1x0000000000000000000000000000000AA`,
-which always pass); a production secret refuses their tokens.
+which always pass); a production secret refuses their tokens, and the API logs a
+warning when it boots with a test secret, which would accept any token.
 
 ### Premium entitlements (optional; Forms itself is always free)
 

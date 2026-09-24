@@ -995,6 +995,12 @@ export function captchaCData(sessionId: string): string {
   return sessionId.replace(/[^A-Za-z0-9_-]/g, '').slice(0, 255);
 }
 
+/**
+ * The action the browser stamps on its challenge and the API requires back:
+ * a token minted for any other action (another form product, a login) fails.
+ */
+export const CAPTCHA_ACTION = 'submit';
+
 // --- Acquisition attribution (first touch, persisted on the account) ---------
 
 /**
