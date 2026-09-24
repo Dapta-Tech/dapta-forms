@@ -60,6 +60,15 @@ const RESET_PARAMS = ['offset', 'response'] as const;
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
+/**
+ * The API's limits on the answer filters (`apps/api/src/submission-filter.ts`),
+ * which answers past them with a 400. The page keeps within them, dropping
+ * what does not fit, so a hand-made URL narrows less instead of breaking.
+ */
+const MAX_VALUE_LENGTH = 500;
+const MAX_VALUES_PER_KEY = 100;
+const MAX_ANSWERS_JSON = 16_384;
+
 /** What the form allows filtering by: its choice questions, and the score when it scores. */
 export interface FilterScope {
   choiceKeys: ReadonlySet<string>;
@@ -110,11 +119,12 @@ export function parseViewFilter(params: RawParams, scope: FilterScope): ViewFilt
       ...new Set(
         all(params, name)
           .map((v) => v.trim())
-          .filter(Boolean),
+          .filter((v) => v !== '' && v.length <= MAX_VALUE_LENGTH),
       ),
-    ];
+    ].slice(0, MAX_VALUES_PER_KEY);
     if (values.length > 0) answers[key] = values;
   }
+  fitAnswers(answers);
   const range = first(params, 'range');
   const preset = (RANGE_PRESETS as readonly string[]).includes(range ?? '')
     ? (range as RangePreset)
@@ -141,6 +151,16 @@ export function parseViewFilter(params: RawParams, scope: FilterScope): ViewFilt
     scoreMax,
     sort: parsedSort.startsWith('score') && !scope.scoring ? 'newest' : parsedSort,
   };
+}
+
+/** Drops the last values (then keys) until `answers` fits the API's JSON limit. */
+function fitAnswers(answers: Record<string, string[]>): void {
+  while (JSON.stringify(answers).length > MAX_ANSWERS_JSON) {
+    const keys = Object.keys(answers);
+    const last = keys[keys.length - 1]!;
+    answers[last]!.pop();
+    if (answers[last]!.length === 0) delete answers[last];
+  }
 }
 
 export function hasDateFilter(f: ViewFilter): boolean {

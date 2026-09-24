@@ -22,6 +22,21 @@ describe('parseViewFilter', () => {
     expect(parseViewFilter({ status: 'all' }, scope).statuses).toEqual([]);
   });
 
+  it('keeps within the API limits, so a hand-made URL narrows less instead of failing', () => {
+    const many = Array.from({ length: 150 }, (_, i) => `v${i}`);
+    const f = parseViewFilter({ 'f.kind': [...many, 'x'.repeat(501)], 'f.tools': 'crm' }, scope);
+    expect(f.answers.kind).toHaveLength(100);
+    expect(f.answers.kind).not.toContain('x'.repeat(501));
+    expect(f.answers.tools).toEqual(['crm']);
+    // Long values that fit one by one can still overflow the API's JSON limit together.
+    const long = Array.from({ length: 100 }, (_, i) => `${i}`.padEnd(500, 'y'));
+    const big = parseViewFilter({ 'f.kind': long, 'f.tools': long }, scope);
+    const json = apiFilterQuery(big, 'UTC').answers!;
+    expect(json.length).toBeLessThanOrEqual(16_384);
+    expect(big.answers.kind!.length).toBeGreaterThan(0);
+    expect(big.answers.kind).toEqual(long.slice(0, big.answers.kind!.length));
+  });
+
   it("keeps only the form's choice questions, trimmed and deduplicated", () => {
     const f = parseViewFilter(
       { 'f.kind': ['llc', ' llc ', ''], 'f.notes': 'x', 'f.ghost': 'y', 'f.tools': 'crm' },
