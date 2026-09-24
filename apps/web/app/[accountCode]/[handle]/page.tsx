@@ -6,6 +6,7 @@ import { getPublicProfile } from '@/lib/api';
 import { getLocale } from '@/lib/locale';
 import { personName } from '@/lib/person';
 import { formDesignProps } from '@/lib/form-design';
+import { publicFormPath } from '@/lib/public-form-path';
 import './[slug]/public-form.css';
 
 export const dynamic = 'force-dynamic';
@@ -110,7 +111,10 @@ export default async function MemberProfilePage({
             <ul className="pf-profile__list">
               {profile.forms.map((f) => (
                 <li key={f.slug}>
-                  <Link href={`/${accountCode}/${profile.handle}/${f.slug}`}>
+                  {/* The neutral form URL, like every other surface that hands
+                      one out: this page names the member on purpose, a form
+                      link copied from it should not. */}
+                  <Link href={publicFormPath(accountCode, f.slug)}>
                     <span className="pf-profile__form-name">{f.name}</span>
                     <span aria-hidden className="pf-profile__form-go">→</span>
                   </Link>

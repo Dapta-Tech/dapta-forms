@@ -28,6 +28,7 @@ import {
 import { getMessages, t } from "@quill/shared";
 import { cn } from "@/lib/cn";
 import { callAction } from "@/lib/call-action";
+import { publicFormPath } from "@/lib/public-form-path";
 import { clientLocale } from "@/lib/client-locale";
 import {
   groupBySections,
@@ -76,7 +77,6 @@ export interface FormsExplorerProps {
   forms: FormSummary[];
   folders: Folder[];
   accountCode: string;
-  handle: string;
   locale: string;
   /** Already-formatted "Updated {when}" per form id (formatted on the server, one clock). */
   updatedByForm: Record<string, string>;
@@ -331,7 +331,7 @@ export function FormsExplorer(props: FormsExplorerProps) {
               <FormRow
                 key={f.id}
                 form={f}
-                publicPath={`/${props.accountCode}/${props.handle}/${f.slug}`}
+                publicPath={publicFormPath(props.accountCode, f.slug)}
                 updatedLabel={props.updatedByForm[f.id] ?? ''}
                 nameRanges={f.match.nameRanges}
                 folders={folders}
@@ -375,7 +375,6 @@ function FolderSection({
   dragging,
   folders,
   accountCode,
-  handle,
   locale,
   updatedByForm,
   labels,
@@ -579,7 +578,7 @@ function FolderSection({
           <FormRow
             key={f.id}
             form={f}
-            publicPath={`/${accountCode}/${handle}/${f.slug}`}
+            publicPath={publicFormPath(accountCode, f.slug)}
             updatedLabel={updatedByForm[f.id] ?? ""}
             nameRanges={f.match.nameRanges}
             folders={folders}

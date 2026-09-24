@@ -87,7 +87,6 @@ export default async function FormsList() {
           forms={forms}
           folders={folders}
           accountCode={me.accountCode}
-          handle={me.handle ?? 'me'}
           locale={locale}
           updatedByForm={updatedByForm}
           labels={{
