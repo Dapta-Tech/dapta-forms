@@ -31,6 +31,7 @@ import {
   useRef,
   useState,
   useTransition,
+  type ChangeEvent,
   type CSSProperties,
   type KeyboardEvent,
   type MouseEvent,
@@ -337,9 +338,11 @@ export function FilterTrigger({ columnId }: { columnId: string }) {
   const sort = columnSort(column, host.filter);
   const open = host.openId === columnId;
   const name =
-    n > 0
-      ? t(host.labels.filterColumnActive, { column: column.label, n })
-      : t(host.labels.filterColumn, { column: column.label });
+    n === 1
+      ? t(host.labels.filterColumnActiveOne, { column: column.label })
+      : n > 1
+        ? t(host.labels.filterColumnActive, { column: column.label, n })
+        : t(host.labels.filterColumn, { column: column.label });
   const on = n > 0 || sort != null;
   return (
     <button
@@ -455,14 +458,23 @@ function MenuBody({
   const rootRef = useRef<HTMLDivElement>(null);
   const cleared = withoutColumn(column, f);
   const canClear = activeCount(column, f) > 0 || columnSort(column, f) != null;
+  // Clear starts the menu's fields over: a score typed and not yet applied
+  // is dropped with its pending wait, not applied on top of the cleared filter.
+  const [clears, setClears] = useState(0);
 
   // The first control takes the focus once the panel is on screen (it is
   // hidden for the frame it is measured in, and a hidden element ignores focus).
   useEffect(() => {
-    const id = requestAnimationFrame(() =>
-      requestAnimationFrame(() => rootRef.current?.querySelector<HTMLElement>(FOCUSABLE)?.focus()),
-    );
-    return () => cancelAnimationFrame(id);
+    let inner = 0;
+    const outer = requestAnimationFrame(() => {
+      inner = requestAnimationFrame(() =>
+        rootRef.current?.querySelector<HTMLElement>(FOCUSABLE)?.focus(),
+      );
+    });
+    return () => {
+      cancelAnimationFrame(outer);
+      cancelAnimationFrame(inner);
+    };
   }, [column.id]);
 
   return (
@@ -491,15 +503,18 @@ function MenuBody({
       ) : column.kind === 'status' ? (
         <StatusMenu counts={statusCounts} total={total} />
       ) : column.kind === 'date' ? (
-        <DateMenu />
+        <DateMenu key={clears} />
       ) : (
-        <ScoreMenu />
+        <ScoreMenu key={clears} />
       )}
       <div className="flex items-center justify-end border-t border-border px-2 py-2">
         <button
           type="button"
           disabled={!canClear}
-          onClick={() => host.update(cleared)}
+          onClick={() => {
+            setClears((n) => n + 1);
+            host.update(cleared);
+          }}
           data-testid="filter-clear"
           className="inline-flex h-8 items-center rounded-md px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-40"
         >
@@ -789,33 +804,52 @@ const SCORE_DEBOUNCE_MS = 500;
 function ScoreMenu() {
   const host = useHost()!;
   const { filter: f, labels } = host;
-  const [min, setMin] = useState(f.scoreMin == null ? '' : String(f.scoreMin));
-  const [max, setMax] = useState(f.scoreMax == null ? '' : String(f.scoreMax));
+  const text = (n: number | null) => (n == null ? '' : String(n));
+  const [min, setMin] = useState(text(f.scoreMin));
+  const [max, setMax] = useState(text(f.scoreMax));
+  // The bounds this menu last applied, to tell its own change coming back
+  // from one made elsewhere (the menu's Clear, a chip's x, Clear all).
+  const [sent, setSent] = useState<[number | null, number | null]>([f.scoreMin, f.scoreMax]);
+  const [seen, setSeen] = useState<[number | null, number | null]>([f.scoreMin, f.scoreMax]);
+  if (seen[0] !== f.scoreMin || seen[1] !== f.scoreMax) {
+    setSeen([f.scoreMin, f.scoreMax]);
+    if (sent[0] !== f.scoreMin || sent[1] !== f.scoreMax) {
+      // Changed elsewhere: the fields follow, and what they said is dropped.
+      setMin(text(f.scoreMin));
+      setMax(text(f.scoreMax));
+      setSent([f.scoreMin, f.scoreMax]);
+    }
+  }
   const latest = useRef(f);
   latest.current = f;
+  const fields = useRef({ min, max });
+  fields.current = { min, max };
+  const timer = useRef<number | undefined>(undefined);
+  useEffect(() => () => window.clearTimeout(timer.current), []);
 
-  // Applied once the typing pauses, or at once on Enter.
-  const commit = useCallback(
-    (lo: string, hi: string) => {
-      const num = (v: string) =>
-        v.trim() === '' || !Number.isFinite(Number(v)) ? null : Number(v);
-      const cur = latest.current;
-      const scoreMin = num(lo);
-      const scoreMax = num(hi);
-      if (scoreMin === cur.scoreMin && scoreMax === cur.scoreMax) return;
-      host.update({ ...cur, scoreMin, scoreMax });
-    },
-    [host],
-  );
-  useEffect(() => {
-    const id = window.setTimeout(() => commit(min, max), SCORE_DEBOUNCE_MS);
-    return () => window.clearTimeout(id);
-  }, [min, max, commit]);
+  // Applied once the typing pauses, or at once on Enter. Only typing starts
+  // the wait, and it applies what the fields say when it ends: a filter
+  // changed meanwhile (the Clear above the fields) is never undone by it.
+  const commit = () => {
+    window.clearTimeout(timer.current);
+    const num = (v: string) => (v.trim() === '' || !Number.isFinite(Number(v)) ? null : Number(v));
+    const cur = latest.current;
+    const scoreMin = num(fields.current.min);
+    const scoreMax = num(fields.current.max);
+    if (scoreMin === cur.scoreMin && scoreMax === cur.scoreMax) return;
+    setSent([scoreMin, scoreMax]);
+    host.update({ ...cur, scoreMin, scoreMax });
+  };
+  const type = (set: (v: string) => void) => (e: ChangeEvent<HTMLInputElement>) => {
+    set(e.target.value);
+    window.clearTimeout(timer.current);
+    timer.current = window.setTimeout(commit, SCORE_DEBOUNCE_MS);
+  };
 
   const field =
     'h-9 w-full rounded-md border border-input bg-background px-3 text-sm tabular-nums focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
   const onEnter = (e: KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter') commit(min, max);
+    if (e.key === 'Enter') commit();
   };
   return (
     <div className="pb-2">
@@ -832,7 +866,7 @@ function ScoreMenu() {
             type="number"
             inputMode="decimal"
             value={min}
-            onChange={(e) => setMin(e.target.value)}
+            onChange={type(setMin)}
             onKeyDown={onEnter}
             aria-label={labels.scoreMin}
             placeholder={labels.scoreMin}
@@ -843,7 +877,7 @@ function ScoreMenu() {
             type="number"
             inputMode="decimal"
             value={max}
-            onChange={(e) => setMax(e.target.value)}
+            onChange={type(setMax)}
             onKeyDown={onEnter}
             aria-label={labels.scoreMax}
             placeholder={labels.scoreMax}

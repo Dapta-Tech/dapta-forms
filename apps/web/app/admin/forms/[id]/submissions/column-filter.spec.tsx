@@ -88,6 +88,26 @@ describe('column filters', () => {
     expect(html).toContain('pi-sort-amount-up-alt');
   });
 
+  it('names one active filter in the singular, in both languages', () => {
+    const one = { ...EMPTY_FILTER, answers: { kind: ['llc'] } };
+    expect(render(one, headings)).toContain('aria-label="Filter by Company type, 1 active"');
+    const es = getMessages('es').admin.submissions;
+    const esHtml = renderToStaticMarkup(
+      <FilterHost
+        columns={columns}
+        filter={one}
+        statusCounts={{ completed: 4, partial: 1 }}
+        total={30}
+        labels={{ ...es.filters, completed: es.badgeCompleted, partial: es.badgePartial }}
+        locale="es"
+      >
+        {headings}
+      </FilterHost>,
+    );
+    expect(esHtml).toContain('aria-label="Filtrar por Company type, 1 activo"');
+    expect(esHtml).not.toContain('1 activos');
+  });
+
   it('shows nothing above the plain table', () => {
     expect(render(EMPTY_FILTER, <FilterBar shown={30} total={30} />)).toBe('');
   });

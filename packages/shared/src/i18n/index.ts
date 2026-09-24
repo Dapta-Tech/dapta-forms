@@ -1379,8 +1379,9 @@ export interface FormsMessages {
       filters: {
         /** The funnel button's name: "Filter by {column}". */
         filterColumn: string;
-        /** The same with a filter on: "Filter by {column}, {n} active". */
+        /** The same with a filter on: "Filter by {column}, {n} active". `One` is n = 1. */
         filterColumnActive: string;
+        filterColumnActiveOne: string;
         /** Search box on top of a long option list. */
         searchOptions: string;
         noOptions: string;
@@ -3124,6 +3125,7 @@ export const en: FormsMessages = {
       filters: {
         filterColumn: 'Filter by {column}',
         filterColumnActive: 'Filter by {column}, {n} active',
+        filterColumnActiveOne: 'Filter by {column}, 1 active',
         searchOptions: 'Search options',
         noOptions: 'No option matches.',
         clear: 'Clear',
@@ -4824,6 +4826,7 @@ export const es: FormsMessages = {
       filters: {
         filterColumn: 'Filtrar por {column}',
         filterColumnActive: 'Filtrar por {column}, {n} activos',
+        filterColumnActiveOne: 'Filtrar por {column}, 1 activo',
         searchOptions: 'Buscar opciones',
         noOptions: 'Ninguna opción coincide.',
         clear: 'Limpiar',
