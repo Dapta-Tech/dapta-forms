@@ -35,6 +35,7 @@ vi.mock('next/font/google', () => {
 const actions = vi.hoisted(() => ({
   submitFormAction: vi.fn(),
   recordEventAction: vi.fn(async () => undefined),
+  recordEventsAction: vi.fn(async () => undefined),
   recordBookingAction: vi.fn(async () => undefined),
   presignUploadAction: vi.fn(async () => ({ ok: false })),
 }));
@@ -252,6 +253,70 @@ describe('slides: the visit on every submit', () => {
       <FormRenderer accountCode="acme" slug="f" name="Quote" config={slides} locale="en" visitCapture={{ hubspotTracking: true }} />,
     );
     expect(host.created).toEqual([{ hubspotTracking: true, formTitle: 'Quote' }]);
+  });
+});
+
+describe('slides, a screen of several questions (#200): the visit exactly as a single step sends it', () => {
+  // The partial point is the email, on the first screen; the last screen is
+  // grouped too, so both submits leave from a screen of several.
+  const grouped = {
+    version: 1,
+    partialSubmitAfterStep: 1,
+    steps: [
+      { key: 'email', type: 'email', question: 'Email?', screenGroup: 'you' },
+      { key: 'name', type: 'text', question: 'Name?', screenGroup: 'you' },
+      { key: 'company', type: 'text', question: 'Company?', screenGroup: 'work' },
+      { key: 'role', type: 'text', question: 'Role?', screenGroup: 'work' },
+    ],
+  } as never;
+  const first = () => el.querySelector<HTMLInputElement>('.pf__fields input')!;
+
+  async function scrollToEnd() {
+    await act(async () => {
+      for (const o of observers) {
+        if (o.el) o.cb([{ isIntersecting: true, target: o.el } as IntersectionObserverEntry], {} as IntersectionObserver);
+      }
+    });
+    await settle();
+  }
+
+  it('sends the visit and the landing campaign with the partial and the complete', async () => {
+    await mount(<FormRenderer accountCode="acme" slug="f" name="Quote" config={grouped} locale="en" visitCapture={CAPTURE} />);
+    await act(async () => typeInto(first(), 'laura@example.com'));
+    await act(async () => button().click());
+    await settle();
+    await act(async () => typeInto(first(), 'Acme'));
+    await act(async () => button().click());
+    await settle();
+    expect(partials()).toHaveLength(1);
+    expect(completes()).toHaveLength(1);
+    for (const payload of [...partials(), ...completes()]) {
+      expect(payload.visit).toEqual(LANDED.visit);
+      expect((payload.data as { utm: unknown }).utm).toEqual(LANDED.hostUtm);
+    }
+    expect(host.asked).toBe(2); // once per submit, never per retry
+  });
+
+  it('with the check above the one button, asks the host while the check runs and sends ONE submit with both', async () => {
+    const config = { ...(grouped as object), partialSubmitAfterStep: undefined } as never;
+    await mount(
+      <FormRenderer accountCode="acme" slug="f" name="Quote" config={config} locale="en" captcha={AUTO} visitCapture={CAPTURE} />,
+    );
+    await act(async () => typeInto(first(), 'laura@example.com'));
+    await act(async () => button().click());
+    await settle();
+    await act(async () => typeInto(first(), 'Acme'));
+    await scrollToEnd();
+    await act(async () => button().click());
+    await settle();
+    // The check has not answered yet, and the host was already asked.
+    expect(host.asked).toBe(1);
+    expect(completes()).toHaveLength(0);
+    await act(async () => renders[0]!.opts.callback!('tok-1'));
+    await settle();
+    expect(completes()).toHaveLength(1);
+    expect(completes()[0]).toMatchObject({ captchaToken: 'tok-1', visit: LANDED.visit });
+    expect((completes()[0]!.data as { utm: unknown }).utm).toEqual(LANDED.hostUtm);
   });
 });
 
