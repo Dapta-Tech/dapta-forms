@@ -248,6 +248,15 @@ export interface FormStep {
    */
   defaultValue?: string;
   /**
+   * Screen group (additive; back-compat). Consecutive steps sharing this id
+   * show on ONE screen in the slides layout, with one button. Absent (every
+   * config saved before screens existed) = the step has a screen of its own.
+   * The rules (solo types, hidden steps, runs of one, the one-page layout)
+   * live in {@link screenIds}; never read this field directly to decide what
+   * a screen is. Unrelated to `flowGroup`, which is the scoring phase.
+   */
+  screenGroup?: string;
+  /**
    * Per-question scoring switch (additive; back-compat — V5-B2). `false` makes
    * THIS step contribute nothing to the score while the rest of the form keeps
    * scoring normally; absent/`true` scores as it always has, so every existing
@@ -1200,13 +1209,26 @@ function resolveGoto(step: FormStep, answers: Answers): GotoRule | null {
 /**
  * Walk an ordered, visible step list applying forward `goto` jumps: at each
  * step, a matching rule jumps to its target (skipping the steps in between) or
- * ends the flow (`target: null`). Only forward targets take effect — a missing
- * or backward target is ignored (the walk continues linearly) — and a `seen`
+ * ends the flow (`target: null`). Only forward targets take effect (a missing
+ * or backward target is ignored and the walk continues linearly), and a `seen`
  * guard makes the walk provably terminate, so no configuration can loop. Steps
  * jumped over are absent from the returned path (never shown, never scored).
+ *
+ * On a SCREEN (`ids`, see {@link screenIds}) a jump runs when the respondent
+ * leaves it: the rest of the screen stays on the path, so the first matching
+ * rule from the top wins and every member after it is still shown and scored.
+ * A target inside a screen lands on that screen's first visible question, and
+ * a target on the jumping screen itself is ignored like any backward one.
+ * Without screens every id is null, `end` stays at `i`, and the walk is the
+ * original one step for step.
  */
-function applyGoto(steps: FormStep[], answers: Answers): FormStep[] {
+function applyGoto(
+  steps: FormStep[],
+  answers: Answers,
+  ids: ReadonlyMap<string, string | null>,
+): FormStep[] {
   const indexByKey = new Map(steps.map((s, i) => [s.key, i] as const));
+  const idAt = (i: number): string | null => ids.get(steps[i]?.key ?? '') ?? null;
   const path: FormStep[] = [];
   const seen = new Set<string>();
   let i = 0;
@@ -1217,13 +1239,28 @@ function applyGoto(steps: FormStep[], answers: Answers): FormStep[] {
     path.push(step);
     const rule = resolveGoto(step, answers);
     if (rule) {
-      if (rule.target == null) break; // skip to end
-      const target = indexByKey.get(rule.target);
-      if (target != null && target > i) {
-        i = target; // forward jump — skip the steps in between
+      // The last member of THIS screen: the rest of it is walked before the jump.
+      let end = i;
+      const screen = idAt(i);
+      while (screen !== null && end + 1 < steps.length && idAt(end + 1) === screen) {
+        end += 1;
+        const member = steps[end] as FormStep;
+        seen.add(member.key);
+        path.push(member);
+      }
+      if (rule.target == null) break; // skip to end (after this screen)
+      let target = indexByKey.get(rule.target);
+      const landing = target != null ? idAt(target) : null;
+      if (target != null && landing !== null) {
+        target = steps.findIndex((_, j) => idAt(j) === landing); // the screen's first visible question
+      }
+      if (target != null && target > end) {
+        i = target; // forward jump: skip the steps in between
         continue;
       }
-      // Missing or backward target: ignore and continue linearly (loop-safe).
+      // Missing, backward or same-screen target: ignore and continue linearly (loop-safe).
+      i = end + 1;
+      continue;
     }
     i += 1;
   }
@@ -2258,7 +2295,131 @@ export function resolveStepDisplay(step: FormStep, answers: Answers): FormStep {
  */
 export function runtimeSteps(config: FormConfig, answers: Answers): FormStep[] {
   const visible = visibleSteps(config, answers).map((s) => resolveStepDisplay(s, answers));
-  return applyGoto(visible, answers);
+  return applyGoto(visible, answers, screenIds(config));
+}
+
+// ---------------------------------------------------------------------------
+// Screens: several questions on one slides screen. ONE definition, here, so
+// the renderer, the builder and the server score agree on what a screen is.
+// Everything downstream of the config (logic keys, scoring, CSV, summaries,
+// CRM mapping, analytics) keeps working per question; a screen only decides
+// what shows together and where a jump lands.
+// ---------------------------------------------------------------------------
+
+/**
+ * Step types that always get a screen of their own, even when they carry an
+ * id: a scheduler books (and advances) by itself, a reveal is a timed
+ * interstitial, and a file writes its answer only once its upload finishes,
+ * so an optional one half uploaded would be lost on a screen submit.
+ */
+export const SOLO_SCREEN_TYPES: ReadonlySet<FormFieldType> = new Set<FormFieldType>([
+  'reveal',
+  'scheduler',
+  'file',
+]);
+
+/** The most questions the builder puts on one screen. The engine does not cap. */
+export const MAX_SCREEN_SIZE = 10;
+
+/** Screens exist only in the slides layout; one page already shows everything. */
+export function screensActive(config: Pick<FormConfig, 'layout'> | null | undefined): boolean {
+  return resolveFormLayout(config) === 'slides';
+}
+
+/**
+ * Can this step sit on a screen with others? Never a solo type, and never a
+ * hidden step: it is never shown, so it is transparent (it neither joins a
+ * screen nor cuts one).
+ */
+export function canShareScreen(step: Pick<FormStep, 'type' | 'hidden'>): boolean {
+  return !SOLO_SCREEN_TYPES.has(step.type) && !step.hidden;
+}
+
+/** One authored screen: its canonical id and its members' indexes in `steps`. */
+export interface AuthoredScreen {
+  id: string;
+  members: number[];
+}
+
+/** The first `screen_<n>` no step uses, for a screen that needs a new id. */
+export function freshScreenId(steps: readonly Pick<FormStep, 'screenGroup'>[], also: Iterable<string> = []): string {
+  const taken = new Set<string>(also);
+  for (const s of steps) if (s.screenGroup) taken.add(s.screenGroup);
+  let n = 1;
+  while (taken.has(`screen_${n}`)) n += 1;
+  return `screen_${n}`;
+}
+
+/**
+ * The screens an author built, in order, whatever the layout (the ids survive
+ * a switch to one page). A screen is a maximal run of consecutive steps that
+ * can share a screen and carry the same id, with two or more members; hidden
+ * steps are skipped over. The same id on a later, separate run makes a second
+ * screen, which gets a fresh id here: each screen's id is unique, so a
+ * config written by hand can never merge two screens by accident.
+ */
+export function authoredScreens(steps: readonly FormStep[]): AuthoredScreen[] {
+  const screens: AuthoredScreen[] = [];
+  const claimed = new Set<string>();
+  let open: { value: string; members: number[] } | null = null;
+  const close = () => {
+    const run = open;
+    open = null;
+    if (!run || run.members.length < 2) return; // a run of one is no screen
+    const id = claimed.has(run.value) ? freshScreenId(steps, claimed) : run.value;
+    claimed.add(id);
+    screens.push({ id, members: run.members });
+  };
+  steps.forEach((step, i) => {
+    if (step.hidden) return; // transparent
+    const value = canShareScreen(step) ? step.screenGroup : undefined;
+    if (!value) {
+      close();
+      return;
+    }
+    if (open && open.value === value) {
+      open.members.push(i);
+      return;
+    }
+    close();
+    open = { value, members: [i] };
+  });
+  close();
+  return screens;
+}
+
+/**
+ * Step key → the id of the screen it is on, or null when it has a screen of
+ * its own. All null on one page, and for every config saved before screens
+ * existed, which is what keeps those walking exactly as they always did.
+ */
+export function screenIds(config: Pick<FormConfig, 'steps' | 'layout'>): Map<string, string | null> {
+  const ids = new Map<string, string | null>(config.steps.map((s) => [s.key, null]));
+  if (!screensActive(config)) return ids;
+  for (const screen of authoredScreens(config.steps)) {
+    for (const i of screen.members) ids.set((config.steps[i] as FormStep).key, screen.id);
+  }
+  return ids;
+}
+
+/**
+ * The runtime path split into the screens the respondent walks: consecutive
+ * steps of `runtimeSteps` on the same screen. When logic hides some members,
+ * the rest still show together; a screen whose members are all hidden simply
+ * is not on the path.
+ */
+export function runtimeScreens(config: FormConfig, answers: Answers): FormStep[][] {
+  const ids = screenIds(config);
+  const screens: FormStep[][] = [];
+  let current: string | null = null;
+  for (const step of runtimeSteps(config, answers)) {
+    const id = ids.get(step.key) ?? null;
+    const last = screens[screens.length - 1];
+    if (id !== null && id === current && last) last.push(step);
+    else screens.push([step]);
+    current = id;
+  }
+  return screens;
 }
 
 /** The key of the step at `partialSubmitAfterStep` (1-based over `steps`), or null. */
