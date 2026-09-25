@@ -9,7 +9,7 @@
  *           style="width:100%;border:0;min-height:480px;"></iframe>
  *   <script src="https://your-host/embed.js" async></script>
  *
- * Two messages cross the boundary, both matched to a frame by `event.source`
+ * Three messages cross the boundary, all matched to a frame by `event.source`
  * and never by URL, so several forms can share one page and a message can only
  * ever act on the frame it came from:
  *
@@ -30,7 +30,17 @@
  *     the top as well: two navigations of one document race, and WebKit
  *     resolves that race by cancelling both.
  *
- * Anything that is not one of those two messages, in that shape, is ignored.
+ *   dapta-forms:scroll-into-view: the form swapped its whole screen (the
+ *     ending, the submitting screen) and the new screen starts at the top of
+ *     the frame. On a long one-page form the visitor is scrolled to the button
+ *     they just pressed, far below it, and would be left looking at an empty
+ *     block. This script scrolls the frame's top into view, and ONLY when that
+ *     top is out of the viewport: someone already looking at it is not moved.
+ *     Smooth unless the visitor asked for reduced motion. The form never sends
+ *     it for the screen it loads with, so loading a page never scrolls it.
+ *
+ * Anything that is not one of those messages, in that shape, is ignored. A
+ * copy of this script cached from before a message existed simply ignores it.
  *
  * WHY THE REDIRECT HANDLER EXISTS: a plain cross-origin iframe can navigate
  * its own top, so most embeds never need this message. An iframe given a
@@ -69,6 +79,21 @@
       var frame = isOurFrame(event.source);
       if (!frame) return;
       frame.style.height = Math.min(Math.ceil(data.height), MAX_HEIGHT) + 'px';
+      return;
+    }
+
+    if (data.type === 'dapta-forms:scroll-into-view') {
+      var target = isOurFrame(event.source);
+      if (!target) return;
+      var top = target.getBoundingClientRect().top;
+      var viewport = window.innerHeight || document.documentElement.clientHeight;
+      if (top >= 0 && top < viewport) return; // its top is already on screen
+      var reduce = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+      try {
+        target.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' });
+      } catch (_) {
+        target.scrollIntoView(true); // browsers without the options object
+      }
       return;
     }
 
