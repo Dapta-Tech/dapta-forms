@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useId, useState, type HTMLAttributes, type ReactNode } from 'react';
+import { Fragment, useEffect, useId, useState, type HTMLAttributes, type ReactNode } from 'react';
 import { useDndContext } from '@dnd-kit/core';
 import type { FormLayout, FormStep } from '@quill/engine';
 import { authoredScreens, screensActive } from '@quill/engine';
@@ -41,8 +41,9 @@ const isMarker = (id: string): boolean => id === PARTIAL_ID;
  * Screens (#200), on slides only: a chain toggle on the top edge of each row
  * that has a question shown above it joins the question to the screen above
  * or starts a new screen there. The rows of one screen close ranks into a
- * single block, named by a label above it ("Screen 2 · 3 questions").
- * Numbering stays per question.
+ * single block, named by a label above it ("Screen 2 · 3 questions") that is
+ * not part of any draggable row, so it stays put while one moves. Numbering
+ * stays per question.
  *
  * A row's state (selected, hovered, focused) is ONE outline drawn inside its
  * border, following its shape: its own rounded card, or its place in a
@@ -191,110 +192,119 @@ export function QuestionSpine({
                 })
               : null;
           return (
-            <SortableRow key={id} id={id}>
-              {({ handleProps }) => (
-                <>
-                {/* The screen's name sits above its block, at the spine's full
-                    width: inside a row it would be cut at the narrowest one. */}
-                {chip ? (
-                  <p
-                    data-testid="spine-screen-chip"
-                    className="mb-1 flex items-center gap-1 pl-8 pr-1 text-2xs font-semibold text-muted-foreground"
-                  >
-                    <i aria-hidden className="pi pi-clone" style={{ fontSize: 9 }} />
-                    {chip}
-                  </p>
-                ) : null}
-                {/* The rows of one screen close the list's gap and share their
-                    borders, so the screen reads as one block. */}
-                <div className={cn('group/row relative', span && !opensScreen && '-mt-[9px]')}>
-                {screensOn && shownAbove(steps, stepIndex) ? (
-                  <ScreenToggle
-                    index={stepIndex}
-                    boundary={screenBoundary(steps, stepIndex)}
-                    reason={blockedReason}
-                    titleId={`spine-title-${step.key}`}
-                    onScreenJoin={onScreenJoin}
-                    m={m}
-                  />
-                ) : null}
-                <div
-                  className={cn(
-                    'relative flex items-center gap-2 border border-border bg-card py-2.5 pl-2 pr-2.5 transition-[background-color,box-shadow] duration-150',
-                    // The row's shape: its own card, or its place in a screen.
-                    !span ? 'rounded-xl' : opensScreen ? 'rounded-t-xl' : closesScreen ? 'rounded-b-xl' : 'rounded-none',
-                    // Its state, as one outline inside the border.
-                    active
-                      ? 'bg-primary/[0.07] ring-2 ring-inset ring-primary-edge'
-                      : 'hover:ring-1 hover:ring-inset hover:ring-muted-foreground/50 has-[[data-spine-select]:focus-visible]:ring-2 has-[[data-spine-select]:focus-visible]:ring-inset has-[[data-spine-select]:focus-visible]:ring-ring',
-                  )}
-                  data-screen-row={span ? (opensScreen ? 'first' : closesScreen ? 'last' : 'inside') : undefined}
+            <Fragment key={id}>
+              {/* The screen's name sits above its block, at the spine's full
+                  width (inside a row it would be cut at the narrowest one), and
+                  outside every draggable row, so it stays put mid-drag. */}
+              {chip ? (
+                <p
+                  data-testid="spine-screen-chip"
+                  className="-mb-1 flex items-center gap-1 pl-8 pr-1 text-2xs font-semibold text-muted-foreground"
                 >
-                  <button
-                    type="button"
-                    aria-label={m.shell.addQuestion}
-                    className="shrink-0 cursor-grab touch-none rounded-sm p-1 text-muted-foreground/70 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:cursor-grabbing"
-                    {...handleProps}
-                  >
-                    <i aria-hidden className="pi pi-bars" style={{ fontSize: 12 }} />
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => onSelect(stepIndex)}
-                    // Its keyboard focus shows as the row's own outline (above).
-                    data-spine-select
-                    className="flex min-w-0 flex-1 items-center gap-2.5 text-left focus-visible:outline-none"
-                  >
-                    <span
+                  <i aria-hidden className="pi pi-clone" style={{ fontSize: 9 }} />
+                  {chip}
+                </p>
+              ) : null}
+              <SortableRow id={id} lifted>
+                {({ handleProps, isDragging }) => (
+                  // The rows of one screen close the list's gap and share their
+                  // borders, so the screen reads as one block.
+                  <div className={cn('group/row relative', span && !opensScreen && '-mt-[9px]')}>
+                    {screensOn && shownAbove(steps, stepIndex) ? (
+                      <ScreenToggle
+                        index={stepIndex}
+                        boundary={screenBoundary(steps, stepIndex)}
+                        reason={blockedReason}
+                        titleId={`spine-title-${step.key}`}
+                        onScreenJoin={onScreenJoin}
+                        m={m}
+                      />
+                    ) : null}
+                    <div
                       className={cn(
-                        'inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-xs font-bold tabular-nums',
-                        active ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground',
+                        'relative flex items-center gap-2 border border-border bg-card py-2.5 pl-2 pr-2.5 transition-[background-color,box-shadow] duration-150',
+                        // The row's shape: its own card (always, while lifted), or
+                        // its place in a screen.
+                        isDragging || !span
+                          ? 'rounded-xl'
+                          : opensScreen
+                            ? 'rounded-t-xl'
+                            : closesScreen
+                              ? 'rounded-b-xl'
+                              : 'rounded-none',
+                        // Its state, as one outline inside the border.
+                        active
+                          ? 'bg-primary/[0.07] ring-2 ring-inset ring-primary-edge'
+                          : 'hover:ring-1 hover:ring-inset hover:ring-muted-foreground/50 has-[[data-spine-select]:focus-visible]:ring-2 has-[[data-spine-select]:focus-visible]:ring-inset has-[[data-spine-select]:focus-visible]:ring-ring',
+                        isDragging && 'shadow-xl',
                       )}
+                      data-screen-row={span ? (opensScreen ? 'first' : closesScreen ? 'last' : 'inside') : undefined}
                     >
-                      {stepIndex + 1}
-                    </span>
-                    <i
-                      aria-hidden
-                      className={cn('pi shrink-0 text-muted-foreground', iconForStep(step))}
-                      style={{ fontSize: 13 }}
-                    />
-                    <span className="flex min-w-0 flex-1 flex-col">
-                      <span id={`spine-title-${step.key}`} className="truncate text-sm font-medium text-foreground">
-                        {title}
-                      </span>
-                      <span className="mt-0.5 flex items-center gap-1.5">
-                        {/* A hidden step looked identical to a normal one here,
-                            in the Logic map and in Results — the single missing
-                            marker behind several "why is this not working"
-                            traps (its points never score, a reveal pinned to it
-                            never plays, a partial point on it never fires). */}
-                        {step.hidden ? (
-                          <span
-                            data-testid="spine-hidden-badge"
-                            className="inline-flex shrink-0 items-center rounded-md bg-muted px-1.5 py-0.5 text-2xs font-semibold uppercase tracking-wide text-faint"
-                          >
-                            {m.badges.hidden}
+                      <button
+                        type="button"
+                        aria-label={m.shell.addQuestion}
+                        className="shrink-0 cursor-grab touch-none rounded-sm p-1 text-muted-foreground/70 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:cursor-grabbing"
+                        {...handleProps}
+                      >
+                        <i aria-hidden className="pi pi-bars" style={{ fontSize: 12 }} />
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => onSelect(stepIndex)}
+                        // Its keyboard focus shows as the row's own outline (above).
+                        data-spine-select
+                        className="flex min-w-0 flex-1 items-center gap-2.5 text-left focus-visible:outline-none"
+                      >
+                        <span
+                          className={cn(
+                            'inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-xs font-bold tabular-nums',
+                            active ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground',
+                          )}
+                        >
+                          {stepIndex + 1}
+                        </span>
+                        <i
+                          aria-hidden
+                          className={cn('pi shrink-0 text-muted-foreground', iconForStep(step))}
+                          style={{ fontSize: 13 }}
+                        />
+                        <span className="flex min-w-0 flex-1 flex-col">
+                          <span id={`spine-title-${step.key}`} className="truncate text-sm font-medium text-foreground">
+                            {title}
                           </span>
-                        ) : null}
-                        {rules > 0 ? (
-                          <span className="inline-flex items-center gap-1 rounded-md bg-secondary/15 px-1.5 py-0.5 text-2xs font-semibold text-secondary">
-                            <i aria-hidden className="pi pi-sitemap" style={{ fontSize: 9 }} />
-                            {rules === 1 ? m.badges.ruleOne : tb(m.badges.rules, { n: rules })}
+                          <span className="mt-0.5 flex items-center gap-1.5">
+                            {/* A hidden step looked identical to a normal one here,
+                                in the Logic map and in Results: the single missing
+                                marker behind several "why is this not working"
+                                traps (its points never score, a reveal pinned to it
+                                never plays, a partial point on it never fires). */}
+                            {step.hidden ? (
+                              <span
+                                data-testid="spine-hidden-badge"
+                                className="inline-flex shrink-0 items-center rounded-md bg-muted px-1.5 py-0.5 text-2xs font-semibold uppercase tracking-wide text-faint"
+                              >
+                                {m.badges.hidden}
+                              </span>
+                            ) : null}
+                            {rules > 0 ? (
+                              <span className="inline-flex items-center gap-1 rounded-md bg-secondary/15 px-1.5 py-0.5 text-2xs font-semibold text-secondary">
+                                <i aria-hidden className="pi pi-sitemap" style={{ fontSize: 9 }} />
+                                {rules === 1 ? m.badges.ruleOne : tb(m.badges.rules, { n: rules })}
+                              </span>
+                            ) : contact ? (
+                              <span className="inline-flex items-center rounded-md bg-muted px-1.5 py-0.5 text-2xs font-semibold text-faint">
+                                {m.badges.contact}
+                              </span>
+                            ) : null}
                           </span>
-                        ) : contact ? (
-                          <span className="inline-flex items-center rounded-md bg-muted px-1.5 py-0.5 text-2xs font-semibold text-faint">
-                            {m.badges.contact}
-                          </span>
-                        ) : null}
-                      </span>
-                    </span>
-                  </button>
-                </div>
-                </div>
-                </>
-              )}
-            </SortableRow>
+                        </span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </SortableRow>
+            </Fragment>
           );
         }}
       </SortableList>
