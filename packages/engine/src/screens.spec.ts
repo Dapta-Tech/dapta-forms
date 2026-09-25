@@ -231,6 +231,36 @@ describe('jumps on a screen', () => {
     expect(keys(runtimeSteps(open, { x: 'yes' }))).toEqual(['x', 'b', 'c', 'd']);
   });
 
+  it('a target whose screen opens with a question logic hides lands on the first one shown', () => {
+    // The builder offers screen STARTS only, so a start with a show rule of its
+    // own is exactly what a jump will point at.
+    const c = cfg([
+      choice('x', undefined, { goto: [{ values: ['yes'], target: 'a' }] }),
+      text('skip'),
+      text('a', 's', { showWhen: { field: 'x', values: ['no'] } }),
+      text('b', 's'),
+      text('c', 's'),
+    ]);
+    expect(keys(runtimeSteps(c, { x: 'yes' }))).toEqual(['x', 'b', 'c']);
+    // A screen with nothing left to show is a missing target: ignored, as ever.
+    const gone = cfg(c.steps.map((s) => (s.key === 'b' || s.key === 'c' ? { ...s, showWhen: { field: 'x', values: ['no'] } } : s)));
+    expect(keys(runtimeSteps(gone, { x: 'yes' }))).toEqual(['x', 'skip']);
+  });
+
+  it('a rule that resolves nowhere is ignored, so the next question’s rule on the screen still runs', () => {
+    const c = cfg([
+      choice('a', 's', { goto: [{ values: ['yes'], target: 'b' }] }), // same screen: ignored
+      choice('b', 's', { goto: [{ values: ['yes'], target: 'e' }] }),
+      text('c'),
+      text('d'),
+      text('e'),
+    ]);
+    expect(keys(runtimeSteps(c, { a: 'yes', b: 'yes' }))).toEqual(['a', 'b', 'e']);
+    // Exactly what the same rules do with no screen at all.
+    const flat = cfg(c.steps.map(({ screenGroup: _drop, ...s }) => s));
+    expect(keys(runtimeSteps(flat, { a: 'yes', b: 'yes' }))).toEqual(['a', 'b', 'e']);
+  });
+
   it('a target on the same screen is ignored and the walk continues after it', () => {
     const forward = cfg([choice('a', 's', { goto: [{ values: ['yes'], target: 'b' }] }), text('b', 's'), text('c')]);
     expect(keys(runtimeSteps(forward, { a: 'yes' }))).toEqual(['a', 'b', 'c']);

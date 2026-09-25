@@ -1215,12 +1215,14 @@ function resolveGoto(step: FormStep, answers: Answers): GotoRule | null {
  * jumped over are absent from the returned path (never shown, never scored).
  *
  * On a SCREEN (`ids`, see {@link screenIds}) a jump runs when the respondent
- * leaves it: the rest of the screen stays on the path, so the first matching
- * rule from the top wins and every member after it is still shown and scored.
- * A target inside a screen lands on that screen's first visible question, and
- * a target on the jumping screen itself is ignored like any backward one.
- * Without screens every id is null, `end` stays at `i`, and the walk is the
- * original one step for step.
+ * leaves it: the whole screen stays on the path, then its members' rules are
+ * read top to bottom and the first one that goes somewhere (the end, or a step
+ * past the screen) wins. A rule that goes nowhere (a missing, backward or
+ * same-screen target) is ignored exactly as a single step's always was, so the
+ * next member's rule still gets its turn. A target inside a screen, even one
+ * logic hides, lands on that screen's first visible question. Without screens
+ * every id is null, a "screen" is the one step, and the walk is the original
+ * one step for step.
  */
 function applyGoto(
   steps: FormStep[],
@@ -1229,40 +1231,46 @@ function applyGoto(
 ): FormStep[] {
   const indexByKey = new Map(steps.map((s, i) => [s.key, i] as const));
   const idAt = (i: number): string | null => ids.get(steps[i]?.key ?? '') ?? null;
+  /** Where a jump to `key` lands: the step, or its screen's first visible question. */
+  const landOn = (key: string): number | undefined => {
+    const screen = ids.get(key) ?? null;
+    if (screen === null) return indexByKey.get(key);
+    const first = steps.findIndex((_, j) => idAt(j) === screen);
+    return first >= 0 ? first : undefined;
+  };
   const path: FormStep[] = [];
   const seen = new Set<string>();
   let i = 0;
   while (i < steps.length) {
     const step = steps[i];
     if (!step || seen.has(step.key)) break;
-    seen.add(step.key);
-    path.push(step);
-    const rule = resolveGoto(step, answers);
-    if (rule) {
-      // The last member of THIS screen: the rest of it is walked before the jump.
-      let end = i;
-      const screen = idAt(i);
-      while (screen !== null && end + 1 < steps.length && idAt(end + 1) === screen) {
-        end += 1;
-        const member = steps[end] as FormStep;
-        seen.add(member.key);
-        path.push(member);
-      }
-      if (rule.target == null) break; // skip to end (after this screen)
-      let target = indexByKey.get(rule.target);
-      const landing = target != null ? idAt(target) : null;
-      if (target != null && landing !== null) {
-        target = steps.findIndex((_, j) => idAt(j) === landing); // the screen's first visible question
-      }
-      if (target != null && target > end) {
-        i = target; // forward jump: skip the steps in between
-        continue;
-      }
-      // Missing, backward or same-screen target: ignore and continue linearly (loop-safe).
-      i = end + 1;
-      continue;
+    // The last member of THIS screen: the whole screen is walked before a jump.
+    let end = i;
+    const screen = idAt(i);
+    while (screen !== null && end + 1 < steps.length && idAt(end + 1) === screen) end += 1;
+    for (let k = i; k <= end; k += 1) {
+      const member = steps[k] as FormStep;
+      seen.add(member.key);
+      path.push(member);
     }
-    i += 1;
+    let next = end + 1;
+    let finished = false;
+    for (let k = i; k <= end; k += 1) {
+      const rule = resolveGoto(steps[k] as FormStep, answers);
+      if (!rule) continue;
+      if (rule.target == null) {
+        finished = true; // skip to end (after this screen)
+        break;
+      }
+      const target = landOn(rule.target);
+      if (target != null && target > end) {
+        next = target; // forward jump: skip the steps in between
+        break;
+      }
+      // Missing, backward or same-screen target: ignored (loop-safe).
+    }
+    if (finished) break;
+    i = next;
   }
   return path;
 }

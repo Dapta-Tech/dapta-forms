@@ -22,9 +22,10 @@ webhook and CRM mapping and the analytics API keep working per question.
   ignores every id), `runtimeScreens`, `screensActive`, `canShareScreen`,
   `SOLO_SCREEN_TYPES` and `MAX_SCREEN_SIZE` (10, the builder's cap; the engine
   does not cap). A jump from a question on a screen now runs when the
-  respondent leaves the screen, so the first matching rule from the top wins
-  and the rest of the screen is still shown and scored; a target inside a
-  screen lands on its first visible question. `normalizeScreenGroups` (also run
+  respondent leaves the screen, so the whole screen is still shown and scored
+  and the first rule from the top that goes somewhere wins (one that goes
+  nowhere is ignored, as it always was); a target inside a screen, even one
+  logic hides, lands on its first visible question. `normalizeScreenGroups` (also run
   by `normalizeConfig`) keeps ids only where they make a screen and returns the
   same array when nothing changes, and `setScreenBoundary` joins or splits the
   boundary above a question. A legacy reveal after a question on a screen
