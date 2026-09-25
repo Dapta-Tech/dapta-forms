@@ -440,6 +440,105 @@ describe('V5-D3 — drop-off attributes a view to the step KEY, not its runtime 
   });
 });
 
+describe('screens (#200): a grouped session reads through the same formulas', () => {
+  /**
+   * name, email and company share one slides screen; notes has its own. The
+   * renderer records a screen per question (E1): a view for each visible
+   * member when the screen shows, a completion for each when it is submitted.
+   * Nothing in the API, the types or the SQL knows about screens.
+   */
+  async function makeGroupedForm(): Promise<string> {
+    const created = await createForm(db, accountId, {
+      name: `screens-${crypto.randomUUID().slice(0, 8)}`,
+      config: {
+        version: 1,
+        steps: [
+          { key: 'name', type: 'text', question: 'Name?', screenGroup: 'you' },
+          { key: 'email', type: 'email', question: 'Email?', screenGroup: 'you' },
+          { key: 'company', type: 'text', question: 'Company?', screenGroup: 'you' },
+          { key: 'notes', type: 'textarea', question: 'Anything else?' },
+        ],
+      },
+    });
+    if (!created.ok) throw new Error('form creation failed');
+    return created.value.id;
+  }
+
+  async function event(form: string, session: string, type: string, stepIndex: number | null = null, stepKey: string | null = null) {
+    await recordFormEvent(db, { formId: form, sessionId: session, type, stepIndex, stepKey, now: NOW });
+  }
+
+  it('members share their views, the drop-off lands on the last one, and Starts means the screen was submitted', async () => {
+    const form = await makeGroupedForm();
+    const screen = ['name', 'email', 'company'];
+    // Four sessions open the form and see the first screen.
+    for (const s of ['s1', 's2', 's3', 's4']) {
+      await event(form, s, 'view');
+      for (const [i, key] of screen.entries()) await event(form, s, 'step_view', i, key);
+    }
+    // Three submit it (no cover: the submit is the start), and see notes.
+    for (const s of ['s1', 's2', 's3']) {
+      await event(form, s, 'start');
+      for (const [i, key] of screen.entries()) await event(form, s, 'step_complete', i, key);
+      await event(form, s, 'step_view', 3, 'notes');
+    }
+    // Two finish.
+    for (const s of ['s1', 's2']) {
+      await db.run(
+        sql`INSERT INTO submission (id, form_id, session_id, data, score, started_at, completed_at)
+            VALUES (${crypto.randomUUID()}, ${form}, ${s}, ${jsonParam({ name: 'x' })}, ${0}, ${NOW}, ${NOW + 10_000})`,
+      );
+    }
+
+    const a = (await svc.funnel(accountId, form, {}))!;
+    expect(a.views).toBe(4);
+    // s4 saw the screen and left without submitting it: not a start.
+    expect(a.starts).toBe(3);
+    expect(a.submissions).toBe(2);
+    expect(a.dropoffMode).toBe('viewed');
+    const rows = Object.fromEntries(a.dropoff.filter((r) => !r.isCover).map((r) => [r.key, r]));
+    // The members of one screen share their views...
+    expect([rows.name!.views, rows.email!.views, rows.company!.views]).toEqual([4, 4, 4]);
+    expect([rows.name!.dropoff, rows.email!.dropoff]).toEqual([0, 0]);
+    // ...and the people who left the screen show on its last member's row.
+    expect(rows.company).toMatchObject({ views: 4, dropoff: 1, dropoffPercent: 25 });
+    expect(rows.notes).toMatchObject({ views: 3, dropoff: 1 });
+  });
+
+  it('the CSV has one column per question, exactly as the same form without screens', async () => {
+    const grouped = await makeGroupedForm();
+    const form = (await db.get<{ config: string }>(sql`SELECT config FROM form WHERE id = ${grouped}`))!;
+    const steps = (JSON.parse(form.config) as { steps: Record<string, unknown>[] }).steps;
+    const flatCreated = await createForm(db, accountId, {
+      name: `flat-${crypto.randomUUID().slice(0, 8)}`,
+      config: { version: 1, steps: steps.map(({ screenGroup: _drop, ...s }) => s) } as never,
+    });
+    if (!flatCreated.ok) throw new Error('form creation failed');
+    const flat = flatCreated.value.id;
+    const answers = { name: 'Ana', email: 'ana@example.com', company: 'Acme', notes: 'hi' };
+    for (const f of [grouped, flat]) {
+      await db.run(
+        sql`INSERT INTO submission (id, form_id, session_id, data, score, started_at, completed_at)
+            VALUES (${'row-' + f}, ${f}, ${'csv'}, ${jsonParam(answers)}, ${0}, ${NOW}, ${NOW + 1})`,
+      );
+    }
+    const auth = {
+      resolveHost: async () => ({ accountId, memberId: 'test-member', role: 'owner' as const }),
+    } as unknown as AuthService;
+    const ctrl = new AnalyticsController(db, auth, svc);
+    const exportOf = async (f: string) => {
+      const chunks: string[] = [];
+      const res = { setHeader: () => {}, write: (c: string) => void chunks.push(c), end: () => {} };
+      await ctrl.exportCsv({ headers: {} }, res, f, {});
+      // Ignore the row id, the one cell that differs by construction.
+      return chunks.join('').trimEnd().split('\r\n').map((l) => l.replace(/,row-[^,]*$/, ''));
+    };
+    const csv = await exportOf(grouped);
+    expect(csv[0]).toMatch(/^\uFEFFName\?,Email\?,Company\?,Anything else\?,/);
+    expect(csv).toEqual(await exportOf(flat));
+  });
+});
+
 describe('submissions query', () => {
   it('paginates newest-first with a total', async () => {
     const page = await querySubmissions(db, formId, { limit: 2, offset: 0 });

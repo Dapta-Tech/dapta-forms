@@ -17,6 +17,7 @@ import {
   sql,
   type Db,
 } from '@quill/db';
+import { computeScore } from '@quill/engine';
 import { SubmissionNotifier, LogOnlyEmailProvider } from '@quill/notifications';
 import { SubmissionService } from './submission.service';
 import { EmailEffects } from './email-effects';
@@ -324,6 +325,47 @@ describe('submit', () => {
       data: { why: 'a'.repeat(30), other: 'b'.repeat(5000) },
     });
     expect('error' in unbounded).toBe(false);
+  });
+
+  it('scores a jump on a screen (#200) exactly as the respondent walked it, like the client', async () => {
+    const account = await getAccountByCode(db, 'acme');
+    const option = (value: string, points: number) => ({ label: value, value, points });
+    const config = {
+      version: 1 as const,
+      scoring: { enabled: true },
+      steps: [
+        // One screen: a jump on its FIRST question runs when the screen is
+        // left, so `budget` is still shown and scored; `extra` is skipped.
+        {
+          key: 'fit',
+          type: 'multiple_choice' as const,
+          question: 'Fit?',
+          options: [option('yes', 5), option('no', 0)],
+          goto: [{ values: ['yes'], target: 'last' }],
+          screenGroup: 'qualify',
+        },
+        {
+          key: 'budget',
+          type: 'multiple_choice' as const,
+          question: 'Budget?',
+          options: [option('high', 3), option('low', 1)],
+          screenGroup: 'qualify',
+        },
+        { key: 'extra', type: 'multiple_choice' as const, question: 'Extra?', options: [option('x', 100)] },
+        { key: 'last', type: 'multiple_choice' as const, question: 'Last?', options: [option('z', 7)] },
+      ],
+    };
+    const created = await createForm(db, account!.id, { name: 'Screens score', config });
+    if (!created.ok) throw new Error('createForm failed');
+
+    // A stale answer to the skipped question never counts.
+    const data = { fit: 'yes', budget: 'high', extra: 'x', last: 'z' };
+    const out = await svc.submit('acme', created.value.slug, { sessionId: 'sess-screens', data });
+    expect('error' in out).toBe(false);
+    if ('error' in out) return;
+    // fit(5) + budget(3) + last(7).
+    expect(out.score).toBe(15);
+    expect(out.score).toBe(computeScore(config, data));
   });
 });
 

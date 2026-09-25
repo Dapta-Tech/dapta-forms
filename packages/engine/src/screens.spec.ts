@@ -38,6 +38,8 @@ import {
   normalizeScreenGroups,
   setScreenBoundary,
 } from './form-config';
+import { summarizeAnswers } from './answer-summary';
+import { summarizeSubmissions } from './submissions-summary';
 
 const step = (p: Partial<FormStep> & Pick<FormStep, 'key' | 'type'>): FormStep => p;
 const text = (key: string, screenGroup?: string, extra: Partial<FormStep> = {}): FormStep =>
@@ -384,5 +386,23 @@ describe('a legacy reveal on a screen member', () => {
     const out = migrateRevealToStep(c);
     expect(out.steps.map((s) => s.type)).toEqual(['text', 'text', 'reveal', 'text']);
     expect(screens(out)).toEqual([['a', 'b'], [out.steps[2]!.key], ['c']]);
+  });
+});
+
+describe('everything downstream of the config reads per question, unchanged', () => {
+  const flat = cfg([
+    step({ key: 'name', type: 'name', question: 'Your name?' }),
+    step({ key: 'email', type: 'email', question: 'Email?' }),
+    choice('fit'),
+    text('notes'),
+  ]);
+  const grouped = cfg(flat.steps.map((s, i) => (i < 3 ? { ...s, screenGroup: 's' } : s)));
+  const answers: Answers = { firstname: 'Ana', lastname: 'Ruiz', email: 'ana@example.com', fit: 'yes', notes: 'hi' };
+
+  it('the answers in the emails and the Summary tab are the same with or without screens', () => {
+    expect(screens(grouped)).toEqual([['name', 'email', 'fit'], ['notes']]);
+    expect(summarizeAnswers(grouped, answers)).toEqual(summarizeAnswers(flat, answers));
+    const rows = [{ id: 'r1', data: answers, at: 1 }];
+    expect(summarizeSubmissions(grouped.steps, rows)).toEqual(summarizeSubmissions(flat.steps, rows));
   });
 });
