@@ -171,7 +171,7 @@ describe('submissionSchema: the visit never costs a submission', () => {
 });
 
 describe('toSubmissionVisitView: what the dashboard may see', () => {
-  it('never carries the HubSpot cookie, only whether one was linked', () => {
+  it('never carries the HubSpot cookie, only whether one was received', () => {
     const view = toSubmissionVisitView({
       pageUri: 'https://a.example.com/',
       pageName: 'Landing',
@@ -184,7 +184,7 @@ describe('toSubmissionVisitView: what the dashboard may see', () => {
       pageUri: 'https://a.example.com/',
       pageName: 'Landing',
       embedded: true,
-      hubspotLinked: true,
+      hubspotCookie: true,
     });
     expect(JSON.stringify(view)).not.toContain(HUTK.toLowerCase());
   });
@@ -196,7 +196,7 @@ describe('toSubmissionVisitView: what the dashboard may see', () => {
       pageUri: null,
       pageName: null,
       embedded: false,
-      hubspotLinked: false,
+      hubspotCookie: false,
     });
   });
 });

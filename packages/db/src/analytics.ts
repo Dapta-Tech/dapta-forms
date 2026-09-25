@@ -14,7 +14,7 @@ import type { SubmissionRow } from './forms';
 
 /**
  * A submission as the dashboard reads it. The visit is the SAFE view: the page
- * and a "HubSpot visitor linked" flag, never the cookie itself. Mapped here, at
+ * and a "HubSpot cookie received" flag, never the cookie itself. Mapped here, at
  * the one place the admin read side turns rows into objects, so a route that
  * spreads a row into its response cannot hand the cookie out by accident.
  */

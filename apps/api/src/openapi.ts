@@ -164,7 +164,7 @@ export const openapiSpec = {
       get: {
         summary: 'Get one submission in full (host)',
         description:
-          'Returns { id, formId, sessionId, data, score, startedAt, completedAt, partialAt, visit }. `visit` is null, or { pageUri, pageName, embedded, hubspotLinked }: the page the response was given on, whether it was embedded there, and whether a HubSpot visitor was linked to it. The visitor cookie itself is never returned. Scoped by a join on the caller\u2019s own account, so a submission id from another workspace is 404, like one that does not exist.',
+          'Returns { id, formId, sessionId, data, score, startedAt, completedAt, partialAt, visit }. `visit` is null, or { pageUri, pageName, embedded, hubspotCookie }: the page the response was given on, whether it was embedded there, and whether the visitor\u2019s HubSpot tracking cookie arrived with the response. The cookie itself is never returned, and `hubspotCookie` does not mean HubSpot accepted the visit: that is decided when the submission is posted to HubSpot. Scoped by a join on the caller\u2019s own account, so a submission id from another workspace is 404, like one that does not exist.',
         security: [{ hostSession: [] }],
         responses: { '200': { description: 'The submission' }, '404': { description: 'No such submission on this form in this workspace' } },
       },

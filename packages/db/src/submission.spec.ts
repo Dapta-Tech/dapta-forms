@@ -260,10 +260,10 @@ describe('submission visit', () => {
     expect(await visitOf(session)).toEqual(DIRECT);
   });
 
-  it('gives the dashboard the page and a linked flag, never the cookie', async () => {
+  it('gives the dashboard the page and a cookie-received flag, never the cookie', async () => {
     const session = 'v-admin';
     const row = await upsertSubmission(db, { formId, sessionId: session, data: { a: 1 }, score: 0, visit: LANDING });
-    const view = { pageUri: LANDING.pageUri, pageName: LANDING.pageName, embedded: true, hubspotLinked: true };
+    const view = { pageUri: LANDING.pageUri, pageName: LANDING.pageName, embedded: true, hubspotCookie: true };
 
     const page = await querySubmissions(db, formId, {});
     const listed = page.items.find((r) => r.id === row.id);

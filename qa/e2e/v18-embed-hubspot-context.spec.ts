@@ -72,7 +72,7 @@ interface VisitView {
   pageUri: string | null;
   pageName: string | null;
   embedded: boolean;
-  hubspotLinked: boolean;
+  hubspotCookie: boolean;
 }
 interface SubmissionItem {
   id: string;
@@ -192,9 +192,9 @@ test.describe('embedded with the full snippet', () => {
     await expect.poll(async () => (await submissions(request, form.id)).length).toBe(1);
     const [row] = await submissions(request, form.id);
     // The fragment is not part of the page; the rest is exactly the landing's.
-    expect(row!.visit).toEqual({ pageUri: LANDING_URL, pageName: LANDING_TITLE, embedded: true, hubspotLinked: true });
+    expect(row!.visit).toEqual({ pageUri: LANDING_URL, pageName: LANDING_TITLE, embedded: true, hubspotCookie: true });
     expect(row!.data.utm).toEqual(CAMPAIGN);
-    // The dashboard never sees the cookie, only that one was linked.
+    // The dashboard never sees the cookie, only that one arrived.
     const raw = await (await request.get(`${API}/v1/forms/${form.id}/submissions`)).text();
     expect(raw).not.toContain(HUTK);
 
@@ -251,7 +251,7 @@ test.describe('embedded with the full snippet', () => {
     await answerOnePage(page);
     await expect.poll(async () => (await submissions(request, form.id)).length).toBe(1);
     const [row] = await submissions(request, form.id);
-    expect(row!.visit).toEqual({ pageUri: LANDING_URL, pageName: LANDING_TITLE, embedded: true, hubspotLinked: false });
+    expect(row!.visit).toEqual({ pageUri: LANDING_URL, pageName: LANDING_TITLE, embedded: true, hubspotCookie: false });
     await expect.poll(() => outboxVisits(row!.id).length).toBe(1);
     expect(outboxVisits(row!.id)[0]!.visit).not.toHaveProperty('hutk');
   });
@@ -286,7 +286,7 @@ test.describe('without the full snippet', () => {
     await expect.poll(async () => (await submissions(request, form.id)).length).toBe(1);
     const [row] = await submissions(request, form.id);
     // No title crossed: the dashboard names the page by its host.
-    expect(row!.visit).toEqual({ pageUri: `${LANDING}/`, pageName: null, embedded: true, hubspotLinked: false });
+    expect(row!.visit).toEqual({ pageUri: `${LANDING}/`, pageName: null, embedded: true, hubspotCookie: false });
     expect(row!.data).not.toHaveProperty('utm');
   });
 
@@ -305,7 +305,7 @@ test.describe('without the full snippet', () => {
       pageUri: `${baseURL}${form.path}?utm_source=newsletter`,
       pageName: form.title,
       embedded: false,
-      hubspotLinked: false,
+      hubspotCookie: false,
     });
   });
 });
@@ -346,7 +346,7 @@ test.describe('embedded, with spam protection on', () => {
 
     await expect.poll(async () => (await submissions(request, form.id))[0]?.completedAt ?? null).not.toBeNull();
     const [row] = await submissions(request, form.id);
-    expect(row!.visit).toEqual({ pageUri: LANDING_URL, pageName: LANDING_TITLE, embedded: true, hubspotLinked: true });
+    expect(row!.visit).toEqual({ pageUri: LANDING_URL, pageName: LANDING_TITLE, embedded: true, hubspotCookie: true });
     await expect.poll(() => outboxVisits(row!.id).length).toBe(1);
     expect(outboxVisits(row!.id)[0]).toMatchObject({ action: 'complete', visit: { hutk: HUTK, pageUri: LANDING_URL } });
   });

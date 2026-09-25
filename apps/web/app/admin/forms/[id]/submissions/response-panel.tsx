@@ -52,8 +52,8 @@ export interface PanelLabels {
   responseId: string;
   /** The page it was given on (#199). */
   pageRow: string;
-  /** Beside the page, when HubSpot joined the response to the visitor's page views. */
-  hubspotLinked: string;
+  /** Beside the page, when the visitor's HubSpot tracking cookie arrived with the response. */
+  hubspotCookie: string;
   utmTitle: string;
   /** "{n} of {total} answered" */
   answeredCount: string;
@@ -953,10 +953,10 @@ export function ResponseDetailView({
                 ) : (
                   <span className="min-w-0 break-words">{detail.page.text}</span>
                 )}
-                {detail.hubspotLinked ? (
+                {detail.hubspotCookie ? (
                   <span className="inline-flex items-center gap-1 rounded-full border border-primary-edge/40 bg-primary/15 px-2 py-0.5 text-2xs font-medium text-foreground">
                     <i aria-hidden className="pi pi-check text-primary" style={{ fontSize: 9 }} />
-                    {labels.hubspotLinked}
+                    {labels.hubspotCookie}
                   </span>
                 ) : null}
               </dd>

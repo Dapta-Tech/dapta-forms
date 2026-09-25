@@ -27,8 +27,8 @@ tracking ID.
   (every field is checked on its own and dropped when it fails; a malformed visit
   never refuses a submission), `parseSubmissionVisit`, and the dashboard's safe
   view, `submissionVisitViewSchema` / `toSubmissionVisitView`, which carries a
-  "HubSpot visitor linked" flag and never the cookie. `submissionViewSchema`
-  gains `visit`.
+  "HubSpot cookie received" flag (`hubspotCookie`) and never the cookie.
+  `submissionViewSchema` gains `visit`.
 - `@quill/db`: migration 0023 adds the nullable `submission.visit` column in both
   dialects. `upsertSubmission` stores it with COALESCE, so a later save without a
   visit keeps the one already stored, and returns the merged row. The dashboard

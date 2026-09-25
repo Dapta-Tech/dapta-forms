@@ -44,7 +44,7 @@ describe('openapi spec', () => {
       expect(submit).toContain(key);
     }
     const read = JSON.stringify(openapiSpec.paths['/v1/forms/{id}/submissions/{submissionId}'].get);
-    expect(read).toContain('hubspotLinked');
+    expect(read).toContain('hubspotCookie');
     expect(read).not.toContain('hutk');
   });
 

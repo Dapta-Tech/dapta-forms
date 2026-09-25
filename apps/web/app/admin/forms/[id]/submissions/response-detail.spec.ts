@@ -228,20 +228,20 @@ describe('buildResponseDetail', () => {
       pageUri: 'https://landing.example.com/offer?utm_source=fb',
       pageName: 'Home insurance',
       embedded: true,
-      hubspotLinked: true,
+      hubspotCookie: true,
       ...over,
     });
 
     it('names the page by its title and links it', () => {
       const d = buildResponseDetail(row({ visit: visit() }), steps, opts);
       expect(d.page).toEqual({ href: 'https://landing.example.com/offer?utm_source=fb', text: 'Home insurance' });
-      expect(d.hubspotLinked).toBe(true);
+      expect(d.hubspotCookie).toBe(true);
     });
 
     it('names an untitled page by its host', () => {
-      const d = buildResponseDetail(row({ visit: visit({ pageName: null, hubspotLinked: false }) }), steps, opts);
+      const d = buildResponseDetail(row({ visit: visit({ pageName: null, hubspotCookie: false }) }), steps, opts);
       expect(d.page).toEqual({ href: 'https://landing.example.com/offer?utm_source=fb', text: 'landing.example.com' });
-      expect(d.hubspotLinked).toBe(false);
+      expect(d.hubspotCookie).toBe(false);
     });
 
     it('links only a web address, and keeps anything else inert text', () => {
@@ -258,7 +258,7 @@ describe('buildResponseDetail', () => {
     it('has no Page row for a response that reported none, older ones included', () => {
       expect(buildResponseDetail(row({ visit: null }), steps, opts).page).toBeNull();
       expect(buildResponseDetail(row(), steps, opts).page).toBeNull();
-      expect(buildResponseDetail(row(), steps, opts).hubspotLinked).toBe(false);
+      expect(buildResponseDetail(row(), steps, opts).hubspotCookie).toBe(false);
     });
 
     it('never carries the HubSpot cookie, even handed a row that has one', () => {

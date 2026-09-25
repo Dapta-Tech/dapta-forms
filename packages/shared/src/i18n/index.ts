@@ -1393,8 +1393,11 @@ export interface FormsMessages {
       responseId: string;
       /** The page the response was given on: the landing that embeds the form, or the form's own link. */
       pageRow: string;
-      /** Beside the page: HubSpot joined this response to the visitor's earlier page views. */
-      hubspotLinked: string;
+      /**
+       * Beside the page: the visitor's HubSpot tracking cookie arrived with the
+       * response. Received, not accepted: it does not say HubSpot took the visit.
+       */
+      hubspotCookie: string;
       utmTitle: string;
       /** "{n} of {total} answered": how much of the form this response covers. */
       answeredCount: string;
@@ -3192,7 +3195,7 @@ export const en: FormsMessages = {
       colStarted: 'Started',
       responseId: 'Response ID',
       pageRow: 'Page',
-      hubspotLinked: 'HubSpot visit linked',
+      hubspotCookie: 'HubSpot cookie received',
       utmTitle: 'Campaign (UTM)',
       answeredCount: '{n} of {total} answered',
       sheetOpen: 'Full screen',
@@ -4930,7 +4933,7 @@ export const es: FormsMessages = {
       colStarted: 'Iniciada',
       responseId: 'ID de respuesta',
       pageRow: 'Página',
-      hubspotLinked: 'Visita de HubSpot vinculada',
+      hubspotCookie: 'Cookie de HubSpot recibida',
       utmTitle: 'Campaña (UTM)',
       answeredCount: '{n} de {total} respondidas',
       sheetOpen: 'Pantalla completa',

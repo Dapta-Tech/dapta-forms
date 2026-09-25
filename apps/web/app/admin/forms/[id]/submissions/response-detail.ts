@@ -41,8 +41,11 @@ export interface ResponseDetail {
    * a web address. Null when none was reported (every older response).
    */
   page: { href: string | null; text: string } | null;
-  /** HubSpot joined this response to the visitor's page views. The cookie itself never gets here. */
-  hubspotLinked: boolean;
+  /**
+   * The visitor's HubSpot tracking cookie arrived with this response. Received,
+   * not accepted: HubSpot decides on the visit later. The cookie never gets here.
+   */
+  hubspotCookie: boolean;
   /**
    * Who answered, when the form asked: the first answered name, email and phone
    * steps. The panel is titled with the first of them that exists, the way a
@@ -157,7 +160,7 @@ export function buildResponseDetail(
     answers,
     utm: utmPairs(data),
     page: pageView(row.visit),
-    hubspotLinked: row.visit?.hubspotLinked === true,
+    hubspotCookie: row.visit?.hubspotCookie === true,
     respondent: { name: firstText('name'), email: firstText('email'), phone: firstText('phone') },
   };
 }

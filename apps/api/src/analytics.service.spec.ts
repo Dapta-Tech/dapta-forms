@@ -1080,8 +1080,8 @@ describe('CSV export: readable columns (BUGS-2310)', () => {
 
 /**
  * The page a response was given on (#199), as the dashboard may read it: the
- * table, the panel and the CSV get the page and whether a HubSpot visitor was
- * linked, and the cookie itself never leaves the API.
+ * table, the panel and the CSV get the page and whether the visitor's HubSpot
+ * cookie arrived, and the cookie itself never leaves the API.
  */
 describe('the visit on the dashboard', () => {
   const HUTK = '0123456789abcdef0123456789abcdef';
@@ -1107,11 +1107,11 @@ describe('the visit on the dashboard', () => {
     return new AnalyticsController(db, auth, svc);
   }
 
-  it('lists and opens a response with its page and a linked flag, never the cookie', async () => {
+  it('lists and opens a response with its page and a cookie-received flag, never the cookie', async () => {
     await answered('sub-visit', VISIT);
     const page = await svc.submissionsPage(formId, { limit: 200 });
     const listed = page.items.find((r) => r.id === 'sub-visit');
-    const view = { pageUri: VISIT.pageUri, pageName: VISIT.pageName, embedded: true, hubspotLinked: true };
+    const view = { pageUri: VISIT.pageUri, pageName: VISIT.pageName, embedded: true, hubspotCookie: true };
     expect(listed?.visit).toEqual(view);
     const one = await controller().submission({ headers: {} }, formId, 'sub-visit');
     expect(one.visit).toEqual(view);

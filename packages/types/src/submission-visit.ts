@@ -147,13 +147,15 @@ export function parseSubmissionVisit(raw: unknown): SubmissionVisit | undefined 
 
 /**
  * The visit as the dashboard may see it: the page, whether it was embedded, and
- * whether a HubSpot visitor was linked. The cookie itself never leaves the API.
+ * whether the visitor's HubSpot tracking cookie arrived with the response. That
+ * flag says the cookie was received, NOT that HubSpot accepted the visit; the
+ * cookie itself never leaves the API.
  */
 export const submissionVisitViewSchema = z.object({
   pageUri: z.string().nullable(),
   pageName: z.string().nullable(),
   embedded: z.boolean(),
-  hubspotLinked: z.boolean(),
+  hubspotCookie: z.boolean(),
 });
 export type SubmissionVisitView = z.infer<typeof submissionVisitViewSchema>;
 
@@ -163,6 +165,6 @@ export function toSubmissionVisitView(visit: SubmissionVisit | null | undefined)
     pageUri: visit.pageUri ?? null,
     pageName: visit.pageName ?? null,
     embedded: visit.embedded,
-    hubspotLinked: Boolean(visit.hutk),
+    hubspotCookie: Boolean(visit.hutk),
   };
 }
