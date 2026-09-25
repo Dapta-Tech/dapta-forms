@@ -266,6 +266,8 @@ export const submission = sqliteTable(
     startedAt: integer('started_at').notNull(),
     completedAt: integer('completed_at'),
     partialAt: integer('partial_at'),
+    /** The page it was answered on, as TEXT JSON (0023); NULL = none reported. */
+    visit: text('visit'),
   },
   (t) => ({
     // One persisted submission per (form, session) — the upsert relies on this.

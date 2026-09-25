@@ -273,6 +273,8 @@ export const submission = pgTable(
     startedAt: bigint('started_at', { mode: 'number' }).notNull(),
     completedAt: bigint('completed_at', { mode: 'number' }),
     partialAt: bigint('partial_at', { mode: 'number' }),
+    /** The page it was answered on (0023, `submissionVisitSchema`); NULL = none reported. */
+    visit: jsonb('visit'),
   },
   (t) => ({
     // One persisted submission per (form, session) — the upsert relies on this.

@@ -30,6 +30,9 @@ import {
   isSafeHttpUrl,
   isSafeImageUrl,
 } from '@quill/engine';
+import { submissionVisitSchema, submissionVisitViewSchema } from './submission-visit';
+
+export * from './submission-visit';
 
 /** A URL rendered into `<img src>` — reject script protocols (XSS defense-in-depth). */
 const safeImageUrl = z
@@ -1442,6 +1445,12 @@ export const submissionSchema = z.object({
    * stored answers.
    */
   hp: z.string().max(1024).optional(),
+  /**
+   * The page the form was answered on (see `submissionVisitSchema`). Tolerant:
+   * a malformed visit is dropped field by field and never fails the submit.
+   * Top-level for the same reason as `hp`: it is not an answer.
+   */
+  visit: submissionVisitSchema,
 });
 export type SubmissionInput = z.infer<typeof submissionSchema>;
 
@@ -1454,6 +1463,8 @@ export const submissionViewSchema = z.object({
   startedAt: z.number(),
   completedAt: z.number().nullable(),
   partialAt: z.number().nullable(),
+  /** Where it was answered, as the dashboard may see it (never the HubSpot cookie). */
+  visit: submissionVisitViewSchema.nullable().optional(),
 });
 export type SubmissionView = z.infer<typeof submissionViewSchema>;
 
