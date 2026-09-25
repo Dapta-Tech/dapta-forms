@@ -379,12 +379,19 @@ test.describe('screens in the builder', () => {
     await expect(page.getByTestId('spine-screen-chip')).toHaveText('Screen 3 · 2 questions');
     await expect.poll(() => draftGroups(request, form.id)).toBe('intro name email:screen_2 phone:screen_2 meet notes');
 
-    // The scheduler's switch is off and cannot be turned on, with the reason.
+    // The scheduler's switch is off and cannot be turned on: still in the Tab
+    // order, announced as unavailable, described by its reason, and a key
+    // press does nothing.
     await spine.getByText('Book a call').click();
-    await expect(page.getByTestId('behavior-screen-join')).toBeDisabled();
-    await expect(page.getByTestId('question-screen')).toContainText(
+    const blocked = page.getByTestId('behavior-screen-join');
+    await expect(blocked).toHaveAttribute('aria-disabled', 'true');
+    await expect(blocked).toHaveAccessibleDescription(
       'Calendars, reveal screens and file uploads always get a screen of their own.',
     );
+    await blocked.focus();
+    await expect(blocked).toBeFocused();
+    await page.keyboard.press('Space');
+    await expect(blocked).toHaveAttribute('aria-checked', 'false');
   });
 
   test('jump targets are screen starts, and the preview walks screens', async ({ page, request }) => {

@@ -12,6 +12,8 @@ export function Switch({
   onCheckedChange,
   disabled,
   'aria-label': ariaLabel,
+  'aria-describedby': describedBy,
+  'aria-disabled': ariaDisabled,
   'data-testid': testId,
   className,
 }: {
@@ -19,6 +21,15 @@ export function Switch({
   onCheckedChange: (next: boolean) => void;
   disabled?: boolean;
   'aria-label'?: string;
+  /** What the switch says beyond its label, e.g. why it cannot be turned on. */
+  'aria-describedby'?: string;
+  /**
+   * Unavailable but still focusable: announced as disabled, drawn dimmed, and
+   * a click does nothing. For a switch whose reason (see `aria-describedby`)
+   * must stay reachable by keyboard, which native `disabled` takes out of the
+   * Tab order.
+   */
+  'aria-disabled'?: boolean;
   /**
    * Forwarded to the rendered button. Declared explicitly because this component
    * does NOT spread its rest props — a `data-testid` passed by a caller used to
@@ -34,14 +45,18 @@ export function Switch({
       role="switch"
       aria-checked={checked}
       aria-label={ariaLabel}
+      aria-describedby={describedBy}
+      aria-disabled={ariaDisabled || undefined}
       data-testid={testId}
       disabled={disabled}
-      onClick={() => onCheckedChange(!checked)}
+      onClick={() => {
+        if (!ariaDisabled) onCheckedChange(!checked);
+      }}
       className={cn(
         'relative inline-flex h-[22px] w-[38px] shrink-0 cursor-pointer items-center rounded-full border border-transparent transition-colors',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
         checked ? 'bg-primary' : 'bg-muted-foreground/30',
-        disabled && 'cursor-not-allowed opacity-50',
+        (disabled || ariaDisabled) && 'cursor-not-allowed opacity-50',
         className,
       )}
     >

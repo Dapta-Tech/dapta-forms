@@ -2,10 +2,11 @@
 
 import { useEffect, useId, useState, type HTMLAttributes, type ReactNode } from 'react';
 import type { FormLayout, FormStep } from '@quill/engine';
-import { MAX_SCREEN_SIZE, authoredScreens, screensActive } from '@quill/engine';
+import { authoredScreens, screensActive } from '@quill/engine';
 import { cn } from '@/lib/cn';
 import { liveRuleCount } from './logic-util';
 import { screenBoundary, screenEnd, screenList, type ScreenBlock } from './screen-util';
+import { screenBlockReason } from './screen-join-field';
 import { SortableList, SortableRow } from './sortable';
 import { iconForStep, isContactType, stepListLabel } from './question-types';
 import type { BuilderMessages } from './builder-messages';
@@ -88,14 +89,7 @@ export function QuestionSpine({
   const stops = screensOn ? screenList(steps) : [];
   const spanAt = (i: number) =>
     spans.find((s) => (s.members[0] as number) <= i && i <= (s.members[s.members.length - 1] as number)) ?? null;
-  const blockedReason = (blocked: ScreenBlock): string =>
-    blocked === 'first'
-      ? m.screens.first
-      : blocked === 'solo'
-        ? m.screens.soloType
-        : blocked === 'hidden'
-          ? m.screens.hidden
-          : tb(m.screens.max, { max: MAX_SCREEN_SIZE });
+  const blockedReason = (blocked: ScreenBlock): string => screenBlockReason(blocked, m);
 
   // Merged sortable ids: step keys with the marker spliced in after its anchor.
   const ids: string[] = [];

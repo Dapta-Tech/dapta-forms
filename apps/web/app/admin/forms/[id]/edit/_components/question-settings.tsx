@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from 'react';
 import type { FormStep, FormLayout, FormRevealSize } from '@quill/engine';
 import {
   FORM_REVEAL_SIZES,
-  MAX_SCREEN_SIZE,
   clampSliderValue,
   defaultFlowGroup,
   nameFields,
@@ -26,7 +25,8 @@ import { SliderScoringEditor } from './slider-scoring-editor';
 import { maxScoreForSteps } from './scoring-util';
 import { LogicDialog } from './logic-dialog';
 import { describeCondition, jumpTargetsAfter, liveGotoRules, liveRuleCount, optionLabel, splitGoto } from './logic-util';
-import { jumpLanding, onScreen, readsOwnScreen, screenBoundary, type ScreenBlock } from './screen-util';
+import { jumpLanding, onScreen, readsOwnScreen, screenBoundary } from './screen-util';
+import { ScreenJoinField } from './screen-join-field';
 import { JumpLandingNote, ScreenJumpNote, ScreenLiveNote } from './screen-notes';
 import { QuestionHubspotSection } from './question-hubspot';
 import { QuestionVariants } from './question-variants';
@@ -179,14 +179,6 @@ export function QuestionSettings({
   const screens = screensActive({ layout });
   const boundary = screens ? screenBoundary(steps, index) : null;
   const onSharedScreen = screens && onScreen(steps, index, layout);
-  const blockedReason = (blocked: ScreenBlock): string =>
-    blocked === 'first'
-      ? bm.screens.first
-      : blocked === 'solo'
-        ? bm.screens.soloType
-        : blocked === 'hidden'
-          ? bm.screens.hidden
-          : tb(bm.screens.max, { max: MAX_SCREEN_SIZE });
   // Form-wide "highest possible" total (same math as Results). Drives the
   // "assign points" nudge when scoring is on but nothing scores yet.
   const scoringMax = maxScoreForSteps(steps);
@@ -756,22 +748,10 @@ export function QuestionSettings({
 
       {/* Screens (#200): the spine's boundary toggle as a switch, always in
           view, since below lg the spine is hidden and this is the only way to
-          group questions there. A boundary that cannot be joined says why
-          instead of disappearing; splitting is always possible. Slides only. */}
+          group questions there. Slides only. */}
       {boundary && onScreenJoin ? (
         <section data-testid="question-screen" className="flex shrink-0 flex-col border-t border-border pt-4">
-          <InlineField
-            label={bm.screens.join}
-            hint={!boundary.joined && boundary.blocked ? blockedReason(boundary.blocked) : undefined}
-          >
-            <Switch
-              checked={boundary.joined}
-              disabled={!boundary.joined && boundary.blocked !== null}
-              onCheckedChange={onScreenJoin}
-              data-testid="behavior-screen-join"
-              aria-label={bm.screens.join}
-            />
-          </InlineField>
+          <ScreenJoinField boundary={boundary} onJoin={onScreenJoin} m={bm} />
         </section>
       ) : null}
 
