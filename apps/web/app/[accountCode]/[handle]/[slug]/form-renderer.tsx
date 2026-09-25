@@ -46,6 +46,7 @@ import { resolveSchedulerPrefill } from '@/lib/booking-prefill';
 import { callAction, callActionWithRetry, isTransportError } from '@/lib/call-action';
 import { navigateTop } from '@/lib/top-navigate';
 import { reportLeadConversion } from '@/lib/lead-conversion';
+import { useAnnounceScreenChange } from '@/lib/embed-screen';
 import {
   submitFormAction,
   recordEventAction,
@@ -174,6 +175,9 @@ export function FormRenderer({
   const [phase, setPhase] = useState<Phase>(
     typeof startAt === 'number' ? 'steps' : coverScreen ? 'cover' : 'steps',
   );
+  // Embedded, a whole-screen swap starts at the frame's top, wherever the
+  // visitor was scrolled: the host is asked to bring it into view.
+  useAnnounceScreenChange(phase);
   const [answers, setAnswers] = useState<Answers>({});
   const [index, setIndex] = useState(typeof startAt === 'number' ? startAt : 0);
   const [animKey, setAnimKey] = useState(0);
