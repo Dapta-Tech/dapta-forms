@@ -8,11 +8,9 @@ import {
   upsertSubmission,
   recordFormEvent,
   firstSessionViewAt,
-  listSubmissions,
   claimAccountActivation,
   claimAccountFirstView,
   getAccountOwner,
-  type SubmissionRow,
 } from '@quill/db';
 import { computeScore, publicTitle, resolveOutcome, summarizeAnswers, type FormConfig } from '@quill/engine';
 import {
@@ -565,11 +563,6 @@ export class SubmissionService {
       bookedAt: row.createdAt,
     });
     return { ok: true };
-  }
-
-  /** List a form's submissions (admin-scoped by the caller). */
-  listSubmissions(formId: string): Promise<SubmissionRow[]> {
-    return listSubmissions(this.db, formId);
   }
 }
 

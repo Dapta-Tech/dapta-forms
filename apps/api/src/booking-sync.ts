@@ -542,7 +542,7 @@ export class BookingSyncEffects {
       // The page it was answered on, as stored: the mirror post is where
       // HubSpot joins the landing's visits to the contact (complete rows only).
       ...(submission.visit
-        ? { visit: submission.visit, formTitle: publicTitle(form.config as { title?: string }, form.name) }
+        ? { visit: submission.visit, formTitle: publicTitle(parsed.success ? parsed.data : null, form.name) }
         : {}),
     });
     return result.delivered;
