@@ -94,6 +94,7 @@ export function CanvasQuestion({
   config,
   step,
   index,
+  position,
   total,
   device,
   onUpdate,
@@ -103,6 +104,11 @@ export function CanvasQuestion({
   config: FormConfig;
   step: FormStep;
   index: number;
+  /**
+   * Where the card sits in the respondent's progress, 0-based. Absent means
+   * `index`: one question per screen. A form with screens (#200) counts them.
+   */
+  position?: number;
   total: number;
   device: 'desktop' | 'mobile';
   onUpdate: (patch: Partial<FormStep>) => void;
@@ -114,6 +120,156 @@ export function CanvasQuestion({
   onOptionLabel: (optionIndex: number, label: string) => void;
   m: BuilderMessages;
 }) {
+  const chrome = canvasChrome(config, device);
+  const at = position ?? index;
+  const isLast = at + 1 >= total;
+
+  // A reveal is not a question: it asks nothing, has no title, no description
+  // and no Next button, and the respondent sees a spinner over the configured
+  // copy. Rendering it through the question chrome below produced a card with a
+  // "…" short-answer box and a Next button that never exist at runtime, so it
+  // gets its own WYSIWYG card.
+  if (step.type === 'reveal') {
+    return (
+      <RevealCanvas
+        step={step}
+        accent={chrome.accent}
+        device={device}
+        logo={resolveFormLogos(config).form}
+        onUpdate={onUpdate}
+        m={m}
+      />
+    );
+  }
+
+  return (
+    <div className="flex justify-center">
+      <div className={cn('w-full border border-border bg-card p-6 shadow-xl sm:p-8', chrome.cardRadius, chrome.canvasWidth)}>
+        <CanvasProgress chrome={chrome} index={at} total={total} />
+
+        <QuestionEditableBody
+          config={config}
+          step={step}
+          index={index}
+          accent={chrome.accent}
+          onUpdate={onUpdate}
+          onOptionLabel={onOptionLabel}
+          m={m}
+        />
+
+        {/* Respondent's Next button (label editable for message/content). A
+            scheduler has none: booking IS the answer, so the public form
+            advances itself, and showing a Submit here promised a button that
+            never renders. */}
+        {step.type !== 'dropdown' && step.type !== 'scheduler' ? (
+          <CanvasButton chrome={chrome} label={step.buttonText || (isLast ? chrome.formLabels.submit : chrome.formLabels.next)} />
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * A SCREEN of several questions on the slides canvas (#200): the whole card as
+ * a respondent sees it, every question on it editable in place, the one the
+ * settings panel describes marked, ONE button at the end and the progress
+ * counted in screens. The editor keys it by the screen's id, so selecting
+ * another question of the same screen moves the mark rather than remounting
+ * the card (and losing the caret).
+ */
+export function CanvasScreen({
+  config,
+  members,
+  selected,
+  position,
+  total,
+  device,
+  onSelect,
+  onUpdateStep,
+  onOptionLabel,
+  m,
+}: {
+  config: FormConfig;
+  /** The screen's questions, as indexes into `config.steps`, in order. */
+  members: number[];
+  /** The selected question, one of `members`. */
+  selected: number;
+  /** The screen's 0-based place among the form's screens, and how many there are. */
+  position: number;
+  total: number;
+  device: 'desktop' | 'mobile';
+  onSelect: (index: number) => void;
+  onUpdateStep: (index: number, patch: Partial<FormStep>) => void;
+  /** Write one step's option label; the value may follow it. See `setOptionLabel`. */
+  onOptionLabel: (stepIndex: number, optionIndex: number, label: string) => void;
+  m: BuilderMessages;
+}) {
+  const chrome = canvasChrome(config, device);
+  const blockRefs = useRef<Map<number, HTMLElement>>(new Map());
+  // Selecting another question of the screen (spine, settings) brings its
+  // block into view; a click inside one is already in view, so it stays put.
+  useEffect(() => {
+    blockRefs.current.get(selected)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }, [selected]);
+  // The respondent's button: the last question's own text, else Next or
+  // Submit, exactly as the public screen picks it.
+  const last = config.steps[members[members.length - 1] as number];
+  const isLast = position + 1 >= total;
+
+  return (
+    <div className="flex justify-center">
+      <div
+        data-testid="canvas-screen"
+        data-screen-size={members.length}
+        className={cn('w-full border border-border bg-card p-6 shadow-xl sm:p-8', chrome.cardRadius, chrome.canvasWidth)}
+      >
+        <CanvasProgress chrome={chrome} index={position} total={total} />
+        <div className="-mx-6 flex flex-col divide-y divide-border sm:-mx-8">
+          {members.map((i) => {
+            const step = config.steps[i];
+            if (!step) return null;
+            return (
+              <section
+                key={step.key}
+                ref={(el) => {
+                  if (el) blockRefs.current.set(i, el);
+                  else blockRefs.current.delete(i);
+                }}
+                data-testid={`screen-block-${i}`}
+                aria-current={i === selected || undefined}
+                // Focus or a click anywhere in a block selects it, so the
+                // settings panel always describes the question under the caret.
+                onMouseDownCapture={() => onSelect(i)}
+                onFocusCapture={() => onSelect(i)}
+                className={cn(
+                  'scroll-my-16 px-6 py-6 transition-colors first:pt-2 sm:px-8',
+                  // The same mark the one-page canvas uses for its selection.
+                  i === selected ? 'bg-primary/5 shadow-[inset_0_0_0_1px_var(--primary-edge)]' : 'hover:bg-muted/40',
+                )}
+              >
+                <QuestionEditableBody
+                  config={config}
+                  step={step}
+                  index={i}
+                  accent={chrome.accent}
+                  onUpdate={(patch) => onUpdateStep(i, patch)}
+                  onOptionLabel={(optionIndex, label) => onOptionLabel(i, optionIndex, label)}
+                  m={m}
+                />
+              </section>
+            );
+          })}
+        </div>
+        <CanvasButton chrome={chrome} label={last?.buttonText || (isLast ? chrome.formLabels.submit : chrome.formLabels.next)} />
+      </div>
+    </div>
+  );
+}
+
+/** The design axes the slides canvas honours, shared by the question card and the screen card. */
+type CanvasChrome = ReturnType<typeof canvasChrome>;
+
+function canvasChrome(config: FormConfig, device: 'desktop' | 'mobile') {
   // The author's exact color, matching the renderer and the live preview. This
   // used to call `clampAccent` with no ground, so it corrected against the dark
   // canvas — which meant the canvas, the preview and the published page could
@@ -164,86 +320,57 @@ export function CanvasQuestion({
             border: `1px solid color-mix(in srgb, ${accent} 32%, transparent)`,
           }
         : { background: accent, color: accentText };
-  const progress = total > 0 ? Math.round(((index + 1) / total) * 100) : 0;
-  const isLast = index + 1 >= total;
   // The same resolver the public form and the preview use: the author's
   // overrides, else the stock copy of the FORM's language (not the editor's).
   const formLabels = resolveFormLabels(config, config.language ?? (clientLocale() === 'es' ? 'es' : 'en'));
+  return { accent, design, cardRadius, btnRadius, canvasWidth, centred, btnStyle, formLabels };
+}
 
-  // A reveal is not a question — it asks nothing, has no title, no description
-  // and no Next button, and the respondent sees a spinner over the configured
-  // copy. Rendering it through the question chrome below produced a card with a
-  // "…" short-answer box and a Next button that never exist at runtime, so it
-  // gets its own WYSIWYG card.
-  if (step.type === 'reveal') {
-    return (
-      <RevealCanvas
-        step={step}
-        accent={accent}
-        device={device}
-        logo={resolveFormLogos(config).form}
-        onUpdate={onUpdate}
-        m={m}
-      />
-    );
-  }
-
-  return (
-    <div className="flex justify-center">
-      <div className={cn('w-full border border-border bg-card p-6 shadow-xl sm:p-8', cardRadius, canvasWidth)}>
-        {/* Respondent progress — drawn the way the form draws it, so choosing
-            dots or hiding it entirely is visible while building. */}
-        {design.progressStyle === 'bar' ? (
-          <div className="mb-6 h-1.5 w-full overflow-hidden rounded-full bg-muted">
-            <div className="h-full rounded-full transition-all" style={{ width: `${progress}%`, background: accent }} />
-          </div>
-        ) : design.progressStyle === 'dots' ? (
-          <div className="mb-6 flex items-center justify-center gap-1.5">
-            {Array.from({ length: Math.max(total, 1) }).map((_, i) => (
-              <span
-                key={i}
-                className={cn('h-1.5 w-1.5 rounded-full transition-transform', i === index && 'scale-150')}
-                style={{ background: i <= index ? accent : 'var(--muted)' }}
-              />
-            ))}
-          </div>
-        ) : design.progressStyle === 'steps' ? (
-          <p className="mb-6 text-center text-[11px] font-semibold tabular-nums text-muted-foreground">
-            {index + 1} / {total}
-          </p>
-        ) : null}
-
-        <QuestionEditableBody
-          config={config}
-          step={step}
-          index={index}
-          accent={accent}
-          onUpdate={onUpdate}
-          onOptionLabel={onOptionLabel}
-          m={m}
+/**
+ * Respondent progress, drawn the way the form draws it, so choosing dots or
+ * hiding it entirely is visible while building.
+ */
+function CanvasProgress({ chrome, index, total }: { chrome: CanvasChrome; index: number; total: number }) {
+  const { design, accent } = chrome;
+  const progress = total > 0 ? Math.round(((index + 1) / total) * 100) : 0;
+  return design.progressStyle === 'bar' ? (
+    <div className="mb-6 h-1.5 w-full overflow-hidden rounded-full bg-muted">
+      <div className="h-full rounded-full transition-all" style={{ width: `${progress}%`, background: accent }} />
+    </div>
+  ) : design.progressStyle === 'dots' ? (
+    <div className="mb-6 flex items-center justify-center gap-1.5">
+      {Array.from({ length: Math.max(total, 1) }).map((_, i) => (
+        <span
+          key={i}
+          className={cn('h-1.5 w-1.5 rounded-full transition-transform', i === index && 'scale-150')}
+          style={{ background: i <= index ? accent : 'var(--muted)' }}
         />
+      ))}
+    </div>
+  ) : design.progressStyle === 'steps' ? (
+    <p className="mb-6 text-center text-[11px] font-semibold tabular-nums text-muted-foreground">
+      {index + 1} / {total}
+    </p>
+  ) : null;
+}
 
-        {/* Respondent's Next button (label editable for message/content). A
-            scheduler has none: booking IS the answer, so the public form
-            advances itself — showing a Submit here promised a button that never
-            renders. */}
-        {step.type !== 'dropdown' && step.type !== 'scheduler' ? (
-          <div className={cn('mt-7', centred && !design.buttonFullWidth && 'text-center')}>
-            <button
-              type="button"
-              className={cn(
-                'items-center justify-center gap-2 px-6 py-3 text-sm font-semibold',
-                btnRadius,
-                design.buttonFullWidth ? 'flex w-full' : 'inline-flex',
-              )}
-              style={btnStyle}
-            >
-              {step.buttonText || (isLast ? formLabels.submit : formLabels.next)}
-              <i aria-hidden className="pi pi-arrow-right" style={{ fontSize: 12 }} />
-            </button>
-          </div>
-        ) : null}
-      </div>
+/** The respondent's primary button, static chrome in the author's button style. */
+function CanvasButton({ chrome, label }: { chrome: CanvasChrome; label: string }) {
+  const { design, centred, btnRadius, btnStyle } = chrome;
+  return (
+    <div className={cn('mt-7', centred && !design.buttonFullWidth && 'text-center')}>
+      <button
+        type="button"
+        className={cn(
+          'items-center justify-center gap-2 px-6 py-3 text-sm font-semibold',
+          btnRadius,
+          design.buttonFullWidth ? 'flex w-full' : 'inline-flex',
+        )}
+        style={btnStyle}
+      >
+        {label}
+        <i aria-hidden className="pi pi-arrow-right" style={{ fontSize: 12 }} />
+      </button>
     </div>
   );
 }
