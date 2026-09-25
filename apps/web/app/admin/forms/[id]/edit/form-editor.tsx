@@ -414,7 +414,8 @@ export function FormEditor({
   function restoreRecovery() {
     if (!recovery) return;
     setName(recovery.name);
-    setConfig(recovery.config);
+    // Canonical like every other change (#200): a backup never skips it.
+    setConfig(withScreens(recovery.config));
     setSelected(recovery.config.steps.length ? 0 : null);
     setRecovery(null);
     autosave.markDirty(); // the restored work goes straight into the save loop
@@ -441,13 +442,29 @@ export function FormEditor({
 
   // --- Step operations ------------------------------------------------------
   function patchStep(index: number, patch: Partial<FormStep>) {
+    // A question shown again goes back into the screen around it (hidden, it
+    // was transparent and lost its place), or right after it when it can never
+    // share one; the partial point and the selection follow it by key.
+    const shownAgain = 'hidden' in patch && !patch.hidden && !!config.steps[index]?.hidden;
     mutate((c) => {
       const steps = c.steps.map((s, i) => (i === index ? { ...s, ...patch } : s));
-      // A question shown again goes back into the screen around it: hidden, it
-      // was transparent and lost its place on the screen.
-      const shownAgain = 'hidden' in patch && !patch.hidden && !!c.steps[index]?.hidden;
-      return { ...c, steps: shownAgain ? rejoinUnhidden(steps, index) : steps };
+      if (!shownAgain) return { ...c, steps };
+      const placed = rejoinUnhidden(steps, index);
+      return {
+        ...c,
+        steps: placed,
+        partialSubmitAfterStep: reanchorAfterReorder(c.partialSubmitAfterStep, steps, placed),
+      };
     });
+    if (shownAgain) {
+      const key = config.steps[index]?.key;
+      const placed = rejoinUnhidden(
+        config.steps.map((s, i) => (i === index ? { ...s, ...patch } : s)),
+        index,
+      );
+      const at = placed.findIndex((s) => s.key === key);
+      if (at >= 0 && at !== index) setSelected(at);
+    }
   }
   /**
    * Join step `index` to the screen of the question above it, or start a new

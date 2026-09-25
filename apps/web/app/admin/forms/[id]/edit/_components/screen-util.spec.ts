@@ -119,6 +119,12 @@ describe('rejoinUnhidden', () => {
     expect(rejoinUnhidden(steps, 2)).toBe(steps);
   });
 
+  it('puts one that can never share a screen right after the screen, so the screen stays whole', () => {
+    const file = { key: 'f', type: 'file', question: 'Deck' } as FormStep;
+    const steps = [q('a', 's'), q('b', 's'), file, q('c', 's'), q('d', 's')];
+    expect(keysOf(rejoinUnhidden(steps, 2))).toEqual(['a:s', 'b:s', 'c:s', 'd:s', 'f']);
+  });
+
   it('restores it even to a full screen: it already sat inside it, and leaving it out would cut it', () => {
     const full = Array.from({ length: MAX_SCREEN_SIZE }, (_, i) => q(`q${i}`, 'big'));
     const steps = [...full.slice(0, 5), q('h'), ...full.slice(5)];

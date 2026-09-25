@@ -131,17 +131,30 @@ export function moveStep(steps: FormStep[], from: number, to: number): FormStep[
  * A question shown again (hidden switched off) that sits between two
  * questions of one screen goes back into it. Hidden, it was transparent and
  * lost its id; without this, un-hiding it would cut the screen it used to
- * belong to in two. One that sat at a screen's edge stays out: nothing says
+ * belong to in two. One that can never share a screen (a file upload, say,
+ * hidden and dropped inside one) goes right after the screen instead, as a
+ * drag would put it. One that sat at a screen's edge stays out: nothing says
  * which side it belonged to, and the settings hint warns before hiding.
  */
 export function rejoinUnhidden(steps: FormStep[], index: number): FormStep[] {
   const step = steps[index];
-  if (!step || step.hidden || !canShareScreen(step)) return steps;
+  if (!step || step.hidden) return steps;
   const above = visibleAbove(steps, index);
   let below = index + 1;
   while (below < steps.length && steps[below]?.hidden) below += 1;
   const id = steps[above]?.screenGroup;
   if (!id || steps[below]?.screenGroup !== id) return steps;
+  if (!canShareScreen(step)) {
+    const arr = [...steps];
+    arr.splice(index, 1);
+    let end = index - 1;
+    for (let i = index; i < arr.length; i += 1) {
+      if (arr[i]?.screenGroup === id) end = i;
+      else if (!arr[i]?.hidden) break;
+    }
+    arr.splice(end + 1, 0, step);
+    return arr;
+  }
   // No cap here: the question already sat inside the screen, and leaving it
   // out would cut the screen in two. The cap only gates new joins.
   return steps.map((s, i) => (i === index ? { ...s, screenGroup: id } : s));
