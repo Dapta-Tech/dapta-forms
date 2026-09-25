@@ -91,6 +91,8 @@
 
   /** The origin of a frame's `src`, or null when it has none worth answering. */
   function srcOrigin(frame) {
+    // No src (a srcdoc frame, say) is no form of ours: it would resolve to this page.
+    if (!frame.src) return null;
     try {
       var origin = new URL(frame.src, window.location.href).origin;
       return origin && origin !== 'null' ? origin : null;

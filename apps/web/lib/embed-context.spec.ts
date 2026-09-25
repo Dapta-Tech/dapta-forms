@@ -158,6 +158,14 @@ describe('embed.js: dapta-forms:context-request', () => {
     expect(second.posted[0]!.targetOrigin).toBe('https://other-forms.example.net');
   });
 
+  it('never answers a frame with no src of its own', () => {
+    // A srcdoc frame shares the page's origin: there is no form in it to answer.
+    const blank = fakeFrame('');
+    const page = hostPage({ cookie: `hubspotutk=${HUTK}`, frames: [blank] });
+    page.ask(blank, {}, new URL(LANDING).origin);
+    expect(blank.posted).toEqual([]);
+  });
+
   it('ignores a request that is not in the version-1 shape', () => {
     const page = hostPage({});
     page.ask(undefined, { v: 2 });
