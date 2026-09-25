@@ -49,6 +49,7 @@ vi.mock('next/font/google', () => {
 const actions = vi.hoisted(() => ({
   submitFormAction: vi.fn(),
   recordEventAction: vi.fn(async () => undefined),
+  recordEventsAction: vi.fn(async () => undefined),
   recordBookingAction: vi.fn(async () => undefined),
   presignUploadAction: vi.fn(async () => ({ ok: false })),
 }));
@@ -108,6 +109,7 @@ beforeEach(() => {
   actions.submitFormAction.mockReset();
   actions.submitFormAction.mockImplementation(async () => ({ ok: true, score: 0, outcome: null }));
   actions.recordEventAction.mockClear();
+  actions.recordEventsAction.mockClear();
   observers = [];
   renders = [];
   vi.stubGlobal(
@@ -182,11 +184,29 @@ const input = (key: string) => member(key).querySelector<HTMLInputElement>('inpu
 const button = () =>
   [...host.querySelectorAll<HTMLButtonElement>('button.pf__btn')].find((b) => !b.classList.contains('pf__back'))!;
 const progress = () => q('[data-testid="pf-progress"]')!.getAttribute('aria-label');
-const events = (type: string) =>
-  actions.recordEventAction.mock.calls
-    .map((c) => (c as unknown[])[2] as { type: string; stepIndex: number | null; stepKey: string | null })
-    .filter((e) => e.type === type)
-    .map((e) => [e.stepIndex, e.stepKey]);
+type Sent = { type: string; stepIndex: number | null; stepKey: string | null };
+/**
+ * Every event sent, in order, whichever action carried it: one call for a
+ * single event, one batch for a screen's events.
+ */
+const sent = (): Sent[] => {
+  const all: { at: number; events: Sent[] }[] = [
+    ...actions.recordEventAction.mock.calls.map((c, i) => ({
+      at: actions.recordEventAction.mock.invocationCallOrder[i]!,
+      events: [(c as unknown[])[2] as Sent],
+    })),
+    ...actions.recordEventsAction.mock.calls.map((c, i) => ({
+      at: actions.recordEventsAction.mock.invocationCallOrder[i]!,
+      events: ((c as unknown[])[2] as { events: Sent[] }).events,
+    })),
+  ];
+  return all.sort((a, b) => a.at - b.at).flatMap((x) => x.events);
+};
+const events = (type: string) => sent().filter((e) => e.type === type).map((e) => [e.stepIndex, e.stepKey]);
+const clearEvents = () => {
+  actions.recordEventAction.mockClear();
+  actions.recordEventsAction.mockClear();
+};
 const enter = async (el: HTMLElement) => {
   await act(async () => {
     el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
@@ -269,6 +289,37 @@ describe('validation on a screen', () => {
     expect(document.activeElement).toBe(input('email'));
   });
 
+  it('a question revealed above the one being answered never takes the focus', async () => {
+    // Written by hand (the builder only lets a rule read an EARLIER question).
+    const above = [
+      { key: 'why', type: 'text', question: 'Why?', showWhen: { field: 'pick', values: ['yes'] }, screenGroup: 's' },
+      { key: 'pick', type: 'multiple_choice', question: 'Pick?', options: yesNo, screenGroup: 's' },
+      { key: 'last', type: 'text', question: 'Last?' },
+    ];
+    await mount(form({ steps: above }));
+    const yes = member('pick').querySelector<HTMLButtonElement>('[role="radio"]')!;
+    await act(async () => {
+      yes.focus();
+      yes.click();
+    });
+    await settle();
+    expect(q('[data-pf-step="why"]')).not.toBeNull();
+    expect(document.activeElement).toBe(yes);
+  });
+
+  it('each question is a named group, described by its error once it has one', async () => {
+    await mount(form());
+    const group = member('name');
+    expect(group.getAttribute('role')).toBe('group');
+    const heading = document.getElementById(group.getAttribute('aria-labelledby')!);
+    expect(heading?.textContent).toContain('Name?');
+    expect(group.getAttribute('aria-describedby')).toBeNull();
+    await act(async () => button().click());
+    await settle();
+    const error = document.getElementById(member('name').getAttribute('aria-describedby')!);
+    expect(error?.textContent).toBe(m.errors.required);
+  });
+
   it('focuses the first question that takes input when the screen opens, and no other', async () => {
     await mount(form());
     // The phone field further down would take focus by itself on a slide of its own.
@@ -293,6 +344,18 @@ describe('Enter on a screen', () => {
     expect(progress()).toBe('Step 2 of 4');
   });
 
+  it('moves on to a choice rather than skip it unseen, and submits only from the last question', async () => {
+    const withChoice = [
+      { key: 'name', type: 'text', question: 'Name?', screenGroup: 's' },
+      { key: 'size', type: 'multiple_choice', question: 'Size?', options: yesNo, screenGroup: 's' },
+      { key: 'last', type: 'text', question: 'Last?' },
+    ];
+    await mount(form({ steps: withChoice }));
+    await enter(input('name'));
+    expect(document.activeElement).toBe(member('size').querySelector('[role="radio"]'));
+    expect(progress()).toBe('Step 1 of 2');
+  });
+
   it('never fires from the dropdown, whose Enter picks an option', async () => {
     await mount(form({}, { startAt: 4 }));
     const combo = member('plan').querySelector<HTMLInputElement>('input')!;
@@ -306,7 +369,7 @@ describe('logic inside a screen', () => {
   it('a member shown by another member appears live, is viewed, and nothing advances by itself', async () => {
     await mount(form({}, { startAt: 4 }));
     expect(q('[data-pf-step="size"]')).toBeNull();
-    actions.recordEventAction.mockClear();
+    clearEvents();
     const yes = member('team').querySelector<HTMLButtonElement>('[role="radio"]')!;
     await act(async () => yes.click());
     await settle();
@@ -378,12 +441,27 @@ describe('funnel events per question (E1)', () => {
     ]);
   });
 
+  it('a screen sends its events in one call, not one call per question', async () => {
+    await mount(form());
+    await settle();
+    expect(actions.recordEventsAction).toHaveBeenCalledTimes(1); // the four views
+    await fillFirstScreen();
+    await act(async () => button().click());
+    await settle();
+    // The four completions, then the next screen's two views.
+    expect(actions.recordEventsAction).toHaveBeenCalledTimes(3);
+    expect(actions.recordEventAction.mock.calls.map((c) => ((c as unknown[])[2] as Sent).type)).toEqual([
+      'view',
+      'start',
+    ]);
+  });
+
   it('coming back to a screen is a new visit: its members are viewed again', async () => {
     await mount(form());
     await fillFirstScreen();
     await act(async () => button().click());
     await settle();
-    actions.recordEventAction.mockClear();
+    clearEvents();
     await act(async () => q<HTMLButtonElement>('.pf__back')!.click());
     await settle();
     expect(events('step_view')).toEqual([
@@ -483,5 +561,56 @@ describe('spam protection on a grouped last screen', () => {
     expect(button().disabled).toBe(false);
     expect(input('name').value).toBe('Ana');
     expect(input('email').value).toBe('ana@example.com');
+  });
+});
+
+describe('a form without screens walks exactly as before', () => {
+  const legacy = [
+    { key: 'a', type: 'text', question: 'A?' },
+    { key: 'b', type: 'text', question: 'B?' },
+    { key: 'c', type: 'text', question: 'C?' },
+  ];
+
+  it('one step at a time: its events, its progress and Back, one call per event', async () => {
+    await mount(form({ steps: legacy }));
+    await settle();
+    expect(progress()).toBe('Step 1 of 3');
+    expect(q('[data-pf-step]')).toBeNull();
+    await act(async () => typeInto(q<HTMLInputElement>('.pf__fields input')!, 'x'));
+    await act(async () => button().click());
+    await settle();
+    expect(progress()).toBe('Step 2 of 3');
+    await act(async () => q<HTMLButtonElement>('.pf__back')!.click());
+    await settle();
+    expect(progress()).toBe('Step 1 of 3');
+    expect(sent().map((e) => `${e.type}:${e.stepIndex ?? '-'}:${e.stepKey ?? '-'}`)).toEqual([
+      'view:-:-',
+      'step_view:0:a',
+      'start:-:-',
+      'step_complete:0:a',
+      'step_view:1:b',
+      'step_view:0:a',
+    ]);
+    expect(actions.recordEventsAction).not.toHaveBeenCalled();
+  });
+
+  it('embedded, it asks the host to scroll on each move to another step, never on load', async () => {
+    let heard = 0;
+    const listen = () => {
+      heard += 1;
+    };
+    window.addEventListener(EMBED_SCREEN_EVENT, listen);
+    try {
+      await mount(form({ steps: legacy }));
+      await settle();
+      expect(heard).toBe(0);
+      await act(async () => typeInto(q<HTMLInputElement>('.pf__fields input')!, 'x'));
+      expect(heard).toBe(0);
+      await act(async () => button().click());
+      await settle();
+      expect(heard).toBe(1);
+    } finally {
+      window.removeEventListener(EMBED_SCREEN_EVENT, listen);
+    }
   });
 });

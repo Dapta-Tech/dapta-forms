@@ -2,8 +2,8 @@
  * Whole-screen swaps inside a public form, told to whoever embeds it.
  *
  * When a renderer replaces its whole screen (the submitting screen, a reveal,
- * the booking screen, the ending), the new content starts at the top of the
- * page. Standing alone, the browser shows it. Embedded, the page IS an iframe
+ * the booking screen, the ending, and in the slides layout every move to
+ * another step or screen), the new content starts at the top of the page. Standing alone, the browser shows it. Embedded, the page IS an iframe
  * sized to its content on someone else's site, and the person is usually
  * scrolled to wherever the button they just pressed was: on a long one-page
  * form that is far below the frame's top, where the new screen sits.

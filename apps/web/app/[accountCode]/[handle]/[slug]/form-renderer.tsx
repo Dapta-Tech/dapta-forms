@@ -53,6 +53,7 @@ import type { ResolvedVisit } from '@/lib/host-visit';
 import {
   submitFormAction,
   recordEventAction,
+  recordEventsAction,
   recordBookingAction,
   presignUploadAction,
 } from './actions';
@@ -93,21 +94,35 @@ function screenStartOf(config: EngineConfig, at: number): number {
   return at;
 }
 
+/** A field someone types into or slides (never the phone's country search). */
+const FIELD = 'input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]):not([type="file"]), textarea';
+
 /**
- * The fields Enter walks on a screen, in order: everything a person types into
- * or slides, never an option button (it activates on its own) and never the
- * phone's country search (its Enter picks a country).
+ * Where a question takes focus: each of its fields (a name has two), or, for a
+ * choice, the option picked (else the first). Where Enter moves on to, and
+ * where an error sends focus.
  */
-const SCREEN_FIELD =
-  '[data-pf-step] input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]):not([type="file"]), [data-pf-step] textarea';
-function screenFields(root: Element): HTMLElement[] {
-  return [...root.querySelectorAll<HTMLElement>(SCREEN_FIELD)].filter(
+function questionControls(block: Element): HTMLElement[] {
+  const fields = [...block.querySelectorAll<HTMLElement>(FIELD)].filter(
     (el) => !el.closest('.pf-phone__panel') && !(el as HTMLInputElement).disabled,
   );
+  if (fields.length > 0) return fields;
+  const options = [...block.querySelectorAll<HTMLElement>('button[role="radio"], button[role="checkbox"]')];
+  const pick = options.find((o) => o.getAttribute('aria-checked') === 'true') ?? options[0];
+  return pick ? [pick] : [];
 }
 
-/** The control a question's error sends focus to: its first field, else its first option. */
-const MEMBER_CONTROL = `${SCREEN_FIELD}, [data-pf-step] button[role="radio"], [data-pf-step] button[role="checkbox"]`;
+/** Every question's controls on a screen, in order. */
+function screenControls(root: Element): HTMLElement[] {
+  return [...root.querySelectorAll('[data-pf-step]')].flatMap(questionControls);
+}
+
+/**
+ * A question's id-safe handle for `aria-labelledby`/`aria-describedby`. Not
+ * `useId`: a hook in the renderer would renumber every id its children draw,
+ * and the markup of forms without screens is pinned byte for byte.
+ */
+const memberId = (key: string, part: 'q' | 'e') => `pf-s-${key.replace(/\s+/g, '_')}-${part}`;
 
 /** Clear every question's error, keeping the state as is when there is none. */
 const noErrors = (e: Record<string, string>) => (Object.keys(e).length > 0 ? {} : e);
@@ -380,6 +395,31 @@ export function FormRenderer({
     [accountCode, slug, sessionId],
   );
 
+  /**
+   * Several events at once (a screen of several questions records one per
+   * question): ONE server action, because the browser runs them one at a time
+   * and N of them would queue in front of the person's next move, the final
+   * submit included. A single event goes exactly as `track` sends it.
+   */
+  const trackMany = useCallback(
+    (events: { type: string; stepIndex?: number; stepKey?: string }[]) => {
+      const [only] = events;
+      if (!only) return;
+      if (events.length === 1) {
+        track(only.type, only.stepIndex, only.stepKey);
+        return;
+      }
+      if (!sessionId) return;
+      void callAction(() =>
+        recordEventsAction(accountCode, slug, {
+          sessionId,
+          events: events.map((e) => ({ type: e.type, stepIndex: e.stepIndex ?? null, stepKey: e.stepKey ?? null })),
+        }),
+      );
+    },
+    [accountCode, slug, sessionId, track],
+  );
+
   // Capture UTM + declared-field URL prefill once on mount (client-only, so a
   // seeded visible step never causes an SSR/hydration mismatch). Hidden steps
   // ride their seeded answer into the submission; visible steps render filled.
@@ -406,18 +446,20 @@ export function FormRenderer({
       lastStepViewKey.current = null; // a single step after this screen is a new view
       if (screenViewed.current.visit !== animKey) screenViewed.current = { visit: animKey, keys: new Set() };
       const start = starts[screenIdx] ?? index;
+      const views: { type: string; stepIndex: number; stepKey: string }[] = [];
       screen.forEach((member, i) => {
         if (screenViewed.current.keys.has(member.key)) return;
         screenViewed.current.keys.add(member.key);
-        track('step_view', start + i, member.key);
+        views.push({ type: 'step_view', stepIndex: start + i, stepKey: member.key });
       });
+      trackMany(views);
       return;
     }
     const key = `${phase}:${index}`;
     if (lastStepViewKey.current === key) return;
     lastStepViewKey.current = key;
     track('step_view', index, step.key);
-  }, [phase, index, step, track, grouped, screen, screenIdx, starts, animKey]);
+  }, [phase, index, step, track, trackMany, grouped, screen, screenIdx, starts, animKey]);
 
   // Clamp the index if the visible-step set shrinks (a branch closed), onto
   // the start of the last screen; and keep it on the start of its screen
@@ -449,7 +491,7 @@ export function FormRenderer({
       (el) => el.getAttribute('data-pf-step') === key,
     );
     if (!block) return;
-    block.querySelector<HTMLElement>(MEMBER_CONTROL)?.focus({ preventScroll: true });
+    questionControls(block)[0]?.focus({ preventScroll: true });
     const still = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     block.scrollIntoView?.({ behavior: still ? 'auto' : 'smooth', block: 'center' });
   }, [errors]);
@@ -648,7 +690,7 @@ export function FormRenderer({
           // leaves never reaches the challenge provider.
           gateRef.current.prewarm();
         }
-        members.forEach((member, i) => track('step_complete', index + i, member.key));
+        trackMany(members.map((member, i) => ({ type: 'step_complete', stepIndex: index + i, stepKey: member.key })));
 
         // Partial submit once past the configured lead-capture threshold (on a
         // screen of several: when the screen holding it is submitted).
@@ -712,7 +754,7 @@ export function FormRenderer({
         advancing.current = false;
       }
     },
-    [engineConfig, index, thresholdKey, revealKey, accountCode, slug, sessionId, finalize, track, markSending],
+    [engineConfig, index, thresholdKey, revealKey, accountCode, slug, sessionId, finalize, track, trackMany, markSending],
   );
 
   // A booking on a SCHEDULER step (V6): record the meeting (booking_event + the
@@ -850,21 +892,22 @@ export function FormRenderer({
   }
 
   /**
-   * Enter on a screen: from a single-line field it moves to the next field,
-   * and from the last one it submits the screen. A textarea takes its new
-   * line, a button (an option, the button itself) activates on its own, and
-   * the dropdown and the phone's country list pick an option with it.
+   * Enter on a screen: from a single-line field it moves on to the next field,
+   * or to the next question's options (a choice is never skipped unseen), and
+   * from the last one it submits the screen. A textarea takes its new line, a
+   * button (an option, the button itself) activates on its own, and the
+   * dropdown and the phone's country list pick an option with it.
    */
   function onScreenKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
     if (e.key !== 'Enter' || e.nativeEvent.isComposing) return;
     const target = e.target as HTMLElement;
     if (target.closest('.pf-dropdown, .pf-phone__panel')) return;
     if (target.tagName !== 'INPUT') return;
-    const fields = screenFields(e.currentTarget);
-    const at = fields.indexOf(target);
+    const controls = screenControls(e.currentTarget);
+    const at = controls.indexOf(target);
     if (at < 0) return;
     e.preventDefault();
-    const next = fields[at + 1];
+    const next = controls[at + 1];
     if (next) next.focus();
     else submitScreen();
   }
@@ -1141,11 +1184,25 @@ export function FormRenderer({
                 const classes = ['pf-s__member'];
                 if (member.type === 'message') classes.push('pf-s__member--message');
                 if (code) classes.push('pf-s__member--error');
-                if (!screenOpened.current.keys.has(member.key)) classes.push('pf-animate');
+                const opened = screenOpened.current.keys.has(member.key);
+                if (!opened) classes.push('pf-animate');
+                // Only the question the screen opened with focuses itself: one
+                // revealed later, above the one being answered, must not take
+                // the caret from under the person typing.
+                const focusHere = i === focusFirst && opened;
                 return (
-                  <section key={member.key} className={classes.join(' ')} data-pf-step={member.key}>
+                  // A named group, so a screen reader hears the question with
+                  // its field and, once there is one, the error beside it.
+                  <section
+                    key={member.key}
+                    className={classes.join(' ')}
+                    data-pf-step={member.key}
+                    role="group"
+                    aria-labelledby={memberId(member.key, 'q')}
+                    aria-describedby={code ? memberId(member.key, 'e') : undefined}
+                  >
                     <div className="pf__question-wrap">
-                      <h2 className="pf__question">
+                      <h2 className="pf__question" id={memberId(member.key, 'q')}>
                         {member.question ?? member.key}
                         {several && member.required && member.type !== 'message' ? (
                           <span aria-hidden className="pf-v__required">
@@ -1163,8 +1220,8 @@ export function FormRenderer({
                           step={member}
                           value={answers[member.key]}
                           answers={answers}
-                          autoFocus={i === focusFirst}
-                          phoneAutoFocus={i === focusFirst}
+                          autoFocus={focusHere}
+                          phoneAutoFocus={focusHere}
                           onChange={(v: AnswerValue) => answerOnScreen(member.key, member.key, v)}
                           onFieldChange={(field, v) => answerOnScreen(member.key, field, v)}
                           // A pick records the answer; the screen's button moves on.
@@ -1179,7 +1236,11 @@ export function FormRenderer({
                           uploadMaxMb={uploadMaxMb}
                         />
                         {/* Quiet per question: the summary below is the one alert. */}
-                        {code ? <p className="pf__error">{err(code)}</p> : null}
+                        {code ? (
+                          <p className="pf__error" id={memberId(member.key, 'e')}>
+                            {err(code)}
+                          </p>
+                        ) : null}
                       </div>
                     ) : null}
                   </section>

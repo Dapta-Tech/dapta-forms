@@ -66,3 +66,33 @@ export async function presignUploadAction(
 ): Promise<PresignResult> {
   return postUploadPresign(accountCode, slug, payload);
 }
+
+/** More events than a screen of ten questions can record at once are not a screen's. */
+const MAX_EVENTS_PER_CALL = 24;
+
+/**
+ * Record several funnel events in one round trip (best-effort). A screen of
+ * several questions records one per question at once (a view each when it
+ * shows, a completion each when it is submitted), and the browser runs server
+ * actions one at a time: N separate calls would queue in front of whatever the
+ * person does next, the final submit included. Sent to the API one by one and
+ * in order, so the rows land exactly as separate calls would have written them.
+ */
+export async function recordEventsAction(
+  accountCode: string,
+  slug: string,
+  payload: {
+    sessionId: string;
+    events: { type: string; stepIndex?: number | null; stepKey?: string | null }[];
+  },
+): Promise<void> {
+  if (!Array.isArray(payload.events)) return;
+  for (const event of payload.events.slice(0, MAX_EVENTS_PER_CALL)) {
+    await postFormEvent(accountCode, slug, {
+      sessionId: payload.sessionId,
+      type: event.type,
+      stepIndex: event.stepIndex ?? null,
+      stepKey: event.stepKey ?? null,
+    });
+  }
+}

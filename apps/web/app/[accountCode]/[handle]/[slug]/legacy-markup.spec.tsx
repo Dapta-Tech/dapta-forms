@@ -18,7 +18,7 @@
  */
 import { afterAll, describe, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { runtimeSteps, type FormConfig } from '@quill/engine';
+import { normalizeScreenGroups, runtimeScreens, runtimeSteps, screenIds, type FormConfig } from '@quill/engine';
 
 // The attribution badge reads the deployment's env at render time, and the
 // brand mark at import time: both are pinned so the proof holds on any machine.
@@ -95,6 +95,18 @@ describe('legacy forms render byte for byte', () => {
       const parts = positions.map((at) => `<!-- slides, startAt ${at} -->\n${slides(config, at)}\n`);
       parts.push(`<!-- one page -->\n${onePage(config)}\n`);
       await expect(parts.join('')).toMatchFileSnapshot(`./__snapshots__/legacy-markup/${name}.html`);
+    });
+  }
+});
+
+describe('legacy forms walk as before: one screen per step, and opening one changes nothing', () => {
+  for (const [name, raw] of Object.entries(fixtures)) {
+    it(name, () => {
+      const config = raw as unknown as FormConfig;
+      expect([...screenIds(config).values()].every((id) => id === null)).toBe(true);
+      expect(runtimeScreens(config, {})).toEqual(runtimeSteps(config, {}).map((s) => [s]));
+      // The editor normalizes on open: the very same array means no edit.
+      expect(normalizeScreenGroups(config.steps)).toBe(config.steps);
     });
   }
 });
