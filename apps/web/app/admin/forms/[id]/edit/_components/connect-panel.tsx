@@ -14,13 +14,13 @@ import { Field, PanelSection, TextField } from './fields';
 import type { EditorMessages } from './messages';
 
 /**
- * The editor's Connect tab (Typeform parity): Spam protection (the human check
- * before the final submit, `config.spamProtection`, staged with the draft like
- * Tracking), per-form Integrations (webhook +
+ * The editor's Connect tab (Typeform parity): per-form Integrations (webhook +
  * HubSpot mapping, the existing IntegrationsEditor embedded as-is), Tracking &
  * Pixels (writes `config.tracking` through the editor's autosave/publish flow),
- * and Emails (per-form template overrides — form → account → stock precedence,
- * persisted via /v1/forms/:id/notifications, independent of the form config).
+ * Emails (per-form template overrides: form → account → stock precedence,
+ * persisted via /v1/forms/:id/notifications, independent of the form config),
+ * and, last, Spam protection (the human check before the final submit,
+ * `config.spamProtection`, staged with the draft like Tracking).
  *
  * Data/persistence split (why the two saves can't clobber each other):
  * - Tracking edits mutate the editor's config state → debounced autosave →
@@ -78,18 +78,12 @@ export function ConnectPanel({
 
   const spamProtection = readSpamProtection(config);
   // Partials are held only where the check actually runs: the owner's switch
-  // AND a deployment with keys. Anywhere else the integrations below behave,
-  // and are described, exactly as they always were.
+  // AND a deployment with keys. Anywhere else the integrations behave, and
+  // are described, exactly as they always were.
   const partialsHeld = captchaAvailable && spamProtection?.captcha === true;
 
   return (
     <div data-testid="connect-panel" className="mx-auto flex w-full max-w-[900px] flex-col gap-4">
-      <SpamProtectionSection
-        value={spamProtection}
-        available={captchaAvailable}
-        onChange={onSpamProtectionChange}
-        mc={mc}
-      />
       <IntegrationsSection
         formId={formId}
         questions={questions}
@@ -101,6 +95,14 @@ export function ConnectPanel({
       />
       <TrackingSection config={config} onTrackingChange={onTrackingChange} mc={mc} />
       <ConnectEmailsSection formId={formId} m={mc} locale={locale} />
+      {/* Last on the tab: a setting most forms never need, placed after
+          everything the form sends and tracks. */}
+      <SpamProtectionSection
+        value={spamProtection}
+        available={captchaAvailable}
+        onChange={onSpamProtectionChange}
+        mc={mc}
+      />
     </div>
   );
 }

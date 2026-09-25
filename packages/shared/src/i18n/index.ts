@@ -3016,10 +3016,10 @@ export const en: FormsMessages = {
       },
       connect: {
         tab: 'Connect',
-        spamTitle: 'Spam protection',
+        spamTitle: 'Spam protection (captcha)',
         spamToggle: 'Check that respondents are human before the final submit',
         spamHelp:
-          'Most people never see a challenge. Only verified, complete submissions reach your integrations.',
+          'Adds a captcha that stops automated bot submissions. Most people see nothing: a checkbox appears only when traffic looks suspicious. Only complete, verified responses reach your integrations.',
         spamPartialNote:
           'Partial answers are still saved in Submissions, but they are not sent to webhooks or HubSpot while protection is on.',
         spamUnavailable: 'Spam protection is not set up on this deployment.',
@@ -4749,10 +4749,10 @@ export const es: FormsMessages = {
       },
       connect: {
         tab: 'Conectar',
-        spamTitle: 'Protección contra spam',
+        spamTitle: 'Protección contra spam (captcha)',
         spamToggle: 'Verificar que quien responde es una persona antes del envío final',
         spamHelp:
-          'La mayoría nunca ve un desafío. Solo las respuestas completas y verificadas llegan a tus integraciones.',
+          'Agrega un captcha que frena los envíos automáticos de bots. La mayoría de las personas no ve nada: solo aparece una casilla si el tráfico parece sospechoso. Solo las respuestas completas y verificadas llegan a tus integraciones.',
         spamPartialNote:
           'Las respuestas parciales se siguen guardando en Envíos, pero no se envían a webhooks ni a HubSpot mientras la protección esté activa.',
         spamUnavailable: 'Este despliegue no tiene configurada la protección contra spam.',
