@@ -1,0 +1,1211 @@
+{
+  "seed-lead-qualifier": {
+    "version": 1,
+    "cover": {
+      "enabled": true,
+      "eyebrow": "Quick check",
+      "headline": "See if we are a fit",
+      "subheadline": "Answer a few questions: takes under a minute.",
+      "ctaText": "Start"
+    },
+    "steps": [
+      {
+        "key": "role",
+        "type": "dropdown",
+        "question": "What best describes you?",
+        "required": true,
+        "flowGroup": "qualification",
+        "options": [
+          {
+            "label": "Founder / Owner",
+            "value": "founder",
+            "points": 10
+          },
+          {
+            "label": "Team lead",
+            "value": "lead",
+            "points": 6
+          },
+          {
+            "label": "Individual",
+            "value": "individual",
+            "points": 2
+          }
+        ]
+      },
+      {
+        "key": "team_size",
+        "type": "slider",
+        "question": "How big is your team?",
+        "flowGroup": "qualification",
+        "min": 1,
+        "max": 100,
+        "default": 5,
+        "sliderScoring": [
+          {
+            "min": 1,
+            "max": 9,
+            "points": 2
+          },
+          {
+            "min": 10,
+            "max": 100,
+            "points": 8
+          }
+        ]
+      },
+      {
+        "key": "company",
+        "type": "text",
+        "question": "What company do you work at?",
+        "flowGroup": "qualification",
+        "showWhen": {
+          "field": "role",
+          "values": [
+            "founder",
+            "lead"
+          ]
+        }
+      },
+      {
+        "key": "email",
+        "type": "email",
+        "question": "Where should we send the results?",
+        "required": true,
+        "flowGroup": "lead_capture"
+      }
+    ],
+    "outcomes": [
+      {
+        "id": "nurture",
+        "label": "Nurture",
+        "minScore": 0
+      },
+      {
+        "id": "qualified",
+        "label": "Qualified",
+        "minScore": 12
+      }
+    ]
+  },
+  "pilot": {
+    "reveal": {
+      "enabled": true,
+      "headline": "Finding your best match…",
+      "durationMs": 5000,
+      "subtitleTemplate": "Matching an advisor for [industry]",
+      "prewarm": true
+    },
+    "partialSubmitAfterStep": 7,
+    "version": 1,
+    "steps": [
+      {
+        "key": "name",
+        "type": "name",
+        "question": "What's your name?",
+        "required": true,
+        "flowGroup": "lead_capture",
+        "fields": [
+          "firstname",
+          "lastname"
+        ],
+        "placeholders": {
+          "firstname": "First name",
+          "lastname": "Last name"
+        }
+      },
+      {
+        "key": "problema",
+        "type": "multiple_choice",
+        "question": "[firstname], what problem are you solving?",
+        "required": true,
+        "options": [
+          {
+            "label": "Cold leads follow-up",
+            "value": "leads_frios",
+            "points": 2
+          },
+          {
+            "label": "WhatsApp sales",
+            "value": "whatsapp",
+            "points": 2
+          },
+          {
+            "label": "Customer support",
+            "value": "soporte",
+            "points": 1
+          },
+          {
+            "label": "None of these",
+            "value": "ninguna",
+            "points": -5
+          }
+        ],
+        "flowGroup": "qualification",
+        "selectionMode": "single"
+      },
+      {
+        "key": "inbound_leads",
+        "type": "slider",
+        "question": "How many leads per month?",
+        "required": true,
+        "min": 0,
+        "max": 1500,
+        "step": 10,
+        "default": 100,
+        "sliderScoring": [
+          {
+            "min": 0,
+            "max": 99,
+            "points": -2
+          },
+          {
+            "min": 100,
+            "max": 149,
+            "points": -1
+          },
+          {
+            "min": 150,
+            "max": 299,
+            "points": 1
+          },
+          {
+            "min": 300,
+            "max": 999,
+            "points": 2
+          },
+          {
+            "min": 1000,
+            "max": 1500,
+            "points": 3
+          }
+        ],
+        "showWhen": {
+          "field": "problema",
+          "values": [
+            "leads_frios",
+            "whatsapp",
+            "soporte"
+          ]
+        },
+        "flowGroup": "qualification",
+        "questionField": "problema",
+        "questionVariants": {
+          "leads_frios": "How many cold leads do you get per month?",
+          "whatsapp": "How many WhatsApp conversations per month?",
+          "*": "How many leads per month?"
+        }
+      },
+      {
+        "key": "industry",
+        "type": "dropdown",
+        "question": "What industry are you in?",
+        "required": true,
+        "options": [
+          {
+            "label": "Banking",
+            "value": "banking",
+            "points": 2
+          },
+          {
+            "label": "Software",
+            "value": "software",
+            "points": 2
+          },
+          {
+            "label": "Retail",
+            "value": "retail",
+            "points": 1
+          },
+          {
+            "label": "Accounting",
+            "value": "accounting",
+            "points": -2
+          },
+          {
+            "label": "Other industry",
+            "value": "other",
+            "points": 0
+          }
+        ],
+        "hideWhen": {
+          "field": "problema",
+          "values": [
+            "ninguna"
+          ]
+        },
+        "flowGroup": "qualification"
+      },
+      {
+        "key": "uso_ia",
+        "type": "multiple_choice",
+        "question": "Are you using AI today?",
+        "required": true,
+        "options": [
+          {
+            "label": "Yes, in production",
+            "value": "production",
+            "points": 1
+          },
+          {
+            "label": "Experimenting",
+            "value": "experimenting",
+            "points": 1
+          },
+          {
+            "label": "Not yet",
+            "value": "no",
+            "points": 0
+          }
+        ],
+        "flowGroup": "qualification",
+        "selectionMode": "single"
+      },
+      {
+        "key": "email",
+        "type": "email",
+        "question": "What's your work email?",
+        "required": true,
+        "flowGroup": "lead_capture",
+        "triggersReveal": true
+      },
+      {
+        "key": "website",
+        "type": "text",
+        "question": "What's your company website?",
+        "required": true,
+        "flowGroup": "lead_capture",
+        "showForPersonalEmailOnly": true
+      },
+      {
+        "key": "disqualified_msg",
+        "type": "message",
+        "question": "We can't help you just yet, thanks for your time.",
+        "required": false,
+        "showWhen": {
+          "field": "problema",
+          "values": [
+            "ninguna"
+          ]
+        },
+        "flowGroup": "lead_capture",
+        "terminal": true
+      },
+      {
+        "key": "phone",
+        "type": "phone",
+        "question": "What's your phone number?",
+        "required": true,
+        "flowGroup": "lead_capture"
+      }
+    ],
+    "cover": {
+      "enabled": true,
+      "bannerText": "Book a call and get a free onboarding session",
+      "badge": "2-minute assessment",
+      "headline": "Find the right plan for your team",
+      "subheadline": "Answer a few questions and book a call with the right advisor.",
+      "ctaText": "Start now"
+    },
+    "branding": {
+      "primaryColor": "#CCFF00"
+    },
+    "outcomes": [
+      {
+        "id": "p0",
+        "label": "P0",
+        "minScore": -20,
+        "redirectUrl": "https://example.com/typ-p0",
+        "overrides": [
+          {
+            "field": "problema",
+            "values": [
+              "ninguna"
+            ]
+          },
+          {
+            "field": "inbound_leads",
+            "maxValue": 0
+          }
+        ]
+      },
+      {
+        "id": "p3",
+        "label": "P3",
+        "minScore": 0,
+        "redirectUrl": "https://example.com/typ-p3",
+        "booking": {
+          "provider": "calendly",
+          "url": "https://calendly.com/d/example/15-min",
+          "prefill": true
+        }
+      },
+      {
+        "id": "p2",
+        "label": "P2",
+        "minScore": 3,
+        "redirectUrl": "https://example.com/typ-p2",
+        "booking": {
+          "provider": "hubspot_meetings",
+          "url": "https://meetings.hubspot.com/example/p2-round-robin",
+          "prefill": true
+        }
+      },
+      {
+        "id": "p1",
+        "label": "P1",
+        "minScore": 5,
+        "redirectUrl": "https://example.com/typ-p1",
+        "booking": {
+          "provider": "hubspot_meetings",
+          "url": "https://meetings.hubspot.com/example/p1-round-robin",
+          "prefill": true
+        }
+      }
+    ],
+    "scoring": {
+      "enabled": true
+    }
+  },
+  "demo-customer-feedback": {
+    "version": 1,
+    "branding": {
+      "primaryColor": "#2b6e4f"
+    },
+    "cover": {
+      "enabled": true,
+      "bannerText": "Demo form: edit or delete it anytime from your dashboard",
+      "eyebrow": "We would love your feedback",
+      "headline": "How was your experience?",
+      "subheadline": "Three quick questions: under a minute. Your answers help us build a better product for you.",
+      "ctaText": "Share my feedback",
+      "trustBadge": "Anonymous unless you choose to leave your email",
+      "clientLogos": [
+        {
+          "name": "Northwind"
+        },
+        {
+          "name": "Acme Co"
+        },
+        {
+          "name": "Globex"
+        },
+        {
+          "name": "Initech"
+        }
+      ]
+    },
+    "steps": [
+      {
+        "key": "satisfaction",
+        "type": "multiple_choice",
+        "question": "Overall, how happy are you with us?",
+        "helper": "Pick the face that fits best.",
+        "required": true,
+        "showIcons": true,
+        "flowGroup": "qualification",
+        "options": [
+          {
+            "label": "Love it",
+            "value": "love",
+            "icon": "😍",
+            "points": 10
+          },
+          {
+            "label": "Pretty good",
+            "value": "good",
+            "icon": "🙂",
+            "points": 7
+          },
+          {
+            "label": "It's okay",
+            "value": "okay",
+            "icon": "😐",
+            "points": 4
+          },
+          {
+            "label": "Could be better",
+            "value": "meh",
+            "icon": "😕",
+            "points": 1
+          }
+        ]
+      },
+      {
+        "key": "favorite_area",
+        "type": "multiple_choice",
+        "question": "What do you value most about us?",
+        "required": true,
+        "showIcons": true,
+        "flowGroup": "qualification",
+        "options": [
+          {
+            "label": "Ease of use",
+            "value": "ease",
+            "icon": "🪄",
+            "points": 3
+          },
+          {
+            "label": "Speed",
+            "value": "speed",
+            "icon": "⚡",
+            "points": 3
+          },
+          {
+            "label": "Support",
+            "value": "support",
+            "icon": "💬",
+            "points": 3
+          },
+          {
+            "label": "Price",
+            "value": "price",
+            "icon": "💰",
+            "points": 3
+          }
+        ]
+      },
+      {
+        "key": "recommend",
+        "type": "slider",
+        "question": "How likely are you to recommend us to a friend or colleague?",
+        "helper": "0 = not at all likely, 10 = absolutely.",
+        "flowGroup": "qualification",
+        "min": 0,
+        "max": 10,
+        "step": 1,
+        "default": 8,
+        "sliderUnitLabel": "/ 10",
+        "sliderScoring": [
+          {
+            "min": 0,
+            "max": 6,
+            "points": 0
+          },
+          {
+            "min": 7,
+            "max": 8,
+            "points": 3
+          },
+          {
+            "min": 9,
+            "max": 10,
+            "points": 6
+          }
+        ]
+      },
+      {
+        "key": "improvement",
+        "type": "textarea",
+        "question": "What is the one thing we could do better?",
+        "placeholder": "Optional: but we read every single note.",
+        "required": false,
+        "flowGroup": "qualification"
+      },
+      {
+        "key": "email",
+        "type": "email",
+        "question": "Want us to follow up? Leave your email.",
+        "helper": "Optional. We only use it to reply to your feedback. No spam.",
+        "placeholder": "you@company.com",
+        "required": false,
+        "flowGroup": "lead_capture",
+        "triggersReveal": true
+      }
+    ],
+    "scoring": {
+      "enabled": true
+    },
+    "outcomes": [
+      {
+        "id": "thanks",
+        "label": "Thank you for sharing 🙌",
+        "minScore": 0
+      },
+      {
+        "id": "delighted",
+        "label": "You just made our day! 🎉",
+        "minScore": 13
+      }
+    ],
+    "reveal": {
+      "enabled": true,
+      "headline": "Saving your feedback…",
+      "subtitle": "Hang tight. This only takes a second."
+    },
+    "partialSubmitAfterStep": 5
+  },
+  "template-lead-qualifier": {
+    "version": 1,
+    "branding": {
+      "primaryColor": "#2563eb"
+    },
+    "cover": {
+      "enabled": true,
+      "eyebrow": "Two minutes, tops",
+      "headline": "Let us see if we are a fit",
+      "subheadline": "A few quick questions so we can point you at the right thing instead of a generic demo.",
+      "ctaText": "Get started",
+      "trustBadge": "No credit card, no sales call unless you ask for one"
+    },
+    "steps": [
+      {
+        "key": "role",
+        "type": "multiple_choice",
+        "question": "What best describes you?",
+        "required": true,
+        "showIcons": true,
+        "flowGroup": "qualification",
+        "options": [
+          {
+            "label": "Founder or owner",
+            "value": "founder",
+            "icon": "🚀",
+            "points": 10
+          },
+          {
+            "label": "Team lead or manager",
+            "value": "lead",
+            "icon": "🧭",
+            "points": 7
+          },
+          {
+            "label": "Individual contributor",
+            "value": "individual",
+            "icon": "👤",
+            "points": 3
+          },
+          {
+            "label": "Just exploring",
+            "value": "exploring",
+            "icon": "👀",
+            "points": 1
+          }
+        ]
+      },
+      {
+        "key": "team_size",
+        "type": "slider",
+        "question": "How many people are on your team?",
+        "helper": "Drag to the closest number.",
+        "flowGroup": "qualification",
+        "min": 1,
+        "max": 100,
+        "step": 1,
+        "default": 5,
+        "sliderUnitLabel": "people",
+        "sliderScoring": [
+          {
+            "min": 1,
+            "max": 4,
+            "points": 2
+          },
+          {
+            "min": 5,
+            "max": 24,
+            "points": 6
+          },
+          {
+            "min": 25,
+            "max": 100,
+            "points": 10
+          }
+        ]
+      },
+      {
+        "key": "timeline",
+        "type": "multiple_choice",
+        "question": "When are you looking to get started?",
+        "required": true,
+        "flowGroup": "qualification",
+        "options": [
+          {
+            "label": "This month",
+            "value": "now",
+            "icon": "🔥",
+            "points": 10
+          },
+          {
+            "label": "This quarter",
+            "value": "quarter",
+            "icon": "📅",
+            "points": 6
+          },
+          {
+            "label": "Sometime this year",
+            "value": "year",
+            "icon": "🗓",
+            "points": 3
+          },
+          {
+            "label": "Just researching",
+            "value": "research",
+            "icon": "📚",
+            "points": 0
+          }
+        ]
+      },
+      {
+        "key": "challenge",
+        "type": "textarea",
+        "question": "What are you trying to solve?",
+        "placeholder": "A sentence is plenty. It helps us skip the generic pitch.",
+        "required": false,
+        "flowGroup": "qualification"
+      },
+      {
+        "key": "name",
+        "type": "name",
+        "question": "Last thing: who are we talking to?",
+        "required": true,
+        "flowGroup": "lead_capture"
+      },
+      {
+        "key": "email",
+        "type": "email",
+        "question": "Where should we send the results?",
+        "placeholder": "you@company.com",
+        "required": true,
+        "flowGroup": "lead_capture"
+      }
+    ],
+    "scoring": {
+      "enabled": true
+    },
+    "outcomes": [
+      {
+        "id": "nurture",
+        "label": "Thanks. We will be in touch",
+        "minScore": 0,
+        "message": "We will send over a few things worth reading while you decide."
+      },
+      {
+        "id": "qualified",
+        "label": "You are exactly who we built this for",
+        "minScore": 20,
+        "message": "Keep an eye on your inbox: someone from the team will reach out today."
+      }
+    ],
+    "partialSubmitAfterStep": 6
+  },
+  "template-event-registration": {
+    "version": 1,
+    "branding": {
+      "primaryColor": "#7c3aed"
+    },
+    "cover": {
+      "enabled": true,
+      "eyebrow": "You are invited",
+      "headline": "Save your spot",
+      "subheadline": "Tell us who is coming and we will send the details straight to your inbox.",
+      "ctaText": "Register",
+      "trustBadge": "Free to attend. We will only email you about this event"
+    },
+    "steps": [
+      {
+        "key": "name",
+        "type": "name",
+        "question": "Who should we put on the list?",
+        "required": true,
+        "flowGroup": "lead_capture"
+      },
+      {
+        "key": "email",
+        "type": "email",
+        "question": "Where should we send your confirmation?",
+        "placeholder": "you@company.com",
+        "required": true,
+        "flowGroup": "lead_capture"
+      },
+      {
+        "key": "attending",
+        "type": "multiple_choice",
+        "question": "How will you be joining us?",
+        "required": true,
+        "showIcons": true,
+        "options": [
+          {
+            "label": "In person",
+            "value": "in_person",
+            "icon": "🏢"
+          },
+          {
+            "label": "Online",
+            "value": "online",
+            "icon": "💻"
+          }
+        ]
+      },
+      {
+        "key": "guests",
+        "type": "slider",
+        "question": "Bringing anyone with you?",
+        "helper": "0 means just you.",
+        "min": 0,
+        "max": 5,
+        "step": 1,
+        "default": 0,
+        "sliderUnitLabel": "guests"
+      },
+      {
+        "key": "notes",
+        "type": "textarea",
+        "question": "Anything we should know?",
+        "placeholder": "Dietary requirements, accessibility needs, or nothing at all.",
+        "required": false
+      }
+    ],
+    "ending": {
+      "headline": "You are on the list",
+      "body": "Check your inbox for the details. See you there."
+    },
+    "partialSubmitAfterStep": 2
+  },
+  "template-application": {
+    "version": 1,
+    "branding": {
+      "primaryColor": "#0f766e"
+    },
+    "cover": {
+      "enabled": true,
+      "eyebrow": "We are reading every one",
+      "headline": "Tell us what you need",
+      "subheadline": "Six questions. No account, no login: just the details so we can get moving.",
+      "ctaText": "Start my request"
+    },
+    "steps": [
+      {
+        "key": "name",
+        "type": "name",
+        "question": "What is your name?",
+        "required": true,
+        "flowGroup": "lead_capture"
+      },
+      {
+        "key": "email",
+        "type": "email",
+        "question": "How do we reach you?",
+        "placeholder": "you@company.com",
+        "required": true,
+        "flowGroup": "lead_capture"
+      },
+      {
+        "key": "request_type",
+        "type": "multiple_choice",
+        "question": "What is this about?",
+        "required": true,
+        "showIcons": true,
+        "options": [
+          {
+            "label": "A role you are hiring for",
+            "value": "job",
+            "icon": "💼"
+          },
+          {
+            "label": "A project or piece of work",
+            "value": "project",
+            "icon": "🛠"
+          },
+          {
+            "label": "Support with something",
+            "value": "support",
+            "icon": "🆘"
+          },
+          {
+            "label": "Something else",
+            "value": "other",
+            "icon": "✨"
+          }
+        ]
+      },
+      {
+        "key": "details",
+        "type": "textarea",
+        "question": "Tell us more",
+        "placeholder": "What you need, and anything that would help us understand it.",
+        "required": true
+      },
+      {
+        "key": "portfolio",
+        "type": "text",
+        "question": "Somewhere we can see your work?",
+        "helper": "A link to a site, a profile, or a repo. Optional.",
+        "placeholder": "https://",
+        "required": false
+      },
+      {
+        "key": "timeline",
+        "type": "multiple_choice",
+        "question": "How soon do you need an answer?",
+        "required": true,
+        "options": [
+          {
+            "label": "As soon as possible",
+            "value": "asap",
+            "icon": "⚡"
+          },
+          {
+            "label": "Within a couple of weeks",
+            "value": "weeks",
+            "icon": "📅"
+          },
+          {
+            "label": "No rush",
+            "value": "flexible",
+            "icon": "😌"
+          }
+        ]
+      }
+    ],
+    "ending": {
+      "headline": "Got it: thank you",
+      "body": "We read every submission and will come back to you at the address you gave us."
+    },
+    "partialSubmitAfterStep": 2
+  },
+  "builder-lead": {
+    "version": 1,
+    "steps": [
+      {
+        "key": "email",
+        "type": "email",
+        "question": "What’s your work email?",
+        "helper": "We’ll tailor the demo and follow up here.",
+        "placeholder": "you@company.com",
+        "required": true,
+        "corporateEmailOnly": true,
+        "flowGroup": "lead_capture"
+      },
+      {
+        "key": "team_size",
+        "type": "multiple_choice",
+        "selectionMode": "single",
+        "question": "How big is your team?",
+        "helper": "This helps us tailor the demo to your setup.",
+        "required": true,
+        "flowGroup": "qualification",
+        "options": [
+          {
+            "label": "Just me",
+            "value": "just_me",
+            "points": 0
+          },
+          {
+            "label": "2 to 10 people",
+            "value": "2_10",
+            "points": 2
+          },
+          {
+            "label": "11 to 50 people",
+            "value": "11_50",
+            "points": 4
+          },
+          {
+            "label": "50+ people",
+            "value": "50_plus",
+            "points": 6
+          }
+        ]
+      },
+      {
+        "key": "main_goal",
+        "type": "multiple_choice",
+        "selectionMode": "multiple",
+        "question": "What’s your main goal?",
+        "helper": "Pick all that apply.",
+        "required": true,
+        "flowGroup": "qualification",
+        "options": [
+          {
+            "label": "Capture more leads",
+            "value": "leads",
+            "points": 2
+          },
+          {
+            "label": "Qualify faster",
+            "value": "qualify",
+            "points": 2
+          },
+          {
+            "label": "Automate follow-up",
+            "value": "automate",
+            "points": 2
+          },
+          {
+            "label": "Just exploring",
+            "value": "exploring",
+            "points": 0
+          }
+        ]
+      },
+      {
+        "key": "budget",
+        "type": "dropdown",
+        "question": "What’s your monthly budget?",
+        "helper": "Ballpark is fine. It helps us recommend a plan.",
+        "required": true,
+        "flowGroup": "qualification",
+        "options": [
+          {
+            "label": "Under $500 / month",
+            "value": "under_500",
+            "points": 0
+          },
+          {
+            "label": "$500 to $2,000 / month",
+            "value": "500_2000",
+            "points": 3
+          },
+          {
+            "label": "$2,000+ / month",
+            "value": "over_2000",
+            "points": 6
+          }
+        ],
+        "goto": [
+          {
+            "values": [
+              "under_500"
+            ],
+            "target": null
+          },
+          {
+            "values": [
+              "over_2000"
+            ],
+            "target": "urgency"
+          }
+        ]
+      },
+      {
+        "key": "urgency",
+        "type": "slider",
+        "question": "How soon do you need this?",
+        "helper": "0 = just researching, 6 = this month.",
+        "flowGroup": "qualification",
+        "min": 0,
+        "max": 6,
+        "step": 1,
+        "default": 3,
+        "sliderScoring": [
+          {
+            "min": 0,
+            "max": 2,
+            "points": 0
+          },
+          {
+            "min": 3,
+            "max": 4,
+            "points": 3
+          },
+          {
+            "min": 5,
+            "max": 6,
+            "points": 6
+          }
+        ]
+      },
+      {
+        "key": "anything_else",
+        "type": "textarea",
+        "question": "Anything else we should know?",
+        "placeholder": "Optional: context helps us prepare.",
+        "required": false,
+        "flowGroup": "qualification"
+      }
+    ],
+    "scoring": {
+      "enabled": true
+    },
+    "outcomes": [
+      {
+        "id": "not_a_fit",
+        "label": "Not a fit",
+        "minScore": 0,
+        "redirectUrl": null
+      },
+      {
+        "id": "nurture",
+        "label": "Nurture",
+        "minScore": 5,
+        "redirectUrl": "https://example.com/resources/guide"
+      },
+      {
+        "id": "book_a_call",
+        "label": "Book a call · hot lead",
+        "minScore": 10,
+        "redirectUrl": "https://cal.example.com/demo"
+      }
+    ],
+    "partialSubmitAfterStep": 1
+  },
+  "builder-contact": {
+    "version": 1,
+    "steps": [
+      {
+        "key": "name",
+        "type": "name",
+        "question": "What’s your name?",
+        "required": true,
+        "flowGroup": "lead_capture"
+      },
+      {
+        "key": "email",
+        "type": "email",
+        "question": "What’s your email?",
+        "placeholder": "you@company.com",
+        "required": true,
+        "flowGroup": "lead_capture"
+      },
+      {
+        "key": "message",
+        "type": "textarea",
+        "question": "How can we help?",
+        "placeholder": "Tell us what you’re looking for…",
+        "required": true,
+        "flowGroup": "qualification"
+      }
+    ],
+    "scoring": {
+      "enabled": false
+    }
+  },
+  "builder-feedback": {
+    "version": 1,
+    "steps": [
+      {
+        "key": "rating",
+        "type": "slider",
+        "question": "How would you rate your experience?",
+        "helper": "1 = poor, 5 = excellent.",
+        "required": true,
+        "flowGroup": "qualification",
+        "min": 1,
+        "max": 5,
+        "step": 1,
+        "default": 4,
+        "sliderUnitLabel": "/ 5"
+      },
+      {
+        "key": "stood_out",
+        "type": "multiple_choice",
+        "selectionMode": "single",
+        "question": "What stood out the most?",
+        "required": true,
+        "flowGroup": "qualification",
+        "options": [
+          {
+            "label": "Ease of use",
+            "value": "ease"
+          },
+          {
+            "label": "Speed",
+            "value": "speed"
+          },
+          {
+            "label": "Support",
+            "value": "support"
+          },
+          {
+            "label": "Value",
+            "value": "value"
+          }
+        ]
+      },
+      {
+        "key": "comments",
+        "type": "textarea",
+        "question": "What could we do better?",
+        "placeholder": "Optional. We read every note.",
+        "required": false,
+        "flowGroup": "qualification"
+      },
+      {
+        "key": "email",
+        "type": "email",
+        "question": "Want a reply? Leave your email.",
+        "helper": "Optional. No spam.",
+        "placeholder": "you@company.com",
+        "required": false,
+        "flowGroup": "lead_capture"
+      }
+    ],
+    "scoring": {
+      "enabled": false
+    }
+  },
+  "builder-rsvp": {
+    "version": 1,
+    "steps": [
+      {
+        "key": "name",
+        "type": "name",
+        "question": "Who’s attending?",
+        "required": true,
+        "flowGroup": "lead_capture"
+      },
+      {
+        "key": "attending",
+        "type": "multiple_choice",
+        "selectionMode": "single",
+        "question": "Will you join us?",
+        "required": true,
+        "flowGroup": "qualification",
+        "options": [
+          {
+            "label": "Yes, I’ll be there",
+            "value": "yes"
+          },
+          {
+            "label": "Sorry, can’t make it",
+            "value": "no"
+          }
+        ],
+        "goto": [
+          {
+            "values": [
+              "no"
+            ],
+            "target": null
+          }
+        ]
+      },
+      {
+        "key": "guests",
+        "type": "dropdown",
+        "question": "How many guests are you bringing?",
+        "required": true,
+        "flowGroup": "qualification",
+        "options": [
+          {
+            "label": "Just me",
+            "value": "0"
+          },
+          {
+            "label": "1 guest",
+            "value": "1"
+          },
+          {
+            "label": "2 guests",
+            "value": "2"
+          },
+          {
+            "label": "3+ guests",
+            "value": "3_plus"
+          }
+        ]
+      },
+      {
+        "key": "dietary",
+        "type": "textarea",
+        "question": "Any dietary notes?",
+        "placeholder": "Optional: allergies, preferences…",
+        "required": false,
+        "flowGroup": "qualification"
+      }
+    ],
+    "scoring": {
+      "enabled": false
+    }
+  }
+}
