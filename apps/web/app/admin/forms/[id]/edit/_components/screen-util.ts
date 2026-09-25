@@ -42,6 +42,14 @@ function visibleAbove(steps: FormStep[], index: number): number {
   return above;
 }
 
+/**
+ * Is any question shown above step `index`? Hidden ones are transparent. With
+ * none, there is no boundary to join above it at all.
+ */
+export function shownAbove(steps: FormStep[], index: number): boolean {
+  return visibleAbove(steps, index) >= 0;
+}
+
 /** The boundary above step `index`: joined or not, and why it cannot be joined. */
 export function screenBoundary(steps: FormStep[], index: number): ScreenBoundary {
   const step = steps[index];

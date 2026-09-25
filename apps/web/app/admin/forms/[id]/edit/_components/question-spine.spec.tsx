@@ -82,7 +82,11 @@ describe('screens in the spine (#200)', () => {
     { key: 'last', type: 'text', question: 'Last?' },
   ] as FormStep[];
 
-  async function renderSpine(layout: 'slides' | 'vertical', onScreenJoin = (_i: number, _j: boolean) => {}) {
+  async function renderSpine(
+    layout: 'slides' | 'vertical',
+    onScreenJoin = (_i: number, _j: boolean) => {},
+    steps: FormStep[] = grouped,
+  ) {
     const m = getBuilderMessages('en');
     host = document.createElement('div');
     document.body.append(host);
@@ -90,7 +94,7 @@ describe('screens in the spine (#200)', () => {
     await act(async () =>
       root!.render(
         <QuestionSpine
-          steps={grouped}
+          steps={steps}
           layout={layout}
           selectedIndex={0}
           onSelect={() => {}}
@@ -106,9 +110,11 @@ describe('screens in the spine (#200)', () => {
   }
   const toggle = (i: number) => host!.querySelector<HTMLButtonElement>(`[data-testid="screen-toggle-${i}"]`)!;
 
-  it('offers a toggle on every row, joined where the screen is', async () => {
+  it('offers a toggle on every row below the first, joined where the screen is', async () => {
     const m = await renderSpine('slides');
-    expect(host!.querySelectorAll('[data-testid^="screen-toggle-"]')).toHaveLength(grouped.length);
+    // Nothing is shown above the first question, so there is nothing to join.
+    expect(toggle(0)).toBeNull();
+    expect(host!.querySelectorAll('[data-testid^="screen-toggle-"]')).toHaveLength(grouped.length - 1);
     expect(toggle(2).dataset.joined).toBe('true');
     expect(toggle(2).getAttribute('aria-label')).toBe(m.screens.split);
     expect(toggle(1).dataset.joined).toBe('false');
@@ -126,7 +132,6 @@ describe('screens in the spine (#200)', () => {
   it('refuses a boundary that cannot be joined, and says why', async () => {
     const m = await renderSpine('slides');
     const cases: Array<[number, string]> = [
-      [0, m.screens.first],
       [3, m.screens.soloType],
       [4, m.screens.hidden],
     ];
@@ -140,6 +145,17 @@ describe('screens in the spine (#200)', () => {
         .map((id) => document.getElementById(id)!.textContent);
       expect(described).toEqual([grouped[i]!.question, reason]);
     }
+  });
+
+  it('offers no toggle above a row with only hidden questions above it: they are transparent', async () => {
+    await renderSpine('slides', undefined, [
+      { key: 'utm', type: 'text', question: 'Campaign', hidden: true },
+      { key: 'a', type: 'text', question: 'A?' },
+      { key: 'b', type: 'text', question: 'B?' },
+    ] as FormStep[]);
+    expect(toggle(0)).toBeNull();
+    expect(toggle(1)).toBeNull();
+    expect(toggle(2)).not.toBeNull();
   });
 
   it('joins and splits through the editor, and a refused click does nothing', async () => {

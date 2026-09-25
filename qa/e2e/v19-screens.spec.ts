@@ -346,9 +346,10 @@ test.describe('screens in the builder', () => {
     const spine = page.getByTestId('question-spine');
     await spine.waitFor();
 
-    // A chain on every row; the ones that cannot join say why.
-    await expect(page.locator('[data-testid^="screen-toggle-"]')).toHaveCount(6);
-    await expect(page.getByTestId('screen-toggle-0')).toHaveAttribute('aria-disabled', 'true');
+    // A chain on every row but the first (nothing is shown above it to join);
+    // the ones that cannot join say why.
+    await expect(page.locator('[data-testid^="screen-toggle-"]')).toHaveCount(5);
+    await expect(page.getByTestId('screen-toggle-0')).toHaveCount(0);
     await expect(page.getByTestId('screen-toggle-4')).toHaveAttribute('aria-disabled', 'true');
     await expect(page.getByTestId('screen-toggle-4')).toHaveAttribute(
       'title',

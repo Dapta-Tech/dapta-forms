@@ -1,11 +1,12 @@
 'use client';
 
 import { useEffect, useId, useState, type HTMLAttributes, type ReactNode } from 'react';
+import { useDndContext } from '@dnd-kit/core';
 import type { FormLayout, FormStep } from '@quill/engine';
 import { authoredScreens, screensActive } from '@quill/engine';
 import { cn } from '@/lib/cn';
 import { liveRuleCount } from './logic-util';
-import { screenBoundary, screenEnd, screenList, type ScreenBlock } from './screen-util';
+import { screenBoundary, screenEnd, screenList, shownAbove, type ScreenBlock } from './screen-util';
 import { screenBlockReason } from './screen-join-field';
 import { SortableList, SortableRow } from './sortable';
 import { iconForStep, isContactType, stepListLabel } from './question-types';
@@ -38,9 +39,10 @@ const isMarker = (id: string): boolean => id === PARTIAL_ID;
  * edited as itself.
  *
  * Screens (#200), on slides only: a chain toggle on the top edge of each row
- * joins the question to the screen above it or starts a new screen there. The
- * rows of one screen close ranks into a single block, named by a label above
- * it ("Screen 2 · 3 questions"). Numbering stays per question.
+ * that has a question shown above it joins the question to the screen above
+ * or starts a new screen there. The rows of one screen close ranks into a
+ * single block, named by a label above it ("Screen 2 · 3 questions").
+ * Numbering stays per question.
  */
 export function QuestionSpine({
   steps,
@@ -201,7 +203,7 @@ export function QuestionSpine({
                 {/* The rows of one screen close the list's gap and share their
                     borders, so the screen reads as one block. */}
                 <div className={cn('group/row relative', span && !opensScreen && '-mt-[9px]')}>
-                {screensOn ? (
+                {screensOn && shownAbove(steps, stepIndex) ? (
                   <ScreenToggle
                     index={stepIndex}
                     boundary={screenBoundary(steps, stepIndex)}
@@ -358,7 +360,8 @@ export function QuestionSpine({
 
 /**
  * The chain on a row's top edge: join this question to the screen above, or
- * start a new screen here. Shown on hover or focus, and always while joined.
+ * start a new screen here. Shown on hover or focus, and always while joined;
+ * never above a row with no question shown above it, and not mid-drag.
  * A boundary that cannot be joined stays reachable (focusable, announced as
  * unavailable) and says why, rather than vanishing without a reason.
  */
@@ -379,9 +382,13 @@ function ScreenToggle({
   m: BuilderMessages;
 }) {
   const reasonId = useId();
+  // While a row is dragged every boundary is about to change, and the chains
+  // would ride along on rows that move: they step aside until the drop.
+  const { active } = useDndContext();
   const { joined } = boundary;
   const blocked = joined ? null : boundary.blocked;
   const label = joined ? m.screens.split : m.screens.join;
+  if (active) return null;
   return (
     <>
       <button
