@@ -33,15 +33,18 @@ tracking ID.
   dialects. `upsertSubmission` stores it with COALESCE, so a later save without a
   visit keeps the one already stored, and returns the merged row. The dashboard
   read side maps it to the safe view.
-- `@quill/destinations`: `DestinationContext.visit`, and `formTitle`, the public
-  title that names a page which reported none. The HubSpot mirror submission
+- `@quill/destinations`: `DestinationContext.visit` (the contract's
+  `SubmissionVisit`), and `formTitle`, the public title that names a page which
+  reported none. The HubSpot mirror submission
   sends `hutk`, `pageUri`, `pageName` and `pageId` as its context, leaves out any
   empty key, and after a 400 retries once with the context it always sent; the
   Note names the page, the delivery detail says `+visit`, the cookie never
   reaches a log, and a cookie from another portal is reported. The webhook
   envelope gains a top-level `visit` (`pageUri`, `pageName`, `embedded`, and
-  `hutk` when there is one), covered by the signature; the delivery history shows
-  that body with the cookie hidden. Without a visit, both send exactly what they
-  sent before.
+  `hutk` when there is one), covered by the signature. The delivery history shows
+  that body, and the receiver's answer, with the cookie hidden (`scrubHutk`), so
+  a receiver that echoes its request cannot put it on screen. Without a visit,
+  both send exactly what they sent before.
 - `@quill/shared`: the Page row, the HubSpot chip and the CSV's Page URL column,
-  and the embed, HubSpot and tracking ID help, in English and Spanish.
+  and the help of the HubSpot form submission switch and of the HubSpot tracking
+  ID, in English and Spanish.
