@@ -250,6 +250,32 @@ describe('WebhookDestination: the visit', () => {
     expect(transcriptOfError(netErr).requestBody).not.toContain(HUTK);
   });
 
+  it('hides the cookie in what an echoing receiver answers, delivered or refused', async () => {
+    // Request bins and workflow tools often answer with the request itself, and
+    // the delivery history shows the receiver's answer verbatim.
+    const echo = (status: number) =>
+      (async (_url: string, init: RequestInit) => new Response(init.body as string, { status })) as unknown as typeof fetch;
+    const small = ctx({ data: {}, utm: {}, visit: { hutk: HUTK, embedded: true } });
+    const opts = { url: 'https://acme.io/hook', resolveDns: publicResolver };
+
+    const delivered = await new WebhookDestination(opts, echo(200)).deliver(small);
+    expect(delivered.responseBody).toContain('"hutk":"[hidden]"');
+    expect(delivered.responseBody).not.toContain(HUTK);
+
+    const refused = await new WebhookDestination(opts, echo(500)).deliver(small).catch((e: unknown) => e);
+    expect(transcriptOfError(refused).responseBody).toContain('"hutk":"[hidden]"');
+    expect(transcriptOfError(refused).responseBody).not.toContain(HUTK);
+  });
+
+  it('hides the cookie before cutting a long answer, so no piece of it survives the cut', async () => {
+    // 390 characters, then the cookie: cut at 400 first, and its first 10 would stay.
+    const fetchImpl = (async () => new Response(`${'x'.repeat(390)}${HUTK.toUpperCase()}`, { status: 200 })) as unknown as typeof fetch;
+    const result = await new WebhookDestination({ url: 'https://acme.io/hook', resolveDns: publicResolver }, fetchImpl).deliver(
+      ctx({ visit: VISIT }),
+    );
+    expect(result.responseBody?.toLowerCase()).not.toContain(HUTK.slice(0, 10));
+  });
+
   it('records the body verbatim when there is no cookie to hide', async () => {
     const { sent, dest } = capture();
     const result = await dest.deliver(ctx({ visit: { pageUri: VISIT.pageUri, embedded: true } }));

@@ -5,6 +5,7 @@ import type {
   DestinationVisit,
   SubmissionDestination,
 } from '../destination.port';
+import { scrubHutk } from '../hutk';
 import { assertPublicWebhookUrl, type DnsResolver } from '../ssrf-guard';
 
 /** The default header carrying the HMAC signature (overridable per destination). */
@@ -13,8 +14,6 @@ export const DEFAULT_SIGNATURE_HEADER = 'X-Forms-Signature';
 export const DEFAULT_WEBHOOK_TIMEOUT_MS = 10_000;
 /** The event name carried in the payload + the X-Forms-Event header. */
 export const WEBHOOK_EVENT = 'form.submission';
-/** What the delivery history shows in place of the visitor's HubSpot cookie. */
-export const HIDDEN_HUTK = '[hidden]';
 
 export interface WebhookDestinationOptions {
   /** The customer endpoint to POST each submission to. */
@@ -78,16 +77,6 @@ function webhookVisit(visit: DestinationVisit): WebhookVisit {
 }
 
 /**
- * The body as the delivery history shows it back: the one sent, except that
- * the visitor's HubSpot cookie is replaced, since the dashboard never shows it.
- * Byte for byte the sent body whenever there is no cookie to hide.
- */
-function transcriptBody(payload: WebhookPayload, body: string): string {
-  if (!payload.visit?.hutk) return body;
-  return JSON.stringify({ ...payload, visit: { ...payload.visit, hutk: HIDDEN_HUTK } });
-}
-
-/**
  * Outbound WEBHOOK destination — POSTs a stable JSON envelope of the submission
  * to a customer-configured URL, optionally HMAC-SHA256 signed so the receiver can
  * verify authenticity. No redirects are followed (a 3xx is treated as a failure,
@@ -133,10 +122,12 @@ export class WebhookDestination implements SubmissionDestination {
       resolve: this.opts.resolveDns,
     });
 
-    const payload = this.buildPayload(ctx);
-    const body = JSON.stringify(payload);
-    // What the transcript records: never the visitor's HubSpot cookie.
-    const shown = transcriptBody(payload, body);
+    const body = JSON.stringify(this.buildPayload(ctx));
+    // What the delivery history records and shows: everything that crossed the
+    // wire, except the visitor's HubSpot cookie (see `scrubHutk`). Byte for byte
+    // the sent body whenever there is no cookie to hide.
+    const hutk = ctx.visit?.hutk;
+    const shown = scrubHutk(body, hutk);
     const timestamp = String(Math.floor(ctx.submittedAt / 1000));
     const headers: Record<string, string> = {
       'content-type': 'application/json',
@@ -190,7 +181,7 @@ export class WebhookDestination implements SubmissionDestination {
       // back — it usually names the exact reason a status code cannot. Read it
       // best-effort and bounded: a failing endpoint may answer with a whole
       // HTML error page, and none of this belongs in an outbox row.
-      const detail = await readErrorBody(res);
+      const detail = await readErrorBody(res, hutk);
       throw new WebhookHttpError(
         `webhook delivery failed: HTTP ${res.status}`,
         res.status,
@@ -207,7 +198,7 @@ export class WebhookDestination implements SubmissionDestination {
       driver: 'webhook',
       requestBody: shown,
       responseStatus: res.status,
-      responseBody: await readErrorBody(res),
+      responseBody: await readErrorBody(res, hutk),
     };
   }
 }
@@ -215,9 +206,14 @@ export class WebhookDestination implements SubmissionDestination {
 /** How much of the receiver's error body we keep. Enough to carry a JSON error. */
 const MAX_ERROR_BODY = 400;
 
-async function readErrorBody(res: Response): Promise<string | null> {
+/**
+ * The receiver's answer, as the delivery history keeps it. A receiver may echo
+ * the request, cookie included, so the cookie is hidden here, and before the
+ * cut, which could otherwise keep a piece of it.
+ */
+async function readErrorBody(res: Response, hutk: string | undefined): Promise<string | null> {
   try {
-    const text = (await res.text()).trim();
+    const text = scrubHutk((await res.text()).trim(), hutk);
     if (!text) return null;
     return text.length > MAX_ERROR_BODY ? `${text.slice(0, MAX_ERROR_BODY)}…` : text;
   } catch {

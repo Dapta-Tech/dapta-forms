@@ -1,5 +1,6 @@
 import { propertiesFor } from '@quill/types';
 import { dayMidnightMs } from '../day';
+import { scrubHutk } from '../hutk';
 import type {
   DestinationContext,
   DestinationResult,
@@ -476,11 +477,11 @@ export class HubspotDestination implements SubmissionDestination {
       if (res.ok) return 'ok';
       const detail = await res.text().catch(() => '');
       this.logger.warn(
-        `[destination:hubspot] mirror form submit failed: HTTP ${res.status} ${withoutCookie(detail, hutk).slice(0, 200)}`,
+        `[destination:hubspot] mirror form submit failed: HTTP ${res.status} ${scrubHutk(detail, hutk).slice(0, 200)}`,
       );
       return res.status;
     } catch (err) {
-      this.logger.warn(`[destination:hubspot] mirror form submit error: ${withoutCookie(String(err), hutk)}`);
+      this.logger.warn(`[destination:hubspot] mirror form submit error: ${scrubHutk(String(err), hutk)}`);
       return 'error';
     }
   }
@@ -664,12 +665,6 @@ function visitContext(visit: DestinationVisit, fallbackName: string): MirrorSubm
     pageName: visit.pageName || fallbackName,
     pageId: visit.pageId,
   };
-}
-
-/** `text` with every occurrence of the visitor's cookie replaced: for anything logged. */
-function withoutCookie(text: string, hutk: string | undefined): string {
-  // The cookie is 32 hex characters (the API checked it), so it is safe as a pattern.
-  return hutk && /^[0-9a-f]+$/i.test(hutk) ? text.replace(new RegExp(hutk, 'gi'), '[hutk]') : text;
 }
 
 /** The Note engagement body: form name, submitted date, score/outcome, the page, fields. */
