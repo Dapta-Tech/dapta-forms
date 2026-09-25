@@ -408,6 +408,31 @@ describe('the visit in the outbox', () => {
     expect((JSON.parse(mirrorRow!.payload!) as { ctx: { visit: unknown } }).ctx.visit).toEqual(VISIT);
   });
 
+  it('snapshots the cookie only for the phase a destination sends it in', async () => {
+    const { hutk: _cookie, ...pageOnly } = VISIT;
+    const config = {
+      version: 1,
+      steps: [],
+      destinations: [
+        { type: 'webhook', enabled: true, settings: { url: 'https://acme.io/hook' } },
+        { type: 'hubspot', enabled: true, settings: { formActivity: true, formGuid: 'guid-1' } },
+      ],
+    };
+    const visitOf = async (kind: 'webhook' | 'hubspot', subjectUid: string) =>
+      (JSON.parse((await listOutbox(db, { kind, subjectUid }))[0]!.payload!) as { ctx: { visit: unknown } }).ctx.visit;
+
+    // A partial never posts the form submission, the one HubSpot call that
+    // takes the cookie, so HubSpot's partial snapshot keeps the page alone.
+    await destinations.enqueueSubmissionDeliveries({ ...input('sub-phase-partial', VISIT), phase: 'partial', config });
+    expect(await visitOf('hubspot', 'sub-phase-partial')).toEqual(pageOnly);
+    // A webhook sends the visit in every phase it fires for.
+    expect(await visitOf('webhook', 'sub-phase-partial')).toEqual(VISIT);
+
+    await destinations.enqueueSubmissionDeliveries({ ...input('sub-phase-complete', VISIT), config });
+    expect(await visitOf('hubspot', 'sub-phase-complete')).toEqual(VISIT);
+    expect(await visitOf('webhook', 'sub-phase-complete')).toEqual(VISIT);
+  });
+
   it('delivers a row enqueued before the visit existed exactly as before: no visit key at all', async () => {
     await destinations.enqueueSubmissionDeliveries(input('sub-legacy'));
     const [row] = await listOutbox(db, { kind: 'webhook', subjectUid: 'sub-legacy' });

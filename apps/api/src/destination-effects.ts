@@ -141,10 +141,10 @@ export class DestinationEffects {
           utm: extractUtm(input.data),
           // Only when there is one: without it the payload is byte for byte
           // what it was before the visit existed. The cookie goes only into
-          // the snapshot of a destination that sends it on.
+          // the snapshot of a destination that sends it on in this phase.
           ...(input.visit
             ? {
-                visit: destinationUsesHutk(destination) ? input.visit : withoutHutk(input.visit),
+                visit: destinationUsesHutk(destination, input.phase) ? input.visit : withoutHutk(input.visit),
                 ...(input.formTitle ? { formTitle: input.formTitle } : {}),
               }
             : {}),

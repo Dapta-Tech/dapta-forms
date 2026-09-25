@@ -1,15 +1,22 @@
-import { formDestinationSchema, type FormDestination, type SubmissionVisit } from '@quill/types';
+import {
+  destinationFiresForPhase,
+  formDestinationSchema,
+  type FormDestination,
+  type SubmissionVisit,
+} from '@quill/types';
 import { mirrorGuidFor } from './hubspot-portal';
 
 /**
- * Does this destination use the landing's HubSpot cookie (`hutk`)? A webhook
- * does (its envelope carries the visit), and a HubSpot destination does only
- * when it records the form submission, the one HubSpot call that accepts it.
+ * Does this destination send the landing's HubSpot cookie (`hutk`) on, in this
+ * phase? A webhook does in every phase it fires for: its envelope carries the
+ * visit. A HubSpot destination does only for a complete, and only when it
+ * records the form submission, the one HubSpot call that accepts the cookie; a
+ * partial never makes that call.
  */
-export function destinationUsesHutk(destination: FormDestination): boolean {
+export function destinationUsesHutk(destination: FormDestination, phase: 'partial' | 'complete'): boolean {
   if (destination.enabled === false) return false;
-  if (destination.type === 'webhook') return true;
-  return mirrorGuidFor(destination.settings) != null;
+  if (destination.type === 'webhook') return destinationFiresForPhase(destination, phase);
+  return phase === 'complete' && mirrorGuidFor(destination.settings) != null;
 }
 
 /** The visit without its cookie. */
@@ -32,7 +39,12 @@ export function hutkConsumed(config: unknown): boolean {
   if (!Array.isArray(destinations)) return false;
   return destinations.some((raw) => {
     const parsed = formDestinationSchema.safeParse(raw);
-    return parsed.success && destinationUsesHutk(parsed.data);
+    // Kept on the row for a later phase too: a complete that comes without a
+    // visit delivers the one its partial stored.
+    return (
+      parsed.success &&
+      (destinationUsesHutk(parsed.data, 'partial') || destinationUsesHutk(parsed.data, 'complete'))
+    );
   });
 }
 
