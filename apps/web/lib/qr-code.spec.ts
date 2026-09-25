@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { encode } from 'uqr';
 import { QR_EXPORT_PX, finishSvg, qrFilename, qrSvg } from './qr-code';
 
-const URL_ = 'http://localhost:3400/acme/me/tech-week-signup';
+const URL_ = 'http://localhost:3400/acme/f/tech-week-signup';
 
 describe('qrSvg', () => {
   it('carries a viewBox AND an explicit size, which Safari needs to draw it at all', () => {

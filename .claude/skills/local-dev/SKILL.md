@@ -16,7 +16,7 @@ pnpm dev              # builds packages, migrates + seeds SQLite, runs web + api
 ```
 
 - Web → http://localhost:3000 · API → http://localhost:4000/health
-- Seeded demo form → http://localhost:3000/acme/alex-rivera/lead-qualifier
+- Seeded demo form → http://localhost:3000/acme/f/lead-qualifier
 - DB file → `.data/dev.db` · emails print to the API log (`log-only`)
 
 `pnpm dev` always runs `db:setup` (migrate + seed) before the apps start, so the

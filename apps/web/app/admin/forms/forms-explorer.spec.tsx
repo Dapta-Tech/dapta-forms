@@ -61,7 +61,6 @@ function render(overrides: Partial<FormsExplorerProps> = {}) {
     ],
     folders: [{ id: "sales", name: "Sales", createdAt: 1, updatedAt: 1 }],
     accountCode: "acme",
-    handle: "alex",
     locale: "en",
     updatedByForm: { a: "Updated today", b: "Updated today" },
     labels,
@@ -142,7 +141,15 @@ describe("FormsExplorer", () => {
     ])
       expect(html).toContain(`data-testid="${id}"`);
     expect(html).toContain('data-testid="forms-search"');
-    expect(html).toContain('href="/acme/alex/lead-qualifier"');
+    expect(html).toContain('href="/acme/f/lead-qualifier"');
+  });
+
+  it("shows and opens every form at its neutral link, filed or unfiled", () => {
+    const html = render();
+    for (const slug of ["lead-qualifier", "survey"]) {
+      expect(html).toContain(`title="/acme/f/${slug}"`);
+      expect(html).toContain(`href="/acme/f/${slug}"`);
+    }
   });
 
   it("without folders it is the flat list: one section, no folder chrome", () => {
@@ -167,5 +174,6 @@ describe("FormsExplorer", () => {
 
     expect(html).not.toContain('data-testid="form-row-grip"');
     expect((html.match(/data-testid="form-row"/g) ?? []).length).toBe(1);
+    expect(html).toContain('href="/acme/f/survey"');
   });
 });

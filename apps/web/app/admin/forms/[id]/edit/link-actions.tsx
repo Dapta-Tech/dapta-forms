@@ -86,9 +86,9 @@ export function LinkActions({
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
-  // `/{accountCode}/{handle}/{slug}` split at the last separator: the prefix is
-  // fixed (it belongs to the workspace and the member, not to this form) and
-  // only the tail is editable.
+  // `/{accountCode}/f/{slug}` split at the last separator: the prefix is fixed
+  // (it belongs to the workspace, not to this form) and only the tail is
+  // editable.
   const cut = publicPath.lastIndexOf('/');
   const prefix = publicPath.slice(0, cut + 1);
   const slug = publicPath.slice(cut + 1);
@@ -256,8 +256,8 @@ export function LinkActions({
               {labels.renameLabel}
             </label>
             {/* The fixed part of the URL is shown, not editable: it names the
-                workspace and the member, so letting someone type over it here
-                would offer an edit this dialog cannot make. */}
+                workspace, so letting someone type over it here would offer an
+                edit this dialog cannot make. */}
             <div className="flex items-center rounded-md border border-input bg-background focus-within:ring-2 focus-within:ring-ring">
               <span className="shrink-0 truncate py-2 pl-3 font-mono text-xs text-muted-foreground">
                 {origin}

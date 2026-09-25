@@ -20,6 +20,11 @@ import { test, expect, type APIRequestContext } from '@playwright/test';
  *      so `?utm_source` is asserted rather than assumed. Next resolves this
  *      redirect on the client, so the crawler's half of it (the canonical tag)
  *      is asserted separately, without a browser.
+ *
+ * The current URL is always the neutral `/{accountCode}/f/{slug}`, and so is
+ * where a retired link lands, including one handed out before `f` existed,
+ * which names a member in the middle segment: the redirect never gives that
+ * name back.
  */
 
 const API = 'http://localhost:4400';
@@ -48,11 +53,20 @@ async function createForm(request: APIRequestContext, label: string, workerIndex
   return body;
 }
 
-/** Same derivation the editor page uses — never hardcode the account code. */
-async function publicPrefix(request: APIRequestContext) {
+async function whoAmI(request: APIRequestContext) {
   const res = await request.get(`${API}/v1/me`);
   expect(res.ok(), 'GET /v1/me should resolve the principal').toBeTruthy();
-  const me = (await res.json()) as { accountCode: string; handle: string | null };
+  return (await res.json()) as { accountCode: string; handle: string | null };
+}
+
+/** Same derivation the editor page uses; never hardcode the account code. */
+async function publicPrefix(request: APIRequestContext) {
+  return `/${(await whoAmI(request)).accountCode}/f`;
+}
+
+/** The prefix of a link handed out before the neutral one: the member's handle in the middle. */
+async function namedPrefix(request: APIRequestContext) {
+  const me = await whoAmI(request);
   return `/${me.accountCode}/${me.handle ?? 'me'}`;
 }
 
@@ -104,50 +118,57 @@ test.describe('V9 — rename a form public link', () => {
     expect(((await server.json()) as { slug: string }).slug).toBe(next);
   });
 
-  test('the previous link sends the visitor to the new one, query string intact', async ({
-    page,
-    request,
-  }, testInfo) => {
-    const form = await createForm(request, 'redirect', testInfo.workerIndex);
-    const prefix = await publicPrefix(request);
-    const next = freshSlug('redirect', testInfo.workerIndex);
+  for (const entry of ['neutral', 'named'] as const) {
+    test(`the previous ${entry} link sends the visitor to the new neutral one, query string intact`, async ({
+      page,
+      request,
+    }, testInfo) => {
+      const form = await createForm(request, `redirect-${entry}`, testInfo.workerIndex);
+      const prefix = await publicPrefix(request);
+      const next = freshSlug(`redirect-${entry}`, testInfo.workerIndex);
 
-    const renamed = await request.put(`${API}/v1/forms/${form.id}/slug`, { data: { slug: next } });
-    expect(renamed.ok(), 'PUT /v1/forms/:id/slug should rename').toBeTruthy();
+      const renamed = await request.put(`${API}/v1/forms/${form.id}/slug`, { data: { slug: next } });
+      expect(renamed.ok(), 'PUT /v1/forms/:id/slug should rename').toBeTruthy();
 
-    // The retired link, exactly as a campaign email would carry it.
-    await page.goto(`${prefix}/${form.slug}?utm_source=qa&utm_medium=email&lang=en`);
+      // The retired link, exactly as a campaign email would carry it: copied
+      // either from the neutral URL or, before it existed, with a handle.
+      const from = entry === 'neutral' ? prefix : await namedPrefix(request);
+      await page.goto(`${from}/${form.slug}?utm_source=qa&utm_medium=email&lang=en`);
 
-    // Waited for, not asserted outright: Next resolves this redirect on the
-    // client (see the note in the public page's `generateMetadata`), so the
-    // address bar changes a beat after load rather than during it.
-    await page.waitForURL(`${ORIGIN}${prefix}/${next}?utm_source=qa&utm_medium=email&lang=en`, {
-      timeout: 15_000,
+      // Waited for, not asserted outright: Next resolves this redirect on the
+      // client (see the note in the public page's `generateMetadata`), so the
+      // address bar changes a beat after load rather than during it.
+      await page.waitForURL(`${ORIGIN}${prefix}/${next}?utm_source=qa&utm_medium=email&lang=en`, {
+        timeout: 15_000,
+      });
+      // The query survived the hop. Losing it here is not hypothetical: the
+      // platform has already lost campaign attribution once to one of its own
+      // redirects, and `?embed=1` and `?step=N` ride the same path.
+      expect(new URL(page.url()).searchParams.get('utm_source')).toBe('qa');
+      // The form, not a 404: the alias resolved and the redirect carried through.
+      await expect(page.locator('.pf')).toBeVisible({ timeout: 15_000 });
     });
-    // The query survived the hop. Losing it here is not hypothetical: the
-    // platform has already lost campaign attribution once to one of its own
-    // redirects, and `?embed=1` and `?step=N` ride the same path.
-    expect(new URL(page.url()).searchParams.get('utm_source')).toBe('qa');
-    // The form, not a 404: the alias resolved and the redirect carried through.
-    await expect(page.locator('.pf')).toBeVisible({ timeout: 15_000 });
-  });
+  }
 
   test('the retired link names the canonical URL for anything that does not run scripts', async ({
     request,
   }, testInfo) => {
     const form = await createForm(request, 'canonical', testInfo.workerIndex);
     const prefix = await publicPrefix(request);
+    const named = await namedPrefix(request);
     const next = freshSlug('canonical', testInfo.workerIndex);
     await request.put(`${API}/v1/forms/${form.id}/slug`, { data: { slug: next } });
 
     // No browser: a crawler, a link checker or a social unfurler reading the
     // markup of the retired URL. The canonical tag is the only thing telling
-    // them which address is the real one.
-    const res = await request.get(`${ORIGIN}${prefix}/${form.slug}?utm_source=qa`);
+    // them which address is the real one. Fetched through an old named link,
+    // the hardest case: two things to correct at once.
+    const res = await request.get(`${ORIGIN}${named}/${form.slug}?utm_source=qa`);
     const html = await res.text();
     const canonical = html.match(/<link rel="canonical" href="([^"]+)"/)?.[1];
 
-    expect(canonical, 'points at the current slug').toContain(`${prefix}/${next}`);
+    expect(canonical, 'points at the current slug, under the neutral segment').toContain(`${prefix}/${next}`);
+    expect(canonical, 'and never at the handle it was reached through').not.toContain(`${named}/`);
     expect(canonical, 'and carries no campaign parameters').not.toContain('utm_');
   });
 

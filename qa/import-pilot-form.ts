@@ -180,7 +180,7 @@ async function main() {
     const created = await createForm(db, account.id, { name, config });
     if (!created.ok) throw new Error(`createForm failed: ${created.reason}`);
     console.log(`[import] created form "${name}" (${created.value.id})`);
-    console.log(`[import] public path: /${accountCode}/me/${created.value.slug}`);
+    console.log(`[import] public path: /${accountCode}/f/${created.value.slug}`);
   } finally {
     await db.close();
   }

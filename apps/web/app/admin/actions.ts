@@ -5,6 +5,7 @@ import { redirect, unstable_rethrow } from 'next/navigation';
 import { lockedOptionValues } from '@quill/engine';
 import { adminApi, ApiError } from '@/lib/admin-api';
 import { getLocale } from '@/lib/locale';
+import { publicFormPath } from '@/lib/public-form-path';
 
 /** Create a form and jump straight into its editor. */
 export async function createFormAction(formData: FormData): Promise<void> {
@@ -194,7 +195,7 @@ export async function renameFormSlugAction(
     return {
       ok: true,
       slug: form.slug,
-      publicPath: `/${me.accountCode}/${me.handle ?? 'me'}/${form.slug}`,
+      publicPath: publicFormPath(me.accountCode, form.slug),
     };
   } catch (e) {
     unstable_rethrow(e);

@@ -4,6 +4,7 @@ import { getMessages } from '@quill/shared';
 import { lockedOptionValues } from '@quill/engine';
 import { adminApi, ApiError } from '@/lib/admin-api';
 import { getLocale } from '@/lib/locale';
+import { publicFormPath } from '@/lib/public-form-path';
 import { FormEditor } from './form-editor';
 import { BuilderTour } from './_components/builder-tour';
 
@@ -23,7 +24,7 @@ export default async function EditFormPage({ params }: { params: Promise<{ id: s
     throw e;
   }
 
-  const publicPath = `/${me.accountCode}/${me.handle ?? 'me'}/${form.slug}`;
+  const publicPath = publicFormPath(me.accountCode, form.slug);
 
   return (
     <>

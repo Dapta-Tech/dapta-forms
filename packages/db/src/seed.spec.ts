@@ -44,6 +44,11 @@ describe('seed — the demo account and the first-run gate', () => {
     expect(Number(row?.onboarding_completed_at)).toBeGreaterThan(0);
   });
 
+  it('prints the demo form at the neutral link the builder hands out, not at the owner handle', async () => {
+    const { formPath } = await seed(db);
+    expect(formPath).toBe('/acme/f/lead-qualifier');
+  });
+
   it('reseeds to the same state — the stamp is not a one-time accident', async () => {
     await seed(db);
     const { accountCode } = await seed(db);
