@@ -340,7 +340,11 @@ test.describe('embedded, with spam protection on', () => {
     await stubChallenge(page);
     await serveLanding(page, `${baseURL}${form.path}?embed=1`);
     await page.goto(LANDING_URL);
-    // A person's pace: strict mode refuses a complete under 2 s from the view.
+    // A person's pace: strict mode refuses a complete under 2 s from the view,
+    // and the view is recorded when the (lazy) frame hydrates, not at goto.
+    const frame = page.frameLocator('iframe[data-dapta-forms]');
+    await expect(frame.locator('.pf-v__question input').first()).toBeVisible();
+    await hydrated(page);
     await page.waitForTimeout(2_100);
     await answerOnePage(page);
 
