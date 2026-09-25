@@ -938,7 +938,9 @@ export function ResponseDetailView({
             <>
               <dt className="text-muted-foreground">{labels.pageRow}</dt>
               <dd className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1" data-testid="response-page">
-                {/* A title wraps between its words; the icon follows its last one. */}
+                {/* A title wraps between its words; the icon follows its last one.
+                    The host rides inside the link, so what reads as the page
+                    is never only a title the respondent's browser supplied. */}
                 {detail.page.href ? (
                   <a
                     href={detail.page.href}
@@ -948,6 +950,14 @@ export function ResponseDetailView({
                     className="min-w-0 break-words font-medium text-primary underline decoration-primary-edge/40 underline-offset-4 hover:decoration-primary-edge"
                   >
                     {detail.page.text}
+                    {detail.page.host ? (
+                      <>
+                        <span aria-hidden className="mx-1.5 text-faint">
+                          ·
+                        </span>
+                        <span className="font-normal text-muted-foreground">{detail.page.host}</span>
+                      </>
+                    ) : null}
                     <i aria-hidden className="pi pi-external-link ml-1.5 inline-block" style={{ fontSize: 11 }} />
                   </a>
                 ) : (

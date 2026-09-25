@@ -254,7 +254,7 @@ describe('ResponseDetailView', () => {
   });
 
   it('shows the page it was given on as a link, with the HubSpot chip only when the cookie came', () => {
-    const page = { href: 'https://landing.example.com/offer', text: 'Home insurance' };
+    const page = { href: 'https://landing.example.com/offer', text: 'Home insurance', host: 'landing.example.com' };
     const withCookie = renderToStaticMarkup(
       <ResponseDetailView detail={detail({ page, hubspotCookie: true })} formId="form_1" labels={labels} fileLabels={fileLabels} />,
     );
@@ -263,11 +263,14 @@ describe('ResponseDetailView', () => {
     expect(row).toContain('href="https://landing.example.com/offer"');
     expect(row).toContain('rel="noopener noreferrer"');
     expect(row).toContain('Home insurance');
+    // The real host inside the link, beside a title anyone could have written.
+    const link = row.match(/<a [\s\S]*?<\/a>/)![0];
+    expect(link).toMatch(/Home insurance[\s\S]*landing\.example\.com/);
     expect(row).toContain('HubSpot cookie received');
 
     const withoutCookie = renderToStaticMarkup(
       <ResponseDetailView
-        detail={detail({ page: { href: null, text: 'landing.example.com' }, hubspotCookie: false })}
+        detail={detail({ page: { href: null, text: 'landing.example.com', host: null }, hubspotCookie: false })}
         formId="form_1"
         labels={labels}
         fileLabels={fileLabels}

@@ -232,15 +232,33 @@ describe('buildResponseDetail', () => {
       ...over,
     });
 
-    it('names the page by its title and links it', () => {
+    it('names the page by its title, links it, and says where the link really goes', () => {
       const d = buildResponseDetail(row({ visit: visit() }), steps, opts);
-      expect(d.page).toEqual({ href: 'https://landing.example.com/offer?utm_source=fb', text: 'Home insurance' });
+      expect(d.page).toEqual({
+        href: 'https://landing.example.com/offer?utm_source=fb',
+        text: 'Home insurance',
+        host: 'landing.example.com',
+      });
       expect(d.hubspotCookie).toBe(true);
     });
 
-    it('names an untitled page by its host', () => {
+    it('never lets a title stand alone over a link it could disguise', () => {
+      // The title is whatever the respondent's browser reported.
+      const d = buildResponseDetail(
+        row({ visit: visit({ pageName: 'Acme pricing', pageUri: 'https://phish.example/login' }) }),
+        steps,
+        opts,
+      );
+      expect(d.page).toEqual({ href: 'https://phish.example/login', text: 'Acme pricing', host: 'phish.example' });
+    });
+
+    it('names an untitled page by its host, once', () => {
       const d = buildResponseDetail(row({ visit: visit({ pageName: null, hubspotCookie: false }) }), steps, opts);
-      expect(d.page).toEqual({ href: 'https://landing.example.com/offer?utm_source=fb', text: 'landing.example.com' });
+      expect(d.page).toEqual({
+        href: 'https://landing.example.com/offer?utm_source=fb',
+        text: 'landing.example.com',
+        host: null,
+      });
       expect(d.hubspotCookie).toBe(false);
     });
 
@@ -252,7 +270,7 @@ describe('buildResponseDetail', () => {
       );
       expect(d.page).toBeNull();
       const named = buildResponseDetail(row({ visit: visit({ pageUri: 'javascript:alert(1)' }) }), steps, opts);
-      expect(named.page).toEqual({ href: null, text: 'Home insurance' });
+      expect(named.page).toEqual({ href: null, text: 'Home insurance', host: null });
     });
 
     it('has no Page row for a response that reported none, older ones included', () => {

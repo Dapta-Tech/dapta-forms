@@ -39,8 +39,13 @@ export interface ResponseDetail {
    * The page it was given on (#199): the landing that embeds the form, or the
    * form's own link. Named by its title, else its host; a link only when it is
    * a web address. Null when none was reported (every older response).
+   *
+   * `host` is the link's real host, shown beside a title: the title is
+   * whatever the respondent's browser reported, so on its own it could dress
+   * any link up as a trusted page. Null when the text already is the host, or
+   * there is no link.
    */
-  page: { href: string | null; text: string } | null;
+  page: { href: string | null; text: string; host: string | null } | null;
   /**
    * The visitor's HubSpot tracking cookie arrived with this response. Received,
    * not accepted: HubSpot decides on the visit later. The cookie never gets here.
@@ -121,8 +126,9 @@ function pageView(visit: SubmissionView['visit']): ResponseDetail['page'] {
       host = null;
     }
   }
-  const text = visit.pageName?.trim() || host;
-  return text ? { href, text } : null;
+  const title = visit.pageName?.trim();
+  if (title) return { href, text: title, host };
+  return host ? { href, text: host, host: null } : null;
 }
 
 /** The `utm` map riding inside the answers, as ordered string pairs. */
