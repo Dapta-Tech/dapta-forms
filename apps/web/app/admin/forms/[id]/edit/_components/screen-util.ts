@@ -131,10 +131,12 @@ export function moveStep(steps: FormStep[], from: number, to: number): FormStep[
  * A question shown again (hidden switched off) that sits between two
  * questions of one screen goes back into it. Hidden, it was transparent and
  * lost its id; without this, un-hiding it would cut the screen it used to
- * belong to in two. One that can never share a screen (a file upload, say,
- * hidden and dropped inside one) goes right after the screen instead, as a
- * drag would put it. One that sat at a screen's edge stays out: nothing says
- * which side it belonged to, and the settings hint warns before hiding.
+ * belong to in two. One that cannot join (one that can never share a screen,
+ * like a file upload hidden and dropped inside one, or any question when the
+ * screen already shows `MAX_SCREEN_SIZE`) goes right after the screen
+ * instead, as a drop would put it. One that sat at a screen's edge stays out:
+ * nothing says which side it belonged to, and the settings hint warns before
+ * hiding.
  */
 export function rejoinUnhidden(steps: FormStep[], index: number): FormStep[] {
   const step = steps[index];
@@ -144,7 +146,8 @@ export function rejoinUnhidden(steps: FormStep[], index: number): FormStep[] {
   while (below < steps.length && steps[below]?.hidden) below += 1;
   const id = steps[above]?.screenGroup;
   if (!id || steps[below]?.screenGroup !== id) return steps;
-  if (!canShareScreen(step)) {
+  const full = steps.filter((s) => s.screenGroup === id && !s.hidden).length >= MAX_SCREEN_SIZE;
+  if (!canShareScreen(step) || full) {
     const arr = [...steps];
     arr.splice(index, 1);
     let end = index - 1;
@@ -155,8 +158,6 @@ export function rejoinUnhidden(steps: FormStep[], index: number): FormStep[] {
     arr.splice(end + 1, 0, step);
     return arr;
   }
-  // No cap here: the question already sat inside the screen, and leaving it
-  // out would cut the screen in two. The cap only gates new joins.
   return steps.map((s, i) => (i === index ? { ...s, screenGroup: id } : s));
 }
 

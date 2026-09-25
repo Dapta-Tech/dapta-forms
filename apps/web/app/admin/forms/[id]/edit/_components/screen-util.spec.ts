@@ -125,10 +125,15 @@ describe('rejoinUnhidden', () => {
     expect(keysOf(rejoinUnhidden(steps, 2))).toEqual(['a:s', 'b:s', 'c:s', 'd:s', 'f']);
   });
 
-  it('restores it even to a full screen: it already sat inside it, and leaving it out would cut it', () => {
+  it('holds the cap: shown again inside a full screen, it lands right after it, as a drop would', () => {
     const full = Array.from({ length: MAX_SCREEN_SIZE }, (_, i) => q(`q${i}`, 'big'));
     const steps = [...full.slice(0, 5), q('h'), ...full.slice(5)];
-    expect(rejoinUnhidden(steps, 5)[5]!.screenGroup).toBe('big');
+    const placed = rejoinUnhidden(steps, 5);
+    expect(placed.filter((s) => s.screenGroup === 'big')).toHaveLength(MAX_SCREEN_SIZE);
+    expect(keysOf(placed.slice(MAX_SCREEN_SIZE))).toEqual(['h']);
+    // One short of the cap, it goes back in.
+    const nine = [...full.slice(0, 5), q('h'), ...full.slice(5, MAX_SCREEN_SIZE - 1)];
+    expect(rejoinUnhidden(nine, 5)[5]!.screenGroup).toBe('big');
   });
 });
 
