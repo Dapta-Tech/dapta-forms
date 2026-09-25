@@ -11,6 +11,20 @@ export async function deleteSubmissionAction(formId: string, submissionId: strin
 }
 
 /**
+ * Delete the table's selection, then refresh the table. The failure comes back
+ * as a value, so the selection bar can say so and keep the selection.
+ */
+export async function deleteSubmissionsAction(formId: string, ids: string[]): Promise<{ ok: boolean }> {
+  try {
+    await adminApi.deleteSubmissions(formId, ids);
+  } catch {
+    return { ok: false };
+  }
+  revalidatePath(`/admin/forms/${formId}/submissions`);
+  return { ok: true };
+}
+
+/**
  * Open one uploaded file: a short-lived download URL, plus a second one to show
  * it in place when the API judged its type safe to render.
  *

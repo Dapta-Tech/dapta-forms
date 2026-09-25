@@ -383,8 +383,32 @@ export async function dailyStartSessions(
 
 export type SubmissionStatus = 'all' | 'completed' | 'partial';
 
-export interface SubmissionQuery extends DateRange {
+/** Row orders the table offers. Every one ends on `id`, so a page boundary never shuffles ties. */
+export const SUBMISSION_SORTS = ['newest', 'oldest', 'score_desc', 'score_asc'] as const;
+export type SubmissionSort = (typeof SUBMISSION_SORTS)[number];
+
+/**
+ * The one filter the submissions table, its CSV export and the Summary share,
+ * so the three always describe the same set of responses. `from`/`to` bound
+ * `started_at`; `scoreMin`/`scoreMax` bound the score, inclusive.
+ *
+ * `answers` narrows by what people chose: answer key to the values accepted
+ * for it. Within one key the values widen (any of them matches, and a
+ * multi-select matches when any of its picks is one of them); across keys
+ * they narrow (every key must match). The keys MUST already be checked
+ * against the form's own choice steps by the caller: they reach SQL as bound
+ * parameters, never spliced, but only a caller that knows the form can tell a
+ * real question from a made-up key.
+ */
+export interface SubmissionFilter extends DateRange {
   status?: SubmissionStatus;
+  scoreMin?: number | null;
+  scoreMax?: number | null;
+  answers?: Readonly<Record<string, readonly string[]>>;
+}
+
+export interface SubmissionQuery extends SubmissionFilter {
+  sort?: SubmissionSort;
   limit?: number;
   offset?: number;
 }
@@ -394,6 +418,80 @@ function statusClause(status?: SubmissionStatus): SQL {
   if (status === 'completed') return sql`AND completed_at IS NOT NULL`;
   if (status === 'partial') return sql`AND completed_at IS NULL AND partial_at IS NOT NULL`;
   return sql``;
+}
+
+/**
+ * One answer key matches any of `values`: a single stored value equal to one
+ * of them, or a stored array (a multi-select) holding at least one. Both sides
+ * are trimmed, the way the Summary counts a choice. The key and every value
+ * are bound parameters. Postgres wraps a scalar in an array so one expansion
+ * reads both shapes; SQLite's `json_each` already yields a scalar as one row.
+ * The key is compared as a value, never written into a JSON path, so a key
+ * with a quote or a backslash in it matches the same on both dialects.
+ */
+function answerMatch(db: Db, key: string, values: readonly string[]): SQL {
+  const list = sql.join(
+    values.map((v) => sql`${v.trim()}`),
+    sql`, `,
+  );
+  if (db.dialect === 'postgres') {
+    const field = sql`submission.data -> (${key}::text)`;
+    return sql`EXISTS (
+      SELECT 1 FROM jsonb_array_elements_text(
+        CASE WHEN jsonb_typeof(${field}) = 'array' THEN ${field} ELSE jsonb_build_array(${field}) END
+      ) AS picked(v)
+      WHERE TRIM(picked.v) IN (${list})
+    )`;
+  }
+  return sql`EXISTS (
+    SELECT 1 FROM json_each(submission.data) AS field
+    JOIN json_each(CASE WHEN field.type = 'array' THEN field.value ELSE json_array(field.value) END) AS picked
+    WHERE field.key = ${key} AND field.type NOT IN ('object', 'null')
+      AND picked.type NOT IN ('object', 'null') AND TRIM(CAST(picked.value AS TEXT)) IN (${list})
+  )`;
+}
+
+/**
+ * A score bound as the integer column compares it: rounded inward (`>= 5.5`
+ * is `>= 6`, `<= 5.5` is `<= 5`) and held to int32. Postgres binds the value
+ * as an integer, so `5.5` or `1e20` as-is fails the whole query.
+ */
+function scoreBound(v: number | null | undefined, side: 'min' | 'max'): number | null {
+  if (v == null || !Number.isFinite(v)) return null;
+  const whole = side === 'min' ? Math.ceil(v) : Math.floor(v);
+  return Math.min(2_147_483_647, Math.max(-2_147_483_648, whole));
+}
+
+/**
+ * `WHERE` for a form's submissions under `f`: the form, the status, the
+ * `started_at` window, the score bounds and every answer filter. A key with no
+ * values left is no filter on that key, never "match nothing".
+ */
+function filterWhere(db: Db, formId: string, f: SubmissionFilter = {}): SQL {
+  const parts: SQL[] = [sql`form_id = ${formId}`];
+  const scoreMin = scoreBound(f.scoreMin, 'min');
+  const scoreMax = scoreBound(f.scoreMax, 'max');
+  if (scoreMin != null) parts.push(sql`score >= ${scoreMin}`);
+  if (scoreMax != null) parts.push(sql`score <= ${scoreMax}`);
+  for (const [key, values] of Object.entries(f.answers ?? {})) {
+    const wanted = values.filter((v) => v.trim() !== '');
+    if (wanted.length > 0) parts.push(answerMatch(db, key, wanted));
+  }
+  return sql`WHERE ${sql.join(parts, sql` AND `)} ${statusClause(f.status)} ${andRange(sql`started_at`, f)}`;
+}
+
+/** `ORDER BY` for a sort, newest first when absent. */
+function orderBy(sort: SubmissionSort = 'newest'): SQL {
+  switch (sort) {
+    case 'oldest':
+      return sql`ORDER BY started_at ASC, id ASC`;
+    case 'score_desc':
+      return sql`ORDER BY score DESC, started_at DESC, id DESC`;
+    case 'score_asc':
+      return sql`ORDER BY score ASC, started_at DESC, id DESC`;
+    default:
+      return sql`ORDER BY started_at DESC, id DESC`;
+  }
 }
 
 function mapSubmission(r: Record<string, unknown>): SubmissionRow {
@@ -410,9 +508,9 @@ function mapSubmission(r: Record<string, unknown>): SubmissionRow {
 }
 
 /**
- * A page of a form's submissions, newest first, with the total matching the
- * filter (before pagination) so the UI can render page counts. `status` narrows
- * to complete/partial; `from`/`to` bound `started_at`.
+ * A page of a form's submissions in `q.sort` order (newest first by default),
+ * with the total matching the filter (before pagination) so the UI can render
+ * page counts.
  */
 export async function querySubmissions(
   db: Db,
@@ -421,7 +519,220 @@ export async function querySubmissions(
 ): Promise<{ items: SubmissionRow[]; total: number; limit: number; offset: number }> {
   const limit = Math.min(Math.max(q.limit ?? 25, 1), 200);
   const offset = Math.max(q.offset ?? 0, 0);
-  const where = sql`WHERE form_id = ${formId} ${statusClause(q.status)} ${andRange(sql`started_at`, q)}`;
+  const where = filterWhere(db, formId, q);
+
+  const totalRow = await db.get<{ n: number | string }>(
+    sql`SELECT COUNT(*) AS n FROM submission ${where}`,
+  );
+  const rows = await db.all<Record<string, unknown>>(
+    sql`SELECT * FROM submission ${where}
+        ${orderBy(q.sort)}
+        LIMIT ${limit} OFFSET ${offset}`,
+  );
+  return { items: rows.map(mapSubmission), total: Number(totalRow?.n ?? 0), limit, offset };
+}
+
+/**
+ * Every submission for a form matching the filter, in the table's order, with
+ * no pagination (used by the CSV export, which must include the full result
+ * set, exactly as the table lists it).
+ */
+export async function allSubmissionsForExport(
+  db: Db,
+  formId: string,
+  q: Omit<SubmissionQuery, 'limit' | 'offset'> & {
+    /** Only these submissions ("Export selected"). An empty list exports nothing. */
+    ids?: readonly string[];
+  } = {},
+): Promise<SubmissionRow[]> {
+  // `IN ()` is a syntax error on both dialects; no id asked for is no row.
+  if (q.ids?.length === 0) return [];
+  const only = q.ids ? sql`AND id IN (${bindIds(q.ids)})` : sql``;
+  const rows = await db.all<Record<string, unknown>>(
+    sql`SELECT * FROM submission ${filterWhere(db, formId, q)} ${only} ${orderBy(q.sort)}`,
+  );
+  return rows.map(mapSubmission);
+}
+
+/** A submission as the Summary reads it: the answers and the three instants, nothing else. */
+export interface SummarySubmissionRow {
+  id: string;
+  data: unknown;
+  startedAt: number;
+  completedAt: number | null;
+  partialAt: number | null;
+}
+
+/**
+ * Every submission matching the filter, newest first (the table's order), with
+ * only the columns the Summary aggregates. Unpaginated like the CSV export,
+ * since every response counts, but it leaves out what the Summary never reads.
+ */
+export async function submissionsForSummary(
+  db: Db,
+  formId: string,
+  q: SubmissionFilter = {},
+): Promise<SummarySubmissionRow[]> {
+  const rows = await db.all<Record<string, unknown>>(
+    sql`SELECT id, data, started_at, completed_at, partial_at FROM submission ${filterWhere(db, formId, q)}
+        ORDER BY started_at DESC, id DESC`,
+  );
+  return rows.map((r) => ({
+    id: String(r.id),
+    data: parseJsonColumn(r.data, {}),
+    startedAt: Number(r.started_at),
+    completedAt: r.completed_at == null ? null : Number(r.completed_at),
+    partialAt: r.partial_at == null ? null : Number(r.partial_at),
+  }));
+}
+
+// --- Header filter counts (the column menus) ---------------------------------
+
+/** What the column menus count, over every response of a form, straight from SQL. */
+export interface SubmissionFacetCounts {
+  total: number;
+  completed: number;
+  partial: number;
+  /**
+   * Per question key asked for: how many responses answered it (at least one
+   * non-blank pick), and how many responses picked each trimmed value. A
+   * response counts once per value even if a stored list repeats it.
+   */
+  choices: Record<string, { answered: number; values: Record<string, number> }>;
+}
+
+/**
+ * The picks of the `keys` answers, one row per (response, key, trimmed pick).
+ * A single stored value and a multi-select list read the same; blanks, nulls
+ * and objects are no pick. The key is compared as a value (bound), never
+ * written into a JSON path.
+ */
+function picksFrom(db: Db, formId: string, keys: readonly string[]): SQL {
+  const list = sql.join(
+    keys.map((k) => sql`${k}`),
+    sql`, `,
+  );
+  if (db.dialect === 'postgres') {
+    return sql`FROM submission
+      CROSS JOIN LATERAL jsonb_each(
+        CASE WHEN jsonb_typeof(submission.data) = 'object' THEN submission.data ELSE '{}'::jsonb END
+      ) AS field(key, value)
+      CROSS JOIN LATERAL jsonb_array_elements(
+        CASE WHEN jsonb_typeof(field.value) = 'array' THEN field.value ELSE jsonb_build_array(field.value) END
+      ) AS picked(value)
+      WHERE submission.form_id = ${formId} AND field.key IN (${list})
+        AND jsonb_typeof(picked.value) IN ('string', 'number', 'boolean')
+        AND TRIM(picked.value #>> '{}') <> ''`;
+  }
+  return sql`FROM submission
+    JOIN json_each(submission.data) AS field
+    JOIN json_each(CASE WHEN field.type = 'array' THEN field.value ELSE json_array(field.value) END) AS picked
+    WHERE submission.form_id = ${formId} AND field.key IN (${list})
+      AND picked.type NOT IN ('object', 'array', 'null')
+      AND TRIM(CAST(picked.value AS TEXT)) <> ''`;
+}
+
+/**
+ * The header filters' counts for a form, aggregated in the database: the
+ * statuses by the table's rule, and per choice question in `keys` the
+ * responses that answered it and that picked each value. Nothing but counts
+ * leaves the database, however many responses there are.
+ */
+export async function submissionFacetCounts(
+  db: Db,
+  formId: string,
+  keys: readonly string[],
+): Promise<SubmissionFacetCounts> {
+  const pick =
+    db.dialect === 'postgres' ? sql`TRIM(picked.value #>> '{}')` : sql`TRIM(CAST(picked.value AS TEXT))`;
+  const [totals, values, answered] = await Promise.all([
+    db.get<{ total: number | string; completed: number | string | null; partial: number | string | null }>(
+      sql`SELECT COUNT(*) AS total,
+            SUM(CASE WHEN completed_at IS NOT NULL THEN 1 ELSE 0 END) AS completed,
+            SUM(CASE WHEN completed_at IS NULL AND partial_at IS NOT NULL THEN 1 ELSE 0 END) AS partial
+          FROM submission WHERE form_id = ${formId}`,
+    ),
+    keys.length === 0
+      ? Promise.resolve([])
+      : db.all<{ key: string; value: string; n: number | string }>(
+          sql`SELECT field.key AS key, ${pick} AS value, COUNT(DISTINCT submission.id) AS n
+              ${picksFrom(db, formId, keys)}
+              GROUP BY field.key, ${pick}`,
+        ),
+    keys.length === 0
+      ? Promise.resolve([])
+      : db.all<{ key: string; n: number | string }>(
+          sql`SELECT field.key AS key, COUNT(DISTINCT submission.id) AS n
+              ${picksFrom(db, formId, keys)}
+              GROUP BY field.key`,
+        ),
+  ]);
+  const choices: SubmissionFacetCounts['choices'] = {};
+  for (const key of keys) choices[key] = { answered: 0, values: {} };
+  for (const r of answered) choices[r.key]!.answered = Number(r.n);
+  for (const r of values) choices[r.key]!.values[r.value] = Number(r.n);
+  return {
+    total: Number(totals?.total ?? 0),
+    completed: Number(totals?.completed ?? 0),
+    partial: Number(totals?.partial ?? 0),
+    choices,
+  };
+}
+
+// --- Per-question answer search (Summary tab) --------------------------------
+
+export interface AnswerSearchQuery extends SubmissionFilter {
+  /** Matched anywhere in the answer, ignoring case. Blank lists every answer. */
+  query?: string;
+  limit?: number;
+  offset?: number;
+}
+
+/** `%needle%` for LIKE, with the needle's own `%`, `_` and `\` taken literally. */
+function containsPattern(q: string): string {
+  return `%${q.toLowerCase().replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+}
+
+/**
+ * One answer key's stored text, as SQL. The key is always a bound parameter,
+ * never spliced into the statement: Postgres takes it as the `->>` operand, and
+ * SQLite as a JSON path (`$."key"`). A key with a quote in it cannot be written
+ * as a SQLite path, so it matches nothing rather than a different key.
+ */
+function answerFieldText(db: Db, field: string): SQL {
+  if (db.dialect === 'postgres') return sql`COALESCE(data ->> (${field}::text), '')`;
+  if (field.includes('"')) return sql`''`;
+  return sql`COALESCE(json_extract(data, ${`$."${field}"`}), '')`;
+}
+
+/**
+ * A page of one question's answers, newest first (the table's order), with the
+ * number that match before pagination. `fields` are the answer keys the
+ * question stores its value under: its own key, or a name step's sub-fields,
+ * which are joined with a space the way the name reads.
+ *
+ * The match is a case-insensitive substring. Accents are NOT folded: "gomez"
+ * does not find "Gómez". Case folding is `lower()` on both dialects, which on
+ * Postgres covers every letter and on SQLite only A to Z; the needle is lowered
+ * in JS, so an accented capital only differs between the two when it is stored
+ * in capitals.
+ */
+export async function searchSubmissionAnswers(
+  db: Db,
+  formId: string,
+  fields: string[],
+  q: AnswerSearchQuery = {},
+): Promise<{ items: SubmissionRow[]; total: number; limit: number; offset: number }> {
+  const limit = Math.min(Math.max(q.limit ?? 10, 1), 50);
+  const offset = Math.max(q.offset ?? 0, 0);
+  if (fields.length === 0) return { items: [], total: 0, limit, offset };
+  const text = sql.join(
+    fields.map((f) => answerFieldText(db, f)),
+    sql` || ' ' || `,
+  );
+  const needle = q.query?.trim() ?? '';
+  const match = needle ? sql`AND lower(${text}) LIKE ${containsPattern(needle)} ESCAPE '\\'` : sql``;
+  const where = sql`${filterWhere(db, formId, q)} AND TRIM(${text}) <> '' ${match}`;
 
   const totalRow = await db.get<{ n: number | string }>(
     sql`SELECT COUNT(*) AS n FROM submission ${where}`,
@@ -432,23 +743,6 @@ export async function querySubmissions(
         LIMIT ${limit} OFFSET ${offset}`,
   );
   return { items: rows.map(mapSubmission), total: Number(totalRow?.n ?? 0), limit, offset };
-}
-
-/**
- * Every submission for a form matching the filter, newest first — no pagination
- * (used by the CSV export, which must include the full result set). Bounded by
- * the same status/date filter as the table.
- */
-export async function allSubmissionsForExport(
-  db: Db,
-  formId: string,
-  q: Omit<SubmissionQuery, 'limit' | 'offset'> = {},
-): Promise<SubmissionRow[]> {
-  const where = sql`WHERE form_id = ${formId} ${statusClause(q.status)} ${andRange(sql`started_at`, q)}`;
-  const rows = await db.all<Record<string, unknown>>(
-    sql`SELECT * FROM submission ${where} ORDER BY started_at DESC, id DESC`,
-  );
-  return rows.map(mapSubmission);
 }
 
 // --- Account-scoped submission delete ----------------------------------------
@@ -471,7 +765,8 @@ export type DeleteSubmissionResult = 'deleted' | 'absent' | 'forbidden';
  * 204 a genuine already-gone row while 404-ing a cross-account id.
  */
 /**
- * One submission's answers, but only if the caller's account owns it.
+ * One submission, but only if the caller's account owns it: its answers, plus
+ * the status, dates and score the response panel shows around them.
  *
  * The JOIN is the whole point: a submission id is guessable enough that reading
  * one by id alone would let any signed-in account read any other account's
@@ -482,18 +777,14 @@ export async function getSubmissionAnswersForAccount(
   db: Db,
   accountId: string,
   submissionId: string,
-): Promise<{ formId: string; data: unknown } | null> {
-  const row = await db.get<{ form_id: string; data: unknown }>(
-    sql`SELECT s.form_id, s.data FROM submission s
+): Promise<SubmissionRow | null> {
+  const row = await db.get<Record<string, unknown>>(
+    sql`SELECT s.* FROM submission s
         JOIN form f ON f.id = s.form_id
         WHERE s.id = ${submissionId} AND f.account_id = ${accountId} LIMIT 1`,
   );
-  if (!row) return null;
-  return {
-    formId: row.form_id,
-    // Postgres hands back parsed jsonb; SQLite hands back the JSON text.
-    data: typeof row.data === 'string' ? JSON.parse(row.data) : row.data,
-  };
+  // Postgres hands back parsed jsonb; SQLite hands back the JSON text.
+  return row ? mapSubmission(row) : null;
 }
 
 export async function deleteSubmissionForAccount(
@@ -515,6 +806,50 @@ export async function deleteSubmissionForAccount(
     sql`SELECT id FROM submission WHERE id = ${submissionId} LIMIT 1`,
   );
   return exists ? 'forbidden' : 'absent';
+}
+
+/** The most submissions one bulk delete (or one "Export selected") may name. */
+export const MAX_BULK_SUBMISSIONS = 100;
+
+/** A list of ids as bound parameters for `IN (...)`. Never call it with an empty list. */
+function bindIds(ids: readonly string[]): SQL {
+  return sql.join(
+    ids.map((id) => sql`${id}`),
+    sql`, `,
+  );
+}
+
+/**
+ * Delete several submissions of one form, but ONLY the ones the account owns:
+ * the same scope as `deleteSubmissionForAccount`, enforced in the same SQL
+ * join, so an id from another account (or another form) is never touched, and
+ * one forged id in the list does not spoil the rest.
+ *
+ * One statement, so a failure deletes nothing rather than half the selection.
+ * Returns how many rows were actually removed. That count only ever covers the
+ * caller's own rows, so it says nothing about whether a foreign id exists.
+ * Duplicates collapse; more than `MAX_BULK_SUBMISSIONS` distinct ids throws
+ * (the controller answers 400 before it gets here).
+ */
+export async function deleteSubmissionsForAccount(
+  db: Db,
+  accountId: string,
+  formId: string,
+  ids: readonly string[],
+): Promise<{ deleted: number }> {
+  const unique = [...new Set(ids)];
+  if (unique.length === 0) return { deleted: 0 };
+  if (unique.length > MAX_BULK_SUBMISSIONS) {
+    throw new RangeError(`At most ${MAX_BULK_SUBMISSIONS} submissions per call.`);
+  }
+  const gone = await db.all<{ id: string }>(
+    sql`DELETE FROM submission
+        WHERE id IN (${bindIds(unique)})
+          AND form_id = ${formId}
+          AND form_id IN (SELECT id FROM form WHERE id = ${formId} AND account_id = ${accountId})
+        RETURNING id`,
+  );
+  return { deleted: gone.length };
 }
 
 /**

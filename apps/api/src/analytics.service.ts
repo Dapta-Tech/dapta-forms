@@ -1,6 +1,19 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { localDayIndex, resolveTimeZone, utcOffsetSegments } from '@quill/shared';
-import { resolveFormLayout } from '@quill/engine';
+import {
+  isInputlessStep,
+  resolveFormLayout,
+  isFilterableChoiceStep,
+  summarizeFacets,
+  summarizeSubmissions,
+  summaryAnswer,
+  summaryAnswerFields,
+  type FormStep,
+  type SubmissionFacets,
+  type SubmissionsSummary,
+  type SummaryAnswer,
+  type SummaryRow,
+} from '@quill/engine';
 import type { Db } from '@quill/db';
 import {
   uniqueViewCount,
@@ -16,10 +29,18 @@ import {
   querySubmissions,
   allSubmissionsForExport,
   deleteSubmissionForAccount,
+  deleteSubmissionsForAccount,
+  searchSubmissionAnswers,
+  submissionsForSummary,
+  submissionFacetCounts,
+  type AnswerSearchQuery,
+  type SummarySubmissionRow,
+  type SubmissionRow,
   getFormById,
   type CompletedSubmission,
   type DateRange,
   type DeleteSubmissionResult,
+  type SubmissionFilter,
   type SubmissionQuery,
   firstEventAt,
   type DayBucketing,
@@ -33,6 +54,15 @@ import type {
   TrendPoint,
 } from '@quill/types';
 import { DB } from './tokens';
+
+/** A stored submission as the summary reads it: answers, and the instant the table shows. */
+function summaryRow(r: SummarySubmissionRow | SubmissionRow): SummaryRow {
+  return {
+    id: r.id,
+    data: (r.data ?? {}) as Record<string, unknown>,
+    at: r.completedAt ?? r.partialAt ?? r.startedAt,
+  };
+}
 
 /** Round to one decimal place (e.g. a completion/drop-off percentage). */
 function pct1(numerator: number, denominator: number): number {
@@ -298,9 +328,55 @@ export class AnalyticsService {
     };
   }
 
-  /** Every submission matching the filter (CSV export — no pagination). */
-  exportSubmissions(formId: string, q: Omit<SubmissionQuery, 'limit' | 'offset'>) {
+  /** Every submission matching the filter (CSV export: no pagination), or only `ids`. */
+  exportSubmissions(
+    formId: string,
+    q: Omit<SubmissionQuery, 'limit' | 'offset'> & { ids?: readonly string[] },
+  ) {
     return allSubmissionsForExport(this.db, formId, q);
+  }
+
+  /**
+   * The Summary tab: every answering step of `steps` summarized over the
+   * submissions matching the filter (the table's own filter object, so a
+   * filtered summary describes exactly the filtered rows).
+   */
+  async summary(formId: string, steps: FormStep[], q: SubmissionFilter): Promise<SubmissionsSummary> {
+    const rows = await submissionsForSummary(this.db, formId, q);
+    return summarizeSubmissions(steps, rows.map(summaryRow));
+  }
+
+  /**
+   * The header filters' counts, over every response of the form. Counted in
+   * the database: the table asks for them on every load and every check, so
+   * they must not cost a read of every response's answers.
+   */
+  async facets(formId: string, steps: FormStep[]): Promise<SubmissionFacets> {
+    const keys = steps.filter(isFilterableChoiceStep).map((s) => s.key);
+    return summarizeFacets(steps, await submissionFacetCounts(this.db, formId, keys));
+  }
+
+  /**
+   * A page of one text question's answers matching `q.query`, newest first,
+   * each with who answered and when. `steps` is the whole form, for the
+   * respondent; `step` is the question searched.
+   */
+  async searchAnswers(
+    formId: string,
+    steps: FormStep[],
+    step: FormStep,
+    q: AnswerSearchQuery,
+  ): Promise<{ items: SummaryAnswer[]; total: number; limit: number; offset: number }> {
+    const page = await searchSubmissionAnswers(this.db, formId, summaryAnswerFields(step), q);
+    const answering = steps.filter((s) => !isInputlessStep(s));
+    return {
+      items: page.items
+        .map((r) => summaryAnswer(answering, step, summaryRow(r)))
+        .filter((a): a is SummaryAnswer => a != null),
+      total: page.total,
+      limit: page.limit,
+      offset: page.offset,
+    };
   }
 
   /**
@@ -310,5 +386,10 @@ export class AnalyticsService {
    */
   deleteSubmission(accountId: string, submissionId: string): Promise<DeleteSubmissionResult> {
     return deleteSubmissionForAccount(this.db, accountId, submissionId);
+  }
+
+  /** Delete the account's own submissions among `ids`, on one form. Foreign ids are left alone. */
+  deleteSubmissions(accountId: string, formId: string, ids: readonly string[]): Promise<{ deleted: number }> {
+    return deleteSubmissionsForAccount(this.db, accountId, formId, ids);
   }
 }

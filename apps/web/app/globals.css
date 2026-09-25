@@ -113,6 +113,71 @@
   --text-3xl--line-height: 36px;
 }
 
+/* Motion for the side drawer (the response panel). The panel slides in from the
+   right edge on a decelerating curve and leaves on a faster accelerating one;
+   the backdrop fades with it. `response-in` is the content swap when walking
+   from one response to the next, so the change reads as movement instead of a
+   flash. The reduced-motion rule below flattens all of them.
+
+   The entrances fill `backwards`, never `both`: a `both` fill keeps the last
+   keyframe's `transform` on the element after it lands, and a transformed
+   ancestor becomes the containing block of every `position: fixed` inside it.
+   The delete confirm and the file preview are rendered inside the panel, so
+   they were clipped to the panel's 576px instead of covering the viewport.
+   Only the exit keeps `both`, since the panel unmounts the moment it ends. */
+@theme {
+  --animate-drawer-in: drawer-in 340ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
+  --animate-drawer-out: drawer-out 220ms cubic-bezier(0.55, 0, 1, 0.45) both;
+  --animate-backdrop-in: backdrop-in 260ms ease-out backwards;
+  --animate-backdrop-out: backdrop-out 220ms ease-in both;
+  --animate-response-in: response-in 280ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
+
+  @keyframes drawer-in {
+    from {
+      transform: translateX(100%);
+      opacity: 0.6;
+    }
+    to {
+      transform: translateX(0);
+      opacity: 1;
+    }
+  }
+  @keyframes drawer-out {
+    from {
+      transform: translateX(0);
+    }
+    to {
+      transform: translateX(100%);
+    }
+  }
+  @keyframes backdrop-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+  @keyframes backdrop-out {
+    from {
+      opacity: 1;
+    }
+    to {
+      opacity: 0;
+    }
+  }
+  @keyframes response-in {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+}
+
 /* Default every element's border-color to the token, the shadcn contract. This
    MUST live in @layer base: an UNLAYERED `*` rule outranks Tailwind's layered
    utilities, so `border-destructive` / `border-input` / `border-primary` would

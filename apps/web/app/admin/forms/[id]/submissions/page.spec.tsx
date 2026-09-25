@@ -27,12 +27,14 @@ import type { SubmissionsPage as SubmissionsPageData } from '@quill/types';
 const getForm = vi.fn();
 const listSubmissions = vi.fn();
 const me = vi.fn();
+const getSubmissionFacets = vi.fn(async () => ({ total: 0, completed: 0, partial: 0, choices: {} }));
 
 vi.mock('@/lib/admin-api', () => ({
   adminApi: {
     getForm: (...a: unknown[]) => getForm(...a),
     listSubmissions: (...a: unknown[]) => listSubmissions(...a),
     me: (...a: unknown[]) => me(...a),
+    getSubmissionFacets: (...a: unknown[]) => getSubmissionFacets(...(a as [])),
   },
   isAdminRole: (role: string) => role === 'owner' || role === 'admin',
   // Declared in the factory: `vi.mock` is hoisted above every top-level binding,
@@ -96,7 +98,13 @@ function textOf(node: unknown): string {
   if (node == null || typeof node === 'boolean') return '';
   if (typeof node === 'string' || typeof node === 'number') return String(node);
   if (Array.isArray(node)) return node.map(textOf).join(' ');
-  if (isElement(node)) return textOf(node.props?.children);
+  // The pager rides into the viewer as a prop (it moves into the full-screen
+  // sheet with the table), and a column heading takes its question as `text`,
+  // so both are read alongside the children.
+  if (isElement(node)) {
+    const p = node.props as { children?: unknown; pager?: unknown; text?: unknown };
+    return [textOf(p.children), textOf(p.pager), textOf(p.text)].join(' ');
+  }
   return '';
 }
 
@@ -109,8 +117,8 @@ const submission = (id: string) => ({
   completedAt: '2024-05-01T10:05:00.000Z',
 });
 
-/** One submissions query as the page actually issued it. */
-type Query = { formId: string; status: string; limit: number; offset: number };
+/** One submissions query as the page actually issued it. No status is every response. */
+type Query = { formId: string; status: string | undefined; limit: number; offset: number };
 
 /**
  * Every submissions query issued so far in the current test, in order.
@@ -134,7 +142,7 @@ const formLookupsSoFar = (): unknown[] => getForm.mock.calls.map(([id]) => id);
 
 const query = (over: Partial<Query> = {}): Query => ({
   formId: FORM_ID,
-  status: 'all',
+  status: undefined,
   limit: PAGE_SIZE,
   offset: 0,
   ...over,
@@ -153,17 +161,21 @@ async function visit(opts: {
   offset: number;
   total: number;
   items?: number;
+  /** `?size=` as typed in the address bar. */
+  size?: string;
 }): Promise<{
+  tree?: unknown;
   redirectedTo: string | null;
   text: string;
   queries: Query[];
   formLookups: unknown[];
 }> {
-  const items = opts.items ?? Math.max(0, Math.min(PAGE_SIZE, opts.total - opts.offset));
+  const limit = [25, 50, 100].includes(Number(opts.size)) ? Number(opts.size) : PAGE_SIZE;
+  const items = opts.items ?? Math.max(0, Math.min(limit, opts.total - opts.offset));
   const page: SubmissionsPageData = {
     items: Array.from({ length: items }, (_, i) => submission(`s${opts.offset + i}`)),
     total: opts.total,
-    limit: PAGE_SIZE,
+    limit,
     offset: opts.offset,
   } as unknown as SubmissionsPageData;
 
@@ -175,6 +187,7 @@ async function visit(opts: {
     params: Promise.resolve({ id: FORM_ID }),
     searchParams: Promise.resolve({
       ...(opts.status ? { status: opts.status } : {}),
+      ...(opts.size ? { size: opts.size } : {}),
       offset: String(opts.offset),
     }),
   });
@@ -186,6 +199,7 @@ async function visit(opts: {
   try {
     const tree = await (data.type as (p: unknown) => Promise<unknown>)(data.props);
     return {
+      tree,
       redirectedTo: null,
       text: textOf(tree),
       queries: queriesSoFar(),
@@ -221,8 +235,10 @@ async function reenter(url: string, total: number) {
   if (status !== null && status !== 'completed' && status !== 'partial') {
     throw new Error(`redirect wrote an unusable status: ${status}`);
   }
+  const size = target.searchParams.get('size');
   return visit({
     ...(status ? { status } : {}),
+    ...(size ? { size } : {}),
     offset: Number(target.searchParams.get('offset') ?? 0),
     total,
   });
@@ -306,8 +322,10 @@ describe('submissions pagination — offset past the last row', () => {
     expect(queries).toEqual([query({ offset: 0 })]);
   });
 
-  it('still shows the empty state when the filter matches nothing', async () => {
-    // total 0 has no last page to clamp to; the empty state owns this case.
+  it('keeps the table, with a way out, when the filter matches nothing', async () => {
+    // total 0 has no last page to clamp to. With a filter on it is the filter
+    // that matched nothing: the headings stay so it can be changed, and the
+    // one row says so.
     const { redirectedTo, text, queries } = await visit({
       status: 'completed',
       offset: 25,
@@ -315,9 +333,64 @@ describe('submissions pagination — offset past the last row', () => {
     });
 
     expect(redirectedTo).toBeNull();
-    expect(text).toContain('No submissions yet');
-    // Still the filtered question — the empty state is not a fallback to `all`.
+    expect(text).toContain('No responses match these filters');
+    expect(text).not.toContain('No submissions yet');
+    // Still the filtered question: the empty state is not a fallback to every response.
     expect(queries).toEqual([query({ status: 'completed', offset: 25 })]);
+  });
+
+  it('shows the empty state for a form with no responses at all', async () => {
+    const { redirectedTo, text } = await visit({ offset: 0, total: 0 });
+    expect(redirectedTo).toBeNull();
+    expect(text).toContain('No submissions yet');
+  });
+});
+
+/** Every element of the tree that satisfies `match`, depth-first, props included. */
+function findAll(node: unknown, match: (el: AnyElement) => boolean, out: AnyElement[] = []): AnyElement[] {
+  if (Array.isArray(node)) {
+    for (const child of node) findAll(child, match, out);
+    return out;
+  }
+  if (!isElement(node)) return out;
+  if (match(node)) out.push(node);
+  const p = node.props as { children?: unknown; pager?: unknown };
+  findAll(p.children, match, out);
+  findAll(p.pager, match, out);
+  return out;
+}
+
+describe('submissions page size (`?size=`)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  const pagerHrefs = (tree: unknown) =>
+    findAll(tree, (el) => typeof (el.props as { href?: unknown }).href === 'string' && 'className' in el.props).map(
+      (el) => (el.props as { href: string }).href,
+    );
+
+  it('asks the API for the chosen size and keeps it on every page link', async () => {
+    const { tree, text, queries } = await visit({ size: '50', offset: 50, total: 160 });
+    expect(queries).toEqual([query({ limit: 50, offset: 50 })]);
+    expect(text).toContain('51–100 of 160');
+    expect(pagerHrefs(tree)).toEqual(['?size=50&offset=0', '?size=50&offset=100']);
+    const [select] = findAll(tree, (el) => (el.props as { label?: unknown }).label === 'Rows per page');
+    expect((select?.props as { value?: unknown } | undefined)?.value).toBe(50);
+  });
+
+  it('reads an unknown size as the default, and leaves the default out of the links', async () => {
+    const { tree, queries } = await visit({ size: '37', offset: 25, total: 80 });
+    expect(queries).toEqual([query({ offset: 25 })]);
+    expect(pagerHrefs(tree)).toEqual(['?offset=0', '?offset=50']);
+  });
+
+  it('keeps the size across the clamp past the last row', async () => {
+    const { redirectedTo } = await visit({ size: '100', offset: 300, total: 150, items: 0 });
+    expect(redirectedTo).toBe(`/admin/forms/${FORM_ID}/submissions?size=100&offset=100`);
+    const back = await reenter(redirectedTo!, 150);
+    expect(back.redirectedTo).toBeNull();
+    expect(back.text).toContain('101–150 of 150');
   });
 });
 
@@ -462,5 +535,191 @@ describe('cells agree with the CSV export', () => {
     expect(text).toContain('✓');
     expect(text).not.toContain('false');
     expect(text).toContain('2026-09-03 09:30 GMT-5');
+  });
+});
+
+describe('response panel', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  /** Render the data child for one URL and return its element tree. */
+  async function tree(searchParams: Record<string, string>): Promise<unknown> {
+    getForm.mockResolvedValue({
+      id: FORM_ID,
+      config: {
+        version: 1,
+        steps: [{ key: 'story', type: 'textarea', question: 'Tell us', required: false }],
+      },
+    });
+    listSubmissions.mockResolvedValue({
+      items: [
+        { ...submission('s0'), data: { story: 'A long answer.\nWith a second line.' } },
+        submission('s1'),
+      ],
+      total: 2,
+      limit: PAGE_SIZE,
+      offset: 0,
+    });
+    me.mockResolvedValue({ accountId: 'acc-1', role: 'owner', timezone: 'UTC' });
+    const shell = await SubmissionsRoute({
+      params: Promise.resolve({ id: FORM_ID }),
+      searchParams: Promise.resolve(searchParams),
+    });
+    const data = find(shell, (el) => el.type === Suspense)?.props?.children as AnyElement;
+    return (data.type as (p: unknown) => Promise<unknown>)(data.props);
+  }
+
+  const viewer = (t: unknown) =>
+    find(t, (el) => typeof el.props === 'object' && el.props !== null && 'items' in el.props) as
+      | ReactElement<{ items: Array<{ id: string; answers: unknown[] }>; initialId?: string }>
+      | undefined;
+
+  it('hands the panel every response on the page, with the full answer', async () => {
+    const v = viewer(await tree({}));
+    expect(v?.props.items.map((i) => i.id)).toEqual(['s0', 's1']);
+    expect(v?.props.items[0]!.answers).toEqual([
+      { key: 'story', label: 'Tell us', kind: 'text', text: 'A long answer.\nWith a second line.', long: true },
+    ]);
+    expect(v?.props.initialId).toBeUndefined();
+  });
+
+  it('opens the response named in ?response=', async () => {
+    expect(viewer(await tree({ response: 's1' }))?.props.initialId).toBe('s1');
+  });
+
+  it('opens the full-screen sheet from ?view=sheet, and only from that value', async () => {
+    const sheet = (t: unknown) => (viewer(t)?.props as { initialSheet?: boolean }).initialSheet;
+    expect(sheet(await tree({ view: 'sheet' }))).toBe(true);
+    expect(sheet(await tree({}))).toBe(false);
+    expect(sheet(await tree({ view: 'grid' }))).toBe(false);
+  });
+
+  it('names each answer cell after its question, so a click lands the panel on it', async () => {
+    const t = await tree({});
+    const keys: string[] = [];
+    const walk = (n: unknown) => {
+      if (Array.isArray(n)) return n.forEach(walk);
+      if (!isElement(n)) return;
+      const p = n.props as Record<string, unknown>;
+      if (n.type === 'td' && typeof p['data-answer-key'] === 'string') keys.push(p['data-answer-key']);
+      walk(p.children);
+    };
+    walk(t);
+    expect(keys).toEqual(['story', 'story']);
+  });
+
+  it('marks every row with its response and gives it a keyboard way in', async () => {
+    const t = await tree({});
+    const rows: string[] = [];
+    const buttons: string[] = [];
+    const walk = (n: unknown) => {
+      if (Array.isArray(n)) return n.forEach(walk);
+      if (!isElement(n)) return;
+      const p = n.props as Record<string, unknown>;
+      if (n.type === 'tr' && typeof p['data-response-id'] === 'string') rows.push(p['data-response-id']);
+      if (n.type === 'button' && typeof p['data-open-response'] === 'string') buttons.push(p['data-open-response']);
+      walk(p.children);
+    };
+    walk(t);
+    expect(rows).toEqual(['s0', 's1']);
+    expect(buttons).toEqual(['s0', 's1']);
+  });
+});
+
+/**
+ * The header filters: read from the URL, sent to the API as one filter, and
+ * carried by everything that links out of the table (the CSV, the pager, the
+ * Summary tab), so each describes the same responses.
+ */
+describe('header filters', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  const STEPS = [
+    {
+      key: 'kind',
+      type: 'dropdown',
+      question: 'Company type',
+      options: [
+        { value: 'llc', label: 'Multi-member LLC' },
+        { value: 'corp', label: 'Corporation' },
+      ],
+    },
+    { key: 'notes', type: 'text', question: 'Notes' },
+  ];
+
+  async function renderShell(sp: Record<string, string | string[]>, total = 60) {
+    getForm.mockResolvedValue({ id: FORM_ID, config: { version: 1, steps: STEPS } });
+    getSubmissionFacets.mockResolvedValue({
+      total: 90,
+      completed: 70,
+      partial: 20,
+      choices: { kind: [{ value: 'llc', label: 'Multi-member LLC', count: 40, percent: 44 }] },
+    } as never);
+    listSubmissions.mockResolvedValue({
+      items: Array.from({ length: Math.min(PAGE_SIZE, total) }, (_, i) => submission(`s${i}`)),
+      total,
+      limit: PAGE_SIZE,
+      offset: 0,
+    });
+    me.mockResolvedValue({ accountId: 'acc-1', role: 'owner', timezone: 'America/Bogota' });
+    const shell = await SubmissionsRoute({ params: Promise.resolve({ id: FORM_ID }), searchParams: Promise.resolve(sp) });
+    const boundary = find(shell, (el) => el.type === Suspense);
+    const child = boundary?.props?.children as AnyElement;
+    const tree = await (child.type as (p: unknown) => Promise<unknown>)(child.props);
+    return { shell, boundary: boundary!, tree };
+  }
+
+  it('asks the API for the filtered rows, with answer keys it can check against the form', async () => {
+    await renderShell({ 'f.kind': ['llc', 'corp'], 'f.notes': 'x', status: 'completed', sort: 'oldest' });
+    expect(listSubmissions).toHaveBeenCalledWith(FORM_ID, {
+      status: 'completed',
+      from: undefined,
+      to: undefined,
+      scoreMin: undefined,
+      scoreMax: undefined,
+      // A text question is not a filter: it never reaches the API.
+      answers: JSON.stringify({ kind: ['llc', 'corp'] }),
+      sort: 'oldest',
+      limit: PAGE_SIZE,
+      offset: 0,
+    });
+  });
+
+  it('exports exactly what is shown, and keeps the filter on the pager and the Summary tab', async () => {
+    const { shell, tree } = await renderShell({ 'f.kind': 'llc', sort: 'oldest', offset: '0' });
+    const exportLink = find(shell, (el) => typeof (el.props as { href?: string }).href === 'string' && String((el.props as { href: string }).href).includes('/export'));
+    const href = new URL((exportLink!.props as { href: string }).href, 'https://x.test');
+    expect(href.searchParams.get('answers')).toBe(JSON.stringify({ kind: ['llc'] }));
+    expect(href.searchParams.get('sort')).toBe('oldest');
+
+    const tabs = find(shell, (el) => (el.props as { active?: string }).active === 'responses');
+    expect((tabs!.props as { query: string }).query).toBe('?f.kind=llc&sort=oldest');
+
+    const viewer = find(tree, (el) => (el.props as { pager?: unknown }).pager !== undefined);
+    const next = find((viewer!.props as { pager: unknown }).pager, (el) => typeof (el.props as { href?: string }).href === 'string');
+    expect((next!.props as { href: string }).href).toBe('?f.kind=llc&sort=oldest&offset=25');
+  });
+
+  it('keys the table by the filter, so a new filter is a new table', async () => {
+    const a = (await renderShell({ 'f.kind': 'llc' })).boundary.key;
+    const b = (await renderShell({ 'f.kind': 'corp' })).boundary.key;
+    expect(a).not.toBe(b);
+  });
+
+  it('hands the column menus the unfiltered counts and the filter they edit', async () => {
+    const { shell } = await renderShell({ 'f.kind': 'llc', status: 'partial' });
+    const host = find(shell, (el) => Array.isArray((el.props as { columns?: unknown }).columns));
+    const props = host!.props as {
+      columns: { id: string; kind: string; options?: unknown[] }[];
+      filter: { statuses: string[]; answers: Record<string, string[]> };
+      statusCounts: unknown;
+      total: number;
+    };
+    expect(props.columns.map((c) => c.id)).toEqual(['date', 'status', 'score', 'q:kind']);
+    expect(props.columns[3]!.options).toHaveLength(1);
+    expect(props.filter).toMatchObject({ statuses: ['partial'], answers: { kind: ['llc'] } });
+    expect(props.statusCounts).toEqual({ completed: 70, partial: 20 });
+    expect(props.total).toBe(90);
   });
 });

@@ -1262,13 +1262,10 @@ export interface FormsMessages {
     submissions: {
       title: string;
       subtitle: string;
-      statusAll: string;
       /** The shared workspace zone, editable from the table by admins. */
       timezoneLabel: string;
       timezoneHint: string;
       timezoneReadOnly: string;
-      statusCompleted: string;
-      statusPartial: string;
       badgeCompleted: string;
       badgePartial: string;
       colSubmitted: string;
@@ -1303,6 +1300,128 @@ export interface FormsMessages {
       na: string;
       error: string;
       retry: string;
+      /** The Summary tab: the form's responses read question by question. */
+      summary: {
+        tabSummary: string;
+        tabResponses: string;
+        /** The Summary | Responses switch, for screen readers. */
+        tabsLabel: string;
+        /** Under a multi-select's bars: why they can add past 100%. */
+        multiNote: string;
+        average: string;
+        /** A range bar of a slider's distribution: "{from}–{to}". */
+        range: string;
+        filesUploaded: string;
+        meetingsBooked: string;
+        noAnswers: string;
+        latest: string;
+        searchLabel: string;
+        searchPlaceholder: string;
+        searchClear: string;
+        /** "Matches: {n}" */
+        matches: string;
+        /** "{query}" is what was typed. */
+        noMatches: string;
+        showMore: string;
+        /** Who answered, when the form asked no name, email or phone. */
+        anonymous: string;
+        openAnswer: string;
+        openFailed: string;
+        searchFailed: string;
+      };
+      /** The side panel that shows one response in full. */
+      viewResponse: string;
+      /** The panel title when the form asked for no name, email or phone. */
+      responseTitle: string;
+      prevResponse: string;
+      nextResponse: string;
+      closeResponse: string;
+      /** "{n} of {total}": where the open response sits in the current page. */
+      responsePosition: string;
+      answersTitle: string;
+      detailsTitle: string;
+      /** A step the respondent never reached (a partial response). */
+      noAnswer: string;
+      colStarted: string;
+      responseId: string;
+      utmTitle: string;
+      /** "{n} of {total} answered": how much of the form this response covers. */
+      answeredCount: string;
+      /** The table as a full-screen sheet, over the whole app. */
+      sheetOpen: string;
+      sheetClose: string;
+      /** First column header when the form collects a contact: who answered, then when. */
+      colResponse: string;
+      /** The row actions column, for screen readers (it has no visible heading). */
+      colActions: string;
+      /** "Score {score}": the score chip in the response panel header. */
+      scoreValue: string;
+      /** Table tools: how many rows a page shows (25, 50, 100). */
+      pageSize: string;
+      /** The checkbox on one row, and the one in the header that takes the whole page. */
+      selectResponse: string;
+      selectPage: string;
+      /** "{n} selected", on the bar that appears with a selection. `One` is n = 1. */
+      selectedCount: string;
+      selectedCountOne: string;
+      /** Download only the selected rows, same CSV as the full export. */
+      exportSelected: string;
+      clearSelection: string;
+      /** "Delete {n} responses?": the confirm for a bulk delete. `One` is n = 1. */
+      bulkDeleteTitle: string;
+      bulkDeleteTitleOne: string;
+      /** Worded to read the same for one response or many. */
+      bulkDeleteBody: string;
+      bulkDeleteFailed: string;
+      /** Tooltip on a question column's resize handle. */
+      resizeColumn: string;
+      /** The filters and sort in the table's column headings, and the chips above it. */
+      filters: {
+        /** The funnel button's name: "Filter by {column}". */
+        filterColumn: string;
+        /** The same with a filter on: "Filter by {column}, {n} active". `One` is n = 1. */
+        filterColumnActive: string;
+        filterColumnActiveOne: string;
+        /** Search box on top of a long option list. */
+        searchOptions: string;
+        noOptions: string;
+        /** Removes this column's filter (and sort). */
+        clear: string;
+        clearAll: string;
+        close: string;
+        sortTitle: string;
+        sortNewest: string;
+        sortOldest: string;
+        sortScoreDesc: string;
+        sortScoreAsc: string;
+        /** The date window's section in the menu. */
+        rangeTitle: string;
+        rangeToday: string;
+        range7d: string;
+        range30d: string;
+        rangeCustom: string;
+        rangeFrom: string;
+        rangeTo: string;
+        scoreRange: string;
+        scoreMin: string;
+        scoreMax: string;
+        /** "{n} of {total} responses": how many the filters leave. */
+        showing: string;
+        /** The chip list, for screen readers. */
+        chipsLabel: string;
+        /** "Remove filter: {filter}" on a chip's x. */
+        removeChip: string;
+        /** Chip values. `{from}–{to}` is a range. */
+        chipBetween: string;
+        chipAtLeast: string;
+        chipAtMost: string;
+        chipFrom: string;
+        chipUntil: string;
+        noMatchesTitle: string;
+        noMatchesBody: string;
+        /** Title on a Summary bar: "See the responses that chose {option}". */
+        showResponses: string;
+      };
     };
     integrations: {
       title: string;
@@ -2920,12 +3039,9 @@ export const en: FormsMessages = {
     submissions: {
       title: 'Submissions',
       subtitle: 'Every response to this form.',
-      statusAll: 'All',
       timezoneLabel: 'Workspace timezone',
       timezoneHint: 'Dates below are read in this zone. It is shared by the whole workspace.',
       timezoneReadOnly: 'Only an admin can change it.',
-      statusCompleted: 'Completed',
-      statusPartial: 'Partial',
       badgeCompleted: 'Completed',
       badgePartial: 'Partial',
       colSubmitted: 'Submitted',
@@ -2954,6 +3070,94 @@ export const en: FormsMessages = {
       na: '',
       error: 'Couldn’t load submissions.',
       retry: 'Try again',
+      summary: {
+        tabSummary: 'Summary',
+        tabResponses: 'Responses',
+        tabsLabel: 'Submissions views',
+        multiNote: 'People could choose more than one option, so the percentages can add up to more than 100%.',
+        average: 'Average',
+        range: '{from}–{to}',
+        filesUploaded: 'Files uploaded',
+        meetingsBooked: 'Meetings booked',
+        noAnswers: 'Nobody has answered this question yet.',
+        latest: 'Latest answers',
+        searchLabel: 'Search the answers to this question',
+        searchPlaceholder: 'Search answers',
+        searchClear: 'Clear search',
+        matches: 'Matches: {n}',
+        noMatches: 'No answer contains “{query}”.',
+        showMore: 'Show more',
+        anonymous: 'Anonymous',
+        openAnswer: 'Open this response',
+        openFailed: 'That response could not be opened. It may have been deleted.',
+        searchFailed: 'The search did not finish. Try again.',
+      },
+      viewResponse: 'View response',
+      responseTitle: 'Anonymous response',
+      prevResponse: 'Previous response',
+      nextResponse: 'Next response',
+      closeResponse: 'Close',
+      responsePosition: '{n} of {total}',
+      answersTitle: 'Answers',
+      detailsTitle: 'Details',
+      noAnswer: 'No answer',
+      colStarted: 'Started',
+      responseId: 'Response ID',
+      utmTitle: 'Campaign (UTM)',
+      answeredCount: '{n} of {total} answered',
+      sheetOpen: 'Full screen',
+      sheetClose: 'Exit full screen',
+      colResponse: 'Response',
+      colActions: 'Actions',
+      scoreValue: 'Score {score}',
+      pageSize: 'Rows per page',
+      selectResponse: 'Select this response',
+      selectPage: 'Select every response on this page',
+      selectedCount: '{n} selected',
+      selectedCountOne: '1 selected',
+      exportSelected: 'Export CSV',
+      clearSelection: 'Clear',
+      bulkDeleteTitle: 'Delete {n} responses?',
+      bulkDeleteTitleOne: 'Delete 1 response?',
+      bulkDeleteBody: 'This cannot be undone.',
+      bulkDeleteFailed: 'Could not delete. Try again.',
+      resizeColumn: 'Drag to resize. Double-click to reset.',
+      filters: {
+        filterColumn: 'Filter by {column}',
+        filterColumnActive: 'Filter by {column}, {n} active',
+        filterColumnActiveOne: 'Filter by {column}, 1 active',
+        searchOptions: 'Search options',
+        noOptions: 'No option matches.',
+        clear: 'Clear',
+        clearAll: 'Clear all',
+        close: 'Close',
+        sortTitle: 'Sort',
+        sortNewest: 'Newest first',
+        sortOldest: 'Oldest first',
+        sortScoreDesc: 'Highest first',
+        sortScoreAsc: 'Lowest first',
+        rangeTitle: 'Date',
+        rangeToday: 'Today',
+        range7d: 'Last 7 days',
+        range30d: 'Last 30 days',
+        rangeCustom: 'Custom range',
+        rangeFrom: 'From',
+        rangeTo: 'To',
+        scoreRange: 'Score range',
+        scoreMin: 'Min',
+        scoreMax: 'Max',
+        showing: '{n} of {total} responses',
+        chipsLabel: 'Active filters',
+        removeChip: 'Remove filter: {filter}',
+        chipBetween: '{from}–{to}',
+        chipAtLeast: '{min} or more',
+        chipAtMost: '{max} or less',
+        chipFrom: 'From {from}',
+        chipUntil: 'Until {to}',
+        noMatchesTitle: 'No responses match these filters',
+        noMatchesBody: 'Remove a filter, or clear them all, to see more.',
+        showResponses: 'See the responses that chose {option}',
+      },
     },
     integrations: {
       title: 'Integrations',
@@ -4536,12 +4740,9 @@ export const es: FormsMessages = {
     submissions: {
       title: 'Respuestas',
       subtitle: 'Todas las respuestas a este formulario.',
-      statusAll: 'Todas',
       timezoneLabel: 'Zona horaria del workspace',
       timezoneHint: 'Las fechas de abajo se leen en esta zona. La comparte todo el workspace.',
       timezoneReadOnly: 'Solo un administrador puede cambiarla.',
-      statusCompleted: 'Completadas',
-      statusPartial: 'Parciales',
       badgeCompleted: 'Completada',
       badgePartial: 'Parcial',
       colSubmitted: 'Enviada',
@@ -4570,6 +4771,94 @@ export const es: FormsMessages = {
       na: '',
       error: 'No se pudieron cargar las respuestas.',
       retry: 'Reintentar',
+      summary: {
+        tabSummary: 'Resumen',
+        tabResponses: 'Respuestas',
+        tabsLabel: 'Vistas de respuestas',
+        multiNote: 'Se podía elegir más de una opción, así que los porcentajes pueden sumar más de 100%.',
+        average: 'Promedio',
+        range: '{from}–{to}',
+        filesUploaded: 'Archivos subidos',
+        meetingsBooked: 'Reuniones agendadas',
+        noAnswers: 'Nadie ha respondido esta pregunta todavía.',
+        latest: 'Últimas respuestas',
+        searchLabel: 'Busca en las respuestas a esta pregunta',
+        searchPlaceholder: 'Buscar respuestas',
+        searchClear: 'Borrar búsqueda',
+        matches: 'Coincidencias: {n}',
+        noMatches: 'Ninguna respuesta contiene «{query}».',
+        showMore: 'Ver más',
+        anonymous: 'Anónimo',
+        openAnswer: 'Abrir esta respuesta',
+        openFailed: 'No se pudo abrir esa respuesta. Puede que la hayan eliminado.',
+        searchFailed: 'La búsqueda no terminó. Intenta de nuevo.',
+      },
+      viewResponse: 'Ver respuesta',
+      responseTitle: 'Respuesta anónima',
+      prevResponse: 'Respuesta anterior',
+      nextResponse: 'Respuesta siguiente',
+      closeResponse: 'Cerrar',
+      responsePosition: '{n} de {total}',
+      answersTitle: 'Respuestas',
+      detailsTitle: 'Detalles',
+      noAnswer: 'Sin respuesta',
+      colStarted: 'Iniciada',
+      responseId: 'ID de respuesta',
+      utmTitle: 'Campaña (UTM)',
+      answeredCount: '{n} de {total} respondidas',
+      sheetOpen: 'Pantalla completa',
+      sheetClose: 'Salir de pantalla completa',
+      colResponse: 'Respuesta',
+      colActions: 'Acciones',
+      scoreValue: 'Puntaje {score}',
+      pageSize: 'Filas por página',
+      selectResponse: 'Seleccionar esta respuesta',
+      selectPage: 'Seleccionar todas las respuestas de esta página',
+      selectedCount: '{n} seleccionadas',
+      selectedCountOne: '1 seleccionada',
+      exportSelected: 'Exportar CSV',
+      clearSelection: 'Limpiar',
+      bulkDeleteTitle: '¿Eliminar {n} respuestas?',
+      bulkDeleteTitleOne: '¿Eliminar 1 respuesta?',
+      bulkDeleteBody: 'No se puede deshacer.',
+      bulkDeleteFailed: 'No se pudo eliminar. Inténtalo de nuevo.',
+      resizeColumn: 'Arrastra para cambiar el ancho. Doble clic para restablecer.',
+      filters: {
+        filterColumn: 'Filtrar por {column}',
+        filterColumnActive: 'Filtrar por {column}, {n} activos',
+        filterColumnActiveOne: 'Filtrar por {column}, 1 activo',
+        searchOptions: 'Buscar opciones',
+        noOptions: 'Ninguna opción coincide.',
+        clear: 'Limpiar',
+        clearAll: 'Limpiar todo',
+        close: 'Cerrar',
+        sortTitle: 'Ordenar',
+        sortNewest: 'Más recientes primero',
+        sortOldest: 'Más antiguas primero',
+        sortScoreDesc: 'Mayor primero',
+        sortScoreAsc: 'Menor primero',
+        rangeTitle: 'Fecha',
+        rangeToday: 'Hoy',
+        range7d: 'Últimos 7 días',
+        range30d: 'Últimos 30 días',
+        rangeCustom: 'Rango personalizado',
+        rangeFrom: 'Desde',
+        rangeTo: 'Hasta',
+        scoreRange: 'Rango de puntaje',
+        scoreMin: 'Mín.',
+        scoreMax: 'Máx.',
+        showing: '{n} de {total} respuestas',
+        chipsLabel: 'Filtros activos',
+        removeChip: 'Quitar filtro: {filter}',
+        chipBetween: '{from}–{to}',
+        chipAtLeast: '{min} o más',
+        chipAtMost: '{max} o menos',
+        chipFrom: 'Desde {from}',
+        chipUntil: 'Hasta {to}',
+        noMatchesTitle: 'Ninguna respuesta coincide con estos filtros',
+        noMatchesBody: 'Quita un filtro, o límpialos todos, para ver más.',
+        showResponses: 'Ver las respuestas que eligieron {option}',
+      },
     },
     integrations: {
       title: 'Integraciones',

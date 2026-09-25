@@ -8,3 +8,4 @@ export * from './form-config';
 export * from './form-design';
 export * from './short-links';
 export * from './pg-errors';
+export * from './submissions-summary';

@@ -78,3 +78,15 @@ export function parseKinds(v: string | undefined): OutboxKind[] | undefined {
 export function parseOutboxStatuses(v: string | undefined): OutboxStatus[] | undefined {
   return parseEnumList(v, OUTBOX_STATUSES);
 }
+
+/**
+ * A list of ids from a comma-separated query (`?ids=a,b,c`): trimmed, blanks
+ * dropped, duplicates collapsed. `undefined` when the param is absent, so the
+ * caller can tell "no filter" from "this list". An id is opaque here; the
+ * query binds each one as a parameter and scopes it to the caller's form, so a
+ * malformed or foreign id simply matches nothing.
+ */
+export function parseIdList(v: string | undefined): string[] | undefined {
+  if (v == null) return undefined;
+  return [...new Set(v.split(',').map((s) => s.trim()).filter(Boolean))];
+}
