@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { Answers, FormConfig, FormLayout } from '@quill/engine';
-import { publicTitle, runtimeSteps } from '@quill/engine';
+import { publicTitle, runtimeScreens } from '@quill/engine';
 import { t } from '@quill/shared';
 import { cn } from '@/lib/cn';
 import {
@@ -39,6 +39,52 @@ export const PREVIEW_VIEWPORTS: Record<PreviewDevice, { width: number; height: n
 };
 
 const DEVICES: PreviewDevice[] = ['mobile', 'tablet', 'desktop'];
+
+/**
+ * Where the preview stands, counted in SCREENS (#200): a screen of several
+ * questions is one stop. The frame is still asked to start on a STEP index
+ * (the preview protocol is unchanged), always the first of a screen; a form
+ * without screens has one step per screen, so its numbers are exactly the
+ * step numbers they always were.
+ *
+ * Clamped as a DERIVED value, never in an effect: deleting steps (or switching
+ * the cover off) mid-preview must correct the very render that observes it,
+ * and the stored state may legitimately point past the new end until the next
+ * click.
+ */
+export function previewNav(screens: readonly (readonly unknown[])[], screen: number | 'cover', hasCover: boolean) {
+  const starts: number[] = [];
+  let at = 0;
+  for (const members of screens) {
+    starts.push(at);
+    at += members.length;
+  }
+  const total = screens.length;
+  /** The screen holding step `index`; past the end, the last one. */
+  const screenAt = (index: number): number => {
+    let found = 0;
+    starts.forEach((start, i) => {
+      if (start <= index) found = i;
+    });
+    return found;
+  };
+  const effectiveScreen: number | 'cover' =
+    screen === 'cover' || total === 0 ? (hasCover ? 'cover' : 0) : (starts[screenAt(screen)] as number);
+  const position = effectiveScreen === 'cover' ? -1 : screenAt(effectiveScreen);
+  return {
+    total,
+    effectiveScreen,
+    position,
+    canPrev: position > (hasCover ? -1 : 0),
+    canNext: position < total - 1,
+    /** The screen `delta` stops away from the one shown, as the frame asks for it. */
+    target(delta: number): number | 'cover' {
+      const next = position + delta;
+      if (next < 0 || total === 0) return hasCover ? 'cover' : 0;
+      return starts[Math.min(next, total - 1)] as number;
+    },
+  };
+}
 const DEVICE_ICON: Record<PreviewDevice, string> = {
   mobile: 'pi pi-mobile',
   tablet: 'pi pi-tablet',
@@ -136,27 +182,13 @@ export function PreviewFrame({
   const hasCover = config.cover != null && config.cover.enabled !== false;
   // Empty answers: the navigation walks the default branch — the path a
   // respondent who has answered nothing yet would see. Same call the old
-  // modal's stepper made.
-  const steps = useMemo(
-    () => runtimeSteps(config as unknown as Parameters<typeof runtimeSteps>[0], {} as Answers),
+  // modal's stepper made, split into screens (see `previewNav`).
+  const screens = useMemo(
+    () => runtimeScreens(config as unknown as Parameters<typeof runtimeScreens>[0], {} as Answers),
     [config],
   );
-
-  // Clamp DERIVED, never in an effect: deleting steps (or switching the cover
-  // off) mid-preview must correct the very render that observes it, and the
-  // stored state may legitimately point past the new end until the next click.
-  const effectiveScreen: number | 'cover' =
-    screen === 'cover'
-      ? hasCover
-        ? 'cover'
-        : 0
-      : screen >= steps.length
-        ? steps.length > 0
-          ? steps.length - 1
-          : hasCover
-            ? 'cover'
-            : 0
-        : screen;
+  const nav = previewNav(screens, screen, hasCover);
+  const { total, effectiveScreen, position, canPrev, canNext } = nav;
 
   const rendererLocale = (formLocale ?? locale) === 'es' ? 'es' : 'en';
   const payload = useMemo<Omit<PreviewConfigMessage, 'channel' | 'type'>>(
@@ -215,17 +247,10 @@ export function PreviewFrame({
     }
   }
 
-  const total = steps.length;
-  const position = effectiveScreen === 'cover' ? -1 : effectiveScreen;
-  const canPrev = position > (hasCover ? -1 : 0);
-  const canNext = position < total - 1;
-
   // Stepping is over `effectiveScreen`, not the raw state: after steps shrink,
   // "next from here" must mean next from the screen actually shown.
   function go(delta: number) {
-    const next = position + delta;
-    if (next < 0) setScreen(hasCover ? 'cover' : 0);
-    else setScreen(Math.min(next, total - 1));
+    setScreen(nav.target(delta));
   }
 
   function restart() {
