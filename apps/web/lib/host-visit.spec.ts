@@ -127,6 +127,31 @@ describe('createHostVisit: embedded, with the host script on the page', () => {
     expect((await pending)?.visit.hutk).toBe(HUTK);
   });
 
+  it('keeps an answer that comes after the wait, for the next submit, without delaying this one', async () => {
+    const w = stubWindow({ framed: true, referrer: 'https://landing.example.com/' });
+    const visit = createHostVisit({ hubspotTracking: false, formTitle: FORM_TITLE });
+    // A busy host page: the first submit gives up at 150 ms and sends the referrer.
+    const first = visit.resolve();
+    const lateId = w.posted.at(-1)!.message.id;
+    await vi.advanceTimersByTimeAsync(SILENT_WAIT_MS);
+    await expect(first).resolves.toEqual({
+      visit: { pageUri: 'https://landing.example.com/', embedded: true },
+      hostUtm: {},
+    });
+
+    // Its answer arrives after all: kept, and the host now counts as one that speaks.
+    w.answer(hostFields, lateId);
+    let done = false;
+    const second = visit.resolve().then((r) => {
+      done = true;
+      return r;
+    });
+    await vi.advanceTimersByTimeAsync(SILENT_WAIT_MS);
+    expect(done).toBe(false); // a speaking host gets the 500 ms
+    await vi.advanceTimersByTimeAsync(HOST_WAIT_MS - SILENT_WAIT_MS);
+    expect((await second)?.visit).toMatchObject({ pageUri: LANDING, hutk: HUTK, embedded: true });
+  });
+
   it('ignores an answer from anything but its parent, or to another request', async () => {
     const w = stubWindow({ framed: true });
     const visit = createHostVisit({ hubspotTracking: false, formTitle: FORM_TITLE });

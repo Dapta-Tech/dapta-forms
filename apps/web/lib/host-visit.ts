@@ -29,7 +29,9 @@ import { isEmbedded } from './top-navigate';
  * come mid-form), and waits at most 500 ms if the host has answered before,
  * 150 ms if it never has (a bare iframe, or an old cached script: the same
  * price as the redirect acknowledgement). On timeout it sends what the host
- * said last, else the referrer as the page. Nothing here ever fails a submit.
+ * said last, else the referrer as the page. An answer that arrives after its
+ * submit stopped waiting still counts: it is kept for the next submit, which
+ * then gets the longer wait. Nothing here ever fails a submit.
  *
  * On a DIRECT LINK the page is the form itself: its URL keeps only `utm_*`
  * (every other parameter is prefill, which is to say answers), and the form's
@@ -91,8 +93,13 @@ export function createHostVisit(opts: HostVisitOptions): HostVisit {
   if (typeof window === 'undefined') return INERT;
   if (!isEmbedded()) return { start: () => () => {}, resolve: async () => directVisit(opts) };
 
-  let last: HostReply | null = null; // what the host said last
-  const mountIds = new Set<string>();
+  // What the host said last. Set means the host speaks, which earns a submit
+  // the longer wait.
+  let last: HostReply | null = null;
+  // Every request this frame made. A reply to any of them is accepted, even
+  // after its submit stopped waiting: a busy host page answers late, and that
+  // answer is still the page as it is.
+  const issued = new Set<string>();
   const waiting = new Map<string, (reply: HostReply) => void>();
   let listening = false;
 
@@ -101,10 +108,9 @@ export function createHostVisit(opts: HostVisitOptions): HostVisit {
     const data = event.data as Record<string, unknown> | null;
     if (!data || typeof data !== 'object' || data.type !== CONTEXT_REPLY || data.v !== CONTEXT_VERSION) return;
     const id = data.id;
-    if (typeof id !== 'string' || !(mountIds.has(id) || waiting.has(id))) return;
+    if (typeof id !== 'string' || !issued.has(id)) return;
     const reply = readReply(data);
     last = reply;
-    mountIds.delete(id);
     const wake = waiting.get(id);
     waiting.delete(id);
     wake?.(reply);
@@ -116,6 +122,7 @@ export function createHostVisit(opts: HostVisitOptions): HostVisit {
   };
   const ask = (): string => {
     const id = nonce();
+    issued.add(id);
     try {
       window.parent.postMessage({ type: CONTEXT_REQUEST, id, v: CONTEXT_VERSION }, '*');
     } catch {
@@ -129,7 +136,7 @@ export function createHostVisit(opts: HostVisitOptions): HostVisit {
       listen();
       const mountAsk = () => {
         if (last) return; // it answered: nothing left to wait for
-        mountIds.add(ask());
+        ask();
       };
       mountAsk();
       const timers = MOUNT_RETRY_MS.map((ms) => setTimeout(mountAsk, ms));
@@ -137,7 +144,6 @@ export function createHostVisit(opts: HostVisitOptions): HostVisit {
         for (const t of timers) clearTimeout(t);
         window.removeEventListener('message', onMessage);
         listening = false;
-        mountIds.clear();
       };
     },
     resolve() {
