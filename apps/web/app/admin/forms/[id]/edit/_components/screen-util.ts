@@ -83,11 +83,11 @@ export function screenList(steps: FormStep[]): number[][] {
  * Move a step, and decide which screen it lands on. Within its own screen it
  * stays (a reorder); dropped strictly between two questions of another screen
  * it joins that screen, within the cap; anywhere else it leaves. A question
- * that cannot join (a calendar, a reveal, a file upload, or one more on a
- * full screen) dropped inside a screen lands right after it instead, so a
- * drop never cuts a screen in two; a hidden one stays where it was dropped,
- * since it cuts nothing. The ids are then canonicalized, so a screen left with
- * one question dissolves.
+ * that cannot join (a scheduler, a reveal screen, a file upload, or one more
+ * on a full screen) dropped inside a screen lands right after it instead, so
+ * a drop never cuts a screen in two; a hidden one stays where it was dropped,
+ * since it cuts nothing. The ids are then canonicalized, so a screen left
+ * with one question dissolves.
  */
 export function moveStep(steps: FormStep[], from: number, to: number): FormStep[] {
   const moved = steps[from];

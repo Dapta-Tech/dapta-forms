@@ -275,7 +275,7 @@ export function QuestionSettings({
       </div>
 
       {/* On a screen of several questions, say before the change what a
-          calendar, a reveal or a file upload does to it: they stand alone. */}
+          scheduler, a reveal screen or a file upload does to it: they stand alone. */}
       <Field label={bm.settings.questionType} hint={onSharedScreen ? bm.screens.soloType : undefined}>
         <SelectField value={currentItemId(step)} onChange={(e) => changeType(e.target.value)}>
           {ALL_ITEMS.map((it) => (

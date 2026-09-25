@@ -226,7 +226,7 @@ export interface BuilderMessages {
     split: string;
     /** Above a screen's rows in the spine, on its frame in Logic and in the map. {n} {count} */
     chip: string;
-    /** Why a calendar, a reveal or a file upload cannot join. */
+    /** Why a scheduler, a reveal screen or a file upload cannot join (the gallery's names). */
     soloType: string;
     /** Why a hidden question cannot join. */
     hidden: string;
@@ -728,7 +728,7 @@ const en: BuilderMessages = {
     join: 'Show on the same screen as the question above',
     split: 'Start a new screen here',
     chip: 'Screen {n} · {count} questions',
-    soloType: 'Calendars, reveal screens and file uploads always get a screen of their own.',
+    soloType: 'Schedulers, reveal screens and file uploads always get a screen of their own.',
     hidden: 'Hidden questions are never shown, so they don’t join a screen.',
     max: 'A screen holds up to {max} questions.',
     first: 'No question is shown above this one, so there is no screen to join.',
@@ -1190,7 +1190,7 @@ const es: BuilderMessages = {
     split: 'Empezar una pantalla nueva aquí',
     chip: 'Pantalla {n} · {count} preguntas',
     soloType:
-      'Los calendarios, las pantallas de revelación y las subidas de archivo siempre van en su propia pantalla.',
+      'Los agendadores, las pantallas de revelación y las subidas de archivo siempre van en su propia pantalla.',
     hidden: 'Las preguntas ocultas nunca se muestran, así que no se unen a una pantalla.',
     max: 'Una pantalla admite hasta {max} preguntas.',
     first: 'No hay ninguna pregunta visible antes de esta, así que no hay una pantalla a la que unirse.',

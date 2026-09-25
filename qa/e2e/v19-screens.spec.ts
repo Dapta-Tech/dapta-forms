@@ -352,7 +352,7 @@ test.describe('screens in the builder', () => {
     await expect(page.getByTestId('screen-toggle-4')).toHaveAttribute('aria-disabled', 'true');
     await expect(page.getByTestId('screen-toggle-4')).toHaveAttribute(
       'title',
-      'Calendars, reveal screens and file uploads always get a screen of their own.',
+      'Schedulers, reveal screens and file uploads always get a screen of their own.',
     );
 
     await spine.getByText('Your email?').hover();
@@ -386,7 +386,7 @@ test.describe('screens in the builder', () => {
     const blocked = page.getByTestId('behavior-screen-join');
     await expect(blocked).toHaveAttribute('aria-disabled', 'true');
     await expect(blocked).toHaveAccessibleDescription(
-      'Calendars, reveal screens and file uploads always get a screen of their own.',
+      'Schedulers, reveal screens and file uploads always get a screen of their own.',
     );
     await blocked.focus();
     await expect(blocked).toBeFocused();
