@@ -160,19 +160,22 @@ function StepBlock({
   const b = bm.branching;
   const rules = liveRuleCount(step);
   const routable = hasOptions(step.type);
-  const targets = jumpTargetsAfter(
-    steps,
-    index,
-    bm.canvas.questionN.replace(' {n}', ''),
-    layout,
-    (step.goto ?? []).map((r) => r.target),
-  );
   // Same audit the Logic map runs — a step whose rules cancel out never shows.
   const never = conditionsContradict(step.showWhen, step.hideWhen) || conditionNeverHolds(step.showWhen);
 
   // Shared with the per-question dialog: the same split, the same sentinels,
   // the same rebuild — one array, two doors.
   const { valueRules, catchAll } = splitGoto(step);
+  // The Always select's targets: its own current target stays listed even
+  // where the list would not offer it (#200); the value rules keep theirs in
+  // their own rows.
+  const targets = jumpTargetsAfter(
+    steps,
+    index,
+    bm.canvas.questionN.replace(' {n}', ''),
+    layout,
+    catchAll?.target != null ? [catchAll.target] : [],
+  );
   const alwaysValue = alwaysValueOf(catchAll);
   // A message and a reveal record no answer, so `*` can never match on one:
   // the select would author a jump that provably never fires.

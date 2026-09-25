@@ -109,15 +109,23 @@ export function LogicDialog({
   // source: with scoring off, every gate reads a constant 0.
   const priorMax = scoringEnabled ? maxScoreForSteps(steps.slice(0, index)) : 0;
 
-  // Only steps AFTER this one are legal forward jump targets — the same list,
+  // The catch-all is NOT a value rule: it belongs to the Always-go-to select
+  // (the After-booking picker on a scheduler), never to the rule editor, which
+  // would render it as a `<select>` with no matching option — blank, and
+  // rewriting the author's "any answer" into a single value on first touch.
+  const { valueRules, catchAll } = splitGoto(step);
+
+  // Only steps AFTER this one are legal forward jump targets: the same list,
   // with the same labels, the Branching dialog offers, so the two doors onto
-  // one rule can never disagree about where it may point.
+  // one rule can never disagree about where it may point. The catch-all's own
+  // target stays listed even where the list would not offer it (#200), and
+  // only there: a value rule's target is its own row's business.
   const laterSteps = jumpTargetsAfter(
     steps,
     index,
     bm.canvas.questionN.replace(' {n}', ''),
     layout,
-    (step.goto ?? []).map((r) => r.target),
+    catchAll?.target != null ? [catchAll.target] : [],
   );
   // On a screen of several questions a jump runs when the screen is left:
   // said once the question has a rule that can run.
@@ -125,11 +133,6 @@ export function LogicDialog({
   const landingOf = (target: string | null | undefined) =>
     target != null ? jumpLanding(steps, index, target, layout) : null;
 
-  // The catch-all is NOT a value rule: it belongs to the Always-go-to select
-  // (the After-booking picker on a scheduler), never to the rule editor, which
-  // would render it as a `<select>` with no matching option — blank, and
-  // rewriting the author's "any answer" into a single value on first touch.
-  const { valueRules, catchAll } = splitGoto(step);
   const alwaysValue = alwaysValueOf(catchAll);
   const afterValue = !catchAll ? '' : (catchAll.target ?? AFTER_SUBMIT);
   // A step that records no answer can never match `*`, so it is offered no

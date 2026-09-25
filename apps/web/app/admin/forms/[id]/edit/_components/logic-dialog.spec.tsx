@@ -412,6 +412,17 @@ describe('LogicDialog: a question on a screen of several (#200)', () => {
     expect(landing(els)).toEqual(['own']);
   });
 
+  it('keeps a value rule\u2019s stale target to that rule: the Always select never lists it', () => {
+    const step = {
+      ...steps[0]!,
+      type: 'multiple_choice',
+      options: [{ label: 'X', value: 'x' }],
+      goto: [{ values: ['x'], target: 'zip' }],
+    } as FormStep;
+    const els = render({ step, steps: [step, ...steps.slice(1)], index: 0 });
+    expect(targets(els)).not.toContain('zip');
+  });
+
   it('says nothing of screens off a screen, or on one page', () => {
     const off = render({ step: steps[2]!, steps, index: 2 });
     expect(off.some((el) => el.type === ScreenJumpNote)).toBe(false);

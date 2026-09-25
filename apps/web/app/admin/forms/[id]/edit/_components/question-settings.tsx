@@ -560,7 +560,8 @@ export function QuestionSettings({
             steps.findIndex((s) => s.key === step.key),
             bm.canvas.questionN.replace(' {n}', ''),
             layout,
-            (step.goto ?? []).map((r) => r.target),
+            // The picker edits the catch-all: only its target stays listed.
+            (step.goto ?? []).filter((r) => r.values.includes('*')).map((r) => r.target),
           )}
           landingOf={(key) => jumpLanding(steps, index, key, layout)}
           goto={step.goto}
