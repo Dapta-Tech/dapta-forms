@@ -43,6 +43,11 @@ const isMarker = (id: string): boolean => id === PARTIAL_ID;
  * or starts a new screen there. The rows of one screen close ranks into a
  * single block, named by a label above it ("Screen 2 · 3 questions").
  * Numbering stays per question.
+ *
+ * A row's state (selected, hovered, focused) is ONE outline drawn inside its
+ * border, following its shape: its own rounded card, or its place in a
+ * screen (the screen's corners on its first and last row, square between).
+ * Drawn inside, it never covers the screen's own edge.
  */
 export function QuestionSpine({
   steps,
@@ -215,21 +220,16 @@ export function QuestionSpine({
                 ) : null}
                 <div
                   className={cn(
-                    'relative flex items-center gap-2 overflow-hidden rounded-xl border py-2.5 pl-2 pr-2.5 transition-colors',
+                    'relative flex items-center gap-2 border border-border bg-card py-2.5 pl-2 pr-2.5 transition-[background-color,box-shadow] duration-150',
+                    // The row's shape: its own card, or its place in a screen.
+                    !span ? 'rounded-xl' : opensScreen ? 'rounded-t-xl' : closesScreen ? 'rounded-b-xl' : 'rounded-none',
+                    // Its state, as one outline inside the border.
                     active
-                      ? 'border-primary-edge bg-primary/[0.07]'
-                      : 'border-border bg-card hover:border-muted-foreground/60',
-                    span && !opensScreen && 'rounded-t-none',
-                    span && !closesScreen && 'rounded-b-none',
-                    // Rows of a screen overlap by a border; the selected one
-                    // draws its whole outline over its neighbours.
-                    span && active && 'z-[1]',
+                      ? 'bg-primary/[0.07] ring-2 ring-inset ring-primary-edge'
+                      : 'hover:ring-1 hover:ring-inset hover:ring-muted-foreground/50 has-[[data-spine-select]:focus-visible]:ring-2 has-[[data-spine-select]:focus-visible]:ring-inset has-[[data-spine-select]:focus-visible]:ring-ring',
                   )}
                   data-screen-row={span ? (opensScreen ? 'first' : closesScreen ? 'last' : 'inside') : undefined}
                 >
-                  {active ? (
-                    <span aria-hidden className="absolute inset-y-1.5 left-0 w-1 rounded-full bg-primary-edge" />
-                  ) : null}
                   <button
                     type="button"
                     aria-label={m.shell.addQuestion}
@@ -242,7 +242,9 @@ export function QuestionSpine({
                   <button
                     type="button"
                     onClick={() => onSelect(stepIndex)}
-                    className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
+                    // Its keyboard focus shows as the row's own outline (above).
+                    data-spine-select
+                    className="flex min-w-0 flex-1 items-center gap-2.5 text-left focus-visible:outline-none"
                   >
                     <span
                       className={cn(
@@ -403,8 +405,10 @@ function ScreenToggle({
           if (!blocked) onScreenJoin(index, !joined);
         }}
         className={cn(
-          // In the grip column, so it never sits over the screen's name.
-          'absolute left-[18px] z-10 inline-flex h-5 w-5 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border bg-card shadow-sm transition-opacity focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+          // In the grip column, so it never sits over the screen's name, with a
+          // halo in the card's colour: the seam and a row's outline stop short
+          // of it instead of running underneath.
+          'absolute left-[18px] z-10 inline-flex h-5 w-5 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border bg-card shadow-sm ring-2 ring-card transition-opacity focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
           // Joined rows touch, so the chain sits on their shared border;
           // otherwise it sits in the middle of the gap between the rows.
           // Without hover (a touch screen) an open boundary stays faintly in view.

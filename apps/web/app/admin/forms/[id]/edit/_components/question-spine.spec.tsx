@@ -158,6 +158,21 @@ describe('screens in the spine (#200)', () => {
     expect(toggle(2)).not.toBeNull();
   });
 
+  it('draws the row state as one outline inside the border, shaped like the row', async () => {
+    await renderSpine('slides');
+    const row = (i: number) =>
+      host!.querySelector<HTMLElement>(`#spine-title-${grouped[i]!.key}`)!.closest<HTMLElement>('.border')!;
+    // The selected row (0, a question of its own): its rounded card, ringed inside.
+    expect(row(0).className).toMatch(/\brounded-xl\b/);
+    expect(row(0).className).toMatch(/\bring-inset\b/);
+    // A screen's first and last rows take the screen's corners, and none leaks
+    // out: no border colour change, no inner rail.
+    expect(row(1).className).toMatch(/\brounded-t-xl\b/);
+    expect(row(2).className).toMatch(/\brounded-b-xl\b/);
+    expect(row(0).querySelector('.absolute.w-1')).toBeNull();
+    expect(row(0).className).not.toMatch(/border-primary-edge/);
+  });
+
   it('joins and splits through the editor, and a refused click does nothing', async () => {
     const calls: Array<[number, boolean]> = [];
     await renderSpine('slides', (i, joined) => calls.push([i, joined]));
