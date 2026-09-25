@@ -3,8 +3,9 @@
 import type { FormConfig, FormOutcome, FormStep } from '@quill/engine';
 import { cn } from '@/lib/cn';
 import { iconForStep } from './question-types';
-import { conditionNeverHolds, conditionsContradict } from '@quill/engine';
+import { authoredScreens, conditionNeverHolds, conditionsContradict, screensActive } from '@quill/engine';
 import { describeCondition, liveGotoRules, optionLabel } from './logic-util';
+import { screenList } from './screen-util';
 import type { BuilderMessages, GalleryItemId } from './builder-messages';
 import { tb } from './builder-messages';
 
@@ -40,6 +41,19 @@ export function LogicMap({ config, m }: { config: FormConfig; m: BuilderMessages
   const titleOf = (step: FormStep, i: number) => step.question?.trim() || tb(m.canvas.questionN, { n: i + 1 });
   const stepByKey = new Map(steps.map((s, i) => [s.key, i] as const));
   const outcomes = config.outcomes ?? [];
+  // Screens (#200), slides only: the first question of each screen of several
+  // carries the name the spine gives it, so the list reads which questions
+  // share a card.
+  const stops = screensActive(config) ? screenList(steps) : [];
+  const screenChips = new Map(
+    (screensActive(config) ? authoredScreens(steps) : []).map((screen) => [
+      screen.members[0] as number,
+      tb(m.screens.chip, {
+        n: stops.findIndex((stop) => stop[0] === screen.members[0]) + 1,
+        count: screen.members.length,
+      }),
+    ]),
+  );
 
   return (
     <div className="relative" data-testid="logic-map">
@@ -75,6 +89,16 @@ export function LogicMap({ config, m }: { config: FormConfig; m: BuilderMessages
           return (
             <div key={step.key} data-testid="logic-step" data-step-key={step.key}>
               <Connector />
+
+              {screenChips.has(i) ? (
+                <p
+                  data-testid="logic-screen-chip"
+                  className="mb-1.5 inline-flex items-center gap-1 rounded-md bg-primary/10 px-1.5 py-0.5 text-2xs font-semibold text-foreground"
+                >
+                  <i aria-hidden className="pi pi-clone" style={{ fontSize: 9 }} />
+                  {screenChips.get(i)}
+                </p>
+              ) : null}
 
               {/* Question node card */}
               <div
