@@ -277,6 +277,15 @@ export const formStepSchema = z.object({
   /** Seeds the answer when neither the URL nor the person supplied one. */
   defaultValue: z.string().max(512).optional(),
   /**
+   * Screen group (ADDITIVE). Consecutive steps sharing this id show on ONE
+   * screen in the slides layout, with one button. Absent (every config saved
+   * before screens existed) = the step has a screen of its own. Ignored on
+   * one page. Unrelated to `flowGroup`, which is the scoring phase. Listed
+   * here because zod strips unknown keys on save: without it an author would
+   * silently lose their screens. See `screenIds` in @quill/engine.
+   */
+  screenGroup: z.string().min(1).max(64).optional(),
+  /**
    * `phone` step: ISO 3166-1 alpha-2 the public country picker defaults to
    * (e.g. "CO"). ADDITIVE — absent = the locale-based default. Two-char cap so a
    * bad value can only fall back, never break the lookup.

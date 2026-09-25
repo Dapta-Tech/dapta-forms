@@ -292,6 +292,34 @@ describe('long-text character limits (additive)', () => {
   });
 });
 
+describe('screen groups (additive)', () => {
+  const grouped = (screenGroup?: unknown) => ({
+    version: 1 as const,
+    steps: [
+      { key: 'first', type: 'text' as const, question: 'First name?', screenGroup },
+      { key: 'email', type: 'email' as const, question: 'Email?', screenGroup },
+    ],
+  });
+
+  it('a legacy config parses exactly as before: no step carries a screen', () => {
+    const parsed = formConfigSchema.parse(baseConfig());
+    expect(parsed.steps[0]).toEqual({ key: 'q1', type: 'text', question: 'Your name?' });
+    expect('screenGroup' in parsed.steps[0]).toBe(false);
+  });
+
+  it('keeps the id on save: a field the schema did not list would be stripped', () => {
+    const parsed = formConfigSchema.parse(grouped('screen_1'));
+    expect(parsed.steps.map((s) => s.screenGroup)).toEqual(['screen_1', 'screen_1']);
+  });
+
+  it('takes 1 to 64 characters, nothing else', () => {
+    expect(() => formConfigSchema.parse(grouped('s'.repeat(64)))).not.toThrow();
+    expect(() => formConfigSchema.parse(grouped('s'.repeat(65)))).toThrow();
+    expect(() => formConfigSchema.parse(grouped(''))).toThrow();
+    expect(() => formConfigSchema.parse(grouped(3))).toThrow();
+  });
+});
+
 describe('submissionSchema: the locale the respondent saw (additive)', () => {
   it('carries an optional locale and rejects an unknown one', () => {
     expect(submissionSchema.parse({ sessionId: 's', data: {} }).locale).toBeUndefined();
