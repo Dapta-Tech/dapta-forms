@@ -1,3 +1,5 @@
+import type { SubmissionVisit } from '@quill/types';
+
 /**
  * The SubmissionDestination port — the boundary every submission-sync caller
  * depends on. Concrete integrations (log-only, webhook, HubSpot, …) are selected
@@ -70,22 +72,11 @@ export interface DestinationContext {
 
 /**
  * Where the form was answered: the landing that embeds it (read there by the
- * host page's embed script), or the form's own URL on a direct link.
+ * host page's embed script), or the form's own URL on a direct link. The
+ * contract's own type, already sanitized by the API. Its `hutk` is an online
+ * identifier: never logged, never shown (see `scrubHutk`).
  */
-export interface DestinationVisit {
-  /** Absolute http(s) URL of the page. */
-  pageUri?: string;
-  /** The page's title. */
-  pageName?: string;
-  /** The landing's HubSpot CMS page id. */
-  pageId?: string;
-  /** The landing's HubSpot visitor cookie. An online identifier: never logged. */
-  hutk?: string;
-  /** The HubSpot portal whose tracking code runs on the landing. */
-  hsPortalId?: string;
-  /** True when the form was answered inside a frame. */
-  embedded: boolean;
-}
+export type DestinationVisit = SubmissionVisit;
 
 /**
  * What actually crossed the wire, for the admin's delivery history.
