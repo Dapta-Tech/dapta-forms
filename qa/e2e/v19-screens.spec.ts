@@ -197,7 +197,14 @@ test.describe('screens: several questions on one slides screen', () => {
       );
     await expect.poll(() => events().some((e) => e.type === 'step_view' && e.step_key === 'notas')).toBe(true);
     const rows = events();
-    expect(rows.filter((e) => e.type === 'step_view').map((e) => `${e.step_index}:${e.step_key}`)).toEqual([
+    // A screen's events go to the API at once, so their rows land in any
+    // order within the screen (no metric reads it): compared as a set.
+    const listOf = (type: string) =>
+      rows
+        .filter((e) => e.type === type)
+        .map((e) => `${e.step_index}:${e.step_key}`)
+        .sort();
+    expect(listOf('step_view')).toEqual([
       '0:intro',
       '1:nombre',
       '2:email',
@@ -207,14 +214,7 @@ test.describe('screens: several questions on one slides screen', () => {
       '5:tamano',
       '6:notas',
     ]);
-    expect(rows.filter((e) => e.type === 'step_complete').map((e) => `${e.step_index}:${e.step_key}`)).toEqual([
-      '0:intro',
-      '1:nombre',
-      '2:email',
-      '3:telefono',
-      '4:equipo',
-      '5:plan',
-    ]);
+    expect(listOf('step_complete')).toEqual(['0:intro', '1:nombre', '2:email', '3:telefono', '4:equipo', '5:plan']);
     expect(rows.filter((e) => e.type === 'start')).toHaveLength(1);
     expect(rows.filter((e) => e.type === 'partial_submit').map((e) => e.step_key)).toEqual(['email']);
   });
