@@ -47,6 +47,7 @@ import { callAction, callActionWithRetry, isTransportError } from '@/lib/call-ac
 import { navigateTop } from '@/lib/top-navigate';
 import { reportLeadConversion } from '@/lib/lead-conversion';
 import { useAnnounceScreenChange } from '@/lib/embed-screen';
+import type { ResolvedVisit } from '@/lib/host-visit';
 import {
   submitFormAction,
   recordEventAction,
@@ -64,6 +65,10 @@ import {
   schedulerToBooking,
   PhaseShell,
   DoneScreen,
+  mergeHostUtm,
+  useHostVisit,
+  visitField,
+  type VisitCapture,
 } from './renderer-shared';
 import './public-form.css';
 
@@ -77,6 +82,7 @@ export function FormRenderer({
   locale = 'en',
   uploadMaxMb,
   captcha,
+  visitCapture,
   startAt,
 }: {
   accountCode: string;
@@ -92,6 +98,12 @@ export function FormRenderer({
    * never does, so a preview never loads, renders or runs a check.
    */
   captcha?: PublicCaptcha;
+  /**
+   * Ask the page this form is answered on for its URL, title and HubSpot
+   * cookie, and send them with each submit (#199). Only the public page
+   * passes it; the builder preview never does, so a preview asks no one.
+   */
+  visitCapture?: VisitCapture;
   /**
    * Start-position hint: a runtime step index, or `'cover'` for the default
    * entry (cover when it exists, else the first step). The builder preview
@@ -109,6 +121,9 @@ export function FormRenderer({
   // the same storage key, so both survive a reload together.
   const sessionKey = `quill-form-${accountCode}-${slug}`;
   const sessionId = useSessionId(sessionKey);
+  // The page this form is answered on, asked once per submit (inert without
+  // `visitCapture`).
+  const resolveVisit = useHostVisit(visitCapture, name);
 
   /**
    * Authorize one upload for a `file` step.
@@ -323,8 +338,9 @@ export function FormRenderer({
     }
   }, [phase, index, steps.length]);
 
-  function withData(a: Answers): Record<string, unknown> {
-    const utm = utmRef.current;
+  function withData(a: Answers, resolved?: ResolvedVisit): Record<string, unknown> {
+    // The landing's campaign stands in only when the form's own URL has none.
+    const utm = mergeHostUtm(utmRef.current, resolved?.hostUtm);
     return Object.keys(utm).length > 0 ? { ...a, utm } : { ...a };
   }
 
@@ -340,7 +356,10 @@ export function FormRenderer({
       const run = ++finalizeRun.current;
       if (inline) markSending(true);
       else setPhase('submitting');
-      const data = withData(finalAnswers);
+      // The page it is answered on, asked NOW so that its wait (500 ms at
+      // most) runs alongside the human check instead of after it, and asked
+      // once: every attempt below, retries included, carries the same visit.
+      const visitReady = resolveVisit();
       // Transport-safe with retries: a submit whose INVOCATION fails (network
       // drop, deploy-rotated action id) used to reject unhandled, stranding the
       // visitor on the "submitting" spinner with the submission silently lost.
@@ -351,23 +370,35 @@ export function FormRenderer({
       const res = await submitFinal({
         gate: gateRef.current,
         m,
-        send: (fields) =>
-          callActionWithRetry(
+        send: async (fields) => {
+          const resolved = await visitReady;
+          return callActionWithRetry(
             () =>
               submitFormAction(accountCode, slug, {
                 sessionId,
-                data,
+                data: withData(finalAnswers, resolved),
+                ...visitField(resolved),
                 // What the respondent SAW, so the confirmation email matches.
                 locale: formLocale,
                 ...fields,
               }),
             { timeoutMs: 8_000 },
-          ),
-        savePartial: () =>
-          callActionWithRetry(
-            () => submitFormAction(accountCode, slug, { sessionId, data, partial: true, locale: formLocale }),
+          );
+        },
+        savePartial: async () => {
+          const resolved = await visitReady;
+          return callActionWithRetry(
+            () =>
+              submitFormAction(accountCode, slug, {
+                sessionId,
+                data: withData(finalAnswers, resolved),
+                ...visitField(resolved),
+                partial: true,
+                locale: formLocale,
+              }),
             { timeoutMs: 8_000 },
-          ),
+          );
+        },
       });
       // A newer run owns the screen now (see `submitFinal`).
       if ('aborted' in res) {
@@ -445,7 +476,7 @@ export function FormRenderer({
       setDone({ score, outcome: res.outcome ?? null });
       setPhase('done');
     },
-    [accountCode, slug, sessionKey, sessionId, engineConfig, markSending],
+    [accountCode, slug, sessionKey, sessionId, engineConfig, markSending, resolveVisit],
   );
 
   // Report the booked meeting to the API (best-effort), THEN redirect/finish.
@@ -504,13 +535,17 @@ export function FormRenderer({
         if (thresholdKey && completed.key === thresholdKey && !partialSent.current) {
           partialSent.current = true;
           track('partial_submit', index, completed.key);
-          void callActionWithRetry(() =>
-            submitFormAction(accountCode, slug, {
-              sessionId,
-              data: withData(nextAnswers),
-              partial: true,
-              locale: formLocale,
-            }),
+          // With the page it is answered on (fire-and-forget like the save).
+          void resolveVisit().then((resolved) =>
+            callActionWithRetry(() =>
+              submitFormAction(accountCode, slug, {
+                sessionId,
+                data: withData(nextAnswers, resolved),
+                ...visitField(resolved),
+                partial: true,
+                locale: formLocale,
+              }),
+            ),
           );
         }
 

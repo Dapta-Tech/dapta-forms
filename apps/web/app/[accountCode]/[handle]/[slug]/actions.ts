@@ -3,7 +3,7 @@
 import { postSubmission, postFormEvent, postUploadPresign, type PresignResult } from '@/lib/api';
 import { postBookingCallback } from '@/lib/booking-embed';
 import { forwardedForChain } from '@/lib/forwarded-for';
-import type { BookingCallbackInput, UploadPresignInput } from '@quill/types';
+import type { BookingCallbackInput, SubmissionVisit, UploadPresignInput } from '@quill/types';
 
 /**
  * Submit a form — partial (past the lead-capture threshold) or complete. The
@@ -13,6 +13,9 @@ import type { BookingCallbackInput, UploadPresignInput } from '@quill/types';
  * strict mode's hidden field); the API decides whether it needs them. A
  * refusal comes back with the API's `error` code, which is what the renderer
  * localizes, never its English `message`.
+ *
+ * `visit` is the page the form was answered on (see `lib/host-visit.ts`); the
+ * API checks it again, field by field, and never refuses a submit over it.
  */
 export async function submitFormAction(
   accountCode: string,
@@ -24,6 +27,7 @@ export async function submitFormAction(
     locale?: 'en' | 'es';
     captchaToken?: string;
     hp?: string;
+    visit?: SubmissionVisit;
   },
 ): Promise<{ ok: boolean; score?: number; outcome?: string | null; message?: string; error?: string }> {
   const res = await postSubmission(accountCode, slug, payload);

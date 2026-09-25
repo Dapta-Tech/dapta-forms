@@ -155,6 +155,8 @@ function panelLabels(s: FormsMessages['admin']['submissions']): PanelLabels {
     colStarted: s.colStarted,
     colScore: s.colScore,
     responseId: s.responseId,
+    pageRow: s.pageRow,
+    hubspotLinked: s.hubspotLinked,
     utmTitle: s.utmTitle,
     answeredCount: s.answeredCount,
     badgeCompleted: s.badgeCompleted,

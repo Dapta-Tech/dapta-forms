@@ -50,6 +50,10 @@ export interface PanelLabels {
   colStarted: string;
   colScore: string;
   responseId: string;
+  /** The page it was given on (#199). */
+  pageRow: string;
+  /** Beside the page, when HubSpot joined the response to the visitor's page views. */
+  hubspotLinked: string;
   utmTitle: string;
   /** "{n} of {total} answered" */
   answeredCount: string;
@@ -928,6 +932,34 @@ export function ResponseDetailView({
             <>
               <dt className="text-muted-foreground">{labels.colScore}</dt>
               <dd className="font-semibold tabular-nums text-primary">{detail.score}</dd>
+            </>
+          ) : null}
+          {detail.page ? (
+            <>
+              <dt className="text-muted-foreground">{labels.pageRow}</dt>
+              <dd className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1" data-testid="response-page">
+                {/* A title wraps between its words; the icon follows its last one. */}
+                {detail.page.href ? (
+                  <a
+                    href={detail.page.href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title={detail.page.href}
+                    className="min-w-0 break-words font-medium text-primary underline decoration-primary-edge/40 underline-offset-4 hover:decoration-primary-edge"
+                  >
+                    {detail.page.text}
+                    <i aria-hidden className="pi pi-external-link ml-1.5 inline-block" style={{ fontSize: 11 }} />
+                  </a>
+                ) : (
+                  <span className="min-w-0 break-words">{detail.page.text}</span>
+                )}
+                {detail.hubspotLinked ? (
+                  <span className="inline-flex items-center gap-1 rounded-full border border-primary-edge/40 bg-primary/15 px-2 py-0.5 text-2xs font-medium text-foreground">
+                    <i aria-hidden className="pi pi-check text-primary" style={{ fontSize: 9 }} />
+                    {labels.hubspotLinked}
+                  </span>
+                ) : null}
+              </dd>
             </>
           ) : null}
           <dt className="text-muted-foreground">{labels.responseId}</dt>

@@ -4,7 +4,13 @@
  * decoupled.
  */
 import { cache } from 'react';
-import type { PublicForm, PublicProfile, UploadPresignInput, UploadPresignResult } from '@quill/types';
+import type {
+  PublicForm,
+  PublicProfile,
+  SubmissionVisit,
+  UploadPresignInput,
+  UploadPresignResult,
+} from '@quill/types';
 import { serverApiUrl } from './api-url';
 import { forwardedForHeader } from './forwarded-for';
 
@@ -62,6 +68,8 @@ export async function postSubmission(
     locale?: 'en' | 'es';
     captchaToken?: string;
     hp?: string;
+    /** The page it was answered on; the API re-checks every field. */
+    visit?: SubmissionVisit;
   },
 ): Promise<SubmitResult> {
   const res = await fetch(

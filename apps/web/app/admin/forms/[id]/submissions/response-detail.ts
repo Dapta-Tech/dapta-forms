@@ -36,6 +36,14 @@ export interface ResponseDetail {
   /** The `utm_*` parameters the respondent arrived with, in capture order. */
   utm: Array<[string, string]>;
   /**
+   * The page it was given on (#199): the landing that embeds the form, or the
+   * form's own link. Named by its title, else its host; a link only when it is
+   * a web address. Null when none was reported (every older response).
+   */
+  page: { href: string | null; text: string } | null;
+  /** HubSpot joined this response to the visitor's page views. The cookie itself never gets here. */
+  hubspotLinked: boolean;
+  /**
    * Who answered, when the form asked: the first answered name, email and phone
    * steps. The panel is titled with the first of them that exists, the way a
    * CRM record is titled with the contact; a form that asks none of them gets
@@ -98,6 +106,22 @@ export function answerView(
   return { key, label, kind: 'text', text, long };
 }
 
+/** The Page row: the title, else the host of a web address; nothing when neither exists. */
+function pageView(visit: SubmissionView['visit']): ResponseDetail['page'] {
+  if (!visit) return null;
+  const href = visit.pageUri && WEB_URL.test(visit.pageUri) ? visit.pageUri : null;
+  let host: string | null = null;
+  if (href) {
+    try {
+      host = new URL(href).host;
+    } catch {
+      host = null;
+    }
+  }
+  const text = visit.pageName?.trim() || host;
+  return text ? { href, text } : null;
+}
+
 /** The `utm` map riding inside the answers, as ordered string pairs. */
 function utmPairs(data: Record<string, unknown>): Array<[string, string]> {
   const utm = data.utm;
@@ -132,6 +156,8 @@ export function buildResponseDetail(
     score: opts.scoring ? row.score : null,
     answers,
     utm: utmPairs(data),
+    page: pageView(row.visit),
+    hubspotLinked: row.visit?.hubspotLinked === true,
     respondent: { name: firstText('name'), email: firstText('email'), phone: firstText('phone') },
   };
 }

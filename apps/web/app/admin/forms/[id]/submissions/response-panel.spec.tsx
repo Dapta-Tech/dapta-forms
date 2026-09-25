@@ -29,6 +29,8 @@ const labels: PanelLabels = {
   colStarted: 'Started',
   colScore: 'Score',
   responseId: 'Response ID',
+  pageRow: 'Page',
+  hubspotLinked: 'HubSpot visit linked',
   utmTitle: 'Campaign (UTM)',
   answeredCount: '{n} of {total} answered',
   badgeCompleted: 'Completed',
@@ -89,6 +91,8 @@ const detail = (over: Partial<ResponseDetail> = {}): ResponseDetail => ({
     { key: 'budget', label: 'Budget?', kind: 'empty' },
   ],
   utm: [['utm_source', 'qr']],
+  page: null,
+  hubspotLinked: false,
   respondent: { name: null, email: null, phone: null },
   ...over,
 });
@@ -247,6 +251,36 @@ describe('ResponseDetailView', () => {
     for (const key of ['story', 'role', 'site', 'id_doc', 'budget'])
       expect(html).toContain(`data-answer-key="${key}"`);
     expect(html).not.toContain('data-focused');
+  });
+
+  it('shows the page it was given on as a link, with the HubSpot chip only when linked', () => {
+    const page = { href: 'https://landing.example.com/offer', text: 'Home insurance' };
+    const linked = renderToStaticMarkup(
+      <ResponseDetailView detail={detail({ page, hubspotLinked: true })} formId="form_1" labels={labels} fileLabels={fileLabels} />,
+    );
+    const row = linked.match(/<dd[^>]*data-testid="response-page"[^>]*>[\s\S]*?<\/dd>/)![0];
+    expect(linked).toContain('>Page<');
+    expect(row).toContain('href="https://landing.example.com/offer"');
+    expect(row).toContain('rel="noopener noreferrer"');
+    expect(row).toContain('Home insurance');
+    expect(row).toContain('HubSpot visit linked');
+
+    const unlinked = renderToStaticMarkup(
+      <ResponseDetailView
+        detail={detail({ page: { href: null, text: 'landing.example.com' }, hubspotLinked: false })}
+        formId="form_1"
+        labels={labels}
+        fileLabels={fileLabels}
+      />,
+    );
+    expect(unlinked).toContain('landing.example.com');
+    expect(unlinked).not.toMatch(/data-testid="response-page"[\s\S]*?<a /);
+    expect(unlinked).not.toContain('HubSpot visit linked');
+  });
+
+  it('has no Page row for a response that reported no page', () => {
+    expect(view()).not.toContain('>Page<');
+    expect(view()).not.toContain('response-page');
   });
 
   it('outlines only the question opened from a cell, answered or not', () => {

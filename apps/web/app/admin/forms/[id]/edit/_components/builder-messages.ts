@@ -581,7 +581,7 @@ const en: BuilderMessages = {
     embed: 'Embed',
     embedTitle: 'Embed this form on your site',
     embedIntro:
-      'Paste this snippet into your page. The form loads inside it and grows to fit its content. The script keeps the height in sync, so there is never an inner scrollbar.',
+      'Paste this snippet into your page. The form loads inside it and grows to fit its content. The script keeps the height in sync, so there is never an inner scrollbar, and tells the form which page it is on: the address, its UTM parameters and, when the page runs your HubSpot tracking code, the HubSpot visit.',
     embedCopy: 'Copy snippet',
     embedCopied: 'Copied',
     copied: 'Copied',
@@ -1018,7 +1018,7 @@ const es: BuilderMessages = {
     embed: 'Insertar',
     embedTitle: 'Inserta este formulario en tu sitio',
     embedIntro:
-      'Pega este fragmento en tu página. El formulario carga dentro y crece según su contenido. El script mantiene la altura sincronizada, así nunca hay scroll interno.',
+      'Pega este fragmento en tu página. El formulario carga dentro y crece según su contenido. El script mantiene la altura sincronizada, así nunca hay scroll interno, y le dice al formulario en qué página está: la dirección, sus parámetros UTM y, si la página carga tu código de seguimiento de HubSpot, la visita de HubSpot.',
     embedCopy: 'Copiar fragmento',
     embedCopied: 'Copiado',
     copied: 'Copiado',

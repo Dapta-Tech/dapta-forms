@@ -10,11 +10,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Answers, FormCover, FormStep, ResolvedEnding } from '@quill/engine';
 import { nameFields, isSafeHttpUrl, interpolate, showBanner } from '@quill/engine';
-import { captchaCData, type OutcomeBooking, type PublicCaptcha } from '@quill/types';
+import { captchaCData, type OutcomeBooking, type PublicCaptcha, type SubmissionVisit } from '@quill/types';
 import type { getMessages } from '@quill/shared';
 import type { FormDesignProps } from '@/lib/form-design';
 import { signupHref } from '@/lib/growth';
 import { warmTurnstile } from '@/lib/captcha';
+import { createHostVisit, type HostVisit, type ResolvedVisit } from '@/lib/host-visit';
 import { isTransportError, type TransportError } from '@/lib/call-action';
 import { CaptchaChallenge, type CaptchaWidgetEvent } from '@/components/public/captcha-challenge';
 
@@ -41,6 +42,61 @@ export function captureUtm(): Record<string, string> {
     if (k.toLowerCase().startsWith('utm_') && v) utm[k] = v;
   }
   return utm;
+}
+
+/**
+ * The landing's campaign under the form's own (#199), all or nothing: an
+ * iframe `src` that carries any `utm_*` keeps exactly those, and only a `src`
+ * with none takes the landing's. Mixing the two would credit one visit to two
+ * campaigns.
+ */
+export function mergeHostUtm(
+  own: Record<string, string>,
+  host: Record<string, string> | undefined,
+): Record<string, string> {
+  if (Object.keys(own).length > 0) return own;
+  return host ? { ...host } : {};
+}
+
+/**
+ * What the public page tells a renderer about the page it is answered on
+ * (#199). Only the public page passes it: without it (the builder preview)
+ * nothing is asked of anyone and no submit carries a visit.
+ */
+export interface VisitCapture {
+  /** The FORM loads its own HubSpot tracking code, so a direct link may send its cookie. */
+  hubspotTracking: boolean;
+}
+
+/**
+ * The page the form is answered on, for the submits (see `lib/host-visit.ts`).
+ * Starts asking the host page at mount; the function it returns resolves the
+ * visit for ONE submit (never rejects, waits at most 500 ms), or undefined
+ * without `capture` or when the page switched it off.
+ */
+export function useHostVisit(
+  capture: VisitCapture | undefined,
+  formTitle: string,
+): () => Promise<ResolvedVisit | undefined> {
+  const visit = useRef<HostVisit | null>(null);
+  const enabled = capture !== undefined;
+  const hubspotTracking = capture?.hubspotTracking === true;
+  useEffect(() => {
+    if (!enabled) return;
+    const current = createHostVisit({ hubspotTracking, formTitle });
+    visit.current = current;
+    const stop = current.start();
+    return () => {
+      stop();
+      if (visit.current === current) visit.current = null;
+    };
+  }, [enabled, hubspotTracking, formTitle]);
+  return useCallback(() => visit.current?.resolve() ?? Promise.resolve(undefined), []);
+}
+
+/** The submit's top-level `visit`, only when there is one. */
+export function visitField(resolved: ResolvedVisit | undefined): { visit?: SubmissionVisit } {
+  return resolved ? { visit: resolved.visit } : {};
 }
 
 /** A query value can never be longer than this once seeded (defense-in-depth). */

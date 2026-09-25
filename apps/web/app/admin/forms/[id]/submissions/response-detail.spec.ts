@@ -221,4 +221,49 @@ describe('buildResponseDetail', () => {
       }).utm,
     ).toEqual([]);
   });
+
+  describe('the page it was given on (#199)', () => {
+    const opts = { locale: 'en' as const, timeZone: TZ, scoring: true };
+    const visit = (over: Partial<NonNullable<SubmissionView['visit']>> = {}) => ({
+      pageUri: 'https://landing.example.com/offer?utm_source=fb',
+      pageName: 'Home insurance',
+      embedded: true,
+      hubspotLinked: true,
+      ...over,
+    });
+
+    it('names the page by its title and links it', () => {
+      const d = buildResponseDetail(row({ visit: visit() }), steps, opts);
+      expect(d.page).toEqual({ href: 'https://landing.example.com/offer?utm_source=fb', text: 'Home insurance' });
+      expect(d.hubspotLinked).toBe(true);
+    });
+
+    it('names an untitled page by its host', () => {
+      const d = buildResponseDetail(row({ visit: visit({ pageName: null, hubspotLinked: false }) }), steps, opts);
+      expect(d.page).toEqual({ href: 'https://landing.example.com/offer?utm_source=fb', text: 'landing.example.com' });
+      expect(d.hubspotLinked).toBe(false);
+    });
+
+    it('links only a web address, and keeps anything else inert text', () => {
+      const d = buildResponseDetail(
+        row({ visit: visit({ pageUri: 'javascript:alert(1)', pageName: null }) }),
+        steps,
+        opts,
+      );
+      expect(d.page).toBeNull();
+      const named = buildResponseDetail(row({ visit: visit({ pageUri: 'javascript:alert(1)' }) }), steps, opts);
+      expect(named.page).toEqual({ href: null, text: 'Home insurance' });
+    });
+
+    it('has no Page row for a response that reported none, older ones included', () => {
+      expect(buildResponseDetail(row({ visit: null }), steps, opts).page).toBeNull();
+      expect(buildResponseDetail(row(), steps, opts).page).toBeNull();
+      expect(buildResponseDetail(row(), steps, opts).hubspotLinked).toBe(false);
+    });
+
+    it('never carries the HubSpot cookie, even handed a row that has one', () => {
+      const leaky = row({ visit: { ...visit(), hutk: '0123456789abcdef0123456789abcdef' } as never });
+      expect(JSON.stringify(buildResponseDetail(leaky, steps, opts))).not.toContain('0123456789abcdef');
+    });
+  });
 });

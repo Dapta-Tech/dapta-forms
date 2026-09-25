@@ -386,6 +386,8 @@ function SubmissionsData({
           colStarted: m.submissions.colStarted,
           colScore: m.submissions.colScore,
           responseId: m.submissions.responseId,
+          pageRow: m.submissions.pageRow,
+          hubspotLinked: m.submissions.hubspotLinked,
           utmTitle: m.submissions.utmTitle,
           answeredCount: m.submissions.answeredCount,
           badgeCompleted: m.submissions.badgeCompleted,
