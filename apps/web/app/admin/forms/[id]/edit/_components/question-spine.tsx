@@ -195,16 +195,8 @@ export function QuestionSpine({
             <Fragment key={id}>
               {/* The screen's name sits above its block, at the spine's full
                   width (inside a row it would be cut at the narrowest one), and
-                  outside every draggable row, so it stays put mid-drag. */}
-              {chip ? (
-                <p
-                  data-testid="spine-screen-chip"
-                  className="-mb-1 flex items-center gap-1 pl-8 pr-1 text-2xs font-semibold text-muted-foreground"
-                >
-                  <i aria-hidden className="pi pi-clone" style={{ fontSize: 9 }} />
-                  {chip}
-                </p>
-              ) : null}
+                  outside every draggable row, so it never rides along mid-drag. */}
+              {chip ? <ScreenChip>{chip}</ScreenChip> : null}
               <SortableRow id={id} lifted>
                 {({ handleProps, isDragging }) => (
                   // The rows of one screen close the list's gap and share their
@@ -437,6 +429,28 @@ function ScreenToggle({
         </span>
       ) : null}
     </>
+  );
+}
+
+/**
+ * A screen's name, above its block. Mid-drag the rows slide under it while it
+ * holds still, so it would sit over rows of another screen: it fades out until
+ * the drop, like the chains, and keeps its space so nothing below jumps.
+ */
+function ScreenChip({ children }: { children: ReactNode }) {
+  const { active } = useDndContext();
+  return (
+    <p
+      data-testid="spine-screen-chip"
+      aria-hidden={active ? true : undefined}
+      className={cn(
+        '-mb-1 flex items-center gap-1 pl-8 pr-1 text-2xs font-semibold text-muted-foreground transition-opacity duration-150',
+        active && 'opacity-0',
+      )}
+    >
+      <i aria-hidden className="pi pi-clone" style={{ fontSize: 9 }} />
+      {children}
+    </p>
   );
 }
 
