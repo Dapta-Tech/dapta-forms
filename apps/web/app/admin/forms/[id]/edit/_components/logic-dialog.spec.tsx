@@ -17,6 +17,7 @@ import { LogicDialog } from './logic-dialog';
 import { LogicConditions } from './logic-conditions';
 import { LogicRules } from './logic-rules';
 import { getBuilderMessages, tb } from './builder-messages';
+import { JumpLandingNote, ScreenJumpNote } from './screen-notes';
 
 type AnyProps = Record<string, unknown> & { children?: ReactNode };
 
@@ -65,6 +66,7 @@ function render(over: {
   step: FormStep;
   index?: number;
   steps?: FormStep[];
+  layout?: 'slides' | 'vertical';
   scoringEnabled?: boolean;
   onUpdate?: (patch: Partial<FormStep>) => void;
 }): ReactElement[] {
@@ -76,6 +78,7 @@ function render(over: {
       step: over.step,
       index: over.index ?? steps.indexOf(over.step),
       steps,
+      layout: over.layout ?? 'slides',
       scoringEnabled: over.scoringEnabled ?? true,
       onUpdate: over.onUpdate ?? (() => {}),
       bm,
@@ -353,5 +356,76 @@ describe('LogicDialog — every edit leaves through onUpdate', () => {
     expect(byTestId(render({ step: scorer }), 'logic-dialog-empty')).toBeDefined();
     const withRule: FormStep = { ...scorer, goto: [{ values: ['budget_1'], target: null }] };
     expect(byTestId(render({ step: withRule }), 'logic-dialog-empty')).toBeUndefined();
+  });
+});
+
+describe('LogicDialog: a question on a screen of several (#200)', () => {
+  const field = (key: string, screenGroup?: string, extra: Partial<FormStep> = {}): FormStep => ({
+    key,
+    type: 'text',
+    question: key,
+    ...(screenGroup ? { screenGroup } : {}),
+    ...extra,
+  });
+  const steps = [
+    field('name', 'screen_1'),
+    field('email', 'screen_1'),
+    field('intro'),
+    field('city', 'screen_2'),
+    field('zip', 'screen_2'),
+    field('last'),
+  ];
+  const targets = (els: ReactElement[]) => {
+    const wrapper = byTestId(els, 'logic-dialog-always')!;
+    return collect((wrapper.props as AnyProps).children)
+      .filter((el) => el.type === 'option')
+      .map((el) => (el.props as AnyProps).value);
+  };
+
+  const landing = (els: ReactElement[]) =>
+    els
+      .filter((el) => el.type === JumpLandingNote)
+      .map((el) => (el.props as AnyProps).landing)
+      .filter((l) => l != null);
+  const withJump = (target: string) => {
+    const step = { ...steps[0]!, goto: [{ values: ['*'], target }] };
+    return { step, steps: [step, ...steps.slice(1)], index: 0 };
+  };
+
+  it('offers screen starts only, and says a jump happens on leaving the screen once there is one', () => {
+    const plain = render({ step: steps[0]!, steps, index: 0 });
+    // Not its own screen's second question, nor the middle of the next screen.
+    expect(targets(plain)).toEqual(['', 'intro', 'city', 'last', '__end__']);
+    expect(plain.some((el) => el.type === ScreenJumpNote)).toBe(false);
+    expect(render(withJump('last')).some((el) => el.type === ScreenJumpNote)).toBe(true);
+  });
+
+  it('keeps a mid-screen target it already holds, and says it opens the whole screen', () => {
+    const els = render(withJump('zip'));
+    expect(targets(els)).toContain('zip');
+    expect(landing(els)).toEqual(['mid']);
+  });
+
+  it('keeps a target on its own screen it already holds, and says the form ignores it', () => {
+    const els = render(withJump('email'));
+    expect(targets(els)).toContain('email');
+    expect(landing(els)).toEqual(['own']);
+  });
+
+  it('says nothing of screens off a screen, or on one page', () => {
+    const off = render({ step: steps[2]!, steps, index: 2 });
+    expect(off.some((el) => el.type === ScreenJumpNote)).toBe(false);
+    const onePage = render({ ...withJump('zip'), layout: 'vertical' });
+    expect(onePage.some((el) => el.type === ScreenJumpNote)).toBe(false);
+    expect(landing(onePage)).toEqual([]);
+    expect(targets(render({ step: steps[0]!, steps, index: 0, layout: 'vertical' }))).toEqual([
+      '',
+      'email',
+      'intro',
+      'city',
+      'zip',
+      'last',
+      '__end__',
+    ]);
   });
 });

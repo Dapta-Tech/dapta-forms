@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { FormStep } from '@quill/engine';
-import { anchorRevealsLast } from './logic-util';
+import { anchorRevealsLast, jumpTargetsAfter } from './logic-util';
 
 const q = (key: string): FormStep => ({ key, type: 'text' });
 const reveal = (key: string): FormStep => ({ key, type: 'reveal' });
@@ -106,5 +106,34 @@ describe('the goto vocabulary — a dead rule is ignored, never stripped', () =>
     expect(buildGoto(valueRules, alwaysValueOf(catchAll))).toEqual(rules);
     // No rules and no catch-all clears the field rather than storing [].
     expect(buildGoto([], GOTO_NEXT)).toBeUndefined();
+  });
+});
+
+describe('jumpTargetsAfter with screens (#200)', () => {
+  const g = (key: string, screenGroup?: string): FormStep => ({ key, type: 'text', ...(screenGroup ? { screenGroup } : {}) });
+  // a · [b c d] · e · [f g]
+  const steps = [g('a'), g('b', 's1'), g('c', 's1'), g('d', 's1'), g('e'), g('f', 's2'), g('g', 's2')];
+  const keys = (index: number, layout: 'slides' | 'vertical' = 'slides', keep?: string[]) =>
+    jumpTargetsAfter(steps, index, 'Question', layout, keep).map((t) => t.key);
+
+  it('offers screen starts only: a jump opens a screen from its first question', () => {
+    expect(keys(0)).toEqual(['b', 'e', 'f']);
+  });
+
+  it('never offers the jumping question’s own screen', () => {
+    expect(keys(1)).toEqual(['e', 'f']);
+    expect(keys(2)).toEqual(['e', 'f']);
+  });
+
+  it('keeps a target a rule already points at, so its picker can still show it', () => {
+    expect(keys(0, 'slides', ['c'])).toEqual(['b', 'c', 'e', 'f']);
+  });
+
+  it('offers every later question on one page, which ignores screens', () => {
+    expect(keys(0, 'vertical')).toEqual(['b', 'c', 'd', 'e', 'f', 'g']);
+  });
+
+  it('labels an untitled question by its position', () => {
+    expect(jumpTargetsAfter(steps, 3, 'Question', 'slides').map((t) => t.label)).toEqual(['Question 5', 'Question 6']);
   });
 });

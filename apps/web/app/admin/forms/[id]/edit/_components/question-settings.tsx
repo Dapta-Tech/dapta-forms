@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { FormStep, FormLayout, FormRevealSize } from '@quill/engine';
 import {
   FORM_REVEAL_SIZES,
+  MAX_SCREEN_SIZE,
   clampSliderValue,
   defaultFlowGroup,
   nameFields,
@@ -11,6 +12,7 @@ import {
   sanitizeStepKey,
   sliderBounds,
   sliderHasNoTravel,
+  screensActive,
 } from '@quill/engine';
 import { COUNTRIES, countryName, getMessages } from '@quill/shared';
 import { clientLocale } from '@/lib/client-locale';
@@ -23,7 +25,9 @@ import { OptionsEditor } from './options-editor';
 import { SliderScoringEditor } from './slider-scoring-editor';
 import { maxScoreForSteps } from './scoring-util';
 import { LogicDialog } from './logic-dialog';
-import { describeCondition, liveGotoRules, liveRuleCount, optionLabel, splitGoto } from './logic-util';
+import { describeCondition, jumpTargetsAfter, liveGotoRules, liveRuleCount, optionLabel, splitGoto } from './logic-util';
+import { jumpLanding, onScreen, readsOwnScreen, screenBoundary, type ScreenBlock } from './screen-util';
+import { JumpLandingNote, ScreenJumpNote, ScreenLiveNote } from './screen-notes';
 import { QuestionHubspotSection } from './question-hubspot';
 import { QuestionVariants } from './question-variants';
 import { SchedulerPanel } from './scheduler-panel';
@@ -130,6 +134,7 @@ export function QuestionSettings({
   publicUrl,
   onOpenConnect,
   uploads,
+  onScreenJoin,
 }: {
   formId: string;
   step: FormStep;
@@ -161,8 +166,27 @@ export function QuestionSettings({
   onOpenConnect: () => void;
   /** The deployment's file-answer ceiling, for the size field's own limit. */
   uploads?: { enabled: boolean; maxFileMb: number };
+  /**
+   * Join this question to the screen of the question above, or start a new
+   * screen here (#200). The same boundary the spine toggles, for the widths
+   * where the spine is hidden. Slides only.
+   */
+  onScreenJoin?: (joined: boolean) => void;
 }) {
   const contact = isContactType(step.type);
+  // Screens exist on slides only: on one page the switch, its badge and every
+  // note about them are absent, and the ids stay in the config untouched.
+  const screens = screensActive({ layout });
+  const boundary = screens ? screenBoundary(steps, index) : null;
+  const onSharedScreen = screens && onScreen(steps, index, layout);
+  const blockedReason = (blocked: ScreenBlock): string =>
+    blocked === 'first'
+      ? bm.screens.first
+      : blocked === 'solo'
+        ? bm.screens.soloType
+        : blocked === 'hidden'
+          ? bm.screens.hidden
+          : tb(bm.screens.max, { max: MAX_SCREEN_SIZE });
   // Form-wide "highest possible" total (same math as Results). Drives the
   // "assign points" nudge when scoring is on but nothing scores yet.
   const scoringMax = maxScoreForSteps(steps);
@@ -258,7 +282,9 @@ export function QuestionSettings({
         </Button>
       </div>
 
-      <Field label={bm.settings.questionType}>
+      {/* On a screen of several questions, say before the change what a
+          calendar, a reveal or a file upload does to it: they stand alone. */}
+      <Field label={bm.settings.questionType} hint={onSharedScreen ? bm.screens.soloType : undefined}>
         <SelectField value={currentItemId(step)} onChange={(e) => changeType(e.target.value)}>
           {ALL_ITEMS.map((it) => (
             <option key={it.id} value={it.id}>
@@ -535,10 +561,16 @@ export function QuestionSettings({
             steps,
             steps.findIndex((s) => s.key === step.key),
           )}
-          // Only steps AFTER this one are legal forward jump targets.
-          laterSteps={steps
-            .slice(steps.findIndex((s) => s.key === step.key) + 1)
-            .map((s) => ({ key: s.key, label: s.question?.trim() || s.key }))}
+          // Only steps AFTER this one are legal forward jump targets, and on
+          // slides only a screen's first question (a jump opens a whole screen).
+          laterSteps={jumpTargetsAfter(
+            steps,
+            steps.findIndex((s) => s.key === step.key),
+            bm.canvas.questionN.replace(' {n}', ''),
+            layout,
+            (step.goto ?? []).map((r) => r.target),
+          )}
+          landingOf={(key) => jumpLanding(steps, index, key, layout)}
           goto={step.goto}
           onGotoChange={(g) => onUpdate({ goto: g })}
           bm={bm}
@@ -715,11 +747,33 @@ export function QuestionSettings({
         step={step}
         index={index}
         steps={steps}
+        layout={layout}
         scoringEnabled={scoringEnabled}
         onUpdate={onUpdate}
         bm={bm}
         em={em}
       />
+
+      {/* Screens (#200): the spine's boundary toggle as a switch, always in
+          view, since below lg the spine is hidden and this is the only way to
+          group questions there. A boundary that cannot be joined says why
+          instead of disappearing; splitting is always possible. Slides only. */}
+      {boundary && onScreenJoin ? (
+        <section data-testid="question-screen" className="flex shrink-0 flex-col border-t border-border pt-4">
+          <InlineField
+            label={bm.screens.join}
+            hint={!boundary.joined && boundary.blocked ? blockedReason(boundary.blocked) : undefined}
+          >
+            <Switch
+              checked={boundary.joined}
+              disabled={!boundary.joined && boundary.blocked !== null}
+              onCheckedChange={onScreenJoin}
+              data-testid="behavior-screen-join"
+              aria-label={bm.screens.join}
+            />
+          </InlineField>
+        </section>
+      ) : null}
 
       {/* Everything below is ADVANCED: dynamic copy, behaviour flags, the answer
           key, and scoring. Collapsed by default, but the header names whatever
@@ -792,7 +846,12 @@ export function QuestionSettings({
             message step (it collects no answer) and for a scheduler (its answer
             is a booking, which no URL parameter can make), so hide it there. */}
         {!isInputlessType(step.type) && step.type !== 'scheduler' ? (
-          <InlineField label={em.behavior.hidden} hint={em.behavior.hiddenHint}>
+          <InlineField
+            label={em.behavior.hidden}
+            // On a screen of several questions hiding also takes it off the
+            // screen (a hidden question never shows, so it joins nothing).
+            hint={onSharedScreen && !step.hidden ? `${em.behavior.hiddenHint} ${bm.screens.hiddenLeaves}` : em.behavior.hiddenHint}
+          >
             <Switch
               checked={!!step.hidden}
               onCheckedChange={(v) => onUpdate({ hidden: v || undefined })}
@@ -831,13 +890,18 @@ export function QuestionSettings({
             is a position, and the one-page reveal has none — it plays once,
             after Submit. Its switch lives in Design, next to the layout picker
             (impossible-combination rule: don't offer a control that lies). */}
+        {/* On a screen of several questions the reveal plays after the SCREEN
+            (it is inserted after its last question), and the label says so. */}
         {step.hidden || step.type === 'reveal' || layout === 'vertical' ? null : (
-          <InlineField label={em.behavior.reveal} hint={em.behavior.revealHint}>
+          <InlineField
+            label={onSharedScreen ? bm.behavior.revealAfterScreen : em.behavior.reveal}
+            hint={onSharedScreen ? bm.behavior.revealAfterScreenHint : em.behavior.revealHint}
+          >
             <Switch
               checked={revealAfter}
               onCheckedChange={onRevealAfterChange}
               data-testid="behavior-reveal-after"
-              aria-label={em.behavior.reveal}
+              aria-label={onSharedScreen ? bm.behavior.revealAfterScreen : em.behavior.reveal}
             />
           </InlineField>
         )}
@@ -923,6 +987,7 @@ function LogicCard({
   step,
   index,
   steps,
+  layout,
   scoringEnabled,
   onUpdate,
   bm,
@@ -931,6 +996,7 @@ function LogicCard({
   step: FormStep;
   index: number;
   steps: FormStep[];
+  layout: FormLayout;
   scoringEnabled: boolean;
   onUpdate: (patch: Partial<FormStep>) => void;
   bm: BuilderMessages;
@@ -986,6 +1052,17 @@ function LogicCard({
   const personalEmail = step.type !== 'email' && step.type !== 'reveal' && index > 0;
   const gated = personalEmail && !!step.showForPersonalEmailOnly;
   const lines = (step.showWhen ? 1 : 0) + (step.hideWhen ? 1 : 0) + (bookingLabel ? 1 : 0) + routed.length;
+  // Screens (#200), slides only: a jump from a question on a screen of several
+  // runs when the screen is left; a jump into the middle of a screen opens the
+  // whole screen; a condition on an answer of the same screen plays live.
+  const jumpsOnLeave = routed.length > 0 && onScreen(steps, index, layout);
+  // A scheduler's picker says it next to the picker itself.
+  const landings = new Set(
+    scheduler
+      ? []
+      : liveGotoRules(step).map((r) => (r.target != null ? jumpLanding(steps, index, r.target, layout) : null)),
+  );
+  const liveOnScreen = readsOwnScreen(steps, index, layout);
 
   return (
     // `shrink-0` and NO `overflow` — see the paragraph in `advanced-settings.tsx`:
@@ -1068,6 +1145,11 @@ function LogicCard({
         </p>
       )}
 
+      {jumpsOnLeave ? <ScreenJumpNote m={bm} /> : null}
+      {landings.has('mid') ? <JumpLandingNote landing="mid" m={bm} /> : null}
+      {landings.has('own') ? <JumpLandingNote landing="own" m={bm} /> : null}
+      {liveOnScreen ? <ScreenLiveNote m={bm} /> : null}
+
       {personalEmail ? (
         <InlineField label={em.logic.personalEmailOnly} hint={em.logic.personalEmailHint}>
           <Switch
@@ -1084,6 +1166,7 @@ function LogicCard({
         step={step}
         index={index}
         steps={steps}
+        layout={layout}
         scoringEnabled={scoringEnabled}
         onUpdate={onUpdate}
         bm={bm}

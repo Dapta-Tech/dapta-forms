@@ -1,6 +1,6 @@
 'use client';
 
-import type { FormStep, GotoRule } from '@quill/engine';
+import type { FormLayout, FormStep, GotoRule } from '@quill/engine';
 import { Modal } from '@/components/modal';
 import { Button } from '@/components/ui/button';
 import { Select } from '@/components/ui/select';
@@ -15,10 +15,13 @@ import {
   buildGoto,
   catchAllFires,
   jumpTargetsAfter,
+  liveGotoRules,
   liveRuleCount,
   splitGoto,
 } from './logic-util';
 import { maxScoreForSteps } from './scoring-util';
+import { jumpLanding, onScreen } from './screen-util';
+import { JumpLandingNote, ScreenJumpNote } from './screen-notes';
 import { tb } from './builder-messages';
 import type { BuilderMessages } from './builder-messages';
 import type { EditorMessages } from './messages';
@@ -71,6 +74,7 @@ export function LogicDialog({
   step,
   index,
   steps,
+  layout,
   scoringEnabled,
   onUpdate,
   bm,
@@ -82,6 +86,8 @@ export function LogicDialog({
   /** This step's position in `steps` — what "earlier" and "later" mean. */
   index: number;
   steps: FormStep[];
+  /** Screens (#200) change where a jump may land and when it runs, on slides. */
+  layout: FormLayout;
   /** Form-level scoring switch — off means every score gate would read 0. */
   scoringEnabled: boolean;
   /** The ONLY mutation path. The dialog never writes config itself. */
@@ -106,7 +112,18 @@ export function LogicDialog({
   // Only steps AFTER this one are legal forward jump targets — the same list,
   // with the same labels, the Branching dialog offers, so the two doors onto
   // one rule can never disagree about where it may point.
-  const laterSteps = jumpTargetsAfter(steps, index, bm.canvas.questionN.replace(' {n}', ''));
+  const laterSteps = jumpTargetsAfter(
+    steps,
+    index,
+    bm.canvas.questionN.replace(' {n}', ''),
+    layout,
+    (step.goto ?? []).map((r) => r.target),
+  );
+  // On a screen of several questions a jump runs when the screen is left:
+  // said once the question has a rule that can run.
+  const screenJump = liveGotoRules(step).length > 0 && onScreen(steps, index, layout);
+  const landingOf = (target: string | null | undefined) =>
+    target != null ? jumpLanding(steps, index, target, layout) : null;
 
   // The catch-all is NOT a value rule: it belongs to the Always-go-to select
   // (the After-booking picker on a scheduler), never to the rule editor, which
@@ -191,6 +208,7 @@ export function LogicDialog({
                   onChange={(v) => writeGoto(valueRules, v === AFTER_SUBMIT ? GOTO_END : v)}
                 />
               </div>
+              <JumpLandingNote landing={landingOf(catchAll?.target)} m={bm} />
             </section>
           ) : (
             /* Routing — value-based forward rules. */
@@ -199,6 +217,7 @@ export function LogicDialog({
                 <i aria-hidden className="pi pi-sitemap text-secondary" style={{ fontSize: 11 }} />
                 {d.routing}
               </p>
+              {screenJump ? <ScreenJumpNote m={bm} /> : null}
               {/* Always go to — the catch-all, edited as what it is. It is the
                   SAME control (same options, same sentinels, same write) the
                   Branching dialog puts on this question, because it is the same
@@ -227,6 +246,7 @@ export function LogicDialog({
                   </div>
                 </div>
               ) : null}
+              {alwaysOffered ? <JumpLandingNote landing={landingOf(catchAll?.target)} m={bm} /> : null}
 
               {routable ? (
                 <>
@@ -238,6 +258,7 @@ export function LogicDialog({
                     step={{ ...step, goto: valueRules.length ? valueRules : undefined }}
                     index={index}
                     steps={steps}
+                    layout={layout}
                     onUpdate={(patch) => writeGoto(patch.goto ?? [], alwaysValue)}
                     m={bm}
                   />

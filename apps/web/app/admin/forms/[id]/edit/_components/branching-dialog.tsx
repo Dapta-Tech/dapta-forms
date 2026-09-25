@@ -1,15 +1,27 @@
 'use client';
 
-import type { FormStep, GotoRule } from '@quill/engine';
+import type { FormLayout, FormStep, GotoRule } from '@quill/engine';
 import { conditionNeverHolds, conditionsContradict } from '@quill/engine';
 import { Modal } from '@/components/modal';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/cn';
 import { SelectField } from './fields';
 import { iconForStep, hasOptions } from './question-types';
-import { GOTO_END, GOTO_NEXT, alwaysValueOf, buildGoto, catchAllFires, jumpTargetsAfter, liveRuleCount, splitGoto } from './logic-util';
+import {
+  GOTO_END,
+  GOTO_NEXT,
+  alwaysValueOf,
+  buildGoto,
+  catchAllFires,
+  jumpTargetsAfter,
+  liveGotoRules,
+  liveRuleCount,
+  splitGoto,
+} from './logic-util';
 import { LogicRules } from './logic-rules';
 import { LogicConditions } from './logic-conditions';
+import { jumpLanding, onScreen } from './screen-util';
+import { JumpLandingNote, ScreenJumpNote } from './screen-notes';
 import { tb } from './builder-messages';
 import type { BuilderMessages } from './builder-messages';
 import type { EditorMessages } from './messages';
@@ -47,6 +59,7 @@ export function BranchingDialog({
   open,
   onClose,
   steps,
+  layout,
   scoringEnabled,
   onUpdateStep,
   bm,
@@ -56,6 +69,8 @@ export function BranchingDialog({
   onClose: () => void;
   /** Every step in the form, in order — the whole point of the view. */
   steps: FormStep[];
+  /** Screens (#200) change where a jump may land and when it runs, on slides. */
+  layout: FormLayout;
   /** Form-level scoring switch, threaded to the visibility editors. */
   scoringEnabled: boolean;
   /** Patch ONE step — maps 1:1 onto the editor's `patchStep`. */
@@ -95,6 +110,7 @@ export function BranchingDialog({
                 step={step}
                 index={index}
                 steps={steps}
+                layout={layout}
                 scoringEnabled={scoringEnabled}
                 title={titleOf(step, index)}
                 onUpdate={(patch) => onUpdateStep(index, patch)}
@@ -124,6 +140,7 @@ function StepBlock({
   step,
   index,
   steps,
+  layout,
   scoringEnabled,
   title,
   onUpdate,
@@ -133,6 +150,7 @@ function StepBlock({
   step: FormStep;
   index: number;
   steps: FormStep[];
+  layout: FormLayout;
   scoringEnabled: boolean;
   title: string;
   onUpdate: (patch: Partial<FormStep>) => void;
@@ -142,7 +160,13 @@ function StepBlock({
   const b = bm.branching;
   const rules = liveRuleCount(step);
   const routable = hasOptions(step.type);
-  const targets = jumpTargetsAfter(steps, index, bm.canvas.questionN.replace(' {n}', ''));
+  const targets = jumpTargetsAfter(
+    steps,
+    index,
+    bm.canvas.questionN.replace(' {n}', ''),
+    layout,
+    (step.goto ?? []).map((r) => r.target),
+  );
   // Same audit the Logic map runs — a step whose rules cancel out never shows.
   const never = conditionsContradict(step.showWhen, step.hideWhen) || conditionNeverHolds(step.showWhen);
 
@@ -153,6 +177,9 @@ function StepBlock({
   // A message and a reveal record no answer, so `*` can never match on one:
   // the select would author a jump that provably never fires.
   const always = catchAllFires(step);
+  // On a screen of several questions a jump runs when the screen is left:
+  // said once the question has a rule that can run.
+  const screenJump = liveGotoRules(step).length > 0 && onScreen(steps, index, layout);
   // Everything under the header line. On a first-step message that is nothing
   // at all — and an empty ruled box reads as a broken control, not as "there
   // is nothing to configure here".
@@ -211,6 +238,8 @@ function StepBlock({
             </p>
           ) : null}
 
+          {screenJump ? <ScreenJumpNote m={bm} /> : null}
+
           {/* Always go to — `*` is "any answer" to the engine, so every question
               that HAS an answer gets this row, scheduler included (there it reads
               as "after the booking"). A message or a reveal gets nothing: the
@@ -242,6 +271,9 @@ function StepBlock({
               </div>
             </div>
           ) : null}
+          {always && catchAll?.target != null ? (
+            <JumpLandingNote landing={jumpLanding(steps, index, catchAll.target, layout)} m={bm} />
+          ) : null}
 
           {/* Value rules — only where the type HAS discrete values. The catch-all
               is split out above, so LogicRules sees (and edits) only real value
@@ -252,6 +284,7 @@ function StepBlock({
                 step={{ ...step, goto: valueRules.length ? valueRules : undefined }}
                 index={index}
                 steps={steps}
+                layout={layout}
                 onUpdate={(patch) => writeGoto(patch.goto ?? [], alwaysValue)}
                 m={bm}
               />

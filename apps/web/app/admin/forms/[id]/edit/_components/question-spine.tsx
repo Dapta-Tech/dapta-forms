@@ -1,9 +1,11 @@
 'use client';
 
-import { useEffect, useState, type HTMLAttributes, type ReactNode } from 'react';
-import type { FormStep } from '@quill/engine';
+import { useEffect, useId, useState, type HTMLAttributes, type ReactNode } from 'react';
+import type { FormLayout, FormStep } from '@quill/engine';
+import { MAX_SCREEN_SIZE, authoredScreens, screensActive } from '@quill/engine';
 import { cn } from '@/lib/cn';
 import { liveRuleCount } from './logic-util';
+import { screenBoundary, screenEnd, screenList, type ScreenBlock } from './screen-util';
 import { SortableList, SortableRow } from './sortable';
 import { iconForStep, isContactType, stepListLabel } from './question-types';
 import type { BuilderMessages } from './builder-messages';
@@ -33,12 +35,19 @@ const isMarker = (id: string): boolean => id === PARTIAL_ID;
  * form-level singleton with a position. It is a `reveal` STEP now — a numbered
  * card like any other — so a form can hold several and each is dragged and
  * edited as itself.
+ *
+ * Screens (#200), on slides only: a chain toggle on the top edge of each row
+ * joins the question to the screen above it or starts a new screen there. The
+ * rows of one screen close ranks into a single block, named by a label above
+ * it ("Screen 2 · 3 questions"). Numbering stays per question.
  */
 export function QuestionSpine({
   steps,
+  layout,
   selectedIndex,
   onSelect,
   onReorder,
+  onScreenJoin,
   onAdd,
   partialAfterStep,
   onPartialChange,
@@ -46,9 +55,13 @@ export function QuestionSpine({
   m,
 }: {
   steps: FormStep[];
+  /** Screens exist on slides only: on one page no toggle, block or chip is drawn. */
+  layout: FormLayout;
   selectedIndex: number | null;
   onSelect: (index: number) => void;
   onReorder: (from: number, to: number) => void;
+  /** Join step `index` to the screen above it, or start a new screen there. */
+  onScreenJoin?: (index: number, joined: boolean) => void;
   onAdd: () => void;
   /** 1-based `config.partialSubmitAfterStep`; marker shows when 1..steps.length. */
   partialAfterStep?: number;
@@ -67,6 +80,22 @@ export function QuestionSpine({
     partialAfterStep != null && partialAfterStep >= 1 && partialAfterStep <= steps.length
       ? partialAfterStep
       : null;
+
+  // Screens (#200). A hidden question between two of a screen is drawn inside
+  // its block: it is transparent to the screen, but it sits there.
+  const screensOn = onScreenJoin != null && screensActive({ layout });
+  const spans = screensOn ? authoredScreens(steps) : [];
+  const stops = screensOn ? screenList(steps) : [];
+  const spanAt = (i: number) =>
+    spans.find((s) => (s.members[0] as number) <= i && i <= (s.members[s.members.length - 1] as number)) ?? null;
+  const blockedReason = (blocked: ScreenBlock): string =>
+    blocked === 'first'
+      ? m.screens.first
+      : blocked === 'solo'
+        ? m.screens.soloType
+        : blocked === 'hidden'
+          ? m.screens.hidden
+          : tb(m.screens.max, { max: MAX_SCREEN_SIZE });
 
   // Merged sortable ids: step keys with the marker spliced in after its anchor.
   const ids: string[] = [];
@@ -150,16 +179,57 @@ export function QuestionSpine({
           const rules = liveRuleCount(step);
           const contact = isContactType(step.type);
           const title = stepListLabel(step, m);
+          const span = spanAt(stepIndex);
+          const opensScreen = span?.members[0] === stepIndex;
+          const closesScreen = span?.members[span.members.length - 1] === stepIndex;
+          const chip =
+            span && opensScreen
+              ? tb(m.screens.chip, {
+                  n: stops.findIndex((stop) => stop[0] === stepIndex) + 1,
+                  count: span.members.length,
+                })
+              : null;
           return (
             <SortableRow key={id} id={id}>
               {({ handleProps }) => (
+                <>
+                {/* The screen's name sits above its block, at the spine's full
+                    width: inside a row it would be cut at the narrowest one. */}
+                {chip ? (
+                  <p
+                    data-testid="spine-screen-chip"
+                    className="mb-1 flex items-center gap-1 pl-8 pr-1 text-2xs font-semibold text-muted-foreground"
+                  >
+                    <i aria-hidden className="pi pi-clone" style={{ fontSize: 9 }} />
+                    {chip}
+                  </p>
+                ) : null}
+                {/* The rows of one screen close the list's gap and share their
+                    borders, so the screen reads as one block. */}
+                <div className={cn('group/row relative', span && !opensScreen && '-mt-[9px]')}>
+                {screensOn ? (
+                  <ScreenToggle
+                    index={stepIndex}
+                    boundary={screenBoundary(steps, stepIndex)}
+                    reason={blockedReason}
+                    titleId={`spine-title-${step.key}`}
+                    onScreenJoin={onScreenJoin}
+                    m={m}
+                  />
+                ) : null}
                 <div
                   className={cn(
                     'relative flex items-center gap-2 overflow-hidden rounded-xl border py-2.5 pl-2 pr-2.5 transition-colors',
                     active
                       ? 'border-primary-edge bg-primary/[0.07]'
                       : 'border-border bg-card hover:border-muted-foreground/60',
+                    span && !opensScreen && 'rounded-t-none',
+                    span && !closesScreen && 'rounded-b-none',
+                    // Rows of a screen overlap by a border; the selected one
+                    // draws its whole outline over its neighbours.
+                    span && active && 'z-[1]',
                   )}
+                  data-screen-row={span ? (opensScreen ? 'first' : closesScreen ? 'last' : 'inside') : undefined}
                 >
                   {active ? (
                     <span aria-hidden className="absolute inset-y-1.5 left-0 w-1 rounded-full bg-primary-edge" />
@@ -192,7 +262,7 @@ export function QuestionSpine({
                       style={{ fontSize: 13 }}
                     />
                     <span className="flex min-w-0 flex-1 flex-col">
-                      <span className="truncate text-sm font-medium text-foreground">
+                      <span id={`spine-title-${step.key}`} className="truncate text-sm font-medium text-foreground">
                         {title}
                       </span>
                       <span className="mt-0.5 flex items-center gap-1.5">
@@ -223,6 +293,8 @@ export function QuestionSpine({
                     </span>
                   </button>
                 </div>
+                </div>
+                </>
               )}
             </SortableRow>
           );
@@ -265,7 +337,10 @@ export function QuestionSpine({
         // the email question is not the last step — after the last question a
         // threshold never fires (the final submit already captures it all).
         const emailIdx = steps.findIndex((s) => s.type === 'email' && !s.hidden);
-        if (partialIdx != null || emailIdx < 0 || emailIdx >= steps.length - 1) return null;
+        // On slides the point fires when the email's SCREEN is submitted, so
+        // an email on the last screen is the same as the last question.
+        const emailEnd = emailIdx >= 0 && screensActive({ layout }) ? screenEnd(steps, emailIdx) : emailIdx;
+        if (partialIdx != null || emailIdx < 0 || emailEnd >= steps.length - 1) return null;
         return (
           <div
             data-testid="partial-point-suggest"
@@ -284,6 +359,69 @@ export function QuestionSpine({
         );
       })()}
     </div>
+  );
+}
+
+/**
+ * The chain on a row's top edge: join this question to the screen above, or
+ * start a new screen here. Shown on hover or focus, and always while joined.
+ * A boundary that cannot be joined stays reachable (focusable, announced as
+ * unavailable) and says why, rather than vanishing without a reason.
+ */
+function ScreenToggle({
+  index,
+  boundary,
+  reason,
+  titleId,
+  onScreenJoin,
+  m,
+}: {
+  index: number;
+  boundary: { joined: boolean; blocked: ScreenBlock | null };
+  reason: (blocked: ScreenBlock) => string;
+  /** The row's title, so the control says which question it moves. */
+  titleId: string;
+  onScreenJoin: (index: number, joined: boolean) => void;
+  m: BuilderMessages;
+}) {
+  const reasonId = useId();
+  const { joined } = boundary;
+  const blocked = joined ? null : boundary.blocked;
+  const label = joined ? m.screens.split : m.screens.join;
+  return (
+    <>
+      <button
+        type="button"
+        data-testid={`screen-toggle-${index}`}
+        data-joined={joined ? 'true' : 'false'}
+        aria-label={label}
+        aria-disabled={blocked ? true : undefined}
+        aria-describedby={blocked ? `${titleId} ${reasonId}` : titleId}
+        title={blocked ? reason(blocked) : label}
+        onClick={() => {
+          if (!blocked) onScreenJoin(index, !joined);
+        }}
+        className={cn(
+          // In the grip column, so it never sits over the screen's name.
+          'absolute left-[18px] z-10 inline-flex h-5 w-5 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border bg-card shadow-sm transition-opacity focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+          // Joined rows touch, so the chain sits on their shared border;
+          // otherwise it sits in the middle of the gap between the rows.
+          // Without hover (a touch screen) an open boundary stays faintly in view.
+          joined
+            ? 'top-0 border-primary-edge text-foreground opacity-100'
+            : 'top-[-4px] border-border text-muted-foreground opacity-0 [@media(hover:none)]:opacity-60',
+          // A boundary that cannot be joined shows dimmed, and says why.
+          joined ? '' : blocked ? 'cursor-not-allowed border-dashed group-hover/row:opacity-50' : 'group-hover/row:opacity-100 hover:text-foreground',
+        )}
+      >
+        <i aria-hidden className="pi pi-link" style={{ fontSize: 10 }} />
+      </button>
+      {blocked ? (
+        <span id={reasonId} className="sr-only">
+          {reason(blocked)}
+        </span>
+      ) : null}
+    </>
   );
 }
 

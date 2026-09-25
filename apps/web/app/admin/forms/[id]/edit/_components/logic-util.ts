@@ -4,7 +4,7 @@
  * the declarative `showWhen`/`hideWhen` conditions still work (honored by the
  * engine, drawn on the map) and count toward a question's rule total.
  */
-import { SCORE_FIELD, type FormStep } from '@quill/engine';
+import { SCORE_FIELD, authoredScreens, screensActive, type AuthoredScreen, type FormLayout, type FormStep } from '@quill/engine';
 import type { GotoRule } from '@quill/engine';
 import { isInputlessType } from './question-types';
 
@@ -92,11 +92,33 @@ export interface JumpTarget {
   label: string;
 }
 
-/** The forward jump targets for the step at `index` (every later step). */
-export function jumpTargetsAfter(steps: FormStep[], index: number, fallback: string): JumpTarget[] {
+/**
+ * The forward jump targets for the step at `index`: every later step, except,
+ * on slides, a question inside a screen that is not its first (a jump opens a
+ * screen from the top) and anything on this step's own screen (a jump there
+ * would go nowhere). `keep` names targets rules already point at, so a picker
+ * still shows the one it holds even when the list would not offer it.
+ */
+export function jumpTargetsAfter(
+  steps: FormStep[],
+  index: number,
+  fallback: string,
+  layout: FormLayout,
+  keep: readonly (string | null | undefined)[] = [],
+): JumpTarget[] {
+  const screens = screensActive({ layout }) ? authoredScreens(steps) : [];
+  const screenAt = new Map<number, AuthoredScreen>();
+  for (const screen of screens) for (const i of screen.members) screenAt.set(i, screen);
+  const own = screenAt.get(index);
+  const offered = (i: number): boolean => {
+    const screen = screenAt.get(i);
+    if (!screen) return true;
+    return screen !== own && screen.members[0] === i;
+  };
   return steps
-    .slice(index + 1)
-    .map((s, i) => ({ key: s.key, label: s.question?.trim() || `${fallback} ${index + i + 2}` }));
+    .map((s, i) => ({ s, i }))
+    .filter(({ s, i }) => i > index && (offered(i) || keep.includes(s.key)))
+    .map(({ s, i }) => ({ key: s.key, label: s.question?.trim() || `${fallback} ${i + 1}` }));
 }
 
 /** The human label for an option value on a choice/dropdown step (falls back to the raw value). */

@@ -1,9 +1,11 @@
 'use client';
 
-import type { FormStep, GotoRule } from '@quill/engine';
+import type { FormLayout, FormStep, GotoRule } from '@quill/engine';
 import { Button } from '@/components/ui/button';
 import { SelectField } from './fields';
 import { jumpTargetsAfter } from './logic-util';
+import { jumpLanding } from './screen-util';
+import { JumpLandingNote } from './screen-notes';
 import type { BuilderMessages } from './builder-messages';
 
 /**
@@ -16,18 +18,27 @@ export function LogicRules({
   step,
   index,
   steps,
+  layout,
   onUpdate,
   m,
 }: {
   step: FormStep;
   index: number;
   steps: FormStep[];
+  /** Screens (#200) narrow the targets to screen starts, on slides only. */
+  layout: FormLayout;
   onUpdate: (patch: Partial<FormStep>) => void;
   m: BuilderMessages;
 }) {
   const rules = step.goto ?? [];
   const options = step.options ?? [];
-  const targets = jumpTargetsAfter(steps, index, m.canvas.questionN.replace(' {n}', ''));
+  const targets = jumpTargetsAfter(
+    steps,
+    index,
+    m.canvas.questionN.replace(' {n}', ''),
+    layout,
+    rules.map((r) => r.target),
+  );
 
   const SKIP = '__end__';
 
@@ -92,6 +103,9 @@ export function LogicRules({
                 ))}
               </SelectField>
             </div>
+            {rule.target != null ? (
+              <JumpLandingNote landing={jumpLanding(steps, index, rule.target, layout)} m={m} />
+            ) : null}
           </div>
         );
       })}
