@@ -951,6 +951,14 @@ export class FormDestinationsController {
       submittedAt: now,
       data: { ...sampleAnswers(config.steps ?? []), test: true },
       utm: {},
+      // The page a real delivery names (#199), so the author sees every key a
+      // receiver will get. The cookie is a placeholder no HubSpot portal knows.
+      visit: {
+        pageUri: 'https://example.com/landing?utm_source=test',
+        pageName: 'Example landing page',
+        hutk: '0'.repeat(32),
+        embedded: true,
+      },
     };
 
     /**

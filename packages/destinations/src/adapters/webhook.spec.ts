@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { createHmac } from 'node:crypto';
 import { WebhookDestination, signWebhookBody, DEFAULT_SIGNATURE_HEADER } from './webhook';
-import type { DestinationContext } from '../destination.port';
+import { transcriptOfError, type DestinationContext } from '../destination.port';
 
 /** A resolver that maps every host to a public IP — keeps tests off real DNS. */
 const publicResolver = async () => ['93.184.216.34'];
@@ -176,5 +176,83 @@ describe('WebhookDestination', () => {
       fetchImpl,
     ).deliver(ctx());
     expect(res.delivered).toBe(true);
+  });
+});
+
+/**
+ * The page the submission was answered on (#199): a top-level `visit` in the
+ * envelope, the landing's HubSpot cookie included for receivers that sync
+ * HubSpot through their own flows. The cookie is an online identifier, so the
+ * body the dashboard shows back (the delivery transcript) never carries it.
+ */
+describe('WebhookDestination: the visit', () => {
+  const HUTK = '0123456789abcdef0123456789abcdef';
+  const VISIT = {
+    pageUri: 'https://landing.example.com/offer?utm_source=fb',
+    pageName: 'Home insurance',
+    pageId: '12345',
+    hutk: HUTK,
+    hsPortalId: '4321',
+    embedded: true,
+  };
+
+  function capture(status = 200) {
+    const sent: Array<{ body: string; headers: Record<string, string> }> = [];
+    const fetchImpl = (async (_url: string, init: RequestInit) => {
+      sent.push({ body: init.body as string, headers: init.headers as Record<string, string> });
+      return new Response('{"accepted":true}', { status });
+    }) as unknown as typeof fetch;
+    const dest = new WebhookDestination({ url: 'https://acme.io/hook', secret: 'shh', resolveDns: publicResolver }, fetchImpl);
+    return { sent, dest };
+  }
+
+  it('adds the page, whether it was embedded, and the cookie; the signature covers them', async () => {
+    const { sent, dest } = capture();
+    await dest.deliver(ctx({ visit: VISIT }));
+    const { body, headers } = sent[0]!;
+    expect(JSON.parse(body).visit).toEqual({
+      pageUri: VISIT.pageUri,
+      pageName: VISIT.pageName,
+      embedded: true,
+      hutk: HUTK,
+    });
+    expect(headers['x-forms-signature']).toBe(signWebhookBody(body, 'shh'));
+  });
+
+  it('keeps the shape stable when the page reported little: nulls, and no cookie key', async () => {
+    const { sent, dest } = capture();
+    await dest.deliver(ctx({ visit: { embedded: true } }));
+    expect(JSON.parse(sent[0]!.body).visit).toEqual({ pageUri: null, pageName: null, embedded: true });
+  });
+
+  it('sends no visit key at all when none was reported', async () => {
+    const { sent, dest } = capture();
+    await dest.deliver(ctx());
+    expect(JSON.parse(sent[0]!.body)).not.toHaveProperty('visit');
+  });
+
+  it('records a transcript that hides the cookie, delivered or refused', async () => {
+    const ok = capture();
+    const result = await ok.dest.deliver(ctx({ visit: VISIT }));
+    expect(ok.sent[0]!.body).toContain(HUTK);
+    expect(result.requestBody).not.toContain(HUTK);
+    expect(JSON.parse(result.requestBody!).visit.hutk).toBe('[hidden]');
+
+    const refused = capture(500);
+    const err = await refused.dest.deliver(ctx({ visit: VISIT })).catch((e: unknown) => e);
+    expect(transcriptOfError(err).requestBody).toBeDefined();
+    expect(transcriptOfError(err).requestBody).not.toContain(HUTK);
+
+    const offline = new WebhookDestination({ url: 'https://acme.io/hook', resolveDns: publicResolver }, (async () => {
+      throw new Error('network down');
+    }) as unknown as typeof fetch);
+    const netErr = await offline.deliver(ctx({ visit: VISIT })).catch((e: unknown) => e);
+    expect(transcriptOfError(netErr).requestBody).not.toContain(HUTK);
+  });
+
+  it('records the body verbatim when there is no cookie to hide', async () => {
+    const { sent, dest } = capture();
+    const result = await dest.deliver(ctx({ visit: { pageUri: VISIT.pageUri, embedded: true } }));
+    expect(result.requestBody).toBe(sent[0]!.body);
   });
 });

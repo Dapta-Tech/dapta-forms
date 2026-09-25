@@ -1,13 +1,14 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
-import { getFormById, parseJsonColumn, resolveProviderToken, sql, type Db } from '@quill/db';
+import { getFormById, parseJsonColumn, readVisitColumn, resolveProviderToken, sql, type Db } from '@quill/db';
 import {
   formConfigSchema,
   formDestinationSchema,
   propertiesFor,
   type FormDestination,
   type HubspotDestination,
+  type SubmissionVisit,
 } from '@quill/types';
-import { resolveOutcome, INVITEE_FIELDS, type FormConfig } from '@quill/engine';
+import { publicTitle, resolveOutcome, INVITEE_FIELDS, type FormConfig } from '@quill/engine';
 import { createDestination, dayMidnightMs, utcMidnightMs } from '@quill/destinations';
 import type { ServerEnv } from '@quill/config/env';
 import { OutboxSkipError } from './email-effects';
@@ -432,8 +433,9 @@ export class BookingSyncEffects {
       completed_at: number | null;
       partial_at: number | null;
       started_at: number;
+      visit: unknown;
     }>(
-      sql`SELECT id, data, score, completed_at, partial_at, started_at FROM submission
+      sql`SELECT id, data, score, completed_at, partial_at, started_at, visit FROM submission
           WHERE form_id = ${formId} AND session_id = ${sessionId} LIMIT 1`,
     );
     if (!row) return null;
@@ -446,6 +448,7 @@ export class BookingSyncEffects {
       // `submittedAt` means. Never the delivery clock: outbox retries/backoff
       // can run hours later, and the date property + Note would lie.
       submittedAt: Number(row.completed_at ?? row.partial_at ?? row.started_at) || Date.now(),
+      visit: readVisitColumn(row.visit),
     };
   }
 
@@ -536,6 +539,11 @@ export class BookingSyncEffects {
       // the booking page happened to collect.
       data: { ...inviteeAnswers(invitee), ...data, email: inviteeEmail },
       utm: extractUtm(data),
+      // The page it was answered on, as stored: the mirror post is where
+      // HubSpot joins the landing's visits to the contact (complete rows only).
+      ...(submission.visit
+        ? { visit: submission.visit, formTitle: publicTitle(form.config as { title?: string }, form.name) }
+        : {}),
     });
     return result.delivered;
   }
@@ -601,6 +609,8 @@ interface SubmissionRow {
   score: number;
   completedAt: number | null;
   submittedAt: number;
+  /** The page it was answered on (see `upsertSubmission`); null when none was reported. */
+  visit: SubmissionVisit | null;
 }
 
 /**

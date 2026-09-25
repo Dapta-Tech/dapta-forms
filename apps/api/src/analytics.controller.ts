@@ -140,6 +140,7 @@ export class AnalyticsController {
         status: m.colStatus,
         score: m.colScore,
         submissionId: m.colSubmissionId,
+        pageUrl: m.colPageUrl,
       },
     });
 
@@ -159,6 +160,8 @@ export class AnalyticsController {
         status: s.completedAt != null ? m.badgeCompleted : m.badgePartial,
         // Latest instant known, as the table shows it: a partial row still has a date.
         submittedAt: local(s.completedAt ?? s.partialAt ?? s.startedAt),
+        // The dashboard's view of the visit: the page, never the HubSpot cookie.
+        pageUri: s.visit?.pageUri ?? '',
       };
       res.write(csvRow(columns.map((c) => c.value(row))));
     }

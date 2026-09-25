@@ -38,6 +38,13 @@ export interface DestinationContext {
   submissionId: string;
   formId: string;
   formName: string;
+  /**
+   * The form's PUBLIC title, what respondents saw. Carried with a visit, for
+   * the one place that needs a page name when the page reported none: the
+   * HubSpot form submission. Absent on older snapshots, which fall back to
+   * `formName` as they always did.
+   */
+  formTitle?: string;
   /** Tenant context asserted by the authenticated backend, never by a browser. */
   accountId: string;
   sessionId: string;
@@ -53,6 +60,31 @@ export interface DestinationContext {
   data: Record<string, unknown>;
   /** UTM values captured for the session (from `submission.data.utm`). */
   utm: Record<string, string>;
+  /**
+   * The page the submission was answered on, already sanitized by the API.
+   * Absent on a delivery enqueued before the visit existed, or when none was
+   * reported: every adapter then behaves exactly as it did without it.
+   */
+  visit?: DestinationVisit;
+}
+
+/**
+ * Where the form was answered: the landing that embeds it (read there by the
+ * host page's embed script), or the form's own URL on a direct link.
+ */
+export interface DestinationVisit {
+  /** Absolute http(s) URL of the page. */
+  pageUri?: string;
+  /** The page's title. */
+  pageName?: string;
+  /** The landing's HubSpot CMS page id. */
+  pageId?: string;
+  /** The landing's HubSpot visitor cookie. An online identifier: never logged. */
+  hutk?: string;
+  /** The HubSpot portal whose tracking code runs on the landing. */
+  hsPortalId?: string;
+  /** True when the form was answered inside a frame. */
+  embedded: boolean;
 }
 
 /**

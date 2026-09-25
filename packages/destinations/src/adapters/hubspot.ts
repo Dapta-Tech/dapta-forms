@@ -3,6 +3,7 @@ import { dayMidnightMs } from '../day';
 import type {
   DestinationContext,
   DestinationResult,
+  DestinationVisit,
   SubmissionDestination,
 } from '../destination.port';
 import {
@@ -10,6 +11,7 @@ import {
   buildMirrorSubmission,
   mirrorFormProperties,
   mirrorSubmitUrl,
+  type MirrorSubmissionContext,
 } from './hubspot-form';
 
 /** HubSpot public API base (overridable in tests). */
@@ -269,9 +271,18 @@ export class HubspotDestination implements SubmissionDestination {
       // refuses the post, and the note needs its id.
       upsert = await this.upsertContact({ email });
       const outcome = await this.submitMirrorForm(ctx, properties);
-      formDetail = outcome === 'ok' ? ' +form' : outcome ? ` (form ${outcome})` : '';
+      formDetail =
+        outcome === 'ok'
+          ? ctx.visit?.hutk
+            ? ' +form +visit'
+            : ' +form'
+          : outcome === 'ok-without-visit'
+            ? ' +form (visit refused)'
+            : outcome
+              ? ` (form ${outcome})`
+              : '';
 
-      if (outcome === 'ok') {
+      if (outcome === 'ok' || outcome === 'ok-without-visit') {
         // The mirror declares what it declares; anything else this destination
         // computes — company/website inferred from the email domain — is not on
         // that form and would otherwise never be written. Best effort, because
@@ -409,13 +420,50 @@ export class HubspotDestination implements SubmissionDestination {
   private async submitMirrorForm(
     ctx: DestinationContext,
     properties: Record<string, string>,
-  ): Promise<'ok' | 'failed' | 'skipped' | null> {
+  ): Promise<'ok' | 'ok-without-visit' | 'failed' | 'skipped' | null> {
     const { portalId, formGuid } = this.opts;
     if (!formGuid || !portalId) return null;
-    const body = buildMirrorSubmission(properties, mirrorFormProperties(this.opts), {
-      pageName: ctx.formName,
-    });
+    const declared = mirrorFormProperties(this.opts);
+    // The context every submission carried before the visit existed, and still
+    // carries, byte for byte, when there is none.
+    const plain: MirrorSubmissionContext = { pageName: ctx.formName };
+    const visit = ctx.visit;
+    const body = buildMirrorSubmission(
+      properties,
+      declared,
+      visit ? visitContext(visit, ctx.formTitle || ctx.formName) : plain,
+    );
     if (body.fields.length === 0) return 'skipped';
+    if (visit) this.warnPortalMismatch(visit, portalId);
+    const first = await this.postMirror(portalId, formGuid, body, visit?.hutk);
+    if (first === 'ok') return 'ok';
+    // A 400 is HubSpot refusing the body, and with a visit on it the refusal
+    // may be over a value the page reported (a cookie it does not recognise, a
+    // page URL it will not take). Once more with today's context alone: safe,
+    // because a refused post created no activity to duplicate.
+    if (first === 400 && visit) {
+      const retry = await this.postMirror(
+        portalId,
+        formGuid,
+        buildMirrorSubmission(properties, declared, plain),
+        visit.hutk,
+      );
+      return retry === 'ok' ? 'ok-without-visit' : 'failed';
+    }
+    return 'failed';
+  }
+
+  /**
+   * One post to the mirror form: 'ok', the refusing status, or 'error' when
+   * nothing answered. Never throws. HubSpot may quote the body back in its
+   * error, so the visitor's cookie is scrubbed from anything logged.
+   */
+  private async postMirror(
+    portalId: string,
+    formGuid: string,
+    body: object,
+    hutk: string | undefined,
+  ): Promise<'ok' | 'error' | number> {
     try {
       const res = await this.fetchImpl(mirrorSubmitUrl(portalId, formGuid, this.formsBase), {
         method: 'POST',
@@ -428,13 +476,26 @@ export class HubspotDestination implements SubmissionDestination {
       if (res.ok) return 'ok';
       const detail = await res.text().catch(() => '');
       this.logger.warn(
-        `[destination:hubspot] mirror form submit failed: HTTP ${res.status} ${detail.slice(0, 200)}`,
+        `[destination:hubspot] mirror form submit failed: HTTP ${res.status} ${withoutCookie(detail, hutk).slice(0, 200)}`,
       );
-      return 'failed';
+      return res.status;
     } catch (err) {
-      this.logger.warn(`[destination:hubspot] mirror form submit error: ${String(err)}`);
-      return 'failed';
+      this.logger.warn(`[destination:hubspot] mirror form submit error: ${withoutCookie(String(err), hutk)}`);
+      return 'error';
     }
+  }
+
+  /**
+   * The cookie belongs to the portal whose tracking code set it. Posted to a
+   * different portal, the activity still lands but HubSpot cannot join the
+   * page views to the contact, and nothing else would ever say why.
+   */
+  private warnPortalMismatch(visit: DestinationVisit, portalId: string): void {
+    if (!visit.hutk || !visit.hsPortalId || visit.hsPortalId === portalId) return;
+    this.logger.warn(
+      `[destination:hubspot] visit portal mismatch: the page runs the tracking code of portal ${visit.hsPortalId}, ` +
+        `this connection posts to portal ${portalId}, so its page views will not join the contact`,
+    );
   }
 
   /** Attach a Note engagement (v3, falling back to legacy v1). Never throws. */
@@ -448,6 +509,7 @@ export class HubspotDestination implements SubmissionDestination {
       score: ctx.score,
       outcomeLabel: ctx.outcomeLabel,
       submittedAt: ctx.submittedAt,
+      pageUri: ctx.visit?.pageUri,
     });
     try {
       const res = await this.fetchImpl(`${this.baseUrl}/crm/v3/objects/notes`, {
@@ -590,10 +652,37 @@ function escapeHtml(text: string): string {
     .replace(/"/g, '&quot;');
 }
 
-/** The Note engagement body: form name, submitted date, score/outcome, fields. */
+/**
+ * The submission's context from its visit: the landing's cookie, page and CMS
+ * page id, named after the page, or after the form respondents saw when the
+ * page reported no title. Empty values are left out when the body is built.
+ */
+function visitContext(visit: DestinationVisit, fallbackName: string): MirrorSubmissionContext {
+  return {
+    hutk: visit.hutk,
+    pageUri: visit.pageUri,
+    pageName: visit.pageName || fallbackName,
+    pageId: visit.pageId,
+  };
+}
+
+/** `text` with every occurrence of the visitor's cookie replaced: for anything logged. */
+function withoutCookie(text: string, hutk: string | undefined): string {
+  // The cookie is 32 hex characters (the API checked it), so it is safe as a pattern.
+  return hutk && /^[0-9a-f]+$/i.test(hutk) ? text.replace(new RegExp(hutk, 'gi'), '[hutk]') : text;
+}
+
+/** The Note engagement body: form name, submitted date, score/outcome, the page, fields. */
 export function buildSubmissionNoteBody(
   properties: Record<string, string>,
-  opts: { formName: string; score: number; outcomeLabel: string | null; submittedAt: number },
+  opts: {
+    formName: string;
+    score: number;
+    outcomeLabel: string | null;
+    submittedAt: number;
+    /** The page the form was answered on, when it was reported. */
+    pageUri?: string;
+  },
 ): string {
   const submittedAt = new Date(opts.submittedAt).toISOString();
   const qualification = opts.outcomeLabel ?? String(opts.score);
@@ -609,6 +698,7 @@ export function buildSubmissionNoteBody(
     `<p style="margin:0 0 6px 0;"><strong>Submitted:</strong> ${escapeHtml(submittedAt)}</p>`,
     `<p style="margin:0 0 6px 0;"><strong>Score:</strong> ${escapeHtml(String(opts.score))}</p>`,
     `<p style="margin:0 0 6px 0;"><strong>Outcome:</strong> ${escapeHtml(qualification)}</p>`,
+    ...(opts.pageUri ? [`<p style="margin:0 0 6px 0;"><strong>Page:</strong> ${escapeHtml(opts.pageUri)}</p>`] : []),
     `<p style="margin:8px 0 8px 0;"><strong>Submitted data:</strong></p>`,
     fieldLines || `<p style="margin:0;">: </p>`,
   ].join('\n');

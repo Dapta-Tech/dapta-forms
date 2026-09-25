@@ -43,7 +43,7 @@ export const openapiSpec = {
       post: {
         summary: 'Submit answers (score recomputed server-side)',
         description:
-          'Body { sessionId, data, partial?, locale?, captchaToken?, hp? }. A form whose owner turned on spam protection, on a deployment that can run it, is served with a `captcha` object in its public payload; its COMPLETE submit must then carry `captchaToken`, the token the human check issued for this session, and the API verifies it before anything is written. A partial submit of such a form is saved but delivered to no destination; the verified complete delivers everything. `hp` is the hidden field of strict mode and must be empty. Every error body carries a stable `error` code next to its English `message`.',
+          'Body { sessionId, data, partial?, locale?, captchaToken?, hp?, visit? }. A form whose owner turned on spam protection, on a deployment that can run it, is served with a `captcha` object in its public payload; its COMPLETE submit must then carry `captchaToken`, the token the human check issued for this session, and the API verifies it before anything is written. A partial submit of such a form is saved but delivered to no destination; the verified complete delivers everything. `hp` is the hidden field of strict mode and must be empty. `visit` is the page the form was answered on, as the browser reports it: { pageUri?, pageName?, pageId?, hutk?, hsPortalId?, embedded? }, where `pageUri` is an absolute http(s) URL (the page that embeds the form, or the form\u2019s own link without its prefill parameters), `pageName` its title, `pageId` and `hsPortalId` the HubSpot page and portal ids, and `hutk` the page\u2019s HubSpot visitor cookie (32 hex characters). Each field is checked on its own and dropped when it fails its rule, so a malformed visit never refuses a submission; a later submit without a visit keeps the one already stored. The cookie is kept only when a webhook or a HubSpot form submission of this form will use it. Every error body carries a stable `error` code next to its English `message`.',
         responses: {
           '201': { description: 'Recorded' },
           '400': { description: 'Invalid (BAD_REQUEST, ANSWER_TOO_LONG)' },
@@ -164,7 +164,7 @@ export const openapiSpec = {
       get: {
         summary: 'Get one submission in full (host)',
         description:
-          'Returns { id, formId, sessionId, data, score, startedAt, completedAt, partialAt }. Scoped by a join on the caller\u2019s own account, so a submission id from another workspace is 404, like one that does not exist.',
+          'Returns { id, formId, sessionId, data, score, startedAt, completedAt, partialAt, visit }. `visit` is null, or { pageUri, pageName, embedded, hubspotLinked }: the page the response was given on, whether it was embedded there, and whether a HubSpot visitor was linked to it. The visitor cookie itself is never returned. Scoped by a join on the caller\u2019s own account, so a submission id from another workspace is 404, like one that does not exist.',
         security: [{ hostSession: [] }],
         responses: { '200': { description: 'The submission' }, '404': { description: 'No such submission on this form in this workspace' } },
       },

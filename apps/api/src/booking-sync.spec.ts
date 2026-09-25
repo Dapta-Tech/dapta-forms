@@ -698,6 +698,79 @@ describe('booking_sync delivery', () => {
     expect(fields.find((f) => f.name === 'email')?.value).toBe('m@corp.io');
   });
 
+  // #199: the visit stored on the row (the landing and its HubSpot cookie)
+  // rides the booking-time mirror post too, the only post such a form makes.
+  it('carries the stored visit onto the booking-time mirror submission', async () => {
+    const hutk = '0123456789abcdef0123456789abcdef';
+    await setHubspotDestination(undefined, {
+      fieldMappings: { role: 'role' },
+      settings: { note: false, formActivity: true, formGuid: 'guid-1' },
+    });
+    await svc.submit('acme', 'lead-qualifier', {
+      sessionId: 'sess-visit-mirror',
+      data: { role: 'founder' },
+      visit: {
+        pageUri: 'https://landing.example.com/offer?utm_source=fb',
+        pageName: 'Home insurance',
+        hutk,
+        embedded: true,
+      },
+    });
+    await svc.booking('acme', 'lead-qualifier', {
+      sessionId: 'sess-visit-mirror',
+      provider: 'calendly',
+      eventUri: EVENT_URI,
+      inviteeUri: INVITEE_URI,
+    });
+
+    const calls: RecordedCall[] = [];
+    bookingSync.fetchImpl = recordingFetch(calls, {
+      [EVENT_URI]: () => jsonResponse({ resource: { start_time: '2026-08-02T10:00:00Z' } }),
+      [INVITEE_URI]: () => jsonResponse({ resource: { email: 'v@corp.io', name: 'Ada Lovelace' } }),
+      [ACCOUNT_INFO_URL]: () => jsonResponse({ portalId: 4242 }),
+      [HUBSPOT_UPSERT_URL]: () => jsonResponse({ results: [{ id: '95' }] }),
+    });
+    await drainDue();
+
+    const mirror = calls.find((c) => c.url.includes('/submissions/v3/integration/secure/submit/'));
+    expect((mirror?.body as { context?: unknown }).context).toEqual({
+      hutk,
+      pageUri: 'https://landing.example.com/offer?utm_source=fb',
+      pageName: 'Home insurance',
+    });
+  });
+
+  it('names an untitled page after the form respondents saw', async () => {
+    const { accountId, formId } = await setHubspotDestination(undefined, {
+      fieldMappings: { role: 'role' },
+      settings: { note: false, formActivity: true, formGuid: 'guid-1' },
+    });
+    // A public title of its own, unlike the dashboard name ("Lead Qualifier").
+    const full = await db.get<{ config: string }>(sql`SELECT config FROM form WHERE id = ${formId}`);
+    await updateForm(db, accountId, formId, { config: { ...JSON.parse(full!.config), title: 'Get your quote' } });
+    await svc.submit('acme', 'lead-qualifier', {
+      sessionId: 'sess-untitled',
+      data: { role: 'founder' },
+      visit: { pageUri: 'https://landing.example.com/', embedded: true },
+    });
+    await svc.booking('acme', 'lead-qualifier', {
+      sessionId: 'sess-untitled',
+      provider: 'calendly',
+      eventUri: EVENT_URI,
+      inviteeUri: INVITEE_URI,
+    });
+    const calls: RecordedCall[] = [];
+    bookingSync.fetchImpl = recordingFetch(calls, {
+      [EVENT_URI]: () => jsonResponse({ resource: { start_time: '2026-08-02T10:00:00Z' } }),
+      [INVITEE_URI]: () => jsonResponse({ resource: { email: 'u@corp.io', name: 'Ada Lovelace' } }),
+      [ACCOUNT_INFO_URL]: () => jsonResponse({ portalId: 4242 }),
+      [HUBSPOT_UPSERT_URL]: () => jsonResponse({ results: [{ id: '96' }] }),
+    });
+    await drainDue();
+    const mirror = calls.find((c) => c.url.includes('/submissions/v3/integration/secure/submit/'));
+    expect((mirror?.body as { context?: { pageName?: string } }).context?.pageName).toBe('Get your quote');
+  });
+
   // The switch is what enables it; the guid alone survives being turned off so
   // the same form is reused when it is turned back on.
   it('skips the mirror when the form activity switch is off', async () => {

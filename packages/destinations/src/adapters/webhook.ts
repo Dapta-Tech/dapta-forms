@@ -2,6 +2,7 @@ import { createHmac } from 'node:crypto';
 import type {
   DestinationContext,
   DestinationResult,
+  DestinationVisit,
   SubmissionDestination,
 } from '../destination.port';
 import { assertPublicWebhookUrl, type DnsResolver } from '../ssrf-guard';
@@ -12,6 +13,8 @@ export const DEFAULT_SIGNATURE_HEADER = 'X-Forms-Signature';
 export const DEFAULT_WEBHOOK_TIMEOUT_MS = 10_000;
 /** The event name carried in the payload + the X-Forms-Event header. */
 export const WEBHOOK_EVENT = 'form.submission';
+/** What the delivery history shows in place of the visitor's HubSpot cookie. */
+export const HIDDEN_HUTK = '[hidden]';
 
 export interface WebhookDestinationOptions {
   /** The customer endpoint to POST each submission to. */
@@ -48,6 +51,40 @@ export interface WebhookPayload {
   };
   data: Record<string, unknown>;
   utm: Record<string, string>;
+  /** The page it was answered on. Absent when none was reported (older rows too). */
+  visit?: WebhookVisit;
+}
+
+/**
+ * The envelope's `visit`: the page, whether the form was embedded in it, and
+ * the landing's HubSpot visitor cookie (`hutk`) when there is one, for a
+ * receiver that syncs HubSpot through its own flows. The page keys are always
+ * present (null when unknown) so a receiver can read them without guards.
+ */
+export interface WebhookVisit {
+  pageUri: string | null;
+  pageName: string | null;
+  embedded: boolean;
+  hutk?: string;
+}
+
+function webhookVisit(visit: DestinationVisit): WebhookVisit {
+  return {
+    pageUri: visit.pageUri ?? null,
+    pageName: visit.pageName ?? null,
+    embedded: visit.embedded === true,
+    ...(visit.hutk ? { hutk: visit.hutk } : {}),
+  };
+}
+
+/**
+ * The body as the delivery history shows it back: the one sent, except that
+ * the visitor's HubSpot cookie is replaced, since the dashboard never shows it.
+ * Byte for byte the sent body whenever there is no cookie to hide.
+ */
+function transcriptBody(payload: WebhookPayload, body: string): string {
+  if (!payload.visit?.hutk) return body;
+  return JSON.stringify({ ...payload, visit: { ...payload.visit, hutk: HIDDEN_HUTK } });
 }
 
 /**
@@ -83,6 +120,7 @@ export class WebhookDestination implements SubmissionDestination {
       },
       data: ctx.data,
       utm: ctx.utm,
+      ...(ctx.visit ? { visit: webhookVisit(ctx.visit) } : {}),
     };
   }
 
@@ -95,7 +133,10 @@ export class WebhookDestination implements SubmissionDestination {
       resolve: this.opts.resolveDns,
     });
 
-    const body = JSON.stringify(this.buildPayload(ctx));
+    const payload = this.buildPayload(ctx);
+    const body = JSON.stringify(payload);
+    // What the transcript records: never the visitor's HubSpot cookie.
+    const shown = transcriptBody(payload, body);
     const timestamp = String(Math.floor(ctx.submittedAt / 1000));
     const headers: Record<string, string> = {
       'content-type': 'application/json',
@@ -129,7 +170,7 @@ export class WebhookDestination implements SubmissionDestination {
       const error = err instanceof Error ? err : new Error(`webhook delivery failed: ${String(err)}`);
       // Attached rather than wrapped in a new class: the message and the error's
       // own type are what the outbox stores and what existing tests assert on.
-      (error as Error & { requestBody?: string }).requestBody = body;
+      (error as Error & { requestBody?: string }).requestBody = shown;
       throw error;
     } finally {
       clearTimeout(timeout);
@@ -141,7 +182,7 @@ export class WebhookDestination implements SubmissionDestination {
         `webhook delivery refused: endpoint attempted a redirect (HTTP ${res.status})`,
         res.status,
         null,
-        body,
+        shown,
       );
     }
     if (!res.ok) {
@@ -154,7 +195,7 @@ export class WebhookDestination implements SubmissionDestination {
         `webhook delivery failed: HTTP ${res.status}`,
         res.status,
         detail,
-        body,
+        shown,
       );
     }
     // A 2xx body too, not only a failing one. "It returned 200" and "it returned
@@ -164,7 +205,7 @@ export class WebhookDestination implements SubmissionDestination {
     return {
       delivered: true,
       driver: 'webhook',
-      requestBody: body,
+      requestBody: shown,
       responseStatus: res.status,
       responseBody: await readErrorBody(res),
     };

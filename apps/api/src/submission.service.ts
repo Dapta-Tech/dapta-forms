@@ -14,7 +14,7 @@ import {
   getAccountOwner,
   type SubmissionRow,
 } from '@quill/db';
-import { computeScore, resolveOutcome, summarizeAnswers, type FormConfig } from '@quill/engine';
+import { computeScore, publicTitle, resolveOutcome, summarizeAnswers, type FormConfig } from '@quill/engine';
 import {
   memberProfileSchema,
   submissionSchema,
@@ -29,6 +29,7 @@ import { BookingEffects } from './booking-effects';
 import { AnalyticsEffects } from './analytics-effects';
 import { UploadService } from './upload.service';
 import { captchaActive, captchaStrict, type CaptchaVerifier } from './captcha';
+import { hutkRefused, storedVisit } from './submission-visit';
 import { CAPTCHA, DB } from './tokens';
 
 export type ServiceError = { error: string; message: string; status: number };
@@ -181,6 +182,13 @@ export class SubmissionService {
 
     const config = form.config as FormConfig;
 
+    // The page it was answered on (#199). The contract already dropped any field
+    // that failed its rule, so this never refuses anything. The HubSpot cookie
+    // is an online identifier: it is kept only when something on this form will
+    // use it, and its value is never logged, refused or not.
+    if (hutkRefused(raw, input.visit)) this.log.warn('hutk dropped: not a 32-character hex HubSpot cookie');
+    const visit = storedVisit(input.visit, form.config);
+
     // The ceiling a long-text question sets is enforced HERE as well as in the
     // browser, because `submissionSchema` puts no bound on an answer string at
     // all, and an unbounded payload was an open door before this setting existed.
@@ -239,6 +247,7 @@ export class SubmissionService {
       data,
       score,
       partial,
+      visit,
     });
 
     // A transport retry whose first attempt actually landed re-runs this whole
@@ -316,6 +325,10 @@ export class SubmissionService {
       submittedAt: Date.now(),
       data,
       config,
+      // The MERGED row's visit, not this request's: a complete that came
+      // without one still delivers what the partial before it caught.
+      visit: row.visit,
+      formTitle: publicTitle(config, form.name),
     });
 
     // ACTIVATION — the north star: this account's form got a real answer.

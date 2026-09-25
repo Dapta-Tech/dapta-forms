@@ -19,6 +19,8 @@ export {
   WebhookHttpError,
   type WebhookDestinationOptions,
   type WebhookPayload,
+  type WebhookVisit,
+  HIDDEN_HUTK,
   signWebhookBody,
   DEFAULT_SIGNATURE_HEADER,
   DEFAULT_WEBHOOK_TIMEOUT_MS,
