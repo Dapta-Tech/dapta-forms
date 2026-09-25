@@ -530,8 +530,9 @@ describe('screens (#200): a grouped session reads through the same formulas', ()
       const chunks: string[] = [];
       const res = { setHeader: () => {}, write: (c: string) => void chunks.push(c), end: () => {} };
       await ctrl.exportCsv({ headers: {} }, res, f, {});
-      // Ignore the row id, the one cell that differs by construction.
-      return chunks.join('').trimEnd().split('\r\n').map((l) => l.replace(/,row-[^,]*$/, ''));
+      // Ignore the row id, the one cell that differs by construction, wherever
+      // it sits (other columns may follow it, like the page it was answered on).
+      return chunks.join('').trimEnd().split('\r\n').map((l) => l.replace(/,row-[^,]*/, ''));
     };
     const csv = await exportOf(grouped);
     expect(csv[0]).toMatch(/^\uFEFFName\?,Email\?,Company\?,Anything else\?,/);
