@@ -456,6 +456,44 @@ describe('funnel events per question (E1)', () => {
     ]);
   });
 
+  it('a screen bigger than one call carries sends its events in batches, and drops none', async () => {
+    // The builder caps a screen at ten; the engine does not, so one written
+    // through the API can hold thirty.
+    const thirty = Array.from({ length: 30 }, (_, i) => ({ key: `q${i}`, type: 'text', question: `Q${i}?`, screenGroup: 'big' }));
+    await mount(form({ steps: [...thirty, { key: 'after', type: 'text', question: 'After?' }] }));
+    await settle();
+    const batches = () =>
+      actions.recordEventsAction.mock.calls.map((c) => ((c as unknown[])[2] as { events: Sent[] }).events.length);
+    expect(batches()).toEqual([24, 6]);
+    expect(events('step_view')).toEqual(thirty.map((s, i) => [i, s.key]));
+    clearEvents();
+    await act(async () => button().click());
+    await settle();
+    expect(batches()).toEqual([24, 6]);
+    expect(events('step_complete')).toEqual(thirty.map((s, i) => [i, s.key]));
+  });
+
+  it('a refused submit clicked again completes each question once for the visit', async () => {
+    actions.submitFormAction.mockImplementation(async () => ({ ok: false, error: 'RATE_LIMITED', message: 'x' }));
+    const lastScreen = [
+      { key: 'name', type: 'text', question: 'Name?', screenGroup: 'last' },
+      { key: 'email', type: 'email', question: 'Email?', screenGroup: 'last' },
+    ];
+    await mount(form({ steps: lastScreen }));
+    await settle();
+    await act(async () => typeInto(input('name'), 'Ana'));
+    await act(async () => button().click());
+    await settle();
+    await act(async () => button().click());
+    await settle();
+    // Both attempts reached the API; the completions went once.
+    expect(actions.submitFormAction).toHaveBeenCalledTimes(2);
+    expect(events('step_complete')).toEqual([
+      [0, 'name'],
+      [1, 'email'],
+    ]);
+  });
+
   it('coming back to a screen is a new visit: its members are viewed again', async () => {
     await mount(form());
     await fillFirstScreen();

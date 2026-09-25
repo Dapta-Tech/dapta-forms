@@ -4,6 +4,7 @@ import { postSubmission, postFormEvent, postUploadPresign, type PresignResult } 
 import { postBookingCallback } from '@/lib/booking-embed';
 import { forwardedForChain } from '@/lib/forwarded-for';
 import type { BookingCallbackInput, SubmissionVisit, UploadPresignInput } from '@quill/types';
+import { EVENTS_PER_CALL } from './event-batches';
 
 /**
  * Submit a form — partial (past the lead-capture threshold) or complete. The
@@ -67,16 +68,15 @@ export async function presignUploadAction(
   return postUploadPresign(accountCode, slug, payload);
 }
 
-/** More events than a screen of ten questions can record at once are not a screen's. */
-const MAX_EVENTS_PER_CALL = 24;
-
 /**
  * Record several funnel events in one round trip (best-effort). A screen of
  * several questions records one per question at once (a view each when it
  * shows, a completion each when it is submitted), and the browser runs server
  * actions one at a time: N separate calls would queue in front of whatever the
- * person does next, the final submit included. Sent to the API one by one and
- * in order, so the rows land exactly as separate calls would have written them.
+ * person does next, the final submit included. For the same reason they go to
+ * the API all at once, not one after another: each is its own row, and no
+ * metric reads their order. A call carries at most `EVENTS_PER_CALL`; the
+ * renderer sends a bigger screen in batches.
  */
 export async function recordEventsAction(
   accountCode: string,
@@ -87,12 +87,14 @@ export async function recordEventsAction(
   },
 ): Promise<void> {
   if (!Array.isArray(payload.events)) return;
-  for (const event of payload.events.slice(0, MAX_EVENTS_PER_CALL)) {
-    await postFormEvent(accountCode, slug, {
-      sessionId: payload.sessionId,
-      type: event.type,
-      stepIndex: event.stepIndex ?? null,
-      stepKey: event.stepKey ?? null,
-    });
-  }
+  await Promise.all(
+    payload.events.slice(0, EVENTS_PER_CALL).map((event) =>
+      postFormEvent(accountCode, slug, {
+        sessionId: payload.sessionId,
+        type: event.type,
+        stepIndex: event.stepIndex ?? null,
+        stepKey: event.stepKey ?? null,
+      }),
+    ),
+  );
 }

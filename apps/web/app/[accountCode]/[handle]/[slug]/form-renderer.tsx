@@ -73,6 +73,7 @@ import {
   visitField,
   type VisitCapture,
 } from './renderer-shared';
+import { eventBatches } from './event-batches';
 import './public-form.css';
 
 type Phase = 'cover' | 'steps' | 'reveal' | 'submitting' | 'booking' | 'done';
@@ -292,6 +293,9 @@ export function FormRenderer({
   // member was revealed live by an answer, and fades in on its own).
   const screenViewed = useRef<{ visit: number; keys: Set<string> }>({ visit: -1, keys: new Set() });
   const screenOpened = useRef<{ visit: number; keys: Set<string> }>({ visit: -1, keys: new Set() });
+  // …and the members already completed on this visit: a submit the API refused
+  // (rate limited, say) is clicked again, and a question counts once per visit.
+  const screenCompleted = useRef<{ visit: number; keys: Set<string> }>({ visit: -1, keys: new Set() });
   // A question to focus once its error has rendered.
   const focusInvalid = useRef<string | null>(null);
   const engineConfig = config as unknown as EngineConfig;
@@ -399,7 +403,9 @@ export function FormRenderer({
    * Several events at once (a screen of several questions records one per
    * question): ONE server action, because the browser runs them one at a time
    * and N of them would queue in front of the person's next move, the final
-   * submit included. A single event goes exactly as `track` sends it.
+   * submit included. A screen bigger than one call carries (the engine does
+   * not cap a screen) goes in batches. A single event goes exactly as `track`
+   * sends it.
    */
   const trackMany = useCallback(
     (events: { type: string; stepIndex?: number; stepKey?: string }[]) => {
@@ -410,12 +416,14 @@ export function FormRenderer({
         return;
       }
       if (!sessionId) return;
-      void callAction(() =>
-        recordEventsAction(accountCode, slug, {
-          sessionId,
-          events: events.map((e) => ({ type: e.type, stepIndex: e.stepIndex ?? null, stepKey: e.stepKey ?? null })),
-        }),
-      );
+      for (const batch of eventBatches(events)) {
+        void callAction(() =>
+          recordEventsAction(accountCode, slug, {
+            sessionId,
+            events: batch.map((e) => ({ type: e.type, stepIndex: e.stepIndex ?? null, stepKey: e.stepKey ?? null })),
+          }),
+        );
+      }
     },
     [accountCode, slug, sessionId, track],
   );
@@ -690,7 +698,18 @@ export function FormRenderer({
           // leaves never reaches the challenge provider.
           gateRef.current.prewarm();
         }
-        trackMany(members.map((member, i) => ({ type: 'step_complete', stepIndex: index + i, stepKey: member.key })));
+        const completions = members.map((member, i) => ({ type: 'step_complete', stepIndex: index + i, stepKey: member.key }));
+        if (members.length > 1) {
+          // A screen of several: each question completes once per visit, even
+          // when a refused submit is clicked again.
+          if (screenCompleted.current.visit !== animKey) screenCompleted.current = { visit: animKey, keys: new Set() };
+          const done = screenCompleted.current.keys;
+          const fresh = completions.filter((c) => !done.has(c.stepKey));
+          for (const c of fresh) done.add(c.stepKey);
+          trackMany(fresh);
+        } else {
+          trackMany(completions);
+        }
 
         // Partial submit once past the configured lead-capture threshold (on a
         // screen of several: when the screen holding it is submitted).
@@ -754,7 +773,20 @@ export function FormRenderer({
         advancing.current = false;
       }
     },
-    [engineConfig, index, thresholdKey, revealKey, accountCode, slug, sessionId, finalize, track, trackMany, markSending],
+    [
+      engineConfig,
+      index,
+      animKey,
+      thresholdKey,
+      revealKey,
+      accountCode,
+      slug,
+      sessionId,
+      finalize,
+      track,
+      trackMany,
+      markSending,
+    ],
   );
 
   // A booking on a SCHEDULER step (V6): record the meeting (booking_event + the
