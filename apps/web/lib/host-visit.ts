@@ -57,8 +57,12 @@ export const SILENT_WAIT_MS = 150;
 export const MOUNT_RETRY_MS = [1_000, 3_000] as const;
 
 const HUBSPOT_COOKIE = 'hubspotutk';
+// C0 and C1 controls. Two patterns on purpose: `.test` on a /g regex keeps
+// state between calls, so the key check has its own, non-global one.
 // eslint-disable-next-line no-control-regex
 const CONTROL = /[\u0000-\u001f\u007f-\u009f]/g;
+// eslint-disable-next-line no-control-regex
+const HAS_CONTROL = /[\u0000-\u001f\u007f-\u009f]/;
 
 /** What one submit sends: the visit, and the landing's campaign for `data.utm`. */
 export interface ResolvedVisit {
@@ -229,25 +233,34 @@ function ownHubspotCookie(): string | undefined {
 }
 
 /**
+ * The `utm_*` parameters of a query string, as `data.utm` stores them, for
+ * both sources: the form's own URL (`captureUtm`) and the landing's
+ * (`hostUtm`). Everything here is typed into an address bar by someone else,
+ * and Postgres refuses `\u0000` in a JSON key exactly as in a value, which
+ * fails the whole submit. So a key carrying a control is no parameter at all,
+ * controls are removed from a value, and an empty value is no parameter.
+ */
+export function utmParams(params: URLSearchParams): Record<string, string> {
+  const utm: Record<string, string> = {};
+  for (const [key, value] of params) {
+    if (!key.toLowerCase().startsWith('utm_') || HAS_CONTROL.test(key)) continue;
+    const clean = value.replace(CONTROL, '').trim();
+    if (clean) utm[key] = clean;
+  }
+  return utm;
+}
+
+/**
  * The `utm_*` parameters of a page URL: the landing's campaign when the form is
  * embedded, merged into `data.utm` all or nothing (see `mergeHostUtm`).
- * Controls are removed (Postgres cannot store `\u0000`), and an empty value is
- * no parameter.
  */
 export function hostUtm(pageUri: string | undefined): Record<string, string> {
   if (!pageUri) return {};
-  let url: URL;
   try {
-    url = new URL(pageUri);
+    return utmParams(new URL(pageUri).searchParams);
   } catch {
     return {};
   }
-  const utm: Record<string, string> = {};
-  for (const [key, value] of url.searchParams) {
-    const clean = value.replace(CONTROL, '').trim();
-    if (key.toLowerCase().startsWith('utm_') && clean) utm[key] = clean;
-  }
-  return utm;
 }
 
 /** A request id no one else can guess. `crypto.randomUUID` needs a secure context; this does not. */

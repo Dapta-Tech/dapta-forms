@@ -15,7 +15,7 @@ import type { getMessages } from '@quill/shared';
 import type { FormDesignProps } from '@/lib/form-design';
 import { signupHref } from '@/lib/growth';
 import { warmTurnstile } from '@/lib/captcha';
-import { createHostVisit, type HostVisit, type ResolvedVisit } from '@/lib/host-visit';
+import { createHostVisit, utmParams, type HostVisit, type ResolvedVisit } from '@/lib/host-visit';
 import { isTransportError, type TransportError } from '@/lib/call-action';
 import { CaptchaChallenge, type CaptchaWidgetEvent } from '@/components/public/captcha-challenge';
 
@@ -33,15 +33,14 @@ export function useSessionId(key: string): string {
   return id;
 }
 
-/** Read `utm_*` query params from the current URL into a flat string map. */
+/**
+ * Read `utm_*` query params from the current URL into a flat string map, by
+ * the same rules as the landing's (`utmParams`): a key carrying a control is
+ * skipped, controls leave a value, an empty value is no parameter.
+ */
 export function captureUtm(): Record<string, string> {
   if (typeof window === 'undefined') return {};
-  const params = new URLSearchParams(window.location.search);
-  const utm: Record<string, string> = {};
-  for (const [k, v] of params.entries()) {
-    if (k.toLowerCase().startsWith('utm_') && v) utm[k] = v;
-  }
-  return utm;
+  return utmParams(new URLSearchParams(window.location.search));
 }
 
 /**

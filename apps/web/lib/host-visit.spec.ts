@@ -292,10 +292,13 @@ describe('hostUtm', () => {
     expect(hostUtm('https://landing.example.com/?utm_source=&utm_medium=a%00b')).toEqual({ utm_medium: 'ab' });
   });
 
-  it('never yields a value Postgres refuses in a JSON value', () => {
-    // An encoded surrogate decodes to replacement characters, never a lone one.
-    const utm = hostUtm('https://landing.example.com/?utm_source=%ED%A0%80&utm_medium=%00x&utm_term=%F0%9F%98%80');
-    expect(JSON.stringify(utm)).not.toMatch(/\\u0000|\\ud[89a-f][0-9a-f]{2}/i);
+  it('never yields a key or a value Postgres refuses in a JSON value', () => {
+    // A control in a KEY drops the whole pair; one in a value is removed. An
+    // encoded surrogate decodes to replacement characters, never a lone one.
+    const utm = hostUtm(
+      'https://landing.example.com/?utm_%00=1&utm_%1Fx=2&utm_source=%ED%A0%80&utm_medium=%00x&utm_content=%00&utm_term=%F0%9F%98%80',
+    );
+    expect(JSON.stringify(utm)).not.toMatch(/\\u00[01][0-9a-f]|\\ud[89a-f][0-9a-f]{2}/i);
     expect(utm).toEqual({ utm_source: '\ufffd\ufffd\ufffd', utm_medium: 'x', utm_term: '\u{1F600}' });
   });
 });

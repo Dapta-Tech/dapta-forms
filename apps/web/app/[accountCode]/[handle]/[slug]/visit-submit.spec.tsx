@@ -47,7 +47,9 @@ const host = vi.hoisted(() => ({
   asked: 0,
   answer: undefined as unknown,
 }));
-vi.mock('@/lib/host-visit', () => ({
+vi.mock('@/lib/host-visit', async (importOriginal) => ({
+  // The real UTM reader: only the host is played by the test.
+  ...(await importOriginal<typeof import('@/lib/host-visit')>()),
   createHostVisit: (opts: { hubspotTracking: boolean; formTitle: string }) => {
     host.created.push(opts);
     return {
@@ -65,7 +67,7 @@ vi.mock('@/lib/host-visit', () => ({
 
 import { FormRenderer } from './form-renderer';
 import { VerticalFormRenderer } from './vertical-form-renderer';
-import { mergeHostUtm } from './renderer-shared';
+import { captureUtm, mergeHostUtm } from './renderer-shared';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -202,6 +204,15 @@ describe('mergeHostUtm: the landing campaign, all or nothing', () => {
   it('is empty when neither has one', () => {
     expect(mergeHostUtm({}, undefined)).toEqual({});
     expect(mergeHostUtm({}, {})).toEqual({});
+  });
+});
+
+describe('captureUtm: the form\'s own campaign, read like the landing\'s', () => {
+  it('drops a pair whose key carries a control, and removes controls from values', () => {
+    window.history.replaceState(null, '', '/acme/f/quote?embed=1&utm_%00=1&utm_source=newsletter&utm_medium=%00&utm_term=a%00b');
+    const utm = captureUtm();
+    expect(utm).toEqual({ utm_source: 'newsletter', utm_term: 'ab' });
+    expect(JSON.stringify(utm)).not.toMatch(/\\u00[01][0-9a-f]/i);
   });
 });
 
