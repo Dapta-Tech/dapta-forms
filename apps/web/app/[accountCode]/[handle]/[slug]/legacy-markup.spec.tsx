@@ -14,11 +14,17 @@
  * on purpose: a stored form never changes when a template is edited, and this
  * proof is about the renderer, not about template copy. The copy is the
  * sources' own, except four dashes written as words or commas, so nothing
- * here trips the repo's dash rule.
+ * here trips the repo's dash rule. One more, `edge-step-types`, is written for
+ * this proof: none of the others has a hidden question, a url, a file upload,
+ * a reveal or a scheduler, and it is also rendered once with the human check.
+ *
+ * Every snapshot was written by the renderer as it was BEFORE screens (the
+ * base commit, in a throwaway checkout), never by the one under test.
  */
 import { afterAll, describe, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { normalizeScreenGroups, runtimeScreens, runtimeSteps, screenIds, type FormConfig } from '@quill/engine';
+import type { PublicCaptcha } from '@quill/types';
 
 // The attribution badge reads the deployment's env at render time, and the
 // brand mark at import time: both are pinned so the proof holds on any machine.
@@ -65,13 +71,21 @@ afterAll(() => {
   }
 });
 
-function slides(config: FormConfig, startAt: number | 'cover'): string {
+function slides(config: FormConfig, startAt: number | 'cover', captcha?: PublicCaptcha): string {
   return renderToStaticMarkup(
-    <FormRenderer accountCode="acme" slug="f" name="Legacy form" config={config as never} locale="en" startAt={startAt} />,
+    <FormRenderer
+      accountCode="acme"
+      slug="f"
+      name="Legacy form"
+      config={config as never}
+      locale="en"
+      startAt={startAt}
+      captcha={captcha}
+    />,
   );
 }
 
-function onePage(config: FormConfig): string {
+function onePage(config: FormConfig, captcha?: PublicCaptcha): string {
   return renderToStaticMarkup(
     <VerticalFormRenderer
       accountCode="acme"
@@ -79,24 +93,39 @@ function onePage(config: FormConfig): string {
       name="Legacy form"
       config={{ ...config, layout: 'vertical' } as never}
       locale="en"
+      captcha={captcha}
     />,
   );
+}
+
+/** Every position the preview protocol can ask for with no answers yet. */
+function positions(config: FormConfig): Array<number | 'cover'> {
+  return ['cover', ...runtimeSteps(config, {}).map((_, i) => i)];
 }
 
 describe('legacy forms render byte for byte', () => {
   for (const [name, raw] of Object.entries(fixtures)) {
     it(name, async () => {
       const config = raw as unknown as FormConfig;
-      // Every position the preview protocol can ask for with no answers yet.
-      const positions: Array<number | 'cover'> = [
-        'cover',
-        ...runtimeSteps(config, {}).map((_, i) => i),
-      ];
-      const parts = positions.map((at) => `<!-- slides, startAt ${at} -->\n${slides(config, at)}\n`);
+      const parts = positions(config).map((at) => `<!-- slides, startAt ${at} -->\n${slides(config, at)}\n`);
       parts.push(`<!-- one page -->\n${onePage(config)}\n`);
       await expect(parts.join('')).toMatchFileSnapshot(`./__snapshots__/legacy-markup/${name}.html`);
     });
   }
+});
+
+describe('a legacy form with the human check renders byte for byte', () => {
+  // Strict mode: the hidden field on every question, and the check's empty
+  // slot above the last button (and above Submit on one page).
+  const strict: PublicCaptcha = { provider: 'turnstile', siteKey: 'site-key', strict: true };
+  it('edge-step-types, strict', async () => {
+    const config = fixtures['edge-step-types'] as unknown as FormConfig;
+    const parts = positions(config).map(
+      (at) => `<!-- slides, startAt ${at}, strict check -->\n${slides(config, at, strict)}\n`,
+    );
+    parts.push(`<!-- one page, strict check -->\n${onePage(config, strict)}\n`);
+    await expect(parts.join('')).toMatchFileSnapshot('./__snapshots__/legacy-markup/edge-step-types.captcha.html');
+  });
 });
 
 describe('legacy forms walk as before: one screen per step, and opening one changes nothing', () => {

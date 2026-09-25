@@ -1207,5 +1207,88 @@
     "scoring": {
       "enabled": false
     }
+  },
+  "edge-step-types": {
+    "version": 1,
+    "cover": {
+      "enabled": true,
+      "eyebrow": "Accelerator",
+      "headline": "Apply for the spring cohort",
+      "subheadline": "A link, a deck, a quick check and a call.",
+      "ctaText": "Apply"
+    },
+    "steps": [
+      {
+        "key": "utm_campaign",
+        "type": "text",
+        "question": "Campaign",
+        "hidden": true
+      },
+      {
+        "key": "website",
+        "type": "url",
+        "question": "What is your company website?",
+        "required": true,
+        "placeholder": "https://example.com"
+      },
+      {
+        "key": "deck",
+        "type": "file",
+        "question": "Upload your pitch deck",
+        "helper": "A PDF works best.",
+        "required": true,
+        "allowedTypes": [
+          "pdf"
+        ],
+        "maxSizeMb": 10
+      },
+      {
+        "key": "stage",
+        "type": "multiple_choice",
+        "question": "What stage are you at?",
+        "selectionMode": "single",
+        "flowGroup": "qualification",
+        "options": [
+          {
+            "label": "Idea",
+            "value": "idea",
+            "points": 1
+          },
+          {
+            "label": "Revenue",
+            "value": "revenue",
+            "points": 5
+          }
+        ]
+      },
+      {
+        "key": "reveal_1",
+        "type": "reveal",
+        "reveal": {
+          "headline": "Checking your fit",
+          "subtitle": "One moment.",
+          "durationMs": 1500
+        }
+      },
+      {
+        "key": "call",
+        "type": "scheduler",
+        "question": "Book a call with a partner",
+        "scheduler": {
+          "provider": "calendly",
+          "url": "https://calendly.com/example/intro",
+          "prefill": true
+        }
+      },
+      {
+        "key": "notes",
+        "type": "textarea",
+        "question": "Anything else we should know?"
+      }
+    ],
+    "ending": {
+      "headline": "Thanks, we got it",
+      "body": "We read every application within a week."
+    }
   }
 }
