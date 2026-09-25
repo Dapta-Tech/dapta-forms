@@ -111,6 +111,15 @@ export interface BuilderMessages {
     empty: string;
     done: string;
   };
+  /** A question's jumps when it sits on a screen of several questions (#200). */
+  logic: {
+    /** On a question of a screen that carries jump rules. */
+    jumpAfterScreen: string;
+    /** On a rule whose target is a question inside a screen, not its first. */
+    midScreenTarget: string;
+    /** On a rule whose target is a later question of its own screen: the form ignores it. */
+    ownScreenTarget: string;
+  };
   /**
    * F3b — the three FORM-WIDE logic editors, opened from the Logic tab's
    * contextual toolbar. The builder can otherwise only show logic ONE question
@@ -205,6 +214,37 @@ export interface BuilderMessages {
     tipAfterLast: string;
     /** One-line pointer left in the Design tab (the select moved to the spine). */
     designNote: string;
+  };
+  /**
+   * Screens: several questions on one slides screen (#200). Joined from the
+   * spine or from the question's settings; never offered on one page.
+   */
+  screens: {
+    /** The spine's boundary control and the settings switch: join the question above. */
+    join: string;
+    /** The spine's boundary control on a joined boundary: split it here. */
+    split: string;
+    /** Above a screen's rows in the spine, on its frame in Logic and in the map. {n} {count} */
+    chip: string;
+    /** Why a calendar, a reveal or a file upload cannot join. */
+    soloType: string;
+    /** Why a hidden question cannot join. */
+    hidden: string;
+    /** Why a question cannot join a full screen. {max} */
+    max: string;
+    /** Why a question with no shown question above it cannot join anything. */
+    first: string;
+    /** Under the hidden switch of a question on a screen: hiding takes it off. */
+    hiddenLeaves: string;
+    /** On a question whose show or hide rule reads a question of its own screen. */
+    liveNote: string;
+  };
+  /** The question's Behavior switches, where a screen changes their wording (#200). */
+  behavior: {
+    /** "Show reveal after" on a question of a screen: it plays after the screen. */
+    revealAfterScreen: string;
+    /** Its hint there: the card goes after the screen's last question. */
+    revealAfterScreenHint: string;
   };
   canvas: {
     /** "Question {n}" */
@@ -624,6 +664,11 @@ const en: BuilderMessages = {
     empty: 'No logic yet. This question always appears and continues in order.',
     done: 'Done',
   },
+  logic: {
+    jumpAfterScreen: 'This jump happens when the respondent leaves this screen.',
+    midScreenTarget: 'This jump lands mid-screen, so it opens the whole screen.',
+    ownScreenTarget: 'This jump points inside its own screen, so it is ignored and the form continues in order.',
+  },
   branching: {
     open: 'Branching',
     title: 'Branching',
@@ -678,6 +723,23 @@ const en: BuilderMessages = {
     tipCaptcha: 'With spam protection on, partial answers are saved but not sent to integrations.',
     tipAfterLast: 'After the last question it never fires. The final submit already captures everything.',
     designNote: 'Configured in the question list on the Build tab: look for the “Partial submit point” card.',
+  },
+  screens: {
+    join: 'Show on the same screen as the question above',
+    split: 'Start a new screen here',
+    chip: 'Screen {n} · {count} questions',
+    soloType: 'Calendars, reveal screens and file uploads always get a screen of their own.',
+    hidden: 'Hidden questions are never shown, so they don’t join a screen.',
+    max: 'A screen holds up to {max} questions.',
+    first: 'No question is shown above this one, so there is no screen to join.',
+    hiddenLeaves: 'Hiding it also takes it off its screen.',
+    liveNote:
+      'This question depends on an answer on the same screen, so it appears and disappears while they answer.',
+  },
+  behavior: {
+    revealAfterScreen: 'Show a reveal screen after this screen',
+    revealAfterScreenHint:
+      'Adds a reveal card right after the last question of this screen. Turning it off removes that card. Edit its copy by selecting the card.',
   },
   canvas: {
     questionN: 'Question {n}',
@@ -1061,6 +1123,12 @@ const es: BuilderMessages = {
     empty: 'Sin lógica. Esta pregunta siempre aparece y continúa en orden.',
     done: 'Listo',
   },
+  logic: {
+    jumpAfterScreen: 'Este salto ocurre cuando la persona sale de esta pantalla.',
+    midScreenTarget: 'Este salto cae a mitad de una pantalla, así que abre la pantalla completa.',
+    ownScreenTarget:
+      'Este salto apunta dentro de su propia pantalla, así que se ignora y el formulario sigue en orden.',
+  },
   branching: {
     open: 'Ramificación',
     title: 'Ramificación',
@@ -1116,6 +1184,24 @@ const es: BuilderMessages = {
     tipAfterLast: 'Después de la última pregunta nunca se activa. El envío final ya lo captura todo.',
     designNote:
       'Se configura en la lista de preguntas, en la pestaña Construir: busca la tarjeta «Punto de envío parcial».',
+  },
+  screens: {
+    join: 'Mostrar en la misma pantalla que la pregunta anterior',
+    split: 'Empezar una pantalla nueva aquí',
+    chip: 'Pantalla {n} · {count} preguntas',
+    soloType:
+      'Los calendarios, las pantallas de revelación y las subidas de archivo siempre van en su propia pantalla.',
+    hidden: 'Las preguntas ocultas nunca se muestran, así que no se unen a una pantalla.',
+    max: 'Una pantalla admite hasta {max} preguntas.',
+    first: 'No hay ninguna pregunta visible antes de esta, así que no hay una pantalla a la que unirse.',
+    hiddenLeaves: 'Al ocultarla, también sale de su pantalla.',
+    liveNote:
+      'Esta pregunta depende de una respuesta de la misma pantalla, así que aparece y desaparece mientras responden.',
+  },
+  behavior: {
+    revealAfterScreen: 'Mostrar una pantalla de revelación después de esta pantalla',
+    revealAfterScreenHint:
+      'Añade una tarjeta de revelación justo después de la última pregunta de esta pantalla. Al apagarlo se elimina esa tarjeta. Edita su texto seleccionando la tarjeta.',
   },
   canvas: {
     questionN: 'Pregunta {n}',
