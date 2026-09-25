@@ -34,13 +34,14 @@ function fakeFrame(src: string, attrs: Record<string, string> = {}) {
   };
 }
 
-/** A host page running embed.js. */
+/** A host page running embed.js, loaded from `scriptSrc` (none: an inline copy). */
 function hostPage(opts: {
   cookie?: string;
   title?: string;
   hsVars?: Record<string, unknown>;
   loaderSrc?: string;
   frames?: ReturnType<typeof fakeFrame>[];
+  scriptSrc?: string;
 }) {
   const listeners: Array<(e: unknown) => void> = [];
   const cookieWrites: string[] = [];
@@ -65,6 +66,7 @@ function hostPage(opts: {
       jar = value;
     },
     documentElement: { clientHeight: 900 },
+    currentScript: opts.scriptSrc === undefined ? null : { src: opts.scriptSrc },
     querySelectorAll: (selector: string) => (selector === 'iframe[data-dapta-forms]' ? frames : []),
     getElementById: (id: string) => (id === 'hs-script-loader' && opts.loaderSrc ? { src: opts.loaderSrc } : null),
   };
@@ -156,6 +158,41 @@ describe('embed.js: dapta-forms:context-request', () => {
     page.ask(second, {}, 'https://other-forms.example.net');
     expect(page.frames[0]!.posted).toEqual([]);
     expect(second.posted[0]!.targetOrigin).toBe('https://other-forms.example.net');
+  });
+
+  describe('only for frames on its own forms host', () => {
+    const FOREIGN = 'https://widgets.example.net';
+
+    it('answers a frame served from the host it was loaded from', () => {
+      const page = hostPage({ cookie: `hubspotutk=${HUTK}`, scriptSrc: `${FORM_ORIGIN}/embed.js` });
+      page.ask();
+      expect(page.frames[0]!.posted[0]?.message).toMatchObject({ type: 'dapta-forms:context', hutk: HUTK });
+    });
+
+    it('never answers a marked frame from another host, even one still showing its own src', () => {
+      // A page editor can put the attribute on any iframe: that one gets nothing.
+      const foreign = fakeFrame(`${FOREIGN}/embed?id=1`);
+      const page = hostPage({ cookie: `hubspotutk=${HUTK}`, scriptSrc: `${FORM_ORIGIN}/embed.js`, frames: [foreign] });
+      page.ask(foreign, {}, FOREIGN);
+      expect(foreign.posted).toEqual([]);
+    });
+
+    it('still sizes such a frame: only the page context is held back', () => {
+      const foreign = fakeFrame(`${FOREIGN}/embed?id=1`);
+      const page = hostPage({ scriptSrc: `${FORM_ORIGIN}/embed.js`, frames: [foreign] });
+      page.send({ type: 'dapta-forms:resize', height: 512 }, foreign.contentWindow, FOREIGN);
+      expect(foreign.style.height).toBe('512px');
+    });
+
+    it('keeps the src check alone when its own host cannot be known', () => {
+      // An inline copy has no src, and an unreadable one says nothing either.
+      for (const scriptSrc of [undefined, 'http://[']) {
+        const foreign = fakeFrame(`${FOREIGN}/embed?id=1`);
+        const page = hostPage({ cookie: `hubspotutk=${HUTK}`, scriptSrc, frames: [foreign] });
+        page.ask(foreign, {}, FOREIGN);
+        expect(foreign.posted, String(scriptSrc)).toHaveLength(1);
+      }
+    });
   });
 
   it('never answers a frame with no src of its own', () => {

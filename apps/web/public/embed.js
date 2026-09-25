@@ -47,9 +47,13 @@
  *     portal ids when it runs HubSpot, and HubSpot's visitor cookie
  *     (`hubspotutk`), which is what lets HubSpot join the new contact to the
  *     visits it made before converting. The iframe cannot read any of it: it
- *     lives on another origin. The answer goes ONLY to one of our frames, and
- *     only while that frame still shows the origin of its own `src`, so a frame
- *     that navigated elsewhere is never handed the cookie. The cookie is left
+ *     lives on another origin. The answer goes ONLY to one of our frames: its
+ *     `src` must be on the host this script was loaded from, so an iframe
+ *     someone marked with the attribute but that is not our form gets
+ *     nothing, and it must still show the origin of that `src`, so a frame
+ *     that navigated elsewhere is never handed the cookie. (A copy of the
+ *     script with no src of its own, pasted inline, cannot know its host and
+ *     keeps only the second check.) The cookie is left
  *     out when the visitor opted out of HubSpot tracking (`__hs_opt_out=yes`,
  *     or a `__hs_do_not_track` cookie) and when it is not HubSpot shaped. This
  *     script reads cookies and never writes one. Put
@@ -75,6 +79,20 @@
 
   var HUTK = /^[0-9a-f]{32}$/i; // HubSpot's visitor cookie: 32 hex characters
   var DIGITS = /^\d{1,20}$/; // a HubSpot page or portal id
+
+  // The forms host this script was loaded from, read once: `currentScript` is
+  // only set while the script first runs. Null when it cannot be known (an
+  // inline copy, an old browser), and then only the frame's own src is checked.
+  var SCRIPT_ORIGIN = (function () {
+    try {
+      var script = document.currentScript;
+      if (!script || !script.src) return null;
+      var origin = new URL(script.src, window.location.href).origin;
+      return origin && origin !== 'null' ? origin : null;
+    } catch (_) {
+      return null;
+    }
+  })();
 
   /** True when `source` is the contentWindow of one of OUR embedded frames. */
   function isOurFrame(source) {
@@ -173,9 +191,12 @@
       var asking = isOurFrame(event.source);
       if (!asking) return;
       var origin = srcOrigin(asking);
-      // The frame must still show what its own src loaded: one that navigated
+      // Our forms host only: an iframe marked with the attribute that loads
+      // something else is not our form, whatever it shows.
+      if (!origin || (SCRIPT_ORIGIN && origin !== SCRIPT_ORIGIN)) return;
+      // And it must still show what its own src loaded: one that navigated
       // elsewhere is not our form any more, and gets nothing.
-      if (!origin || event.origin !== origin) return;
+      if (event.origin !== origin) return;
       var off = asking.getAttribute('data-dapta-forms-context') === 'off';
       try {
         var reply = off ? { type: 'dapta-forms:context', id: data.id, v: 1, off: true } : pageContext(data.id);
