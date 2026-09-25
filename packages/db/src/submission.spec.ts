@@ -8,6 +8,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { sql, type SQL } from 'drizzle-orm';
+import { parseSubmissionVisit } from '@quill/types';
 import { createDb, type Db } from './client';
 import { migrate } from './migrate';
 import { upsertSubmission, listSubmissions } from './forms';
@@ -272,6 +273,21 @@ describe('submission visit', () => {
     const one = await getSubmissionAnswersForAccount(db, accountId, row.id);
     expect(one?.visit).toEqual(view);
     for (const read of [page.items, exported, [one]]) expect(JSON.stringify(read)).not.toContain(HUTK);
+  });
+
+  it('stores a visit parsed from hostile strings, on Postgres too', async () => {
+    // All of it arrives from a page nobody here controls. What the parse keeps
+    // must be JSON Postgres accepts in a jsonb column, or the whole submit fails.
+    const hostile = parseSubmissionVisit({
+      pageUri: 'https://landing.example.com/\ud800',
+      pageName: 'Seguro \ud800 de hogar\u0000',
+      pageId: '12\ud800',
+      hsPortalId: '\u0000',
+      hutk: `${'a'.repeat(31)}\ud800`,
+      embedded: true,
+    });
+    const row = await upsertSubmission(db, { formId, sessionId: 'v-hostile', data: {}, score: 0, visit: hostile });
+    expect(row.visit).toEqual({ pageName: 'Seguro \ufffd de hogar', embedded: true });
   });
 
   it('reads a row stored before the column existed as no visit, on the dashboard too', async () => {

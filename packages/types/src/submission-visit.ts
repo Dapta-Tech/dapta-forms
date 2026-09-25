@@ -27,9 +27,12 @@ const DIGITS = /^\d{1,20}$/;
 /** C0 and C1 controls. Postgres refuses `\u0000` in a JSON value outright. */
 // eslint-disable-next-line no-control-regex
 const CONTROL = /[\u0000-\u001f\u007f-\u009f]/g;
-/** A browser always reports its URL encoded: raw whitespace or a control means it was not one. */
-// eslint-disable-next-line no-control-regex
-const RAW_SPACE = /[\s\u0000-\u001f\u007f]/;
+/**
+ * A browser always serializes its URL (percent-encoding, punycode host), so it
+ * is printable ASCII and nothing else. Whitespace, a control or a lone
+ * surrogate means it was not one, and the last two are JSON Postgres refuses.
+ */
+const PRINTABLE_ASCII = /^[\x21-\x7e]+$/;
 /** Scheme, authority, and the rest (path and query). */
 const HTTP_PARTS = /^(https?:\/\/)([^/?]*)(.*)$/i;
 
@@ -74,7 +77,7 @@ function isUtmPair(pair: string): boolean {
  * is given up on.
  */
 function cleanPageUri(raw: string): string | undefined {
-  if (!isSafeHttpUrl(raw) || RAW_SPACE.test(raw)) return undefined;
+  if (!isSafeHttpUrl(raw) || !PRINTABLE_ASCII.test(raw)) return undefined;
   const parts = HTTP_PARTS.exec(raw.split('#')[0] ?? '');
   if (!parts) return undefined;
   const scheme = parts[1] ?? '';

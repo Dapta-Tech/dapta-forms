@@ -76,13 +76,43 @@ describe('parseSubmissionVisit', () => {
     expect(parseSubmissionVisit({ pageName: 'a\ud800b' })?.pageName).toBe('a\ufffdb');
   });
 
+  it('drops a page URL with anything but printable ASCII, the only thing a browser sends', () => {
+    // A browser serializes its URL (percent-encoding, punycode). A lone
+    // surrogate kept here reached Postgres as JSON it refuses, failing the submit.
+    for (const pageUri of [
+      'https://a.example.com/\ud800',
+      'https://a.example.com/caf\u00e9',
+      'https://a.example.com/a\u0000b',
+      'https://a.example.com/a b',
+    ]) {
+      expect(parseSubmissionVisit({ pageUri, embedded: true }), JSON.stringify(pageUri)).toEqual({ embedded: true });
+    }
+    const serialized = 'https://xn--caf-dma.example.com/caf%C3%A9?q=%F0%9F%98%80';
+    expect(parseSubmissionVisit({ pageUri: serialized })?.pageUri).toBe(serialized);
+  });
+
+  it('never keeps a string Postgres refuses in a JSON value, in any field', () => {
+    for (const bad of ['\u0000', '\ud800', '\udfff', 'a\ud83d', '\u0000\ud800']) {
+      const visit = parseSubmissionVisit({
+        pageUri: `https://a.example.com/${bad}`,
+        pageName: `x${bad}y`,
+        pageId: `1${bad}`,
+        hutk: `${'a'.repeat(31)}${bad}`,
+        hsPortalId: bad,
+        embedded: true,
+      });
+      expect(JSON.stringify(visit), JSON.stringify(bad)).not.toMatch(/\\u0000|\\ud[89a-f][0-9a-f]{2}/i);
+    }
+  });
+
   it('keeps a page id and a portal id only as up to 20 digits', () => {
     expect(parseSubmissionVisit({ pageId: 98765, hsPortalId: ' 4321 ' })).toEqual({
       pageId: '98765',
       hsPortalId: '4321',
       embedded: false,
     });
-    for (const bad of ['12a', '', '1'.repeat(21), -3, {}]) {
+    // ASCII digits only: another script's digits are not an id HubSpot knows.
+    for (const bad of ['12a', '', '1'.repeat(21), -3, {}, '\u0661\u0662\u0663', '\uff11\uff12']) {
       expect(parseSubmissionVisit({ pageId: bad, hsPortalId: bad, pageName: 'x' })).toEqual({
         pageName: 'x',
         embedded: false,
