@@ -70,6 +70,7 @@ import {
 import {
   useSessionId,
   useCaptchaGate,
+  captchaAborted,
   submitFinal,
   captureUtm,
   captureDefaults,
@@ -260,6 +261,16 @@ export function VerticalFormRenderer({
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [done, setDone] = useState<{ score: number; outcome: string | null } | null>(null);
   const [booking, setBooking] = useState<{ outcome: FormOutcome; score: number } | null>(null);
+  // Submit is running right here on the page (spam protection's check above
+  // the button, then the submit): the button says so and takes no second
+  // click, and the answers hold still. Mirrored in a ref for the handlers.
+  const [sending, setSending] = useState(false);
+  const sendingRef = useRef(false);
+  const markSending = useCallback((on: boolean) => {
+    sendingRef.current = on;
+    setSending(on);
+  }, []);
+  const finalizeRun = useRef(0);
 
   const utmRef = useRef<Record<string, string>>({});
   const redirected = useRef(false); // a deferred redirect fires exactly once
@@ -322,6 +333,7 @@ export function VerticalFormRenderer({
     sessionId,
     locale: formLocale,
     theme: design.themeMode ?? 'dark',
+    prompt: m.captcha.prompt,
   });
   const gateRef = useRef(gate);
   gateRef.current = gate;
@@ -371,15 +383,26 @@ export function VerticalFormRenderer({
 
   const finalize = useCallback(
     async (finalAnswers: Answers) => {
-      setPhase('submitting');
+      // With spam protection on and the footer on the page, the whole submit
+      // happens at the button: the check sits right above it, the button reads
+      // "Submitting…", and the page stays where the person is. Otherwise (no
+      // check, or after a reveal took the page) the submitting screen, as ever.
+      const inline = gateRef.current.inlineReady();
+      const run = ++finalizeRun.current;
+      if (inline) {
+        markSending(true);
+        setSubmitError(null);
+      } else {
+        setPhase('submitting');
+      }
       const data = withData(finalAnswers);
       // Transport-safe with retries: a submit whose INVOCATION fails (network
       // drop, deploy-rotated action id) used to reject unhandled, stranding the
       // visitor on the "submitting" spinner with the submission silently lost.
       // Retrying is safe — the server dedupes submissions by session.
       // 8s per attempt: worst case ~27s on the spinner, not the old forever.
-      // With spam protection on, the human check runs first, on this screen
-      // (see `submitFinal`, shared with the slides layout).
+      // With spam protection on, the human check runs first (see
+      // `submitFinal`, shared with the slides layout).
       const res = await submitFinal({
         gate: gateRef.current,
         m,
@@ -402,10 +425,14 @@ export function VerticalFormRenderer({
           ),
       });
       // A newer run owns the screen now (see `submitFinal`).
-      if ('aborted' in res) return;
+      if ('aborted' in res) {
+        if (run === finalizeRun.current) markSending(false);
+        return;
+      }
       if (!res.ok) {
         // Back to the page with every answer intact and the message next to
         // Submit, which is also how the person tries again.
+        markSending(false);
         setSubmitError(res.message);
         setPhase('form');
         return;
@@ -453,7 +480,7 @@ export function VerticalFormRenderer({
       setDone({ score, outcome: res.outcome ?? null });
       setPhase('done');
     },
-    [accountCode, slug, sessionKey, sessionId, engineConfig],
+    [accountCode, slug, sessionKey, sessionId, engineConfig, markSending],
   );
   const finalizeRef = useRef(finalize);
   finalizeRef.current = finalize;
@@ -516,13 +543,16 @@ export function VerticalFormRenderer({
 
   /** Every answer mutation funnels through here: start signal + error clearing. */
   function setAnswer(step: FormStep, key: string, value: AnswerValue, instant: boolean) {
+    // What is being submitted is what the page shows: no edits mid-submit.
+    if (sendingRef.current) return;
     seededKeys.current.delete(step.key); // a real interaction "claims" the answer
     if (!startTracked.current) {
       startTracked.current = true;
       track('start');
-      // The first answer, not the view: a visitor who only looks and leaves
-      // never reaches the challenge provider.
-      gateRef.current.prewarm();
+      // The first answer arms the check above Submit, which then loads only
+      // once the footer is on screen: a visitor who only looks, or never
+      // scrolls to the end, never reaches the challenge provider.
+      gateRef.current.arm();
     }
     const next = { ...answersRef.current, [key]: value };
     // Keep the ref fresh SYNCHRONOUSLY: a blur handler can run before React
@@ -627,6 +657,7 @@ export function VerticalFormRenderer({
 
   /** Submit the whole page: validate the walk, scroll to the first error. */
   async function submitAll() {
+    if (sendingRef.current) return;
     // Commit point: canonicalize every answer (url steps gain their scheme)
     // before the walk is validated, so a value typed and submitted without a
     // blur still lands in its stored shape.
@@ -668,6 +699,17 @@ export function VerticalFormRenderer({
     // still records its step_complete / partial_submit before the submission.
     for (const s of walk) markCompleteIfValid(s, a);
     if (pendingReveal && pendingReveal.enabled !== false) {
+      // The reveal takes the page before the submit, so the check runs HERE
+      // first, above Submit (a checkbox, if one is needed, where the person
+      // is looking), and its token waits for the submit after the reveal. A
+      // check that cannot finish here gets its second chance on the
+      // submitting screen after the reveal.
+      if (gateRef.current.inlineReady()) {
+        markSending(true);
+        const held = await gateRef.current.hold();
+        markSending(false);
+        if (captchaAborted(held)) return;
+      }
       setPhase('reveal');
       return;
     }
@@ -735,8 +777,9 @@ export function VerticalFormRenderer({
 
   if (phase === 'submitting') {
     // The human check shows here when it needs the person (or always, in
-    // strict mode, where the widget itself is the progress indicator).
-    const showSpinner = !gate.interactive && !(gate.enabled && gate.strict);
+    // strict mode, where the widget itself is the progress indicator). A
+    // token already won above Submit leaves no widget here: the spinner.
+    const showSpinner = !gate.interactive && !(gate.strict && gate.widget);
     return (
       <PhaseShell
         className="pf pf--reveal"
@@ -881,8 +924,16 @@ export function VerticalFormRenderer({
                   {submitError}
                 </p>
               ) : null}
-              <button type="button" className="pf__btn" onClick={() => void submitAll()}>
-                {labels.submit}
+              {/* Spam protection's check, right above Submit; nothing otherwise. */}
+              {gate.inline}
+              <button
+                type="button"
+                className="pf__btn"
+                onClick={() => void submitAll()}
+                disabled={sending}
+                aria-busy={sending || undefined}
+              >
+                {sending ? m.submitting : labels.submit}
               </button>
             </div>
           ) : null}

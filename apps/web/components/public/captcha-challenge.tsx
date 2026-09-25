@@ -1,34 +1,36 @@
 'use client';
 
 /**
- * One run of the human check, on the submitting screen of a form with spam
- * protection on. Mounted per attempt (the caller keys it), so a retry is a
- * fresh widget and never a reset of a half-finished one.
+ * One human-check widget, reporting what it does. Where it sits (right above a
+ * button that finishes the form, or on the submitting screen) and what a
+ * report means for the submit are decided by the renderers' shared
+ * `useCaptchaGate`, identically for both layouts.
  *
- * It reports exactly one outcome, whatever the widget does after that:
+ * It reports, as they happen:
  *
- * - `onToken`: the check passed; the token goes to the API with the submit.
- * - `onUnavailable`: it could not run. The script did not load, the browser is
- *   unsupported, the widget errored, or nothing at all happened within
- *   `timeoutMs` (an iframe blocked by an extension fires no callback at all).
+ * - `token`: the check passed. Can come more than once: a token left unused
+ *   for five minutes expires and the widget fetches a fresh one on its own.
+ * - `expired`: the last token is no longer valid; a fresh one follows.
+ * - `error`: it could not run (the script did not load, the browser is
+ *   unsupported, or the widget failed). Final for this widget: a new attempt
+ *   is a new widget, remounted by the caller.
+ * - `interactive`: the widget is (or stops) asking the person for a click.
  *
- * `onInteractive` tracks the one moment the person has to act: the widget is
- * asking for a click. The caller shows its prompt then, and the own timeout
- * stops counting, because a person reading the checkbox is not an outage. It
- * starts again once the click is done: a widget that goes quiet after it is.
- *
- * Nothing here decides what happens with the outcome; the renderers' shared
- * `useCaptchaGate` and `submitFinal` do, identically for both layouts.
+ * Silence (an iframe blocked by an extension fires no callback at all) is the
+ * caller's to time out, only while a submit is actually waiting.
  */
 import { useEffect, useRef } from 'react';
 import { CAPTCHA_ACTION } from '@quill/types';
 import { loadTurnstile } from '@/lib/captcha';
 
-/** No callback at all for this long means the widget is not coming. */
-export const CAPTCHA_TIMEOUT_MS = 15_000;
-
 /** Below this container width the flexible widget would overflow; the compact one fits. */
 const FLEXIBLE_MIN_WIDTH = 300;
+
+export type CaptchaWidgetEvent =
+  | { type: 'token'; token: string }
+  | { type: 'expired' }
+  | { type: 'error'; reason: string }
+  | { type: 'interactive'; on: boolean };
 
 export interface CaptchaChallengeProps {
   siteKey: string;
@@ -38,45 +40,26 @@ export interface CaptchaChallengeProps {
   cData: string;
   language: 'en' | 'es';
   theme: 'light' | 'dark';
-  timeoutMs?: number;
-  onToken: (token: string) => void;
-  onUnavailable: (reason: string) => void;
-  onInteractive: (interactive: boolean) => void;
+  onEvent: (event: CaptchaWidgetEvent) => void;
 }
 
-export function CaptchaChallenge({
-  siteKey,
-  strict,
-  cData,
-  language,
-  theme,
-  timeoutMs = CAPTCHA_TIMEOUT_MS,
-  onToken,
-  onUnavailable,
-  onInteractive,
-}: CaptchaChallengeProps) {
+export function CaptchaChallenge({ siteKey, strict, cData, language, theme, onEvent }: CaptchaChallengeProps) {
   const container = useRef<HTMLDivElement | null>(null);
-  // Latest callbacks, so the effect below runs once per mount.
-  const handlers = useRef({ onToken, onUnavailable, onInteractive });
-  handlers.current = { onToken, onUnavailable, onInteractive };
+  // The latest handler, so the effect below runs once per mount.
+  const handler = useRef(onEvent);
+  handler.current = onEvent;
 
   useEffect(() => {
-    let settled = false;
     let unmounted = false;
     let widgetId: string | undefined;
-    const settle = (report: () => void) => {
-      if (settled || unmounted) return;
-      settled = true;
-      clearTimeout(timer);
-      report();
+    const emit = (event: CaptchaWidgetEvent) => {
+      if (!unmounted) handler.current(event);
     };
-    const arm = () => setTimeout(() => settle(() => handlers.current.onUnavailable('timeout')), timeoutMs);
-    let timer = arm();
 
     loadTurnstile()
       .then((turnstile) => {
         const el = container.current;
-        if (settled || unmounted || !el) return;
+        if (unmounted || !el) return;
         const width = el.clientWidth;
         widgetId =
           turnstile.render(el, {
@@ -87,35 +70,29 @@ export function CaptchaChallenge({
             language,
             theme,
             size: width > 0 && width < FLEXIBLE_MIN_WIDTH ? 'compact' : 'flexible',
-            // One outcome per mount: a retry is the caller's, on a fresh widget.
+            // A failure is final for this widget: the caller decides whether a
+            // fresh one is worth it, so a broken check cannot loop by itself.
             retry: 'never',
-            'refresh-expired': 'manual',
+            // A token left unused for five minutes (someone reading the last
+            // question) expires; the widget quietly fetches a fresh one.
+            'refresh-expired': 'auto',
             'response-field': false,
-            callback: (token) => settle(() => handlers.current.onToken(token)),
+            callback: (token) => emit({ type: 'token', token }),
+            'expired-callback': () => emit({ type: 'expired' }),
             'error-callback': (code) => {
-              settle(() => handlers.current.onUnavailable(`error ${code}`));
+              emit({ type: 'error', reason: `error ${code}` });
               // Handled: no console noise, and no exception thrown into the page.
               return true;
             },
-            'unsupported-callback': () => settle(() => handlers.current.onUnavailable('unsupported')),
-            'before-interactive-callback': () => {
-              if (settled || unmounted) return;
-              clearTimeout(timer);
-              handlers.current.onInteractive(true);
-            },
-            'after-interactive-callback': () => {
-              if (settled || unmounted) return;
-              handlers.current.onInteractive(false);
-              clearTimeout(timer);
-              timer = arm();
-            },
+            'unsupported-callback': () => emit({ type: 'error', reason: 'unsupported' }),
+            'before-interactive-callback': () => emit({ type: 'interactive', on: true }),
+            'after-interactive-callback': () => emit({ type: 'interactive', on: false }),
           }) ?? undefined;
       })
-      .catch(() => settle(() => handlers.current.onUnavailable('script')));
+      .catch(() => emit({ type: 'error', reason: 'script' }));
 
     return () => {
       unmounted = true;
-      clearTimeout(timer);
       if (widgetId) {
         try {
           window.turnstile?.remove(widgetId);
@@ -124,8 +101,8 @@ export function CaptchaChallenge({
         }
       }
     };
-    // One widget per mount on purpose: the caller remounts (by key) to run it
-    // again, so no prop change may re-render the widget under a pending check.
+    // One widget per mount on purpose: the caller remounts (by key) for a
+    // fresh attempt, so no prop change may re-render a widget mid-check.
   }, []);
 
   return (

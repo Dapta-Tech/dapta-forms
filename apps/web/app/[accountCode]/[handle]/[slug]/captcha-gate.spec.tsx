@@ -1,9 +1,10 @@
 // @vitest-environment happy-dom
 /**
- * The human check both public layouts share: `useCaptchaGate` (the widget's
- * life cycle on the submitting screen, and strict mode's hidden field) and
- * `submitFinal` (what a final submit does with each outcome). Driven through a
- * stand-in for the provider's browser API, so no request leaves the test.
+ * The human check both public layouts share: `useCaptchaGate` (the widget
+ * right above a finishing button, the fallback on the submitting screen, and
+ * strict mode's hidden field) and `submitFinal` (what a final submit does with
+ * each outcome). Driven through a stand-in for the provider's browser API and
+ * a hand-driven IntersectionObserver, so no request leaves the test.
  */
 import { act, useEffect } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -12,6 +13,8 @@ import { getMessages } from '@quill/shared';
 import type { PublicCaptcha } from '@quill/types';
 import { resetTurnstileLoaderForTests, type TurnstileRenderOptions } from '@/lib/captcha';
 import {
+  captchaAborted,
+  HELD_TOKEN_TTL_MS,
   submitErrorMessage,
   submitFinal,
   useCaptchaGate,
@@ -36,8 +39,10 @@ let gate: CaptchaGate;
 const AUTO: PublicCaptcha = { provider: 'turnstile', siteKey: 'site-key' };
 const STRICT: PublicCaptcha = { provider: 'turnstile', siteKey: 'site-key', strict: true };
 
-function Harness({ captcha }: { captcha: PublicCaptcha | undefined }) {
-  const g = useCaptchaGate(captcha, { sessionId: 'sess-123', locale: 'es', theme: 'dark' });
+const PROMPT = 'Confirma que eres una persona para enviar tus respuestas.';
+
+function Harness({ captcha, withSlot = false }: { captcha: PublicCaptcha | undefined; withSlot?: boolean }) {
+  const g = useCaptchaGate(captcha, { sessionId: 'sess-123', locale: 'es', theme: 'dark', prompt: PROMPT });
   useEffect(() => {
     gate = g;
   });
@@ -45,16 +50,35 @@ function Harness({ captcha }: { captcha: PublicCaptcha | undefined }) {
   return (
     <div>
       <div data-testid="step">{g.honeypot}</div>
+      <div data-testid="footer">
+        {withSlot ? g.inline : null}
+        <button type="button">Enviar</button>
+      </div>
       <div data-testid="submitting">{g.widget}</div>
     </div>
   );
 }
 
-async function mount(captcha: PublicCaptcha | undefined) {
+async function mount(captcha: PublicCaptcha | undefined, withSlot = false) {
   host = document.createElement('div');
   document.body.append(host);
   root = createRoot(host);
-  await act(async () => root.render(<Harness captcha={captcha} />));
+  await act(async () => root.render(<Harness captcha={captcha} withSlot={withSlot} />));
+}
+
+async function rerender(captcha: PublicCaptcha | undefined, withSlot: boolean) {
+  await act(async () => root.render(<Harness captcha={captcha} withSlot={withSlot} />));
+}
+
+/** The observer the inline slot watches its place with; tests decide when it is seen. */
+let observers: { cb: IntersectionObserverCallback; el?: Element }[];
+async function scrollSlotIntoView() {
+  await act(async () => {
+    for (const o of observers) o.cb([{ isIntersecting: true, target: o.el } as IntersectionObserverEntry], {} as IntersectionObserver);
+  });
+  await act(async () => {
+    await Promise.resolve();
+  });
 }
 
 /**
@@ -76,6 +100,21 @@ beforeEach(() => {
   resetTurnstileLoaderForTests();
   renders = [];
   removed = [];
+  observers = [];
+  vi.stubGlobal(
+    'IntersectionObserver',
+    class {
+      private entry: { cb: IntersectionObserverCallback; el?: Element };
+      constructor(cb: IntersectionObserverCallback) {
+        this.entry = { cb };
+        observers.push(this.entry);
+      }
+      observe(el: Element) {
+        this.entry.el = el;
+      }
+      disconnect() {}
+    },
+  );
   window.turnstile = {
     render: (el, opts) => {
       const id = `w${renders.length + 1}`;
@@ -94,6 +133,7 @@ afterEach(async () => {
   host?.remove();
   delete window.turnstile;
   vi.useRealTimers();
+  vi.unstubAllGlobals();
 });
 
 describe('useCaptchaGate: a form served without a check', () => {
@@ -215,6 +255,245 @@ describe('useCaptchaGate: automatic mode', () => {
   });
 });
 
+describe('useCaptchaGate: inline, right above the finishing button', () => {
+  it('loads nothing until the person has started AND the button area is on screen', async () => {
+    await mount(AUTO, true);
+    expect(gate.inlineReady()).toBe(true);
+    expect(renders).toHaveLength(0);
+    await scrollSlotIntoView(); // seen, but nobody has answered anything yet
+    expect(renders).toHaveLength(0);
+    await act(async () => gate.arm());
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(renders).toHaveLength(1);
+    expect(renders[0]!.opts).toMatchObject({
+      sitekey: 'site-key',
+      action: 'submit',
+      cData: 'sess-123',
+      appearance: 'interaction-only',
+      'refresh-expired': 'auto',
+      retry: 'never',
+    });
+    // Mounted above the button, not on the submitting screen.
+    expect(host.querySelector('[data-testid="footer"] [data-testid="captcha-inline"] [data-testid="captcha-widget"]')).not.toBeNull();
+    expect(host.querySelector('[data-testid="submitting"] [data-testid="captcha-widget"]')).toBeNull();
+  });
+
+  it('strict: the widget above the button is visible to everyone', async () => {
+    await mount(STRICT, true);
+    await act(async () => gate.arm());
+    await scrollSlotIntoView();
+    expect(renders[0]!.opts.appearance).toBe('always');
+  });
+
+  it('a token ready before the click is used at once, with no new widget', async () => {
+    await mount(AUTO, true);
+    await act(async () => gate.arm());
+    await scrollSlotIntoView();
+    await act(async () => renders[0]!.opts.callback!('early-token'));
+    let result!: CaptchaResult;
+    await act(async () => {
+      result = await gate.challenge();
+    });
+    expect(result).toEqual({ status: 'token', token: 'early-token' });
+    expect(renders).toHaveLength(1);
+  });
+
+  it('a click before the token is ready waits for it', async () => {
+    await mount(AUTO, true);
+    await act(async () => gate.arm());
+    await scrollSlotIntoView();
+    const { result } = await startChallenge();
+    let settled = false;
+    void result.then(() => {
+      settled = true;
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(settled).toBe(false);
+    await act(async () => renders[0]!.opts.callback!('late-token'));
+    await expect(result).resolves.toEqual({ status: 'token', token: 'late-token' });
+  });
+
+  it('a click on a button whose area was never seen mounts the widget right away', async () => {
+    await mount(AUTO, true); // not armed, not in view: a keyboard submit
+    const { result } = await startChallenge();
+    expect(renders).toHaveLength(1);
+    await act(async () => renders[0]!.opts.callback!('tok'));
+    await expect(result).resolves.toEqual({ status: 'token', token: 'tok' });
+  });
+
+  it('a token is single use: the next attempt gets a fresh widget', async () => {
+    await mount(AUTO, true);
+    await act(async () => gate.arm());
+    await scrollSlotIntoView();
+    await act(async () => renders[0]!.opts.callback!('first'));
+    await act(async () => {
+      await gate.challenge();
+    });
+    const { result } = await startChallenge();
+    expect(renders).toHaveLength(2);
+    expect(removed).toEqual(['w1']);
+    await act(async () => renders[1]!.opts.callback!('second'));
+    await expect(result).resolves.toEqual({ status: 'token', token: 'second' });
+  });
+
+  it('never submits an expired token: it waits for the refreshed one', async () => {
+    await mount(AUTO, true);
+    await act(async () => gate.arm());
+    await scrollSlotIntoView();
+    await act(async () => renders[0]!.opts.callback!('old'));
+    await act(async () => renders[0]!.opts['expired-callback']!());
+    const { result } = await startChallenge();
+    // The same widget refreshes itself (refresh-expired: auto): no remount.
+    expect(renders).toHaveLength(1);
+    await act(async () => renders[0]!.opts.callback!('refreshed'));
+    await expect(result).resolves.toEqual({ status: 'token', token: 'refreshed' });
+  });
+
+  it('shows the prompt above a checkbox, and waits for the person as long as it takes', async () => {
+    vi.useFakeTimers();
+    await mount(AUTO, true);
+    await act(async () => gate.arm());
+    await scrollSlotIntoView();
+    await act(async () => renders[0]!.opts['before-interactive-callback']!());
+    const slot = host.querySelector('[data-testid="captcha-inline"]')!;
+    expect(slot.textContent).toContain(PROMPT);
+    expect(slot.getAttribute('data-captcha-state')).toBe('interactive');
+    const { result } = await startChallenge();
+    await act(async () => {
+      vi.advanceTimersByTime(120_000);
+    });
+    let settled = false;
+    void result.then(() => {
+      settled = true;
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(settled).toBe(false);
+    await act(async () => renders[0]!.opts['after-interactive-callback']!());
+    await act(async () => renders[0]!.opts.callback!('clicked'));
+    await expect(result).resolves.toEqual({ status: 'token', token: 'clicked' });
+    expect(slot.textContent).not.toContain(PROMPT);
+  });
+
+  it('an inline widget that errored before the click is replaced by the click', async () => {
+    await mount(AUTO, true);
+    await act(async () => gate.arm());
+    await scrollSlotIntoView();
+    await act(async () => {
+      renders[0]!.opts['error-callback']!('300030');
+    });
+    const { result } = await startChallenge();
+    expect(renders).toHaveLength(2);
+    await act(async () => renders[1]!.opts.callback!('after-error'));
+    await expect(result).resolves.toEqual({ status: 'token', token: 'after-error' });
+  });
+
+  it('times out a silent widget only while a submit waits', async () => {
+    vi.useFakeTimers();
+    await mount(AUTO, true);
+    await act(async () => gate.arm());
+    await scrollSlotIntoView();
+    await act(async () => {
+      vi.advanceTimersByTime(60_000); // nobody waiting: nothing to time out
+    });
+    const { result } = await startChallenge();
+    await act(async () => {
+      vi.advanceTimersByTime(15_000);
+    });
+    await expect(result).resolves.toMatchObject({ status: 'unavailable', reason: 'timeout' });
+  });
+
+  it('keeps a token when its button area goes away (a reveal after Enviar), and spends it next', async () => {
+    await mount(AUTO, true);
+    await act(async () => gate.arm());
+    await scrollSlotIntoView();
+    await act(async () => renders[0]!.opts.callback!('kept'));
+    await rerender(AUTO, false);
+    expect(gate.inlineReady()).toBe(false);
+    let result!: CaptchaResult;
+    await act(async () => {
+      result = await gate.challenge();
+    });
+    expect(result).toEqual({ status: 'token', token: 'kept' });
+    expect(host.querySelector('[data-testid="submitting"] [data-testid="captcha-widget"]')).toBeNull();
+  });
+
+  it('without a slot mounted, the check falls back to the submitting screen', async () => {
+    await mount(AUTO, false);
+    expect(gate.inlineReady()).toBe(false);
+    await startChallenge();
+    expect(host.querySelector('[data-testid="submitting"] [data-testid="captcha-widget"]')).not.toBeNull();
+  });
+
+  it('hold: waits for the token above the button without spending it', async () => {
+    await mount(AUTO, true);
+    await act(async () => gate.arm());
+    await scrollSlotIntoView();
+    let held!: Promise<CaptchaResult>;
+    await act(async () => {
+      held = gate.hold();
+    });
+    await act(async () => renders[0]!.opts.callback!('kept-for-later'));
+    await expect(held).resolves.toEqual({ status: 'token', token: 'kept-for-later' });
+    // The interstitial takes the page (the slot goes), then the submit spends it.
+    await rerender(AUTO, false);
+    let result!: CaptchaResult;
+    await act(async () => {
+      result = await gate.challenge();
+    });
+    expect(result).toEqual({ status: 'token', token: 'kept-for-later' });
+    expect(renders).toHaveLength(1);
+  });
+
+  it('hold: with no slot on the page there is nothing to wait for', async () => {
+    await mount(AUTO, false);
+    let result!: CaptchaResult;
+    await act(async () => {
+      result = await gate.hold();
+    });
+    expect(result).toEqual({ status: 'unavailable', reason: 'no slot' });
+    expect(renders).toHaveLength(0);
+  });
+
+  it('a held token past its lifetime is never handed over: a fresh widget runs instead', async () => {
+    vi.useFakeTimers();
+    await mount(AUTO, true);
+    await act(async () => gate.arm());
+    await scrollSlotIntoView();
+    await act(async () => renders[0]!.opts.callback!('old'));
+    await act(async () => {
+      vi.advanceTimersByTime(HELD_TOKEN_TTL_MS + 1);
+    });
+    const { result } = await startChallenge();
+    expect(renders).toHaveLength(2);
+    await act(async () => renders[1]!.opts.callback!('fresh'));
+    await expect(result).resolves.toEqual({ status: 'token', token: 'fresh' });
+  });
+
+  it('a submit waiting on a slot that goes away ends as aborted, not as a failure', async () => {
+    await mount(AUTO, true);
+    await act(async () => gate.arm());
+    await scrollSlotIntoView();
+    const { result } = await startChallenge();
+    await rerender(AUTO, false);
+    const r = await result;
+    expect(r).toEqual({ status: 'unavailable', reason: 'slot gone' });
+    expect(captchaAborted(r)).toBe(true);
+  });
+
+  it('renders no slot at all for a form served without a check', async () => {
+    await mount(undefined, true);
+    expect(gate.inline).toBeNull();
+    expect(gate.inlineReady()).toBe(false);
+    expect(host.querySelector('[data-testid="captcha-inline"]')).toBeNull();
+  });
+});
+
 describe('useCaptchaGate: strict mode', () => {
   it('shows the widget to everyone', async () => {
     await mount(STRICT);
@@ -252,8 +531,12 @@ describe('submitFinal', () => {
       strict: false,
       interactive: false,
       runs: 0,
+      arm: () => {},
       prewarm: () => {},
+      inlineReady: () => false,
       challenge: async () => results[Math.min(g.runs++, results.length - 1)]!,
+      hold: async () => results[0]!,
+      inline: null,
       widget: null,
       honeypot: null,
       submitFields: () => fields,

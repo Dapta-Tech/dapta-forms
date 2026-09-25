@@ -1543,13 +1543,15 @@
   }
 }
 
-/* ── Spam protection: the human check on the submitting screen ──
-   The provider draws its widget (an iframe) inside `.pf-captcha__widget`. In
-   automatic mode it stays invisible and takes no room unless the provider
-   needs a click; in strict mode it is always shown. The renderer asks for the
-   `flexible` widget (fills its box, 300px minimum) and falls back to `compact`
-   below 300px, so a 320px phone or a narrow embed never scrolls sideways. An
-   embed grows to fit on its own: the height reporter watches the document. */
+/* ── Spam protection: the human check ──
+   It runs right above a button that ends the form (`.pf-captcha--inline`), or
+   on the submitting screen for a finish with no button. The provider draws its
+   widget (an iframe) inside `.pf-captcha__widget`. In automatic mode it stays
+   invisible and takes no room unless the provider needs a click; in strict
+   mode it is always shown. The renderer asks for the `flexible` widget (fills
+   its box, 300px minimum) and falls back to `compact` below 300px, so a 320px
+   phone or a narrow embed never scrolls sideways. An embed grows to fit on its
+   own: the height reporter watches the form. */
 .pf-captcha {
   width: 100%;
   display: flex;
@@ -1567,9 +1569,60 @@
   min-height: 65px;
 }
 /* Automatic: once the check has passed the widget has nothing left to say,
-   and the spinner above carries the rest of the submit. */
+   and the spinner (or the button's "Submitting…") carries the rest. */
 .pf-captcha[data-captcha-mode='auto'][data-captcha-state='done'] {
   display: none;
+}
+
+/* Above the button. Automatic takes no room at all until the provider asks
+   for a click, so the button sits exactly where it always did; strict holds
+   the widget's height from the first paint, so the button never jumps when
+   the check loads as the person scrolls to it. The slot stays a real box even
+   when empty: it is what tells the page that the end is on screen. */
+.pf-captcha--inline {
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+.pf-captcha--inline[data-captcha-mode='strict'] {
+  min-height: 65px;
+}
+/* The slides step: the button's own 28px gap moves above the check, and the
+   button follows the check closely, as one group. */
+.pf__fields > .pf-captcha--inline[data-captcha-mode='strict'],
+.pf__fields > .pf-captcha--inline[data-captcha-state='interactive'] {
+  margin-top: 28px;
+}
+.pf__fields > .pf-captcha--inline[data-captcha-mode='strict'] + .pf__btn--inline,
+.pf__fields > .pf-captcha--inline[data-captcha-state='interactive'] + .pf__btn--inline {
+  margin-top: 12px;
+}
+/* The one-page footer is a column with a 12px gap: an empty automatic slot
+   gives its gap back, so the footer looks exactly as it does without one. */
+.pf-v__footer > .pf-captcha--inline[data-captcha-mode='auto']:not([data-captcha-state='interactive']) {
+  margin-bottom: -12px;
+}
+/* The one-page layout pins its questions and its Submit to the left, and a
+   left-aligned slides form does the same: the check lines up with them, its
+   drawn widget included. */
+.pf-v__footer > .pf-captcha--inline,
+.pf[data-pf-align='left'] .pf-captcha--inline {
+  align-items: flex-start;
+}
+.pf-v__footer > .pf-captcha--inline .pf-captcha__widget,
+.pf[data-pf-align='left'] .pf-captcha--inline .pf-captcha__widget {
+  justify-content: flex-start;
+}
+.pf-captcha__prompt {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.4;
+  text-align: center;
+  color: var(--muted-foreground);
+}
+.pf-v__footer > .pf-captcha--inline .pf-captcha__prompt,
+.pf[data-pf-align='left'] .pf-captcha--inline .pf-captcha__prompt {
+  text-align: left;
 }
 /* A final submit that failed on this screen (a reveal or a scheduler as the
    last step has no step to go back to): the message and a way to try again. */

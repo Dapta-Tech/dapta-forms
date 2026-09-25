@@ -16,7 +16,7 @@ import type { FormDesignProps } from '@/lib/form-design';
 import { signupHref } from '@/lib/growth';
 import { warmTurnstile } from '@/lib/captcha';
 import { isTransportError, type TransportError } from '@/lib/call-action';
-import { CaptchaChallenge } from '@/components/public/captcha-challenge';
+import { CaptchaChallenge, type CaptchaWidgetEvent } from '@/components/public/captcha-challenge';
 
 type RendererMessages = ReturnType<typeof getMessages>['renderer'];
 
@@ -258,33 +258,85 @@ export function DoneScreen({
 }
 
 /* ── Spam protection ───────────────────────────────────────────────────────
- * Shared by both layouts so they can never disagree on when the human check
- * runs, what a failure means, or what the respondent is told. The check runs
- * on the SUBMITTING screen only: it is the one point every way of finishing a
- * form passes through (a button, a single-choice auto-advance, a terminal
- * step, a reveal or a scheduler as the last step, Enter, the one-page Submit).
+ * Shared by both layouts so they can never disagree on where the human check
+ * runs, what a failure means, or what the respondent is told.
+ *
+ * Where it runs:
+ * - INLINE, right above a button that finishes the form (the one-page Submit,
+ *   and a slides step whose own button ends the form, Enter included). The
+ *   widget mounts once the person has started and the button area is on
+ *   screen, and verifies while they finish, so the submit usually has its
+ *   token already. The screen never changes for it: a checkbox, when the
+ *   provider asks for one, appears where the person is already looking.
+ * - On the SUBMITTING screen otherwise (a single-choice auto-advance, a reveal
+ *   or a scheduler as the last step): the one point those finishes share.
  * ------------------------------------------------------------------------- */
 
 /** What one run of the check produced. */
 export type CaptchaResult = { status: 'token'; token: string } | { status: 'unavailable'; reason: string };
+
+/** No callback at all for this long, while a submit waits, means the widget is not coming. */
+export const CAPTCHA_TIMEOUT_MS = 15_000;
+
+/**
+ * A token is good for five minutes. One held without its widget (a one-page
+ * reveal unmounts the button area before the submit) is dropped a little
+ * before that, so the API is never handed one about to lapse.
+ */
+export const HELD_TOKEN_TTL_MS = 270_000;
+
+/** A check that ended because the flow moved on, not because it failed: nothing to report. */
+export function captchaAborted(result: CaptchaResult): boolean {
+  return (
+    result.status === 'unavailable' &&
+    (result.reason === 'superseded' || result.reason === 'unmounted' || result.reason === 'slot gone')
+  );
+}
+
+type Place = 'inline' | 'screen';
+type WidgetState = 'idle' | 'running' | 'interactive' | 'done' | 'failed';
 
 export interface CaptchaGate {
   /** True only when the API served this form with a check: never in the builder preview. */
   enabled: boolean;
   /** Strict mode: the check is visible to everyone and the hidden field rides the submit. */
   strict: boolean;
-  /** The check is waiting for the person (a checkbox is showing): show the prompt. */
+  /** The submitting-screen widget is waiting for a click: show the prompt there. */
   interactive: boolean;
-  /** Load the provider script ahead of the submit. Call at the first start or answer. */
+  /**
+   * The person has started (the first start or answer): the inline widget may
+   * mount from now on, when its button is on screen. Nothing loads before.
+   */
+  arm: () => void;
+  /** `arm`, plus loading the provider script ahead of a finish on the submitting screen. */
   prewarm: () => void;
-  /** Run the check once, on a fresh widget. Resolves with a token or `unavailable`. */
+  /** Whether a submit right now runs its check inline (a slot is mounted above its button). */
+  inlineReady: () => boolean;
+  /** Get a token for ONE submit attempt, from the inline widget or the submitting screen's. */
   challenge: () => Promise<CaptchaResult>;
-  /** The widget block for the submitting screen; null until the first run. */
+  /**
+   * Wait for the inline widget's token WITHOUT spending it: the next
+   * `challenge` takes it. For a finish that plays an interstitial between the
+   * button and the submit, so the check (and a checkbox) happens above the
+   * button, not after the interstitial.
+   */
+  hold: () => Promise<CaptchaResult>;
+  /** The slot to render right above a button that finishes the form; null without a check. */
+  inline: React.ReactNode;
+  /** The widget for the submitting screen; null until a check runs there. */
   widget: React.ReactNode;
   /** Strict mode's hidden field, for every screen a respondent answers on; else null. */
   honeypot: React.ReactNode;
   /** The top-level submit fields the check adds: `hp` in strict mode, nothing otherwise. */
   submitFields: () => { hp?: string };
+}
+
+interface Waiter {
+  place: Place;
+  /** `hold`: a token keeps for the next `challenge` instead of being spent. */
+  keep: boolean;
+  resolve: (result: CaptchaResult) => void;
+  timer?: ReturnType<typeof setTimeout>;
 }
 
 /**
@@ -294,47 +346,177 @@ export interface CaptchaGate {
  */
 export function useCaptchaGate(
   captcha: PublicCaptcha | undefined,
-  opts: { sessionId: string; locale: 'en' | 'es'; theme: 'light' | 'dark' },
+  opts: { sessionId: string; locale: 'en' | 'es'; theme: 'light' | 'dark'; prompt: string },
 ): CaptchaGate {
   const strict = captcha?.strict === true;
-  const [run, setRun] = useState(0);
-  const [state, setState] = useState<'running' | 'interactive' | 'done' | 'failed'>('running');
-  const runRef = useRef(0);
-  const pending = useRef<{ id: number; resolve: (r: CaptchaResult) => void } | null>(null);
 
-  const settle = useCallback((id: number, result: CaptchaResult) => {
-    const waiting = pending.current;
-    // A widget from a superseded run can still report; only the current one counts.
-    if (!waiting || waiting.id !== id) return;
-    pending.current = null;
-    setState(result.status === 'token' ? 'done' : 'failed');
-    waiting.resolve(result);
+  // Each place has at most one live widget; bumping its generation remounts it
+  // (a fresh widget, hence a fresh token), and events from an older one are
+  // dropped. The screen widget exists only while a check runs there.
+  const [gen, setGen] = useState<Record<Place, number>>({ inline: 1, screen: 0 });
+  const gens = useRef<Record<Place, number>>({ inline: 1, screen: 0 });
+  const [state, setState] = useState<Record<Place, WidgetState>>({ inline: 'idle', screen: 'idle' });
+  const [armed, setArmed] = useState(false);
+  // A submit is waiting on the inline widget: mount it even if not in view yet.
+  const [inlineWanted, setInlineWanted] = useState(false);
+
+  const slots = useRef(0); // inline slots mounted right now
+  const held = useRef<{ place: Place; gen: number; token: string; at: number } | null>(null); // unspent token
+  const stale = useRef<Record<Place, boolean>>({ inline: false, screen: false }); // cannot give another token
+  const clicking = useRef<Record<Place, boolean>>({ inline: false, screen: false }); // asking for a click
+  const waiter = useRef<Waiter | null>(null);
+
+  const mark = useCallback((place: Place, next: WidgetState) => {
+    setState((s) => (s[place] === next ? s : { ...s, [place]: next }));
   }, []);
 
-  const challenge = useCallback((): Promise<CaptchaResult> => {
-    if (!captcha) return Promise.resolve({ status: 'unavailable', reason: 'disabled' });
-    return new Promise<CaptchaResult>((resolve) => {
-      pending.current?.resolve({ status: 'unavailable', reason: 'superseded' });
-      const id = runRef.current + 1;
-      runRef.current = id;
-      pending.current = { id, resolve };
-      setState('running');
-      setRun(id);
-    });
-  }, [captcha]);
+  const finish = useCallback((result: CaptchaResult) => {
+    const w = waiter.current;
+    if (!w) return;
+    waiter.current = null;
+    if (w.timer) clearTimeout(w.timer);
+    w.resolve(result);
+  }, []);
 
-  // A renderer that goes away mid-check must not leave its submit awaiting forever.
-  useEffect(
-    () => () => {
-      pending.current?.resolve({ status: 'unavailable', reason: 'unmounted' });
-      pending.current = null;
+  // Silence is only an outage while a submit waits, and never while the
+  // person is looking at a checkbox: reading it is not a failure.
+  const armTimer = useCallback(
+    (w: Waiter) => {
+      if (w.timer) clearTimeout(w.timer);
+      w.timer = setTimeout(() => {
+        if (waiter.current !== w) return;
+        stale.current[w.place] = true;
+        finish({ status: 'unavailable', reason: 'timeout' });
+      }, CAPTCHA_TIMEOUT_MS);
     },
-    [],
+    [finish],
   );
 
-  const prewarm = useCallback(() => {
-    if (captcha) warmTurnstile();
+  const remount = useCallback(
+    (place: Place) => {
+      gens.current = { ...gens.current, [place]: gens.current[place] + 1 };
+      setGen(gens.current);
+      stale.current[place] = false;
+      clicking.current[place] = false;
+      mark(place, 'running');
+    },
+    [mark],
+  );
+
+  const onEvent = useCallback(
+    (place: Place, from: number, e: CaptchaWidgetEvent) => {
+      if (gens.current[place] !== from) return; // a replaced widget
+      const w = waiter.current && waiter.current.place === place ? waiter.current : null;
+      switch (e.type) {
+        case 'token':
+          clicking.current[place] = false;
+          mark(place, 'done');
+          if (w && !w.keep) {
+            // Spent by this submit: the next attempt needs a new widget.
+            stale.current[place] = true;
+            finish({ status: 'token', token: e.token });
+          } else {
+            held.current = { place, gen: from, token: e.token, at: Date.now() };
+            stale.current[place] = false;
+            if (w) finish({ status: 'token', token: e.token });
+          }
+          return;
+        case 'expired':
+          if (held.current?.place === place && held.current.gen === from) held.current = null;
+          mark(place, 'running');
+          return;
+        case 'error':
+          if (held.current?.place === place) held.current = null;
+          stale.current[place] = true;
+          clicking.current[place] = false;
+          mark(place, 'failed');
+          if (w) finish({ status: 'unavailable', reason: e.reason });
+          return;
+        case 'interactive':
+          clicking.current[place] = e.on;
+          mark(place, e.on ? 'interactive' : 'running');
+          if (w) {
+            if (e.on && w.timer) clearTimeout(w.timer);
+            else if (!e.on) armTimer(w);
+          }
+          return;
+      }
+    },
+    [armTimer, finish, mark],
+  );
+
+  const run = useCallback(
+    (keep: boolean): Promise<CaptchaResult> => {
+      if (!captcha) return Promise.resolve({ status: 'unavailable', reason: 'disabled' });
+      finish({ status: 'unavailable', reason: 'superseded' });
+      // A token already in hand is used by this attempt (and spent, unless it
+      // is only being held). It can outlive its widget: a one-page reveal
+      // unmounts the button area before the submit.
+      const ready = held.current;
+      if (ready && Date.now() - ready.at < HELD_TOKEN_TTL_MS) {
+        if (!keep) {
+          held.current = null;
+          stale.current[ready.place] = true;
+        }
+        return Promise.resolve({ status: 'token', token: ready.token });
+      }
+      if (ready) {
+        // Too old to trust: its widget (if still there) is replaced below.
+        held.current = null;
+        stale.current[ready.place] = true;
+      }
+      const place: Place = slots.current > 0 ? 'inline' : 'screen';
+      if (keep && place === 'screen') return Promise.resolve({ status: 'unavailable', reason: 'no slot' });
+      return new Promise<CaptchaResult>((resolve) => {
+        const w: Waiter = { place, keep, resolve };
+        waiter.current = w;
+        if (place === 'inline') {
+          setInlineWanted(true);
+          if (stale.current.inline) remount('inline');
+        } else {
+          remount('screen');
+        }
+        if (!clicking.current[place]) armTimer(w);
+      });
+    },
+    [captcha, finish, remount, armTimer],
+  );
+  const challenge = useCallback(() => run(false), [run]);
+  const hold = useCallback(() => run(true), [run]);
+
+  // A slot above a finishing button counts while it is mounted. One that goes
+  // away while its submit waits takes its widget with it: fail that attempt
+  // rather than wait on a widget that no longer exists.
+  const registerSlot = useCallback(() => {
+    slots.current += 1;
+    return () => {
+      slots.current -= 1;
+      if (slots.current === 0 && waiter.current?.place === 'inline') {
+        finish({ status: 'unavailable', reason: 'slot gone' });
+      }
+    };
+  }, [finish]);
+
+  // A slot that starts its widget starts a NEW one (a slot mounts fresh on
+  // every visit to its step), whatever the last one ended as.
+  const activateSlot = useCallback(() => {
+    stale.current.inline = false;
+    clicking.current.inline = false;
+    mark('inline', 'running');
+  }, [mark]);
+
+  // A renderer that goes away mid-check must not leave its submit awaiting forever.
+  useEffect(() => () => finish({ status: 'unavailable', reason: 'unmounted' }), [finish]);
+
+  const arm = useCallback(() => {
+    if (captcha) setArmed(true);
   }, [captcha]);
+  const prewarm = useCallback(() => {
+    if (!captcha) return;
+    setArmed(true);
+    warmTurnstile();
+  }, [captcha]);
+  const inlineReady = useCallback(() => Boolean(captcha) && slots.current > 0, [captcha]);
 
   // The hidden field is uncontrolled on purpose: a bot that writes `.value`
   // straight into the DOM fires no event, and a controlled input would wipe
@@ -351,19 +533,41 @@ export function useCaptchaGate(
     return { hp: hpEl.current?.value || hpLast.current || '' };
   }, [strict]);
 
+  const widgetProps = captcha
+    ? {
+        siteKey: captcha.siteKey,
+        strict,
+        cData: captchaCData(opts.sessionId),
+        language: opts.locale,
+        theme: opts.theme,
+      }
+    : null;
+
+  const inline = widgetProps ? (
+    <CaptchaInlineSlot
+      strict={strict}
+      mount={armed || inlineWanted}
+      force={inlineWanted}
+      state={state.inline}
+      prompt={opts.prompt}
+      register={registerSlot}
+      onActivate={activateSlot}
+    >
+      <CaptchaChallenge
+        key={gen.inline}
+        {...widgetProps}
+        onEvent={(e) => onEvent('inline', gen.inline, e)}
+      />
+    </CaptchaInlineSlot>
+  ) : null;
+
   const widget =
-    captcha && run > 0 ? (
-      <div className="pf-captcha" data-captcha-mode={strict ? 'strict' : 'auto'} data-captcha-state={state}>
+    widgetProps && gen.screen > 0 ? (
+      <div className="pf-captcha" data-captcha-mode={strict ? 'strict' : 'auto'} data-captcha-state={state.screen}>
         <CaptchaChallenge
-          key={run}
-          siteKey={captcha.siteKey}
-          strict={strict}
-          cData={captchaCData(opts.sessionId)}
-          language={opts.locale}
-          theme={opts.theme}
-          onToken={(token) => settle(run, { status: 'token', token })}
-          onUnavailable={(reason) => settle(run, { status: 'unavailable', reason })}
-          onInteractive={(on) => setState((s) => (s === 'done' || s === 'failed' ? s : on ? 'interactive' : 'running'))}
+          key={gen.screen}
+          {...widgetProps}
+          onEvent={(e) => onEvent('screen', gen.screen, e)}
         />
       </div>
     ) : null;
@@ -384,13 +588,86 @@ export function useCaptchaGate(
   return {
     enabled: Boolean(captcha),
     strict,
-    interactive: state === 'interactive',
+    interactive: state.screen === 'interactive',
+    arm,
     prewarm,
+    inlineReady,
     challenge,
+    hold,
+    inline,
     widget,
     honeypot,
     submitFields,
   };
+}
+
+/**
+ * The place right above a finishing button. Renders its widget once the
+ * person has started (`mount`) AND the place is on screen, and keeps it from
+ * then on; `force` (a submit waiting) skips the on-screen part. The on-screen
+ * test is an IntersectionObserver with the implicit root, which inside a
+ * cross-origin iframe measures against the HOST page's viewport: an embedded
+ * form only loads the check once its end has been scrolled into view.
+ */
+function CaptchaInlineSlot({
+  strict,
+  mount,
+  force,
+  state,
+  prompt,
+  register,
+  onActivate,
+  children,
+}: {
+  strict: boolean;
+  mount: boolean;
+  force: boolean;
+  state: WidgetState;
+  prompt: string;
+  register: () => () => void;
+  onActivate: () => void;
+  children: React.ReactNode;
+}) {
+  const ref = useRef<HTMLDivElement | null>(null);
+  const [inView, setInView] = useState(false);
+  const [active, setActive] = useState(false);
+
+  useEffect(() => register(), [register]);
+
+  useEffect(() => {
+    if (inView || !ref.current) return;
+    if (typeof IntersectionObserver === 'undefined') {
+      setInView(true);
+      return;
+    }
+    const obs = new IntersectionObserver((entries) => {
+      if (entries.some((e) => e.isIntersecting)) {
+        setInView(true);
+        obs.disconnect();
+      }
+    });
+    obs.observe(ref.current);
+    return () => obs.disconnect();
+  }, [inView]);
+
+  useEffect(() => {
+    if (active || !(force || (mount && inView))) return;
+    onActivate();
+    setActive(true);
+  }, [active, force, mount, inView, onActivate]);
+
+  return (
+    <div
+      ref={ref}
+      className="pf-captcha pf-captcha--inline"
+      data-testid="captcha-inline"
+      data-captcha-mode={strict ? 'strict' : 'auto'}
+      data-captcha-state={active ? state : 'idle'}
+    >
+      {state === 'interactive' ? <p className="pf-captcha__prompt">{prompt}</p> : null}
+      {active ? children : null}
+    </div>
+  );
 }
 
 /** What the submit server action answers (see `submitFormAction`). */
@@ -455,8 +732,8 @@ function toFinal(res: SubmitActionResult | TransportError, m: RendererMessages):
  *   browser is unsupported): fail closed WITHOUT losing anything. The answers
  *   are saved as a partial, which the API never delivers while protection is
  *   on, and the person is told they are saved and asked to try again.
- * - A run cut short by a newer one (or by the page going away) is dropped:
- *   whoever superseded it owns the screen now.
+ * - A run cut short by a newer one (or by the page going away, or by its
+ *   button area going away) is dropped: whoever superseded it owns the screen.
  */
 export async function submitFinal(args: {
   gate: CaptchaGate;
@@ -469,7 +746,7 @@ export async function submitFinal(args: {
   for (let attempt = 0; ; attempt++) {
     const check = await gate.challenge();
     if (check.status === 'unavailable') {
-      if (check.reason === 'superseded' || check.reason === 'unmounted') return { ok: false, aborted: true };
+      if (captchaAborted(check)) return { ok: false, aborted: true };
       if (attempt === 0 && check.reason.startsWith('error')) continue;
       const saved = await savePartial();
       if (!isTransportError(saved) && saved.ok) return { ok: false, message: m.captcha.unavailable };

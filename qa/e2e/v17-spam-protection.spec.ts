@@ -21,7 +21,8 @@ import { fileURLToPath } from 'node:url';
  * any token, which is what lets a stubbed widget complete a real submit. The
  * real widget against the test keys is exercised by hand (see the PR).
  *
- * Point it at other ports with QA_API_URL (the web side is `baseURL`). The
+ * Point it at other ports with QA_API_URL (the web side is `baseURL`), and at
+ * the API's database file with QA_DB_PATH when it is not `.data/qa.db`. The
  * public surface is rate-limited per IP (60 requests, then 1/s): run this file
  * alone, or boot with RATE_LIMIT_ENABLED=false, or it reads RATE_LIMITED.
  */
@@ -30,7 +31,7 @@ const API = process.env.QA_API_URL ?? 'http://localhost:4400';
 const CHALLENGE_HOST = 'challenges.cloudflare.com';
 
 const SPEC_DIR = path.dirname(fileURLToPath(import.meta.url));
-const DB_PATH = path.resolve(SPEC_DIR, '../../.data/qa.db');
+const DB_PATH = process.env.QA_DB_PATH ?? path.resolve(SPEC_DIR, '../../.data/qa.db');
 const requireFromDb = createRequire(path.resolve(SPEC_DIR, '../../packages/db/package.json'));
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const Database = requireFromDb('better-sqlite3') as new (
@@ -60,16 +61,22 @@ async function me(request: APIRequestContext): Promise<Me> {
   return (await res.json()) as Me;
 }
 
+const TWO_QUESTIONS = [
+  { key: 'nombre', type: 'text', question: '¿Cómo te llamas?', required: true },
+  { key: 'email', type: 'email', question: '¿Cuál es tu correo?', required: true },
+];
+
 /** Two questions, a partial point after the first, and a webhook listening to BOTH phases. */
-function config(spamProtection: Record<string, unknown> | null, layout?: 'vertical'): Record<string, unknown> {
+function config(
+  spamProtection: Record<string, unknown> | null,
+  layout?: 'vertical',
+  steps: Record<string, unknown>[] = TWO_QUESTIONS,
+): Record<string, unknown> {
   return {
     version: 1,
     language: 'es',
     ...(layout ? { layout } : {}),
-    steps: [
-      { key: 'nombre', type: 'text', question: '¿Cómo te llamas?', required: true },
-      { key: 'email', type: 'email', question: '¿Cuál es tu correo?', required: true },
-    ],
+    steps,
     partialSubmitAfterStep: 1,
     ...(spamProtection ? { spamProtection } : {}),
     // Loopback target: allowed outside production. Delivery is irrelevant here;
@@ -209,6 +216,11 @@ test.describe('spam protection: deployment with keys', () => {
       expect(await page.evaluate(() => document.activeElement?.getAttribute('name'))).not.toBe('pf_hp');
     }
 
+    // The check sits right above Submit, and has run by the time the person gets there.
+    await page.locator('.pf-v__footer .pf__btn').scrollIntoViewIfNeeded();
+    const slot = page.locator('.pf-v__footer [data-testid="captcha-inline"]');
+    await expect(slot.locator('[data-testid="captcha-widget"]')).toHaveCount(1);
+    await expect(slot).toHaveAttribute('data-captcha-state', 'done');
     await page.locator('.pf-v__footer .pf__btn').click();
     await expect(page.locator('.pf-done__title')).toBeVisible();
     expect(await page.evaluate(() => (window as unknown as { __renders: { appearance: string }[] }).__renders[0]!.appearance)).toBe(
@@ -275,15 +287,56 @@ test.describe('spam protection: deployment with keys', () => {
     expect(deliveriesOf(rows.map((r) => r.id))).toEqual([]);
   });
 
-  test('a check that needs the person shows the prompt, then completes', async ({ page, request }) => {
+  test('a check that needs the person asks right above the button; the submit goes once it is solved', async ({
+    page,
+    request,
+  }) => {
     const form = await createForm(request, 'interactive', config({ captcha: true }));
     await stubChallenge(page, 'interactive');
     await page.goto(form.path);
     await answerSlides(page);
+    // Still on the last step: the prompt and the checkbox above the button,
+    // which says it is sending and takes no second click.
+    const slot = page.locator('.pf__fields [data-testid="captcha-inline"]');
+    await expect(slot.locator('.pf-captcha__prompt')).toHaveText(
+      'Confirma que eres una persona para enviar tus respuestas.',
+    );
+    await expect(slot).toContainText('stub checkbox');
+    await expect(page.locator('.pf__btn--inline')).toHaveText('Enviando…');
+    await expect(page.locator('.pf__btn--inline')).toBeDisabled();
+    await expect(page.locator('.pf-reveal__subtitle')).toHaveCount(0);
+    await page.evaluate(() => (window as unknown as { __solve: () => void }).__solve());
+    await expect(page.locator('.pf-done__title')).toBeVisible();
+  });
+
+  test('a finish with no button (a single choice last) keeps the check on the submitting screen', async ({
+    page,
+    request,
+  }) => {
+    const steps = [
+      TWO_QUESTIONS[0]!,
+      {
+        key: 'tamano',
+        type: 'multiple_choice',
+        question: '¿Cuántas personas son?',
+        required: true,
+        options: [
+          { label: '1 a 10', value: 'small' },
+          { label: 'Más de 10', value: 'large' },
+        ],
+      },
+    ];
+    const form = await createForm(request, 'fallback', config({ captcha: true }, undefined, steps));
+    await stubChallenge(page, 'interactive');
+    await page.goto(form.path);
+    await page.locator('.pf__fields input').fill('Laura Gómez');
+    await page.locator('.pf__btn--inline').click();
+    await expect(page.locator('[data-testid="captcha-inline"]')).toHaveCount(0);
+    await page.getByRole('radio', { name: 'Más de 10' }).click();
     await expect(page.locator('.pf-reveal__subtitle')).toHaveText(
       'Confirma que eres una persona para enviar tus respuestas.',
     );
-    await expect(page.locator('.pf-reveal__spinner')).toHaveCount(0);
+    await expect(page.locator('.pf-reveal__inner [data-testid="captcha-widget"]')).toContainText('stub checkbox');
     await page.evaluate(() => (window as unknown as { __solve: () => void }).__solve());
     await expect(page.locator('.pf-done__title')).toBeVisible();
   });

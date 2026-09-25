@@ -69,11 +69,36 @@ describe('spam protection in the public markup', () => {
     }
   });
 
-  it('automatic: no hidden field, and the page itself shows no challenge', () => {
+  it('automatic: no hidden field, and no widget in the page until the person starts', () => {
     for (const html of both(AUTO)) {
       expect(html).not.toContain('pf_hp');
       expect(html).not.toContain('captcha-widget');
     }
+  });
+
+  it('one-page: the empty slot for the check sits in the footer, right before Submit', () => {
+    for (const captcha of [AUTO, STRICT]) {
+      const vertical = both(captcha)[1]!;
+      const footer = vertical.slice(vertical.indexOf('pf-v__footer'));
+      expect(footer).toMatch(/data-testid="captcha-inline"[^>]*><\/div><button[^>]*class="pf__btn"/);
+      expect(footer).toContain(`data-captcha-mode="${captcha.strict ? 'strict' : 'auto'}"`);
+    }
+  });
+
+  it('slides: the slot only on a step whose own button ends the form', () => {
+    const render = (startAt: number) =>
+      renderToStaticMarkup(
+        <FormRenderer accountCode="acme" slug="f" name="F" config={switchedOn as never} locale="en" captcha={AUTO} startAt={startAt} />,
+      );
+    expect(render(0)).not.toContain('captcha-inline'); // step 1 of 2: its button goes on
+    expect(render(1)).toMatch(/data-testid="captcha-inline"[^>]*><\/div><button[^>]*class="pf__btn pf__btn--inline"/);
+    // A terminal step ends the form from its own button too.
+    const terminal = { ...switchedOn, steps: [{ ...steps[0]!, terminal: true }, steps[1]!] };
+    expect(
+      renderToStaticMarkup(
+        <FormRenderer accountCode="acme" slug="f" name="F" config={terminal as never} locale="en" captcha={AUTO} startAt={0} />,
+      ),
+    ).toContain('captcha-inline');
   });
 
   it('without `captcha` (the builder preview, a deployment without keys) nothing renders, whatever the config says', () => {

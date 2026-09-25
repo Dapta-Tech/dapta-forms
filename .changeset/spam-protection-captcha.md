@@ -8,8 +8,11 @@
 Optional spam protection: a human check before a form's final submit, verified by the API.
 
 A form owner turns it on per form in the Connect tab, and it applies on Publish. It
-runs on the submitting screen, the one point every way of finishing a form passes
-through, in both layouts. In Automatic mode most people never see it; in Strict
+runs right above the button that ends the form (the one-page Submit, or the last
+step's button in slides), loading once the person has started and that button is on
+screen, so the page never changes for it; a finish with no button (a single choice
+that advances by itself, a reveal or a scheduler as the last step) runs it on the
+submitting screen instead. In Automatic mode most people never see it; in Strict
 mode everyone sees the check, and the API adds two checks of its own: a hidden
 field no person can reach, and a minimum fill time of 2 s from the session's first
 view (a session with no recorded view is never blocked).
