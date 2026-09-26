@@ -2192,6 +2192,68 @@
   }
 }
 
+/* ── Screens: several questions on one slides card (#200) ──────────────────────
+   A screen of several questions keeps the slide's card, topbar and single
+   button, and stacks its questions in one column. `.pf-s` marks the card's
+   content and `data-pf-screen-size` counts the questions showing. With ONE
+   (logic hid the others) the card keeps the slide's own typography; with two
+   or more the question titles drop to the one-page size and a hairline
+   separates them. A `message` on the card is its heading and keeps the slide
+   size. The alignment axis applies as on any slide, and here the errors and a
+   message's body follow it too. A form without screens never renders `.pf-s`,
+   so nothing below reaches it.
+
+   The three bands need no rules of their own beyond the gap: the card is the
+   same box a slide is. Up to 480px the column scrolls with the document and
+   the button closes it in flow; up to 768px the body's own padding (32/20)
+   frames it; from 769px it is the centred 560px card (720px wide) and grows
+   downward, with `.pf`'s `min-height: 100dvh` (not a height) letting the page
+   grow instead of clipping the card's top. */
+.pf-s__member + .pf-s__member {
+  margin-top: 28px;
+  padding-top: 28px;
+  border-top: 1px solid var(--border);
+}
+.pf-s:not([data-pf-screen-size='1']) .pf-s__member:not(.pf-s__member--message) .pf__question {
+  font-size: clamp(17px, 3vw, 21px);
+}
+.pf-s:not([data-pf-screen-size='1']) .pf-s__member .pf__helper {
+  margin-top: 6px;
+}
+.pf-s:not([data-pf-screen-size='1']) .pf-s__member .pf__fields {
+  margin-top: 16px;
+}
+.pf-s__member .pf__error {
+  margin-top: 10px;
+}
+.pf-s__member--error .pf-input {
+  border-color: var(--destructive);
+}
+.pf[data-pf-align='left'] .pf-s .pf__error,
+.pf[data-pf-align='left'] .pf-s .pf-message__body {
+  text-align: left;
+}
+/* The one button, with the screen's error summary and (on a screen that ends
+   the form) spam protection's check right above it. The check's spacing is
+   the slide's (see "Spam protection" above). */
+.pf-s__footer > .pf__error {
+  margin-top: 24px;
+}
+.pf-s__footer > .pf-captcha--inline[data-captcha-mode='strict'],
+.pf-s__footer > .pf-captcha--inline[data-captcha-state='interactive'] {
+  margin-top: 28px;
+}
+.pf-s__footer > .pf-captcha--inline[data-captcha-mode='strict'] + .pf__btn--inline,
+.pf-s__footer > .pf-captcha--inline[data-captcha-state='interactive'] + .pf__btn--inline {
+  margin-top: 12px;
+}
+@media (max-width: 480px) {
+  .pf-s__member + .pf-s__member {
+    margin-top: 20px;
+    padding-top: 20px;
+  }
+}
+
 /* NOTE: there is no `.pf--embedded` block any more. The builder used to render
    this markup as a SUBTREE of the admin document, which needed preview-only
    rules here to re-scope the `100dvh` floor, the fixed background layer and the
