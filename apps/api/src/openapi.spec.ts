@@ -38,6 +38,16 @@ describe('openapi spec', () => {
     expect(paths).toContain('/health');
   });
 
+  it('documents the visit on the submit, and only its safe view on the dashboard read', () => {
+    const submit = JSON.stringify(openapiSpec.paths['/v1/public/forms/{accountCode}/{slug}/submissions'].post);
+    for (const key of ['visit', 'pageUri', 'pageName', 'pageId', 'hutk', 'hsPortalId', 'embedded']) {
+      expect(submit).toContain(key);
+    }
+    const read = JSON.stringify(openapiSpec.paths['/v1/forms/{id}/submissions/{submissionId}'].get);
+    expect(read).toContain('hubspotCookie');
+    expect(read).not.toContain('hutk');
+  });
+
   it('documents the human check on the submit: the token field and the 403/503 answers', () => {
     const submit = openapiSpec.paths['/v1/public/forms/{accountCode}/{slug}/submissions'].post;
     expect(JSON.stringify(submit)).toContain('captchaToken');

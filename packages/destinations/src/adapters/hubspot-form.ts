@@ -199,19 +199,37 @@ export function mirrorSubmitUrl(portalId: string, formGuid: string, base?: strin
 }
 
 /**
+ * A submission's `context`: the page it came from and the visitor's HubSpot
+ * cookie (`hutk`), which is what joins the contact to the page views it made
+ * before converting. HubSpot accepts these on a form submission and nowhere
+ * else.
+ */
+export interface MirrorSubmissionContext {
+  hutk?: string;
+  pageUri?: string;
+  pageName?: string;
+  pageId?: string;
+}
+
+const CONTEXT_KEYS = ['hutk', 'pageUri', 'pageName', 'pageId'] as const;
+
+/**
  * The submission body: the properties the adapter just wrote to the contact,
  * as form fields.
  *
- * Only properties the mirror DECLARES are sent — HubSpot rejects a submission
+ * Only properties the mirror DECLARES are sent: HubSpot rejects a submission
  * naming a field the form does not have, which would otherwise turn a stale
  * mirror (mappings edited, mirror not yet rebuilt) into a hard failure instead
  * of a partial activity.
+ *
+ * A context key with no value is left out rather than sent empty: HubSpot
+ * refuses the whole submission over an empty `hutk`.
  */
 export function buildMirrorSubmission(
   properties: Record<string, string>,
   declared: string[],
-  context?: { pageUri?: string; pageName?: string },
-): { fields: { objectTypeId: string; name: string; value: string }[]; context?: object } {
+  context?: MirrorSubmissionContext,
+): { fields: { objectTypeId: string; name: string; value: string }[]; context?: MirrorSubmissionContext } {
   const allowed = new Set(declared);
   const fields = Object.entries(properties)
     .filter(([name, value]) => allowed.has(name) && value !== '' && value != null)
@@ -220,5 +238,10 @@ export function buildMirrorSubmission(
       name,
       value: String(value),
     }));
-  return context && (context.pageUri || context.pageName) ? { fields, context } : { fields };
+  const sent: MirrorSubmissionContext = {};
+  for (const key of CONTEXT_KEYS) {
+    const value = context?.[key];
+    if (typeof value === 'string' && value.trim() !== '') sent[key] = value;
+  }
+  return Object.keys(sent).length > 0 ? { fields, context: sent } : { fields };
 }

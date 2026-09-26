@@ -179,6 +179,29 @@ describe('buildMirrorSubmission', () => {
     expect(body.fields.map((f) => f.name)).toEqual(['email']);
   });
 
+  it('carries the visit context, leaving out every key with no value', () => {
+    // HubSpot answers 400 to an empty `hutk`: an empty key is never sent.
+    const body = buildMirrorSubmission({ email: 'a@b.com' }, ['email'], {
+      hutk: '',
+      pageUri: 'https://landing.example.com/',
+      pageName: 'Landing',
+      pageId: undefined,
+    });
+    expect(body.context).toEqual({ pageUri: 'https://landing.example.com/', pageName: 'Landing' });
+    const full = buildMirrorSubmission({ email: 'a@b.com' }, ['email'], {
+      hutk: '0123456789abcdef0123456789abcdef',
+      pageUri: 'https://landing.example.com/',
+      pageName: 'Landing',
+      pageId: '12345',
+    });
+    expect(full.context).toEqual({
+      hutk: '0123456789abcdef0123456789abcdef',
+      pageUri: 'https://landing.example.com/',
+      pageName: 'Landing',
+      pageId: '12345',
+    });
+  });
+
   it('carries a page context when there is one, and omits the key when not', () => {
     expect(buildMirrorSubmission({ email: 'a@b.com' }, ['email'])).not.toHaveProperty('context');
     const withContext = buildMirrorSubmission({ email: 'a@b.com' }, ['email'], {

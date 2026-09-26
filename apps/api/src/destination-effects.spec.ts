@@ -312,6 +312,138 @@ describe('per-event trigger filter (enqueue-time)', () => {
   });
 });
 
+/**
+ * The page a submission was answered on (#199) rides the outbox snapshot, so
+ * every attempt of one delivery sends the same visit, and a row enqueued before
+ * the visit existed still delivers exactly what it always did.
+ */
+describe('the visit in the outbox', () => {
+  const VISIT = {
+    pageUri: 'https://landing.example.com/offer?utm_source=fb',
+    pageName: 'Home insurance',
+    hutk: '0123456789abcdef0123456789abcdef',
+    embedded: true,
+  };
+
+  function input(submissionId: string, visit?: typeof VISIT): SubmissionDeliveryInput {
+    return {
+      formId: 'form-1',
+      formName: 'F',
+      accountId: 'acc-1',
+      submissionId,
+      sessionId: `sess-${submissionId}`,
+      score: 0,
+      outcomeLabel: null,
+      phase: 'complete',
+      submittedAt: 1_800_000_000_000,
+      data: { email: 'lead@acme.io' },
+      config: { version: 1, steps: [], destinations: [{ type: 'webhook', enabled: true, settings: { url: 'https://acme.io/hook' } }] },
+      ...(visit ? { visit } : {}),
+    };
+  }
+
+  function drainingWorker(statuses: number[]) {
+    const bodies: string[] = [];
+    destinations.fetchImpl = (async (_url: string, init: RequestInit) => {
+      bodies.push(init.body as string);
+      return new Response('{}', { status: statuses.shift() ?? 200 });
+    }) as unknown as typeof fetch;
+    const env = { OUTBOX_WORKER_ENABLED: false, OUTBOX_POLL_MS: 5000, NODE_ENV: 'test' } as never;
+    const email = new EmailEffects(new SubmissionNotifier(new LogOnlyEmailProvider()), db);
+    return { bodies, worker: new OutboxWorker(db, env, email, destinations) };
+  }
+
+  it('snapshots the visit, so a retried delivery sends the very same body', async () => {
+    await destinations.enqueueSubmissionDeliveries(input('sub-visit', VISIT));
+    const [row] = await listOutbox(db, { kind: 'webhook', subjectUid: 'sub-visit' });
+    expect((JSON.parse(row!.payload!) as { ctx: { visit: unknown } }).ctx.visit).toEqual(VISIT);
+
+    const { bodies, worker } = drainingWorker([503, 200]);
+    await worker.drainOnce();
+    // The backoff put the retry in the future; bring it forward.
+    await db.run(sql`UPDATE outbox SET next_attempt_at = 0 WHERE subject_uid = ${'sub-visit'}`);
+    await worker.drainOnce();
+
+    expect(bodies).toHaveLength(2);
+    expect(bodies[1]).toBe(bodies[0]);
+    expect(JSON.parse(bodies[0]!).visit).toEqual({
+      pageUri: VISIT.pageUri,
+      pageName: VISIT.pageName,
+      embedded: true,
+      hutk: VISIT.hutk,
+    });
+    expect((await listOutbox(db, { kind: 'webhook', subjectUid: 'sub-visit' }))[0]!.status).toBe('done');
+  });
+
+  it('snapshots the cookie only for a destination that uses it', async () => {
+    const base = input('sub-min', VISIT);
+    await destinations.enqueueSubmissionDeliveries({
+      ...base,
+      config: {
+        version: 1,
+        steps: [],
+        destinations: [
+          { type: 'webhook', enabled: true, settings: { url: 'https://acme.io/hook' } },
+          { type: 'hubspot', enabled: true, settings: {} },
+        ],
+      },
+    });
+    const ctxOf = async (kind: 'webhook' | 'hubspot') =>
+      (JSON.parse((await listOutbox(db, { kind, subjectUid: 'sub-min' }))[0]!.payload!) as { ctx: { visit: unknown } })
+        .ctx.visit;
+    expect(await ctxOf('webhook')).toEqual(VISIT);
+    // HubSpot without its form submission never sends the cookie: it keeps the page only.
+    const { hutk: _cookie, ...pageOnly } = VISIT;
+    expect(await ctxOf('hubspot')).toEqual(pageOnly);
+
+    await destinations.enqueueSubmissionDeliveries({
+      ...input('sub-mirror', VISIT),
+      config: {
+        version: 1,
+        steps: [],
+        destinations: [{ type: 'hubspot', enabled: true, settings: { formActivity: true, formGuid: 'guid-1' } }],
+      },
+    });
+    const [mirrorRow] = await listOutbox(db, { kind: 'hubspot', subjectUid: 'sub-mirror' });
+    expect((JSON.parse(mirrorRow!.payload!) as { ctx: { visit: unknown } }).ctx.visit).toEqual(VISIT);
+  });
+
+  it('snapshots the cookie only for the phase a destination sends it in', async () => {
+    const { hutk: _cookie, ...pageOnly } = VISIT;
+    const config = {
+      version: 1,
+      steps: [],
+      destinations: [
+        { type: 'webhook', enabled: true, settings: { url: 'https://acme.io/hook' } },
+        { type: 'hubspot', enabled: true, settings: { formActivity: true, formGuid: 'guid-1' } },
+      ],
+    };
+    const visitOf = async (kind: 'webhook' | 'hubspot', subjectUid: string) =>
+      (JSON.parse((await listOutbox(db, { kind, subjectUid }))[0]!.payload!) as { ctx: { visit: unknown } }).ctx.visit;
+
+    // A partial never posts the form submission, the one HubSpot call that
+    // takes the cookie, so HubSpot's partial snapshot keeps the page alone.
+    await destinations.enqueueSubmissionDeliveries({ ...input('sub-phase-partial', VISIT), phase: 'partial', config });
+    expect(await visitOf('hubspot', 'sub-phase-partial')).toEqual(pageOnly);
+    // A webhook sends the visit in every phase it fires for.
+    expect(await visitOf('webhook', 'sub-phase-partial')).toEqual(VISIT);
+
+    await destinations.enqueueSubmissionDeliveries({ ...input('sub-phase-complete', VISIT), config });
+    expect(await visitOf('hubspot', 'sub-phase-complete')).toEqual(VISIT);
+    expect(await visitOf('webhook', 'sub-phase-complete')).toEqual(VISIT);
+  });
+
+  it('delivers a row enqueued before the visit existed exactly as before: no visit key at all', async () => {
+    await destinations.enqueueSubmissionDeliveries(input('sub-legacy'));
+    const [row] = await listOutbox(db, { kind: 'webhook', subjectUid: 'sub-legacy' });
+    expect(JSON.parse(row!.payload!).ctx).not.toHaveProperty('visit');
+
+    const { bodies, worker } = drainingWorker([200]);
+    await worker.drainOnce();
+    expect(Object.keys(JSON.parse(bodies[0]!))).toEqual(['id', 'type', 'phase', 'submittedAt', 'form', 'submission', 'data', 'utm']);
+  });
+});
+
 describe('public form config', () => {
   it('never leaks destination config to the public renderer', async () => {
     await addWebhookDestination('shh');

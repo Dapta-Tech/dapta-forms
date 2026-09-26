@@ -29,6 +29,8 @@ const labels: PanelLabels = {
   colStarted: 'Started',
   colScore: 'Score',
   responseId: 'Response ID',
+  pageRow: 'Page',
+  hubspotCookie: 'HubSpot cookie received',
   utmTitle: 'Campaign (UTM)',
   answeredCount: '{n} of {total} answered',
   badgeCompleted: 'Completed',
@@ -89,6 +91,8 @@ const detail = (over: Partial<ResponseDetail> = {}): ResponseDetail => ({
     { key: 'budget', label: 'Budget?', kind: 'empty' },
   ],
   utm: [['utm_source', 'qr']],
+  page: null,
+  hubspotCookie: false,
   respondent: { name: null, email: null, phone: null },
   ...over,
 });
@@ -247,6 +251,39 @@ describe('ResponseDetailView', () => {
     for (const key of ['story', 'role', 'site', 'id_doc', 'budget'])
       expect(html).toContain(`data-answer-key="${key}"`);
     expect(html).not.toContain('data-focused');
+  });
+
+  it('shows the page it was given on as a link, with the HubSpot chip only when the cookie came', () => {
+    const page = { href: 'https://landing.example.com/offer', text: 'Home insurance', host: 'landing.example.com' };
+    const withCookie = renderToStaticMarkup(
+      <ResponseDetailView detail={detail({ page, hubspotCookie: true })} formId="form_1" labels={labels} fileLabels={fileLabels} />,
+    );
+    const row = withCookie.match(/<dd[^>]*data-testid="response-page"[^>]*>[\s\S]*?<\/dd>/)![0];
+    expect(withCookie).toContain('>Page<');
+    expect(row).toContain('href="https://landing.example.com/offer"');
+    expect(row).toContain('rel="noopener noreferrer"');
+    expect(row).toContain('Home insurance');
+    // The real host inside the link, beside a title anyone could have written.
+    const link = row.match(/<a [\s\S]*?<\/a>/)![0];
+    expect(link).toMatch(/Home insurance[\s\S]*landing\.example\.com/);
+    expect(row).toContain('HubSpot cookie received');
+
+    const withoutCookie = renderToStaticMarkup(
+      <ResponseDetailView
+        detail={detail({ page: { href: null, text: 'landing.example.com', host: null }, hubspotCookie: false })}
+        formId="form_1"
+        labels={labels}
+        fileLabels={fileLabels}
+      />,
+    );
+    expect(withoutCookie).toContain('landing.example.com');
+    expect(withoutCookie).not.toMatch(/data-testid="response-page"[\s\S]*?<a /);
+    expect(withoutCookie).not.toContain('HubSpot cookie received');
+  });
+
+  it('has no Page row for a response that reported no page', () => {
+    expect(view()).not.toContain('>Page<');
+    expect(view()).not.toContain('response-page');
   });
 
   it('outlines only the question opened from a cell, answered or not', () => {

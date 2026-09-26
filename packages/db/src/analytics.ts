@@ -7,9 +7,18 @@
  * COUNT / SUM(CASE…) / AVG(CASE…) which behave the same on both engines.
  */
 import { type SQL } from 'drizzle-orm';
+import { toSubmissionVisitView, type SubmissionVisitView } from '@quill/types';
 import { sql, type Db } from './client';
-import { parseJsonColumn } from './forms';
+import { parseJsonColumn, readVisitColumn } from './forms';
 import type { SubmissionRow } from './forms';
+
+/**
+ * A submission as the dashboard reads it. The visit is the SAFE view: the page
+ * and a "HubSpot cookie received" flag, never the cookie itself. Mapped here, at
+ * the one place the admin read side turns rows into objects, so a route that
+ * spreads a row into its response cannot hand the cookie out by accident.
+ */
+export type AdminSubmissionRow = Omit<SubmissionRow, 'visit'> & { visit: SubmissionVisitView | null };
 
 /** An optional epoch-ms date window applied to the query. */
 export interface DateRange {
@@ -494,7 +503,7 @@ function orderBy(sort: SubmissionSort = 'newest'): SQL {
   }
 }
 
-function mapSubmission(r: Record<string, unknown>): SubmissionRow {
+function mapSubmission(r: Record<string, unknown>): AdminSubmissionRow {
   return {
     id: String(r.id),
     formId: String(r.form_id),
@@ -504,6 +513,7 @@ function mapSubmission(r: Record<string, unknown>): SubmissionRow {
     startedAt: Number(r.started_at),
     completedAt: r.completed_at == null ? null : Number(r.completed_at),
     partialAt: r.partial_at == null ? null : Number(r.partial_at),
+    visit: toSubmissionVisitView(readVisitColumn(r.visit)),
   };
 }
 
@@ -516,7 +526,7 @@ export async function querySubmissions(
   db: Db,
   formId: string,
   q: SubmissionQuery = {},
-): Promise<{ items: SubmissionRow[]; total: number; limit: number; offset: number }> {
+): Promise<{ items: AdminSubmissionRow[]; total: number; limit: number; offset: number }> {
   const limit = Math.min(Math.max(q.limit ?? 25, 1), 200);
   const offset = Math.max(q.offset ?? 0, 0);
   const where = filterWhere(db, formId, q);
@@ -544,7 +554,7 @@ export async function allSubmissionsForExport(
     /** Only these submissions ("Export selected"). An empty list exports nothing. */
     ids?: readonly string[];
   } = {},
-): Promise<SubmissionRow[]> {
+): Promise<AdminSubmissionRow[]> {
   // `IN ()` is a syntax error on both dialects; no id asked for is no row.
   if (q.ids?.length === 0) return [];
   const only = q.ids ? sql`AND id IN (${bindIds(q.ids)})` : sql``;
@@ -722,7 +732,7 @@ export async function searchSubmissionAnswers(
   formId: string,
   fields: string[],
   q: AnswerSearchQuery = {},
-): Promise<{ items: SubmissionRow[]; total: number; limit: number; offset: number }> {
+): Promise<{ items: AdminSubmissionRow[]; total: number; limit: number; offset: number }> {
   const limit = Math.min(Math.max(q.limit ?? 10, 1), 50);
   const offset = Math.max(q.offset ?? 0, 0);
   if (fields.length === 0) return { items: [], total: 0, limit, offset };
@@ -777,7 +787,7 @@ export async function getSubmissionAnswersForAccount(
   db: Db,
   accountId: string,
   submissionId: string,
-): Promise<SubmissionRow | null> {
+): Promise<AdminSubmissionRow | null> {
   const row = await db.get<Record<string, unknown>>(
     sql`SELECT s.* FROM submission s
         JOIN form f ON f.id = s.form_id

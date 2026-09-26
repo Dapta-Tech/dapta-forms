@@ -5,7 +5,7 @@ import { publicLocale } from '@/lib/locale';
 import { canonicalFor } from '@/lib/public-form-path';
 import { getMessages, t } from '@quill/shared';
 import { resolveFormLayout, publicTitle } from '@quill/engine';
-import { resolveTracking } from '@/components/tracking/resolve-tracking';
+import { formLoadsHubspotTracking, resolveTracking } from '@/components/tracking/resolve-tracking';
 import { TrackingScripts } from '@/components/tracking/tracking-scripts';
 import { EmbedHeightReporter } from '@/components/public/embed-height-reporter';
 import { FormRenderer } from './form-renderer';
@@ -201,6 +201,11 @@ export default async function PublicFormPage({
           // Spam protection: present only when the API says this form's final
           // submit must pass the human check. The builder preview never passes it.
           captcha={form.captcha}
+          // The page it is answered on goes with each submit (#199). Whether a
+          // direct link may send its own HubSpot cookie is the FORM's tracking
+          // ID, never the deployment default: that code only runs here because
+          // this form asked for it.
+          visitCapture={{ hubspotTracking: formLoadsHubspotTracking(form.config.tracking) }}
         />
       </div>
     </>

@@ -1319,6 +1319,8 @@ export interface FormsMessages {
       /** CSV-only headers (the table shows the date under `colSubmitted` and the name joined). */
       colSubmittedAt: string;
       colSubmissionId: string;
+      /** CSV-only: the page the response was given on (#199). */
+      colPageUrl: string;
       colFirstName: string;
       colLastName: string;
       export: string;
@@ -1389,6 +1391,13 @@ export interface FormsMessages {
       noAnswer: string;
       colStarted: string;
       responseId: string;
+      /** The page the response was given on: the landing that embeds the form, or the form's own link. */
+      pageRow: string;
+      /**
+       * Beside the page: the visitor's HubSpot tracking cookie arrived with the
+       * response. Received, not accepted: it does not say HubSpot took the visit.
+       */
+      hubspotCookie: string;
       utmTitle: string;
       /** "{n} of {total} answered": how much of the form this response covers. */
       answeredCount: string;
@@ -3052,7 +3061,8 @@ export const en: FormsMessages = {
         posthogHostHelp: 'Defaults to PostHog US cloud; set your EU or self-hosted ingestion URL.',
         posthogHostInvalid: 'Enter a full http(s) URL, e.g. https://eu.i.posthog.com.',
         hubspotLabel: 'HubSpot tracking ID',
-        hubspotHelp: 'Loads the HubSpot tracking code for your portal on the form page.',
+        hubspotHelp:
+          'Loads the HubSpot tracking code for your portal on the form page. If you embed this form in pages that already load your HubSpot tracking code, leave it empty: the embed passes the visit from those pages.',
         utmNote:
           'UTM parameters are captured automatically and can be mapped to HubSpot properties in Integrations.',
         emailsTitle: 'Emails',
@@ -3129,6 +3139,7 @@ export const en: FormsMessages = {
       colScore: 'Score',
       colSubmittedAt: 'Submitted at',
       colSubmissionId: 'Submission id',
+      colPageUrl: 'Page URL',
       colFirstName: 'First name',
       colLastName: 'Last name',
       export: 'Download CSV',
@@ -3183,6 +3194,8 @@ export const en: FormsMessages = {
       noAnswer: 'No answer',
       colStarted: 'Started',
       responseId: 'Response ID',
+      pageRow: 'Page',
+      hubspotCookie: 'HubSpot cookie received',
       utmTitle: 'Campaign (UTM)',
       answeredCount: '{n} of {total} answered',
       sheetOpen: 'Full screen',
@@ -3279,7 +3292,7 @@ export const en: FormsMessages = {
       createNoteHelp: 'Attaches a note with the form name and score to the contact.',
       formActivity: 'Record a form submission in HubSpot',
       formActivityHelp:
-        'Creates a matching form in your portal, so each completed submission shows on the contact as a form submission activity listing the properties it set. Not just a note. Needs the forms and form-submissions-write scopes on your private app.',
+        'Creates a matching form in your portal, so each completed submission shows on the contact as a form submission activity listing the properties it set. Not just a note. It is also what joins the contact to its visits on the page that embeds the form, so turn it on to attribute them. Needs the forms and form-submissions-write scopes on your private app.',
       formActivityError: 'HubSpot could not set this up: {reason}',
       selectProperty: 'Select a property…',
       noProperty: '(none)',
@@ -4786,7 +4799,8 @@ export const es: FormsMessages = {
           'Por defecto usa la nube de PostHog en EE. UU.; configura tu URL de ingesta de la UE o autoalojada.',
         posthogHostInvalid: 'Introduce una URL http(s) completa, p. ej. https://eu.i.posthog.com.',
         hubspotLabel: 'ID de seguimiento de HubSpot',
-        hubspotHelp: 'Carga el código de seguimiento de HubSpot de tu portal en la página del formulario.',
+        hubspotHelp:
+          'Carga el código de seguimiento de HubSpot de tu portal en la página del formulario. Si insertas este formulario en páginas que ya cargan tu código de seguimiento de HubSpot, déjalo vacío: el embed pasa la visita de esas páginas.',
         utmNote:
           'Los parámetros UTM se capturan automáticamente y puedes mapearlos a propiedades de HubSpot en Integraciones.',
         emailsTitle: 'Correos',
@@ -4863,6 +4877,7 @@ export const es: FormsMessages = {
       colScore: 'Puntaje',
       colSubmittedAt: 'Fecha de envío',
       colSubmissionId: 'ID de respuesta',
+      colPageUrl: 'URL de la página',
       colFirstName: 'Nombre',
       colLastName: 'Apellido',
       export: 'Descargar CSV',
@@ -4917,6 +4932,8 @@ export const es: FormsMessages = {
       noAnswer: 'Sin respuesta',
       colStarted: 'Iniciada',
       responseId: 'ID de respuesta',
+      pageRow: 'Página',
+      hubspotCookie: 'Cookie de HubSpot recibida',
       utmTitle: 'Campaña (UTM)',
       answeredCount: '{n} de {total} respondidas',
       sheetOpen: 'Pantalla completa',
@@ -5013,7 +5030,7 @@ export const es: FormsMessages = {
       createNoteHelp: 'Adjunta al contacto una nota con el nombre del formulario y la puntuación.',
       formActivity: 'Registrar la respuesta como form submission en HubSpot',
       formActivityHelp:
-        'Crea un formulario espejo en tu portal, para que cada respuesta completada aparezca en el contacto como una actividad de form submission con las propiedades que escribió: y no solo como una nota. Necesita los permisos forms y form-submissions-write en tu private app.',
+        'Crea un formulario espejo en tu portal, para que cada respuesta completada aparezca en el contacto como una actividad de form submission con las propiedades que escribió: y no solo como una nota. También es lo que une al contacto con sus visitas a la página donde está insertado el formulario, así que actívalo para atribuirlas. Necesita los permisos forms y form-submissions-write en tu private app.',
       formActivityError: 'HubSpot no pudo configurarlo: {reason}',
       selectProperty: 'Selecciona una propiedad…',
       noProperty: '(ninguna)',

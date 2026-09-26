@@ -66,6 +66,8 @@ export interface ExportRow {
   status: string;
   /** Latest known instant (completed, else partial, else started) in the workspace zone. */
   submittedAt: string;
+  /** The page it was given on (the landing that embeds the form, or its own link); '' when unknown. */
+  pageUri: string;
 }
 
 export interface ExportColumn {
@@ -81,13 +83,16 @@ export interface ExportLabels {
   status: string;
   score: string;
   submissionId: string;
+  pageUrl: string;
 }
 
 /**
  * The columns of the submissions CSV, in order: the name split in two when the
  * form has a name step with the stock `firstname` / `lastname` fields (a step
  * with its own fields keeps one column under its question), every other answering step in form order
- * headed by its question, then the technical columns. Message and reveal steps
+ * headed by its question, then the technical columns. The page URL comes LAST,
+ * after the submission id: it was added after the others, and a spreadsheet
+ * that reads the file by column position must not see one move. Message and reveal steps
  * collect nothing and get no column. A header that repeats gets ` (2)`, ` (3)`
  * so a spreadsheet can still tell the columns apart.
  */
@@ -131,6 +136,7 @@ export function exportColumns(
   );
   if (opts.scoring) cols.push({ header: opts.labels.score, value: (r) => r.score });
   cols.push({ header: opts.labels.submissionId, value: (r) => r.id });
+  cols.push({ header: opts.labels.pageUrl, value: (r) => r.pageUri });
 
   // Suffix repeats, skipping any suffixed name a question already uses, so
   // `Email`, `Email`, `Email (2)` becomes `Email`, `Email (3)`, `Email (2)`.

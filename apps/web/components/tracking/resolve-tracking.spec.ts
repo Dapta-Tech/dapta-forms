@@ -1,6 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   DEFAULT_POSTHOG_HOST,
+  formLoadsHubspotTracking,
   hasAnyTracking,
   resolveTracking,
   type TrackingEnv,
@@ -112,5 +113,21 @@ describe('resolveTracking', () => {
     expect(resolveTracking({ posthogKey: 'phc_form' }, FULL_ENV).posthogHost).toBe(
       'https://ph.env.example',
     );
+  });
+});
+
+describe('formLoadsHubspotTracking (#199)', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('is the FORM loading its own HubSpot tracking code, never the deployment default', () => {
+    // The env default may load the code on every form, but the form did not ask
+    // for it: its own cookie is not sent on its behalf.
+    vi.stubEnv('NEXT_PUBLIC_HUBSPOT_TRACKING_ID', 'env-hubspot');
+    expect(formLoadsHubspotTracking({ hubspotTrackingId: '4321' })).toBe(true);
+    expect(formLoadsHubspotTracking({})).toBe(false);
+    expect(formLoadsHubspotTracking(null)).toBe(false);
+    expect(formLoadsHubspotTracking({ hubspotTrackingId: '   ' })).toBe(false);
   });
 });

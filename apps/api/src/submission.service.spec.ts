@@ -679,6 +679,205 @@ describe('spam protection (captcha)', () => {
   });
 });
 
+/**
+ * The page a submission was answered on (#199): what the service stores, what
+ * it keeps of the HubSpot cookie, and which visit the deliveries carry.
+ */
+describe('the visit', () => {
+  const HUTK = '0123456789ABCDEF0123456789abcdef';
+  const LANDING = {
+    pageUri: 'https://landing.example.com/offer?utm_source=fb#form',
+    pageName: '  Home   insurance ',
+    pageId: '12345',
+    hutk: HUTK,
+    hsPortalId: '4321',
+    embedded: true,
+  };
+  const STORED = {
+    pageUri: 'https://landing.example.com/offer?utm_source=fb',
+    pageName: 'Home insurance',
+    pageId: '12345',
+    hutk: HUTK.toLowerCase(),
+    hsPortalId: '4321',
+    embedded: true,
+  };
+  const { hutk: _cookie, ...WITHOUT_COOKIE } = STORED;
+
+  let destinations: DestinationEffects;
+  let verifier: FakeVerifier;
+  let formId: string;
+  const slug = 'visit-form';
+
+  async function publish(destinationsConfig: unknown[], extra: Record<string, unknown> = {}) {
+    const account = await getAccountByCode(db, 'acme');
+    const created = await createForm(db, account!.id, {
+      name: 'Visit form',
+      slug,
+      config: {
+        version: 1,
+        steps: [
+          { key: 'email', type: 'email', question: 'Email?' },
+          { key: 'company', type: 'text', question: 'Company?' },
+        ],
+        destinations: destinationsConfig,
+        ...extra,
+      } as never,
+    });
+    if (!created.ok) throw new Error('createForm failed');
+    formId = created.value.id;
+  }
+
+  function service() {
+    const email = new EmailEffects(new SubmissionNotifier(new LogOnlyEmailProvider()), db);
+    return new SubmissionService(db, email, destinations, undefined, undefined, undefined, verifier);
+  }
+
+  const WEBHOOK = { type: 'webhook', enabled: true, settings: { url: 'https://hooks.example.com/in' } };
+  const HUBSPOT_MIRROR = { type: 'hubspot', enabled: true, settings: { formActivity: true, formGuid: 'guid-1' } };
+
+  const storedVisit = async () => (await listSubmissions(db, formId))[0]?.visit;
+  const ctxOf = async (kind: 'webhook' | 'hubspot', action: 'partial' | 'complete') => {
+    const row = (await listOutbox(db, { kind })).find((r) => r.action === action);
+    return (JSON.parse(row!.payload!) as { ctx: Record<string, unknown> }).ctx;
+  };
+
+  beforeEach(() => {
+    destinations = new DestinationEffects(db);
+    verifier = new FakeVerifier();
+  });
+
+  it('stores the visit the browser reported, sanitized, and answers as usual', async () => {
+    await publish([WEBHOOK]);
+    const out = await service().submit('acme', slug, {
+      sessionId: 'sess-visit',
+      data: { email: 'lead@example.com' },
+      visit: LANDING,
+    });
+    expect('error' in out).toBe(false);
+    expect(await storedVisit()).toEqual(STORED);
+  });
+
+  it('never refuses a submission over a malformed visit', async () => {
+    await publish([WEBHOOK]);
+    for (const [i, visit] of [
+      'https://landing.example.com',
+      { pageUri: 'javascript:alert(1)', pageName: 7, hutk: 'abc', pageId: 'x', embedded: 'yes' },
+      [LANDING],
+    ].entries()) {
+      const out = await service().submit('acme', slug, { sessionId: `sess-bad-${i}`, data: { email: 'a@example.com' }, visit });
+      expect('error' in out).toBe(false);
+    }
+    const rows = await listSubmissions(db, formId);
+    expect(rows).toHaveLength(3);
+    expect(rows.every((r) => r.visit === null)).toBe(true);
+  });
+
+  it('logs a dropped cookie without ever printing it', async () => {
+    await publish([WEBHOOK]);
+    const svc = service();
+    const warn = vi.spyOn((svc as unknown as { log: { warn: (m: string) => void } }).log, 'warn');
+    await svc.submit('acme', slug, {
+      sessionId: 'sess-bad-cookie',
+      data: { email: 'a@example.com' },
+      visit: { ...LANDING, hutk: 'not-a-hubspot-cookie' },
+    });
+    expect(warn).toHaveBeenCalledWith(expect.stringMatching(/hutk dropped/));
+    expect(JSON.stringify(warn.mock.calls)).not.toContain('not-a-hubspot-cookie');
+    expect(await storedVisit()).toEqual(WITHOUT_COOKIE);
+  });
+
+  it('keeps the cookie only when a webhook or a HubSpot form submission will use it', async () => {
+    const cases: Array<[string, unknown[], boolean]> = [
+      ['no destination', [], false],
+      ['a webhook', [WEBHOOK], true],
+      ['a switched-off webhook', [{ ...WEBHOOK, enabled: false }], false],
+      ['HubSpot recording the form submission', [HUBSPOT_MIRROR], true],
+      ['HubSpot with the form submission off', [{ type: 'hubspot', enabled: true, settings: {} }], false],
+      [
+        'HubSpot with the switch on but no mirror form yet',
+        [{ type: 'hubspot', enabled: true, settings: { formActivity: true } }],
+        false,
+      ],
+    ];
+    for (const [label, config, kept] of cases) {
+      await db.run(sql`DELETE FROM form WHERE slug = ${slug}`);
+      await publish(config);
+      await service().submit('acme', slug, { sessionId: `sess-${label}`, data: { email: 'a@example.com' }, visit: LANDING });
+      expect(await storedVisit(), label).toEqual(kept ? STORED : WITHOUT_COOKIE);
+    }
+  });
+
+  it('delivers the MERGED visit: a partial caught it, the complete came without one', async () => {
+    await publish([WEBHOOK]);
+    const svc = service();
+    await svc.submit('acme', slug, { sessionId: 'sess-merge', data: { email: 'a@example.com' }, partial: true, visit: LANDING });
+    await svc.submit('acme', slug, { sessionId: 'sess-merge', data: { email: 'a@example.com', company: 'Acme' } });
+    expect((await ctxOf('webhook', 'partial')).visit).toEqual(STORED);
+    expect((await ctxOf('webhook', 'complete')).visit).toEqual(STORED);
+  });
+
+  it('enqueues exactly the payload it always did when no visit was reported', async () => {
+    await publish([WEBHOOK]);
+    await service().submit('acme', slug, { sessionId: 'sess-plain', data: { email: 'a@example.com' } });
+    expect(await ctxOf('webhook', 'complete')).not.toHaveProperty('visit');
+    expect(await ctxOf('webhook', 'complete')).not.toHaveProperty('formTitle');
+  });
+
+  it('carries the public title with a visit, for HubSpot to name an untitled page', async () => {
+    await publish([HUBSPOT_MIRROR], { title: 'Get your quote' });
+    await service().submit('acme', slug, {
+      sessionId: 'sess-title',
+      data: { email: 'a@example.com' },
+      visit: { pageUri: 'https://landing.example.com/', embedded: true },
+    });
+    const ctx = await ctxOf('hubspot', 'complete');
+    expect(ctx.formName).toBe('Visit form');
+    expect(ctx.formTitle).toBe('Get your quote');
+  });
+
+  describe('with spam protection on', () => {
+    beforeEach(async () => {
+      await publish([WEBHOOK, HUBSPOT_MIRROR], { spamProtection: { captcha: true } });
+    });
+
+    it('a partial stores its visit and delivers nothing; the verified complete delivers it', async () => {
+      const svc = service();
+      await svc.submit('acme', slug, { sessionId: 'sess-p', data: { email: 'a@example.com' }, partial: true, visit: LANDING });
+      expect(await storedVisit()).toEqual(STORED);
+      expect(await listOutbox(db, { kind: 'webhook' })).toHaveLength(0);
+
+      await svc.submit('acme', slug, { sessionId: 'sess-p', data: { email: 'a@example.com' }, captchaToken: 'tok' });
+      expect((await ctxOf('webhook', 'complete')).visit).toEqual(STORED);
+      expect((await ctxOf('hubspot', 'complete')).visit).toEqual(STORED);
+    });
+
+    it('a refused check writes nothing, visit included', async () => {
+      verifier.verdict = { outcome: 'failed', reason: 'invalid-input-response' };
+      const out = await service().submit('acme', slug, {
+        sessionId: 'sess-refused',
+        data: { email: 'a@example.com' },
+        captchaToken: 'forged',
+        visit: LANDING,
+      });
+      expect(out).toMatchObject({ status: 403 });
+      expect(await listSubmissions(db, formId)).toHaveLength(0);
+    });
+
+    it('an unavailable check keeps the answers AND the visit as a partial, for the retry to complete', async () => {
+      verifier.verdict = { outcome: 'unavailable', reason: 'timeout' };
+      const out = await service().submit('acme', slug, {
+        sessionId: 'sess-down',
+        data: { email: 'a@example.com' },
+        captchaToken: 'tok',
+        visit: LANDING,
+      });
+      expect(out).toMatchObject({ status: 503 });
+      expect(await storedVisit()).toEqual(STORED);
+      expect(await listOutbox(db, { kind: 'webhook' })).toHaveLength(0);
+    });
+  });
+});
+
 describe('events', () => {
   it('records a funnel event for a valid form', async () => {
     const out = await svc.event('acme', 'lead-qualifier', { sessionId: 'sess-3', type: 'view' });

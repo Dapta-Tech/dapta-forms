@@ -64,6 +64,15 @@ export function resolveTracking(
   };
 }
 
+/**
+ * Does the FORM itself load HubSpot's tracking code? Its own config only: the
+ * deployment's env default may load the code on every form, but only a form
+ * that asked for it sends its own `hubspotutk` with a direct-link submit (#199).
+ */
+export function formLoadsHubspotTracking(config?: FormTracking | null): boolean {
+  return clean(config?.hubspotTrackingId) !== null;
+}
+
 /** True when at least one tracker is enabled (the page renders markup at all). */
 export function hasAnyTracking(tracking: ResolvedTracking): boolean {
   return Boolean(
