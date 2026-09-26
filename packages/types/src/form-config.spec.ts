@@ -10,12 +10,14 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
+  captchaCData,
   folderInputSchema,
   folderViewSchema,
   formConfigSchema,
   formCreateInputSchema,
   formFolderPatchSchema,
   hasExtraHubspotDestination,
+  publicFormSchema,
   submissionSchema,
   workspaceTimezoneSchema,
 } from './index';
@@ -290,11 +292,106 @@ describe('long-text character limits (additive)', () => {
   });
 });
 
+describe('screen groups (additive)', () => {
+  const grouped = (screenGroup?: unknown) => ({
+    version: 1 as const,
+    steps: [
+      { key: 'first', type: 'text' as const, question: 'First name?', screenGroup },
+      { key: 'email', type: 'email' as const, question: 'Email?', screenGroup },
+    ],
+  });
+
+  it('a legacy config parses exactly as before: no step carries a screen', () => {
+    const parsed = formConfigSchema.parse(baseConfig());
+    expect(parsed.steps[0]).toEqual({ key: 'q1', type: 'text', question: 'Your name?' });
+    expect('screenGroup' in parsed.steps[0]).toBe(false);
+  });
+
+  it('keeps the id on save: a field the schema did not list would be stripped', () => {
+    const parsed = formConfigSchema.parse(grouped('screen_1'));
+    expect(parsed.steps.map((s) => s.screenGroup)).toEqual(['screen_1', 'screen_1']);
+  });
+
+  it('takes 1 to 64 characters, nothing else', () => {
+    expect(() => formConfigSchema.parse(grouped('s'.repeat(64)))).not.toThrow();
+    expect(() => formConfigSchema.parse(grouped('s'.repeat(65)))).toThrow();
+    expect(() => formConfigSchema.parse(grouped(''))).toThrow();
+    expect(() => formConfigSchema.parse(grouped(3))).toThrow();
+  });
+});
+
 describe('submissionSchema: the locale the respondent saw (additive)', () => {
   it('carries an optional locale and rejects an unknown one', () => {
     expect(submissionSchema.parse({ sessionId: 's', data: {} }).locale).toBeUndefined();
     expect(submissionSchema.parse({ sessionId: 's', data: {}, locale: 'es' }).locale).toBe('es');
     expect(() => submissionSchema.parse({ sessionId: 's', data: {}, locale: 'fr' })).toThrow();
+  });
+});
+
+describe('spam protection (additive)', () => {
+  it('a legacy config parses with no spam protection, which means off', () => {
+    const parsed = formConfigSchema.parse(baseConfig());
+    expect(parsed.spamProtection).toBeUndefined();
+  });
+
+  it('keeps the switch and the mode, and accepts null (the editor clears it this way)', () => {
+    expect(
+      formConfigSchema.parse({ ...baseConfig(), spamProtection: { captcha: true } }).spamProtection,
+    ).toEqual({ captcha: true });
+    expect(
+      formConfigSchema.parse({ ...baseConfig(), spamProtection: { captcha: true, strict: true } })
+        .spamProtection,
+    ).toEqual({ captcha: true, strict: true });
+    expect(formConfigSchema.parse({ ...baseConfig(), spamProtection: null }).spamProtection).toBeNull();
+  });
+
+  it('rejects a switch that is not a boolean', () => {
+    expect(() =>
+      formConfigSchema.parse({ ...baseConfig(), spamProtection: { captcha: 'yes' } }),
+    ).toThrow();
+  });
+});
+
+describe('publicFormSchema: the challenge the renderer runs (additive)', () => {
+  it('parses a payload without one, and one carrying the provider and its site key', () => {
+    const base = { slug: 'f', name: 'F', config: baseConfig() };
+    expect(publicFormSchema.parse(base).captcha).toBeUndefined();
+    expect(
+      publicFormSchema.parse({ ...base, captcha: { provider: 'turnstile', siteKey: 'site-key', strict: true } })
+        .captcha,
+    ).toEqual({ provider: 'turnstile', siteKey: 'site-key', strict: true });
+  });
+});
+
+describe('submissionSchema: the challenge token and the honeypot (additive)', () => {
+  it('carries both as optional top-level fields, never inside the answers', () => {
+    const parsed = submissionSchema.parse({ sessionId: 's', data: {}, captchaToken: 'tok', hp: '' });
+    expect(parsed.captchaToken).toBe('tok');
+    expect(parsed.hp).toBe('');
+    expect(parsed.data).toEqual({});
+    const legacy = submissionSchema.parse({ sessionId: 's', data: {} });
+    expect(legacy.captchaToken).toBeUndefined();
+    expect(legacy.hp).toBeUndefined();
+  });
+
+  it('accepts a token of 2048 characters and rejects one of 2049', () => {
+    expect(submissionSchema.parse({ sessionId: 's', data: {}, captchaToken: 'a'.repeat(2048) }).captchaToken)
+      .toHaveLength(2048);
+    expect(() =>
+      submissionSchema.parse({ sessionId: 's', data: {}, captchaToken: 'a'.repeat(2049) }),
+    ).toThrow();
+  });
+});
+
+describe('captchaCData', () => {
+  it('passes a session id made of allowed characters through unchanged', () => {
+    const uuid = '3f1b3d7e-2b9a-4c7e-9e3a-6f0d2a1c5b44';
+    expect(captchaCData(uuid)).toBe(uuid);
+  });
+
+  it('drops the characters the widget refuses and caps the length', () => {
+    expect(captchaCData('a b/c:d_e-f')).toBe('abcd_e-f');
+    expect(captchaCData('x'.repeat(300))).toHaveLength(255);
   });
 });
 

@@ -88,8 +88,37 @@ describe('listAccountWebhooks', () => {
         enabled: true,
         events: ['complete'],
         hasSecret: false,
+        captcha: false,
       },
     ]);
+  });
+
+  it('says whether the owning form has spam protection switched on', async () => {
+    // Read from the SAME published config the destinations come from: while it
+    // is on, the API holds this webhook's partial deliveries, and the page has
+    // to say so. Whether the deployment can run the check is the API's half.
+    await insertForm(accountId, 'Protected', {
+      version: 1,
+      steps: [],
+      spamProtection: { captcha: true, strict: true },
+      destinations: [hook({ url: 'https://a.test/protected' })],
+    });
+    await insertForm(accountId, 'Strict alone is off', {
+      version: 1,
+      steps: [],
+      spamProtection: { strict: true },
+      destinations: [hook({ url: 'https://a.test/strict-only' })],
+    });
+    await insertForm(accountId, 'Legacy', {
+      version: 1,
+      steps: [],
+      destinations: [hook({ url: 'https://a.test/legacy' })],
+    });
+
+    const byUrl = new Map((await listAccountWebhooks(db, accountId)).map((r) => [r.url, r.captcha]));
+    expect(byUrl.get('https://a.test/protected')).toBe(true);
+    expect(byUrl.get('https://a.test/strict-only')).toBe(false);
+    expect(byUrl.get('https://a.test/legacy')).toBe(false);
   });
 
   it('reports BOTH webhooks of a form that stores two', async () => {

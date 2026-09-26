@@ -15,7 +15,7 @@
 
 | # | Tema | Decisión |
 |---|------|----------|
-| 1 | **Start** | Un "start" = **la primera pregunta fue vista** (`step_view` con `step_index=0`). Funciona con y sin portada. Es el denominador de Completion rate. |
+| 1 | **Start** | Un "start" = **la sesión empezó a responder**: pulsó el CTA de la portada (`start`) o completó al menos una pregunta (`step_complete`). Funciona con y sin portada. Es el denominador de Completion rate. (Hasta el PR #40 era "la primera pregunta fue vista", `step_view` con `step_index=0`; sin portada eso daba Starts ≈ Views. Ver `startCount` en `packages/db/src/analytics.ts`). |
 | 2 | **Completion rate** | `submissions / starts` (con el nuevo Start). |
 | 3 | **Submissions** | Solo **completas** (`completed_at` no null). Los parciales siguen como métrica aparte (`partialSubmits`). |
 | 4 | **Time to complete** | **Mediana** de `completed_at − open`, donde `open` = `created_at` del evento `view` de esa sesión (fallback `started_at`). No promedio. |
@@ -225,6 +225,36 @@ la posición antigua (`byIndex`) solo para filas grabadas antes de esta
 migración (limitación documentada, no una regresión). Ver
 `packages/db/src/analytics.ts`, `apps/web/.../form-renderer.tsx`, tests
 `V5-D3` en `analytics.service.spec.ts`.
+
+## 4c. Pantallas de varias preguntas (#200)
+
+Un autor puede juntar preguntas consecutivas en una sola pantalla del layout
+slides (`screenGroup` en cada paso). Las métricas **no cambian de fórmula** y
+la API, los tipos y el SQL no saben nada de pantallas: el renderer sigue
+mandando eventos **por pregunta** (opción E1).
+
+| Momento | Eventos |
+|---|---|
+| Se muestra una pantalla | un `step_view` por cada pregunta visible, con su índice runtime y su clave. Una pregunta que aparece en vivo por la respuesta de otra de la misma pantalla manda el suyo al aparecer. Una vez por visita |
+| Se envía la pantalla (válida) | `start` si no hay portada y todavía no salió; un `step_complete` por cada pregunta visible, `message` incluido; `partial_submit` y el guardado parcial si el umbral está en la pantalla |
+| Final | `submit`, sin cambios |
+
+Efecto en cada métrica:
+
+- **Views, Submissions, Time to complete, bookings, parciales:** ninguno.
+- **Starts:** misma definición (decisión #1). En un form sin portada cuya
+  primera pantalla es de varias preguntas, quien responde 2 de 3 y se va **no**
+  cuenta como Start, porque no envió la pantalla; antes de agrupar habría
+  contado. Es lo esperado: Start = pasó la primera pantalla.
+- **Drop-off (modo viewed):** las preguntas de una pantalla comparten sus
+  vistas, así que la caída aparece en la fila de la **última** pregunta de la
+  pantalla. Es honesto pero grueso, como Typeform, que solo mide por página.
+  Anotar la pantalla en la tabla queda como follow-up.
+- **Una página (vertical):** ignora las pantallas; nada cambia.
+
+Ver `advance` y el efecto de `step_view` en
+`apps/web/app/[accountCode]/[handle]/[slug]/form-renderer.tsx`, y el test
+"screens (#200)" en `apps/api/src/analytics.service.spec.ts`.
 
 ## 5. Riesgos / notas
 

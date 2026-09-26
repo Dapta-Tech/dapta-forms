@@ -25,6 +25,7 @@ import { DestinationEffects } from './destination-effects';
 import { BookingEffects, BOOKING_SYNC_DELAY_MS } from './booking-effects';
 import { BookingSyncEffects, dayMidnightMs, utcMidnightMs } from './booking-sync';
 import { OutboxWorker } from './outbox.worker';
+import { NoopCaptchaVerifier, TurnstileVerifier, type CaptchaVerifier } from './captcha';
 
 const EVENT_URI = 'https://api.calendly.com/scheduled_events/abc';
 const INVITEE_URI = 'https://api.calendly.com/scheduled_events/abc/invitees/def';
@@ -697,6 +698,79 @@ describe('booking_sync delivery', () => {
     expect(fields.find((f) => f.name === 'email')?.value).toBe('m@corp.io');
   });
 
+  // #199: the visit stored on the row (the landing and its HubSpot cookie)
+  // rides the booking-time mirror post too, the only post such a form makes.
+  it('carries the stored visit onto the booking-time mirror submission', async () => {
+    const hutk = '0123456789abcdef0123456789abcdef';
+    await setHubspotDestination(undefined, {
+      fieldMappings: { role: 'role' },
+      settings: { note: false, formActivity: true, formGuid: 'guid-1' },
+    });
+    await svc.submit('acme', 'lead-qualifier', {
+      sessionId: 'sess-visit-mirror',
+      data: { role: 'founder' },
+      visit: {
+        pageUri: 'https://landing.example.com/offer?utm_source=fb',
+        pageName: 'Home insurance',
+        hutk,
+        embedded: true,
+      },
+    });
+    await svc.booking('acme', 'lead-qualifier', {
+      sessionId: 'sess-visit-mirror',
+      provider: 'calendly',
+      eventUri: EVENT_URI,
+      inviteeUri: INVITEE_URI,
+    });
+
+    const calls: RecordedCall[] = [];
+    bookingSync.fetchImpl = recordingFetch(calls, {
+      [EVENT_URI]: () => jsonResponse({ resource: { start_time: '2026-08-02T10:00:00Z' } }),
+      [INVITEE_URI]: () => jsonResponse({ resource: { email: 'v@corp.io', name: 'Ada Lovelace' } }),
+      [ACCOUNT_INFO_URL]: () => jsonResponse({ portalId: 4242 }),
+      [HUBSPOT_UPSERT_URL]: () => jsonResponse({ results: [{ id: '95' }] }),
+    });
+    await drainDue();
+
+    const mirror = calls.find((c) => c.url.includes('/submissions/v3/integration/secure/submit/'));
+    expect((mirror?.body as { context?: unknown }).context).toEqual({
+      hutk,
+      pageUri: 'https://landing.example.com/offer?utm_source=fb',
+      pageName: 'Home insurance',
+    });
+  });
+
+  it('names an untitled page after the form respondents saw', async () => {
+    const { accountId, formId } = await setHubspotDestination(undefined, {
+      fieldMappings: { role: 'role' },
+      settings: { note: false, formActivity: true, formGuid: 'guid-1' },
+    });
+    // A public title of its own, unlike the dashboard name ("Lead Qualifier").
+    const full = await db.get<{ config: string }>(sql`SELECT config FROM form WHERE id = ${formId}`);
+    await updateForm(db, accountId, formId, { config: { ...JSON.parse(full!.config), title: 'Get your quote' } });
+    await svc.submit('acme', 'lead-qualifier', {
+      sessionId: 'sess-untitled',
+      data: { role: 'founder' },
+      visit: { pageUri: 'https://landing.example.com/', embedded: true },
+    });
+    await svc.booking('acme', 'lead-qualifier', {
+      sessionId: 'sess-untitled',
+      provider: 'calendly',
+      eventUri: EVENT_URI,
+      inviteeUri: INVITEE_URI,
+    });
+    const calls: RecordedCall[] = [];
+    bookingSync.fetchImpl = recordingFetch(calls, {
+      [EVENT_URI]: () => jsonResponse({ resource: { start_time: '2026-08-02T10:00:00Z' } }),
+      [INVITEE_URI]: () => jsonResponse({ resource: { email: 'u@corp.io', name: 'Ada Lovelace' } }),
+      [ACCOUNT_INFO_URL]: () => jsonResponse({ portalId: 4242 }),
+      [HUBSPOT_UPSERT_URL]: () => jsonResponse({ results: [{ id: '96' }] }),
+    });
+    await drainDue();
+    const mirror = calls.find((c) => c.url.includes('/submissions/v3/integration/secure/submit/'));
+    expect((mirror?.body as { context?: { pageName?: string } }).context?.pageName).toBe('Get your quote');
+  });
+
   // The switch is what enables it; the guid alone survives being turned off so
   // the same form is reused when it is turned back on.
   it('skips the mirror when the form activity switch is off', async () => {
@@ -913,6 +987,133 @@ describe('booking_sync delivery', () => {
  * integration cases below prove the config reaches it and that the value is the
  * booking's day rather than the meeting's.
  */
+/**
+ * With spam protection on, a partial is saved and never delivered, and the
+ * public booking callback must not become a side door around that: a partial
+ * carrying an email plus a forged callback would otherwise upsert the contact.
+ * So the sync then requires an invitee the provider API vouched for, or a
+ * COMPLETE (verified) submission.
+ */
+describe('booking_sync with spam protection on', () => {
+  const keys = new TurnstileVerifier({ siteKey: 'site', secretKey: 'secret' });
+
+  async function protect(spamProtection: Record<string, unknown>) {
+    const { accountId, formId } = await setHubspotDestination(BOOKING_SYNC_CONFIG);
+    const full = await db.get<{ config: string }>(sql`SELECT config FROM form WHERE id = ${formId}`);
+    await updateForm(db, accountId, formId, { config: { ...JSON.parse(full!.config), spamProtection } });
+  }
+
+  function guarded(verifier: CaptchaVerifier) {
+    bookingSync = new BookingSyncEffects(
+      db,
+      { CALENDLY_API_TOKEN: 'cal-token', HUBSPOT_PRIVATE_APP_TOKEN: 'hs-token' } as never,
+      undefined,
+      verifier,
+    );
+  }
+
+  it('a partial and a callback with no verified invitee write nothing: skipped', async () => {
+    guarded(keys);
+    await protect({ captcha: true });
+    await svc.submit('acme', 'lead-qualifier', {
+      sessionId: 'sess-bot',
+      data: { role: 'founder', email: 'victim@example.com' },
+      partial: true,
+    });
+    await svc.booking('acme', 'lead-qualifier', {
+      sessionId: 'sess-bot',
+      provider: 'hubspot_meetings',
+      startTime: '2026-08-01T15:00:00Z',
+    });
+
+    const calls: RecordedCall[] = [];
+    bookingSync.fetchImpl = recordingFetch(calls);
+    await drainDue();
+
+    const rows = await listOutbox(db, { kind: 'booking_sync' });
+    expect(rows[0]!.status).toBe('skipped');
+    expect(rows[0]!.lastError).toContain('spam protection');
+    expect(calls.filter((c) => c.url === HUBSPOT_UPSERT_URL)).toHaveLength(0);
+  });
+
+  it('an invitee the provider API returned is enough, even before the form completes', async () => {
+    guarded(keys);
+    await protect({ captcha: true });
+    await svc.submit('acme', 'lead-qualifier', {
+      sessionId: 'sess-mid',
+      data: { role: 'founder' },
+      partial: true,
+    });
+    await svc.booking('acme', 'lead-qualifier', {
+      sessionId: 'sess-mid',
+      provider: 'calendly',
+      eventUri: EVENT_URI,
+      inviteeUri: INVITEE_URI,
+    });
+
+    const calls: RecordedCall[] = [];
+    bookingSync.fetchImpl = recordingFetch(calls, {
+      [EVENT_URI]: () => jsonResponse({ resource: { start_time: '2026-08-02T10:00:00Z' } }),
+      [INVITEE_URI]: () => jsonResponse({ resource: { email: 'person@example.com' } }),
+      [HUBSPOT_UPSERT_URL]: () => jsonResponse({ results: [{ id: '1' }] }),
+    });
+    await drainDue();
+
+    expect((await listOutbox(db, { kind: 'booking_sync' }))[0]!.status).toBe('done');
+    const upserts = calls.filter((c) => c.url === HUBSPOT_UPSERT_URL);
+    expect(upserts.length).toBeGreaterThan(0);
+    expect((upserts[0]!.body as { inputs: Array<{ id: string }> }).inputs[0]!.id).toBe('person@example.com');
+  });
+
+  it('a COMPLETE submission is enough, keyed on its own answers', async () => {
+    guarded(keys);
+    await protect({ captcha: true });
+    // Written here as the verified complete would be: the gate lives in the
+    // submit path (covered in submission.service.spec.ts), not in the sync.
+    await svc.submit('acme', 'lead-qualifier', {
+      sessionId: 'sess-done',
+      data: { role: 'founder', team_size: 20, email: 'lead@example.com' },
+    });
+    await svc.booking('acme', 'lead-qualifier', {
+      sessionId: 'sess-done',
+      provider: 'hubspot_meetings',
+      startTime: '2026-08-01T15:00:00Z',
+    });
+
+    const calls: RecordedCall[] = [];
+    bookingSync.fetchImpl = recordingFetch(calls, {
+      [HUBSPOT_UPSERT_URL]: () => jsonResponse({ results: [{ id: '2' }] }),
+    });
+    await drainDue();
+
+    expect((await listOutbox(db, { kind: 'booking_sync' }))[0]!.status).toBe('done');
+    expect(calls.filter((c) => c.url === HUBSPOT_UPSERT_URL)).toHaveLength(1);
+  });
+
+  it('with the switch on but no keys on the deployment, the sync behaves exactly as before', async () => {
+    guarded(new NoopCaptchaVerifier());
+    await protect({ captcha: true });
+    await svc.submit('acme', 'lead-qualifier', {
+      sessionId: 'sess-nokeys',
+      data: { role: 'founder', email: 'lead@example.com' },
+      partial: true,
+    });
+    await svc.booking('acme', 'lead-qualifier', {
+      sessionId: 'sess-nokeys',
+      provider: 'hubspot_meetings',
+      startTime: '2026-08-01T15:00:00Z',
+    });
+
+    const calls: RecordedCall[] = [];
+    bookingSync.fetchImpl = recordingFetch(calls, {
+      [HUBSPOT_UPSERT_URL]: () => jsonResponse({ results: [{ id: '3' }] }),
+    });
+    await drainDue();
+
+    expect((await listOutbox(db, { kind: 'booking_sync' }))[0]!.status).toBe('done');
+  });
+});
+
 describe('dayMidnightMs', () => {
   it('floors to the calendar day in the given zone, not the UTC day', () => {
     // 2026-08-11 00:30 UTC — still Aug 10, 19:30 in Bogota.

@@ -13,12 +13,14 @@ export {
   type DnsResolver,
 } from './ssrf-guard';
 export { LogOnlyDestination } from './adapters/log-only';
+export { HIDDEN_HUTK, scrubHutk } from './hutk';
 export { dayMidnightMs, utcMidnightMs } from './day';
 export {
   WebhookDestination,
   WebhookHttpError,
   type WebhookDestinationOptions,
   type WebhookPayload,
+  type WebhookVisit,
   signWebhookBody,
   DEFAULT_SIGNATURE_HEADER,
   DEFAULT_WEBHOOK_TIMEOUT_MS,

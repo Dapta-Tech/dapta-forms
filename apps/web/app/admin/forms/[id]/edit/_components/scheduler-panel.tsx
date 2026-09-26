@@ -7,6 +7,8 @@ import type { CalendlyEventType, CalendlyEventTypesResponse } from '@/lib/admin-
 import { Select } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
 import { GOTO_END, GOTO_NEXT, buildGoto } from './logic-util';
+import { JumpLandingNote } from './screen-notes';
+import type { JumpLanding } from './screen-util';
 import { Switch } from '@/components/ui/switch';
 import { buttonVariants } from '@/components/ui/button';
 import { ProviderLogo } from '@/components/ui/provider-logo';
@@ -66,6 +68,7 @@ export function SchedulerPanel({
   onChange,
   fields,
   laterSteps,
+  landingOf,
   goto,
   onGotoChange,
   bm,
@@ -76,6 +79,8 @@ export function SchedulerPanel({
   fields: { key: string; label: string }[];
   /** Steps AFTER this one — the only legal forward jump targets. */
   laterSteps: { key: string; label: string }[];
+  /** Where a jump to this target lands on a screen (#200), when that needs saying. */
+  landingOf?: (key: string) => JumpLanding;
   goto: FormStep['goto'];
   onGotoChange: (next: FormStep['goto']) => void;
   bm: BuilderMessages;
@@ -364,6 +369,7 @@ export function SchedulerPanel({
             }}
           />
         </div>
+        {catchAll?.target != null && landingOf ? <JumpLandingNote landing={landingOf(catchAll.target)} m={bm} /> : null}
       </div>
 
       {/* Autofill: which earlier answer feeds each field THIS event type's

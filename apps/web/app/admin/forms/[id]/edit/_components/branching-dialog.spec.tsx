@@ -17,6 +17,7 @@ import { LogicRules } from './logic-rules';
 import { LogicConditions } from './logic-conditions';
 import { BranchingDialog } from './branching-dialog';
 import { getBuilderMessages, tb } from './builder-messages';
+import { JumpLandingNote, ScreenJumpNote } from './screen-notes';
 
 type AnyProps = Record<string, unknown> & { children?: ReactNode };
 
@@ -69,6 +70,7 @@ const choice = (key: string, question: string): FormStep => ({
 
 function render(over: {
   steps: FormStep[];
+  layout?: 'slides' | 'vertical';
   onUpdateStep?: (i: number, patch: Partial<FormStep>) => void;
 }): ReactElement[] {
   return collect(
@@ -76,6 +78,7 @@ function render(over: {
       open: true,
       onClose: () => {},
       steps: over.steps,
+      layout: over.layout ?? 'slides',
       scoringEnabled: true,
       onUpdateStep: over.onUpdateStep ?? (() => {}),
       bm,
@@ -255,5 +258,49 @@ describe('BranchingDialog — every block is the editor (R7)', () => {
     const els = render({ steps: [choice('a', 'A')] });
     expect(els.some((el) => el.type === LogicDialog)).toBe(false);
     expect(byTestId(els, 'branching-edit')).toBeUndefined();
+  });
+});
+
+describe('BranchingDialog: screens of several questions (#200)', () => {
+  const onScreen = (step: FormStep, screenGroup: string): FormStep => ({ ...step, screenGroup });
+  const steps = [
+    onScreen(choice('size', 'Company size?'), 'screen_1'),
+    onScreen({ ...choice('role', 'Your role?'), goto: [{ values: ['*'], target: 'budget' }] }, 'screen_1'),
+    onScreen(choice('region', 'Region?'), 'screen_2'),
+    onScreen(choice('budget', 'Budget?'), 'screen_2'),
+    choice('last', 'Anything else?'),
+  ];
+  const alwaysTargets = (els: ReactElement[], key: string) => {
+    const block = allByTestId(els, 'branching-step').find((el) => (el.props as AnyProps)['data-step-key'] === key)!;
+    const wrapper = byTestId(collect((block.props as AnyProps).children), 'branching-always')!;
+    return collect((wrapper.props as AnyProps).children)
+      .filter((el) => el.type === 'option')
+      .map((el) => (el.props as AnyProps).value);
+  };
+
+  const landings = (els: ReactElement[]) =>
+    els
+      .filter((el) => el.type === JumpLandingNote)
+      .map((el) => (el.props as AnyProps).landing)
+      .filter((l) => l != null);
+
+  it('tells a question of a screen with a jump when it runs, and offers screen starts only', () => {
+    const els = render({ steps });
+    // Only `role` has a rule; the note is not repeated on every question.
+    expect(els.filter((el) => el.type === ScreenJumpNote)).toHaveLength(1);
+    expect(alwaysTargets(els, 'size')).toEqual(['', 'region', 'last', '__end__']);
+  });
+
+  it('keeps and flags a jump already landing mid-screen', () => {
+    const els = render({ steps });
+    expect(alwaysTargets(els, 'role')).toContain('budget');
+    expect(landings(els)).toEqual(['mid']);
+  });
+
+  it('says none of it on one page', () => {
+    const els = render({ steps, layout: 'vertical' });
+    expect(els.some((el) => el.type === ScreenJumpNote)).toBe(false);
+    expect(landings(els)).toEqual([]);
+    expect(alwaysTargets(els, 'size')).toEqual(['', 'role', 'region', 'budget', 'last', '__end__']);
   });
 });

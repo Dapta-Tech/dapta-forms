@@ -4,6 +4,7 @@ import { getMessages } from '@quill/shared';
 import { lockedOptionValues } from '@quill/engine';
 import { adminApi, ApiError } from '@/lib/admin-api';
 import { getLocale } from '@/lib/locale';
+import { publicFormPath } from '@/lib/public-form-path';
 import { FormEditor } from './form-editor';
 import { BuilderTour } from './_components/builder-tour';
 
@@ -23,7 +24,7 @@ export default async function EditFormPage({ params }: { params: Promise<{ id: s
     throw e;
   }
 
-  const publicPath = `/${me.accountCode}/${me.handle ?? 'me'}/${form.slug}`;
+  const publicPath = publicFormPath(me.accountCode, form.slug);
 
   return (
     <>
@@ -44,6 +45,9 @@ export default async function EditFormPage({ params }: { params: Promise<{ id: s
         // the dashboard's own env: two copies of this switch that disagreed
         // would offer a question whose answers the API refuses.
         uploads={me.uploads}
+        // Same rule for spam protection: the API says whether this deployment
+        // can run the human check, and the editor never guesses.
+        captcha={me.captcha}
         updatedAt={form.updatedAt}
         publicPath={publicPath}
         locale={locale}

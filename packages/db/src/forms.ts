@@ -7,7 +7,13 @@
  */
 import { randomUUID } from 'node:crypto';
 import { validateFormSlug } from '@quill/engine';
-import { attributionSchema, mergeWebhookSecrets, type Attribution } from '@quill/types';
+import {
+  attributionSchema,
+  mergeWebhookSecrets,
+  parseSubmissionVisit,
+  type Attribution,
+  type SubmissionVisit,
+} from '@quill/types';
 import { sql, type Db } from './client';
 import type { SQL } from 'drizzle-orm';
 import { canonicalPublicCode } from './short-links';
@@ -364,6 +370,13 @@ export interface AccountWebhook {
   events: string[] | null;
   /** Whether a signing secret is configured. The secret itself is never read out. */
   hasSecret: boolean;
+  /**
+   * Whether the owning form's published config has spam protection switched
+   * on. While it is on (and the deployment can run the check), the API holds
+   * every partial delivery, so a partial trigger on this webhook is paused.
+   * The deployment half is the API's to add: this package never reads env.
+   */
+  captcha: boolean;
 }
 
 /**
@@ -392,8 +405,12 @@ export async function listAccountWebhooks(db: Db, accountId: string): Promise<Ac
 
   const out: AccountWebhook[] = [];
   for (const r of rows) {
-    const config = parseJsonColumn<{ destinations?: unknown }>(r.config, {});
+    const config = parseJsonColumn<{ destinations?: unknown; spamProtection?: unknown }>(r.config, {});
     const destinations = Array.isArray(config.destinations) ? config.destinations : [];
+    const spam = config.spamProtection;
+    // Strictly `true`, like the API's own check: a stray `"yes"` is not on.
+    const captcha =
+      !!spam && typeof spam === 'object' && (spam as { captcha?: unknown }).captcha === true;
     for (const entry of destinations) {
       // Duck-typed on purpose, the same way the delivery path and the masker read
       // this array. Parsing with `webhookDestinationSchema` would drop a stored
@@ -425,6 +442,7 @@ export async function listAccountWebhooks(db: Db, accountId: string): Promise<Ac
         enabled: d.enabled === true,
         events: events.length ? events : null,
         hasSecret: typeof secret === 'string' && secret.length > 0,
+        captcha,
       });
     }
   }
@@ -963,6 +981,12 @@ export interface SubmissionRow {
   startedAt: number;
   completedAt: number | null;
   partialAt: number | null;
+  /**
+   * The page it was answered on (0023), HubSpot cookie included: this row is
+   * the API's own, for the deliveries. The dashboard reads `analytics.ts`,
+   * whose rows carry only the safe view of it.
+   */
+  visit: SubmissionVisit | null;
 }
 
 function mapSubmission(r: Record<string, unknown>): SubmissionRow {
@@ -975,13 +999,24 @@ function mapSubmission(r: Record<string, unknown>): SubmissionRow {
     startedAt: Number(r.started_at),
     completedAt: r.completed_at == null ? null : Number(r.completed_at),
     partialAt: r.partial_at == null ? null : Number(r.partial_at),
+    visit: readVisitColumn(r.visit),
   };
+}
+
+/** A stored visit, re-checked on the way out: an unreadable one reads as none. */
+export function readVisitColumn(raw: unknown): SubmissionVisit | null {
+  return parseSubmissionVisit(parseJsonColumn(raw, null)) ?? null;
 }
 
 /**
  * Upsert THE submission for a session (one row per session). A partial save sets
  * `partial_at`; a final submit sets `completed_at`. Re-submitting the same
  * session updates the same row (idempotent per session) rather than duplicating.
+ *
+ * `visit` merges instead of replacing: a write without one leaves the stored
+ * visit alone (`COALESCE`), so a partial that caught the landing's HubSpot
+ * cookie keeps it through a complete that did not get an answer in time. The
+ * row returned is the MERGED one, which is what deliveries must be built from.
  *
  * `wasCompletedBefore` reports whether the row was ALREADY completed when this
  * write arrived. The row itself is safely idempotent; its downstream EFFECTS
@@ -998,12 +1033,17 @@ export async function upsertSubmission(
     data: unknown;
     score: number;
     partial?: boolean;
+    /** The page it was answered on; absent or null keeps whatever is stored. */
+    visit?: SubmissionVisit | null;
     now?: number;
   },
 ): Promise<SubmissionRow & { wasCompletedBefore: boolean }> {
   const now = input.now ?? Date.now();
   const completedAt = input.partial ? null : now;
   const partialAt = input.partial ? now : null;
+  // SQL NULL, never the JSON `null` jsonParam writes for a missing value: only
+  // a real NULL lets COALESCE keep the stored visit.
+  const visit = input.visit ? jsonParam(input.visit) : null;
 
   type ExistingRow = { id: string; started_at: number; completed_at: number | null };
   const selectExisting = (): Promise<ExistingRow | null | undefined> =>
@@ -1025,7 +1065,8 @@ export async function upsertSubmission(
       // completion claim: another finalization may commit after it read NULL.
       const completed = await db.get<Record<string, unknown>>(
         sql`UPDATE submission
-            SET data = ${jsonParam(input.data)}, score = ${input.score}, completed_at = ${completedAt}
+            SET data = ${jsonParam(input.data)}, score = ${input.score}, completed_at = ${completedAt},
+                visit = COALESCE(${visit}, visit)
             WHERE id = ${existing.id} AND completed_at IS NULL
             RETURNING *`,
       );
@@ -1036,7 +1077,8 @@ export async function upsertSubmission(
       sql`UPDATE submission
           SET data = ${jsonParam(input.data)}, score = ${input.score},
               completed_at = COALESCE(${completedAt}, completed_at),
-              partial_at = COALESCE(${partialAt}, partial_at)
+              partial_at = COALESCE(${partialAt}, partial_at),
+              visit = COALESCE(${visit}, visit)
           WHERE id = ${existing.id}`,
     );
     return { ...(await getSubmissionById(db, existing.id))!, wasCompletedBefore };
@@ -1053,9 +1095,9 @@ export async function upsertSubmission(
   const id = randomUUID();
   try {
     await db.run(
-      sql`INSERT INTO submission (id, form_id, session_id, data, score, started_at, completed_at, partial_at)
+      sql`INSERT INTO submission (id, form_id, session_id, data, score, started_at, completed_at, partial_at, visit)
           VALUES (${id}, ${input.formId}, ${input.sessionId}, ${jsonParam(input.data)}, ${input.score},
-            ${now}, ${completedAt}, ${partialAt})`,
+            ${now}, ${completedAt}, ${partialAt}, ${visit})`,
     );
     return { ...(await getSubmissionById(db, id))!, wasCompletedBefore: false };
   } catch (err) {
@@ -1100,4 +1142,18 @@ export async function recordFormEvent(
         VALUES (${randomUUID()}, ${input.formId}, ${input.sessionId}, ${input.type},
           ${input.stepIndex ?? null}, ${input.stepKey ?? null}, ${input.now ?? Date.now()})`,
   );
+}
+
+/**
+ * When a session first viewed a form (epoch-ms), or null when no `view` was
+ * recorded for it: a lost beacon, or a client that never loaded the page at
+ * all. Served by `form_event_session_idx` (form, session, type), so it is one
+ * index range read however busy the form is.
+ */
+export async function firstSessionViewAt(db: Db, formId: string, sessionId: string): Promise<number | null> {
+  const row = await db.get<{ at: number | string | null }>(
+    sql`SELECT MIN(created_at) AS at FROM form_event
+        WHERE form_id = ${formId} AND session_id = ${sessionId} AND type = 'view'`,
+  );
+  return row?.at == null ? null : Number(row.at);
 }

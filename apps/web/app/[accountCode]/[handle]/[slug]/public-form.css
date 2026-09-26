@@ -1543,6 +1543,111 @@
   }
 }
 
+/* ── Spam protection: the human check ──
+   It runs right above a button that ends the form (`.pf-captcha--inline`), or
+   on the submitting screen for a finish with no button. The provider draws its
+   widget (an iframe) inside `.pf-captcha__widget`. In automatic mode it stays
+   invisible and takes no room unless the provider needs a click; in strict
+   mode it is always shown. The renderer asks for the `flexible` widget (fills
+   its box, 300px minimum) and falls back to `compact` below 300px, so a 320px
+   phone or a narrow embed never scrolls sideways. An embed grows to fit on its
+   own: the height reporter watches the form. */
+.pf-captcha {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+}
+.pf-captcha__widget {
+  width: 100%;
+  max-width: 400px;
+  display: flex;
+  justify-content: center;
+}
+/* Strict: hold the widget's height from the start, so the screen does not
+   jump when the iframe paints. */
+.pf-captcha[data-captcha-mode='strict'] .pf-captcha__widget {
+  min-height: 65px;
+}
+/* Automatic: once the check has passed the widget has nothing left to say,
+   and the spinner (or the button's "Submitting…") carries the rest. */
+.pf-captcha[data-captcha-mode='auto'][data-captcha-state='done'] {
+  display: none;
+}
+
+/* Above the button. Automatic takes no room at all until the provider asks
+   for a click, so the button sits exactly where it always did; strict holds
+   the widget's height from the first paint, so the button never jumps when
+   the check loads as the person scrolls to it. The slot stays a real box even
+   when empty: it is what tells the page that the end is on screen. */
+.pf-captcha--inline {
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+.pf-captcha--inline[data-captcha-mode='strict'] {
+  min-height: 65px;
+}
+/* The slides step: the button's own 28px gap moves above the check, and the
+   button follows the check closely, as one group. */
+.pf__fields > .pf-captcha--inline[data-captcha-mode='strict'],
+.pf__fields > .pf-captcha--inline[data-captcha-state='interactive'] {
+  margin-top: 28px;
+}
+.pf__fields > .pf-captcha--inline[data-captcha-mode='strict'] + .pf__btn--inline,
+.pf__fields > .pf-captcha--inline[data-captcha-state='interactive'] + .pf__btn--inline {
+  margin-top: 12px;
+}
+/* The one-page footer is a column with a 12px gap: an empty automatic slot
+   gives its gap back, so the footer looks exactly as it does without one. */
+.pf-v__footer > .pf-captcha--inline[data-captcha-mode='auto']:not([data-captcha-state='interactive']) {
+  margin-bottom: -12px;
+}
+/* The one-page layout pins its questions and its Submit to the left, and a
+   left-aligned slides form does the same: the check lines up with them, its
+   drawn widget included. */
+.pf-v__footer > .pf-captcha--inline,
+.pf[data-pf-align='left'] .pf-captcha--inline {
+  align-items: flex-start;
+}
+.pf-v__footer > .pf-captcha--inline .pf-captcha__widget,
+.pf[data-pf-align='left'] .pf-captcha--inline .pf-captcha__widget {
+  justify-content: flex-start;
+}
+.pf-captcha__prompt {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.4;
+  text-align: center;
+  color: var(--muted-foreground);
+}
+.pf-v__footer > .pf-captcha--inline .pf-captcha__prompt,
+.pf[data-pf-align='left'] .pf-captcha--inline .pf-captcha__prompt {
+  text-align: left;
+}
+/* A final submit that failed on this screen (a reveal or a scheduler as the
+   last step has no step to go back to): the message and a way to try again. */
+.pf-reveal__inner .pf__error {
+  margin: 0;
+}
+.pf-reveal__inner .pf__btn--inline {
+  max-width: 320px;
+  margin-top: 20px;
+}
+
+/* Strict mode's hidden field. Out of sight and out of reach for a person,
+   but NOT `display: none`, which some bots know to skip. Every property is
+   pinned so no form theme can bring it back into view. */
+.pf-hp {
+  position: absolute !important;
+  left: -10000px !important;
+  top: auto !important;
+  width: 1px !important;
+  height: 1px !important;
+  overflow: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
 @media (max-width: 480px) {
   /* The row does NOT wrap. It used to, which dropped the meter to its own line
      and left the two marks sitting against each other — the pairing reads as
@@ -2084,6 +2189,68 @@
 @media (prefers-reduced-motion: reduce) {
   .pf[data-pf-transition='fade'] .pf-animate {
     animation: none;
+  }
+}
+
+/* ── Screens: several questions on one slides card (#200) ──────────────────────
+   A screen of several questions keeps the slide's card, topbar and single
+   button, and stacks its questions in one column. `.pf-s` marks the card's
+   content and `data-pf-screen-size` counts the questions showing. With ONE
+   (logic hid the others) the card keeps the slide's own typography; with two
+   or more the question titles drop to the one-page size and a hairline
+   separates them. A `message` on the card is its heading and keeps the slide
+   size. The alignment axis applies as on any slide, and here the errors and a
+   message's body follow it too. A form without screens never renders `.pf-s`,
+   so nothing below reaches it.
+
+   The three bands need no rules of their own beyond the gap: the card is the
+   same box a slide is. Up to 480px the column scrolls with the document and
+   the button closes it in flow; up to 768px the body's own padding (32/20)
+   frames it; from 769px it is the centred 560px card (720px wide) and grows
+   downward, with `.pf`'s `min-height: 100dvh` (not a height) letting the page
+   grow instead of clipping the card's top. */
+.pf-s__member + .pf-s__member {
+  margin-top: 28px;
+  padding-top: 28px;
+  border-top: 1px solid var(--border);
+}
+.pf-s:not([data-pf-screen-size='1']) .pf-s__member:not(.pf-s__member--message) .pf__question {
+  font-size: clamp(17px, 3vw, 21px);
+}
+.pf-s:not([data-pf-screen-size='1']) .pf-s__member .pf__helper {
+  margin-top: 6px;
+}
+.pf-s:not([data-pf-screen-size='1']) .pf-s__member .pf__fields {
+  margin-top: 16px;
+}
+.pf-s__member .pf__error {
+  margin-top: 10px;
+}
+.pf-s__member--error .pf-input {
+  border-color: var(--destructive);
+}
+.pf[data-pf-align='left'] .pf-s .pf__error,
+.pf[data-pf-align='left'] .pf-s .pf-message__body {
+  text-align: left;
+}
+/* The one button, with the screen's error summary and (on a screen that ends
+   the form) spam protection's check right above it. The check's spacing is
+   the slide's (see "Spam protection" above). */
+.pf-s__footer > .pf__error {
+  margin-top: 24px;
+}
+.pf-s__footer > .pf-captcha--inline[data-captcha-mode='strict'],
+.pf-s__footer > .pf-captcha--inline[data-captcha-state='interactive'] {
+  margin-top: 28px;
+}
+.pf-s__footer > .pf-captcha--inline[data-captcha-mode='strict'] + .pf__btn--inline,
+.pf-s__footer > .pf-captcha--inline[data-captcha-state='interactive'] + .pf__btn--inline {
+  margin-top: 12px;
+}
+@media (max-width: 480px) {
+  .pf-s__member + .pf-s__member {
+    margin-top: 20px;
+    padding-top: 20px;
   }
 }
 

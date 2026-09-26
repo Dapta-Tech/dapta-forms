@@ -13,7 +13,13 @@ import type {
   FormOption,
   FormOutcome,
 } from './form-logic';
-import { revealAfterKey } from './form-logic';
+import {
+  MAX_SCREEN_SIZE,
+  authoredScreens,
+  canShareScreen,
+  freshScreenId,
+  revealAfterKey,
+} from './form-logic';
 
 /** Field kinds that capture the lead and therefore never score. */
 const LEAD_CAPTURE_TYPES: ReadonlySet<FormFieldType> = new Set<FormFieldType>([
@@ -152,7 +158,12 @@ export function migrateRevealToStep(config: FormConfig): FormConfig {
   const anchorKey = revealAfterKey(config);
   if (anchorKey != null) {
     const anchor = steps.findIndex((s) => s.key === anchorKey);
-    const at = anchor >= 0 ? anchor + 1 : steps.length;
+    // After a question on a screen the legacy reveal plays after the whole
+    // screen, so the step goes after its last member: in between, it would
+    // cut the screen in two.
+    const screen = authoredScreens(steps).find((s) => s.members.includes(anchor));
+    const end = screen ? (screen.members[screen.members.length - 1] as number) : anchor;
+    const at = anchor >= 0 ? end + 1 : steps.length;
     const step = createEmptyStep('reveal', new Set(steps.map((s) => s.key)));
     step.reveal = {
       enabled: true,
@@ -494,6 +505,76 @@ export function hasScoringSignal(config: FormConfig): boolean {
 }
 
 /**
+ * Canonical screen ids: the id is kept only where it makes a screen.
+ *
+ *  - dropped on solo types (`reveal`, `scheduler`, `file`) and hidden steps,
+ *    which never share a screen;
+ *  - dropped on a step left alone, which is no screen;
+ *  - re-issued on a separate run that reused an earlier screen's id, so the
+ *    two stay two screens (see `authoredScreens`).
+ *
+ * Layout-agnostic on purpose: a one-page form keeps its ids, so switching back
+ * to slides brings the screens back. Idempotent, and returns THE SAME array
+ * when nothing changes (the steps that do not change keep their identity
+ * too), which is what keeps opening a form from counting as an edit.
+ */
+export function normalizeScreenGroups(steps: FormStep[]): FormStep[] {
+  const want = new Map<number, string>();
+  for (const screen of authoredScreens(steps)) for (const i of screen.members) want.set(i, screen.id);
+  let changed = false;
+  const next = steps.map((step, i) => {
+    const id = want.get(i);
+    if (step.screenGroup === id) return step;
+    changed = true;
+    if (id === undefined) {
+      const { screenGroup: _dropped, ...rest } = step;
+      return rest;
+    }
+    return { ...step, screenGroup: id };
+  });
+  return changed ? next : steps;
+}
+
+/**
+ * Join or split the boundary above `steps[index]`: `joined` puts the question
+ * on the same screen as the question above it, merging the two whole screens;
+ * otherwise the question and the rest of its screen start a new one. "Above"
+ * skips hidden questions, which are transparent.
+ *
+ * Returns the config untouched (the same object) when the boundary already is
+ * what was asked, or when it cannot be: the first question, a hidden one, a
+ * solo type on either side, or a join past {@link MAX_SCREEN_SIZE}.
+ */
+export function setScreenBoundary(config: FormConfig, index: number, joined: boolean): FormConfig {
+  const { steps } = config;
+  const current = steps[index];
+  if (!current || !canShareScreen(current)) return config;
+  let above = index - 1;
+  while (above >= 0 && steps[above]?.hidden) above -= 1;
+  const prev = above >= 0 ? steps[above] : undefined;
+  if (!prev || !canShareScreen(prev)) return config;
+
+  const screens = authoredScreens(steps);
+  const upper = screens.find((s) => s.members.includes(above)) ?? null;
+  const lower = screens.find((s) => s.members.includes(index)) ?? null;
+  if (joined === (upper !== null && upper === lower)) return config;
+
+  let members: number[];
+  let id: string;
+  if (joined) {
+    members = [...(upper?.members ?? [above]), ...(lower?.members ?? [index])];
+    if (members.length > MAX_SCREEN_SIZE) return config;
+    id = upper?.id ?? lower?.id ?? freshScreenId(steps);
+  } else {
+    members = (lower?.members ?? []).filter((i) => i >= index);
+    id = freshScreenId(steps);
+  }
+  const move = new Set(members);
+  const next = steps.map((s, i) => (move.has(i) && s.screenGroup !== id ? { ...s, screenGroup: id } : s));
+  return { ...config, steps: normalizeScreenGroups(next) };
+}
+
+/**
  * Return a canonical, save-ready config:
  *  - every step has a unique, non-empty `key` (collisions get `_2`, `_3`…),
  *  - references (`showWhen`/`hideWhen`/`questionField`) are rewritten to follow
@@ -501,6 +582,7 @@ export function hasScoringSignal(config: FormConfig): boolean {
  *  - each step gets a derived `flowGroup` when absent (lead-capture fields
  *    never score),
  *  - options get filled/deduped values,
+ *  - screen ids stay only where they make a screen (`normalizeScreenGroups`),
  *  - outcomes are sorted by `minScore` ascending with unique ids,
  *  - `scoring.enabled` is derived when the author left it unset but the form
  *    clearly scores.
@@ -603,7 +685,8 @@ export function normalizeConfig(config: FormConfig): FormConfig {
   const next: FormConfig = {
     ...passthrough,
     version: 1,
-    steps: normalized,
+    // Screen ids only where they make a screen (see `normalizeScreenGroups`).
+    steps: normalizeScreenGroups(normalized),
     ...(cover != null ? { cover } : {}),
     ...(branding != null ? { branding } : {}),
     ...(outcomes.length ? { outcomes } : {}),

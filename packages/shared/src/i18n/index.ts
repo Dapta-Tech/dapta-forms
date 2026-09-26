@@ -94,6 +94,33 @@ export interface FormsMessages {
       option: string;
       file: string;
       submit: string;
+      /**
+       * The final submit's human check did not pass (spam protection), or the
+       * form started checking after this page loaded. Keyed by the API's
+       * `CAPTCHA_FAILED` / `CAPTCHA_REQUIRED` codes, never by its message.
+       */
+      captcha: string;
+      /**
+       * The API's `CAPTCHA_REQUIRED` reaching a page loaded before the owner
+       * turned protection on: it has no check to run, so only a reload helps.
+       */
+      captcha_required: string;
+      /** The API's `RATE_LIMITED`: too many requests from this connection. */
+      rate_limited: string;
+      /** The API's `ANSWER_TOO_LONG`: an answer over its question's ceiling. */
+      answer_too_long: string;
+    };
+    /**
+     * Spam protection on the submitting screen: the human check that runs before
+     * the final submit of a form whose owner turned it on.
+     */
+    captcha: {
+      /** Shown above the check when it needs the person to act (a checkbox). */
+      prompt: string;
+      /** The check could not run or be verified; the answers were kept as a partial. */
+      unavailable: string;
+      /** Runs the check and the submit again. */
+      retry: string;
     };
     /**
      * The live character counter on a long-text question. Rendered ONLY when
@@ -980,6 +1007,8 @@ export interface FormsMessages {
         slidesHint: string;
         vertical: string;
         verticalHint: string;
+        /** Under the picker on One page, when the form has screens (#200): they are kept, not applied. */
+        screensIgnored: string;
         /** Shown in the cover section when vertical: no Start gate, CTA unused. */
         coverCtaNote: string;
         /** Vertical's ONE reveal (form-level): shown once, after Submit. */
@@ -1170,6 +1199,24 @@ export interface FormsMessages {
       /** The editor's Connect tab (per-form integrations, tracking, emails). */
       connect: {
         tab: string;
+        /**
+         * Spam protection: the per-form human check before the final submit, at
+         * the top of the tab. Staged with the draft like Tracking.
+         */
+        spamTitle: string;
+        spamToggle: string;
+        spamHelp: string;
+        spamPartialNote: string;
+        /** Why the switch is disabled: this deployment has no challenge keys. */
+        spamUnavailable: string;
+        /** The switch is saved on, but this deployment cannot run the check. */
+        spamInactiveHere: string;
+        spamDraftNote: string;
+        /** Accessible name of the Automatic / Strict choice. */
+        spamModeGroup: string;
+        spamModeAuto: string;
+        spamModeStrict: string;
+        spamModeStrictHelp: string;
         integrationsTitle: string;
         integrationsSubtitle: string;
         integrationsLoadError: string;
@@ -1274,6 +1321,8 @@ export interface FormsMessages {
       /** CSV-only headers (the table shows the date under `colSubmitted` and the name joined). */
       colSubmittedAt: string;
       colSubmissionId: string;
+      /** CSV-only: the page the response was given on (#199). */
+      colPageUrl: string;
       colFirstName: string;
       colLastName: string;
       export: string;
@@ -1344,6 +1393,13 @@ export interface FormsMessages {
       noAnswer: string;
       colStarted: string;
       responseId: string;
+      /** The page the response was given on: the landing that embeds the form, or the form's own link. */
+      pageRow: string;
+      /**
+       * Beside the page: the visitor's HubSpot tracking cookie arrived with the
+       * response. Received, not accepted: it does not say HubSpot took the visit.
+       */
+      hubspotCookie: string;
       utmTitle: string;
       /** "{n} of {total} answered": how much of the form this response covers. */
       answeredCount: string;
@@ -1614,6 +1670,12 @@ export interface FormsMessages {
       webhookEventsHelp: string;
       eventPartial: string;
       eventComplete: string;
+      /** Beside the partial trigger while the form's spam protection holds partials. */
+      eventPartialHeld: string;
+      /** A webhook that ONLY listens to partials, on a form whose partials are held. */
+      webhookPartialOnlyHeld: string;
+      /** The HubSpot card while partials are held: contacts sync on complete. */
+      hubspotPartialHeld: string;
       // Delivery history — the collapsible log inside each integration card.
       /** Per-card headings; the shared panel takes them as props. */
       historyWebhookTitle: string;
@@ -1714,6 +1776,12 @@ export interface FormsMessages {
         eventsBoth: string;
         eventsPartial: string;
         eventsComplete: string;
+        /** Both triggers, on a form whose spam protection holds partials. */
+        eventsCompleteHeld: string;
+        /** Partial-only, on such a form: it fires on nothing until protection is off. */
+        eventsPartialHeld: string;
+        /** Tooltip on either held label: why. */
+        partialsHeldNote: string;
         /** A signing secret is configured. The value itself is never shown. */
         signed: string;
         edit: string;
@@ -2017,6 +2085,15 @@ export const en: FormsMessages = {
       option: 'Choose one of the available options.',
       file: 'Upload a file to continue.',
       submit: 'Could not submit. Please try again.',
+      captcha: 'We couldn’t verify that you’re human. Please try again.',
+      captcha_required: 'This form now checks that you’re human. Refresh the page and submit again.',
+      rate_limited: 'Too many attempts from your connection. Wait a moment and try again.',
+      answer_too_long: 'One of your answers is longer than this form allows. Shorten it and try again.',
+    },
+    captcha: {
+      prompt: 'Confirm you’re human to send your answers.',
+      unavailable: 'We couldn’t complete the security check. Your answers are saved. Please try again.',
+      retry: 'Try again',
     },
     charCounter: {
       characters: '{count} characters',
@@ -2402,7 +2479,7 @@ export const en: FormsMessages = {
       nameRequired: 'Give your form a name.',
       layoutLabel: 'Layout',
       layoutSlides: 'Slides',
-      layoutSlidesDesc: 'One question per screen, step by step.',
+      layoutSlidesDesc: 'One screen at a time. Group questions to show several on one screen.',
       layoutVertical: 'One page',
       layoutVerticalDesc: 'All questions on a single page, one Submit.',
       cancel: 'Cancel',
@@ -2760,10 +2837,11 @@ export const en: FormsMessages = {
         title: 'Layout',
         subtitle: 'How respondents move through the form.',
         slides: 'Slides',
-        slidesHint: 'One question per screen, step by step.',
+        slidesHint: 'One screen at a time. Group questions to show several on one screen.',
         vertical: 'One page',
         verticalHint:
           'Every question on a single page with one Submit. Logic still applies live: questions show and hide as answers change.',
+        screensIgnored: 'Screens only apply to Slides. On One page every question is already on one page.',
         coverCtaNote:
           'On a one-page form the cover renders as a header above the questions: there is no Start button, so its text is not used.',
         endReveal: 'Reveal screen before results',
@@ -2950,6 +3028,20 @@ export const en: FormsMessages = {
       },
       connect: {
         tab: 'Connect',
+        spamTitle: 'Spam protection (captcha)',
+        spamToggle: 'Check that respondents are human before the final submit',
+        spamHelp:
+          'Adds a captcha that stops automated bot submissions. Most people see nothing: a checkbox appears only when traffic looks suspicious. Only complete, verified responses reach your integrations.',
+        spamPartialNote:
+          'Partial answers are still saved in Submissions, but they are not sent to webhooks or HubSpot while protection is on.',
+        spamUnavailable: 'Spam protection is not set up on this deployment.',
+        spamInactiveHere:
+          'It is switched on for this form, but it does not run on this deployment until spam protection is set up.',
+        spamDraftNote: 'Staged with your draft: click Publish to apply it to the live form.',
+        spamModeGroup: 'Protection mode',
+        spamModeAuto: 'Automatic: only suspicious visitors see a check (recommended)',
+        spamModeStrict: 'Strict: everyone sees the verification before sending, plus extra checks',
+        spamModeStrictHelp: 'Use it if spam still gets through. It adds a visible step for everyone.',
         integrationsTitle: 'Integrations',
         integrationsSubtitle:
           'Send each submission to your CRM or a webhook. Delivery is durable and retried.',
@@ -2972,7 +3064,8 @@ export const en: FormsMessages = {
         posthogHostHelp: 'Defaults to PostHog US cloud; set your EU or self-hosted ingestion URL.',
         posthogHostInvalid: 'Enter a full http(s) URL, e.g. https://eu.i.posthog.com.',
         hubspotLabel: 'HubSpot tracking ID',
-        hubspotHelp: 'Loads the HubSpot tracking code for your portal on the form page.',
+        hubspotHelp:
+          'Loads the HubSpot tracking code for your portal on the form page. If you embed this form in pages that already load your HubSpot tracking code, leave it empty: the embed passes the visit from those pages.',
         utmNote:
           'UTM parameters are captured automatically and can be mapped to HubSpot properties in Integrations.',
         emailsTitle: 'Emails',
@@ -3049,6 +3142,7 @@ export const en: FormsMessages = {
       colScore: 'Score',
       colSubmittedAt: 'Submitted at',
       colSubmissionId: 'Submission id',
+      colPageUrl: 'Page URL',
       colFirstName: 'First name',
       colLastName: 'Last name',
       export: 'Download CSV',
@@ -3103,6 +3197,8 @@ export const en: FormsMessages = {
       noAnswer: 'No answer',
       colStarted: 'Started',
       responseId: 'Response ID',
+      pageRow: 'Page',
+      hubspotCookie: 'HubSpot cookie received',
       utmTitle: 'Campaign (UTM)',
       answeredCount: '{n} of {total} answered',
       sheetOpen: 'Full screen',
@@ -3199,7 +3295,7 @@ export const en: FormsMessages = {
       createNoteHelp: 'Attaches a note with the form name and score to the contact.',
       formActivity: 'Record a form submission in HubSpot',
       formActivityHelp:
-        'Creates a matching form in your portal, so each completed submission shows on the contact as a form submission activity listing the properties it set. Not just a note. Needs the forms and form-submissions-write scopes on your private app.',
+        'Creates a matching form in your portal, so each completed submission shows on the contact as a form submission activity listing the properties it set. Not just a note. It is also what joins the contact to its visits on the page that embeds the form, so turn it on to attribute them. Needs the forms and form-submissions-write scopes on your private app.',
       formActivityError: 'HubSpot could not set this up: {reason}',
       selectProperty: 'Select a property…',
       noProperty: '(none)',
@@ -3339,6 +3435,11 @@ export const en: FormsMessages = {
       webhookEventsHelp: 'Choose which submissions are sent to this webhook. Both are sent by default.',
       eventPartial: 'Partial submissions',
       eventComplete: 'Complete submissions',
+      eventPartialHeld: 'Paused while spam protection is on',
+      webhookPartialOnlyHeld:
+        'This webhook will not fire: it only listens to partial answers, which are paused while spam protection is on.',
+      hubspotPartialHeld:
+        'Spam protection is on: contacts are created or updated when a respondent completes the form, not from partial answers.',
       historyWebhookTitle: 'Webhook history',
       historyHubspotTitle: 'HubSpot history',
       historyEmailTitle: 'Email history',
@@ -3422,6 +3523,9 @@ export const en: FormsMessages = {
         eventsBoth: 'Partial + complete',
         eventsPartial: 'Partial submissions',
         eventsComplete: 'Complete submissions',
+        eventsCompleteHeld: 'Complete (partials paused)',
+        eventsPartialHeld: 'Partial submissions (paused)',
+        partialsHeldNote: 'Spam protection is on for this form: partial answers are saved but not sent.',
         signed: 'Signed with a secret',
         edit: 'Edit',
         failedCount: '{n} failed',
@@ -3713,6 +3817,17 @@ export const es: FormsMessages = {
       option: 'Elige una de las opciones disponibles.',
       file: 'Sube un archivo para continuar.',
       submit: 'No se pudo enviar. Inténtalo de nuevo.',
+      captcha: 'No pudimos verificar que eres una persona. Inténtalo de nuevo.',
+      captcha_required:
+        'Este formulario ahora verifica que eres una persona. Recarga la página y vuelve a enviar tus respuestas.',
+      rate_limited: 'Demasiados intentos desde tu conexión. Espera un momento e inténtalo de nuevo.',
+      answer_too_long: 'Una de tus respuestas es más larga de lo que permite este formulario. Acórtala e inténtalo de nuevo.',
+    },
+    captcha: {
+      prompt: 'Confirma que eres una persona para enviar tus respuestas.',
+      unavailable:
+        'No pudimos completar la verificación de seguridad. Tus respuestas quedaron guardadas. Inténtalo de nuevo.',
+      retry: 'Reintentar',
     },
     charCounter: {
       characters: '{count} caracteres',
@@ -4101,7 +4216,7 @@ export const es: FormsMessages = {
       nameRequired: 'Ponle un nombre a tu formulario.',
       layoutLabel: 'Diseño',
       layoutSlides: 'Diapositivas',
-      layoutSlidesDesc: 'Una pregunta por pantalla, paso a paso.',
+      layoutSlidesDesc: 'Una pantalla a la vez. Agrupa preguntas para mostrar varias en una pantalla.',
       layoutVertical: 'Una página',
       layoutVerticalDesc: 'Todas las preguntas en una sola página, un solo Enviar.',
       cancel: 'Cancelar',
@@ -4459,10 +4574,11 @@ export const es: FormsMessages = {
         title: 'Diseño',
         subtitle: 'Cómo avanzan los respondientes por el formulario.',
         slides: 'Diapositivas',
-        slidesHint: 'Una pregunta por pantalla, paso a paso.',
+        slidesHint: 'Una pantalla a la vez. Agrupa preguntas para mostrar varias en una pantalla.',
         vertical: 'Una página',
         verticalHint:
           'Todas las preguntas en una sola página con un solo Enviar. La lógica sigue aplicando en vivo. Las preguntas aparecen y se ocultan según las respuestas.',
+        screensIgnored: 'Las pantallas solo aplican en Diapositivas. En Una página todas las preguntas ya están juntas.',
         coverCtaNote:
           'En un formulario de una página la portada se muestra como encabezado sobre las preguntas. No hay botón de inicio, así que su texto no se usa.',
         endReveal: 'Pantalla de revelación antes del resultado',
@@ -4650,6 +4766,20 @@ export const es: FormsMessages = {
       },
       connect: {
         tab: 'Conectar',
+        spamTitle: 'Protección contra spam (captcha)',
+        spamToggle: 'Verificar que quien responde es una persona antes del envío final',
+        spamHelp:
+          'Agrega un captcha que frena los envíos automáticos de bots. La mayoría de las personas no ve nada: solo aparece una casilla si el tráfico parece sospechoso. Solo las respuestas completas y verificadas llegan a tus integraciones.',
+        spamPartialNote:
+          'Las respuestas parciales se siguen guardando en Envíos, pero no se envían a webhooks ni a HubSpot mientras la protección esté activa.',
+        spamUnavailable: 'Este despliegue no tiene configurada la protección contra spam.',
+        spamInactiveHere:
+          'Está activada en este formulario, pero no se aplica en este despliegue hasta que se configure la protección contra spam.',
+        spamDraftNote: 'Se guarda con tu borrador: haz clic en Publicar para aplicarla al formulario público.',
+        spamModeGroup: 'Modo de protección',
+        spamModeAuto: 'Automático: solo quien parezca sospechoso ve una verificación (recomendado)',
+        spamModeStrict: 'Estricto: todos ven la verificación antes de enviar, con controles extra',
+        spamModeStrictHelp: 'Úsalo si sigue entrando spam. Agrega un paso visible para todos.',
         integrationsTitle: 'Integraciones',
         integrationsSubtitle:
           'Envía cada respuesta a tu CRM o a un webhook. La entrega es duradera y con reintentos.',
@@ -4673,7 +4803,8 @@ export const es: FormsMessages = {
           'Por defecto usa la nube de PostHog en EE. UU.; configura tu URL de ingesta de la UE o autoalojada.',
         posthogHostInvalid: 'Introduce una URL http(s) completa, p. ej. https://eu.i.posthog.com.',
         hubspotLabel: 'ID de seguimiento de HubSpot',
-        hubspotHelp: 'Carga el código de seguimiento de HubSpot de tu portal en la página del formulario.',
+        hubspotHelp:
+          'Carga el código de seguimiento de HubSpot de tu portal en la página del formulario. Si insertas este formulario en páginas que ya cargan tu código de seguimiento de HubSpot, déjalo vacío: el embed pasa la visita de esas páginas.',
         utmNote:
           'Los parámetros UTM se capturan automáticamente y puedes mapearlos a propiedades de HubSpot en Integraciones.',
         emailsTitle: 'Correos',
@@ -4750,6 +4881,7 @@ export const es: FormsMessages = {
       colScore: 'Puntaje',
       colSubmittedAt: 'Fecha de envío',
       colSubmissionId: 'ID de respuesta',
+      colPageUrl: 'URL de la página',
       colFirstName: 'Nombre',
       colLastName: 'Apellido',
       export: 'Descargar CSV',
@@ -4804,6 +4936,8 @@ export const es: FormsMessages = {
       noAnswer: 'Sin respuesta',
       colStarted: 'Iniciada',
       responseId: 'ID de respuesta',
+      pageRow: 'Página',
+      hubspotCookie: 'Cookie de HubSpot recibida',
       utmTitle: 'Campaña (UTM)',
       answeredCount: '{n} de {total} respondidas',
       sheetOpen: 'Pantalla completa',
@@ -4900,7 +5034,7 @@ export const es: FormsMessages = {
       createNoteHelp: 'Adjunta al contacto una nota con el nombre del formulario y la puntuación.',
       formActivity: 'Registrar la respuesta como form submission en HubSpot',
       formActivityHelp:
-        'Crea un formulario espejo en tu portal, para que cada respuesta completada aparezca en el contacto como una actividad de form submission con las propiedades que escribió: y no solo como una nota. Necesita los permisos forms y form-submissions-write en tu private app.',
+        'Crea un formulario espejo en tu portal, para que cada respuesta completada aparezca en el contacto como una actividad de form submission con las propiedades que escribió: y no solo como una nota. También es lo que une al contacto con sus visitas a la página donde está insertado el formulario, así que actívalo para atribuirlas. Necesita los permisos forms y form-submissions-write en tu private app.',
       formActivityError: 'HubSpot no pudo configurarlo: {reason}',
       selectProperty: 'Selecciona una propiedad…',
       noProperty: '(ninguna)',
@@ -5042,6 +5176,11 @@ export const es: FormsMessages = {
       webhookEventsHelp: 'Elige qué respuestas se envían a este webhook. Por defecto se envían ambas.',
       eventPartial: 'Respuestas parciales',
       eventComplete: 'Respuestas completas',
+      eventPartialHeld: 'En pausa mientras la protección contra spam está activa',
+      webhookPartialOnlyHeld:
+        'Este webhook no se va a disparar: solo escucha respuestas parciales, que están en pausa mientras la protección contra spam está activa.',
+      hubspotPartialHeld:
+        'La protección contra spam está activa: los contactos se crean o actualizan cuando alguien completa el formulario, no con respuestas parciales.',
       historyWebhookTitle: 'Historial del webhook',
       historyHubspotTitle: 'Historial de HubSpot',
       historyEmailTitle: 'Historial de correos',
@@ -5126,6 +5265,10 @@ export const es: FormsMessages = {
         eventsBoth: 'Parciales y completas',
         eventsPartial: 'Respuestas parciales',
         eventsComplete: 'Respuestas completas',
+        eventsCompleteHeld: 'Completas (parciales en pausa)',
+        eventsPartialHeld: 'Respuestas parciales (en pausa)',
+        partialsHeldNote:
+          'La protección contra spam está activa en este formulario: las respuestas parciales se guardan pero no se envían.',
         signed: 'Firmado con un secreto',
         edit: 'Editar',
         // Sin concordancia de número a propósito: `t()` no pluraliza, y "1

@@ -3,19 +3,36 @@
 import { postSubmission, postFormEvent, postUploadPresign, type PresignResult } from '@/lib/api';
 import { postBookingCallback } from '@/lib/booking-embed';
 import { forwardedForChain } from '@/lib/forwarded-for';
-import type { BookingCallbackInput, UploadPresignInput } from '@quill/types';
+import type { BookingCallbackInput, SubmissionVisit, UploadPresignInput } from '@quill/types';
+import { EVENTS_PER_CALL } from './event-batches';
 
 /**
  * Submit a form — partial (past the lead-capture threshold) or complete. The
  * score is always recomputed server-side; the client value is never trusted.
+ *
+ * `captchaToken` and `hp` are spam protection's (the human check's token and
+ * strict mode's hidden field); the API decides whether it needs them. A
+ * refusal comes back with the API's `error` code, which is what the renderer
+ * localizes, never its English `message`.
+ *
+ * `visit` is the page the form was answered on (see `lib/host-visit.ts`); the
+ * API checks it again, field by field, and never refuses a submit over it.
  */
 export async function submitFormAction(
   accountCode: string,
   slug: string,
-  payload: { sessionId: string; data: Record<string, unknown>; partial?: boolean; locale?: 'en' | 'es' },
-): Promise<{ ok: boolean; score?: number; outcome?: string | null; message?: string }> {
+  payload: {
+    sessionId: string;
+    data: Record<string, unknown>;
+    partial?: boolean;
+    locale?: 'en' | 'es';
+    captchaToken?: string;
+    hp?: string;
+    visit?: SubmissionVisit;
+  },
+): Promise<{ ok: boolean; score?: number; outcome?: string | null; message?: string; error?: string }> {
   const res = await postSubmission(accountCode, slug, payload);
-  return { ok: res.ok, score: res.score, outcome: res.outcome, message: res.message };
+  return { ok: res.ok, score: res.score, outcome: res.outcome, message: res.message, error: res.error };
 }
 
 /** Record a funnel event (best-effort). */
@@ -49,4 +66,35 @@ export async function presignUploadAction(
   payload: UploadPresignInput,
 ): Promise<PresignResult> {
   return postUploadPresign(accountCode, slug, payload);
+}
+
+/**
+ * Record several funnel events in one round trip (best-effort). A screen of
+ * several questions records one per question at once (a view each when it
+ * shows, a completion each when it is submitted), and the browser runs server
+ * actions one at a time: N separate calls would queue in front of whatever the
+ * person does next, the final submit included. For the same reason they go to
+ * the API all at once, not one after another: each is its own row, and no
+ * metric reads their order. A call carries at most `EVENTS_PER_CALL`; the
+ * renderer sends a bigger screen in batches.
+ */
+export async function recordEventsAction(
+  accountCode: string,
+  slug: string,
+  payload: {
+    sessionId: string;
+    events: { type: string; stepIndex?: number | null; stepKey?: string | null }[];
+  },
+): Promise<void> {
+  if (!Array.isArray(payload.events)) return;
+  await Promise.all(
+    payload.events.slice(0, EVENTS_PER_CALL).map((event) =>
+      postFormEvent(accountCode, slug, {
+        sessionId: payload.sessionId,
+        type: event.type,
+        stepIndex: event.stepIndex ?? null,
+        stepKey: event.stepKey ?? null,
+      }),
+    ),
+  );
 }

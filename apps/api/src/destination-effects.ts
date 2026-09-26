@@ -18,10 +18,12 @@ import {
   formConfigSchema,
   formDestinationSchema,
   type FormDestination,
+  type SubmissionVisit,
 } from '@quill/types';
 import type { ServerEnv } from '@quill/config/env';
 import { HubspotPortalResolver, mirrorGuidFor } from './hubspot-portal';
 import { HubspotPropertiesService } from './integrations.controller';
+import { destinationUsesHutk, withoutHutk } from './submission-visit';
 import { DB, ENV } from './tokens';
 
 /** The delivery snapshot serialized into an outbox row (config + context). */
@@ -45,6 +47,13 @@ export interface SubmissionDeliveryInput {
   data: Record<string, unknown>;
   /** The stored form config (destinations are read from it). */
   config: unknown;
+  /**
+   * The page it was answered on, from the MERGED row (see `upsertSubmission`).
+   * Snapshotted into the payload with the rest, so a retry delivers the same one.
+   */
+  visit?: SubmissionVisit | null;
+  /** The form's public title, snapshotted with a visit (see `DestinationContext.formTitle`). */
+  formTitle?: string;
 }
 
 /**
@@ -130,6 +139,15 @@ export class DestinationEffects {
           submittedAt: input.submittedAt,
           data: input.data,
           utm: extractUtm(input.data),
+          // Only when there is one: without it the payload is byte for byte
+          // what it was before the visit existed. The cookie goes only into
+          // the snapshot of a destination that sends it on in this phase.
+          ...(input.visit
+            ? {
+                visit: destinationUsesHutk(destination, input.phase) ? input.visit : withoutHutk(input.visit),
+                ...(input.formTitle ? { formTitle: input.formTitle } : {}),
+              }
+            : {}),
         };
         const payload: DestinationOutboxPayload = { destination, ctx };
         await enqueueOutbox(this.db, {

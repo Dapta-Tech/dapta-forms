@@ -13,6 +13,7 @@ import {
   computeLayout,
   edgePath,
   NODE_H,
+  screenFrame,
   type LayoutNode,
 } from './logic-layout';
 import { tb, type BuilderMessages } from './builder-messages';
@@ -204,6 +205,34 @@ export function LogicCanvas({
           className="absolute left-0 top-0 origin-top-left"
           style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }}
         >
+          {/* Screens (#200) first of all: a frame behind the questions shown
+              together on one card, named the way the spine names it. Redrawn
+              around a member being dragged, so the frame never lies mid-drag. */}
+          {layout.screens.map((screen) => {
+            const boxes = screen.members
+              .map((id) => layout.nodes.find((n) => n.id === id))
+              .filter((n): n is LayoutNode => n != null)
+              .map((n) => ({ ...n, ...nodePos(n) }));
+            if (boxes.length < 2) return null;
+            // One frame around the screen, or, when that box would take in a
+            // question that is not on it, one around each of its questions.
+            const frames = screen.outline === 'box' ? [screenFrame(boxes)] : boxes.map((b) => screenFrame([b]));
+            return frames.map((frame, i) => (
+              <div
+                key={`${screen.id}:${i}`}
+                data-testid="logic-screen-frame"
+                className="pointer-events-none absolute rounded-2xl border border-dashed border-primary-edge/60 bg-primary/[0.04]"
+                style={{ left: frame.x, top: frame.y, width: frame.w, height: frame.h }}
+              >
+                {i === 0 && zoom >= LOD_TITLE ? (
+                  <span className="absolute left-3 top-1 truncate text-2xs font-semibold text-muted-foreground">
+                    {tb(m.screens.chip, { n: screen.n, count: screen.count })}
+                  </span>
+                ) : null}
+              </div>
+            ));
+          })}
+
           {/* Edges first so nodes paint over them. The SVG is deliberately
               oversized and offset: node coordinates are centred on the spine, so
               half the graph lives at negative y. */}

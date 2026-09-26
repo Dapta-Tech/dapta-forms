@@ -78,6 +78,24 @@ describe('WebhooksSection', () => {
     expect(render([webhook({ firesComplete: false })])).toContain(m.eventsPartial);
   });
 
+  it('says partials are paused while the form’s spam protection holds them', () => {
+    const both = render([webhook({ partialsHeld: true })]);
+    expect(both).toContain(m.eventsCompleteHeld);
+    expect(both).not.toContain(`>${m.eventsBoth}<`);
+    expect(both).toContain(`title="${m.partialsHeldNote}"`);
+
+    const partialOnly = render([webhook({ firesComplete: false, partialsHeld: true })]);
+    expect(partialOnly).toContain(m.eventsPartialHeld);
+
+    // Nothing it listens to is held: the plain label, no note.
+    const completeOnly = render([webhook({ firesPartial: false, partialsHeld: true })]);
+    expect(completeOnly).toContain(m.eventsComplete);
+    expect(completeOnly).not.toContain(m.partialsHeldNote);
+
+    // An API older than the field sends none, which reads as not held.
+    expect(render([webhook({ partialsHeld: undefined })])).toContain(m.eventsBoth);
+  });
+
   it('shows nothing in Delivery until something has failed', () => {
     expect(render([webhook()])).not.toContain('webhook-health');
     // ...and no scope note either, since there is no count to qualify.

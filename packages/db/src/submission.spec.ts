@@ -8,10 +8,17 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { sql, type SQL } from 'drizzle-orm';
+import { parseSubmissionVisit } from '@quill/types';
 import { createDb, type Db } from './client';
 import { migrate } from './migrate';
 import { upsertSubmission, listSubmissions } from './forms';
-import { allSubmissionsForExport, deleteSubmissionsForAccount, MAX_BULK_SUBMISSIONS } from './analytics';
+import {
+  allSubmissionsForExport,
+  deleteSubmissionsForAccount,
+  getSubmissionAnswersForAccount,
+  MAX_BULK_SUBMISSIONS,
+  querySubmissions,
+} from './analytics';
 
 let db: Db;
 let accountId: string;
@@ -173,6 +180,120 @@ describe('submission upsert', () => {
       threw = true;
     }
     expect(threw).toBe(true);
+  });
+});
+
+/**
+ * The page a submission was answered on (#199). A write without a visit never
+ * erases one already stored (a partial caught the landing's cookie, the
+ * complete ran out of time asking), a write with one replaces it, and the
+ * dashboard's read side never hands the HubSpot cookie out. Both dialects: the
+ * COALESCE over a jsonb column is exactly the kind of statement that passes on
+ * SQLite and fails on Postgres.
+ */
+describe('submission visit', () => {
+  const HUTK = '0123456789abcdef0123456789abcdef';
+  const LANDING = {
+    pageUri: 'https://landing.example.com/offer?utm_source=fb',
+    pageName: 'Home insurance',
+    pageId: '12345',
+    hutk: HUTK,
+    hsPortalId: '4321',
+    embedded: true,
+  };
+  const DIRECT = { pageUri: 'https://forms.example.com/acme/f/quote', pageName: 'Quote', embedded: false };
+
+  async function visitOf(session: string) {
+    const rows = await listSubmissions(db, formId);
+    return rows.find((r) => r.sessionId === session)?.visit;
+  }
+
+  it('stores the visit the first write carries, and reads no visit as null', async () => {
+    const stored = await upsertSubmission(db, {
+      formId,
+      sessionId: 'v-first',
+      data: { a: 1 },
+      score: 0,
+      partial: true,
+      visit: LANDING,
+    });
+    expect(stored.visit).toEqual(LANDING);
+    await upsertSubmission(db, { formId, sessionId: 'v-none', data: {}, score: 0 });
+    expect(await visitOf('v-none')).toBeNull();
+  });
+
+  it('keeps the visit when a later write carries none, on the partial and the complete path', async () => {
+    const session = 'v-keep';
+    await upsertSubmission(db, { formId, sessionId: session, data: { a: 1 }, score: 1, partial: true, visit: LANDING });
+    await upsertSubmission(db, { formId, sessionId: session, data: { a: 2 }, score: 2, partial: true });
+    expect(await visitOf(session)).toEqual(LANDING);
+
+    // The completion claim is its own UPDATE: it must merge the same way, and
+    // hand the MERGED row back, since that is what the deliveries are built from.
+    const completed = await upsertSubmission(db, { formId, sessionId: session, data: { a: 3 }, score: 3 });
+    expect(completed.wasCompletedBefore).toBe(false);
+    expect(completed.completedAt).not.toBeNull();
+    expect(completed.visit).toEqual(LANDING);
+    expect(await visitOf(session)).toEqual(LANDING);
+  });
+
+  it('replaces the visit with a newer one', async () => {
+    const session = 'v-replace';
+    await upsertSubmission(db, { formId, sessionId: session, data: {}, score: 0, partial: true, visit: DIRECT });
+    const completed = await upsertSubmission(db, { formId, sessionId: session, data: {}, score: 0, visit: LANDING });
+    expect(completed.visit).toEqual(LANDING);
+    expect(await visitOf(session)).toEqual(LANDING);
+  });
+
+  it('leaves a completed row alone when a late partial brings a visit', async () => {
+    const session = 'v-late';
+    await upsertSubmission(db, { formId, sessionId: session, data: { done: true }, score: 5, visit: DIRECT });
+    const late = await upsertSubmission(db, {
+      formId,
+      sessionId: session,
+      data: {},
+      score: 0,
+      partial: true,
+      visit: LANDING,
+    });
+    expect(late.wasCompletedBefore).toBe(true);
+    expect(await visitOf(session)).toEqual(DIRECT);
+  });
+
+  it('gives the dashboard the page and a cookie-received flag, never the cookie', async () => {
+    const session = 'v-admin';
+    const row = await upsertSubmission(db, { formId, sessionId: session, data: { a: 1 }, score: 0, visit: LANDING });
+    const view = { pageUri: LANDING.pageUri, pageName: LANDING.pageName, embedded: true, hubspotCookie: true };
+
+    const page = await querySubmissions(db, formId, {});
+    const listed = page.items.find((r) => r.id === row.id);
+    expect(listed?.visit).toEqual(view);
+    const exported = await allSubmissionsForExport(db, formId, { ids: [row.id] });
+    expect(exported[0]?.visit).toEqual(view);
+    const one = await getSubmissionAnswersForAccount(db, accountId, row.id);
+    expect(one?.visit).toEqual(view);
+    for (const read of [page.items, exported, [one]]) expect(JSON.stringify(read)).not.toContain(HUTK);
+  });
+
+  it('stores a visit parsed from hostile strings, on Postgres too', async () => {
+    // All of it arrives from a page nobody here controls. What the parse keeps
+    // must be JSON Postgres accepts in a jsonb column, or the whole submit fails.
+    const hostile = parseSubmissionVisit({
+      pageUri: 'https://landing.example.com/\ud800',
+      pageName: 'Seguro \ud800 de hogar\u0000',
+      pageId: '12\ud800',
+      hsPortalId: '\u0000',
+      hutk: `${'a'.repeat(31)}\ud800`,
+      embedded: true,
+    });
+    const row = await upsertSubmission(db, { formId, sessionId: 'v-hostile', data: {}, score: 0, visit: hostile });
+    expect(row.visit).toEqual({ pageName: 'Seguro \ufffd de hogar', embedded: true });
+  });
+
+  it('reads a row stored before the column existed as no visit, on the dashboard too', async () => {
+    await upsertSubmission(db, { formId, sessionId: 'v-legacy', data: {}, score: 0 });
+    const page = await querySubmissions(db, formId, {});
+    expect(page.items.find((r) => r.sessionId === 'v-legacy')?.visit).toBeNull();
   });
 });
 

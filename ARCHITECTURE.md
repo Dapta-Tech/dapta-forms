@@ -16,7 +16,7 @@ always goes through the API over HTTP, so the two apps deploy independently.
   PUBLIC RESPONDENT                              ADMIN / FORM BUILDER
   ────────────────                               ────────────────────
   Browser                                        Browser
-     │  GET /[account]/[handle]/[slug]              │  /admin/... (dashboard + builder)
+     │  GET /[account]/f/[slug]                     │  /admin/... (dashboard + builder)
      ▼                                              ▼
   apps/web (Next.js, RSC)                        apps/web (Next.js, RSC + islands)
      │  server-renders published config             │  lib/admin-api.ts

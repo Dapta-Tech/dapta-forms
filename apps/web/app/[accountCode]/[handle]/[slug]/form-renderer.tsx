@@ -14,6 +14,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   runtimeSteps,
+  runtimeScreens,
+  screenIds,
   validateAnswerCode,
   canonicalizeAnswer,
   resolveOutcome,
@@ -32,7 +34,7 @@ import {
   type FormOutcome,
 } from '@quill/engine';
 import { getMessages, resolveFormLabels } from '@quill/shared';
-import type { FormConfig } from '@quill/types';
+import type { FormConfig, PublicCaptcha } from '@quill/types';
 import { formDesignProps } from '@/lib/form-design';
 import { FormLogo } from '@/components/public/form-logo';
 import { FormProgress } from '@/components/public/form-progress';
@@ -46,24 +48,85 @@ import { resolveSchedulerPrefill } from '@/lib/booking-prefill';
 import { callAction, callActionWithRetry, isTransportError } from '@/lib/call-action';
 import { navigateTop } from '@/lib/top-navigate';
 import { reportLeadConversion } from '@/lib/lead-conversion';
+import { useAnnounceScreenChange } from '@/lib/embed-screen';
+import type { ResolvedVisit } from '@/lib/host-visit';
 import {
   submitFormAction,
   recordEventAction,
+  recordEventsAction,
   recordBookingAction,
   presignUploadAction,
 } from './actions';
 import {
   useSessionId,
+  useCaptchaGate,
+  captchaAborted,
+  submitFinal,
   captureUtm,
   captureDefaults,
   capturePrefill,
   schedulerToBooking,
   PhaseShell,
   DoneScreen,
+  mergeHostUtm,
+  useHostVisit,
+  visitField,
+  type VisitCapture,
 } from './renderer-shared';
+import { eventBatches } from './event-batches';
 import './public-form.css';
 
 type Phase = 'cover' | 'steps' | 'reveal' | 'submitting' | 'booking' | 'done';
+
+type EngineConfig = Parameters<typeof runtimeSteps>[0];
+
+/**
+ * The runtime index the screen holding step `at` starts on: a start position
+ * inside a screen of several questions opens the whole screen. On a form
+ * without screens every step is its own screen and this returns `at` as is,
+ * out of range included (the clamp in the renderer handles that, as ever).
+ */
+function screenStartOf(config: EngineConfig, at: number): number {
+  let start = 0;
+  for (const screen of runtimeScreens(config, {})) {
+    if (at < start + screen.length) return start;
+    start += screen.length;
+  }
+  return at;
+}
+
+/** A field someone types into or slides (never the phone's country search). */
+const FIELD = 'input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]):not([type="file"]), textarea';
+
+/**
+ * Where a question takes focus: each of its fields (a name has two), or, for a
+ * choice, the option picked (else the first). Where Enter moves on to, and
+ * where an error sends focus.
+ */
+function questionControls(block: Element): HTMLElement[] {
+  const fields = [...block.querySelectorAll<HTMLElement>(FIELD)].filter(
+    (el) => !el.closest('.pf-phone__panel') && !(el as HTMLInputElement).disabled,
+  );
+  if (fields.length > 0) return fields;
+  const options = [...block.querySelectorAll<HTMLElement>('button[role="radio"], button[role="checkbox"]')];
+  const pick = options.find((o) => o.getAttribute('aria-checked') === 'true') ?? options[0];
+  return pick ? [pick] : [];
+}
+
+/** Every question's controls on a screen, in order. */
+function screenControls(root: Element): HTMLElement[] {
+  return [...root.querySelectorAll('[data-pf-step]')].flatMap(questionControls);
+}
+
+/**
+ * A question's id-safe handle for `aria-labelledby`/`aria-describedby`. Not
+ * `useId`: a hook in the renderer would renumber every id its children draw,
+ * and the markup of forms without screens is pinned byte for byte.
+ */
+const memberId = (key: string, part: 'q' | 'e') => `pf-s-${key.replace(/\s+/g, '_')}-${part}`;
+
+/** Clear every question's error, keeping the state as is when there is none. */
+const noErrors = (e: Record<string, string>) => (Object.keys(e).length > 0 ? {} : e);
 
 export function FormRenderer({
   accountCode,
@@ -72,6 +135,8 @@ export function FormRenderer({
   config,
   locale = 'en',
   uploadMaxMb,
+  captcha,
+  visitCapture,
   startAt,
 }: {
   accountCode: string;
@@ -81,6 +146,18 @@ export function FormRenderer({
   locale?: string;
   /** The deployment's per-file ceiling in MB, for `file` steps. */
   uploadMaxMb?: number;
+  /**
+   * The human check the final submit must pass (spam protection), exactly as
+   * the API served it. Only the public page passes it; the builder preview
+   * never does, so a preview never loads, renders or runs a check.
+   */
+  captcha?: PublicCaptcha;
+  /**
+   * Ask the page this form is answered on for its URL, title and HubSpot
+   * cookie, and send them with each submit (#199). Only the public page
+   * passes it; the builder preview never does, so a preview asks no one.
+   */
+  visitCapture?: VisitCapture;
   /**
    * Start-position hint: a runtime step index, or `'cover'` for the default
    * entry (cover when it exists, else the first step). The builder preview
@@ -98,6 +175,9 @@ export function FormRenderer({
   // the same storage key, so both survive a reload together.
   const sessionKey = `quill-form-${accountCode}-${slug}`;
   const sessionId = useSessionId(sessionKey);
+  // The page this form is answered on, asked once per submit (inert without
+  // `visitCapture`).
+  const resolveVisit = useHostVisit(visitCapture, name);
 
   /**
    * Authorize one upload for a `file` step.
@@ -166,9 +246,35 @@ export function FormRenderer({
     typeof startAt === 'number' ? 'steps' : coverScreen ? 'cover' : 'steps',
   );
   const [answers, setAnswers] = useState<Answers>({});
-  const [index, setIndex] = useState(typeof startAt === 'number' ? startAt : 0);
+  // The runtime index of the current screen's FIRST step (on a form without
+  // screens, simply the current step's).
+  const [index, setIndex] = useState(() =>
+    typeof startAt === 'number' ? screenStartOf(config as unknown as EngineConfig, startAt) : 0,
+  );
+  // Bumped by every move to another screen (and only then).
   const [animKey, setAnimKey] = useState(0);
+  // Embedded, a new screen starts at the frame's top, wherever the visitor
+  // was scrolled: the host is asked to bring it into view. Keyed by the move,
+  // not by what the screen holds, so an answer (or the URL prefill filling
+  // the form right after it loads) never asks, and neither does the load.
+  useAnnounceScreenChange(phase === 'steps' ? `steps:${animKey}` : phase);
   const [error, setError] = useState<string | null>(null);
+  // A screen of several questions: each question's error, by step key (the
+  // validation code). `error` above is then the one summary for the screen.
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  // A refused final submit that cannot go back to its step (see `finalize`).
+  const [submitFailure, setSubmitFailure] = useState<string | null>(null);
+  // The final submit is running on its own step (spam protection's check
+  // above the button, then the submit): the button says so and takes no
+  // second click or Enter, Back waits, and the answer holds still. Mirrored in
+  // a ref for the handlers.
+  const [sending, setSending] = useState(false);
+  const sendingRef = useRef(false);
+  const markSending = useCallback((on: boolean) => {
+    sendingRef.current = on;
+    setSending(on);
+  }, []);
+  const finalizeRun = useRef(0);
   const [done, setDone] = useState<{ score: number; outcome: string | null } | null>(null);
   const [booking, setBooking] = useState<{ outcome: FormOutcome; score: number } | null>(null);
 
@@ -182,7 +288,17 @@ export function FormRenderer({
   const bookedRef = useRef(false); // one booking → one callback + one redirect
   const schedulerBooked = useRef<Set<string>>(new Set()); // one booking per scheduler step
   const lastStepViewKey = useRef<string | null>(null);
-  const engineConfig = config as unknown as Parameters<typeof runtimeSteps>[0];
+  // A screen of several questions: the members already viewed on this visit
+  // (a visit is an `animKey`), and the ones the visit opened with (any other
+  // member was revealed live by an answer, and fades in on its own).
+  const screenViewed = useRef<{ visit: number; keys: Set<string> }>({ visit: -1, keys: new Set() });
+  const screenOpened = useRef<{ visit: number; keys: Set<string> }>({ visit: -1, keys: new Set() });
+  // …and the members already completed on this visit: a submit the API refused
+  // (rate limited, say) is clicked again, and a question counts once per visit.
+  const screenCompleted = useRef<{ visit: number; keys: Set<string> }>({ visit: -1, keys: new Set() });
+  // A question to focus once its error has rendered.
+  const focusInvalid = useRef<string | null>(null);
+  const engineConfig = config as unknown as EngineConfig;
 
   // Deferred redirect (V5-B1): "show the thank-you for N ms, then leave". The
   // screen is already rendered by the time this runs, so the respondent reads
@@ -209,6 +325,26 @@ export function FormRenderer({
     [engineConfig, answers],
   );
   const step = steps[index];
+  // The same walk split into screens (several questions on one card). On a
+  // form without screens every step is a screen of its own, so each screen
+  // below is `[step]`, its position is `index`, and every code path this
+  // renderer had before screens is walked unchanged.
+  const ids = useMemo(() => screenIds(engineConfig), [engineConfig]);
+  const hasScreens = useMemo(() => [...ids.values()].some((id) => id !== null), [ids]);
+  const screens = useMemo(() => runtimeScreens(engineConfig, answers), [engineConfig, answers]);
+  const starts = useMemo(() => {
+    let at = 0;
+    return screens.map((s) => {
+      const start = at;
+      at += s.length;
+      return start;
+    });
+  }, [screens]);
+  const screenIdx = screens.findIndex((s, i) => index >= (starts[i] ?? 0) && index < (starts[i] ?? 0) + s.length);
+  const screen = screenIdx >= 0 ? screens[screenIdx] : undefined;
+  // A screen an author built of several questions: even when logic leaves
+  // one of them, it keeps the card (and its button: it never auto-advances).
+  const grouped = !!screen?.[0] && (ids.get(screen[0].key) ?? null) !== null;
   const thresholdKey = useMemo(() => partialSubmitKey(engineConfig), [engineConfig]);
   // BACK-COMPAT ONLY: where a LEGACY form-level reveal plays
   // (revealAfterStep → triggersReveal → default-last), null when there is none.
@@ -223,6 +359,20 @@ export function FormRenderer({
   // once and applied by `PhaseShell`. Nothing here overrides a token the author
   // did not set, so a form with no branding renders exactly as it always did.
   const design = useMemo(() => formDesignProps(config.branding), [config.branding]);
+
+  // Spam protection's human check, shared with the one-page layout. Inert
+  // without `captcha`. Read through a ref inside the async flows below.
+  const gate = useCaptchaGate(captcha, {
+    sessionId,
+    locale: formLocale,
+    theme: design.themeMode ?? 'dark',
+    prompt: m.captcha.prompt,
+  });
+  const gateRef = useRef(gate);
+  gateRef.current = gate;
+  // The step the respondent finished on, read when a final submit is refused.
+  const stepRef = useRef<FormStep | undefined>(undefined);
+  stepRef.current = step;
 
   const err = (code: string) => m.errors[code as keyof typeof m.errors] ?? m.errors.required;
 
@@ -249,6 +399,35 @@ export function FormRenderer({
     [accountCode, slug, sessionId],
   );
 
+  /**
+   * Several events at once (a screen of several questions records one per
+   * question): ONE server action, because the browser runs them one at a time
+   * and N of them would queue in front of the person's next move, the final
+   * submit included. A screen bigger than one call carries (the engine does
+   * not cap a screen) goes in batches. A single event goes exactly as `track`
+   * sends it.
+   */
+  const trackMany = useCallback(
+    (events: { type: string; stepIndex?: number; stepKey?: string }[]) => {
+      const [only] = events;
+      if (!only) return;
+      if (events.length === 1) {
+        track(only.type, only.stepIndex, only.stepKey);
+        return;
+      }
+      if (!sessionId) return;
+      for (const batch of eventBatches(events)) {
+        void callAction(() =>
+          recordEventsAction(accountCode, slug, {
+            sessionId,
+            events: batch.map((e) => ({ type: e.type, stepIndex: e.stepIndex ?? null, stepKey: e.stepKey ?? null })),
+          }),
+        );
+      }
+    },
+    [accountCode, slug, sessionId, track],
+  );
+
   // Capture UTM + declared-field URL prefill once on mount (client-only, so a
   // seeded visible step never causes an SSR/hydration mismatch). Hidden steps
   // ride their seeded answer into the submission; visible steps render filled.
@@ -267,49 +446,145 @@ export function FormRenderer({
 
   // step_view once when a step becomes current — keyed by phase+index so an
   // answer keystroke (which recomputes `step`) never re-fires the same view.
+  // A screen of several questions views each visible member once per visit,
+  // and a member revealed live by an answer views itself when it appears.
   useEffect(() => {
     if (phase !== 'steps' || !step) return;
+    if (grouped && screen) {
+      lastStepViewKey.current = null; // a single step after this screen is a new view
+      if (screenViewed.current.visit !== animKey) screenViewed.current = { visit: animKey, keys: new Set() };
+      const start = starts[screenIdx] ?? index;
+      const views: { type: string; stepIndex: number; stepKey: string }[] = [];
+      screen.forEach((member, i) => {
+        if (screenViewed.current.keys.has(member.key)) return;
+        screenViewed.current.keys.add(member.key);
+        views.push({ type: 'step_view', stepIndex: start + i, stepKey: member.key });
+      });
+      trackMany(views);
+      return;
+    }
     const key = `${phase}:${index}`;
     if (lastStepViewKey.current === key) return;
     lastStepViewKey.current = key;
     track('step_view', index, step.key);
-  }, [phase, index, step, track]);
+  }, [phase, index, step, track, trackMany, grouped, screen, screenIdx, starts, animKey]);
 
-  // Clamp the index if the visible-step set shrinks (a branch closed).
+  // Clamp the index if the visible-step set shrinks (a branch closed), onto
+  // the start of the last screen; and keep it on the start of its screen
+  // should the walk ever move under it. On a form without screens the start
+  // of a screen is its only step, so this is the clamp it always was.
   useEffect(() => {
-    if (phase === 'steps' && steps.length > 0 && index >= steps.length) {
-      setIndex(steps.length - 1);
-    }
-  }, [phase, index, steps.length]);
+    if (phase !== 'steps' || steps.length === 0) return;
+    if (index >= steps.length) setIndex(starts[starts.length - 1] ?? steps.length - 1);
+    else if (screenIdx >= 0 && starts[screenIdx] !== index) setIndex(starts[screenIdx] ?? index);
+  }, [phase, index, steps.length, starts, screenIdx]);
 
-  function withData(a: Answers): Record<string, unknown> {
-    const utm = utmRef.current;
+  // A screen of several questions can outgrow the viewport, so each new
+  // screen starts at the top. Only on a form with screens: one without them
+  // keeps its scroll exactly as before. Never on load (compared by value).
+  const scrolledFor = useRef(animKey);
+  useEffect(() => {
+    if (scrolledFor.current === animKey) return;
+    scrolledFor.current = animKey;
+    if (hasScreens) window.scrollTo(0, 0);
+  }, [animKey, hasScreens]);
+
+  // Focus the first invalid question once its error is on screen, and bring
+  // it to the middle of the viewport.
+  useEffect(() => {
+    const key = focusInvalid.current;
+    if (!key) return;
+    focusInvalid.current = null;
+    const block = [...document.querySelectorAll<HTMLElement>('[data-pf-step]')].find(
+      (el) => el.getAttribute('data-pf-step') === key,
+    );
+    if (!block) return;
+    questionControls(block)[0]?.focus({ preventScroll: true });
+    const still = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    block.scrollIntoView?.({ behavior: still ? 'auto' : 'smooth', block: 'center' });
+  }, [errors]);
+
+  function withData(a: Answers, resolved?: ResolvedVisit): Record<string, unknown> {
+    // The landing's campaign stands in only when the form's own URL has none.
+    const utm = mergeHostUtm(utmRef.current, resolved?.hostUtm);
     return Object.keys(utm).length > 0 ? { ...a, utm } : { ...a };
   }
 
   const finalize = useCallback(
     async (finalAnswers: Answers) => {
-      setPhase('submitting');
+      setSubmitFailure(null);
+      // A finish through the step's own button, with spam protection on,
+      // happens right on that step: the check sits above the button, which
+      // reads "Submitting…", and the screen stays. Every other finish (no
+      // check, an auto-advance, a reveal or a scheduler) takes the submitting
+      // screen, as ever. The step's check slot being mounted is what tells.
+      const inline = gateRef.current.inlineReady();
+      const run = ++finalizeRun.current;
+      if (inline) markSending(true);
+      else setPhase('submitting');
+      // The page it is answered on, asked NOW so that its wait (500 ms at
+      // most) runs alongside the human check instead of after it, and asked
+      // once: every attempt below, retries included, carries the same visit.
+      const visitReady = resolveVisit();
       // Transport-safe with retries: a submit whose INVOCATION fails (network
       // drop, deploy-rotated action id) used to reject unhandled, stranding the
       // visitor on the "submitting" spinner with the submission silently lost.
       // Retrying is safe — the server dedupes submissions by session.
       // 8s per attempt: worst case ~27s on the spinner, not the old forever.
-      const res = await callActionWithRetry(
-        () =>
-          submitFormAction(accountCode, slug, {
-            sessionId,
-            data: withData(finalAnswers),
-            // What the respondent SAW, so the confirmation email matches.
-            locale: formLocale,
-          }),
-        { timeoutMs: 8_000 },
-      );
+      // With spam protection on, the human check runs first (see
+      // `submitFinal`, shared with the one-page layout).
+      const res = await submitFinal({
+        gate: gateRef.current,
+        m,
+        send: async (fields) => {
+          const resolved = await visitReady;
+          return callActionWithRetry(
+            () =>
+              submitFormAction(accountCode, slug, {
+                sessionId,
+                data: withData(finalAnswers, resolved),
+                ...visitField(resolved),
+                // What the respondent SAW, so the confirmation email matches.
+                locale: formLocale,
+                ...fields,
+              }),
+            { timeoutMs: 8_000 },
+          );
+        },
+        savePartial: async () => {
+          const resolved = await visitReady;
+          return callActionWithRetry(
+            () =>
+              submitFormAction(accountCode, slug, {
+                sessionId,
+                data: withData(finalAnswers, resolved),
+                ...visitField(resolved),
+                partial: true,
+                locale: formLocale,
+              }),
+            { timeoutMs: 8_000 },
+          );
+        },
+      });
+      // A newer run owns the screen now (see `submitFinal`).
+      if ('aborted' in res) {
+        if (run === finalizeRun.current) markSending(false);
+        return;
+      }
       if (!res.ok) {
-        // Back to the steps with every answer intact; transport messages are
-        // technical noise, so those show the localized submit error instead.
-        setError((isTransportError(res) ? null : res.message) ?? err('submit'));
-        setPhase('steps');
+        markSending(false);
+        // Back to the step with every answer intact, the message beside its
+        // button. A reveal or a scheduler as the last step has neither: going
+        // back replayed the reveal (which finalized again, forever) or left the
+        // person on a calendar they had already booked. The failure stays on
+        // this screen instead, with its own way to try again.
+        const last = stepRef.current;
+        if (last && last.type !== 'reveal' && last.type !== 'scheduler') {
+          setError(res.message);
+          setPhase('steps');
+        } else {
+          setSubmitFailure(res.message);
+        }
         return;
       }
       // The submission is now confirmed, so this is a lead. Report the
@@ -367,7 +642,7 @@ export function FormRenderer({
       setDone({ score, outcome: res.outcome ?? null });
       setPhase('done');
     },
-    [accountCode, slug, sessionKey, sessionId, engineConfig],
+    [accountCode, slug, sessionKey, sessionId, engineConfig, markSending, resolveVisit],
   );
 
   // Report the booked meeting to the API (best-effort), THEN redirect/finish.
@@ -400,8 +675,11 @@ export function FormRenderer({
     [accountCode, slug, sessionId, booking],
   );
 
+  // Completes the current screen and moves on. `members` are the questions
+  // the screen showed (a screen of several, E1: each counts as completed) and
+  // `completed` the last of them; a single step is a screen of its own.
   const advance = useCallback(
-    async (nextAnswers: Answers, completed: FormStep) => {
+    async (nextAnswers: Answers, completed: FormStep, members: FormStep[] = [completed]) => {
       if (advancing.current) return;
       advancing.current = true;
       try {
@@ -416,25 +694,46 @@ export function FormRenderer({
         if (!coverScreen && !startSent.current) {
           startSent.current = true;
           track('start');
+          // The first answer, not the view: a visitor who only looks and
+          // leaves never reaches the challenge provider.
+          gateRef.current.prewarm();
         }
-        track('step_complete', index, completed.key);
+        const completions = members.map((member, i) => ({ type: 'step_complete', stepIndex: index + i, stepKey: member.key }));
+        if (members.length > 1) {
+          // A screen of several: each question completes once per visit, even
+          // when a refused submit is clicked again.
+          if (screenCompleted.current.visit !== animKey) screenCompleted.current = { visit: animKey, keys: new Set() };
+          const done = screenCompleted.current.keys;
+          const fresh = completions.filter((c) => !done.has(c.stepKey));
+          for (const c of fresh) done.add(c.stepKey);
+          trackMany(fresh);
+        } else {
+          trackMany(completions);
+        }
 
-        // Partial submit once past the configured lead-capture threshold.
-        if (thresholdKey && completed.key === thresholdKey && !partialSent.current) {
+        // Partial submit once past the configured lead-capture threshold (on a
+        // screen of several: when the screen holding it is submitted).
+        const threshold = members.findIndex((member) => member.key === thresholdKey);
+        if (thresholdKey && threshold >= 0 && !partialSent.current) {
           partialSent.current = true;
-          track('partial_submit', index, completed.key);
-          void callActionWithRetry(() =>
-            submitFormAction(accountCode, slug, {
-              sessionId,
-              data: withData(nextAnswers),
-              partial: true,
-              locale: formLocale,
-            }),
+          track('partial_submit', index + threshold, thresholdKey);
+          // With the page it is answered on (fire-and-forget like the save).
+          void resolveVisit().then((resolved) =>
+            callActionWithRetry(() =>
+              submitFormAction(accountCode, slug, {
+                sessionId,
+                data: withData(nextAnswers, resolved),
+                ...visitField(resolved),
+                partial: true,
+                locale: formLocale,
+              }),
+            ),
           );
         }
 
         // Terminal (disqualify) step → finalize now, skip the reveal screen.
-        if (completed.terminal) {
+        // A screen of several finishes when any question on it is terminal.
+        if (members.some((member) => member.terminal)) {
           await finalize(nextAnswers);
           return;
         }
@@ -444,7 +743,17 @@ export function FormRenderer({
         // wins, else a legacy triggersReveal step, else the last step. When the
         // reveal step is the last VISIBLE step it becomes the pre-result
         // interstitial (submitAfterReveal); otherwise it plays then continues.
-        if (revealKey && completed.key === revealKey) {
+        // After a question on a screen of several, it plays after the screen.
+        if (revealKey && members.some((member) => member.key === revealKey)) {
+          // A reveal between the last button and the submit: the check runs
+          // above that button first, and its token waits for the submit after
+          // the interstitial (see the one-page layout's reveal).
+          if (isLast && gateRef.current.inlineReady()) {
+            markSending(true);
+            const held = await gateRef.current.hold();
+            markSending(false);
+            if (captchaAborted(held)) return;
+          }
           submitAfterReveal.current = isLast;
           if (!isLast) setIndex(completedIdx + 1);
           setPhase('reveal');
@@ -458,12 +767,26 @@ export function FormRenderer({
 
         setAnimKey((k) => k + 1);
         setError(null);
-        setIndex(completedIdx >= 0 ? completedIdx + 1 : Math.min(index + 1, nextSteps.length - 1));
+        setErrors(noErrors);
+        setIndex(completedIdx >= 0 ? completedIdx + 1 : Math.min(index + members.length, nextSteps.length - 1));
       } finally {
         advancing.current = false;
       }
     },
-    [engineConfig, index, thresholdKey, revealKey, accountCode, slug, sessionId, finalize, track],
+    [
+      engineConfig,
+      index,
+      animKey,
+      thresholdKey,
+      revealKey,
+      accountCode,
+      slug,
+      sessionId,
+      finalize,
+      track,
+      trackMany,
+      markSending,
+    ],
   );
 
   // A booking on a SCHEDULER step (V6): record the meeting (booking_event + the
@@ -499,7 +822,7 @@ export function FormRenderer({
   );
 
   function submitCurrent() {
-    if (!step) return;
+    if (!step || sendingRef.current) return;
     // Commit point: store the canonical value (a url step gains its scheme
     // here) BEFORE validating, so Enter and the button hand the same shape to
     // the engine, the partial save and the CRM.
@@ -517,7 +840,7 @@ export function FormRenderer({
 
   // Choice/dropdown selection: record the answer and auto-advance.
   function select(value: string) {
-    if (!step) return;
+    if (!step || sendingRef.current) return;
     const next = { ...answers, [step.key]: value };
     setAnswers(next);
     setError(null);
@@ -546,21 +869,100 @@ export function FormRenderer({
     submitCurrent();
   }
 
+  // --- A screen of several questions ----------------------------------------
+
+  /** One answer on the screen: it clears that question's error and the summary. */
+  function answerOnScreen(owner: string, field: string, value: AnswerValue) {
+    if (sendingRef.current) return;
+    // The first answer arms spam protection's check, which then loads once
+    // the end of the form is on screen, as on the one-page layout.
+    gateRef.current.arm();
+    setAnswers((a) => ({ ...a, [field]: value }));
+    setError(null);
+    setErrors((e) => {
+      if (!(owner in e)) return e;
+      const rest = { ...e };
+      delete rest[owner];
+      return rest;
+    });
+  }
+
+  /**
+   * The screen's one button (and Enter from its last field): every visible
+   * question is validated at once. Each invalid one shows its own error, one
+   * summary is announced, and focus goes to the first; otherwise the screen
+   * completes as a whole.
+   */
+  function submitScreen() {
+    if (!screen?.[0] || sendingRef.current) return;
+    // Commit point: store canonical values (a url step gains its scheme)
+    // before validating, exactly like a single step.
+    let next = answers;
+    for (const member of screen) {
+      const canonical = canonicalizeAnswer(member, next[member.key]);
+      if (canonical !== next[member.key]) next = { ...next, [member.key]: canonical };
+    }
+    if (next !== answers) setAnswers(next);
+    const first = screen[0].key;
+    const members = runtimeScreens(engineConfig, next).find((s) => s.some((x) => x.key === first)) ?? screen;
+    const invalid: Record<string, string> = {};
+    for (const member of members) {
+      const check = validateAnswerCode(member, next[member.key], next);
+      if (!check.ok) invalid[member.key] = check.code;
+    }
+    const firstInvalid = members.find((member) => member.key in invalid);
+    if (firstInvalid) {
+      focusInvalid.current = firstInvalid.key;
+      setErrors(invalid);
+      setError(m.verticalErrors);
+      return;
+    }
+    setErrors(noErrors);
+    setError(null);
+    const last = members[members.length - 1] as FormStep;
+    void advance(next, last, members);
+  }
+
+  /**
+   * Enter on a screen: from a single-line field it moves on to the next field,
+   * or to the next question's options (a choice is never skipped unseen), and
+   * from the last one it submits the screen. A textarea takes its new line, a
+   * button (an option, the button itself) activates on its own, and the
+   * dropdown and the phone's country list pick an option with it.
+   */
+  function onScreenKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
+    if (e.key !== 'Enter' || e.nativeEvent.isComposing) return;
+    const target = e.target as HTMLElement;
+    if (target.closest('.pf-dropdown, .pf-phone__panel')) return;
+    if (target.tagName !== 'INPUT') return;
+    const controls = screenControls(e.currentTarget);
+    const at = controls.indexOf(target);
+    if (at < 0) return;
+    e.preventDefault();
+    const next = controls[at + 1];
+    if (next) next.focus();
+    else submitScreen();
+  }
+
   function start() {
     startSent.current = true;
     track('start');
+    gateRef.current.prewarm();
     lastStepViewKey.current = null;
     setPhase('steps');
     setIndex(0);
     setAnimKey((k) => k + 1);
   }
 
+  // Back to the previous screen (its first question), or to the cover.
   function back() {
+    if (sendingRef.current) return;
     setError(null);
-    if (phase === 'steps' && index > 0) {
+    setErrors(noErrors);
+    if (phase === 'steps' && screenIdx > 0) {
       setAnimKey((k) => k + 1);
-      setIndex((i) => i - 1);
-    } else if (phase === 'steps' && index === 0 && coverScreen) {
+      setIndex(starts[screenIdx - 1] ?? index - 1);
+    } else if (phase === 'steps' && screenIdx === 0 && coverScreen) {
       setPhase('cover');
     }
   }
@@ -671,6 +1073,10 @@ export function FormRenderer({
   }
 
   if (phase === 'submitting') {
+    // The human check shows here when it needs the person (or always, in
+    // strict mode, where the widget itself is the progress indicator). A
+    // token already won above the button leaves no widget here: the spinner.
+    const showSpinner = !submitFailure && !gate.interactive && !(gate.strict && gate.widget);
     return (
       <PhaseShell
         className="pf pf--reveal"
@@ -689,8 +1095,26 @@ export function FormRenderer({
               <FormLogo src={logos.form} name={name} fallback="none" />
             </div>
           ) : null}
-          <div className="pf-reveal__spinner" aria-hidden="true" />
-          <p className="pf-reveal__subtitle">{m.submitting}</p>
+          {showSpinner ? <div className="pf-reveal__spinner" aria-hidden="true" /> : null}
+          {submitFailure ? (
+            <>
+              <p className="pf__error" role="alert" data-testid="submit-failure">
+                {submitFailure}
+              </p>
+              <button
+                type="button"
+                className="pf__btn pf__btn--inline"
+                onClick={() => void finalizeRef.current(answersRef.current)}
+              >
+                {m.captcha.retry}
+              </button>
+            </>
+          ) : (
+            <>
+              <p className="pf-reveal__subtitle">{gate.interactive ? m.captcha.prompt : m.submitting}</p>
+              {gate.widget}
+            </>
+          )}
         </div>
       </PhaseShell>
     );
@@ -738,6 +1162,148 @@ export function FormRenderer({
         <div className="pf__body">
           <p className="pf__helper">{m.noSteps}</p>
         </div>
+        <MadeWithBadge locale={locale} accountCode={accountCode} />
+      </PhaseShell>
+    );
+  }
+
+  // A SCREEN of several questions (#200): one card, one button, each question
+  // with its own quiet error. Never auto-advances, even when logic leaves one
+  // question on it. `reveal`, `scheduler` and `file` never share a screen, so
+  // they keep their own branches below.
+  if (grouped && screen) {
+    const isLastScreen = screenIdx === screens.length - 1;
+    // Spam protection's check sits right above this screen's one button when
+    // the button ends the form: the last screen, or one with a terminal question.
+    const finishesHere = isLastScreen || screen.some((member) => !!member.terminal);
+    const last = screen[screen.length - 1] as FormStep;
+    // Only the first question that takes input focuses itself: more would
+    // fight, and the winner would scroll the card.
+    const focusFirst = screen.findIndex((member) => member.type !== 'message');
+    // The members this visit opened with; any other one was revealed live.
+    if (screenOpened.current.visit !== animKey) {
+      screenOpened.current = { visit: animKey, keys: new Set(screen.map((member) => member.key)) };
+    }
+    const several = screen.length > 1;
+    return (
+      <PhaseShell className="pf" design={design} onKeyDown={onScreenKeyDown} cover={chrome}>
+        <header className="pf__topbar">
+          <div className="pf__topbar-inner">
+            {screenIdx > 0 || coverScreen ? (
+              <button
+                type="button"
+                className="pf__back"
+                onClick={back}
+                aria-label={labels.back}
+                disabled={sending}
+              >
+                ←
+              </button>
+            ) : (
+              <span className="pf__back pf__back--placeholder" />
+            )}
+            <FormLogo src={logos.form} name={name} />
+            <span className="pf__back pf__back--placeholder" />
+          </div>
+          <FormProgress total={screens.length} currentIndex={screenIdx} locale={locale} style={design.design.progressStyle} />
+        </header>
+
+        <div className="pf__body">
+          <div className="pf__inner">
+            <div className="pf__content pf-s pf-animate" key={animKey} data-pf-screen-size={screen.length}>
+              {screen.map((member, i) => {
+                const code = errors[member.key];
+                const classes = ['pf-s__member'];
+                if (member.type === 'message') classes.push('pf-s__member--message');
+                if (code) classes.push('pf-s__member--error');
+                const opened = screenOpened.current.keys.has(member.key);
+                if (!opened) classes.push('pf-animate');
+                // Only the question the screen opened with focuses itself: one
+                // revealed later, above the one being answered, must not take
+                // the caret from under the person typing.
+                const focusHere = i === focusFirst && opened;
+                return (
+                  // A named group, so a screen reader hears the question with
+                  // its field and, once there is one, the error beside it.
+                  <section
+                    key={member.key}
+                    className={classes.join(' ')}
+                    data-pf-step={member.key}
+                    role="group"
+                    aria-labelledby={memberId(member.key, 'q')}
+                    aria-describedby={code ? memberId(member.key, 'e') : undefined}
+                  >
+                    <div className="pf__question-wrap">
+                      <h2 className="pf__question" id={memberId(member.key, 'q')}>
+                        {member.question ?? member.key}
+                        {several && member.required && member.type !== 'message' ? (
+                          <span aria-hidden className="pf-v__required">
+                            *
+                          </span>
+                        ) : null}
+                      </h2>
+                      {member.helper && member.type !== 'message' ? (
+                        <p className="pf__helper">{member.helper}</p>
+                      ) : null}
+                    </div>
+                    {member.type !== 'message' || member.helper ? (
+                      <div className="pf__fields">
+                        <StepInput
+                          step={member}
+                          value={answers[member.key]}
+                          answers={answers}
+                          autoFocus={focusHere}
+                          phoneAutoFocus={focusHere}
+                          onChange={(v: AnswerValue) => answerOnScreen(member.key, member.key, v)}
+                          onFieldChange={(field, v) => answerOnScreen(member.key, field, v)}
+                          // A pick records the answer; the screen's button moves on.
+                          onSelect={(v) => answerOnScreen(member.key, member.key, v)}
+                          // A slider's default is written when it mounts, which is
+                          // not an answer: it arms nothing and clears nothing.
+                          onSeed={(v: AnswerValue) => setAnswers((a) => ({ ...a, [member.key]: v }))}
+                          dropdownPlaceholder={m.dropdownPlaceholder}
+                          dropdownEmpty={m.dropdownEmpty}
+                          locale={locale}
+                          onRequestUpload={requestUploadTicket}
+                          uploadMaxMb={uploadMaxMb}
+                        />
+                        {/* Quiet per question: the summary below is the one alert. */}
+                        {code ? (
+                          <p className="pf__error" id={memberId(member.key, 'e')}>
+                            {err(code)}
+                          </p>
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </section>
+                );
+              })}
+
+              <div className="pf-s__footer">
+                {error ? (
+                  <p className="pf__error" role="alert">
+                    {error}
+                  </p>
+                ) : null}
+
+                {/* Spam protection's check, right above a button that ends the form. */}
+                {finishesHere ? gate.inline : null}
+
+                <button
+                  type="button"
+                  className="pf__btn pf__btn--inline"
+                  onClick={submitScreen}
+                  disabled={sending}
+                  aria-busy={sending || undefined}
+                >
+                  {sending ? m.submitting : (last.buttonText ?? (isLastScreen ? labels.submit : labels.next))}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+        {/* Strict mode's hidden field (spam protection); nothing otherwise. */}
+        {gate.honeypot}
         <MadeWithBadge locale={locale} accountCode={accountCode} />
       </PhaseShell>
     );
@@ -810,7 +1376,7 @@ export function FormRenderer({
             <FormLogo src={logos.form} name={name} />
             <span className="pf__back pf__back--placeholder" />
           </div>
-          <FormProgress total={steps.length} currentIndex={index} locale={locale} style={design.design.progressStyle} />
+          <FormProgress total={screens.length} currentIndex={screenIdx} locale={locale} style={design.design.progressStyle} />
         </header>
         <div className="pf__body">
           <div className="pf__inner">
@@ -853,6 +1419,7 @@ export function FormRenderer({
             </div>
           </div>
         </div>
+        {gate.honeypot}
         {/* Last child of `.pf__main`, in flow — one DOM position that lands
             correctly on all three bands: it ends the fluid column below 769px
             and rides the centered card group above it. */}
@@ -865,12 +1432,22 @@ export function FormRenderer({
   // multi-select choice (pick several, then Continue) — shows the button.
   const autoAdvances = step.type === 'dropdown' || (step.type === 'multiple_choice' && !isMultiSelect(step));
   const showContinue = !autoAdvances;
+  // This step's own button ends the form: it is the last one on the path, or
+  // it is terminal. Spam protection's check then sits right above that button
+  // (see `finalize`, and `advance` for a legacy reveal played after it).
+  const finishesHere = showContinue && (!!step.terminal || index + 1 === steps.length);
   return (
     <PhaseShell className="pf" design={design} onKeyDown={onKeyDown} cover={chrome}>
       <header className="pf__topbar">
         <div className="pf__topbar-inner">
           {index > 0 || coverScreen ? (
-            <button type="button" className="pf__back" onClick={back} aria-label={labels.back}>
+            <button
+              type="button"
+              className="pf__back"
+              onClick={back}
+              aria-label={labels.back}
+              disabled={sending}
+            >
               ←
             </button>
           ) : (
@@ -879,7 +1456,7 @@ export function FormRenderer({
           <FormLogo src={logos.form} name={name} />
           <span className="pf__back pf__back--placeholder" />
         </div>
-        <FormProgress total={steps.length} currentIndex={index} locale={locale} style={design.design.progressStyle} />
+        <FormProgress total={screens.length} currentIndex={screenIdx} locale={locale} style={design.design.progressStyle} />
       </header>
 
       <div className="pf__body">
@@ -898,10 +1475,12 @@ export function FormRenderer({
                 value={answers[step.key]}
                 answers={answers}
                 onChange={(v: AnswerValue) => {
+                  if (sendingRef.current) return;
                   setAnswers((a) => ({ ...a, [step.key]: v }));
                   setError(null);
                 }}
                 onFieldChange={(field, v) => {
+                  if (sendingRef.current) return;
                   setAnswers((a) => ({ ...a, [field]: v }));
                   setError(null);
                 }}
@@ -919,15 +1498,28 @@ export function FormRenderer({
                 </p>
               ) : null}
 
+              {/* Spam protection's check, right above a button that ends the form. */}
+              {finishesHere ? gate.inline : null}
+
               {showContinue ? (
-                <button type="button" className="pf__btn pf__btn--inline" onClick={submitCurrent}>
-                  {step.buttonText ?? (index + 1 === steps.length ? labels.submit : labels.next)}
+                <button
+                  type="button"
+                  className="pf__btn pf__btn--inline"
+                  onClick={submitCurrent}
+                  disabled={sending}
+                  aria-busy={sending || undefined}
+                >
+                  {sending
+                    ? m.submitting
+                    : (step.buttonText ?? (index + 1 === steps.length ? labels.submit : labels.next))}
                 </button>
               ) : null}
             </div>
           </div>
         </div>
       </div>
+      {/* Strict mode's hidden field (spam protection); nothing otherwise. */}
+      {gate.honeypot}
       {/* See the scheduler screen above: in flow at the end of `.pf__main`,
           never fixed — a floating pill would fight the Continue button and the
           mobile keyboard. */}

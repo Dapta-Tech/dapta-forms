@@ -37,6 +37,14 @@ interface StepInputProps {
    */
   autoFocus?: boolean;
   /**
+   * Whether a `phone` field focuses itself on mount. Apart from `autoFocus`
+   * because the phone field always has, even on the one-page layout (which
+   * passes `autoFocus={false}`), and that page's markup is pinned as it is. A
+   * screen of several questions passes `false` for every question but its
+   * first, or the phone would take focus from the one above it. Default `true`.
+   */
+  phoneAutoFocus?: boolean;
+  /**
    * A NON-INTERACTION answer write (today: the slider seeding its default on
    * mount so an untouched optional slider still submits a value). Falls back to
    * `onChange` when absent — the slides layout treats both the same. The
@@ -186,6 +194,7 @@ export function StepInput({
   dropdownEmpty,
   locale = 'en',
   autoFocus = true,
+  phoneAutoFocus = true,
   onSeed,
   onRequestUpload,
   uploadMaxMb,
@@ -237,6 +246,7 @@ export function StepInput({
           locale={locale}
           ariaLabel={step.question ?? step.key}
           defaultCountry={step.phoneDefaultCountry ?? undefined}
+          autoFocus={phoneAutoFocus}
         />
       );
 

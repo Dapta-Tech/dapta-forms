@@ -3,22 +3,26 @@
  * submit answers (score recomputed server-side), verify the row + the enqueued
  * outbox email, and record a funnel event.
  */
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   createDb,
   migrate,
   seed,
   listOutbox,
   listSubmissions,
+  recordFormEvent,
   upsertNotificationSetting,
   getAccountByCode,
   createForm,
   sql,
   type Db,
 } from '@quill/db';
+import { computeScore } from '@quill/engine';
 import { SubmissionNotifier, LogOnlyEmailProvider } from '@quill/notifications';
 import { SubmissionService } from './submission.service';
 import { EmailEffects } from './email-effects';
+import { DestinationEffects } from './destination-effects';
+import { NoopCaptchaVerifier, type CaptchaCheck, type CaptchaVerdict, type CaptchaVerifier } from './captcha';
 
 let db: Db;
 let svc: SubmissionService;
@@ -321,6 +325,598 @@ describe('submit', () => {
       data: { why: 'a'.repeat(30), other: 'b'.repeat(5000) },
     });
     expect('error' in unbounded).toBe(false);
+  });
+
+  it('scores a jump on a screen (#200) exactly as the respondent walked it, like the client', async () => {
+    const account = await getAccountByCode(db, 'acme');
+    const option = (value: string, points: number) => ({ label: value, value, points });
+    const config = {
+      version: 1 as const,
+      scoring: { enabled: true },
+      steps: [
+        // One screen: a jump on its FIRST question runs when the screen is
+        // left, so `budget` is still shown and scored; `extra` is skipped.
+        {
+          key: 'fit',
+          type: 'multiple_choice' as const,
+          question: 'Fit?',
+          options: [option('yes', 5), option('no', 0)],
+          goto: [{ values: ['yes'], target: 'last' }],
+          screenGroup: 'qualify',
+        },
+        {
+          key: 'budget',
+          type: 'multiple_choice' as const,
+          question: 'Budget?',
+          options: [option('high', 3), option('low', 1)],
+          screenGroup: 'qualify',
+        },
+        { key: 'extra', type: 'multiple_choice' as const, question: 'Extra?', options: [option('x', 100)] },
+        { key: 'last', type: 'multiple_choice' as const, question: 'Last?', options: [option('z', 7)] },
+      ],
+    };
+    const created = await createForm(db, account!.id, { name: 'Screens score', config });
+    if (!created.ok) throw new Error('createForm failed');
+
+    // A stale answer to the skipped question never counts.
+    const data = { fit: 'yes', budget: 'high', extra: 'x', last: 'z' };
+    const out = await svc.submit('acme', created.value.slug, { sessionId: 'sess-screens', data });
+    expect('error' in out).toBe(false);
+    if ('error' in out) return;
+    // fit(5) + budget(3) + last(7).
+    expect(out.score).toBe(15);
+    expect(out.score).toBe(computeScore(config, data));
+  });
+});
+
+/**
+ * A verifier whose verdicts the test scripts, recording every check it is
+ * asked for. The real adapter is covered in `captcha.spec.ts`; here the point
+ * is what the SERVICE does with each verdict.
+ */
+class FakeVerifier implements CaptchaVerifier {
+  readonly provider = 'turnstile' as const;
+  readonly siteKey = 'site-key';
+  readonly checks: CaptchaCheck[] = [];
+  constructor(
+    public verdict: CaptchaVerdict = { outcome: 'passed' },
+    readonly enabled = true,
+  ) {}
+  async verify(check: CaptchaCheck): Promise<CaptchaVerdict> {
+    this.checks.push(check);
+    return this.verdict;
+  }
+}
+
+describe('spam protection (captcha)', () => {
+  let destinations: DestinationEffects;
+  let verifier: FakeVerifier;
+  let protectedSvc: SubmissionService;
+  let formId: string;
+  const slug = 'protected-form';
+
+  /** A published form with the check switched on and both destinations listening. */
+  async function publishProtected(spamProtection: Record<string, unknown> | null = { captcha: true }) {
+    const account = await getAccountByCode(db, 'acme');
+    const created = await createForm(db, account!.id, {
+      name: 'Protected form',
+      slug,
+      config: {
+        version: 1,
+        steps: [
+          { key: 'email', type: 'email', question: 'Email?' },
+          { key: 'company', type: 'text', question: 'Company?' },
+        ],
+        // No `events`: the webhook listens to BOTH phases, the default a new
+        // webhook is born with, and HubSpot always upserts on a partial.
+        destinations: [
+          { type: 'webhook', enabled: true, settings: { url: 'https://hooks.example.com/in' } },
+          { type: 'hubspot', enabled: true, settings: {} },
+        ],
+        ...(spamProtection ? { spamProtection } : {}),
+      } as never,
+    });
+    if (!created.ok) throw new Error('createForm failed');
+    formId = created.value.id;
+  }
+
+  function build(v: CaptchaVerifier | undefined, uploads?: unknown) {
+    const email = new EmailEffects(new SubmissionNotifier(new LogOnlyEmailProvider()), db);
+    return new SubmissionService(db, email, destinations, undefined, undefined, uploads as never, v);
+  }
+
+  const deliveries = async () =>
+    [...(await listOutbox(db, { kind: 'webhook' })), ...(await listOutbox(db, { kind: 'hubspot' }))];
+  const emails = () => listOutbox(db, { kind: 'email' });
+  const eventTypes = async () =>
+    (
+      await db.all<{ type: string }>(sql`SELECT type FROM form_event WHERE form_id = ${formId} ORDER BY created_at`)
+    ).map((r) => r.type);
+
+  beforeEach(async () => {
+    destinations = new DestinationEffects(db);
+    verifier = new FakeVerifier();
+    protectedSvc = build(verifier);
+    await publishProtected();
+  });
+
+  it('refuses a complete submit without a token: 403, a readable message, nothing written', async () => {
+    const out = await protectedSvc.submit('acme', slug, {
+      sessionId: 'sess-no-token',
+      data: { email: 'lead@example.com' },
+    });
+    expect(out).toMatchObject({ error: 'CAPTCHA_REQUIRED', status: 403 });
+    // An old cached renderer shows `message` verbatim, so it has to be usable as is.
+    expect((out as { message: string }).message).toMatch(/refresh the page/i);
+    await flushEffects();
+    expect(await listSubmissions(db, formId)).toHaveLength(0);
+    expect(await deliveries()).toHaveLength(0);
+    expect(await emails()).toHaveLength(0);
+    expect(verifier.checks).toHaveLength(0);
+  });
+
+  it('refuses a token the verifier rejects: 403, no row, no outbox, a server-written event', async () => {
+    verifier.verdict = { outcome: 'failed', reason: 'invalid-input-response' };
+    const out = await protectedSvc.submit('acme', slug, {
+      sessionId: 'sess-bad-token',
+      data: { email: 'lead@example.com' },
+      captchaToken: 'forged',
+    });
+    expect(out).toMatchObject({ error: 'CAPTCHA_FAILED', status: 403 });
+    await flushEffects();
+    expect(await listSubmissions(db, formId)).toHaveLength(0);
+    expect(await deliveries()).toHaveLength(0);
+    expect(await emails()).toHaveLength(0);
+    expect(await eventTypes()).toEqual(['captcha_failed']);
+  });
+
+  it('checks the token against THIS session and the client address the controller resolved', async () => {
+    await protectedSvc.submit(
+      'acme',
+      slug,
+      { sessionId: 'sess-ip', data: { email: 'lead@example.com' }, captchaToken: 'tok' },
+      { remoteIp: '203.0.113.9' },
+    );
+    expect(verifier.checks).toEqual([{ token: 'tok', sessionId: 'sess-ip', remoteIp: '203.0.113.9' }]);
+  });
+
+  it('a verified complete is written and delivers everything: emails, webhook and HubSpot', async () => {
+    const out = await protectedSvc.submit('acme', slug, {
+      sessionId: 'sess-ok',
+      data: { email: 'lead@example.com', company: 'Acme' },
+      captchaToken: 'tok',
+    });
+    expect('error' in out).toBe(false);
+    await flushEffects();
+    const rows = await listSubmissions(db, formId);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.completedAt).not.toBeNull();
+    expect((await deliveries()).map((r) => `${r.kind}:${r.action}`).sort()).toEqual([
+      'hubspot:complete',
+      'webhook:complete',
+    ]);
+    expect((await emails()).map((r) => r.action).sort()).toEqual(['submission_confirmed', 'submission_received']);
+  });
+
+  it('a partial is saved but NOTHING is delivered while protection is on, and the complete then delivers', async () => {
+    const partial = await protectedSvc.submit('acme', slug, {
+      sessionId: 'sess-partial',
+      data: { email: 'lead@example.com' },
+      partial: true,
+    });
+    expect('error' in partial).toBe(false);
+    await flushEffects();
+    const rows = await listSubmissions(db, formId);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.partialAt).not.toBeNull();
+    expect(await deliveries()).toHaveLength(0);
+    // A partial is never checked: there is nothing to challenge mid-form.
+    expect(verifier.checks).toHaveLength(0);
+
+    await protectedSvc.submit('acme', slug, {
+      sessionId: 'sess-partial',
+      data: { email: 'lead@example.com', company: 'Acme' },
+      captchaToken: 'tok',
+    });
+    await flushEffects();
+    expect((await deliveries()).map((r) => `${r.kind}:${r.action}`).sort()).toEqual([
+      'hubspot:complete',
+      'webhook:complete',
+    ]);
+  });
+
+  it('a direct partial carrying a full answer set is saved and still not delivered', async () => {
+    await protectedSvc.submit('acme', slug, {
+      sessionId: 'sess-direct-partial',
+      data: { email: 'bot@example.com', company: 'Bot Inc' },
+      partial: true,
+    });
+    await flushEffects();
+    expect(await listSubmissions(db, formId)).toHaveLength(1);
+    expect(await deliveries()).toHaveLength(0);
+  });
+
+  it('when the check is unavailable the answers are kept as a partial and the API answers 503', async () => {
+    verifier.verdict = { outcome: 'unavailable', reason: 'timeout' };
+    const out = await protectedSvc.submit('acme', slug, {
+      sessionId: 'sess-down',
+      data: { email: 'lead@example.com', company: 'Acme' },
+      captchaToken: 'tok',
+    });
+    expect(out).toMatchObject({ error: 'CAPTCHA_UNAVAILABLE', status: 503 });
+    await flushEffects();
+    const rows = await listSubmissions(db, formId);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.completedAt).toBeNull();
+    expect(rows[0]!.partialAt).not.toBeNull();
+    expect(rows[0]!.data).toMatchObject({ email: 'lead@example.com', company: 'Acme' });
+    expect(await deliveries()).toHaveLength(0);
+    expect(await emails()).toHaveLength(0);
+    expect(await eventTypes()).toEqual(['captcha_unavailable']);
+  });
+
+  it('a transport retry of a verified complete (same token) causes no second round of effects', async () => {
+    const payload = { sessionId: 'sess-retry-captcha', data: { email: 'lead@example.com' }, captchaToken: 'tok' };
+    const first = await protectedSvc.submit('acme', slug, payload);
+    const again = await protectedSvc.submit('acme', slug, payload);
+    await flushEffects();
+    expect('error' in first || 'error' in again).toBe(false);
+    expect((await deliveries()).map((r) => r.action)).toEqual(['complete', 'complete']);
+    expect((await emails()).map((r) => r.action).sort()).toEqual(['submission_confirmed', 'submission_received']);
+  });
+
+  it('checks the token before touching uploads, which copy objects even on a partial', async () => {
+    const verifyAnswers = vi.fn(async (_f: unknown, _s: string, data: Record<string, unknown>) => ({ answers: data }));
+    const withUploads = build(verifier, { enabled: true, maxFileMb: 10, verifyAnswers });
+    verifier.verdict = { outcome: 'failed', reason: 'invalid-input-response' };
+    await withUploads.submit('acme', slug, {
+      sessionId: 'sess-uploads',
+      data: { email: 'lead@example.com' },
+      captchaToken: 'forged',
+    });
+    expect(verifyAnswers).not.toHaveBeenCalled();
+  });
+
+  it('on a deployment without keys the switch is ignored: no check, partials delivered as today', async () => {
+    const noKeys = build(new NoopCaptchaVerifier());
+    const out = await noKeys.submit('acme', slug, { sessionId: 'sess-nokeys', data: { email: 'lead@example.com' } });
+    expect('error' in out).toBe(false);
+    await noKeys.submit('acme', slug, {
+      sessionId: 'sess-nokeys-partial',
+      data: { email: 'lead@example.com' },
+      partial: true,
+    });
+    await flushEffects();
+    expect((await deliveries()).map((r) => `${r.kind}:${r.action}`).sort()).toEqual([
+      'hubspot:complete',
+      'hubspot:partial',
+      'webhook:complete',
+      'webhook:partial',
+    ]);
+  });
+
+  it('a built-without-verifier service (every existing construction) behaves exactly as before', async () => {
+    const legacy = build(undefined);
+    const out = await legacy.submit('acme', slug, { sessionId: 'sess-legacy', data: { email: 'lead@example.com' } });
+    expect('error' in out).toBe(false);
+  });
+
+  it('with the switch off and keys loaded, nothing is checked and partials are delivered', async () => {
+    await db.run(sql`DELETE FROM form WHERE id = ${formId}`);
+    await publishProtected(null);
+    const out = await protectedSvc.submit('acme', slug, { sessionId: 'sess-off', data: { email: 'lead@example.com' } });
+    expect('error' in out).toBe(false);
+    await protectedSvc.submit('acme', slug, { sessionId: 'sess-off-2', data: { email: 'x@example.com' }, partial: true });
+    await flushEffects();
+    expect(verifier.checks).toHaveLength(0);
+    expect((await deliveries()).some((r) => r.action === 'partial')).toBe(true);
+  });
+
+  describe('the public payload', () => {
+    it('carries the challenge only when the deployment has keys AND the form turned it on', async () => {
+      const on = await protectedSvc.publicForm('acme', slug);
+      expect(on?.captcha).toEqual({ provider: 'turnstile', siteKey: 'site-key' });
+      // The owner's switch never reaches the page: the renderer acts on `captcha` alone.
+      expect((on?.config as Record<string, unknown>).spamProtection).toBeUndefined();
+
+      expect((await build(new NoopCaptchaVerifier()).publicForm('acme', slug))?.captcha).toBeUndefined();
+      expect((await build(undefined).publicForm('acme', slug))?.captcha).toBeUndefined();
+      expect((await protectedSvc.publicForm('acme', 'lead-qualifier'))?.captcha).toBeUndefined();
+    });
+
+    it('marks strict mode, and only while the check itself is on', async () => {
+      await db.run(sql`DELETE FROM form WHERE id = ${formId}`);
+      await publishProtected({ captcha: true, strict: true });
+      expect((await protectedSvc.publicForm('acme', slug))?.captcha).toEqual({
+        provider: 'turnstile',
+        siteKey: 'site-key',
+        strict: true,
+      });
+      await db.run(sql`DELETE FROM form WHERE id = ${formId}`);
+      await publishProtected({ strict: true });
+      expect((await protectedSvc.publicForm('acme', slug))?.captcha).toBeUndefined();
+    });
+  });
+
+  describe('strict mode', () => {
+    beforeEach(async () => {
+      await db.run(sql`DELETE FROM form WHERE id = ${formId}`);
+      await publishProtected({ captcha: true, strict: true });
+    });
+
+    const viewAt = (sessionId: string, at: number) =>
+      recordFormEvent(db, { formId, sessionId, type: 'view', now: at });
+
+    it('refuses a filled hidden field with the same answer as a bad token, and writes nothing', async () => {
+      await viewAt('sess-hp', Date.now() - 60_000);
+      const out = await protectedSvc.submit('acme', slug, {
+        sessionId: 'sess-hp',
+        data: { email: 'bot@example.com' },
+        captchaToken: 'tok',
+        hp: 'https://spam.example.com',
+      });
+      expect(out).toMatchObject({ error: 'CAPTCHA_FAILED', status: 403 });
+      await flushEffects();
+      expect(await listSubmissions(db, formId)).toHaveLength(0);
+      expect(await deliveries()).toHaveLength(0);
+      expect(await eventTypes()).toEqual(['view', 'spam_honeypot']);
+    });
+
+    it('refuses a complete that lands under 2 s after the session first viewed the form', async () => {
+      await viewAt('sess-fast', Date.now() - 500);
+      const out = await protectedSvc.submit('acme', slug, {
+        sessionId: 'sess-fast',
+        data: { email: 'bot@example.com' },
+        captchaToken: 'tok',
+        hp: '',
+      });
+      expect(out).toMatchObject({ error: 'CAPTCHA_FAILED', status: 403 });
+      await flushEffects();
+      expect(await listSubmissions(db, formId)).toHaveLength(0);
+      expect(await eventTypes()).toEqual(['view', 'spam_too_fast']);
+    });
+
+    it('lets a person through: an empty hidden field, past the minimum time', async () => {
+      await viewAt('sess-human', Date.now() - 45_000);
+      const out = await protectedSvc.submit('acme', slug, {
+        sessionId: 'sess-human',
+        data: { email: 'lead@example.com' },
+        captchaToken: 'tok',
+        hp: '',
+      });
+      expect('error' in out).toBe(false);
+    });
+
+    it('never blocks a session whose view was lost: the challenge already covered it', async () => {
+      const out = await protectedSvc.submit('acme', slug, {
+        sessionId: 'sess-no-view',
+        data: { email: 'lead@example.com' },
+        captchaToken: 'tok',
+      });
+      expect('error' in out).toBe(false);
+    });
+
+    it('checks the token FIRST: a bad token is a plain challenge failure, whatever else is wrong', async () => {
+      verifier.verdict = { outcome: 'failed', reason: 'invalid-input-response' };
+      await viewAt('sess-both', Date.now() - 100);
+      await protectedSvc.submit('acme', slug, {
+        sessionId: 'sess-both',
+        data: { email: 'bot@example.com' },
+        captchaToken: 'forged',
+        hp: 'filled',
+      });
+      expect(await eventTypes()).toEqual(['view', 'captcha_failed']);
+    });
+  });
+
+  it('automatic mode ignores the hidden field and the timing', async () => {
+    await recordFormEvent(db, { formId, sessionId: 'sess-auto', type: 'view', now: Date.now() - 100 });
+    const out = await protectedSvc.submit('acme', slug, {
+      sessionId: 'sess-auto',
+      data: { email: 'lead@example.com' },
+      captchaToken: 'tok',
+      hp: 'filled by an extension',
+    });
+    expect('error' in out).toBe(false);
+  });
+});
+
+/**
+ * The page a submission was answered on (#199): what the service stores, what
+ * it keeps of the HubSpot cookie, and which visit the deliveries carry.
+ */
+describe('the visit', () => {
+  const HUTK = '0123456789ABCDEF0123456789abcdef';
+  const LANDING = {
+    pageUri: 'https://landing.example.com/offer?utm_source=fb#form',
+    pageName: '  Home   insurance ',
+    pageId: '12345',
+    hutk: HUTK,
+    hsPortalId: '4321',
+    embedded: true,
+  };
+  const STORED = {
+    pageUri: 'https://landing.example.com/offer?utm_source=fb',
+    pageName: 'Home insurance',
+    pageId: '12345',
+    hutk: HUTK.toLowerCase(),
+    hsPortalId: '4321',
+    embedded: true,
+  };
+  const { hutk: _cookie, ...WITHOUT_COOKIE } = STORED;
+
+  let destinations: DestinationEffects;
+  let verifier: FakeVerifier;
+  let formId: string;
+  const slug = 'visit-form';
+
+  async function publish(destinationsConfig: unknown[], extra: Record<string, unknown> = {}) {
+    const account = await getAccountByCode(db, 'acme');
+    const created = await createForm(db, account!.id, {
+      name: 'Visit form',
+      slug,
+      config: {
+        version: 1,
+        steps: [
+          { key: 'email', type: 'email', question: 'Email?' },
+          { key: 'company', type: 'text', question: 'Company?' },
+        ],
+        destinations: destinationsConfig,
+        ...extra,
+      } as never,
+    });
+    if (!created.ok) throw new Error('createForm failed');
+    formId = created.value.id;
+  }
+
+  function service() {
+    const email = new EmailEffects(new SubmissionNotifier(new LogOnlyEmailProvider()), db);
+    return new SubmissionService(db, email, destinations, undefined, undefined, undefined, verifier);
+  }
+
+  const WEBHOOK = { type: 'webhook', enabled: true, settings: { url: 'https://hooks.example.com/in' } };
+  const HUBSPOT_MIRROR = { type: 'hubspot', enabled: true, settings: { formActivity: true, formGuid: 'guid-1' } };
+
+  const storedVisit = async () => (await listSubmissions(db, formId))[0]?.visit;
+  const ctxOf = async (kind: 'webhook' | 'hubspot', action: 'partial' | 'complete') => {
+    const row = (await listOutbox(db, { kind })).find((r) => r.action === action);
+    return (JSON.parse(row!.payload!) as { ctx: Record<string, unknown> }).ctx;
+  };
+
+  beforeEach(() => {
+    destinations = new DestinationEffects(db);
+    verifier = new FakeVerifier();
+  });
+
+  it('stores the visit the browser reported, sanitized, and answers as usual', async () => {
+    await publish([WEBHOOK]);
+    const out = await service().submit('acme', slug, {
+      sessionId: 'sess-visit',
+      data: { email: 'lead@example.com' },
+      visit: LANDING,
+    });
+    expect('error' in out).toBe(false);
+    expect(await storedVisit()).toEqual(STORED);
+  });
+
+  it('never refuses a submission over a malformed visit', async () => {
+    await publish([WEBHOOK]);
+    for (const [i, visit] of [
+      'https://landing.example.com',
+      { pageUri: 'javascript:alert(1)', pageName: 7, hutk: 'abc', pageId: 'x', embedded: 'yes' },
+      [LANDING],
+    ].entries()) {
+      const out = await service().submit('acme', slug, { sessionId: `sess-bad-${i}`, data: { email: 'a@example.com' }, visit });
+      expect('error' in out).toBe(false);
+    }
+    const rows = await listSubmissions(db, formId);
+    expect(rows).toHaveLength(3);
+    expect(rows.every((r) => r.visit === null)).toBe(true);
+  });
+
+  it('logs a dropped cookie without ever printing it', async () => {
+    await publish([WEBHOOK]);
+    const svc = service();
+    const warn = vi.spyOn((svc as unknown as { log: { warn: (m: string) => void } }).log, 'warn');
+    await svc.submit('acme', slug, {
+      sessionId: 'sess-bad-cookie',
+      data: { email: 'a@example.com' },
+      visit: { ...LANDING, hutk: 'not-a-hubspot-cookie' },
+    });
+    expect(warn).toHaveBeenCalledWith(expect.stringMatching(/hutk dropped/));
+    expect(JSON.stringify(warn.mock.calls)).not.toContain('not-a-hubspot-cookie');
+    expect(await storedVisit()).toEqual(WITHOUT_COOKIE);
+  });
+
+  it('keeps the cookie only when a webhook or a HubSpot form submission will use it', async () => {
+    const cases: Array<[string, unknown[], boolean]> = [
+      ['no destination', [], false],
+      ['a webhook', [WEBHOOK], true],
+      ['a switched-off webhook', [{ ...WEBHOOK, enabled: false }], false],
+      ['HubSpot recording the form submission', [HUBSPOT_MIRROR], true],
+      ['HubSpot with the form submission off', [{ type: 'hubspot', enabled: true, settings: {} }], false],
+      [
+        'HubSpot with the switch on but no mirror form yet',
+        [{ type: 'hubspot', enabled: true, settings: { formActivity: true } }],
+        false,
+      ],
+    ];
+    for (const [label, config, kept] of cases) {
+      await db.run(sql`DELETE FROM form WHERE slug = ${slug}`);
+      await publish(config);
+      await service().submit('acme', slug, { sessionId: `sess-${label}`, data: { email: 'a@example.com' }, visit: LANDING });
+      expect(await storedVisit(), label).toEqual(kept ? STORED : WITHOUT_COOKIE);
+    }
+  });
+
+  it('delivers the MERGED visit: a partial caught it, the complete came without one', async () => {
+    await publish([WEBHOOK]);
+    const svc = service();
+    await svc.submit('acme', slug, { sessionId: 'sess-merge', data: { email: 'a@example.com' }, partial: true, visit: LANDING });
+    await svc.submit('acme', slug, { sessionId: 'sess-merge', data: { email: 'a@example.com', company: 'Acme' } });
+    expect((await ctxOf('webhook', 'partial')).visit).toEqual(STORED);
+    expect((await ctxOf('webhook', 'complete')).visit).toEqual(STORED);
+  });
+
+  it('enqueues exactly the payload it always did when no visit was reported', async () => {
+    await publish([WEBHOOK]);
+    await service().submit('acme', slug, { sessionId: 'sess-plain', data: { email: 'a@example.com' } });
+    expect(await ctxOf('webhook', 'complete')).not.toHaveProperty('visit');
+    expect(await ctxOf('webhook', 'complete')).not.toHaveProperty('formTitle');
+  });
+
+  it('carries the public title with a visit, for HubSpot to name an untitled page', async () => {
+    await publish([HUBSPOT_MIRROR], { title: 'Get your quote' });
+    await service().submit('acme', slug, {
+      sessionId: 'sess-title',
+      data: { email: 'a@example.com' },
+      visit: { pageUri: 'https://landing.example.com/', embedded: true },
+    });
+    const ctx = await ctxOf('hubspot', 'complete');
+    expect(ctx.formName).toBe('Visit form');
+    expect(ctx.formTitle).toBe('Get your quote');
+  });
+
+  describe('with spam protection on', () => {
+    beforeEach(async () => {
+      await publish([WEBHOOK, HUBSPOT_MIRROR], { spamProtection: { captcha: true } });
+    });
+
+    it('a partial stores its visit and delivers nothing; the verified complete delivers it', async () => {
+      const svc = service();
+      await svc.submit('acme', slug, { sessionId: 'sess-p', data: { email: 'a@example.com' }, partial: true, visit: LANDING });
+      expect(await storedVisit()).toEqual(STORED);
+      expect(await listOutbox(db, { kind: 'webhook' })).toHaveLength(0);
+
+      await svc.submit('acme', slug, { sessionId: 'sess-p', data: { email: 'a@example.com' }, captchaToken: 'tok' });
+      expect((await ctxOf('webhook', 'complete')).visit).toEqual(STORED);
+      expect((await ctxOf('hubspot', 'complete')).visit).toEqual(STORED);
+    });
+
+    it('a refused check writes nothing, visit included', async () => {
+      verifier.verdict = { outcome: 'failed', reason: 'invalid-input-response' };
+      const out = await service().submit('acme', slug, {
+        sessionId: 'sess-refused',
+        data: { email: 'a@example.com' },
+        captchaToken: 'forged',
+        visit: LANDING,
+      });
+      expect(out).toMatchObject({ status: 403 });
+      expect(await listSubmissions(db, formId)).toHaveLength(0);
+    });
+
+    it('an unavailable check keeps the answers AND the visit as a partial, for the retry to complete', async () => {
+      verifier.verdict = { outcome: 'unavailable', reason: 'timeout' };
+      const out = await service().submit('acme', slug, {
+        sessionId: 'sess-down',
+        data: { email: 'a@example.com' },
+        captchaToken: 'tok',
+        visit: LANDING,
+      });
+      expect(out).toMatchObject({ status: 503 });
+      expect(await storedVisit()).toEqual(STORED);
+      expect(await listOutbox(db, { kind: 'webhook' })).toHaveLength(0);
+    });
   });
 });
 

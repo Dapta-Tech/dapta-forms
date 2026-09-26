@@ -440,6 +440,106 @@ describe('V5-D3 — drop-off attributes a view to the step KEY, not its runtime 
   });
 });
 
+describe('screens (#200): a grouped session reads through the same formulas', () => {
+  /**
+   * name, email and company share one slides screen; notes has its own. The
+   * renderer records a screen per question (E1): a view for each visible
+   * member when the screen shows, a completion for each when it is submitted.
+   * Nothing in the API, the types or the SQL knows about screens.
+   */
+  async function makeGroupedForm(): Promise<string> {
+    const created = await createForm(db, accountId, {
+      name: `screens-${crypto.randomUUID().slice(0, 8)}`,
+      config: {
+        version: 1,
+        steps: [
+          { key: 'name', type: 'text', question: 'Name?', screenGroup: 'you' },
+          { key: 'email', type: 'email', question: 'Email?', screenGroup: 'you' },
+          { key: 'company', type: 'text', question: 'Company?', screenGroup: 'you' },
+          { key: 'notes', type: 'textarea', question: 'Anything else?' },
+        ],
+      },
+    });
+    if (!created.ok) throw new Error('form creation failed');
+    return created.value.id;
+  }
+
+  async function event(form: string, session: string, type: string, stepIndex: number | null = null, stepKey: string | null = null) {
+    await recordFormEvent(db, { formId: form, sessionId: session, type, stepIndex, stepKey, now: NOW });
+  }
+
+  it('members share their views, the drop-off lands on the last one, and Starts means the screen was submitted', async () => {
+    const form = await makeGroupedForm();
+    const screen = ['name', 'email', 'company'];
+    // Four sessions open the form and see the first screen.
+    for (const s of ['s1', 's2', 's3', 's4']) {
+      await event(form, s, 'view');
+      for (const [i, key] of screen.entries()) await event(form, s, 'step_view', i, key);
+    }
+    // Three submit it (no cover: the submit is the start), and see notes.
+    for (const s of ['s1', 's2', 's3']) {
+      await event(form, s, 'start');
+      for (const [i, key] of screen.entries()) await event(form, s, 'step_complete', i, key);
+      await event(form, s, 'step_view', 3, 'notes');
+    }
+    // Two finish.
+    for (const s of ['s1', 's2']) {
+      await db.run(
+        sql`INSERT INTO submission (id, form_id, session_id, data, score, started_at, completed_at)
+            VALUES (${crypto.randomUUID()}, ${form}, ${s}, ${jsonParam({ name: 'x' })}, ${0}, ${NOW}, ${NOW + 10_000})`,
+      );
+    }
+
+    const a = (await svc.funnel(accountId, form, {}))!;
+    expect(a.views).toBe(4);
+    // s4 saw the screen and left without submitting it: not a start.
+    expect(a.starts).toBe(3);
+    expect(a.submissions).toBe(2);
+    expect(a.dropoffMode).toBe('viewed');
+    const rows = Object.fromEntries(a.dropoff.filter((r) => !r.isCover).map((r) => [r.key, r]));
+    // The members of one screen share their views...
+    expect([rows.name!.views, rows.email!.views, rows.company!.views]).toEqual([4, 4, 4]);
+    expect([rows.name!.dropoff, rows.email!.dropoff]).toEqual([0, 0]);
+    // ...and the people who left the screen show on its last member's row.
+    expect(rows.company).toMatchObject({ views: 4, dropoff: 1, dropoffPercent: 25 });
+    expect(rows.notes).toMatchObject({ views: 3, dropoff: 1 });
+  });
+
+  it('the CSV has one column per question, exactly as the same form without screens', async () => {
+    const grouped = await makeGroupedForm();
+    const form = (await db.get<{ config: string }>(sql`SELECT config FROM form WHERE id = ${grouped}`))!;
+    const steps = (JSON.parse(form.config) as { steps: Record<string, unknown>[] }).steps;
+    const flatCreated = await createForm(db, accountId, {
+      name: `flat-${crypto.randomUUID().slice(0, 8)}`,
+      config: { version: 1, steps: steps.map(({ screenGroup: _drop, ...s }) => s) } as never,
+    });
+    if (!flatCreated.ok) throw new Error('form creation failed');
+    const flat = flatCreated.value.id;
+    const answers = { name: 'Ana', email: 'ana@example.com', company: 'Acme', notes: 'hi' };
+    for (const f of [grouped, flat]) {
+      await db.run(
+        sql`INSERT INTO submission (id, form_id, session_id, data, score, started_at, completed_at)
+            VALUES (${'row-' + f}, ${f}, ${'csv'}, ${jsonParam(answers)}, ${0}, ${NOW}, ${NOW + 1})`,
+      );
+    }
+    const auth = {
+      resolveHost: async () => ({ accountId, memberId: 'test-member', role: 'owner' as const }),
+    } as unknown as AuthService;
+    const ctrl = new AnalyticsController(db, auth, svc);
+    const exportOf = async (f: string) => {
+      const chunks: string[] = [];
+      const res = { setHeader: () => {}, write: (c: string) => void chunks.push(c), end: () => {} };
+      await ctrl.exportCsv({ headers: {} }, res, f, {});
+      // Ignore the row id, the one cell that differs by construction, wherever
+      // it sits (other columns may follow it, like the page it was answered on).
+      return chunks.join('').trimEnd().split('\r\n').map((l) => l.replace(/,row-[^,]*/, ''));
+    };
+    const csv = await exportOf(grouped);
+    expect(csv[0]).toMatch(/^\uFEFFName\?,Email\?,Company\?,Anything else\?,/);
+    expect(csv).toEqual(await exportOf(flat));
+  });
+});
+
 describe('submissions query', () => {
   it('paginates newest-first with a total', async () => {
     const page = await querySubmissions(db, formId, { limit: 2, offset: 0 });
@@ -592,7 +692,8 @@ describe('header filters (controller)', () => {
 
   it('exports in the sort the table shows', async () => {
     const rows = await csv({ sort: 'score_asc' });
-    expect(rows.map((r) => r.split(',').at(-2))).toEqual(['2', '6', '6', '10', '10']);
+    // Score, then Submission id, then Page URL close every row.
+    expect(rows.map((r) => r.split(',').at(-3))).toEqual(['2', '6', '6', '10', '10']);
   });
 
   it('drops keys that are not choice questions of this form, and refuses a malformed filter', async () => {
@@ -709,7 +810,7 @@ describe('CSV export (large sets, un-paginated)', () => {
 
     const lines = await runExport();
     expect(lines[0]).toBe(
-      '\uFEFFWhat best describes you?,How big is your team?,What company do you work at?,Where should we send the results?,Submitted at,Status,Score,Submission id',
+      '\uFEFFWhat best describes you?,How big is your team?,What company do you work at?,Where should we send the results?,Submitted at,Status,Score,Submission id,Page URL',
     );
     expect(lines.length - 1).toBe(250); // header + one row per submission
   });
@@ -720,7 +821,7 @@ describe('CSV export (large sets, un-paginated)', () => {
     const lines = await runExport(`${picked[0]}, ${picked[1]},,${picked[0]}`);
     expect(lines[0]).toBe(all[0]);
     expect(lines).toHaveLength(3);
-    for (const id of picked) expect(lines.some((l) => l.endsWith(`,${id}`))).toBe(true);
+    for (const id of picked) expect(lines.some((l) => l.endsWith(`,${id},`))).toBe(true);
   });
 
   it('400s an empty or oversized `?ids=` before streaming anything', async () => {
@@ -849,7 +950,7 @@ describe('workspace timezone: day cuts and the CSV local columns', () => {
     const res = { setHeader: () => {}, write: (c: string) => void chunks.push(c), end: () => {} };
     await ctrl.exportCsv({ headers: {} }, res, formId, {});
     const lines = chunks.join('').trimEnd().split('\r\n');
-    expect(lines[0]).toMatch(/,Submitted at,Status,Score,Submission id$/);
+    expect(lines[0]).toMatch(/,Submitted at,Status,Score,Submission id,Page URL$/);
     const row = lines.find((l) => l.includes('tz-csv'))!;
     expect(row).toContain(',2026-09-03T19:15:00-05:00,Completed,10,');
     // The start instant and the UTC twins are gone.
@@ -959,7 +1060,7 @@ describe('CSV export: readable columns (BUGS-2310)', () => {
     const id = await makeForm();
     const [header] = (await exportOf(id)).split('\r\n');
     expect(header).toBe(
-      '\uFEFFFirst name,Last name,Phone number,*Nombre Completo de tu LLC*,City/Town,City/Town (2),Selecciona el tipo de sociedad,Servicios,Pasaporte,nolabel,Submitted at,Status,Score,Submission id',
+      '\uFEFFFirst name,Last name,Phone number,*Nombre Completo de tu LLC*,City/Town,City/Town (2),Selecciona el tipo de sociedad,Servicios,Pasaporte,nolabel,Submitted at,Status,Score,Submission id,Page URL',
     );
   });
 
@@ -968,7 +1069,7 @@ describe('CSV export: readable columns (BUGS-2310)', () => {
     await answer(id, answers);
     const row = (await exportOf(id)).split('\r\n')[1]!;
     expect(row).toMatch(
-      /^Laura,Pérez,"=""\+573180087175""",Lyown Consulting LLC,Miami,Doral,LLC multimiembro,EIN; Bienes raíces,pasaporte\.pdf,x,[^,]+,Completed,7,sub-1$/,
+      /^Laura,Pérez,"=""\+573180087175""",Lyown Consulting LLC,Miami,Doral,LLC multimiembro,EIN; Bienes raíces,pasaporte\.pdf,x,[^,]+,Completed,7,sub-1,$/,
     );
     expect(row).not.toContain('uploads/');
     expect(row).not.toContain('{');
@@ -998,8 +1099,8 @@ describe('CSV export: readable columns (BUGS-2310)', () => {
     const id = await makeForm({ scoring: { enabled: false } });
     await answer(id, answers);
     const [header, row] = (await exportOf(id)).split('\r\n');
-    expect(header).toMatch(/,Submitted at,Status,Submission id$/);
-    expect(row).toMatch(/,Completed,sub-1$/);
+    expect(header).toMatch(/,Submitted at,Status,Submission id,Page URL$/);
+    expect(row).toMatch(/,Completed,sub-1,$/);
   });
 
   it('dates a partial row by its partial instant and names its status like the table', async () => {
@@ -1015,8 +1116,8 @@ describe('CSV export: readable columns (BUGS-2310)', () => {
             ${Date.UTC(2026, 8, 2, 10, 0)}, ${null}, ${null})`,
     );
     const lines = (await exportOf(id)).split('\r\n');
-    expect(lines.find((l) => l.includes('Parcial LLC'))).toMatch(/,2026-09-03T10:05:00\+00:00,Partial,0,sub-p$/);
-    expect(lines.find((l) => l.includes('Solo inicio'))).toMatch(/,2026-09-02T10:00:00\+00:00,Partial,0,sub-s$/);
+    expect(lines.find((l) => l.includes('Parcial LLC'))).toMatch(/,2026-09-03T10:05:00\+00:00,Partial,0,sub-p,$/);
+    expect(lines.find((l) => l.includes('Solo inicio'))).toMatch(/,2026-09-02T10:00:00\+00:00,Partial,0,sub-s,$/);
   });
 
   it('reads a booking in the workspace zone', async () => {
@@ -1058,21 +1159,79 @@ describe('CSV export: readable columns (BUGS-2310)', () => {
     // not a question and for the status.
     const [esHeader, esRow] = (await exportOf(id)).split('\r\n');
     expect(esHeader).toMatch(/^\uFEFFNombre,Apellido,/);
-    expect(esHeader).toMatch(/,Fecha de envío,Estado,Puntaje,ID de respuesta$/);
-    expect(esRow).toMatch(/,Completada,7,sub-1$/);
+    expect(esHeader).toMatch(/,Fecha de envío,Estado,Puntaje,ID de respuesta,URL de la página$/);
+    expect(esRow).toMatch(/,Completada,7,sub-1,$/);
     // A member who chose English wins over a Spanish form.
     const member = await db.get<{ id: string }>(
       sql`SELECT id FROM member WHERE account_id = ${accountId} LIMIT 1`,
     );
     await db.run(sql`UPDATE member SET locale = 'en' WHERE id = ${member!.id}`);
     expect((await exportOf(id, member!.id)).split('\r\n')[0]).toMatch(
-      /,Submitted at,Status,Score,Submission id$/,
+      /,Submitted at,Status,Score,Submission id,Page URL$/,
     );
     // And one who chose Spanish wins over an English default.
     const enForm = await makeForm();
     await db.run(sql`UPDATE member SET locale = 'es' WHERE id = ${member!.id}`);
     expect((await exportOf(enForm, member!.id)).split('\r\n')[0]).toMatch(
-      /,Fecha de envío,Estado,Puntaje,ID de respuesta$/,
+      /,Fecha de envío,Estado,Puntaje,ID de respuesta,URL de la página$/,
     );
+  });
+});
+
+/**
+ * The page a response was given on (#199), as the dashboard may read it: the
+ * table, the panel and the CSV get the page and whether the visitor's HubSpot
+ * cookie arrived, and the cookie itself never leaves the API.
+ */
+describe('the visit on the dashboard', () => {
+  const HUTK = '0123456789abcdef0123456789abcdef';
+  const VISIT = {
+    pageUri: 'https://landing.example.com/offer?utm_source=fb',
+    pageName: 'Home insurance',
+    hutk: HUTK,
+    embedded: true,
+  };
+
+  async function answered(id: string, visit: unknown) {
+    await db.run(
+      sql`INSERT INTO submission (id, form_id, session_id, data, score, started_at, completed_at, partial_at, visit)
+          VALUES (${id}, ${formId}, ${`sess-${id}`}, ${jsonParam({ email: 'v@x.io' })}, ${0}, ${NOW}, ${NOW + 1}, ${null},
+            ${visit == null ? null : jsonParam(visit)})`,
+    );
+  }
+
+  function controller() {
+    const auth = {
+      resolveHost: async () => ({ accountId, memberId: 'test-member', role: 'owner' as const }),
+    } as unknown as AuthService;
+    return new AnalyticsController(db, auth, svc);
+  }
+
+  it('lists and opens a response with its page and a cookie-received flag, never the cookie', async () => {
+    await answered('sub-visit', VISIT);
+    const page = await svc.submissionsPage(formId, { limit: 200 });
+    const listed = page.items.find((r) => r.id === 'sub-visit');
+    const view = { pageUri: VISIT.pageUri, pageName: VISIT.pageName, embedded: true, hubspotCookie: true };
+    expect(listed?.visit).toEqual(view);
+    const one = await controller().submission({ headers: {} }, formId, 'sub-visit');
+    expect(one.visit).toEqual(view);
+    expect(JSON.stringify(page)).not.toContain(HUTK);
+    expect(JSON.stringify(one)).not.toContain(HUTK);
+  });
+
+  it('exports the page URL as the last column, empty for a response without one, and never the cookie', async () => {
+    await answered('sub-visit', VISIT);
+    await answered('sub-plain', null);
+    const chunks: string[] = [];
+    const res = { setHeader: () => {}, write: (c: string) => void chunks.push(c), end: () => {} };
+    await controller().exportCsv({ headers: {} }, res, formId, {});
+    const csv = chunks.join('');
+    const lines = csv.trimEnd().split('\r\n');
+    expect(lines[0]).toMatch(/,Submission id,Page URL$/);
+    expect(lines.find((l) => l.includes(',sub-visit,'))).toMatch(
+      /,sub-visit,https:\/\/landing\.example\.com\/offer\?utm_source=fb$/,
+    );
+    expect(lines.find((l) => l.includes(',sub-plain,'))).toMatch(/,sub-plain,$/);
+    expect(csv).not.toContain(HUTK);
   });
 });

@@ -16,6 +16,10 @@ const FORBIDDEN = [
   ['amazon', 'aws'].join(''),
   'flux',
   ['dapta', '-iam'].join(''),
+  // The challenge provider is a deployment choice behind a port: the public
+  // contract describes a "human check", never whose.
+  'turnstile',
+  'cloudflare',
 ];
 
 describe('openapi spec', () => {
@@ -32,5 +36,23 @@ describe('openapi spec', () => {
     expect(paths).toContain('/v1/public/forms/{accountCode}/{slug}');
     expect(paths).toContain('/v1/public/forms/{accountCode}/{slug}/submissions');
     expect(paths).toContain('/health');
+  });
+
+  it('documents the visit on the submit, and only its safe view on the dashboard read', () => {
+    const submit = JSON.stringify(openapiSpec.paths['/v1/public/forms/{accountCode}/{slug}/submissions'].post);
+    for (const key of ['visit', 'pageUri', 'pageName', 'pageId', 'hutk', 'hsPortalId', 'embedded']) {
+      expect(submit).toContain(key);
+    }
+    const read = JSON.stringify(openapiSpec.paths['/v1/forms/{id}/submissions/{submissionId}'].get);
+    expect(read).toContain('hubspotCookie');
+    expect(read).not.toContain('hutk');
+  });
+
+  it('documents the human check on the submit: the token field and the 403/503 answers', () => {
+    const submit = openapiSpec.paths['/v1/public/forms/{accountCode}/{slug}/submissions'].post;
+    expect(JSON.stringify(submit)).toContain('captchaToken');
+    expect(Object.keys(submit.responses)).toEqual(expect.arrayContaining(['201', '400', '403', '503']));
+    expect(JSON.stringify(submit.responses)).toContain('CAPTCHA_REQUIRED');
+    expect(JSON.stringify(submit.responses)).toContain('CAPTCHA_UNAVAILABLE');
   });
 });

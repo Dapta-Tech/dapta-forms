@@ -36,6 +36,22 @@ export interface ResponseDetail {
   /** The `utm_*` parameters the respondent arrived with, in capture order. */
   utm: Array<[string, string]>;
   /**
+   * The page it was given on (#199): the landing that embeds the form, or the
+   * form's own link. Named by its title, else its host; a link only when it is
+   * a web address. Null when none was reported (every older response).
+   *
+   * `host` is the link's real host, shown beside a title: the title is
+   * whatever the respondent's browser reported, so on its own it could dress
+   * any link up as a trusted page. Null when the text already is the host, or
+   * there is no link.
+   */
+  page: { href: string | null; text: string; host: string | null } | null;
+  /**
+   * The visitor's HubSpot tracking cookie arrived with this response. Received,
+   * not accepted: HubSpot decides on the visit later. The cookie never gets here.
+   */
+  hubspotCookie: boolean;
+  /**
    * Who answered, when the form asked: the first answered name, email and phone
    * steps. The panel is titled with the first of them that exists, the way a
    * CRM record is titled with the contact; a form that asks none of them gets
@@ -98,6 +114,23 @@ export function answerView(
   return { key, label, kind: 'text', text, long };
 }
 
+/** The Page row: the title, else the host of a web address; nothing when neither exists. */
+function pageView(visit: SubmissionView['visit']): ResponseDetail['page'] {
+  if (!visit) return null;
+  const href = visit.pageUri && WEB_URL.test(visit.pageUri) ? visit.pageUri : null;
+  let host: string | null = null;
+  if (href) {
+    try {
+      host = new URL(href).host;
+    } catch {
+      host = null;
+    }
+  }
+  const title = visit.pageName?.trim();
+  if (title) return { href, text: title, host };
+  return host ? { href, text: host, host: null } : null;
+}
+
 /** The `utm` map riding inside the answers, as ordered string pairs. */
 function utmPairs(data: Record<string, unknown>): Array<[string, string]> {
   const utm = data.utm;
@@ -132,6 +165,8 @@ export function buildResponseDetail(
     score: opts.scoring ? row.score : null,
     answers,
     utm: utmPairs(data),
+    page: pageView(row.visit),
+    hubspotCookie: row.visit?.hubspotCookie === true,
     respondent: { name: firstText('name'), email: firstText('email'), phone: firstText('phone') },
   };
 }

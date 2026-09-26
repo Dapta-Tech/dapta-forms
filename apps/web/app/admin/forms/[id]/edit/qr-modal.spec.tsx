@@ -10,7 +10,7 @@ import { qrSvg } from '@/lib/qr-code';
 import { getBuilderMessages } from './_components/builder-messages';
 import { QrModalView, type QrLabels } from './qr-modal';
 
-const URL_ = 'http://localhost:3400/acme/me/tech-week-signup';
+const URL_ = 'http://localhost:3400/acme/f/tech-week-signup';
 
 function labels(locale: 'en' | 'es'): QrLabels {
   const s = getBuilderMessages(locale).shell;

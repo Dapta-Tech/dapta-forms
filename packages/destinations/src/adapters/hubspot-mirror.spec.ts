@@ -216,3 +216,137 @@ describe('HubspotDestination — the mirror form submission', () => {
     expect(names).not.toContain('website');
   });
 });
+
+/**
+ * The visit (#199): the landing's HubSpot cookie and page ride on the mirror
+ * submission, the one HubSpot call that accepts them, so the contact is joined
+ * to the visits it made before converting. A bad context value makes HubSpot
+ * refuse the WHOLE post (a 400, which creates no activity), so it is retried
+ * once with today's context alone. The cookie is an online identifier and
+ * never reaches a log.
+ */
+describe('HubspotDestination: the visit on the mirror submission', () => {
+  const HUTK = '0123456789abcdef0123456789abcdef';
+  const VISIT = {
+    pageUri: 'https://landing.example.com/offer?utm_source=fb',
+    pageName: 'Home insurance',
+    pageId: '12345',
+    hutk: HUTK,
+    hsPortalId: '23824272',
+    embedded: true,
+  };
+
+  /** Mirror answers follow `statuses` in order (then 200); the CRM always succeeds. */
+  function scripted(statuses: number[], mirrorBody = 'nope') {
+    const calls: { url: string; body: unknown }[] = [];
+    const warnings: string[] = [];
+    const fetchImpl = (async (url: string, init?: RequestInit) => {
+      calls.push({ url, body: init?.body ? JSON.parse(String(init.body)) : undefined });
+      if (isFormsHost(url)) {
+        const status = statuses.shift() ?? 200;
+        return { ok: status < 400, status, text: async () => mirrorBody, json: async () => ({}) };
+      }
+      return { ok: true, status: 200, json: async () => ({ results: [{ id: 'contact-9' }] }) };
+    }) as unknown as typeof fetch;
+    const logger = { warn: (m: string) => void warnings.push(m) };
+    const dest = new HubspotDestination(OPTS, fetchImpl, API_BASE, logger, FORMS_BASE);
+    const contexts = () => mirrorCalls(calls).map((c) => (c.body as { context?: unknown }).context);
+    return { calls, warnings, dest, contexts };
+  }
+
+  it('sends the cookie, the page URL, the page name and the CMS page id as the context', async () => {
+    const { dest, contexts } = scripted([]);
+    const result = await dest.deliver(ctx({ visit: VISIT }));
+    expect(contexts()).toEqual([
+      { hutk: HUTK, pageUri: VISIT.pageUri, pageName: VISIT.pageName, pageId: VISIT.pageId },
+    ]);
+    expect(result.detail).toContain('+form +visit');
+  });
+
+  it('omits what the page did not report, and names an untitled page after the form respondents saw', async () => {
+    const { dest, contexts } = scripted([]);
+    await dest.deliver(
+      ctx({ visit: { pageUri: 'https://landing.example.com/', embedded: true }, formTitle: 'Get a quote' }),
+    );
+    expect(contexts()).toEqual([{ pageUri: 'https://landing.example.com/', pageName: 'Get a quote' }]);
+    // A snapshot from before the public title rode along: the form's name, as before.
+    const older = scripted([]);
+    await older.dest.deliver(ctx({ visit: { pageUri: 'https://landing.example.com/', embedded: true } }));
+    expect(older.contexts()).toEqual([{ pageUri: 'https://landing.example.com/', pageName: 'Lead Qualifier' }]);
+  });
+
+  it('sends exactly the context it always did when there is no visit', async () => {
+    const { dest, contexts } = scripted([]);
+    const result = await dest.deliver(ctx());
+    expect(contexts()).toEqual([{ pageName: 'Lead Qualifier' }]);
+    expect(result.detail).not.toContain('visit');
+  });
+
+  it('retries a 400 ONCE with the form name alone, and the activity still lands', async () => {
+    const { dest, contexts, calls } = scripted([400]);
+    const result = await dest.deliver(ctx({ visit: VISIT }));
+    expect(contexts()).toEqual([
+      { hutk: HUTK, pageUri: VISIT.pageUri, pageName: VISIT.pageName, pageId: VISIT.pageId },
+      { pageName: 'Lead Qualifier' },
+    ]);
+    expect(result.detail).toContain('+form (visit refused)');
+    // The retry succeeded: only the key upsert ran, nothing retryable follows.
+    expect(calls.filter((c) => c.url.includes('/crm/v3/objects/contacts/batch/upsert'))).toHaveLength(1);
+  });
+
+  it('gives up after the second 400, and falls back to the full upsert as before', async () => {
+    const { dest, contexts, calls } = scripted([400, 400]);
+    const result = await dest.deliver(ctx({ visit: VISIT }));
+    expect(contexts()).toHaveLength(2);
+    expect(result.detail).toContain('form failed');
+    expect(calls.filter((c) => c.url.includes('/crm/v3/objects/contacts/batch/upsert'))).toHaveLength(2);
+  });
+
+  it('does not retry any other refusal with less context', async () => {
+    for (const status of [403, 500]) {
+      const { dest, contexts } = scripted([status]);
+      await dest.deliver(ctx({ visit: VISIT }));
+      expect(contexts(), String(status)).toHaveLength(1);
+    }
+  });
+
+  it('never posts the visit for a partial: only the contact is written', async () => {
+    const { dest, calls } = scripted([]);
+    await dest.deliver(ctx({ phase: 'partial', visit: VISIT }));
+    expect(mirrorCalls(calls)).toHaveLength(0);
+  });
+
+  it('keeps the cookie out of every log line, even when HubSpot echoes it back', async () => {
+    const { dest, warnings } = scripted([400, 400], `{"errors":[{"message":"bad hutk ${HUTK}"}]}`);
+    await dest.deliver(ctx({ visit: VISIT }));
+    expect(warnings.length).toBeGreaterThan(0);
+    expect(warnings.join('\n')).not.toContain(HUTK);
+  });
+
+  it('says so, without the cookie, when the page runs another portal', async () => {
+    const { dest, warnings } = scripted([]);
+    await dest.deliver(ctx({ visit: { ...VISIT, hsPortalId: '999' } }));
+    const line = warnings.find((w) => w.includes('visit portal mismatch'));
+    expect(line).toContain('999');
+    expect(line).toContain('23824272');
+    expect(warnings.join('\n')).not.toContain(HUTK);
+  });
+
+  it('names the page in the Note', async () => {
+    const calls: { url: string; body: unknown }[] = [];
+    const fetchImpl = (async (url: string, init?: RequestInit) => {
+      calls.push({ url, body: init?.body ? JSON.parse(String(init.body)) : undefined });
+      if (isFormsHost(url)) return { ok: true, status: 200, text: async () => '', json: async () => ({}) };
+      return { ok: true, status: 200, json: async () => ({ results: [{ id: 'contact-9' }] }) };
+    }) as unknown as typeof fetch;
+    const dest = new HubspotDestination({ ...OPTS, note: true }, fetchImpl, API_BASE, silent, FORMS_BASE);
+    await dest.deliver(ctx({ visit: { ...VISIT, pageUri: 'https://landing.example.com/?a=1&b=<x>' } }));
+    const note = calls.find((c) => c.url.endsWith('/crm/v3/objects/notes'))!.body as {
+      properties: { hs_note_body: string };
+    };
+    expect(note.properties.hs_note_body).toContain(
+      '<strong>Page:</strong> https://landing.example.com/?a=1&amp;b=&lt;x&gt;',
+    );
+    expect(note.properties.hs_note_body).not.toContain(HUTK);
+  });
+});

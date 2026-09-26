@@ -50,12 +50,12 @@ async function createForm(request: APIRequestContext, label: string, workerIndex
   return { ...body, name };
 }
 
-/** Same derivation the list page uses — never hardcode the account code. */
+/** Same derivation the list page uses; never hardcode the account code. */
 async function publicPath(request: APIRequestContext, slug: string) {
   const res = await request.get(`${API}/v1/me`);
   expect(res.ok(), 'GET /v1/me should resolve the principal').toBeTruthy();
-  const me = (await res.json()) as { accountCode: string; handle: string | null };
-  return `/${me.accountCode}/${me.handle ?? 'me'}/${slug}`;
+  const me = (await res.json()) as { accountCode: string };
+  return `/${me.accountCode}/f/${slug}`;
 }
 
 /** The list row belonging to one form. Anchored on the form id (via the edit

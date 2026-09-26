@@ -37,7 +37,7 @@ nothing configured must still boot (SQLite + `log-only` email + `local` auth).
 
 `pnpm install && pnpm dev` boots the whole stack on SQLite (web
 http://localhost:3000, api http://localhost:4000) with a seeded demo form at
-`/acme/alex-rivera/lead-qualifier`. Use `pnpm dev:pg` for Postgres parity. The
+`/acme/f/lead-qualifier`. Use `pnpm dev:pg` for Postgres parity. The
 `.claude/skills/local-dev` skill has the boot / seed / login / reset recipe.
 
 ## Finishing a change

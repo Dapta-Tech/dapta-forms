@@ -1,9 +1,11 @@
 'use client';
 
-import type { FormStep, GotoRule } from '@quill/engine';
+import type { FormLayout, FormStep, GotoRule } from '@quill/engine';
 import { Button } from '@/components/ui/button';
 import { SelectField } from './fields';
 import { jumpTargetsAfter } from './logic-util';
+import { jumpLanding } from './screen-util';
+import { JumpLandingNote } from './screen-notes';
 import type { BuilderMessages } from './builder-messages';
 
 /**
@@ -16,18 +18,29 @@ export function LogicRules({
   step,
   index,
   steps,
+  layout,
   onUpdate,
   m,
 }: {
   step: FormStep;
   index: number;
   steps: FormStep[];
+  /** Screens (#200) narrow the targets to screen starts, on slides only. */
+  layout: FormLayout;
   onUpdate: (patch: Partial<FormStep>) => void;
   m: BuilderMessages;
 }) {
   const rules = step.goto ?? [];
   const options = step.options ?? [];
-  const targets = jumpTargetsAfter(steps, index, m.canvas.questionN.replace(' {n}', ''));
+  const fallback = m.canvas.questionN.replace(' {n}', '');
+  // What the form offers as a target. A new rule starts on the first of these;
+  // each row's select also keeps its own current target when the list would
+  // not offer it (#200: inside a screen), and only its own.
+  const offered = jumpTargetsAfter(steps, index, fallback, layout);
+  const targetsOf = (rule: GotoRule) =>
+    rule.target != null && !offered.some((t) => t.key === rule.target)
+      ? jumpTargetsAfter(steps, index, fallback, layout, [rule.target])
+      : offered;
 
   const SKIP = '__end__';
 
@@ -36,7 +49,7 @@ export function LogicRules({
   }
   function addRule() {
     const firstValue = options[0]?.value ?? '';
-    setRules([...rules, { values: firstValue ? [firstValue] : [], target: targets[0]?.key ?? null }]);
+    setRules([...rules, { values: firstValue ? [firstValue] : [], target: offered[0]?.key ?? null }]);
   }
   function update(i: number, patch: Partial<GotoRule>) {
     setRules(rules.map((r, ri) => (ri === i ? { ...r, ...patch } : r)));
@@ -50,6 +63,7 @@ export function LogicRules({
       {rules.map((rule, i) => {
         const value = rule.values[0] ?? '';
         const targetValue = rule.target == null ? SKIP : rule.target;
+        const targets = targetsOf(rule);
         return (
           <div key={i} className="flex flex-col gap-2 rounded-lg border border-border bg-background p-2.5">
             <div className="flex items-center justify-between gap-2">
@@ -92,6 +106,9 @@ export function LogicRules({
                 ))}
               </SelectField>
             </div>
+            {rule.target != null ? (
+              <JumpLandingNote landing={jumpLanding(steps, index, rule.target, layout)} m={m} />
+            ) : null}
           </div>
         );
       })}

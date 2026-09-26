@@ -6,15 +6,19 @@ import {
   HttpCode,
   Inject,
   NotFoundException,
+  Optional,
   Param,
   Post,
+  Req,
   UseGuards,
 } from '@nestjs/common';
 import { ZodError } from 'zod';
+import type { ServerEnv } from '@quill/config/env';
 import { SubmissionService } from './submission.service';
 import { UploadService } from './upload.service';
 import { unwrap } from './http';
-import { RateLimitGuard } from './rate-limit';
+import { RateLimitGuard, clientKey, resolveTrustProxyHops } from './rate-limit';
+import { ENV } from './tokens';
 import { uploadPresignSchema } from '@quill/types';
 
 function badReq(err: unknown): never {
@@ -31,10 +35,17 @@ function badReq(err: unknown): never {
 @UseGuards(RateLimitGuard)
 @Controller('v1/public')
 export class PublicController {
+  private readonly trustProxyHops: number;
+
   constructor(
     @Inject(SubmissionService) private readonly svc: SubmissionService,
     @Inject(UploadService) private readonly uploads: UploadService,
-  ) {}
+    // Only for the proxy depth the client address is read at. Optional so a
+    // construction without it trusts the socket peer alone, the safe default.
+    @Optional() @Inject(ENV) env?: ServerEnv,
+  ) {
+    this.trustProxyHops = env ? resolveTrustProxyHops(env) : 0;
+  }
 
   /** The published form config for the public renderer. */
   @Get('forms/:accountCode/:slug')
@@ -76,16 +87,23 @@ export class PublicController {
     }
   }
 
-  /** Persist a submission (partial or complete); the score is recomputed server-side. */
+  /**
+   * Persist a submission (partial or complete); the score is recomputed
+   * server-side. The client address travels with it for spam protection's token
+   * check, resolved exactly as the rate limiter resolves it: the same trusted
+   * proxy depth, so a spoofed `X-Forwarded-For` entry is never the one sent.
+   */
   @Post('forms/:accountCode/:slug/submissions')
   @HttpCode(201)
   async submit(
     @Param('accountCode') accountCode: string,
     @Param('slug') slug: string,
     @Body() body: unknown,
+    @Req() req: { headers?: Record<string, unknown>; ip?: string; socket?: { remoteAddress?: string } },
   ) {
     try {
-      return unwrap(await this.svc.submit(accountCode, slug, body));
+      const remoteIp = clientKey(req ?? {}, this.trustProxyHops);
+      return unwrap(await this.svc.submit(accountCode, slug, body, { remoteIp }));
     } catch (err) {
       badReq(err);
     }

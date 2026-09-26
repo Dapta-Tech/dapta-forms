@@ -10,3 +10,4 @@ export const PREMIUM_MODE = Symbol('PREMIUM_MODE');
 export const ONBOARDING_ENABLED = Symbol('ONBOARDING_ENABLED');
 export const WORKSPACE_PROJECTION = Symbol('WORKSPACE_PROJECTION');
 export const STORAGE = Symbol('STORAGE');
+export const CAPTCHA = Symbol('CAPTCHA');

@@ -4,7 +4,11 @@ import { redirect } from 'next/navigation';
 import { BrandLockup } from '@/components/brand/brand';
 import { attributionHandoffQuery } from '@/lib/attribution';
 import { authProvider, getSession } from '@/lib/auth-session';
+import { publicFormPath } from '@/lib/public-form-path';
 import { selfHost } from '@/lib/request-origin';
+
+/** The seeded demo form (`packages/db/src/seed.ts`), at the link the builder would hand out. */
+const DEMO_FORM_PATH = publicFormPath('acme', 'lead-qualifier');
 
 /**
  * Carry the acquisition tags into the login hand-off.
@@ -65,14 +69,14 @@ export default async function HomePage({
       </div>
 
       <Link
-        href="/acme/alex-rivera/lead-qualifier"
+        href={DEMO_FORM_PATH}
         className="rounded-md bg-primary px-5 py-3 font-semibold text-primary-foreground transition-transform active:scale-[0.98]"
       >
         Open the demo form →
       </Link>
 
       <p className="text-sm text-muted-foreground">
-        Try <code className="rounded-sm bg-muted px-1.5 py-0.5">/acme/alex-rivera/lead-qualifier</code>
+        Try <code className="rounded-sm bg-muted px-1.5 py-0.5">{DEMO_FORM_PATH}</code>
       </p>
     </main>
   );

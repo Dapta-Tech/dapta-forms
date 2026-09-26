@@ -65,21 +65,30 @@ export function SortableList({
   );
 }
 
-/** One sortable row. `children` receives the props to spread on the drag grip. */
+/**
+ * One sortable row. `children` receives the props to spread on the drag grip.
+ *
+ * Rows move by translation only. dnd-kit's full transform also carries a
+ * scale when the dragged row and the one under it differ in height, which
+ * stretched and squashed rows (and their text) mid-drag. `lifted` keeps the
+ * dragged row fully opaque, for a row that draws its own lifted look.
+ */
 export function SortableRow({
   id,
+  lifted = false,
   children,
 }: {
   id: string;
+  lifted?: boolean;
   children: (args: { handleProps: HTMLAttributes<HTMLElement>; isDragging: boolean }) => ReactNode;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id,
   });
   const style: React.CSSProperties = {
-    transform: CSS.Transform.toString(transform),
+    transform: CSS.Translate.toString(transform),
     transition,
-    opacity: isDragging ? 0.6 : 1,
+    opacity: isDragging && !lifted ? 0.6 : 1,
     zIndex: isDragging ? 20 : undefined,
     position: 'relative',
   };

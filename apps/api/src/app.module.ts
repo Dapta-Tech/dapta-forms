@@ -4,6 +4,7 @@ import { createEmailProvider, SubmissionNotifier, type EmailProvider } from '@qu
 import { loadServerEnv, type ServerEnv } from '@quill/config/env';
 import {
   AUTH_PROVIDER,
+  CAPTCHA,
   DB,
   EMAIL,
   ENTITLEMENTS,
@@ -29,6 +30,7 @@ import { DaptaSyncDelivery } from './dapta-sync';
 import { OutboxWorker } from './outbox.worker';
 import { RateLimitGuard, createRateLimiter } from './rate-limit';
 import { createObjectStorage } from './storage';
+import { createCaptchaVerifier } from './captcha';
 import { UploadService } from './upload.service';
 import { resolveEntitlementsProvider } from './entitlements.provider';
 import { createAuthProvider, type SignupObserver } from './auth.provider';
@@ -163,6 +165,11 @@ function signupObserver(productAnalytics: AnalyticsEffects): SignupObserver {
     // the default and every bare fork, this is the noop adapter and the
     // question type reports itself unavailable rather than half-working.
     { provide: STORAGE, useFactory: (env: ServerEnv) => createObjectStorage(env), inject: [ENV] },
+    // Spam protection: the verifier behind a form's human check. With both
+    // CAPTCHA_* keys unset, the default and every bare fork, this is the no-op
+    // and the check does not exist: no form is challenged or held, and the
+    // editor shows the switch disabled. Factory so `fetch` isn't DI-reflected.
+    { provide: CAPTCHA, useFactory: (env: ServerEnv) => createCaptchaVerifier(env), inject: [ENV] },
     UploadService,
     SubmissionService,
     AnalyticsService,

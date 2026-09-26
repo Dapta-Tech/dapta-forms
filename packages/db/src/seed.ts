@@ -123,5 +123,7 @@ export async function seed(db: Db): Promise<SeedResult> {
           ${jsonParam(SAMPLE_CONFIG)}, ${now}, ${now})`,
   );
 
-  return { accountCode, slug, formPath: `/${accountCode}/alex-rivera/${slug}` };
+  // The neutral form URL (`/{accountCode}/f/{slug}`), the same shape the builder
+  // hands out: a form link never names a member, the seeded owner included.
+  return { accountCode, slug, formPath: `/${accountCode}/f/${slug}` };
 }

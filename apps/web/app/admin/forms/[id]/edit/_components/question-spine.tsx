@@ -1,9 +1,13 @@
 'use client';
 
-import { useEffect, useState, type HTMLAttributes, type ReactNode } from 'react';
-import type { FormStep } from '@quill/engine';
+import { Fragment, useEffect, useId, useState, type HTMLAttributes, type ReactNode } from 'react';
+import { useDndContext } from '@dnd-kit/core';
+import type { FormLayout, FormStep } from '@quill/engine';
+import { authoredScreens, screensActive } from '@quill/engine';
 import { cn } from '@/lib/cn';
 import { liveRuleCount } from './logic-util';
+import { screenBoundary, screenEnd, screenList, shownAbove, type ScreenBlock } from './screen-util';
+import { screenBlockReason } from './screen-join-field';
 import { SortableList, SortableRow } from './sortable';
 import { iconForStep, isContactType, stepListLabel } from './question-types';
 import type { BuilderMessages } from './builder-messages';
@@ -33,26 +37,50 @@ const isMarker = (id: string): boolean => id === PARTIAL_ID;
  * form-level singleton with a position. It is a `reveal` STEP now — a numbered
  * card like any other — so a form can hold several and each is dragged and
  * edited as itself.
+ *
+ * Screens (#200), on slides only: a chain toggle on the top edge of each row
+ * that has a question shown above it joins the question to the screen above
+ * or starts a new screen there. The rows of one screen close ranks into a
+ * single block, named by a label above it ("Screen 2 · 3 questions") that is
+ * not part of any draggable row, so it stays put while one moves. Numbering
+ * stays per question.
+ *
+ * A row's state (selected, hovered, focused) is ONE outline drawn inside its
+ * border, following its shape: its own rounded card, or its place in a
+ * screen (the screen's corners on its first and last row, square between).
+ * Drawn inside, it never covers the screen's own edge.
  */
 export function QuestionSpine({
   steps,
+  layout,
   selectedIndex,
   onSelect,
   onReorder,
+  onScreenJoin,
   onAdd,
   partialAfterStep,
   onPartialChange,
+  partialsHeld = false,
   m,
 }: {
   steps: FormStep[];
+  /** Screens exist on slides only: on one page no toggle, block or chip is drawn. */
+  layout: FormLayout;
   selectedIndex: number | null;
   onSelect: (index: number) => void;
   onReorder: (from: number, to: number) => void;
+  /** Join step `index` to the screen above it, or start a new screen there. */
+  onScreenJoin?: (index: number, joined: boolean) => void;
   onAdd: () => void;
   /** 1-based `config.partialSubmitAfterStep`; marker shows when 1..steps.length. */
   partialAfterStep?: number;
   /** Set (1-based), move, or clear (`undefined`) the partial-submit threshold. */
   onPartialChange: (afterStep: number | undefined) => void;
+  /**
+   * Spam protection (on, on a deployment that can run it) holds partials: they
+   * are saved but reach no integration. The marker's popover says so.
+   */
+  partialsHeld?: boolean;
   m: BuilderMessages;
 }) {
   // Effective 1-based marker slot (null = not shown) — only for an in-range
@@ -61,6 +89,15 @@ export function QuestionSpine({
     partialAfterStep != null && partialAfterStep >= 1 && partialAfterStep <= steps.length
       ? partialAfterStep
       : null;
+
+  // Screens (#200). A hidden question between two of a screen is drawn inside
+  // its block: it is transparent to the screen, but it sits there.
+  const screensOn = onScreenJoin != null && screensActive({ layout });
+  const spans = screensOn ? authoredScreens(steps) : [];
+  const stops = screensOn ? screenList(steps) : [];
+  const spanAt = (i: number) =>
+    spans.find((s) => (s.members[0] as number) <= i && i <= (s.members[s.members.length - 1] as number)) ?? null;
+  const blockedReason = (blocked: ScreenBlock): string => screenBlockReason(blocked, m);
 
   // Merged sortable ids: step keys with the marker spliced in after its anchor.
   const ids: string[] = [];
@@ -120,6 +157,7 @@ export function QuestionSpine({
                         <p>{m.partial.tipCapture}</p>
                         <p>{m.partial.tipStored}</p>
                         <p>{m.partial.tipNotify}</p>
+                        {partialsHeld ? <p data-testid="partial-point-captcha">{m.partial.tipCaptcha}</p> : null}
                         {atEnd ? <p>{m.partial.tipAfterLast}</p> : null}
                         <p className="font-medium text-foreground">{m.partial.tipWhere}</p>
                       </>
@@ -143,81 +181,122 @@ export function QuestionSpine({
           const rules = liveRuleCount(step);
           const contact = isContactType(step.type);
           const title = stepListLabel(step, m);
+          const span = spanAt(stepIndex);
+          const opensScreen = span?.members[0] === stepIndex;
+          const closesScreen = span?.members[span.members.length - 1] === stepIndex;
+          const chip =
+            span && opensScreen
+              ? tb(m.screens.chip, {
+                  n: stops.findIndex((stop) => stop[0] === stepIndex) + 1,
+                  count: span.members.length,
+                })
+              : null;
           return (
-            <SortableRow key={id} id={id}>
-              {({ handleProps }) => (
-                <div
-                  className={cn(
-                    'relative flex items-center gap-2 overflow-hidden rounded-xl border py-2.5 pl-2 pr-2.5 transition-colors',
-                    active
-                      ? 'border-primary-edge bg-primary/[0.07]'
-                      : 'border-border bg-card hover:border-muted-foreground/60',
-                  )}
-                >
-                  {active ? (
-                    <span aria-hidden className="absolute inset-y-1.5 left-0 w-1 rounded-full bg-primary-edge" />
-                  ) : null}
-                  <button
-                    type="button"
-                    aria-label={m.shell.addQuestion}
-                    className="shrink-0 cursor-grab touch-none rounded-sm p-1 text-muted-foreground/70 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:cursor-grabbing"
-                    {...handleProps}
-                  >
-                    <i aria-hidden className="pi pi-bars" style={{ fontSize: 12 }} />
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => onSelect(stepIndex)}
-                    className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
-                  >
-                    <span
+            <Fragment key={id}>
+              {/* The screen's name sits above its block, at the spine's full
+                  width (inside a row it would be cut at the narrowest one), and
+                  outside every draggable row, so it never rides along mid-drag. */}
+              {chip ? <ScreenChip>{chip}</ScreenChip> : null}
+              <SortableRow id={id} lifted>
+                {({ handleProps, isDragging }) => (
+                  // The rows of one screen close the list's gap and share their
+                  // borders, so the screen reads as one block.
+                  <div className={cn('group/row relative', span && !opensScreen && '-mt-[9px]')}>
+                    {screensOn && shownAbove(steps, stepIndex) ? (
+                      <ScreenToggle
+                        index={stepIndex}
+                        boundary={screenBoundary(steps, stepIndex)}
+                        reason={blockedReason}
+                        titleId={`spine-title-${step.key}`}
+                        onScreenJoin={onScreenJoin}
+                        m={m}
+                      />
+                    ) : null}
+                    <div
                       className={cn(
-                        'inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-xs font-bold tabular-nums',
-                        active ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground',
+                        'relative flex items-center gap-2 border border-border bg-card py-2.5 pl-2 pr-2.5 transition-[background-color,box-shadow] duration-150',
+                        // The row's shape: its own card (always, while lifted), or
+                        // its place in a screen.
+                        isDragging || !span
+                          ? 'rounded-xl'
+                          : opensScreen
+                            ? 'rounded-t-xl'
+                            : closesScreen
+                              ? 'rounded-b-xl'
+                              : 'rounded-none',
+                        // Its state, as one outline inside the border.
+                        active
+                          ? 'bg-primary/[0.07] ring-2 ring-inset ring-primary-edge'
+                          : 'hover:ring-1 hover:ring-inset hover:ring-muted-foreground/50 has-[[data-spine-select]:focus-visible]:ring-2 has-[[data-spine-select]:focus-visible]:ring-inset has-[[data-spine-select]:focus-visible]:ring-ring',
+                        isDragging && 'shadow-xl',
                       )}
+                      data-screen-row={span ? (opensScreen ? 'first' : closesScreen ? 'last' : 'inside') : undefined}
                     >
-                      {stepIndex + 1}
-                    </span>
-                    <i
-                      aria-hidden
-                      className={cn('pi shrink-0 text-muted-foreground', iconForStep(step))}
-                      style={{ fontSize: 13 }}
-                    />
-                    <span className="flex min-w-0 flex-1 flex-col">
-                      <span className="truncate text-sm font-medium text-foreground">
-                        {title}
-                      </span>
-                      <span className="mt-0.5 flex items-center gap-1.5">
-                        {/* A hidden step looked identical to a normal one here,
-                            in the Logic map and in Results — the single missing
-                            marker behind several "why is this not working"
-                            traps (its points never score, a reveal pinned to it
-                            never plays, a partial point on it never fires). */}
-                        {step.hidden ? (
-                          <span
-                            data-testid="spine-hidden-badge"
-                            className="inline-flex shrink-0 items-center rounded-md bg-muted px-1.5 py-0.5 text-2xs font-semibold uppercase tracking-wide text-faint"
-                          >
-                            {m.badges.hidden}
+                      <button
+                        type="button"
+                        aria-label={m.shell.addQuestion}
+                        className="shrink-0 cursor-grab touch-none rounded-sm p-1 text-muted-foreground/70 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:cursor-grabbing"
+                        {...handleProps}
+                      >
+                        <i aria-hidden className="pi pi-bars" style={{ fontSize: 12 }} />
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => onSelect(stepIndex)}
+                        // Its keyboard focus shows as the row's own outline (above).
+                        data-spine-select
+                        className="flex min-w-0 flex-1 items-center gap-2.5 text-left focus-visible:outline-none"
+                      >
+                        <span
+                          className={cn(
+                            'inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-xs font-bold tabular-nums',
+                            active ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground',
+                          )}
+                        >
+                          {stepIndex + 1}
+                        </span>
+                        <i
+                          aria-hidden
+                          className={cn('pi shrink-0 text-muted-foreground', iconForStep(step))}
+                          style={{ fontSize: 13 }}
+                        />
+                        <span className="flex min-w-0 flex-1 flex-col">
+                          <span id={`spine-title-${step.key}`} className="truncate text-sm font-medium text-foreground">
+                            {title}
                           </span>
-                        ) : null}
-                        {rules > 0 ? (
-                          <span className="inline-flex items-center gap-1 rounded-md bg-secondary/15 px-1.5 py-0.5 text-2xs font-semibold text-secondary">
-                            <i aria-hidden className="pi pi-sitemap" style={{ fontSize: 9 }} />
-                            {rules === 1 ? m.badges.ruleOne : tb(m.badges.rules, { n: rules })}
+                          <span className="mt-0.5 flex items-center gap-1.5">
+                            {/* A hidden step looked identical to a normal one here,
+                                in the Logic map and in Results: the single missing
+                                marker behind several "why is this not working"
+                                traps (its points never score, a reveal pinned to it
+                                never plays, a partial point on it never fires). */}
+                            {step.hidden ? (
+                              <span
+                                data-testid="spine-hidden-badge"
+                                className="inline-flex shrink-0 items-center rounded-md bg-muted px-1.5 py-0.5 text-2xs font-semibold uppercase tracking-wide text-faint"
+                              >
+                                {m.badges.hidden}
+                              </span>
+                            ) : null}
+                            {rules > 0 ? (
+                              <span className="inline-flex items-center gap-1 rounded-md bg-secondary/15 px-1.5 py-0.5 text-2xs font-semibold text-secondary">
+                                <i aria-hidden className="pi pi-sitemap" style={{ fontSize: 9 }} />
+                                {rules === 1 ? m.badges.ruleOne : tb(m.badges.rules, { n: rules })}
+                              </span>
+                            ) : contact ? (
+                              <span className="inline-flex items-center rounded-md bg-muted px-1.5 py-0.5 text-2xs font-semibold text-faint">
+                                {m.badges.contact}
+                              </span>
+                            ) : null}
                           </span>
-                        ) : contact ? (
-                          <span className="inline-flex items-center rounded-md bg-muted px-1.5 py-0.5 text-2xs font-semibold text-faint">
-                            {m.badges.contact}
-                          </span>
-                        ) : null}
-                      </span>
-                    </span>
-                  </button>
-                </div>
-              )}
-            </SortableRow>
+                        </span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </SortableRow>
+            </Fragment>
           );
         }}
       </SortableList>
@@ -258,7 +337,10 @@ export function QuestionSpine({
         // the email question is not the last step — after the last question a
         // threshold never fires (the final submit already captures it all).
         const emailIdx = steps.findIndex((s) => s.type === 'email' && !s.hidden);
-        if (partialIdx != null || emailIdx < 0 || emailIdx >= steps.length - 1) return null;
+        // On slides the point fires when the email's SCREEN is submitted, so
+        // an email on the last screen is the same as the last question.
+        const emailEnd = emailIdx >= 0 && screensActive({ layout }) ? screenEnd(steps, emailIdx) : emailIdx;
+        if (partialIdx != null || emailIdx < 0 || emailEnd >= steps.length - 1) return null;
         return (
           <div
             data-testid="partial-point-suggest"
@@ -277,6 +359,98 @@ export function QuestionSpine({
         );
       })()}
     </div>
+  );
+}
+
+/**
+ * The chain on a row's top edge: join this question to the screen above, or
+ * start a new screen here. Shown on hover or focus, and always while joined;
+ * never above a row with no question shown above it, and not mid-drag.
+ * A boundary that cannot be joined stays reachable (focusable, announced as
+ * unavailable) and says why, rather than vanishing without a reason.
+ */
+function ScreenToggle({
+  index,
+  boundary,
+  reason,
+  titleId,
+  onScreenJoin,
+  m,
+}: {
+  index: number;
+  boundary: { joined: boolean; blocked: ScreenBlock | null };
+  reason: (blocked: ScreenBlock) => string;
+  /** The row's title, so the control says which question it moves. */
+  titleId: string;
+  onScreenJoin: (index: number, joined: boolean) => void;
+  m: BuilderMessages;
+}) {
+  const reasonId = useId();
+  // While a row is dragged every boundary is about to change, and the chains
+  // would ride along on rows that move: they step aside until the drop.
+  const { active } = useDndContext();
+  const { joined } = boundary;
+  const blocked = joined ? null : boundary.blocked;
+  const label = joined ? m.screens.split : m.screens.join;
+  if (active) return null;
+  return (
+    <>
+      <button
+        type="button"
+        data-testid={`screen-toggle-${index}`}
+        data-joined={joined ? 'true' : 'false'}
+        aria-label={label}
+        aria-disabled={blocked ? true : undefined}
+        aria-describedby={blocked ? `${titleId} ${reasonId}` : titleId}
+        title={blocked ? reason(blocked) : label}
+        onClick={() => {
+          if (!blocked) onScreenJoin(index, !joined);
+        }}
+        className={cn(
+          // In the grip column, so it never sits over the screen's name, with a
+          // halo in the card's colour: the seam and a row's outline stop short
+          // of it instead of running underneath.
+          'absolute left-[18px] z-10 inline-flex h-5 w-5 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border bg-card shadow-sm ring-2 ring-card transition-opacity focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+          // Joined rows touch, so the chain sits on their shared border;
+          // otherwise it sits in the middle of the gap between the rows.
+          // Without hover (a touch screen) an open boundary stays faintly in view.
+          joined
+            ? 'top-0 border-primary-edge text-foreground opacity-100'
+            : 'top-[-4px] border-border text-muted-foreground opacity-0 [@media(hover:none)]:opacity-60',
+          // A boundary that cannot be joined shows dimmed, and says why.
+          joined ? '' : blocked ? 'cursor-not-allowed border-dashed group-hover/row:opacity-50' : 'group-hover/row:opacity-100 hover:text-foreground',
+        )}
+      >
+        <i aria-hidden className="pi pi-link" style={{ fontSize: 10 }} />
+      </button>
+      {blocked ? (
+        <span id={reasonId} className="sr-only">
+          {reason(blocked)}
+        </span>
+      ) : null}
+    </>
+  );
+}
+
+/**
+ * A screen's name, above its block. Mid-drag the rows slide under it while it
+ * holds still, so it would sit over rows of another screen: it fades out until
+ * the drop, like the chains, and keeps its space so nothing below jumps.
+ */
+function ScreenChip({ children }: { children: ReactNode }) {
+  const { active } = useDndContext();
+  return (
+    <p
+      data-testid="spine-screen-chip"
+      aria-hidden={active ? true : undefined}
+      className={cn(
+        '-mb-1 flex items-center gap-1 pl-8 pr-1 text-2xs font-semibold text-muted-foreground transition-opacity duration-150',
+        active && 'opacity-0',
+      )}
+    >
+      <i aria-hidden className="pi pi-clone" style={{ fontSize: 9 }} />
+      {children}
+    </p>
   );
 }
 

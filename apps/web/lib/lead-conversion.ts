@@ -43,7 +43,8 @@
  * no cooperation from the host, because the pixel is form config and loads in
  * the frame with the rest of the page. What v1 deliberately does NOT do is ask
  * the host to fire ITS pixel: that would need a new message type in
- * `public/embed.js` (which today carries only height and redirect), it would run
+ * `public/embed.js` (which carries the height, the redirect, the scroll into
+ * view and the page context the form asks for at submit), it would run
  * on pages we do not control, and we could not know whether the host already
  * fires a Lead of its own. Double counting is the precise failure this module
  * exists to prevent. The honest limitation: in a cross-site frame the pixel

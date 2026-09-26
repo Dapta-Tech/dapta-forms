@@ -1,3 +1,5 @@
+import type { SubmissionVisit } from '@quill/types';
+
 /**
  * The SubmissionDestination port — the boundary every submission-sync caller
  * depends on. Concrete integrations (log-only, webhook, HubSpot, …) are selected
@@ -38,6 +40,13 @@ export interface DestinationContext {
   submissionId: string;
   formId: string;
   formName: string;
+  /**
+   * The form's PUBLIC title, what respondents saw. Carried with a visit, for
+   * the one place that needs a page name when the page reported none: the
+   * HubSpot form submission. Absent on older snapshots, which fall back to
+   * `formName` as they always did.
+   */
+  formTitle?: string;
   /** Tenant context asserted by the authenticated backend, never by a browser. */
   accountId: string;
   sessionId: string;
@@ -53,7 +62,21 @@ export interface DestinationContext {
   data: Record<string, unknown>;
   /** UTM values captured for the session (from `submission.data.utm`). */
   utm: Record<string, string>;
+  /**
+   * The page the submission was answered on, already sanitized by the API.
+   * Absent on a delivery enqueued before the visit existed, or when none was
+   * reported: every adapter then behaves exactly as it did without it.
+   */
+  visit?: DestinationVisit;
 }
+
+/**
+ * Where the form was answered: the landing that embeds it (read there by the
+ * host page's embed script), or the form's own URL on a direct link. The
+ * contract's own type, already sanitized by the API. Its `hutk` is an online
+ * identifier: never logged, never shown (see `scrubHutk`).
+ */
+export type DestinationVisit = SubmissionVisit;
 
 /**
  * What actually crossed the wire, for the admin's delivery history.

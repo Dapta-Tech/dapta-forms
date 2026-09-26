@@ -1,6 +1,7 @@
 import type { FormConfig, FormOutcome, FormStep, OutcomeRange } from '@quill/engine';
-import { isScoreCondition, outcomeRanges } from '@quill/engine';
+import { authoredScreens, isScoreCondition, outcomeRanges, screensActive } from '@quill/engine';
 import { liveGotoRules } from './logic-util';
+import { screenList } from './screen-util';
 
 /**
  * Where every node on the Logic canvas goes — a pure function of the config, so
@@ -80,11 +81,62 @@ export interface LayoutEdge {
   catchAll?: true;
 }
 
+/** Room between a screen's frame and the nodes it holds. */
+export const SCREEN_PAD = 12;
+/** Height of the band above a screen's nodes that carries its label. */
+export const SCREEN_LABEL_H = 22;
+
+/**
+ * A frame drawn behind the nodes of one screen of several questions (#200),
+ * slides only. It carries the member node ids so the canvas can redraw it
+ * around a node being dragged, and the numbers its label needs.
+ */
+export interface LayoutScreen {
+  id: string;
+  /** 1-based place among the form's screens, as the spine numbers it. */
+  n: number;
+  /** How many questions it holds. */
+  count: number;
+  /** The node ids of its questions. */
+  members: string[];
+  /**
+   * `'box'`: one frame around all of them. `'members'`: a frame around each
+   * question, for a screen whose box would also take in a question that is
+   * not on it (parallel rows can put one there).
+   */
+  outline: 'box' | 'members';
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
 export interface Layout {
   nodes: LayoutNode[];
   edges: LayoutEdge[];
+  /** Frames behind each screen of several questions; empty on one page. */
+  screens: LayoutScreen[];
   width: number;
   height: number;
+}
+
+/** Do two boxes overlap (touching edges do not count)? */
+function overlaps(a: { x: number; y: number; w: number; h: number }, b: { x: number; y: number; w: number; h: number }) {
+  return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+}
+
+/** The frame around a set of node boxes: padded, with the label band on top. */
+export function screenFrame(boxes: Array<{ x: number; y: number; w: number; h: number }>): {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+} {
+  const x0 = Math.min(...boxes.map((b) => b.x)) - SCREEN_PAD;
+  const y0 = Math.min(...boxes.map((b) => b.y)) - SCREEN_PAD - SCREEN_LABEL_H;
+  const x1 = Math.max(...boxes.map((b) => b.x + b.w)) + SCREEN_PAD;
+  const y1 = Math.max(...boxes.map((b) => b.y + b.h)) + SCREEN_PAD;
+  return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
 }
 
 /** The condition that decides whether a step appears, if any. */
@@ -290,14 +342,40 @@ export function computeLayout(config: FormConfig): Layout {
     }
   }
 
+  // A frame behind each screen of several questions (#200), on slides only,
+  // around wherever its nodes were placed (a pinned one included).
+  const screens: LayoutScreen[] = [];
+  if (screensActive(config)) {
+    const stops = screenList(steps);
+    for (const screen of authoredScreens(steps)) {
+      const members = screen.members
+        .map((i) => nodeByStepKey.get(steps[i]!.key))
+        .filter((n): n is LayoutNode => n != null);
+      if (members.length < 2) continue;
+      const frame = screenFrame(members);
+      const ids = members.map((n) => n.id);
+      const intrudes = nodes.some((n) => n.kind === 'step' && !ids.includes(n.id) && overlaps(n, frame));
+      screens.push({
+        id: screen.id,
+        n: stops.findIndex((stop) => stop[0] === screen.members[0]) + 1,
+        count: screen.members.length,
+        members: ids,
+        outline: intrudes ? 'members' : 'box',
+        ...frame,
+      });
+    }
+  }
+
   // The bounding box has to come from the PLACED nodes, not the column walk: a
   // pinned node can sit anywhere, and a canvas sized from the derived grid would
-  // clip it out of reach with no way to scroll to it.
-  const maxX = nodes.reduce((m, n) => Math.max(m, n.x + n.w), 0);
-  const minY = nodes.reduce((m, n) => Math.min(m, n.y), 0);
-  const maxY = nodes.reduce((m, n) => Math.max(m, n.y + n.h), 0);
+  // clip it out of reach with no way to scroll to it. Frames reach a little
+  // past their nodes, so they count too.
+  const boxes = [...nodes, ...screens];
+  const maxX = boxes.reduce((m, n) => Math.max(m, n.x + n.w), 0);
+  const minY = boxes.reduce((m, n) => Math.min(m, n.y), 0);
+  const maxY = boxes.reduce((m, n) => Math.max(m, n.y + n.h), 0);
 
-  return { nodes, edges, width: maxX, height: maxY - minY };
+  return { nodes, edges, screens, width: maxX, height: maxY - minY };
 }
 
 /** The node's centre-right anchor — where an outgoing edge leaves it. */

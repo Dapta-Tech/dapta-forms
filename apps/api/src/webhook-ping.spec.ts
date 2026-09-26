@@ -128,6 +128,22 @@ describe('webhook ping', () => {
     expect(body.data.test).toBe(true);
   });
 
+  it('shows the visit a real delivery carries, with an obviously fake cookie', async () => {
+    // #199: the envelope's `visit`, so an author wiring a receiver sees every key.
+    await setWebhook('http://localhost:4999/hook');
+    await controller.pingWebhook(asOwner(), formId);
+    const body = JSON.parse(String(calls[0]!.init.body)) as { visit?: unknown };
+    expect(body.visit).toEqual({
+      pageUri: 'https://example.com/landing?utm_source=test',
+      pageName: 'Example landing page',
+      embedded: true,
+      hutk: '0'.repeat(32),
+    });
+    // The history shows the body back with the cookie hidden, as for a real one.
+    const [row] = await listFormDeliveries(db, accountId, formId, { kinds: ['webhook'], statuses: ['done'] });
+    expect(JSON.parse(String(row?.requestBody)).visit.hutk).toBe('[hidden]');
+  });
+
   it('reports a clear 400 when the form has no webhook configured', async () => {
     formId = await seededFormId();
     await updateFormDestinations(db, accountId, formId, []);

@@ -1,13 +1,14 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
-import { getFormById, parseJsonColumn, resolveProviderToken, sql, type Db } from '@quill/db';
+import { getFormById, parseJsonColumn, readVisitColumn, resolveProviderToken, sql, type Db } from '@quill/db';
 import {
   formConfigSchema,
   formDestinationSchema,
   propertiesFor,
   type FormDestination,
   type HubspotDestination,
+  type SubmissionVisit,
 } from '@quill/types';
-import { resolveOutcome, INVITEE_FIELDS, type FormConfig } from '@quill/engine';
+import { publicTitle, resolveOutcome, INVITEE_FIELDS, type FormConfig } from '@quill/engine';
 import { createDestination, dayMidnightMs, utcMidnightMs } from '@quill/destinations';
 import type { ServerEnv } from '@quill/config/env';
 import { OutboxSkipError } from './email-effects';
@@ -15,7 +16,8 @@ import { extractUtm } from './destination-effects';
 import { HubspotPortalResolver, mirrorGuidFor } from './hubspot-portal';
 import type { BookingSyncPayload } from './booking-effects';
 import { HubspotPropertiesService } from './integrations.controller';
-import { DB, ENV } from './tokens';
+import { captchaActive, type CaptchaVerifier } from './captcha';
+import { CAPTCHA, DB, ENV } from './tokens';
 
 // Re-exported from their shared home (`@quill/destinations`) — the submit-time
 // adapter collapses days the same way, and both sides must agree on the answer.
@@ -164,6 +166,9 @@ export class BookingSyncEffects {
     @Optional()
     @Inject(HubspotPropertiesService)
     private readonly hubspotProperties?: HubspotPropertiesService,
+    /** Spam protection's verifier, only to know whether a form is protected
+     *  on this deployment. LAST: specs build this class positionally. */
+    @Optional() @Inject(CAPTCHA) private readonly captcha?: CaptchaVerifier,
   ) {}
 
   /**
@@ -248,6 +253,18 @@ export class BookingSyncEffects {
 
     // --- The session's submission (one read serves three consumers below) ----
     const submission = await this.loadSubmission(payload.formId, payload.sessionId);
+
+    // --- Spam protection: no side door around held partials --------------------
+    // The booking callback is public and unchallenged. With protection on, a
+    // partial is saved but never delivered, so a partial carrying someone's
+    // email plus a forged callback must not upsert that contact here instead.
+    // What still counts: an invitee the provider API returned to OUR token, or a
+    // COMPLETE submission, which only exists once the challenge passed.
+    if (captchaActive(form.config, this.captcha) && !inviteeEmail && submission?.completedAt == null) {
+      throw new OutboxSkipError(
+        'booking sync: spam protection is on and this session has no verified invitee and no complete submission',
+      );
+    }
 
     // --- Respondent email: invitee first, else the session's submission ------
     const submissionEmail = submission ? looseEmailFromData(submission.data) : null;
@@ -416,8 +433,9 @@ export class BookingSyncEffects {
       completed_at: number | null;
       partial_at: number | null;
       started_at: number;
+      visit: unknown;
     }>(
-      sql`SELECT id, data, score, completed_at, partial_at, started_at FROM submission
+      sql`SELECT id, data, score, completed_at, partial_at, started_at, visit FROM submission
           WHERE form_id = ${formId} AND session_id = ${sessionId} LIMIT 1`,
     );
     if (!row) return null;
@@ -430,6 +448,7 @@ export class BookingSyncEffects {
       // `submittedAt` means. Never the delivery clock: outbox retries/backoff
       // can run hours later, and the date property + Note would lie.
       submittedAt: Number(row.completed_at ?? row.partial_at ?? row.started_at) || Date.now(),
+      visit: readVisitColumn(row.visit),
     };
   }
 
@@ -520,6 +539,11 @@ export class BookingSyncEffects {
       // the booking page happened to collect.
       data: { ...inviteeAnswers(invitee), ...data, email: inviteeEmail },
       utm: extractUtm(data),
+      // The page it was answered on, as stored: the mirror post is where
+      // HubSpot joins the landing's visits to the contact (complete rows only).
+      ...(submission.visit
+        ? { visit: submission.visit, formTitle: publicTitle(parsed.success ? parsed.data : null, form.name) }
+        : {}),
     });
     return result.delivered;
   }
@@ -585,6 +609,8 @@ interface SubmissionRow {
   score: number;
   completedAt: number | null;
   submittedAt: number;
+  /** The page it was answered on (see `upsertSubmission`); null when none was reported. */
+  visit: SubmissionVisit | null;
 }
 
 /**

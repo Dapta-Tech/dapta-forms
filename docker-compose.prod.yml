@@ -72,6 +72,10 @@ services:
       DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
       # Community-safe default: no external email, no Dapta coupling.
       EMAIL_PROVIDER: log-only
+      # Optional spam protection (Cloudflare Turnstile): set BOTH to let form
+      # owners turn on a human check before the final submit. Unset = off.
+      # CAPTCHA_SITE_KEY: ${CAPTCHA_SITE_KEY:-}
+      # CAPTCHA_SECRET_KEY: ${CAPTCHA_SECRET_KEY:-}
     ports:
       - '4000:4000'
     depends_on:

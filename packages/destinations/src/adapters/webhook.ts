@@ -2,8 +2,10 @@ import { createHmac } from 'node:crypto';
 import type {
   DestinationContext,
   DestinationResult,
+  DestinationVisit,
   SubmissionDestination,
 } from '../destination.port';
+import { scrubHutk } from '../hutk';
 import { assertPublicWebhookUrl, type DnsResolver } from '../ssrf-guard';
 
 /** The default header carrying the HMAC signature (overridable per destination). */
@@ -48,6 +50,30 @@ export interface WebhookPayload {
   };
   data: Record<string, unknown>;
   utm: Record<string, string>;
+  /** The page it was answered on. Absent when none was reported (older rows too). */
+  visit?: WebhookVisit;
+}
+
+/**
+ * The envelope's `visit`: the page, whether the form was embedded in it, and
+ * the landing's HubSpot visitor cookie (`hutk`) when there is one, for a
+ * receiver that syncs HubSpot through its own flows. The page keys are always
+ * present (null when unknown) so a receiver can read them without guards.
+ */
+export interface WebhookVisit {
+  pageUri: string | null;
+  pageName: string | null;
+  embedded: boolean;
+  hutk?: string;
+}
+
+function webhookVisit(visit: DestinationVisit): WebhookVisit {
+  return {
+    pageUri: visit.pageUri ?? null,
+    pageName: visit.pageName ?? null,
+    embedded: visit.embedded === true,
+    ...(visit.hutk ? { hutk: visit.hutk } : {}),
+  };
 }
 
 /**
@@ -83,6 +109,7 @@ export class WebhookDestination implements SubmissionDestination {
       },
       data: ctx.data,
       utm: ctx.utm,
+      ...(ctx.visit ? { visit: webhookVisit(ctx.visit) } : {}),
     };
   }
 
@@ -96,6 +123,11 @@ export class WebhookDestination implements SubmissionDestination {
     });
 
     const body = JSON.stringify(this.buildPayload(ctx));
+    // What the delivery history records and shows: everything that crossed the
+    // wire, except the visitor's HubSpot cookie (see `scrubHutk`). Byte for byte
+    // the sent body whenever there is no cookie to hide.
+    const hutk = ctx.visit?.hutk;
+    const shown = scrubHutk(body, hutk);
     const timestamp = String(Math.floor(ctx.submittedAt / 1000));
     const headers: Record<string, string> = {
       'content-type': 'application/json',
@@ -129,7 +161,7 @@ export class WebhookDestination implements SubmissionDestination {
       const error = err instanceof Error ? err : new Error(`webhook delivery failed: ${String(err)}`);
       // Attached rather than wrapped in a new class: the message and the error's
       // own type are what the outbox stores and what existing tests assert on.
-      (error as Error & { requestBody?: string }).requestBody = body;
+      (error as Error & { requestBody?: string }).requestBody = shown;
       throw error;
     } finally {
       clearTimeout(timeout);
@@ -141,7 +173,7 @@ export class WebhookDestination implements SubmissionDestination {
         `webhook delivery refused: endpoint attempted a redirect (HTTP ${res.status})`,
         res.status,
         null,
-        body,
+        shown,
       );
     }
     if (!res.ok) {
@@ -149,12 +181,12 @@ export class WebhookDestination implements SubmissionDestination {
       // back — it usually names the exact reason a status code cannot. Read it
       // best-effort and bounded: a failing endpoint may answer with a whole
       // HTML error page, and none of this belongs in an outbox row.
-      const detail = await readErrorBody(res);
+      const detail = await readErrorBody(res, hutk);
       throw new WebhookHttpError(
         `webhook delivery failed: HTTP ${res.status}`,
         res.status,
         detail,
-        body,
+        shown,
       );
     }
     // A 2xx body too, not only a failing one. "It returned 200" and "it returned
@@ -164,9 +196,9 @@ export class WebhookDestination implements SubmissionDestination {
     return {
       delivered: true,
       driver: 'webhook',
-      requestBody: body,
+      requestBody: shown,
       responseStatus: res.status,
-      responseBody: await readErrorBody(res),
+      responseBody: await readErrorBody(res, hutk),
     };
   }
 }
@@ -174,9 +206,14 @@ export class WebhookDestination implements SubmissionDestination {
 /** How much of the receiver's error body we keep. Enough to carry a JSON error. */
 const MAX_ERROR_BODY = 400;
 
-async function readErrorBody(res: Response): Promise<string | null> {
+/**
+ * The receiver's answer, as the delivery history keeps it. A receiver may echo
+ * the request, cookie included, so the cookie is hidden here, and before the
+ * cut, which could otherwise keep a piece of it.
+ */
+async function readErrorBody(res: Response, hutk: string | undefined): Promise<string | null> {
   try {
-    const text = (await res.text()).trim();
+    const text = scrubHutk((await res.text()).trim(), hutk);
     if (!text) return null;
     return text.length > MAX_ERROR_BODY ? `${text.slice(0, MAX_ERROR_BODY)}…` : text;
   } catch {

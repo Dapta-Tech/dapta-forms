@@ -1,0 +1,16 @@
+-- Submission visit: additive.
+--
+-- The page a submission was answered on (#199): the landing that embeds the
+-- form (reported by embed.js on the host page), or the form's own URL on a
+-- direct link, with the landing's HubSpot visitor cookie when there is one.
+-- HubSpot needs that cookie on the form submission to join the contact to the
+-- visits it made before converting, and a webhook receiver gets it too.
+--
+-- Its own column, not a key inside `data`: `data` holds answers, is replaced
+-- whole on every save, and is sent to webhooks and CSVs as answers. A write
+-- that carries no visit leaves this column alone (COALESCE in the upsert), so a
+-- partial that caught the cookie keeps it through a complete that did not.
+--
+-- NULL means no visit reported: every row written before this column, a
+-- builder preview, a host page that switched it off.
+ALTER TABLE submission ADD COLUMN IF NOT EXISTS visit JSONB;
