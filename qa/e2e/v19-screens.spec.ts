@@ -313,3 +313,150 @@ test.describe('screens: several questions on one slides screen', () => {
     await expect(page.locator('.pf-v__question')).toHaveCount(8);
   });
 });
+
+/**
+ * The builder side: a plain slides form, grouped from the editor itself, the
+ * way an author does it. Every write is read back from the saved draft.
+ */
+const PLAIN = {
+  version: 1,
+  steps: [
+    { key: 'intro', type: 'message', question: 'Your details' },
+    { key: 'name', type: 'text', question: 'Your name?', required: true },
+    { key: 'email', type: 'email', question: 'Your email?', required: true },
+    { key: 'phone', type: 'phone', question: 'Your phone?' },
+    { key: 'meet', type: 'scheduler', question: 'Book a call' },
+    { key: 'notes', type: 'textarea', question: 'Anything else?' },
+  ],
+};
+
+async function draftGroups(request: APIRequestContext, id: string): Promise<string> {
+  const res = await request.get(`${API}/v1/forms/${id}`);
+  const form = (await res.json()) as { draftConfig?: { steps: Array<{ key: string; screenGroup?: string }> } };
+  return (form.draftConfig?.steps ?? []).map((s) => (s.screenGroup ? `${s.key}:${s.screenGroup}` : s.key)).join(' ');
+}
+
+test.describe('screens in the builder', () => {
+  test('the spine and the settings switch join and split the same boundary; the canvas shows the screen', async ({
+    page,
+    request,
+  }) => {
+    const form = await createForm(request, 'editor', PLAIN);
+    await page.goto(`/admin/forms/${form.id}/edit`);
+    const spine = page.getByTestId('question-spine');
+    await spine.waitFor();
+
+    // A chain on every row but the first (nothing is shown above it to join);
+    // the ones that cannot join say why.
+    await expect(page.locator('[data-testid^="screen-toggle-"]')).toHaveCount(5);
+    await expect(page.getByTestId('screen-toggle-0')).toHaveCount(0);
+    await expect(page.getByTestId('screen-toggle-4')).toHaveAttribute('aria-disabled', 'true');
+    await expect(page.getByTestId('screen-toggle-4')).toHaveAttribute(
+      'title',
+      'Schedulers, reveal screens and file uploads always get a screen of their own.',
+    );
+
+    await spine.getByText('Your email?').hover();
+    await page.getByTestId('screen-toggle-2').click();
+    await spine.getByText('Your phone?').hover();
+    await page.getByTestId('screen-toggle-3').click();
+    await expect(page.getByTestId('spine-screen-chip')).toHaveText('Screen 2 · 3 questions');
+    await expect.poll(() => draftGroups(request, form.id)).toBe('intro name:screen_1 email:screen_1 phone:screen_1 meet notes');
+
+    // Selecting a question of the screen draws the whole screen, that question marked.
+    await spine.getByText('Your email?').click();
+    await expect(page.getByTestId('canvas-screen')).toHaveAttribute('data-screen-size', '3');
+    await expect(page.locator('[data-testid^="screen-block-"]')).toHaveCount(3);
+    await expect(page.getByTestId('screen-block-2')).toHaveAttribute('aria-current', 'true');
+
+    // The settings switch is the same boundary: off splits the screen above the
+    // email, which starts a screen of its own (a new id; the name, left alone,
+    // loses its).
+    // Always in view (the only way to group below lg, where the spine is hidden).
+    const join = page.getByTestId('behavior-screen-join');
+    await expect(join).toBeVisible();
+    await expect(join).toHaveAttribute('aria-checked', 'true');
+    await join.click();
+    await expect(page.getByTestId('spine-screen-chip')).toHaveText('Screen 3 · 2 questions');
+    await expect.poll(() => draftGroups(request, form.id)).toBe('intro name email:screen_2 phone:screen_2 meet notes');
+
+    // The scheduler's switch is off and cannot be turned on: still in the Tab
+    // order, announced as unavailable, described by its reason, and a key
+    // press does nothing.
+    await spine.getByText('Book a call').click();
+    const blocked = page.getByTestId('behavior-screen-join');
+    await expect(blocked).toHaveAttribute('aria-disabled', 'true');
+    await expect(blocked).toHaveAccessibleDescription(
+      'Schedulers, reveal screens and file uploads always get a screen of their own.',
+    );
+    await blocked.focus();
+    await expect(blocked).toBeFocused();
+    await page.keyboard.press('Space');
+    await expect(blocked).toHaveAttribute('aria-checked', 'false');
+  });
+
+  test('jump targets are screen starts, and the preview walks screens', async ({ page, request }) => {
+    // The name jumps to the notes: said to happen when the screen is left.
+    const grouped = {
+      ...PLAIN,
+      steps: PLAIN.steps.map((s) =>
+        ['intro', 'name', 'email'].includes(s.key)
+          ? { ...s, screenGroup: 'details', ...(s.key === 'name' ? { goto: [{ values: ['*'], target: 'notes' }] } : {}) }
+          : s,
+      ),
+    };
+    const form = await createForm(request, 'editor-logic', grouped);
+    await page.goto(`/admin/forms/${form.id}/edit`);
+    await page.getByTestId('question-spine').getByText('Your name?').click();
+
+    const jumpNote = 'This jump happens when the respondent leaves this screen.';
+    await expect(page.getByTestId('question-logic').getByTestId('screen-jump-note')).toHaveText(jumpNote);
+    await page.getByTestId('question-logic-edit').click();
+    await expect(page.getByTestId('logic-dialog').getByTestId('screen-jump-note')).toHaveText(jumpNote);
+    await page.getByTestId('logic-dialog-always').locator('button').first().click();
+    await expect(page.getByRole('option')).toHaveText([
+      'Next question in order',
+      'Your phone?',
+      'Book a call',
+      'Anything else?',
+      'End of the form',
+    ]);
+    await page.keyboard.press('Escape');
+    if (await page.getByTestId('logic-dialog').isVisible()) await page.getByTestId('logic-dialog-close').click();
+    await expect(page.getByTestId('logic-dialog')).toHaveCount(0);
+
+    await page.getByTestId('toolbar-preview').or(page.getByRole('button', { name: 'Preview' })).first().click();
+    await expect(page.getByTestId('preview-position')).toHaveText('Step 1 of 4');
+    // The frame loads its own document and then receives the draft: on a
+    // cold server that first paint takes a while.
+    const frame = page.frameLocator('[data-testid="preview-iframe"]');
+    await expect(frame.locator('[data-pf-step]')).toHaveCount(3, { timeout: 20_000 });
+    await page.getByTestId('preview-next').click();
+    await expect(page.getByTestId('preview-position')).toHaveText('Step 2 of 4');
+    await expect(frame.locator('.pf__question')).toHaveText('Your phone?', { timeout: 20_000 });
+  });
+
+  test('one page hides every screen control, keeps the screens, and Design says so', async ({ page, request }) => {
+    const grouped = {
+      ...PLAIN,
+      layout: 'vertical',
+      steps: PLAIN.steps.map((s) => (['name', 'email'].includes(s.key) ? { ...s, screenGroup: 'details' } : s)),
+    };
+    const form = await createForm(request, 'editor-vertical', grouped);
+    await page.goto(`/admin/forms/${form.id}/edit`);
+    await page.getByTestId('question-spine').waitFor();
+    await expect(page.getByTestId('question-logic')).toBeVisible();
+    await expect(page.locator('[data-testid^="screen-toggle-"]')).toHaveCount(0);
+    await expect(page.getByTestId('spine-screen-chip')).toHaveCount(0);
+    await expect(page.getByTestId('behavior-screen-join')).toHaveCount(0);
+
+    await page.goto(`/admin/forms/${form.id}/edit?tab=design`);
+    await expect(page.getByTestId('design-screens-ignored')).toHaveText(
+      'Screens only apply to Slides. On One page every question is already on one page.',
+    );
+    await page.getByTestId('design-layout-slides').click();
+    await expect(page.getByTestId('design-screens-ignored')).toHaveCount(0);
+    await expect.poll(() => draftGroups(request, form.id)).toBe('intro name:details email:details phone meet notes');
+  });
+});
+

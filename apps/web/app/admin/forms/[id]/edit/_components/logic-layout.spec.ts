@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { FormConfig, FormStep } from '@quill/engine';
-import { computeLayout, groupIntoColumns, NODE_W } from './logic-layout';
+import { computeLayout, groupIntoColumns, NODE_W, SCREEN_PAD } from './logic-layout';
 
 const choice = (key: string, extra: Partial<FormStep> = {}): FormStep => ({
   key,
@@ -226,5 +226,66 @@ describe('computeLayout — catch-all (`*`) rules', () => {
     const skip = edges.find((e) => e.to === '__end__');
     expect(skip).toMatchObject({ from: 'book', kind: 'goto', catchAll: true });
     expect(skip?.label).toBeUndefined();
+  });
+});
+
+describe('computeLayout: screens (#200)', () => {
+  const grouped = [
+    choice('intro'),
+    choice('name', { screenGroup: 'screen_1' }),
+    choice('email', { screenGroup: 'screen_1' }),
+    choice('phone', { screenGroup: 'screen_1' }),
+    choice('budget'),
+  ];
+
+  it('draws one frame behind the questions of each screen of several', () => {
+    const { nodes, screens } = computeLayout(cfg(grouped));
+    expect(screens).toHaveLength(1);
+    const [frame] = screens;
+    expect(frame).toMatchObject({ id: 'screen_1', n: 2, count: 3, members: ['name', 'email', 'phone'] });
+    // It encloses every one of its nodes, and none of the others.
+    for (const n of nodes) {
+      const inside =
+        n.x >= frame!.x && n.x + n.w <= frame!.x + frame!.w && n.y >= frame!.y && n.y + n.h <= frame!.y + frame!.h;
+      expect(inside).toBe(frame!.members.includes(n.id));
+    }
+    const first = nodes.find((n) => n.id === 'name')!;
+    expect(frame!.x).toBe(first.x - SCREEN_PAD);
+  });
+
+  it('follows a pinned question, and the canvas grows to the frame', () => {
+    const pinned = computeLayout(cfg(grouped, { logicLayout: { phone: { x: 3000, y: 600 } } }));
+    const frame = pinned.screens[0]!;
+    expect(frame.x + frame.w).toBe(3000 + NODE_W + SCREEN_PAD);
+    expect(pinned.width).toBeGreaterThanOrEqual(frame.x + frame.w);
+  });
+
+  it('frames each question of a screen whose box would take in a question not on it', () => {
+    // `other` and `a` are alternatives on the same answer, so they share a
+    // column; the box from `a` to `b` would cover `other`.
+    const gated = { showWhen: { field: 'x', values: ['a'] } };
+    const { screens } = computeLayout(
+      cfg([
+        choice('x'),
+        choice('other', gated),
+        choice('a', { ...gated, screenGroup: 'screen_1' }),
+        choice('b', { screenGroup: 'screen_1' }),
+      ]),
+    );
+    expect(screens[0]).toMatchObject({ members: ['a', 'b'], outline: 'members' });
+    expect(computeLayout(cfg(grouped)).screens[0]!.outline).toBe('box');
+  });
+
+  it('draws none on one page, and none without screens', () => {
+    expect(computeLayout(cfg(grouped, { layout: 'vertical' })).screens).toEqual([]);
+    expect(computeLayout(cfg([choice('a'), choice('b')])).screens).toEqual([]);
+  });
+
+  it('leaves the nodes and edges of a form exactly where they were', () => {
+    const plain = grouped.map(({ screenGroup: _id, ...rest }) => rest as FormStep);
+    const a = computeLayout(cfg(grouped));
+    const b = computeLayout(cfg(plain));
+    expect(a.nodes.map((n) => [n.id, n.x, n.y])).toEqual(b.nodes.map((n) => [n.id, n.x, n.y]));
+    expect(a.edges).toEqual(b.edges);
   });
 });

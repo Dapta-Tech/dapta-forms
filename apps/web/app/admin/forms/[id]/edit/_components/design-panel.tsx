@@ -6,6 +6,7 @@ import { getMessages } from '@quill/shared';
 import {
   DEFAULT_FORM_FONT,
   FORM_BACKGROUND_STYLES,
+  authoredScreens,
   isSafeImageUrl,
   resolveDesign,
   resolveFormLogos,
@@ -201,6 +202,14 @@ export function DesignPanel({
               </button>
             ))}
           </div>
+          {/* Screens (#200) are a slides thing. On one page the ids stay in the
+              config, untouched, so switching back restores them; this says so
+              instead of leaving the author to wonder where they went. */}
+          {vertical && authoredScreens(config.steps).length > 0 ? (
+            <p data-testid="design-screens-ignored" className="max-w-[520px] text-xs text-muted-foreground">
+              {m.layout.screensIgnored}
+            </p>
+          ) : null}
           {/* Vertical's one reveal is a FORM-level fact (it always plays after
               Submit), so its switch lives here — not on a question. */}
           {vertical ? (

@@ -12,6 +12,8 @@ import {
   createEmptyStep,
   migrateRevealToStep,
   resolveFormLayout,
+  screensActive,
+  setScreenBoundary,
 } from '@quill/engine';
 import type { FormSpamProtection, FormTracking } from '@quill/types';
 import { formConfigSchema } from '@quill/types';
@@ -23,8 +25,17 @@ import { useAutosave } from '@/lib/use-autosave';
 import { clearDraftBackup, readDraftBackup, writeDraftBackup } from '@/lib/draft-backup';
 import { cn } from '@/lib/cn';
 import { anchorRevealsLast } from './_components/logic-util';
+import {
+  moveStep,
+  partialAfterScreenMove,
+  rejoinUnhidden,
+  revealSlot,
+  screenList,
+  screenOf,
+  withScreens,
+} from './_components/screen-util';
 import { QuestionSpine } from './_components/question-spine';
-import { CanvasQuestion, CanvasPage } from './_components/canvas-question';
+import { CanvasQuestion, CanvasPage, CanvasScreen } from './_components/canvas-question';
 import { QuestionSettings } from './_components/question-settings';
 import { invalidateQuestionHubspotCache } from './_components/question-hubspot';
 import { renameQuestionMappingAction } from './_components/question-hubspot-actions';
@@ -191,9 +202,9 @@ export function FormEditor({
     // form never plays there — fold it to the end on open, same idiom as the
     // reveal migration above (identity-preserving when nothing moves, so an
     // already-anchored form does not start dirty).
-    if (resolveFormLayout(migrated) !== 'vertical') return migrated;
+    if (resolveFormLayout(migrated) !== 'vertical') return withScreens(migrated);
     const anchored = anchorRevealsLast(migrated.steps);
-    return anchored === migrated.steps ? migrated : { ...migrated, steps: anchored };
+    return withScreens(anchored === migrated.steps ? migrated : { ...migrated, steps: anchored });
   });
   // Deep-linkable tabs: `?tab=connect` selects the tab on load…
   const [tab, setTabState] = useState<Tab>(() => parseTab(searchParams.get('tab')));
@@ -403,7 +414,8 @@ export function FormEditor({
   function restoreRecovery() {
     if (!recovery) return;
     setName(recovery.name);
-    setConfig(recovery.config);
+    // Canonical like every other change (#200): a backup never skips it.
+    setConfig(withScreens(recovery.config));
     setSelected(recovery.config.steps.length ? 0 : null);
     setRecovery(null);
     autosave.markDirty(); // the restored work goes straight into the save loop
@@ -414,7 +426,9 @@ export function FormEditor({
   }
 
   function mutate(updater: (c: FormConfig) => FormConfig) {
-    setConfig(updater);
+    // Every edit that can break a screen (add, delete, reorder, a type change,
+    // the hidden switch, the layout) goes through here, so one pass covers them.
+    setConfig((c) => withScreens(updater(c)));
     // A fresh edit outdates the crash backup — restoring it now would clobber
     // what was just typed, so the offer leaves with the first real edit.
     setRecovery(null);
@@ -428,10 +442,37 @@ export function FormEditor({
 
   // --- Step operations ------------------------------------------------------
   function patchStep(index: number, patch: Partial<FormStep>) {
-    mutate((c) => ({
-      ...c,
-      steps: c.steps.map((s, i) => (i === index ? { ...s, ...patch } : s)),
-    }));
+    // A question shown again goes back into the screen around it (hidden, it
+    // was transparent and lost its place), or right after it when it can never
+    // share one; the partial point and the selection follow it by key.
+    const shownAgain = 'hidden' in patch && !patch.hidden && !!config.steps[index]?.hidden;
+    mutate((c) => {
+      const steps = c.steps.map((s, i) => (i === index ? { ...s, ...patch } : s));
+      if (!shownAgain) return { ...c, steps };
+      const placed = rejoinUnhidden(steps, index);
+      return {
+        ...c,
+        steps: placed,
+        partialSubmitAfterStep: reanchorAfterReorder(c.partialSubmitAfterStep, steps, placed),
+      };
+    });
+    if (shownAgain) {
+      const key = config.steps[index]?.key;
+      const placed = rejoinUnhidden(
+        config.steps.map((s, i) => (i === index ? { ...s, ...patch } : s)),
+        index,
+      );
+      const at = placed.findIndex((s) => s.key === key);
+      if (at >= 0 && at !== index) setSelected(at);
+    }
+  }
+  /**
+   * Join step `index` to the screen of the question above it, or start a new
+   * screen at it (#200). The spine's boundary toggle and the settings switch
+   * both land here; a boundary that cannot change leaves the config alone.
+   */
+  function joinScreen(index: number, joined: boolean) {
+    mutate((c) => setScreenBoundary(c, index, joined));
   }
   /**
    * Write an option's label, letting its VALUE follow unless the value is the
@@ -553,17 +594,22 @@ export function FormEditor({
     // selected step BY KEY — on vertical the anchor pass may move more than the
     // dragged card (a reveal dropped mid-list snaps back to the end).
     const before = config.steps;
-    const arr = [...before];
-    const [moved] = arr.splice(from, 1);
-    if (!moved) return;
-    arr.splice(to, 0, moved);
-    const after = layout === 'vertical' ? anchorRevealsLast(arr) : arr;
+    if (!before[from]) return;
+    // A question dragged between two of a screen joins it, one dragged within
+    // its screen stays, and anywhere else it leaves (#200). On one page too:
+    // the screens are not shown there, but they come back on slides.
+    const placed = moveStep(before, from, to);
+    const after = layout === 'vertical' ? anchorRevealsLast(placed) : placed;
     const selectedKey = selected != null ? before[selected]?.key : undefined;
+    const movedKey = before[from]!.key;
     mutate((c) => ({
       ...c,
       steps: after,
-      // Keep the partial-submit marker attached to the step it fires AFTER.
-      partialSubmitAfterStep: reanchorAfterReorder(c.partialSubmitAfterStep, c.steps, after),
+      // Keep the partial-submit marker attached to the step it fires AFTER,
+      // or, on a screen, to the screen (#200).
+      partialSubmitAfterStep:
+        (layout === 'vertical' ? null : partialAfterScreenMove(c.partialSubmitAfterStep, c.steps, after, movedKey)) ??
+        reanchorAfterReorder(c.partialSubmitAfterStep, c.steps, after),
     }));
     if (selectedKey != null) {
       const next = after.findIndex((s) => s.key === selectedKey);
@@ -601,10 +647,11 @@ export function FormEditor({
    */
   function setRevealAfter(index: number, on: boolean) {
     mutate((c) => {
-      const next = c.steps[index + 1];
+      // On a screen of several questions it plays after the SCREEN (#200).
+      const at = revealSlot(c, index);
+      const next = c.steps[at];
       const isReveal = next?.type === 'reveal';
       if (on === isReveal) return c;
-      const at = index + 1;
       if (on) {
         const step = createEmptyStep('reveal', new Set(c.steps.map((s) => s.key)));
         return {
@@ -721,6 +768,14 @@ export function FormEditor({
   const scoringEnabled = config.scoring?.enabled !== false;
   const hasQuestions = config.steps.length > 0;
   const layout = resolveFormLayout(config);
+  // Screens (#200): what the slides canvas shows and how it counts progress.
+  // Only a form that HAS screens counts by them, so every other form keeps
+  // the exact numbers it always had.
+  const stops = screensActive(config) ? screenList(config.steps) : [];
+  const hasScreens = stops.some((stop) => stop.length > 1);
+  const selectedScreen = selected != null && hasScreens ? screenOf(config.steps, selected) : null;
+  const stopOf = (index: number): number =>
+    Math.max(0, stops.filter((stop) => (stop[0] as number) <= index).length - 1);
 
   // The GENERAL menu (Typeform's Content/Workflow/Connect row). Design is not
   // here: it is a sub-mode of Build, entered from the builder's own toolbar —
@@ -1042,9 +1097,11 @@ export function FormEditor({
               <aside className="hidden min-h-0 overflow-y-auto lg:block" data-tour="edit">
                 <QuestionSpine
                   steps={config.steps}
+                  layout={layout}
                   selectedIndex={selected}
                   onSelect={setSelected}
                   onReorder={reorderSteps}
+                  onScreenJoin={joinScreen}
                   onAdd={() => setGalleryOpen(true)}
                   partialAfterStep={config.partialSubmitAfterStep}
                   onPartialChange={setPartialSubmitAfterStep}
@@ -1083,13 +1140,31 @@ export function FormEditor({
                         onOptionLabel={setOptionLabel}
                         m={bm}
                       />
+                    ) : selectedScreen ? (
+                      // A screen of several questions is ONE card, as the
+                      // respondent sees it. Keyed by the screen, not the
+                      // question: moving between its questions keeps the card.
+                      <CanvasScreen
+                        key={`screen:${selectedScreen.id}`}
+                        config={config}
+                        members={selectedScreen.members}
+                        selected={selected}
+                        position={stopOf(selected)}
+                        total={stops.length}
+                        device={device}
+                        onSelect={setSelected}
+                        onUpdateStep={patchStep}
+                        onOptionLabel={setOptionLabel}
+                        m={bm}
+                      />
                     ) : (
                       <CanvasQuestion
                         key={`${selected}-${focusCanvas}`}
                         config={config}
                         step={selectedStep}
                         index={selected}
-                        total={config.steps.length}
+                        position={hasScreens ? stopOf(selected) : undefined}
+                        total={hasScreens ? stops.length : config.steps.length}
                         device={device}
                         onUpdate={(patch) => patchStep(selected, patch)}
                         onOptionLabel={(optionIndex, label) => setOptionLabel(selected, optionIndex, label)}
@@ -1152,9 +1227,11 @@ export function FormEditor({
                     bm={bm}
                     em={m}
                     locale={locale}
-                    revealAfter={config.steps[selected + 1]?.type === 'reveal'}
+                    // On a screen of several questions the reveal sits after the screen.
+                    revealAfter={config.steps[revealSlot(config, selected)]?.type === 'reveal'}
                     onRevealAfterChange={(on) => setRevealAfter(selected, on)}
                     onRenameKey={(nextKey) => renameStepKey(selected, nextKey)}
+                    onScreenJoin={(joined) => joinScreen(selected, joined)}
                   />
                 ) : null}
               </aside>
@@ -1251,6 +1328,7 @@ export function FormEditor({
         open={logicView === 'branching'}
         onClose={() => setLogicView(null)}
         steps={config.steps}
+        layout={layout}
         scoringEnabled={scoringEnabled}
         onUpdateStep={patchStep}
         bm={bm}
@@ -1286,6 +1364,7 @@ export function FormEditor({
           step={logicDialogStep}
           index={logicStep}
           steps={config.steps}
+          layout={layout}
           scoringEnabled={scoringEnabled}
           onUpdate={(patch) => patchStep(logicStep, patch)}
           bm={bm}

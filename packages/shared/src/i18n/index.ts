@@ -1007,6 +1007,8 @@ export interface FormsMessages {
         slidesHint: string;
         vertical: string;
         verticalHint: string;
+        /** Under the picker on One page, when the form has screens (#200): they are kept, not applied. */
+        screensIgnored: string;
         /** Shown in the cover section when vertical: no Start gate, CTA unused. */
         coverCtaNote: string;
         /** Vertical's ONE reveal (form-level): shown once, after Submit. */
@@ -2477,7 +2479,7 @@ export const en: FormsMessages = {
       nameRequired: 'Give your form a name.',
       layoutLabel: 'Layout',
       layoutSlides: 'Slides',
-      layoutSlidesDesc: 'One question per screen, step by step.',
+      layoutSlidesDesc: 'One screen at a time. Group questions to show several on one screen.',
       layoutVertical: 'One page',
       layoutVerticalDesc: 'All questions on a single page, one Submit.',
       cancel: 'Cancel',
@@ -2835,10 +2837,11 @@ export const en: FormsMessages = {
         title: 'Layout',
         subtitle: 'How respondents move through the form.',
         slides: 'Slides',
-        slidesHint: 'One question per screen, step by step.',
+        slidesHint: 'One screen at a time. Group questions to show several on one screen.',
         vertical: 'One page',
         verticalHint:
           'Every question on a single page with one Submit. Logic still applies live: questions show and hide as answers change.',
+        screensIgnored: 'Screens only apply to Slides. On One page every question is already on one page.',
         coverCtaNote:
           'On a one-page form the cover renders as a header above the questions: there is no Start button, so its text is not used.',
         endReveal: 'Reveal screen before results',
@@ -4213,7 +4216,7 @@ export const es: FormsMessages = {
       nameRequired: 'Ponle un nombre a tu formulario.',
       layoutLabel: 'Diseño',
       layoutSlides: 'Diapositivas',
-      layoutSlidesDesc: 'Una pregunta por pantalla, paso a paso.',
+      layoutSlidesDesc: 'Una pantalla a la vez. Agrupa preguntas para mostrar varias en una pantalla.',
       layoutVertical: 'Una página',
       layoutVerticalDesc: 'Todas las preguntas en una sola página, un solo Enviar.',
       cancel: 'Cancelar',
@@ -4571,10 +4574,11 @@ export const es: FormsMessages = {
         title: 'Diseño',
         subtitle: 'Cómo avanzan los respondientes por el formulario.',
         slides: 'Diapositivas',
-        slidesHint: 'Una pregunta por pantalla, paso a paso.',
+        slidesHint: 'Una pantalla a la vez. Agrupa preguntas para mostrar varias en una pantalla.',
         vertical: 'Una página',
         verticalHint:
           'Todas las preguntas en una sola página con un solo Enviar. La lógica sigue aplicando en vivo. Las preguntas aparecen y se ocultan según las respuestas.',
+        screensIgnored: 'Las pantallas solo aplican en Diapositivas. En Una página todas las preguntas ya están juntas.',
         coverCtaNote:
           'En un formulario de una página la portada se muestra como encabezado sobre las preguntas. No hay botón de inicio, así que su texto no se usa.',
         endReveal: 'Pantalla de revelación antes del resultado',

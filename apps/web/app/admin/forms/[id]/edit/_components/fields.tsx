@@ -340,17 +340,24 @@ export function SegmentedToggle<T extends string>({
 export function InlineField({
   label,
   hint,
+  hintId,
   children,
 }: {
   label: string;
   hint?: string;
+  /** An id for the hint, so the control can point at it (`aria-describedby`). */
+  hintId?: string;
   children: ReactNode;
 }) {
   return (
     <div className="flex items-start justify-between gap-4 py-1">
       <div className="min-w-0">
         <p className="text-sm font-medium text-foreground">{label}</p>
-        {hint ? <p className="mt-0.5 text-xs text-muted-foreground">{hint}</p> : null}
+        {hint ? (
+          <p id={hintId} className="mt-0.5 text-xs text-muted-foreground">
+            {hint}
+          </p>
+        ) : null}
       </div>
       <div className="shrink-0 pt-0.5">{children}</div>
     </div>
