@@ -8,14 +8,26 @@ import type { BookingCallbackInput, UploadPresignInput } from '@quill/types';
 /**
  * Submit a form — partial (past the lead-capture threshold) or complete. The
  * score is always recomputed server-side; the client value is never trusted.
+ *
+ * `captchaToken` and `hp` are spam protection's (the human check's token and
+ * strict mode's hidden field); the API decides whether it needs them. A
+ * refusal comes back with the API's `error` code, which is what the renderer
+ * localizes, never its English `message`.
  */
 export async function submitFormAction(
   accountCode: string,
   slug: string,
-  payload: { sessionId: string; data: Record<string, unknown>; partial?: boolean; locale?: 'en' | 'es' },
-): Promise<{ ok: boolean; score?: number; outcome?: string | null; message?: string }> {
+  payload: {
+    sessionId: string;
+    data: Record<string, unknown>;
+    partial?: boolean;
+    locale?: 'en' | 'es';
+    captchaToken?: string;
+    hp?: string;
+  },
+): Promise<{ ok: boolean; score?: number; outcome?: string | null; message?: string; error?: string }> {
   const res = await postSubmission(accountCode, slug, payload);
-  return { ok: res.ok, score: res.score, outcome: res.outcome, message: res.message };
+  return { ok: res.ok, score: res.score, outcome: res.outcome, message: res.message, error: res.error };
 }
 
 /** Record a funnel event (best-effort). */

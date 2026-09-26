@@ -42,6 +42,7 @@ export function QuestionSpine({
   onAdd,
   partialAfterStep,
   onPartialChange,
+  partialsHeld = false,
   m,
 }: {
   steps: FormStep[];
@@ -53,6 +54,11 @@ export function QuestionSpine({
   partialAfterStep?: number;
   /** Set (1-based), move, or clear (`undefined`) the partial-submit threshold. */
   onPartialChange: (afterStep: number | undefined) => void;
+  /**
+   * Spam protection (on, on a deployment that can run it) holds partials: they
+   * are saved but reach no integration. The marker's popover says so.
+   */
+  partialsHeld?: boolean;
   m: BuilderMessages;
 }) {
   // Effective 1-based marker slot (null = not shown) — only for an in-range
@@ -120,6 +126,7 @@ export function QuestionSpine({
                         <p>{m.partial.tipCapture}</p>
                         <p>{m.partial.tipStored}</p>
                         <p>{m.partial.tipNotify}</p>
+                        {partialsHeld ? <p data-testid="partial-point-captcha">{m.partial.tipCaptcha}</p> : null}
                         {atEnd ? <p>{m.partial.tipAfterLast}</p> : null}
                         <p className="font-medium text-foreground">{m.partial.tipWhere}</p>
                       </>

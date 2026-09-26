@@ -15,7 +15,8 @@ import { extractUtm } from './destination-effects';
 import { HubspotPortalResolver, mirrorGuidFor } from './hubspot-portal';
 import type { BookingSyncPayload } from './booking-effects';
 import { HubspotPropertiesService } from './integrations.controller';
-import { DB, ENV } from './tokens';
+import { captchaActive, type CaptchaVerifier } from './captcha';
+import { CAPTCHA, DB, ENV } from './tokens';
 
 // Re-exported from their shared home (`@quill/destinations`) — the submit-time
 // adapter collapses days the same way, and both sides must agree on the answer.
@@ -164,6 +165,9 @@ export class BookingSyncEffects {
     @Optional()
     @Inject(HubspotPropertiesService)
     private readonly hubspotProperties?: HubspotPropertiesService,
+    /** Spam protection's verifier, only to know whether a form is protected
+     *  on this deployment. LAST: specs build this class positionally. */
+    @Optional() @Inject(CAPTCHA) private readonly captcha?: CaptchaVerifier,
   ) {}
 
   /**
@@ -248,6 +252,18 @@ export class BookingSyncEffects {
 
     // --- The session's submission (one read serves three consumers below) ----
     const submission = await this.loadSubmission(payload.formId, payload.sessionId);
+
+    // --- Spam protection: no side door around held partials --------------------
+    // The booking callback is public and unchallenged. With protection on, a
+    // partial is saved but never delivered, so a partial carrying someone's
+    // email plus a forged callback must not upsert that contact here instead.
+    // What still counts: an invitee the provider API returned to OUR token, or a
+    // COMPLETE submission, which only exists once the challenge passed.
+    if (captchaActive(form.config, this.captcha) && !inviteeEmail && submission?.completedAt == null) {
+      throw new OutboxSkipError(
+        'booking sync: spam protection is on and this session has no verified invitee and no complete submission',
+      );
+    }
 
     // --- Respondent email: invitee first, else the session's submission ------
     const submissionEmail = submission ? looseEmailFromData(submission.data) : null;

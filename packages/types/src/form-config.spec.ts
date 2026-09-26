@@ -10,12 +10,14 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
+  captchaCData,
   folderInputSchema,
   folderViewSchema,
   formConfigSchema,
   formCreateInputSchema,
   formFolderPatchSchema,
   hasExtraHubspotDestination,
+  publicFormSchema,
   submissionSchema,
   workspaceTimezoneSchema,
 } from './index';
@@ -295,6 +297,73 @@ describe('submissionSchema: the locale the respondent saw (additive)', () => {
     expect(submissionSchema.parse({ sessionId: 's', data: {} }).locale).toBeUndefined();
     expect(submissionSchema.parse({ sessionId: 's', data: {}, locale: 'es' }).locale).toBe('es');
     expect(() => submissionSchema.parse({ sessionId: 's', data: {}, locale: 'fr' })).toThrow();
+  });
+});
+
+describe('spam protection (additive)', () => {
+  it('a legacy config parses with no spam protection, which means off', () => {
+    const parsed = formConfigSchema.parse(baseConfig());
+    expect(parsed.spamProtection).toBeUndefined();
+  });
+
+  it('keeps the switch and the mode, and accepts null (the editor clears it this way)', () => {
+    expect(
+      formConfigSchema.parse({ ...baseConfig(), spamProtection: { captcha: true } }).spamProtection,
+    ).toEqual({ captcha: true });
+    expect(
+      formConfigSchema.parse({ ...baseConfig(), spamProtection: { captcha: true, strict: true } })
+        .spamProtection,
+    ).toEqual({ captcha: true, strict: true });
+    expect(formConfigSchema.parse({ ...baseConfig(), spamProtection: null }).spamProtection).toBeNull();
+  });
+
+  it('rejects a switch that is not a boolean', () => {
+    expect(() =>
+      formConfigSchema.parse({ ...baseConfig(), spamProtection: { captcha: 'yes' } }),
+    ).toThrow();
+  });
+});
+
+describe('publicFormSchema: the challenge the renderer runs (additive)', () => {
+  it('parses a payload without one, and one carrying the provider and its site key', () => {
+    const base = { slug: 'f', name: 'F', config: baseConfig() };
+    expect(publicFormSchema.parse(base).captcha).toBeUndefined();
+    expect(
+      publicFormSchema.parse({ ...base, captcha: { provider: 'turnstile', siteKey: 'site-key', strict: true } })
+        .captcha,
+    ).toEqual({ provider: 'turnstile', siteKey: 'site-key', strict: true });
+  });
+});
+
+describe('submissionSchema: the challenge token and the honeypot (additive)', () => {
+  it('carries both as optional top-level fields, never inside the answers', () => {
+    const parsed = submissionSchema.parse({ sessionId: 's', data: {}, captchaToken: 'tok', hp: '' });
+    expect(parsed.captchaToken).toBe('tok');
+    expect(parsed.hp).toBe('');
+    expect(parsed.data).toEqual({});
+    const legacy = submissionSchema.parse({ sessionId: 's', data: {} });
+    expect(legacy.captchaToken).toBeUndefined();
+    expect(legacy.hp).toBeUndefined();
+  });
+
+  it('accepts a token of 2048 characters and rejects one of 2049', () => {
+    expect(submissionSchema.parse({ sessionId: 's', data: {}, captchaToken: 'a'.repeat(2048) }).captchaToken)
+      .toHaveLength(2048);
+    expect(() =>
+      submissionSchema.parse({ sessionId: 's', data: {}, captchaToken: 'a'.repeat(2049) }),
+    ).toThrow();
+  });
+});
+
+describe('captchaCData', () => {
+  it('passes a session id made of allowed characters through unchanged', () => {
+    const uuid = '3f1b3d7e-2b9a-4c7e-9e3a-6f0d2a1c5b44';
+    expect(captchaCData(uuid)).toBe(uuid);
+  });
+
+  it('drops the characters the widget refuses and caps the length', () => {
+    expect(captchaCData('a b/c:d_e-f')).toBe('abcd_e-f');
+    expect(captchaCData('x'.repeat(300))).toHaveLength(255);
   });
 });
 

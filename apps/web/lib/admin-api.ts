@@ -212,6 +212,13 @@ export interface Me {
    * question type rather than offering one that could never be answered.
    */
   uploads: { enabled: boolean; maxFileMb: number };
+  /**
+   * Whether this DEPLOYMENT can run spam protection's human check (it has
+   * challenge keys). `false` on every bare fork: the Connect tab shows the
+   * switch disabled, with the reason. Optional so an API older than this reads
+   * as unavailable rather than crashing the editor.
+   */
+  captcha?: { available: boolean };
   /** `'staff'` when the caller is in this workspace by access grant, not by membership. */
   accessGrant: 'staff' | null;
   /** Staff of the deployment (by email domain, identity-backed only): may search and enter the whole estate. */
@@ -491,6 +498,12 @@ export interface AccountWebhook {
   /** Already resolved server-side: absent triggers mean both phases fire. */
   firesPartial: boolean;
   firesComplete: boolean;
+  /**
+   * The owning form's spam protection holds partial deliveries on this
+   * deployment, so a partial trigger is paused. Optional: an older API sends
+   * none, which reads as "not held", exactly what it meant then.
+   */
+  partialsHeld?: boolean;
   hasSecret: boolean;
   /**
    * Deliveries that ended without landing, rolled up per FORM — the queue records

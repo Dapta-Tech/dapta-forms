@@ -199,6 +199,8 @@ export interface BuilderMessages {
     tipNotify: string;
     /** Popover: where partials appear in the admin. */
     tipWhere: string;
+    /** Popover, only while spam protection holds partials: saved, not sent. */
+    tipCaptcha: string;
     /** Popover extra line when the marker sits after the LAST question. */
     tipAfterLast: string;
     /** One-line pointer left in the Design tab (the select moved to the spine). */
@@ -673,6 +675,7 @@ const en: BuilderMessages = {
     suggestEmailAction: 'Capture after the email question',
     tipNotify: 'Consider letting respondents know their answers may be collected before they submit.',
     tipWhere: 'View them in Submissions with the “Partial” filter.',
+    tipCaptcha: 'With spam protection on, partial answers are saved but not sent to integrations.',
     tipAfterLast: 'After the last question it never fires. The final submit already captures everything.',
     designNote: 'Configured in the question list on the Build tab: look for the “Partial submit point” card.',
   },
@@ -1109,6 +1112,7 @@ const es: BuilderMessages = {
     suggestEmailAction: 'Capturar tras la pregunta de email',
     tipNotify: 'Considera avisar a tus respondientes de que sus respuestas pueden recopilarse antes de enviar.',
     tipWhere: 'Míralos en Envíos con el filtro «Parciales».',
+    tipCaptcha: 'Con la protección activa, las parciales se guardan pero no se envían a integraciones.',
     tipAfterLast: 'Después de la última pregunta nunca se activa. El envío final ya lo captura todo.',
     designNote:
       'Se configura en la lista de preguntas, en la pestaña Construir: busca la tarjeta «Punto de envío parcial».',

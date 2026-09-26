@@ -32,7 +32,7 @@ import {
   type FormOutcome,
 } from '@quill/engine';
 import { getMessages, resolveFormLabels } from '@quill/shared';
-import type { FormConfig } from '@quill/types';
+import type { FormConfig, PublicCaptcha } from '@quill/types';
 import { formDesignProps } from '@/lib/form-design';
 import { FormLogo } from '@/components/public/form-logo';
 import { FormProgress } from '@/components/public/form-progress';
@@ -55,6 +55,9 @@ import {
 } from './actions';
 import {
   useSessionId,
+  useCaptchaGate,
+  captchaAborted,
+  submitFinal,
   captureUtm,
   captureDefaults,
   capturePrefill,
@@ -73,6 +76,7 @@ export function FormRenderer({
   config,
   locale = 'en',
   uploadMaxMb,
+  captcha,
   startAt,
 }: {
   accountCode: string;
@@ -82,6 +86,12 @@ export function FormRenderer({
   locale?: string;
   /** The deployment's per-file ceiling in MB, for `file` steps. */
   uploadMaxMb?: number;
+  /**
+   * The human check the final submit must pass (spam protection), exactly as
+   * the API served it. Only the public page passes it; the builder preview
+   * never does, so a preview never loads, renders or runs a check.
+   */
+  captcha?: PublicCaptcha;
   /**
    * Start-position hint: a runtime step index, or `'cover'` for the default
    * entry (cover when it exists, else the first step). The builder preview
@@ -173,6 +183,19 @@ export function FormRenderer({
   const [index, setIndex] = useState(typeof startAt === 'number' ? startAt : 0);
   const [animKey, setAnimKey] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  // A refused final submit that cannot go back to its step (see `finalize`).
+  const [submitFailure, setSubmitFailure] = useState<string | null>(null);
+  // The final submit is running on its own step (spam protection's check
+  // above the button, then the submit): the button says so and takes no
+  // second click or Enter, Back waits, and the answer holds still. Mirrored in
+  // a ref for the handlers.
+  const [sending, setSending] = useState(false);
+  const sendingRef = useRef(false);
+  const markSending = useCallback((on: boolean) => {
+    sendingRef.current = on;
+    setSending(on);
+  }, []);
+  const finalizeRun = useRef(0);
   const [done, setDone] = useState<{ score: number; outcome: string | null } | null>(null);
   const [booking, setBooking] = useState<{ outcome: FormOutcome; score: number } | null>(null);
 
@@ -227,6 +250,20 @@ export function FormRenderer({
   // once and applied by `PhaseShell`. Nothing here overrides a token the author
   // did not set, so a form with no branding renders exactly as it always did.
   const design = useMemo(() => formDesignProps(config.branding), [config.branding]);
+
+  // Spam protection's human check, shared with the one-page layout. Inert
+  // without `captcha`. Read through a ref inside the async flows below.
+  const gate = useCaptchaGate(captcha, {
+    sessionId,
+    locale: formLocale,
+    theme: design.themeMode ?? 'dark',
+    prompt: m.captcha.prompt,
+  });
+  const gateRef = useRef(gate);
+  gateRef.current = gate;
+  // The step the respondent finished on, read when a final submit is refused.
+  const stepRef = useRef<FormStep | undefined>(undefined);
+  stepRef.current = step;
 
   const err = (code: string) => m.errors[code as keyof typeof m.errors] ?? m.errors.required;
 
@@ -293,27 +330,64 @@ export function FormRenderer({
 
   const finalize = useCallback(
     async (finalAnswers: Answers) => {
-      setPhase('submitting');
+      setSubmitFailure(null);
+      // A finish through the step's own button, with spam protection on,
+      // happens right on that step: the check sits above the button, which
+      // reads "Submitting…", and the screen stays. Every other finish (no
+      // check, an auto-advance, a reveal or a scheduler) takes the submitting
+      // screen, as ever. The step's check slot being mounted is what tells.
+      const inline = gateRef.current.inlineReady();
+      const run = ++finalizeRun.current;
+      if (inline) markSending(true);
+      else setPhase('submitting');
+      const data = withData(finalAnswers);
       // Transport-safe with retries: a submit whose INVOCATION fails (network
       // drop, deploy-rotated action id) used to reject unhandled, stranding the
       // visitor on the "submitting" spinner with the submission silently lost.
       // Retrying is safe — the server dedupes submissions by session.
       // 8s per attempt: worst case ~27s on the spinner, not the old forever.
-      const res = await callActionWithRetry(
-        () =>
-          submitFormAction(accountCode, slug, {
-            sessionId,
-            data: withData(finalAnswers),
-            // What the respondent SAW, so the confirmation email matches.
-            locale: formLocale,
-          }),
-        { timeoutMs: 8_000 },
-      );
+      // With spam protection on, the human check runs first (see
+      // `submitFinal`, shared with the one-page layout).
+      const res = await submitFinal({
+        gate: gateRef.current,
+        m,
+        send: (fields) =>
+          callActionWithRetry(
+            () =>
+              submitFormAction(accountCode, slug, {
+                sessionId,
+                data,
+                // What the respondent SAW, so the confirmation email matches.
+                locale: formLocale,
+                ...fields,
+              }),
+            { timeoutMs: 8_000 },
+          ),
+        savePartial: () =>
+          callActionWithRetry(
+            () => submitFormAction(accountCode, slug, { sessionId, data, partial: true, locale: formLocale }),
+            { timeoutMs: 8_000 },
+          ),
+      });
+      // A newer run owns the screen now (see `submitFinal`).
+      if ('aborted' in res) {
+        if (run === finalizeRun.current) markSending(false);
+        return;
+      }
       if (!res.ok) {
-        // Back to the steps with every answer intact; transport messages are
-        // technical noise, so those show the localized submit error instead.
-        setError((isTransportError(res) ? null : res.message) ?? err('submit'));
-        setPhase('steps');
+        markSending(false);
+        // Back to the step with every answer intact, the message beside its
+        // button. A reveal or a scheduler as the last step has neither: going
+        // back replayed the reveal (which finalized again, forever) or left the
+        // person on a calendar they had already booked. The failure stays on
+        // this screen instead, with its own way to try again.
+        const last = stepRef.current;
+        if (last && last.type !== 'reveal' && last.type !== 'scheduler') {
+          setError(res.message);
+          setPhase('steps');
+        } else {
+          setSubmitFailure(res.message);
+        }
         return;
       }
       // The submission is now confirmed, so this is a lead. Report the
@@ -371,7 +445,7 @@ export function FormRenderer({
       setDone({ score, outcome: res.outcome ?? null });
       setPhase('done');
     },
-    [accountCode, slug, sessionKey, sessionId, engineConfig],
+    [accountCode, slug, sessionKey, sessionId, engineConfig, markSending],
   );
 
   // Report the booked meeting to the API (best-effort), THEN redirect/finish.
@@ -420,6 +494,9 @@ export function FormRenderer({
         if (!coverScreen && !startSent.current) {
           startSent.current = true;
           track('start');
+          // The first answer, not the view: a visitor who only looks and
+          // leaves never reaches the challenge provider.
+          gateRef.current.prewarm();
         }
         track('step_complete', index, completed.key);
 
@@ -449,6 +526,15 @@ export function FormRenderer({
         // reveal step is the last VISIBLE step it becomes the pre-result
         // interstitial (submitAfterReveal); otherwise it plays then continues.
         if (revealKey && completed.key === revealKey) {
+          // A reveal between the last button and the submit: the check runs
+          // above that button first, and its token waits for the submit after
+          // the interstitial (see the one-page layout's reveal).
+          if (isLast && gateRef.current.inlineReady()) {
+            markSending(true);
+            const held = await gateRef.current.hold();
+            markSending(false);
+            if (captchaAborted(held)) return;
+          }
           submitAfterReveal.current = isLast;
           if (!isLast) setIndex(completedIdx + 1);
           setPhase('reveal');
@@ -467,7 +553,7 @@ export function FormRenderer({
         advancing.current = false;
       }
     },
-    [engineConfig, index, thresholdKey, revealKey, accountCode, slug, sessionId, finalize, track],
+    [engineConfig, index, thresholdKey, revealKey, accountCode, slug, sessionId, finalize, track, markSending],
   );
 
   // A booking on a SCHEDULER step (V6): record the meeting (booking_event + the
@@ -503,7 +589,7 @@ export function FormRenderer({
   );
 
   function submitCurrent() {
-    if (!step) return;
+    if (!step || sendingRef.current) return;
     // Commit point: store the canonical value (a url step gains its scheme
     // here) BEFORE validating, so Enter and the button hand the same shape to
     // the engine, the partial save and the CRM.
@@ -521,7 +607,7 @@ export function FormRenderer({
 
   // Choice/dropdown selection: record the answer and auto-advance.
   function select(value: string) {
-    if (!step) return;
+    if (!step || sendingRef.current) return;
     const next = { ...answers, [step.key]: value };
     setAnswers(next);
     setError(null);
@@ -553,6 +639,7 @@ export function FormRenderer({
   function start() {
     startSent.current = true;
     track('start');
+    gateRef.current.prewarm();
     lastStepViewKey.current = null;
     setPhase('steps');
     setIndex(0);
@@ -560,6 +647,7 @@ export function FormRenderer({
   }
 
   function back() {
+    if (sendingRef.current) return;
     setError(null);
     if (phase === 'steps' && index > 0) {
       setAnimKey((k) => k + 1);
@@ -675,6 +763,10 @@ export function FormRenderer({
   }
 
   if (phase === 'submitting') {
+    // The human check shows here when it needs the person (or always, in
+    // strict mode, where the widget itself is the progress indicator). A
+    // token already won above the button leaves no widget here: the spinner.
+    const showSpinner = !submitFailure && !gate.interactive && !(gate.strict && gate.widget);
     return (
       <PhaseShell
         className="pf pf--reveal"
@@ -693,8 +785,26 @@ export function FormRenderer({
               <FormLogo src={logos.form} name={name} fallback="none" />
             </div>
           ) : null}
-          <div className="pf-reveal__spinner" aria-hidden="true" />
-          <p className="pf-reveal__subtitle">{m.submitting}</p>
+          {showSpinner ? <div className="pf-reveal__spinner" aria-hidden="true" /> : null}
+          {submitFailure ? (
+            <>
+              <p className="pf__error" role="alert" data-testid="submit-failure">
+                {submitFailure}
+              </p>
+              <button
+                type="button"
+                className="pf__btn pf__btn--inline"
+                onClick={() => void finalizeRef.current(answersRef.current)}
+              >
+                {m.captcha.retry}
+              </button>
+            </>
+          ) : (
+            <>
+              <p className="pf-reveal__subtitle">{gate.interactive ? m.captcha.prompt : m.submitting}</p>
+              {gate.widget}
+            </>
+          )}
         </div>
       </PhaseShell>
     );
@@ -857,6 +967,7 @@ export function FormRenderer({
             </div>
           </div>
         </div>
+        {gate.honeypot}
         {/* Last child of `.pf__main`, in flow — one DOM position that lands
             correctly on all three bands: it ends the fluid column below 769px
             and rides the centered card group above it. */}
@@ -869,12 +980,22 @@ export function FormRenderer({
   // multi-select choice (pick several, then Continue) — shows the button.
   const autoAdvances = step.type === 'dropdown' || (step.type === 'multiple_choice' && !isMultiSelect(step));
   const showContinue = !autoAdvances;
+  // This step's own button ends the form: it is the last one on the path, or
+  // it is terminal. Spam protection's check then sits right above that button
+  // (see `finalize`, and `advance` for a legacy reveal played after it).
+  const finishesHere = showContinue && (!!step.terminal || index + 1 === steps.length);
   return (
     <PhaseShell className="pf" design={design} onKeyDown={onKeyDown} cover={chrome}>
       <header className="pf__topbar">
         <div className="pf__topbar-inner">
           {index > 0 || coverScreen ? (
-            <button type="button" className="pf__back" onClick={back} aria-label={labels.back}>
+            <button
+              type="button"
+              className="pf__back"
+              onClick={back}
+              aria-label={labels.back}
+              disabled={sending}
+            >
               ←
             </button>
           ) : (
@@ -902,10 +1023,12 @@ export function FormRenderer({
                 value={answers[step.key]}
                 answers={answers}
                 onChange={(v: AnswerValue) => {
+                  if (sendingRef.current) return;
                   setAnswers((a) => ({ ...a, [step.key]: v }));
                   setError(null);
                 }}
                 onFieldChange={(field, v) => {
+                  if (sendingRef.current) return;
                   setAnswers((a) => ({ ...a, [field]: v }));
                   setError(null);
                 }}
@@ -923,15 +1046,28 @@ export function FormRenderer({
                 </p>
               ) : null}
 
+              {/* Spam protection's check, right above a button that ends the form. */}
+              {finishesHere ? gate.inline : null}
+
               {showContinue ? (
-                <button type="button" className="pf__btn pf__btn--inline" onClick={submitCurrent}>
-                  {step.buttonText ?? (index + 1 === steps.length ? labels.submit : labels.next)}
+                <button
+                  type="button"
+                  className="pf__btn pf__btn--inline"
+                  onClick={submitCurrent}
+                  disabled={sending}
+                  aria-busy={sending || undefined}
+                >
+                  {sending
+                    ? m.submitting
+                    : (step.buttonText ?? (index + 1 === steps.length ? labels.submit : labels.next))}
                 </button>
               ) : null}
             </div>
           </div>
         </div>
       </div>
+      {/* Strict mode's hidden field (spam protection); nothing otherwise. */}
+      {gate.honeypot}
       {/* See the scheduler screen above: in flow at the end of `.pf__main`,
           never fixed — a floating pill would fight the Continue button and the
           mobile keyboard. */}

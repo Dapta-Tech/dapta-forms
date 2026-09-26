@@ -47,13 +47,22 @@ export interface SubmitResult {
   score?: number;
   outcome?: string | null;
   message?: string;
+  /** The API's stable code on a refusal (`CAPTCHA_FAILED`, `RATE_LIMITED`, ...). */
+  error?: string;
 }
 
 /** Submit answers for a public form (partial or complete). */
 export async function postSubmission(
   accountCode: string,
   slug: string,
-  body: { sessionId: string; data: Record<string, unknown>; partial?: boolean; locale?: 'en' | 'es' },
+  body: {
+    sessionId: string;
+    data: Record<string, unknown>;
+    partial?: boolean;
+    locale?: 'en' | 'es';
+    captchaToken?: string;
+    hp?: string;
+  },
 ): Promise<SubmitResult> {
   const res = await fetch(
     `${API_URL}/v1/public/forms/${encodeURIComponent(accountCode)}/${encodeURIComponent(slug)}/submissions`,
@@ -73,7 +82,12 @@ export async function postSubmission(
       score: json.score as number,
       outcome: (json.outcome as string | null) ?? null,
     };
-  return { ok: false, status: res.status, message: (json.message as string) ?? 'Could not submit.' };
+  return {
+    ok: false,
+    status: res.status,
+    message: (json.message as string) ?? 'Could not submit.',
+    ...(typeof json.error === 'string' ? { error: json.error } : {}),
+  };
 }
 
 /** Record a funnel event (fire-and-forget from the client). */

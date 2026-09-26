@@ -317,6 +317,7 @@ export function IntegrationsEditor({
   hubspotConnected,
   questions,
   readiness = NOT_READY,
+  partialsHeld = false,
   messages: m,
   locale,
 }: {
@@ -327,6 +328,11 @@ export function IntegrationsEditor({
   hubspotConnected: boolean;
   /** The form's mappable questions (from its steps). */
   questions: QuestionMeta[];
+  /**
+   * Spam protection holds this form's partial answers: saved, delivered to no
+   * destination. The cards say so; the stored triggers are left as they are.
+   */
+  partialsHeld?: boolean;
   /**
    * Whether this form can key a CRM contact — config AND connections. The
    * screen must not promise a sync it cannot deliver, so the copy below reads
@@ -628,6 +634,7 @@ export function IntegrationsEditor({
         // refetches the live config every time it is opened, so this is as
         // fresh as the array the card was seeded from.
         carriedCount={carriedWebhooks(initialDestinations).length}
+        partialsHeld={partialsHeld}
         locale={locale}
         m={m}
       />
@@ -646,6 +653,7 @@ export function IntegrationsEditor({
           formActivityError={formActivityError}
           readiness={readiness}
           questions={questions}
+          partialsHeld={partialsHeld}
           formId={id}
           m={m}
         />
@@ -1303,6 +1311,7 @@ export function WebhookCard({
   clearUrlError,
   formId,
   carriedCount,
+  partialsHeld = false,
   locale,
   m,
 }: {
@@ -1310,6 +1319,8 @@ export function WebhookCard({
   onChange: (s: WebhookState) => void;
   urlError: string | null;
   clearUrlError: () => void;
+  /** Spam protection holds partials: the Partial trigger is paused, not fired. */
+  partialsHeld?: boolean;
   /** Needed for the test delivery — the API resolves the saved webhook by form. */
   formId: string;
   /** Webhooks stored on this form that the card does not edit. */
@@ -1427,13 +1438,23 @@ export function WebhookCard({
       </Field>
       <Field label={m.webhookEvents} help={m.webhookEventsHelp}>
         <div className="flex flex-col gap-2 sm:flex-row sm:gap-6">
-          <label className="flex cursor-pointer items-center gap-2 text-sm">
+          <label className="flex cursor-pointer flex-wrap items-center gap-2 text-sm">
             <Checkbox
               checked={state.firePartial}
               onChange={(e) => toggleEvent('partial', e.target.checked)}
               aria-label={m.eventPartial}
             />
             {m.eventPartial}
+            {/* The trigger stays as saved (switching protection off restores
+                it); what changes is that nothing partial is sent meanwhile. */}
+            {partialsHeld && state.firePartial ? (
+              <span
+                data-testid="webhook-partial-held"
+                className="rounded-full bg-secondary/15 px-2 py-0.5 text-xs font-medium text-secondary"
+              >
+                {m.eventPartialHeld}
+              </span>
+            ) : null}
           </label>
           <label className="flex cursor-pointer items-center gap-2 text-sm">
             <Checkbox
@@ -1444,6 +1465,11 @@ export function WebhookCard({
             {m.eventComplete}
           </label>
         </div>
+        {partialsHeld && state.firePartial && !state.fireComplete ? (
+          <p data-testid="webhook-partial-only-held" role="alert" className="text-xs text-destructive">
+            {m.webhookPartialOnlyHeld}
+          </p>
+        ) : null}
       </Field>
       {/* Inside the card body, so it hides with the enable switch: a webhook
           that is off has no deliveries to explain, and the settings it belongs
@@ -1473,12 +1499,15 @@ export function HubspotCard({
   readiness,
   questions,
   formId,
+  partialsHeld = false,
   m,
 }: {
   state: HubspotState;
   onChange: (s: HubspotState) => void;
   /** Which form's delivery history the card reads. */
   formId: string;
+  /** Spam protection holds partials: the contact is written on complete only. */
+  partialsHeld?: boolean;
   /** Why HubSpot refused to build the mirror form on the last save, if it did. */
   formActivityError?: string | null;
   /** `options` rides along for the value pickers; absent = not an enumeration.
@@ -1722,6 +1751,14 @@ export function HubspotCard({
         {emailSource?.kind === 'scheduler' ? (
           <p data-testid="hubspot-scheduler-note" className="mt-2 text-xs text-muted-foreground">
             {readiness.ok ? m.emailFromScheduler : m.schedulerDisconnected}
+          </p>
+        ) : null}
+        {/* Spam protection: a partial no longer upserts the contact. Said here,
+            beside the rule it changes, rather than discovered from a CRM that
+            only fills in when a form is finished. */}
+        {partialsHeld ? (
+          <p data-testid="hubspot-partial-held" className="mt-2 text-xs text-muted-foreground">
+            {m.hubspotPartialHeld}
           </p>
         ) : null}
       </div>

@@ -364,6 +364,13 @@ export interface AccountWebhook {
   events: string[] | null;
   /** Whether a signing secret is configured. The secret itself is never read out. */
   hasSecret: boolean;
+  /**
+   * Whether the owning form's published config has spam protection switched
+   * on. While it is on (and the deployment can run the check), the API holds
+   * every partial delivery, so a partial trigger on this webhook is paused.
+   * The deployment half is the API's to add: this package never reads env.
+   */
+  captcha: boolean;
 }
 
 /**
@@ -392,8 +399,12 @@ export async function listAccountWebhooks(db: Db, accountId: string): Promise<Ac
 
   const out: AccountWebhook[] = [];
   for (const r of rows) {
-    const config = parseJsonColumn<{ destinations?: unknown }>(r.config, {});
+    const config = parseJsonColumn<{ destinations?: unknown; spamProtection?: unknown }>(r.config, {});
     const destinations = Array.isArray(config.destinations) ? config.destinations : [];
+    const spam = config.spamProtection;
+    // Strictly `true`, like the API's own check: a stray `"yes"` is not on.
+    const captcha =
+      !!spam && typeof spam === 'object' && (spam as { captcha?: unknown }).captcha === true;
     for (const entry of destinations) {
       // Duck-typed on purpose, the same way the delivery path and the masker read
       // this array. Parsing with `webhookDestinationSchema` would drop a stored
@@ -425,6 +436,7 @@ export async function listAccountWebhooks(db: Db, accountId: string): Promise<Ac
         enabled: d.enabled === true,
         events: events.length ? events : null,
         hasSecret: typeof secret === 'string' && secret.length > 0,
+        captcha,
       });
     }
   }
@@ -1100,4 +1112,18 @@ export async function recordFormEvent(
         VALUES (${randomUUID()}, ${input.formId}, ${input.sessionId}, ${input.type},
           ${input.stepIndex ?? null}, ${input.stepKey ?? null}, ${input.now ?? Date.now()})`,
   );
+}
+
+/**
+ * When a session first viewed a form (epoch-ms), or null when no `view` was
+ * recorded for it: a lost beacon, or a client that never loaded the page at
+ * all. Served by `form_event_session_idx` (form, session, type), so it is one
+ * index range read however busy the form is.
+ */
+export async function firstSessionViewAt(db: Db, formId: string, sessionId: string): Promise<number | null> {
+  const row = await db.get<{ at: number | string | null }>(
+    sql`SELECT MIN(created_at) AS at FROM form_event
+        WHERE form_id = ${formId} AND session_id = ${sessionId} AND type = 'view'`,
+  );
+  return row?.at == null ? null : Number(row.at);
 }

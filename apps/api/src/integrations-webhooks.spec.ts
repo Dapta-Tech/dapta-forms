@@ -32,6 +32,7 @@ import {
 } from './integrations.controller';
 import { AuthService } from './auth.service';
 import { LocalAuthProvider, type ReqLike } from './auth.provider';
+import { NoopCaptchaVerifier, TurnstileVerifier, type CaptchaVerifier } from './captcha';
 
 /** No identity → the local provider resolves the first seeded account + owner. */
 const asOwner = (): ReqLike => ({ headers: {} });
@@ -45,7 +46,7 @@ const webhook = (settings: Record<string, unknown>, extra: Record<string, unknow
 let db: Db;
 let controller: IntegrationsController;
 
-function build(): void {
+function build(captcha?: CaptchaVerifier): void {
   const env = { NODE_ENV: 'test' } as unknown as ServerEnv;
   const provider = new LocalAuthProvider(db, {
     NODE_ENV: 'test',
@@ -61,6 +62,7 @@ function build(): void {
     new CalendlyEventTypesService(env, db, noopFetch),
     db,
     env,
+    captcha,
   );
 }
 
@@ -74,9 +76,10 @@ async function seedForm(
   name: string,
   destinations: FormDestination[],
   account?: string,
+  extraConfig: Record<string, unknown> = {},
 ): Promise<string> {
   const accountId = account ?? (await acmeId());
-  const created = await createForm(db, accountId, { name, config: { version: 1, steps: [] } });
+  const created = await createForm(db, accountId, { name, config: { version: 1, steps: [], ...extraConfig } });
   if (!created.ok) throw new Error(`could not seed form ${name}`);
   await updateFormDestinations(db, accountId, created.value.id, destinations);
   return created.value.id;
@@ -220,5 +223,33 @@ describe('GET /v1/integrations/webhooks', () => {
     const serialized = JSON.stringify(res);
     expect(serialized).not.toContain(secret);
     expect(serialized).not.toContain(WEBHOOK_SECRET_MASK);
+  });
+
+  describe('partials held by spam protection', () => {
+    const protectedForm = { spamProtection: { captcha: true } };
+
+    it('reports them held when the form is protected AND the deployment can run the check', async () => {
+      build(new TurnstileVerifier({ siteKey: 's', secretKey: 'k' }));
+      await seedForm('Protected', [webhook({ url: 'https://a.test/protected' })], undefined, protectedForm);
+      await seedForm('Open', [webhook({ url: 'https://a.test/open' })]);
+
+      const byUrl = new Map((await controller.webhooks(asOwner())).items.map((i) => [i.url, i]));
+      // The trigger stays what the owner saved: turning protection off restores it.
+      expect(byUrl.get('https://a.test/protected')).toMatchObject({
+        firesPartial: true,
+        firesComplete: true,
+        partialsHeld: true,
+      });
+      expect(byUrl.get('https://a.test/open')).toMatchObject({ firesPartial: true, partialsHeld: false });
+    });
+
+    it('never reports them held on a deployment without keys, where nothing is held', async () => {
+      build(new NoopCaptchaVerifier());
+      await seedForm('Protected', [webhook({ url: 'https://a.test/protected' })], undefined, protectedForm);
+      expect((await controller.webhooks(asOwner())).items[0]?.partialsHeld).toBe(false);
+
+      build(undefined);
+      expect((await controller.webhooks(asOwner())).items[0]?.partialsHeld).toBe(false);
+    });
   });
 });

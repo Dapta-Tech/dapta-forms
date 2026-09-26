@@ -198,6 +198,9 @@ export default async function PublicFormPage({
           config={form.config}
           locale={locale}
           uploadMaxMb={form.uploadMaxMb}
+          // Spam protection: present only when the API says this form's final
+          // submit must pass the human check. The builder preview never passes it.
+          captcha={form.captcha}
         />
       </div>
     </>

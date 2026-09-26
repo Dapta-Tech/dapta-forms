@@ -42,7 +42,21 @@ export const openapiSpec = {
     '/v1/public/forms/{accountCode}/{slug}/submissions': {
       post: {
         summary: 'Submit answers (score recomputed server-side)',
-        responses: { '201': { description: 'Recorded' }, '400': { description: 'Invalid' } },
+        description:
+          'Body { sessionId, data, partial?, locale?, captchaToken?, hp? }. A form whose owner turned on spam protection, on a deployment that can run it, is served with a `captcha` object in its public payload; its COMPLETE submit must then carry `captchaToken`, the token the human check issued for this session, and the API verifies it before anything is written. A partial submit of such a form is saved but delivered to no destination; the verified complete delivers everything. `hp` is the hidden field of strict mode and must be empty. Every error body carries a stable `error` code next to its English `message`.',
+        responses: {
+          '201': { description: 'Recorded' },
+          '400': { description: 'Invalid (BAD_REQUEST, ANSWER_TOO_LONG)' },
+          '403': {
+            description:
+              'CAPTCHA_REQUIRED (no token on a complete submit of a protected form: refresh the page) or CAPTCHA_FAILED (the human check did not pass). Nothing is written.',
+          },
+          '429': { description: 'RATE_LIMITED' },
+          '503': {
+            description:
+              'CAPTCHA_UNAVAILABLE: the human check could not be completed. The answers were kept as a partial, which is not delivered; submit again.',
+          },
+        },
       },
     },
     '/v1/public/forms/{accountCode}/{slug}/uploads': {

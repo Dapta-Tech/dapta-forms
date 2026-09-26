@@ -45,6 +45,9 @@ export default async function EditFormPage({ params }: { params: Promise<{ id: s
         // the dashboard's own env: two copies of this switch that disagreed
         // would offer a question whose answers the API refuses.
         uploads={me.uploads}
+        // Same rule for spam protection: the API says whether this deployment
+        // can run the human check, and the editor never guesses.
+        captcha={me.captcha}
         updatedAt={form.updatedAt}
         publicPath={publicPath}
         locale={locale}

@@ -13,7 +13,7 @@ import {
   migrateRevealToStep,
   resolveFormLayout,
 } from '@quill/engine';
-import type { FormTracking } from '@quill/types';
+import type { FormSpamProtection, FormTracking } from '@quill/types';
 import { formConfigSchema } from '@quill/types';
 import { optionLocksAction, saveFormAction, type SaveFormResult, type StaleConflict } from '@/app/admin/actions';
 import { sameSavedContent, type SavedContent } from '@/lib/stale-save';
@@ -126,6 +126,7 @@ export function FormEditor({
   updatedAt,
   lockedValues = {},
   uploads,
+  captcha,
 }: {
   id: string;
   initialName: string;
@@ -149,6 +150,12 @@ export function FormEditor({
    * would refuse to accept an answer to is worse than not offering it.
    */
   uploads?: { enabled: boolean; maxFileMb: number };
+  /**
+   * Whether this deployment can run spam protection's human check. Absent or
+   * unavailable disables the switch in Connect and describes partials exactly
+   * as before: the API holds nothing where it cannot check anything.
+   */
+  captcha?: { available: boolean };
 }) {
   const bm = getBuilderMessages(locale);
   const searchParams = useSearchParams();
@@ -626,6 +633,15 @@ export function FormEditor({
   // flow round-trips it (normalizeConfig passes unknown top-level keys through).
   const setTracking = (tracking: FormTracking | undefined) =>
     mutate((c) => ({ ...c, tracking }) as FormConfig);
+  // `spamProtection` rides the same draft as `tracking`; undefined removes the
+  // key, so a form switched on and back off keeps the legacy config shape.
+  const setSpamProtection = (spamProtection: FormSpamProtection | undefined) =>
+    mutate((c) => ({ ...c, spamProtection }) as FormConfig);
+  const captchaAvailable = captcha?.available === true;
+  // Partials are held only where the check runs; the spine's popover says so.
+  const partialsHeld =
+    captchaAvailable &&
+    (config as FormConfig & { spamProtection?: FormSpamProtection | null }).spamProtection?.captcha === true;
   // Layout is switchable at any time: the config is identical either way, the
   // renderers just present it differently — nothing is lost by toggling.
   // 'slides' is stored as ABSENT so a slides form keeps the exact config shape
@@ -1032,6 +1048,7 @@ export function FormEditor({
                   onAdd={() => setGalleryOpen(true)}
                   partialAfterStep={config.partialSubmitAfterStep}
                   onPartialChange={setPartialSubmitAfterStep}
+                  partialsHeld={partialsHeld}
                   m={bm}
                 />
               </aside>
@@ -1179,6 +1196,8 @@ export function FormEditor({
               formId={id}
               config={config}
               onTrackingChange={setTracking}
+              onSpamProtectionChange={setSpamProtection}
+              captchaAvailable={captchaAvailable}
               m={m}
               locale={locale}
             />
