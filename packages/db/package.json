@@ -1,6 +1,6 @@
 {
   "name": "@quill/db",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "description": "Drizzle data layer — one portable schema over SQLite (dev) and Postgres (prod), migrations, seed, and the forms repository.",
@@ -8,7 +8,10 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
-    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" }
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
