@@ -97,7 +97,13 @@ export const openapiSpec = {
       },
     },
     '/v1/forms': {
-      get: { summary: 'List forms (host)', security: [{ hostSession: [] }], responses: { '200': { description: 'Forms' } } },
+      get: {
+        summary: 'List forms (host)',
+        description:
+          'Each item is { id, name, slug, brandAppliedAt, folderId, hasDraft, createdAt, updatedAt }. `hasDraft` is true while the form holds edits that have not been published; the public form keeps serving the last published config until then.',
+        security: [{ hostSession: [] }],
+        responses: { '200': { description: 'Forms' } },
+      },
       post: { summary: 'Create a form (host)', security: [{ hostSession: [] }], responses: { '201': { description: 'Created' } } },
         description:
           'Body { name, slug?, config?, folderId? }. `folderId` files the new form in one of the workspace folders (404 for a folder outside it); absent = unfiled.',
