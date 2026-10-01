@@ -686,7 +686,10 @@ export function IntegrationsEditor({
         data-testid="integrations-save-status"
         data-status={status}
         aria-live="polite"
-        className="sticky bottom-0 flex items-center gap-2 border-t border-border bg-background/95 py-4 text-sm text-muted-foreground backdrop-blur"
+        // A pill that carries its own ground, not a full-width band painted in
+        // the page colour: this editor sits on a white page in one place and on
+        // the grey work surface in another, and a band can only match one.
+        className="sticky bottom-3 flex w-fit items-center gap-2 rounded-full border border-border bg-card px-3.5 py-2 text-sm text-muted-foreground"
       >
         <i
           aria-hidden

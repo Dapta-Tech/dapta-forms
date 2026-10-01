@@ -2,8 +2,9 @@ import {
   DM_Sans,
   Figtree,
   Fraunces,
-  IBM_Plex_Mono,
+  Hanken_Grotesk,
   Inter,
+  JetBrains_Mono,
   Manrope,
   Playfair_Display,
   Poppins,
@@ -22,7 +23,7 @@ import type { FormFont } from '@quill/engine';
  * puts a third-party dependency on a page meant to run in a bare fork with
  * nothing configured.
  *
- * `preload` is TRUE only for Figtree, the face every page paints. Every other
+ * `preload` is TRUE only for Hanken Grotesk, the face every page paints. Every other
  * face — the mono included — is declared on `<html>` so any form
  * can use one without a re-render, but preloading all of them would emit a
  * `<link rel="preload">` per face on every page for fonts that page will never
@@ -30,61 +31,59 @@ import type { FormFont } from '@quill/engine';
  */
 
 /**
- * Figtree — the brand face, and the voice that does all the talking.
+ * Hanken Grotesk: the brand face, and the voice that does all the talking.
  *
- * A geometric-humanist sans under the SIL Open Font License. The license is the
- * reason it is here rather than a commercial face: `next/font/google` downloads
- * it at BUILD time and serves it from our own origin, so the font files ship
- * inside the deployed app and inside every clone of this repository. Only a
+ * The same grotesque the marketing site sets its headlines in, so the product
+ * and the landing read as one thing. Under the SIL Open Font License, which is
+ * the reason it can be here at all: `next/font/google` downloads it at BUILD
+ * time and serves it from our own origin, so the font files ship inside the
+ * deployed app and inside every clone of this repository. Only a
  * freely-redistributable license makes that legal, and OFL is one.
  *
- * It is a variable font, so no `weight` is declared — the whole 300–900 axis
+ * It is a variable font, so no `weight` is declared: the whole 100 to 900 axis
  * arrives in one file and the type scale draws 400 body / 500 labels / 600
- * titles / 700 buttons / 800 display off it. No obliques are used: this language
- * has no italic role, hierarchy comes from size and slate-vs-white.
- *
- * Chosen over the other OFL geometrics by measurement, not taste: it is one of
- * the three (with Outfit and Manrope) that leave the admin's dense panels at the
- * exact same height, and of those it has the healthiest x-height — which is what
- * decides whether a 10px uppercase telemetry label is still readable.
+ * titles / 700 display off it.
  */
-const figtree = Figtree({
+const hanken = Hanken_Grotesk({
   subsets: ['latin'],
-  variable: '--font-figtree',
+  variable: '--font-hanken',
   display: 'swap',
 });
 
 /**
- * IBM Plex Mono — the voice for things you copy rather than read.
+ * JetBrains Mono: the voice for things you copy rather than read.
  *
- * Its whole job is the fixed advance and the unambiguous `l`/`1`/`O`/`0`: public
- * links, slugs, handles, account codes, hex values, interpolation tokens, question
- * keys. Nothing else. In particular it no longer sets NUMBERS — a headline stat is
- * something you glance at, not something you transcribe, and monospacing one only
- * made it read as a code sample.
- *
- * Humanist rather than technical, which is why it replaced Martian Mono: that face
- * is wide, high-waisted and loud enough that any string in it announced itself as
- * a terminal. This one pairs with Figtree (both humanist) and says "literal"
- * without saying "console".
+ * Its whole job is the fixed advance and the unambiguous `l`/`1`/`O`/`0`: embed
+ * snippets, keys, hex values, interpolation tokens. Nothing else. In particular
+ * it does not set NUMBERS: a headline stat is something you glance at, not
+ * something you transcribe, and monospacing one only made it read as a code
+ * sample.
  *
  * It is app chrome rather than a form-author choice, so it is deliberately absent
- * from `FORM_FONTS` — an author picks the voice their questions speak in, not the
+ * from `FORM_FONTS`: an author picks the voice their questions speak in, not the
  * voice the dashboard labels things in.
  */
-const plexMono = IBM_Plex_Mono({
+const jetbrainsMono = JetBrains_Mono({
   subsets: ['latin'],
-  weight: ['400', '500', '600'],
-  variable: '--font-plex-mono',
+  variable: '--font-jetbrains-mono',
   display: 'swap',
   // Not preloaded: it paints the `font-mono` spots rather than page furniture, so
   // most routes never need it and the ones that do can swap a few short strings.
   preload: false,
 });
 
-/** Poppins — the previous brand face. Still curated: forms already published
- *  with it must keep rendering in it, so it stays in `FORM_FONTS` and only loses
- *  its preload (it is no longer what a page paints by default). */
+/** Figtree: the previous brand face. Still curated: it is the default face of
+ *  every form published before the rebrand, so it stays in `FORM_FONTS` and only
+ *  loses its preload (it is no longer what an admin page paints). */
+const figtree = Figtree({
+  subsets: ['latin'],
+  variable: '--font-figtree',
+  display: 'swap',
+  preload: false,
+});
+
+/** Poppins: an earlier brand face. Still curated: forms already published
+ *  with it must keep rendering in it, so it stays in `FORM_FONTS`. */
 const poppins = Poppins({
   subsets: ['latin'],
   weight: ['400', '500', '600', '700'],
@@ -113,8 +112,9 @@ const playfair = Playfair_Display({
 
 /** Every face's CSS variable, for the `<html>` element. */
 export const fontVariables = [
+  hanken.variable,
+  jetbrainsMono.variable,
   figtree.variable,
-  plexMono.variable,
   poppins.variable,
   inter.variable,
   dmSans.variable,
@@ -126,7 +126,7 @@ export const fontVariables = [
 ].join(' ');
 
 /** The brand face, the app-wide default (`--font-sans` in globals.css). */
-export const brandFontVariable = figtree.variable;
+export const brandFontVariable = hanken.variable;
 
 const SANS_FALLBACK = 'ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif';
 const SERIF_FALLBACK = 'ui-serif, Georgia, "Times New Roman", serif';

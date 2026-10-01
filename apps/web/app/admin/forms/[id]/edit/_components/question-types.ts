@@ -135,3 +135,39 @@ export function stepFromGalleryItem(item: GalleryItem, taken: ReadonlySet<string
   }
   return step;
 }
+
+/**
+ * A step's gallery id, so any surface can show its localized kind ("Single
+ * choice", "Email"...) from the one catalog the gallery already owns.
+ */
+export function galleryIdForStep(step: Pick<FormStep, 'type' | 'selectionMode'>): GalleryItemId {
+  switch (step.type) {
+    case 'name':
+      return 'name';
+    case 'email':
+      return 'email';
+    case 'phone':
+      return 'phone';
+    case 'dropdown':
+      return 'dropdown';
+    case 'multiple_choice':
+      return step.selectionMode === 'multiple' ? 'multiple' : 'single';
+    case 'slider':
+      return 'slider';
+    case 'textarea':
+      return 'long';
+    case 'url':
+      return 'url';
+    case 'file':
+      return 'file';
+    case 'message':
+      return 'message';
+    case 'reveal':
+      return 'reveal';
+    case 'scheduler':
+      return 'scheduler';
+    case 'text':
+    default:
+      return 'short';
+  }
+}

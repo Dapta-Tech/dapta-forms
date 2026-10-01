@@ -294,6 +294,17 @@ export interface FormsMessages {
       integrationsDesc: string;
       analytics: string;
       analyticsDesc: string;
+      /** Heading of the list of forms, most recently touched first. */
+      recent: string;
+      viewAll: string;
+      /** Heading of the quick links beside it. */
+      shortcuts: string;
+      noSubmissions: string;
+      /** The caption under the completion figure: what the rate is a share OF. */
+      statCompletionNote: string;
+      publicPageDesc: string;
+      /** "Updated {when}" without the verb, for a narrow column. */
+      colUpdated: string;
     };
     /** The workspace brand kit (Account settings → Brand kit; /admin/branding redirects there). */
     brandKit: {
@@ -650,6 +661,19 @@ export interface FormsMessages {
       dragHandle: string;
       dropHere: string;
       actionFailed: string;
+      /** The list as a table: its column headings. */
+      colForm: string;
+      colStatus: string;
+      colSubmissions: string;
+      colCompletion: string;
+      colUpdated: string;
+      /** Publish state of a row. A form is live from creation, so there are two. */
+      statusLive: string;
+      statusLiveHint: string;
+      statusUnpublished: string;
+      statusUnpublishedHint: string;
+      /** Completion cell when nobody has started the form yet (no rate to compute). */
+      noCompletion: string;
     };
     /** The form editor (builder). */
     editor: {
@@ -2214,6 +2238,13 @@ export const en: FormsMessages = {
       integrationsDesc: 'Send responses to your CRM or a webhook.',
       analytics: 'Analytics',
       analyticsDesc: 'Funnel performance and drop-off.',
+      recent: 'Recent activity',
+      viewAll: 'View all',
+      shortcuts: 'Shortcuts',
+      noSubmissions: 'No responses yet',
+      statCompletionNote: 'of those who start',
+      publicPageDesc: 'The forms you want people to find.',
+      colUpdated: 'Updated',
     },
     brandKit: {
       title: 'Brand kit',
@@ -2529,6 +2560,16 @@ export const en: FormsMessages = {
       dragHandle: 'Drag to a folder',
       dropHere: 'Drop to move here',
       actionFailed: 'Something went wrong. Please try again.',
+      colForm: 'Form',
+      colStatus: 'Status',
+      colSubmissions: 'Submissions',
+      colCompletion: 'Completion',
+      colUpdated: 'Updated',
+      statusLive: 'Published',
+      statusLiveHint: 'What the public sees is the latest version.',
+      statusUnpublished: 'Unpublished changes',
+      statusUnpublishedHint: 'It has edits the public does not see yet.',
+      noCompletion: 'No data',
     },
     editor: {
       back: 'Back to forms',
@@ -3948,6 +3989,13 @@ export const es: FormsMessages = {
       integrationsDesc: 'Envía respuestas a tu CRM o a un webhook.',
       analytics: 'Analíticas',
       analyticsDesc: 'Rendimiento del embudo y abandono.',
+      recent: 'Actividad reciente',
+      viewAll: 'Ver todos',
+      shortcuts: 'Accesos',
+      noSubmissions: 'Sin respuestas',
+      statCompletionNote: 'de quienes empiezan',
+      publicPageDesc: 'Los formularios que quieres que encuentren.',
+      colUpdated: 'Actualizado',
     },
     brandKit: {
       title: 'Kit de marca',
@@ -4266,6 +4314,16 @@ export const es: FormsMessages = {
       dragHandle: 'Arrastra a una carpeta',
       dropHere: 'Suelta para mover aquí',
       actionFailed: 'Algo salió mal. Inténtalo de nuevo.',
+      colForm: 'Formulario',
+      colStatus: 'Estado',
+      colSubmissions: 'Respuestas',
+      colCompletion: 'Finalización',
+      colUpdated: 'Actualizado',
+      statusLive: 'Publicado',
+      statusLiveHint: 'Lo que ve el público es la última versión.',
+      statusUnpublished: 'Cambios sin publicar',
+      statusUnpublishedHint: 'Tiene cambios que el público aún no ve.',
+      noCompletion: 'Sin datos',
     },
     editor: {
       back: 'Volver a formularios',

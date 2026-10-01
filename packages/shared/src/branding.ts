@@ -14,26 +14,28 @@ export interface PublicBranding {
 }
 
 /**
- * Program Lime — the default accent when a host hasn't chosen one.
+ * Signal Green: the default accent when a host hasn't chosen one.
  *
- * The hex form of the token scale's `hsl(68 76% 61%)`. It is written out rather
- * than computed because every helper in this file is hex-in/hex-out contrast
- * math; the channels live in `tokens.css`, and these two must be kept in step.
+ * The hex form of `--signal` in `tokens.css`. It is written out rather than read
+ * from the sheet because every helper in this file is hex-in/hex-out contrast
+ * math; the two must be kept in step.
  */
-export const DEFAULT_ACCENT = '#d3e750';
+export const DEFAULT_ACCENT = '#3ddc84';
 
 /**
- * The token ground (`--background`) a form renders on when its author has not
- * chosen one. Every contrast helper below defaults to this, which is why they
- * used to be correct without taking a background at all — the public form was
- * dark, always.
+ * The token ground (`--background` of the light theme) a form renders on when
+ * its author has not chosen one. Every contrast helper below defaults to this.
  */
-export const DEFAULT_CANVAS = '#0a0c0e';
+export const DEFAULT_CANVAS = '#ffffff';
 
-/** The foreground that pairs with `DEFAULT_CANVAS` — Signal White, never pure. */
-export const DEFAULT_CANVAS_FOREGROUND = '#e8edf2';
+/** The foreground that pairs with `DEFAULT_CANVAS`: Ink. */
+export const DEFAULT_CANVAS_FOREGROUND = '#1a1a1c';
 
-const DARK_CANVAS_RGB: Rgb = { r: 0x0a, g: 0x0c, b: 0x0e };
+/** The palette's two text ends: Ink on a light ground, Snow on a dark one. */
+const INK = '#1a1a1c';
+const SNOW = '#fefefe';
+
+const DEFAULT_CANVAS_RGB: Rgb = { r: 0xff, g: 0xff, b: 0xff };
 const MIN_ACCENT_CONTRAST = 3;
 /** WCAG AA for normal-size body text. */
 export const AA_CONTRAST = 4.5;
@@ -151,13 +153,12 @@ export function contrastGrade(ratio: number): 'AAA' | 'AA' | 'fail' {
 /**
  * The near-black or near-white text that reads on an arbitrary ground.
  *
- * Both ends are the token scale's own text colors rather than `#000`/`#fff`:
- * Bezel Graphite on light, Signal White on dark. Pure white on a dark ground is
- * the glare this palette exists to avoid, and an author's custom background
- * should still land them inside the system.
+ * Both ends are the token scale's own text colors rather than `#000`/`#fff`: Ink
+ * on light, Snow on dark, so an author's custom background still lands them
+ * inside the system.
  */
 export function readableOn(background: string): string {
-  return isLightColor(background) ? '#0d1013' : '#e8edf2';
+  return isLightColor(background) ? INK : SNOW;
 }
 
 /**
@@ -190,15 +191,15 @@ function nudgeUntilReadable(rgb: Rgb, ground: Rgb, minRatio: number, step: numbe
 export function clampAccent(hex: string, background: string = DEFAULT_CANVAS): string {
   const rgb = parseHex(hex);
   if (!rgb) return DEFAULT_ACCENT;
-  const ground = parseHex(background) ?? DARK_CANVAS_RGB;
+  const ground = parseHex(background) ?? DEFAULT_CANVAS_RGB;
   return toHex(nudgeUntilReadable(rgb, ground, MIN_ACCENT_CONTRAST, 0.12));
 }
 
 /**
  * The label color that reads on top of the accent.
  *
- * Picks the better END first — Lime Ink, the one text color the palette permits on
- * Program Lime, or Signal White — and then WALKS IT until it clears AA.
+ * Picks the better END first (Ink, the one text color the palette permits on
+ * Signal Green, or Snow) and then WALKS IT until it clears AA.
  *
  * The walk is the point. Choosing between two fixed constants silently ships
  * failing pairs for any accent of middling luminance: the seeded demo form's
@@ -210,7 +211,7 @@ export function clampAccent(hex: string, background: string = DEFAULT_CANVAS): s
 export function onAccent(hex: string): string {
   const rgb = parseHex(hex) ?? parseHex(DEFAULT_ACCENT)!;
   const wantsDarkInk = contrast(rgb, BLACK) >= contrast(rgb, WHITE);
-  const ink = wantsDarkInk ? '#0c0e07' : '#e8edf2';
+  const ink = wantsDarkInk ? INK : SNOW;
   let current = parseHex(ink)!;
   if (contrast(current, rgb) >= AA_CONTRAST) return ink;
 

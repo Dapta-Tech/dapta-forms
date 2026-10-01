@@ -212,7 +212,7 @@ function PointsCard({
             the rows that produce it rather than being a number to take on faith. */}
         <span
           data-testid="points-card-max"
-          className="shrink-0 rounded-sm bg-muted px-1.5 py-0.5 text-2xs font-semibold tabular-nums text-muted-foreground"
+          className="shrink-0 rounded-sm bg-score/15 px-1.5 py-0.5 text-2xs font-semibold tabular-nums text-score-ink"
         >
           {tb(bm.scoring.stepMax, { n: maxStepPoints(step) })}
         </span>
@@ -247,7 +247,7 @@ function PointsCard({
             <div
               key={o.value}
               data-testid="points-option"
-              className="flex items-center justify-between gap-2 rounded-lg bg-muted/60 px-3 py-2 text-sm"
+              className="flex items-center justify-between gap-2 rounded-lg border border-border px-3 py-2 text-sm"
             >
               <span className="min-w-0 flex-1 truncate text-foreground">{o.label}</span>
               <div className="w-20 shrink-0">

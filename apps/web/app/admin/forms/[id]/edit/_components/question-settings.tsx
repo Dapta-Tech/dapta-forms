@@ -34,14 +34,7 @@ import { SchedulerPanel } from './scheduler-panel';
 import { FileSettings } from './file-settings';
 import { tokenOptionsBefore } from './token-textarea';
 import { HelpTip } from '@/components/ui/help-tip';
-import {
-  GALLERY,
-  GALLERY_GROUPS,
-  hasOptions,
-  isContactType,
-  isInputlessType,
-  type GalleryItem,
-} from './question-types';
+import { GALLERY, GALLERY_GROUPS, hasOptions, isContactType, isInputlessType, type GalleryItem, galleryIdForStep } from './question-types';
 import type { EditorMessages } from './messages';
 import { AdvancedSettings, PrefillRow } from './advanced-settings';
 import { tb } from './builder-messages';
@@ -253,7 +246,13 @@ export function QuestionSettings({
   return (
     <div className="flex h-full flex-col gap-5 overflow-y-auto border-l border-border p-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-foreground">{bm.settings.title}</h2>
+        {/* Which question this panel is about, in the canvas's own words and
+            number. The accessible name stays "Question settings": that is what
+            the panel IS, and what a screen reader (and the e2e) looks for. */}
+        <h2 aria-label={bm.settings.title} className="flex items-baseline gap-2 text-sm font-semibold text-foreground">
+          {tb(bm.canvas.questionN, { n: String(index + 1).padStart(2, '0') })}
+          <span className="truncate text-xs font-normal text-faint">{bm.gallery.items[galleryIdForStep(step)].title}</span>
+        </h2>
         <Button
           variant="ghost"
           size="icon"
@@ -1077,7 +1076,9 @@ function LogicCard({
       </div>
 
       {lines > 0 ? (
-        <div className="flex flex-col gap-1.5 rounded-lg border border-border bg-background p-2.5">
+        // One quiet tray for the rules, on the rail's grey: a summary to read,
+        // not a second card with its own outline inside the panel.
+        <div className="flex flex-col gap-1.5 rounded-xl bg-sidebar p-3">
           {step.showWhen ? <ConditionSentence kind="show" cond={step.showWhen} steps={steps} bm={bm} /> : null}
           {step.hideWhen ? <ConditionSentence kind="hide" cond={step.hideWhen} steps={steps} bm={bm} /> : null}
           {bookingLabel ? (
@@ -1405,10 +1406,12 @@ function NameFieldsEditor({
   }
 
   return (
-    <div className="flex flex-col gap-2.5">
+    <div className="flex flex-col">
       {fields.map((field, i) => (
-        <div key={i} className="flex flex-col gap-2 rounded-lg border border-border bg-background p-2.5">
-          <span className="text-xs font-medium text-muted-foreground">
+        // Two groups split by a hairline, not two boxes: the panel is already
+        // the container.
+        <div key={i} className="flex flex-col gap-2 border-b border-border py-3 first:pt-0">
+          <span className="text-xs font-semibold text-foreground">
             {i === 0 ? m.first : m.second}
           </span>
           <label className="flex flex-col gap-1">
@@ -1431,7 +1434,7 @@ function NameFieldsEditor({
           </label>
         </div>
       ))}
-      <p className="text-2xs leading-relaxed text-faint" data-testid="name-fieldkey-hint">
+      <p className="pt-3 text-2xs leading-relaxed text-faint" data-testid="name-fieldkey-hint">
         {m.fieldKeyHint}
       </p>
     </div>

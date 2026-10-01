@@ -145,9 +145,9 @@ export function MembersTable({
 export function StatusBadge({ status, label }: { status: MemberStatus; label: string }) {
   const tone =
     status === 'active'
-      ? { chip: 'bg-primary/20 text-foreground', dot: 'bg-primary-edge' }
+      ? { chip: 'bg-signal/20 text-foreground', dot: 'bg-signal-edge' }
       : status === 'invited'
-        ? { chip: 'bg-secondary/20 text-foreground', dot: 'bg-secondary' }
+        ? { chip: 'bg-warning/20 text-foreground', dot: 'bg-warning' }
         : { chip: 'bg-muted text-muted-foreground', dot: 'bg-faint' };
   return (
     <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium ${tone.chip}`}>

@@ -563,8 +563,12 @@ function SubmissionsData({
                     />
                   </td>
                   {scoring ? (
-                    <td data-cell className={`${TD} whitespace-nowrap text-right tabular-nums`}>
-                      {row.score}
+                    <td data-cell className={`${TD} whitespace-nowrap text-right`}>
+                      {/* The score channel: the one figure on the row that is a
+                          judgement rather than an answer. */}
+                      <span className="inline-flex min-w-7 justify-center rounded-full bg-score/15 px-2 py-0.5 text-xs font-semibold tabular-nums text-score-ink">
+                        {row.score}
+                      </span>
                     </td>
                   ) : null}
                   {steps.map((s, i) => {

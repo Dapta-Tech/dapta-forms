@@ -5,6 +5,7 @@ import type { FormOption, FormOptionLayout } from '@quill/engine';
 import { isDerivedOptionValue, uniqueKey } from '@quill/engine';
 import { Button } from '@/components/ui/button';
 import { HelpTip } from '@/components/ui/help-tip';
+import { cn } from '@/lib/cn';
 import { TextField, NumberField } from './fields';
 import { IconPicker } from './icon-picker';
 import { OptionsImportModal } from './options-import-modal';
@@ -116,7 +117,7 @@ export function OptionsEditor({
       {options.length === 0 ? (
         <p className="text-xs text-muted-foreground">{m.empty}</p>
       ) : (
-        <SortableList ids={ids} onReorder={reorder} className="flex flex-col gap-2">
+        <SortableList ids={ids} onReorder={reorder} className="flex flex-col">
           {(id, index) => {
             const o = options[index];
             if (!o) return null;
@@ -126,7 +127,14 @@ export function OptionsEditor({
                   // Icon gets its OWN row rather than a fifth column: the panel
                   // is ~420px, and squeezing label/value/icon/points side by
                   // side clipped every header and cut the labels to 3 letters.
-                  <div className="flex flex-col gap-2 rounded-md border border-border bg-background p-2">
+                  //
+                  // No box around each option: a row and a hairline. The panel
+                  // is the container, and five outlined cards inside it read as
+                  // five separate things rather than one list. The column
+                  // headings show once, on the first row; the rest keep them
+                  // for assistive tech only. `bg-background` keeps a row opaque
+                  // while it is dragged over its neighbours.
+                  <div className="flex flex-col gap-2 border-b border-border bg-background py-2.5">
                   <div className="flex items-end gap-2">
                     <button
                       type="button"
@@ -137,7 +145,7 @@ export function OptionsEditor({
                       <i aria-hidden className="pi pi-bars" style={{ fontSize: 13 }} />
                     </button>
                     <label className="flex min-w-0 flex-[2] flex-col gap-1">
-                      <span className="flex items-center gap-1 text-xs font-medium text-muted-foreground">
+                      <span className={cn('flex items-center gap-1 text-xs font-medium text-muted-foreground', index > 0 && 'sr-only')}>
                         {m.label}
                         <HelpTip text={m.labelHelp} label={m.label} />
                       </span>
@@ -148,9 +156,11 @@ export function OptionsEditor({
                     </label>
                     {showPoints ? (
                       <label className="flex w-20 shrink-0 flex-col gap-1">
-                        <span className="text-xs font-medium text-muted-foreground">{m.points}</span>
+                        <span className={cn('text-xs font-medium text-muted-foreground', index > 0 && 'sr-only')}>{m.points}</span>
                         <NumberField
                           aria-label={m.points}
+                          // Points are the score channel, here as everywhere.
+                          className="border-score/40 bg-score/10 text-center font-semibold tabular-nums text-score-ink hover:border-score"
                           data-testid={`option-points-${index}`}
                           value={o.points ?? 0}
                           onChange={(e) => update(index, { points: Number(e.target.value) || 0 })}

@@ -42,7 +42,7 @@ import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { SearchClearButton } from "@/components/ui/search-clear-button";
 import { CreateForm } from "./create-form";
 import { FolderDialog, type FolderDialogLabels } from "./folder-dialog";
-import { FormRow, type FormRowLabels } from "./form-row";
+import { FormRow, ROW_GRID, type FormRowLabels, type FormRowStats } from "./form-row";
 import type { FormRowActionLabels } from "./form-row-actions";
 import { deleteFolderAction, moveFormAction } from "./folder-actions";
 
@@ -71,6 +71,11 @@ export interface FormsExplorerLabels {
   createIn: string;
   moveFailed: string;
   dropHere: string;
+  colForm: string;
+  colStatus: string;
+  colSubmissions: string;
+  colCompletion: string;
+  colUpdated: string;
 }
 
 export interface FormsExplorerProps {
@@ -78,8 +83,14 @@ export interface FormsExplorerProps {
   folders: Folder[];
   accountCode: string;
   locale: string;
-  /** Already-formatted "Updated {when}" per form id (formatted on the server, one clock). */
+  /** The already-formatted date of the last edit, per form id (formatted on the server, one clock). */
   updatedByForm: Record<string, string>;
+  /** Responses and completion per form id; a form missing here shows no figures. */
+  statsByForm?: Record<string, FormRowStats>;
+  /** The page title block, set to the left of the search box. */
+  heading?: React.ReactNode;
+  /** The page's buttons (new folder, create form), set to the right of it. */
+  actions?: React.ReactNode;
   labels: FormsExplorerLabels;
   rowLabels: FormRowLabels;
   actionLabels: FormRowActionLabels;
@@ -88,12 +99,17 @@ export interface FormsExplorerProps {
 }
 
 /**
- * The forms list with folders and search. ONE list: every folder is a
- * collapsible section (Unfiled first), rows drag onto section headers, the
+ * The forms list with folders and search. ONE table: every folder is a
+ * collapsible band inside it (Unfiled first), rows drag onto a band, the
  * kebab's "Move to folder" is the keyboard-only route to the same move, and
  * the search box filters the loaded list by name or slug, expanding the
- * sections with a hit and hiding the rest. Without folders it looks exactly
- * like the flat list it replaces.
+ * sections with a hit and hiding the rest. Without folders it is a plain
+ * table with no bands.
+ *
+ * The frame is deliberately NOT `overflow-hidden`: a row's kebab menu hangs
+ * below its row, and on the last row that is below the frame. The corners are
+ * rounded piece by piece instead (the header, the last row, a collapsed last
+ * band).
  */
 export function FormsExplorer(props: FormsExplorerProps) {
   const { forms, folders, labels } = props;
@@ -250,89 +266,111 @@ export function FormsExplorer(props: FormsExplorerProps) {
       onDragEnd={onDragEnd}
       onDragCancel={() => setDragging(null)}
     >
-      <div className="mb-4">
-        <div className="relative max-w-md">
-          <i
-            aria-hidden
-            className="pi pi-search pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
-            style={{ fontSize: 13 }}
-          />
-          <input
-            ref={searchRef}
-            id={searchId}
-            type="search"
-            value={query}
-            data-testid="forms-search"
-            aria-label={labels.searchLabel}
-            placeholder={labels.searchPlaceholder}
-            autoComplete="off"
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Escape") {
-                e.preventDefault();
-                if (query) setQuery("");
-                else searchRef.current?.blur();
-              }
-              if (e.key === "ArrowDown") {
-                e.preventDefault();
-                listRef.current
-                  ?.querySelector<HTMLElement>("ul:not([hidden]) [data-form-link]")
-                  ?.focus();
-              }
-            }}
-            className="h-10 w-full rounded-md border border-input bg-background pl-9 pr-24 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          />
-          <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5 text-2xs text-faint">
-            {query ? null : (
-              <kbd className="rounded border border-border px-1.5 py-0.5 font-mono">
-                {shortcutLabel}
-              </kbd>
-            )}
-          </span>
-          <SearchClearButton
-            query={query}
-            label={labels.searchClear}
-            testId="forms-search-clear"
-            onClear={() => {
-              setQuery("");
-              searchRef.current?.focus();
-            }}
-          />
+      <div className="mb-6 flex flex-wrap items-end justify-between gap-x-6 gap-y-4">
+        {props.heading ?? <span />}
+        <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
+          <div className="relative w-full sm:w-72">
+            <i
+              aria-hidden
+              className="pi pi-search pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+              style={{ fontSize: 13 }}
+            />
+            <input
+              ref={searchRef}
+              id={searchId}
+              type="search"
+              value={query}
+              data-testid="forms-search"
+              aria-label={labels.searchLabel}
+              placeholder={labels.searchPlaceholder}
+              autoComplete="off"
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") {
+                  e.preventDefault();
+                  if (query) setQuery("");
+                  else searchRef.current?.blur();
+                }
+                if (e.key === "ArrowDown") {
+                  e.preventDefault();
+                  listRef.current
+                    ?.querySelector<HTMLElement>("ul:not([hidden]) [data-form-link]")
+                    ?.focus();
+                }
+              }}
+              className="h-10 w-full rounded-md border border-input bg-background pl-9 pr-20 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            />
+            <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5 text-2xs text-faint">
+              {query ? null : (
+                <kbd className="rounded border border-border bg-sidebar px-1.5 py-0.5 font-sans">
+                  {shortcutLabel}
+                </kbd>
+              )}
+            </span>
+            <SearchClearButton
+              query={query}
+              label={labels.searchClear}
+              testId="forms-search-clear"
+              onClear={() => {
+                setQuery("");
+                searchRef.current?.focus();
+              }}
+            />
+          </div>
+          {props.actions}
         </div>
-        <p
-          role="status"
-          aria-live="polite"
-          className={cn(
-            "mt-1 text-xs text-muted-foreground",
-            !searching && "sr-only",
-          )}
-        >
-          {searching ? t(labels.searchResults, { count: matches }) : ""}
-        </p>
       </div>
+      <p
+        role="status"
+        aria-live="polite"
+        className={cn(
+          "-mt-3 mb-3 text-xs text-muted-foreground",
+          !searching && "sr-only",
+        )}
+      >
+        {searching ? t(labels.searchResults, { count: matches }) : ""}
+      </p>
 
       <div
         ref={listRef}
         onKeyDown={onListKeyDown}
-        className="flex flex-col gap-6"
+        data-testid="forms-table"
+        className="divide-y divide-border rounded-2xl border border-border bg-card [&>:last-child_li:last-child]:rounded-b-[15px]"
       >
+        {/* Column headings, on the rows' own grid. Decorative to a screen
+            reader: each cell below already names itself. */}
+        <div
+          aria-hidden
+          className={cn(
+            "hidden items-center rounded-t-[15px] bg-sidebar px-5 py-2.5 text-xs font-medium uppercase tracking-wider text-faint",
+            ROW_GRID,
+          )}
+        >
+          <span>{labels.colForm}</span>
+          <span>{labels.colStatus}</span>
+          <span>{labels.colSubmissions}</span>
+          <span>{labels.colCompletion}</span>
+          <span className="hidden min-[85rem]:block">{labels.colUpdated}</span>
+          <span />
+        </div>
         {searching && matches === 0 ? (
           <p
             data-testid="forms-search-empty"
-            className="rounded-xl border border-dashed border-border bg-card/40 p-8 text-center text-sm text-muted-foreground"
+            className="px-5 py-12 text-center text-sm text-muted-foreground"
           >
             {labels.searchEmpty}
           </p>
         ) : null}
         {flat && !searching && sections[0] ? (
-          /* No folders yet: the flat list this page always had, no section chrome, no grip. */
-          <ul role="list" className="flex flex-col gap-3">
+          /* No folders yet: a plain table, no bands, no grip. */
+          <ul role="list" className="divide-y divide-border">
             {sections[0].forms.map((f) => (
               <FormRow
                 key={f.id}
                 form={f}
                 publicPath={publicFormPath(props.accountCode, f.slug)}
                 updatedLabel={props.updatedByForm[f.id] ?? ''}
+                stats={props.statsByForm?.[f.id]}
                 nameRanges={f.match.nameRanges}
                 folders={folders}
                 labels={props.rowLabels}
@@ -343,10 +381,11 @@ export function FormsExplorer(props: FormsExplorerProps) {
             ))}
           </ul>
         ) : null}
-        {(flat && !searching ? [] : sections).map((section) => (
+        {(flat && !searching ? [] : sections).map((section, i, all) => (
           <FolderSection
             key={section.id ?? UNFILED}
             section={section}
+            last={i === all.length - 1}
             expanded={searching || !collapsed.has(section.id ?? UNFILED)}
             onToggle={() => toggle(section.id ?? UNFILED)}
             onMove={move}
@@ -373,10 +412,12 @@ function FolderSection({
   onToggle,
   onMove,
   dragging,
+  last,
   folders,
   accountCode,
   locale,
   updatedByForm,
+  statsByForm,
   labels,
   rowLabels,
   actionLabels,
@@ -388,6 +429,8 @@ function FolderSection({
   onToggle: () => void;
   onMove: (formId: string, folderId: string | null) => void;
   dragging: boolean;
+  /** The last band in the table, which has to carry the frame's bottom corners when nothing is under it. */
+  last: boolean;
 }) {
   const router = useRouter();
   const toast = useToast();
@@ -453,12 +496,19 @@ function FolderSection({
       data-testid={isFolder ? "folder-section" : "unfiled-section"}
       data-folder-id={section.id ?? ""}
       className={cn(
-        "rounded-xl transition-colors",
-        dragging && "outline outline-1 outline-dashed outline-border",
+        "transition-colors",
+        dragging && "outline outline-1 -outline-offset-1 outline-dashed outline-input",
         isOver && "bg-primary/10 outline-primary-edge",
+        last && "rounded-b-[15px]",
       )}
     >
-      <div className="flex flex-wrap items-center justify-between gap-2 px-1 py-1">
+      <div
+        className={cn(
+          "flex flex-wrap items-center justify-between gap-2 bg-sidebar px-5 py-1.5",
+          isOver && "bg-transparent",
+          last && (!expanded || section.forms.length === 0) && "rounded-b-[15px]",
+        )}
+      >
         <button
           type="button"
           id={headingId}
@@ -488,7 +538,7 @@ function FolderSection({
           <span className="truncate">{name}</span>
           <span
             data-testid="folder-count"
-            className="rounded-full bg-muted px-2 py-0.5 text-2xs font-medium text-muted-foreground"
+            className="rounded-full border border-border bg-card px-2 py-0.5 text-2xs font-medium text-muted-foreground"
           >
             {count}
           </span>
@@ -572,7 +622,7 @@ function FolderSection({
         id={listId}
         role="list"
         hidden={!expanded}
-        className="flex flex-col gap-3"
+        className="divide-y divide-border border-t border-border empty:border-t-0"
       >
         {section.forms.map((f) => (
           <FormRow
@@ -580,6 +630,7 @@ function FolderSection({
             form={f}
             publicPath={publicFormPath(accountCode, f.slug)}
             updatedLabel={updatedByForm[f.id] ?? ""}
+            stats={statsByForm?.[f.id]}
             nameRanges={f.match.nameRanges}
             folders={folders}
             labels={rowLabels}

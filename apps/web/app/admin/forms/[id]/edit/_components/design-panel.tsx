@@ -26,7 +26,7 @@ import {
   t,
 } from '@quill/shared';
 import { Switch } from '@/components/ui/switch';
-import { Field, InlineField, NumberField, PanelSection, SegmentedToggle, SelectField, TextField } from './fields';
+import { Field, InlineField, NumberField, PanelSection, SegmentedToggle, SelectField, TextField, FlatPanelSections } from './fields';
 import { ColorPicker } from './color-picker';
 import { FontPicker } from './font-picker';
 import { ThemePresets } from './theme-presets';
@@ -125,9 +125,18 @@ export function DesignPanel({
   const accentSuggestion = branding.primaryColor ? suggestReadable(accent, ground) : null;
 
   return (
-    <div className="grid h-full min-h-0 gap-4 px-4 py-6 sm:px-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,46%)] lg:overflow-hidden">
+    // A narrow panel of settings and the form beside it, as large as the window
+    // allows: this is the tab where looks get chosen, so the thing being looked
+    // at gets the room. The settings used to take the wider half and leave the
+    // preview at under half size. The panel is as wide as the Build tab's
+    // settings panel, so switching tabs does not move the edge.
+    <div className="grid h-full min-h-0 lg:grid-cols-[380px_minmax(0,1fr)] lg:overflow-hidden xl:grid-cols-[420px_minmax(0,1fr)]">
       {/* ── Controls ───────────────────────────────────────────────────── */}
-      <div className="flex min-w-0 flex-col gap-4 lg:overflow-y-auto lg:pr-1">
+      <div
+        data-testid="design-controls"
+        className="flex min-w-0 flex-col border-border bg-background lg:overflow-y-auto lg:border-r"
+      >
+        <FlatPanelSections>
         <PanelSection title={d.languageTitle} subtitle={d.languageHint}>
           <div className="max-w-[520px]">
             <SelectField
@@ -231,7 +240,9 @@ export function DesignPanel({
         </PanelSection>
 
         <PanelSection title={d.colorsTitle} subtitle={d.colorsSubtitle}>
-          <div className="grid gap-3 sm:grid-cols-3">
+          {/* One per row: the panel is 380 to 420px wide, and three pickers
+              side by side cut each one's value to its first few letters. */}
+          <div className="grid gap-3">
             <Field label={d.background}>
               <ColorPicker
                 value={branding.background}
@@ -593,6 +604,7 @@ export function DesignPanel({
         <CoverSection config={config} onCoverChange={onCoverChange} m={m} />
         <ClientLogosSection config={config} onCoverChange={onCoverChange} m={m} />
         {children}
+        </FlatPanelSections>
       </div>
 
       {/* ── Preview ─────────────────────────────────────────────────────────
@@ -603,7 +615,7 @@ export function DesignPanel({
           `PreviewFrame` the Preview modal uses, so both surfaces are honest or
           neither is. The frame runs the real renderer and walks itself; its
           prev/next only choose which screen the renderer STARTS on. */}
-      <div className="min-w-0 lg:sticky lg:top-0 lg:h-full lg:min-h-0">
+      <div className="min-w-0 border-t border-border bg-panel p-4 sm:p-6 lg:h-full lg:min-h-0 lg:border-t-0">
         <PreviewFrame
           device={device}
           onDeviceChange={setDevice}

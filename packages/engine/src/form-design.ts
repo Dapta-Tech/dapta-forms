@@ -338,10 +338,24 @@ export interface FormThemePreset {
 
 export const FORM_THEME_PRESETS: readonly FormThemePreset[] = [
   /**
-   * The house look — the same Master Control Room palette and type the app chrome
-   * and the marketing site wear, offered as a preset so an author can get back to
-   * it after wandering. It leads the list because it is what a new form already
+   * The house look: the same paper, ink and Signal Green the app chrome and the
+   * marketing site wear, offered as a preset so an author can get back to it
+   * after wandering. It leads the list because it is what a new form already
    * looks like before anyone opens the design tab.
+   */
+  {
+    id: 'dforms',
+    label: 'dForms',
+    background: '#ffffff',
+    foreground: '#1a1a1c',
+    primaryColor: '#3ddc84',
+    font: 'figtree',
+    radius: 'soft',
+    buttonStyle: 'solid',
+  },
+  /**
+   * The house look before the rebrand. Kept, with its id intact, so a form that
+   * stored `themePreset: 'control-room'` still shows its card as selected.
    */
   {
     id: 'control-room',

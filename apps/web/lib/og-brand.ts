@@ -1,12 +1,12 @@
 import { readFileSync } from 'node:fs';
 
 /**
- * The Dapta Forms mark, as a `data:` URI the card can draw.
+ * The dForms logotype, as a `data:` URI the card can draw.
  *
  * Reads the same two SVGs the app ships in `public/` rather than a copy, so the
  * mark on a share card cannot drift from the mark in the product. The pair is
  * the light/dark artwork, not a themed `currentColor` drawing: the wordmark is
- * `#1a1a1c` in one file and `#fefefe` in the other, and the lime dot is fixed in
+ * `#1a1a1c` in one file and `#fefefe` in the other, and the green is fixed in
  * both. Picking the wrong one paints the mark into the ground it sits on.
  *
  * Satori reads SVG happily — unlike WebP, which is why the author's own logo
@@ -20,7 +20,7 @@ const MARK_FILES = {
 } as const;
 
 /** The lockup's intrinsic proportions, from its `viewBox`. */
-export const DAPTA_FORMS_MARK_RATIO = 5686 / 1040;
+export const DAPTA_FORMS_MARK_RATIO = 2941.092 / 715.8;
 
 const cache = new Map<keyof typeof MARK_FILES, string>();
 

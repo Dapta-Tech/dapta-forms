@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
-import 'primeicons/primeicons.css';
 import './globals.css';
+import './icons.css';
 import { fontVariables } from '@/lib/fonts';
 import { getLocale } from '@/lib/locale';
 import { getThemePref } from '@/lib/theme.server';

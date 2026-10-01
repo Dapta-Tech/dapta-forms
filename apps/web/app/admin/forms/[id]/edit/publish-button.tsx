@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { getMessages } from '@quill/shared';
 import { publishFormAction, type StaleConflict } from '@/app/admin/actions';
 import { useToast } from '@/components/toast';
@@ -11,8 +11,10 @@ import type { FlushResult } from '@/lib/use-autosave';
 /**
  * The editor's explicit Publish control for the draft→publish flow. Autosave
  * writes an unpublished draft; this button makes it live (POST
- * /v1/forms/:id/publish via `publishFormAction`) and shows an "Unpublished
- * changes" badge while a draft is pending.
+ * /v1/forms/:id/publish via `publishFormAction`) and reports, through
+ * `onPendingChange`, whether a draft is pending. The editor draws the
+ * "Unpublished changes" badge from that, beside the form's name: the state
+ * belongs to the form, and the name is where the form is.
  *
  * Draft-state contract (kept self-contained so the editor's patch stays small):
  * - `initialHasDraft` — whether the server row already had a `draftConfig`
@@ -35,6 +37,7 @@ export function PublishButton({
   getStamp,
   onPublished,
   onStale,
+  onPendingChange,
 }: {
   formId: string;
   initialHasDraft?: boolean;
@@ -51,6 +54,8 @@ export function PublishButton({
   /** The server refused the publish as STALE. `retry` = only the stamp moved
    *  and the editor adopted the new one; `stop` = a real conflict, shown by the editor. */
   onStale?: (res: StaleConflict) => 'retry' | 'stop';
+  /** Whether there are unpublished changes to show a badge for (false while a publish is in flight). */
+  onPendingChange?: (pending: boolean) => void;
 }) {
   const m = getMessages(locale).admin.publish;
   const toast = useToast();
@@ -60,6 +65,15 @@ export function PublishButton({
 
   const hasDraft =
     publishedAtCount < 0 ? initialHasDraft || saveCount > 0 : saveCount > publishedAtCount;
+
+  const pending = hasDraft && !publishing;
+  // Through a ref, so a caller passing an inline arrow does not re-fire this on
+  // every one of its own renders: only a real change of state is reported.
+  const reportPending = useRef(onPendingChange);
+  reportPending.current = onPendingChange;
+  useEffect(() => {
+    reportPending.current?.(pending);
+  }, [pending]);
 
   async function publish() {
     if (!hasDraft || publishing) return;
@@ -103,26 +117,13 @@ export function PublishButton({
 
   return (
     <div className="flex shrink-0 items-center gap-2" data-tour="publish">
-      {hasDraft && !publishing ? (
-        // The full label only fits once the topbar is wide (`2xl`); below that
-        // it collapses to the dot — still announced, via `sr-only`, and titled
-        // for sighted users. `whitespace-nowrap` keeps the label on one line
-        // rather than wrapping inside this fixed-height pill.
-        <span
-          title={m.unpublishedChanges}
-          className="hidden h-9 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-border bg-muted px-2.5 text-xs font-medium text-muted-foreground sm:inline-flex 2xl:px-3"
-        >
-          <span aria-hidden className="h-1.5 w-1.5 shrink-0 rounded-full bg-primary-edge" />
-          <span className="sr-only 2xl:not-sr-only">{m.unpublishedChanges}</span>
-        </span>
-      ) : null}
       <button
         type="button"
         onClick={publish}
         disabled={!hasDraft || publishing}
         title={hasDraft ? undefined : m.noChanges}
         className={cn(
-          'inline-flex h-9 shrink-0 items-center whitespace-nowrap rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground transition-transform hover:brightness-105 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+          'inline-flex h-9 shrink-0 items-center whitespace-nowrap rounded-full bg-signal px-4 text-sm font-semibold text-signal-foreground transition-transform hover:brightness-105 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
           (!hasDraft || publishing) && 'cursor-not-allowed opacity-50 hover:brightness-100 active:scale-100',
         )}
       >

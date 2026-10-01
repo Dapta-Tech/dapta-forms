@@ -742,7 +742,7 @@ export function PanelHeader({
         />
         {detail.score != null ? (
           <span
-            className="inline-flex items-center gap-1.5 rounded-full bg-primary px-2.5 py-0.5 text-xs font-semibold text-primary-foreground ring-1 ring-primary-edge"
+            className="inline-flex items-center gap-1.5 rounded-full bg-score/15 px-2.5 py-0.5 text-xs font-semibold text-score-ink"
             data-testid="response-score"
           >
             <i aria-hidden className="pi pi-star-fill" style={{ fontSize: 10 }} />
@@ -931,7 +931,7 @@ export function ResponseDetailView({
           {detail.score != null ? (
             <>
               <dt className="text-muted-foreground">{labels.colScore}</dt>
-              <dd className="font-semibold tabular-nums text-primary">{detail.score}</dd>
+              <dd className="font-semibold tabular-nums text-score-ink">{detail.score}</dd>
             </>
           ) : null}
           {detail.page ? (

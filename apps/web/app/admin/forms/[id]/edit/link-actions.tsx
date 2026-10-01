@@ -176,16 +176,18 @@ export function LinkActions({
     }
   };
 
+  // Five related actions read as ONE control: a single pill with the five
+  // inside it, instead of five separate boxes competing with the tabs.
   const icon =
-    'inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border text-foreground ' +
-    'transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
+    'inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-foreground ' +
+    'transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
 
   return (
-    <div className="flex shrink-0 items-center gap-1.5">
+    <div className="flex shrink-0 items-center rounded-full border border-input bg-card p-0.5">
       <button
         type="button"
         onClick={() => void copy()}
-        className={cn(icon, copied && 'border-primary-edge text-primary')}
+        className={cn(icon, copied && 'bg-signal/20')}
         aria-label={copied ? labels.copied : labels.copyLink}
         title={copied ? labels.copied : labels.copyLink}
         data-testid="editor-copy-link"

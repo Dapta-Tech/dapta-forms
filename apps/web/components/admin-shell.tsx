@@ -209,7 +209,7 @@ export function AdminShell({
   messages,
   accountNav,
   initialCollapsed = false,
-  themePref = 'dark',
+  themePref = 'light',
   workspaces = [],
   currentAccountId,
   staff = false,
@@ -441,7 +441,7 @@ export function AdminShell({
           escape the modal (WCAG 2.4.3 / APG modal-dialog). */}
       <header
         inert={drawerOpen || undefined}
-        className="sticky top-0 z-30 flex items-center gap-2 border-b border-border bg-popover px-3 py-2 md:hidden"
+        className="sticky top-0 z-30 flex items-center gap-2 border-b border-border bg-sidebar px-3 py-2 md:hidden"
       >
         <button
           type="button"
@@ -493,7 +493,7 @@ export function AdminShell({
         //
         // The width transition needs no `motion-reduce:` variant: globals.css
         // already zeroes every transition under prefers-reduced-motion.
-        className={`hidden shrink-0 flex-col gap-6 border-r border-border bg-popover py-4 transition-[width] md:flex md:h-dvh md:overflow-y-auto ${
+        className={`hidden shrink-0 flex-col gap-6 border-r border-border bg-sidebar py-4 transition-[width] md:flex md:h-dvh md:overflow-y-auto ${
           studio ? 'md:fixed md:left-0 md:top-0 md:z-30' : 'md:sticky md:top-0'
         } ${railCollapsed ? 'w-[64px] px-2' : 'w-60 px-4'}`}
       >
@@ -534,7 +534,7 @@ export function AdminShell({
       ) : null}
       <aside
         ref={drawerRef}
-        className={`fixed inset-y-0 left-0 z-50 flex w-[82vw] max-w-[320px] flex-col gap-6 overflow-y-auto border-r border-border bg-popover p-4 transition-transform md:hidden ${
+        className={`fixed inset-y-0 left-0 z-50 flex w-[82vw] max-w-[320px] flex-col gap-6 overflow-y-auto border-r border-border bg-sidebar p-4 transition-transform md:hidden ${
           drawerOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
         role="dialog"

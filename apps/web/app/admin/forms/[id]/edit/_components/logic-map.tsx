@@ -2,11 +2,11 @@
 
 import type { FormConfig, FormOutcome, FormStep } from '@quill/engine';
 import { cn } from '@/lib/cn';
-import { iconForStep } from './question-types';
+import { galleryIdForStep, iconForStep } from './question-types';
 import { authoredScreens, conditionNeverHolds, conditionsContradict, screensActive } from '@quill/engine';
 import { describeCondition, liveGotoRules, optionLabel } from './logic-util';
 import { screenList } from './screen-util';
-import type { BuilderMessages, GalleryItemId } from './builder-messages';
+import type { BuilderMessages } from './builder-messages';
 import { tb } from './builder-messages';
 
 /**
@@ -62,7 +62,7 @@ export function LogicMap({ config, m }: { config: FormConfig; m: BuilderMessages
       {/* Legend */}
       <div className="pointer-events-none sticky top-0 z-10 mb-3 flex items-center justify-end gap-3 text-xs text-muted-foreground">
         <LegendSwatch className="bg-secondary" label={m.map.branchLegend} />
-        <LegendSwatch className="bg-primary" label={m.map.endLegend} />
+        <LegendSwatch className="bg-score" label={m.map.endLegend} />
       </div>
 
       <div className="mx-auto flex max-w-[520px] flex-col items-stretch pb-12">
@@ -71,9 +71,8 @@ export function LogicMap({ config, m }: { config: FormConfig; m: BuilderMessages
             read-only map it read as a "run the form" button nobody could press.
             A plain dot marks the entry point without promising an action. */}
         <div className="flex flex-col items-center" data-testid="logic-start">
-          <span className="inline-flex items-center gap-2 rounded-full border border-primary-edge/40 bg-primary/[0.08] px-4 py-2 shadow-sm">
-            <span aria-hidden className="inline-block h-2 w-2 shrink-0 rounded-full bg-primary-edge" />
-            <span className="text-sm font-semibold uppercase tracking-wide text-primary">{m.map.start}</span>
+          <span className="inline-flex items-center gap-2 rounded-full bg-primary px-4 py-2">
+            <span className="text-sm font-semibold text-primary-foreground">{m.map.start}</span>
           </span>
           <span className="mt-1.5 text-xs text-muted-foreground">{m.map.startHint}</span>
         </div>
@@ -104,8 +103,8 @@ export function LogicMap({ config, m }: { config: FormConfig; m: BuilderMessages
               <div
                 data-testid="logic-node"
                 className={cn(
-                  'relative w-full overflow-hidden rounded-xl border bg-card px-3.5 py-3 shadow-sm',
-                  hasLogic ? 'border-secondary/45' : 'border-border',
+                  'relative w-full overflow-hidden rounded-xl border bg-card px-3.5 py-3',
+                  hasLogic ? 'border-secondary/45' : 'border-input',
                 )}
               >
                 {hasLogic ? (
@@ -200,14 +199,14 @@ export function LogicMap({ config, m }: { config: FormConfig; m: BuilderMessages
                         <BranchEdge key={ri} label={tb(m.map.skipEdge, { value })}>
                           <div
                             data-testid="logic-end"
-                            className="rounded-lg border border-primary-edge/50 bg-primary/[0.07] px-3 py-2"
+                            className="rounded-lg border border-score/40 bg-score/[0.07] px-3 py-2"
                           >
                             <div className="flex items-center gap-2">
-                              <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-primary/20">
-                                <i aria-hidden className="pi pi-flag-fill text-primary" style={{ fontSize: 9 }} />
+                              <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-score/20">
+                                <i aria-hidden className="pi pi-flag-fill text-score-ink" style={{ fontSize: 9 }} />
                               </span>
                               <span className="text-sm font-semibold text-foreground">{m.map.thankYou}</span>
-                              <span className="ml-auto rounded-sm bg-primary/15 px-1.5 py-0.5 text-2xs font-semibold uppercase tracking-wide text-primary">
+                              <span className="ml-auto rounded-sm bg-score/15 px-1.5 py-0.5 text-2xs font-semibold uppercase tracking-wide text-score-ink">
                                 {m.map.end}
                               </span>
                             </div>
@@ -277,36 +276,6 @@ export function LogicMap({ config, m }: { config: FormConfig; m: BuilderMessages
   );
 }
 
-/** Map a step to its gallery id so the node can show a localized kind label
- *  ("Single choice", "Email", …) reusing the existing gallery catalog. */
-function galleryIdForStep(step: FormStep): GalleryItemId {
-  switch (step.type) {
-    case 'name':
-      return 'name';
-    case 'email':
-      return 'email';
-    case 'phone':
-      return 'phone';
-    case 'dropdown':
-      return 'dropdown';
-    case 'multiple_choice':
-      return step.selectionMode === 'multiple' ? 'multiple' : 'single';
-    case 'slider':
-      return 'slider';
-    case 'textarea':
-      return 'long';
-    case 'url':
-      return 'url';
-    case 'file':
-      return 'file';
-    case 'message':
-      return 'message';
-    case 'text':
-    default:
-      return 'short';
-  }
-}
-
 /** The human, localized kind label for a step (falls back to empty). */
 function kindLabel(step: FormStep, m: BuilderMessages): string {
   return m.gallery.items[galleryIdForStep(step)]?.title ?? '';
@@ -318,19 +287,19 @@ function OutcomeNode({ outcome, m }: { outcome: FormOutcome; m: BuilderMessages 
   return (
     <div
       data-testid="logic-outcome"
-      className="relative w-full overflow-hidden rounded-xl border border-primary-edge/50 bg-primary/[0.06] px-3.5 py-3 shadow-sm"
+      className="relative w-full overflow-hidden rounded-xl border border-score/40 bg-score/[0.06] px-3.5 py-3"
     >
-      <span aria-hidden className="absolute inset-y-0 left-0 w-1 bg-primary-edge" />
+      <span aria-hidden className="absolute inset-y-0 left-0 w-1 bg-score" />
       <div className="flex items-center gap-3">
-        <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/20">
+        <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-score/20">
           <i
             aria-hidden
-            className={`pi ${redirects ? 'pi-external-link' : 'pi-flag-fill'} text-primary`}
+            className={`pi ${redirects ? 'pi-external-link' : 'pi-flag-fill'} text-score-ink`}
             style={{ fontSize: 13 }}
           />
         </span>
         <div className="min-w-0 flex-1">
-          <span className="block text-2xs font-semibold uppercase tracking-wide text-primary">
+          <span className="block text-2xs font-semibold uppercase tracking-wide text-score-ink">
             {m.map.outcomeKicker}
           </span>
           <span className="block truncate text-sm font-semibold text-foreground" title={outcome.label}>

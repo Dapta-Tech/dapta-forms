@@ -226,16 +226,25 @@ describe('theme presets', () => {
     expect(darks.length).toBeLessThan(FORM_THEME_PRESETS.length);
   });
 
-  it('control-room reproduces the house look and leads the list', () => {
+  it('dforms reproduces the house look and leads the list', () => {
     // The first card is what a new form already looks like, so an author who
     // wanders can get back to the default without hand-typing four values.
-    expect(FORM_THEME_PRESETS[0]?.id).toBe('control-room');
-    const house = findThemePreset('control-room');
-    expect(house?.background).toBe('#0a0c0e');
-    expect(house?.foreground).toBe('#e8edf2');
-    expect(house?.primaryColor).toBe('#d3e750');
+    expect(FORM_THEME_PRESETS[0]?.id).toBe('dforms');
+    const house = findThemePreset('dforms');
+    expect(house?.background).toBe('#ffffff');
+    expect(house?.foreground).toBe('#1a1a1c');
+    expect(house?.primaryColor).toBe('#3ddc84');
     expect(house?.font).toBe(DEFAULT_FORM_FONT);
     expect(house?.radius).toBe(LEGACY_FORM_DESIGN.radius);
+  });
+
+  it('keeps control-room, the house look before the rebrand, under its original id', () => {
+    // A form that stored `themePreset: 'control-room'` must still show its card
+    // as selected: the id is data, not a label.
+    const previous = findThemePreset('control-room');
+    expect(previous?.background).toBe('#0a0c0e');
+    expect(previous?.foreground).toBe('#e8edf2');
+    expect(previous?.primaryColor).toBe('#d3e750');
   });
 
   it('keeps midnight, the previous house look, under its original id', () => {

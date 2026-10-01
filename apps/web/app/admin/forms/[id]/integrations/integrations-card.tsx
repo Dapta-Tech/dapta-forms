@@ -52,8 +52,8 @@ export function Card({
             {logo ? <ProviderLogo provider={logo} size={20} /> : null}
             <h2 className="text-lg font-semibold">{title}</h2>
             {badge ? (
-              <span className="inline-flex items-center gap-1 rounded-full border border-primary-edge/40 bg-primary/10 px-2 py-0.5 text-xs font-medium text-foreground">
-                <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-primary-edge" />
+              <span className="inline-flex items-center gap-1 rounded-full border border-signal-edge/40 bg-signal/15 px-2 py-0.5 text-xs font-medium text-foreground">
+                <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-signal-edge" />
                 {badge}
               </span>
             ) : null}

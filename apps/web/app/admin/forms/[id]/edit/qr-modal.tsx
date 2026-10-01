@@ -11,6 +11,7 @@
 import { useMemo, useState } from 'react';
 import { Modal } from '@/components/modal';
 import { Button } from '@/components/ui/button';
+import { IS_DAPTA_BRAND } from '@/components/brand/brand';
 import { saveBlob, svgDataUrl, svgToPngBlob } from '@/lib/download-blob';
 import { QR_EXPORT_PX, qrFilename, qrSvg } from '@/lib/qr-code';
 
@@ -135,7 +136,9 @@ export function QrModal({
   onCopy: () => void;
   onClose: () => void;
 }) {
-  const svg = useMemo(() => qrSvg(url), [url]);
+  // The mark in the centre only on a build that carries the product's own
+  // brand: a fork's customers should not print someone else's logo.
+  const svg = useMemo(() => qrSvg(url, QR_EXPORT_PX, { logo: IS_DAPTA_BRAND }), [url]);
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
 
