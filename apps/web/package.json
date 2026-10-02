@@ -7,6 +7,7 @@
   "scripts": {
     "dev": "next dev -p 3000",
     "build": "next build",
+    "icons": "node scripts/build-icons.mjs",
     "start": "next start -p 3000",
     "lint": "eslint app components lib",
     "test": "vitest run",
@@ -23,7 +24,6 @@
     "clsx": "^2.1.1",
     "mammoth": "^1.12.2",
     "next": "^16.2.10",
-    "primeicons": "^7.0.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "tailwind-merge": "^2.6.0",
@@ -37,6 +37,7 @@
     "@types/react-dom": "^19.0.2",
     "eslint": "^9.17.0",
     "happy-dom": "^20.14.5",
+    "lucide-static": "^1.49.0",
     "tailwindcss": "^4.0.0",
     "typescript": "^5.7.2",
     "vitest": "^2.1.8"

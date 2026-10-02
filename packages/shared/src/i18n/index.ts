@@ -290,10 +290,17 @@ export interface FormsMessages {
       createFormDesc: string;
       branding: string;
       brandingDesc: string;
-      integrations: string;
-      integrationsDesc: string;
-      analytics: string;
-      analyticsDesc: string;
+      /** Heading of the list of forms, most recently touched first. */
+      recent: string;
+      viewAll: string;
+      /** Heading of the quick links beside it. */
+      shortcuts: string;
+      noSubmissions: string;
+      /** The caption under the completion figure: what the rate is a share OF. */
+      statCompletionNote: string;
+      publicPageDesc: string;
+      /** "Updated {when}" without the verb, for a narrow column. */
+      colUpdated: string;
     };
     /** The workspace brand kit (Account settings → Brand kit; /admin/branding redirects there). */
     brandKit: {
@@ -320,6 +327,8 @@ export interface FormsMessages {
       colorsSubtitle: string;
       /** An axis the kit leaves to each form. */
       notSet: string;
+      /** The same, short enough to sit inside a colour swatch or beside a toggle. */
+      notSetShort: string;
       clearAxis: string;
       typographyTitle: string;
       typographySubtitle: string;
@@ -535,6 +544,19 @@ export interface FormsMessages {
       tokensHint: string;
       previewLabel: string;
       previewSubject: string;
+      /** The button that opens the preview as an inbox mock. */
+      previewExpand: string;
+      /** The inbox mock: a window around the email, as it lands for a person. */
+      previewMock: {
+        title: string;
+        inbox: string;
+        toMe: string;
+        justNow: string;
+        reply: string;
+        forward: string;
+        close: string;
+        note: string;
+      };
       usingDefault: string;
       customized: string;
       save: string;
@@ -650,6 +672,19 @@ export interface FormsMessages {
       dragHandle: string;
       dropHere: string;
       actionFailed: string;
+      /** The list as a table: its column headings. */
+      colForm: string;
+      colStatus: string;
+      colSubmissions: string;
+      colCompletion: string;
+      colUpdated: string;
+      /** Publish state of a row. A form is live from creation, so there are two. */
+      statusLive: string;
+      statusLiveHint: string;
+      statusUnpublished: string;
+      statusUnpublishedHint: string;
+      /** Completion cell when nobody has started the form yet (no rate to compute). */
+      noCompletion: string;
     };
     /** The form editor (builder). */
     editor: {
@@ -1417,6 +1452,12 @@ export interface FormsMessages {
       /** The checkbox on one row, and the one in the header that takes the whole page. */
       selectResponse: string;
       selectPage: string;
+      /**
+       * The button that brings the checkboxes in, and the one that puts them
+       * away again (dropping whatever was ticked).
+       */
+      selectMode: string;
+      selectModeDone: string;
       /** "{n} selected", on the bar that appears with a selection. `One` is n = 1. */
       selectedCount: string;
       selectedCountOne: string;
@@ -1440,6 +1481,14 @@ export interface FormsMessages {
         filterColumnActiveOne: string;
         /** Search box on top of a long option list. */
         searchOptions: string;
+        /**
+         * The table's own search box (its placeholder, and its fuller name for
+         * a screen reader), the x that empties it, and its chip's name.
+         */
+        searchResponses: string;
+        searchResponsesLabel: string;
+        searchResponsesClear: string;
+        searchChip: string;
         noOptions: string;
         /** Removes this column's filter (and sort). */
         clear: string;
@@ -2025,9 +2074,9 @@ export interface FormsMessages {
 
 export const en: FormsMessages = {
   growth: {
-    madeWith: 'Made with Dapta Forms',
+    madeWith: 'Made with dForms',
     ctaQuestion: 'Want your own form?',
-    ctaAction: 'Get Dapta Forms, free',
+    ctaAction: 'Get dForms, free',
     seoForm: 'Fill out {name} online.',
     shareCardSteps: '{count} questions',
     shareCardUntitled: 'Form',
@@ -2041,7 +2090,7 @@ export const en: FormsMessages = {
     thankYouTitle: 'Thank you!',
     thankYouBody: 'Your answers were recorded.',
     ctaQuestion: 'Want your own form?',
-    ctaAction: 'Get Dapta Forms, free',
+    ctaAction: 'Get dForms, free',
     progressLabel: 'Step {current} of {total}',
     verticalProgress: '{answered} of {total} answered',
     verticalErrors: 'Check the highlighted questions above.',
@@ -2210,15 +2259,18 @@ export const en: FormsMessages = {
       createFormDesc: 'Build a new form and share its link.',
       branding: 'Branding & style',
       brandingDesc: 'Your brand kit: logo, colors and the public look.',
-      integrations: 'Integrations & webhooks',
-      integrationsDesc: 'Send responses to your CRM or a webhook.',
-      analytics: 'Analytics',
-      analyticsDesc: 'Funnel performance and drop-off.',
+      recent: 'Recent activity',
+      viewAll: 'View all',
+      shortcuts: 'Shortcuts',
+      noSubmissions: 'No responses yet',
+      statCompletionNote: 'of those who start',
+      publicPageDesc: 'The forms you want people to find.',
+      colUpdated: 'Updated',
     },
     brandKit: {
       title: 'Brand kit',
       subtitle:
-        'Your workspace look: logo, colors, font and controls. New forms start with it; you can apply it to existing forms below.',
+        'New forms start with it. You can apply it to the ones that already exist.',
       save: 'Save brand kit',
       saving: 'Saving…',
       saved: 'Brand kit saved.',
@@ -2237,6 +2289,7 @@ export const en: FormsMessages = {
       colorsTitle: 'Colors',
       colorsSubtitle: 'Setting a background locks the light/dark theme of forms the kit is applied to.',
       notSet: 'Not set: each form keeps its own',
+      notSetShort: 'Not set',
       clearAxis: 'Clear',
       typographyTitle: 'Typography',
       typographySubtitle: 'The typeface forms render with.',
@@ -2353,7 +2406,7 @@ export const en: FormsMessages = {
     },
     account: {
       title: 'Account settings',
-      subtitle: 'Your workspaces, brand kit, notifications, public page and preferences.',
+      subtitle: 'Workspaces, brand, emails and preferences.',
       managing: 'Managing',
       nav: {
         workspaces: 'Workspaces',
@@ -2426,6 +2479,17 @@ export const en: FormsMessages = {
       tokensHint: 'Click a variable to insert it. Each is replaced with the real value when the email is sent.',
       previewLabel: 'Preview',
       previewSubject: 'Subject',
+      previewExpand: 'Expand preview',
+      previewMock: {
+        title: 'How the email arrives',
+        inbox: 'Inbox',
+        toMe: 'to me',
+        justNow: 'Just now',
+        reply: 'Reply',
+        forward: 'Forward',
+        close: 'Close',
+        note: 'A mock of how the email looks in an inbox. Each email app draws it a little differently.',
+      },
       usingDefault: 'Using default',
       customized: 'Customized',
       save: 'Save changes',
@@ -2529,6 +2593,16 @@ export const en: FormsMessages = {
       dragHandle: 'Drag to a folder',
       dropHere: 'Drop to move here',
       actionFailed: 'Something went wrong. Please try again.',
+      colForm: 'Form',
+      colStatus: 'Status',
+      colSubmissions: 'Submissions',
+      colCompletion: 'Completion',
+      colUpdated: 'Updated',
+      statusLive: 'Published',
+      statusLiveHint: 'What the public sees is the latest version.',
+      statusUnpublished: 'Unpublished changes',
+      statusUnpublishedHint: 'It has edits the public does not see yet.',
+      noCompletion: 'No data',
     },
     editor: {
       back: 'Back to forms',
@@ -3209,6 +3283,8 @@ export const en: FormsMessages = {
       pageSize: 'Rows per page',
       selectResponse: 'Select this response',
       selectPage: 'Select every response on this page',
+      selectMode: 'Select',
+      selectModeDone: 'Done',
       selectedCount: '{n} selected',
       selectedCountOne: '1 selected',
       exportSelected: 'Export CSV',
@@ -3223,6 +3299,10 @@ export const en: FormsMessages = {
         filterColumnActive: 'Filter by {column}, {n} active',
         filterColumnActiveOne: 'Filter by {column}, 1 active',
         searchOptions: 'Search options',
+        searchResponses: 'Search responses',
+        searchResponsesLabel: 'Search in the written answers',
+        searchResponsesClear: 'Clear search',
+        searchChip: 'Search',
         noOptions: 'No option matches.',
         clear: 'Clear',
         clearAll: 'Clear all',
@@ -3383,7 +3463,7 @@ export const en: FormsMessages = {
       pingHelp:
         'Posts one sample body in the real shape, signed the same way, so you can check what your endpoint receives. The answers are made up and marked as a test.',
       pingStatus: 'Your endpoint answered HTTP {status}.',
-      pingWeSend: 'Dapta Forms always delivers with POST and a JSON body.',
+      pingWeSend: 'dForms always delivers with POST and a JSON body.',
       pingEndpointSaid: 'It replied: {detail}',
       pingMethodNotAllowed: 'It does not accept POST on this URL.',
       pingUnsupportedMedia: 'It refused the content type.',
@@ -3757,9 +3837,9 @@ export const en: FormsMessages = {
 
 export const es: FormsMessages = {
   growth: {
-    madeWith: 'Hecho con Dapta Forms',
+    madeWith: 'Hecho con dForms',
     ctaQuestion: '¿Quieres tu propio formulario?',
-    ctaAction: 'Consigue Dapta Forms, gratis',
+    ctaAction: 'Consigue dForms, gratis',
     seoForm: 'Completa {name} en línea.',
     shareCardSteps: '{count} preguntas',
     shareCardUntitled: 'Formulario',
@@ -3773,7 +3853,7 @@ export const es: FormsMessages = {
     thankYouTitle: '¡Gracias!',
     thankYouBody: 'Tus respuestas quedaron registradas.',
     ctaQuestion: '¿Quieres tu propio formulario?',
-    ctaAction: 'Consigue Dapta Forms, gratis',
+    ctaAction: 'Consigue dForms, gratis',
     progressLabel: 'Paso {current} de {total}',
     verticalProgress: '{answered} de {total} respondidas',
     verticalErrors: 'Revisa las preguntas marcadas arriba.',
@@ -3944,15 +4024,18 @@ export const es: FormsMessages = {
       createFormDesc: 'Crea un formulario nuevo y comparte su enlace.',
       branding: 'Marca y estilo',
       brandingDesc: 'Tu kit de marca: logo, colores y la apariencia pública.',
-      integrations: 'Integraciones y webhooks',
-      integrationsDesc: 'Envía respuestas a tu CRM o a un webhook.',
-      analytics: 'Analíticas',
-      analyticsDesc: 'Rendimiento del embudo y abandono.',
+      recent: 'Actividad reciente',
+      viewAll: 'Ver todos',
+      shortcuts: 'Accesos',
+      noSubmissions: 'Sin respuestas',
+      statCompletionNote: 'de quienes empiezan',
+      publicPageDesc: 'Los formularios que quieres que encuentren.',
+      colUpdated: 'Actualizado',
     },
     brandKit: {
       title: 'Kit de marca',
       subtitle:
-        'La apariencia de tu workspace: logo, colores, tipografía y controles. Los formularios nuevos nacen con él; abajo puedes aplicarlo a los existentes.',
+        'Los formularios nuevos nacen con él. Puedes aplicarlo a los que ya existen.',
       save: 'Guardar kit de marca',
       saving: 'Guardando…',
       saved: 'Kit de marca guardado.',
@@ -3971,6 +4054,7 @@ export const es: FormsMessages = {
       colorsTitle: 'Colores',
       colorsSubtitle: 'Elegir un fondo fija el tema claro/oscuro de los formularios donde se aplique el kit.',
       notSet: 'Sin definir: cada formulario conserva el suyo',
+      notSetShort: 'Sin definir',
       clearAxis: 'Limpiar',
       typographyTitle: 'Tipografía',
       typographySubtitle: 'La tipografía con la que se renderizan los formularios.',
@@ -4088,7 +4172,7 @@ export const es: FormsMessages = {
     },
     account: {
       title: 'Ajustes de cuenta',
-      subtitle: 'Tus workspaces, kit de marca, notificaciones, página pública y preferencias.',
+      subtitle: 'Workspaces, marca, correos y preferencias.',
       managing: 'Administrando',
       nav: {
         workspaces: 'Workspaces',
@@ -4161,6 +4245,17 @@ export const es: FormsMessages = {
       tokensHint: 'Haz clic en una variable para insertarla. Cada una se reemplaza por su valor real al enviar el correo.',
       previewLabel: 'Vista previa',
       previewSubject: 'Asunto',
+      previewExpand: 'Ampliar vista previa',
+      previewMock: {
+        title: 'Cómo llega el correo',
+        inbox: 'Recibidos',
+        toMe: 'para mí',
+        justNow: 'Ahora mismo',
+        reply: 'Responder',
+        forward: 'Reenviar',
+        close: 'Cerrar',
+        note: 'Una maqueta de cómo se ve el correo en una bandeja de entrada. Cada app de correo lo dibuja un poco distinto.',
+      },
       usingDefault: 'Usando el predeterminado',
       customized: 'Personalizado',
       save: 'Guardar cambios',
@@ -4266,6 +4361,16 @@ export const es: FormsMessages = {
       dragHandle: 'Arrastra a una carpeta',
       dropHere: 'Suelta para mover aquí',
       actionFailed: 'Algo salió mal. Inténtalo de nuevo.',
+      colForm: 'Formulario',
+      colStatus: 'Estado',
+      colSubmissions: 'Respuestas',
+      colCompletion: 'Finalización',
+      colUpdated: 'Actualizado',
+      statusLive: 'Publicado',
+      statusLiveHint: 'Lo que ve el público es la última versión.',
+      statusUnpublished: 'Cambios sin publicar',
+      statusUnpublishedHint: 'Tiene cambios que el público aún no ve.',
+      noCompletion: 'Sin datos',
     },
     editor: {
       back: 'Volver a formularios',
@@ -4948,6 +5053,8 @@ export const es: FormsMessages = {
       pageSize: 'Filas por página',
       selectResponse: 'Seleccionar esta respuesta',
       selectPage: 'Seleccionar todas las respuestas de esta página',
+      selectMode: 'Seleccionar',
+      selectModeDone: 'Listo',
       selectedCount: '{n} seleccionadas',
       selectedCountOne: '1 seleccionada',
       exportSelected: 'Exportar CSV',
@@ -4962,6 +5069,10 @@ export const es: FormsMessages = {
         filterColumnActive: 'Filtrar por {column}, {n} activos',
         filterColumnActiveOne: 'Filtrar por {column}, 1 activo',
         searchOptions: 'Buscar opciones',
+        searchResponses: 'Buscar respuestas',
+        searchResponsesLabel: 'Buscar en las respuestas escritas',
+        searchResponsesClear: 'Borrar búsqueda',
+        searchChip: 'Búsqueda',
         noOptions: 'Ninguna opción coincide.',
         clear: 'Limpiar',
         clearAll: 'Limpiar todo',
@@ -5124,7 +5235,7 @@ export const es: FormsMessages = {
       pingHelp:
         'Manda un cuerpo de ejemplo con la forma real, firmado igual, para que veas qué recibe tu endpoint. Las respuestas son inventadas y van marcadas como prueba.',
       pingStatus: 'Tu endpoint respondió HTTP {status}.',
-      pingWeSend: 'Dapta Forms siempre entrega con POST y un cuerpo JSON.',
+      pingWeSend: 'dForms siempre entrega con POST y un cuerpo JSON.',
       pingEndpointSaid: 'Respondió: {detail}',
       pingMethodNotAllowed: 'No acepta POST en esa URL.',
       pingUnsupportedMedia: 'Rechazó el tipo de contenido.',

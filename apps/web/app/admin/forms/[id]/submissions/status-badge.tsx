@@ -4,13 +4,13 @@ export function StatusBadge({ completed, label }: { completed: boolean; label: s
     <span
       className={
         completed
-          ? 'inline-flex items-center gap-1.5 rounded-full bg-primary/20 px-2.5 py-0.5 text-xs font-medium text-foreground'
-          : 'inline-flex items-center gap-1.5 rounded-full bg-secondary/20 px-2.5 py-0.5 text-xs font-medium text-foreground'
+          ? 'inline-flex items-center gap-1.5 rounded-full bg-signal/20 px-2.5 py-0.5 text-xs font-medium text-foreground'
+          : 'inline-flex items-center gap-1.5 rounded-full bg-warning/20 px-2.5 py-0.5 text-xs font-medium text-foreground'
       }
     >
       <span
         aria-hidden
-        className={`h-1.5 w-1.5 rounded-full ${completed ? 'bg-primary-edge' : 'bg-secondary'}`}
+        className={`h-1.5 w-1.5 rounded-full ${completed ? 'bg-signal-edge' : 'bg-warning'}`}
       />
       {label}
     </span>

@@ -279,7 +279,7 @@ export function PreviewFrame({
                 title={m.previous}
                 aria-label={m.previous}
                 data-testid="preview-prev"
-                className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-input bg-card text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 <i aria-hidden className="pi pi-chevron-left" style={{ fontSize: 11 }} />
               </button>
@@ -296,7 +296,7 @@ export function PreviewFrame({
                 title={m.next}
                 aria-label={m.next}
                 data-testid="preview-next"
-                className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-input bg-card text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 <i aria-hidden className="pi pi-chevron-right" style={{ fontSize: 11 }} />
               </button>
@@ -306,7 +306,7 @@ export function PreviewFrame({
         <div
           role="radiogroup"
           aria-label={m.device}
-          className="inline-flex h-8 items-center gap-0.5 rounded-lg border border-border bg-card p-0.5"
+          className="inline-flex h-8 items-center gap-0.5 rounded-full border border-input bg-card p-0.5"
         >
           {DEVICES.map((d) => (
             <button
@@ -317,10 +317,11 @@ export function PreviewFrame({
               onClick={() => onDeviceChange(d)}
               data-testid={`preview-device-${d}`}
               className={cn(
-                'inline-flex h-full items-center gap-1.5 whitespace-nowrap rounded-md px-2.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                // Same rim as the toolbar's own device toggle (editor-toolbar.tsx).
+                'inline-flex h-full items-center gap-1.5 whitespace-nowrap rounded-full px-3 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                // Same mark as the Build canvas's own device toggle
+                // (editor-toolbar.tsx): two renderings of one control.
                 device === d
-                  ? 'bg-muted text-foreground shadow-[inset_0_0_0_1px_var(--primary-edge)]'
+                  ? 'bg-foreground text-background'
                   : 'text-muted-foreground hover:text-foreground',
               )}
             >
@@ -336,7 +337,7 @@ export function PreviewFrame({
             title={viewportLabel}
             aria-label={viewportLabel}
             data-testid="preview-viewport"
-            className="inline-flex h-8 shrink-0 items-center whitespace-nowrap font-mono text-2xs tabular-nums text-muted-foreground/70"
+            className="inline-flex h-8 shrink-0 items-center whitespace-nowrap text-2xs tabular-nums text-muted-foreground/70"
           >
             {width} × {height}
             {percent < 100 ? ` · ${percent}%` : ''}
@@ -374,7 +375,7 @@ export function PreviewFrame({
         </div>
       </div>
 
-      <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-border bg-muted/30">
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-input bg-card">
         {/* Address bar — the form's real public URL. */}
         <div
           className={cn(
@@ -392,7 +393,7 @@ export function PreviewFrame({
             title={fullUrl}
           >
             <i aria-hidden className="pi pi-lock shrink-0 text-muted-foreground" style={{ fontSize: 9 }} />
-            <span className="truncate font-mono text-xs text-muted-foreground">
+            <span className="truncate text-xs text-muted-foreground">
               <span className="sr-only">{m.urlLabel}: </span>
               {displayUrl}
             </span>
@@ -422,7 +423,7 @@ export function PreviewFrame({
         {/* `min-h` rather than `min-h-0`: on a narrow admin window this column
             has no definite height, and a stage of zero height would compute a
             scale of nothing. */}
-        <div className="flex min-h-[420px] flex-1 overflow-hidden p-3">
+        <div className="flex min-h-[420px] flex-1 overflow-hidden bg-panel p-3">
           {/* The stage is sized by the PANEL and never by the frame it holds —
               the framed box is taken OUT OF FLOW for exactly that reason. In
               flow, shrinking the frame would shrink the stage that measured it,

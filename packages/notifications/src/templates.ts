@@ -115,8 +115,8 @@ export function renderMemberInvited(
       subject: `Te agregaron a ${v.accountName}`,
       lines: [
         v.invitedBy
-          ? `${v.invitedBy} te agregó al espacio de trabajo "${v.accountName}" en Dapta Forms.`
-          : `Te agregaron al espacio de trabajo "${v.accountName}" en Dapta Forms.`,
+          ? `${v.invitedBy} te agregó al espacio de trabajo "${v.accountName}" en dForms.`
+          : `Te agregaron al espacio de trabajo "${v.accountName}" en dForms.`,
         'Entra con este mismo correo y vas a llegar directo ahí.',
         v.signInLink ? `Entrar: ${v.signInLink}` : '',
       ],
@@ -126,8 +126,8 @@ export function renderMemberInvited(
     subject: `You were added to ${v.accountName}`,
     lines: [
       v.invitedBy
-        ? `${v.invitedBy} added you to the "${v.accountName}" workspace on Dapta Forms.`
-        : `You were added to the "${v.accountName}" workspace on Dapta Forms.`,
+        ? `${v.invitedBy} added you to the "${v.accountName}" workspace on dForms.`
+        : `You were added to the "${v.accountName}" workspace on dForms.`,
       'Sign in with this same address and you will land straight in it.',
       v.signInLink ? `Sign in: ${v.signInLink}` : '',
     ],

@@ -10,6 +10,7 @@ import { screenBoundary, screenEnd, screenList, shownAbove, type ScreenBlock } f
 import { screenBlockReason } from './screen-join-field';
 import { SortableList, SortableRow } from './sortable';
 import { iconForStep, isContactType, stepListLabel } from './question-types';
+import { maxStepPoints } from './scoring-util';
 import type { BuilderMessages } from './builder-messages';
 import { tb } from './builder-messages';
 
@@ -22,11 +23,17 @@ const PARTIAL_ID = '__partial_submit_point__';
 const isMarker = (id: string): boolean => id === PARTIAL_ID;
 
 /**
- * The left flow spine — numbered question cards (drag to reorder), a type icon,
- * the truncated title, a purple "Logic" badge when the question carries rules,
- * and a muted "Contact" badge for auto-detected contact fields. The selected
- * card gets a lime left rail. One dashed "+ Add question" at the bottom opens
+ * The left flow spine: one compact row per question (drag to reorder) with its
+ * number, a tile carrying the type icon, the truncated title, the points it can
+ * add when the form scores, a "Logic" badge when it carries rules, and a muted
+ * "Contact" badge for auto-detected contact fields. The selected row is filled
+ * and its tile turns to ink. One dashed "+ Add question" at the bottom opens
  * the type gallery.
+ *
+ * A question on its own is a borderless row: the list is the object, and a box
+ * around each of eleven rows only made eleven objects of it. A SCREEN of
+ * several questions keeps its outline, because there the box is the
+ * information.
  *
  * One dashed, unnumbered marker renders INSIDE the same dnd-kit list (under a
  * special id) so it drags exactly like a question: the "Partial submit point"
@@ -45,10 +52,10 @@ const isMarker = (id: string): boolean => id === PARTIAL_ID;
  * not part of any draggable row, so it stays put while one moves. Numbering
  * stays per question.
  *
- * A row's state (selected, hovered, focused) is ONE outline drawn inside its
- * border, following its shape: its own rounded card, or its place in a
+ * A row's state follows its shape: its own rounded row, or its place in a
  * screen (the screen's corners on its first and last row, square between).
- * Drawn inside, it never covers the screen's own edge.
+ * Selected is a fill plus the ink tile; keyboard focus is one outline drawn
+ * INSIDE the row, so it never covers a screen's own edge.
  */
 export function QuestionSpine({
   steps,
@@ -61,6 +68,7 @@ export function QuestionSpine({
   partialAfterStep,
   onPartialChange,
   partialsHeld = false,
+  scoringEnabled = false,
   m,
 }: {
   steps: FormStep[];
@@ -81,6 +89,8 @@ export function QuestionSpine({
    * are saved but reach no integration. The marker's popover says so.
    */
   partialsHeld?: boolean;
+  /** The form scores: rows then show the most points their question can add. */
+  scoringEnabled?: boolean;
   m: BuilderMessages;
 }) {
   // Effective 1-based marker slot (null = not shown) — only for an in-range
@@ -130,13 +140,13 @@ export function QuestionSpine({
   }
 
   return (
-    <div data-testid="question-spine" className="flex h-full flex-col gap-3 border-r border-border p-4">
-      <div className="flex items-center justify-between">
+    <div data-testid="question-spine" className="flex h-full flex-col gap-2 border-r border-border p-3">
+      <div className="flex items-center gap-2 px-1 pb-1 pt-0.5">
         <h2 className="text-sm font-semibold text-foreground">{m.shell.questions}</h2>
-        <span className="text-xs text-muted-foreground">{steps.length}</span>
+        <span className="text-xs tabular-nums text-faint">{steps.length}</span>
       </div>
 
-      <SortableList ids={ids} onReorder={handleReorder} className="flex flex-col gap-2">
+      <SortableList ids={ids} onReorder={handleReorder} className="flex flex-col gap-1">
         {(id, index) => {
           if (id === PARTIAL_ID) {
             const atEnd = partialIdx === steps.length;
@@ -181,6 +191,9 @@ export function QuestionSpine({
           const rules = liveRuleCount(step);
           const contact = isContactType(step.type);
           const title = stepListLabel(step, m);
+          // What the engine can actually award for this question; zero for the
+          // ones it never scores, so only real contributors get a chip.
+          const points = scoringEnabled ? maxStepPoints(step) : 0;
           const span = spanAt(stepIndex);
           const opensScreen = span?.members[0] === stepIndex;
           const closesScreen = span?.members[span.members.length - 1] === stepIndex;
@@ -201,7 +214,8 @@ export function QuestionSpine({
                 {({ handleProps, isDragging }) => (
                   // The rows of one screen close the list's gap and share their
                   // borders, so the screen reads as one block.
-                  <div className={cn('group/row relative', span && !opensScreen && '-mt-[9px]')}>
+                  // (The list's 4px gap plus the 1px border the two rows share.)
+                  <div className={cn('group/row relative', span && !opensScreen && '-mt-[5px]')}>
                     {screensOn && shownAbove(steps, stepIndex) ? (
                       <ScreenToggle
                         index={stepIndex}
@@ -214,8 +228,12 @@ export function QuestionSpine({
                     ) : null}
                     <div
                       className={cn(
-                        'relative flex items-center gap-2 border border-border bg-card py-2.5 pl-2 pr-2.5 transition-[background-color,box-shadow] duration-150',
-                        // The row's shape: its own card (always, while lifted), or
+                        'relative flex items-center gap-1.5 border py-1.5 pl-2 pr-2 transition-[background-color,box-shadow] duration-150',
+                        // Only a screen draws its outline; a question on its own
+                        // keeps the border's box (so nothing shifts when it joins
+                        // one) but not its ink.
+                        span && !isDragging ? 'border-border bg-card' : 'border-transparent',
+                        // The row's shape: its own row (always, while lifted), or
                         // its place in a screen.
                         isDragging || !span
                           ? 'rounded-xl'
@@ -224,18 +242,19 @@ export function QuestionSpine({
                             : closesScreen
                               ? 'rounded-b-xl'
                               : 'rounded-none',
-                        // Its state, as one outline inside the border.
-                        active
-                          ? 'bg-primary/[0.07] ring-2 ring-inset ring-primary-edge'
-                          : 'hover:ring-1 hover:ring-inset hover:ring-muted-foreground/50 has-[[data-spine-select]:focus-visible]:ring-2 has-[[data-spine-select]:focus-visible]:ring-inset has-[[data-spine-select]:focus-visible]:ring-ring',
-                        isDragging && 'shadow-xl',
+                        // Its state. Selected is the fill (the ink tile below
+                        // carries the contrast); focus is one outline inside.
+                        active ? 'bg-muted' : 'hover:bg-muted/60',
+                        'has-[[data-spine-select]:focus-visible]:ring-2 has-[[data-spine-select]:focus-visible]:ring-inset has-[[data-spine-select]:focus-visible]:ring-ring',
+                        isDragging && 'border-input bg-card shadow-xl',
                       )}
                       data-screen-row={span ? (opensScreen ? 'first' : closesScreen ? 'last' : 'inside') : undefined}
+                      data-selected={active ? 'true' : undefined}
                     >
                       <button
                         type="button"
                         aria-label={m.shell.addQuestion}
-                        className="shrink-0 cursor-grab touch-none rounded-sm p-1 text-muted-foreground/70 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:cursor-grabbing"
+                        className="shrink-0 cursor-grab touch-none rounded-sm p-1 text-faint opacity-50 transition-opacity hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring group-hover/row:opacity-100 active:cursor-grabbing"
                         {...handleProps}
                       >
                         <i aria-hidden className="pi pi-bars" style={{ fontSize: 12 }} />
@@ -246,21 +265,23 @@ export function QuestionSpine({
                         onClick={() => onSelect(stepIndex)}
                         // Its keyboard focus shows as the row's own outline (above).
                         data-spine-select
-                        className="flex min-w-0 flex-1 items-center gap-2.5 text-left focus-visible:outline-none"
+                        className="flex min-w-0 flex-1 items-center gap-2 text-left focus-visible:outline-none"
                       >
-                        <span
-                          className={cn(
-                            'inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-xs font-bold tabular-nums',
-                            active ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground',
-                          )}
-                        >
+                        <span className="w-4 shrink-0 text-right text-2xs font-medium tabular-nums text-faint">
                           {stepIndex + 1}
                         </span>
-                        <i
-                          aria-hidden
-                          className={cn('pi shrink-0 text-muted-foreground', iconForStep(step))}
-                          style={{ fontSize: 13 }}
-                        />
+                        {/* The type, in a tile. Ink when selected: on a grey fill
+                            that is 16:1, which is what says "this one". */}
+                        <span
+                          className={cn(
+                            'inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border',
+                            active
+                              ? 'border-primary bg-primary text-primary-foreground'
+                              : 'border-border bg-card text-muted-foreground',
+                          )}
+                        >
+                          <i aria-hidden className={cn('pi', iconForStep(step))} style={{ fontSize: 13 }} />
+                        </span>
                         <span className="flex min-w-0 flex-1 flex-col">
                           <span id={`spine-title-${step.key}`} className="truncate text-sm font-medium text-foreground">
                             {title}
@@ -291,6 +312,15 @@ export function QuestionSpine({
                             ) : null}
                           </span>
                         </span>
+                        {points > 0 ? (
+                          <span
+                            data-testid="spine-points"
+                            title={tb(m.scoring.stepMax, { n: points })}
+                            className="shrink-0 rounded-md bg-score/15 px-1.5 py-0.5 text-2xs font-semibold tabular-nums text-score-ink"
+                          >
+                            +{points}
+                          </span>
+                        ) : null}
                       </button>
                     </div>
                   </div>
@@ -309,7 +339,7 @@ export function QuestionSpine({
       <button
         type="button"
         onClick={onAdd}
-        className="mt-1 flex items-center justify-center gap-2 rounded-xl border border-dashed border-border py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:border-primary-edge/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="mt-1 flex items-center justify-center gap-2 rounded-xl border border-dashed border-input py-2 text-sm font-medium text-muted-foreground transition-colors hover:border-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         <i aria-hidden className="pi pi-plus" style={{ fontSize: 12 }} />
         {m.shell.addQuestion}
@@ -322,7 +352,7 @@ export function QuestionSpine({
           type="button"
           data-testid="partial-point-add"
           onClick={() => onPartialChange(Math.min(steps.length, (selectedIndex ?? 0) + 1))}
-          className="flex items-center justify-center gap-2 rounded-xl border border-dashed border-secondary/50 py-2 text-xs font-medium text-secondary/90 transition-colors hover:border-secondary hover:text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="flex items-center justify-center gap-2 rounded-xl border border-dashed border-warning/60 py-2 text-xs font-medium text-warning-ink transition-colors hover:bg-warning/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           <i aria-hidden className="pi pi-plus" style={{ fontSize: 11 }} />
           {m.partial.add}
@@ -344,14 +374,14 @@ export function QuestionSpine({
         return (
           <div
             data-testid="partial-point-suggest"
-            className="rounded-xl border border-secondary/40 bg-secondary/[0.06] p-3 text-xs text-muted-foreground"
+            className="rounded-xl border border-warning/40 bg-warning/10 p-3 text-xs text-muted-foreground"
           >
             <p>{m.partial.suggestEmail}</p>
             <button
               type="button"
               data-testid="partial-point-suggest-apply"
               onClick={() => onPartialChange(emailIdx + 1)}
-              className="mt-2 rounded-md border border-secondary/60 px-2.5 py-1 font-medium text-secondary transition-colors hover:bg-secondary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="mt-2 rounded-full border border-warning/60 px-2.5 py-1 font-medium text-warning-ink transition-colors hover:bg-warning/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               {m.partial.suggestEmailAction}
             </button>
@@ -416,7 +446,7 @@ function ScreenToggle({
           // Without hover (a touch screen) an open boundary stays faintly in view.
           joined
             ? 'top-0 border-primary-edge text-foreground opacity-100'
-            : 'top-[-4px] border-border text-muted-foreground opacity-0 [@media(hover:none)]:opacity-60',
+            : 'top-[-2px] border-border text-muted-foreground opacity-0 [@media(hover:none)]:opacity-60',
           // A boundary that cannot be joined shows dimmed, and says why.
           joined ? '' : blocked ? 'cursor-not-allowed border-dashed group-hover/row:opacity-50' : 'group-hover/row:opacity-100 hover:text-foreground',
         )}
@@ -523,20 +553,22 @@ function SpineMarker({
   return (
     <div
       data-testid={`${testidPrefix}-row`}
-      className="rounded-xl border border-dashed border-secondary/70 bg-secondary/[0.06] py-2 pl-2 pr-2.5"
+      // Amber, the app-wide colour of "saved but not live yet": a partial
+      // response is exactly that, and its marker is where it starts.
+      className="rounded-xl border border-dashed border-warning/60 bg-warning/10 py-1.5 pl-2 pr-2"
     >
       <div className="flex items-center gap-1.5">
         <button
           type="button"
           data-testid={`${testidPrefix}-handle`}
           aria-label={moveLabel}
-          className="shrink-0 cursor-grab touch-none rounded-sm p-1 text-secondary/70 hover:text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:cursor-grabbing"
+          className="shrink-0 cursor-grab touch-none rounded-sm p-1 text-warning-ink/70 hover:text-warning-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:cursor-grabbing"
           {...handleProps}
         >
           <i aria-hidden className="pi pi-bars" style={{ fontSize: 12 }} />
         </button>
-        <i aria-hidden className={cn('pi shrink-0 text-secondary', icon)} style={{ fontSize: 12 }} />
-        <span className="min-w-0 flex-1 text-xs font-semibold leading-tight text-secondary">
+        <i aria-hidden className={cn('pi shrink-0 text-warning-ink', icon)} style={{ fontSize: 12 }} />
+        <span className="min-w-0 flex-1 text-xs font-semibold leading-tight text-warning-ink">
           {label}
         </span>
         <button

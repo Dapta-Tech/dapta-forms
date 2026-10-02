@@ -81,6 +81,28 @@ describe('parseViewFilter', () => {
   });
 });
 
+describe('the text search', () => {
+  it('is read trimmed and cut to the limit, and is a filter like the others', () => {
+    const f = parseViewFilter({ search: '  ana gómez  ' }, scope);
+    expect(f.search).toBe('ana gómez');
+    expect(isFiltered(f)).toBe(true);
+    expect(parseViewFilter({ search: '   ' }, scope).search).toBeNull();
+    expect(parseViewFilter({ search: 'x'.repeat(500) }, scope).search).toHaveLength(200);
+    // A form with nothing written to search ignores it.
+    expect(parseViewFilter({ search: 'ana' }, { ...scope, searchable: false }).search).toBeNull();
+  });
+
+  it('rides in the page URL and reaches the API as `search`', () => {
+    const f = { ...EMPTY_FILTER, search: 'ana' };
+    expect(filterParams(f).toString()).toBe('search=ana');
+    expect(apiFilterQuery(f, 'UTC').search).toBe('ana');
+    expect(apiFilterQuery(EMPTY_FILTER, 'UTC').search).toBeUndefined();
+    // A new search starts at the first page, with no response open.
+    expect(withFilter('offset=50&response=s1&size=50&search=old', f).toString()).toBe('size=50&search=ana');
+    expect(withFilter('search=old', EMPTY_FILTER).toString()).toBe('');
+  });
+});
+
 describe('the filter in the address bar', () => {
   it('round-trips through the URL', () => {
     const f = parseViewFilter(

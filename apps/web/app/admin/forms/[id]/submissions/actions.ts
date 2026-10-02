@@ -11,6 +11,23 @@ export async function deleteSubmissionAction(formId: string, submissionId: strin
 }
 
 /**
+ * Delete a submission and revalidate nothing: the caller refreshes the page
+ * itself (`router.refresh()`), and learns whether the delete went through.
+ *
+ * For the Summary's panel. There, the refresh a revalidating action brings
+ * with it never reached the screen: the page stayed as it was, the deleted
+ * response's panel still open and its button stuck on "pending".
+ */
+export async function deleteSubmissionQuietAction(submissionId: string): Promise<{ ok: boolean }> {
+  try {
+    await adminApi.deleteSubmission(submissionId);
+    return { ok: true };
+  } catch {
+    return { ok: false };
+  }
+}
+
+/**
  * Delete the table's selection, then refresh the table. The failure comes back
  * as a value, so the selection bar can say so and keep the selection.
  */

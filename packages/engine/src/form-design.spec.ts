@@ -8,6 +8,7 @@ import {
   findThemePreset,
   resolveCustomFont,
   resolveDesign,
+  withNewFormBranding,
 } from './form-design';
 
 describe('resolveDesign — legacy defaults', () => {
@@ -226,16 +227,25 @@ describe('theme presets', () => {
     expect(darks.length).toBeLessThan(FORM_THEME_PRESETS.length);
   });
 
-  it('control-room reproduces the house look and leads the list', () => {
+  it('dforms reproduces the house look and leads the list', () => {
     // The first card is what a new form already looks like, so an author who
     // wanders can get back to the default without hand-typing four values.
-    expect(FORM_THEME_PRESETS[0]?.id).toBe('control-room');
-    const house = findThemePreset('control-room');
-    expect(house?.background).toBe('#0a0c0e');
-    expect(house?.foreground).toBe('#e8edf2');
-    expect(house?.primaryColor).toBe('#d3e750');
+    expect(FORM_THEME_PRESETS[0]?.id).toBe('dforms');
+    const house = findThemePreset('dforms');
+    expect(house?.background).toBe('#ffffff');
+    expect(house?.foreground).toBe('#1a1a1c');
+    expect(house?.primaryColor).toBe('#3ddc84');
     expect(house?.font).toBe(DEFAULT_FORM_FONT);
     expect(house?.radius).toBe(LEGACY_FORM_DESIGN.radius);
+  });
+
+  it('keeps control-room, the house look before the rebrand, under its original id', () => {
+    // A form that stored `themePreset: 'control-room'` must still show its card
+    // as selected: the id is data, not a label.
+    const previous = findThemePreset('control-room');
+    expect(previous?.background).toBe('#0a0c0e');
+    expect(previous?.foreground).toBe('#e8edf2');
+    expect(previous?.primaryColor).toBe('#d3e750');
   });
 
   it('keeps midnight, the previous house look, under its original id', () => {
@@ -252,5 +262,80 @@ describe('theme presets', () => {
     expect(findThemePreset('nope')).toBeNull();
     expect(findThemePreset(null)).toBeNull();
     expect(findThemePreset(undefined)).toBeNull();
+  });
+});
+
+describe('withNewFormBranding', () => {
+  it('writes the dForms colours into a form made from nothing', () => {
+    const out = withNewFormBranding(undefined);
+    expect(out).toEqual({
+      version: 1,
+      steps: [],
+      branding: {
+        background: '#ffffff',
+        foreground: '#1a1a1c',
+        primaryColor: '#3ddc84',
+        themePreset: 'dforms',
+      },
+    });
+  });
+
+  it('keeps everything else on the config it is given', () => {
+    const out = withNewFormBranding({ version: 1, steps: [], language: 'es', layout: 'vertical' });
+    expect(out.language).toBe('es');
+    expect(out.layout).toBe('vertical');
+  });
+
+  it('does not mutate its input', () => {
+    const input = { version: 1, steps: [], branding: { radius: 'sharp' } };
+    withNewFormBranding(input);
+    expect(input).toEqual({ version: 1, steps: [], branding: { radius: 'sharp' } });
+  });
+
+  it('fills only what the caller left out', () => {
+    // A kit accent survives; the ground it did not name still becomes dForms.
+    const out = withNewFormBranding({ version: 1, steps: [], branding: { primaryColor: '#ff5500' } });
+    expect(out.branding).toEqual({
+      background: '#ffffff',
+      foreground: '#1a1a1c',
+      primaryColor: '#ff5500',
+    });
+  });
+
+  it('leaves the ground alone when the caller chose either half of it', () => {
+    // Foreground alone was written against the dark default; a white ground
+    // would put that text on white.
+    const fg = withNewFormBranding({ version: 1, steps: [], branding: { foreground: '#ffffff' } });
+    expect(fg.branding).toEqual({ foreground: '#ffffff', primaryColor: '#3ddc84' });
+    const bg = withNewFormBranding({ version: 1, steps: [], branding: { background: '#101010' } });
+    expect(bg.branding).toEqual({ background: '#101010', primaryColor: '#3ddc84' });
+  });
+
+  it('treats blank strings as absent', () => {
+    const out = withNewFormBranding({ version: 1, steps: [], branding: { background: ' ', primaryColor: '' } });
+    expect((out.branding as Record<string, unknown>).background).toBe('#ffffff');
+    expect((out.branding as Record<string, unknown>).primaryColor).toBe('#3ddc84');
+  });
+
+  it('marks the preset only when all three colours came from it', () => {
+    const custom = withNewFormBranding({
+      version: 1,
+      steps: [],
+      branding: { background: '#101010', foreground: '#eeeeee', primaryColor: '#ff5500' },
+    });
+    expect((custom.branding as Record<string, unknown>).themePreset).toBeUndefined();
+  });
+
+  it('is idempotent', () => {
+    const once = withNewFormBranding(undefined);
+    expect(withNewFormBranding(once)).toEqual(once);
+  });
+
+  it('lands on the dForms preset card, so the editor shows it selected', () => {
+    const branding = withNewFormBranding(undefined).branding as Record<string, string>;
+    const preset = findThemePreset('dforms');
+    expect(branding.background).toBe(preset?.background);
+    expect(branding.foreground).toBe(preset?.foreground);
+    expect(branding.primaryColor).toBe(preset?.primaryColor);
   });
 });

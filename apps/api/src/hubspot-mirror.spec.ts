@@ -118,7 +118,7 @@ describe('syncMirrorForm — creating and updating', () => {
     expect(out.settings.formGuid).toBe('guid-new');
     expect(calls[0]!.method).toBe('POST');
     expect(calls[0]!.url).toBe(`${BASE}/marketing/v3/forms`);
-    expect(calls[0]!.body.name).toBe('Lead qualifier (Dapta Forms)');
+    expect(calls[0]!.body.name).toBe('Lead qualifier (dForms)');
   });
 
   it('records the signature, so the next save is a no-op', async () => {
@@ -166,7 +166,7 @@ describe('syncMirrorForm — creating and updating', () => {
       deps(fetchImpl),
     );
     expect(out.action).toBe('updated');
-    expect(calls[0]!.body.name).toBe('Lead qualifier (Dapta Forms)');
+    expect(calls[0]!.body.name).toBe('Lead qualifier (dForms)');
   });
 });
 

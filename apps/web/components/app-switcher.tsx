@@ -3,6 +3,7 @@
 import { useCallback, useRef, useState } from 'react';
 import { BrandMark } from '@/components/brand/brand';
 import { AnchoredMenu } from '@/components/ui/anchored-menu';
+import { PRODUCT_NAME } from '@/lib/product-name';
 import { CALENDARS_URL, PLATFORM_URL, suiteHref } from '@/lib/suite';
 
 /**
@@ -26,7 +27,6 @@ interface SwitcherMessages {
   opensNewTab: string;
 }
 
-const PRODUCT_NAME = process.env.NEXT_PUBLIC_PRODUCT_NAME || 'Forms';
 
 export function AppSwitcher({ messages: m }: { messages: SwitcherMessages }) {
   const [open, setOpen] = useState(false);

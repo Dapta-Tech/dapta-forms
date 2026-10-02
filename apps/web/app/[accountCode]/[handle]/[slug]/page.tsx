@@ -186,7 +186,7 @@ export default async function PublicFormPage({
           document element says, and an author previewing their own form does not
           relabel it with their dashboard preference. */}
       <div lang={locale} className={embedded ? 'pf-embed-root' : undefined}>
-        {/* The "Made with Dapta Forms" attribution is NOT a document footer:
+        {/* The "Made with dForms" attribution is NOT a document footer:
             the renderers place it inside `.pf` themselves. As a sibling here it
             started exactly where the first `100dvh` viewport ended, so it was
             below the fold on every slides form and past the whole scroll on a

@@ -1,4 +1,4 @@
-import { Suspense } from 'react';
+import { Suspense, type ReactNode } from 'react';
 import { notFound, redirect } from 'next/navigation';
 import type { FormConfig, SubmissionsPage } from '@quill/types';
 import {
@@ -45,7 +45,7 @@ import {
   type ViewFilter,
 } from './filters';
 import { choiceColumnId, filterColumns, filterScope } from './filter-columns';
-import { ClearFiltersButton, FilterBar, FilterHost, FilterTh } from './column-filter';
+import { ClearFiltersButton, FilterBar, FilterHost, FilterTh, ResponseSearch, SearchSlot } from './column-filter';
 
 export const dynamic = 'force-dynamic';
 
@@ -56,11 +56,14 @@ export const dynamic = 'force-dynamic';
  * rule is drawn on each cell instead. The header ground is opaque for the
  * same reason: in the sheet it stays put over the rows scrolling under it.
  */
-const TH =
-  'sticky top-0 z-10 border-b border-border bg-card px-4 py-3 align-bottom font-medium in-data-sheet:shadow-[0_1px_0_var(--color-border)]';
+const TH_BASE =
+  'sticky top-0 z-10 border-b border-border bg-card py-3 align-middle font-medium in-data-sheet:shadow-[0_1px_0_var(--color-border)]';
+/** Every cell draws the rule on its right too, so the columns read as a sheet's grid. */
+const TH = `${TH_BASE} border-r px-4`;
 /** `data-cursor`: the sheet's keyboard cursor, drawn inside the cell so no neighbour clips it. */
-const TD =
-  'border-b border-border px-4 py-3 group-last:border-b-0 data-cursor:outline-2 data-cursor:-outline-offset-2 data-cursor:outline-primary-edge';
+const TD_BASE =
+  'border-b border-border py-3 group-last:border-b-0 data-cursor:outline-2 data-cursor:-outline-offset-2 data-cursor:outline-primary-edge';
+const TD = `${TD_BASE} border-r px-4`;
 
 /**
  * A question column's width: the one the reader dragged it to (a CSS variable
@@ -79,11 +82,16 @@ function questionWidth(index: number, cell: boolean): { minWidth?: string; maxWi
  * The two pinned columns: the checkbox at the left edge, and the response
  * right after it, offset by the checkbox column's width. Both need an opaque
  * ground since the rows scroll under them.
+ *
+ * The checkbox column only exists while selecting (`data-select` on the
+ * viewer): out of that mode it is not drawn, and the response sits at the edge.
  */
-const SELECT_COL = 'w-11 min-w-11 max-w-11';
-const PINNED_RESPONSE = 'sticky left-11';
+const SELECT_COL = 'hidden w-11 min-w-11 max-w-11 px-0 in-data-select:table-cell';
+const PINNED_RESPONSE = 'sticky left-0 in-data-select:left-11';
+/** The ink bar on a row's left edge: the response open in the panel. */
+const ACTIVE_BAR = 'before:absolute before:inset-y-0 before:left-0 before:w-0.75 group-data-active:before:bg-primary';
 const PINNED_TINT =
-  'bg-card group-has-checked:bg-linear-to-r group-has-checked:from-primary/5 group-has-checked:to-primary/5 group-hover:bg-linear-to-r group-hover:from-accent/70 group-hover:to-accent/70 group-data-active:bg-linear-to-r group-data-active:from-primary/10 group-data-active:to-primary/10';
+  'bg-card group-has-checked:bg-linear-to-r group-has-checked:from-primary/5 group-has-checked:to-primary/5 group-hover:bg-sidebar group-data-active:bg-muted group-data-active:bg-none';
 
 /** The query as Next hands it over: a param given twice (a filter's options) is a list. */
 type SP = Record<string, string | string[] | undefined>;
@@ -131,7 +139,8 @@ export default async function SubmissionsPage({
   // The header filters, from the URL (an old `?status=` link reads as the
   // Status filter). The API takes the same filter, so the table, the CSV and
   // the Summary always describe the same rows.
-  const filter = parseViewFilter(sp, filterScope(steps, scoring));
+  const scope = filterScope(steps, scoring);
+  const filter = parseViewFilter(sp, scope);
   const apiQuery = apiFilterQuery(filter, timeZone);
   // The page of rows, fetched here because the table's key needs it, while
   // the counts finish.
@@ -158,62 +167,74 @@ export default async function SubmissionsPage({
     },
   });
 
-  return (
-    <div className="mx-auto max-w-[1100px] px-6 py-8">
-      <FormTabs formId={id} active="submissions" labels={m.nav} />
-      <div className="mb-6 flex flex-col gap-4">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h1 className="text-3xl font-semibold tracking-tight">{m.submissions.title}</h1>
-            <p className="mt-1 text-muted-foreground">{m.submissions.subtitle}</p>
-          </div>
-          {/* The export downloads exactly what the filters show, in the same order. */}
-          <a
-            href={`/admin/forms/${id}/submissions/export${apiQueryString(apiQuery)}`}
-            className="inline-flex h-10 items-center gap-2 rounded-md border border-border bg-transparent px-4 text-sm font-semibold text-foreground transition-colors hover:bg-accent"
-          >
-            <i aria-hidden className="pi pi-download" style={{ fontSize: 13 }} />
-            {m.submissions.export}
-          </a>
-        </div>
-        <div className="flex flex-wrap items-end justify-between gap-4">
-          <SubmissionsViewTabs
-            formId={id}
-            active="responses"
-            labels={m.submissions.summary}
-            query={queryString(filterParams(filter))}
-          />
-          {/* The SHARED workspace zone, right where the timestamps are: an
-              admin can fix it here, a member sees which zone applies. */}
-          <WorkspaceTimezoneField
-            accountId={me.accountId}
-            value={me.timezone}
-            canEdit={isAdminRole(me.role)}
-            variant="inline"
-            locale={locale}
-            labels={{
-              label: m.submissions.timezoneLabel,
-              help: m.submissions.timezoneHint,
-              saved: m.settings.workspaceTimezoneSaved,
-              error: m.settings.workspaceTimezoneError,
-              unset: m.settings.workspaceTimezoneUnset,
-              utc: m.settings.workspaceTimezoneUtc,
-              readOnly: m.submissions.timezoneReadOnly,
-            }}
-          />
-        </div>
-      </div>
+  // Summary | Responses, handed to the data below so it sits on the same line
+  // as the filters and the full-screen button (and on the empty state too).
+  const viewTabs = (
+    <SubmissionsViewTabs
+      formId={id}
+      active="responses"
+      labels={m.submissions.summary}
+      query={queryString(filterParams(filter))}
+    />
+  );
 
-      {/* Outside the keyed Suspense on purpose: a column's filter menu stays
-          open while the rows it filters change under it. */}
-      <FilterHost
-        columns={columns}
-        filter={filter}
-        statusCounts={{ completed: facets.completed, partial: facets.partial }}
-        total={facets.total}
-        labels={{ ...m.submissions.filters, completed: m.submissions.badgeCompleted, partial: m.submissions.badgePartial }}
-        locale={locale}
-      >
+  // The host of the filters wraps the header too: the search box lives up
+  // there, outside the table that every new set of rows remounts.
+  return (
+    <FilterHost
+      columns={columns}
+      filter={filter}
+      statusCounts={{ completed: facets.completed, partial: facets.partial }}
+      total={facets.total}
+      labels={{ ...m.submissions.filters, completed: m.submissions.badgeCompleted, partial: m.submissions.badgePartial }}
+      locale={locale}
+    >
+    <div>
+      <FormTabs
+        formId={id}
+        active="submissions"
+        labels={{ ...m.nav, forms: m.chrome.nav.forms }}
+        name={form.name}
+        hasDraft={form.draftConfig != null}
+        statusLabels={m.forms}
+        actions={
+          <>
+            {/* Only where there is something written to search. */}
+            {scope.searchable ? <ResponseSearch /> : null}
+            {/* The SHARED workspace zone, right where the timestamps are: an
+                admin can fix it here, a member sees which zone applies. */}
+            <WorkspaceTimezoneField
+              accountId={me.accountId}
+              value={me.timezone}
+              canEdit={isAdminRole(me.role)}
+              variant="inline"
+              locale={locale}
+              labels={{
+                label: m.submissions.timezoneLabel,
+                help: m.submissions.timezoneHint,
+                saved: m.settings.workspaceTimezoneSaved,
+                error: m.settings.workspaceTimezoneError,
+                unset: m.settings.workspaceTimezoneUnset,
+                utc: m.settings.workspaceTimezoneUtc,
+                readOnly: m.submissions.timezoneReadOnly,
+              }}
+            />
+            {/* The export downloads exactly what the filters show, in the same order. */}
+            <a
+              href={`/admin/forms/${id}/submissions/export${apiQueryString(apiQuery)}`}
+              className="inline-flex h-10 shrink-0 items-center gap-2 rounded-full bg-muted px-4 text-sm font-semibold text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <i aria-hidden className="pi pi-download" style={{ fontSize: 13 }} />
+              {m.submissions.export}
+            </a>
+          </>
+        }
+      />
+      <div className="mx-auto max-w-[1520px] px-6 py-6 sm:px-8">
+
+        {/* The filter menus hang from the host above, outside this keyed
+            Suspense on purpose: a column's menu stays open while the rows it
+            filters change under it. */}
         {/* A new key is a new boundary, whose fallback React shows for a
             moment even with the rows at hand: it holds the old picture then,
             so the table (and the full-screen sheet) do not blink. */}
@@ -241,12 +262,15 @@ export default async function SubmissionsPage({
               timeZone={timeZone}
               responseId={one(sp.response)}
               sheet={one(sp.view) === SHEET_VIEW}
+              viewTabs={viewTabs}
+              searchable={scope.searchable === true}
               m={m}
             />
           </Suspense>
         </SwapHold>
-      </FilterHost>
+      </div>
     </div>
+    </FilterHost>
   );
 }
 
@@ -276,6 +300,8 @@ function SubmissionsData({
   timeZone,
   responseId,
   sheet,
+  viewTabs,
+  searchable,
   m,
 }: {
   id: string;
@@ -299,6 +325,10 @@ function SubmissionsData({
   responseId?: string;
   /** `?view=sheet`: open the table as the full-screen sheet on load. */
   sheet: boolean;
+  /** Summary | Responses, drawn at the head of the table's toolbar. */
+  viewTabs: ReactNode;
+  /** Whether the form has written answers to search: the sheet keeps a place for the box. */
+  searchable: boolean;
   m: FormsMessages['admin'];
 }) {
   const filtered = isFiltered(filter);
@@ -306,9 +336,12 @@ function SubmissionsData({
   // matches nothing: the table stays, headings and all, so it can be undone.
   if (page.total === 0 && !filtered) {
     return (
-      <div className="rounded-xl border border-dashed border-border bg-card/40 p-12 text-center">
-        <p className="text-lg font-medium">{m.submissions.emptyTitle}</p>
-        <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">{m.submissions.emptyBody}</p>
+      <div className="flex flex-col gap-4">
+        {viewTabs}
+        <div className="rounded-2xl border border-dashed border-border p-12 text-center">
+          <p className="text-lg font-medium">{m.submissions.emptyTitle}</p>
+          <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">{m.submissions.emptyBody}</p>
+        </div>
       </div>
     );
   }
@@ -357,9 +390,9 @@ function SubmissionsData({
   // Every column, for the one cell that says a filter matched nothing.
   const columnCount = 4 + (scoring ? 1 : 0) + steps.length;
   const pagerButton =
-    'inline-flex h-9 items-center rounded-md border border-border px-3 font-medium text-foreground transition-colors hover:bg-accent';
+    'inline-flex h-9 items-center rounded-full bg-muted px-4 font-medium text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
   const pagerOff =
-    'inline-flex h-9 cursor-not-allowed items-center rounded-md border border-border px-3 font-medium text-muted-foreground opacity-50';
+    'inline-flex h-9 cursor-not-allowed items-center rounded-full bg-muted/60 px-4 font-medium text-faint';
 
   return (
     <div className="flex flex-col gap-4">
@@ -399,6 +432,8 @@ function SubmissionsData({
           scoreValue: m.submissions.scoreValue,
         }}
         selectionLabels={{
+          selectMode: m.submissions.selectMode,
+          selectModeDone: m.submissions.selectModeDone,
           selectedCount: m.submissions.selectedCount,
           selectedCountOne: m.submissions.selectedCountOne,
           exportSelected: m.submissions.exportSelected,
@@ -412,13 +447,11 @@ function SubmissionsData({
         pager={
           page.total === 0 ? undefined : (
           <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
-            <div className="flex items-center gap-3">
-              <PageSizeSelect value={size} label={m.submissions.pageSize} />
-              <span className="text-muted-foreground tabular-nums" data-testid="page-range">
+            <PageSizeSelect value={size} label={m.submissions.pageSize} />
+            <div className="flex items-center gap-2">
+              <span className="mr-2 text-muted-foreground tabular-nums" data-testid="page-range">
                 {t(m.submissions.showing, { from, to, total: page.total })}
               </span>
-            </div>
-            <div className="flex items-center gap-2">
               {hasPrev ? (
                 <PagerLink href={pageHref(Math.max(0, offset - page.limit))} className={pagerButton}>
                   {m.submissions.prev}
@@ -437,17 +470,18 @@ function SubmissionsData({
           </div>
           )
         }
+        lead={viewTabs}
+        searchSlot={searchable ? <SearchSlot /> : null}
+        // What the view is filtered by: beside the tabs on the page, above the
+        // table in the sheet.
+        filters={<FilterBar shown={page.total} total={total} />}
       >
-        {/* What the view is filtered by, above the table in both views. */}
-        <div className="mb-3 empty:hidden">
-          <FilterBar shown={page.total} total={total} />
-        </div>
         {/* In the sheet (`data-sheet` on the viewer) this container takes the
             screen and scrolls both ways, under a header that stays put and
             beside a first column that stays put. */}
         <div
           data-table-scroll
-          className="overflow-x-auto rounded-lg border border-border bg-card in-data-sheet:min-h-0 in-data-sheet:overflow-auto"
+          className="overflow-x-auto rounded-2xl border border-border bg-card in-data-sheet:min-h-0 in-data-sheet:overflow-auto in-data-sheet:rounded-xl"
         >
         {/* `--q-min`/`--q-max`: a question column's default width range in
             each view, for the columns the reader has not resized. */}
@@ -456,12 +490,12 @@ function SubmissionsData({
             {/* Sentence case at the label step, not the uppercase telemetry
                 eyebrow: these are questions people read, often two lines long. */}
             <tr className="text-left text-xs leading-4 text-muted-foreground">
-              <th className={`${TH} sticky left-0 z-20 px-0 ${SELECT_COL}`}>
+              <th className={`${TH_BASE} sticky left-0 z-20 ${SELECT_COL}`}>
                 <PageSelect label={m.submissions.selectPage} />
               </th>
               {/* A funnel on every column that filters (the date, the status,
                   the score, each choice question); the heading opens it. */}
-              <FilterTh columnId="date" className={`${TH} ${PINNED_RESPONSE} z-20 whitespace-nowrap shadow-[1px_0_0_var(--color-border)]`}>
+              <FilterTh columnId="date" className={`${TH} ${PINNED_RESPONSE} z-20 whitespace-nowrap`}>
                 {hasContact ? m.submissions.colResponse : m.submissions.colSubmitted}
               </FilterTh>
               <FilterTh columnId="status" className={`${TH} whitespace-nowrap`}>
@@ -490,7 +524,7 @@ function SubmissionsData({
                   <ColumnHeading text={stepLabel(s)} />
                 </FilterTh>
               ))}
-              <th className={TH} aria-label={m.submissions.colActions} />
+              <th className={`${TH_BASE} px-4`} aria-label={m.submissions.colActions} />
             </tr>
           </thead>
           <tbody>
@@ -518,20 +552,19 @@ function SubmissionsData({
                 <tr
                   key={row.id}
                   data-response-id={row.id}
-                  className="group cursor-pointer align-top transition-colors hover:bg-accent/70 has-checked:bg-primary/5 data-active:bg-primary/10 data-active:hover:bg-primary/15"
+                  className="group cursor-pointer align-top transition-colors hover:bg-sidebar has-checked:bg-primary/5 data-active:bg-muted data-active:hover:bg-muted"
                 >
                   {/* Sticky, so both pinned cells need an opaque ground: the card
                       colour, with the row's selected, hover or active tint laid over
-                      it as an image. The lime bar on the checkbox cell's left edge
-                      marks the response open in the panel. */}
-                  <td
-                    className={`${TD} ${SELECT_COL} ${PINNED_TINT} sticky left-0 z-1 p-0 before:absolute before:inset-y-0 before:left-0 before:w-0.75 group-data-active:before:bg-primary`}
-                  >
+                      it. The ink bar on the row's left edge marks the response open
+                      in the panel: on the checkbox cell while selecting, on the
+                      response cell otherwise. */}
+                  <td className={`${TD_BASE} ${SELECT_COL} ${PINNED_TINT} ${ACTIVE_BAR} sticky left-0 z-1`}>
                     <RowSelect id={row.id} label={m.submissions.selectResponse} />
                   </td>
                   <td
                     data-cell
-                    className={`${TD} ${PINNED_RESPONSE} ${PINNED_TINT} z-1 whitespace-nowrap shadow-[1px_0_0_var(--color-border)]`}
+                    className={`${TD} ${PINNED_RESPONSE} ${PINNED_TINT} ${ACTIVE_BAR} z-1 whitespace-nowrap in-data-select:before:hidden`}
                   >
                     <span className="inline-flex items-start gap-2">
                       <span className="flex flex-col">
@@ -563,8 +596,12 @@ function SubmissionsData({
                     />
                   </td>
                   {scoring ? (
-                    <td data-cell className={`${TD} whitespace-nowrap text-right tabular-nums`}>
-                      {row.score}
+                    <td data-cell className={`${TD} whitespace-nowrap text-right`}>
+                      {/* The score channel: the one figure on the row that is a
+                          judgement rather than an answer. */}
+                      <span className="inline-flex min-w-7 justify-center rounded-full bg-score/15 px-2 py-0.5 text-xs font-semibold tabular-nums text-score-ink">
+                        {row.score}
+                      </span>
                     </td>
                   ) : null}
                   {steps.map((s, i) => {
@@ -595,13 +632,13 @@ function SubmissionsData({
                       </td>
                     );
                   })}
-                  {/* Its own padding, not TD's: a notch less on top so the taller pill
-                      lines up with the first line of the row, and room on the right
-                      so it does not sit against the table edge. */}
-                  <td className="whitespace-nowrap border-b border-border py-2.5 pl-4 pr-5 text-right group-last:border-b-0">
+                  {/* Its own padding, not TD's: the round button is taller than a
+                      line of text, and less padding keeps the row its height. */}
+                  <td className="whitespace-nowrap border-b border-border py-1.5 pl-2 pr-3 text-right group-last:border-b-0">
                     <DeleteSubmissionButton
                       formId={id}
                       submissionId={row.id}
+                      size="icon"
                       labels={{ delete: m.submissions.delete, confirm: m.submissions.deleteConfirm }}
                     />
                   </td>

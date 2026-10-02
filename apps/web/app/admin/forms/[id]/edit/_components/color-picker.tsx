@@ -43,6 +43,8 @@ export function ColorPicker({
   againstLabel,
   allowEmpty = false,
   disabled = false,
+  variant = 'field',
+  emptyLabel,
   m,
 }: {
   value: string | null | undefined;
@@ -54,6 +56,14 @@ export function ColorPicker({
   allowEmpty?: boolean;
   /** Read-only mode: the trigger renders but never opens the popover. */
   disabled?: boolean;
+  /**
+   * `field`: a one-line control (swatch, hex, chevron) for a dense panel.
+   * `card`: the colour as a block with its name and hex under it, for a screen
+   * where the three colours ARE the setting (the brand kit).
+   */
+  variant?: 'field' | 'card';
+  /** What an unset colour reads as. Defaults to "Custom". */
+  emptyLabel?: string;
   m: EditorMessages['design'];
 }) {
   const [open, setOpen] = useState(false);
@@ -82,6 +92,7 @@ export function ColorPicker({
     };
   }, [open]);
 
+  const card = variant === 'card';
   const ratio = against && valid ? contrastRatio(current, against) : null;
   const grade = ratio === null ? null : contrastGrade(ratio);
 
@@ -93,7 +104,7 @@ export function ColorPicker({
 
   return (
     <div ref={rootRef} className="relative flex flex-col gap-1.5">
-      <div className="flex items-center gap-2">
+      <div className={card ? 'flex flex-col gap-2' : 'flex items-center gap-2'}>
         <button
           type="button"
           aria-haspopup="dialog"
@@ -101,11 +112,15 @@ export function ColorPicker({
           aria-label={label}
           disabled={disabled}
           onClick={() => setOpen((v) => !v)}
-          className="flex h-9 min-w-0 flex-1 items-center gap-2 rounded-md border border-input bg-background px-2 text-left transition-colors hover:border-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className={
+            card
+              ? 'flex min-w-0 flex-col gap-2 rounded-xl border border-border bg-card p-2 text-left transition-colors hover:border-input focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
+              : 'flex h-9 min-w-0 flex-1 items-center gap-2 rounded-md border border-input bg-background px-2 text-left transition-colors hover:border-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
+          }
         >
           <span
             aria-hidden
-            className="h-5 w-5 shrink-0 rounded-sm border border-border"
+            className={cn('shrink-0 border border-border', card ? 'h-11 w-full rounded-lg' : 'h-5 w-5 rounded-sm')}
             style={{
               background: valid ? current : 'transparent',
               // An unset color reads as a checker-ish neutral rather than as
@@ -115,10 +130,21 @@ export function ColorPicker({
                 : 'linear-gradient(135deg, var(--muted) 45%, var(--border) 45%, var(--border) 55%, var(--muted) 55%)',
             }}
           />
-          <span className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground">
-            {valid ? current : m.colorCustom}
-          </span>
-          <i aria-hidden className="pi pi-chevron-down shrink-0 text-muted-foreground" style={{ fontSize: 10 }} />
+          {card ? (
+            <span className="flex min-w-0 flex-col px-0.5 pb-0.5">
+              <span className="truncate text-xs font-medium text-foreground" title={label}>{label}</span>
+              <span className="truncate text-xs uppercase text-muted-foreground" title={valid ? current : (emptyLabel ?? m.colorCustom)}>
+                {valid ? current : (emptyLabel ?? m.colorCustom)}
+              </span>
+            </span>
+          ) : (
+            <>
+              <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+                {valid ? current : (emptyLabel ?? m.colorCustom)}
+              </span>
+              <i aria-hidden className="pi pi-chevron-down shrink-0 text-muted-foreground" style={{ fontSize: 10 }} />
+            </>
+          )}
         </button>
 
         {grade ? (
@@ -126,7 +152,8 @@ export function ColorPicker({
             data-testid="contrast-badge"
             title={`${againstLabel ?? ''} ${ratio}:1`}
             className={cn(
-              'shrink-0 rounded-sm px-1.5 py-0.5 font-mono text-2xs font-semibold tabular-nums',
+              'rounded-sm px-1.5 py-0.5 text-2xs font-semibold tabular-nums',
+              card ? 'self-start' : 'shrink-0',
               grade === 'fail'
                 ? 'bg-destructive/15 text-destructive'
                 : 'bg-muted text-muted-foreground',
@@ -195,7 +222,7 @@ export function ColorPicker({
               spellCheck={false}
               onChange={(e) => commit(e.target.value)}
               onBlur={() => setDraft(null)}
-              className="h-8 py-1 font-mono text-xs"
+              className="h-8 py-1 text-xs"
             />
             {allowEmpty ? (
               <button

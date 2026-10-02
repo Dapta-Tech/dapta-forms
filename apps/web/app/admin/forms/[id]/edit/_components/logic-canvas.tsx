@@ -197,7 +197,7 @@ export function LogicCanvas({
         onPointerCancel={endPan}
         data-testid="logic-canvas-viewport"
         className={cn(
-          'relative min-h-0 flex-1 overflow-hidden bg-[radial-gradient(var(--border)_1px,transparent_1px)] [background-size:20px_20px]',
+          'relative min-h-0 flex-1 overflow-hidden bg-panel bg-[radial-gradient(var(--input)_1px,transparent_1px)] [background-size:20px_20px]',
           drag ? 'cursor-grabbing' : 'cursor-grab',
         )}
       >
@@ -262,7 +262,7 @@ export function LogicCanvas({
                     d={edgePath(a, b)}
                     fill="none"
                     strokeWidth={e.kind === 'goto' ? 2 : 1.5}
-                    className={e.kind === 'goto' ? 'stroke-secondary' : 'stroke-border'}
+                    className={e.kind === 'goto' ? 'stroke-secondary' : 'stroke-muted-foreground/40'}
                     strokeDasharray={e.kind === 'goto' ? '5 4' : undefined}
                   />
                   {label && zoom >= LOD_TITLE ? (
@@ -364,14 +364,22 @@ function ZoomButton({
   );
 }
 
+/**
+ * The two terminals are markers, not cards, so they are drawn as a capsule of
+ * ordinary button height, centred in the node's box and as WIDE as it. The
+ * width is the part that matters: edges attach at the box's left and right
+ * edges, so a capsule that only hugged its label left a gap between itself and
+ * its own line, and stretching it to the box's height instead made it a tall
+ * blob standing apart from the row of cards.
+ */
+const TERMINAL = 'flex h-9 w-full items-center justify-center gap-2 rounded-full px-3';
+
 function StartNode({ label }: { label: string }) {
   return (
-    <span
-      data-testid="logic-start"
-      className="inline-flex h-full items-center gap-2 rounded-full border border-primary-edge/40 bg-primary/[0.08] px-4"
-    >
-      <span aria-hidden className="inline-block h-2 w-2 shrink-0 rounded-full bg-primary-edge" />
-      <span className="text-xs font-semibold uppercase tracking-wide text-primary">{label}</span>
+    <span className="flex h-full w-full items-center">
+      <span data-testid="logic-start" className={cn(TERMINAL, 'bg-primary')}>
+        <span className="truncate text-xs font-semibold text-primary-foreground">{label}</span>
+      </span>
     </span>
   );
 }
@@ -379,12 +387,11 @@ function StartNode({ label }: { label: string }) {
 /** The shared "skip to end" terminal — every `target: null` jump lands here. */
 function EndNode({ label }: { label: string }) {
   return (
-    <span
-      data-testid="logic-end"
-      className="inline-flex h-full items-center gap-2 rounded-full border border-primary-edge/50 bg-primary/[0.08] px-4"
-    >
-      <i aria-hidden className="pi pi-flag-fill text-primary" style={{ fontSize: 10 }} />
-      <span className="text-xs font-semibold uppercase tracking-wide text-primary">{label}</span>
+    <span className="flex h-full w-full items-center">
+      <span data-testid="logic-end" className={cn(TERMINAL, 'border border-input bg-card')}>
+        <i aria-hidden className="pi pi-flag-fill text-foreground" style={{ fontSize: 10 }} />
+        <span className="truncate text-xs font-semibold text-foreground">{label}</span>
+      </span>
     </span>
   );
 }
@@ -425,8 +432,8 @@ function StepNode({
       data-testid="logic-node"
       data-step-key={step.key}
       className={cn(
-        'group relative flex h-full w-full select-none flex-col justify-center gap-0.5 rounded-xl border bg-card px-3 shadow-sm',
-        broken ? 'border-destructive/60' : rules > 0 ? 'border-secondary/50' : 'border-border',
+        'group relative flex h-full w-full select-none flex-col justify-center gap-0.5 rounded-xl border bg-card px-3',
+        broken ? 'border-destructive/60' : rules > 0 ? 'border-secondary' : 'border-input',
         // Full alpha, not `/40`. `--secondary` was a saturated purple when this
         // was written, where 40% still read as a distinct ring; on this branch it
         // became slate, and slate at 40% over the card lands under 1.5:1 against
@@ -558,7 +565,7 @@ function OutcomeNode({
     <div
       data-testid="logic-outcome"
       className={cn(
-        'group flex h-full w-full select-none flex-col justify-center gap-0.5 rounded-xl border border-primary-edge/50 bg-primary/[0.06] px-3 shadow-sm',
+        'group flex h-full w-full select-none flex-col justify-center gap-0.5 rounded-xl border border-input border-t-2 border-t-score bg-card px-3',
         // Full alpha, not `/40`. `--secondary` was a saturated purple when this
         // was written, where 40% still read as a distinct ring; on this branch it
         // became slate, and slate at 40% over the card lands under 1.5:1 against
@@ -571,7 +578,7 @@ function OutcomeNode({
       <div className="flex items-center gap-2">
         <i
           aria-hidden
-          className={`pi ${redirects ? 'pi-external-link' : 'pi-flag-fill'} shrink-0 text-primary`}
+          className={`pi ${redirects ? 'pi-external-link' : 'pi-flag-fill'} shrink-0 text-score-ink`}
           style={{ fontSize: 12 }}
         />
         {zoom >= LOD_TITLE ? (
@@ -584,7 +591,7 @@ function OutcomeNode({
         ) : null}
         <span
           data-testid="logic-outcome-range"
-          className="shrink-0 rounded-sm bg-primary/15 px-1 py-0.5 text-2xs font-bold tabular-nums text-primary"
+          className="shrink-0 rounded-sm bg-score/15 px-1 py-0.5 text-2xs font-bold tabular-nums text-score-ink"
         >
           {spanText(node.outcomeSpan ?? { min: outcome.minScore ?? 0, max: null })}
         </span>

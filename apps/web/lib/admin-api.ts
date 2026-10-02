@@ -282,6 +282,12 @@ export interface FormSummary {
   brandAppliedAt: number | null;
   /** The folder the form is filed in; null = unfiled. */
   folderId: string | null;
+  /**
+   * Whether edits are waiting to be published. Optional because the web app
+   * and the API deploy separately: an API that predates the field answers
+   * without it, and the list then shows no status rather than a wrong one.
+   */
+  hasDraft?: boolean;
   createdAt: number;
   updatedAt: number;
 }
@@ -363,6 +369,8 @@ export interface SubmissionsQuery {
   scoreMax?: string;
   /** `{"questionKey": ["value", …]}` as JSON. */
   answers?: string;
+  /** Text looked for in the written answers. */
+  search?: string;
   sort?: string;
   limit?: number;
   offset?: number;

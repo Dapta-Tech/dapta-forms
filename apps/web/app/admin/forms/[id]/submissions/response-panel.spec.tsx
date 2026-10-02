@@ -48,6 +48,8 @@ const selectionLabels = {
   exportSelected: 'Export CSV',
   delete: 'Delete',
   clearSelection: 'Clear',
+  selectMode: 'Select',
+  selectModeDone: 'Done',
   bulkDeleteTitle: 'Delete {n} responses?',
   bulkDeleteTitleOne: 'Delete 1 response?',
   bulkDeleteBody: 'This cannot be undone.',

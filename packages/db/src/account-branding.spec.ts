@@ -63,6 +63,20 @@ describe('account_branding repo', () => {
     expect('themePreset' in merged).toBe(false);
   });
 
+  it('mergeKitIntoBranding drops the stored other half of a background/foreground pair', () => {
+    const form = { background: '#ffffff', foreground: '#1a1a1c', primaryColor: '#3ddc84' };
+    const darkGround = mergeKitIntoBranding(form, { background: '#111111' });
+    expect(darkGround.background).toBe('#111111');
+    expect('foreground' in darkGround).toBe(false); // renderer derives a readable ink
+    const lightInk = mergeKitIntoBranding(form, { foreground: '#fefefe' });
+    expect(lightInk.foreground).toBe('#fefefe');
+    expect('background' in lightInk).toBe(false);
+    const both = mergeKitIntoBranding(form, { background: '#111111', foreground: '#eeeeee' });
+    expect(both).toMatchObject({ background: '#111111', foreground: '#eeeeee' });
+    const neither = mergeKitIntoBranding(form, { primaryColor: '#ff5500' });
+    expect(neither).toMatchObject({ background: '#ffffff', foreground: '#1a1a1c' });
+  });
+
   it('apply merges into live config, backs up, and revert restores exactly', async () => {
     const created = await createForm(db, accountId, {
       name: 'F1',

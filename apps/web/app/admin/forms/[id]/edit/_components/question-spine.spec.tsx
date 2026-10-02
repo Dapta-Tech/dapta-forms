@@ -158,13 +158,19 @@ describe('screens in the spine (#200)', () => {
     expect(toggle(2)).not.toBeNull();
   });
 
-  it('draws the row state as one outline inside the border, shaped like the row', async () => {
+  it('draws the row state inside the row, shaped like the row', async () => {
     await renderSpine('slides');
     const row = (i: number) =>
       host!.querySelector<HTMLElement>(`#spine-title-${grouped[i]!.key}`)!.closest<HTMLElement>('.border')!;
-    // The selected row (0, a question of its own): its rounded card, ringed inside.
+    // The selected row (0, a question of its own): its rounded row, filled, with
+    // no outline of its own (only a screen draws one), and focus ringed inside.
     expect(row(0).className).toMatch(/\brounded-xl\b/);
+    expect(row(0).dataset.selected).toBe('true');
+    expect(row(0).className).toMatch(/\bbg-muted\b/);
+    expect(row(0).className).toMatch(/\bborder-transparent\b/);
     expect(row(0).className).toMatch(/\bring-inset\b/);
+    // A screen keeps its outline: that box is the information.
+    expect(row(1).className).toMatch(/\bborder-border\b/);
     // A screen's first and last rows take the screen's corners, and none leaks
     // out: no border colour change, no inner rail.
     expect(row(1).className).toMatch(/\brounded-t-xl\b/);

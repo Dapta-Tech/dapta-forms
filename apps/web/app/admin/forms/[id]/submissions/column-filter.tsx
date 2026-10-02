@@ -27,27 +27,33 @@ import {
   useContext,
   useEffect,
   useId,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
   useTransition,
   type ChangeEvent,
   type CSSProperties,
+  type Dispatch,
   type KeyboardEvent,
   type MouseEvent,
   type ReactNode,
+  type SetStateAction,
 } from 'react';
 import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
 import { t, type FormsMessages } from '@quill/shared';
 import { AnchoredMenu } from '@/components/ui/anchored-menu';
 import { Checkbox } from '@/components/ui/checkbox';
+import { SearchClearButton } from '@/components/ui/search-clear-button';
 import { DatePicker } from '@/components/ui/date-picker';
 import { useDialogA11y } from '@/components/modal';
 import { formatIsoDate } from '@/lib/calendar-math';
 import {
+  cleanSearch,
   EMPTY_FILTER,
   hasDateFilter,
+  MAX_SEARCH_LENGTH,
   hasScoreFilter,
   isCustomized,
   isFiltered,
@@ -79,6 +85,12 @@ interface Host {
   update: (next: ViewFilter) => void;
   labels: FilterLabels;
   locale: string;
+  /** Whether the table is open as the full-screen sheet (told by the viewer). */
+  sheet: boolean;
+  setSheet: (on: boolean) => void;
+  /** The place the sheet's top bar keeps for the search box, while it is drawn. */
+  searchSlot: HTMLElement | null;
+  setSearchSlot: Dispatch<SetStateAction<HTMLElement | null>>;
 }
 
 const HostContext = createContext<Host | null>(null);
@@ -160,6 +172,9 @@ export function FilterHost({
     [router],
   );
 
+  const [sheet, setSheet] = useState(false);
+  const [searchSlot, setSearchSlot] = useState<HTMLElement | null>(null);
+
   const host = useMemo<Host>(
     () => ({
       filter: shown,
@@ -171,8 +186,12 @@ export function FilterHost({
       update,
       labels,
       locale,
+      sheet,
+      setSheet,
+      searchSlot,
+      setSearchSlot,
     }),
-    [shown, pending, byId, openId, toggle, attach, update, labels, locale],
+    [shown, pending, byId, openId, toggle, attach, update, labels, locale, sheet, searchSlot],
   );
 
   const column = openId ? byId.get(openId) : undefined;
@@ -387,7 +406,7 @@ export function FilterTrigger({ columnId }: { columnId: string }) {
 }
 
 /**
- * A heading cell that filters: the text, the funnel right after it, and the
+ * A heading cell that filters: the text, the funnel at the cell's right edge, and the
  * whole cell as the click target (a heading is a small thing to hit). A click
  * on the column's resize handle stays the handle's.
  */
@@ -427,7 +446,10 @@ export function FilterTh({
       onClick={onClick}
       data-filter-column={filterable ? columnId : undefined}
     >
-      <span className={`flex items-start gap-1.5 ${align === 'end' ? 'justify-end' : ''}`}>
+      {/* The funnel sits at the column's right edge, level with the middle of
+          the heading: every funnel in the row is then on one line, whether its
+          question takes one line or two. */}
+      <span className={`flex items-center gap-2 ${align === 'end' ? 'justify-end' : 'justify-between'}`}>
         <span className="min-w-0">{children}</span>
         {filterable ? <FilterTrigger columnId={columnId} /> : null}
       </span>
@@ -543,7 +565,7 @@ function Share({ count, percent }: { count: number; percent: number }) {
       <span className="text-xs tabular-nums text-muted-foreground">{count}</span>
       <span aria-hidden className="block h-1 w-full overflow-hidden rounded-full bg-muted">
         <span
-          className="block h-full rounded-full bg-primary-edge"
+          className="block h-full rounded-full bg-signal-edge"
           style={{ width: `${percent}%` }}
         />
       </span>
@@ -960,6 +982,14 @@ function chipsOf(host: Host): Chip[] {
       without: { ...f, answers: withAnswer(f.answers, c.key, []) },
     });
   }
+  if (f.search) {
+    out.push({
+      id: 'search',
+      column: labels.searchChip,
+      value: f.search,
+      without: { ...f, search: null },
+    });
+  }
   if (f.sort !== 'newest') {
     const sortLabel: Record<SortKey, string> = {
       newest: labels.sortNewest,
@@ -1012,7 +1042,7 @@ export function FilterBar({
               key={c.id}
               data-testid="filter-chip"
               data-chip={c.id}
-              className="inline-flex h-7 max-w-full items-center gap-1 rounded-full border border-primary-edge/40 bg-primary/10 pl-3 pr-1 text-xs"
+              className="inline-flex h-8 max-w-full items-center gap-1 rounded-full border border-input bg-card pl-3 pr-1.5 text-xs"
             >
               <span className="min-w-0 truncate">
                 <span className="text-muted-foreground">{c.column}: </span>
@@ -1048,6 +1078,183 @@ export function FilterBar({
       {host.pending ? (
         <i aria-hidden className="pi pi-spin pi-spinner text-faint" style={{ fontSize: 12 }} />
       ) : null}
+    </div>
+  );
+}
+
+/** Wait this long after the last keystroke before searching. */
+const SEARCH_DEBOUNCE_MS = 300;
+/** How long the box holds its place in the sheet with no slot to measure and nothing loading. */
+const SLOT_GRACE_MS = 3000;
+
+/** Tells the filter host whether the table is open as the full-screen sheet. */
+export function useSheetSignal(sheet: boolean): void {
+  const setSheet = useHost()?.setSheet;
+  useEffect(() => {
+    setSheet?.(sheet);
+  }, [sheet, setSheet]);
+}
+
+/**
+ * The place the sheet's top bar keeps for the search box: an empty block of
+ * the box's size, so the bar lays itself out around it. Hidden (by a parent,
+ * on a phone with a selection) it measures zero, and the box hides with it.
+ */
+export function SearchSlot() {
+  const setSearchSlot = useHost()?.setSearchSlot;
+  const ref = useCallback(
+    (el: HTMLDivElement | null) => {
+      if (!setSearchSlot) return;
+      // On a remount the old slot leaves and the new one arrives in the same
+      // commit: only clear what is still ours.
+      if (el) setSearchSlot(el);
+      else setSearchSlot((prev) => (prev && !prev.isConnected ? null : prev));
+    },
+    [setSearchSlot],
+  );
+  return <div ref={ref} aria-hidden data-search-slot="" className="h-10 w-36 shrink sm:w-56" />;
+}
+
+/**
+ * Where to draw the search box while the sheet is open: over the slot, in
+ * viewport coordinates. Null on the page (the box sits in the header's flow).
+ *
+ * While the rows reload the sheet on screen is a held copy and there is no
+ * slot to measure: the box keeps its last place, so it does not jump out of
+ * the bar between two keystrokes.
+ */
+function useSheetPlacement(host: Host | null): CSSProperties | null {
+  const slot = host?.searchSlot ?? null;
+  const sheet = host?.sheet ?? false;
+  const pending = host?.pending ?? false;
+  const [place, setPlace] = useState<CSSProperties | null>(null);
+
+  useLayoutEffect(() => {
+    if (!sheet) {
+      setPlace(null);
+      return;
+    }
+    if (!slot || !slot.isConnected) return;
+    const measure = () => {
+      const r = slot.getBoundingClientRect();
+      setPlace(
+        r.width === 0
+          ? { display: 'none' }
+          : { top: r.top, left: r.left, width: r.width },
+      );
+    };
+    measure();
+    const ro = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure);
+    ro?.observe(slot);
+    if (slot.parentElement) ro?.observe(slot.parentElement);
+    window.addEventListener('resize', measure);
+    return () => {
+      ro?.disconnect();
+      window.removeEventListener('resize', measure);
+    };
+  }, [slot, sheet]);
+
+  // A sheet that says it is open but shows no slot for a while (its table gave
+  // way to an empty state) is not holding a place any more.
+  useEffect(() => {
+    if (!sheet || pending || (slot && slot.isConnected)) return;
+    const timer = window.setTimeout(() => setPlace(null), SLOT_GRACE_MS);
+    return () => window.clearTimeout(timer);
+  }, [sheet, pending, slot]);
+
+  return sheet ? place : null;
+}
+
+/**
+ * The table's search box: text looked for in what people wrote (text, contact
+ * and URL answers). It is one more filter: it lives in the address bar, shows
+ * as a chip, and the export and the Summary follow it.
+ *
+ * It sits in the page header, not in the table's toolbar: the table is
+ * remounted on every new set of rows, and a box inside it would lose the
+ * focus, and the caret, mid-word.
+ *
+ * The full-screen sheet covers that header, and is part of what remounts. So
+ * the sheet's top bar only keeps a place for the box (`SearchSlot`), and this
+ * same box, never unmounted, is laid over that place while the sheet is open.
+ */
+export function ResponseSearch() {
+  const host = useHost();
+  const applied = host?.filter.search ?? '';
+  const [text, setText] = useState(applied);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const hostRef = useRef(host);
+  hostRef.current = host;
+
+  // The filter changed somewhere else (its chip was removed, "Clear all"):
+  // the box follows, unless the person is typing in it right now.
+  useEffect(() => {
+    if (document.activeElement !== inputRef.current) setText(applied);
+  }, [applied]);
+
+  const apply = useCallback((raw: string) => {
+    const now = hostRef.current;
+    if (!now) return;
+    const next = cleanSearch(raw);
+    if (next === (now.filter.search ?? null)) return;
+    now.update({ ...now.filter, search: next });
+  }, []);
+
+  // Search once the person pauses, not on every key.
+  useEffect(() => {
+    const timer = window.setTimeout(() => apply(text), SEARCH_DEBOUNCE_MS);
+    return () => window.clearTimeout(timer);
+  }, [text, apply]);
+
+  const place = useSheetPlacement(host);
+
+  if (!host) return null;
+  const { labels } = host;
+  return (
+    <div
+      className={place ? 'fixed z-[45] min-w-0' : 'relative min-w-0'}
+      style={place ?? undefined}
+      role="search"
+      data-response-search=""
+      data-in-sheet={place ? '' : undefined}
+    >
+      <i
+        aria-hidden
+        className="pi pi-search pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground"
+        style={{ fontSize: 13 }}
+      />
+      <input
+        ref={inputRef}
+        type="search"
+        value={text}
+        maxLength={MAX_SEARCH_LENGTH}
+        aria-label={labels.searchResponsesLabel}
+        title={labels.searchResponsesLabel}
+        placeholder={labels.searchResponses}
+        autoComplete="off"
+        data-testid="response-search"
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') apply(text);
+          else if (e.key === 'Escape' && text) {
+            e.preventDefault();
+            setText('');
+          }
+        }}
+        className={`h-10 max-w-full rounded-full border border-input bg-card pl-9 pr-10 text-sm transition-colors placeholder:text-muted-foreground hover:border-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+          place ? 'w-full' : 'w-56'
+        }`}
+      />
+      <SearchClearButton
+        query={text}
+        label={labels.searchResponsesClear}
+        testId="response-search-clear"
+        className="right-1.5 rounded-full"
+        onClear={() => {
+          setText('');
+          inputRef.current?.focus();
+        }}
+      />
     </div>
   );
 }

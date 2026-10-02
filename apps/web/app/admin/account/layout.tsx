@@ -1,12 +1,12 @@
 import type { ReactNode } from 'react';
 import { getMessages } from '@quill/shared';
 import { getLocale } from '@/lib/locale';
-import { PageHeader } from '@/components/ui/page-header';
+import { StatementHeader } from '@/components/ui/page-header';
 import { AccountNav } from './account-nav';
 
 /**
  * Account settings (/admin/account/*): the area behind the rail's profile
- * button. One header, then the sub-nav (Workspaces · Brand kit · Notifications
+ * button. One header (the two-line statement the Home page opens with), then the sub-nav (Workspaces · Brand kit · Notifications
  * · Public page) and the page. Side by side only from `xl`: the rail already
  * takes 240px from `md`, and two columns in what is left of a 768-1279px
  * viewport squeezed the page to a strip. Below `xl` the sub-nav sits above
@@ -22,7 +22,7 @@ export default async function AccountLayout({ children }: { children: ReactNode 
 
   return (
     <div className="mx-auto max-w-[1520px] px-6 py-10 sm:px-8">
-      <PageHeader title={a.title} subtitle={a.subtitle} />
+      <StatementHeader title={a.title} statement={a.subtitle} />
       <div className="flex flex-col gap-6 xl:flex-row xl:items-start xl:gap-8">
         <AccountNav labels={a.nav} ariaLabel={a.title} />
         <div className="min-w-0 flex-1">{children}</div>

@@ -8,9 +8,10 @@ rationale (request flow, package boundaries, the ports/adapters seams) lives in
 in [`CONTRIBUTING.md`](CONTRIBUTING.md). Read those two when this summary points
 you at them.
 
-> **Naming:** the product is **Dapta Forms**. Internal packages use the `@quill/*`
-> scope — `quill` is the codename, nothing more. Prefer "Dapta Forms" in
-> user-facing text and `@quill/*` only when naming a package.
+> **Naming:** the product is **dForms**. Internal packages use the `@quill/*`
+> scope, and `quill` is the codename, nothing more. Prefer "dForms" in
+> user-facing text and `@quill/*` only when naming a package. (Older docs and
+> comments still say "Dapta Forms", its name before the rebrand.)
 
 ## What this is
 

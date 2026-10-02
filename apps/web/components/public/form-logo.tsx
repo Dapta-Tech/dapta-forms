@@ -36,10 +36,8 @@ export function FormLogo({
     );
   }
   if (fallback === 'none') return null;
-  return (
-    <span className="pf__logo--fallback">
-      {name}
-      <span className="pf__logo-dot">.</span>
-    </span>
-  );
+  // The name exactly as the author typed it. It used to get a full stop
+  // appended, a flourish borrowed from the product's own wordmark: on someone
+  // else's form it read as a typo in their title.
+  return <span className="pf__logo--fallback">{name}</span>;
 }

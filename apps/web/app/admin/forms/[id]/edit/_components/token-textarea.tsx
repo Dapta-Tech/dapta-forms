@@ -465,7 +465,7 @@ export function TokenTextarea({
                 >
                   <i aria-hidden className={`pi ${t.icon} shrink-0 text-muted-foreground`} style={{ fontSize: 11 }} />
                   <span className="min-w-0 flex-1 truncate text-xs text-foreground">{t.label}</span>
-                  <span className="shrink-0 rounded-sm bg-muted px-1.5 py-0.5 font-mono text-2xs text-faint">
+                  <span className="shrink-0 rounded-sm bg-muted px-1.5 py-0.5 text-2xs text-faint">
                     {t.key}
                   </span>
                 </button>

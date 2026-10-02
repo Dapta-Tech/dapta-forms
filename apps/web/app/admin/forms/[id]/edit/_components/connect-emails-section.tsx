@@ -347,6 +347,8 @@ function FormEmailCard({
               tokensHint: nm.tokensHint,
               previewLabel: nm.previewLabel,
               previewSubject: nm.previewSubject,
+              previewExpand: nm.previewExpand,
+              previewMock: nm.previewMock,
               tokenLabels,
               recipientsLabel: nm.recipientsLabel,
               recipientsHint: nm.recipientsHint,

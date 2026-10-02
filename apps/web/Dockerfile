@@ -27,7 +27,7 @@ WORKDIR /repo
 ARG NEXT_PUBLIC_API_URL=http://localhost:4000
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 # Brand + growth-loop link — also NEXT_PUBLIC (inlined at build). Vendor-neutral
-# defaults keep the OSS build generic; Dapta's CI passes "Dapta Forms" + the
+# defaults keep the OSS build generic; Dapta's CI passes "dForms" + the
 # platform URL. (Deploy-enabling change per ECR-CI-PLAN §3.)
 ARG NEXT_PUBLIC_PRODUCT_NAME=Forms
 ENV NEXT_PUBLIC_PRODUCT_NAME=$NEXT_PUBLIC_PRODUCT_NAME
@@ -40,7 +40,7 @@ ENV NEXT_PUBLIC_SIGNUP_URL=$NEXT_PUBLIC_SIGNUP_URL
 # about a deployment. Nothing changes for a fork — the loop stays gated on
 # NEXT_PUBLIC_SIGNUP_URL, so with that unset neither surface renders at all.
 #
-# It follows the badge's COPY. The copy reads "Made with Dapta Forms", so the
+# It follows the badge's COPY. The copy reads "Made with dForms", so the
 # destination is the Forms landing on the platform's site — the page written
 # for a stranger who just answered someone's form. Every time the sentence
 # changed and this did not, a respondent was sent somewhere the pill did not

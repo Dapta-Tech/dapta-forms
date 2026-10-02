@@ -21,12 +21,14 @@ import {
   useState,
   type ReactNode,
 } from 'react';
+import { useRouter } from 'next/navigation';
 import { t } from '@quill/shared';
 import { Drawer } from '@/components/drawer';
 import { inNestedDialog } from '@/components/modal';
 import { callAction, isTransportError } from '@/lib/call-action';
 import type { ResponseDetail } from '../response-detail';
 import { PanelHeader, ResponseDetailView, type PanelLabels } from '../response-panel';
+import { DeleteSubmissionButton } from '../row-actions';
 import type { FileButtonLabels } from '../submission-file-button';
 import { summaryResponseAction } from './actions';
 
@@ -64,6 +66,7 @@ export function SummaryResponsePanel({
   fileLabels: FileButtonLabels;
   children: ReactNode;
 }) {
+  const router = useRouter();
   const [walk, setWalk] = useState<Walk | null>(null);
   const [open, setOpen] = useState(false);
   /** Every response read so far: walking back and forth fetches each one once. */
@@ -205,6 +208,26 @@ export function SummaryResponsePanel({
               onClose={() => setOpen(false)}
               labels={labels}
             />
+          ) : null
+        }
+        // The same way out the Responses view gives. Deleting here refreshes the
+        // Summary by hand: see `deleteSubmissionQuietAction` for why.
+        footer={
+          shown ? (
+            <div className="flex justify-end">
+              <DeleteSubmissionButton
+                formId={formId}
+                submissionId={shown.id}
+                size="md"
+                labels={{ delete: labels.delete, confirm: labels.deleteConfirm }}
+                onDeleted={() => {
+                  // The panel closes at once; the cards follow with the refresh.
+                  cache.current.delete(shown.id);
+                  setOpen(false);
+                  router.refresh();
+                }}
+              />
+            </div>
           ) : null
         }
       >

@@ -3,7 +3,7 @@ import { BrandMark } from '@/components/brand/brand';
 import { signupHref } from '@/lib/growth';
 
 /**
- * "Made with Dapta Forms" — the growth-loop attribution on every public surface (R11).
+ * "Made with dForms": the growth-loop attribution on every public surface (R11).
  *
  * The copy names the PRODUCT, and so does the mark: this is `BrandMark`, the
  * Forms `F`, never `PlatformMark`. A pill signs itself with the mark that
