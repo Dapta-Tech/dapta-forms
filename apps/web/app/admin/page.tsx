@@ -108,79 +108,80 @@ export default async function AdminHome() {
         />
       </div>
 
-      <div className="grid grid-cols-1 gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(300px,420px)]">
-        <section aria-labelledby="home-recent" className="min-w-0">
-          <div className="flex items-center justify-between gap-3 border-b border-border pb-3">
-            <h2 id="home-recent" className={EYEBROW}>
-              {h.recent}
-            </h2>
-            <Link href="/admin/forms" className="text-sm font-medium text-foreground hover:underline">
-              {h.viewAll}
-            </Link>
-          </div>
-          {recent.length === 0 ? (
-            <p className="py-10 text-sm text-muted-foreground">{messages.forms.emptyBody}</p>
-          ) : (
-            <ul>
-              {recent.map(({ form, analytics: a }) => {
-                const submissions = a?.submissions ?? 0;
-                const rate = a?.completionRate ?? null;
-                return (
-                  <li key={form.id} data-testid="home-recent-row">
-                    <Link
-                      href={`/admin/forms/${form.id}/edit`}
-                      className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-6 gap-y-1 border-b border-border py-4 transition-colors hover:bg-sidebar sm:grid-cols-[minmax(0,1fr)_9rem_8rem_7rem] sm:px-2"
-                    >
-                      <span className="min-w-0">
-                        <span className="block truncate font-medium text-foreground">{form.name}</span>
-                        <span className="block truncate text-xs text-faint">/{form.slug}</span>
-                      </span>
-                      <span
-                        className={
-                          submissions > 0
-                            ? 'text-sm tabular-nums text-foreground'
-                            : 'text-sm text-faint'
-                        }
-                      >
-                        {submissions > 0 ? t(picker.submissionsCount, { n: submissions }) : h.noSubmissions}
-                      </span>
-                      <span className="hidden items-center gap-2 sm:flex">
-                        {rate == null ? null : (
-                          <>
-                            <span className="w-10 text-sm tabular-nums text-foreground">
-                              {t(picker.completionValue, { n: Math.round(rate) })}
-                            </span>
-                            {/* The one saturated mark on the row: progress, in the
-                                signal. A track under it so 0% still reads as a bar. */}
-                            <span aria-hidden className="h-1 flex-1 overflow-hidden rounded-full bg-muted">
-                              <span className="block h-full rounded-full bg-signal-edge" style={{ width: `${rate}%` }} />
-                            </span>
-                          </>
-                        )}
-                      </span>
-                      <span className="hidden text-right text-xs text-faint sm:block">
-                        {formatDate(form.updatedAt, { locale, timeZone: zone })}
-                      </span>
-                    </Link>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </section>
-
-        <section aria-labelledby="home-shortcuts">
-          <h2 id="home-shortcuts" className={`${EYEBROW} pb-3`}>
-            {h.shortcuts}
+      <section aria-labelledby="home-recent" className="min-w-0">
+        <div className="flex items-center justify-between gap-3 border-b border-border pb-3">
+          <h2 id="home-recent" className={EYEBROW}>
+            {h.recent}
           </h2>
-          <div className="flex flex-col gap-3">
-            <Shortcut href="/admin/account/brand-kit" icon="pi-palette" title={h.branding} desc={h.brandingDesc} />
-            <Shortcut href="/admin/integrations" icon="pi-link" title={h.integrations} desc={h.integrationsDesc} />
-            <Shortcut href="/admin/analytics" icon="pi-chart-bar" title={h.analytics} desc={h.analyticsDesc} />
-            <Shortcut href="/admin/account/public-page" icon="pi-globe" title={h.publicLink} desc={h.publicPageDesc} />
-          </div>
-        </section>
-      </div>
+          <Link href="/admin/forms" className="text-sm font-medium text-foreground hover:underline">
+            {h.viewAll}
+          </Link>
+        </div>
+        {recent.length === 0 ? (
+          <p className="py-10 text-sm text-muted-foreground">{messages.forms.emptyBody}</p>
+        ) : (
+          <ul>
+            {recent.map(({ form, analytics: a }) => {
+              const submissions = a?.submissions ?? 0;
+              const rate = a?.completionRate ?? null;
+              return (
+                <li key={form.id} data-testid="home-recent-row">
+                  <Link
+                    href={`/admin/forms/${form.id}/edit`}
+                    className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-6 gap-y-1 border-b border-border py-4 transition-colors hover:bg-sidebar sm:grid-cols-[minmax(0,1fr)_11rem_10rem_8rem] sm:px-2"
+                  >
+                    <span className="min-w-0">
+                      <span className="block truncate font-medium text-foreground">{form.name}</span>
+                      <span className="block truncate text-xs text-faint">/{form.slug}</span>
+                    </span>
+                    <span
+                      className={
+                        submissions > 0
+                          ? 'text-sm tabular-nums text-foreground'
+                          : 'text-sm text-faint'
+                      }
+                    >
+                      {submissions > 0 ? t(picker.submissionsCount, { n: submissions }) : h.noSubmissions}
+                    </span>
+                    <span className="hidden items-center gap-2 sm:flex">
+                      {rate == null ? null : (
+                        <>
+                          <span className="w-10 text-sm tabular-nums text-foreground">
+                            {t(picker.completionValue, { n: Math.round(rate) })}
+                          </span>
+                          {/* The one saturated mark on the row: progress, in the
+                              signal. A track under it so 0% still reads as a bar. */}
+                          <span aria-hidden className="h-1 flex-1 overflow-hidden rounded-full bg-muted">
+                            <span className="block h-full rounded-full bg-signal-edge" style={{ width: `${rate}%` }} />
+                          </span>
+                        </>
+                      )}
+                    </span>
+                    <span className="hidden text-right text-xs text-faint sm:block">
+                      {formatDate(form.updatedAt, { locale, timeZone: zone })}
+                    </span>
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </section>
+
+      {/* Two links to places the rail does not go (the brand kit and the public
+          page live under Account settings), set as one band the width of the
+          figures above so they close the page the way the figures open it.
+          They used to float in a column of four beside the list, and two of the
+          four repeated the rail's own entries (Integrations, Analytics). */}
+      <section aria-labelledby="home-shortcuts" className="mt-10">
+        <h2 id="home-shortcuts" className="sr-only">
+          {h.shortcuts}
+        </h2>
+        <div className="grid grid-cols-1 divide-y divide-border overflow-hidden rounded-2xl border border-border sm:grid-cols-2 sm:divide-x sm:divide-y-0">
+          <Shortcut href="/admin/account/brand-kit" icon="pi-palette" title={h.branding} desc={h.brandingDesc} />
+          <Shortcut href="/admin/account/public-page" icon="pi-globe" title={h.publicLink} desc={h.publicPageDesc} />
+        </div>
+      </section>
     </div>
   );
 }
@@ -229,17 +230,19 @@ function Shortcut({
   desc: string;
 }): ReactNode {
   return (
-    <Link
-      href={href}
-      className="flex items-center gap-4 rounded-xl border border-border bg-sidebar p-4 transition-colors hover:border-input"
-    >
-      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border bg-card text-foreground">
+    <Link href={href} className="group flex items-center gap-4 bg-card p-6 transition-colors hover:bg-sidebar">
+      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border bg-background text-foreground">
         <i aria-hidden className={`pi ${icon}`} style={{ fontSize: 16 }} />
       </span>
-      <span className="min-w-0">
+      <span className="min-w-0 flex-1">
         <span className="block font-medium">{title}</span>
         <span className="block text-sm text-muted-foreground">{desc}</span>
       </span>
+      <i
+        aria-hidden
+        className="pi pi-arrow-right shrink-0 text-faint transition-transform group-hover:translate-x-0.5 group-hover:text-foreground"
+        style={{ fontSize: 14 }}
+      />
     </Link>
   );
 }

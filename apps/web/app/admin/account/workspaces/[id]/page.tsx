@@ -54,7 +54,12 @@ export default async function WorkspacePage({
   const w = a.workspace;
   const s = messages.settings;
 
-  const workspaces = await adminApi.listWorkspaces().catch(() => []);
+  const [workspaces, cookieMe] = await Promise.all([
+    adminApi.listWorkspaces().catch(() => []),
+    // The workspace the person is working in right now (the cookie's), to say
+    // which of the two this page is about. Best-effort: a failure only hides the chip.
+    adminApi.me().catch(() => null),
+  ]);
   // The upstream id first: it is the canonical one, and in principle nothing
   // stops a local id from colliding with it.
   const ws = workspaces.find((x) => x.workspaceId === id) ?? workspaces.find((x) => x.accountId === id);
@@ -108,16 +113,67 @@ export default async function WorkspacePage({
 
   return (
     <div>
-      <Link
-        href="/admin/account/workspaces"
-        data-testid="workspace-back"
-        className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
-      >
-        <i aria-hidden className="pi pi-arrow-left" style={{ fontSize: 12 }} />
-        {w.back}
-      </Link>
+      <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
+        <div className="flex min-w-0 items-center gap-4">
+          <span
+            aria-hidden
+            className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-primary text-lg font-semibold text-primary-foreground"
+          >
+            {(ws.accountName.trim().charAt(0) || '?').toUpperCase()}
+          </span>
+          <div className="min-w-0">
+            <div className="flex min-w-0 items-center gap-2">
+              <h2 className="truncate text-xl font-semibold tracking-tight" data-testid="workspace-title">
+                {ws.accountName}
+              </h2>
+              {cookieMe?.accountId === accountId ? (
+                <span
+                  data-testid="workspace-current"
+                  className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-foreground"
+                >
+                  {a.workspaces.current}
+                </span>
+              ) : null}
+            </div>
+            <div className="mt-1 text-sm text-muted-foreground">
+              <WorkspaceId
+                id={ws.workspaceId ?? ws.accountId}
+                labels={{ idLabel: w.idLabel, copyId: w.copyId, copied: w.copied }}
+              />
+            </div>
+          </div>
+        </div>
+        <Link
+          href="/admin/account/workspaces"
+          data-testid="workspace-back"
+          className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
+        >
+          <i aria-hidden className="pi pi-arrow-left" style={{ fontSize: 12 }} />
+          {w.back}
+        </Link>
+      </div>
 
-      <div className="mt-4 flex flex-wrap items-end justify-between gap-4">
+      <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-sm text-muted-foreground">
+        <span className="inline-flex items-center gap-1.5">
+          <span className="text-faint">{a.workspaces.yourRole}:</span>
+          <span className="font-medium text-foreground">{roleLabel[me.role]}</span>
+        </span>
+        <span aria-hidden className="text-faint">
+          ·
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <i aria-hidden className="pi pi-users" style={{ fontSize: 13 }} />
+          {memberText}
+        </span>
+        <span aria-hidden className="text-faint">
+          ·
+        </span>
+        <span className="text-xs text-faint" title={ws.accountCode}>
+          {ws.accountCode}
+        </span>
+      </div>
+
+      <div className="mt-8 grid gap-6 md:grid-cols-2">
         <WorkspaceName
           accountId={accountId}
           initial={ws.accountName}
@@ -145,57 +201,6 @@ export default async function WorkspacePage({
             readOnly: messages.submissions.timezoneReadOnly,
           }}
         />
-        {canManage ? (
-          <InviteMember
-            accountId={accountId}
-            labels={{
-              addMember: s.addMember,
-              inviteTitle: s.inviteTitle,
-              inviteSubtitle: s.inviteSubtitle,
-              inviteEmailLabel: s.inviteEmailLabel,
-              inviteEmailPlaceholder: s.inviteEmailPlaceholder,
-              inviteRoleLabel: s.inviteRoleLabel,
-              roleAdmin: s.roleAdmin,
-              roleMember: s.roleMember,
-              inviteSubmit: s.inviteSubmit,
-              inviteCancel: s.inviteCancel,
-              inviteSuccess: s.inviteSuccess,
-              inviteErrorTaken: s.inviteErrorTaken,
-              inviteErrorInvalid: s.inviteErrorInvalid,
-              inviteErrorFailed: s.inviteErrorFailed,
-              inviteErrorUpstream: s.inviteErrorUpstream,
-            }}
-          />
-        ) : null}
-      </div>
-
-      <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-sm text-muted-foreground">
-        <span className="inline-flex items-center gap-1.5">
-          <span className="text-faint">{a.workspaces.yourRole}:</span>
-          <span className="inline-flex items-center rounded-full border border-border px-2 py-0.5 text-xs text-foreground">
-            {roleLabel[me.role]}
-          </span>
-        </span>
-        <span aria-hidden className="text-faint">
-          ·
-        </span>
-        <span className="inline-flex items-center gap-1.5">
-          <i aria-hidden className="pi pi-users" style={{ fontSize: 13 }} />
-          {memberText}
-        </span>
-        <span aria-hidden className="text-faint">
-          ·
-        </span>
-        <span className="text-xs text-faint" title={ws.accountCode}>
-          {ws.accountCode}
-        </span>
-        <span aria-hidden className="text-faint">
-          ·
-        </span>
-        <WorkspaceId
-          id={ws.workspaceId ?? ws.accountId}
-          labels={{ idLabel: w.idLabel, copyId: w.copyId, copied: w.copied }}
-        />
       </div>
 
       {!canManage ? (
@@ -205,34 +210,58 @@ export default async function WorkspacePage({
         </div>
       ) : (
         <>
-          <nav className="mt-6 flex items-center gap-1 border-b border-border" aria-label={ws.accountName}>
-            {tabs.map((item) => {
-              const isActive = item.key === tab;
-              return (
-                <Link
-                  key={item.key}
-                  href={`?tab=${item.key}`}
-                  scroll={false}
-                  data-testid={item.testId}
-                  aria-current={isActive ? 'page' : undefined}
-                  className={
-                    isActive
-                      ? 'relative -mb-px inline-flex items-center gap-2 border-b-2 border-primary-edge px-3 py-2 text-sm font-semibold text-foreground'
-                      : 'relative -mb-px inline-flex items-center gap-2 border-b-2 border-transparent px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground'
-                  }
-                >
-                  {item.label}
-                  {item.count !== undefined ? (
-                    <span className="rounded-full bg-muted px-1.5 py-0.5 text-2xs font-medium tabular-nums text-faint">
-                      {item.count}
-                    </span>
-                  ) : null}
-                </Link>
-              );
-            })}
-          </nav>
+          <div className="mt-10 flex flex-wrap items-end justify-between gap-x-4 gap-y-3 border-b border-border">
+            <nav className="flex items-center gap-1" aria-label={ws.accountName}>
+              {tabs.map((item) => {
+                const isActive = item.key === tab;
+                return (
+                  <Link
+                    key={item.key}
+                    href={`?tab=${item.key}`}
+                    scroll={false}
+                    data-testid={item.testId}
+                    aria-current={isActive ? 'page' : undefined}
+                    className={
+                      isActive
+                        ? 'relative -mb-px inline-flex items-center gap-2 border-b-2 border-primary-edge px-3 py-2 text-sm font-semibold text-foreground'
+                        : 'relative -mb-px inline-flex items-center gap-2 border-b-2 border-transparent px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground'
+                    }
+                  >
+                    {item.label}
+                    {item.count !== undefined ? (
+                      <span className="rounded-full bg-muted px-1.5 py-0.5 text-2xs font-medium tabular-nums text-faint">
+                        {item.count}
+                      </span>
+                    ) : null}
+                  </Link>
+                );
+              })}
+            </nav>
+            <div className="pb-2">
+              <InviteMember
+                accountId={accountId}
+                labels={{
+                  addMember: s.addMember,
+                  inviteTitle: s.inviteTitle,
+                  inviteSubtitle: s.inviteSubtitle,
+                  inviteEmailLabel: s.inviteEmailLabel,
+                  inviteEmailPlaceholder: s.inviteEmailPlaceholder,
+                  inviteRoleLabel: s.inviteRoleLabel,
+                  roleAdmin: s.roleAdmin,
+                  roleMember: s.roleMember,
+                  inviteSubmit: s.inviteSubmit,
+                  inviteCancel: s.inviteCancel,
+                  inviteSuccess: s.inviteSuccess,
+                  inviteErrorTaken: s.inviteErrorTaken,
+                  inviteErrorInvalid: s.inviteErrorInvalid,
+                  inviteErrorFailed: s.inviteErrorFailed,
+                  inviteErrorUpstream: s.inviteErrorUpstream,
+                }}
+              />
+            </div>
+          </div>
 
-          <div className="mt-6">
+          <div className="mt-2">
             {tab === 'members' ? (
               <MembersTable
                 accountId={accountId}

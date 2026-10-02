@@ -36,6 +36,33 @@ export function PageHeader({
 }
 
 /**
+ * The header of a SETTINGS area: the title in ink and, on a second line at the
+ * same size, what the area holds in grey, so the page opens with a statement
+ * rather than a title and a caption. Same voice as the Home greeting. The
+ * statement has to be short (it is set at heading size), which is why Account
+ * settings words it as a list of the five things it contains.
+ */
+export function StatementHeader({
+  title,
+  statement,
+  action,
+}: {
+  title: string;
+  statement: string;
+  action?: ReactNode;
+}) {
+  return (
+    <div className="mb-8 flex flex-wrap items-end justify-between gap-x-6 gap-y-4">
+      <div className="min-w-0">
+        <h1 className="text-3xl font-bold tracking-tight">{title}</h1>
+        <p className="text-3xl font-bold tracking-tight text-faint">{statement}</p>
+      </div>
+      {action ? <div className="shrink-0">{action}</div> : null}
+    </div>
+  );
+}
+
+/**
  * Sticky detail-page header. `-mx-8 px-8` bleeds the surface + border to the
  * container's padding edges so the backdrop covers the full width as content
  * scrolls under it. Place as the first child of a `px-8 py-10` page container.

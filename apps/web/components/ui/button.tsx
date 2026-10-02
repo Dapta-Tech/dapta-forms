@@ -14,6 +14,8 @@ const buttonVariants = cva(
       variant: {
         default: 'bg-primary text-primary-foreground',
         secondary: 'bg-secondary text-secondary-foreground',
+        // The quiet pill: a grey wash with ink text, for the action next to a primary one.
+        soft: 'bg-muted text-foreground hover:bg-accent',
         outline: 'border border-border bg-transparent hover:bg-accent',
         ghost: 'bg-transparent hover:bg-accent',
         destructive: 'border border-destructive text-destructive hover:bg-destructive/10',

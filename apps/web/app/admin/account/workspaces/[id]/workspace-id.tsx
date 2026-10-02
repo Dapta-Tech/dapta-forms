@@ -33,7 +33,7 @@ export function WorkspaceId({
   }
 
   return (
-    <span className="inline-flex min-w-0 items-center gap-1.5" data-testid="workspace-id">
+    <span className="inline-flex max-w-full min-w-0 items-center gap-1.5" data-testid="workspace-id">
       <span className="text-faint">{labels.idLabel}:</span>
       <code className="min-w-0 truncate rounded-sm bg-muted px-1.5 py-0.5 text-xs text-foreground" title={id}>
         {id}

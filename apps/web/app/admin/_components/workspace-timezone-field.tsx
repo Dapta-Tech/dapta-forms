@@ -111,8 +111,8 @@ export function WorkspaceTimezoneField({
   }
 
   return (
-    <div data-testid="workspace-timezone-settings" className="flex min-w-0 max-w-md flex-col gap-1.5">
-      <span className="text-2xs uppercase tracking-wide text-faint">{labels.label}</span>
+    <div data-testid="workspace-timezone-settings" className="flex min-w-0 flex-col gap-1.5">
+      <span className="text-sm font-medium">{labels.label}</span>
       {canEdit ? (
         <Select
           ariaLabel={labels.label}

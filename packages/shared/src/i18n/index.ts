@@ -290,10 +290,6 @@ export interface FormsMessages {
       createFormDesc: string;
       branding: string;
       brandingDesc: string;
-      integrations: string;
-      integrationsDesc: string;
-      analytics: string;
-      analyticsDesc: string;
       /** Heading of the list of forms, most recently touched first. */
       recent: string;
       viewAll: string;
@@ -331,6 +327,8 @@ export interface FormsMessages {
       colorsSubtitle: string;
       /** An axis the kit leaves to each form. */
       notSet: string;
+      /** The same, short enough to sit inside a colour swatch or beside a toggle. */
+      notSetShort: string;
       clearAxis: string;
       typographyTitle: string;
       typographySubtitle: string;
@@ -546,6 +544,19 @@ export interface FormsMessages {
       tokensHint: string;
       previewLabel: string;
       previewSubject: string;
+      /** The button that opens the preview as an inbox mock. */
+      previewExpand: string;
+      /** The inbox mock: a window around the email, as it lands for a person. */
+      previewMock: {
+        title: string;
+        inbox: string;
+        toMe: string;
+        justNow: string;
+        reply: string;
+        forward: string;
+        close: string;
+        note: string;
+      };
       usingDefault: string;
       customized: string;
       save: string;
@@ -2248,10 +2259,6 @@ export const en: FormsMessages = {
       createFormDesc: 'Build a new form and share its link.',
       branding: 'Branding & style',
       brandingDesc: 'Your brand kit: logo, colors and the public look.',
-      integrations: 'Integrations & webhooks',
-      integrationsDesc: 'Send responses to your CRM or a webhook.',
-      analytics: 'Analytics',
-      analyticsDesc: 'Funnel performance and drop-off.',
       recent: 'Recent activity',
       viewAll: 'View all',
       shortcuts: 'Shortcuts',
@@ -2263,7 +2270,7 @@ export const en: FormsMessages = {
     brandKit: {
       title: 'Brand kit',
       subtitle:
-        'Your workspace look: logo, colors, font and controls. New forms start with it; you can apply it to existing forms below.',
+        'New forms start with it. You can apply it to the ones that already exist.',
       save: 'Save brand kit',
       saving: 'Saving…',
       saved: 'Brand kit saved.',
@@ -2282,6 +2289,7 @@ export const en: FormsMessages = {
       colorsTitle: 'Colors',
       colorsSubtitle: 'Setting a background locks the light/dark theme of forms the kit is applied to.',
       notSet: 'Not set: each form keeps its own',
+      notSetShort: 'Not set',
       clearAxis: 'Clear',
       typographyTitle: 'Typography',
       typographySubtitle: 'The typeface forms render with.',
@@ -2398,7 +2406,7 @@ export const en: FormsMessages = {
     },
     account: {
       title: 'Account settings',
-      subtitle: 'Your workspaces, brand kit, notifications, public page and preferences.',
+      subtitle: 'Workspaces, brand, emails and preferences.',
       managing: 'Managing',
       nav: {
         workspaces: 'Workspaces',
@@ -2471,6 +2479,17 @@ export const en: FormsMessages = {
       tokensHint: 'Click a variable to insert it. Each is replaced with the real value when the email is sent.',
       previewLabel: 'Preview',
       previewSubject: 'Subject',
+      previewExpand: 'Expand preview',
+      previewMock: {
+        title: 'How the email arrives',
+        inbox: 'Inbox',
+        toMe: 'to me',
+        justNow: 'Just now',
+        reply: 'Reply',
+        forward: 'Forward',
+        close: 'Close',
+        note: 'A mock of how the email looks in an inbox. Each email app draws it a little differently.',
+      },
       usingDefault: 'Using default',
       customized: 'Customized',
       save: 'Save changes',
@@ -4005,10 +4024,6 @@ export const es: FormsMessages = {
       createFormDesc: 'Crea un formulario nuevo y comparte su enlace.',
       branding: 'Marca y estilo',
       brandingDesc: 'Tu kit de marca: logo, colores y la apariencia pública.',
-      integrations: 'Integraciones y webhooks',
-      integrationsDesc: 'Envía respuestas a tu CRM o a un webhook.',
-      analytics: 'Analíticas',
-      analyticsDesc: 'Rendimiento del embudo y abandono.',
       recent: 'Actividad reciente',
       viewAll: 'Ver todos',
       shortcuts: 'Accesos',
@@ -4020,7 +4035,7 @@ export const es: FormsMessages = {
     brandKit: {
       title: 'Kit de marca',
       subtitle:
-        'La apariencia de tu workspace: logo, colores, tipografía y controles. Los formularios nuevos nacen con él; abajo puedes aplicarlo a los existentes.',
+        'Los formularios nuevos nacen con él. Puedes aplicarlo a los que ya existen.',
       save: 'Guardar kit de marca',
       saving: 'Guardando…',
       saved: 'Kit de marca guardado.',
@@ -4039,6 +4054,7 @@ export const es: FormsMessages = {
       colorsTitle: 'Colores',
       colorsSubtitle: 'Elegir un fondo fija el tema claro/oscuro de los formularios donde se aplique el kit.',
       notSet: 'Sin definir: cada formulario conserva el suyo',
+      notSetShort: 'Sin definir',
       clearAxis: 'Limpiar',
       typographyTitle: 'Tipografía',
       typographySubtitle: 'La tipografía con la que se renderizan los formularios.',
@@ -4156,7 +4172,7 @@ export const es: FormsMessages = {
     },
     account: {
       title: 'Ajustes de cuenta',
-      subtitle: 'Tus workspaces, kit de marca, notificaciones, página pública y preferencias.',
+      subtitle: 'Workspaces, marca, correos y preferencias.',
       managing: 'Administrando',
       nav: {
         workspaces: 'Workspaces',
@@ -4229,6 +4245,17 @@ export const es: FormsMessages = {
       tokensHint: 'Haz clic en una variable para insertarla. Cada una se reemplaza por su valor real al enviar el correo.',
       previewLabel: 'Vista previa',
       previewSubject: 'Asunto',
+      previewExpand: 'Ampliar vista previa',
+      previewMock: {
+        title: 'Cómo llega el correo',
+        inbox: 'Recibidos',
+        toMe: 'para mí',
+        justNow: 'Ahora mismo',
+        reply: 'Responder',
+        forward: 'Reenviar',
+        close: 'Cerrar',
+        note: 'Una maqueta de cómo se ve el correo en una bandeja de entrada. Cada app de correo lo dibuja un poco distinto.',
+      },
       usingDefault: 'Usando el predeterminado',
       customized: 'Personalizado',
       save: 'Guardar cambios',

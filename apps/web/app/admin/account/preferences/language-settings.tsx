@@ -4,6 +4,7 @@ import { useState, useTransition } from 'react';
 import type { FormsMessages, Locale } from '@quill/shared';
 import { setLocaleAction } from '@/app/admin/locale-actions';
 import { Select } from '@/components/ui/select';
+import { SettingsRow } from '@/components/ui/settings';
 import { callAction, isTransportError } from '@/lib/call-action';
 
 type PreferencesMessages = FormsMessages['admin']['account']['preferences'];
@@ -38,39 +39,43 @@ export function LanguageSettings({ locale, m }: { locale: Locale; m: Preferences
   };
 
   return (
-    <section className="rounded-xl border border-border bg-card p-6" data-testid="preferences-language">
-      <h2 className="text-lg font-semibold tracking-tight">{m.title}</h2>
-      <p className="mt-0.5 text-sm text-muted-foreground">{m.subtitle}</p>
+    <section data-testid="preferences-language">
+      <h2 className="text-xl font-semibold tracking-tight">{m.title}</h2>
+      <p className="mt-1 text-sm text-muted-foreground">{m.subtitle}</p>
 
-      <label className="mt-5 flex flex-col gap-1.5 text-sm">
-        <span className="font-medium text-foreground">{m.languageLabel}</span>
-        <div className="max-w-xs">
-          <Select
-            ariaLabel={m.languageLabel}
-            locale={locale}
-            value={locale}
-            disabled={pending}
-            id="language-select"
-            onChange={choose}
-            options={[
-              { value: 'en', label: 'English' },
-              { value: 'es', label: 'Español' },
-            ]}
-          />
-        </div>
-      </label>
+      <div className="mt-6 border-t border-border">
+        <SettingsRow title={m.languageLabel} first>
+          <label className="flex flex-col gap-2 text-sm">
+            <span className="sr-only">{m.languageLabel}</span>
+            <div className="max-w-xs">
+              <Select
+                ariaLabel={m.languageLabel}
+                locale={locale}
+                value={locale}
+                disabled={pending}
+                id="language-select"
+                onChange={choose}
+                options={[
+                  { value: 'en', label: 'English' },
+                  { value: 'es', label: 'Español' },
+                ]}
+              />
+            </div>
+          </label>
 
-      <p className="mt-2 max-w-prose text-sm text-muted-foreground">{m.languageHelp}</p>
+          <p className="mt-3 max-w-prose text-sm text-muted-foreground">{m.languageHelp}</p>
 
-      {failed ? (
-        <p
-          role="alert"
-          data-testid="language-error"
-          className="mt-3 text-sm text-destructive"
-        >
-          {m.languageError}
-        </p>
-      ) : null}
+          {failed ? (
+            <p
+              role="alert"
+              data-testid="language-error"
+              className="mt-3 text-sm text-destructive"
+            >
+              {m.languageError}
+            </p>
+          ) : null}
+        </SettingsRow>
+      </div>
     </section>
   );
 }

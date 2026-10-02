@@ -26,6 +26,9 @@ The dForms look: the admin, the editor and the forms list wear the new brand, an
   config of a form created from nothing (the dashboard and `POST /v1/forms`, and
   the onboarding wizard), filling only what the caller left out. A copy of a form
   keeps its original's look. The editor shows the dForms preset card as selected.
+- The first-run wizard is a `.pf` surface that is the product's own screen, not
+  a customer's form, so it wears the dForms colours (white, ink, Signal Green)
+  written inline on its root instead of the dark ground a public form now owns.
 - **Theme presets** (`@quill/engine`): a `dforms` preset leads the list. The
   `control-room` preset keeps its id, so a form that stored it still shows its
   card as selected.
@@ -71,6 +74,28 @@ The dForms look: the admin, the editor and the forms list wear the new brand, an
   syncs) and the page title. A build is Dapta's own when
   `NEXT_PUBLIC_PRODUCT_NAME` is `dForms` or the old `Dapta Forms`, and shows
   `dForms` either way.
+- **Home**: the shortcuts no longer float in a column beside the list. The two
+  that repeated the rail (Integrations, Analytics) are gone, and the two that
+  lead somewhere the rail does not (Brand kit, Public page) form one band under
+  the list, the width of the figures above it.
+- **Account settings**: a two-line statement header like Home's, and every
+  screen without nested cards. A workspace opens with its tile, name, a Current
+  chip and its id, then its name and timezone side by side, its tabs with Add
+  member on the same row, and flat tables. Brand kit lays its settings out as
+  rows (what it is on the left, the control on the right) with the three
+  colours as swatches, the preview in a grey well and "Apply to existing forms"
+  beside them; the preview shows how a NEW form would look (white, ink and
+  Signal Green for what the kit leaves out). Notifications keeps both emails on
+  the page and puts the live preview beside the fields from `xl`. Public page
+  and Preferences use the same rows. No control, `data-testid` or heading the
+  e2e specs read was removed. The Members and Invitations tables no longer make
+  the page scroll sideways on a narrow screen.
+- **Email preview as an inbox**: the email preview, on Account settings and on a
+  form's Connect tab, has an expand button that opens a mock of an inbox: the
+  subject under its label, the sender, and the message on the grey page an HTML
+  email draws itself on, with the answers as the two-column table the real email
+  carries. It follows what you type. It draws no third-party logo and says it is
+  a mock.
 - **Icons**: the admin draws its icons from a generated `icons.css` (built from
   `lucide-static` by `pnpm --filter @quill/web icons`) instead of `primeicons`.
   Class names are unchanged.
@@ -80,5 +105,8 @@ The dForms look: the admin, the editor and the forms list wear the new brand, an
   sign-up line on the thank-you screen "Get dForms, free".
 - i18n: `admin.forms.col*`, `admin.forms.status*`, `admin.forms.noCompletion`,
   `admin.submissions.selectMode`, `admin.submissions.selectModeDone`,
-  `admin.submissions.filters.searchResponses*`, `admin.submissions.filters.searchChip`
-  (EN + ES).
+  `admin.submissions.filters.searchResponses*`, `admin.submissions.filters.searchChip`,
+  `admin.brandKit.notSetShort`, `admin.notifications.previewExpand`,
+  `admin.notifications.previewMock.*` (EN + ES). `admin.home.integrations*` and
+  `admin.home.analytics*` are removed; `admin.account.subtitle` and
+  `admin.brandKit.subtitle` are shorter.

@@ -85,15 +85,15 @@ export function InvitationsTable({
           {labels.invitationsEmpty}
         </p>
       ) : (
-        <div className="mt-4 overflow-x-auto rounded-xl border border-border bg-card">
+        <div className="relative mt-4 overflow-x-auto">
           <table className="w-full min-w-[640px] border-collapse text-sm" data-testid="invitations-table">
             <thead>
-              <tr className="border-b border-border text-left text-2xs uppercase tracking-wide text-faint">
-                <th className="whitespace-nowrap px-4 py-3 font-medium">{labels.colEmail}</th>
-                <th className="whitespace-nowrap px-4 py-3 font-medium">{labels.colStatus}</th>
-                <th className="whitespace-nowrap px-4 py-3 font-medium">{labels.colSent}</th>
-                <th className="whitespace-nowrap px-4 py-3 font-medium">{labels.colExpires}</th>
-                <th className="whitespace-nowrap px-4 py-3 text-right font-medium">
+              <tr className="border-b border-border text-left text-xs font-medium uppercase tracking-wider text-faint">
+                <th className="whitespace-nowrap px-2 py-3 font-medium">{labels.colEmail}</th>
+                <th className="whitespace-nowrap px-2 py-3 font-medium">{labels.colStatus}</th>
+                <th className="whitespace-nowrap px-2 py-3 font-medium">{labels.colSent}</th>
+                <th className="whitespace-nowrap px-2 py-3 font-medium">{labels.colExpires}</th>
+                <th className="whitespace-nowrap px-2 py-3 text-right font-medium">
                   <span className="sr-only">{labels.colActions}</span>
                 </th>
               </tr>
@@ -105,15 +105,15 @@ export function InvitationsTable({
                   data-testid="invitation-row"
                   className="border-b border-border last:border-b-0"
                 >
-                  <td className="max-w-[280px] truncate px-4 py-3 font-medium text-foreground" title={row.email}>
+                  <td className="max-w-[280px] truncate px-2 py-3.5 font-medium text-foreground" title={row.email}>
                     {row.email}
                   </td>
-                  <td className="whitespace-nowrap px-4 py-3">
+                  <td className="whitespace-nowrap px-2 py-3.5">
                     <StatusBadge status="invited" label={labels.pendingBadge} />
                   </td>
-                  <td className="whitespace-nowrap px-4 py-3 text-muted-foreground">{format(row.sentAt)}</td>
-                  <td className="whitespace-nowrap px-4 py-3 text-muted-foreground">{format(row.expiresAt)}</td>
-                  <td className="whitespace-nowrap px-4 py-2 text-right">
+                  <td className="whitespace-nowrap px-2 py-3.5 text-muted-foreground">{format(row.sentAt)}</td>
+                  <td className="whitespace-nowrap px-2 py-3.5 text-muted-foreground">{format(row.expiresAt)}</td>
+                  <td className="whitespace-nowrap px-2 py-2 text-right">
                     {row.invitationId ? (
                       <ResendInvitationButton
                         accountId={accountId}

@@ -11,6 +11,7 @@ import {
   NotificationEmailFields,
   type NotificationEmailValue,
 } from '@/components/notification-email-fields';
+import type { NotificationMockLabels } from '@/components/notification-email-mock';
 import type { NotificationSettingView } from '@/lib/admin-api';
 import { saveNotificationAction, resetNotificationAction } from './actions';
 import { callAction } from '@/lib/call-action';
@@ -31,6 +32,8 @@ export interface NotificationLabels {
   tokensHint: string;
   previewLabel: string;
   previewSubject: string;
+  previewExpand: string;
+  previewMock: NotificationMockLabels;
   usingDefault: string;
   customized: string;
   save: string;
@@ -91,14 +94,14 @@ export function NotificationSettings({
       : { title: labels.confirmedTitle, subtitle: labels.confirmedSubtitle };
 
   return (
-    <section data-testid="notification-settings" className="rounded-xl border border-border bg-card p-6">
-      <h2 className="text-lg font-semibold tracking-tight">{labels.heading}</h2>
-      <p className="mt-0.5 text-sm text-muted-foreground">{labels.subtitle}</p>
+    <section data-testid="notification-settings">
+      <h2 className="text-xl font-semibold tracking-tight">{labels.heading}</h2>
+      <p className="mt-1 text-sm text-muted-foreground">{labels.subtitle}</p>
       {/* These are the ACCOUNT templates — any form can pin its own copy. */}
       <p className="mt-1 text-xs text-muted-foreground" data-testid="notifications-form-override-note">
         <i aria-hidden className="pi pi-info-circle" style={{ fontSize: 11 }} /> {labels.formOverrideNote}
       </p>
-      <div className="mt-5 flex flex-col gap-5">
+      <div className="mt-6 flex flex-col">
         {settings.map((s) => (
           <NotificationEmailCard
             key={s.emailKey}
@@ -237,17 +240,15 @@ function NotificationEmailCard({
   }
 
   return (
-    <div className="rounded-md border border-border bg-background/40 p-5">
+    <div className="border-t border-border py-8 first:border-t-0 first:pt-2">
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
-          <h3 className="text-sm font-semibold">{title}</h3>
-          <p className="mt-0.5 text-xs text-muted-foreground">{subtitle}</p>
+          <h3 className="text-base font-semibold">{title}</h3>
+          <p className="mt-0.5 text-sm text-muted-foreground">{subtitle}</p>
         </div>
         <span
-          className={`shrink-0 rounded-full border px-2 py-0.5 text-2xs font-medium uppercase tracking-wide ${
-            isCustom
-              ? 'border-primary-edge/50 text-primary'
-              : 'border-border text-muted-foreground'
+          className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs font-medium ${
+            isCustom ? 'bg-signal/20 text-foreground' : 'bg-muted text-muted-foreground'
           }`}
         >
           {isCustom ? labels.customized : labels.usingDefault}
@@ -256,6 +257,7 @@ function NotificationEmailCard({
 
       {/* Toggle + subject/body + chips + preview (shared with the per-form editor) */}
       <NotificationEmailFields
+        layout="split"
         value={value}
         onChange={setValue}
         tokens={visibleTokens(setting.emailKey, setting.tokens)}
@@ -268,6 +270,8 @@ function NotificationEmailCard({
           tokensHint: labels.tokensHint,
           previewLabel: labels.previewLabel,
           previewSubject: labels.previewSubject,
+          previewExpand: labels.previewExpand,
+          previewMock: labels.previewMock,
           tokenLabels,
           recipientsLabel: labels.recipientsLabel,
           recipientsHint: labels.recipientsHint,
@@ -279,27 +283,28 @@ function NotificationEmailCard({
         }}
         notice={answersMissing ? labels.answersMissing : null}
         recipients={hasRecipients ? { max: NOTIFICATION_RECIPIENTS_MAX } : undefined}
+        footer={
+          <div className="mt-6 flex items-center gap-2">
+            <Button
+              type="button"
+              onClick={onSave}
+              disabled={pending || !dirty || recipientsInvalid}
+              className="min-w-[130px]"
+            >
+              {pending ? labels.saving : labels.save}
+            </Button>
+            <Button
+              type="button"
+              variant="soft"
+              onClick={onReset}
+              disabled={pending || !isCustomTemplate}
+            >
+              {labels.reset}
+            </Button>
+          </div>
+        }
       />
 
-      {/* Actions */}
-      <div className="mt-4 flex items-center justify-end gap-2">
-        <Button
-          type="button"
-          variant="ghost"
-          onClick={onReset}
-          disabled={pending || !isCustomTemplate}
-        >
-          {labels.reset}
-        </Button>
-        <Button
-          type="button"
-          onClick={onSave}
-          disabled={pending || !dirty || recipientsInvalid}
-          className="min-w-[130px]"
-        >
-          {pending ? labels.saving : labels.save}
-        </Button>
-      </div>
       {dialog}
     </div>
   );
