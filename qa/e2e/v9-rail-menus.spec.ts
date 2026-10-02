@@ -174,9 +174,9 @@ async function openAndCheck(page: Page, which: Switcher, where: string) {
  */
 async function settleEditorPeek(page: Page, path: string) {
   if (!/\/admin\/forms\/[^/]+\/(edit|integrations)/.test(path)) return;
-  // `bg-popover` narrows this to the SHELL's rail: the editor renders two
+  // `bg-sidebar` narrows this to the SHELL's rail: the editor renders two
   // asides of its own, so the bare tag selector is ambiguous on this route.
-  const rail = page.locator('aside.bg-popover:not([role="dialog"])');
+  const rail = page.locator('aside.bg-sidebar:not([role="dialog"])');
   await expect
     .poll(() => rail.evaluate((el) => getComputedStyle(el).position), { timeout: 25_000 })
     .toBe('fixed');

@@ -40,7 +40,7 @@ const USING_DEFAULT = 'Using default';
 // Illustrative preview sample the client renders (apps/web/lib/notification-preview.ts
 // NOTIFICATION_SAMPLE). Interpolating a default template must surface these.
 const SAMPLE_FORM_NAME = 'Lead Qualifier';
-const SAMPLE_FORM_LINK = 'https://forms.example.com/acme/lead-qualifier';
+const SAMPLE_FORM_LINK = 'https://forms.example.com/admin/forms/lead-qualifier/submissions';
 const SAMPLE_RESPONDENT_EMAIL = 'lead@acme.io';
 
 const specDir = path.dirname(fileURLToPath(import.meta.url));
@@ -176,7 +176,7 @@ async function createForm(
 /** The editable card for one email, scoped by its (unique) heading. */
 function cardByTitle(page: Page, title: string): Locator {
   return page
-    .locator('div.p-5')
+    .getByTestId('notification-card')
     .filter({ has: page.getByRole('heading', { level: 3, name: title, exact: true }) });
 }
 
@@ -201,7 +201,14 @@ test('GET /v1/notifications returns the two settings with defaults + token catal
     'submission_received',
   ]);
 
-  const expectedTokens = ['formName', 'respondentEmail', 'score', 'outcomeLabel', 'formLink'];
+  const expectedTokens = [
+    'formName',
+    'respondentEmail',
+    'score',
+    'outcomeLabel',
+    'formLink',
+    'answers',
+  ];
   for (const s of settings) {
     expect(typeof s.enabled, `${s.emailKey}.enabled`).toBe('boolean');
     expect(s.tokens, `${s.emailKey}.tokens`).toEqual(expectedTokens);
@@ -230,9 +237,10 @@ test('Account settings → Notifications renders both cards with toggle, subject
 
   await expect(page.getByRole('heading', { name: 'Notifications', level: 2 })).toBeVisible();
 
-  for (const { title, defaultSubject } of [
-    { title: OWNER_TITLE, defaultSubject: 'New submission: {{formName}}' },
-    { title: RESPONDENT_TITLE, defaultSubject: 'We got your responses: {{formName}}' },
+  for (const { title, defaultSubject, chips } of [
+    { title: OWNER_TITLE, defaultSubject: 'New submission: {{formName}}', chips: 6 },
+    // The respondent notice has no chip for the form link: the link is theirs to open, not an insert.
+    { title: RESPONDENT_TITLE, defaultSubject: 'We got your responses: {{formName}}', chips: 5 },
   ]) {
     const card = cardByTitle(page, title);
     await expect(card).toBeVisible();
@@ -242,8 +250,9 @@ test('Account settings → Notifications renders both cards with toggle, subject
     // Subject input (hydrated with the shipped default) + body textarea.
     await expect(card.locator('input')).toHaveValue(defaultSubject);
     await expect(card.locator('textarea')).toBeVisible();
-    // The five {{token}} chips.
-    await expect(card.locator('button[title]')).toHaveCount(5);
+    // The {{token}} chips (the preview's expand button has a title too, so
+    // count only the ones that carry a token).
+    await expect(card.locator('button[title^="{{"]')).toHaveCount(chips);
     await expect(card.locator('button[title="{{formName}}"]')).toBeVisible();
     // Live preview: the {{formLink}} token interpolated to the sample value.
     await expect(card.getByText('Preview', { exact: true })).toBeVisible();

@@ -240,7 +240,10 @@ function NotificationEmailCard({
   }
 
   return (
-    <div className="border-t border-border py-8 first:border-t-0 first:pt-2">
+    <div
+      data-testid="notification-card"
+      className="border-t border-border py-8 first:border-t-0 first:pt-2"
+    >
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
           <h3 className="text-base font-semibold">{title}</h3>

@@ -177,7 +177,7 @@ async function submitPublicForm(page: Page, publicUrl: string, email: string): P
 /** The Settings card for one email, scoped by its (unique) heading. */
 function settingsCard(page: Page, title: string): Locator {
   return page
-    .locator('div.p-5')
+    .getByTestId('notification-card')
     .filter({ has: page.getByRole('heading', { level: 3, name: title, exact: true }) });
 }
 

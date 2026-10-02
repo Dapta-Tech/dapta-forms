@@ -40,11 +40,11 @@ const ORIGIN = 'http://localhost:3400';
  * The SHELL's rail, and only it. `aside:not([role="dialog"])` is enough on the
  * list screens, but the editor renders two asides of its own (the question
  * spine and the settings panel), so on this route that selector matches three
- * elements and every locator built on it dies of strict mode. `bg-popover` is
+ * elements and every locator built on it dies of strict mode. `bg-sidebar` is
  * the rail's own surface token; the mobile drawer shares it and is excluded by
  * its role.
  */
-const RAIL = 'aside.bg-popover:not([role="dialog"])';
+const RAIL = 'aside.bg-sidebar:not([role="dialog"])';
 /** Likewise: the shell's <main>, not the editor's own scrolling column. */
 const MAIN = 'main.flex-1';
 const COLLAPSED_W = 64;
@@ -145,7 +145,7 @@ test.describe('V16: the editor rail peeks open on hover', () => {
     // 200px is inside the 240px rail and outside its 64px footprint, so this
     // point is over the canvas. The z-index regression guard.
     const onTop = await page.evaluate(() => {
-      const rail = document.querySelector('aside.bg-popover:not([role="dialog"])');
+      const rail = document.querySelector('aside.bg-sidebar:not([role="dialog"])');
       const hit = document.elementFromPoint(200, window.innerHeight / 2);
       if (!rail || !hit) return { ok: false, tag: 'nothing' };
       return {

@@ -138,8 +138,14 @@ test.describe("forms list: folders and search", () => {
     const miss = await createForm(request, `qa-${t}-Other`);
     try {
       await page.goto("/admin/forms");
-      await page.keyboard.press("Control+K");
-      await expect(page.getByTestId("forms-search")).toBeFocused();
+      // The shortcut is a client listener, so a press that lands before the
+      // page hydrates is lost (about 350ms after load). Press until it takes.
+      await expect(async () => {
+        await page.keyboard.press("Control+K");
+        await expect(page.getByTestId("forms-search")).toBeFocused({
+          timeout: 500,
+        });
+      }).toPass({ timeout: 10_000 });
       await page.keyboard.type("satisfaccion");
       await expect(page.locator(`[data-form-id="${hit.id}"] mark`)).toHaveText(
         "Satisfacción",
@@ -171,6 +177,11 @@ test.describe("forms list: folders and search", () => {
     const folder = await createFolder(request, `qa-${t}-Sales`);
     const form = await createForm(request, `qa-${t}-mover`);
     try {
+      // The drag below works in viewport coordinates, so the grip and the
+      // Unfiled header must both be on screen. The QA database keeps the forms
+      // other specs leave behind, which makes the list taller than a default
+      // viewport and puts the folder's rows far below the fold.
+      await page.setViewportSize({ width: 1280, height: 5000 });
       await page.goto("/admin/forms");
       const row = page.locator(`[data-form-id="${form.id}"]`);
       await row.getByTestId("form-row-menu").click();
@@ -208,13 +219,17 @@ test.describe("forms list: folders and search", () => {
       await expect.poll(() => folderOf(request, form.id)).toBeNull();
 
       // Back into the folder, then delete the folder: the form survives, unfiled.
+      // A click on the row's menu in the second or so after a drop does not open
+      // it, so let the page settle before reaching for it.
+      await page.waitForLoadState("networkidle");
+      await page.waitForTimeout(1500);
       await row.getByTestId("form-row-menu").click();
       await page.getByTestId(`form-row-move-${folder.id}`).click();
       await expect.poll(() => folderOf(request, form.id)).toBe(folder.id);
       await section(page, folder.id).getByTestId("folder-menu").click();
       await page.getByTestId("folder-delete").click();
       await page
-        .getByRole("dialog")
+        .getByRole("alertdialog")
         .getByRole("button", { name: /delete folder|eliminar carpeta/i })
         .click();
       await expect(section(page, folder.id)).toHaveCount(0);
