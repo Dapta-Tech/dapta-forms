@@ -37,9 +37,9 @@ export default async function PublicPagePage() {
         <dl className="mt-5 grid grid-cols-1 gap-x-8 gap-y-4 sm:grid-cols-2">
           <Field label={s.displayName} value={me.displayName ?? s.vanityNone} />
           <Field label={s.email} value={me.email ?? s.vanityNone} />
-          <Field label={s.handle} value={me.handle ?? s.vanityNone} mono />
-          <Field label={s.accountCode} value={me.accountCode} mono />
-          <Field label={s.vanity} value={me.vanitySlug ?? s.vanityNone} mono />
+          <Field label={s.handle} value={me.handle ?? s.vanityNone} />
+          <Field label={s.accountCode} value={me.accountCode} />
+          <Field label={s.vanity} value={me.vanitySlug ?? s.vanityNone} />
         </dl>
         {publicPath ? (
           <div className="mt-6 border-t border-border pt-5">
@@ -64,16 +64,14 @@ export default async function PublicPagePage() {
 function Field({
   label,
   value,
-  mono,
 }: {
   label: string;
   value: string;
-  mono?: boolean;
 }): ReactNode {
   return (
     <div className="flex flex-col gap-1">
       <dt className="text-2xs uppercase tracking-wide text-faint">{label}</dt>
-      <dd className={`truncate text-sm text-foreground ${mono ? 'font-mono' : ''}`} title={value}>
+      <dd className="truncate text-sm text-foreground" title={value}>
         {value}
       </dd>
     </div>

@@ -233,7 +233,7 @@ export async function syncMirrorForm(
       return {
         settings: { ...settings, formGuid: null, formSignature: undefined },
         action: 'failed',
-        error: 'The HubSpot form for this Dapta form no longer exists. It will be recreated.',
+        error: 'The HubSpot form for this dForms form no longer exists. It will be recreated.',
       };
     }
     // Only a rejected PAYLOAD is worth retrying smaller. A 401/403 is about the

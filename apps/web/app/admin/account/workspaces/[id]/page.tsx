@@ -186,7 +186,7 @@ export default async function WorkspacePage({
         <span aria-hidden className="text-faint">
           ·
         </span>
-        <span className="font-mono text-xs text-faint" title={ws.accountCode}>
+        <span className="text-xs text-faint" title={ws.accountCode}>
           {ws.accountCode}
         </span>
         <span aria-hidden className="text-faint">

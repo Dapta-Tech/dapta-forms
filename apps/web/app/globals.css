@@ -74,16 +74,13 @@
   --radius-xl: var(--radius-monitor); /* 16px */
   --radius-2xl: 20px;
 
-  /* Two voices, no third font. Hanken Grotesk does all the talking; JetBrains
-     Mono is reserved for strings you COPY rather than read (snippets, keys, hex),
-     where a fixed advance and an unambiguous l/1/O/0 do real work. Numbers are
-     NOT one of those: a stat is glanced at, and monospacing it only made it read
-     as code. Both self-hosted via next/font (`--font-hanken`, `--font-jetbrains-mono`)
-     and both OFL, which is what lets next/font bake the files into the build and
-     into every clone of this repo. Each falls back to a system stack if its
-     variable is ever absent. */
+  /* One voice. Hanken Grotesk does all the talking, URLs, keys and hex values
+     included: the design system has no monospaced face, so none is loaded.
+     Numbers keep their steady width with `tabular-nums` instead. Self-hosted via
+     next/font (`--font-hanken`) and OFL, which is what lets next/font bake the
+     files into the build and into every clone of this repo. It falls back to a
+     system stack if the variable is ever absent. */
   --font-sans: var(--font-hanken), 'Hanken Grotesk', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
-  --font-mono: var(--font-jetbrains-mono), 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
 
   /* The type scale, pinned end to end.
      It had drifted to ELEVEN sizes — 10 · 11 · 12 · 13 · 14 · 15 · 16 · 18 · 23 ·

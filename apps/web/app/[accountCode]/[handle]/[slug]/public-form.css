@@ -14,17 +14,53 @@
  * semantic token so the page reads as one system. All rules are scoped under `.pf`.
  * -------------------------------------------------------------------------- */
 
+/* The form's own ground: the pre-rebrand dark palette, owned HERE.
+   A public form never reads the app's token sheet for its base colours. The app
+   moved to paper, ink and Signal Green when dForms replaced the old look, and a
+   form published before that stored no colours, so it would have followed the app
+   to the new palette without its author touching anything. Owning the ground keeps
+   an unbranded form exactly what it was, and keeps a branded one from picking up a
+   different `--destructive` or `--faint` than the one it was designed against.
+   A form's own colours still win: `formThemeVars` writes them inline on this same
+   element, and an inline declaration beats a rule. A form born after the rebrand
+   carries the dForms colours in its config, so it lands on those, not on these.
+   `.pf.pf` outranks the sheet's `[data-theme='dark']` rule, which matches this
+   element too when the form is pinned dark and would otherwise win on source order. */
+.pf.pf {
+  --background: #0a0c0e;
+  --foreground: #e8edf2;
+  --card: #101418;
+  --card-foreground: #e8edf2;
+  --popover: #0d1013;
+  --popover-foreground: #e8edf2;
+  --primary: hsl(68 76% 61%);
+  --primary-foreground: #0c0e07;
+  --primary-edge: hsl(68 76% 61%);
+  --primary-ink: hsl(68 76% 61%);
+  --secondary: #7d8fa1;
+  --secondary-foreground: #0a0c0e;
+  --muted: #161c22;
+  --muted-foreground: #93a1ae;
+  --accent: #161c22;
+  --accent-foreground: #e8edf2;
+  --faint: #758592;
+  --destructive: #ff3b30;
+  --destructive-foreground: #0a0c0e;
+  --border: rgba(148, 170, 190, 0.16);
+  --input: rgba(148, 170, 190, 0.58);
+  --ring: hsl(68 76% 61% / 0.45);
+}
+
 .pf {
-  /* Accent defaults to the product SIGNAL, not the theme primary: the app's own
-     primary is ink, and an unbranded form is the one surface where the green is
-     the main action. branding.primaryColor overrides inline. */
-  --pf-primary: var(--signal);
-  --pf-primary-contrast: var(--signal-foreground);
+  /* Accent defaults to the theme primary; branding.primaryColor overrides inline. */
+  --pf-primary: var(--primary);
+  --pf-primary-contrast: var(--primary-foreground);
   /* The accent as a LINE. Separate from the fill because a colour bright enough
      to BE a button is rarely legible as a 2px outline on the same page: the raw
-     green measures 1.8:1 on paper. `formThemeVars` overrides this with the
+     accent measures 1.27:1 on paper, which made every focus stop on this surface
+     an indicator nobody could see. `formThemeVars` overrides this with the
      author's own colour, clamped only when it would have been invisible. */
-  --pf-primary-edge: var(--signal-edge);
+  --pf-primary-edge: var(--primary-edge);
 
   /* Radii are OWNED here rather than derived from the app's `--radius`.
      They used to be `calc(var(--radius) * 2)` / `var(--radius)`, which silently
@@ -1043,7 +1079,7 @@
   letter-spacing: 0.06em;
   text-transform: uppercase;
   /* The eyebrow stays branded through its WASH, not its letters (see the
-     note under `.pf__logo--fallback`) — a pale accent used as 12px uppercase type is the single
+     note under `.pf__logo--fallback`), a pale accent used as 12px uppercase type is the single
      easiest way to make a cover's first line vanish. */
   color: var(--foreground);
   background: color-mix(in srgb, var(--pf-primary) 16%, transparent);
@@ -1082,7 +1118,7 @@
   padding: 0 24px calc(36px + env(safe-area-inset-bottom));
 }
 
-/* ── "Made with Dapta Forms" attribution ──
+/* ── "Made with dForms" attribution ──
    Form CHROME, not a document footer. It is rendered INSIDE `.pf` by the
    renderers — under the cover CTA, as the last child of `.pf__main` on slides,
    at the end of the page on vertical — so it participates in this layout.

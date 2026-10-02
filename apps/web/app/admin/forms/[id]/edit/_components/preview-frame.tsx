@@ -337,7 +337,7 @@ export function PreviewFrame({
             title={viewportLabel}
             aria-label={viewportLabel}
             data-testid="preview-viewport"
-            className="inline-flex h-8 shrink-0 items-center whitespace-nowrap font-mono text-2xs tabular-nums text-muted-foreground/70"
+            className="inline-flex h-8 shrink-0 items-center whitespace-nowrap text-2xs tabular-nums text-muted-foreground/70"
           >
             {width} × {height}
             {percent < 100 ? ` · ${percent}%` : ''}
@@ -393,7 +393,7 @@ export function PreviewFrame({
             title={fullUrl}
           >
             <i aria-hidden className="pi pi-lock shrink-0 text-muted-foreground" style={{ fontSize: 9 }} />
-            <span className="truncate font-mono text-xs text-muted-foreground">
+            <span className="truncate text-xs text-muted-foreground">
               <span className="sr-only">{m.urlLabel}: </span>
               {displayUrl}
             </span>

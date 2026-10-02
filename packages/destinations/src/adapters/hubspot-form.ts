@@ -121,14 +121,14 @@ function fieldFor(property: string): HubSpotFormField {
 }
 
 /**
- * The mirror form's name, as it appears on the activity: "<form> (Dapta Forms)".
+ * The mirror form's name, as it appears on the activity: "<form> (dForms)".
  *
  * The suffix is what tells a CRM user why a form they never built is in their
  * portal — the same job Typeform's "Fields and questions must be updated on
  * Typeform" does. Truncated because HubSpot caps the name, and a form whose
  * creation 400s on a long title would fail at the least explicable moment.
  */
-export const MIRROR_FORM_SUFFIX = ' (Dapta Forms)';
+export const MIRROR_FORM_SUFFIX = ' (dForms)';
 const MAX_NAME = 200;
 
 export function mirrorFormName(formName: string): string {

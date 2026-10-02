@@ -4,7 +4,6 @@ import {
   Fraunces,
   Hanken_Grotesk,
   Inter,
-  JetBrains_Mono,
   Manrope,
   Playfair_Display,
   Poppins,
@@ -24,7 +23,7 @@ import type { FormFont } from '@quill/engine';
  * nothing configured.
  *
  * `preload` is TRUE only for Hanken Grotesk, the face every page paints. Every other
- * face — the mono included — is declared on `<html>` so any form
+ * face is declared on `<html>` so any form
  * can use one without a re-render, but preloading all of them would emit a
  * `<link rel="preload">` per face on every page for fonts that page will never
  * paint. The rest load on demand, when a glyph actually needs them.
@@ -48,28 +47,6 @@ const hanken = Hanken_Grotesk({
   subsets: ['latin'],
   variable: '--font-hanken',
   display: 'swap',
-});
-
-/**
- * JetBrains Mono: the voice for things you copy rather than read.
- *
- * Its whole job is the fixed advance and the unambiguous `l`/`1`/`O`/`0`: embed
- * snippets, keys, hex values, interpolation tokens. Nothing else. In particular
- * it does not set NUMBERS: a headline stat is something you glance at, not
- * something you transcribe, and monospacing one only made it read as a code
- * sample.
- *
- * It is app chrome rather than a form-author choice, so it is deliberately absent
- * from `FORM_FONTS`: an author picks the voice their questions speak in, not the
- * voice the dashboard labels things in.
- */
-const jetbrainsMono = JetBrains_Mono({
-  subsets: ['latin'],
-  variable: '--font-jetbrains-mono',
-  display: 'swap',
-  // Not preloaded: it paints the `font-mono` spots rather than page furniture, so
-  // most routes never need it and the ones that do can swap a few short strings.
-  preload: false,
 });
 
 /** Figtree: the previous brand face. Still curated: it is the default face of
@@ -113,7 +90,6 @@ const playfair = Playfair_Display({
 /** Every face's CSS variable, for the `<html>` element. */
 export const fontVariables = [
   hanken.variable,
-  jetbrainsMono.variable,
   figtree.variable,
   poppins.variable,
   inter.variable,

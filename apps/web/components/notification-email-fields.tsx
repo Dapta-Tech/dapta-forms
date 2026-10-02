@@ -250,7 +250,7 @@ export function NotificationEmailFields({
           onFocus={() => (activeField.current = 'body')}
           disabled={!value.enabled}
           rows={6}
-          className="w-full resize-y rounded-md border border-input bg-background px-3 py-2 font-mono text-xs leading-relaxed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+          className="w-full resize-y rounded-md border border-input bg-background px-3 py-2 text-xs leading-relaxed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
         />
       </label>
 
@@ -280,7 +280,7 @@ export function NotificationEmailFields({
               title={`{{${t}}}`}
             >
               {labels.tokenLabels[t] ?? t}
-              <span className="ml-1 font-mono text-muted-foreground/70">{`{{${t}}}`}</span>
+              <span className="ml-1 text-muted-foreground/70">{`{{${t}}}`}</span>
             </button>
           ))}
         </div>

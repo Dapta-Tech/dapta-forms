@@ -149,7 +149,7 @@ export default async function OgImage({
    * Where the two marks go.
    *
    * The rail carries exactly one, and it is the author's whenever there is one
-   * to draw. With no author logo the Dapta Forms mark takes the rail outright,
+   * to draw. With no author logo the dForms mark takes the rail outright,
    * at the size the author's would have had — an earlier pass left a bare accent
    * bar up there instead, which on a card with nothing else in the rail read as
    * a stray dash rather than as a brand.

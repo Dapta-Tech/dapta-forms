@@ -4,13 +4,14 @@ import './globals.css';
 import './icons.css';
 import { fontVariables } from '@/lib/fonts';
 import { getLocale } from '@/lib/locale';
+import { PRODUCT_NAME } from '@/lib/product-name';
 import { getThemePref } from '@/lib/theme.server';
 
 // Customer-facing name comes from the deployment (NEXT_PUBLIC_PRODUCT_NAME,
-// inlined at build time) — "Dapta Forms" in Dapta's builds, "Forms"
-// for a bare fork. "Quill" is the internal/repo identifier only and must
+// inlined at build time, see lib/product-name.ts): "dForms" in Dapta's builds,
+// "Forms" for a bare fork. "Quill" is the internal/repo identifier only and must
 // never surface in the UI.
-const productName = process.env.NEXT_PUBLIC_PRODUCT_NAME || 'Forms';
+const productName = PRODUCT_NAME;
 
 // Absolute base for OG/twitter URLs (PUBLIC_APP_URL is the deployment's public
 // web origin — already in .env for public form links). Bad value → localhost.
@@ -30,8 +31,8 @@ export const metadata: Metadata = {
 
 export default async function RootLayout({ children }: { children: ReactNode }) {
   // The viewer's persisted choice, resolved on the server so the first response
-  // already carries it — see lib/theme.server.ts for why that matters. Dark
-  // unless they opted into light; the attribute is ALWAYS stamped, so the token
+  // already carries it, see lib/theme.server.ts for why that matters. Light
+  // unless they opted into dark; the attribute is ALWAYS stamped, so the token
   // sheet's `prefers-color-scheme` fallback never decides for us.
   //
   // This is ADMIN chrome only, despite being the root. A public form does not

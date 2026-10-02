@@ -1343,7 +1343,7 @@ function FieldKeyEditor({
             setRefused(null);
           }
         }}
-        className="h-8 py-1 font-mono text-xs"
+        className="h-8 py-1 text-xs"
       />
       {collides || refused ? (
         <p role="alert" data-testid="step-field-key-taken" className="text-xs text-destructive">
@@ -1351,7 +1351,7 @@ function FieldKeyEditor({
         </p>
       ) : (
         <p className="text-2xs leading-relaxed text-faint">
-          {m.fieldKeyHint} <span className="font-mono">{m.fieldKeyUrlExample.replace('{key}', stepKey)}</span>
+          {m.fieldKeyHint} <span>{m.fieldKeyUrlExample.replace('{key}', stepKey)}</span>
         </p>
       )}
     </div>
@@ -1419,7 +1419,7 @@ function NameFieldsEditor({
             <TextField
               value={field}
               onChange={(e) => setFieldKey(i, e.target.value)}
-              className="h-8 py-1 font-mono text-xs"
+              className="h-8 py-1 text-xs"
             />
           </label>
           <label className="flex flex-col gap-1">

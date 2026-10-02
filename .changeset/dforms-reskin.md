@@ -2,6 +2,8 @@
 '@quill/db': minor
 '@quill/shared': minor
 '@quill/engine': minor
+'@quill/notifications': patch
+'@quill/destinations': patch
 ---
 
 The dForms look: the admin, the editor and the forms list wear the new brand, and the forms list reports each form's publish state.
@@ -9,8 +11,21 @@ The dForms look: the admin, the editor and the forms list wear the new brand, an
 - **Tokens** (`@quill/shared`): `tokens.css` is rewritten around paper, ink and
   Signal Green (`--signal`), with `--score` for points, `--warning` for work
   that is not live yet, and `--panel` / `--sidebar` as work surfaces. Light and
-  dark are both defined. `DEFAULT_ACCENT` is now `#3ddc84`, and the default
-  canvas a form renders on when its author chose none is white with ink text.
+  dark are both defined. This is the look of the admin; a public form does not
+  read it for its base colours (see "Existing forms" below).
+- **Existing forms do not change.** A form published before the rebrand stored
+  no colours, and an absent colour keeps meaning what it always meant: the dark
+  ground, Signal White text and Program Lime accent, with Figtree. `DEFAULT_ACCENT`
+  and `DEFAULT_CANVAS` in `@quill/shared` keep their old values, an unbranded
+  public form is still pinned dark, and `public-form.css` owns the dark palette
+  a form's own colours are drawn over instead of following the app's new tokens.
+  The `legacy-markup` snapshots confirm it: the only differences in the rendered
+  markup are the attribution text and the full stop below.
+- **New forms are born with the dForms look** (`@quill/engine`):
+  `withNewFormBranding` writes a white ground, ink text and Signal Green into the
+  config of a form created from nothing (the dashboard and `POST /v1/forms`, and
+  the onboarding wizard), filling only what the caller left out. A copy of a form
+  keeps its original's look. The editor shows the dForms preset card as selected.
 - **Theme presets** (`@quill/engine`): a `dforms` preset leads the list. The
   `control-room` preset keeps its id, so a form that stored it still shows its
   card as selected.
@@ -45,13 +60,22 @@ The dForms look: the admin, the editor and the forms list wear the new brand, an
   the contact questions (name, email, phone) included; they used to show a
   search box and nothing else. The panel a card opens has the Delete button
   the table's panel has, and deleting there refreshes the cards.
+- The fallback wordmark on a public form (a form with no logo) no longer appends
+  a full stop to the form's name, for every form: on someone else's form it read
+  as a typo in their title.
+- **No monospaced face**: the admin no longer loads a monospaced font or uses
+  `font-mono`; URLs, keys, hex values and code samples are set in the sans.
+- **Name**: the product reads dForms everywhere a person sees it: invitation
+  emails, the webhook note, the onboarding logo, the HubSpot mirror form's
+  suffix ("<form> (dForms)", renamed in place the next time a form's mirror
+  syncs) and the page title. A build is Dapta's own when
+  `NEXT_PUBLIC_PRODUCT_NAME` is `dForms` or the old `Dapta Forms`, and shows
+  `dForms` either way.
 - **Icons**: the admin draws its icons from a generated `icons.css` (built from
   `lucide-static` by `pnpm --filter @quill/web icons`) instead of `primeicons`.
   Class names are unchanged.
 - **QR codes**: on the Dapta brand the code carries the dForms mark in its
   centre, at error correction level H so it still scans.
-- The fallback wordmark on a public form no longer appends a period to the
-  form's name.
 - The attribution pill under a public form reads "Made with dForms", and the
   sign-up line on the thank-you screen "Get dForms, free".
 - i18n: `admin.forms.col*`, `admin.forms.status*`, `admin.forms.noCompletion`,

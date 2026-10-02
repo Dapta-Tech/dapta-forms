@@ -90,7 +90,7 @@ export function OptionsImportModal({
           placeholder={m.placeholder}
           spellCheck={false}
           rows={6}
-          className="w-full resize-y rounded-md border border-border bg-background px-3 py-2 font-mono text-xs leading-relaxed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="w-full resize-y rounded-md border border-border bg-background px-3 py-2 text-xs leading-relaxed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         />
 
         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -139,7 +139,7 @@ export function OptionsImportModal({
                   return (
                     <tr key={`${r.line}-${r.label}`} className="border-b border-border last:border-b-0">
                       <td className="px-3 py-1.5">{r.label}</td>
-                      <td className="px-3 py-1.5 font-mono tabular-nums">{r.points ?? ''}</td>
+                      <td className="px-3 py-1.5 tabular-nums">{r.points ?? ''}</td>
                       <td className="px-3 py-1.5">
                         <span className={`rounded-full px-2 py-0.5 text-2xs font-semibold ${toneClass[st.tone]}`}>
                           {st.text}

@@ -58,13 +58,18 @@ export function formDesignProps(branding: FormBranding | null | undefined): Form
   const attrs = designAttributes(design);
   if (themeMode) attrs['data-pf-theme'] = themeMode;
   else {
-    // The form fixed no colours, so it takes the PRODUCT default (light) rather
+    // The form fixed no colours, so it takes the dark ground it always had rather
     // than the current document's scheme.
+    //
+    // This is the LEGACY look, and it stays dark on purpose: every form published
+    // before the dForms rebrand stored no colours, and an absent value must keep
+    // meaning what it meant. A form born after the rebrand never lands here, it is
+    // created carrying the dForms colours (`newFormBranding` in `@quill/engine`).
     //
     // The root layout stamps `data-theme` from the viewer's cookie on every route,
     // and a respondent has no such cookie. The only person whose cookie ever
-    // applied was the AUTHOR, inside their own builder: pick Dark in the sidebar
-    // and the preview showed the form dark while every visitor got it on paper.
+    // applied was the AUTHOR, inside their own builder: pick Light in the sidebar
+    // and the preview showed the form on paper while every visitor got it dark.
     // That is the preview lying about the published page, which is the one thing
     // it exists not to do.
     //
@@ -72,7 +77,7 @@ export function formDesignProps(branding: FormBranding | null | undefined): Form
     // already lives (`themeMode` is exactly "did the author decide this?") and
     // covers the preview iframe, the real public page and the profile page in one
     // place. A branded form is untouched: it pins its own colours inline.
-    attrs['data-theme'] = 'light';
+    attrs['data-theme'] = 'dark';
   }
 
   return {

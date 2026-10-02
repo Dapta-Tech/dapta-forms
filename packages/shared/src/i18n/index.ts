@@ -3444,7 +3444,7 @@ export const en: FormsMessages = {
       pingHelp:
         'Posts one sample body in the real shape, signed the same way, so you can check what your endpoint receives. The answers are made up and marked as a test.',
       pingStatus: 'Your endpoint answered HTTP {status}.',
-      pingWeSend: 'Dapta Forms always delivers with POST and a JSON body.',
+      pingWeSend: 'dForms always delivers with POST and a JSON body.',
       pingEndpointSaid: 'It replied: {detail}',
       pingMethodNotAllowed: 'It does not accept POST on this URL.',
       pingUnsupportedMedia: 'It refused the content type.',
@@ -5208,7 +5208,7 @@ export const es: FormsMessages = {
       pingHelp:
         'Manda un cuerpo de ejemplo con la forma real, firmado igual, para que veas qué recibe tu endpoint. Las respuestas son inventadas y van marcadas como prueba.',
       pingStatus: 'Tu endpoint respondió HTTP {status}.',
-      pingWeSend: 'Dapta Forms siempre entrega con POST y un cuerpo JSON.',
+      pingWeSend: 'dForms siempre entrega con POST y un cuerpo JSON.',
       pingEndpointSaid: 'Respondió: {detail}',
       pingMethodNotAllowed: 'No acepta POST en esa URL.',
       pingUnsupportedMedia: 'Rechazó el tipo de contenido.',

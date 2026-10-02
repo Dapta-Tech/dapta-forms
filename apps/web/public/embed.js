@@ -1,5 +1,5 @@
 /**
- * Dapta Forms embed helper: auto-resizes embedded form iframes, carries their
+ * dForms embed helper: auto-resizes embedded form iframes, carries their
  * end-of-form redirect up to the host page, and tells a form which page it is
  * answered on.
  *

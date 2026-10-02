@@ -1,23 +1,21 @@
+import { IS_DAPTA_BRAND, PRODUCT_NAME } from '@/lib/product-name';
 import { DaptaMark } from './dapta-logo';
 import { FormsLockup, FormsMark, FormsWordmark } from './forms-logo';
+
+export { IS_DAPTA_BRAND, PRODUCT_NAME };
 
 /**
  * Brand surfaces, with the open-core gate applied once.
  *
  * The Dapta artwork may only render on a Dapta build. Dapta's pipeline injects
- * `NEXT_PUBLIC_PRODUCT_NAME="Dapta Forms"` at build time; a bare fork keeps the
- * default `Forms` (or its own name) and gets a neutral typographic brand built
- * from whatever it called the product. That is the same principle as
+ * `NEXT_PUBLIC_PRODUCT_NAME="dForms"` at build time (see `lib/product-name.ts`);
+ * a bare fork keeps the default `Forms` (or its own name) and gets a neutral
+ * typographic brand built from whatever it called the product. That is the same principle as
  * `MadeWithBadge`: a fork is never forced to carry Dapta branding.
  *
  * Call sites use `<BrandLockup>` / `<BrandMark>` / `<PlatformMark>` and never the
  * raw marks, so the gate cannot be forgotten on a new surface.
  */
-
-export const PRODUCT_NAME = process.env.NEXT_PUBLIC_PRODUCT_NAME || 'Forms';
-
-/** True only on a build that identifies itself as Dapta's own. */
-export const IS_DAPTA_BRAND = PRODUCT_NAME === 'Dapta Forms';
 
 /**
  * The company behind the product. Constant, not env-driven: unlike
@@ -79,8 +77,8 @@ export function BrandMark({ className, labelled }: { className?: string; labelle
  *
  * Distinct from `BrandMark` on purpose, and the two are not interchangeable: a
  * surface signs itself with the mark that matches the name written next to it.
- * Anything that says "Forms" — in-product chrome AND the "Made with Dapta Forms"
- * attribution badge — takes `BrandMark`; only a surface that names the company
+ * Anything that says "Forms" (in-product chrome AND the "Made with dForms"
+ * attribution badge) takes `BrandMark`; only a surface that names the company
  * takes this one. Pairing either mark with the other name is the bug this split
  * exists to prevent. No surface takes it today (the badge did while its copy
  * read "Powered by Dapta"); it stays because the split is the rule, and the

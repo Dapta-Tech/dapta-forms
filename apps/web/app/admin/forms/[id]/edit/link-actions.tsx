@@ -261,7 +261,7 @@ export function LinkActions({
                 workspace, so letting someone type over it here would offer an
                 edit this dialog cannot make. */}
             <div className="flex items-center rounded-md border border-input bg-background focus-within:ring-2 focus-within:ring-ring">
-              <span className="shrink-0 truncate py-2 pl-3 font-mono text-xs text-muted-foreground">
+              <span className="shrink-0 truncate py-2 pl-3 text-xs text-muted-foreground">
                 {origin}
                 {prefix}
               </span>
@@ -283,7 +283,7 @@ export function LinkActions({
                 autoComplete="off"
                 aria-describedby={error || shapeIssue ? 'form-slug-error' : undefined}
                 aria-invalid={error != null || (draft.length > 0 && shapeIssue !== null)}
-                className="min-w-0 flex-1 bg-transparent py-2 pr-3 font-mono text-sm focus-visible:outline-none"
+                className="min-w-0 flex-1 bg-transparent py-2 pr-3 text-sm focus-visible:outline-none"
                 data-testid="form-slug-input"
               />
             </div>
@@ -312,7 +312,7 @@ export function LinkActions({
           <p className="text-sm text-muted-foreground">{labels.embedIntro}</p>
           <pre
             data-testid="embed-snippet"
-            className="overflow-x-auto rounded-md border border-border bg-muted/40 p-3 font-mono text-xs leading-relaxed text-foreground"
+            className="overflow-x-auto rounded-md border border-border bg-muted/40 p-3 text-xs leading-relaxed text-foreground"
           >
             {embedOpen ? buildSnippet() : ''}
           </pre>

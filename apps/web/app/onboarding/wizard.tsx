@@ -378,8 +378,8 @@ export function OnboardingWizard({
             <span className="pf__back pf__back--placeholder" />
           )}
           <span className="ob__brand">
-            <FormsLockup className="ob__logo ob__logo--wide" title="Dapta Forms" />
-            <FormsMark className="ob__logo ob__logo--compact" title="Dapta Forms" />
+            <FormsLockup className="ob__logo ob__logo--wide" title="dForms" />
+            <FormsMark className="ob__logo ob__logo--compact" title="dForms" />
           </span>
           <span className="pf__back pf__back--placeholder" />
         </div>
@@ -549,7 +549,7 @@ function CreatingScreen({ m }: { m: Messages }) {
   return (
     <div className="pf ob ob--creating">
       <div className="ob__creating">
-        <FormsMark className="ob__creating-mark" title="Dapta Forms" />
+        <FormsMark className="ob__creating-mark" title="dForms" />
         <h1 className="ob__creating-headline">{m.creating}</h1>
         <p className="ob__creating-sub">{m.creatingSubtitle}</p>
         {/* `role="progressbar"` with no value: indeterminate, which is the
@@ -576,7 +576,7 @@ function FailedScreen({ m, onRetry }: { m: Messages; onRetry?: () => void }) {
   return (
     <div className="pf ob ob--creating">
       <div className="ob__creating" role="alert">
-        <FormsMark className="ob__creating-mark" title="Dapta Forms" />
+        <FormsMark className="ob__creating-mark" title="dForms" />
         <h1 className="ob__creating-headline">{m.error.headline}</h1>
         <p className="ob__creating-sub">{m.error.body}</p>
         {onRetry ? (

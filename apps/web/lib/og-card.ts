@@ -82,7 +82,7 @@ export interface OgCardStyle {
   logo: { height: number; centered: boolean; drawAuthorLogo: boolean };
   progress: FormProgressStyle;
   font: FormFont;
-  /** Which artwork the Dapta Forms mark should use. */
+  /** Which artwork the dForms mark should use. */
   isDark: boolean;
 }
 
@@ -217,7 +217,7 @@ export function resolveCardStyle(branding: FormBranding | null | undefined): OgC
       // this and solves it with `--brand-ink`, a fixed DARK tile — which only
       // works there because that one asset's colour is known. Here it is not.
       //
-      // So the card omits it and the Dapta Forms mark takes the rail. A missing
+      // So the card omits it and the dForms mark takes the rail. A missing
       // logo reads as a design decision; a logo dissolved into its own backing
       // plate reads as a broken image.
       drawAuthorLogo: branded,

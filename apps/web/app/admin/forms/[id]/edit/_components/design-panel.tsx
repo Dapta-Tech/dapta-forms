@@ -691,7 +691,7 @@ function ContrastRow({
       <span className="text-muted-foreground">{label}</span>
       <span
         className={cn(
-          'rounded-sm px-1.5 py-0.5 font-mono text-2xs font-semibold tabular-nums',
+          'rounded-sm px-1.5 py-0.5 text-2xs font-semibold tabular-nums',
           grade === 'fail' ? 'bg-destructive/15 text-destructive' : 'bg-muted text-muted-foreground',
         )}
       >

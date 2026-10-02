@@ -84,7 +84,7 @@ export function PublicPageSettings({
         <p className="mt-4 text-sm text-muted-foreground">{m.publicPageNoHandle}</p>
       ) : (
         <>
-          <p className="mt-4 font-mono text-xs text-muted-foreground" data-testid="public-page-url">
+          <p className="mt-4 text-xs text-muted-foreground" data-testid="public-page-url">
             {publicPath}
           </p>
 

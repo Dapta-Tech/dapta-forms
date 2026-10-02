@@ -321,10 +321,10 @@ function DeliveryRow({
             /* The queue's own action name. It is a stable identifier rather than
                copy, and inventing a label per action would go stale the moment a
                new one is enqueued. */
-            <span className="truncate font-mono text-[11px] text-muted-foreground">{d.action}</span>
+            <span className="truncate text-[11px] text-muted-foreground">{d.action}</span>
           )}
           {d.responseStatus !== null ? (
-            <span className="shrink-0 font-mono text-[11px] tabular-nums text-muted-foreground">
+            <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
               HTTP {d.responseStatus}
             </span>
           ) : null}
@@ -379,7 +379,7 @@ function BodyBlock({
     <div className="flex min-w-0 flex-col gap-1">
       <span className="text-[11px] font-medium text-foreground">{label}</span>
       {body ? (
-        <pre className="max-h-56 overflow-auto rounded-md border border-border bg-background/60 p-2 font-mono text-[11px] leading-relaxed text-muted-foreground">
+        <pre className="max-h-56 overflow-auto rounded-md border border-border bg-background/60 p-2 text-[11px] leading-relaxed text-muted-foreground">
           {formatBody(body)}
         </pre>
       ) : (

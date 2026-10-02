@@ -301,7 +301,7 @@ export function WorkspaceCards({
                           </span>
                         ) : null}
                       </div>
-                      <p className="mt-0.5 truncate font-mono text-xs text-faint" title={w.accountCode}>
+                      <p className="mt-0.5 truncate text-xs text-faint" title={w.accountCode}>
                         {w.accountCode}
                       </p>
                     </div>
@@ -416,7 +416,7 @@ export function WorkspaceCards({
                               {r.hint.kind === 'form' ? t(labels.createDialog.hintForm, { name: r.hint.value }) : r.hint.value}
                             </p>
                           ) : (
-                            <p className="mt-0.5 truncate font-mono text-xs text-faint" title={workspaceId}>
+                            <p className="mt-0.5 truncate text-xs text-faint" title={workspaceId}>
                               {workspaceId}
                             </p>
                           )}

@@ -115,7 +115,7 @@ export function ColorPicker({
                 : 'linear-gradient(135deg, var(--muted) 45%, var(--border) 45%, var(--border) 55%, var(--muted) 55%)',
             }}
           />
-          <span className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground">
+          <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
             {valid ? current : m.colorCustom}
           </span>
           <i aria-hidden className="pi pi-chevron-down shrink-0 text-muted-foreground" style={{ fontSize: 10 }} />
@@ -126,7 +126,7 @@ export function ColorPicker({
             data-testid="contrast-badge"
             title={`${againstLabel ?? ''} ${ratio}:1`}
             className={cn(
-              'shrink-0 rounded-sm px-1.5 py-0.5 font-mono text-2xs font-semibold tabular-nums',
+              'shrink-0 rounded-sm px-1.5 py-0.5 text-2xs font-semibold tabular-nums',
               grade === 'fail'
                 ? 'bg-destructive/15 text-destructive'
                 : 'bg-muted text-muted-foreground',
@@ -195,7 +195,7 @@ export function ColorPicker({
               spellCheck={false}
               onChange={(e) => commit(e.target.value)}
               onBlur={() => setDraft(null)}
-              className="h-8 py-1 font-mono text-xs"
+              className="h-8 py-1 text-xs"
             />
             {allowEmpty ? (
               <button

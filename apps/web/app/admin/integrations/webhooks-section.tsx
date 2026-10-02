@@ -137,7 +137,7 @@ function WebhookTable({
                       <span
                         dir="ltr"
                         title={w.url}
-                        className="block max-w-[420px] truncate font-mono text-xs text-muted-foreground"
+                        className="block max-w-[420px] truncate text-xs text-muted-foreground"
                       >
                         {w.url}
                       </span>
