@@ -264,14 +264,14 @@ export function WorkspaceCards({
                   onClick={clickable ? () => cardClick(w) : undefined}
                   className={cn(
                     'flex flex-col gap-4 rounded-xl border bg-card p-5 transition-colors',
-                    isCurrent ? 'border-primary-edge/60' : 'border-border hover:border-primary-edge/40',
+                    isCurrent ? 'border-input' : 'border-border hover:border-input',
                     clickable && 'cursor-pointer',
                   )}
                 >
                   <div className="flex items-start gap-3">
                     <span
                       aria-hidden
-                      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-primary/15 text-sm font-semibold text-foreground"
+                      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary text-sm font-semibold text-primary-foreground"
                     >
                       {w.accountName.slice(0, 1).toUpperCase()}
                     </span>
@@ -281,7 +281,7 @@ export function WorkspaceCards({
                           {w.accountName}
                         </span>
                         {isCurrent ? (
-                          <span className="shrink-0 rounded-full bg-primary/20 px-2 py-0.5 text-2xs font-medium text-foreground">
+                          <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-2xs font-medium text-foreground">
                             {labels.current}
                           </span>
                         ) : null}
@@ -301,7 +301,7 @@ export function WorkspaceCards({
                           </span>
                         ) : null}
                       </div>
-                      <p className="mt-0.5 truncate font-mono text-xs text-faint" title={w.accountCode}>
+                      <p className="mt-0.5 truncate text-xs text-faint" title={w.accountCode}>
                         {w.accountCode}
                       </p>
                     </div>
@@ -390,7 +390,7 @@ export function WorkspaceCards({
                       data-testid="workspace-card"
                       data-workspace-id={workspaceId}
                       data-estate
-                      className="flex flex-col gap-4 rounded-xl border border-border bg-card p-5 transition-colors hover:border-primary-edge/40"
+                      className="flex flex-col gap-4 rounded-xl border border-border bg-card p-5 transition-colors hover:border-input"
                     >
                       <div className="flex items-start gap-3">
                         <span
@@ -416,7 +416,7 @@ export function WorkspaceCards({
                               {r.hint.kind === 'form' ? t(labels.createDialog.hintForm, { name: r.hint.value }) : r.hint.value}
                             </p>
                           ) : (
-                            <p className="mt-0.5 truncate font-mono text-xs text-faint" title={workspaceId}>
+                            <p className="mt-0.5 truncate text-xs text-faint" title={workspaceId}>
                               {workspaceId}
                             </p>
                           )}

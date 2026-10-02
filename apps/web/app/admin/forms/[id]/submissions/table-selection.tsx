@@ -3,7 +3,9 @@
 /**
  * Multi-select on the submissions table: a checkbox per row, one in the header
  * for the whole page, and a bar that acts on the selection (export it, delete
- * it, clear it).
+ * it, clear it). The checkboxes are put away until "Select" is pressed (the
+ * viewer's `data-select`), so a table that is only being read carries no
+ * column of empty boxes.
  *
  * The rows are server-rendered; the checkboxes are the only client pieces in
  * them, and they read one selection held by `ResponsesViewer`. A selection is
@@ -21,6 +23,7 @@ import {
   useTransition,
 } from 'react';
 import { t } from '@quill/shared';
+import { Checkbox } from '@/components/ui/checkbox';
 import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import { callAction, isTransportError } from '@/lib/call-action';
 import { deleteSubmissionsAction } from './actions';
@@ -32,6 +35,9 @@ export interface SelectionLabels {
   exportSelected: string;
   delete: string;
   clearSelection: string;
+  /** The button that brings the checkboxes in, and the one that puts them away. */
+  selectMode: string;
+  selectModeDone: string;
   /** "Delete {n} responses?" */
   bulkDeleteTitle: string;
   bulkDeleteTitleOne: string;
@@ -98,25 +104,25 @@ export function useSelection(pageIds: string[]): Selection {
   );
 }
 
-const CHECKBOX = 'size-4 cursor-pointer rounded-sm accent-primary-edge';
-
 /**
  * One row's checkbox. The label covers the whole cell (the cell is sticky, so
  * it positions the label), so a click anywhere in it toggles the row instead
  * of opening the panel: the viewer ignores clicks on labels and inputs. A
  * plain block label stops at its own height, and a tall row's lower half
  * opened the panel.
+ *
+ * Both this and the header's are the app's own `Checkbox`, centred in the same
+ * column: a native box is drawn by the browser, white on the dark theme, and
+ * the two used to sit at different sizes and offsets.
  */
 export function RowSelect({ id, label }: { id: string; label: string }) {
   const selection = useContext(SelectionContext);
   if (!selection) return null;
   return (
     <label className="absolute inset-0 flex cursor-pointer justify-center pt-3.5">
-      <input
-        type="checkbox"
+      <Checkbox
         data-row-select
         aria-label={label}
-        className={CHECKBOX}
         checked={selection.has(id)}
         onChange={(e) => selection.toggle(id, e.target.checked)}
       />
@@ -136,13 +142,11 @@ export function PageSelect({ label }: { label: string }) {
   }, [some]);
   if (!selection) return null;
   return (
-    <label className="flex cursor-pointer justify-center px-3.5 py-0.5">
-      <input
+    <label className="flex cursor-pointer justify-center">
+      <Checkbox
         ref={ref}
-        type="checkbox"
         data-page-select
         aria-label={label}
-        className={CHECKBOX}
         checked={all}
         onChange={(e) => selection.setPage(e.target.checked)}
       />
@@ -151,7 +155,7 @@ export function PageSelect({ label }: { label: string }) {
 }
 
 const BAR_BUTTON =
-  'inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50';
+  'inline-flex h-8 items-center gap-1.5 rounded-full px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50';
 
 /**
  * "3 selected · Export CSV · Delete · Clear". Nothing at all without a
@@ -200,7 +204,7 @@ export function SelectionBar({ formId, labels }: { formId: string; labels: Selec
         className="flex min-w-0 animate-response-in items-center gap-1"
       >
         <span
-          className="mr-1 whitespace-nowrap text-sm font-semibold tabular-nums"
+          className="mr-2 whitespace-nowrap text-sm font-semibold tabular-nums"
           data-testid="selection-count"
         >
           {count === 1 ? labels.selectedCountOne : t(labels.selectedCount, { n: count })}
@@ -210,7 +214,7 @@ export function SelectionBar({ formId, labels }: { formId: string; labels: Selec
           data-testid="selection-export"
           aria-label={labels.exportSelected}
           title={labels.exportSelected}
-          className={`${BAR_BUTTON} text-foreground hover:bg-accent`}
+          className={`${BAR_BUTTON} bg-muted text-foreground hover:bg-accent`}
         >
           <i aria-hidden className="pi pi-download" style={{ fontSize: 12 }} />
           <span className="hidden sm:inline">{labels.exportSelected}</span>

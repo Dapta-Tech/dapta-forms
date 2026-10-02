@@ -294,12 +294,12 @@ function StatusBadge({
   const state = connected ? 'account' : serverProvided ? 'server' : 'none';
   const tone =
     state === 'account'
-      ? 'border-primary-edge/40 bg-primary/10 text-foreground'
+      ? 'border-signal-edge/40 bg-signal/15 text-foreground'
       : state === 'server'
         ? 'border-border bg-muted/60 text-foreground'
         : 'border-border bg-muted/40 text-muted-foreground';
   const dot =
-    state === 'account' ? 'bg-primary' : state === 'server' ? 'bg-primary/50' : 'bg-muted-foreground';
+    state === 'account' ? 'bg-signal-edge' : state === 'server' ? 'bg-signal-edge/50' : 'bg-muted-foreground';
   return (
     <span
       data-testid="connection-status"

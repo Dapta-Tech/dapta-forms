@@ -8,12 +8,14 @@ import { cn } from '@/lib/cn';
  * <button> with variant styling.
  */
 const buttonVariants = cva(
-  'inline-flex cursor-pointer items-center justify-center gap-2 rounded-md text-sm font-semibold transition-transform focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-[0.98] disabled:pointer-events-none disabled:border-transparent disabled:bg-muted disabled:text-muted-foreground',
+  'inline-flex cursor-pointer items-center justify-center gap-2 rounded-full text-sm font-semibold transition-transform focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-[0.98] disabled:pointer-events-none disabled:border-transparent disabled:bg-muted disabled:text-muted-foreground',
   {
     variants: {
       variant: {
         default: 'bg-primary text-primary-foreground',
         secondary: 'bg-secondary text-secondary-foreground',
+        // The quiet pill: a grey wash with ink text, for the action next to a primary one.
+        soft: 'bg-muted text-foreground hover:bg-accent',
         outline: 'border border-border bg-transparent hover:bg-accent',
         ghost: 'bg-transparent hover:bg-accent',
         destructive: 'border border-destructive text-destructive hover:bg-destructive/10',

@@ -1,6 +1,6 @@
 @import 'tailwindcss';
 
-/* Ported design tokens (dark-first) — the shadcn CSS-variable contract. */
+/* Design tokens: the shadcn CSS-variable contract. */
 @import '@quill/shared/tokens.css';
 
 /* Map the token variables into Tailwind's theme so components use semantic
@@ -35,20 +35,33 @@
   --color-brand-ink: var(--brand-ink);
   --color-brand-ink-foreground: var(--brand-ink-foreground);
 
-  /* The accent at a lightness that reads against this theme's page — the rim on an
-     accent fill, the focus outline, and the mark on a selected control.
-
-     THE RULE, in one line: the accent has three jobs and three tokens.
-       FILL    `bg-primary`          — `--primary`, the brand lime, rimmed below
-       LETTERS `text-primary`        — `--primary-ink`, overridden below
-       LINES   `border-primary-edge` — this token, used directly at the call site
-     A border is the one job that is NOT overridden here, because `border-primary`
-     is nine different classes once you count `/40 /50 /60`, `hover:`, `checked:`
-     and `focus-within:` — overriding the bare one would have silently left the
-     other eight on the raw lime, which in light mode is a 1.27:1 line. So the call
-     sites name this token themselves and every opacity variant follows for free.
-     On dark `--primary-edge` IS `--primary`, so none of this changes that theme. */
+  /* The primary has three jobs and three tokens.
+       FILL    `bg-primary`          : `--primary`, ink on light and paper on dark
+       LETTERS `text-primary`        : `--primary-ink`, overridden below
+       LINES   `border-primary-edge` : this token, named at the call site
+     In the dForms palette the three resolve to the same ink. They stay separate
+     because ~400 call sites already name them, and a border is the one job that
+     cannot be overridden centrally: `border-primary` is nine different classes
+     once you count `/40 /50 /60`, `hover:`, `checked:` and `focus-within:`. */
   --color-primary-edge: var(--primary-edge);
+
+  /* Signal Green: the one saturated working colour, rationed to publishing, a
+     switch that is on, and progress. `bg-signal` always pairs with
+     `text-signal-foreground` (ink); white on it is 1.8:1. */
+  --color-signal: var(--signal);
+  --color-signal-foreground: var(--signal-foreground);
+  --color-signal-edge: var(--signal-edge);
+  --color-signal-ink: var(--signal-ink);
+  /* The navigation rail's ground, one tonal step off the page. */
+  --color-sidebar: var(--sidebar);
+  /* The ground of a WORK surface (builder canvas, logic map): cards sit on it. */
+  --color-panel: var(--panel);
+  /* The two data channels: points and score ranges, and not-live-yet. The base
+     is for dots, lines and washes (`bg-score/15`); `-ink` is the same hue as text. */
+  --color-score: var(--score);
+  --color-score-ink: var(--score-ink);
+  --color-warning: var(--warning);
+  --color-warning-ink: var(--warning-ink);
 
   /* The WHOLE radius scale is pinned here, not just `md`: overriding one step
      leaves `rounded-lg/xl/2xl` on Tailwind's defaults, so the scale contradicts
@@ -56,21 +69,18 @@
      to it. One ladder, softest at the card step. `rounded-full` is left alone: it
      is avatars and status dots, not a corner decision. */
   --radius-sm: 6px;
-  --radius-md: var(--radius); /* 10px */
+  --radius-md: var(--radius); /* 8px */
   --radius-lg: 12px;
   --radius-xl: var(--radius-monitor); /* 16px */
   --radius-2xl: 20px;
 
-  /* Two voices, no third font. Figtree does all the talking; IBM Plex Mono is
-     reserved for strings you COPY rather than read — links, slugs, hex, keys —
-     where a fixed advance and an unambiguous l/1/O/0 do real work. Numbers are
-     NOT one of those: a stat is glanced at, and monospacing it only made it read
-     as code. Both self-hosted via next/font (`--font-figtree`, `--font-plex-mono`)
-     and both OFL, which is what lets next/font bake the files into the build and
-     into every clone of this repo. Each falls back to a system stack if its
-     variable is ever absent. */
-  --font-sans: var(--font-figtree), Figtree, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
-  --font-mono: var(--font-plex-mono), 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  /* One voice. Hanken Grotesk does all the talking, URLs, keys and hex values
+     included: the design system has no monospaced face, so none is loaded.
+     Numbers keep their steady width with `tabular-nums` instead. Self-hosted via
+     next/font (`--font-hanken`) and OFL, which is what lets next/font bake the
+     files into the build and into every clone of this repo. It falls back to a
+     system stack if the variable is ever absent. */
+  --font-sans: var(--font-hanken), 'Hanken Grotesk', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
 
   /* The type scale, pinned end to end.
      It had drifted to ELEVEN sizes — 10 · 11 · 12 · 13 · 14 · 15 · 16 · 18 · 23 ·
@@ -229,25 +239,14 @@
     color: var(--primary-ink);
   }
 
-  /* Rim every accent fill with `--primary-edge`, so the fill's SHAPE clears 3:1
+  /* Rim every signal fill with `--signal-edge`, so the fill's SHAPE clears 3:1
      against the page it sits on (WCAG 1.4.11). On dark the edge equals the fill and
-     this paints nothing; on light it is the difference between Publish being a
-     recognisable control and being a pale smear at 1.27:1.
-     An `inset` box-shadow rather than a border because a border would add 2px to
-     every one of ~60 accent fills and reflow all of them. Opacity-modified variants
-     (`bg-primary/10`, `bg-primary/[0.06]`) are different classes and untouched — they
-     are washes, not fills, and two of them carry their own `shadow-sm`.
-
-     THE SIZE RULE this implies: `bg-primary` is for fills big enough to HAVE an
-     interior — buttons, chips, badges. A 1px rim on a 6px dot leaves 4px of fill
-     and reads as a donut, and on a 4px bar it takes half the shape. Below about
-     10px the accent is a MARK, not a fill, and it takes `bg-primary-edge`
-     instead: the edge colour carrying the whole shape, which is identical on dark
-     and a legible dark-olive on light. Every such indicator (the save-status dot,
-     the unpublished-changes dot, the spine's active bar, the Logic start dots)
-     uses that, and a new one should too. */
-  .bg-primary {
-    box-shadow: inset 0 0 0 1px var(--primary-edge);
+     this paints nothing; on light the bright green alone is 1.8:1 on paper, so
+     without the rim Publish is a pale shape rather than a recognisable control.
+     An `inset` box-shadow rather than a border because a border would add 2px and
+     reflow the control. */
+  .bg-signal {
+    box-shadow: inset 0 0 0 1px var(--signal-edge);
   }
 }
 
@@ -259,13 +258,12 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* Lime focus ring (WCAG) honored everywhere.
-   Uses `--primary-edge`, not `--primary`: the outline is the one thing that must be
-   findable on every surface, and the raw accent flattened to 1.27:1 over paper —
-   the focus indicator was the least visible thing on a focused control in light
-   mode. On dark the edge IS the accent, so nothing changes there. */
+/* Focus ring, honored everywhere. Green is the focus colour of this language;
+   `--focus` is the signal at a lightness that clears 3:1 on each theme's page
+   (the raw green is 1.8:1 on paper, which would make the indicator the least
+   visible thing on a focused control). */
 :focus-visible {
-  outline: 2px solid var(--primary-edge);
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 

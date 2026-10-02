@@ -28,13 +28,6 @@ export default async function BrandKitPage() {
 
   return (
     <div data-testid="account-brand-kit">
-      <div className="mb-6">
-        <h2 className="text-xl font-semibold tracking-tight">{bk.title}</h2>
-        <p className="mt-1 text-sm text-muted-foreground">{bk.subtitle}</p>
-        <div className="mt-3">
-          <ManagingChip label={messages.account.managing} name={me.accountName} />
-        </div>
-      </div>
       <BrandKitPanel
         initialKit={branding.config ?? {}}
         updatedAt={branding.updatedAt}
@@ -43,6 +36,16 @@ export default async function BrandKitPage() {
         bk={bk}
         design={messages.editor.design}
         locale={locale}
+        workspaceName={me.accountName}
+        heading={
+          <>
+            <h2 className="text-xl font-semibold tracking-tight">{bk.title}</h2>
+            <p className="mt-1 text-sm text-muted-foreground">{bk.subtitle}</p>
+            <div className="mt-3">
+              <ManagingChip label={messages.account.managing} name={me.accountName} />
+            </div>
+          </>
+        }
       />
     </div>
   );

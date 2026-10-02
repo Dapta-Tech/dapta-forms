@@ -11,7 +11,7 @@ import { randomUUID } from 'node:crypto';
 import { sql } from 'drizzle-orm';
 import { createDb, type Db } from './client';
 import { migrate } from './migrate';
-import { getFormById, publishForm, saveDraftConfig } from './forms';
+import { getFormById, listForms, publishForm, saveDraftConfig } from './forms';
 import { insertBookingEvent, listBookingEvents } from './bookings';
 
 let db: Db;
@@ -62,6 +62,15 @@ describe('draft + publish', () => {
     expect(out.value.config).toEqual(DRAFT_CONFIG); // draft went live
     expect(out.value.draftConfig).toBeNull(); // draft cleared
     expect(out.value.publishedAt).not.toBeNull();
+  });
+
+  it('the list reports a pending draft without reading it, and clears on publish', async () => {
+    const inList = async () => (await listForms(db, accountId)).find((f) => f.id === formId)!.hasDraft;
+    expect(await inList()).toBe(false); // live from creation, nothing pending
+    await saveDraftConfig(db, accountId, formId, DRAFT_CONFIG);
+    expect(await inList()).toBe(true);
+    await publishForm(db, accountId, formId);
+    expect(await inList()).toBe(false);
   });
 
   it('drafts never stage destinations; publish preserves the LIVE destinations', async () => {

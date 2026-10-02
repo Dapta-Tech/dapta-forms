@@ -55,7 +55,7 @@ export function Switch({
       className={cn(
         'relative inline-flex h-[22px] w-[38px] shrink-0 cursor-pointer items-center rounded-full border border-transparent transition-colors',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-        checked ? 'bg-primary' : 'bg-muted-foreground/30',
+        checked ? 'bg-signal' : 'bg-muted-foreground/30',
         (disabled || ariaDisabled) && 'cursor-not-allowed opacity-50',
         className,
       )}

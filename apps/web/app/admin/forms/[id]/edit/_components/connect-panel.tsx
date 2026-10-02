@@ -83,7 +83,17 @@ export function ConnectPanel({
   const partialsHeld = captchaAvailable && spamProtection?.captcha === true;
 
   return (
-    <div data-testid="connect-panel" className="mx-auto flex w-full max-w-[900px] flex-col gap-4">
+    // Two columns from `xl`: where the answers GO on the left, which is the
+    // reason someone opens this tab and the part that grows (a field map, a
+    // delivery history); the form-wide switches on the right, each a short card.
+    // One centred column made the three short cards wait under however long the
+    // integrations ran. `items-start` so a short column is not stretched to
+    // match a long one. Below `xl` it is the single column it always was, in the
+    // same order.
+    <div
+      data-testid="connect-panel"
+      className="mx-auto grid w-full max-w-[900px] items-start gap-4 xl:max-w-[1320px] xl:grid-cols-[minmax(0,1fr)_minmax(340px,400px)]"
+    >
       <IntegrationsSection
         formId={formId}
         questions={questions}
@@ -93,16 +103,18 @@ export function ConnectPanel({
         im={im}
         locale={loc}
       />
-      <TrackingSection config={config} onTrackingChange={onTrackingChange} mc={mc} />
-      <ConnectEmailsSection formId={formId} m={mc} locale={locale} />
-      {/* Last on the tab: a setting most forms never need, placed after
-          everything the form sends and tracks. */}
-      <SpamProtectionSection
-        value={spamProtection}
-        available={captchaAvailable}
-        onChange={onSpamProtectionChange}
-        mc={mc}
-      />
+      <div className="flex min-w-0 flex-col gap-4">
+        <TrackingSection config={config} onTrackingChange={onTrackingChange} mc={mc} />
+        <ConnectEmailsSection formId={formId} m={mc} locale={locale} />
+        {/* Last on the tab: a setting most forms never need, placed after
+            everything the form sends and tracks. */}
+        <SpamProtectionSection
+          value={spamProtection}
+          available={captchaAvailable}
+          onChange={onSpamProtectionChange}
+          mc={mc}
+        />
+      </div>
     </div>
   );
 }
@@ -414,7 +426,9 @@ function TrackingSection({
         <i aria-hidden className="pi pi-info-circle mt-0.5 shrink-0 text-secondary" style={{ fontSize: 11 }} />
         {mc.trackingDraftNote}
       </p>
-      <div className="grid gap-4 sm:grid-cols-2">
+      {/* One per row again from `xl`, where this card moves to the narrow
+          right-hand column and two fields abreast squeeze their hints. */}
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-1">
         <Field label={mc.gtmLabel} hint={mc.gtmHelp}>
           <TextField
             data-testid="tracking-gtm"

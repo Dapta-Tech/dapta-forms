@@ -35,21 +35,31 @@ export function PageSizeSelect({ value, label }: { value: PageSize; label: strin
       <label htmlFor={id} className="hidden whitespace-nowrap text-muted-foreground sm:inline">
         {label}
       </label>
-      <select
-        id={id}
-        aria-label={label}
-        data-testid="page-size"
-        value={value}
-        disabled={pending}
-        onChange={(e) => onChange(Number(e.target.value))}
-        className="h-8 cursor-pointer rounded-md border border-border bg-card px-2 text-sm font-medium tabular-nums text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
-      >
-        {PAGE_SIZES.map((n) => (
-          <option key={n} value={n}>
-            {n}
-          </option>
-        ))}
-      </select>
+      {/* Still a native select (its list is the platform's, on a phone too),
+          but with the arrow drawn here: the browser's own sits against the
+          border of a pill and cannot be padded. */}
+      <span className="relative inline-flex">
+        <select
+          id={id}
+          aria-label={label}
+          data-testid="page-size"
+          value={value}
+          disabled={pending}
+          onChange={(e) => onChange(Number(e.target.value))}
+          className="h-9 cursor-pointer appearance-none rounded-full border border-input bg-card pl-4 pr-9 text-sm font-medium tabular-nums text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
+        >
+          {PAGE_SIZES.map((n) => (
+            <option key={n} value={n}>
+              {n}
+            </option>
+          ))}
+        </select>
+        <i
+          aria-hidden
+          className="pi pi-chevron-down pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-muted-foreground"
+          style={{ fontSize: 12 }}
+        />
+      </span>
     </span>
   );
 }

@@ -24,8 +24,8 @@ export default async function NotificationsPage() {
         data-testid="account-notifications-forbidden"
         className="rounded-xl border border-border bg-card p-6"
       >
-        <h2 className="text-lg font-semibold tracking-tight">{n.heading}</h2>
-        <p className="mt-0.5 text-sm text-muted-foreground">{n.subtitle}</p>
+        <h2 className="text-xl font-semibold tracking-tight">{n.heading}</h2>
+        <p className="mt-1 text-sm text-muted-foreground">{n.subtitle}</p>
         <p className="mt-4 text-sm text-muted-foreground">{messages.account.notificationsNoAccess}</p>
       </section>
     );
@@ -42,8 +42,8 @@ export default async function NotificationsPage() {
         <NotificationSettings settings={notifications.settings} locale={locale} labels={n} />
       ) : (
         <section className="rounded-xl border border-border bg-card p-6">
-          <h2 className="text-lg font-semibold tracking-tight">{n.heading}</h2>
-          <p className="mt-0.5 text-sm text-muted-foreground">{n.subtitle}</p>
+          <h2 className="text-xl font-semibold tracking-tight">{n.heading}</h2>
+          <p className="mt-1 text-sm text-muted-foreground">{n.subtitle}</p>
           <p className="mt-4 text-sm text-muted-foreground">{messages.settings.manageErrorFailed}</p>
         </section>
       )}

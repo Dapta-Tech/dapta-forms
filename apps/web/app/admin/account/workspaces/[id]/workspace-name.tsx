@@ -47,8 +47,8 @@ export function WorkspaceName({
   if (!canEdit) {
     return (
       <div className="min-w-0">
-        <p className="text-2xs uppercase tracking-wide text-faint">{labels.workspaceName}</p>
-        <h2 className="mt-1 truncate text-2xl font-semibold tracking-tight" data-testid="workspace-name">
+        <p className="text-sm font-medium">{labels.workspaceName}</p>
+        <h2 className="mt-1.5 truncate text-base text-foreground" data-testid="workspace-name">
           {initial}
         </h2>
       </div>
@@ -59,7 +59,7 @@ export function WorkspaceName({
     <form action={action} className="min-w-0" data-testid="workspace-name-form">
       <input type="hidden" name="accountId" value={accountId} />
       <label className="flex flex-col gap-1.5 text-sm">
-        <span className="text-2xs uppercase tracking-wide text-faint">{labels.workspaceName}</span>
+        <span className="font-medium">{labels.workspaceName}</span>
         <div className="flex items-center gap-2">
           <input
             name="name"
@@ -70,9 +70,9 @@ export function WorkspaceName({
             key={initial}
             autoComplete="off"
             data-testid="workspace-name-input"
-            className="w-full max-w-md rounded-md border border-input bg-background px-3 py-2 text-base font-semibold tracking-tight focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="h-10 w-full min-w-0 rounded-lg border border-input bg-background px-3 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           />
-          <Button type="submit" size="sm" disabled={pending}>
+          <Button type="submit" variant="soft" disabled={pending}>
             {labels.workspaceNameSave}
           </Button>
         </div>

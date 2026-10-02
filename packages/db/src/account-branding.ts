@@ -75,6 +75,13 @@ export async function upsertAccountBranding(
  * kit actually sets are overwritten — a kit that leaves `radius` absent does
  * not touch a form's own radius. `themePreset` is cleared because after an
  * apply the last-applied-preset bookkeeping no longer describes the colors.
+ *
+ * Background and foreground are the exception: they only make sense as a pair.
+ * A kit that sets one of them drops the form's stored other, so the renderer
+ * derives a readable text colour for the new ground (or the ground for the new
+ * text). Without that, a form created with the dForms ink-on-white pair and
+ * given a kit with only a dark background would render ink on near-black. It
+ * also matches what the brand kit preview shows.
  */
 export function mergeKitIntoBranding(
   branding: Record<string, unknown> | null | undefined,
@@ -85,6 +92,10 @@ export function mergeKitIntoBranding(
     const value = (kit as Record<string, unknown>)[field];
     if (value !== undefined) next[field] = value;
   }
+  const kitBackground = (kit as Record<string, unknown>).background !== undefined;
+  const kitForeground = (kit as Record<string, unknown>).foreground !== undefined;
+  if (kitBackground && !kitForeground) delete next.foreground;
+  if (kitForeground && !kitBackground) delete next.background;
   delete next.themePreset;
   return next;
 }

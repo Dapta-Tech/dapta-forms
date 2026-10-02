@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useLayoutEffect, useRef } from 'react';
+import { useEffect, useLayoutEffect, useRef, type ReactNode } from 'react';
 import type { FormConfig, FormStep } from '@quill/engine';
 import {
   nameFields,
@@ -13,11 +13,11 @@ import {
   resolveRevealPresentation,
   uniqueKey,
 } from '@quill/engine';
-import { onAccent, DEFAULT_ACCENT, getMessages } from '@quill/shared';
+import { onAccent, DEFAULT_ACCENT, getMessages, resolveThemeMode } from '@quill/shared';
 import { resolveFormLabels } from '@quill/shared';
 import { clientLocale } from '@/lib/client-locale';
 import { cn } from '@/lib/cn';
-import { iconForStep, hasOptions } from './question-types';
+import { galleryIdForStep, iconForStep, hasOptions } from './question-types';
 import { maxStepPoints } from './scoring-util';
 import type { BuilderMessages } from './builder-messages';
 import { tb } from './builder-messages';
@@ -134,6 +134,7 @@ export function CanvasQuestion({
       <RevealCanvas
         step={step}
         accent={chrome.accent}
+        theme={chrome.theme}
         device={device}
         logo={resolveFormLogos(config).form}
         onUpdate={onUpdate}
@@ -143,8 +144,8 @@ export function CanvasQuestion({
   }
 
   return (
-    <div className="flex justify-center">
-      <div className={cn('w-full border border-border bg-card p-6 shadow-xl sm:p-8', chrome.cardRadius, chrome.canvasWidth)}>
+    <CanvasFrame chrome={chrome} tag={frameTag(step, index, m)}>
+      <div data-theme={chrome.theme} className={cn(CARD, 'p-6 sm:p-8', chrome.cardRadius)}>
         <CanvasProgress chrome={chrome} index={at} total={total} />
 
         <QuestionEditableBody
@@ -152,6 +153,7 @@ export function CanvasQuestion({
           step={step}
           index={index}
           accent={chrome.accent}
+          eyebrow={false}
           onUpdate={onUpdate}
           onOptionLabel={onOptionLabel}
           m={m}
@@ -164,6 +166,40 @@ export function CanvasQuestion({
         {step.type !== 'dropdown' && step.type !== 'scheduler' ? (
           <CanvasButton chrome={chrome} label={step.buttonText || (isLast ? chrome.formLabels.submit : chrome.formLabels.next)} />
         ) : null}
+      </div>
+    </CanvasFrame>
+  );
+}
+
+/** A card on the canvas: paper with a visible edge, never a shadow. The work
+ *  surface behind it is `--panel`, so the border is what separates the two. */
+const CARD = 'w-full border border-input bg-card text-foreground';
+
+/** `01 · SHORT TEXT`: which question the frame is around, and what kind it is. */
+function frameTag(step: FormStep, index: number, m: BuilderMessages): string {
+  const kind = m.gallery.items[galleryIdForStep(step)]?.title ?? '';
+  const n = String(index + 1).padStart(2, '0');
+  return kind ? `${n} · ${kind}` : n;
+}
+
+/**
+ * The selection frame: an ink outline standing a few pixels off the card, with
+ * a tag naming the question. It says "this is the thing the panel on the right
+ * is editing" without touching the card itself, which stays exactly what a
+ * respondent sees. The frame is CHROME, so it takes the dashboard's colours;
+ * the card inside pins the form's own scheme (see `chrome.theme`).
+ */
+function CanvasFrame({ chrome, tag, children }: { chrome: CanvasChrome; tag: string; children: ReactNode }) {
+  return (
+    <div className="flex justify-center pt-3">
+      <div className={cn('relative w-full rounded-[26px] border-[1.5px] border-foreground p-2', chrome.frameWidth)}>
+        <span
+          data-testid="canvas-frame-tag"
+          className="absolute -top-3 left-6 inline-flex h-6 max-w-[calc(100%-3rem)] items-center truncate rounded-full bg-foreground px-3 text-2xs font-semibold uppercase tracking-wider text-background"
+        >
+          {tag}
+        </span>
+        {children}
       </div>
     </div>
   );
@@ -217,11 +253,12 @@ export function CanvasScreen({
   const isLast = position + 1 >= total;
 
   return (
-    <div className="flex justify-center">
+    <CanvasFrame chrome={chrome} tag={tb(m.screens.chip, { n: position + 1, count: members.length })}>
       <div
         data-testid="canvas-screen"
         data-screen-size={members.length}
-        className={cn('w-full border border-border bg-card p-6 shadow-xl sm:p-8', chrome.cardRadius, chrome.canvasWidth)}
+        data-theme={chrome.theme}
+        className={cn(CARD, 'p-6 sm:p-8', chrome.cardRadius)}
       >
         <CanvasProgress chrome={chrome} index={position} total={total} />
         <div className="-mx-6 flex flex-col divide-y divide-border sm:-mx-8">
@@ -262,7 +299,7 @@ export function CanvasScreen({
         </div>
         <CanvasButton chrome={chrome} label={last?.buttonText || (isLast ? chrome.formLabels.submit : chrome.formLabels.next)} />
       </div>
-    </div>
+    </CanvasFrame>
   );
 }
 
@@ -309,6 +346,15 @@ function canvasChrome(config: FormConfig, device: 'desktop' | 'mobile') {
     design.radius === 'sharp' ? 'rounded-[2px]' : design.radius === 'round' ? 'rounded-full' : 'rounded-[8px]';
   const canvasWidth =
     device === 'mobile' ? 'max-w-[380px]' : design.contentWidth === 'wide' ? 'max-w-[760px]' : 'max-w-[640px]';
+  // The selection frame stands 8px + 1.5px off the card on each side, so it is
+  // the card's measure plus that, and the card inside keeps the width it claims.
+  const frameWidth =
+    device === 'mobile' ? 'max-w-[399px]' : design.contentWidth === 'wide' ? 'max-w-[779px]' : 'max-w-[659px]';
+  // The scheme the CARD wears: the form's own when the author fixed a background,
+  // else the product default (light). Not the dashboard's: an unbranded form is on
+  // paper for every respondent, so its card stays on paper while the author works
+  // in dark. Same rule `formDesignProps` applies to the public page.
+  const theme = resolveThemeMode(config.branding?.background) ?? 'light';
   const centred = design.contentAlign === 'center';
   const btnStyle =
     design.buttonStyle === 'outline'
@@ -323,7 +369,7 @@ function canvasChrome(config: FormConfig, device: 'desktop' | 'mobile') {
   // The same resolver the public form and the preview use: the author's
   // overrides, else the stock copy of the FORM's language (not the editor's).
   const formLabels = resolveFormLabels(config, config.language ?? (clientLocale() === 'es' ? 'es' : 'en'));
-  return { accent, design, cardRadius, btnRadius, canvasWidth, centred, btnStyle, formLabels };
+  return { accent, design, cardRadius, btnRadius, canvasWidth, frameWidth, theme, centred, btnStyle, formLabels };
 }
 
 /**
@@ -386,6 +432,7 @@ function QuestionEditableBody({
   step,
   index,
   accent,
+  eyebrow = true,
   onUpdate,
   onOptionLabel,
   m,
@@ -394,6 +441,8 @@ function QuestionEditableBody({
   step: FormStep;
   index: number;
   accent: string;
+  /** "Question N" above the title. Off where a frame tag already says it. */
+  eyebrow?: boolean;
   onUpdate: (patch: Partial<FormStep>) => void;
   onOptionLabel: (optionIndex: number, label: string) => void;
   m: BuilderMessages;
@@ -423,11 +472,12 @@ function QuestionEditableBody({
 
   return (
     <>
-      {/* Eyebrow */}
-      <p className="mb-2 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-        <i aria-hidden className={`pi ${iconForStep(step)}`} style={{ fontSize: 12 }} />
-        {tb(m.canvas.questionN, { n: index + 1 })}
-      </p>
+      {eyebrow ? (
+        <p className="mb-2 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+          <i aria-hidden className={`pi ${iconForStep(step)}`} style={{ fontSize: 12 }} />
+          {tb(m.canvas.questionN, { n: index + 1 })}
+        </p>
+      ) : null}
 
       {/* Inline editable title — with the @ recall-information picker. The
           engine interpolates `[key]` tokens in BOTH `question` and the
@@ -488,7 +538,7 @@ function QuestionEditableBody({
                 <div
                   key={i}
                   className={cn(
-                    'group relative flex min-h-[104px] w-[calc((100%-1.25rem)/3)] min-w-[132px] max-w-[220px] flex-col items-center gap-2 border border-border bg-background px-2 py-4 transition-colors focus-within:border-primary-edge/60 hover:border-muted-foreground/60',
+                    'group relative flex min-h-[104px] w-[calc((100%-1.25rem)/3)] min-w-[132px] max-w-[220px] flex-col items-center gap-2 border border-input bg-background px-2 py-4 transition-colors focus-within:border-primary-edge/60 hover:border-muted-foreground/60',
                     optionRadius,
                   )}
                 >
@@ -511,7 +561,7 @@ function QuestionEditableBody({
                     className="w-full min-w-0 bg-transparent text-center text-sm font-medium text-foreground outline-none placeholder:text-muted-foreground/50"
                   />
                   {showsPoints ? (
-                    <span className="rounded-full bg-primary/15 px-2 py-0.5 text-[11px] font-semibold text-primary">
+                    <span className="rounded-full bg-score/15 px-2 py-0.5 text-[11px] font-semibold text-score-ink">
                       {tb(m.canvas.pts, { n: opt.points ?? 0 })}
                     </span>
                   ) : null}
@@ -528,7 +578,7 @@ function QuestionEditableBody({
                 <div
                   key={i}
                   className={cn(
-                    'group flex items-center gap-3 border border-border bg-background px-4 py-3.5 transition-colors focus-within:border-primary-edge/60 hover:border-muted-foreground/60',
+                    'group flex items-center gap-3 border border-input bg-background px-4 py-3.5 transition-colors focus-within:border-primary-edge/60 hover:border-muted-foreground/60',
                     optionRadius,
                   )}
                 >
@@ -547,7 +597,7 @@ function QuestionEditableBody({
                     className="min-w-0 flex-1 bg-transparent text-[15px] font-medium text-foreground outline-none placeholder:text-muted-foreground/50"
                   />
                   {showsPoints ? (
-                    <span className="shrink-0 rounded-full bg-primary/15 px-2.5 py-1 text-xs font-semibold text-primary">
+                    <span className="shrink-0 rounded-full bg-score/15 px-2.5 py-1 text-xs font-semibold text-score-ink">
                       {tb(m.canvas.pts, { n: opt.points ?? 0 })}
                     </span>
                   ) : null}
@@ -589,7 +639,7 @@ function QuestionEditableBody({
             className="text-[15px] leading-relaxed text-foreground"
           />
         ) : step.type === 'textarea' ? (
-          <div className="rounded-xl border border-border bg-background px-4 py-3 text-[15px] text-muted-foreground/60">
+          <div className="rounded-xl border border-input bg-background px-4 py-3 text-[15px] text-muted-foreground/60">
             {step.placeholder || m.canvas.messagePlaceholder}
           </div>
         ) : step.type === 'name' ? (
@@ -599,7 +649,7 @@ function QuestionEditableBody({
         ) : step.type === 'file' ? (
           <FileDropPreview step={step} m={m} />
         ) : (
-          <div className="rounded-xl border border-border bg-background px-4 py-3 text-[15px] text-muted-foreground/60">
+          <div className="rounded-xl border border-input bg-background px-4 py-3 text-[15px] text-muted-foreground/60">
             {step.placeholder ||
               (step.type === 'email'
                 ? 'you@company.com'
@@ -672,8 +722,9 @@ export function CanvasPage({
     <div className="flex justify-center">
       <div
         data-testid="canvas-page"
+        data-theme={resolveThemeMode(config.branding?.background) ?? 'light'}
         className={cn(
-          'w-full overflow-hidden rounded-2xl border border-border bg-card shadow-xl',
+          'w-full overflow-hidden rounded-2xl border border-input bg-card text-foreground',
           device === 'mobile' ? 'max-w-[400px]' : 'max-w-[720px]',
         )}
       >
@@ -819,6 +870,7 @@ const REVEAL_TEXT_PX = {
 function RevealCanvas({
   step,
   accent,
+  theme,
   device,
   logo,
   onUpdate,
@@ -826,6 +878,8 @@ function RevealCanvas({
 }: {
   step: FormStep;
   accent: string;
+  /** The scheme the card wears: the form's, not the dashboard's. */
+  theme: 'light' | 'dark';
   device: 'desktop' | 'mobile';
   /** The form's logo, mirrored from the published screen. Absent renders nothing. */
   logo?: string | null;
@@ -861,8 +915,9 @@ function RevealCanvas({
     <div className="flex justify-center">
       <div
         data-testid="canvas-reveal-preview"
+        data-theme={theme}
         className={cn(
-          'flex w-full flex-col items-center rounded-2xl border border-border px-6 py-14 shadow-xl sm:px-8',
+          'flex w-full flex-col items-center rounded-2xl border border-input px-6 py-14 text-foreground sm:px-8',
           accentBackground ? '' : 'bg-card',
           device === 'mobile' ? 'max-w-[380px]' : 'max-w-[640px]',
         )}
@@ -1046,7 +1101,7 @@ function NamePreview({ step, m }: { step: FormStep; m: BuilderMessages }) {
   const firstLabel = (firstField && step.placeholders?.[firstField]) || m.canvas.nameFirstPlaceholder;
   const secondLabel = (secondField && step.placeholders?.[secondField]) || m.canvas.nameLastPlaceholder;
   const boxClass =
-    'w-full rounded-xl border border-border bg-background px-4 py-3 text-[15px] text-foreground outline-none placeholder:text-muted-foreground/60';
+    'w-full rounded-xl border border-input bg-background px-4 py-3 text-[15px] text-foreground outline-none placeholder:text-muted-foreground/60';
   return (
     <div className="grid grid-cols-2 gap-3">
       {firstField ? (

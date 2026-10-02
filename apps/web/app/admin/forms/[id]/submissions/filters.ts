@@ -12,6 +12,7 @@
  *   ?range=today|7d|30d          a rolling window, kept rolling in a shared link
  *   ?from=YYYY-MM-DD&to=…        a custom window, in the workspace's zone
  *   ?scoreMin=…&scoreMax=…       inclusive
+ *   ?search=…                    text looked for in the written answers
  *   ?sort=oldest|score_desc|score_asc   newest is the default and never written
  *
  * The API gets the same filter with the answers packed into one JSON param
@@ -37,6 +38,8 @@ export interface ViewFilter {
   to: string | null;
   scoreMin: number | null;
   scoreMax: number | null;
+  /** Text looked for in the written answers (text, contact and URL questions). */
+  search: string | null;
   sort: SortKey;
 }
 
@@ -48,13 +51,14 @@ export const EMPTY_FILTER: ViewFilter = {
   to: null,
   scoreMin: null,
   scoreMax: null,
+  search: null,
   sort: 'newest',
 };
 
 /** The prefix of an answer filter's param: `f.<questionKey>`. */
 export const ANSWER_PREFIX = 'f.';
 /** Every param the filter owns, besides the `f.` ones. */
-const FILTER_PARAMS = ['status', 'range', 'from', 'to', 'scoreMin', 'scoreMax', 'sort'] as const;
+const FILTER_PARAMS = ['status', 'range', 'from', 'to', 'scoreMin', 'scoreMax', 'search', 'sort'] as const;
 /** What a filter change resets: the page, and the response open on it. */
 const RESET_PARAMS = ['offset', 'response'] as const;
 
@@ -68,11 +72,15 @@ const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 const MAX_VALUE_LENGTH = 500;
 const MAX_VALUES_PER_KEY = 100;
 const MAX_ANSWERS_JSON = 16_384;
+/** The API cuts a longer search; the page cuts it the same, so the chip shows what was searched. */
+export const MAX_SEARCH_LENGTH = 200;
 
 /** What the form allows filtering by: its choice questions, and the score when it scores. */
 export interface FilterScope {
   choiceKeys: ReadonlySet<string>;
   scoring: boolean;
+  /** Whether the form has a written answer to search. Left out, it is taken to. */
+  searchable?: boolean;
 }
 
 type RawParams = Record<string, string | string[] | undefined> | URLSearchParams;
@@ -149,8 +157,15 @@ export function parseViewFilter(params: RawParams, scope: FilterScope): ViewFilt
     to,
     scoreMin,
     scoreMax,
+    search: scope.searchable === false ? null : cleanSearch(first(params, 'search')),
     sort: parsedSort.startsWith('score') && !scope.scoring ? 'newest' : parsedSort,
   };
+}
+
+/** A search as it is applied: trimmed, cut to the API's limit, or null when blank. */
+export function cleanSearch(v: string | null | undefined): string | null {
+  const s = (v ?? '').trim().slice(0, MAX_SEARCH_LENGTH).trim();
+  return s === '' ? null : s;
 }
 
 /** Drops the last values (then keys) until `answers` fits the API's JSON limit. */
@@ -177,7 +192,8 @@ export function isFiltered(f: ViewFilter): boolean {
     f.statuses.length > 0 ||
     Object.keys(f.answers).length > 0 ||
     hasDateFilter(f) ||
-    hasScoreFilter(f)
+    hasScoreFilter(f) ||
+    f.search != null
   );
 }
 
@@ -198,6 +214,7 @@ export function filterParams(f: ViewFilter): URLSearchParams {
   if (f.to) q.set('to', f.to);
   if (f.scoreMin != null) q.set('scoreMin', String(f.scoreMin));
   if (f.scoreMax != null) q.set('scoreMax', String(f.scoreMax));
+  if (f.search) q.set('search', f.search);
   if (f.sort !== 'newest') q.set('sort', f.sort);
   return q;
 }
@@ -263,6 +280,7 @@ export function apiFilterQuery(
     scoreMin: f.scoreMin == null ? undefined : String(f.scoreMin),
     scoreMax: f.scoreMax == null ? undefined : String(f.scoreMax),
     answers: Object.keys(f.answers).length > 0 ? JSON.stringify(f.answers) : undefined,
+    search: f.search ?? undefined,
     sort: f.sort === 'newest' ? undefined : f.sort,
   };
 }

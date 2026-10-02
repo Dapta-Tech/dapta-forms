@@ -17,6 +17,7 @@ import {
 } from '@quill/engine';
 import type { FormSpamProtection, FormTracking } from '@quill/types';
 import { formConfigSchema } from '@quill/types';
+import { getMessages } from '@quill/shared';
 import { optionLocksAction, saveFormAction, type SaveFormResult, type StaleConflict } from '@/app/admin/actions';
 import { sameSavedContent, type SavedContent } from '@/lib/stale-save';
 import { useToast } from '@/components/toast';
@@ -57,10 +58,6 @@ import { LinkActions } from './link-actions';
 import { DevicePreviewModal } from './_components/device-preview-modal';
 import {
   DeviceToggle,
-  EditorToolbar,
-  ToolbarButton,
-  ToolbarIconButton,
-  ToolbarSeparator,
   type Tab,
 } from './_components/editor-toolbar';
 import { stepFromGalleryItem, stepListLabel, type GalleryItem } from './_components/question-types';
@@ -169,6 +166,8 @@ export function FormEditor({
   captcha?: { available: boolean };
 }) {
   const bm = getBuilderMessages(locale);
+  /** The publish copy, for the badge this component now draws (Publish itself reads its own). */
+  const publishM = getMessages(locale).admin.publish;
   const searchParams = useSearchParams();
   const [name, setName] = useState(initialName);
   /**
@@ -250,6 +249,8 @@ export function FormEditor({
   const isDesktop = useIsDesktop();
   const [galleryOpen, setGalleryOpen] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
+  /** Whether the Publish control has changes waiting; drives the badge beside the name. */
+  const [unpublished, setUnpublished] = useState(initialHasDraft);
   const [focusCanvas, setFocusCanvas] = useState(0);
   const [saveCount, setSaveCount] = useState(0);
   // Same count, readable synchronously by Publish right after it awaits the
@@ -777,12 +778,13 @@ export function FormEditor({
   const stopOf = (index: number): number =>
     Math.max(0, stops.filter((stop) => (stop[0] as number) <= index).length - 1);
 
-  // The GENERAL menu (Typeform's Content/Workflow/Connect row). Design is not
-  // here: it is a sub-mode of Build, entered from the builder's own toolbar —
-  // the tab still exists as a parseable value so `?tab=design` links resolve.
+  // The four sections, in the order a form gets made: what it asks, how it
+  // branches, how it looks, where the answers go. Design used to be a button in
+  // a second toolbar row; it is a section like the others, so it sits with them.
   const tabs: { id: Tab; label: string; icon: string }[] = [
     { id: 'build', label: bm.shell.tabBuild, icon: 'pi-th-large' },
     { id: 'logic', label: bm.shell.tabLogic, icon: 'pi-sitemap' },
+    { id: 'design', label: bm.shell.tabDesign, icon: 'pi-palette' },
     { id: 'connect', label: m.connect.tab, icon: 'pi-link' },
   ];
 
@@ -803,36 +805,114 @@ export function FormEditor({
       ? 'bg-destructive'
       : status === 'saving' || status === 'retrying'
         ? 'bg-muted-foreground'
-        : 'bg-primary-edge';
+        : 'bg-signal-edge';
   /** Kept for tests/tools reading `data-status`: an empty saved form is "draft". */
   const displayStatus = status === 'saved' && !hasQuestions ? 'draft' : status;
 
+  // The three form-wide logic views. One definition, placed twice: over the
+  // canvas from `lg` up, above the list below it (never both at once).
+  const logicViewClass =
+    'inline-flex h-9 shrink-0 items-center gap-2 whitespace-nowrap rounded-full border border-input bg-card px-3.5 text-sm font-medium text-foreground transition-colors hover:border-foreground active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
+  const logicViews = (
+    <>
+      <button type="button" onClick={() => setLogicView('branching')} data-testid="toolbar-branching" className={logicViewClass}>
+        <i aria-hidden className="pi pi-sitemap" style={{ fontSize: 13 }} />
+        {bm.branching.open}
+      </button>
+      <button type="button" onClick={() => setLogicView('scoring')} data-testid="toolbar-scoring" className={logicViewClass}>
+        {/* Score is the purple channel everywhere it appears. */}
+        <i aria-hidden className="pi pi-star text-score-ink" style={{ fontSize: 13 }} />
+        {bm.scoring.open}
+      </button>
+      <button type="button" onClick={() => setLogicView('outcomes')} data-testid="toolbar-outcomes" className={logicViewClass}>
+        <i aria-hidden className="pi pi-flag text-score-ink" style={{ fontSize: 13 }} />
+        {bm.outcomes.open}
+      </button>
+    </>
+  );
+
   return (
     <div className="flex h-[100dvh] flex-col overflow-hidden bg-background">
-      {/* Topbar, row 1 — everything true of the WHOLE form.
-          A three-column grid rather than a flex row: the tabs sit in the middle
-          cell, so they stay centred no matter how long the form's name is or how
-          wide the actions get. The old flex row made the tabs the first thing to
-          lose space, which is why their labels had retreated behind `2xl` and a
-          duplicate tab bar existed below `lg`. Both are gone: with the
-          section-scoped controls moved to row 2, the tabs can be labelled from
-          `md` up at every width. */}
-      <header className="grid h-14 shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 border-b border-border px-3 sm:px-4">
-        <div className="flex min-w-0 items-center gap-2">
+      {/* Topbar: one row from `lg` up, two below it.
+          Four pieces: the form (back, name, publish state), the sections, the
+          sharing tools, and Publish. From `lg` they sit in one row with the
+          sections centred. The right-hand column is `minmax(max-content, 1fr)`:
+          it is never narrower than its own controls, so when the bar runs out
+          of room the sections slide left instead of the tools sliding over
+          them, which is what a plain `1fr` did. Below `lg` the wrapper around
+          the tools and Publish is `display: contents`, and the four pieces
+          place themselves on two rows: the form and Publish above, the sections
+          and the tools below. */}
+      <header
+        data-testid="editor-header"
+        className="grid shrink-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 border-b border-border px-2 sm:px-4 lg:h-14 lg:grid-cols-[minmax(0,1fr)_auto_minmax(max-content,1fr)]"
+      >
+        <div className="col-start-1 row-start-1 flex h-12 min-w-0 items-center gap-1.5 lg:h-14">
           <Link
             href="/admin/forms"
-            className="inline-flex shrink-0 items-center gap-1.5 rounded-md px-1 text-sm text-muted-foreground transition-colors hover:text-foreground"
+            aria-label={bm.shell.back}
+            title={bm.shell.back}
+            className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md px-1.5 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
-            <i aria-hidden className="pi pi-chevron-left" style={{ fontSize: 12 }} />
-            <span className="hidden sm:inline">{bm.shell.back}</span>
+            <i aria-hidden className="pi pi-arrow-left" style={{ fontSize: 14 }} />
+            <span className="hidden 2xl:inline">{bm.shell.back}</span>
           </Link>
           <input
             value={name}
             onChange={(e) => rename(e.target.value)}
             placeholder={bm.shell.formNamePlaceholder}
             aria-label={bm.shell.formNamePlaceholder}
-            className="min-w-0 max-w-[28ch] flex-1 rounded-md border border-transparent bg-transparent px-1.5 py-1 text-base font-semibold tracking-tight hover:border-border focus-visible:border-input focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            // Sized to its text, up to a cap: the badge then sits right after
+            // the name instead of at the far end of a mostly empty input.
+            // `field-sizing` measures the real text where the browser has it;
+            // the `size` attribute is the approximation everywhere else.
+            size={Math.min(28, Math.max(8, name.length + 1))}
+            className="min-w-[8ch] max-w-[28ch] shrink rounded-md [field-sizing:content] border border-transparent bg-transparent px-1.5 py-1 text-base font-semibold tracking-tight hover:border-border focus-visible:border-input focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           />
+          {unpublished ? (
+            // The whole label from 1440px; a dot below that, still announced
+            // (`sr-only`) and titled. Amber is "not live yet" everywhere.
+            <span
+              title={publishM.unpublishedChanges}
+              data-testid="editor-unpublished"
+              className="inline-flex h-7 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-warning/30 bg-warning/15 px-2 text-xs font-medium text-warning-ink min-[90rem]:px-2.5"
+            >
+              <span aria-hidden className="h-1.5 w-1.5 shrink-0 rounded-full bg-warning" />
+              <span className="sr-only min-[90rem]:not-sr-only">{publishM.unpublishedChanges}</span>
+            </span>
+          ) : null}
+        </div>
+
+        <nav
+          className="col-start-1 row-start-2 -mb-px flex min-w-0 items-stretch overflow-x-auto lg:col-start-2 lg:row-start-1 lg:h-14 lg:justify-self-center lg:overflow-visible"
+          aria-label="Sections"
+        >
+          {tabs.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              data-testid={`editor-tab-${t.id}`}
+              onClick={() => setTab(t.id)}
+              aria-current={tab === t.id}
+              title={t.label}
+              className={cn(
+                'relative inline-flex h-10 shrink-0 items-center gap-1.5 whitespace-nowrap px-2.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring md:px-3 lg:h-14',
+                // An ink rule under the current section. Below `md` the tabs are
+                // icon-only, so this rule is the ONLY thing saying where you
+                // are: ink on the bar is 16:1, where the old grey wash was 1.2:1.
+                'after:absolute after:inset-x-2.5 after:bottom-0 after:h-0.5 after:rounded-full md:after:inset-x-3',
+                tab === t.id
+                  ? 'text-foreground after:bg-foreground'
+                  : 'text-muted-foreground hover:text-foreground',
+              )}
+            >
+              <i aria-hidden className={`pi ${t.icon} md:!hidden`} style={{ fontSize: 14 }} />
+              <span className="sr-only md:not-sr-only">{t.label}</span>
+            </button>
+          ))}
+        </nav>
+
+        <div className="contents lg:col-start-3 lg:row-start-1 lg:flex lg:min-w-0 lg:items-center lg:justify-end lg:gap-2">
           <span
             className={cn(
               'hidden shrink-0 items-center gap-1.5 text-xs text-muted-foreground xl:inline-flex',
@@ -850,90 +930,75 @@ export function FormEditor({
             <span className={cn('h-1.5 w-1.5 rounded-full', statusDot)} />
             {statusLabel}
           </span>
-        </div>
-
-        <nav
-          className="flex items-center gap-0.5 justify-self-center rounded-lg border border-border bg-card p-0.5"
-          aria-label="Sections"
-        >
-          {tabs.map((t) => (
-            <button
-              key={t.id}
-              type="button"
-              data-testid={`editor-tab-${t.id}`}
-              onClick={() => setTab(t.id)}
-              // Design is a Build sub-mode, so Build stays the current section
-              // while it is open — exactly how Typeform keeps Content lit while
-              // its Design panel is up.
-              aria-current={tab === t.id || (t.id === 'build' && tab === 'design')}
-              title={t.label}
-              className={cn(
-                'inline-flex items-center gap-1.5 whitespace-nowrap rounded-md px-2.5 py-1.5 text-sm font-medium transition-colors',
-                // Below `md` these chips are icon-only, which makes the selected
-                // state the ONLY thing saying which section you are in — and a
-                // bare `bg-muted` wash is 1.14:1 dark / 1.17:1 light against the
-                // bar. The rim carries the 3:1; the wash keeps doing the
-                // scanning. Same mark as every other segmented pill in the app.
-                tab === t.id
-                  ? 'bg-muted text-foreground shadow-[inset_0_0_0_1px_var(--primary-edge)]'
-                  : 'text-muted-foreground hover:text-foreground',
-              )}
-            >
-              <i aria-hidden className={`pi ${t.icon}`} style={{ fontSize: 12 }} />
-              <span className="sr-only md:not-sr-only">{t.label}</span>
-            </button>
-          ))}
-        </nav>
-
-        <div className="flex min-w-0 items-center justify-end gap-2">
-          <LinkActions
-            publicPath={publicPath}
-            formId={id}
-            formName={name}
-            onRenamed={setPublicPath}
-            labels={{
-              copyLink: bm.shell.copyLink,
-              copied: bm.shell.copied,
-              openForm: bm.shell.openForm,
-              embed: bm.shell.embed,
-              embedTitle: bm.shell.embedTitle,
-              embedIntro: bm.shell.embedIntro,
-              embedCopy: bm.shell.embedCopy,
-              embedCopied: bm.shell.embedCopied,
-              qr: bm.shell.qr,
-              qrTitle: bm.shell.qrTitle,
-              qrIntro: bm.shell.qrIntro,
-              qrAlt: bm.shell.qrAlt,
-              qrDownloadPng: bm.shell.qrDownloadPng,
-              qrDownloadSvg: bm.shell.qrDownloadSvg,
-              qrPngFailed: bm.shell.qrPngFailed,
-              renameLink: bm.shell.renameLink,
-              renameTitle: bm.shell.renameTitle,
-              renameIntro: bm.shell.renameIntro,
-              renameLabel: bm.shell.renameLabel,
-              renameSave: bm.shell.renameSave,
-              renameSaving: bm.shell.renameSaving,
-              renameCancel: bm.shell.renameCancel,
-              renameTaken: bm.shell.renameTaken,
-              renameInvalid: bm.shell.renameInvalid,
-              renameTooLong: bm.shell.renameTooLong,
-              renameFailed: bm.shell.renameFailed,
-            }}
-          />
-          <PublishButton
-            formId={id}
-            initialHasDraft={initialHasDraft}
-            saveCount={saveCount}
-            locale={locale}
-            flush={autosave.flush}
-            getSaveCount={() => saveCountRef.current}
-            getStamp={() => stampRef.current}
-            onPublished={(stamp, saved) => {
-              stampRef.current = stamp;
-              lastSavedRef.current = saved;
-            }}
-            onStale={resolveStale}
-          />
+          <div className="col-start-2 row-start-2 flex shrink-0 items-center gap-1.5 justify-self-end py-1 lg:gap-2 lg:py-0">
+            {/* Preview is true of every section, so it lives in the bar. The
+                eye is the product's original preview glyph. `data-tour` anchors
+                the first-run tour's Preview step. */}
+            <span className="flex shrink-0 items-center" data-tour="preview">
+              <button
+                type="button"
+                onClick={() => setPreviewOpen(true)}
+                aria-label={bm.shell.preview}
+                title={bm.shell.preview}
+                data-testid="toolbar-preview"
+                className="inline-flex h-9 w-9 shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-full border border-input bg-card text-sm font-medium text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring xl:w-auto xl:px-3.5"
+              >
+                <i aria-hidden className="pi pi-eye" style={{ fontSize: 14 }} />
+                <span className="hidden xl:inline">{bm.shell.preview}</span>
+              </button>
+            </span>
+            <LinkActions
+              publicPath={publicPath}
+              formId={id}
+              formName={name}
+              onRenamed={setPublicPath}
+              labels={{
+                copyLink: bm.shell.copyLink,
+                copied: bm.shell.copied,
+                openForm: bm.shell.openForm,
+                embed: bm.shell.embed,
+                embedTitle: bm.shell.embedTitle,
+                embedIntro: bm.shell.embedIntro,
+                embedCopy: bm.shell.embedCopy,
+                embedCopied: bm.shell.embedCopied,
+                qr: bm.shell.qr,
+                qrTitle: bm.shell.qrTitle,
+                qrIntro: bm.shell.qrIntro,
+                qrAlt: bm.shell.qrAlt,
+                qrDownloadPng: bm.shell.qrDownloadPng,
+                qrDownloadSvg: bm.shell.qrDownloadSvg,
+                qrPngFailed: bm.shell.qrPngFailed,
+                renameLink: bm.shell.renameLink,
+                renameTitle: bm.shell.renameTitle,
+                renameIntro: bm.shell.renameIntro,
+                renameLabel: bm.shell.renameLabel,
+                renameSave: bm.shell.renameSave,
+                renameSaving: bm.shell.renameSaving,
+                renameCancel: bm.shell.renameCancel,
+                renameTaken: bm.shell.renameTaken,
+                renameInvalid: bm.shell.renameInvalid,
+                renameTooLong: bm.shell.renameTooLong,
+                renameFailed: bm.shell.renameFailed,
+              }}
+            />
+          </div>
+          <div className="col-start-2 row-start-1 flex shrink-0 items-center justify-self-end">
+            <PublishButton
+              formId={id}
+              initialHasDraft={initialHasDraft}
+              saveCount={saveCount}
+              locale={locale}
+              flush={autosave.flush}
+              getSaveCount={() => saveCountRef.current}
+              getStamp={() => stampRef.current}
+              onPublished={(stamp, saved) => {
+                stampRef.current = stamp;
+                lastSavedRef.current = saved;
+              }}
+              onStale={resolveStale}
+              onPendingChange={setUnpublished}
+            />
+          </div>
         </div>
       </header>
 
@@ -1004,85 +1069,6 @@ export function FormEditor({
         </div>
       ) : null}
 
-      {/* Topbar, row 2 — contextual: only what acts on the CURRENT section. */}
-      <EditorToolbar m={bm}>
-        {/* The builder's own submenu, Typeform-shaped: "+ Add content · Design ·
-            device · preview" live INSIDE the builder, not in the general menu.
-            Design renders on the design sub-mode too, lit, and toggles back. */}
-        {tab === 'build' || tab === 'design' ? (
-          <>
-            <ToolbarButton
-              icon="pi-plus"
-              label={bm.shell.addQuestion}
-              onClick={() => setGalleryOpen(true)}
-              primary
-              testId="toolbar-add-question"
-            />
-            <ToolbarSeparator />
-            <ToolbarButton
-              icon="pi-palette"
-              label={bm.shell.tabDesign}
-              active={tab === 'design'}
-              onClick={() => setTab(tab === 'design' ? 'build' : 'design')}
-              testId="editor-tab-design"
-            />
-            <ToolbarSeparator />
-            {hasQuestions && tab === 'build' ? (
-              <DeviceToggle device={device} onChange={setDevice} m={bm} />
-            ) : null}
-            {/* Preview rides WITH the viewport cluster instead of drifting to
-                the far edge. The eye is the product's original preview glyph.
-                `data-tour` anchors the first-run tour's Preview step: the
-                control left the header row, so the anchor moves with it. */}
-            <span className="flex shrink-0 items-center" data-tour="preview">
-              <ToolbarIconButton
-                icon="pi-eye"
-                label={bm.shell.preview}
-                onClick={() => setPreviewOpen(true)}
-                testId="toolbar-preview"
-              />
-            </span>
-          </>
-        ) : null}
-        {/* Logic's own menu. Each entry is a FORM-WIDE view of one axis — the
-            builder can otherwise only ever show logic one question at a time,
-            so there was nowhere to answer "what does this whole form do?". */}
-        {tab === 'logic' ? (
-          <>
-            <ToolbarButton
-              icon="pi-sitemap"
-              label={bm.branching.open}
-              onClick={() => setLogicView('branching')}
-              testId="toolbar-branching"
-            />
-            <ToolbarButton
-              icon="pi-star"
-              label={bm.scoring.open}
-              onClick={() => setLogicView('scoring')}
-              testId="toolbar-scoring"
-            />
-            <ToolbarButton
-              icon="pi-flag"
-              label={bm.outcomes.open}
-              onClick={() => setLogicView('outcomes')}
-              testId="toolbar-outcomes"
-            />
-          </>
-        ) : null}
-        {/* On Logic and Connect the preview keeps a home at the row's end —
-            "what does this look like now?" is true of every section. */}
-        {tab === 'logic' || tab === 'connect' ? (
-          <span className="ml-auto flex items-center gap-1.5">
-            <ToolbarIconButton
-              icon="pi-eye"
-              label={bm.shell.preview}
-              onClick={() => setPreviewOpen(true)}
-              testId="toolbar-preview"
-            />
-          </span>
-        ) : null}
-      </EditorToolbar>
-
       {/* Body */}
       <div className="min-h-0 flex-1 overflow-hidden">
         {tab === 'build' ? (
@@ -1106,23 +1092,30 @@ export function FormEditor({
                   partialAfterStep={config.partialSubmitAfterStep}
                   onPartialChange={setPartialSubmitAfterStep}
                   partialsHeld={partialsHeld}
+                  scoringEnabled={scoringEnabled}
                   m={bm}
                 />
               </aside>
 
-              {/* Center canvas */}
-              <main className="flex min-h-0 flex-col overflow-y-auto">
-                {/* The device switch used to live here, in a third chrome strip
-                    directly under the topbar's two. It is a Build-scoped
-                    control, so it moved into the contextual toolbar — one strip
-                    instead of two, and the canvas gets the height back. What
-                    stays is the caption, which describes the canvas itself. */}
-                <div className="border-b border-border px-4 py-2.5 text-sm text-muted-foreground">
-                  <span className="truncate">
-                    {selected != null
-                      ? `${tb(bm.shell.questionOfTotal, { n: selected + 1, total: config.steps.length })} · ${bm.shell.editingLive}`
-                      : ''}
-                  </span>
+              {/* Center canvas: a work surface, so it sits on `--panel` and the
+                  cards on it have an edge to be seen against. */}
+              <main className="flex min-h-0 flex-col overflow-y-auto bg-panel">
+                {/* What the canvas is showing, and at what size. Set on the
+                    panel itself, not in a strip of chrome above it: both
+                    describe the card below and nothing else. */}
+                <div className="flex items-center justify-between gap-3 px-4 pt-4 sm:px-8">
+                  {(() => {
+                    const caption =
+                      selected != null
+                        ? `${tb(bm.shell.questionOfTotal, { n: selected + 1, total: config.steps.length })} · ${bm.shell.editingLive}`
+                        : '';
+                    return (
+                      <span title={caption} className="min-w-0 truncate text-xs font-medium uppercase tracking-wider text-faint">
+                        {caption}
+                      </span>
+                    );
+                  })()}
+                  <DeviceToggle device={device} onChange={setDevice} m={bm} />
                 </div>
                 <div className="flex-1 px-4 py-6 sm:px-8">
                   {selectedStep && selected != null ? (
@@ -1176,6 +1169,20 @@ export function FormEditor({
                       {bm.settings.empty}
                     </p>
                   )}
+                  {/* Add a question from where the questions are. The spine has
+                      its own button too; this one is in reach when the spine is
+                      not (it is hidden below `lg`). */}
+                  <div className="mt-6 flex justify-center">
+                    <button
+                      type="button"
+                      onClick={() => setGalleryOpen(true)}
+                      data-testid="toolbar-add-question"
+                      className="inline-flex h-10 items-center gap-2 rounded-full border border-input bg-card px-4 text-sm font-medium text-foreground transition-colors hover:border-foreground active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      <i aria-hidden className="pi pi-plus" style={{ fontSize: 12 }} />
+                      {bm.shell.addQuestion}
+                    </button>
+                  </div>
                 </div>
                 {/* Mobile question strip */}
                 <div className="flex gap-2 overflow-x-auto border-t border-border px-3 py-2 lg:hidden">
@@ -1252,23 +1259,37 @@ export function FormEditor({
           // than a CSS class because these are different components: a hidden
           // canvas would measure a zero-width box on mount and fit to nothing.
           isDesktop ? (
-            <LogicCanvas
-              config={config}
-              m={bm}
-              onEditStep={setLogicStep}
-              onEditOutcomes={() => setLogicView('outcomes')}
-              onMoveStep={reorderSteps}
-              onPinNode={pinLogicNode}
-              onAutoArrange={autoArrangeLogic}
-            />
+            <div className="relative h-full">
+              {/* Logic's own menu, floating over the map's top-right corner.
+                  Each entry is a FORM-WIDE view of one axis: the builder can
+                  otherwise only show logic one question at a time, so there
+                  was nowhere to answer "what does this whole form do?". The
+                  wrapper ignores the pointer so the map under the gaps between
+                  the pills still pans. */}
+              <div className="pointer-events-none absolute right-4 top-4 z-10 flex items-center gap-2 [&>*]:pointer-events-auto">
+                {logicViews}
+              </div>
+              <LogicCanvas
+                config={config}
+                m={bm}
+                onEditStep={setLogicStep}
+                onEditOutcomes={() => setLogicView('outcomes')}
+                onMoveStep={reorderSteps}
+                onPinNode={pinLogicNode}
+                onAutoArrange={autoArrangeLogic}
+              />
+            </div>
           ) : (
-            <div className="h-full overflow-y-auto px-4 py-6 sm:px-8">
+            <div className="h-full overflow-y-auto bg-panel px-4 py-6 sm:px-8">
+              <div className="mb-4 flex flex-wrap items-center gap-2">{logicViews}</div>
               <p className="mb-4 text-sm text-muted-foreground">{bm.map.title}</p>
               <LogicMap config={config} m={bm} />
             </div>
           )
         ) : tab === 'connect' ? (
-          <div className="h-full overflow-y-auto px-4 py-6 sm:px-8">
+          // On the work-surface grey, like the canvas: the cards here are white,
+          // and on a white page their edges were the only thing separating them.
+          <div className="h-full overflow-y-auto bg-panel px-4 py-6 sm:px-8">
             <ConnectPanel
               formId={id}
               config={config}

@@ -15,7 +15,7 @@ import {
   sql,
   type VanityOutcome,
 } from '@quill/db';
-import { canClaimVanitySlug } from '@quill/engine';
+import { canClaimVanitySlug, withNewFormBranding } from '@quill/engine';
 import { getMessages } from '@quill/shared';
 import type {
   AccountOnboarding,
@@ -216,9 +216,12 @@ export class AdminService {
         name: this.templateFormName(templateId, template.name, input.locale),
         // The wizard's language becomes the form's (Auto only for forms that
         // predate the field), the same rule as "New form" in the dashboard.
-        ...(template.config || input.locale
-          ? { config: { ...(template.config ?? { version: 1 as const, steps: [] }), ...(input.locale ? { language: input.locale } : {}) } }
-          : {}),
+        // Born with the dForms colours, like any form made from nothing; a template
+        // that names its own colours keeps them.
+        config: withNewFormBranding({
+          ...(template.config ?? { version: 1 as const, steps: [] }),
+          ...(input.locale ? { language: input.locale } : {}),
+        }),
       },
       p.memberId,
     );

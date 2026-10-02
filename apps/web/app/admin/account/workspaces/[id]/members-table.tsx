@@ -61,15 +61,15 @@ export function MembersTable({
 
   return (
     // The horizontal scroll lives INSIDE this container; the page never scrolls sideways.
-    <div className="overflow-x-auto rounded-xl border border-border bg-card">
+    <div className="relative overflow-x-auto">
       <table className="w-full min-w-[640px] border-collapse text-sm" data-testid="members-table">
         <thead>
-          <tr className="border-b border-border text-left text-2xs uppercase tracking-wide text-faint">
-            <th className="whitespace-nowrap px-4 py-3 font-medium">{labels.colName}</th>
-            <th className="whitespace-nowrap px-4 py-3 font-medium">{labels.colEmail}</th>
-            <th className="whitespace-nowrap px-4 py-3 font-medium">{labels.colRole}</th>
-            <th className="whitespace-nowrap px-4 py-3 font-medium">{labels.colStatus}</th>
-            <th className="whitespace-nowrap px-4 py-3 text-right font-medium">
+          <tr className="border-b border-border text-left text-xs font-medium uppercase tracking-wider text-faint">
+            <th className="whitespace-nowrap px-2 py-3 font-medium">{labels.colName}</th>
+            <th className="whitespace-nowrap px-2 py-3 font-medium">{labels.colEmail}</th>
+            <th className="whitespace-nowrap px-2 py-3 font-medium">{labels.colRole}</th>
+            <th className="whitespace-nowrap px-2 py-3 font-medium">{labels.colStatus}</th>
+            <th className="whitespace-nowrap px-2 py-3 text-right font-medium">
               <span className="sr-only">{labels.colActions}</span>
             </th>
           </tr>
@@ -87,9 +87,9 @@ export function MembersTable({
                 data-member-id={mem.id}
                 className="border-b border-border last:border-b-0"
               >
-                <td className="px-4 py-3">
+                <td className="px-2 py-3.5">
                   <div className="flex min-w-0 items-center gap-3">
-                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-border bg-background text-xs font-semibold text-muted-foreground">
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-semibold text-muted-foreground">
                       {initial}
                     </span>
                     <span className="flex min-w-0 items-center gap-2">
@@ -97,25 +97,21 @@ export function MembersTable({
                         {name}
                       </span>
                       {isYou ? (
-                        <span className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-2xs font-medium uppercase tracking-wide text-faint">
+                        <span className="shrink-0 rounded-full border border-border px-2 py-0.5 text-2xs font-medium text-muted-foreground">
                           {labels.you}
                         </span>
                       ) : null}
                     </span>
                   </div>
                 </td>
-                <td className="max-w-[260px] truncate px-4 py-3 text-muted-foreground" title={mem.email ?? undefined}>
+                <td className="max-w-[260px] truncate px-2 py-3.5 text-muted-foreground" title={mem.email ?? undefined}>
                   {mem.email ?? ''}
                 </td>
-                <td className="whitespace-nowrap px-4 py-3">
-                  <span className="inline-flex items-center rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground">
-                    {roleLabel[mem.role]}
-                  </span>
-                </td>
-                <td className="whitespace-nowrap px-4 py-3">
+                <td className="whitespace-nowrap px-2 py-3.5 text-foreground">{roleLabel[mem.role]}</td>
+                <td className="whitespace-nowrap px-2 py-3.5">
                   <StatusBadge status={mem.status} label={statusLabel[mem.status]} />
                 </td>
-                <td className="whitespace-nowrap px-4 py-2 text-right">
+                <td className="whitespace-nowrap px-2 py-2 text-right">
                   {canManageRow ? (
                     <MemberRowActions
                       accountId={accountId}
@@ -145,9 +141,9 @@ export function MembersTable({
 export function StatusBadge({ status, label }: { status: MemberStatus; label: string }) {
   const tone =
     status === 'active'
-      ? { chip: 'bg-primary/20 text-foreground', dot: 'bg-primary-edge' }
+      ? { chip: 'bg-signal/20 text-foreground', dot: 'bg-signal-edge' }
       : status === 'invited'
-        ? { chip: 'bg-secondary/20 text-foreground', dot: 'bg-secondary' }
+        ? { chip: 'bg-warning/20 text-foreground', dot: 'bg-warning' }
         : { chip: 'bg-muted text-muted-foreground', dot: 'bg-faint' };
   return (
     <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium ${tone.chip}`}>

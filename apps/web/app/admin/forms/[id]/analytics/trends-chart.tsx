@@ -8,7 +8,7 @@ import { Select } from '@/components/ui/select';
  * The Trends chart: one switchable metric plotted per day over the selected
  * range. Hand-rolled SVG on purpose — a charting library would be the single
  * heaviest dependency in the web app for one area chart, and the tokens
- * (`--primary`, `--border`, `--muted-foreground`) already give it the themed
+ * (`--signal`, `--border`, `--muted-foreground`) already give it the themed
  * look every other surface has.
  *
  * The API sends every metric for every day, so switching the metric is instant
@@ -29,6 +29,8 @@ export interface TrendsLabels {
   metricLabel: string;
   empty: string;
   seconds: string;
+  /** Which zone the days are cut in, said under the subtitle. */
+  note?: string;
   metrics: Record<MetricKey, string>;
 }
 
@@ -184,11 +186,19 @@ export function TrendsChart({
   ];
 
   return (
-    <section data-testid="analytics-trends" className="flex flex-col gap-3">
+    <section
+      data-testid="analytics-trends"
+      className="flex min-w-0 flex-col gap-5 rounded-2xl border border-border bg-card p-5 sm:p-6"
+    >
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h2 className="text-lg font-semibold">{labels.title}</h2>
+        <div className="min-w-0">
+          <h2 className="text-base font-semibold">{labels.title}</h2>
           <p className="text-sm text-muted-foreground">{labels.subtitle}</p>
+          {labels.note ? (
+            <p className="mt-0.5 text-xs text-faint" data-testid="analytics-timezone-note">
+              {labels.note}
+            </p>
+          ) : null}
         </div>
         {/* The shared Select, not a native one: this was the last `<select>` in
             the admin, and the OS-drawn chevron sat on the border. */}
@@ -205,7 +215,7 @@ export function TrendsChart({
         </div>
       </div>
 
-      <div className="rounded-xl border border-border bg-card p-4">
+      <div>
         {points.length === 0 ? (
           <p className="py-10 text-center text-sm text-muted-foreground">{labels.empty}</p>
         ) : (
@@ -261,19 +271,19 @@ export function TrendsChart({
               </g>
             ) : null}
 
-            {areaPath ? <path d={areaPath} fill="var(--primary)" fillOpacity={0.14} /> : null}
+            {areaPath ? <path d={areaPath} fill="var(--signal)" fillOpacity={0.16} /> : null}
             {linePath ? (
               <path
                 d={linePath}
                 fill="none"
-                stroke="var(--primary)"
+                stroke="var(--signal-edge)"
                 strokeWidth={2}
                 strokeLinejoin="round"
                 strokeLinecap="round"
               />
             ) : null}
             {isolated.map((i) => (
-              <circle key={i} cx={xAt(i)} cy={yAt(values[i]!)} r={3.5} fill="var(--primary)" />
+              <circle key={i} cx={xAt(i)} cy={yAt(values[i]!)} r={3.5} fill="var(--signal-edge)" />
             ))}
             {/* A single day has no line to read a value off, so print it next to
                 the dot — otherwise the chart is a lone mark on an empty grid. */}

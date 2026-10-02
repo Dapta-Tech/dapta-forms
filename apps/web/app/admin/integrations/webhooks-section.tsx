@@ -137,7 +137,7 @@ function WebhookTable({
                       <span
                         dir="ltr"
                         title={w.url}
-                        className="block max-w-[420px] truncate font-mono text-xs text-muted-foreground"
+                        className="block max-w-[420px] truncate text-xs text-muted-foreground"
                       >
                         {w.url}
                       </span>
@@ -165,13 +165,13 @@ function WebhookTable({
                       data-state={w.enabled ? 'on' : 'off'}
                       className={
                         w.enabled
-                          ? 'inline-flex items-center gap-1.5 rounded-full bg-primary/20 px-2.5 py-0.5 text-xs font-medium text-foreground'
+                          ? 'inline-flex items-center gap-1.5 rounded-full bg-signal/20 px-2.5 py-0.5 text-xs font-medium text-foreground'
                           : 'inline-flex items-center gap-1.5 rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground'
                       }
                     >
                       <span
                         aria-hidden
-                        className={`h-1.5 w-1.5 rounded-full ${w.enabled ? 'bg-primary-edge' : 'bg-faint'}`}
+                        className={`h-1.5 w-1.5 rounded-full ${w.enabled ? 'bg-signal-edge' : 'bg-faint'}`}
                       />
                       {w.enabled ? m.on : m.off}
                     </span>

@@ -216,6 +216,12 @@ export interface FormSummary {
   brandAppliedAt: number | null;
   /** The folder this form is filed in (0021); null = unfiled. */
   folderId: string | null;
+  /**
+   * Whether an unpublished draft is pending. A form is live from the moment it
+   * is created, so this is the only publish state a list can show: false reads
+   * as "what is public is the latest", true as "there are edits not yet live".
+   */
+  hasDraft: boolean;
   createdAt: number;
   updatedAt: number;
 }
@@ -344,7 +350,12 @@ function isFormAccountSlugConflict(error: unknown): boolean {
 
 export async function listForms(db: Db, accountId: string): Promise<FormSummary[]> {
   const rows = await db.all<Record<string, unknown>>(
-    sql`SELECT id, name, slug, brand_applied_at, folder_id, created_at, updated_at FROM form
+    // The draft itself is not read, only whether one exists: a list of fifty
+    // forms would otherwise haul fifty configs to answer a yes-or-no question.
+    // The comparison comes back as a boolean on Postgres and as 0/1 on SQLite.
+    sql`SELECT id, name, slug, brand_applied_at, folder_id, created_at, updated_at,
+               (draft_config IS NOT NULL) AS has_draft
+        FROM form
         WHERE account_id = ${accountId} ORDER BY updated_at DESC, created_at DESC`,
   );
   return rows.map((r) => ({
@@ -353,6 +364,7 @@ export async function listForms(db: Db, accountId: string): Promise<FormSummary[
     slug: String(r.slug),
     brandAppliedAt: r.brand_applied_at == null ? null : Number(r.brand_applied_at),
     folderId: r.folder_id == null ? null : String(r.folder_id),
+    hasDraft: r.has_draft === true || Number(r.has_draft) === 1,
     createdAt: Number(r.created_at),
     updatedAt: Number(r.updated_at),
   }));

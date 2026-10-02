@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import type { ReactNode } from 'react';
-import { getMessages, t } from '@quill/shared';
+import { formatDate, getMessages, t } from '@quill/shared';
 import { adminApi } from '@/lib/admin-api';
 import { getLocale } from '@/lib/locale';
 import { greetingName } from '@/lib/person';
@@ -60,58 +60,160 @@ export default async function AdminHome() {
     layoutVerticalDesc: messages.forms.layoutVerticalDesc,
   };
 
+  // The list beside the figures: the forms worked on most recently, each with
+  // the two numbers the stat row totals. Same per-form analytics, no new call.
+  const recent = forms
+    .map((f, i) => ({ form: f, analytics: analytics[i] ?? null }))
+    .sort((a, b) => b.form.updatedAt - a.form.updatedAt)
+    .slice(0, RECENT_LIMIT);
+  const picker = messages.picker;
+  const zone = me.timezone ?? 'UTC';
+
   return (
     <div className="mx-auto max-w-[1520px] px-6 py-10 sm:px-8">
-      <h1 className="mb-1 text-3xl font-semibold tracking-tight">
-        {firstName ? t(h.welcomeNamed, { name: firstName }) : h.welcome}
-      </h1>
-      <p className="mb-8 text-muted-foreground">{h.subtitle}</p>
-
-      {publicUrl ? (
-        <div
-          data-testid="home-public-page"
-          className="mb-8 flex flex-col gap-2 rounded-xl border border-border bg-card p-5"
-        >
-          <span className="text-sm text-muted-foreground">{h.publicLink}</span>
-          <CopyLink path={publicUrl} labels={{ copy: h.copy, copied: h.copied, open: h.open }} />
+      <div className="mb-8 flex flex-wrap items-end justify-between gap-x-6 gap-y-4">
+        {/* Two lines at ONE size: the greeting in ink, what the page is in grey.
+            The grey line is the subtitle, promoted, so the page opens with a
+            statement instead of a title and a caption. */}
+        <div className="min-w-0">
+          <h1 className="text-3xl font-bold tracking-tight">
+            {firstName ? t(h.welcomeNamed, { name: firstName }) : h.welcome}
+          </h1>
+          <p className="text-3xl font-bold tracking-tight text-faint">{h.subtitle}</p>
         </div>
-      ) : null}
+        <div className="flex flex-wrap items-center gap-3">
+          {publicUrl ? (
+            <div
+              data-testid="home-public-page"
+              title={h.publicLink}
+              className="flex h-10 min-w-0 max-w-full items-center rounded-full border border-border bg-sidebar pl-4 pr-3"
+            >
+              <CopyLink path={publicUrl} labels={{ copy: h.copy, copied: h.copied, open: h.open }} />
+            </div>
+          ) : null}
+          <CreateForm labels={createLabels} />
+        </div>
+      </div>
 
-      <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-3">
+      {/* One bordered band, three cells: the figures read as a row of one object
+          rather than three separate cards competing for the eye. */}
+      <div className="mb-10 grid grid-cols-1 divide-y divide-border overflow-hidden rounded-2xl border border-border sm:grid-cols-3 sm:divide-x sm:divide-y-0">
         <Stat label={h.statForms} value={String(forms.length)} href="/admin/forms" />
         <Stat label={h.statSubmissions} value={String(totalSubmissions)} href="/admin/submissions" />
-        <Stat label={h.statCompletion} value={`${completionRate}%`} href="/admin/analytics" />
+        <Stat
+          label={h.statCompletion}
+          value={`${completionRate}%`}
+          note={h.statCompletionNote}
+          href="/admin/analytics"
+        />
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <CreateForm labels={createLabels} variant="card" cardTitle={h.createForm} cardDesc={h.createFormDesc} />
-        <Shortcut href="/admin/account/brand-kit" icon="pi-palette" title={h.branding} desc={h.brandingDesc} />
-        <Shortcut href="/admin/integrations" icon="pi-link" title={h.integrations} desc={h.integrationsDesc} />
-        <Shortcut href="/admin/analytics" icon="pi-chart-bar" title={h.analytics} desc={h.analyticsDesc} />
-      </div>
+      <section aria-labelledby="home-recent" className="min-w-0">
+        <div className="flex items-center justify-between gap-3 border-b border-border pb-3">
+          <h2 id="home-recent" className={EYEBROW}>
+            {h.recent}
+          </h2>
+          <Link href="/admin/forms" className="text-sm font-medium text-foreground hover:underline">
+            {h.viewAll}
+          </Link>
+        </div>
+        {recent.length === 0 ? (
+          <p className="py-10 text-sm text-muted-foreground">{messages.forms.emptyBody}</p>
+        ) : (
+          <ul>
+            {recent.map(({ form, analytics: a }) => {
+              const submissions = a?.submissions ?? 0;
+              const rate = a?.completionRate ?? null;
+              return (
+                <li key={form.id} data-testid="home-recent-row">
+                  <Link
+                    href={`/admin/forms/${form.id}/edit`}
+                    className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-6 gap-y-1 border-b border-border py-4 transition-colors hover:bg-sidebar sm:grid-cols-[minmax(0,1fr)_11rem_10rem_8rem] sm:px-2"
+                  >
+                    <span className="min-w-0">
+                      <span className="block truncate font-medium text-foreground">{form.name}</span>
+                      <span className="block truncate text-xs text-faint">/{form.slug}</span>
+                    </span>
+                    <span
+                      className={
+                        submissions > 0
+                          ? 'text-sm tabular-nums text-foreground'
+                          : 'text-sm text-faint'
+                      }
+                    >
+                      {submissions > 0 ? t(picker.submissionsCount, { n: submissions }) : h.noSubmissions}
+                    </span>
+                    <span className="hidden items-center gap-2 sm:flex">
+                      {rate == null ? null : (
+                        <>
+                          <span className="w-10 text-sm tabular-nums text-foreground">
+                            {t(picker.completionValue, { n: Math.round(rate) })}
+                          </span>
+                          {/* The one saturated mark on the row: progress, in the
+                              signal. A track under it so 0% still reads as a bar. */}
+                          <span aria-hidden className="h-1 flex-1 overflow-hidden rounded-full bg-muted">
+                            <span className="block h-full rounded-full bg-signal-edge" style={{ width: `${rate}%` }} />
+                          </span>
+                        </>
+                      )}
+                    </span>
+                    <span className="hidden text-right text-xs text-faint sm:block">
+                      {formatDate(form.updatedAt, { locale, timeZone: zone })}
+                    </span>
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </section>
+
+      {/* Two links to places the rail does not go (the brand kit and the public
+          page live under Account settings), set as one band the width of the
+          figures above so they close the page the way the figures open it.
+          They used to float in a column of four beside the list, and two of the
+          four repeated the rail's own entries (Integrations, Analytics). */}
+      <section aria-labelledby="home-shortcuts" className="mt-10">
+        <h2 id="home-shortcuts" className="sr-only">
+          {h.shortcuts}
+        </h2>
+        <div className="grid grid-cols-1 divide-y divide-border overflow-hidden rounded-2xl border border-border sm:grid-cols-2 sm:divide-x sm:divide-y-0">
+          <Shortcut href="/admin/account/brand-kit" icon="pi-palette" title={h.branding} desc={h.brandingDesc} />
+          <Shortcut href="/admin/account/public-page" icon="pi-globe" title={h.publicLink} desc={h.publicPageDesc} />
+        </div>
+      </section>
     </div>
   );
 }
 
-function Stat({ label, value, href }: { label: string; value: string; href: string }): ReactNode {
-  return (
-    <Link
-      href={href}
-      className="flex flex-col gap-1 rounded-xl border border-border bg-card p-5 transition-transform hover:border-primary-edge active:scale-[0.99]"
-    >
-      {/* 24px, not 30px: at `text-3xl` this tied the page's own `<h1>` in size AND
-          weight, so four things on the screen claimed to be the most important and
-          the title stopped reading as one.
+/** How many forms the recent list shows before "View all" takes over. */
+const RECENT_LIMIT = 6;
 
-          Set in the SANS, not the mono. A monospaced stat was the wrong read: a
-          headline figure is something you glance at, and the mono's fixed advance
-          plus its wide, high-waisted letterforms made a two-character number look
-          like a code sample and land far heavier than its weight says. The mono
-          stays for strings you copy — slugs, keys, hex — where the fixed advance is
-          doing real work. `tabular-nums` survives on its own: it is what actually
-          stops the number jittering as it updates, and every face here has it. */}
-      <span className="text-2xl font-semibold tracking-tight tabular-nums">{value}</span>
-      <span className="text-sm text-muted-foreground">{label}</span>
+/** A section label: small, tracked, quiet. Sans, like every label in the app. */
+const EYEBROW = 'text-xs font-medium uppercase tracking-wider text-faint';
+
+function Stat({
+  label,
+  value,
+  note,
+  href,
+}: {
+  label: string;
+  value: string;
+  /** What the figure is a share of, set beside it in the quiet voice. */
+  note?: string;
+  href: string;
+}): ReactNode {
+  return (
+    <Link href={href} className="flex flex-col gap-2 bg-card p-6 transition-colors hover:bg-sidebar">
+      <span className={EYEBROW}>{label}</span>
+      {/* Set in the SANS, not the mono: a headline figure is something you glance
+          at, and a monospaced one reads as a code sample. `tabular-nums` is what
+          actually stops the number jittering as it updates. */}
+      <span className="flex items-baseline gap-2">
+        <span className="text-3xl font-bold tracking-tight tabular-nums">{value}</span>
+        {note ? <span className="text-sm text-muted-foreground">{note}</span> : null}
+      </span>
     </Link>
   );
 }
@@ -128,15 +230,19 @@ function Shortcut({
   desc: string;
 }): ReactNode {
   return (
-    <Link
-      href={href}
-      className="flex flex-col gap-1 rounded-xl border border-border bg-card p-5 transition-transform hover:border-primary-edge active:scale-[0.99]"
-    >
-      <span className="mb-1 flex h-9 w-9 items-center justify-center rounded-md bg-muted text-foreground">
-        <i aria-hidden className={`pi ${icon}`} style={{ fontSize: 14 }} />
+    <Link href={href} className="group flex items-center gap-4 bg-card p-6 transition-colors hover:bg-sidebar">
+      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border bg-background text-foreground">
+        <i aria-hidden className={`pi ${icon}`} style={{ fontSize: 16 }} />
       </span>
-      <span className="font-medium">{title}</span>
-      <span className="text-sm text-muted-foreground">{desc}</span>
+      <span className="min-w-0 flex-1">
+        <span className="block font-medium">{title}</span>
+        <span className="block text-sm text-muted-foreground">{desc}</span>
+      </span>
+      <i
+        aria-hidden
+        className="pi pi-arrow-right shrink-0 text-faint transition-transform group-hover:translate-x-0.5 group-hover:text-foreground"
+        style={{ fontSize: 14 }}
+      />
     </Link>
   );
 }

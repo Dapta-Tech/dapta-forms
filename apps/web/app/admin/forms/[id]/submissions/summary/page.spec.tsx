@@ -5,7 +5,7 @@
  */
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
-import type { ReactElement } from 'react';
+import { Suspense, type ReactElement } from 'react';
 import type { SubmissionsSummary } from '@quill/engine';
 
 const getSummary = vi.fn();
@@ -35,7 +35,7 @@ vi.mock('next/navigation', () => ({
     throw new Error('NEXT_NOT_FOUND');
   },
   // The filter chips navigate; rendering never does.
-  useRouter: () => ({ push: () => {} }),
+  useRouter: () => ({ push: () => {}, refresh: () => {} }),
 }));
 // The search and the panel reach server actions; rendering needs neither.
 vi.mock('./actions', () => ({
@@ -44,11 +44,12 @@ vi.mock('./actions', () => ({
 }));
 vi.mock('../actions', () => ({
   deleteSubmissionAction: vi.fn(),
+  deleteSubmissionQuietAction: vi.fn(),
   submissionFileUrlAction: vi.fn(),
 }));
 
 // What each text card is handed: its props are what travels to the browser.
-const textCards = vi.hoisted(() => [] as Array<{ stepKey: string; recent: unknown[]; compact?: boolean }>);
+const textCards = vi.hoisted(() => [] as Array<{ stepKey: string; recent: unknown[] }>);
 vi.mock('./text-answers', async (importOriginal) => {
   const real = await importOriginal<typeof import('./text-answers')>();
   return {
@@ -84,14 +85,7 @@ async function render(sp: Record<string, string | string[]> = {}): Promise<strin
   const data = find(page, (el) => typeof el.type === 'function' && el.type.name === 'SummaryData');
   if (!data) throw new Error('no SummaryData');
   const resolved = await (data.type as (p: unknown) => Promise<ReactElement>)(data.props);
-  const header = renderToStaticMarkup(
-    find(
-      page,
-      (el) =>
-        el.props && (el.props as { className?: string }).className === 'mb-6 flex flex-col gap-4',
-    )!,
-  );
-  return header + renderToStaticMarkup(resolved);
+  return renderToStaticMarkup(resolved);
 }
 
 const summary: SubmissionsSummary = {
@@ -278,7 +272,24 @@ describe('Summary tab', () => {
     expect(html).not.toContain('No submissions yet');
   });
 
-  it('keeps a contact question to its count and search, with no list of people', async () => {
+  it('keys the cards by the responses they describe, so a delete from the panel repaints them', async () => {
+    const key = async () => {
+      const page = await SummaryRoute({ params: Promise.resolve({ id: 'form_1' }), searchParams: Promise.resolve({}) });
+      return find(page, (el) => el.type === Suspense)?.key;
+    };
+    getSummary.mockResolvedValue(summary);
+    const before = await key();
+    expect(await key()).toBe(before);
+    // One response fewer.
+    getSummary.mockResolvedValue({ ...summary, total: summary.total - 1 });
+    expect(await key()).not.toBe(before);
+    // The same count, but one question lost an answer.
+    const [first, ...rest] = summary.questions;
+    getSummary.mockResolvedValue({ ...summary, questions: [{ ...first!, answered: first!.answered - 1 }, ...rest] });
+    expect(await key()).not.toBe(before);
+  });
+
+  it('opens a contact question with its latest answers, like every text card', async () => {
     getForm.mockResolvedValue({
       id: 'form_1',
       config: { version: 1, steps: [...FORM_CONFIG.steps, { key: 'email', type: 'email', question: 'Email' }] },
@@ -300,10 +311,10 @@ describe('Summary tab', () => {
     const html = await render();
     expect(html).toContain('12 of 30 answered');
     expect(html).toContain('data-testid="summary-search"');
-    expect(html).not.toContain('ana@x.io');
-    // Not in the page, and not in the card's props either: no email travels.
-    expect(textCards.find((c) => c.stepKey === 'email')).toMatchObject({ compact: true, recent: [] });
-    expect(html).not.toContain('data-testid="summary-answers"');
-    expect(html).not.toContain('data-testid="summary-show-more"');
+    // A contact card opens with its latest answers, like any other text card:
+    // a card showing only a search box read as a question nobody answered.
+    expect(html).toContain('ana@x.io');
+    expect(html).toContain('data-testid="summary-answers"');
+    expect(textCards.find((c) => c.stepKey === 'email')?.recent).toHaveLength(1);
   });
 });

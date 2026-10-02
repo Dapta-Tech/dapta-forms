@@ -1,7 +1,8 @@
 /**
  * The submissions filter as the admin routes read it from a query string: one
  * parser for the table, the CSV export, the Summary and its answer search, so
- * the four always describe the same responses.
+ * the four always describe the same responses. The text search (`search`) is
+ * part of it, for the same reason.
  *
  * Answer filters arrive as one `answers` param holding JSON (`{"key":
  * ["value", …]}`), not as one param per key: step keys are free text, and a
@@ -20,7 +21,7 @@ import {
   type SubmissionFilter,
   type SubmissionSort,
 } from '@quill/db';
-import { isFilterableChoiceStep } from '@quill/engine';
+import { isFilterableChoiceStep, isTextSummaryStep, summaryAnswerFields } from '@quill/engine';
 import { resolveTimeZone } from '@quill/shared';
 import type { FormConfig } from '@quill/types';
 import { parseBound, parseStatus } from './query-params';
@@ -33,6 +34,8 @@ export interface FilterQuery {
   scoreMin?: unknown;
   scoreMax?: unknown;
   answers?: unknown;
+  /** Free text, looked for in what people wrote. Named `search`: the Summary's answer route already owns `q`. */
+  search?: unknown;
   sort?: unknown;
 }
 
@@ -42,6 +45,8 @@ const MAX_ANSWERS_LENGTH = 16_384;
 const MAX_VALUES_PER_KEY = 100;
 /** Longest value accepted; option values are short identifiers. */
 const MAX_VALUE_LENGTH = 500;
+/** Longest search accepted; what is past it is cut, not refused. */
+const MAX_SEARCH_LENGTH = 200;
 
 function str(v: unknown): string | undefined {
   return typeof v === 'string' ? v : undefined;
@@ -106,6 +111,22 @@ export function parseAnswerFilters(
 }
 
 /**
+ * The text search, over the form's own written answers: its text, contact and
+ * URL steps (a name step by its sub-fields). Choice steps are left out: they
+ * store option values, not what the reader sees, and have their own filter.
+ * No filter when the search is blank or the form has no such step.
+ */
+export function parseSearch(
+  v: unknown,
+  config: Pick<FormConfig, 'steps'>,
+): { query: string; fields: string[] } | undefined {
+  const query = str(v)?.trim().slice(0, MAX_SEARCH_LENGTH).trim();
+  if (!query) return undefined;
+  const fields = [...new Set((config.steps ?? []).filter(isTextSummaryStep).flatMap(summaryAnswerFields))];
+  return fields.length > 0 ? { query, fields } : undefined;
+}
+
+/**
  * The filter for one form. A date-only bound names a whole day in `zone` (the
  * workspace's), as the table reads its timestamps. The score bounds are
  * dropped when the form does not score: there is no column to filter.
@@ -123,6 +144,7 @@ export function parseSubmissionFilter(
     scoreMin: scoring ? parseScore(q.scoreMin, 'min') : null,
     scoreMax: scoring ? parseScore(q.scoreMax, 'max') : null,
     answers: parseAnswerFilters(q.answers, config),
+    search: parseSearch(q.search, config),
   };
 }
 

@@ -141,7 +141,7 @@ describe('formThemeVars', () => {
 
   it('guarantees an AA button label on a mid-luminance accent, not a best-of-two', () => {
     // The regression this exists for: the seeded demo form's indigo put the fixed
-    // Lime Ink at 4.35:1, and the other fixed end (near-white) lands at 4.56 — so
+    // Lime Ink at 4.35:1, and the other fixed end (near-white) lands at 4.56, so
     // "pick the better constant" was a coin flip between a fail and a near-fail.
     const indigo = '#6366f1';
     expect(contrastRatio('#0c0e07', indigo)).toBeLessThan(4.5); // the old answer

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { encode } from 'uqr';
-import { QR_EXPORT_PX, finishSvg, qrFilename, qrSvg } from './qr-code';
+import { QR_EXPORT_PX, finishSvg, logoTileModules, qrFilename, qrSvg } from './qr-code';
 
 const URL_ = 'http://localhost:3400/acme/f/tech-week-signup';
 
@@ -40,6 +40,55 @@ describe('qrSvg', () => {
   it('is a pure function of the URL: the same link always prints the same code', () => {
     expect(qrSvg(URL_)).toBe(qrSvg(URL_));
     expect(qrSvg(URL_)).not.toBe(qrSvg(`${URL_}-2`));
+  });
+});
+
+describe('qrSvg with the product mark', () => {
+  const withLogo = qrSvg(URL_, QR_EXPORT_PX, { logo: true });
+
+  it('is off unless asked for: a build without the brand prints a plain code', () => {
+    expect(qrSvg(URL_)).not.toContain('qr-logo-brush');
+    expect(qrSvg(URL_, QR_EXPORT_PX, { logo: false })).toBe(qrSvg(URL_));
+  });
+
+  it('encodes at ECC H, because the mark covers modules the reader must recover', () => {
+    const { size } = encode(URL_, { ecc: 'H', border: 0 });
+    const side = Number(withLogo.match(/viewBox="0 0 (\d+) \d+"/)?.[1]);
+    expect(side).toBe((size + 2 * 4) * 10);
+    // Same link, denser code than the plain one: the cost of the logo.
+    expect(size).toBeGreaterThan(encode(URL_, { ecc: 'M', border: 0 }).size);
+  });
+
+  it('cuts the white tile on the module grid, centred on the code', () => {
+    const { size } = encode(URL_, { ecc: 'H', border: 0 });
+    const tile = withLogo.match(/<rect x="(\d+)" y="(\d+)" width="(\d+)" height="(\d+)" fill="white"\/>/);
+    expect(tile).not.toBeNull();
+    const [x, y, w, h] = tile!.slice(1).map(Number) as [number, number, number, number];
+    expect(x).toBe(y);
+    expect(w).toBe(h);
+    expect(x % 10).toBe(0);
+    expect(w % 10).toBe(0);
+    // Centred: the same margin on both sides of the full (quiet zone included) side.
+    expect(x + w + x).toBe((size + 2 * 4) * 10);
+  });
+
+  it('keeps the tile to a quarter of the side, well inside what H can lose', () => {
+    for (const modules of [21, 25, 29, 33, 37, 41, 45, 49, 57, 77, 177]) {
+      const k = logoTileModules(modules);
+      expect(k % 2).toBe(1);
+      expect(k).toBeGreaterThanOrEqual(5);
+      expect(k / modules).toBeLessThanOrEqual(0.25);
+    }
+  });
+
+  it('draws the mark with smooth edges inside a grid drawn with hard ones', () => {
+    expect(withLogo.match(/<svg\b[^>]*>/)?.[0]).toContain('shape-rendering="crispEdges"');
+    expect(withLogo).toContain('shape-rendering="geometricPrecision"');
+  });
+
+  it('is self-contained: nothing in it points outside the file', () => {
+    expect(withLogo).not.toMatch(/href=|url\((?!#qr-logo-brush\))/);
+    expect(withLogo.trimEnd().endsWith('</svg>')).toBe(true);
   });
 });
 

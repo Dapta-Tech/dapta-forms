@@ -5,6 +5,7 @@ import type { MemberProfile } from '@quill/types';
 import type { FormsMessages } from '@quill/shared';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { SettingsRow } from '@/components/ui/settings';
 import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/components/toast';
 import { saveMyProfileAction } from './actions';
@@ -57,14 +58,11 @@ export function PublicPageSettings({
   }
 
   return (
-    <section
-      data-testid="public-page-settings"
-      className="mb-8 rounded-xl border border-border bg-card p-6"
-    >
+    <section data-testid="public-page-settings" className="mb-10">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0">
-          <h2 className="text-lg font-semibold tracking-tight">{m.publicPageHeading}</h2>
-          <p className="mt-0.5 text-sm text-muted-foreground">{m.publicPageSubtitle}</p>
+          <h2 className="text-xl font-semibold tracking-tight">{m.publicPageHeading}</h2>
+          <p className="mt-1 text-sm text-muted-foreground">{m.publicPageSubtitle}</p>
         </div>
         <label className="flex shrink-0 items-center gap-2 text-sm">
           <Switch
@@ -84,33 +82,36 @@ export function PublicPageSettings({
         <p className="mt-4 text-sm text-muted-foreground">{m.publicPageNoHandle}</p>
       ) : (
         <>
-          <p className="mt-4 font-mono text-xs text-muted-foreground" data-testid="public-page-url">
+          <p
+            className="mt-4 inline-flex rounded-full bg-muted px-3 py-1 text-xs text-muted-foreground"
+            data-testid="public-page-url"
+          >
             {publicPath}
           </p>
 
-          <div className="mt-5 flex flex-col gap-4">
-            <label className="flex flex-col gap-1.5">
-              <span className="text-sm font-medium">{m.publicPageHeadline}</span>
+          <div className="mt-4 border-t border-border">
+            <SettingsRow title={m.publicPageHeadline} first>
               <Input
                 value={headline}
                 maxLength={120}
+                aria-label={m.publicPageHeadline}
                 placeholder={m.publicPageHeadlinePlaceholder}
                 onChange={(e) => setHeadline(e.target.value)}
               />
-            </label>
-            <label className="flex flex-col gap-1.5">
-              <span className="text-sm font-medium">{m.publicPageBio}</span>
+            </SettingsRow>
+            <SettingsRow title={m.publicPageBio}>
               <textarea
                 value={bio}
                 maxLength={600}
                 rows={4}
+                aria-label={m.publicPageBio}
                 placeholder={m.publicPageBioPlaceholder}
                 onChange={(e) => setBio(e.target.value)}
-                className="rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               />
-            </label>
-            <div className="flex items-center gap-3">
-              <Button onClick={() => save()} disabled={pending} size="sm">
+            </SettingsRow>
+            <div className="flex items-center gap-3 border-t border-border pt-6">
+              <Button onClick={() => save()} disabled={pending}>
                 {pending ? m.publicPageSaving : m.publicPageSave}
               </Button>
               {enabled ? (

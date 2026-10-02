@@ -1,9 +1,10 @@
 'use client';
 
-import { useMemo, useRef } from 'react';
+import { useMemo, useRef, useState, type ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
+import { NotificationEmailMock, type NotificationMockLabels } from '@/components/notification-email-mock';
 import { interpolate, NOTIFICATION_SAMPLE as SAMPLE } from '@/lib/notification-preview';
 
 /**
@@ -36,6 +37,10 @@ export interface NotificationFieldsLabels {
   tokensHint: string;
   previewLabel: string;
   previewSubject: string;
+  /** The button that opens the preview as an inbox mock. */
+  previewExpand: string;
+  /** Copy for the inbox mock the button opens. */
+  previewMock: NotificationMockLabels;
   /** Human label per {{token}} chip. */
   tokenLabels: Record<string, string>;
   /** Recipient-list copy; required only when the `recipients` prop is passed. */
@@ -65,6 +70,8 @@ export function NotificationEmailFields({
   testIdPrefix,
   notice,
   recipients,
+  layout = 'stacked',
+  footer,
 }: {
   value: NotificationEmailValue;
   onChange: (next: NotificationEmailValue) => void;
@@ -83,6 +90,14 @@ export function NotificationEmailFields({
    * `note` says which layer the current list comes from.
    */
   recipients?: { max: number; note?: string | null };
+  /**
+   * `stacked`: the fields, then the preview under them (the per-form editor,
+   * where the column is narrow). `split`: the preview in a panel beside the
+   * fields from `xl` (Account settings, where there is room for both).
+   */
+  layout?: 'stacked' | 'split';
+  /** Set under the fields, inside their column, so it stays with them in `split`. */
+  footer?: ReactNode;
 }) {
   const subjectRef = useRef<HTMLInputElement>(null);
   const bodyRef = useRef<HTMLTextAreaElement>(null);
@@ -127,7 +142,39 @@ export function NotificationEmailFields({
     onChange({ ...value, recipients: [...recipientList, ''] });
   }
 
-  return (
+  const split = layout === 'split';
+  const [mockOpen, setMockOpen] = useState(false);
+
+  const preview = (
+    <>
+      <div className="flex items-center justify-between gap-2">
+        <span className={split ? 'text-xs font-medium uppercase tracking-wider text-faint' : 'text-xs font-medium'}>
+          {labels.previewLabel}
+        </span>
+        <button
+          type="button"
+          onClick={() => setMockOpen(true)}
+          aria-label={labels.previewExpand}
+          title={labels.previewExpand}
+          data-testid={testIdPrefix ? `${testIdPrefix}-preview-expand` : 'notification-preview-expand'}
+          className="-my-1 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <i aria-hidden className="pi pi-expand" style={{ fontSize: 13 }} />
+        </button>
+      </div>
+      <div className={`${split ? 'mt-3 rounded-xl p-4' : 'mt-1.5 rounded-md p-3'} border border-border bg-card`}>
+        <p className="text-xs text-muted-foreground">
+          <span className="font-medium text-foreground">{labels.previewSubject}: </span>
+          {previewSubject}
+        </p>
+        <div className="mt-2 whitespace-pre-wrap break-words border-t border-border pt-2 text-sm text-foreground [overflow-wrap:anywhere]">
+          {previewBody}
+        </div>
+      </div>
+    </>
+  );
+
+  const fields = (
     <>
       {/* Enable toggle */}
       <div className="mt-4 flex items-center gap-3 border-t border-border pt-4">
@@ -250,7 +297,7 @@ export function NotificationEmailFields({
           onFocus={() => (activeField.current = 'body')}
           disabled={!value.enabled}
           rows={6}
-          className="w-full resize-y rounded-md border border-input bg-background px-3 py-2 font-mono text-xs leading-relaxed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+          className="w-full resize-y rounded-md border border-input bg-background px-3 py-2 text-xs leading-relaxed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
         />
       </label>
 
@@ -276,29 +323,49 @@ export function NotificationEmailFields({
               type="button"
               onClick={() => insertToken(t)}
               disabled={!value.enabled}
-              className="rounded-md border border-border bg-card px-2 py-1 text-xs text-muted-foreground transition-colors hover:border-primary-edge/50 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+              className="rounded-full border border-border bg-card px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:border-input hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
               title={`{{${t}}}`}
             >
               {labels.tokenLabels[t] ?? t}
-              <span className="ml-1 font-mono text-muted-foreground/70">{`{{${t}}}`}</span>
+              <span className="ml-1 text-muted-foreground/70">{`{{${t}}}`}</span>
             </button>
           ))}
         </div>
       </div>
 
-      {/* Preview */}
-      <div className="mt-4">
-        <span className="text-xs font-medium">{labels.previewLabel}</span>
-        <div className="mt-1.5 rounded-md border border-border bg-card p-3">
-          <p className="text-xs text-muted-foreground">
-            <span className="font-medium text-foreground">{labels.previewSubject}: </span>
-            {previewSubject}
-          </p>
-          <div className="mt-2 whitespace-pre-wrap border-t border-border pt-2 text-sm text-foreground">
-            {previewBody}
-          </div>
-        </div>
-      </div>
+      {/* Preview, in the column when stacked */}
+      {split ? null : <div className="mt-4">{preview}</div>}
     </>
+  );
+
+  // The same sample the preview shows, drawn as an inbox. Closed it renders nothing.
+  const mock = (
+    <NotificationEmailMock
+      open={mockOpen}
+      onClose={() => setMockOpen(false)}
+      subject={value.subject}
+      body={value.body}
+      labels={labels.previewMock}
+    />
+  );
+
+  if (!split) {
+    return (
+      <>
+        {fields}
+        {mock}
+      </>
+    );
+  }
+
+  return (
+    <div className="grid gap-8 xl:grid-cols-[minmax(0,1fr)_21rem] xl:items-start">
+      <div className="min-w-0">
+        {fields}
+        {footer}
+      </div>
+      <div className="min-w-0 rounded-2xl bg-panel p-5 xl:sticky xl:top-6">{preview}</div>
+      {mock}
+    </div>
   );
 }

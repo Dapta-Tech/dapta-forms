@@ -127,17 +127,17 @@ describe('buildMirrorFormPayload', () => {
 
 describe('mirrorFormName / labelForProperty', () => {
   it('says where the form came from', () => {
-    expect(mirrorFormName('Lead qualifier')).toBe('Lead qualifier (Dapta Forms)');
+    expect(mirrorFormName('Lead qualifier')).toBe('Lead qualifier (dForms)');
   });
 
   it('truncates a long name instead of letting the create 400', () => {
     const name = mirrorFormName('x'.repeat(400));
     expect(name.length).toBeLessThanOrEqual(200);
-    expect(name.endsWith(' (Dapta Forms)')).toBe(true);
+    expect(name.endsWith(' (dForms)')).toBe(true);
   });
 
   it('still names an untitled form', () => {
-    expect(mirrorFormName('')).toBe('Untitled form (Dapta Forms)');
+    expect(mirrorFormName('')).toBe('Untitled form (dForms)');
   });
 
   it('reads a property name back as a label', () => {

@@ -1,6 +1,6 @@
 'use client';
 
-import { Children, isValidElement, useEffect, useRef, useState, type ReactNode } from 'react';
+import { Children, createContext, isValidElement, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { cn } from '@/lib/cn';
 import { Select, type SelectOption } from '@/components/ui/select';
 
@@ -299,7 +299,7 @@ export function SegmentedToggle<T extends string>({
         move(delta);
       }}
       className={cn(
-        'inline-flex items-center gap-0.5 rounded-lg border border-border bg-card p-0.5',
+        'inline-flex items-center gap-0.5 rounded-full border border-input bg-card p-0.5',
         className,
       )}
     >
@@ -321,10 +321,12 @@ export function SegmentedToggle<T extends string>({
           tabIndex={value === o.value || (index < 0 && i === 0) ? 0 : -1}
           onClick={() => onChange(o.value)}
           className={cn(
-            'inline-flex items-center gap-2 whitespace-nowrap rounded-md font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60',
-            size === 'md' ? 'px-3 py-2 text-sm' : 'px-3 py-1 text-xs',
+            'inline-flex items-center gap-2 whitespace-nowrap rounded-full font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-card disabled:opacity-60',
+            size === 'md' ? 'px-3.5 py-1.5 text-sm' : 'px-3 py-1 text-xs',
+            // The chosen option is ink, the app-wide mark for "this one": 16:1
+            // against the track, so the state never rests on a faint wash.
             value === o.value
-              ? 'bg-muted text-foreground shadow-[inset_0_0_0_1px_var(--primary-edge)]'
+              ? 'bg-foreground text-background'
               : 'text-muted-foreground hover:text-foreground',
           )}
         >
@@ -364,6 +366,24 @@ export function InlineField({
   );
 }
 
+/**
+ * How the `PanelSection`s under this point are drawn.
+ *
+ * `card` (the default) is a bordered card, for a page that lays sections out
+ * side by side or down a wide column. `flat` is for a narrow side panel: there
+ * the panel is already the container, so a section is a block of it closed by a
+ * hairline, and a card per section would be a column of boxes inside a box.
+ *
+ * A context rather than a prop because the sections of one panel are written in
+ * several files (the Design panel takes two of its sections as children), and
+ * the choice belongs to the panel, not to each of them.
+ */
+const PanelSectionVariant = createContext<'card' | 'flat'>('card');
+
+export function FlatPanelSections({ children }: { children: ReactNode }) {
+  return <PanelSectionVariant.Provider value="flat">{children}</PanelSectionVariant.Provider>;
+}
+
 /** A titled group of controls with a consistent header + divider. */
 export function PanelSection({
   title,
@@ -376,8 +396,14 @@ export function PanelSection({
   action?: ReactNode;
   children: ReactNode;
 }) {
+  const flat = useContext(PanelSectionVariant) === 'flat';
   return (
-    <section className="flex flex-col gap-4 rounded-xl border border-border bg-card p-4">
+    <section
+      className={cn(
+        'flex flex-col gap-4',
+        flat ? 'border-b border-border px-5 py-5' : 'rounded-xl border border-border bg-card p-4',
+      )}
+    >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <h3 className="text-sm font-semibold text-foreground">{title}</h3>

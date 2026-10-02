@@ -79,17 +79,19 @@ export function AnalyticsFilter({
   };
 
   const presets: { key: Preset; label: string }[] = [
-    { key: 'all', label: labels.all },
     { key: 'today', label: labels.today },
     { key: 'week', label: labels.week },
     { key: 'month', label: labels.month },
     { key: 'year', label: labels.year },
+    { key: 'all', label: labels.all },
     { key: 'custom', label: labels.custom },
   ];
 
   return (
-    <div className="flex flex-col gap-3" aria-busy={pending}>
-      <div className="flex flex-wrap items-center gap-2">
+    <div className="flex min-w-0 max-w-full flex-col items-start gap-3 sm:items-end" aria-busy={pending}>
+      {/* One pill holding every range: it scrolls sideways on a phone rather
+          than wrapping into a second row of the header. */}
+      <div className="inline-flex max-w-full items-center gap-0.5 overflow-x-auto rounded-full border border-input bg-card p-0.5">
         {presets.map((p) => {
           const active = p.key === 'custom' ? showCustom : !showCustom && current === p.key;
           return (
@@ -101,10 +103,11 @@ export function AnalyticsFilter({
               aria-pressed={active}
               className={
                 active
-                  ? 'inline-flex h-9 items-center rounded-md bg-primary px-3 text-sm font-semibold text-primary-foreground transition-transform active:scale-[0.98] disabled:opacity-60'
-                  : 'inline-flex h-9 items-center rounded-md border border-border bg-transparent px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-60'
+                  ? 'inline-flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full bg-primary px-3 text-sm font-semibold text-primary-foreground transition-transform active:scale-[0.98] disabled:opacity-60'
+                  : 'inline-flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-3 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground disabled:opacity-60'
               }
             >
+              {p.key === 'custom' ? <i aria-hidden className="pi pi-calendar" style={{ fontSize: 12 }} /> : null}
               {p.label}
             </button>
           );
@@ -112,7 +115,7 @@ export function AnalyticsFilter({
       </div>
 
       {showCustom ? (
-        <div className="flex flex-wrap items-end gap-3">
+        <div className="flex flex-wrap items-end gap-3 sm:justify-end">
           <div className="flex flex-col gap-1 text-xs text-muted-foreground">
             <span>{labels.from}</span>
             <DatePicker
@@ -141,7 +144,7 @@ export function AnalyticsFilter({
             disabled={pending || (!from && !to)}
             onClick={applyCustom}
             data-testid="analytics-apply"
-            className="inline-flex h-9 items-center rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground transition-transform active:scale-[0.98] disabled:opacity-60"
+            className="inline-flex h-9 items-center rounded-full bg-primary px-4 text-sm font-semibold text-primary-foreground transition-transform active:scale-[0.98] disabled:opacity-60"
           >
             {labels.apply}
           </button>

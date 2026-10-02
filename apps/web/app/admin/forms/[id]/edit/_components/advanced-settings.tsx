@@ -171,7 +171,7 @@ export function PrefillRow({
         </p>
       ) : (
         <div className="flex items-center gap-2 rounded-md bg-muted/50 px-2 py-1.5">
-          <code className="min-w-0 flex-1 overflow-x-auto whitespace-nowrap font-mono text-xs text-foreground">
+          <code className="min-w-0 flex-1 overflow-x-auto whitespace-nowrap text-xs text-foreground">
             {example}
           </code>
           <button

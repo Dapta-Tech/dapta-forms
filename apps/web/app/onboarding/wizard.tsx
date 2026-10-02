@@ -34,10 +34,31 @@
  * never reaches the end to be recorded, and they are exactly the one worth
  * measuring.
  */
-import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react';
-import type { FormsMessages, Locale } from '@quill/shared';
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition, type CSSProperties } from 'react';
+import { withNewFormBranding } from '@quill/engine';
+import { formThemeVars, type FormsMessages, type Locale } from '@quill/shared';
 import { StepInput } from '@/components/public/step-input';
 import { FormsLockup, FormsMark } from '@/components/brand/forms-logo';
+
+/**
+ * The wizard is a `.pf` surface, and a public form no longer follows the app's
+ * palette: it owns the old dark one (see the top of `public-form.css`) so forms
+ * published before the rebrand keep their look. This is the product's own first
+ * screen, not a customer's form, so it wears the dForms colours the way a form
+ * created today does: white, ink and Signal Green, written inline on the root.
+ */
+const OB_STYLE = (() => {
+  const b = withNewFormBranding(undefined).branding as {
+    background: string;
+    foreground: string;
+    primaryColor: string;
+  };
+  return formThemeVars({
+    background: b.background,
+    foreground: b.foreground,
+    primaryColor: b.primaryColor,
+  }) as CSSProperties;
+})();
 import { captureEvent } from '@/lib/product-analytics';
 import { callAction } from '@/lib/call-action';
 import {
@@ -364,7 +385,7 @@ export function OnboardingWizard({
   }
 
   return (
-    <div className="pf ob">
+    <div className="pf ob" style={OB_STYLE}>
       {/* The renderer's topbar: back · logo · spacer, on a `40px 1fr 40px` grid
           that centres the mark against the bar rather than against whatever
           space the back button leaves over. */}
@@ -378,8 +399,8 @@ export function OnboardingWizard({
             <span className="pf__back pf__back--placeholder" />
           )}
           <span className="ob__brand">
-            <FormsLockup className="ob__logo ob__logo--wide" title="Dapta Forms" />
-            <FormsMark className="ob__logo ob__logo--compact" title="Dapta Forms" />
+            <FormsLockup className="ob__logo ob__logo--wide" title="dForms" />
+            <FormsMark className="ob__logo ob__logo--compact" title="dForms" />
           </span>
           <span className="pf__back pf__back--placeholder" />
         </div>
@@ -547,9 +568,9 @@ export function OnboardingWizard({
  */
 function CreatingScreen({ m }: { m: Messages }) {
   return (
-    <div className="pf ob ob--creating">
+    <div className="pf ob ob--creating" style={OB_STYLE}>
       <div className="ob__creating">
-        <FormsMark className="ob__creating-mark" title="Dapta Forms" />
+        <FormsMark className="ob__creating-mark" title="dForms" />
         <h1 className="ob__creating-headline">{m.creating}</h1>
         <p className="ob__creating-sub">{m.creatingSubtitle}</p>
         {/* `role="progressbar"` with no value: indeterminate, which is the
@@ -574,9 +595,9 @@ function CreatingScreen({ m }: { m: Messages }) {
  */
 function FailedScreen({ m, onRetry }: { m: Messages; onRetry?: () => void }) {
   return (
-    <div className="pf ob ob--creating">
+    <div className="pf ob ob--creating" style={OB_STYLE}>
       <div className="ob__creating" role="alert">
-        <FormsMark className="ob__creating-mark" title="Dapta Forms" />
+        <FormsMark className="ob__creating-mark" title="dForms" />
         <h1 className="ob__creating-headline">{m.error.headline}</h1>
         <p className="ob__creating-sub">{m.error.body}</p>
         {onRetry ? (

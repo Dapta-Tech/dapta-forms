@@ -176,16 +176,18 @@ export function LinkActions({
     }
   };
 
+  // Five related actions read as ONE control: a single pill with the five
+  // inside it, instead of five separate boxes competing with the tabs.
   const icon =
-    'inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border text-foreground ' +
-    'transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
+    'inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-foreground ' +
+    'transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
 
   return (
-    <div className="flex shrink-0 items-center gap-1.5">
+    <div className="flex shrink-0 items-center rounded-full border border-input bg-card p-0.5">
       <button
         type="button"
         onClick={() => void copy()}
-        className={cn(icon, copied && 'border-primary-edge text-primary')}
+        className={cn(icon, copied && 'bg-signal/20')}
         aria-label={copied ? labels.copied : labels.copyLink}
         title={copied ? labels.copied : labels.copyLink}
         data-testid="editor-copy-link"
@@ -259,7 +261,7 @@ export function LinkActions({
                 workspace, so letting someone type over it here would offer an
                 edit this dialog cannot make. */}
             <div className="flex items-center rounded-md border border-input bg-background focus-within:ring-2 focus-within:ring-ring">
-              <span className="shrink-0 truncate py-2 pl-3 font-mono text-xs text-muted-foreground">
+              <span className="shrink-0 truncate py-2 pl-3 text-xs text-muted-foreground">
                 {origin}
                 {prefix}
               </span>
@@ -281,7 +283,7 @@ export function LinkActions({
                 autoComplete="off"
                 aria-describedby={error || shapeIssue ? 'form-slug-error' : undefined}
                 aria-invalid={error != null || (draft.length > 0 && shapeIssue !== null)}
-                className="min-w-0 flex-1 bg-transparent py-2 pr-3 font-mono text-sm focus-visible:outline-none"
+                className="min-w-0 flex-1 bg-transparent py-2 pr-3 text-sm focus-visible:outline-none"
                 data-testid="form-slug-input"
               />
             </div>
@@ -310,7 +312,7 @@ export function LinkActions({
           <p className="text-sm text-muted-foreground">{labels.embedIntro}</p>
           <pre
             data-testid="embed-snippet"
-            className="overflow-x-auto rounded-md border border-border bg-muted/40 p-3 font-mono text-xs leading-relaxed text-foreground"
+            className="overflow-x-auto rounded-md border border-border bg-muted/40 p-3 text-xs leading-relaxed text-foreground"
           >
             {embedOpen ? buildSnippet() : ''}
           </pre>

@@ -63,38 +63,49 @@ export default async function AnalyticsPage({
   const locale = await getLocale();
   const m = getMessages(locale).admin;
   // The workspace zone names the days: the range cuts, the buckets, the picker's "today".
-  const zone = (await adminApi.me()).timezone ?? 'UTC';
+  const [me, form] = await Promise.all([
+    adminApi.me(),
+    adminApi.getForm(id).catch((e: unknown) => {
+      if (e instanceof ApiError && e.status === 404) notFound();
+      throw e;
+    }),
+  ]);
+  const zone = me.timezone ?? 'UTC';
   const range = resolveRange(sp, zone);
   const rangeKey = `${sp.preset ?? 'all'}:${sp.from ?? ''}:${sp.to ?? ''}:${zone}`;
 
   return (
-    <div className="mx-auto max-w-[1100px] px-6 py-8">
-      <FormTabs formId={id} active="analytics" labels={m.nav} />
-      <div className="mb-6 flex flex-col gap-4">
-        <div>
-          <h1 className="text-3xl font-semibold tracking-tight">{m.analytics.title}</h1>
-          <p className="mt-1 text-muted-foreground">{m.analytics.subtitle}</p>
-        </div>
-        <AnalyticsFilter
-          locale={locale}
-          todayIso={isoDateInZone(Date.now(), zone)}
-          labels={{
-            today: m.analytics.rangeToday,
-            week: m.analytics.rangeWeek,
-            month: m.analytics.rangeMonth,
-            year: m.analytics.rangeYear,
-            all: m.analytics.rangeAll,
-            custom: m.analytics.rangeCustom,
-            from: m.analytics.rangeFrom,
-            to: m.analytics.rangeTo,
-            apply: m.analytics.rangeApply,
-          }}
-        />
+    <div>
+      <FormTabs
+        formId={id}
+        active="analytics"
+        labels={{ ...m.nav, forms: m.chrome.nav.forms }}
+        name={form.name}
+        hasDraft={form.draftConfig != null}
+        statusLabels={m.forms}
+        actions={
+          <AnalyticsFilter
+            locale={locale}
+            todayIso={isoDateInZone(Date.now(), zone)}
+            labels={{
+              today: m.analytics.rangeToday,
+              week: m.analytics.rangeWeek,
+              month: m.analytics.rangeMonth,
+              year: m.analytics.rangeYear,
+              all: m.analytics.rangeAll,
+              custom: m.analytics.rangeCustom,
+              from: m.analytics.rangeFrom,
+              to: m.analytics.rangeTo,
+              apply: m.analytics.rangeApply,
+            }}
+          />
+        }
+      />
+      <div className="mx-auto max-w-[1520px] px-6 py-6 sm:px-8">
+        <Suspense key={rangeKey} fallback={<AnalyticsSkeleton />}>
+          <AnalyticsData id={id} range={range} zone={zone} m={m.analytics} locale={locale} />
+        </Suspense>
       </div>
-
-      <Suspense key={rangeKey} fallback={<AnalyticsSkeleton />}>
-        <AnalyticsData id={id} range={range} zone={zone} m={m.analytics} locale={locale} />
-      </Suspense>
     </div>
   );
 }
@@ -146,7 +157,7 @@ async function AnalyticsData({
     // form…" because they picked last week is simply wrong.
     const filtered = range.from != null || range.to != null;
     return (
-      <div className="rounded-xl border border-dashed border-border bg-card/40 p-12 text-center">
+      <div className="rounded-2xl border border-dashed border-border p-12 text-center">
         <p className="text-lg font-medium">{filtered ? m.emptyRangeTitle : m.emptyTitle}</p>
         <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
           {filtered ? m.emptyRangeBody : m.emptyBody}
@@ -177,121 +188,119 @@ async function AnalyticsData({
   ];
 
   const maxViews = Math.max(1, ...a.dropoff.map((r) => r.views));
+  const reached = a.dropoffMode === 'answered' ? m.colAnswered : m.colViews;
 
   return (
-    <div className="flex flex-col gap-8">
-      <div
-        className={`grid grid-cols-2 gap-3 sm:grid-cols-3 ${
-          cards.length === 7 ? 'lg:grid-cols-7' : 'lg:grid-cols-6'
-        }`}
-      >
-        {cards.map((c) => (
-          <div key={c.label} className="rounded-xl border border-border bg-card p-4">
-            {/* Both halves in the sans, matching the dashboard's stat cards — the
-                two surfaces show the same kind of figure and must not disagree
-                about what a number looks like. The mono was tried here and read as
-                code rather than as measurement; `tabular-nums` is what the value
-                actually needed, and the label earns its separation from size, case
-                and `text-faint` instead of from a second typeface. */}
-            <div className="text-2xs font-medium uppercase tracking-wide text-faint">{c.label}</div>
-            <div className="mt-2 text-2xl font-semibold tabular-nums">{c.value}</div>
-          </div>
-        ))}
+    <div className="flex flex-col gap-6">
+      {/* One bordered band, a cell per figure: they read as a row of one object.
+          The grid overhangs its frame by a pixel on the right and the bottom, so
+          the last cell of each row and the last row carry no doubled rule. */}
+      <div className="overflow-hidden rounded-2xl border border-border bg-card">
+        <dl
+          className={`-mb-px -mr-px grid grid-cols-2 sm:grid-cols-3 ${
+            cards.length === 7 ? 'xl:grid-cols-7' : 'xl:grid-cols-6'
+          }`}
+        >
+          {cards.map((c) => (
+            <div key={c.label} className="flex flex-col justify-between gap-2 border-b border-r border-border p-5">
+              {/* Both halves in the sans, matching the dashboard's stat cards: the
+                  two surfaces show the same kind of figure and must not disagree
+                  about what a number looks like. `tabular-nums` is what the value
+                  actually needed, and the label earns its separation from size,
+                  case and `text-faint` instead of from a second typeface. */}
+              <dt className="text-2xs font-medium uppercase tracking-wider text-faint">{c.label}</dt>
+              <dd className="text-2xl font-bold tabular-nums tracking-tight">{c.value}</dd>
+            </div>
+          ))}
+        </dl>
       </div>
 
-      <TrendsChart
-        points={a.trends}
-        locale={locale}
-        labels={{
-          title: m.trendsTitle,
-          subtitle: m.trendsSubtitle,
-          metricLabel: m.trendsMetricLabel,
-          empty: m.trendsEmpty,
-          seconds: m.seconds,
-          metrics: {
-            views: m.metricViews,
-            starts: m.metricStarts,
-            submissions: m.metricSubmissions,
-            completionRate: m.metricCompletionRate,
-            timeToComplete: m.metricTimeToComplete,
-          },
-        }}
-      />
-      {/* Which zone the days above are cut in; the API echoes the one it used. */}
-      <p className="mt-2 text-xs text-muted-foreground" data-testid="analytics-timezone-note">
-        {t(m.timezoneNote, { zone: a.range.timeZone ?? 'UTC' })}
-      </p>
+      {/* The chart over the drop-off list, each the full width: the trend is
+          read first, then where people leave. Both are drawn in the signal
+          green, the colour progress carries everywhere else in the app. */}
+      <div className="flex flex-col gap-6">
+        <TrendsChart
+          points={a.trends}
+          locale={locale}
+          labels={{
+            title: m.trendsTitle,
+            subtitle: m.trendsSubtitle,
+            metricLabel: m.trendsMetricLabel,
+            empty: m.trendsEmpty,
+            seconds: m.seconds,
+            // Which zone the days are cut in; the API echoes the one it used.
+            note: t(m.timezoneNote, { zone: a.range.timeZone ?? 'UTC' }),
+            metrics: {
+              views: m.metricViews,
+              starts: m.metricStarts,
+              submissions: m.metricSubmissions,
+              completionRate: m.metricCompletionRate,
+              timeToComplete: m.metricTimeToComplete,
+            },
+          }}
+        />
 
-      <section>
-        <h2 className="text-lg font-semibold">{m.dropoffTitle}</h2>
-        <p className="mb-3 text-sm text-muted-foreground">
-          {a.dropoffMode === 'answered' ? m.dropoffSubtitleAnswered : m.dropoffSubtitle}
-        </p>
-        <div className="overflow-hidden rounded-lg border border-border bg-card">
-          <table className="w-full border-collapse text-sm">
-            <thead>
-              <tr className="border-b border-border text-left text-2xs uppercase tracking-wide text-faint">
-                <th className="px-4 py-3 font-medium">{m.colStep}</th>
-                <th className="w-[45%] px-4 py-3 font-medium">
-                  {a.dropoffMode === 'answered' ? m.colAnswered : m.colViews}
-                </th>
-                <th className="px-4 py-3 text-right font-medium">{m.colDropoff}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {a.dropoff.map((row) => (
-                <tr key={row.stepIndex} className="border-b border-border last:border-b-0">
-                  <td className="px-4 py-3">
-                    <span className="font-medium">
-                      {row.isCover ? (row.question ? m.coverRow : m.landingRow) : row.question}
+        <section
+          className="min-w-0 rounded-2xl border border-border bg-card p-5 sm:p-6"
+          data-testid="analytics-dropoff"
+        >
+          <h2 className="text-base font-semibold">{m.dropoffTitle}</h2>
+          <p className="text-sm text-muted-foreground">
+            {a.dropoffMode === 'answered' ? m.dropoffSubtitleAnswered : m.dropoffSubtitle}
+          </p>
+          <ol className="mt-3 flex flex-col">
+            {a.dropoff.map((row) => {
+              const label = row.isCover ? (row.question ? m.coverRow : m.landingRow) : row.question;
+              return (
+                <li key={row.stepIndex} className="border-t border-border py-3 first:border-t-0 last:pb-0">
+                  <div className="flex items-baseline justify-between gap-3 text-sm">
+                    <span className="min-w-0 truncate font-medium" title={label}>
+                      {/* The step number is the row's address, not its content: the
+                          quietest tier, so the question text beside it stays the
+                          thing you read. */}
+                      {!row.isCover ? (
+                        <span className="mr-1.5 tabular-nums text-faint">{row.stepIndex + 1}</span>
+                      ) : null}
+                      {label}
                     </span>
-                    {/* The step number is the row's address, not its content — the
-                        quietest tier, so the question text beside it stays the
-                        thing you read. */}
-                    {!row.isCover ? (
-                      <span className="ml-2 text-xs text-faint">#{row.stepIndex + 1}</span>
-                    ) : null}
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="relative h-6 w-full overflow-hidden rounded-sm bg-muted">
-                      <div
-                        className="absolute inset-y-0 left-0 rounded-sm bg-primary/25"
-                        style={{ width: `${Math.round((row.views / maxViews) * 100)}%` }}
-                      />
-                      <span className="absolute inset-0 flex items-center px-2 text-xs font-medium tabular-nums">
+                    <span className="flex shrink-0 items-baseline gap-3 tabular-nums">
+                      <span title={m.colDropoff} className="text-xs">
+                        {row.dropoff > 0 ? (
+                          <span className="text-destructive">
+                            −{row.dropoff}{' '}
+                            <span className="text-muted-foreground">({row.dropoffPercent}%)</span>
+                          </span>
+                        ) : (
+                          <span className="text-faint">0</span>
+                        )}
+                      </span>
+                      <span className="min-w-8 text-right font-medium" title={reached}>
                         {row.views}
                       </span>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3 text-right tabular-nums">
-                    {row.dropoff > 0 ? (
-                      <span className="text-destructive">
-                        −{row.dropoff}{' '}
-                        <span className="text-muted-foreground">({row.dropoffPercent}%)</span>
-                      </span>
-                    ) : (
-                      <span className="text-muted-foreground">0</span>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </section>
+                    </span>
+                  </div>
+                  <div aria-hidden className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
+                    <div
+                      className="h-full rounded-full bg-signal-edge"
+                      style={{ width: `${Math.round((row.views / maxViews) * 100)}%` }}
+                    />
+                  </div>
+                </li>
+              );
+            })}
+          </ol>
+        </section>
+      </div>
     </div>
   );
 }
 
 function AnalyticsSkeleton() {
   return (
-    <div className="flex flex-col gap-8">
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-        {Array.from({ length: 6 }).map((_, i) => (
-          <Skeleton key={i} className="h-20 w-full" />
-        ))}
-      </div>
-      <Skeleton className="h-64 w-full" />
+    <div className="flex flex-col gap-6">
+      <Skeleton className="h-24 w-full rounded-2xl" />
+      <Skeleton className="h-80 w-full rounded-2xl" />
+      <Skeleton className="h-80 w-full rounded-2xl" />
     </div>
   );
 }

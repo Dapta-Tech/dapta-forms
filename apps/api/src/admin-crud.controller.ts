@@ -54,6 +54,7 @@ import {
   renameFolder,
   setFormFolder,
 } from '@quill/db';
+import { withNewFormBranding } from '@quill/engine';
 import {
   defaultSubmissionTemplate,
   isSubmissionEmailKey,
@@ -578,6 +579,11 @@ export class AdminCrudController {
           : {};
       config = { ...base, branding: { ...mergeKitIntoBranding(null, kit.config), ...own } };
     }
+    // Then whatever neither the caller nor the kit chose is filled with the dForms
+    // colours. This is the ONLY place the new look enters: a form that stored no
+    // colours still renders the dark, lime look it was designed on, so "absent"
+    // keeps its old meaning and only forms born here get the new one.
+    config = withNewFormBranding(config);
     // `p.memberId` — from the resolved principal, never the body.
     const created = unwrapCrud(await createForm(this.db, p.accountId, { ...input, config }, p.memberId));
     await this.productAnalytics?.captureForMember('form_created', p, { form_id: created.id });

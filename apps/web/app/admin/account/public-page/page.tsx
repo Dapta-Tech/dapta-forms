@@ -28,18 +28,15 @@ export default async function PublicPagePage() {
     <div data-testid="account-public-page">
       <PublicPageSettings publicPath={publicPath} initial={myProfile?.profile ?? null} m={s} />
 
-      <section
-        data-testid="account-profile"
-        className="rounded-xl border border-border bg-card p-6"
-      >
-        <h2 className="text-lg font-semibold tracking-tight">{a.profileHeading}</h2>
-        <p className="mt-0.5 text-sm text-muted-foreground">{a.profileSubtitle}</p>
-        <dl className="mt-5 grid grid-cols-1 gap-x-8 gap-y-4 sm:grid-cols-2">
+      <section data-testid="account-profile" className="border-t border-border pt-10">
+        <h2 className="text-xl font-semibold tracking-tight">{a.profileHeading}</h2>
+        <p className="mt-1 text-sm text-muted-foreground">{a.profileSubtitle}</p>
+        <dl className="mt-6 grid grid-cols-1 gap-x-8 gap-y-5 sm:grid-cols-2">
           <Field label={s.displayName} value={me.displayName ?? s.vanityNone} />
           <Field label={s.email} value={me.email ?? s.vanityNone} />
-          <Field label={s.handle} value={me.handle ?? s.vanityNone} mono />
-          <Field label={s.accountCode} value={me.accountCode} mono />
-          <Field label={s.vanity} value={me.vanitySlug ?? s.vanityNone} mono />
+          <Field label={s.handle} value={me.handle ?? s.vanityNone} />
+          <Field label={s.accountCode} value={me.accountCode} />
+          <Field label={s.vanity} value={me.vanitySlug ?? s.vanityNone} />
         </dl>
         {publicPath ? (
           <div className="mt-6 border-t border-border pt-5">
@@ -64,16 +61,14 @@ export default async function PublicPagePage() {
 function Field({
   label,
   value,
-  mono,
 }: {
   label: string;
   value: string;
-  mono?: boolean;
 }): ReactNode {
   return (
     <div className="flex flex-col gap-1">
-      <dt className="text-2xs uppercase tracking-wide text-faint">{label}</dt>
-      <dd className={`truncate text-sm text-foreground ${mono ? 'font-mono' : ''}`} title={value}>
+      <dt className="text-xs font-medium uppercase tracking-wider text-faint">{label}</dt>
+      <dd className="truncate text-sm text-foreground" title={value}>
         {value}
       </dd>
     </div>

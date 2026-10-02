@@ -6,6 +6,7 @@
 import {
   formatAnswerValue,
   isFilterableChoiceStep,
+  isTextSummaryStep,
   stepLabel,
   type FormStep,
   type SubmissionFacets,
@@ -31,7 +32,12 @@ export function choiceColumnId(key: string): string {
 }
 
 export function filterScope(steps: FormStep[], scoring: boolean): FilterScope {
-  return { choiceKeys: new Set(steps.filter(isFilterableChoiceStep).map((s) => s.key)), scoring };
+  return {
+    choiceKeys: new Set(steps.filter(isFilterableChoiceStep).map((s) => s.key)),
+    scoring,
+    // The search reads the written answers: a form of choices only has none.
+    searchable: steps.some(isTextSummaryStep),
+  };
 }
 
 /**
