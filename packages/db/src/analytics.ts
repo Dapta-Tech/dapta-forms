@@ -414,6 +414,14 @@ export interface SubmissionFilter extends DateRange {
   scoreMin?: number | null;
   scoreMax?: number | null;
   answers?: Readonly<Record<string, readonly string[]>>;
+  /**
+   * Free text, matched anywhere in what people wrote: a case-insensitive
+   * substring of the listed answer keys' text, joined with a space (so a first
+   * and a last name stored apart are found as "first last"). Accents are not
+   * folded, as in the Summary's own search. Like `answers`, the keys MUST come
+   * from the form's own steps; a blank query or an empty key list is no filter.
+   */
+  search?: { query: string; fields: readonly string[] };
 }
 
 export interface SubmissionQuery extends SubmissionFilter {
@@ -473,8 +481,9 @@ function scoreBound(v: number | null | undefined, side: 'min' | 'max'): number |
 
 /**
  * `WHERE` for a form's submissions under `f`: the form, the status, the
- * `started_at` window, the score bounds and every answer filter. A key with no
- * values left is no filter on that key, never "match nothing".
+ * `started_at` window, the score bounds, every answer filter and the text
+ * search. A key with no values left is no filter on that key, never "match
+ * nothing".
  */
 function filterWhere(db: Db, formId: string, f: SubmissionFilter = {}): SQL {
   const parts: SQL[] = [sql`form_id = ${formId}`];
@@ -485,6 +494,14 @@ function filterWhere(db: Db, formId: string, f: SubmissionFilter = {}): SQL {
   for (const [key, values] of Object.entries(f.answers ?? {})) {
     const wanted = values.filter((v) => v.trim() !== '');
     if (wanted.length > 0) parts.push(answerMatch(db, key, wanted));
+  }
+  const needle = f.search?.query.trim() ?? '';
+  if (needle && f.search!.fields.length > 0) {
+    const text = sql.join(
+      f.search!.fields.map((field) => answerFieldText(db, field)),
+      sql` || ' ' || `,
+    );
+    parts.push(sql`lower(${text}) LIKE ${containsPattern(needle)} ESCAPE '\\'`);
   }
   return sql`WHERE ${sql.join(parts, sql` AND `)} ${statusClause(f.status)} ${andRange(sql`started_at`, f)}`;
 }

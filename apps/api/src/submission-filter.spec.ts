@@ -4,6 +4,7 @@ import {
   parseAnswerFilters,
   parseScore,
   parseSort,
+  parseSearch,
   parseSubmissionFilter,
 } from './submission-filter';
 
@@ -45,6 +46,40 @@ describe('parseAnswerFilters', () => {
       parseAnswerFilters(JSON.stringify({ kind: Array(101).fill('a') }), config),
     ).toThrow();
     expect(() => parseAnswerFilters('x'.repeat(20_000), config)).toThrow();
+  });
+});
+
+describe('parseSearch', () => {
+  const withName = {
+    steps: [
+      ...config.steps,
+      { key: 'who', type: 'name', question: 'Name' },
+      { key: 'mail', type: 'email', question: 'Email' },
+    ],
+  } as unknown as FormConfig;
+
+  it("searches the form's written answers only, a name by its sub-fields", () => {
+    const s = parseSearch('  ana  ', withName);
+    expect(s?.query).toBe('ana');
+    expect(s?.fields).toContain('notes');
+    expect(s?.fields).toContain('mail');
+    expect(s?.fields).toEqual(expect.arrayContaining(['firstname', 'lastname']));
+    // Choice steps store option values, and have their own filter.
+    expect(s?.fields).not.toContain('kind');
+    expect(s?.fields).not.toContain('tools');
+  });
+
+  it('is no filter when blank, not a string, or the form asks nothing written', () => {
+    expect(parseSearch('   ', withName)).toBeUndefined();
+    expect(parseSearch(undefined, withName)).toBeUndefined();
+    expect(parseSearch(['a'], withName)).toBeUndefined();
+    const choicesOnly = { steps: config.steps.filter((st) => st.type !== 'text') } as FormConfig;
+    expect(parseSearch('ana', choicesOnly)).toBeUndefined();
+  });
+
+  it('cuts a search past the limit instead of refusing it', () => {
+    expect(parseSearch('x'.repeat(500), withName)?.query).toHaveLength(200);
+    expect(parseSubmissionFilter({ search: 'ana' }, withName, 'UTC').search?.query).toBe('ana');
   });
 });
 

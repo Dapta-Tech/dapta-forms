@@ -149,7 +149,7 @@ export const openapiSpec = {
       get: {
         summary: "A form's responses summarized question by question (host)",
         description:
-          'Returns { total, questions }: one entry per answering step, in form order, with how many responses answered it. Choices carry a count and percent per option (most chosen first; a multi-select can add past 100); a slider its average and distribution; text questions their five latest answers; files and bookings how many answered. Optional status (all|completed|partial) and from/to (epoch ms or YYYY-MM-DD, bound by startedAt), the same filter as the submissions table.',
+          'Returns { total, questions }: one entry per answering step, in form order, with how many responses answered it. Choices carry a count and percent per option (most chosen first; a multi-select can add past 100); a slider its average and distribution; text questions their five latest answers; files and bookings how many answered. Optional status (all|completed|partial), from/to (epoch ms or YYYY-MM-DD, bound by startedAt) and search (text looked for in the written answers: text, contact and URL questions, ignoring case), the same filter as the submissions table and its CSV export.',
         security: [{ hostSession: [] }],
         responses: { '200': { description: 'The summary' }, '404': { description: 'No such form in this account' } },
       },

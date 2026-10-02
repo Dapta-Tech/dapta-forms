@@ -390,6 +390,28 @@ describe('per-question answer search (Summary tab)', () => {
     expect((await searchSubmissionAnswers(db, formId, ['notes'], { query: '5_%' })).total).toBe(0);
   });
 
+  it('narrows the table, the export and the summary by a text search across the given fields', async () => {
+    const fields = ['notes', 'firstname', 'lastname'];
+    const page = await querySubmissions(db, formId, { search: { query: 'AFTER', fields } });
+    expect(page.total).toBe(3);
+    expect(ids(page)).toEqual(['a2', 'a1', 'a5']);
+    // A first and a last name stored apart are found as one.
+    expect(ids(await querySubmissions(db, formId, { search: { query: 'ana gómez', fields } }))).toEqual(['a1']);
+    // Wildcards are literal, and a blank query or no field is no filter.
+    expect(ids(await querySubmissions(db, formId, { search: { query: '50%', fields } }))).toEqual(['a4']);
+    expect((await querySubmissions(db, formId, { search: { query: '   ', fields } })).total).toBe(5);
+    expect((await querySubmissions(db, formId, { search: { query: 'after', fields: [] } })).total).toBe(5);
+    // It composes with the other filters, and the Summary's own search.
+    expect(
+      ids(await querySubmissions(db, formId, { search: { query: 'after', fields }, from: D1 })),
+    ).toEqual(['a2', 'a1']);
+    const narrowed = await searchSubmissionAnswers(db, formId, ['notes'], {
+      query: 'lunch',
+      search: { query: 'bo', fields },
+    });
+    expect(ids(narrowed)).toEqual(['a2']);
+  });
+
   it('does not fold accents', async () => {
     const fields = ['firstname', 'lastname'];
     expect(ids(await searchSubmissionAnswers(db, formId, fields, { query: 'gómez' }))).toEqual(['a1']);
