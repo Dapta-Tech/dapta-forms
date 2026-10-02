@@ -369,6 +369,8 @@ export interface SubmissionsQuery {
   scoreMax?: string;
   /** `{"questionKey": ["value", …]}` as JSON. */
   answers?: string;
+  /** Text looked for in the written answers. */
+  search?: string;
   sort?: string;
   limit?: number;
   offset?: number;

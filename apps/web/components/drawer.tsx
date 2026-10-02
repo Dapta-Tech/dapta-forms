@@ -68,7 +68,7 @@ export function Drawer({
         aria-hidden
         tabIndex={-1}
         onClick={onClose}
-        className={`absolute inset-0 bg-background/70 backdrop-blur-xs ${
+        className={`absolute inset-0 bg-foreground/15 ${
           leaving ? 'animate-backdrop-out' : 'animate-backdrop-in'
         }`}
       />
@@ -78,22 +78,13 @@ export function Drawer({
         aria-modal="true"
         aria-labelledby={labelId}
         data-testid="drawer"
-        className={`relative flex h-full w-full max-w-xl flex-col overflow-hidden border-l border-border bg-popover shadow-2xl ${
+        className={`relative flex h-full w-full max-w-lg flex-col overflow-hidden border-l border-border bg-popover shadow-xl ${
           leaving ? 'animate-drawer-out' : 'animate-drawer-in'
         }`}
       >
-        {/* A faint wash of the accent behind the header: the panel's one splash of color. */}
-        <div
-          aria-hidden
-          className="pointer-events-none absolute inset-x-0 top-0 h-48 bg-linear-to-b from-primary/12 to-transparent"
-        />
-        <div className="relative shrink-0 border-b border-border px-5 py-4">{header}</div>
-        <div className="relative min-h-0 flex-1 overflow-y-auto px-5 py-5">{children}</div>
-        {footer ? (
-          <div className="relative shrink-0 border-t border-border bg-popover px-5 py-3">
-            {footer}
-          </div>
-        ) : null}
+        <div className="shrink-0 border-b border-border px-6 py-4">{header}</div>
+        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">{children}</div>
+        {footer ? <div className="shrink-0 border-t border-border bg-popover px-6 py-3">{footer}</div> : null}
       </div>
     </div>
   );

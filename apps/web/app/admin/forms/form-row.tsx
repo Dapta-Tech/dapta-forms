@@ -5,6 +5,7 @@ import { useDraggable } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 import { cn } from "@/lib/cn";
 import { CopyLinkIcon } from "@/components/copy-link";
+import { PublishChip } from "@/components/ui/publish-chip";
 import type { Folder, FormSummary } from "@/lib/admin-api";
 import type { MatchRange } from "@/lib/forms-search";
 import { FormRowActions, type FormRowActionLabels } from "./form-row-actions";
@@ -68,32 +69,6 @@ export interface FormRowStats {
   submissions: number;
   /** Percentage, or null when nobody has started the form (no denominator). */
   completionRate: number | null;
-}
-
-/**
- * Publish state as a pill. Two states, because that is all the model has: a
- * form is public from the moment it exists, so the only thing left to say is
- * whether what is public is the latest edit. Green is "live", amber is "not
- * live yet", the same two meanings they carry everywhere else in the app.
- */
-function StatusChip({ hasDraft, labels }: { hasDraft: boolean; labels: FormRowLabels }) {
-  return (
-    <span
-      data-testid="form-row-status"
-      data-status={hasDraft ? "unpublished" : "live"}
-      title={hasDraft ? labels.statusUnpublishedHint : labels.statusLiveHint}
-      className={cn(
-        "inline-flex max-w-full items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium text-foreground",
-        hasDraft ? "bg-warning/20" : "bg-signal/20",
-      )}
-    >
-      <span
-        aria-hidden
-        className={cn("h-1.5 w-1.5 shrink-0 rounded-full", hasDraft ? "bg-warning" : "bg-signal-edge")}
-      />
-      <span className="truncate">{hasDraft ? labels.statusUnpublished : labels.statusLive}</span>
-    </span>
-  );
 }
 
 /** The name with the matched ranges wrapped in `<mark>`. */
@@ -249,7 +224,9 @@ export function FormRow({
       {/* Present even when empty: in the table it is a grid lane, and a missing
           cell would pull every later one a column to the left. */}
       <div className={cn("flex min-w-0 items-center", typeof form.hasDraft !== "boolean" && "hidden xl:flex")}>
-        {typeof form.hasDraft === "boolean" ? <StatusChip hasDraft={form.hasDraft} labels={labels} /> : null}
+        {typeof form.hasDraft === "boolean" ? (
+          <PublishChip hasDraft={form.hasDraft} labels={labels} testId="form-row-status" />
+        ) : null}
       </div>
 
       <Link

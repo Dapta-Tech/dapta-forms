@@ -47,7 +47,7 @@ function highlight(text: string, query: string): ReactNode {
   for (let at = lower.indexOf(q); at >= 0; at = lower.indexOf(q, from)) {
     if (at > from) parts.push(text.slice(from, at));
     parts.push(
-      <mark key={at} className="rounded-sm bg-primary/30 px-0.5 text-foreground">
+      <mark key={at} className="rounded-sm bg-signal/30 px-0.5 text-foreground">
         {text.slice(at, at + q.length)}
       </mark>,
     );
@@ -63,7 +63,6 @@ export function TextAnswers({
   recent,
   answered,
   filter,
-  compact = false,
   labels,
 }: {
   formId: string;
@@ -74,12 +73,6 @@ export function TextAnswers({
   answered: number;
   /** The Summary's filter, so a search looks only through the filtered responses. */
   filter: SummaryFilterQuery;
-  /**
-   * A contact question (name, email, phone): the card is its count and the
-   * search box, and lists answers only for a search. A list of people is the
-   * least useful thing to read in a summary, and it took the most room.
-   */
-  compact?: boolean;
   labels: TextAnswersLabels;
 }) {
   const openResponse = useOpenResponse();
@@ -171,8 +164,6 @@ export function TextAnswers({
 
   const searching = applied.length > 0;
   const more = !exhausted;
-  // Compact, the list (and its "latest" caption) only exists for a search.
-  const listed = !compact || searching;
 
   return (
     <div className="flex flex-col gap-3">
@@ -198,7 +189,7 @@ export function TextAnswers({
               setQuery('');
             }
           }}
-          className="h-9 w-full rounded-md border border-input bg-background pl-8 pr-10 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="h-10 w-full rounded-lg border border-input bg-card pl-9 pr-10 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         />
         <SearchClearButton
           query={query}
@@ -213,12 +204,10 @@ export function TextAnswers({
       </div>
 
       <div
-        className={`flex items-center justify-between gap-3 text-xs text-muted-foreground ${
-          listed || loading ? 'min-h-5' : 'hidden'
-        }`}
+        className="flex min-h-5 items-center justify-between gap-3 text-xs text-muted-foreground"
       >
         <span aria-live="polite" data-testid="summary-search-status">
-          {searching ? t(labels.matches, { n: total }) : listed ? labels.latest : null}
+          {searching ? t(labels.matches, { n: total }) : labels.latest}
         </span>
         {loading ? (
           <i aria-hidden className="pi pi-spin pi-spinner text-faint" style={{ fontSize: 12 }} />
@@ -231,19 +220,22 @@ export function TextAnswers({
         </p>
       ) : null}
 
-      {!listed ? null : searching && items.length === 0 && !loading ? (
+      {searching && items.length === 0 && !loading ? (
         <p className="rounded-lg border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
           {t(labels.noMatches, { query: applied })}
         </p>
       ) : (
         <ul
-          className={`flex flex-col divide-y divide-border overflow-hidden rounded-lg border border-border transition-opacity ${
+          className={`flex flex-col border-t border-border transition-opacity ${
             loading ? 'opacity-60' : ''
           }`}
           data-testid="summary-answers"
         >
           {items.map((item, i) => (
-            <li key={item.id}>
+            // The rule between two answers stays the width of the card's
+            // content; the row itself reaches a little past it on both sides,
+            // so its hover ground has air around the text and the icon.
+            <li key={item.id} className="border-t border-border first:border-t-0">
               <button
                 type="button"
                 onClick={() => void open(i)}
@@ -251,7 +243,7 @@ export function TextAnswers({
                 title={labels.openAnswer}
                 data-testid="summary-answer"
                 data-response-id={item.id}
-                className="group flex w-full items-start gap-3 bg-background/40 px-4 py-3 text-left transition-colors hover:bg-accent/70 focus-visible:bg-accent/70 focus-visible:outline-none aria-busy:cursor-wait"
+                className="group -mx-3 flex w-[calc(100%+1.5rem)] items-center gap-3 rounded-lg px-3 py-3 text-left transition-colors hover:bg-sidebar focus-visible:bg-sidebar focus-visible:outline-none aria-busy:cursor-wait"
               >
                 <span className="min-w-0 flex-1">
                   <span className="line-clamp-3 whitespace-pre-line break-words text-sm text-foreground">
@@ -272,14 +264,15 @@ export function TextAnswers({
                     <span>{item.when}</span>
                   </span>
                 </span>
+                {/* Level with the middle of the row, whatever its height. */}
                 <i
                   aria-hidden
                   className={`pi ${
                     opening === item.id ? 'pi-spin pi-spinner' : 'pi-window-maximize'
-                  } mt-1 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100 ${
+                  } shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100 ${
                     opening === item.id ? 'opacity-100' : ''
                   }`}
-                  style={{ fontSize: 11 }}
+                  style={{ fontSize: 13 }}
                 />
               </button>
             </li>
@@ -287,13 +280,13 @@ export function TextAnswers({
         </ul>
       )}
 
-      {more && listed ? (
+      {more ? (
         <button
           type="button"
           onClick={() => void fetchPage(applied, nextOffset)}
           disabled={loading}
           data-testid="summary-show-more"
-          className="inline-flex h-9 w-fit items-center gap-2 self-center rounded-md border border-border px-4 text-sm font-medium text-foreground transition-colors hover:bg-accent disabled:opacity-50"
+          className="inline-flex h-8 w-fit items-center self-start rounded-sm text-sm font-medium text-foreground underline-offset-4 transition-colors hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
         >
           {labels.showMore}
         </button>

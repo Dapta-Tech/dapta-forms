@@ -2,15 +2,18 @@ import { Skeleton } from '@/components/skeleton';
 
 export default function AnalyticsLoading() {
   return (
-    <div className="mx-auto max-w-[1100px] px-6 py-8">
-      <Skeleton className="mb-6 h-9 w-64" />
-      <Skeleton className="mb-6 h-9 w-80" />
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-        {Array.from({ length: 6 }).map((_, i) => (
-          <Skeleton key={i} className="h-20 w-full" />
-        ))}
+    <div>
+      <div className="border-b border-border">
+        <div className="mx-auto max-w-[1520px] px-6 pb-4 pt-6 sm:px-8">
+          <Skeleton className="h-10 w-72" />
+          <Skeleton className="mt-4 h-6 w-80" />
+        </div>
       </div>
-      <Skeleton className="mt-8 h-64 w-full" />
+      <div className="mx-auto flex max-w-[1520px] flex-col gap-6 px-6 py-6 sm:px-8">
+        <Skeleton className="h-24 w-full rounded-2xl" />
+        <Skeleton className="h-80 w-full rounded-2xl" />
+        <Skeleton className="h-80 w-full rounded-2xl" />
+      </div>
     </div>
   );
 }

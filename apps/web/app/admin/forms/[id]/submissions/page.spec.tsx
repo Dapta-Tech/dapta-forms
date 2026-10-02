@@ -90,7 +90,10 @@ function find(node: unknown, match: (el: AnyElement) => boolean): AnyElement | u
   }
   if (!isElement(node)) return undefined;
   if (match(node)) return node;
-  return find(node.props?.children, match);
+  // The children, then the slots the page hands elements down through: the
+  // header's actions (the export) and the view switch given to the table.
+  const p = (node.props ?? {}) as { children?: unknown; actions?: unknown; viewTabs?: unknown };
+  return find(p.children, match) ?? find(p.actions, match) ?? find(p.viewTabs, match);
 }
 
 /** Every string/number leaf in the tree, joined — what a reader would see. */

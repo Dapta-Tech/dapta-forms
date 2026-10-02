@@ -25,8 +25,8 @@ export interface WorkspaceTimezoneLabels {
  * The ONE workspace timezone, editable by admins/owners from two places (the
  * workspace's settings page and the submissions table) and read-only for
  * members. Both surfaces write the same column through the same action; the
- * `settings` variant carries the explanatory help line, the `inline` one is
- * compact enough to sit beside a filter.
+ * `settings` variant carries the explanatory help line, the `inline` one is a
+ * chip that sits beside the table's export.
  */
 export function WorkspaceTimezoneField({
   accountId,
@@ -71,15 +71,48 @@ export function WorkspaceTimezoneField({
     });
   };
 
-  const inline = variant === 'inline';
+  // Inline, it is a chip beside the table's export: a clock and the zone. The
+  // label and the help line are still there for a screen reader and on hover;
+  // spelled out above a control this small they outweighed the table.
+  if (variant === 'inline') {
+    const hint = canEdit ? labels.help : `${labels.help} ${labels.readOnly}`;
+    return (
+      <div data-testid="workspace-timezone-inline" className="relative min-w-0" title={`${labels.label}. ${hint}`}>
+        <i
+          aria-hidden
+          className={`pi ${canEdit ? 'pi-clock' : 'pi-lock'} pointer-events-none absolute left-3.5 top-1/2 z-1 -translate-y-1/2 text-muted-foreground`}
+          style={{ fontSize: 13 }}
+        />
+        {canEdit ? (
+          <Select
+            ariaLabel={labels.label}
+            value={current}
+            options={options}
+            placeholder={labels.unset}
+            searchable
+            locale={locale}
+            disabled={pending}
+            onChange={onChange}
+            className="h-10 min-w-[220px] rounded-full pl-9 text-sm"
+          />
+        ) : (
+          <span
+            className="inline-flex h-10 items-center rounded-full border border-input pl-9 pr-4 text-sm text-foreground"
+            data-testid="workspace-timezone-readonly"
+          >
+            {current || labels.unset}
+          </span>
+        )}
+        <p id={helpId} className="sr-only">
+          {hint}
+        </p>
+      </div>
+    );
+  }
+
   return (
-    <div
-      data-testid={`workspace-timezone-${variant}`}
-      className={inline ? 'flex min-w-0 flex-col gap-1' : 'flex min-w-0 max-w-md flex-col gap-1.5'}
-    >
-      <span className={inline ? 'text-xs font-medium text-muted-foreground' : 'text-2xs uppercase tracking-wide text-faint'}>
-        {labels.label}
-      </span>
+    <div data-testid="workspace-timezone-settings" className="flex min-w-0 max-w-md flex-col gap-1.5">
+      <span className="text-2xs uppercase tracking-wide text-faint">{labels.label}</span>
       {canEdit ? (
         <Select
           ariaLabel={labels.label}
@@ -90,7 +123,6 @@ export function WorkspaceTimezoneField({
           locale={locale}
           disabled={pending}
           onChange={onChange}
-          className={inline ? 'h-9 min-w-[220px] text-sm' : undefined}
         />
       ) : (
         <span

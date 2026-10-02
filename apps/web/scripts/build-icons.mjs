@@ -56,6 +56,7 @@ const MAP = {
   'chevron-up': 'chevron-up',
   circle: 'circle',
   'circle-off': 'circle-off',
+  clock: 'clock',
   clipboard: 'clipboard',
   clone: 'layers-2',
   code: 'code',

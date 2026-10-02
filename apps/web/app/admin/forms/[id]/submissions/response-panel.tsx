@@ -34,6 +34,7 @@ import { DeleteSubmissionButton } from './row-actions';
 import { RESPONSE_PARAM, SHEET_VIEW, VIEW_PARAM } from './viewer-params';
 import { SelectionBar, SelectionProvider, useSelection, type SelectionLabels } from './table-selection';
 import { arrowDirection, cellGrid, clampCursor, moveCursor, revealCell, type Cursor } from './sheet-cursor';
+import { useSheetSignal } from './column-filter';
 
 export interface PanelLabels {
   responseTitle: string;
@@ -124,7 +125,7 @@ export function PagerLink({
 }
 
 const TOOLBAR_BUTTON =
-  'inline-flex h-9 items-center gap-2 rounded-md border border-border bg-transparent px-3 text-sm font-medium text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
+  'inline-flex h-9 shrink-0 items-center gap-2 rounded-full border border-input bg-card px-3.5 text-sm font-medium text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
 
 /**
  * Wraps the submissions table: a click on a row (or on its "View response"
@@ -158,6 +159,9 @@ export function ResponsesViewer({
   fileLabels,
   selectionLabels,
   pager,
+  lead,
+  filters,
+  searchSlot,
   children,
 }: {
   formId: string;
@@ -174,6 +178,12 @@ export function ResponsesViewer({
   selectionLabels: SelectionLabels;
   /** The range and the page links, under the table in both views. */
   pager?: ReactNode;
+  /** What leads the page's toolbar (the Summary | Responses switch). Not drawn in the sheet. */
+  lead?: ReactNode;
+  /** The filter chips: in the toolbar on the page, above the table in the sheet. */
+  filters?: ReactNode;
+  /** The place kept in the sheet's top bar for the search box, which lives in the page header. */
+  searchSlot?: ReactNode;
   children: ReactNode;
 }) {
   const [openId, setOpenId] = useState<string | null>(() =>
@@ -186,6 +196,14 @@ export function ResponsesViewer({
    */
   const [focusKey, setFocusKey] = useState<string | null>(null);
   const [sheet, setSheet] = useState(initialSheet);
+  /**
+   * Whether the checkboxes are out. Off, the table is only read and carries no
+   * column of empty boxes; "Select" brings them in, and putting them away
+   * drops whatever was ticked, so nothing stays selected out of sight.
+   */
+  const [selectMode, setSelectMode] = useState(false);
+  // The search box in the page header moves over the sheet's bar while it is open.
+  useSheetSignal(sheet);
   /**
    * The sheet fades in only when the person opens it. Mounted already open
    * (a reload, a page link, a filter change: each one remounts the viewer)
@@ -395,7 +413,9 @@ export function ResponsesViewer({
     if (!sheet) return;
     const overflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
-    closeSheetRef.current?.focus();
+    // Not while the person is typing a search: every new set of rows mounts
+    // this sheet again, and taking the focus then would cut the word short.
+    if (!document.activeElement?.closest('[data-response-search]')) closeSheetRef.current?.focus();
     const onKey = (e: KeyboardEvent) => {
       // `aria-modal`, not `role="dialog"`: every open dialog here (Modal,
       // Drawer, ConfirmDialog) is modal, while the admin shell's mobile nav
@@ -420,6 +440,18 @@ export function ResponsesViewer({
           'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
         ),
       ].filter((el) => el.offsetParent !== null);
+      // The search box is drawn over its slot in the bar but lives in the page
+      // header, outside the sheet: it takes its turn where the slot is.
+      const slot = root.querySelector('[data-search-slot]');
+      const search = [
+        ...document.querySelectorAll<HTMLElement>('[data-in-sheet] input, [data-in-sheet] button'),
+      ];
+      if (slot && search.length > 0) {
+        const after = items.findIndex(
+          (el) => (slot.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0,
+        );
+        items.splice(after < 0 ? items.length : after, 0, ...search);
+      }
       if (items.length === 0) return;
       // Every Tab is moved by hand, not only the one at either end. Safari
       // does not Tab to links, so the pager's last link never took the focus
@@ -475,6 +507,27 @@ export function ResponsesViewer({
 
   const bar = <SelectionBar formId={formId} labels={selectionLabels} />;
   const selecting = selection.ids.length > 0;
+  const selectToggle = (
+    <button
+      type="button"
+      onClick={() => {
+        if (selectMode) selection.clear();
+        setSelectMode(!selectMode);
+      }}
+      aria-pressed={selectMode}
+      data-testid="select-mode"
+      className={
+        selectMode
+          ? 'inline-flex h-9 shrink-0 items-center gap-2 rounded-full bg-primary px-3.5 text-sm font-semibold text-primary-foreground transition-transform focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-[0.98]'
+          : TOOLBAR_BUTTON
+      }
+    >
+      <i aria-hidden className={`pi ${selectMode ? 'pi-check' : 'pi-check-square'}`} style={{ fontSize: 12 }} />
+      <span className={sheet ? 'hidden sm:inline' : undefined}>
+        {selectMode ? selectionLabels.selectModeDone : selectionLabels.selectMode}
+      </span>
+    </button>
+  );
 
   return (
     <SelectionProvider value={selection}>
@@ -482,6 +535,7 @@ export function ResponsesViewer({
       <div
         ref={rootRef}
         data-sheet={sheet ? '' : undefined}
+        data-select={selectMode ? '' : undefined}
         data-testid="responses-viewer"
         className={
           sheet
@@ -506,6 +560,10 @@ export function ResponsesViewer({
                 <h2 className="truncate text-base font-semibold">{title}</h2>
               </div>
             )}
+            <div className="flex min-w-0 shrink-0 items-center gap-2">
+            {/* On a phone the selection's bar needs the room: the search steps aside. */}
+            {searchSlot ? <div className={selecting ? 'hidden sm:block' : undefined}>{searchSlot}</div> : null}
+            {selectToggle}
             <button
               ref={closeSheetRef}
               type="button"
@@ -518,28 +576,47 @@ export function ResponsesViewer({
               <i aria-hidden className="pi pi-window-minimize" style={{ fontSize: 12 }} />
               <span className="hidden sm:inline">{labels.sheetClose}</span>
             </button>
+            </div>
           </div>
         ) : (
-          <div className="flex min-h-9 flex-wrap items-center justify-between gap-2">
-            {bar}
-            <button
-              ref={openSheetRef}
-              type="button"
-              onClick={() => toggleSheet(true)}
-              data-testid="sheet-open"
-              className={`${TOOLBAR_BUTTON} ml-auto`}
-            >
-              <i aria-hidden className="pi pi-expand" style={{ fontSize: 12 }} />
-              {labels.sheetOpen}
-            </button>
+          <div className="flex min-h-9 flex-wrap items-center gap-x-3 gap-y-2">
+            {lead}
+            {filters}
+            <div className="ml-auto flex shrink-0 items-center gap-2">
+              {selectToggle}
+              <button
+                ref={openSheetRef}
+                type="button"
+                onClick={() => toggleSheet(true)}
+                data-testid="sheet-open"
+                className={TOOLBAR_BUTTON}
+              >
+                <i aria-hidden className="pi pi-expand" style={{ fontSize: 12 }} />
+                {labels.sheetOpen}
+              </button>
+            </div>
           </div>
         )}
         <div
           onClick={onClick}
           className={sheet ? 'flex min-h-0 flex-1 flex-col p-3 sm:p-4' : undefined}
         >
+          {sheet && filters ? <div className="mb-3 empty:hidden">{filters}</div> : null}
           {children}
         </div>
+        {/* On the page the selection's bar floats over the foot of the screen,
+            so it is at hand however far down the table the rows were ticked.
+            Centred with auto margins, not a transform: the bar animates in with
+            one, and the two would fight. */}
+        {!sheet && selecting ? (
+          <div className="pointer-events-none fixed inset-x-0 bottom-6 z-30 flex justify-center px-4">
+            <div className="pointer-events-auto max-w-full rounded-full border border-border bg-popover px-2 py-1.5 pl-4 shadow-lg">
+              {bar}
+            </div>
+          </div>
+        ) : !sheet ? (
+          bar
+        ) : null}
         {pager ? (
           <div
             className={
@@ -623,7 +700,7 @@ function IconButton({
       aria-label={label}
       title={label}
       data-testid={testId}
-      className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-40"
+      className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-input text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-40"
     >
       <i aria-hidden className={`pi ${icon}`} style={{ fontSize: 12 }} />
     </button>
@@ -675,19 +752,11 @@ export function PanelHeader({
 }) {
   const { title, contact } = identity(detail.respondent, labels.responseTitle);
   const mark = initials(detail.respondent);
-  const total = detail.answers.length;
-  const answered = detail.answers.filter((a) => a.kind !== 'empty').length;
-  const pct = total > 0 ? Math.round((answered / total) * 100) : 0;
   return (
     <div className="flex flex-col gap-4">
+      {/* The walk on the left with where you are in it, the way out on the right. */}
       <div className="flex items-center justify-between gap-3">
-        <span
-          className="text-xs font-medium tabular-nums text-muted-foreground"
-          data-testid="response-position"
-        >
-          {position}
-        </span>
-        <div className="flex shrink-0 items-center gap-1">
+        <div className="flex shrink-0 items-center gap-1.5">
           <IconButton
             icon="pi-chevron-up"
             label={labels.prevResponse}
@@ -702,28 +771,34 @@ export function PanelHeader({
             disabled={!hasNext}
             testId="response-next"
           />
-          <IconButton
-            icon="pi-times"
-            label={labels.closeResponse}
-            onClick={onClose}
-            testId="response-close"
-          />
+          <span
+            className="ml-1.5 text-xs font-medium tabular-nums text-muted-foreground"
+            data-testid="response-position"
+          >
+            {position}
+          </span>
         </div>
+        <IconButton
+          icon="pi-times"
+          label={labels.closeResponse}
+          onClick={onClose}
+          testId="response-close"
+        />
       </div>
 
-      <div key={detail.id} className="flex animate-response-in items-center gap-3.5">
+      <div key={detail.id} className="flex animate-response-in items-center gap-3">
         <span
           aria-hidden
-          className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-primary text-base font-semibold text-primary-foreground shadow-sm ring-1 ring-primary-edge"
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted text-sm font-semibold text-foreground"
           data-testid="response-avatar"
         >
-          {mark ?? <i className="pi pi-user" style={{ fontSize: 18 }} />}
+          {mark ?? <i className="pi pi-user" style={{ fontSize: 16 }} />}
         </span>
         <div className="min-w-0">
           <h2 id={LABEL_ID} className="truncate text-lg font-semibold tracking-tight">
             {title}
           </h2>
-          <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
             {contact ? <span className="truncate">{contact}</span> : null}
             {contact ? (
               <span aria-hidden className="text-faint">
@@ -742,27 +817,12 @@ export function PanelHeader({
         />
         {detail.score != null ? (
           <span
-            className="inline-flex items-center gap-1.5 rounded-full bg-score/15 px-2.5 py-0.5 text-xs font-semibold text-score-ink"
+            className="inline-flex items-center rounded-full bg-score/15 px-2.5 py-0.5 text-xs font-semibold text-score-ink"
             data-testid="response-score"
           >
-            <i aria-hidden className="pi pi-star-fill" style={{ fontSize: 10 }} />
             {t(labels.scoreValue, { score: detail.score })}
           </span>
         ) : null}
-        <div className="ml-auto flex min-w-36 flex-1 items-center justify-end gap-2.5">
-          <div aria-hidden className="h-1.5 max-w-32 flex-1 overflow-hidden rounded-full bg-muted">
-            <div
-              className="h-full rounded-full bg-primary transition-[width] duration-500 ease-out"
-              style={{ width: `${pct}%` }}
-            />
-          </div>
-          <span
-            className="shrink-0 text-xs tabular-nums text-muted-foreground"
-            data-testid="response-answered"
-          >
-            {t(labels.answeredCount, { n: answered, total })}
-          </span>
-        </div>
       </div>
     </div>
   );
@@ -802,9 +862,8 @@ function AnswerValueView({
           {answer.choices.map((c, i) => (
             <li
               key={`${c}-${i}`}
-              className="inline-flex items-center gap-1.5 rounded-full border border-primary-edge/40 bg-primary/15 px-3 py-1 text-sm font-medium text-foreground"
+              className="inline-flex items-center rounded-full border border-border bg-muted px-3 py-1 text-sm font-medium text-foreground"
             >
-              <i aria-hidden className="pi pi-check text-primary" style={{ fontSize: 10 }} />
               {c}
             </li>
           ))}
@@ -816,7 +875,7 @@ function AnswerValueView({
           href={answer.href}
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex items-center gap-1.5 break-all text-base font-medium text-primary underline decoration-primary-edge/40 underline-offset-4 hover:decoration-primary-edge"
+          className="inline-flex items-center gap-1.5 break-all text-base font-medium text-foreground underline decoration-border underline-offset-4 hover:decoration-foreground"
         >
           {answer.text}
           <i aria-hidden className="pi pi-external-link shrink-0" style={{ fontSize: 11 }} />
@@ -836,19 +895,14 @@ function AnswerValueView({
 }
 
 /**
- * One answer's card. An unanswered step is dashed and bare; the question opened
- * from a table cell is outlined in the accent. One border colour per state, so
- * no two border utilities ever compete on the same element.
+ * One answer's row: the question in the quiet voice, the answer under it, a
+ * hairline between rows. The question opened from a table cell is lifted onto a
+ * grey ground with a ring, so the eye lands on it.
  */
-function answerCardClass(empty: boolean, focused: boolean): string {
-  const edge = focused
-    ? 'border-primary-edge ring-2 ring-primary-edge/40'
-    : empty
-      ? 'border-border'
-      : 'border-border hover:border-primary-edge/40';
-  return empty
-    ? `rounded-lg border border-dashed px-4 py-3 ${edge}`
-    : `rounded-lg border bg-card px-4 py-3.5 transition-colors ${edge}`;
+function answerRowClass(focused: boolean): string {
+  return focused
+    ? '-mx-3 rounded-lg bg-muted px-3 py-3.5 ring-2 ring-primary-edge/40'
+    : 'border-b border-border py-3.5 last:border-b-0';
 }
 
 /** The panel body: the answers, then the facts about the response. Static, so it renders without a DOM. */
@@ -866,8 +920,11 @@ export function ResponseDetailView({
   /** The question opened from a table cell: outlined in the accent so the eye lands on it. */
   focusKey?: string | null;
 }) {
-  const heading = 'mb-3 text-2xs font-medium uppercase tracking-wide text-faint';
-  const card = 'rounded-lg border border-border bg-card';
+  const heading = 'text-2xs font-medium uppercase tracking-wider text-faint';
+  const total = detail.answers.length;
+  const answered = detail.answers.filter((a) => a.kind !== 'empty').length;
+  const term = 'text-muted-foreground';
+  const value = 'min-w-0 text-right';
   return (
     <div
       key={detail.id}
@@ -876,28 +933,23 @@ export function ResponseDetailView({
       className="flex animate-response-in flex-col gap-7 text-sm outline-none"
     >
       <section>
-        <h3 className={heading}>{labels.answersTitle}</h3>
-        <ol className="flex flex-col gap-2.5" data-testid="response-answers">
-          {detail.answers.map((a, i) => (
+        <div className="flex items-baseline justify-between gap-3">
+          <h3 className={heading}>{labels.answersTitle}</h3>
+          <span className="text-xs tabular-nums text-muted-foreground" data-testid="response-answered">
+            {t(labels.answeredCount, { n: answered, total })}
+          </span>
+        </div>
+        <ol className="mt-1 flex flex-col" data-testid="response-answers">
+          {detail.answers.map((a) => (
             <li
               key={a.key}
-              className={answerCardClass(a.kind === 'empty', a.key === focusKey)}
+              className={answerRowClass(a.key === focusKey)}
               data-answer-kind={a.kind}
               data-answer-key={a.key}
               data-focused={a.key === focusKey ? '' : undefined}
             >
-              <div className="flex items-start gap-2.5">
-                <span
-                  aria-hidden
-                  className={`mt-px flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-2xs font-semibold tabular-nums ${
-                    a.kind === 'empty' ? 'bg-muted text-faint' : 'bg-primary/15 text-primary'
-                  }`}
-                >
-                  {i + 1}
-                </span>
-                <p className="text-xs font-medium leading-5 text-muted-foreground">{a.label}</p>
-              </div>
-              <div className="mt-2 pl-7.5">
+              <p className="text-xs leading-5 text-muted-foreground">{a.label}</p>
+              <div className="mt-1">
                 <AnswerValueView
                   answer={a}
                   responseId={detail.id}
@@ -911,33 +963,33 @@ export function ResponseDetailView({
         </ol>
       </section>
 
-      <section>
+      <section className="border-t border-border pt-5">
         <h3 className={heading}>{labels.detailsTitle}</h3>
         <dl
-          className={`${card} grid grid-cols-[minmax(0,auto)_minmax(0,1fr)] gap-x-6 gap-y-2.5 px-4 py-3.5`}
+          className="mt-3 grid grid-cols-[minmax(0,auto)_minmax(0,1fr)] items-baseline gap-x-6 gap-y-3"
           data-testid="response-details"
         >
-          <dt className="text-muted-foreground">{labels.colStatus}</dt>
-          <dd>
+          <dt className={term}>{labels.colStatus}</dt>
+          <dd className={value}>
             <StatusBadge
               completed={detail.completed}
               label={detail.completed ? labels.badgeCompleted : labels.badgePartial}
             />
           </dd>
-          <dt className="text-muted-foreground">{labels.colSubmitted}</dt>
-          <dd>{detail.submittedAt}</dd>
-          <dt className="text-muted-foreground">{labels.colStarted}</dt>
-          <dd>{detail.startedAt}</dd>
+          <dt className={term}>{labels.colStarted}</dt>
+          <dd className={`${value} tabular-nums`}>{detail.startedAt}</dd>
+          <dt className={term}>{labels.colSubmitted}</dt>
+          <dd className={`${value} tabular-nums`}>{detail.submittedAt}</dd>
           {detail.score != null ? (
             <>
-              <dt className="text-muted-foreground">{labels.colScore}</dt>
-              <dd className="font-semibold tabular-nums text-score-ink">{detail.score}</dd>
+              <dt className={term}>{labels.colScore}</dt>
+              <dd className={`${value} font-semibold tabular-nums text-score-ink`}>{detail.score}</dd>
             </>
           ) : null}
           {detail.page ? (
             <>
-              <dt className="text-muted-foreground">{labels.pageRow}</dt>
-              <dd className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1" data-testid="response-page">
+              <dt className={term}>{labels.pageRow}</dt>
+              <dd className="flex min-w-0 flex-wrap items-center justify-end gap-x-2 gap-y-1 text-right" data-testid="response-page">
                 {/* A title wraps between its words; the icon follows its last one.
                     The host rides inside the link, so what reads as the page
                     is never only a title the respondent's browser supplied. */}
@@ -947,7 +999,7 @@ export function ResponseDetailView({
                     target="_blank"
                     rel="noopener noreferrer"
                     title={detail.page.href}
-                    className="min-w-0 break-words font-medium text-primary underline decoration-primary-edge/40 underline-offset-4 hover:decoration-primary-edge"
+                    className="min-w-0 break-words font-medium text-foreground underline decoration-border underline-offset-4 hover:decoration-foreground"
                   >
                     {detail.page.text}
                     {detail.page.host ? (
@@ -964,35 +1016,33 @@ export function ResponseDetailView({
                   <span className="min-w-0 break-words">{detail.page.text}</span>
                 )}
                 {detail.hubspotCookie ? (
-                  <span className="inline-flex items-center gap-1 rounded-full border border-primary-edge/40 bg-primary/15 px-2 py-0.5 text-2xs font-medium text-foreground">
-                    <i aria-hidden className="pi pi-check text-primary" style={{ fontSize: 9 }} />
+                  <span className="inline-flex items-center gap-1 rounded-full bg-signal/20 px-2 py-0.5 text-2xs font-medium text-foreground">
+                    <i aria-hidden className="pi pi-check" style={{ fontSize: 9 }} />
                     {labels.hubspotCookie}
                   </span>
                 ) : null}
               </dd>
             </>
           ) : null}
-          <dt className="text-muted-foreground">{labels.responseId}</dt>
-          <dd className="select-all break-all font-mono text-xs">{detail.id}</dd>
+          <dt className={term}>{labels.responseId}</dt>
+          <dd className={`${value} select-all break-all text-xs text-muted-foreground`}>{detail.id}</dd>
         </dl>
       </section>
 
       {detail.utm.length > 0 ? (
-        <section>
+        <section className="border-t border-border pt-5">
           <h3 className={heading}>{labels.utmTitle}</h3>
-          <ul className="flex flex-wrap gap-2" data-testid="response-utm">
+          <dl
+            className="mt-3 grid grid-cols-[minmax(0,auto)_minmax(0,1fr)] items-baseline gap-x-6 gap-y-3"
+            data-testid="response-utm"
+          >
             {detail.utm.map(([k, v]) => (
-              <li
-                key={k}
-                className="inline-flex max-w-full items-center overflow-hidden rounded-md border border-border bg-card text-xs"
-              >
-                <span className="border-r border-border bg-muted px-2 py-1 font-mono text-muted-foreground">
-                  {k}
-                </span>
-                <span className="break-all px-2 py-1 font-medium">{v}</span>
-              </li>
+              <div key={k} className="contents">
+                <dt className={term}>{k}</dt>
+                <dd className={`${value} break-all font-medium`}>{v}</dd>
+              </div>
             ))}
-          </ul>
+          </dl>
         </section>
       ) : null}
     </div>

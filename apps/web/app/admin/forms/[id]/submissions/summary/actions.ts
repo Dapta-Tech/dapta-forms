@@ -9,12 +9,12 @@ import { toSummaryHit, type SummaryHit } from './summary-hit';
 
 /** The filter params a search carries, and nothing else a caller might slip in. */
 export type SummaryFilterQuery = Partial<
-  Record<'status' | 'from' | 'to' | 'scoreMin' | 'scoreMax' | 'answers', string>
+  Record<'status' | 'from' | 'to' | 'scoreMin' | 'scoreMax' | 'answers' | 'search', string>
 >;
 
 function pickFilter(f: SummaryFilterQuery): SummaryFilterQuery {
   const out: SummaryFilterQuery = {};
-  for (const k of ['status', 'from', 'to', 'scoreMin', 'scoreMax', 'answers'] as const) {
+  for (const k of ['status', 'from', 'to', 'scoreMin', 'scoreMax', 'answers', 'search'] as const) {
     const v = f[k];
     if (typeof v === 'string' && v !== '') out[k] = v;
   }

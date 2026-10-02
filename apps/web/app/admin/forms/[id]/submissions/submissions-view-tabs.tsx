@@ -37,7 +37,7 @@ export function SubmissionsViewTabs({
     <nav
       aria-label={labels.tabsLabel}
       data-testid="submissions-view-tabs"
-      className="inline-flex w-fit items-center gap-1 rounded-lg border border-border bg-card p-1"
+      className="inline-flex w-fit shrink-0 items-center gap-0.5 rounded-full border border-input bg-card p-0.5"
     >
       {tabs.map((tab) => {
         const on = tab.key === active;
@@ -49,8 +49,8 @@ export function SubmissionsViewTabs({
             data-view={tab.key}
             className={
               on
-                ? 'inline-flex h-8 items-center gap-2 rounded-md bg-primary px-3 text-sm font-semibold text-primary-foreground ring-1 ring-primary-edge'
-                : 'inline-flex h-8 items-center gap-2 rounded-md px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground'
+                ? 'inline-flex h-8 items-center gap-2 rounded-full bg-primary px-3.5 text-sm font-semibold text-primary-foreground'
+                : 'inline-flex h-8 items-center gap-2 rounded-full px-3.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground'
             }
           >
             <i aria-hidden className={`pi ${tab.icon}`} style={{ fontSize: 12 }} />

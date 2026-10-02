@@ -1441,6 +1441,12 @@ export interface FormsMessages {
       /** The checkbox on one row, and the one in the header that takes the whole page. */
       selectResponse: string;
       selectPage: string;
+      /**
+       * The button that brings the checkboxes in, and the one that puts them
+       * away again (dropping whatever was ticked).
+       */
+      selectMode: string;
+      selectModeDone: string;
       /** "{n} selected", on the bar that appears with a selection. `One` is n = 1. */
       selectedCount: string;
       selectedCountOne: string;
@@ -1464,6 +1470,14 @@ export interface FormsMessages {
         filterColumnActiveOne: string;
         /** Search box on top of a long option list. */
         searchOptions: string;
+        /**
+         * The table's own search box (its placeholder, and its fuller name for
+         * a screen reader), the x that empties it, and its chip's name.
+         */
+        searchResponses: string;
+        searchResponsesLabel: string;
+        searchResponsesClear: string;
+        searchChip: string;
         noOptions: string;
         /** Removes this column's filter (and sort). */
         clear: string;
@@ -2049,9 +2063,9 @@ export interface FormsMessages {
 
 export const en: FormsMessages = {
   growth: {
-    madeWith: 'Made with Dapta Forms',
+    madeWith: 'Made with dForms',
     ctaQuestion: 'Want your own form?',
-    ctaAction: 'Get Dapta Forms, free',
+    ctaAction: 'Get dForms, free',
     seoForm: 'Fill out {name} online.',
     shareCardSteps: '{count} questions',
     shareCardUntitled: 'Form',
@@ -2065,7 +2079,7 @@ export const en: FormsMessages = {
     thankYouTitle: 'Thank you!',
     thankYouBody: 'Your answers were recorded.',
     ctaQuestion: 'Want your own form?',
-    ctaAction: 'Get Dapta Forms, free',
+    ctaAction: 'Get dForms, free',
     progressLabel: 'Step {current} of {total}',
     verticalProgress: '{answered} of {total} answered',
     verticalErrors: 'Check the highlighted questions above.',
@@ -3250,6 +3264,8 @@ export const en: FormsMessages = {
       pageSize: 'Rows per page',
       selectResponse: 'Select this response',
       selectPage: 'Select every response on this page',
+      selectMode: 'Select',
+      selectModeDone: 'Done',
       selectedCount: '{n} selected',
       selectedCountOne: '1 selected',
       exportSelected: 'Export CSV',
@@ -3264,6 +3280,10 @@ export const en: FormsMessages = {
         filterColumnActive: 'Filter by {column}, {n} active',
         filterColumnActiveOne: 'Filter by {column}, 1 active',
         searchOptions: 'Search options',
+        searchResponses: 'Search responses',
+        searchResponsesLabel: 'Search in the written answers',
+        searchResponsesClear: 'Clear search',
+        searchChip: 'Search',
         noOptions: 'No option matches.',
         clear: 'Clear',
         clearAll: 'Clear all',
@@ -3798,9 +3818,9 @@ export const en: FormsMessages = {
 
 export const es: FormsMessages = {
   growth: {
-    madeWith: 'Hecho con Dapta Forms',
+    madeWith: 'Hecho con dForms',
     ctaQuestion: '¿Quieres tu propio formulario?',
-    ctaAction: 'Consigue Dapta Forms, gratis',
+    ctaAction: 'Consigue dForms, gratis',
     seoForm: 'Completa {name} en línea.',
     shareCardSteps: '{count} preguntas',
     shareCardUntitled: 'Formulario',
@@ -3814,7 +3834,7 @@ export const es: FormsMessages = {
     thankYouTitle: '¡Gracias!',
     thankYouBody: 'Tus respuestas quedaron registradas.',
     ctaQuestion: '¿Quieres tu propio formulario?',
-    ctaAction: 'Consigue Dapta Forms, gratis',
+    ctaAction: 'Consigue dForms, gratis',
     progressLabel: 'Paso {current} de {total}',
     verticalProgress: '{answered} de {total} respondidas',
     verticalErrors: 'Revisa las preguntas marcadas arriba.',
@@ -5006,6 +5026,8 @@ export const es: FormsMessages = {
       pageSize: 'Filas por página',
       selectResponse: 'Seleccionar esta respuesta',
       selectPage: 'Seleccionar todas las respuestas de esta página',
+      selectMode: 'Seleccionar',
+      selectModeDone: 'Listo',
       selectedCount: '{n} seleccionadas',
       selectedCountOne: '1 seleccionada',
       exportSelected: 'Exportar CSV',
@@ -5020,6 +5042,10 @@ export const es: FormsMessages = {
         filterColumnActive: 'Filtrar por {column}, {n} activos',
         filterColumnActiveOne: 'Filtrar por {column}, 1 activo',
         searchOptions: 'Buscar opciones',
+        searchResponses: 'Buscar respuestas',
+        searchResponsesLabel: 'Buscar en las respuestas escritas',
+        searchResponsesClear: 'Borrar búsqueda',
+        searchChip: 'Búsqueda',
         noOptions: 'Ninguna opción coincide.',
         clear: 'Limpiar',
         clearAll: 'Limpiar todo',
