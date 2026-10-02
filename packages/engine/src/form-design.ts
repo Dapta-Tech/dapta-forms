@@ -57,7 +57,7 @@ export const FORM_LOGO_POSITIONS = ['left', 'center'] as const;
 export type FormLogoPosition = (typeof FORM_LOGO_POSITIONS)[number];
 
 /**
- * Scale of the "Made with Dapta Forms" attribution pill.
+ * Scale of the "Made with dForms" attribution pill.
  *
  * Two values, not three. `logoSize` carries a `lg` because a host's own logo is
  * the point of the page; this pill is the opposite. Nobody has ever wanted the
@@ -457,4 +457,58 @@ export const FORM_THEME_PRESETS: readonly FormThemePreset[] = [
 export function findThemePreset(id: string | null | undefined): FormThemePreset | null {
   if (!id) return null;
   return FORM_THEME_PRESETS.find((p) => p.id === id) ?? null;
+}
+
+/** The preset a form is born with. Its id is also what the editor shows as selected. */
+export const NEW_FORM_PRESET_ID = 'dforms';
+
+const isFilled = (value: unknown): boolean => typeof value === 'string' && value.trim() !== '';
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+/**
+ * Give a form being CREATED the dForms colours, writing them into its config.
+ *
+ * The distinction this exists for: an ABSENT colour and a STORED colour are
+ * different things, and only the stored one is safe to change. Every form
+ * published before the rebrand stored no colours, and the renderer reads that as
+ * the dark, lime look those forms were designed on (`DEFAULT_CANVAS` and
+ * `DEFAULT_ACCENT` in `@quill/shared`). Moving what "absent" means would restyle
+ * all of them overnight, so it does not move. A form born now is written the
+ * dForms colours (white ground, ink text, Signal Green) instead, so the new look
+ * is a fact about that form's config and the old one stays a fact about the old
+ * forms'.
+ *
+ * Only what the caller left out is filled, never what it chose:
+ *
+ *  - Ground: written only when the caller named NEITHER a background nor a
+ *    foreground. A caller that sent a foreground alone meant it against the dark
+ *    default it used to get; pairing it with a white ground now could put white
+ *    text on white, so the ground is left alone and keeps its legacy meaning.
+ *  - Accent: written whenever it is absent, with or without a ground.
+ *  - `themePreset` is written only when all three colours came from the preset,
+ *    because it exists to say which card is selected and a half-and-half form is
+ *    Custom.
+ *
+ * Duplicating a form must NOT go through this: a copy keeps its original's look,
+ * stored or absent. Callers are the places a form is made from nothing: the
+ * dashboard and the API (through `POST /v1/forms`) and the onboarding wizard.
+ */
+export function withNewFormBranding(config: unknown): Record<string, unknown> {
+  const base: Record<string, unknown> = isRecord(config) ? { ...config } : { version: 1, steps: [] };
+  const own: Record<string, unknown> = isRecord(base.branding) ? { ...base.branding } : {};
+  const preset = findThemePreset(NEW_FORM_PRESET_ID);
+  if (!preset) return base;
+
+  const wantsGround = !isFilled(own.background) && !isFilled(own.foreground);
+  const wantsAccent = !isFilled(own.primaryColor);
+  if (wantsGround) {
+    own.background = preset.background;
+    own.foreground = preset.foreground;
+  }
+  if (wantsAccent) own.primaryColor = preset.primaryColor;
+  if (wantsGround && wantsAccent) own.themePreset = preset.id;
+
+  base.branding = own;
+  return base;
 }
