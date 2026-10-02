@@ -51,6 +51,16 @@
   --ring: hsl(68 76% 61% / 0.45);
 }
 
+/* A form whose own ground is light: the two text colours `formThemeVars` never
+   derives (errors and hints) take the pre-rebrand light palette's values, which
+   clear 4.5:1 on paper. The dark ones above measure 3.5:1 and 3.8:1 on white,
+   and every form created since the rebrand starts on white. */
+.pf.pf[data-pf-theme='light'] {
+  --faint: #586470;
+  --destructive: #c2261c;
+  --destructive-foreground: #ffffff;
+}
+
 .pf {
   /* Accent defaults to the theme primary; branding.primaryColor overrides inline. */
   --pf-primary: var(--primary);

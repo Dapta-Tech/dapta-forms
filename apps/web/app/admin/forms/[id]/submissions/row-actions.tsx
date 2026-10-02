@@ -4,6 +4,7 @@ import { useState, useTransition } from 'react';
 import { getMessages } from '@quill/shared';
 import { clientLocale } from '@/lib/client-locale';
 import { useConfirmDialog } from '@/components/ui/confirm-dialog';
+import { useToast } from '@/components/toast';
 import { deleteSubmissionAction, deleteSubmissionQuietAction } from './actions';
 import { callAction, isTransportError } from '@/lib/call-action';
 
@@ -42,6 +43,7 @@ export function DeleteSubmissionButton({
   const [busy, setBusy] = useState(false);
   const pending = inTransition || busy;
   const { confirm: confirmDialog, dialog } = useConfirmDialog();
+  const toast = useToast();
   const run = () => {
     if (!onDeleted) {
       start(() => void callAction(() => deleteSubmissionAction(formId, submissionId)));
@@ -51,6 +53,8 @@ export function DeleteSubmissionButton({
     void callAction(() => deleteSubmissionQuietAction(submissionId)).then((res) => {
       setBusy(false);
       if (!isTransportError(res) && res.ok) onDeleted();
+      // The panel stays open on a failure, so say why nothing happened.
+      else toast.error(getMessages(clientLocale()).admin.submissions.bulkDeleteFailed);
     });
   };
   return (
