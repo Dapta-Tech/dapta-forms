@@ -70,6 +70,7 @@ import {
 } from './actions';
 import {
   useSessionId,
+  releaseSessionId,
   useCaptchaGate,
   captchaAborted,
   submitFinal,
@@ -475,6 +476,9 @@ export function VerticalFormRenderer({
       // `submit` event right after is already awaited to survive exactly that.
       // That existing wait is the pixel's way out, so nothing new is timed.
       reportLeadConversion({ sessionKey, sessionId });
+      // One confirmed complete is one response: the next load in this tab
+      // starts another (see `releaseSessionId`).
+      releaseSessionId(sessionKey);
       // Await the `submit` funnel event (best-effort) BEFORE any outcome
       // redirect — a fire-and-forget request would be aborted by the immediate
       // window.location navigation (same pattern as the slides layout).

@@ -59,6 +59,7 @@ import {
 } from './actions';
 import {
   useSessionId,
+  releaseSessionId,
   useCaptchaGate,
   captchaAborted,
   submitFinal,
@@ -595,6 +596,9 @@ export function FormRenderer({
       // already awaited for exactly that reason, so that existing wait doubles
       // as the pixel's way out: no new timer, no latency added to the redirect.
       reportLeadConversion({ sessionKey, sessionId });
+      // One confirmed complete is one response: the next load in this tab
+      // starts another (see `releaseSessionId`).
+      releaseSessionId(sessionKey);
       // Await the `submit` funnel event (best-effort) BEFORE any outcome
       // redirect: a fire-and-forget request here is aborted by the immediate
       // window.location navigation, silently losing the submit event for every
