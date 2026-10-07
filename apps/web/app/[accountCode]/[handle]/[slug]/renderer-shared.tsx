@@ -34,6 +34,29 @@ export function useSessionId(key: string): string {
 }
 
 /**
+ * End the stored session once the server has CONFIRMED a complete, so the
+ * next load of this form in the same tab starts a new response.
+ *
+ * The server keeps one row per (form, session) and a complete that lands on a
+ * row already completed enqueues nothing (that is how a transport retry stays
+ * a single lead). Without this, a second person registering in the same tab
+ * after a reload reused the first person's id: their answers overwrote the
+ * first row and no email, webhook or CRM delivery ever left for them.
+ *
+ * Only the STORED id is dropped. This mount keeps its in-memory id, which is
+ * what everything after the confirmation still needs: the `submit` funnel
+ * event, the post-submit booking record, and any retry that was in flight. A
+ * reload or a remount reads nothing under `key` and mints a fresh one.
+ */
+export function releaseSessionId(key: string): void {
+  try {
+    window.sessionStorage.removeItem(key);
+  } catch {
+    /* storage blocked: nothing was persisted, so there is nothing to release */
+  }
+}
+
+/**
  * Read `utm_*` query params from the current URL into a flat string map, by
  * the same rules as the landing's (`utmParams`): a key carrying a control is
  * skipped, controls leave a value, an empty value is no parameter.

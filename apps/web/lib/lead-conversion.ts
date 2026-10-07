@@ -22,9 +22,11 @@
  *
  *  2. EXACTLY ONCE per session. The lock lives in `sessionStorage`, keyed off
  *     the session key the renderers already use (`quill-form-<account>-<slug>`),
- *     because a `useRef` dies with the document: a respondent who reloads the
- *     thank-you screen, or re-submits after a reload, would report a second
- *     lead and inflate the campaign's conversion count.
+ *     because a `useRef` dies with the document: a double click, or a retry
+ *     that re-runs the success branch, would report a second lead and inflate
+ *     the campaign's conversion count. A NEW response after a reload is a new
+ *     session (the renderers release the stored id once a complete is
+ *     confirmed, `releaseSessionId`), so it reports its own lead, as it should.
  *
  *  3. BEFORE the caller navigates. `fbq` is fire-and-forget over the network, so
  *     an immediate `window.location` assignment cancels its request, which is
