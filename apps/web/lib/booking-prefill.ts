@@ -215,6 +215,28 @@ export function buildCalendlyWidgetPrefill(
 }
 
 /**
+ * The `calendly.prefill` postMessage payload for a widget that booted BEFORE the
+ * answers existed (preloaded hidden, see lib/calendly-preload). It carries what
+ * Calendly's own widget script posts from its `prefill` option: the contact
+ * fields plus the positional `a1`…`aN` custom answers, flattened to one level.
+ * Null when there is nothing to send.
+ */
+export function calendlyPrefillMessagePayload(
+  prefill: CalendlyWidgetPrefill | undefined,
+): Record<string, string> | null {
+  if (!prefill) return null;
+  const payload: Record<string, string> = {};
+  if (prefill.name) payload.name = prefill.name;
+  if (prefill.firstName) payload.firstName = prefill.firstName;
+  if (prefill.lastName) payload.lastName = prefill.lastName;
+  if (prefill.email) payload.email = prefill.email;
+  for (const [field, value] of Object.entries(prefill.customAnswers ?? {})) {
+    if (/^a\d{1,2}$/.test(field) && value) payload[field] = value;
+  }
+  return Object.keys(payload).length > 0 ? payload : null;
+}
+
+/**
  * The final embed URL for an outcome's booking config. Prefill from answers is
  * ON unless the config explicitly opts out (`prefill: false`) — the same
  * default-enabled convention as `cover.enabled` / `reveal.enabled`.

@@ -67,6 +67,7 @@ import {
   type ViewFilter,
 } from './filters';
 import type { FilterColumn, FilterOption } from './filter-columns';
+import { FOCUSABLE_SELECTOR } from '@/lib/focusable';
 
 export type FilterLabels = FormsMessages['admin']['submissions']['filters'] & {
   completed: string;
@@ -230,16 +231,13 @@ function useHost(): Host | null {
   return useContext(HostContext);
 }
 
-const FOCUSABLE =
-  'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
-
 /**
  * Tab stays inside the open menu. It is portalled to the end of the page, so
  * the next Tab after its last control would leave for the browser's chrome.
  */
 function trapTab(e: KeyboardEvent<HTMLDivElement>): void {
   if (e.key !== 'Tab') return;
-  const items = [...e.currentTarget.querySelectorAll<HTMLElement>(FOCUSABLE)].filter(
+  const items = [...e.currentTarget.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)].filter(
     (el) => el.offsetParent !== null,
   );
   if (items.length === 0) return;
@@ -490,7 +488,7 @@ function MenuBody({
     let inner = 0;
     const outer = requestAnimationFrame(() => {
       inner = requestAnimationFrame(() =>
-        rootRef.current?.querySelector<HTMLElement>(FOCUSABLE)?.focus(),
+        rootRef.current?.querySelector<HTMLElement>(FOCUSABLE_SELECTOR)?.focus(),
       );
     });
     return () => {

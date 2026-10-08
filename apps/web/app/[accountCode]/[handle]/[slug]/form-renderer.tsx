@@ -44,6 +44,7 @@ import { BookingScreen } from '@/components/public/booking-screen';
 import { RevealScreen, revealShellProps } from '@/components/public/reveal-screen';
 import { MadeWithBadge } from '@/components/made-with-badge';
 import { warmBookingEmbed, type BookingScheduledDetails } from '@/lib/booking-embed';
+import { useCalendlyPreload } from '@/lib/calendly-preload';
 import { resolveSchedulerPrefill } from '@/lib/booking-prefill';
 import { callAction, callActionWithRetry, isTransportError } from '@/lib/call-action';
 import { navigateTop } from '@/lib/top-navigate';
@@ -67,6 +68,7 @@ import {
   captureDefaults,
   capturePrefill,
   schedulerToBooking,
+  preloadableCalendlyKeys,
   PhaseShell,
   DoneScreen,
   mergeHostUtm,
@@ -176,6 +178,14 @@ export function FormRenderer({
   // the same storage key, so both survive a reload together.
   const sessionKey = `quill-form-${accountCode}-${slug}`;
   const sessionId = useSessionId(sessionKey);
+  // Boot the form's Calendly embeds hidden while the visitor answers, so the
+  // one they reach is already painted instead of starting cold
+  // (lib/calendly-preload). Keyed on content: a re-render changes nothing.
+  const calendlyPreloadKeys = useMemo(
+    () => preloadableCalendlyKeys({ steps: config.steps as FormStep[], outcomes: config.outcomes }),
+    [config.steps, config.outcomes],
+  );
+  useCalendlyPreload(calendlyPreloadKeys, sessionId);
   // The page this form is answered on, asked once per submit (inert without
   // `visitCapture`).
   const resolveVisit = useHostVisit(visitCapture, name);
@@ -1046,6 +1056,7 @@ export function FormRenderer({
           answers={answersRef.current}
           sessionId={sessionId}
           locale={locale}
+          preloadKey={booking.outcome.booking.url}
           onBooked={(details) => void handleBooked(details)}
         />
       </PhaseShell>
@@ -1398,6 +1409,7 @@ export function FormRenderer({
                     sessionId={sessionId}
                     locale={locale}
                     hideHeader
+                    preloadKey={step.scheduler ? schedulerToBooking(step.scheduler)?.url : undefined}
                     onBooked={(details) => void handleSchedulerBooked(step, details)}
                   />
                 ) : (

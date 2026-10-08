@@ -18,6 +18,7 @@ import { warmTurnstile } from '@/lib/captcha';
 import { createHostVisit, utmParams, type HostVisit, type ResolvedVisit } from '@/lib/host-visit';
 import { isTransportError, type TransportError } from '@/lib/call-action';
 import { CaptchaChallenge, type CaptchaWidgetEvent } from '@/components/public/captcha-challenge';
+import { isPreloadableCalendlyUrl } from '@/lib/calendly-preload';
 
 type RendererMessages = ReturnType<typeof getMessages>['renderer'];
 
@@ -207,6 +208,49 @@ export function schedulerToBooking(
     }
   }
   return { provider, url: finalUrl, prefill: scheduler.prefill !== false };
+}
+
+/** At most this many Calendly widgets boot hidden per form (each is a full app). */
+export const MAX_PRELOADED_CALENDLY = 3;
+
+/**
+ * The Calendly embeds worth booting hidden while the visitor answers, so the
+ * one they reach paints at once instead of after Calendly's 4-10 s cold start.
+ *
+ * Each entry is the PRELOAD KEY of a booking: the URL `BookingScreen` is handed
+ * minus anything that depends on answers (a scheduler step's mapped custom
+ * answers ride the URL, so the key is `schedulerToBooking` without them). The
+ * renderer passes the same key to `BookingScreen`, which adopts the preloaded
+ * widget only on an exact match.
+ *
+ * Scheduler steps first, in step order (a gated set, e.g. one per lead tier,
+ * is the common case), then outcome bookings. Only Calendly's own pages
+ * (https://calendly.com): HubSpot Meetings and any other host stay cold.
+ * Deduped and capped at `MAX_PRELOADED_CALENDLY`.
+ *
+ * Slides only: on the one-page layout the form's sticky header and floating
+ * menus share the page with the calendar, and a widget positioned from outside
+ * the form would paint over them.
+ */
+export function preloadableCalendlyKeys(config: {
+  steps: FormStep[];
+  outcomes?: { booking?: OutcomeBooking | null }[] | null;
+}): string[] {
+  const keys: string[] = [];
+  const add = (key: string | undefined) => {
+    if (!key || !isPreloadableCalendlyUrl(key)) return;
+    if (!keys.includes(key) && keys.length < MAX_PRELOADED_CALENDLY) keys.push(key);
+  };
+  for (const step of config.steps) {
+    if (step.type !== 'scheduler' || !step.scheduler) continue;
+    const booking = schedulerToBooking(step.scheduler);
+    if (booking?.provider === 'calendly') add(booking.url);
+  }
+  for (const outcome of config.outcomes ?? []) {
+    const booking = outcome.booking;
+    if (booking?.provider === 'calendly') add(booking.url);
+  }
+  return keys;
 }
 
 /**
