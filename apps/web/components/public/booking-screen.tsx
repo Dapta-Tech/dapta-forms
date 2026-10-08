@@ -12,6 +12,10 @@
  *
  * The provider's "booked" postMessage (origin-allowlisted, parsed in
  * lib/booking-embed) fires `onBooked` exactly once with the extracted details.
+ *
+ * A Calendly widget the renderer already booted hidden for this booking
+ * (`preloadKey`, see lib/calendly-preload) is ADOPTED instead: it is shown over
+ * this screen's slot, already painted, and the prefill is posted to it.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { getMessages } from '@quill/shared';
@@ -19,6 +23,7 @@ import type { OutcomeBooking } from '@quill/types';
 import {
   buildBookingEmbedUrl,
   buildCalendlyWidgetPrefill,
+  calendlyPrefillMessagePayload,
 } from '@/lib/booking-prefill';
 import {
   attachBookingMessageListener,
@@ -26,6 +31,12 @@ import {
   warmBookingEmbed,
   type BookingScheduledDetails,
 } from '@/lib/booking-embed';
+import {
+  CALENDLY_FALLBACK_HEIGHT,
+  hasPreloadedCalendly,
+  holdCalendlyPreload,
+  showPreloadedCalendly,
+} from '@/lib/calendly-preload';
 
 type EmbedState = 'loading' | 'ready' | 'failed';
 
@@ -42,6 +53,7 @@ export function BookingScreen({
   onBooked,
   hideHeader = false,
   extraCustomAnswers,
+  preloadKey,
 }: {
   booking: OutcomeBooking;
   answers: Record<string, unknown>;
@@ -56,6 +68,12 @@ export function BookingScreen({
    * filled by the id it actually has, not a guessed one.
    */
   extraCustomAnswers?: Record<string, string>;
+  /**
+   * The booking's preload key (`preloadableCalendlyKeys`): when the renderer
+   * booted a Calendly widget under it for this session, that widget is shown
+   * instead of a new one.
+   */
+  preloadKey?: string;
 }) {
   const m = getMessages(locale).renderer.booking;
 
@@ -68,7 +86,9 @@ export function BookingScreen({
     [booking, answers, sessionId, embedDomain],
   );
   const calendlyPrefill = useMemo(() => {
-    const base = buildCalendlyWidgetPrefill(answers);
+    // "Prefill: off" keeps the contact fields out, as the URL already does; the
+    // mapped custom answers are the author's explicit mapping and always ride.
+    const base = booking.prefill !== false ? buildCalendlyWidgetPrefill(answers) : undefined;
     const extra = extraCustomAnswers ?? {};
     if (Object.keys(extra).length === 0) return base;
     // The mapped custom questions win over the conventional a1 guess.
@@ -76,7 +96,23 @@ export function BookingScreen({
       ...(base ?? {}),
       customAnswers: { ...(base?.customAnswers ?? {}), ...extra },
     };
-  }, [answers, extraCustomAnswers]);
+  }, [answers, extraCustomAnswers, booking.prefill]);
+  // The callers rebuild `answers` on every render, so the prefill object is new
+  // each time. Effects key on one held per CONTENT: keyed on the object, every
+  // re-render of the screen tore the widget down and booted it again.
+  const calendlyPrefillKey = JSON.stringify(calendlyPrefill ?? null);
+  const stablePrefill = useMemo(() => calendlyPrefill, [calendlyPrefillKey]);
+
+  // Decided at mount; it only ever flips to the cold embed (the widget turned
+  // out to be held by another screen).
+  const [preloaded, setPreloaded] = useState(
+    () =>
+      booking.provider === 'calendly' &&
+      !!preloadKey &&
+      typeof window !== 'undefined' &&
+      hasPreloadedCalendly(preloadKey, sessionId),
+  );
+  const [preloadedHeight, setPreloadedHeight] = useState<number>(CALENDLY_FALLBACK_HEIGHT);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const [calendlyState, setCalendlyState] = useState<EmbedState>('loading');
@@ -98,9 +134,25 @@ export function BookingScreen({
     [booking.provider],
   );
 
+  // Adopted widget: shown over the slot (and prefilled) while this screen lives.
   useEffect(() => {
-    if (booking.provider !== 'calendly') return;
+    if (!preloaded || !preloadKey) return;
+    const slot = containerRef.current;
+    if (!slot) return;
+    return showPreloadedCalendly(preloadKey, sessionId, slot, {
+      onHeight: setPreloadedHeight,
+      onShown: () => setCalendlyState('ready'),
+      onUnavailable: () => setPreloaded(false),
+      onFail: () => setCalendlyState('failed'),
+      prefill: calendlyPrefillMessagePayload(stablePrefill),
+    });
+  }, [preloaded, preloadKey, sessionId, stablePrefill]);
+
+  useEffect(() => {
+    if (booking.provider !== 'calendly' || preloaded) return;
     let cancelled = false;
+    // A cold widget on screen: the hidden preloads would only compete with it.
+    const unhold = holdCalendlyPreload();
     setCalendlyState('loading');
     loadCalendlyScript()
       .then(() => {
@@ -114,7 +166,7 @@ export function BookingScreen({
         window.Calendly.initInlineWidget({
           url: embedUrl,
           parentElement: container,
-          ...(calendlyPrefill ? { prefill: calendlyPrefill } : {}),
+          ...(stablePrefill ? { prefill: stablePrefill } : {}),
           resize: true,
         });
         setCalendlyState('ready');
@@ -124,8 +176,9 @@ export function BookingScreen({
       });
     return () => {
       cancelled = true;
+      unhold();
     };
-  }, [booking.provider, embedUrl, calendlyPrefill]);
+  }, [booking.provider, preloaded, embedUrl, stablePrefill]);
 
   // HubSpot: the iframe exposes no ready/error callback, so we can't observe a
   // failed load directly. Start a timer on (re)mount; if the `load` event never
@@ -176,6 +229,31 @@ export function BookingScreen({
                 {m.fallbackCta}
               </a>
             </p>
+          </>
+        ) : preloaded ? (
+          <>
+            {/* The adopted widget lives on <body> and is positioned over this
+                slot; the slot only reserves its height in the flow. */}
+            <div
+              data-testid="booking-embed-calendly"
+              data-preloaded=""
+              ref={containerRef}
+              className="pf-booking__calendly"
+              style={{ width: '100%', minHeight: calendlyState === 'failed' ? 0 : preloadedHeight }}
+            />
+            {calendlyState === 'loading' ? (
+              <p className="pf-booking__loading" role="status" aria-live="polite">
+                {m.loading}
+              </p>
+            ) : null}
+            {calendlyState === 'failed' ? (
+              <p className="pf__error pf-booking__fallback" role="alert">
+                {m.loadError}{' '}
+                <a href={embedUrl} target="_blank" rel="noopener noreferrer">
+                  {m.fallbackCta}
+                </a>
+              </p>
+            ) : null}
           </>
         ) : (
           <>
