@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, type ReactNode, type RefObject } from 'react';
+import { FOCUSABLE_SELECTOR } from '@/lib/focusable';
 
 /**
  * Accessible modal dialog: backdrop, Esc-to-close, role=dialog + aria-labelledby,
@@ -107,11 +108,9 @@ export function useDialogA11y(
   useEffect(() => {
     if (!open) return;
     restoreRef.current = document.activeElement as HTMLElement | null;
-    const FOCUSABLE =
-      'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
     /** Visible, focusable controls inside the dialog, in DOM order. */
     const focusable = (): HTMLElement[] =>
-      [...(panelRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE) ?? [])].filter(
+      [...(panelRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR) ?? [])].filter(
         (el) => el.offsetParent !== null || el === document.activeElement,
       );
 

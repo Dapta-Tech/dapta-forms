@@ -4,6 +4,7 @@ import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 
 import { getMessages } from '@quill/shared';
 import { clientLocale } from '@/lib/client-locale';
 import { Button } from '@/components/ui/button';
+import { FOCUSABLE_SELECTOR } from '@/lib/focusable';
 
 /**
  * Branded replacement for native `window.confirm()` — the ugly OS popup broke
@@ -65,10 +66,6 @@ export function useConfirmDialog(): {
   };
 }
 
-/** Everything focusable inside the dialog card (for the Tab cycle). */
-const FOCUSABLE =
-  'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
-
 function ConfirmDialog({
   options,
   onClose,
@@ -95,7 +92,7 @@ function ConfirmDialog({
       }
       if (e.key !== 'Tab') return;
       // Focus trap: Tab cycles within the card in both directions.
-      const items = cardRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE);
+      const items = cardRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR);
       if (!items || items.length === 0) return;
       const first = items[0]!;
       const last = items[items.length - 1]!;

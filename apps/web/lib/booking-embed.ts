@@ -67,39 +67,61 @@ export function warmBookingEmbed(provider: BookingProvider, url?: string): void 
   }
 }
 
+/** Give up on a script load that never settles (a stalled network, a blocker). */
+export const CALENDLY_SCRIPT_TIMEOUT_MS = 15_000;
+
+let calendlyScriptLoad: Promise<void> | null = null;
+
 /**
  * Load Calendly's inline-widget script once. Re-entrant: resolves immediately
- * when `window.Calendly` exists, and piggybacks on an already-inserted tag
- * instead of adding a second one. Rejects when the script fails to load so the
- * caller can render the fallback link.
+ * when `window.Calendly` exists, and every concurrent caller shares the one
+ * in-flight load (piggybacking on a tag already in the page). Rejects when the
+ * script fails or stalls, so the caller can render the fallback link; a failed
+ * attempt removes its tag and forgets itself, so the next caller tries afresh
+ * instead of waiting on events that already fired.
  */
 export function loadCalendlyScript(): Promise<void> {
   if (typeof window === 'undefined' || typeof document === 'undefined') return Promise.resolve();
   if (window.Calendly) return Promise.resolve();
+  if (calendlyScriptLoad) return calendlyScriptLoad;
 
-  const existing = document.querySelector<HTMLScriptElement>(
-    'script[src*="calendly.com/assets/external/widget.js"]',
-  );
-  if (existing) {
-    return new Promise((resolve, reject) => {
-      if (window.Calendly) return resolve();
-      existing.addEventListener('load', () => resolve(), { once: true });
-      existing.addEventListener(
-        'error',
-        () => reject(new Error('Calendly script failed to load')),
-        { once: true },
-      );
-    });
-  }
-
-  return new Promise((resolve, reject) => {
-    const script = document.createElement('script');
-    script.src = CALENDLY_SCRIPT_SRC;
-    script.async = true;
-    script.onload = () => resolve();
-    script.onerror = () => reject(new Error('Calendly script failed to load'));
-    document.body.appendChild(script);
+  const attempt = new Promise<void>((resolve, reject) => {
+    const existing = document.querySelector<HTMLScriptElement>(
+      'script[src*="calendly.com/assets/external/widget.js"]',
+    );
+    const script = existing ?? document.createElement('script');
+    let timer = 0;
+    let settled = false;
+    const fail = () => {
+      if (settled) return; // a late error after the timeout already gave up
+      settled = true;
+      window.clearTimeout(timer);
+      script.remove();
+      // Forget only THIS attempt: a newer one may already be in flight.
+      if (calendlyScriptLoad === attempt) calendlyScriptLoad = null;
+      reject(new Error('Calendly script failed to load'));
+    };
+    script.addEventListener(
+      'load',
+      () => {
+        if (settled) return;
+        window.clearTimeout(timer);
+        if (!window.Calendly) return fail();
+        settled = true;
+        resolve();
+      },
+      { once: true },
+    );
+    script.addEventListener('error', fail, { once: true });
+    timer = window.setTimeout(fail, CALENDLY_SCRIPT_TIMEOUT_MS);
+    if (!existing) {
+      script.src = CALENDLY_SCRIPT_SRC;
+      script.async = true;
+      document.body.appendChild(script);
+    }
   });
+  calendlyScriptLoad = attempt;
+  return attempt;
 }
 
 /** What a provider's "booked" postMessage told us (all fields best-effort). */

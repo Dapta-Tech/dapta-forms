@@ -6,6 +6,7 @@ import {
   buildCalendlyEmbedUrl,
   buildCalendlyWidgetPrefill,
   buildHubSpotMeetingsUrl,
+  calendlyPrefillMessagePayload,
   extractBookingContactFields,
 } from './booking-prefill';
 
@@ -312,5 +313,47 @@ describe('resolveSchedulerPrefill — "Automatic" resolves by question TYPE', ()
       STEPS,
     );
     expect(answers.email).toBe('primary@acme.io');
+  });
+});
+
+describe('calendlyPrefillMessagePayload', () => {
+  it('flattens the widget prefill into the calendly.prefill message payload', () => {
+    expect(
+      calendlyPrefillMessagePayload({
+        name: 'Ada Lovelace',
+        firstName: 'Ada',
+        lastName: 'Lovelace',
+        email: 'ada@example.com',
+        customAnswers: { a1: '+57 300', a3: 'Acme' },
+      }),
+    ).toEqual({
+      name: 'Ada Lovelace',
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      email: 'ada@example.com',
+      a1: '+57 300',
+      a3: 'Acme',
+    });
+  });
+
+  it('carries the same fields the cold embed prefills from the answers', () => {
+    expect(calendlyPrefillMessagePayload(buildCalendlyWidgetPrefill(ANSWERS))).toEqual({
+      name: 'Ada Lovelace',
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      email: 'ada@example.com',
+      a1: '+57 300 123 4567',
+    });
+  });
+
+  it('drops empty values and keys Calendly would not read', () => {
+    expect(
+      calendlyPrefillMessagePayload({ email: '', customAnswers: { a2: '', guests: 'x', a100: 'y' } }),
+    ).toBeNull();
+  });
+
+  it('is null when there is nothing to prefill', () => {
+    expect(calendlyPrefillMessagePayload(undefined)).toBeNull();
+    expect(calendlyPrefillMessagePayload({})).toBeNull();
   });
 });

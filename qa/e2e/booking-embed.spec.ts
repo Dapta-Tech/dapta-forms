@@ -289,10 +289,13 @@ test('booked event persists a booking_event row and enqueues a booking_sync outb
     await answerAndSubmit(page, form, 'Cold', 'qa-db@example.com');
     await expect(page.getByTestId('booking-embed-calendly')).toBeAttached({ timeout: 15_000 });
 
-    sessionId = await page.evaluate(
-      (f) => window.sessionStorage.getItem(`quill-form-${f.accountCode}-${f.slug}`),
-      { accountCode: form.accountCode, slug: form.slug },
-    );
+    // The stored id is released once the complete is confirmed (a new load
+    // starts a new response), but the mounted renderer keeps it for the
+    // booking, and the embed carries it as `utm_content`: read it there.
+    const fallbackLink = page.locator('.pf-booking__fallback a');
+    await expect(fallbackLink).toBeVisible({ timeout: 15_000 });
+    const href = await fallbackLink.getAttribute('href');
+    sessionId = href ? new URL(href).searchParams.get('utm_content') : null;
     expect(sessionId, 'renderer sessionId').toBeTruthy();
 
     await page.evaluate(() => {
