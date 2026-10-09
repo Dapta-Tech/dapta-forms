@@ -161,9 +161,7 @@ export class S3Storage implements ObjectStorage {
       new GetObjectCommand({
         Bucket: this.bucket,
         Key: key,
-        ResponseContentDisposition: inline
-          ? `inline; filename="${safe}"`
-          : `attachment; filename="${safe}"`,
+        ResponseContentDisposition: contentDisposition(inline ? 'inline' : 'attachment', safe),
         // Overriding the type is what makes `inline` safe to offer at all. The
         // stored type is an unverified claim from upload time; this one comes
         // from the extension, which the magic-byte check agreed with before the
@@ -276,6 +274,43 @@ export function headerSafeFilename(name: string): string {
     .replace(/[/\\]/g, '_')
     .trim();
   return (cleaned || 'download').slice(0, 120);
+}
+
+/**
+ * A Content-Disposition value S3 will accept for any filename (RFC 6266).
+ *
+ * S3 signs the `response-content-disposition` override but refuses one that is
+ * not ISO-8859-1, so a name like a macOS screenshot ("... 10.21.29\u202fPM.png",
+ * a narrow no-break space) or one with an emoji or a non-Latin script made
+ * every download and preview of that file fail with `InvalidArgument`. The
+ * header now carries an ASCII `filename` for old clients and the real name,
+ * percent-encoded, as `filename*`, which every current browser prefers.
+ *
+ * `name` must already be header-safe (`headerSafeFilename`).
+ */
+export function contentDisposition(type: 'inline' | 'attachment', name: string): string {
+  const ascii = asciiFilename(name);
+  if (ascii === name) return `${type}; filename="${name}"`;
+  return `${type}; filename="${ascii}"; filename*=UTF-8''${encodeRfc5987(name)}`;
+}
+
+/** The closest printable-ASCII spelling: accents dropped, compatibility spaces as spaces, anything else `_`. */
+function asciiFilename(name: string): string {
+  const ascii = name
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^\x20-\x7e]/gu, '_')
+    .replace(/["\\]/g, '_')
+    .trim();
+  return ascii || 'download';
+}
+
+/** RFC 5987 `value-chars`: what `encodeURIComponent` leaves alone, minus the four it should not. */
+function encodeRfc5987(value: string): string {
+  return encodeURIComponent(value).replace(
+    /['()*]/g,
+    (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`,
+  );
 }
 
 /**

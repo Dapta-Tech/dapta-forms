@@ -87,3 +87,18 @@ export function previewFor(filename: string, sizeBytes: number): PreviewPlan {
   if (Number.isFinite(sizeBytes) && sizeBytes > PREVIEW_MAX_BYTES) return NO_PREVIEW;
   return plan;
 }
+
+/**
+ * How a permanent file link serves one file: in the browser tab, or as a
+ * download under its own name.
+ *
+ * Narrower than the dashboard on purpose. The dashboard shows text in a
+ * sandboxed dialog and renders Word itself; a link opens a bare browser tab,
+ * where only PDFs and images are worth showing in place. Everything else,
+ * text included, downloads. The decision still comes from `previewFor`, so
+ * the extension decides and the stored `mime` never does.
+ */
+export function linkPlanFor(filename: string, sizeBytes: number): PreviewPlan {
+  const plan = previewFor(filename, sizeBytes);
+  return (plan.kind === 'image' || plan.kind === 'pdf') && plan.inlineContentType ? plan : NO_PREVIEW;
+}

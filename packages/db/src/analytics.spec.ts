@@ -30,6 +30,7 @@ import {
   querySubmissions,
   allSubmissionsForExport,
   getSubmissionAnswersForAccount,
+  getSubmissionAnswersUnscoped,
   searchSubmissionAnswers,
   submissionsForSummary,
   submissionFacetCounts,
@@ -462,6 +463,13 @@ describe('per-question answer search (Summary tab)', () => {
     expect(row?.data).toMatchObject({ firstname: 'Ana', lastname: 'Gómez' });
     expect(await getSubmissionAnswersForAccount(db, randomUUID(), 'a1')).toBeNull();
     expect(await getSubmissionAnswersForAccount(db, accountId, 'nope')).toBeNull();
+  });
+
+  it('reads the answers by id alone for the file link, null once the row is gone', async () => {
+    expect(await getSubmissionAnswersUnscoped(db, 'a1')).toMatchObject({ firstname: 'Ana' });
+    expect(await getSubmissionAnswersUnscoped(db, 'nope')).toBeNull();
+    await db.run(sql`DELETE FROM submission WHERE id = 'a1'`);
+    expect(await getSubmissionAnswersUnscoped(db, 'a1')).toBeNull();
   });
 });
 
