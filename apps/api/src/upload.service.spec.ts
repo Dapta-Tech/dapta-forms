@@ -437,3 +437,81 @@ describe('submissionFile', () => {
     expect(await svc.submissionFile(form.accountId, id, 'cv')).toMatchObject({ status: 404 });
   });
 });
+
+describe('linkedFile (permanent file link)', () => {
+  /** Plant one submission, under whatever account, carrying `data`. */
+  async function plant(data: Record<string, unknown>): Promise<string> {
+    const id = `sub-${Math.random().toString(36).slice(2)}`;
+    await db.run(
+      sql`INSERT INTO submission (id, form_id, session_id, data, score, started_at, completed_at)
+          VALUES (${id}, ${form.id}, ${`sess-${id}`}, ${JSON.stringify(data)}, 0, 1, 1)`,
+    );
+    return id;
+  }
+
+  const CV = { key: 'uploads/acct/form/sess/9f3c.pdf', name: 'Ada Lovelace CV.pdf', size: '40211', mime: 'application/pdf' };
+  const MISS = { error: 'NOT_FOUND', message: 'File not found.', status: 404 };
+
+  it('opens a PDF in the browser, under the type its extension names', async () => {
+    const id = await plant({ cv: CV });
+    const r = await svc.linkedFile(id, 'cv');
+    expect(r).toMatchObject({ disposition: 'inline' });
+    expect((r as { url: string }).url).toContain(`as=inline&type=${encodeURIComponent('application/pdf')}`);
+    expect(storage.reads).toEqual([
+      { key: CV.key, filename: CV.name, inline: { contentType: 'application/pdf' } },
+    ]);
+  });
+
+  it('opens an image in the browser', async () => {
+    const id = await plant({ cv: { ...CV, key: 'uploads/a/f/s/1.png', name: 'logo.png', mime: 'image/png' } });
+    const r = (await svc.linkedFile(id, 'cv')) as { url: string; disposition: string };
+    expect(r.disposition).toBe('inline');
+    expect(r.url).toContain(encodeURIComponent('image/png'));
+  });
+
+  it('serves a mime lie by its extension: a .png declared text/html is an image, never a page', async () => {
+    const id = await plant({ cv: { ...CV, key: 'uploads/a/f/s/1.png', name: 'logo.png', mime: 'text/html' } });
+    const r = (await svc.linkedFile(id, 'cv')) as { url: string; disposition: string };
+    expect(r.disposition).toBe('inline');
+    expect(r.url).toContain(encodeURIComponent('image/png'));
+    expect(r.url).not.toContain('text%2Fhtml');
+  });
+
+  it('downloads a .docx under its own name instead of opening it', async () => {
+    const id = await plant({ cv: { ...CV, key: 'uploads/a/f/s/2.docx', name: 'CV final.docx' } });
+    const r = (await svc.linkedFile(id, 'cv')) as { url: string; disposition: string };
+    expect(r.disposition).toBe('attachment');
+    expect(r.url).toContain('as=attachment');
+    expect(storage.reads).toEqual([{ key: 'uploads/a/f/s/2.docx', filename: 'CV final.docx', inline: undefined }]);
+  });
+
+  it('downloads plain text too: a bare tab shows only PDFs and images', async () => {
+    const id = await plant({ cv: { ...CV, key: 'uploads/a/f/s/3.csv', name: 'leads.csv', mime: 'text/csv' } });
+    expect(await svc.linkedFile(id, 'cv')).toMatchObject({ disposition: 'attachment' });
+  });
+
+  it('answers the same 404 for a deleted submission', async () => {
+    const id = await plant({ cv: CV });
+    await db.run(sql`DELETE FROM submission WHERE id = ${id}`);
+    expect(await svc.linkedFile(id, 'cv')).toEqual(MISS);
+    expect(storage.reads).toHaveLength(0);
+  });
+
+  it('answers the same 404 for a question with no file on it', async () => {
+    const id = await plant({ cv: CV, work_email: 'ada@example.com' });
+    expect(await svc.linkedFile(id, 'work_email')).toEqual(MISS);
+    expect(await svc.linkedFile(id, 'nope')).toEqual(MISS);
+  });
+
+  it('answers the same 404 on a deployment with no bucket', async () => {
+    svc = new UploadService(db, ENV, new FakeStorage(false));
+    const id = await plant({ cv: CV });
+    expect(await svc.linkedFile(id, 'cv')).toEqual(MISS);
+  });
+
+  it('reports a signing failure as 503, not as a missing file', async () => {
+    svc = new UploadService(db, ENV, new UnsignableStorage());
+    const id = await plant({ cv: CV });
+    expect(await svc.linkedFile(id, 'cv')).toMatchObject({ error: 'UPLOAD_UNAVAILABLE', status: 503 });
+  });
+});
