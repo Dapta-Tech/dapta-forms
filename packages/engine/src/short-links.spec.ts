@@ -70,3 +70,15 @@ describe('validateFormSlug', () => {
     expect(validateVanitySlug(long)).toBe('invalid');
   });
 });
+
+describe('reserved public slugs', () => {
+  it('reserves the file link route, so no account code can be shadowed by it', () => {
+    // `/file/<token>` is a static segment on the web host: an account whose
+    // code were `file` would lose its `/file/<handle>` pages to it.
+    for (const word of ['file', 'files', 'FILE']) {
+      expect(isReservedPublicSlug(word), word).toBe(true);
+    }
+    expect(validateVanitySlug('file')).toBe('reserved');
+    expect(validateVanitySlug('files')).toBe('reserved');
+  });
+});

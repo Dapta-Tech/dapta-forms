@@ -48,6 +48,7 @@ import { AuthService, type ReqLike } from './auth.service';
 import { assertAdmin } from './permissions';
 import { RateLimitGuard } from './rate-limit';
 import { captchaActive, type CaptchaVerifier } from './captcha';
+import { fileLinksFor } from './file-link';
 import { CAPTCHA, DB, ENV } from './tokens';
 
 /**
@@ -670,6 +671,9 @@ interface OwnedMirrorState {
   formSignature?: string;
 }
 
+/** The submission id a test delivery names. No real submission has it. */
+const PING_SUBMISSION_ID = 'test-submission';
+
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
@@ -938,9 +942,15 @@ export class FormDestinationsController {
     );
 
     const now = Date.now();
+    const data = { ...sampleAnswers(config.steps ?? []), test: true };
+    // A file answer gets its `url` exactly as a real delivery would, minted by
+    // the same code for this placeholder submission, so the receiver sees the
+    // real shape. Opening it answers 404: there is no such submission. Absent
+    // wherever a real payload would carry none.
+    const fileLinks = fileLinksFor(this.env, PING_SUBMISSION_ID, data);
     const ctx = {
       idempotencyKey: `ping:${id}:${now}`,
-      submissionId: 'test-submission',
+      submissionId: PING_SUBMISSION_ID,
       formId: form.id,
       formName: form.name,
       accountId: p.accountId,
@@ -949,8 +959,9 @@ export class FormDestinationsController {
       outcomeLabel: null,
       phase: 'partial' as const,
       submittedAt: now,
-      data: { ...sampleAnswers(config.steps ?? []), test: true },
+      data,
       utm: {},
+      ...(fileLinks ? { fileLinks } : {}),
       // The page a real delivery names (#199), so the author sees every key a
       // receiver will get. The cookie is a placeholder no HubSpot portal knows.
       visit: {
@@ -1127,7 +1138,8 @@ function sampleAnswers(steps: { key: string; type: string }[]): Record<string, u
         break;
       case 'file':
         // The object shape a real file answer has, so an endpoint author wires
-        // against `name` and not against a string that never arrives.
+        // against `name` and not against a string that never arrives. Its
+        // `url` is added on the way out, by the same code a real delivery uses.
         out[s.key] = {
           key: 'uploads/acct/form/session/9f3c.pdf',
           name: 'sample.pdf',

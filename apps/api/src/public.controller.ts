@@ -3,6 +3,7 @@ import {
   Body,
   Controller,
   Get,
+  Header,
   HttpCode,
   Inject,
   NotFoundException,
@@ -15,7 +16,8 @@ import {
 import { ZodError } from 'zod';
 import type { ServerEnv } from '@quill/config/env';
 import { SubmissionService } from './submission.service';
-import { UploadService } from './upload.service';
+import { FILE_LINK_NOT_FOUND, UploadService } from './upload.service';
+import { fileLinkKey, verifyFileToken } from './file-link';
 import { unwrap } from './http';
 import { RateLimitGuard, clientKey, resolveTrustProxyHops } from './rate-limit';
 import { ENV } from './tokens';
@@ -36,6 +38,8 @@ function badReq(err: unknown): never {
 @Controller('v1/public')
 export class PublicController {
   private readonly trustProxyHops: number;
+  /** Null when the deployment has no secret to sign file links with: every link 404s. */
+  private readonly fileLinkKey: Buffer | null;
 
   constructor(
     @Inject(SubmissionService) private readonly svc: SubmissionService,
@@ -45,6 +49,7 @@ export class PublicController {
     @Optional() @Inject(ENV) env?: ServerEnv,
   ) {
     this.trustProxyHops = env ? resolveTrustProxyHops(env) : 0;
+    this.fileLinkKey = fileLinkKey(env);
   }
 
   /** The published form config for the public renderer. */
@@ -85,6 +90,27 @@ export class PublicController {
     } catch (err) {
       badReq(err);
     }
+  }
+
+  /**
+   * Resolve a permanent file link (the `url` a webhook payload carries on a
+   * file answer) to a short-lived signed GET for the web host to redirect to.
+   *
+   * No session: the token is an HMAC over the submission id and step key, so
+   * holding it IS the authorization, and it is checked before anything is read.
+   * A bad token, a deleted submission, a question with no file and a
+   * deployment with no bucket all answer the same 404, so this cannot be used
+   * to probe for submissions. Rate-limited per IP like the rest of the
+   * controller; the web host forwards the visitor's X-Forwarded-For.
+   */
+  @Get('files/:token')
+  @Header('Cache-Control', 'no-store')
+  async file(@Param('token') token: string) {
+    const claims = this.fileLinkKey ? verifyFileToken(this.fileLinkKey, token) : null;
+    if (!claims) {
+      throw new NotFoundException({ error: FILE_LINK_NOT_FOUND.error, message: FILE_LINK_NOT_FOUND.message });
+    }
+    return unwrap(await this.uploads.linkedFile(claims.submissionId, claims.stepKey));
   }
 
   /**
