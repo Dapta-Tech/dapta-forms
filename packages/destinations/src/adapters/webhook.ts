@@ -77,6 +77,27 @@ function webhookVisit(visit: DestinationVisit): WebhookVisit {
 }
 
 /**
+ * The answers as the payload sends them: each file answer named in `links`
+ * gains a `url` after its existing fields, and nothing else changes. A copy,
+ * never a mutation, because `data` is the snapshot every retry re-sends and the
+ * submission's own stored answers must never carry a link.
+ */
+export function withFileLinks(
+  data: Record<string, unknown>,
+  links: Record<string, string> | undefined,
+): Record<string, unknown> {
+  if (!links) return data;
+  let out: Record<string, unknown> | null = null;
+  for (const [key, url] of Object.entries(links)) {
+    const answer = data[key];
+    if (typeof url !== 'string' || !answer || typeof answer !== 'object' || Array.isArray(answer)) continue;
+    out ??= { ...data };
+    out[key] = { ...(answer as Record<string, unknown>), url };
+  }
+  return out ?? data;
+}
+
+/**
  * Outbound WEBHOOK destination — POSTs a stable JSON envelope of the submission
  * to a customer-configured URL, optionally HMAC-SHA256 signed so the receiver can
  * verify authenticity. No redirects are followed (a 3xx is treated as a failure,
@@ -107,7 +128,7 @@ export class WebhookDestination implements SubmissionDestination {
         score: ctx.score,
         outcome: ctx.outcomeLabel,
       },
-      data: ctx.data,
+      data: withFileLinks(ctx.data, ctx.fileLinks),
       utm: ctx.utm,
       ...(ctx.visit ? { visit: webhookVisit(ctx.visit) } : {}),
     };

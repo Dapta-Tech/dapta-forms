@@ -21,6 +21,7 @@ import {
   type SubmissionVisit,
 } from '@quill/types';
 import type { ServerEnv } from '@quill/config/env';
+import { fileLinksFor } from './file-link';
 import { HubspotPortalResolver, mirrorGuidFor } from './hubspot-portal';
 import { HubspotPropertiesService } from './integrations.controller';
 import { destinationUsesHutk, withoutHutk } from './submission-visit';
@@ -120,6 +121,14 @@ export class DestinationEffects {
         });
       }
 
+      // One permanent link per uploaded file, for the webhook payload only.
+      // Minted once here and snapshotted with the rest, so a retry sends the
+      // same link, and kept OUT of `data`: HubSpot reads `data` and must see
+      // exactly what was stored, and so must the submission row itself.
+      const fileLinks = enabled.some(({ destination }) => destination.type === 'webhook')
+        ? fileLinksFor(this.env, input.submissionId, input.data)
+        : undefined;
+
       for (const { destination, index } of enabled) {
         const kind = destination.type as OutboxKind;
         // Per-destination identity: the config-array index disambiguates two
@@ -139,6 +148,7 @@ export class DestinationEffects {
           submittedAt: input.submittedAt,
           data: input.data,
           utm: extractUtm(input.data),
+          ...(fileLinks && destination.type === 'webhook' ? { fileLinks } : {}),
           // Only when there is one: without it the payload is byte for byte
           // what it was before the visit existed. The cookie goes only into
           // the snapshot of a destination that sends it on in this phase.

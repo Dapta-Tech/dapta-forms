@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { createHmac } from 'node:crypto';
-import { WebhookDestination, signWebhookBody, DEFAULT_SIGNATURE_HEADER } from './webhook';
+import { WebhookDestination, signWebhookBody, withFileLinks, DEFAULT_SIGNATURE_HEADER } from './webhook';
 import { transcriptOfError, type DestinationContext } from '../destination.port';
 
 /** A resolver that maps every host to a public IP — keeps tests off real DNS. */
@@ -280,5 +280,48 @@ describe('WebhookDestination: the visit', () => {
     const { sent, dest } = capture();
     const result = await dest.deliver(ctx({ visit: { pageUri: VISIT.pageUri, embedded: true } }));
     expect(result.requestBody).toBe(sent[0]!.body);
+  });
+});
+
+describe('WebhookDestination: permanent file links', () => {
+  const CV = { key: 'uploads/a/f/s/1.pdf', name: 'cv.pdf', size: '40211', mime: 'application/pdf' };
+  const LINK = 'https://forms.example.com/file/v1.abc.def';
+  const dest = () => new WebhookDestination({ url: 'https://hooks.example/x', resolveDns: publicResolver });
+
+  for (const phase of ['partial', 'complete'] as const) {
+    it(`adds the url to the file answer in a ${phase} payload, after the fields it already had`, () => {
+      const data = { email: 'lead@acme.io', cv: { ...CV } };
+      const payload = dest().buildPayload(ctx({ phase, data, fileLinks: { cv: LINK } }));
+      expect(payload.data.cv).toEqual({ ...CV, url: LINK });
+      expect(Object.keys(payload.data.cv as object)).toEqual(['key', 'name', 'size', 'mime', 'url']);
+      expect(payload.data.email).toBe('lead@acme.io');
+      // The snapshot is never mutated: a retry re-sends the same data.
+      expect(data.cv).toEqual(CV);
+    });
+  }
+
+  it('sends data byte for byte as before when there are no links', () => {
+    const data = { email: 'lead@acme.io', cv: CV };
+    expect(dest().buildPayload(ctx({ data })).data).toBe(data);
+  });
+
+  it('ignores a link for an answer that is missing or not an object', () => {
+    const data = { email: 'lead@acme.io', tags: ['a'] };
+    const out = withFileLinks(data, { email: LINK, tags: LINK, gone: LINK });
+    expect(out).toEqual(data);
+  });
+
+  it('sends the url on the wire, inside the signed body', async () => {
+    let body = '';
+    const fetchImpl = (async (_url: string, init: RequestInit) => {
+      body = init.body as string;
+      return new Response('{}', { status: 200 });
+    }) as unknown as typeof fetch;
+    const signed = new WebhookDestination(
+      { url: 'https://hooks.example/x', secret: 's', resolveDns: publicResolver },
+      fetchImpl,
+    );
+    await signed.deliver(ctx({ data: { cv: CV }, fileLinks: { cv: LINK } }));
+    expect(JSON.parse(body).data.cv.url).toBe(LINK);
   });
 });

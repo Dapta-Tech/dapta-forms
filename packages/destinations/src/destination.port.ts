@@ -63,6 +63,14 @@ export interface DestinationContext {
   /** UTM values captured for the session (from `submission.data.utm`). */
   utm: Record<string, string>;
   /**
+   * A permanent, login-free link per uploaded file, keyed by the step key its
+   * answer sits under in `data`. Only the webhook reads it: it adds each one as
+   * `url` on that file answer in the payload, leaving `data` itself (and every
+   * other adapter's view of it) untouched. Absent when the submission has no
+   * file, when the deployment cannot sign links, and on older snapshots.
+   */
+  fileLinks?: Record<string, string>;
+  /**
    * The page the submission was answered on, already sanitized by the API.
    * Absent on a delivery enqueued before the visit existed, or when none was
    * reported: every adapter then behaves exactly as it did without it.

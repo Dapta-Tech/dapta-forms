@@ -40,6 +40,7 @@ const asOwner = (): ReqLike => ({ headers: {} });
 describe('webhook ping', () => {
   let db: Db;
   let controller: FormDestinationsController;
+  let auth: AuthService;
   let calls: { url: string; init: RequestInit }[];
   let accountId: string;
   let formId: string;
@@ -57,7 +58,7 @@ describe('webhook ping', () => {
       SEED_DEMO_FORM: false,
       ONBOARDING_WIZARD: false,
     });
-    const auth = new AuthService(db, provider);
+    auth = new AuthService(db, provider);
     controller = new FormDestinationsController(db, auth);
     calls = [];
     controller.fetchImpl = (async (url: string, init: RequestInit) => {
@@ -142,6 +143,33 @@ describe('webhook ping', () => {
     // The history shows the body back with the cookie hidden, as for a real one.
     const [row] = await listFormDeliveries(db, accountId, formId, { kinds: ['webhook'], statuses: ['done'] });
     expect(JSON.parse(String(row?.requestBody)).visit.hutk).toBe('[hidden]');
+  });
+
+  it('gives a file answer the url a real delivery carries, and none where a real one would not', async () => {
+    await setWebhook('http://localhost:4999/hook');
+    const { sql } = await import('@quill/db');
+    const row = await db.get<{ config: string }>(sql`SELECT config FROM form WHERE id = ${formId}`);
+    const config = JSON.parse(row!.config) as { steps: unknown[] };
+    config.steps.push({ key: 'cv', type: 'file', question: 'Your CV' });
+    await db.run(sql`UPDATE form SET config = ${JSON.stringify(config)} WHERE id = ${formId}`);
+
+    // Without a public host or a key, the sample has no url, exactly like a real payload.
+    await controller.pingWebhook(asOwner(), formId);
+    const bare = JSON.parse(String(calls[0]!.init.body)) as { data: Record<string, Record<string, unknown>> };
+    expect(bare.data.cv).toMatchObject({ name: 'sample.pdf' });
+    expect(bare.data.cv!.url).toBeUndefined();
+
+    const env = {
+      NODE_ENV: 'test',
+      PUBLIC_APP_URL: 'https://forms.example.com',
+      FORMS_ENCRYPTION_KEY: Buffer.alloc(32, 7).toString('base64'),
+    } as never;
+    const withLinks = new FormDestinationsController(db, auth, env);
+    withLinks.fetchImpl = controller.fetchImpl;
+    await withLinks.pingWebhook(asOwner(), formId);
+    const body = JSON.parse(String(calls[1]!.init.body)) as { data: Record<string, Record<string, unknown>> };
+    expect(body.data.cv).toMatchObject({ key: expect.any(String), name: 'sample.pdf', size: expect.any(String), mime: 'application/pdf' });
+    expect(body.data.cv!.url).toMatch(/^https:\/\/forms\.example\.com\/file\/v1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/);
   });
 
   it('reports a clear 400 when the form has no webhook configured', async () => {
