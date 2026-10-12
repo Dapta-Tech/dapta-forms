@@ -11,7 +11,7 @@
 Build a multi-step form, score every answer, book the meeting and sync the lead to your CRM. Self-host it anywhere.</p>
 
 <p align="center">
-  <a href="https://github.com/Dapta-Tech/dapta-forms/actions/workflows/ci.yml"><img src="https://github.com/Dapta-Tech/dapta-forms/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+  <a href="https://github.com/Dapta-Tech/dapta-forms/actions/workflows/ci.yml?query=branch%3Amain"><img src="https://github.com/Dapta-Tech/dapta-forms/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-3DDC84.svg" alt="License: MIT" /></a>
   <img src="https://img.shields.io/badge/Next.js-16-111113.svg?logo=nextdotjs" alt="Next.js 16" />
   <img src="https://img.shields.io/badge/NestJS-API-E0234E.svg?logo=nestjs&logoColor=white" alt="NestJS" />
@@ -29,33 +29,46 @@ Build a multi-step form, score every answer, book the meeting and sync the lead 
   <a href="CONTRIBUTING.md">Contributing</a>
 </p>
 
+**dForms is an open-source form builder for teams that sell.** Use it to:
 
+- build multi-step forms with logic, in your own brand
+- score every answer and send each lead to the right outcome
+- let qualified leads book a meeting on the spot (HubSpot Meetings or Calendly)
+- deliver every lead to HubSpot or any webhook, with retries
+- see where people drop off and which answers convert
 
-
-## What is dForms?
-
-**dForms is a form builder for teams that sell.** A respondent answers a few
-questions; dForms scores each answer, decides which outcome they reach (a thank-you
-message, a redirect, or a calendar to book a call), and delivers the lead to HubSpot
-or any webhook. You see where people drop off and which answers convert.
+<table>
+  <tr>
+    <th width="50%">Admin: builder</th>
+    <th width="50%">Admin: submissions</th>
+  </tr>
+  <tr>
+    <td><img src="docs/images/builder.png" alt="Builder: question list, live canvas and settings, with points on every option" /></td>
+    <td><img src="docs/images/submissions.png" alt="Responses table with status, score and answers" /></td>
+  </tr>
+  <tr>
+    <th>Admin: analytics</th>
+    <th>Admin: logic</th>
+  </tr>
+  <tr>
+    <td><img src="docs/images/analytics.png" alt="Analytics with funnel metrics, daily trends and drop-off" /></td>
+    <td><img src="docs/images/logic.png" alt="Logic map branching into three scored outcomes" /></td>
+  </tr>
+  <tr>
+    <th>Public form: cover</th>
+    <th>Public form: question</th>
+  </tr>
+  <tr>
+    <td><img src="docs/images/public-cover.png" alt="A branded public form cover" /></td>
+    <td><img src="docs/images/public-question.png" alt="A multi-select question with two answers chosen" /></td>
+  </tr>
+</table>
 
 It is a Turborepo monorepo: a **Next.js 16** web app (public forms, admin and
 builder) and a **NestJS** API. **Postgres** is the source of truth in CI and
 production; **SQLite** lets you clone and run it in a minute with no infrastructure.
 
-<table>
-  <tr>
-    <td width="50%"><img src="docs/images/public-cover.png" alt="A branded public form cover" /></td>
-    <td width="50%"><img src="docs/images/public-question.png" alt="A multi-select question with two answers chosen" /></td>
-  </tr>
-  <tr>
-    <td align="center"><p>The public form, in the author's own brand</p></td>
-    <td align="center"><p>One question per screen, keyboard-friendly</p></td>
-  </tr>
-</table>
-
 ## Features
-
 | | |
 |---|---|
 | **Build** | 13 question types: short and long text, name, email (with a work-email check), phone, URL, dropdown, single and multiple choice (list or cards, with emoji or logos), slider, file upload, message, reveal screen and an embedded scheduler. Slides or one-page layout, live WYSIWYG canvas, desktop and mobile preview. |
@@ -69,24 +82,24 @@ production; **SQLite** lets you clone and run it in a minute with no infrastruct
 | **Share** | Readable links (`/{account}/f/{slug}`) with editable slugs, a QR code, and an `embed.js` helper that auto-resizes iframes and carries redirects to the host page. |
 | **Operate** | Responses table with header filters, search, time zone and CSV export; folders; workspaces with members and roles; Cloudflare Turnstile spam protection; English and Spanish across the app and the forms. |
 
-## Screenshots
+## More screenshots
 
 <table>
   <tr>
-    <td width="50%"><img src="docs/images/builder.png" alt="Builder: question list, live canvas and settings" /><p><b>Build.</b> Questions, live canvas and per-question settings, with points on every option.</p></td>
-    <td width="50%"><img src="docs/images/logic.png" alt="Logic map with three scored outcomes" /><p><b>Logic.</b> The whole flow on one canvas, branching into scored outcomes.</p></td>
+    <th width="50%">Admin: design</th>
+    <th width="50%">Admin: connect</th>
   </tr>
   <tr>
-    <td><img src="docs/images/design.png" alt="Design tab with a live preview" /><p><b>Design.</b> Language, layout, theme and brand, with a live device preview.</p></td>
-    <td><img src="docs/images/connect.png" alt="Connect tab with webhook, HubSpot and tracking pixels" /><p><b>Connect.</b> Webhook, HubSpot and tracking pixels per form.</p></td>
+    <td><img src="docs/images/design.png" alt="Design tab with a live device preview" /></td>
+    <td><img src="docs/images/connect.png" alt="Connect tab with webhook, HubSpot and tracking pixels" /></td>
   </tr>
   <tr>
-    <td><img src="docs/images/submissions.png" alt="Responses table with status and score" /><p><b>Submissions.</b> Complete and partial responses with their score, filters and CSV export.</p></td>
-    <td><img src="docs/images/analytics.png" alt="Analytics with trends and drop-off" /><p><b>Analytics.</b> Funnel metrics, daily trends and question-by-question drop-off.</p></td>
+    <th>Admin: forms</th>
+    <th>Public form: mobile</th>
   </tr>
   <tr>
-    <td><img src="docs/images/forms-list.png" alt="Forms list with completion rate" /><p><b>Forms.</b> Every form with its status, submissions and completion rate.</p></td>
-    <td align="center"><img src="docs/images/public-mobile.png" alt="The public form on a phone" width="34%" /><p><b>Mobile.</b> The same form, sized for a phone.</p></td>
+    <td><img src="docs/images/forms-list.png" alt="Forms list with status, submissions and completion rate" /></td>
+    <td align="center"><img src="docs/images/public-mobile.png" alt="The public form on a phone" width="34%" /></td>
   </tr>
 </table>
 
