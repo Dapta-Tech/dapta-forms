@@ -9,6 +9,7 @@ import {
   createObjectStorage,
   extensionOf,
   headerSafeFilename,
+  contentDisposition,
   incomingKey,
   storedBasename,
   uploadsPrefixFor,
@@ -92,6 +93,43 @@ describe('headerSafeFilename', () => {
   });
   it('bounds the length', () => {
     expect(headerSafeFilename('x'.repeat(500))).toHaveLength(120);
+  });
+});
+
+describe('contentDisposition', () => {
+  it('keeps a plain ASCII name exactly as before', () => {
+    expect(contentDisposition('inline', 'cv.pdf')).toBe('inline; filename="cv.pdf"');
+    expect(contentDisposition('attachment', 'Cover letter.docx')).toBe('attachment; filename="Cover letter.docx"');
+  });
+
+  it('gives a macOS screenshot name an ASCII fallback and the exact name in filename*', () => {
+    // The narrow no-break space macOS puts before AM/PM is outside ISO-8859-1,
+    // which S3 refuses in a signed response-content-disposition.
+    const name = 'Screenshot 2026-10-08 at 10.21.29\u202fPM.png';
+    const value = contentDisposition('inline', name);
+    expect(value).toBe(
+      `inline; filename="Screenshot 2026-10-08 at 10.21.29 PM.png"; filename*=UTF-8''Screenshot%202026-10-08%20at%2010.21.29%E2%80%AFPM.png`,
+    );
+    expect(/^[\x20-\x7e]*$/.test(value)).toBe(true);
+  });
+
+  it('drops accents in the fallback and keeps them in filename*', () => {
+    expect(contentDisposition('attachment', 'Propuesta diagnóstico.pdf')).toBe(
+      `attachment; filename="Propuesta diagnostico.pdf"; filename*=UTF-8''Propuesta%20diagn%C3%B3stico.pdf`,
+    );
+  });
+
+  it('replaces what has no ASCII spelling and encodes the RFC 5987 reserved characters', () => {
+    const value = contentDisposition('attachment', "réservé (v2) 📄 it's.pdf");
+    expect(value).toContain('filename="reserve (v2) _ it\'s.pdf"');
+    expect(value).toContain("filename*=UTF-8''r%C3%A9serv%C3%A9%20%28v2%29%20%F0%9F%93%84%20it%27s.pdf");
+    expect(/^[\x20-\x7e]*$/.test(value)).toBe(true);
+  });
+
+  it('never leaves the ASCII fallback empty', () => {
+    expect(contentDisposition('attachment', '履歴書')).toBe(
+      `attachment; filename="___"; filename*=UTF-8''%E5%B1%A5%E6%AD%B4%E6%9B%B8`,
+    );
   });
 });
 

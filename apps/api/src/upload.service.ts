@@ -16,8 +16,12 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { fileTypeFromBuffer } from 'file-type';
 import type { Db } from '@quill/db';
-import { getPublishedForm, getSubmissionAnswersForAccount } from '@quill/db';
-import { parseFileAnswer, type FormConfig, type FormStep } from '@quill/engine';
+import {
+  getPublishedForm,
+  getSubmissionAnswersForAccount,
+  getSubmissionAnswersUnscoped,
+} from '@quill/db';
+import { parseFileAnswer, type FileAnswer, type FormConfig, type FormStep } from '@quill/engine';
 import type {
   SubmissionAnswers,
   SubmissionFile,
@@ -25,7 +29,7 @@ import type {
   UploadPresignResult,
 } from '@quill/types';
 import { type ServerEnv } from '@quill/config/env';
-import { previewFor } from './file-preview';
+import { linkPlanFor, previewFor, type PreviewPlan } from './file-preview';
 import {
   canonicalExt,
   extensionOf,
@@ -37,6 +41,32 @@ import {
 import { DB, ENV, STORAGE } from './tokens';
 
 export type UploadError = { error: string; message: string; status: number };
+
+/** Where a permanent file link sends the browser, and how the file will open there. */
+export interface LinkedFile {
+  /** A presigned GET, alive for `UPLOAD_DOWNLOAD_TTL_SEC`. Never stored. */
+  url: string;
+  disposition: 'inline' | 'attachment';
+}
+
+/**
+ * The one answer a file link gets for every miss: bad token, no bucket, no
+ * submission, no file on that question. Identical on purpose (see `linkedFile`).
+ */
+export const FILE_LINK_NOT_FOUND: UploadError = {
+  error: 'NOT_FOUND',
+  message: 'File not found.',
+  status: 404,
+};
+
+/** A plan that forces nothing: the signed URL is a plain download. */
+const NO_INLINE: PreviewPlan = { kind: 'none', inlineContentType: null };
+
+/** The file answer stored under one question, or null when there is none. */
+function fileAnswerOn(data: unknown, stepKey: string): FileAnswer | null {
+  if (!data || typeof data !== 'object') return null;
+  return parseFileAnswer((data as Record<string, unknown>)[stepKey] as never);
+}
 
 /**
  * Extensions no form may accept, whatever its owner configured.
@@ -260,25 +290,70 @@ export class UploadService {
     const row = await getSubmissionAnswersForAccount(this.db, accountId, submissionId);
     if (!row) return { error: 'NOT_FOUND', message: 'Submission not found.', status: 404 };
 
-    const answers = (row.data ?? {}) as Record<string, unknown>;
-    const file = parseFileAnswer(answers[stepKey] as never);
+    const file = fileAnswerOn(row.data, stepKey);
     if (!file) return { error: 'NOT_FOUND', message: 'No file on that question.', status: 404 };
 
     const plan = previewFor(file.name, Number(file.size));
-    try {
-      const url = await this.storage.presignGet(file.key, file.name);
+    return this.signing(submissionId, async () => {
+      const url = await this.presignAs(file, NO_INLINE);
       // A .docx is the one previewable kind with no inline type: the dashboard
       // reads its bytes and renders them itself, and a fetch does not care what
       // disposition the URL carries, so one URL does both jobs there.
       let previewUrl: string | null = null;
       if (plan.inlineContentType) {
-        previewUrl = await this.storage.presignGet(file.key, file.name, {
-          contentType: plan.inlineContentType,
-        });
+        previewUrl = await this.presignAs(file, plan);
       } else if (plan.kind !== 'none') {
         previewUrl = url;
       }
       return { name: file.name, size: file.size, kind: plan.kind, url, previewUrl };
+    });
+  }
+
+  /**
+   * One file answer behind a permanent file link: a fresh short-lived URL to
+   * send the browser to, in place for a PDF or an image, as a download under
+   * its own name for anything else.
+   *
+   * NOT account-scoped, and that is the design rather than a gap: the caller
+   * has already verified the link's HMAC, and the token is the authorization.
+   * Nothing else may call this. Every miss (no bucket, no submission, nothing
+   * on that question) is the same 404 with the same body, so the endpoint
+   * cannot be used to learn whether a submission exists.
+   */
+  async linkedFile(submissionId: string, stepKey: string): Promise<LinkedFile | UploadError> {
+    if (!this.storage.enabled) return FILE_LINK_NOT_FOUND;
+    const data = await getSubmissionAnswersUnscoped(this.db, submissionId);
+    const file = data ? fileAnswerOn(data, stepKey) : null;
+    if (!file) return FILE_LINK_NOT_FOUND;
+
+    const plan = linkPlanFor(file.name, Number(file.size));
+    return this.signing(submissionId, async () => ({
+      url: await this.presignAs(file, plan),
+      disposition: plan.inlineContentType ? ('inline' as const) : ('attachment' as const),
+    }));
+  }
+
+  /**
+   * Sign a GET for one stored file, in place when the plan names a type to
+   * force (one `previewFor` derived from the extension), else as a download.
+   * The shared step of every read, so no caller can serve a file inline under
+   * the type the browser claimed at upload.
+   */
+  private presignAs(file: FileAnswer, plan: PreviewPlan): Promise<string> {
+    return plan.inlineContentType
+      ? this.storage.presignGet(file.key, file.name, { contentType: plan.inlineContentType })
+      : this.storage.presignGet(file.key, file.name);
+  }
+
+  /**
+   * Run the signing calls of one read, reporting a failure as a typed 503.
+   * Signing reaches the credential chain, so it can fail for reasons nobody on
+   * the request caused, and "storage is unreachable" must never read as "the
+   * file is gone".
+   */
+  private async signing<T>(submissionId: string, sign: () => Promise<T>): Promise<T | UploadError> {
+    try {
+      return await sign();
     } catch (err) {
       this.log.error(`failed to sign a download for submission ${submissionId}: ${String(err)}`);
       return {

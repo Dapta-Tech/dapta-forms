@@ -814,6 +814,26 @@ export async function getSubmissionAnswersForAccount(
   return row ? mapSubmission(row) : null;
 }
 
+/**
+ * The answers of one submission by id alone, with NO account scope.
+ *
+ * Exactly one caller may use this: the public file link, whose token is an
+ * HMAC over the submission id and step key and is therefore the authorization
+ * by itself. An id that did not come out of a verified token must never reach
+ * this function; every dashboard read goes through
+ * `getSubmissionAnswersForAccount`. Returns only the answers, because that is
+ * all a file link needs, and null when the submission is gone.
+ */
+export async function getSubmissionAnswersUnscoped(
+  db: Db,
+  submissionId: string,
+): Promise<Record<string, unknown> | null> {
+  const row = await db.get<{ data: unknown }>(
+    sql`SELECT data FROM submission WHERE id = ${submissionId} LIMIT 1`,
+  );
+  return row ? parseJsonColumn<Record<string, unknown>>(row.data, {}) : null;
+}
+
 export async function deleteSubmissionForAccount(
   db: Db,
   accountId: string,

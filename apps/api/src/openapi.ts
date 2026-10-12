@@ -23,6 +23,18 @@ export const openapiSpec = {
       },
     },
   },
+  webhooks: {
+    'form.submission': {
+      post: {
+        summary: 'A submission reached a phase (webhook destination)',
+        description:
+          'POSTed to each enabled webhook destination of a form, once per phase it fires on (`partial`, `complete`, or both). Headers: `X-Forms-Event`, `X-Forms-Delivery` (the idempotency key, also the body `id`), `X-Forms-Timestamp`, and, when the destination has a secret, an HMAC-SHA256 signature of the raw body, as `sha256=<hex>` (header `X-Forms-Signature` unless the destination names another). Body { id, type, phase, submittedAt, form { id, name }, submission { id, sessionId, score, outcome }, data, utm, visit? }. `data` holds the answers keyed by question. A file answer is an object { key, name, size, mime, url }: `key` is the stored object key, `name` the original file name, `size` the size in bytes as a string, `mime` the type the browser declared (not verified), and `url` a permanent link that opens the file without signing in (PDFs and images in the browser, anything else as a download). `url` is absent when the deployment has no public web address or no signing key configured. Treat it as a secret: anyone holding it can open the file until the submission is deleted.',
+        responses: {
+          '200': { description: 'Any 2xx marks the delivery done; anything else, a timeout or a redirect is retried with backoff' },
+        },
+      },
+    },
+  },
   paths: {
     '/health': {
       get: { summary: 'Liveness + DB probe', responses: { '200': { description: 'ok | degraded' } } },
@@ -68,6 +80,19 @@ export const openapiSpec = {
           '200': { description: 'Where to PUT, and what the answer must carry' },
           '400': { description: 'Invalid, or a type or size the question refuses' },
           '404': { description: 'No such form, or uploads are not enabled here' },
+          '503': { description: 'UPLOAD_UNAVAILABLE' },
+        },
+      },
+    },
+    '/v1/public/files/{token}': {
+      get: {
+        summary: 'Resolve a permanent file link',
+        description:
+          'The API side of the `url` a webhook payload carries on every file answer. That link lives on the web host, as `/file/{token}`, and the web host calls this endpoint and redirects the browser (302, `Cache-Control: no-store`, `Referrer-Policy: no-referrer`) to the URL it returns. No session is needed: the token is a signed claim on one file of one submission, and holding it is the authorization. Returns { url, disposition }: `url` is a signed GET that lives a few minutes and opens PDFs and images in the browser (`disposition` inline, with a content type decided by the file extension, never by the type declared at upload) and downloads everything else under its original name (`disposition` attachment). The link itself never expires; it stops working when the submission is deleted or the deployment changes its signing key. Every miss (malformed or forged token, deleted submission, no file on that question, file storage not enabled) is the same 404. Rate limited per client like the rest of the public surface.',
+        responses: {
+          '200': { description: 'Where to send the browser, and how the file opens there' },
+          '404': { description: 'NOT_FOUND, for every kind of miss' },
+          '429': { description: 'RATE_LIMITED' },
           '503': { description: 'UPLOAD_UNAVAILABLE' },
         },
       },

@@ -281,6 +281,19 @@ export const serverEnvSchema = z.object({
   // Life of the owner's download URL. Minted per click, never stored, never
   // mailed. A link with a longer life than this is a bug, not a feature.
   UPLOAD_DOWNLOAD_TTL_SEC: z.coerce.number().int().positive().max(3600).default(300),
+  // Signing secret for the permanent file links a webhook payload carries
+  // (`url` on every file answer, resolved on the web host at click time).
+  // Optional on purpose: unset, the key is derived from FORMS_ENCRYPTION_KEY
+  // under a label of its own, so a deployment that already has that key needs
+  // nothing new. Set this only to sign links with a dedicated secret. Changing
+  // whichever one is in use revokes every link already sent. With neither set,
+  // payloads carry no `url` and the link route answers 404. Server-only.
+  FILE_LINK_SECRET: z
+    .string()
+    .refine((v) => v === '' || v.trim().length >= 32, {
+      message: 'FILE_LINK_SECRET must be at least 32 characters (openssl rand -base64 32).',
+    })
+    .optional(),
 
   // Spam protection: a human check (Cloudflare Turnstile) a form owner can turn
   // on per form, verified by THIS service before a final submit is written.

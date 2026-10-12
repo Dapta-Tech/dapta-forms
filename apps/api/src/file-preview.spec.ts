@@ -9,7 +9,7 @@
  * extension is the only claim the upload path actually verified.
  */
 import { describe, expect, it } from 'vitest';
-import { PREVIEW_MAX_BYTES, previewFor } from './file-preview';
+import { PREVIEW_MAX_BYTES, linkPlanFor, previewFor } from './file-preview';
 
 const SMALL = 40_000;
 
@@ -77,5 +77,23 @@ describe('previewFor', () => {
     // answer never carried one. Refusing on that would break every older answer.
     expect(previewFor('scan.pdf', 0).kind).toBe('pdf');
     expect(previewFor('scan.pdf', Number.NaN).kind).toBe('pdf');
+  });
+});
+
+describe('linkPlanFor (permanent file link)', () => {
+  it('opens only PDFs and images in place, with the type their extension names', () => {
+    expect(linkPlanFor('cv.pdf', SMALL)).toEqual({ kind: 'pdf', inlineContentType: 'application/pdf' });
+    expect(linkPlanFor('logo.PNG', SMALL)).toEqual({ kind: 'image', inlineContentType: 'image/png' });
+    expect(linkPlanFor('photo.jpeg', SMALL).inlineContentType).toBe('image/jpeg');
+  });
+
+  it('downloads everything else, text and Word included', () => {
+    for (const name of ['notes.txt', 'leads.csv', 'data.json', 'CV.docx', 'site.zip', 'page.html', 'resume']) {
+      expect(linkPlanFor(name, SMALL), name).toEqual({ kind: 'none', inlineContentType: null });
+    }
+  });
+
+  it('follows the preview ceiling: a huge PDF downloads', () => {
+    expect(linkPlanFor('big.pdf', PREVIEW_MAX_BYTES + 1).inlineContentType).toBeNull();
   });
 });
