@@ -4,9 +4,9 @@ import { randomUUID } from 'node:crypto';
 /**
  * V5-A12 — the reveal must play from EVERY position, reliably.
  *
- * The V4 tester reported this as intermittent: "hubieron un par de veces que el
- * reveal screen no me funcionaba cuando lo ponía de último, pero ahora ya,
- * revisa que funcione bien sin importar donde esté." An intermittent report is
+ * The V4 tester reported this as intermittent (translated from Spanish): "a couple
+ * of times the reveal screen didn't work when I put it last, but now it does;
+ * check that it works wherever it is." An intermittent report is
  * not a bug you can fix from a description — it is one you either reproduce or
  * close with evidence, so this spec is the evidence.
  *
