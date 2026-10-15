@@ -526,3 +526,82 @@ describe('GET /api/auth/login, the browser id', () => {
     expect(cookieJar.set.mock.calls.map(([name]) => name)).not.toContain('dforms_bid');
   });
 });
+
+/**
+ * `?next=` (lib/return-path.ts): a dashboard path parked for the callback.
+ * Unlike the tags the latest attempt wins, and a login that asks for no
+ * destination clears an old one.
+ */
+describe('GET /api/auth/login destination (next)', () => {
+  const fetchMock = vi.fn();
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.unstubAllEnvs();
+    provider.name = 'workos';
+    vi.stubGlobal('fetch', fetchMock);
+    vi.stubEnv('PUBLIC_APP_URL', '');
+    vi.stubEnv('IAM_BASE_URL', 'https://iam.example.com/iam');
+    fetchMock.mockResolvedValue({ ok: true, json: async () => ({ loginUrl: AUTHORIZE }) });
+    cookieJar.get.mockReturnValue(undefined);
+  });
+
+  const nextSet = () => cookieJar.set.mock.calls.find(([name]) => name === 'quill_next');
+
+  it.each([
+    '/admin/developers/keys',
+    '/admin/developers/docs',
+    '/admin/playbooks',
+    '/admin/playbooks/guia-de-calificacion',
+  ])('parks %s in an httpOnly cookie for 30 minutes', async (next) => {
+    await GET(req(`/api/auth/login?next=${encodeURIComponent(next)}`));
+
+    expect(nextSet()?.[1]).toBe(next);
+    expect(nextSet()?.[2]).toMatchObject({ httpOnly: true, sameSite: 'lax', path: '/', maxAge: 1800 });
+  });
+
+  it.each([
+    ['another host', 'https://evil.example'],
+    ['a protocol-relative URL', '//evil.example/admin'],
+    ['a parent segment', '/admin/playbooks/../../login'],
+    ['a query string', '/admin/playbooks?categoria=ventas'],
+    ['a path outside the dashboard', '/playbooks/guia'],
+    ['an overlong path', `/admin/playbooks/${'a'.repeat(200)}`],
+  ])('never parks %s', async (_label, next) => {
+    await GET(req(`/api/auth/login?next=${encodeURIComponent(next)}`));
+
+    expect(nextSet()).toBeUndefined();
+  });
+
+  it('the latest attempt wins over an older parked destination', async () => {
+    cookieJar.get.mockImplementation((name: string) =>
+      name === 'quill_next' ? { value: '/admin/developers/keys' } : undefined,
+    );
+
+    await GET(req('/api/auth/login?next=%2Fadmin%2Fplaybooks%2Fguia-de-calificacion'));
+
+    expect(nextSet()?.[1]).toBe('/admin/playbooks/guia-de-calificacion');
+  });
+
+  it('clears an old destination when this login asks for none', async () => {
+    cookieJar.get.mockImplementation((name: string) =>
+      name === 'quill_next' ? { value: '/admin/developers/keys' } : undefined,
+    );
+
+    await GET(req('/api/auth/login'));
+
+    expect(cookieJar.delete).toHaveBeenCalledWith('quill_next');
+    expect(nextSet()).toBeUndefined();
+  });
+
+  it('clears an old destination when this login asks for one it refuses', async () => {
+    cookieJar.get.mockImplementation((name: string) =>
+      name === 'quill_next' ? { value: '/admin/developers/keys' } : undefined,
+    );
+
+    await GET(req('/api/auth/login?next=https%3A%2F%2Fevil.example'));
+
+    expect(cookieJar.delete).toHaveBeenCalledWith('quill_next');
+    expect(nextSet()).toBeUndefined();
+  });
+});

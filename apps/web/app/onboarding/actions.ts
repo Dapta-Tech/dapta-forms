@@ -5,6 +5,7 @@ import { revalidatePath } from 'next/cache';
 import { cookies } from 'next/headers';
 import { adminApi, type OnboardingComplete, type OnboardingProgress } from '@/lib/admin-api';
 import { LOCALE_COOKIE, LOCALE_COOKIE_MAX_AGE } from '@/lib/locale';
+import { NEXT_COOKIE, safeNextPath } from '@/lib/return-path';
 
 /**
  * Persist one screen's worth of answers.
@@ -92,6 +93,16 @@ export async function completeOnboardingAction(
       maxAge: LOCALE_COOKIE_MAX_AGE,
       sameSite: 'lax',
     });
+  }
+
+  // Arrived with a destination (the landing's «Connect» asks for the API keys):
+  // it beats the editor of the form the wizard just made. Spent here, the last
+  // stop of the round-trip (lib/return-path.ts).
+  const jar = await cookies();
+  const next = safeNextPath(jar.get(NEXT_COOKIE)?.value);
+  if (next) {
+    jar.delete(NEXT_COOKIE);
+    target = next;
   }
 
   revalidatePath('/admin', 'layout');
