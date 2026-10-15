@@ -39,6 +39,7 @@ import {
   projectRoster,
   removeMember,
   renameAccount,
+  setMemberStatus,
   sql,
   wouldOrphanWorkspace,
   type AccessGrant,
@@ -53,6 +54,7 @@ import {
 import { AUTH_PROVIDER, DB, WORKSPACE_PROJECTION } from './tokens';
 import type { AuthProvider, HostPrincipal, ReqLike, UpstreamIdentity } from './auth.provider';
 import { AuthService } from './auth.service';
+import { apiKeyFromRequest } from './api-keys';
 import { assertAdmin, assertCanManageTarget, assertNotSelf, assertOwner } from './permissions';
 import {
   IAM_ADMIN_ROLE_NAME,
@@ -112,9 +114,14 @@ export class WorkspaceService {
     @Optional() @Inject(WORKSPACE_PROJECTION) private readonly projection: WorkspaceProjection | null = null,
   ) {}
 
-  /** The caller's upstream identity when this deployment has one, else null. */
+  /**
+   * The caller's upstream identity when this deployment has one, else null.
+   * An API key has none: it is not a session the identity service issued, so
+   * it is never forwarded there (GET /v1/me asks `isStaff` with a key too).
+   */
   private async upstream(req: ReqLike): Promise<UpstreamIdentity | null> {
     if (!this.projection || !this.provider.resolveUpstream) return null;
+    if (apiKeyFromRequest(req) !== null) return null;
     return this.provider.resolveUpstream(req);
   }
 
@@ -694,6 +701,11 @@ export class WorkspaceService {
         throw new BadRequestException({ error: 'BAD_REQUEST', message: 'Cannot set a member back to invited.' });
       }
       await this.projection.iam.setWorkspaceUserActive(up.bearer, ref.workspaceUserId, input.status === 'active');
+      // A key follows its member: once the identity service has taken the
+      // disable, apply it here too, which revokes their API keys in the same
+      // transaction. Waiting for the roster re-read below would leave the keys
+      // working whenever that read fails or still lags behind the write.
+      if (input.status !== 'active') await setMemberStatus(this.db, p.accountId, memberId, input.status);
     }
     if (ref.externalId) this.projection.invalidate(ref.externalId);
     await this.roster(req);

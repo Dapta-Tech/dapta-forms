@@ -259,6 +259,6 @@ See `advance` and the `step_view` effect in
 ## 5. Risks / notes
 
 - **Time perf (correlated subquery for `open`):** acceptable at lead-gen volume; a daily rollup (Phase 2) makes it cheap. An index `form_event (form_id, session_id, type)` would help if needed (additive).
-- **Fire-and-forget top-of-funnel events** (`void recordEventAction`): a `view`/`step_view` can be lost to network/adblock, undercounting the top. Out of scope for these fixes; consider beacon/retry if the undercount matters.
+- **Fire-and-forget top-of-funnel events** (`void callAction(() => recordEvent(...))`): a `view`/`step_view` can be lost to network/adblock, undercounting the top. Out of scope for these fixes; consider beacon/retry if the undercount matters.
 - **"Last week/month/year" semantics, rolling vs calendar:** we chose rolling; if the user expects calendar, it is a `resolveRange` change (client-side).
 - **`account.timezone` (Phase 2):** until it exists, everything is UTC, documented as intentional behavior.

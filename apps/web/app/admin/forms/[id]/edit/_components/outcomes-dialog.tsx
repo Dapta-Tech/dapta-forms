@@ -10,7 +10,7 @@ import { HelpTip } from '@/components/ui/help-tip';
 import { cn } from '@/lib/cn';
 import { TextField, NumberField } from './fields';
 import { RedirectField } from './redirect-field';
-import { TokenTextarea, tokenOptionsBefore, allTokenKeys } from './token-textarea';
+import { TokenTextarea, recallTokenOptionsBefore, allTokenKeys } from './token-textarea';
 import { maxScore } from './scoring-util';
 import { tb } from './builder-messages';
 import type { BuilderMessages } from './builder-messages';
@@ -78,7 +78,7 @@ export function OutcomesDialog({
   const outcomes = [...(config.outcomes ?? [])].sort((a, b) => (a.minScore ?? 0) - (b.minScore ?? 0));
   // The thank-you screen runs AFTER every step, so every captured field is
   // available to recall there — pass the full list, not a prefix.
-  const endingTokens = tokenOptionsBefore(config.steps, config.steps.length);
+  const endingTokens = recallTokenOptionsBefore(config.steps, config.steps.length);
   const allKeys = allTokenKeys(config.steps);
   const bmTokens = bm.tokens;
   const tokenMessages = {

@@ -28,6 +28,10 @@ type Mode = 'emoji' | 'letters' | 'image';
  * (`resolveOptionIcon`). Switching a question back to List therefore can't leave
  * an unreachable image behind — the tab is gone and the value falls back to
  * initials.
+ *
+ * With no icon the trigger shows an empty slot, not the label's initials: an
+ * option without an icon draws none on the form, so the editor must not
+ * promise letters the respondent will never see.
  */
 export function IconPicker({
   value,
@@ -38,7 +42,7 @@ export function IconPicker({
 }: {
   value: string | null | undefined;
   onChange: (icon: string | null) => void;
-  /** The option's label — drives the initials preview. */
+  /** The option's label: drives the Letters tab's suggestion. */
   label: string;
   layout: FormOptionLayout;
   m: EditorMessages['options'];
@@ -90,7 +94,9 @@ export function IconPicker({
     return all;
   }, [imageAllowed, m]);
 
-  const previewGlyph = current && !currentIsImage ? current : optionInitials(label);
+  // An image on a list draws as initials (see `resolveOptionIcon`); no icon at
+  // all draws nothing, so the slot stays empty.
+  const previewGlyph = !current ? '' : currentIsImage ? optionInitials(label) : current;
   const showImagePreview = currentIsImage && imageAllowed && isSafeImageUrl(current);
 
   return (
@@ -106,15 +112,18 @@ export function IconPicker({
         {/* The glyph keeps its muted disc (it needs a surface to sit on); a
             logo does not — same reasoning as the card icon. */}
         <span
+          data-testid="icon-picker-preview"
           className={cn(
             'flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden text-sm leading-none',
-            showImagePreview ? '' : 'rounded-md bg-muted',
+            showImagePreview ? '' : current ? 'rounded-md bg-muted' : 'rounded-md border border-dashed border-border text-muted-foreground',
           )}
         >
           {showImagePreview ? (
             <img src={current} alt="" className="max-h-full max-w-full object-contain" />
-          ) : (
+          ) : current ? (
             previewGlyph
+          ) : (
+            <i aria-hidden className="pi pi-plus" style={{ fontSize: 10 }} />
           )}
         </span>
         <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">

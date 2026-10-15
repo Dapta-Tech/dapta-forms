@@ -460,7 +460,7 @@ describe('AdminService — enqueue triggers', () => {
     const { accountId, memberId } = await seedAccount({});
     const effects = new DaptaSyncEffects(db, envWith());
     const admin = newAdmin(effects);
-    const p = { accountId, memberId, role: 'owner' as const };
+    const p = { accountId, memberId, role: 'owner' as const, via: 'session' as const };
 
     // Arrival patch: a step was SEEN, nothing was answered.
     await admin.saveOnboarding(p, { lastStep: 'phone' });
@@ -479,7 +479,7 @@ describe('AdminService — enqueue triggers', () => {
     const { accountId, memberId } = await seedAccount({});
     const effects = new DaptaSyncEffects(db, envWith());
     const admin = newAdmin(effects);
-    const p = { accountId, memberId, role: 'owner' as const };
+    const p = { accountId, memberId, role: 'owner' as const, via: 'session' as const };
 
     const first = await admin.completeOnboarding(p, { template: 'blank', cohort: 'cold' });
     expect(first.completed).toBe(true);

@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   Body,
   Controller,
   Get,
@@ -16,20 +15,11 @@ import {
   upsertAccountBranding,
 } from '@quill/db';
 import { brandKitSchema } from '@quill/types';
-import { z, ZodError } from 'zod';
+import { z } from 'zod';
 import { AuthService, type ReqLike } from './auth.service';
 import { assertAdmin } from './permissions';
+import { parse } from './validation';
 import { DB } from './tokens';
-
-function parse<T>(schema: { parse: (v: unknown) => T }, body: unknown): T {
-  try {
-    return schema.parse(body);
-  } catch (err) {
-    if (err instanceof ZodError)
-      throw new BadRequestException({ error: 'BAD_REQUEST', message: err.issues[0]?.message });
-    throw err;
-  }
-}
 
 const formIdsSchema = z.object({ formIds: z.array(z.string().min(1)).min(1).max(500) });
 

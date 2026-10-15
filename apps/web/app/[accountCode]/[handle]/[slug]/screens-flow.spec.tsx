@@ -48,13 +48,13 @@ vi.mock('next/font/google', () => {
 });
 
 const actions = vi.hoisted(() => ({
-  submitFormAction: vi.fn(),
-  recordEventAction: vi.fn(async () => undefined),
-  recordEventsAction: vi.fn(async () => undefined),
-  recordBookingAction: vi.fn(async () => undefined),
-  presignUploadAction: vi.fn(async () => ({ ok: false })),
+  submitForm: vi.fn(),
+  recordEvent: vi.fn(async () => undefined),
+  recordEvents: vi.fn(async () => undefined),
+  recordBooking: vi.fn(async () => undefined),
+  presignUpload: vi.fn(async () => ({ ok: false })),
 }));
-vi.mock('./actions', () => actions);
+vi.mock('./transport', () => actions);
 
 import { FormRenderer } from './form-renderer';
 
@@ -107,10 +107,10 @@ let renders: { el: HTMLElement; opts: TurnstileRenderOptions }[];
 beforeEach(() => {
   resetTurnstileLoaderForTests();
   window.sessionStorage.clear();
-  actions.submitFormAction.mockReset();
-  actions.submitFormAction.mockImplementation(async () => ({ ok: true, score: 0, outcome: null }));
-  actions.recordEventAction.mockClear();
-  actions.recordEventsAction.mockClear();
+  actions.submitForm.mockReset();
+  actions.submitForm.mockImplementation(async () => ({ ok: true, score: 0, outcome: null }));
+  actions.recordEvent.mockClear();
+  actions.recordEvents.mockClear();
   observers = [];
   renders = [];
   vi.stubGlobal(
@@ -192,12 +192,12 @@ type Sent = { type: string; stepIndex: number | null; stepKey: string | null };
  */
 const sent = (): Sent[] => {
   const all: { at: number; events: Sent[] }[] = [
-    ...actions.recordEventAction.mock.calls.map((c, i) => ({
-      at: actions.recordEventAction.mock.invocationCallOrder[i]!,
+    ...actions.recordEvent.mock.calls.map((c, i) => ({
+      at: actions.recordEvent.mock.invocationCallOrder[i]!,
       events: [(c as unknown[])[2] as Sent],
     })),
-    ...actions.recordEventsAction.mock.calls.map((c, i) => ({
-      at: actions.recordEventsAction.mock.invocationCallOrder[i]!,
+    ...actions.recordEvents.mock.calls.map((c, i) => ({
+      at: actions.recordEvents.mock.invocationCallOrder[i]!,
       events: ((c as unknown[])[2] as { events: Sent[] }).events,
     })),
   ];
@@ -205,8 +205,8 @@ const sent = (): Sent[] => {
 };
 const events = (type: string) => sent().filter((e) => e.type === type).map((e) => [e.stepIndex, e.stepKey]);
 const clearEvents = () => {
-  actions.recordEventAction.mockClear();
-  actions.recordEventsAction.mockClear();
+  actions.recordEvent.mockClear();
+  actions.recordEvents.mockClear();
 };
 const enter = async (el: HTMLElement) => {
   await act(async () => {
@@ -267,7 +267,7 @@ describe('validation on a screen', () => {
     expect(host.querySelectorAll('[role="alert"]')).toHaveLength(1);
     expect(q('[role="alert"]')!.textContent).toBe(m.verticalErrors);
     expect(document.activeElement).toBe(input('name'));
-    expect(actions.submitFormAction).not.toHaveBeenCalled();
+    expect(actions.submitForm).not.toHaveBeenCalled();
   });
 
   it('a fixed answer clears its own error and the summary', async () => {
@@ -405,8 +405,8 @@ describe('logic inside a screen', () => {
     await fillFirstScreen();
     await act(async () => button().click());
     await settle();
-    expect(actions.submitFormAction).toHaveBeenCalledTimes(1);
-    expect(actions.submitFormAction.mock.calls[0]![2].partial).toBeUndefined();
+    expect(actions.submitForm).toHaveBeenCalledTimes(1);
+    expect(actions.submitForm.mock.calls[0]![2].partial).toBeUndefined();
     expect(q('.pf-done__title')).not.toBeNull();
   });
 });
@@ -433,7 +433,7 @@ describe('funnel events per question (E1)', () => {
     ]);
     // The threshold (email) is on this screen: the partial fires on its submit.
     expect(events('partial_submit')).toEqual([[1, 'email']]);
-    const partial = actions.submitFormAction.mock.calls.find((c) => c[2].partial === true)!;
+    const partial = actions.submitForm.mock.calls.find((c) => c[2].partial === true)!;
     expect(partial[2].data).toMatchObject({ name: 'Ana', email: 'ana@example.com' });
     // The next screen's views: its visible members only.
     expect(events('step_view').slice(4)).toEqual([
@@ -445,13 +445,13 @@ describe('funnel events per question (E1)', () => {
   it('a screen sends its events in one call, not one call per question', async () => {
     await mount(form());
     await settle();
-    expect(actions.recordEventsAction).toHaveBeenCalledTimes(1); // the four views
+    expect(actions.recordEvents).toHaveBeenCalledTimes(1); // the four views
     await fillFirstScreen();
     await act(async () => button().click());
     await settle();
     // The four completions, then the next screen's two views.
-    expect(actions.recordEventsAction).toHaveBeenCalledTimes(3);
-    expect(actions.recordEventAction.mock.calls.map((c) => ((c as unknown[])[2] as Sent).type)).toEqual([
+    expect(actions.recordEvents).toHaveBeenCalledTimes(3);
+    expect(actions.recordEvent.mock.calls.map((c) => ((c as unknown[])[2] as Sent).type)).toEqual([
       'view',
       'start',
     ]);
@@ -464,7 +464,7 @@ describe('funnel events per question (E1)', () => {
     await mount(form({ steps: [...thirty, { key: 'after', type: 'text', question: 'After?' }] }));
     await settle();
     const batches = () =>
-      actions.recordEventsAction.mock.calls.map((c) => ((c as unknown[])[2] as { events: Sent[] }).events.length);
+      actions.recordEvents.mock.calls.map((c) => ((c as unknown[])[2] as { events: Sent[] }).events.length);
     expect(batches()).toEqual([24, 6]);
     expect(events('step_view')).toEqual(thirty.map((s, i) => [i, s.key]));
     clearEvents();
@@ -475,7 +475,7 @@ describe('funnel events per question (E1)', () => {
   });
 
   it('a refused submit clicked again completes each question once for the visit', async () => {
-    actions.submitFormAction.mockImplementation(async () => ({ ok: false, error: 'RATE_LIMITED', message: 'x' }));
+    actions.submitForm.mockImplementation(async () => ({ ok: false, error: 'RATE_LIMITED', message: 'x' }));
     const lastScreen = [
       { key: 'name', type: 'text', question: 'Name?', screenGroup: 'last' },
       { key: 'email', type: 'email', question: 'Email?', screenGroup: 'last' },
@@ -488,7 +488,7 @@ describe('funnel events per question (E1)', () => {
     await act(async () => button().click());
     await settle();
     // Both attempts reached the API; the completions went once.
-    expect(actions.submitFormAction).toHaveBeenCalledTimes(2);
+    expect(actions.submitForm).toHaveBeenCalledTimes(2);
     expect(events('step_complete')).toEqual([
       [0, 'name'],
       [1, 'email'],
@@ -569,7 +569,7 @@ describe('spam protection on a grouped last screen', () => {
     expect(q('.pf-reveal__subtitle')).toBeNull(); // no submitting screen
     await act(async () => renders[0]!.opts.callback!('tok'));
     await settle();
-    expect(actions.submitFormAction.mock.calls.at(-1)![2]).toMatchObject({ captchaToken: 'tok' });
+    expect(actions.submitForm.mock.calls.at(-1)![2]).toMatchObject({ captchaToken: 'tok' });
     expect(q('.pf-done__title')).not.toBeNull();
   });
 
@@ -583,11 +583,11 @@ describe('spam protection on a grouped last screen', () => {
     await act(async () => renders[0]!.opts.callback!('s-tok'));
     await act(async () => button().click());
     await settle();
-    expect(actions.submitFormAction.mock.calls.at(-1)![2]).toMatchObject({ captchaToken: 's-tok', hp: '' });
+    expect(actions.submitForm.mock.calls.at(-1)![2]).toMatchObject({ captchaToken: 's-tok', hp: '' });
   });
 
   it('a refusal lands on the screen, with every answer intact and the button back', async () => {
-    actions.submitFormAction.mockImplementation(async (_a: string, _s: string, p: { partial?: boolean }) =>
+    actions.submitForm.mockImplementation(async (_a: string, _s: string, p: { partial?: boolean }) =>
       p.partial ? { ok: true } : { ok: false, error: 'RATE_LIMITED', message: 'x' },
     );
     await mount(form({ steps: lastGrouped }, { captcha: AUTO }));
@@ -630,7 +630,7 @@ describe('a form without screens walks exactly as before', () => {
       'step_view:1:b',
       'step_view:0:a',
     ]);
-    expect(actions.recordEventsAction).not.toHaveBeenCalled();
+    expect(actions.recordEvents).not.toHaveBeenCalled();
   });
 
   it('embedded, it asks the host to scroll on each move to another step, never on load', async () => {

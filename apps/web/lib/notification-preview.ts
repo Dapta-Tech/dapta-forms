@@ -16,6 +16,7 @@ export const NOTIFICATION_SAMPLE_ANSWERS: { label: string; value: string }[] = [
 /** Illustrative values used ONLY for the on-screen preview (never sent). */
 export const NOTIFICATION_SAMPLE: Record<string, string> = {
   formName: 'Lead Qualifier',
+  respondentName: 'Alex Rivera',
   respondentEmail: 'lead@acme.io',
   score: '15',
   outcomeLabel: 'Qualified',

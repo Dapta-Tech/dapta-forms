@@ -114,6 +114,33 @@ describe('submission upsert', () => {
     expect(rows[0]!.completedAt).not.toBeNull();
   });
 
+  it('a partial that read an open row never overwrites a complete that committed in between', async () => {
+    // The browser no longer serializes a tab's requests, so a partial and the
+    // complete can be in flight together. Hold the partial right after its
+    // SELECT (row still open), let the complete commit, then let it write.
+    const session = 'partial-vs-complete';
+    await upsertSubmission(db, { formId, sessionId: session, data: { a: 1 }, score: 1, partial: true });
+    let held = false;
+    const racing: Db = {
+      ...db,
+      get: async <T>(query: SQL): Promise<T | undefined> => {
+        const row = await db.get<T>(query);
+        if (!held) {
+          held = true;
+          await upsertSubmission(db, { formId, sessionId: session, data: { a: 1, b: 2 }, score: 9 });
+        }
+        return row;
+      },
+    };
+    await upsertSubmission(racing, { formId, sessionId: session, data: { a: 1 }, score: 1, partial: true });
+
+    const rows = await listSubmissions(db, formId);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.completedAt).not.toBeNull();
+    expect(rows[0]!.data).toEqual({ a: 1, b: 2 });
+    expect(rows[0]!.score).toBe(9);
+  });
+
   it('reports whether the row was already completed, so effects fire exactly once', async () => {
     // The row is idempotent per session; its downstream effects (emails, CRM
     // deliveries) are not. `wasCompletedBefore` is what lets the service tell a

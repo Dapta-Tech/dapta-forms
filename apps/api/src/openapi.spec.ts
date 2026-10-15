@@ -55,4 +55,15 @@ describe('openapi spec', () => {
     expect(JSON.stringify(submit.responses)).toContain('CAPTCHA_REQUIRED');
     expect(JSON.stringify(submit.responses)).toContain('CAPTCHA_UNAVAILABLE');
   });
+
+  it('documents the API key bearer scheme and the key routes', () => {
+    const scheme = openapiSpec.components.securitySchemes.apiKey;
+    expect(scheme).toMatchObject({ type: 'http', scheme: 'bearer' });
+    for (const code of ['KEY_NOT_ALLOWED', 'INVALID_API_KEY', 'WORKSPACE_FORBIDDEN', 'RATE_LIMITED', 'Retry-After']) {
+      expect(scheme.description).toContain(code);
+    }
+    const paths = Object.keys(openapiSpec.paths);
+    expect(paths).toEqual(expect.arrayContaining(['/v1/api-keys', '/v1/api-keys/{id}']));
+    expect(JSON.stringify(openapiSpec.paths['/v1/api-keys'].post)).toContain('KEY_LIMIT');
+  });
 });

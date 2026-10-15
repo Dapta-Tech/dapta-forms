@@ -69,6 +69,7 @@ describe('GET /v1/notifications', () => {
     // The interpolation catalog.
     expect(received.tokens).toEqual([
       'formName',
+      'respondentName',
       'respondentEmail',
       'score',
       'outcomeLabel',

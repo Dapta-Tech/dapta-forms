@@ -318,6 +318,8 @@ export interface FormDetail {
   draftConfig?: FormConfig | null;
   /** Epoch-ms of the last publish; null = never published via the draft flow. */
   publishedAt?: number | null;
+  /** Epoch-ms of when the version a revert would bring back went live; null = nothing to revert to. */
+  previousPublishedAt?: number | null;
   createdAt: number;
   updatedAt: number;
 }
@@ -396,6 +398,36 @@ function qs(params: Record<string, string | number | undefined | null>): string 
 }
 
 export const isAdminRole = (role: AccountRole): boolean => role === 'owner' || role === 'admin';
+
+/** Who created an API key, as `GET /v1/api-keys` names them. */
+export interface ApiKeyCreator {
+  memberId: string;
+  name: string | null;
+  email: string | null;
+}
+
+/**
+ * One active API key, as listed. The secret itself is never here: only its last
+ * four characters. A member is sent their own keys; an owner or admin, every
+ * active key of the workspace. Revoked keys are never listed.
+ */
+export interface ApiKey {
+  id: string;
+  name: string;
+  last4: string;
+  createdAt: number;
+  lastUsedAt: number | null;
+  createdBy: ApiKeyCreator;
+}
+
+/** `POST /v1/api-keys` (201): the only response that ever carries the full `key`. */
+export interface CreatedApiKey {
+  id: string;
+  name: string;
+  last4: string;
+  createdAt: number;
+  key: string;
+}
 
 /**
  * One allowed value of an enumeration property. `value` is what gets WRITTEN to
@@ -680,6 +712,8 @@ export const adminApi = {
   /** Publish the pending draft config (no-op when no draft is pending). */
   publishForm: (id: string, b?: { expectedUpdatedAt?: number }) =>
     req<FormDetail>('POST', `/v1/forms/${id}/publish`, b?.expectedUpdatedAt === undefined ? undefined : b),
+  /** Put the previously published version back live; 409 NOTHING_TO_REVERT when there is none. */
+  revertForm: (id: string) => req<FormDetail>('POST', `/v1/forms/${id}/revert`),
   deleteForm: (id: string) => req<void>('DELETE', `/v1/forms/${id}`),
 
   // Form folders
@@ -836,4 +870,11 @@ export const adminApi = {
   /** Remove this form's override — the form inherits the account template again. */
   resetFormNotification: (id: string, emailKey: NotificationEmailKey) =>
     req<FormNotificationView>('POST', `/v1/forms/${id}/notifications/${emailKey}/reset`),
+
+  // API keys (Developers page). Session only: the API refuses these routes to a key.
+  listApiKeys: () => req<{ keys: ApiKey[] }>('GET', '/v1/api-keys'),
+  /** 409 `KEY_LIMIT` once the caller already holds ten active keys in this workspace. */
+  createApiKey: (name: string) => req<CreatedApiKey>('POST', '/v1/api-keys', { name }),
+  /** 204. Someone else's key without owner/admin: 403. Another workspace's: 404. */
+  revokeApiKey: (id: string) => req<void>('DELETE', `/v1/api-keys/${encodeURIComponent(id)}`),
 };

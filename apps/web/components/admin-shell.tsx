@@ -1,9 +1,12 @@
 'use client';
 
 import {
+  useCallback,
   useEffect,
+  useId,
   useRef,
   useState,
+  type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
   type TransitionEvent as ReactTransitionEvent,
@@ -16,6 +19,8 @@ import { BrandMark, BrandWordmark } from '@/components/brand/brand';
 import { ProfileMenu } from '@/components/profile-menu';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { WorkspaceSwitcher } from '@/components/workspace-switcher';
+import { AnchoredMenu } from '@/components/ui/anchored-menu';
+import { McpLogos } from '@/components/mcp-logos';
 import type { Workspace } from '@/lib/admin-api';
 import { PLATFORM_URL, suiteHref } from '@/lib/suite';
 import type { ThemePref } from '@/lib/theme';
@@ -28,7 +33,15 @@ type ChromeMessages = FormsMessages['admin']['chrome'];
  *  a desktop collapse rail (cookie-persisted, no FOUC), and a <768px off-canvas
  *  drawer with a hamburger top bar. Tokens only; R22 press/hover; R27/R28. */
 
-type IconName = 'home' | 'forms' | 'submissions' | 'analytics' | 'integrations' | 'docs' | 'agents';
+type IconName =
+  | 'home'
+  | 'forms'
+  | 'submissions'
+  | 'analytics'
+  | 'integrations'
+  | 'mcp'
+  | 'docs'
+  | 'agents';
 
 interface NavItem {
   key: keyof ChromeMessages['nav'];
@@ -43,7 +56,29 @@ interface NavItem {
    * site has one page per language). `NavLinks` resolves it from `docsHref`.
    */
   localizedHref?: 'docsHref';
+  /**
+   * Pages under this item. The item becomes a disclosure instead of a link:
+   * an accordion in the wide rail and the drawer, a flyout menu on the
+   * collapsed rail. `href` is then the prefix that marks the group active.
+   */
+  children?: readonly SubNavItem[];
 }
+
+interface SubNavItem {
+  key: keyof ChromeMessages['developersMenu'];
+  href: string;
+  /** PrimeIcons class, shown in the flyout where the row has room for one. */
+  icon: string;
+}
+
+// MCP (shown as "MCP", keyed `developers`) holds two pages: the keys, and the
+// docs for what a key can call. The addresses keep their `/admin/developers`
+// prefix because skill zips already handed out link there. `/admin/developers`
+// itself only redirects to the keys, so the group never links to it.
+const DEVELOPERS_PAGES: readonly SubNavItem[] = [
+  { key: 'keys', href: '/admin/developers/keys', icon: 'pi-key' },
+  { key: 'docs', href: '/admin/developers/docs', icon: 'pi-file-code' },
+];
 
 // Forms information architecture: Home, Forms, Submissions, Analytics,
 // Integrations. Submissions/Analytics/Integrations are per-form surfaces
@@ -51,6 +86,13 @@ interface NavItem {
 // ACCOUNT (workspaces, brand kit, notifications, public page) lives behind the
 // profile button at the bottom of the rail, under /admin/account, the same
 // place Dapta's admin panel keeps it, so no rail item is active on those pages.
+//
+// "MCP" follows Integrations: the workspace's API keys, for connecting an AI
+// agent or a script, and the docs for every route a key can call. Its own item
+// rather than a corner of Account settings, so the API is found without being
+// looked for. It is the one item with pages under it (see `NavGroup`), and its
+// icon is the rotating Claude, ChatGPT and Cursor logos (`McpLogos`). There is
+// no dForms MCP server yet: until there is, the item leads to the API keys.
 //
 // Then "Docs": the product documentation, always present, in the reader's
 // language (the URL lives in the message catalog, see `docsHref`). External
@@ -69,6 +111,7 @@ const NAV: NavItem[] = [
   { key: 'submissions', href: '/admin/submissions', icon: 'submissions' },
   { key: 'analytics', href: '/admin/analytics', icon: 'analytics' },
   { key: 'integrations', href: '/admin/integrations', icon: 'integrations' },
+  { key: 'developers', href: '/admin/developers', icon: 'mcp', children: DEVELOPERS_PAGES },
   { key: 'docs', href: '', icon: 'docs', external: true, localizedHref: 'docsHref' },
   ...(PLATFORM_URL
     ? [{ key: 'agents', href: suiteHref(PLATFORM_URL, 'sidebar'), icon: 'agents', external: true } as const]
@@ -86,7 +129,8 @@ const PEEK_CLOSE_MS = 160;
 
 // Dapta's icon system is PrimeIcons (pi pi-*) — the same set Calendars + the
 // production admin panel use. Sized at the design-system's 20px sidebar icon.
-const PI_BY_NAME: Record<IconName, string> = {
+// MCP is the one exception: its icon is the rotating AI app logos, same 20px.
+const PI_BY_NAME: Record<Exclude<IconName, 'mcp'>, string> = {
   home: 'pi-home',
   forms: 'pi-file-edit',
   submissions: 'pi-inbox',
@@ -96,7 +140,8 @@ const PI_BY_NAME: Record<IconName, string> = {
   agents: 'pi-microchip-ai',
 };
 
-function Icon({ name, className }: { name: IconName; className?: string }) {
+function Icon({ name, className, paused }: { name: IconName; className?: string; paused?: boolean }) {
+  if (name === 'mcp') return <McpLogos size={20} paused={paused} />;
   return (
     <i
       aria-hidden
@@ -106,15 +151,209 @@ function Icon({ name, className }: { name: IconName; className?: string }) {
   );
 }
 
+/**
+ * The look of one rail row. `parent` is a group whose open accordion already
+ * shows the active child: it reads as "you are in here" without the wash and
+ * the bar, which belong to the one row that IS the page.
+ */
+function navRowClass(collapsed: boolean, state: 'active' | 'parent' | 'idle') {
+  return [
+    'relative flex items-center gap-3 rounded-md text-sm transition-colors active:scale-[0.99]',
+    collapsed ? 'mx-auto h-11 w-11 justify-center gap-0 px-0' : 'min-h-[44px] w-full px-3 py-2.5 text-left',
+    state === 'active'
+      ? 'bg-muted font-medium text-foreground'
+      : state === 'parent'
+        ? 'font-medium text-foreground hover:bg-muted'
+        : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+    // The `bg-muted` wash alone cannot mark "you are here": on paper it
+    // is 1.18:1 against the card behind it, well under the 3:1 WCAG
+    // 1.4.11 asks of a state indicator, and a grey chip on white can
+    // never reach it. The wash still does the scanning work; this 2px
+    // accent bar does the identifying, at 3.3:1 on light and 14:1 on
+    // dark. Two signals, so neither has to carry the whole job.
+    state === 'active' &&
+      'before:absolute before:inset-y-1.5 before:left-0 before:w-0.5 before:rounded-full before:bg-primary-edge before:content-[""]',
+  ]
+    .filter(Boolean)
+    .join(' ');
+}
+
+/**
+ * A rail item with pages under it (MCP). One `<button>` in both rail
+ * widths, so focus survives the editor's peek widening the rail under it:
+ *
+ *  - Wide rail and drawer: a disclosure. The pages show indented below it,
+ *    open on their own whenever the current route is one of them.
+ *  - Collapsed rail: a menu button. The pages open in a flyout beside the
+ *    icon, portalled out of the rail by AnchoredMenu (the rail is a stacking
+ *    context, so a `fixed` panel inside it would still paint under <main>).
+ */
+function NavGroup({
+  item,
+  pages,
+  collapsed,
+  label,
+  labels,
+  onNavigate,
+}: {
+  item: NavItem;
+  pages: readonly SubNavItem[];
+  collapsed: boolean;
+  label: string;
+  labels: ChromeMessages['developersMenu'];
+  onNavigate?: () => void;
+}) {
+  const pathname = usePathname();
+  const inside = isNavItemActive(pathname, item.href);
+  const [open, setOpen] = useState(inside);
+  const [flyout, setFlyout] = useState(false);
+  // The rotating logos hold still under the pointer (see McpLogos).
+  const [hovered, setHovered] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const listId = useId();
+  const closeFlyout = useCallback(() => setFlyout(false), []);
+
+  // Arriving on one of the pages opens the group, including after the person
+  // closed it by hand and then followed a link here from somewhere else.
+  useEffect(() => {
+    if (inside) setOpen(true);
+  }, [inside, pathname]);
+
+  // The flyout belongs to the 64px rail. If the rail widens under it (the
+  // editor's peek), the accordion takes over and the panel would be left
+  // pointing at an icon that is no longer where it was.
+  useEffect(() => {
+    if (!collapsed) setFlyout(false);
+  }, [collapsed]);
+
+  const state = !inside ? 'idle' : collapsed || !open ? 'active' : 'parent';
+
+  const onFlyoutKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
+    const keys = ['ArrowDown', 'ArrowUp', 'Home', 'End'];
+    if (!keys.includes(e.key)) return;
+    e.preventDefault();
+    const items = Array.from(e.currentTarget.querySelectorAll<HTMLElement>('[role="menuitem"]'));
+    const at = items.indexOf(document.activeElement as HTMLElement);
+    const next =
+      e.key === 'Home'
+        ? 0
+        : e.key === 'End'
+          ? items.length - 1
+          : (at + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
+    items[next]?.focus();
+  };
+
+  return (
+    <>
+      <button
+        ref={triggerRef}
+        type="button"
+        data-testid={`nav-${item.key}`}
+        onClick={() => (collapsed ? setFlyout((v) => !v) : setOpen((v) => !v))}
+        onPointerEnter={() => setHovered(true)}
+        onPointerLeave={() => setHovered(false)}
+        aria-haspopup={collapsed ? 'menu' : undefined}
+        aria-expanded={collapsed ? flyout : open}
+        aria-controls={!collapsed && open ? listId : undefined}
+        title={collapsed ? label : undefined}
+        className={navRowClass(collapsed, state)}
+      >
+        <Icon name={item.icon} paused={hovered} />
+        <span className={collapsed ? 'sr-only' : 'min-w-0 flex-1 truncate'}>{label}</span>
+        {!collapsed ? (
+          <i
+            aria-hidden
+            className={`pi pi-chevron-down ml-auto shrink-0 text-muted-foreground transition-transform ${open ? 'rotate-180' : ''}`}
+            style={{ fontSize: 11 }}
+          />
+        ) : null}
+      </button>
+
+      {!collapsed && open ? (
+        <ul id={listId} className="mt-1 flex flex-col gap-1" data-testid={`nav-${item.key}-pages`}>
+          {pages.map((page) => {
+            const active = isNavItemActive(pathname, page.href);
+            return (
+              <li key={page.key}>
+                <Link
+                  href={page.href}
+                  onClick={onNavigate}
+                  aria-current={active ? 'page' : undefined}
+                  data-testid={`nav-${item.key}-${page.key}`}
+                  // pl-11 sets the label on the parent label's column (12px
+                  // padding + 20px icon + 12px gap), which is what reads as
+                  // "under MCP" without a second icon per row.
+                  className={[
+                    'relative flex min-h-[40px] items-center rounded-md py-2 pl-11 pr-3 text-sm transition-colors active:scale-[0.99]',
+                    active
+                      ? 'bg-muted font-medium text-foreground before:absolute before:inset-y-1.5 before:left-0 before:w-0.5 before:rounded-full before:bg-primary-edge before:content-[""]'
+                      : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+                  ].join(' ')}
+                >
+                  <span className="min-w-0 truncate">{labels[page.key]}</span>
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
+      ) : null}
+
+      <AnchoredMenu
+        anchorRef={triggerRef}
+        open={collapsed && flyout}
+        onClose={closeFlyout}
+        label={label}
+        side="right"
+        width={200}
+        autoFocus
+        onKeyDown={onFlyoutKeyDown}
+        className="flex flex-col overflow-hidden py-1"
+        testId={`nav-${item.key}-flyout`}
+      >
+        <p className="px-2.5 py-1 text-2xs font-medium uppercase tracking-wide text-faint">{label}</p>
+        {pages.map((page) => {
+          const active = isNavItemActive(pathname, page.href);
+          return (
+            <Link
+              key={page.key}
+              href={page.href}
+              role="menuitem"
+              aria-current={active ? 'page' : undefined}
+              data-testid={`nav-${item.key}-flyout-${page.key}`}
+              onClick={() => {
+                closeFlyout();
+                onNavigate?.();
+              }}
+              className={`flex w-full items-center gap-2.5 px-2.5 py-2 text-left text-sm transition-colors hover:bg-muted focus-visible:bg-muted ${
+                active ? 'bg-muted font-medium text-foreground' : 'text-foreground'
+              }`}
+            >
+              <i
+                aria-hidden
+                className={`pi ${page.icon} ${active ? 'text-foreground' : 'text-muted-foreground'}`}
+                style={{ fontSize: 14 }}
+              />
+              <span className="min-w-0 flex-1 truncate">{labels[page.key]}</span>
+            </Link>
+          );
+        })}
+      </AnchoredMenu>
+    </>
+  );
+}
+
 function NavLinks({
   collapsed,
   nav,
+  pages,
   docsHref,
   newTab,
   onNavigate,
 }: {
   collapsed: boolean;
   nav: ChromeMessages['nav'];
+  /** Labels of the pages under MCP. */
+  pages: ChromeMessages['developersMenu'];
   /** The localized documentation URL, already UTM-tagged by the caller. */
   docsHref: string;
   /** "(opens in a new tab)" — read out after an external item's label. */
@@ -126,28 +365,26 @@ function NavLinks({
     <ul className="flex flex-col gap-1">
       {NAV.map((item) => {
         const href = item.localizedHref ? docsHref : item.href;
+        const label = nav[item.key];
+        if (item.children) {
+          return (
+            <li key={item.key}>
+              <NavGroup
+                item={item}
+                pages={item.children}
+                collapsed={collapsed}
+                label={label}
+                labels={pages}
+                onNavigate={onNavigate}
+              />
+            </li>
+          );
+        }
         // An external item is never "here": its href is another origin, so the
         // prefix rule could not match anyway, but the intent should not depend
         // on that accident.
         const active = !item.external && isNavItemActive(pathname, href, item.match);
-        const label = nav[item.key];
-        const className = [
-          'relative flex items-center gap-3 rounded-md text-sm transition-colors active:scale-[0.99]',
-          collapsed ? 'mx-auto h-11 w-11 justify-center gap-0 px-0' : 'min-h-[44px] px-3 py-2.5',
-          active
-            ? 'bg-muted font-medium text-foreground'
-            : 'text-muted-foreground hover:bg-muted hover:text-foreground',
-          // The `bg-muted` wash alone cannot mark "you are here": on paper it
-          // is 1.18:1 against the card behind it, well under the 3:1 WCAG
-          // 1.4.11 asks of a state indicator, and a grey chip on white can
-          // never reach it. The wash still does the scanning work; this 2px
-          // accent bar does the identifying, at 3.3:1 on light and 14:1 on
-          // dark. Two signals, so neither has to carry the whole job.
-          active &&
-            'before:absolute before:inset-y-1.5 before:left-0 before:w-0.5 before:rounded-full before:bg-primary-edge before:content-[""]',
-        ]
-          .filter(Boolean)
-          .join(' ');
+        const className = navRowClass(collapsed, active ? 'active' : 'idle');
         // Label stays in the a11y tree when collapsed (sr-only) so the
         // icon-only link keeps a discernible name (WCAG 4.1.2).
         const body = (
@@ -515,6 +752,7 @@ export function AdminShell({
           <NavLinks
             collapsed={railCollapsed}
             nav={messages.nav}
+            pages={messages.developersMenu}
             docsHref={docsHref}
             newTab={messages.switcher.opensNewTab}
           />
@@ -567,6 +805,7 @@ export function AdminShell({
           <NavLinks
             collapsed={false}
             nav={messages.nav}
+            pages={messages.developersMenu}
             docsHref={docsHref}
             newTab={messages.switcher.opensNewTab}
             onNavigate={() => setDrawerOpen(false)}

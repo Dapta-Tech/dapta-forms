@@ -52,8 +52,68 @@ export function useSessionId(key: string): string {
 export function releaseSessionId(key: string): void {
   try {
     window.sessionStorage.removeItem(key);
+    // The answers kept for a reload belong to that response, which is done.
+    window.sessionStorage.removeItem(answerDraftKey(key));
   } catch {
     /* storage blocked: nothing was persisted, so there is nothing to release */
+  }
+}
+
+/**
+ * The answers of the response in progress, kept beside the session id so a
+ * reload of the tab picks the form up where the person left it instead of
+ * from an empty first question. A reload is the way out of anything that
+ * broke the page mid-form (a deploy that outlived the retries, a network
+ * that came back too late), and losing every answer to it is how a person
+ * gives up on a form.
+ *
+ * Tab-scoped like the session id (`sessionStorage`): closing the tab drops
+ * both. Released together with the id once the server confirms the complete
+ * (see `releaseSessionId`), so the next response in this tab starts clean.
+ * Only the public page keeps one; the builder preview never does.
+ */
+export interface AnswerDraft {
+  /** The session these answers belong to: a draft never crosses responses. */
+  sessionId: string;
+  answers: Answers;
+  /** Slides: the runtime index of the screen the person was on. */
+  index?: number;
+  /** One page: keys whose answer was seeded, not typed (see `seededKeys`). */
+  seeded?: string[];
+  /** The person had started answering: `start` went out, the human check was warmed. */
+  started?: boolean;
+}
+
+export const answerDraftKey = (sessionKey: string) => `${sessionKey}#answers`;
+
+/** The draft for THIS session, or null (none, another session's, unreadable). */
+export function readAnswerDraft(sessionKey: string, sessionId: string): AnswerDraft | null {
+  if (!sessionId) return null;
+  try {
+    const raw = window.sessionStorage.getItem(answerDraftKey(sessionKey));
+    if (!raw) return null;
+    const draft = JSON.parse(raw) as Partial<AnswerDraft> | null;
+    if (!draft || draft.sessionId !== sessionId) return null;
+    const answers = draft.answers;
+    if (!answers || typeof answers !== 'object' || Array.isArray(answers)) return null;
+    return {
+      sessionId,
+      answers,
+      ...(Number.isInteger(draft.index) && (draft.index as number) >= 0 ? { index: draft.index } : {}),
+      ...(Array.isArray(draft.seeded) ? { seeded: draft.seeded.filter((k) => typeof k === 'string') } : {}),
+      ...(draft.started === true ? { started: true } : {}),
+    };
+  } catch {
+    return null;
+  }
+}
+
+export function saveAnswerDraft(sessionKey: string, draft: AnswerDraft): void {
+  if (!draft.sessionId) return;
+  try {
+    window.sessionStorage.setItem(answerDraftKey(sessionKey), JSON.stringify(draft));
+  } catch {
+    /* storage full or blocked: the form still works, a reload just starts over */
   }
 }
 
@@ -792,7 +852,7 @@ function CaptchaInlineSlot({
   );
 }
 
-/** What the submit server action answers (see `submitFormAction`). */
+/** What the submit endpoint answers (see `submitForm` in `transport.ts`). */
 export interface SubmitActionResult {
   ok: boolean;
   score?: number;

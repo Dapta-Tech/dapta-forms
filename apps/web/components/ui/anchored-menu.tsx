@@ -96,6 +96,7 @@ export function AnchoredMenu({
   className = '',
   testId,
   role = 'menu',
+  side = 'below',
   onKeyDown,
   children,
 }: {
@@ -121,6 +122,13 @@ export function AnchoredMenu({
    * role would tell a screen reader to treat as menu items.
    */
   role?: 'menu' | 'dialog';
+  /**
+   * `below` (the default) hangs the panel under the trigger. `right` opens it
+   * beside the trigger, top-aligned with it: the flyout of an icon on the
+   * collapsed rail, where "below" would cover the very icons it belongs to.
+   * Falls back to `below` when the viewport has no room on the right.
+   */
+  side?: 'below' | 'right';
   onKeyDown?: (e: ReactKeyboardEvent<HTMLDivElement>) => void;
   children: ReactNode;
 }) {
@@ -163,6 +171,17 @@ export function AnchoredMenu({
     const natural = el ? el.scrollHeight + (el.offsetHeight - el.clientHeight) : 0;
 
     const viewport = window.innerHeight;
+
+    if (side === 'right' && rect.right + GAP + w <= window.innerWidth - EDGE) {
+      // Top-aligned with the trigger, nudged up just enough to fit; a panel
+      // taller than the whole viewport scrolls inside itself.
+      const maxHeight = viewport - EDGE * 2;
+      const height = Math.min(natural, maxHeight);
+      const top = Math.max(EDGE, Math.min(rect.top, viewport - EDGE - height));
+      setBox({ top, left: rect.right + GAP, width: w, maxHeight });
+      return;
+    }
+
     const spaceBelow = viewport - EDGE - (rect.bottom + GAP);
     const spaceAbove = rect.top - GAP - EDGE;
 
@@ -186,7 +205,7 @@ export function AnchoredMenu({
       width: w,
       maxHeight,
     });
-  }, [anchorRef, minWidth, width]);
+  }, [anchorRef, minWidth, side, width]);
 
   // Re-place instead of closing on scroll: the rail itself scrolls
   // (`overflow-y-auto`), so a menu that closed on any scroll event was one

@@ -8,6 +8,7 @@ import {
   notificationTokenValues,
   NOTIFICATION_TOKENS,
   renderBodyLines,
+  renderSubmissionEmail,
   renderSubmissionConfirmed,
   renderSubmissionReceived,
   SUBMISSION_EMAIL_KEYS,
@@ -119,6 +120,7 @@ describe('notificationTokenValues', () => {
   it('maps absent optionals to empty strings and stringifies score', () => {
     expect(notificationTokenValues({ formName: 'F', score: 0 })).toEqual({
       formName: 'F',
+      respondentName: '',
       respondentEmail: '',
       score: '0',
       outcomeLabel: '',
@@ -141,6 +143,57 @@ describe('notificationTokenValues', () => {
 
   it('offers {{answers}} as a token', () => {
     expect(NOTIFICATION_TOKENS).toContain('answers');
+  });
+});
+
+describe('{{respondentName}}', () => {
+  it('is offered as a token', () => {
+    expect(NOTIFICATION_TOKENS).toContain('respondentName');
+  });
+
+  it('renders the full name in the subject, the text body and the HTML body', () => {
+    const out = renderSubmissionEmail(
+      'submission_received',
+      'en',
+      {
+        subject: 'New lead: {{respondentName}}',
+        body: 'From {{respondentName}} <{{respondentEmail}}>',
+      },
+      { formName: 'F', respondentName: 'Ana Ruiz', respondentEmail: 'ana@example.com' },
+    );
+    expect(out.subject).toBe('New lead: Ana Ruiz');
+    expect(out.text).toEqual(['From Ana Ruiz <ana@example.com>']);
+    expect(out.html).toEqual(['From Ana Ruiz &lt;ana@example.com&gt;']);
+  });
+
+  it('greets the respondent on the receipt too', () => {
+    const out = renderSubmissionEmail(
+      'submission_confirmed',
+      'es',
+      { subject: null, body: 'Hola {{respondentName}}, recibimos tus respuestas.' },
+      { formName: 'F', respondentName: 'Ana Ruiz' },
+    );
+    expect(out.text).toEqual(['Hola Ana Ruiz, recibimos tus respuestas.']);
+  });
+
+  it('escapes the name on the HTML path', () => {
+    const out = renderSubmissionEmail(
+      'submission_received',
+      'en',
+      { body: 'From {{respondentName}}' },
+      { formName: 'F', respondentName: '<b>Ana</b>' },
+    );
+    expect(out.html).toEqual(['From &lt;b&gt;Ana&lt;/b&gt;']);
+  });
+
+  it('drops a line that only carries an absent name', () => {
+    const out = renderSubmissionEmail(
+      'submission_received',
+      'en',
+      { body: 'Name: {{respondentName}}\nForm: {{formName}}' },
+      { formName: 'F' },
+    );
+    expect(out.text).toEqual(['Form: F']);
   });
 });
 

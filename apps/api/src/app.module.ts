@@ -1,8 +1,10 @@
 import { Module } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
 import { createDb } from '@quill/db';
 import { createEmailProvider, SubmissionNotifier, type EmailProvider } from '@quill/notifications';
 import { loadServerEnv, type ServerEnv } from '@quill/config/env';
 import {
+  API_KEY_RATE_LIMITER,
   AUTH_PROVIDER,
   CAPTCHA,
   DB,
@@ -29,6 +31,9 @@ import { DaptaSyncEffects } from './dapta-sync-effects';
 import { DaptaSyncDelivery } from './dapta-sync';
 import { OutboxWorker } from './outbox.worker';
 import { RateLimitGuard, createRateLimiter } from './rate-limit';
+import { createApiKeyRateLimiter } from './api-key-auth';
+import { ApiKeyRouteGuard } from './api-key-routes';
+import { ApiKeysController } from './api-keys.controller';
 import { createObjectStorage } from './storage';
 import { createCaptchaVerifier } from './captcha';
 import { UploadService } from './upload.service';
@@ -74,6 +79,7 @@ function signupObserver(productAnalytics: AnalyticsEffects): SignupObserver {
     DocsController,
     PublicController,
     AdminCrudController,
+    ApiKeysController,
     BrandingController,
     AnalyticsController,
     IntegrationsController,
@@ -161,6 +167,16 @@ function signupObserver(productAnalytics: AnalyticsEffects): SignupObserver {
     // when RATE_LIMIT_ENABLED=false; swappable for a distributed limiter.
     { provide: RATE_LIMITER, useFactory: (env: ServerEnv) => createRateLimiter(env), inject: [ENV] },
     RateLimitGuard,
+    // API keys (public API v1): 120 calls a minute per key, in memory per pod,
+    // off with the rest of the limiting when RATE_LIMIT_ENABLED=false.
+    {
+      provide: API_KEY_RATE_LIMITER,
+      useFactory: (env: ServerEnv) => createApiKeyRateLimiter(env),
+      inject: [ENV],
+    },
+    // App-wide: a request with an API key may only reach the allowlisted admin
+    // routes (403 KEY_NOT_ALLOWED otherwise). A no-op for every other request.
+    { provide: APP_GUARD, useClass: ApiKeyRouteGuard },
     // Object storage for the `file` question type. With STORAGE_BUCKET unset,
     // the default and every bare fork, this is the noop adapter and the
     // question type reports itself unavailable rather than half-working.

@@ -38,6 +38,8 @@ export interface SubmissionNotification {
   to: string[];
   /** The respondent's own email, if captured (for the confirmation copy). */
   respondentEmail?: string | null;
+  /** The respondent's full name, if the form asked for one (`{{respondentName}}`). */
+  respondentName?: string | null;
   score?: number | null;
   outcomeLabel?: string | null;
   /** Where the owner reads the answers (the admin submissions page). Never set on the receipt. */

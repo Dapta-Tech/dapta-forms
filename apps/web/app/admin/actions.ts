@@ -142,7 +142,9 @@ export async function saveFormAction(
  * over the live config, stamps published_at, and clears the draft (a no-op when
  * nothing is pending).
  */
-export type PublishFormResult = SaveFormResult;
+export type PublishFormResult =
+  | (Extract<SaveFormResult, { ok: true }> & { previousPublishedAt: number | null })
+  | Exclude<SaveFormResult, { ok: true }>;
 
 export async function publishFormAction(id: string, expectedUpdatedAt?: number): Promise<PublishFormResult> {
   try {
@@ -153,6 +155,9 @@ export async function publishFormAction(id: string, expectedUpdatedAt?: number):
       ok: true,
       updatedAt: published.updatedAt,
       saved: { name: published.name, config: published.draftConfig ?? published.config },
+      // A publish that landed kept the version it replaced: the editor's revert
+      // control lights up from this, without a reload.
+      previousPublishedAt: published.previousPublishedAt ?? null,
     };
   } catch (e) {
     unstable_rethrow(e);
@@ -161,6 +166,44 @@ export async function publishFormAction(id: string, expectedUpdatedAt?: number):
       ok: false,
       message: e instanceof Error ? e.message : 'Failed to publish.',
     };
+  }
+}
+
+/**
+ * Put the previously published version back live (POST /v1/forms/:id/revert).
+ * The pending draft is untouched, so `hasDraft` tells the editor whether what
+ * it shows is still the server's draft or was the live config that just
+ * changed under it. NOTHING_TO_REVERT comes back as a code, so the editor can
+ * say it in the reader's language and grey the control out.
+ */
+export type RevertFormResult =
+  | {
+      ok: true;
+      updatedAt: number;
+      saved: { name: string; config: unknown };
+      hasDraft: boolean;
+      previousPublishedAt: number | null;
+    }
+  | { ok: false; code: 'NOTHING_TO_REVERT' | 'UNKNOWN'; message?: string };
+
+export async function revertFormAction(id: string): Promise<RevertFormResult> {
+  try {
+    const form = await adminApi.revertForm(id);
+    revalidatePath(`/admin/forms/${id}/edit`);
+    revalidatePath('/admin');
+    return {
+      ok: true,
+      updatedAt: form.updatedAt,
+      saved: { name: form.name, config: form.draftConfig ?? form.config },
+      hasDraft: form.draftConfig != null,
+      previousPublishedAt: form.previousPublishedAt ?? null,
+    };
+  } catch (e) {
+    unstable_rethrow(e);
+    if (e instanceof ApiError && e.status === 409 && e.code === 'NOTHING_TO_REVERT') {
+      return { ok: false, code: 'NOTHING_TO_REVERT' };
+    }
+    return { ok: false, code: 'UNKNOWN', message: e instanceof Error ? e.message : undefined };
   }
 }
 

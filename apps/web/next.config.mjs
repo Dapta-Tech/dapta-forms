@@ -38,6 +38,15 @@ const nextConfig = {
   turbopack: {
     root: join(here, '..', '..'),
   },
+  // `/admin/developers` became a group in the rail (API keys, API docs). The
+  // address is in skill zips people already downloaded, so it keeps working
+  // as a real HTTP redirect, answered before any page renders. The page at
+  // that path redirects too, for anything that reaches it anyway. Temporary,
+  // not permanent: a browser caches a 308 forever, and the path may hold an
+  // overview of its own one day.
+  async redirects() {
+    return [{ source: '/admin/developers', destination: '/admin/developers/keys', permanent: false }];
+  },
 };
 
 export default nextConfig;

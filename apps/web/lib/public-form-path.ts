@@ -1,34 +1,15 @@
 /**
  * The public URL of a form: `/{accountCode}/f/{slug}`.
  *
- * The middle segment used to be a member handle, and not even the author's: the
- * builder composed it from whichever member was LOOKING at the editor or the
- * forms list, so two teammates copied two different links for one form, and a
- * link handed to a lead, an ad audience or a printed QR told them who inside
- * the company had built it. No route, endpoint or query ever read that segment
- * (the form resolves by account code and slug alone), so a fixed word in its
- * place changes nothing about how a link resolves, only what it gives away.
- *
- * Every surface that hands a form link out (the builder's topbar, Embed, QR,
- * Open form, the preview's address bar, the prefill example, the forms list,
- * a member's public page) builds it here, so none of them can drift back.
+ * The rule itself (the neutral `f` segment, the per-segment encoding, and why a
+ * member handle no longer appears there) lives in `@quill/shared`, because the
+ * API hands the same link to agents as `publicUrl` and must not keep a second
+ * copy. It is re-exported here so every web surface keeps importing it from
+ * one place, and this module keeps the web-only half: `canonicalFor`.
  */
+import { PUBLIC_FORM_SEGMENT, publicFormPath } from '@quill/shared';
 
-/**
- * The fixed middle segment. It can never collide with a member's public page
- * at `/{accountCode}/{handle}`: a handle is at least three characters, both by
- * validation and by derivation.
- */
-export const PUBLIC_FORM_SEGMENT = 'f';
-
-/**
- * The path to hand out for a form. Each segment is encoded: the public page
- * also passes in an account code that arrived in the URL, already decoded, and
- * a CRLF interpolated into a redirect target makes Node answer 500.
- */
-export function publicFormPath(accountCode: string, slug: string): string {
-  return `/${encodeURIComponent(accountCode)}/${PUBLIC_FORM_SEGMENT}/${encodeURIComponent(slug)}`;
-}
+export { PUBLIC_FORM_SEGMENT, publicFormPath } from '@quill/shared';
 
 /**
  * What the public page owes a request: a canonical tag, a redirect, or neither.

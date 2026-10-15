@@ -194,6 +194,12 @@ export interface FormRow {
   draftConfig: unknown | null;
   /** Epoch-ms of the last publish; null = never published via the draft flow. */
   publishedAt: number | null;
+  /**
+   * Epoch-ms of when the version a revert would bring back went live; null =
+   * nothing to revert to. The version itself (`previous_config`) stays on the
+   * server: only `revertForm` reads it.
+   */
+  previousPublishedAt: number | null;
   /** Epoch-ms of the last brand-kit apply; null when never applied or reverted. */
   brandAppliedAt: number | null;
   /**
@@ -235,6 +241,10 @@ function mapForm(r: Record<string, unknown>): FormRow {
     config: parseJsonColumn(r.config, { version: 1, steps: [] }),
     draftConfig: r.draft_config == null ? null : parseJsonColumn(r.draft_config, null),
     publishedAt: r.published_at == null ? null : Number(r.published_at),
+    previousPublishedAt:
+      r.previous_config == null || r.previous_published_at_ms == null
+        ? null
+        : Number(r.previous_published_at_ms),
     brandAppliedAt: r.brand_applied_at == null ? null : Number(r.brand_applied_at),
     createdBy: r.created_by == null ? null : String(r.created_by),
     folderId: r.folder_id == null ? null : String(r.folder_id),
@@ -468,10 +478,24 @@ export async function getFormById(db: Db, accountId: string, id: string): Promis
   return r ? mapForm(r) : null;
 }
 
+/** How a form was born (`form.created_via`, 0024). NULL on forms from before the column. */
+export type FormCreatedVia = 'web' | 'api' | 'mcp';
+
 export async function createForm(
   db: Db,
   accountId: string,
-  input: { name: string; slug?: string; config?: unknown; folderId?: string | null },
+  input: {
+    name: string;
+    slug?: string;
+    config?: unknown;
+    folderId?: string | null;
+    /**
+     * How the form is born (0024): `web` from the dashboard and the onboarding,
+     * `api` with an API key. Like `createdBy`, it MUST come from the resolved
+     * principal, never from request input. Omitted (seeding) leaves it NULL.
+     */
+    createdVia?: FormCreatedVia | null;
+  },
   /**
    * `member.id` of the author, for per-user analytics (migration 0010).
    * MUST come from the resolved principal, never from request input — this is
@@ -497,9 +521,9 @@ export async function createForm(
     const now = Date.now();
     try {
       await db.run(
-        sql`INSERT INTO form (id, account_id, name, slug, config, created_by, folder_id, created_at, updated_at)
+        sql`INSERT INTO form (id, account_id, name, slug, config, created_by, created_via, folder_id, created_at, updated_at)
             VALUES (${id}, ${accountId}, ${input.name}, ${slug}, ${jsonParam(config)},
-                    ${createdBy ?? null}, ${folderId}, ${now}, ${now})`,
+                    ${createdBy ?? null}, ${input.createdVia ?? null}, ${folderId}, ${now}, ${now})`,
       );
     } catch (error) {
       if (attempt + 1 < FORM_SLUG_INSERT_ATTEMPTS && isFormAccountSlugConflict(error)) continue;
@@ -837,9 +861,17 @@ export async function publishForm(
   // a single publish gets counted twice. `published_at` cannot substitute for
   // this either — it is Date.now(), so two publishes in the same millisecond are
   // indistinguishable.
+  //
+  // The config this replaces is kept for a revert (see `revertForm`), copied
+  // column to column so it is exactly what was live at the instant of the
+  // write. Both dialects evaluate every SET against the row as it was. Its
+  // date is when it went live: the last publish, or the form's creation for a
+  // form that was live before it was ever published.
   const fired = await db.get<{ id: string }>(
     sql`UPDATE form
         SET config = ${jsonParam(next)}, draft_config = NULL,
+            previous_config = config,
+            previous_published_at_ms = COALESCE(published_at, created_at),
             published_at = ${now}, updated_at = ${now}
         WHERE account_id = ${accountId} AND id = ${id} AND draft_config IS NOT NULL
           ${staleGuard(expectedUpdatedAt)}
@@ -864,8 +896,11 @@ export async function publishForm(
  * Duck-typed (no schema parse): a legacy config that fails validation must
  * still come out with its guid stripped, for the same reason
  * `storedMirrorState` in the API reads it duck-typed.
+ *
+ * Exported for `POST /v1/forms`, the other way a config that names another
+ * form's mirror can arrive: a config copied from an existing form.
  */
-function withoutOwnedMirrorState(config: unknown): unknown {
+export function withoutOwnedMirrorState(config: unknown): unknown {
   if (!config || typeof config !== 'object' || Array.isArray(config)) return config;
   const destinations = (config as { destinations?: unknown }).destinations;
   if (!Array.isArray(destinations)) return config;
@@ -888,6 +923,8 @@ export async function duplicateForm(
   id: string,
   /** Author of the COPY — whoever duplicated it, not whoever wrote the original. */
   createdBy?: string | null,
+  /** How the COPY was born, from the duplicating principal (see `createForm`). */
+  createdVia?: FormCreatedVia | null,
 ): Promise<CrudResult<FormRow>> {
   const src = await getFormById(db, accountId, id);
   if (!src) return { ok: false, reason: 'NOT_FOUND' };
@@ -902,6 +939,7 @@ export async function duplicateForm(
       // NOT verbatim: the HubSpot mirror-form pointer is the original's, and a
       // copy that inherits it delivers its submissions AS the original.
       config: withoutOwnedMirrorState(src.config),
+      createdVia,
     },
     createdBy,
   );
@@ -1084,6 +1122,19 @@ export async function upsertSubmission(
       );
       if (completed) return { ...mapSubmission(completed), wasCompletedBefore: false };
       return { ...(await getSubmissionById(db, existing.id))!, wasCompletedBefore: true };
+    }
+    if (input.partial) {
+      // Same race from the other side: the SELECT read an open row, and a
+      // complete may commit before this write. Requests from one tab run in
+      // parallel (nothing serializes them), so the guard lives in the WHERE:
+      // a partial never touches a row that is completed by the time it writes.
+      await db.run(
+        sql`UPDATE submission
+            SET data = ${jsonParam(input.data)}, score = ${input.score}, partial_at = ${partialAt},
+                visit = COALESCE(${visit}, visit)
+            WHERE id = ${existing.id} AND completed_at IS NULL`,
+      );
+      return { ...(await getSubmissionById(db, existing.id))!, wasCompletedBefore };
     }
     await db.run(
       sql`UPDATE submission

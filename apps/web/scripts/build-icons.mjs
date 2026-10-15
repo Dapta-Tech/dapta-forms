@@ -73,6 +73,7 @@ const MAP = {
   expand: 'expand',
   'external-link': 'arrow-up-right',
   eye: 'eye',
+  'file-code': 'file-code',
   'file-edit': 'file-pen-line',
   'file-import': 'file-input',
   filter: 'funnel',

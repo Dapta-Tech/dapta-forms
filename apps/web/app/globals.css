@@ -299,6 +299,41 @@ body {
   }
 }
 
+/* The rail's MCP icon (components/mcp-logos.tsx): three stacked logos that
+   take turns. Each is a mask filled with currentColor, so it takes the row's
+   ink in both themes; Claude overrides it inline with its brand orange. The
+   one leaving shrinks and turns away while the next one fades in on the same
+   spot. */
+.mcp-logos {
+  position: relative;
+  display: inline-block;
+}
+.mcp-logos__logo {
+  position: absolute;
+  inset: 0;
+  background-color: currentColor;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  opacity: 0;
+  transform: scale(0.7) rotate(-20deg);
+  transition:
+    opacity 420ms ease,
+    transform 520ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.mcp-logos__logo.is-active {
+  opacity: 1;
+  transform: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .mcp-logos__logo {
+    transition: none;
+  }
+}
+
 /* ---------------------------------------------------------------------------
  * Public-page branding classes (R25). The .branded-surface wrapper carries
  * brandingClassOf() output + the --bp-* custom properties (widgetStyleVars).

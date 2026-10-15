@@ -243,6 +243,66 @@ describe('submit', () => {
     expect(await listOutbox(db, { kind: 'email' })).toHaveLength(0);
   });
 
+  it('hands both emails the full name, the same one [name] shows on the form', async () => {
+    const account = await getAccountByCode(db, 'acme');
+    const created = await createForm(db, account!.id, {
+      name: 'Name form',
+      config: {
+        version: 1,
+        steps: [
+          { key: 'name', type: 'name', question: 'Your name?' },
+          { key: 'email', type: 'email', question: 'Your email?' },
+        ],
+      },
+    });
+    if (!created.ok) throw new Error('createForm failed');
+    await svc.submit('acme', created.value.slug, {
+      sessionId: 'sess-name',
+      data: { firstname: 'Ana', lastname: 'Ruiz', email: 'ana@example.com' },
+    });
+    await flushEffects();
+    const rows = await listOutbox(db, { kind: 'email' });
+    const names = rows.map(
+      (r) => (JSON.parse(r.payload!) as { respondentName: string | null }).respondentName,
+    );
+    expect(rows.map((r) => r.action).sort()).toEqual([
+      'submission_confirmed',
+      'submission_received',
+    ]);
+    expect(names).toEqual(['Ana Ruiz', 'Ana Ruiz']);
+  });
+
+  it('a form without a name leaves {{respondentName}} empty, and a step keyed name keeps its value', async () => {
+    await svc.submit('acme', 'lead-qualifier', {
+      sessionId: 'sess-noname',
+      data: { role: 'founder', team_size: 20, email: 'lead@acme.io' },
+    });
+    await flushEffects();
+    const first = await listOutbox(db, { kind: 'email' });
+    expect(
+      first.every(
+        (r) => (JSON.parse(r.payload!) as { respondentName: unknown }).respondentName === null,
+      ),
+    ).toBe(true);
+
+    const account = await getAccountByCode(db, 'acme');
+    const created = await createForm(db, account!.id, {
+      name: 'Company form',
+      config: { version: 1, steps: [{ key: 'name', type: 'text', question: 'Company?' }] },
+    });
+    if (!created.ok) throw new Error('createForm failed');
+    await svc.submit('acme', created.value.slug, {
+      sessionId: 'sess-company',
+      data: { name: 'Acme Inc' },
+    });
+    await flushEffects();
+    const rows = await listOutbox(db, { kind: 'email' });
+    const received = rows.filter((r) => r.action === 'submission_received').pop()!;
+    expect((JSON.parse(received.payload!) as { respondentName: string }).respondentName).toBe(
+      'Acme Inc',
+    );
+  });
+
   it('resolves the outcome WITH answers so answer-forced overrides match the client', async () => {
     const account = await getAccountByCode(db, 'acme');
     const created = await createForm(db, account!.id, {

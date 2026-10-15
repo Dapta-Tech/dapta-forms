@@ -210,6 +210,7 @@ function FormEmailCard({
 
   const tokenLabels: Record<string, string> = {
     formName: nm.tokenFormName,
+    respondentName: nm.tokenRespondentName,
     respondentEmail: nm.tokenRespondentEmail,
     score: nm.tokenScore,
     outcomeLabel: nm.tokenOutcomeLabel,

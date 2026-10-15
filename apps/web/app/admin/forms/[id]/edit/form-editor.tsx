@@ -83,6 +83,23 @@ const parseTab = (value: string | null): Tab =>
   TAB_IDS.includes(value as Tab) ? (value as Tab) : 'build';
 
 /**
+ * A stored config as the builder edits it. The builder has ONE reveal model: a
+ * `reveal` step in the list. A form authored under the old form-level reveal
+ * (Design-tab copy + a draggable position marker) is folded into that shape the
+ * moment it opens, so the two ways to author one screen never coexist on
+ * screen. Vertical: a reveal card mid-list promises an interstitial the
+ * one-page form never plays there, so it is folded to the end (identity
+ * preserving when nothing moves, so an already-anchored form does not start
+ * dirty). Used on load and when a revert puts another version on screen.
+ */
+function openConfig(stored: FormConfig): FormConfig {
+  const migrated = migrateRevealToStep(stored);
+  if (resolveFormLayout(migrated) !== 'vertical') return withScreens(migrated);
+  const anchored = anchorRevealsLast(migrated.steps);
+  return withScreens(anchored === migrated.steps ? migrated : { ...migrated, steps: anchored });
+}
+
+/**
  * Re-anchor a 1-based flow marker position (`partialSubmitAfterStep`) after a
  * step is DELETED, keeping it attached to the step it
  * sits AFTER: a delete ABOVE the anchor shifts it up one; deleting the anchor
@@ -131,6 +148,7 @@ export function FormEditor({
   locale,
   m,
   initialHasDraft = false,
+  initialPreviousPublishedAt = null,
   updatedAt,
   lockedValues = {},
   uploads,
@@ -144,6 +162,8 @@ export function FormEditor({
   m: EditorMessages;
   /** Whether the form already had an unpublished draft when the page loaded. */
   initialHasDraft?: boolean;
+  /** When the version a revert would bring back went live; null = nothing to revert to. */
+  initialPreviousPublishedAt?: number | null;
   /** Server row's last-write stamp — gates the crash-recovery offer. */
   updatedAt?: number;
   /**
@@ -191,23 +211,25 @@ export function FormEditor({
    * next load reads the published config and locks them properly.
    */
   const [locks, setLocks] = useState(lockedValues);
-  // The builder has ONE reveal model: a `reveal` step in the list. A form
-  // authored under the old form-level reveal (Design-tab copy + a draggable
-  // position marker) is folded into that shape the moment it opens, so the two
-  // ways to author one screen never coexist on screen.
-  const [config, setConfig] = useState<FormConfig>(() => {
-    const migrated = migrateRevealToStep(initialConfig);
-    // Vertical: a reveal card mid-list promises an interstitial the one-page
-    // form never plays there — fold it to the end on open, same idiom as the
-    // reveal migration above (identity-preserving when nothing moves, so an
-    // already-anchored form does not start dirty).
-    if (resolveFormLayout(migrated) !== 'vertical') return withScreens(migrated);
-    const anchored = anchorRevealsLast(migrated.steps);
-    return withScreens(anchored === migrated.steps ? migrated : { ...migrated, steps: anchored });
-  });
+  // Folded into the builder's shape on open (see `openConfig`).
+  const [config, setConfig] = useState<FormConfig>(() => openConfig(initialConfig));
   // Deep-linkable tabs: `?tab=connect` selects the tab on load…
   const [tab, setTabState] = useState<Tab>(() => parseTab(searchParams.get('tab')));
   // …and switching syncs the URL shallowly (no navigation, no RSC refetch).
+
+  /** Union in the locks the server reads off the LIVE config now (see `setTab`). */
+  const refreshLocks = useCallback(() => {
+    void callAction(() => optionLocksAction(id)).then((res) => {
+      if (isTransportError(res) || !res.ok) return;
+      setLocks((prev) => {
+        const merged: Record<string, string[]> = { ...prev };
+        for (const [key, values] of Object.entries(res.locks)) {
+          merged[key] = [...new Set([...(merged[key] ?? []), ...values])];
+        }
+        return merged;
+      });
+    });
+  }, [id]);
 
   const setTab = useCallback(
     (next: Tab) => {
@@ -220,25 +242,14 @@ export function FormEditor({
       // the CRM is now keyed by. Unioned, never replaced: a failed read leaves
       // the set alone, and a step key renamed earlier in this session keeps the
       // entry that was re-filed under its new name.
-      if (next === 'build') {
-        void callAction(() => optionLocksAction(id)).then((res) => {
-          if (isTransportError(res) || !res.ok) return;
-          setLocks((prev) => {
-            const merged: Record<string, string[]> = { ...prev };
-            for (const [key, values] of Object.entries(res.locks)) {
-              merged[key] = [...new Set([...(merged[key] ?? []), ...values])];
-            }
-            return merged;
-          });
-        });
-      }
+      if (next === 'build') refreshLocks();
       setTabState(next);
       const url = new URL(window.location.href);
       if (next === 'build') url.searchParams.delete('tab');
       else url.searchParams.set('tab', next);
       window.history.replaceState(null, '', url);
     },
-    [id],
+    [id, refreshLocks],
   );
   const [selected, setSelected] = useState<number | null>(initialConfig.steps.length ? 0 : null);
   const [device, setDevice] = useState<'desktop' | 'mobile'>('desktop');
@@ -323,6 +334,27 @@ export function FormEditor({
   function reloadForConflict() {
     writeDraftBackup(id, latest.current.name, latest.current.config);
     window.location.reload();
+  }
+  /**
+   * A revert landed. It moved the row's stamp, so adopt it. With a draft
+   * pending, the editor shows that draft and the revert did not touch it, so
+   * nothing on screen changes. Without one, the editor shows the LIVE config,
+   * which is now the reverted version: put it on screen, or the next edit
+   * would save the version just taken down as a fresh draft. The values it
+   * made live are locked like any published value.
+   */
+  function onReverted(res: { updatedAt: number; saved: SavedContent; hasDraft: boolean }) {
+    stampRef.current = res.updatedAt;
+    lastSavedRef.current = res.saved;
+    refreshLocks();
+    if (res.hasDraft) return;
+    const stored = res.saved.config as FormConfig;
+    const opened = openConfig(stored);
+    setName(res.saved.name);
+    setConfig(opened);
+    setSelected(opened.steps.length ? 0 : null);
+    setRecovery(null);
+    if (opened !== stored) autosave.markDirty();
   }
   /** "Keep mine": take the newer stamp and let the next save overwrite. */
   function overwriteConflict() {
@@ -997,6 +1029,8 @@ export function FormEditor({
               }}
               onStale={resolveStale}
               onPendingChange={setUnpublished}
+              initialPreviousPublishedAt={initialPreviousPublishedAt}
+              onReverted={onReverted}
             />
           </div>
         </div>

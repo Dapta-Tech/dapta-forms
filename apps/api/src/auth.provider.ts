@@ -44,9 +44,28 @@ export interface ResolvedHost {
   memberId: string;
 }
 
+/**
+ * How a principal got in: the browser `session` every provider resolves, or an
+ * `api_key` sent as `Authorization: Bearer`. Never an authorization input on its
+ * own; it only lets code that must treat a key differently (routes a key may not
+ * call, the stricter API validation, the created-via metric) tell the two apart.
+ */
+export type PrincipalVia = 'session' | 'api_key';
+
 /** The authenticated host, enriched with the account role for authorization. */
 export interface HostPrincipal extends ResolvedHost {
   role: AccountRole;
+  via: PrincipalVia;
+  /** The `api_key.id` the request authenticated with; set only when `via` is `'api_key'`. */
+  apiKeyId?: string;
+}
+
+/**
+ * Did this request come with an API key rather than a session? The one question
+ * the key, validation and metric code ask, so none of them compares `via` by hand.
+ */
+export function isApiKeyPrincipal(p: Pick<HostPrincipal, 'via'>): boolean {
+  return p.via === 'api_key';
 }
 
 /**

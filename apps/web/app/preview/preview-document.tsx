@@ -111,17 +111,17 @@ const SCROLLBAR_RESET = `
  * an accidental real submission from a preview is a data-integrity bug, not a
  * cosmetic one.
  *
- * The renderers' whole server surface is three Server Actions (`submitFormAction`,
- * `recordEventAction`, `recordBookingAction` in the public route's `actions.ts`).
- * They are imported at module scope by `form-renderer.tsx`, which this task may
- * not touch and which must not grow a preview-only prop anyway — the public
- * renderer should not know a preview exists. So the fence is drawn at the
- * document's network edge instead, which is also the stronger place: it holds
- * for anything the renderer might call in future, not just today's three.
+ * The renderers' whole server surface is one same-origin route, called by
+ * `transport.ts` beside them (submit, funnel events, booking record, upload
+ * authorization, all POSTs to `/api/public/forms/...`). They are imported at
+ * module scope by `form-renderer.tsx`, which must not grow a preview-only
+ * switch for them: the public renderer should not know a preview exists. So
+ * the fence is drawn at the document's network edge instead, which is also
+ * the stronger place: it holds for anything the renderer might call in
+ * future, not just today's calls.
  *
- * Server Actions dispatch as a same-origin POST. Every same-origin mutating
- * request from this document is therefore blocked, which covers all three
- * without depending on Next's internal header names. Cross-origin requests are
+ * Every same-origin mutating request from this document is blocked, which
+ * covers all of them without depending on any one path. Cross-origin requests are
  * left alone so an author's own scheduler embed still renders. `/_next/` and
  * `/__nextjs` are exempt so the dev overlay keeps working inside the frame.
  *

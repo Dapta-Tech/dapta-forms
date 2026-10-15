@@ -206,6 +206,9 @@ export default async function PublicFormPage({
           // ID, never the deployment default: that code only runs here because
           // this form asked for it.
           visitCapture={{ hubspotTracking: formLoadsHubspotTracking(form.config.tracking) }}
+          // A reload of this tab picks the response in progress back up. The
+          // builder preview never passes it.
+          resume
         />
       </div>
     </>

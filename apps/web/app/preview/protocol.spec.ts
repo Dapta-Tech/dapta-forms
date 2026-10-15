@@ -4,6 +4,7 @@ import {
   isBlockedPreviewRequest,
   readPreviewMessage,
 } from './protocol';
+import { publicFormEndpoint } from '@/app/[accountCode]/[handle]/[slug]/transport';
 
 /**
  * These two functions ARE the preview's security boundary: the message gate is
@@ -144,6 +145,12 @@ describe('isBlockedPreviewRequest — the inertness matrix', () => {
   it('blocks a same-origin POST — the Server Action dispatch shape', () => {
     expect(isBlockedPreviewRequest(`${ORIGIN}/preview`, { method: 'POST' }, BASE)).toBe(true);
     expect(isBlockedPreviewRequest('/preview', { method: 'POST' }, BASE)).toBe(true);
+  });
+
+  it("blocks the public form's own endpoint, every operation the renderers call", () => {
+    for (const op of ['submissions', 'events', 'booking', 'uploads']) {
+      expect(isBlockedPreviewRequest(publicFormEndpoint('preview', 'preview', op), { method: 'POST' }, BASE)).toBe(true);
+    }
   });
 
   it('blocks every same-origin mutating method, not just POST', () => {

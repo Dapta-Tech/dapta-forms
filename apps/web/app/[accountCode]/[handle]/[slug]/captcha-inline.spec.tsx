@@ -36,12 +36,12 @@ vi.mock('next/font/google', () => {
 });
 
 const actions = vi.hoisted(() => ({
-  submitFormAction: vi.fn(),
-  recordEventAction: vi.fn(async () => undefined),
-  recordBookingAction: vi.fn(async () => undefined),
-  presignUploadAction: vi.fn(async () => ({ ok: false })),
+  submitForm: vi.fn(),
+  recordEvent: vi.fn(async () => undefined),
+  recordBooking: vi.fn(async () => undefined),
+  presignUpload: vi.fn(async () => ({ ok: false })),
 }));
-vi.mock('./actions', () => actions);
+vi.mock('./transport', () => actions);
 
 import { FormRenderer } from './form-renderer';
 import { VerticalFormRenderer } from './vertical-form-renderer';
@@ -84,8 +84,8 @@ beforeEach(() => {
   document.head.querySelectorAll('link[rel="preconnect"]').forEach((l) => l.remove());
   renders = [];
   observers = [];
-  actions.submitFormAction.mockReset();
-  actions.submitFormAction.mockImplementation(async () => ({ ok: true, score: 0, outcome: null }));
+  actions.submitForm.mockReset();
+  actions.submitForm.mockImplementation(async () => ({ ok: true, score: 0, outcome: null }));
   vi.stubGlobal(
     'IntersectionObserver',
     class {
@@ -197,13 +197,13 @@ describe('one-page: the check right above Submit', () => {
     expect(submitButton().disabled).toBe(true);
     expect(q('.pf--vertical')).not.toBeNull(); // no submitting screen
     expect(q('.pf-reveal__subtitle')).toBeNull();
-    expect(actions.submitFormAction).not.toHaveBeenCalled();
+    expect(actions.submitForm).not.toHaveBeenCalled();
 
     await act(async () => renders[0]!.opts.callback!('tok-1'));
     await settle();
-    expect(actions.submitFormAction).toHaveBeenCalledTimes(1);
-    expect(actions.submitFormAction.mock.calls[0]![2]).toMatchObject({ captchaToken: 'tok-1' });
-    expect(actions.submitFormAction.mock.calls[0]![2].partial).toBeUndefined();
+    expect(actions.submitForm).toHaveBeenCalledTimes(1);
+    expect(actions.submitForm.mock.calls[0]![2]).toMatchObject({ captchaToken: 'tok-1' });
+    expect(actions.submitForm.mock.calls[0]![2].partial).toBeUndefined();
     expect(q('.pf-done__title')).not.toBeNull();
   });
 
@@ -214,13 +214,13 @@ describe('one-page: the check right above Submit', () => {
     await act(async () => renders[0]!.opts.callback!('early'));
     await act(async () => submitButton().click());
     await settle();
-    expect(actions.submitFormAction.mock.calls[0]![2]).toMatchObject({ captchaToken: 'early' });
+    expect(actions.submitForm.mock.calls[0]![2]).toMatchObject({ captchaToken: 'early' });
     expect(renders).toHaveLength(1);
     expect(q('.pf-done__title')).not.toBeNull();
   });
 
   it('a refusal stays next to the button, with every answer intact and the button back', async () => {
-    actions.submitFormAction.mockImplementation(async () => ({ ok: false, error: 'CAPTCHA_FAILED', message: 'x' }));
+    actions.submitForm.mockImplementation(async () => ({ ok: false, error: 'CAPTCHA_FAILED', message: 'x' }));
     await mount(<VerticalFormRenderer accountCode="acme" slug="f" name="F" config={{ version: 1, layout: 'vertical', steps: textSteps } as never} locale="en" captcha={AUTO} />);
     await fillOnePage();
     await scrollToEnd();
@@ -232,7 +232,7 @@ describe('one-page: the check right above Submit', () => {
     expect(q('.pf-v__footer')!.contains(renders[1]!.el)).toBe(true);
     await act(async () => renders[1]!.opts.callback!('second'));
     await settle();
-    expect(actions.submitFormAction).toHaveBeenCalledTimes(2);
+    expect(actions.submitForm).toHaveBeenCalledTimes(2);
     const error = q('.pf-v__footer .pf__error')!;
     expect(error.textContent).toBe(m.errors.captcha);
     expect(submitButton().disabled).toBe(false);
@@ -251,7 +251,7 @@ describe('one-page: the check right above Submit', () => {
     await act(async () => renders[0]!.opts.callback!('s-tok'));
     await act(async () => submitButton().click());
     await settle();
-    expect(actions.submitFormAction.mock.calls[0]![2]).toMatchObject({ captchaToken: 's-tok', hp: '' });
+    expect(actions.submitForm.mock.calls[0]![2]).toMatchObject({ captchaToken: 's-tok', hp: '' });
   });
 
   it('with a reveal before the submit, the check still runs above Submit and the reveal plays after it', async () => {
@@ -273,7 +273,7 @@ describe('one-page: the check right above Submit', () => {
     await settle();
     // The token won above the button is the one the submit spends: no second widget.
     expect(renders).toHaveLength(1);
-    expect(actions.submitFormAction.mock.calls.at(-1)![2]).toMatchObject({ captchaToken: 'before-reveal' });
+    expect(actions.submitForm.mock.calls.at(-1)![2]).toMatchObject({ captchaToken: 'before-reveal' });
     expect(q('.pf-done__title')).not.toBeNull();
   });
 
@@ -285,7 +285,7 @@ describe('one-page: the check right above Submit', () => {
     await act(async () => submitButton().click());
     await settle();
     expect(renders).toHaveLength(0);
-    expect(actions.submitFormAction.mock.calls[0]![2].captchaToken).toBeUndefined();
+    expect(actions.submitForm.mock.calls[0]![2].captchaToken).toBeUndefined();
     expect(q('.pf-done__title')).not.toBeNull();
   });
 });
@@ -314,12 +314,12 @@ describe('slides: the check above the button of a step that ends the form', () =
     expect(q('.pf-reveal__subtitle')).toBeNull(); // still on the step
     await act(async () => renders[0]!.opts.callback!('slide-tok'));
     await settle();
-    expect(actions.submitFormAction.mock.calls.at(-1)![2]).toMatchObject({ captchaToken: 'slide-tok' });
+    expect(actions.submitForm.mock.calls.at(-1)![2]).toMatchObject({ captchaToken: 'slide-tok' });
     expect(q('.pf-done__title')).not.toBeNull();
   });
 
   it('a refusal returns the button on the same step, the message beside it', async () => {
-    actions.submitFormAction.mockImplementation(async (_a: string, _s: string, p: { partial?: boolean }) =>
+    actions.submitForm.mockImplementation(async (_a: string, _s: string, p: { partial?: boolean }) =>
       p.partial ? { ok: true } : { ok: false, error: 'RATE_LIMITED', message: 'x' },
     );
     await mount(<FormRenderer accountCode="acme" slug="f" name="F" config={{ version: 1, steps: textSteps } as never} locale="en" captcha={AUTO} startAt={1} />);
@@ -350,7 +350,7 @@ describe('slides: the check above the button of a step that ends the form', () =
     });
     await settle();
     expect(renders).toHaveLength(1);
-    expect(actions.submitFormAction.mock.calls.at(-1)![2]).toMatchObject({ captchaToken: 'held' });
+    expect(actions.submitForm.mock.calls.at(-1)![2]).toMatchObject({ captchaToken: 'held' });
     expect(q('.pf-done__title')).not.toBeNull();
   });
 
@@ -365,7 +365,7 @@ describe('slides: the check above the button of a step that ends the form', () =
     expect(q('.pf-reveal__inner')!.contains(renders[0]!.el)).toBe(true);
     await act(async () => renders[0]!.opts.callback!('screen-tok'));
     await settle();
-    expect(actions.submitFormAction.mock.calls.at(-1)![2]).toMatchObject({ captchaToken: 'screen-tok' });
+    expect(actions.submitForm.mock.calls.at(-1)![2]).toMatchObject({ captchaToken: 'screen-tok' });
     expect(q('.pf-done__title')).not.toBeNull();
   });
 });

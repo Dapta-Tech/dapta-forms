@@ -21,6 +21,13 @@ export const openapiSpec = {
         name: 'authorization',
         description: 'Host session (AuthProvider).',
       },
+      apiKey: {
+        type: 'http',
+        scheme: 'bearer',
+        bearerFormat: 'dforms_<43 base64url characters>',
+        description:
+          "An API key, created in dForms under MCP, API keys, sent as `Authorization: Bearer dforms_...`. It acts as the member who created it, in that member's workspace, with their current role. Works on the host routes that build and run forms: forms (create, read, edit, slug, duplicate, publish, revert, delete), folders, destinations, responses, CSV, analytics, brand kit, notifications, `GET /v1/me` and reading integrations. Any other host route (API keys, members, invitations, workspaces, onboarding, attribution, writing the profile or the public page, connecting or disconnecting integrations) answers 403 `KEY_NOT_ALLOWED`. An unknown or revoked key, or one whose member is no longer active in the workspace, answers 401 `INVALID_API_KEY`. The key fixes the workspace: an `x-quill-workspace` header naming another one answers 403 `WORKSPACE_FORBIDDEN`. Each key may make 120 calls a minute; past that, 429 `{ error: 'RATE_LIMITED', retryAfterSec }` with a `Retry-After` header.",
+      },
     },
   },
   webhooks: {
@@ -109,6 +116,40 @@ export const openapiSpec = {
         responses: { '202': { description: 'Accepted' }, '400': { description: 'Invalid' } },
       },
     },
+    '/v1/api-keys': {
+      get: {
+        summary: 'List API keys (host session only)',
+        description:
+          'Body { keys: [{ id, name, last4, createdAt, lastUsedAt, createdBy: { memberId, name, email } }] }. A member sees their own keys; an owner or admin sees every active key of the workspace. Revoked keys, and keys of members who are not active, are never listed, and the key itself never appears. Disabling or removing a member revokes their keys for good: reactivating them does not bring the keys back. 403 `KEY_NOT_ALLOWED` when called with an API key.',
+        security: [{ hostSession: [] }],
+        responses: { '200': { description: 'Keys' }, '403': { description: 'KEY_NOT_ALLOWED' } },
+      },
+      post: {
+        summary: 'Create an API key (host session only)',
+        description:
+          'Body { name } (1 to 60 characters). Answers 201 { id, name, last4, createdAt, key }: the only response that ever carries the full key, so store it then. A person may hold 10 active keys per workspace; the 11th answers 409 `KEY_LIMIT`.',
+        security: [{ hostSession: [] }],
+        responses: {
+          '201': { description: 'Created, with the key in clear' },
+          '400': { description: 'Invalid name' },
+          '403': { description: 'KEY_NOT_ALLOWED' },
+          '409': { description: 'KEY_LIMIT' },
+        },
+      },
+    },
+    '/v1/api-keys/{id}': {
+      delete: {
+        summary: 'Revoke an API key (host session only)',
+        description:
+          'The key stops working on the next call. A member may revoke their own keys; an owner or admin, any key of the workspace.',
+        security: [{ hostSession: [] }],
+        responses: {
+          '204': { description: 'Revoked' },
+          '403': { description: "Someone else's key without being owner or admin, or KEY_NOT_ALLOWED" },
+          '404': { description: 'Unknown, already revoked, or another workspace' },
+        },
+      },
+    },
     '/v1/me/locale': {
       put: {
         summary: 'Set the language you read the product in (host)',
@@ -125,7 +166,7 @@ export const openapiSpec = {
       get: {
         summary: 'List forms (host)',
         description:
-          'Each item is { id, name, slug, brandAppliedAt, folderId, hasDraft, createdAt, updatedAt }. `hasDraft` is true while the form holds edits that have not been published; the public form keeps serving the last published config until then.',
+          'Each item is { id, name, slug, brandAppliedAt, folderId, hasDraft, createdAt, updatedAt, publicUrl, editorUrl }. `hasDraft` is true while the form holds edits that have not been published; the public form keeps serving the last published config until then. `publicUrl` is the form\u2019s public link (the same one the dashboard copies, with the workspace\u2019s current code and the form\u2019s current slug) and `editorUrl` opens it in the builder; both are absolute URLs on PUBLIC_APP_URL, and null when the deployment does not set it. Every route that returns a form (create, get, update, slug, duplicate, publish) carries the same two fields.',
         security: [{ hostSession: [] }],
         responses: { '200': { description: 'Forms' } },
       },
@@ -134,7 +175,13 @@ export const openapiSpec = {
           'Body { name, slug?, config?, folderId? }. `folderId` files the new form in one of the workspace folders (404 for a folder outside it); absent = unfiled.',
     },
     '/v1/forms/{id}': {
-      get: { summary: 'Get a form (host)', security: [{ hostSession: [] }], responses: { '200': { description: 'Form' } } },
+      get: {
+        summary: 'Get a form (host)',
+        description:
+          'The form, with `publicUrl` (its public link) and `editorUrl` (its builder). Both are absolute URLs on PUBLIC_APP_URL and follow a slug rename; both are null when the deployment does not set PUBLIC_APP_URL.',
+        security: [{ hostSession: [] }],
+        responses: { '200': { description: 'Form' } },
+      },
       put: {
         summary: 'Update a form (host)',
         description:
@@ -252,6 +299,19 @@ export const openapiSpec = {
         summary: 'Publish a pending draft config (host)',
         security: [{ hostSession: [] }],
         responses: { '200': { description: 'Published (no-op without a draft)' } },
+      },
+    },
+    '/v1/forms/{id}/revert': {
+      post: {
+        summary: 'Put the previously published version back live (host)',
+        description:
+          'Every publish keeps the config it replaces. This swaps the two: the previous version goes live again and the one it replaced becomes the previous, so a second revert undoes the first. The destinations the form has now are kept, and a pending draft is not touched. The answer is the form, with `previousPublishedAt` (epoch-ms of when the version a revert would bring back went live, or null when there is none). Allowed with an API key.',
+        security: [{ hostSession: [] }],
+        responses: {
+          '200': { description: 'The form with the reverted config live' },
+          '404': { description: 'No such form in this workspace' },
+          '409': { description: 'NOTHING_TO_REVERT: the form was never published over an earlier version' },
+        },
       },
     },
     '/v1/branding': {

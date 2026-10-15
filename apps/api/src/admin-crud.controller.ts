@@ -29,6 +29,7 @@ import {
   deleteNotificationSetting,
   duplicateForm,
   getAccountMember,
+  getAccountPublicCode,
   getFormById,
   getNotificationSettings,
   inviteMember,
@@ -44,6 +45,7 @@ import {
   setMemberStatus,
   updateForm,
   upsertNotificationSetting,
+  withoutOwnedMirrorState,
   type CrudResult,
   getMemberProfileRaw,
   setMemberLocale,
@@ -54,7 +56,9 @@ import {
   renameFolder,
   setFormFolder,
 } from '@quill/db';
+import { revertForm } from '@quill/db';
 import { withNewFormBranding } from '@quill/engine';
+import { formLinks, type FormLinks } from '@quill/shared';
 import {
   defaultSubmissionTemplate,
   isSubmissionEmailKey,
@@ -86,16 +90,18 @@ import {
   workspaceTimezoneSchema,
   type FormConfig,
 } from '@quill/types';
-import { ZodError } from 'zod';
 import { AdminService } from './admin.service';
 import { SubmissionService } from './submission.service';
 import { AnalyticsService } from './analytics.service';
 import { AuthService, type ReqLike } from './auth.service';
+import { createdVia } from './api-keys';
 import { WorkspaceService } from './workspace.service';
 import { EmailEffects } from './email-effects';
 import { AnalyticsEffects } from './analytics-effects';
 import { UploadService } from './upload.service';
 import { unwrap } from './http';
+import { parse } from './validation';
+import { keyFormBodyIssues, keyNormalizedConfig } from './strict-config';
 import type { ServerEnv } from '@quill/config/env';
 import { assertAdmin, assertCanManageTarget, assertNotSelf, assertOwner } from './permissions';
 import { parseIntParam, parseKinds, parseOutboxStatuses } from './query-params';
@@ -103,33 +109,29 @@ import { parseSort, parseSubmissionFilter, workspaceZone, type FilterQuery } fro
 import type { CaptchaVerifier } from './captcha';
 import { CAPTCHA, DB, ENV } from './tokens';
 
-function parse<T>(schema: { parse: (v: unknown) => T }, body: unknown): T {
-  try {
-    return schema.parse(body);
-  } catch (err) {
-    if (err instanceof ZodError)
-      throw new BadRequestException({ error: 'BAD_REQUEST', message: err.issues[0]?.message });
-    throw err;
-  }
-}
-
 function unwrapCrud<T>(r: CrudResult<T>): T {
   if (r.ok) return r.value;
   if (r.reason === 'NOT_FOUND') throw new NotFoundException({ error: 'NOT_FOUND', message: 'Not found.' });
   throw new ConflictException({ error: r.reason, message: r.message ?? 'Conflict.' });
 }
 
+/** A form row as `getFormById` reads it. */
+type FormRow = NonNullable<Awaited<ReturnType<typeof getFormById>>>;
+
 /**
  * `unwrapCrud` for the editor's guarded writes: a STALE refusal carries the
  * row as it is NOW, so the client can tell "someone else changed the content"
  * from "only the stamp moved" (its own slug rename, a CRM mapping save) in one
  * round trip, and adopt the stamp or show the conflict accordingly.
+ * `view` shapes that row like every other form response (the controller passes
+ * its `formView`, so `current` carries `publicUrl` and `editorUrl` too).
  */
 async function unwrapGuarded<T>(
   db: Db,
   accountId: string,
   id: string,
   r: CrudResult<T>,
+  view: (form: FormRow) => unknown = maskForm,
 ): Promise<T> {
   if (!r.ok && r.reason === 'STALE') {
     const current = await getFormById(db, accountId, id);
@@ -137,7 +139,7 @@ async function unwrapGuarded<T>(
       error: 'STALE',
       message: r.message ?? 'This form was saved elsewhere since you loaded it.',
       updatedAt: current?.updatedAt ?? null,
-      current: current ? maskForm(current) : null,
+      current: current ? await view(current) : null,
     });
   }
   return unwrapCrud(r);
@@ -200,6 +202,32 @@ export class AdminCrudController {
     // reads as "not available", which is the safe answer.
     @Optional() @Inject(CAPTCHA) private readonly captcha?: CaptchaVerifier,
   ) {}
+
+  /**
+   * Adds `publicUrl` and `editorUrl` to forms of one account, so an API caller
+   * (an agent, most of all) can hand a person the exact link instead of
+   * guessing its shape. Built with the same `publicFormPath` every web surface
+   * uses, on `PUBLIC_APP_URL`, naming the workspace by its canonical public
+   * code (vanity slug first) and the form by its live slug. Without
+   * `PUBLIC_APP_URL` both are null, and the account is not even read.
+   *
+   * Returns a function so a list pays for one account read, not one per form.
+   */
+  private async linker(
+    accountId: string,
+  ): Promise<<T extends { id: string; slug: string }>(form: T) => T & FormLinks> {
+    const appUrl = this.env?.PUBLIC_APP_URL;
+    const accountCode = appUrl?.trim() ? await getAccountPublicCode(this.db, accountId) : null;
+    return (form) => ({ ...form, ...formLinks(appUrl, accountCode, form) });
+  }
+
+  /** One masked form as the admin API returns it: secrets masked, links added. */
+  private async formView<T extends { id: string; slug: string; config: unknown; draftConfig?: unknown }>(
+    accountId: string,
+    form: T,
+  ): Promise<T & FormLinks> {
+    return (await this.linker(accountId))(maskForm(form));
+  }
 
   private ws(): WorkspaceService {
     if (!this.workspacesSvc) throw new Error('WorkspaceService not wired');
@@ -373,6 +401,7 @@ export class AdminCrudController {
           form_id: result.formId,
           from_onboarding: true,
           template: parsed.data.template,
+          via: createdVia(p),
         });
       }
     }
@@ -533,7 +562,8 @@ export class AdminCrudController {
   @Get('forms')
   async listForms(@Req() req: ReqLike) {
     const p = await this.auth.resolveHost(req);
-    return listForms(this.db, p.accountId);
+    const link = await this.linker(p.accountId);
+    return (await listForms(this.db, p.accountId)).map(link);
   }
 
   @Get('forms/:id')
@@ -541,7 +571,7 @@ export class AdminCrudController {
     const p = await this.auth.resolveHost(req);
     const f = await getFormById(this.db, p.accountId, id);
     if (!f) throw new NotFoundException({ error: 'NOT_FOUND', message: 'Not found.' });
-    return maskForm(f);
+    return this.formView(p.accountId, f);
   }
 
   @Post('forms')
@@ -550,7 +580,11 @@ export class AdminCrudController {
     const p = await this.auth.resolveHost(req);
     // The create schema (not the shared input one): only creation may name a
     // folder; PUT /v1/forms/:id never moves a form, PATCH /forms/:id/folder does.
-    const input = parse(formCreateInputSchema, body);
+    const input = parse(
+      formCreateInputSchema,
+      body,
+      await keyFormBodyIssues(this.db, p, body, { requireSteps: false, storesDestinations: true }),
+    );
     // The other path that AUTHORS a `destinations` array (PUT /forms/:id stages
     // a draft, and drafts strip the key; duplicate copies stored state and is
     // exempt — see `hasExtraHubspotDestination`). Same one-HubSpot rule as
@@ -567,7 +601,9 @@ export class AdminCrudController {
     // kit exactly like dashboard-created ones. Caller-supplied branding wins
     // over the kit (explicit input beats a default).
     const kit = await getAccountBranding(this.db, p.accountId);
-    let config: unknown = input.config;
+    // The HubSpot mirror's `formGuid`/`formSignature` belong to the form that
+    // made them (a copied config would aim this one at it), as on duplicate.
+    let config: unknown = withoutOwnedMirrorState(keyNormalizedConfig(p, input.config));
     if (kit) {
       const base =
         config && typeof config === 'object' && !Array.isArray(config)
@@ -584,10 +620,13 @@ export class AdminCrudController {
     // colours still renders the dark, lime look it was designed on, so "absent"
     // keeps its old meaning and only forms born here get the new one.
     config = withNewFormBranding(config);
-    // `p.memberId` — from the resolved principal, never the body.
-    const created = unwrapCrud(await createForm(this.db, p.accountId, { ...input, config }, p.memberId));
-    await this.productAnalytics?.captureForMember('form_created', p, { form_id: created.id });
-    return maskForm(created);
+    // `p.memberId` and `createdVia` come from the resolved principal, never the body.
+    const via = createdVia(p);
+    const created = unwrapCrud(
+      await createForm(this.db, p.accountId, { ...input, config, createdVia: via }, p.memberId),
+    );
+    await this.productAnalytics?.captureForMember('form_created', p, { form_id: created.id, via });
+    return this.formView(p.accountId, created);
   }
 
   /**
@@ -622,7 +661,12 @@ export class AdminCrudController {
   @Put('forms/:id')
   async updateForm(@Req() req: ReqLike, @Param('id') id: string, @Body() body: unknown) {
     const p = await this.auth.resolveHost(req);
-    const { config, slug, expectedUpdatedAt, ...meta } = parse(formInputSchema.partial(), body);
+    const { config: sent, slug, expectedUpdatedAt, ...meta } = parse(
+      formInputSchema.partial(),
+      body,
+      await keyFormBodyIssues(this.db, p, body, { requireSteps: true, storesDestinations: false, formId: id }),
+    );
+    const config = keyNormalizedConfig(p, sent);
     if (slug !== undefined) {
       unwrapCrud(await setFormSlug(this.db, p.accountId, id, slugify(slug)));
     }
@@ -632,11 +676,13 @@ export class AdminCrudController {
     // request checks against the one it just produced; a request with no
     // metadata wrote nothing, and the draft still checks the client's own
     // stamp (reading it off the row here would wave every stale draft through).
+    const view = (f: FormRow) => this.formView(p.accountId, f);
     let updated = await unwrapGuarded(
       this.db,
       p.accountId,
       id,
       await updateForm(this.db, p.accountId, id, meta, expectedUpdatedAt),
+      view,
     );
     if (config !== undefined) {
       const metaWrote = meta.name !== undefined;
@@ -647,9 +693,10 @@ export class AdminCrudController {
         p.accountId,
         id,
         await saveDraftConfig(this.db, p.accountId, id, config, stamp),
+        view,
       );
     }
-    return maskForm(updated);
+    return this.formView(p.accountId, updated);
   }
 
   /**
@@ -673,7 +720,7 @@ export class AdminCrudController {
   async updateFormSlug(@Req() req: ReqLike, @Param('id') id: string, @Body() body: unknown) {
     const p = await this.auth.resolveHost(req);
     const { slug } = parse(formSlugInputSchema, body);
-    return maskForm(unwrapCrud(await setFormSlug(this.db, p.accountId, id, slug)));
+    return this.formView(p.accountId, unwrapCrud(await setFormSlug(this.db, p.accountId, id, slug)));
   }
 
   @Post('forms/:id/duplicate')
@@ -682,12 +729,14 @@ export class AdminCrudController {
     const p = await this.auth.resolveHost(req);
     // Duplicating is the OTHER way a form is born in the builder. Without this
     // it would be the one creation path with no author and no funnel event.
-    const copy = unwrapCrud(await duplicateForm(this.db, p.accountId, id, p.memberId));
+    const via = createdVia(p);
+    const copy = unwrapCrud(await duplicateForm(this.db, p.accountId, id, p.memberId, via));
     await this.productAnalytics?.captureForMember('form_created', p, {
       form_id: copy.id,
       from_duplicate: true,
+      via,
     });
-    return maskForm(copy);
+    return this.formView(p.accountId, copy);
   }
 
   /**
@@ -708,7 +757,7 @@ export class AdminCrudController {
       ? await getFormById(this.db, p.accountId, id)
       : null;
     const result = await publishForm(this.db, p.accountId, id, expectedUpdatedAt);
-    const published = await unwrapGuarded(this.db, p.accountId, id, result);
+    const published = await unwrapGuarded(this.db, p.accountId, id, result, (f) => this.formView(p.accountId, f));
     // `result.published` comes from the UPDATE's own RETURNING, so it is true
     // exactly on the call that copied the draft over. Reading the row BEFORE and
     // deciding here would be a read-then-act: two concurrent publishes both saw
@@ -723,9 +772,29 @@ export class AdminCrudController {
         // The owner's switch as published, whether or not this deployment can
         // run it: adoption of the feature, not coverage.
         has_captcha: hasCaptchaSwitch(published.config),
+        via: createdVia(p),
       });
     }
-    return maskForm(published);
+    return this.formView(p.accountId, published);
+  }
+
+  /**
+   * Put the previously published version back live: the live config and the
+   * previous one swap, so reverting twice undoes the revert. Destinations stay
+   * as they are now and a pending draft is untouched (see `revertForm`).
+   * 409 NOTHING_TO_REVERT when the form was never published over an earlier
+   * version. Same gate as publishing, and an API key may call it.
+   */
+  @Post('forms/:id/revert')
+  @HttpCode(200)
+  async revertForm(@Req() req: ReqLike, @Param('id') id: string) {
+    const p = await this.auth.resolveHost(req);
+    const result = await revertForm(this.db, p.accountId, id);
+    if (!result.ok && result.reason === 'NOTHING_TO_REVERT') {
+      throw new ConflictException({ error: 'NOTHING_TO_REVERT', message: result.message });
+    }
+    const view = (f: FormRow) => this.formView(p.accountId, f);
+    return view(await unwrapGuarded(this.db, p.accountId, id, result, view));
   }
 
   @Delete('forms/:id')

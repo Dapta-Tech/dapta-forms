@@ -222,6 +222,8 @@ export class AdminService {
           ...(template.config ?? { version: 1 as const, steps: [] }),
           ...(input.locale ? { language: input.locale } : {}),
         }),
+        // The wizard is a dashboard flow: always born on the web.
+        createdVia: 'web',
       },
       p.memberId,
     );

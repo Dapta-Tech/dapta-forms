@@ -48,6 +48,16 @@ describe('resolveRevealCopy', () => {
     expect(out.versusStatus).toBe('Searching in fintech…');
   });
 
+  it('reads [name] as the full name from a name step', () => {
+    const out = resolveRevealCopy(
+      { headline: 'One moment, [name]', subtitle: 'Matching [firstname]…' },
+      { firstname: 'Ana', lastname: 'Ruiz' },
+      messages,
+    );
+    expect(out.headline).toBe('One moment, Ana Ruiz');
+    expect(out.subtitle).toBe('Matching Ana…');
+  });
+
   it('uses the configured versus labels and interpolates them', () => {
     const out = resolveRevealCopy(
       { versusYouLabel: '[firstname]', versusMatchLabel: 'Your [role]' },

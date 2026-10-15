@@ -34,13 +34,13 @@ vi.mock('next/font/google', () => {
 });
 
 const actions = vi.hoisted(() => ({
-  submitFormAction: vi.fn(),
-  recordEventAction: vi.fn(async () => undefined),
-  recordEventsAction: vi.fn(async () => undefined),
-  recordBookingAction: vi.fn(async () => undefined),
-  presignUploadAction: vi.fn(async () => ({ ok: false })),
+  submitForm: vi.fn(),
+  recordEvent: vi.fn(async () => undefined),
+  recordEvents: vi.fn(async () => undefined),
+  recordBooking: vi.fn(async () => undefined),
+  presignUpload: vi.fn(async () => ({ ok: false })),
 }));
-vi.mock('./actions', () => actions);
+vi.mock('./transport', () => actions);
 
 /** The host, as the renderer sees it through `createHostVisit`. */
 const host = vi.hoisted(() => ({
@@ -108,8 +108,8 @@ beforeEach(() => {
   host.answer = LANDED;
   renders = [];
   observers = [];
-  actions.submitFormAction.mockReset();
-  actions.submitFormAction.mockImplementation(async () => ({ ok: true, score: 0, outcome: null }));
+  actions.submitForm.mockReset();
+  actions.submitForm.mockImplementation(async () => ({ ok: true, score: 0, outcome: null }));
   vi.stubGlobal(
     'IntersectionObserver',
     class {
@@ -165,7 +165,7 @@ function typeInto(input: HTMLInputElement, value: string) {
 
 const button = () =>
   [...el.querySelectorAll<HTMLButtonElement>('button.pf__btn')].find((b) => !b.classList.contains('pf__back'))!;
-const calls = () => actions.submitFormAction.mock.calls.map((c) => c[2] as Record<string, unknown>);
+const calls = () => actions.submitForm.mock.calls.map((c) => c[2] as Record<string, unknown>);
 const completes = () => calls().filter((p) => !p.partial);
 const partials = () => calls().filter((p) => p.partial === true);
 
@@ -371,7 +371,7 @@ describe('with spam protection on', () => {
     await settle();
     // The check has not answered yet, and the host was already asked.
     expect(host.asked).toBe(1);
-    expect(actions.submitFormAction).not.toHaveBeenCalled();
+    expect(actions.submitForm).not.toHaveBeenCalled();
 
     await act(async () => renders[0]!.opts.callback!('tok-1'));
     await settle();
@@ -380,7 +380,7 @@ describe('with spam protection on', () => {
   });
 
   it('keeps the visit it asked for through the automatic retry of a refused check', async () => {
-    actions.submitFormAction.mockImplementationOnce(async () => ({ ok: false, error: 'CAPTCHA_FAILED', message: 'x' }));
+    actions.submitForm.mockImplementationOnce(async () => ({ ok: false, error: 'CAPTCHA_FAILED', message: 'x' }));
     const config = { version: 1, layout: 'vertical', steps } as never;
     await mount(
       <VerticalFormRenderer accountCode="acme" slug="f" name="Quote" config={config} locale="en" captcha={AUTO} visitCapture={CAPTURE} />,

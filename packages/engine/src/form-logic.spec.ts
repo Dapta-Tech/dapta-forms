@@ -45,6 +45,10 @@ import {
   sanitizeStepKey,
   resolveQuestion,
   resolveEnding,
+  fullNameToken,
+  interpolateUrl,
+  stripUrlTokens,
+  redirectUrlFor,
   resolveFormLayout,
   FORM_LAYOUTS,
   type FormConfig,
@@ -1110,19 +1114,15 @@ describe('resolveOptionIcon — one answer for every surface', () => {
     }
   });
 
-  it('falls back to the label initials when there is no icon', () => {
-    expect(resolveOptionIcon({ label: 'Team lead' }, 'cards')).toEqual({
-      kind: 'glyph',
-      text: 'TL',
-    });
-    expect(resolveOptionIcon({ icon: null, label: 'Founder' }, 'list')).toEqual({
-      kind: 'glyph',
-      text: 'F',
-    });
-    expect(resolveOptionIcon({ icon: '   ', label: 'Founder' }, 'cards')).toEqual({
-      kind: 'glyph',
-      text: 'F',
-    });
+  it('draws no icon, and no initials, when the option has none', () => {
+    for (const layout of ['cards', 'list'] as const) {
+      expect(resolveOptionIcon({ label: 'Team lead' }, layout)).toEqual({ kind: 'none' });
+      expect(resolveOptionIcon({ icon: null, label: 'Founder' }, layout)).toEqual({ kind: 'none' });
+      expect(resolveOptionIcon({ icon: '', label: 'Founder' }, layout)).toEqual({ kind: 'none' });
+      // Whitespace is not an icon either: an editor that saved a stray space
+      // must not bring the initials back.
+      expect(resolveOptionIcon({ icon: '   ', label: 'Founder' }, layout)).toEqual({ kind: 'none' });
+    }
   });
 });
 
@@ -1567,8 +1567,163 @@ describe('per-question scoring (V5-B2)', () => {
   });
 });
 
+describe('[name] reads as the full name', () => {
+  it('joins firstname and lastname with one space', () => {
+    expect(fullNameToken({ firstname: 'Ana', lastname: 'Ruiz' })).toBe('Ana Ruiz');
+    expect(interpolate('Thanks [name]!', { firstname: 'Ana', lastname: 'Ruiz' })).toBe(
+      'Thanks Ana Ruiz!',
+    );
+  });
+
+  it('leaves no stray space when one half is missing or blank', () => {
+    expect(fullNameToken({ firstname: 'Ana' })).toBe('Ana');
+    expect(fullNameToken({ firstname: '  ', lastname: 'Ruiz ' })).toBe('Ruiz');
+    expect(interpolate('Thanks [name]!', { lastname: 'Ruiz' })).toBe('Thanks Ruiz!');
+  });
+
+  it('sweeps the token like any other empty one when there is no name at all', () => {
+    expect(fullNameToken({})).toBe('');
+    expect(interpolate('Thanks, [name]!', {})).toBe('Thanks!');
+    expect(interpolate('[name], one more thing', {})).toBe('One more thing');
+  });
+
+  it('an answer stored under `name` itself wins, so older forms read the same', () => {
+    const answers = { name: 'Team Rocket', firstname: 'Ana', lastname: 'Ruiz' };
+    expect(fullNameToken(answers)).toBe('Team Rocket');
+    expect(interpolate('Hi [name]', answers)).toBe('Hi Team Rocket');
+    // A blank own answer falls through to the split name instead of rendering nothing.
+    expect(fullNameToken({ name: '  ', firstname: 'Ana' })).toBe('Ana');
+  });
+
+  it('leaves [firstname] and [lastname] alone', () => {
+    expect(interpolate('[firstname] / [lastname]', { firstname: 'Ana', lastname: 'Ruiz' })).toBe(
+      'Ana / Ruiz',
+    );
+  });
+
+  it('resolves in questions and descriptions through resolveStepDisplay', () => {
+    const shown = resolveStepDisplay(
+      step({
+        key: 'role',
+        type: 'text',
+        question: 'What is your role, [name]?',
+        helper: 'Hi [name].',
+      }),
+      { firstname: 'Ana', lastname: 'Ruiz' },
+    );
+    expect(shown.question).toBe('What is your role, Ana Ruiz?');
+    expect(shown.helper).toBe('Hi Ana Ruiz.');
+  });
+});
+
+describe('interpolateUrl (redirect URL tokens)', () => {
+  it('fills [key] tokens percent-encoded, [name] as the full name', () => {
+    expect(
+      interpolateUrl('https://example.com/thanks?who=[name]&mail=[email]', {
+        firstname: 'Ana María',
+        lastname: 'Ruiz',
+        email: 'ana+x@example.com',
+      }),
+    ).toBe('https://example.com/thanks?who=Ana%20Mar%C3%ADa%20Ruiz&mail=ana%2Bx%40example.com');
+  });
+
+  it('an answer can never add a parameter, a path or a fragment', () => {
+    expect(interpolateUrl('https://example.com/?a=[x]', { x: '1&admin=1#top/..' })).toBe(
+      'https://example.com/?a=1%26admin%3D1%23top%2F..',
+    );
+  });
+
+  it('a token with no answer becomes empty, and a URL without tokens is untouched', () => {
+    expect(interpolateUrl('https://example.com/?n=[name]&r=[role]', {})).toBe(
+      'https://example.com/?n=&r=',
+    );
+    expect(interpolateUrl('https://example.com/a,b?c=d', { name: 'x' })).toBe(
+      'https://example.com/a,b?c=d',
+    );
+  });
+
+  it('a step keyed `name` keeps its own value in the URL', () => {
+    expect(
+      interpolateUrl('https://example.com/?n=[name]', { name: 'Acme', firstname: 'Ana' }),
+    ).toBe('https://example.com/?n=Acme');
+  });
+
+  it('arrays join with a comma, like the copy tokens', () => {
+    expect(interpolateUrl('https://example.com/?t=[tools]', { tools: ['crm', 'ads'] })).toBe(
+      'https://example.com/?t=crm%2C%20ads',
+    );
+  });
+});
+
+describe('stripUrlTokens (embedded redirects carry no answers)', () => {
+  it('drops every query parameter with a token and keeps the rest as written', () => {
+    expect(stripUrlTokens('https://example.com/w?src=form&who=[name]&role=[role]#top')).toBe(
+      'https://example.com/w?src=form#top',
+    );
+    expect(stripUrlTokens('https://example.com/w?who=[name]&src=form')).toBe('https://example.com/w?src=form');
+    expect(stripUrlTokens('https://example.com/w?who=Mr%20[name]')).toBe('https://example.com/w');
+  });
+
+  it('leaves no empty `?` behind when every parameter carried a token', () => {
+    expect(stripUrlTokens('https://example.com/w?who=[name]&mail=[email]')).toBe('https://example.com/w');
+    expect(stripUrlTokens('https://example.com/w?who=[name]#done')).toBe('https://example.com/w#done');
+  });
+
+  it('removes a token elsewhere instead of filling it', () => {
+    expect(stripUrlTokens('https://example.com/u/[name]/x?a=1#[email]')).toBe('https://example.com/u//x?a=1#');
+    expect(stripUrlTokens('https://example.com/?[name]')).toBe('https://example.com/');
+  });
+
+  it('a URL without tokens comes back byte for byte', () => {
+    for (const url of ['https://example.com', 'https://example.com/a?b=1&c=&d#e', 'https://example.com/?']) {
+      expect(stripUrlTokens(url)).toBe(url);
+    }
+  });
+});
+
+describe('redirectUrlFor', () => {
+  const answers = { firstname: 'Ana', lastname: 'Ruiz', email: 'ana@example.com' };
+  const url = 'https://example.com/w?src=form&who=[name]&mail=[email]';
+
+  it('fills the tokens on a standalone form', () => {
+    expect(redirectUrlFor(url, answers, false)).toBe(
+      'https://example.com/w?src=form&who=Ana%20Ruiz&mail=ana%40example.com',
+    );
+  });
+
+  it('never puts an answer in the URL of an embedded form', () => {
+    const out = redirectUrlFor(url, answers, true);
+    expect(out).toBe('https://example.com/w?src=form');
+    for (const value of ['Ana', 'Ruiz', 'ana%40example.com', 'ana@example.com']) expect(out).not.toContain(value);
+  });
+});
+
 describe('resolveEnding (V5-B1 — outcome → form → built-in)', () => {
   const outcome = (over: Partial<FormOutcome> = {}): FormOutcome => ({ id: 'o', label: '', ...over });
+
+  it('fills the redirect URL tokens when given the answers, and only then', () => {
+    const cfg: FormConfig = {
+      version: 1,
+      steps: [],
+      ending: { redirectUrl: 'https://example.com/hi?n=[name]' },
+    };
+    const answers = { firstname: 'Ana', lastname: 'Ruiz' };
+    expect(resolveEnding(cfg, null, answers).redirectUrl).toBe(
+      'https://example.com/hi?n=Ana%20Ruiz',
+    );
+    expect(
+      resolveEnding(cfg, outcome({ redirectUrl: 'https://example.com/o/[name]' }), answers)
+        .redirectUrl,
+    ).toBe('https://example.com/o/Ana%20Ruiz');
+    // Embedded, the token-bearing parameter goes, with or without answers.
+    expect(resolveEnding(cfg, null, answers, { embedded: true }).redirectUrl).toBe('https://example.com/hi');
+    expect(resolveEnding(cfg, null, undefined, { embedded: true }).redirectUrl).toBe('https://example.com/hi');
+    // Without answers the URL comes back exactly as configured.
+    expect(resolveEnding(cfg, null).redirectUrl).toBe('https://example.com/hi?n=[name]');
+    // The copy stays a template: the done screen interpolates it.
+    const withCopy: FormConfig = { ...cfg, ending: { ...cfg.ending, body: 'Thanks [name]' } };
+    expect(resolveEnding(withCopy, null, answers).body).toBe('Thanks [name]');
+  });
 
   it('a legacy config with no ending block resolves to nothing (built-in copy)', () => {
     const out = resolveEnding({ version: 1, steps: [] }, null);

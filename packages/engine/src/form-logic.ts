@@ -1914,7 +1914,12 @@ export interface ResolvedEnding {
   headline: string | null;
   /** Body copy (still un-interpolated), or `null` for the built-in copy. */
   body: string | null;
-  /** Where to send the respondent, or `null` to show the thank-you screen. */
+  /**
+   * Where to send the respondent, or `null` to show the thank-you screen. Its
+   * `[key]` tokens are filled (and percent-encoded) when `resolveEnding` is
+   * given the answers, and dropped when it is told the form is embedded;
+   * otherwise it is the URL exactly as configured.
+   */
   redirectUrl: string | null;
   /** How long to show the thank-you screen first. 0 = redirect immediately. */
   redirectDelayMs: number;
@@ -1934,10 +1939,20 @@ export interface ResolvedEnding {
  *
  * A field is "set" only when it is a non-empty string, so clearing an outcome's
  * box falls back to the form default rather than blanking the screen. The
- * outcome's `label` doubles as its heading (it always has) — inheriting the
+ * outcome's `label` doubles as its heading (it always has), inheriting the
  * form headline only when the label is empty.
+ *
+ * Pass `answers` to get the redirect URL with its `[key]` tokens filled in
+ * (`interpolateUrl`), or `embedded: true` to get it with every token-bearing
+ * parameter dropped (`stripUrlTokens`); the headline and body stay templates
+ * either way, because the done screen interpolates them itself.
  */
-export function resolveEnding(config: FormConfig, outcome: FormOutcome | null): ResolvedEnding {
+export function resolveEnding(
+  config: FormConfig,
+  outcome: FormOutcome | null,
+  answers?: Answers,
+  opts: { embedded?: boolean } = {},
+): ResolvedEnding {
   const e = config.ending ?? null;
   const pick = (a: string | null | undefined, b: string | null | undefined): string | null => {
     const first = typeof a === 'string' ? a.trim() : '';
@@ -1966,7 +1981,10 @@ export function resolveEnding(config: FormConfig, outcome: FormOutcome | null): 
   return {
     headline: pick(outcome?.label, e?.headline),
     body: pick(outcome?.message, e?.body),
-    redirectUrl,
+    redirectUrl:
+      redirectUrl && (answers || opts.embedded)
+        ? redirectUrlFor(redirectUrl, answers ?? {}, opts.embedded === true)
+        : redirectUrl,
     redirectDelayMs: redirectUrl && Number.isFinite(delaySource) ? Math.max(0, delaySource) : 0,
   };
 }
@@ -2132,6 +2150,92 @@ function resolveToken(value: AnswerValue): string {
 }
 
 /**
+ * The token that reads as the person's full name. A `name` step never stores
+ * an answer under `name` (it writes `firstname` and `lastname`), so `[name]`
+ * used to resolve to nothing on every form that asked for a name the right way.
+ */
+export const FULL_NAME_TOKEN = 'name';
+
+/**
+ * What `[name]` resolves to: an answer stored under `name` itself wins (a form
+ * whose own step is keyed `name` keeps showing that step's value, exactly as
+ * before), else `firstname` and `lastname` joined by one space, without a
+ * stray space when one of them is missing. Empty string when neither exists.
+ */
+export function fullNameToken(answers: Answers): string {
+  const own = resolveToken(answers[FULL_NAME_TOKEN]);
+  if (own.trim() !== '') return own;
+  return [answers.firstname, answers.lastname]
+    .filter((v): v is string => typeof v === 'string' && v.trim() !== '')
+    .map((v) => v.trim())
+    .join(' ');
+}
+
+/**
+ * The respondent's full name for a surface that knows the form, such as the
+ * notification emails: `fullNameToken` first, so it reads exactly like `[name]`
+ * on the form, else the first `name` step's own subfields, which also covers a
+ * step whose subfields were renamed away from `firstname` and `lastname`.
+ */
+export function respondentFullName(steps: readonly FormStep[], answers: Answers): string {
+  const token = fullNameToken(answers);
+  if (token !== '') return token;
+  const step = steps.find((s) => s.type === 'name');
+  return step ? nameAnswer(step, answers) : '';
+}
+
+/** The substitution text for one `[field]` token, `[name]` included. */
+export function tokenText(field: string, answers: Answers): string {
+  return field === FULL_NAME_TOKEN ? fullNameToken(answers) : resolveToken(answers[field]);
+}
+
+/**
+ * Replace `[key]` tokens in a redirect URL. Every value is percent-encoded, so
+ * an answer can only ever land as data inside the URL the owner wrote: it
+ * cannot add a parameter, a path segment or a fragment, and it cannot change
+ * the scheme or the host (the template starts with `http(s)://`, which the
+ * schema enforces). A token with no answer becomes an empty string; the prose
+ * sweep `interpolate` does around an empty token would corrupt a URL.
+ */
+export function interpolateUrl(template: string, answers: Answers): string {
+  return template.replace(/\[([a-zA-Z0-9_]+)\]/g, (_m, field: string) =>
+    encodeURIComponent(tokenText(field, answers)),
+  );
+}
+
+/**
+ * A redirect URL with no answer in it, for a form running embedded: the owner
+ * decided an embedded form never hands answers to the destination, nor to the
+ * host page that relays the redirect. Every query parameter that carries a
+ * `[key]` token is dropped whole (no empty `?who=` is left behind, and the `?`
+ * goes when nothing else remains); the rest of the URL stays exactly as
+ * written. A token anywhere else (path, fragment) is removed, never filled.
+ */
+export function stripUrlTokens(template: string): string {
+  const token = /\[[a-zA-Z0-9_]+\]/;
+  const tokens = /\[[a-zA-Z0-9_]+\]/g;
+  const hashAt = template.indexOf('#');
+  const main = hashAt === -1 ? template : template.slice(0, hashAt);
+  const hash = hashAt === -1 ? '' : template.slice(hashAt).replace(tokens, '');
+  const queryAt = main.indexOf('?');
+  if (queryAt === -1) return main.replace(tokens, '') + hash;
+  const base = main.slice(0, queryAt).replace(tokens, '');
+  const query = main.slice(queryAt + 1);
+  if (!token.test(query)) return `${base}?${query}${hash}`;
+  const kept = query.split('&').filter((pair) => pair !== '' && !token.test(pair));
+  return `${base}${kept.length > 0 ? `?${kept.join('&')}` : ''}${hash}`;
+}
+
+/**
+ * The redirect URL to navigate to: `[key]` tokens filled from the answers on a
+ * standalone form (`interpolateUrl`), or stripped on an embedded one
+ * (`stripUrlTokens`), so an embedded form's redirect never carries an answer.
+ */
+export function redirectUrlFor(template: string, answers: Answers, embedded: boolean): string {
+  return embedded ? stripUrlTokens(template) : interpolateUrl(template, answers);
+}
+
+/**
  * Replace `[key]` tokens in copy with the corresponding answer. A token whose
  * answer is missing/empty resolves to nothing AND the connector that joined it to
  * the rest of the sentence is swept up with it, so no dangling *joining* punctuation
@@ -2148,6 +2252,8 @@ function resolveToken(value: AnswerValue): string {
  *    `"Hi [firstname], welcome"` → `"Hi, welcome"`;
  *  - duplicate spaces a removal creates are collapsed and the ends trimmed.
  *
+ * `[name]` reads as the full name (see {@link fullNameToken}).
+ *
  * Copy with **no empty tokens** is substituted verbatim — byte-for-byte identical
  * to a plain replace — so the all-resolved path (including a resolved token's own
  * spacing) is unchanged. Pure and deterministic; every regex is linear (no
@@ -2159,7 +2265,7 @@ export function interpolate(template: string, answers: Answers): string {
   const EMPTY = '\uE000';
   let hadEmpty = false;
   const substituted = template.replace(/\[([a-zA-Z0-9_]+)\]/g, (_m, field: string) => {
-    const resolved = resolveToken(answers[field]);
+    const resolved = tokenText(field, answers);
     if (resolved === '') {
       hadEmpty = true;
       return EMPTY;
@@ -2172,7 +2278,7 @@ export function interpolate(template: string, answers: Answers): string {
   // The copy opened with a token that resolved empty: its first surviving word was
   // mid-sentence a moment ago, so it should be re-capitalized after the cleanup.
   const lead = template.match(/^\s*\[([a-zA-Z0-9_]+)\]/);
-  const leadingEmpty = lead != null && resolveToken(answers[lead[1]]) === '';
+  const leadingEmpty = lead != null && tokenText(lead[1]!, answers) === '';
 
   let cleaned = substituted;
   if (leadingEmpty) {
@@ -2590,8 +2696,11 @@ export function isImageIcon(icon: string | null | undefined): boolean {
 export const OPTION_ICON_GLYPH_MAX = 2;
 
 /**
- * The initials a label falls back to when it has no icon: up to two letters,
- * taken from the first two words ("HubSpot Sales" → "HS", "Hubspot" → "H").
+ * A label's initials: up to two letters, taken from the first two words
+ * ("HubSpot Sales" → "HS", "Hubspot" → "H"). What an image icon degrades to
+ * where it cannot be drawn (a list row, a logo that fails to load), and the
+ * suggestion the editor's Letters tab offers. An option with NO icon does not
+ * get them: it draws no icon at all (see `resolveOptionIcon`).
  */
 export function optionInitials(label: string): string {
   const words = label.trim().split(/\s+/).filter(Boolean);
@@ -2606,7 +2715,9 @@ export function optionInitials(label: string): string {
 /** What an option's icon resolves to on a given layout. */
 export type ResolvedOptionIcon =
   | { kind: 'image'; src: string }
-  | { kind: 'glyph'; text: string };
+  | { kind: 'glyph'; text: string }
+  /** The option has no icon: draw its text alone, no circle, no initials. */
+  | { kind: 'none' };
 
 /**
  * The single answer to "what do I draw for this option?", shared by the public
@@ -2617,6 +2728,11 @@ export type ResolvedOptionIcon =
  * sliver — so under `list` an image URL degrades to the label's initials rather
  * than drawing badly. That also means an OLD config pairing a URL with a list
  * can't produce the broken combination.
+ *
+ * An option without an icon resolves to `none` on both layouts. It used to
+ * draw the label's initials in the icon's place ("FR", "NR"), which read as a
+ * broken logo rather than as a choice; a card without an icon now shows its
+ * text alone, and a list row keeps its radio.
  */
 export function resolveOptionIcon(
   option: Pick<FormOption, 'icon' | 'label'>,
@@ -2628,7 +2744,7 @@ export function resolveOptionIcon(
     return { kind: 'glyph', text: optionInitials(option.label) };
   }
   if (icon) return { kind: 'glyph', text: icon };
-  return { kind: 'glyph', text: optionInitials(option.label) };
+  return { kind: 'none' };
 }
 
 // ---------------------------------------------------------------------------

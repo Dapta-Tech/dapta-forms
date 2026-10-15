@@ -87,19 +87,27 @@ export const member = pgTable(
   }),
 );
 
-export const apiKey = pgTable('api_key', {
-  id: text('id').primaryKey(),
-  accountId: text('account_id').notNull(),
-  name: text('name').notNull(),
-  prefix: text('prefix').notNull().unique(),
-  last4: text('last4').notNull(),
-  keyHash: text('key_hash').notNull().unique(),
-  scopes: text('scopes'),
-  lastUsedAtMs: bigint('last_used_at_ms', { mode: 'number' }),
-  expiresAtMs: bigint('expires_at_ms', { mode: 'number' }),
-  revokedAtMs: bigint('revoked_at_ms', { mode: 'number' }),
-  createdAt: bigint('created_at', { mode: 'number' }).notNull(),
-});
+export const apiKey = pgTable(
+  'api_key',
+  {
+    id: text('id').primaryKey(),
+    accountId: text('account_id').notNull(),
+    /** member.id of the person who created the key, whose role it acts with (see 0024); NULL only on pre-0024 rows. */
+    memberId: text('member_id'),
+    name: text('name').notNull(),
+    prefix: text('prefix').notNull().unique(),
+    last4: text('last4').notNull(),
+    keyHash: text('key_hash').notNull().unique(),
+    scopes: text('scopes'),
+    lastUsedAtMs: bigint('last_used_at_ms', { mode: 'number' }),
+    expiresAtMs: bigint('expires_at_ms', { mode: 'number' }),
+    revokedAtMs: bigint('revoked_at_ms', { mode: 'number' }),
+    createdAt: bigint('created_at', { mode: 'number' }).notNull(),
+  },
+  (t) => ({
+    apiKeyAccountMemberIdx: index('api_key_account_member_idx').on(t.accountId, t.memberId),
+  }),
+);
 
 export const outbox = pgTable('outbox', {
   id: text('id').primaryKey(),
@@ -218,6 +226,12 @@ export const form = pgTable(
     createdBy: text('created_by'),
     /** The folder this form is filed in (see 0021); NULL = unfiled, and a deleted folder unfiles. */
     folderId: text('folder_id').references(() => formFolder.id, { onDelete: 'set null' }),
+    /** How the form was born: 'web', 'api' or 'mcp' (see 0024); NULL = created before the column. */
+    createdVia: text('created_via'),
+    /** The live config the last publish replaced, for a revert; NULL = nothing to revert to. */
+    previousConfig: jsonb('previous_config'),
+    /** Epoch-ms of when `previousConfig` was published; NULL alongside it. */
+    previousPublishedAtMs: bigint('previous_published_at_ms', { mode: 'number' }),
     createdAt: bigint('created_at', { mode: 'number' }).notNull(),
     updatedAt: bigint('updated_at', { mode: 'number' }).notNull(),
   },

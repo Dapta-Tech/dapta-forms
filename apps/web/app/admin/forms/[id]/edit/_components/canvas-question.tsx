@@ -21,7 +21,7 @@ import { galleryIdForStep, iconForStep, hasOptions } from './question-types';
 import { maxStepPoints } from './scoring-util';
 import type { BuilderMessages } from './builder-messages';
 import { tb } from './builder-messages';
-import { TokenTextarea, tokenOptionsBefore, allTokenKeys } from './token-textarea';
+import { TokenTextarea, recallTokenOptionsBefore, allTokenKeys } from './token-textarea';
 import { SchedulerEmbedPreview } from './scheduler-embed-preview';
 
 /** The reveal's play time when the card configures none (mirrors the renderer). */
@@ -489,7 +489,7 @@ function QuestionEditableBody({
         placeholder={m.canvas.titlePlaceholder}
         ariaLabel={m.canvas.titlePlaceholder}
         autoGrow
-        tokens={tokenOptionsBefore(config.steps, index)}
+        tokens={recallTokenOptionsBefore(config.steps, index)}
         allKeys={allTokenKeys(config.steps)}
         m={m.tokens}
         hint={m.tokens.hint}
@@ -510,7 +510,7 @@ function QuestionEditableBody({
           placeholder={m.canvas.descriptionPlaceholder}
           ariaLabel={m.canvas.descriptionPlaceholder}
           autoGrow
-          tokens={tokenOptionsBefore(config.steps, index)}
+          tokens={recallTokenOptionsBefore(config.steps, index)}
           allKeys={allTokenKeys(config.steps)}
           m={m.tokens}
           testId="canvas-description-input"
@@ -537,12 +537,16 @@ function QuestionEditableBody({
               return cardLayout ? (
                 <div
                   key={i}
+                  data-testid="canvas-option-card"
+                  data-text-only={icon.kind === 'none' ? 'true' : undefined}
                   className={cn(
                     'group relative flex min-h-[104px] w-[calc((100%-1.25rem)/3)] min-w-[132px] max-w-[220px] flex-col items-center gap-2 border border-input bg-background px-2 py-4 transition-colors focus-within:border-primary-edge/60 hover:border-muted-foreground/60',
+                    // No icon: the text alone, centred, as the public card does.
+                    icon.kind === 'none' && 'min-h-[108px] justify-center px-3',
                     optionRadius,
                   )}
                 >
-                  {icon.kind === 'image' ? (
+                  {icon.kind === 'none' ? null : icon.kind === 'image' ? (
                     // No plate behind a logo — it carries its own shape. The
                     // band is only reserved so cards keep one baseline.
                     <span className="flex h-[46px] w-full max-w-[96px] items-center justify-center overflow-hidden">

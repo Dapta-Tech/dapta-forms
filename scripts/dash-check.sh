@@ -58,6 +58,7 @@ PROSE=(
 # would be switched off within a week.
 CODE=(
   'packages/shared/src/i18n/index.ts'
+  'packages/shared/src/api-reference.ts'
   'apps/web/app/admin/forms/[id]/edit/_components/builder-messages.ts'
   'apps/web/app/admin/forms/[id]/edit/_components/templates.ts'
   'packages/notifications/src/templates.ts'

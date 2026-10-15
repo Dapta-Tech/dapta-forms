@@ -1,10 +1,10 @@
 /**
- * How many funnel events one `recordEventsAction` call carries.
+ * How many funnel events one `recordEvents` call carries.
  *
  * A screen of several questions records one event per question, and the
  * engine does not cap a screen: the builder's cap of ten is the builder's, so
  * a screen written through the API can hold more. The renderer sends such a
- * screen's events in batches of this size, and the action never fans out
+ * screen's events in batches of this size, and the route never fans out
  * further than this in one call.
  */
 export const EVENTS_PER_CALL = 24;

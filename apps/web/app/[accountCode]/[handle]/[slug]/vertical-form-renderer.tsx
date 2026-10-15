@@ -32,6 +32,7 @@ import {
   canonicalizeAnswer,
   resolveOutcome,
   resolveEnding,
+  redirectUrlFor,
   computeScore,
   partialSubmitKey,
   revealAfterKey,
@@ -58,19 +59,21 @@ import { formDesignProps } from '@/lib/form-design';
 import { warmBookingEmbed, type BookingScheduledDetails } from '@/lib/booking-embed';
 import { resolveSchedulerPrefill } from '@/lib/booking-prefill';
 import { callAction, callActionWithRetry, isTransportError } from '@/lib/call-action';
-import { navigateTop } from '@/lib/top-navigate';
+import { isEmbeddedRender, navigateTop } from '@/lib/top-navigate';
 import { reportLeadConversion } from '@/lib/lead-conversion';
 import { useAnnounceScreenChange } from '@/lib/embed-screen';
 import type { ResolvedVisit } from '@/lib/host-visit';
 import {
-  submitFormAction,
-  recordEventAction,
-  recordBookingAction,
-  presignUploadAction,
-} from './actions';
+  submitForm,
+  recordEvent,
+  recordBooking,
+  presignUpload,
+} from './transport';
 import {
   useSessionId,
   releaseSessionId,
+  readAnswerDraft,
+  saveAnswerDraft,
   useCaptchaGate,
   captchaAborted,
   submitFinal,
@@ -177,6 +180,7 @@ export function VerticalFormRenderer({
   uploadMaxMb,
   captcha,
   visitCapture,
+  resume,
 }: {
   accountCode: string;
   slug: string;
@@ -197,6 +201,12 @@ export function VerticalFormRenderer({
    * passes it; the builder preview never does, so a preview asks no one.
    */
   visitCapture?: VisitCapture;
+  /**
+   * Keep the answers in progress for a reload of this tab, and pick them back
+   * up on mount (see `AnswerDraft`). Only the public page passes it; the
+   * builder preview never does, so a preview neither keeps nor restores one.
+   */
+  resume?: boolean;
 }) {
   const m = getMessages(locale).renderer;
   // The form's button copy: author overrides, else the stock copy of `locale`.
@@ -221,11 +231,12 @@ export function VerticalFormRenderer({
    */
   const requestUploadTicket = useCallback(
     async (stepKey: string, file: { name: string; size: number; mime: string }) => {
-      // Through `callAction`, never a bare await: a deploy rotating action ids
-      // mid-session rejects the call, and an unguarded await here would leave
-      // the control stuck on its progress bar with no error and no retry.
+      // Through `callAction`, never a bare await: a dropped connection (or a
+      // proxy error while a deploy rolls) rejects the call, and an unguarded
+      // await here would leave the control stuck on its progress bar with no
+      // error and no retry.
       const r = await callAction(() =>
-        presignUploadAction(accountCode, slug, {
+        presignUpload(accountCode, slug, {
           sessionId,
           stepKey,
           name: file.name,
@@ -273,6 +284,9 @@ export function VerticalFormRenderer({
   // visitor was scrolled: the host is asked to bring it into view.
   useAnnounceScreenChange(phase);
   const [answers, setAnswers] = useState<Answers>({});
+  // Set once the mount effect has read the reload draft: saving before that
+  // would overwrite it with the empty answers of the first render.
+  const [draftReady, setDraftReady] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [done, setDone] = useState<{ score: number; outcome: string | null } | null>(null);
@@ -362,7 +376,7 @@ export function VerticalFormRenderer({
       // Transport-safe fire-and-forget: a rejected invocation must never
       // surface as an unhandled rejection mid-walk (funnel events are best-effort).
       void callAction(() =>
-        recordEventAction(accountCode, slug, {
+        recordEvent(accountCode, slug, {
           sessionId,
           type,
           stepIndex: stepIndex ?? null,
@@ -390,8 +404,45 @@ export function VerticalFormRenderer({
     // Defaults first, then the URL on top: a link that names a value must beat
     // a default the author configured earlier.
     const seed = { ...captureDefaults(engineConfig.steps), ...capturePrefill(engineConfig.steps) };
-    if (Object.keys(seed).length > 0) setAnswers((a) => ({ ...seed, ...a }));
+    // A reload mid-form: what the person had answered wins over both. A value
+    // that was only seeded before the reload stays seeded (no progress tick,
+    // no terminal cut), exactly as it was.
+    const draft = resume ? readAnswerDraft(sessionKey, sessionId) : null;
+    const restored = draft?.answers ?? {};
+    // The draft last: a question's own mount-time default (a slider's) has
+    // already landed in `a` and in `seededKeys` by now, and must not replace
+    // what was answered, nor leave a moved slider counted as untouched.
+    if (draft) {
+      const seeded = new Set(draft.seeded ?? []);
+      for (const key of Object.keys(restored)) {
+        if (seeded.has(key)) seededKeys.current.add(key);
+        else seededKeys.current.delete(key);
+      }
+    }
+    if (Object.keys(seed).length > 0 || Object.keys(restored).length > 0) {
+      setAnswers((a) => ({ ...seed, ...a, ...restored }));
+    }
+    if (draft?.started) {
+      // The `start` of this session already went out before the reload, and
+      // the check above Submit was armed by that first answer.
+      startTracked.current = true;
+      gateRef.current.arm();
+    }
+    setDraftReady(true);
   }, []);
+
+  // Keep the response in progress for a reload (see `AnswerDraft`). Only while
+  // the page is the form: past a confirmed complete the draft is released
+  // with the session id and must not come back.
+  useEffect(() => {
+    if (!resume || !draftReady || !sessionId || phase !== 'form') return;
+    saveAnswerDraft(sessionKey, {
+      sessionId,
+      answers,
+      seeded: [...seededKeys.current],
+      ...(startTracked.current ? { started: true } : {}),
+    });
+  }, [resume, draftReady, sessionKey, sessionId, answers, phase]);
   useEffect(() => {
     if (!sessionId || viewTracked.current) return;
     viewTracked.current = true;
@@ -417,7 +468,7 @@ export function VerticalFormRenderer({
       // once: every attempt below, retries included, carries the same visit.
       const visitReady = resolveVisit();
       // Transport-safe with retries: a submit whose INVOCATION fails (network
-      // drop, deploy-rotated action id) used to reject unhandled, stranding the
+      // drop, a gateway error while a deploy rolls) used to reject unhandled, stranding the
       // visitor on the "submitting" spinner with the submission silently lost.
       // Retrying is safe — the server dedupes submissions by session.
       // 8s per attempt: worst case ~27s on the spinner, not the old forever.
@@ -430,7 +481,7 @@ export function VerticalFormRenderer({
           const resolved = await visitReady;
           return callActionWithRetry(
             () =>
-              submitFormAction(accountCode, slug, {
+              submitForm(accountCode, slug, {
                 sessionId,
                 data: withData(finalAnswers, resolved),
                 ...visitField(resolved),
@@ -445,7 +496,7 @@ export function VerticalFormRenderer({
           const resolved = await visitReady;
           return callActionWithRetry(
             () =>
-              submitFormAction(accountCode, slug, {
+              submitForm(accountCode, slug, {
                 sessionId,
                 data: withData(finalAnswers, resolved),
                 ...visitField(resolved),
@@ -484,7 +535,7 @@ export function VerticalFormRenderer({
       // window.location navigation (same pattern as the slides layout).
       if (sessionId) {
         await callAction(() =>
-          recordEventAction(accountCode, slug, {
+          recordEvent(accountCode, slug, {
             sessionId,
             type: 'submit',
             stepIndex: null,
@@ -499,7 +550,9 @@ export function VerticalFormRenderer({
         setPhase('booking');
         return;
       }
-      const ending = resolveEnding(engineConfig, outcome);
+      const ending = resolveEnding(engineConfig, outcome, finalAnswers, {
+        embedded: isEmbeddedRender(),
+      });
       if (ending.redirectUrl) {
         if (isSafeHttpUrl(ending.redirectUrl)) {
           if (ending.redirectDelayMs > 0) {
@@ -524,7 +577,9 @@ export function VerticalFormRenderer({
   useEffect(() => {
     if (phase !== 'done' || !done || redirected.current) return;
     const outcome = resolveOutcome(engineConfig, done.score, answersRef.current);
-    const ending = resolveEnding(engineConfig, outcome);
+    const ending = resolveEnding(engineConfig, outcome, answersRef.current, {
+      embedded: isEmbeddedRender(),
+    });
     if (!ending.redirectUrl || ending.redirectDelayMs <= 0) return;
     if (!isSafeHttpUrl(ending.redirectUrl)) return;
     const url = ending.redirectUrl;
@@ -566,7 +621,7 @@ export function VerticalFormRenderer({
         // With the page it is answered on (fire-and-forget like the save).
         void resolveVisit().then((resolved) =>
           callActionWithRetry(() =>
-            submitFormAction(accountCode, slug, {
+            submitForm(accountCode, slug, {
               sessionId,
               data: withData(nextAnswers, resolved),
               ...visitField(resolved),
@@ -649,7 +704,7 @@ export function VerticalFormRenderer({
       // submission is the respondent's explicit Submit later — so the answer
       // lands immediately instead of blocking the page on the round-trip.
       void callAction(() =>
-        recordBookingAction(accountCode, slug, {
+        recordBooking(accountCode, slug, {
           sessionId,
           provider: details.provider,
           ...(details.eventUri ? { eventUri: details.eventUri } : {}),
@@ -676,7 +731,7 @@ export function VerticalFormRenderer({
       // booking_events and duplicate CRM notes. A failure no longer strands the
       // visitor: they continue to the done screen/redirect regardless.
       const rec = await callAction(() =>
-        recordBookingAction(accountCode, slug, {
+        recordBooking(accountCode, slug, {
           sessionId,
           provider: details.provider,
           ...(details.eventUri ? { eventUri: details.eventUri } : {}),
@@ -685,8 +740,11 @@ export function VerticalFormRenderer({
         }),
       );
       if (isTransportError(rec)) console.warn('[forms] post-submit booking record failed');
-      if (outcome?.redirectUrl && isSafeHttpUrl(outcome.redirectUrl)) {
-        navigateTop(outcome.redirectUrl);
+      const redirectUrl = outcome?.redirectUrl
+        ? redirectUrlFor(outcome.redirectUrl, answersRef.current, isEmbeddedRender())
+        : null;
+      if (redirectUrl && isSafeHttpUrl(redirectUrl)) {
+        navigateTop(redirectUrl);
         return;
       }
       setPhase('done'); // `done` state was set in finalize

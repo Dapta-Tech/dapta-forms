@@ -8,6 +8,12 @@ describe('notification preview interpolate', () => {
     );
   });
 
+  it('fills {{respondentName}} in the preview, like the server fills it in the email', () => {
+    expect(interpolate('New lead: {{respondentName}}', NOTIFICATION_SAMPLE)).toBe(
+      'New lead: Alex Rivera',
+    );
+  });
+
   it('leaves an unknown token literal (matches the server behavior)', () => {
     expect(interpolate('Hi {{nope}}', NOTIFICATION_SAMPLE)).toBe('Hi {{nope}}');
   });

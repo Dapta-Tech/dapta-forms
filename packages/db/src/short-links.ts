@@ -23,6 +23,18 @@ export function canonicalPublicCode(account: { code: string; vanity_slug?: strin
   return account.vanity_slug ?? account.code;
 }
 
+/**
+ * The canonical public code of one account (see `canonicalPublicCode`), or null
+ * when no such account exists. What a form link handed out by the API names as
+ * its first segment, so it matches the `accountCode` the dashboard links with.
+ */
+export async function getAccountPublicCode(db: Db, accountId: string): Promise<string | null> {
+  const row = await db.get<{ code: string; vanity_slug: string | null }>(
+    sql`SELECT code, vanity_slug FROM account WHERE id = ${accountId} LIMIT 1`,
+  );
+  return row ? canonicalPublicCode(row) : null;
+}
+
 /** Is `value` already taken as a public code anywhere (code, vanity, alias)? */
 export async function publicCodeInUse(
   db: Db,

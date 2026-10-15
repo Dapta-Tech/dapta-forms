@@ -30,13 +30,13 @@ vi.mock('next/font/google', () => {
 });
 
 const actions = vi.hoisted(() => ({
-  submitFormAction: vi.fn(),
-  recordEventAction: vi.fn(async () => undefined),
-  recordEventsAction: vi.fn(async () => undefined),
-  recordBookingAction: vi.fn(async () => undefined),
-  presignUploadAction: vi.fn(async () => ({ ok: false })),
+  submitForm: vi.fn(),
+  recordEvent: vi.fn(async () => undefined),
+  recordEvents: vi.fn(async () => undefined),
+  recordBooking: vi.fn(async () => undefined),
+  presignUpload: vi.fn(async () => ({ ok: false })),
 }));
-vi.mock('./actions', () => actions);
+vi.mock('./transport', () => actions);
 
 import { FormRenderer } from './form-renderer';
 import { VerticalFormRenderer } from './vertical-form-renderer';
@@ -57,8 +57,8 @@ let el: HTMLDivElement | undefined;
 beforeEach(() => {
   window.sessionStorage.clear();
   window.history.replaceState(null, '', '/acme/f/quote');
-  actions.submitFormAction.mockReset();
-  actions.submitFormAction.mockImplementation(async () => ({ ok: true, score: 0, outcome: null }));
+  actions.submitForm.mockReset();
+  actions.submitForm.mockImplementation(async () => ({ ok: true, score: 0, outcome: null }));
   vi.stubGlobal(
     'IntersectionObserver',
     class {
@@ -106,7 +106,7 @@ function typeInto(input: HTMLInputElement, value: string) {
 const button = () =>
   [...el!.querySelectorAll<HTMLButtonElement>('button.pf__btn')].find((b) => !b.classList.contains('pf__back'))!;
 const completeSessions = () =>
-  actions.submitFormAction.mock.calls
+  actions.submitForm.mock.calls
     .map((c) => c[2] as { sessionId: string; partial?: boolean })
     .filter((p) => !p.partial)
     .map((p) => p.sessionId);
@@ -162,7 +162,7 @@ describe.each(layouts)('$name: one confirmed complete is one response', ({ rende
   });
 
   it('keeps the session when the complete was NOT confirmed, so the retry stays one response', async () => {
-    actions.submitFormAction.mockImplementation(async () => ({ ok: false, message: 'Try again.' }));
+    actions.submitForm.mockImplementation(async () => ({ ok: false, message: 'Try again.' }));
     await mount(render());
     const first = window.sessionStorage.getItem(KEY);
     await answer('ana@example.com');

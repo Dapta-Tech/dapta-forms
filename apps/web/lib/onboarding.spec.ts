@@ -120,7 +120,7 @@ describe('wizardQuestions — who is asked what', () => {
     expect(values[values.length - 1]).toBe('none');
   });
 
-  it('gives every card an icon — cards without one degrade to bare initials', () => {
+  it('gives every card an icon: a card without one would show its text alone', () => {
     for (const key of ['crm', 'lead_source', 'use_case'] as const) {
       const q = wizardQuestions(m, 'cold').find((x) => x.key === key);
       expect(q?.step.optionLayout, key).toBe('cards');

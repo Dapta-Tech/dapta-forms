@@ -8,19 +8,24 @@ import base from '@quill/config/eslint';
  * turns that rejection into a value, so this rule forces every call through it.
  * Scoped to client component trees; server-side code (actions, RSC pages,
  * route handlers) awaits its own helpers, not remote action stubs.
+ *
+ * The public form's transport (`app/[accountCode]/[handle]/[slug]/transport.ts`)
+ * has the same contract as an action stub (it rejects when no verdict came
+ * back), so its calls fall under the same rule by name.
  */
+const REMOTE_CALL = "/Action$|^(submitForm|recordEvents?|recordBooking|presignUpload)$/";
 const requireCallAction = {
   files: ['app/**/*.tsx', 'components/**/*.tsx'],
   rules: {
     'no-restricted-syntax': [
       'error',
       {
-        selector: "AwaitExpression > CallExpression[callee.name=/Action$/]:not([callee.name='callAction'])",
+        selector: `AwaitExpression > CallExpression[callee.name=${REMOTE_CALL}]:not([callee.name='callAction'])`,
         message:
           'Invoke server actions via callAction(() => theAction(…)) from @/lib/call-action — a bare await rejects on transport failures (deploy-rotated action ids, network drops) and strands UI state.',
       },
       {
-        selector: "UnaryExpression[operator='void'] > CallExpression[callee.name=/Action$/]:not([callee.name='callAction'])",
+        selector: `UnaryExpression[operator='void'] > CallExpression[callee.name=${REMOTE_CALL}]:not([callee.name='callAction'])`,
         message:
           'Invoke server actions via void callAction(() => theAction(…)) from @/lib/call-action — a bare void call swallows transport rejections instead of handling them.',
       },

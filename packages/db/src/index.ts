@@ -6,6 +6,7 @@
 export * from './client';
 export * from './crud';
 export * from './forms';
+export * from './form-revert';
 export * from './folders';
 export * from './bookings';
 export * from './account-integrations';
@@ -14,6 +15,7 @@ export * from './crypto';
 export * from './analytics';
 export * from './milestones';
 export * from './members';
+export * from './api-keys';
 export * from './workspaces';
 export * from './demo-form';
 export * from './onboarding';

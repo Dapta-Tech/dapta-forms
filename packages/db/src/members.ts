@@ -9,7 +9,8 @@
  * team owner-protection in crud.ts). All ops are account-scoped by the caller.
  */
 import { randomUUID } from 'node:crypto';
-import { sql, type Db } from './client';
+import { runAtomically, sql, type Db } from './client';
+import { revokeKeysOfInactiveMembersSql } from './api-keys';
 import type { SQL } from 'drizzle-orm';
 import type { CrudResult } from './crud';
 import { deriveUniqueHandle } from './short-links';
@@ -194,7 +195,9 @@ export async function changeMemberRole(
 
 /**
  * Enable/disable a member (soft access revocation). Disabling an owner is guarded
- * the same as demotion — the account must retain an active owner.
+ * the same as demotion: the account must retain an active owner. Any status
+ * but `active` revokes the member's API keys in the same transaction, so
+ * enabling them again later does not bring those keys back.
  */
 export async function setMemberStatus(
   db: Db,
@@ -210,16 +213,17 @@ export async function setMemberStatus(
     if ((await otherActiveOwners(db, accountId, memberId)) === 0)
       return { ok: false, reason: 'LAST_OWNER', message: 'A workspace must keep at least one owner.' };
   }
-  await db.run(
-    sql`UPDATE member SET status = ${status} WHERE account_id = ${accountId} AND id = ${memberId}`,
-  );
+  const update = sql`UPDATE member SET status = ${status} WHERE account_id = ${accountId} AND id = ${memberId}`;
+  if (status === 'active') await db.run(update);
+  else await runAtomically(db, [update, revokeKeysOfInactiveMembersSql(accountId)]);
   return { ok: true, value: (await getAccountMember(db, accountId, memberId))! };
 }
 
 /**
  * Remove a member from the workspace. Guards the last owner. Forms are
  * account-owned (not member-owned), so removing a member leaves the account's
- * forms and their submissions intact — only the roster row is deleted.
+ * forms and their submissions intact: only the roster row is deleted, and
+ * the member's API keys are revoked with it.
  */
 export async function removeMember(
   db: Db,
@@ -232,7 +236,10 @@ export async function removeMember(
     if ((await otherActiveOwners(db, accountId, memberId)) === 0)
       return { ok: false, reason: 'LAST_OWNER', message: 'A workspace must keep at least one owner.' };
   }
-  await db.run(sql`DELETE FROM member WHERE account_id = ${accountId} AND id = ${memberId}`);
+  await runAtomically(db, [
+    sql`DELETE FROM member WHERE account_id = ${accountId} AND id = ${memberId}`,
+    revokeKeysOfInactiveMembersSql(accountId),
+  ]);
   return { ok: true, value: { id: memberId } };
 }
 

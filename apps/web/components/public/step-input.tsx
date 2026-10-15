@@ -78,6 +78,9 @@ function asArray(value: AnswerValue): string[] {
  *
  * A broken image URL falls back to the glyph rather than leaving a torn-image
  * box: the option must stay pickable whatever the icon does.
+ *
+ * An option with no icon draws nothing here (`none`): the card shows its text
+ * alone. Callers check `hasOptionIcon` to style that card.
  */
 function OptionIcon({
   option,
@@ -89,6 +92,7 @@ function OptionIcon({
   const [failed, setFailed] = useState(false);
   const resolved = resolveOptionIcon(option, layout);
   const base = layout === 'cards' ? 'pf-choice-icon' : 'pf-choice-list';
+  if (resolved.kind === 'none') return null;
 
   if (resolved.kind === 'image' && !failed) {
     return (
@@ -109,6 +113,11 @@ function OptionIcon({
       {glyph}
     </span>
   );
+}
+
+/** True when the option draws an icon on this layout (an emoji, letters or a logo). */
+function hasOptionIcon(option: FormOption, layout: 'cards' | 'list'): boolean {
+  return resolveOptionIcon(option, layout).kind !== 'none';
 }
 
 /**
@@ -370,13 +379,16 @@ export function StepInput({
           >
             {(step.options ?? []).map((opt) => {
               const on = multi ? picked.includes(opt.value) : value === opt.value;
+              // Without an icon the card is its text alone, centred in the
+              // card, so it sits level with icon cards beside it.
+              const textOnly = !hasOptionIcon(opt, 'cards');
               return (
                 <button
                   key={opt.value}
                   type="button"
                   role={multi ? 'checkbox' : 'radio'}
                   aria-checked={on}
-                  className={`pf-choice-icon${on ? ' pf-choice-icon--selected' : ''}`}
+                  className={`pf-choice-icon${textOnly ? ' pf-choice-icon--text' : ''}${on ? ' pf-choice-icon--selected' : ''}`}
                   onClick={() => (multi ? toggle(opt) : onSelect(opt.value))}
                 >
                   <OptionIcon option={opt} layout="cards" />
@@ -420,7 +432,7 @@ export function StepInput({
               className={`pf-choice-list${value === opt.value ? ' pf-choice-list--selected' : ''}`}
               onClick={() => onSelect(opt.value)}
             >
-              {opt.icon ? (
+              {hasOptionIcon(opt, 'list') ? (
                 <OptionIcon option={opt} layout="list" />
               ) : (
                 <span className="pf-choice-list__radio" aria-hidden="true" />

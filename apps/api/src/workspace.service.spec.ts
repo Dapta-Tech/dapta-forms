@@ -11,7 +11,7 @@
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { ConflictException, ForbiddenException } from '@nestjs/common';
-import { createDb, migrate, seed, getAccountByCode, sql, type Db } from '@quill/db';
+import { createDb, migrate, seed, getAccountByCode, insertApiKey, sql, type Db } from '@quill/db';
 import { AuthService, WORKSPACE_HEADER } from './auth.service';
 import { LocalAuthProvider, type ReqLike } from './auth.provider';
 import { WorkOsAuthProvider } from './auth.provider.workos';
@@ -39,6 +39,8 @@ describe('WorkspaceService (IAM-backed)', () => {
   /** Test seams: the fake clock the role-catalog cache reads, and a way to make `/role` fail. */
   let clock: number;
   let roleCatalogStatus: number;
+  /** Test seam: the status `GET /iam/workspace/:id` answers with (the roster re-read). */
+  let workspaceReadStatus: number;
 
   const token = signJwtHs256({ sub: SUB, account_id: IAM_ACCOUNT, email: 'a@x.com', name: 'A', exp: 4102444800 }, SECRET);
   const req = (workspace?: string): ReqLike => ({
@@ -53,6 +55,7 @@ describe('WorkspaceService (IAM-backed)', () => {
     invitations = [];
     clock = 1_000_000;
     roleCatalogStatus = 200;
+    workspaceReadStatus = 200;
     workspaces = [
       { id: WS_OWN, name: 'Mine', account_id: IAM_ACCOUNT, is_active: true, users: [{ id: 'wu1', user_id: SUB, type: 'OWNER', is_active: true, roles: [] }] },
     ];
@@ -88,6 +91,8 @@ describe('WorkspaceService (IAM-backed)', () => {
         if (w) w.name = body.name;
         return json(w ?? {});
       }
+      if (method === 'GET' && url.pathname.startsWith('/iam/workspace/') && workspaceReadStatus !== 200)
+        return new Response('down', { status: workspaceReadStatus });
       if (method === 'GET' && url.pathname.startsWith('/iam/workspace/')) {
         const w = workspaces.find((x) => x.id === url.pathname.split('/').pop());
         return w ? json(w) : new Response('nf', { status: 404 });
@@ -338,6 +343,27 @@ describe('WorkspaceService (IAM-backed)', () => {
     expect(calls.filter((c) => c.method === 'PUT' && c.path === '/iam/workspaceUser').at(-1)!.body).toEqual({ id: 'wu2', is_active: false });
     const on = await svc.updateMemberUpstream(req(), b.id, { status: 'active' });
     expect(on.status).toBe('active');
+  });
+
+  it('disabling upstream revokes the member\'s API keys here even when the roster re-read fails', async () => {
+    await svc.list(req());
+    workspaces[0]!.users!.push({ id: 'wu2', user_id: 'sub-2', type: 'MEMBER', is_active: true, roles: [], user: { email: 'b@x.com', name: 'B' } });
+    const b = (await svc.roster(req())).find((m) => m.email === 'b@x.com')!;
+    const created = await insertApiKey(db, {
+      accountId: (await db.get<{ account_id: string }>(sql`SELECT account_id FROM member WHERE id = ${b.id}`))!.account_id,
+      memberId: b.id,
+      name: 'agent',
+      keyHash: 'hash-b',
+      prefix: 'dforms_bbbbb',
+      last4: 'bbbb',
+    });
+    expect(created.ok).toBe(true);
+    // The identity service takes the write, then cannot be read back.
+    workspaceReadStatus = 500;
+    const off = await svc.updateMemberUpstream(req(), b.id, { status: 'disabled' });
+    expect(off.status).toBe('disabled');
+    const row = await db.get<{ revoked_at_ms: number | null }>(sql`SELECT revoked_at_ms FROM api_key WHERE member_id = ${b.id}`);
+    expect(row?.revoked_at_ms).not.toBeNull();
   });
 
   it('removes a member upstream first, then locally — OWNER only; an admin gets 403 (the identity service’s rule)', async () => {

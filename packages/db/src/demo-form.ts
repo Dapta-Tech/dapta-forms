@@ -113,7 +113,23 @@ export const DEMO_FORM_CONFIG: FormConfig = {
       placeholder: 'you@company.com',
       required: false,
       flowGroup: 'lead_capture',
-      triggersReveal: true,
+    },
+    // The processing interstitial as a reveal step, the shape the builder edits
+    // (what `migrateRevealToStep` makes of the old form-level reveal). A
+    // template born in the legacy shape could not be read and saved back with
+    // an API key, which refuses the legacy fields.
+    {
+      key: 'saving',
+      type: 'reveal',
+      question: '',
+      required: false,
+      flowGroup: 'qualification',
+      reveal: {
+        enabled: true,
+        headline: 'Saving your feedback…',
+        subtitle: 'Hang tight. This only takes a second.',
+        durationMs: 2200,
+      },
     },
   ],
   scoring: { enabled: true },
@@ -121,11 +137,6 @@ export const DEMO_FORM_CONFIG: FormConfig = {
     { id: 'thanks', label: 'Thank you for sharing \u{1F64C}', minScore: 0 },
     { id: 'delighted', label: 'You just made our day! \u{1F389}', minScore: 13 },
   ],
-  reveal: {
-    enabled: true,
-    headline: 'Saving your feedback…',
-    subtitle: 'Hang tight. This only takes a second.',
-  },
   partialSubmitAfterStep: 5,
 };
 

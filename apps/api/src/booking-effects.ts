@@ -38,7 +38,7 @@ export interface BookingSyncPayload {
  * How long a `booking_sync` row stays dormant before the worker may drain it.
  *
  * A booking made on a mid-form `scheduler` STEP is recorded BEFORE the form
- * finishes: the renderer awaits `recordBookingAction` and only then advances,
+ * finishes: the renderer awaits `recordBooking` and only then advances,
  * which is what finalizes the submission (see `handleSchedulerBooked`). Drain
  * the row inside that gap and `loadSubmission` still reads `completed_at = null`
  * — so the delivery runs as `partial`, and the adapter's complete-only writes

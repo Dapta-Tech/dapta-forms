@@ -47,6 +47,28 @@ export interface Db {
 export { sql };
 
 /**
+ * Run several write statements as ONE transaction on either dialect: all of
+ * them land or none does, and no other request's statements interleave with
+ * them. For a change that spans two tables (a member and their API keys).
+ */
+export async function runAtomically(db: Db, statements: SQL[]): Promise<void> {
+  if (db.dialect === 'sqlite' && db.sqlite) {
+    const native = db.sqlite;
+    native.txn(() => {
+      for (const statement of statements) native.drizzle.run(statement);
+    });
+    return;
+  }
+  if (db.pg) {
+    await db.pg.drizzle.transaction(async (tx) => {
+      for (const statement of statements) await tx.execute(statement);
+    });
+    return;
+  }
+  for (const statement of statements) await db.run(statement);
+}
+
+/**
  * Find the monorepo root by walking up for pnpm-workspace.yaml. A relative
  * default SQLite path must resolve to the SAME file no matter which package's
  * cwd invoked it (the API, the migrate CLI, and the web app all differ), so we

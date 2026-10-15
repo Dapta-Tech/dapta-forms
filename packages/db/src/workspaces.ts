@@ -13,7 +13,8 @@
  * second time — because it runs on the login path and on demand.
  */
 import { randomUUID } from 'node:crypto';
-import { sql, type Db } from './client';
+import { runAtomically, sql, type Db } from './client';
+import { revokeKeysOfInactiveMembersSql } from './api-keys';
 import { deriveUniqueHandle, insertAccountWithShortCode } from './short-links';
 import { ACCOUNT_ROLES, type AccessGrant, type AccountRole } from './members';
 
@@ -203,7 +204,10 @@ export async function rebindLegacyAccount(
   if (Number(projectedForms?.n ?? 0) === 0) {
     // Absorb the empty projection: its member rows are re-created by the next
     // projection pass against the legacy row, so nothing of value is lost.
-    await db.run(sql`DELETE FROM member WHERE account_id = ${projected.id}`);
+    await runAtomically(db, [
+      sql`DELETE FROM member WHERE account_id = ${projected.id}`,
+      revokeKeysOfInactiveMembersSql(projected.id),
+    ]);
     await db.run(sql`DELETE FROM account_alias WHERE account_id = ${projected.id}`);
     await db.run(sql`DELETE FROM account WHERE id = ${projected.id}`);
     await db.run(
@@ -219,7 +223,11 @@ export async function rebindLegacyAccount(
         WHERE id = ${legacy.id}`,
   );
   // Parked means unreachable: its rows must not keep it alive in the switcher.
-  await db.run(sql`UPDATE member SET status = 'disabled' WHERE account_id = ${legacy.id}`);
+  // Their API keys go with them (a key follows its member).
+  await runAtomically(db, [
+    sql`UPDATE member SET status = 'disabled' WHERE account_id = ${legacy.id}`,
+    revokeKeysOfInactiveMembersSql(legacy.id),
+  ]);
   return { accountId: projected.id, parkedLegacyId: legacy.id };
 }
 
@@ -285,11 +293,13 @@ export async function projectMemberships(
       // evidence, so it disables regardless of the prune grace window below.
       const gone = await getAccountByExternalId(db, m.workspaceId);
       if (gone) {
-        await db.run(
+        // The member's API keys are revoked with the row (a key follows its member).
+        await runAtomically(db, [
           sql`UPDATE member SET status = 'disabled'
               WHERE account_id = ${gone.id} AND external_id = ${identity.externalId}
                 AND status = 'active' AND access_grant IS NULL`,
-        );
+          revokeKeysOfInactiveMembersSql(gone.id),
+        ]);
       }
       continue;
     }
@@ -407,7 +417,10 @@ export async function projectMemberships(
     );
     for (const h of held) {
       if (seenAccountIds.has(h.account_id)) continue;
-      await db.run(sql`UPDATE member SET status = 'disabled' WHERE id = ${h.id} AND account_id = ${h.account_id}`);
+      await runAtomically(db, [
+        sql`UPDATE member SET status = 'disabled' WHERE id = ${h.id} AND account_id = ${h.account_id}`,
+        revokeKeysOfInactiveMembersSql(h.account_id),
+      ]);
     }
   }
 
@@ -549,13 +562,14 @@ export async function projectRoster(
       sql`SELECT id FROM member WHERE account_id = ${accountId} AND external_id = ${r.externalId} LIMIT 1`,
     );
     if (existing) {
-      await db.run(
-        sql`UPDATE member SET role = ${role}, status = ${status},
+      const update = sql`UPDATE member SET role = ${role}, status = ${status},
               iam_workspace_user_id = COALESCE(${r.workspaceUserId}, iam_workspace_user_id),
               email = COALESCE(email, ${r.email}),
               display_name = COALESCE(display_name, ${r.displayName})
-            WHERE id = ${existing.id} AND account_id = ${accountId}`,
-      );
+            WHERE id = ${existing.id} AND account_id = ${accountId}`;
+      // Upstream marking them inactive revokes their API keys with the row.
+      if (r.active) await db.run(update);
+      else await runAtomically(db, [update, revokeKeysOfInactiveMembersSql(accountId)]);
       continue;
     }
     const email = r.email?.trim().toLowerCase() || null;
@@ -594,7 +608,10 @@ export async function projectRoster(
   );
   for (const h of held) {
     if (seen.has(h.external_id)) continue;
-    await db.run(sql`UPDATE member SET status = 'disabled' WHERE id = ${h.id} AND account_id = ${accountId}`);
+    await runAtomically(db, [
+      sql`UPDATE member SET status = 'disabled' WHERE id = ${h.id} AND account_id = ${accountId}`,
+      revokeKeysOfInactiveMembersSql(accountId),
+    ]);
   }
   await db.run(sql`UPDATE account SET synced_at = ${now} WHERE id = ${accountId}`);
 }

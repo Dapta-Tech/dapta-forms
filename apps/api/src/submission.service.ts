@@ -12,7 +12,14 @@ import {
   claimAccountFirstView,
   getAccountOwner,
 } from '@quill/db';
-import { computeScore, publicTitle, resolveOutcome, summarizeAnswers, type FormConfig } from '@quill/engine';
+import {
+  computeScore,
+  publicTitle,
+  resolveOutcome,
+  respondentFullName,
+  summarizeAnswers,
+  type FormConfig,
+} from '@quill/engine';
 import {
   memberProfileSchema,
   submissionSchema,
@@ -259,6 +266,9 @@ export class SubmissionService {
 
     if (!partial && !reCompleted) {
       const respondentEmail = pickEmail(data);
+      // The same full name the form's own `[name]` token shows, for the
+      // `{{respondentName}}` token in either email. Null when no name was asked.
+      const respondentName = respondentFullName(config.steps, data) || null;
       // The answers as the owner reads them (labels, option labels, step
       // order): resolved once here, printed by the `{{answers}}` token in
       // either email. The respondent copy carries them too so a custom receipt
@@ -272,6 +282,7 @@ export class SubmissionService {
           submissionId: row.id,
           formName: form.name,
           respondentEmail,
+          respondentName,
           score,
           outcomeLabel: outcome?.label ?? null,
           answers,
@@ -288,6 +299,7 @@ export class SubmissionService {
             submissionId: row.id,
             formName: form.name,
             respondentEmail,
+            respondentName,
             answers,
             // The language the respondent saw (the page resolved ?lang and the
             // browser), else the form's own language; null = English.

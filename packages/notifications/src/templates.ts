@@ -31,6 +31,12 @@ export function normalizeLocale(value?: string | null): NotificationLocale {
 export interface ReceivedCopyVars {
   formName: string;
   respondentEmail?: string | null;
+  /**
+   * The respondent's full name, as the caller resolved it from the answers
+   * (the same rule as the form's own `[name]` token). Rendered by
+   * `{{respondentName}}`; absent or blank when the form asked for no name.
+   */
+  respondentName?: string | null;
   score?: number | null;
   outcomeLabel?: string | null;
   /** A link to the admin submissions page (owner notice only). */
@@ -46,6 +52,8 @@ export interface ReceivedCopyVars {
 /** Everything the "we got your responses" (respondent) copy can interpolate. */
 export interface ConfirmedCopyVars {
   formName: string;
+  /** The respondent's full name, for a custom receipt that greets them. */
+  respondentName?: string | null;
   /** Reserved: no producer sets it on the receipt today, so the stock line drops. */
   formLink?: string | null;
   /** The respondent's own answers, for a custom template that wants to echo them. */
@@ -160,6 +168,7 @@ export function isSubmissionEmailKey(value: string): value is SubmissionEmailKey
  */
 export const NOTIFICATION_TOKENS = [
   'formName',
+  'respondentName',
   'respondentEmail',
   'score',
   'outcomeLabel',
@@ -172,6 +181,7 @@ export type NotificationToken = (typeof NOTIFICATION_TOKENS)[number];
 export function notificationTokenValues(v: ReceivedCopyVars): Record<NotificationToken, string> {
   return {
     formName: v.formName ?? '',
+    respondentName: v.respondentName?.trim() ?? '',
     respondentEmail: v.respondentEmail ?? '',
     score: v.score != null ? String(v.score) : '',
     outcomeLabel: v.outcomeLabel ?? '',
@@ -190,6 +200,7 @@ export function htmlTokenValues(v: ReceivedCopyVars): Record<NotificationToken, 
   const text = notificationTokenValues(v);
   return {
     formName: escapeHtml(text.formName),
+    respondentName: escapeHtml(text.respondentName),
     respondentEmail: escapeHtml(text.respondentEmail),
     score: escapeHtml(text.score),
     outcomeLabel: escapeHtml(text.outcomeLabel),

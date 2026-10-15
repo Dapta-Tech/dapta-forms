@@ -44,6 +44,7 @@ export interface NotificationLabels {
   saveError: string;
   resetSuccess: string;
   tokenFormName: string;
+  tokenRespondentName: string;
   tokenRespondentEmail: string;
   tokenScore: string;
   tokenOutcomeLabel: string;
@@ -173,6 +174,7 @@ function NotificationEmailCard({
 
   const tokenLabels: Record<string, string> = {
     formName: labels.tokenFormName,
+    respondentName: labels.tokenRespondentName,
     respondentEmail: labels.tokenRespondentEmail,
     score: labels.tokenScore,
     outcomeLabel: labels.tokenOutcomeLabel,

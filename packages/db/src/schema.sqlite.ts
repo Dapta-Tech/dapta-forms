@@ -93,19 +93,27 @@ export const member = sqliteTable(
   }),
 );
 
-export const apiKey = sqliteTable('api_key', {
-  id: text('id').primaryKey(),
-  accountId: text('account_id').notNull(),
-  name: text('name').notNull(),
-  prefix: text('prefix').notNull().unique(),
-  last4: text('last4').notNull(),
-  keyHash: text('key_hash').notNull().unique(),
-  scopes: text('scopes'),
-  lastUsedAtMs: integer('last_used_at_ms'),
-  expiresAtMs: integer('expires_at_ms'),
-  revokedAtMs: integer('revoked_at_ms'),
-  createdAt: integer('created_at').notNull(),
-});
+export const apiKey = sqliteTable(
+  'api_key',
+  {
+    id: text('id').primaryKey(),
+    accountId: text('account_id').notNull(),
+    /** member.id of the person who created the key, whose role it acts with (see 0024); NULL only on pre-0024 rows. */
+    memberId: text('member_id'),
+    name: text('name').notNull(),
+    prefix: text('prefix').notNull().unique(),
+    last4: text('last4').notNull(),
+    keyHash: text('key_hash').notNull().unique(),
+    scopes: text('scopes'),
+    lastUsedAtMs: integer('last_used_at_ms'),
+    expiresAtMs: integer('expires_at_ms'),
+    revokedAtMs: integer('revoked_at_ms'),
+    createdAt: integer('created_at').notNull(),
+  },
+  (t) => ({
+    apiKeyAccountMemberIdx: index('api_key_account_member_idx').on(t.accountId, t.memberId),
+  }),
+);
 
 /** Durable side-effect queue (submission emails, future webhooks). */
 export const outbox = sqliteTable('outbox', {
@@ -212,6 +220,12 @@ export const form = sqliteTable(
     createdBy: text('created_by'),
     /** The folder this form is filed in (see 0021); NULL = unfiled, and a deleted folder unfiles. */
     folderId: text('folder_id').references(() => formFolder.id, { onDelete: 'set null' }),
+    /** How the form was born: 'web', 'api' or 'mcp' (see 0024); NULL = created before the column. */
+    createdVia: text('created_via'),
+    /** The live config (TEXT JSON) the last publish replaced, for a revert; NULL = nothing to revert to. */
+    previousConfig: text('previous_config'),
+    /** Epoch-ms of when `previousConfig` was published; NULL alongside it. */
+    previousPublishedAtMs: integer('previous_published_at_ms'),
     createdAt: integer('created_at').notNull(),
     updatedAt: integer('updated_at').notNull(),
   },

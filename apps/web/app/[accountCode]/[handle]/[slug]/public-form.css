@@ -666,6 +666,23 @@
   line-height: 1.25;
   color: var(--foreground);
 }
+/* A card whose option has no icon: its text alone, centred in the card. It
+   keeps the card's size, so in a row beside icon cards (which stretch the row
+   to the tallest) the label sits in the middle instead of hugging the top, and
+   a step of text-only cards keeps the same tiles as one with icons. The label
+   also gets the width the icon no longer needs. */
+.pf-choice-icon--text {
+  justify-content: center;
+  /* The height of a one-line icon card (16 + 46 + 10 + 17.5 + 16 padding and
+     border), so a row of text cards under a row of icon cards is the same
+     height instead of 8px shorter. */
+  min-height: 108px;
+  padding-left: 12px;
+  padding-right: 12px;
+}
+.pf-choice-icon--text .pf-choice-icon__label {
+  overflow-wrap: anywhere;
+}
 
 /* ── Searchable dropdown ── */
 .pf-dropdown {

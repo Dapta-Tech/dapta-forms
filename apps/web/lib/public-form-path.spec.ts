@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { validateHandle } from '@quill/shared';
+import { formLinks, publicFormPath as sharedPublicFormPath, validateHandle } from '@quill/shared';
 import { deriveHandleBase } from '@quill/engine';
 import { PUBLIC_FORM_SEGMENT, canonicalFor, publicFormPath } from './public-form-path';
 
@@ -10,6 +10,12 @@ describe('publicFormPath', () => {
 
   it('encodes each segment, so a CRLF or a slash cannot leave its segment', () => {
     expect(publicFormPath('ac\r\nme', 'a/b')).toBe('/ac%0D%0Ame/f/a%2Fb');
+  });
+
+  it('is the very rule the API builds `publicUrl` with, not a copy of it', () => {
+    expect(publicFormPath).toBe(sharedPublicFormPath);
+    const { publicUrl } = formLinks('https://forms.example.com', 'acme', { id: 'x', slug: 'lead-qualifier' });
+    expect(publicUrl).toBe(`https://forms.example.com${publicFormPath('acme', 'lead-qualifier')}`);
   });
 });
 

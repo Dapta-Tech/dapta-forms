@@ -8,7 +8,7 @@ import { cn } from '@/lib/cn';
 import { Field, SelectField, TextField, InlineField } from './fields';
 import { hasOptions } from './question-types';
 import type { EditorMessages } from './messages';
-import { TokenTextarea, tokenOptionsBefore, allTokenKeys } from './token-textarea';
+import { TokenTextarea, recallTokenOptionsBefore, allTokenKeys } from './token-textarea';
 
 const FALLBACK = '*';
 
@@ -160,7 +160,7 @@ export function QuestionVariants({
   // The @ picker in every variant textarea: insertable tokens are the fields
   // captured BEFORE this step (all the engine's `interpolate` resolves here);
   // allKeys classifies a referenced later-step vs. unknown token for warnings.
-  const tokens = tokenOptionsBefore(steps, index);
+  const tokens = recallTokenOptionsBefore(steps, index);
   const allKeys = allTokenKeys(steps);
   const tokenMessages = {
     pickerLabel: m.tokenPickerLabel,

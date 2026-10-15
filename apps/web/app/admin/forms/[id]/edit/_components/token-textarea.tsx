@@ -2,7 +2,7 @@
 
 import { useId, useLayoutEffect, useRef, useState } from 'react';
 import type { FormStep } from '@quill/engine';
-import { isInputlessStep, nameFields } from '@quill/engine';
+import { FULL_NAME_TOKEN, isInputlessStep, nameFields } from '@quill/engine';
 import { cn } from '@/lib/cn';
 import { iconForStep } from './question-types';
 
@@ -20,7 +20,9 @@ import { iconForStep } from './question-types';
  * answer under `step.key` — except `name` steps, which store one answer per
  * subfield (`nameFields(step)`, default firstname/lastname) and never under
  * their own key. `message` steps capture nothing. Score, outcome, and UTM
- * values never enter the answers map, so they are never offered.
+ * values never enter the answers map, so they are never offered. The one token
+ * that is not an answer key is `[name]`, which the engine reads as the full
+ * name (`fullNameToken`), so a `name` step offers it next to its subfields.
  *
  * Authoring guidance (never blocking — the runtime sweeps empty tokens
  * gracefully): a referenced token that is captured at THIS step or LATER renders
@@ -78,10 +80,38 @@ export function tokenOptionsBefore(steps: FormStep[], index: number): TokenOptio
   return out;
 }
 
-/** Every key ANY step captures — classifies unknown vs. later-step tokens. */
+/**
+ * The tokens one step makes available to recall: its answer keys, plus
+ * `[name]` (the full name) on a `name` step. Kept apart from `stepTokenKeys`
+ * because the scheduler's autofill maps ANSWER keys, and `name` is not one.
+ */
+function stepRecallKeys(step: FormStep): string[] {
+  const keys = stepTokenKeys(step);
+  return step.type === 'name' ? [FULL_NAME_TOKEN, ...keys] : keys;
+}
+
+/**
+ * Picker entries for the `[key]` tokens copy BEFORE `steps[index]` can recall:
+ * `tokenOptionsBefore` plus `[name]` after a `name` step. This is what every
+ * text field with the @ picker offers.
+ */
+export function recallTokenOptionsBefore(steps: FormStep[], index: number): TokenOption[] {
+  const out: TokenOption[] = [];
+  const seen = new Set<string>();
+  steps.slice(0, Math.max(0, index)).forEach((s, i) => {
+    for (const key of stepRecallKeys(s)) {
+      if (seen.has(key)) continue; // duplicate keys: the earliest capture wins
+      seen.add(key);
+      out.push({ key, label: s.question?.trim() || `${i + 1} · ${s.key}`, icon: iconForStep(s) });
+    }
+  });
+  return out;
+}
+
+/** Every token ANY step makes recallable: classifies unknown vs. later-step tokens. */
 export function allTokenKeys(steps: FormStep[]): Set<string> {
   const set = new Set<string>();
-  for (const s of steps) for (const k of stepTokenKeys(s)) set.add(k);
+  for (const s of steps) for (const k of stepRecallKeys(s)) set.add(k);
   return set;
 }
 

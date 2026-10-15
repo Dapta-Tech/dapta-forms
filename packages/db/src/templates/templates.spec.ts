@@ -12,6 +12,7 @@ import {
   ONBOARDING_USE_CASES,
   type FormTemplateId,
 } from '@quill/types';
+import { migrateRevealToStep } from '@quill/engine';
 import { FORM_TEMPLATES, getFormTemplate } from './index';
 
 describe('FORM_TEMPLATES', () => {
@@ -28,6 +29,14 @@ describe('FORM_TEMPLATES', () => {
       expect(result.success ? null : result.error.issues).toBeNull();
     },
   );
+
+  // The builder folds the old form-level reveal into a reveal step the moment
+  // a form opens, and an API key refuses the legacy fields, so a template born
+  // in the legacy shape could not be read and saved back with a key.
+  it.each(FORM_TEMPLATE_IDS.filter((id) => id !== 'blank'))('%s is already in the shape the builder edits', (id) => {
+    const config = FORM_TEMPLATES[id].config!;
+    expect(migrateRevealToStep(config)).toBe(config);
+  });
 
   it('leaves `blank` without a config so it tracks the dashboard default', () => {
     expect(FORM_TEMPLATES.blank.config).toBeNull();

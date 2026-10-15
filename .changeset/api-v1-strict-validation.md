@@ -1,0 +1,11 @@
+---
+'@quill/db': minor
+---
+
+The admin API explains its validation errors and holds API keys to what the editor can show.
+
+- Every validation 400 of the form, branding and destinations routes now carries `issues: [{ path, message, code }]` with every problem at once. `path` is the dot path inside the request body (`config.steps.2.question`); `message` is still the first issue's, so nothing that reads only `message` changes.
+- `POST /v1/forms` drops `formGuid` and `formSignature` from HubSpot destinations, for every caller, as duplicating already did. A config copied from another form no longer points the new form at the original's HubSpot mirror form. `@quill/db` exports the helper both paths use, `withoutOwnedMirrorState`.
+- With an API key only (a browser session saves exactly as before, legacy fields included), a form config is refused with `UNSUPPORTED_FIELD` and the field's exact path when it carries a field the editor has no control for: `outcomes[].booking`, `steps[].buttonText`, `steps[].sliderUnitLabel`, `steps[].reveal.subtitleTemplate`, `steps[].reveal.enabled`, `steps[].scheduler.prefill`, `steps[].flowGroup`, `branding.clientLogos`, the webhook `signatureHeader` and `timeoutMs` (checked where destinations are written: `POST /v1/forms` and `PUT /v1/forms/:id/destinations`; `PUT /v1/forms/:id` drops destinations from the draft, so it does not refuse them), and the legacy `config.reveal`, `config.revealAfterStep` and `steps[].triggersReveal`. The value the editor itself writes passes, so a form read and sent straight back saves: the derived `flowGroup`, the step defaults `buttonText` "Continue", `reveal.enabled` true and `scheduler.prefill` true (on any step, since changing a step's type in the builder keeps them), and the brand kit's own client logos.
+- With an API key, a step without a question is refused with `EMPTY_QUESTION` (a reveal step asks nothing and is exempt), and `PUT /v1/forms/:id` with a config that has no `steps` answers 400 `STEPS_REQUIRED` and writes nothing.
+- With an API key, the saved config is the engine's normalized one (`normalizeConfig`: unique step keys, deduplicated option values, derived flow groups and scoring), and the response returns it.

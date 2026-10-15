@@ -37,9 +37,10 @@ import { isSafeHttpUrl } from '@quill/engine';
  * `window.location.href`, and nothing is posted to anyone.
  *
  * Security posture of route 1: `redirectUrl` is a static string from the
- * PUBLISHED form config (`resolveEnding` returns it verbatim — it is never
- * interpolated with answers), so the message is exactly as public as the form
- * document any visitor can already fetch. It carries no answers, no keys and
+ * PUBLISHED form config (an embedded form never fills its `[key]` tokens with
+ * answers: `isEmbeddedRender` makes the renderers drop them), so the message is
+ * exactly as public as the form document any visitor can already fetch. It
+ * carries no answers, no keys and
  * no identifiers, which is why `targetOrigin: '*'` is acceptable here, the same
  * reasoning the height reporter runs on: the embedding site is by definition
  * unknown to us, and `window.parent` delivers to that host page and nowhere
@@ -71,6 +72,17 @@ export function isEmbedded(): boolean {
     // are not even allowed to look, we are certainly framed.
     return true;
   }
+}
+
+/**
+ * Whether answers must stay out of the redirect URL: the form runs in a frame,
+ * or was loaded with `?embed=1`. Either signal is enough, because the cost of
+ * a false positive is a redirect without answers, and of a false negative is
+ * answers handed to a page that embedded the form.
+ */
+export function isEmbeddedRender(): boolean {
+  if (typeof window === 'undefined') return false;
+  return isEmbedded() || new URLSearchParams(window.location.search).get('embed') === '1';
 }
 
 /**

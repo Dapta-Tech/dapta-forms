@@ -35,6 +35,7 @@ export default async function EditFormPage({ params }: { params: Promise<{ id: s
         // draft, and the explicit Publish action makes it live.
         initialConfig={form.draftConfig ?? form.config}
         initialHasDraft={form.draftConfig != null}
+        initialPreviousPublishedAt={form.previousPublishedAt ?? null}
         // Which option values a label edit must not move, read from the LIVE
         // config rather than the draft being edited: a value is untouchable
         // because of what already left the building (answers already stored
