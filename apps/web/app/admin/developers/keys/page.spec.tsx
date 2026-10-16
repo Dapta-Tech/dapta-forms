@@ -118,11 +118,11 @@ describe('DevelopersPage', () => {
     expect(html).not.toContain(es.developerDocs.title);
   });
 
-  describe('skill download', () => {
+  describe('setup guide', () => {
     const download = (html: string) =>
       html.match(/<a [^>]*data-testid="api-keys-skill-download"[^>]*>.*?<\/a>/)?.[0];
 
-    it('offers the skill zip beside the keys, with the line that says what it is for', async () => {
+    it('opens the page with the three steps, the skill download first, above the keys', async () => {
       me.mockResolvedValue(caller('member'));
       listApiKeys.mockResolvedValue({ keys });
       const html = await render();
@@ -131,12 +131,14 @@ describe('DevelopersPage', () => {
       expect(link).toContain('href="/api/developers/skill"');
       expect(link).toMatch(/\sdownload=""/);
       expect(link).toContain(m.developerDocs.skillButton);
-      expect(html).toContain(m.developers.skill.title);
-      expect(html).toContain(m.developers.skill.body);
-      // After the keys, so the order on the page is the order of the steps.
-      expect(html.indexOf('data-testid="api-keys-skill"')).toBeGreaterThan(
-        html.indexOf('data-testid="api-keys"'),
-      );
+      expect(html).toContain(m.developers.guide.title);
+      expect(html).toContain(m.developers.guide.downloadTitle);
+      // Download, key, agent, in that order, and all of it before the list.
+      const at = (id: string) => html.indexOf(`data-testid="${id}"`);
+      expect(at('setup-step-download')).toBeGreaterThan(-1);
+      expect(at('setup-step-download')).toBeLessThan(at('setup-step-key'));
+      expect(at('setup-step-key')).toBeLessThan(at('setup-step-agent'));
+      expect(at('setup-guide')).toBeLessThan(at('api-keys'));
     });
 
     it('is there with no keys yet and when the list failed: it does not depend on them', async () => {
@@ -162,7 +164,7 @@ describe('DevelopersPage', () => {
       listApiKeys.mockResolvedValue({ keys });
       const html = await render();
       const es = getMessages('es').admin;
-      expect(html).toContain(es.developers.skill.title);
+      expect(html).toContain(es.developers.guide.title);
       expect(download(html)).toContain(es.developerDocs.skillButton);
     });
   });

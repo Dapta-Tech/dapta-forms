@@ -10,10 +10,20 @@ import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 // Types only: the module itself is server-side (it reads the session cookie).
 import type { AccountRole, ApiKey, CreatedApiKey } from '@/lib/admin-api';
 import { callAction, isTransportError } from '@/lib/call-action';
+import { exportKeyCommand } from '@/lib/developer-skill/agent-setup';
 import { createApiKeyAction, revokeApiKeyAction } from './actions';
+import { CodePanel } from './docs/code-panel';
 import { API_KEY_NAME_MAX } from './limits';
+import { SetupGuide } from './setup-guide';
 
 type KeysMessages = FormsMessages['admin']['developers']['keys'];
+type GuideMessages = FormsMessages['admin']['developers']['guide'];
+
+/** What the setup guide above the list needs from the page: its copy and the skill download. */
+export interface ApiKeysGuide {
+  m: GuideMessages;
+  skill: { available: boolean; href: string; button: string; unavailable: string };
+}
 
 /** The person looking at the page, as `/v1/me` describes them in this workspace. */
 export interface ApiKeysViewer {
@@ -24,7 +34,9 @@ export interface ApiKeysViewer {
 }
 
 /**
- * The API keys of the Developers page: the list, the create dialog and revoke.
+ * The API keys of the MCP page: the setup guide, the list, the create dialog
+ * and revoke. The guide lives in here so its "Create key" opens the same dialog
+ * and its steps see the same list.
  *
  * What the list holds is the API's call: a member is sent their own keys, an
  * owner or admin every active key in the workspace. The page only decides how
@@ -41,6 +53,7 @@ export function ApiKeysPanel({
   m,
   locale,
   timeZone,
+  guide,
 }: {
   initialKeys: ApiKey[];
   loadError: boolean;
@@ -48,6 +61,8 @@ export function ApiKeysPanel({
   m: KeysMessages;
   locale: Locale;
   timeZone: string;
+  /** Left out, the panel is the list alone. */
+  guide?: ApiKeysGuide;
 }) {
   const [keys, setKeys] = useState(initialKeys);
   // A server refresh (the actions revalidate this route) hands down the list
@@ -105,116 +120,133 @@ export function ApiKeysPanel({
     ? 'md:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.2fr)_minmax(0,1.3fr)_auto]'
     : 'md:grid-cols-[minmax(0,1.8fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.2fr)_auto]';
 
+  // A failed list knows nothing, so the guide claims nothing from it either.
+  const hasOwnKey = !loadError && keys.some((k) => k.createdBy.memberId === viewer.memberId);
+  const agentConnected = !loadError && keys.some((k) => k.lastUsedAt != null);
+
   return (
-    <section aria-labelledby="api-keys-title" className="mb-10" data-testid="api-keys">
-      <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
-        <div className="min-w-0">
-          <h2 id="api-keys-title" className="text-lg font-semibold text-foreground">
-            {m.title}
-          </h2>
-          <p className="mt-1 text-sm text-muted-foreground">{showCreator ? m.subtitleAdmin : m.subtitle}</p>
-        </div>
-        <Button data-testid="api-key-create" onClick={() => setCreating(true)} className="shrink-0">
-          <i aria-hidden className="pi pi-plus" style={{ fontSize: 13 }} />
-          {m.create}
-        </Button>
-      </div>
-
-      {loadError ? (
-        <p
-          role="alert"
-          data-testid="api-keys-error"
-          className="rounded-xl border border-destructive/40 bg-destructive/5 p-4 text-sm text-foreground"
-        >
-          {m.loadError}
-        </p>
-      ) : keys.length === 0 ? (
-        <div
-          data-testid="api-keys-empty"
-          className="rounded-xl border border-dashed border-border bg-card/40 px-6 py-10 text-center"
-        >
-          <span className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-muted text-muted-foreground">
-            <i aria-hidden className="pi pi-key" style={{ fontSize: 18 }} />
-          </span>
-          <p className="font-medium text-foreground">{m.emptyTitle}</p>
-          <p className="mx-auto mt-1 max-w-prose text-sm text-muted-foreground">{m.emptyBody}</p>
-        </div>
-      ) : (
-        <div className="rounded-xl border border-border bg-card">
-          <div
-            aria-hidden
-            className={`hidden gap-4 border-b border-border px-4 py-3 text-xs font-medium uppercase tracking-wider text-faint md:grid ${cols}`}
-          >
-            <span>{m.colName}</span>
-            <span>{m.colKey}</span>
-            <span>{m.colCreated}</span>
-            <span>{m.colLastUsed}</span>
-            {showCreator ? <span>{m.colCreatedBy}</span> : null}
-            <span className="sr-only">{m.colActions}</span>
+    <>
+      {guide ? (
+        <SetupGuide
+          m={guide.m}
+          copy={{ copy: m.copy, copied: m.copied, copyFailed: m.copyFailed }}
+          skill={guide.skill}
+          createLabel={m.create}
+          hasKey={hasOwnKey}
+          agentConnected={agentConnected}
+          onCreate={() => setCreating(true)}
+        />
+      ) : null}
+      <section aria-labelledby="api-keys-title" className="mb-10" data-testid="api-keys">
+        <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+          <div className="min-w-0">
+            <h2 id="api-keys-title" className="text-lg font-semibold text-foreground">
+              {m.title}
+            </h2>
+            <p className="mt-1 text-sm text-muted-foreground">{showCreator ? m.subtitleAdmin : m.subtitle}</p>
           </div>
-          <ul>
-            {keys.map((k) => {
-              const mine = k.createdBy.memberId === viewer.memberId;
-              const creator = mine
-                ? m.you
-                : k.createdBy.name?.trim() || k.createdBy.email || m.unknownCreator;
-              const busy = revokingId === k.id;
-              return (
-                <li
-                  key={k.id}
-                  data-testid="api-key-row"
-                  className={`flex flex-col gap-1.5 border-b border-border px-4 py-3.5 text-sm last:border-b-0 md:grid md:items-center md:gap-4 ${cols}`}
-                >
-                  <span className="min-w-0 truncate font-medium text-foreground" title={k.name}>
-                    {k.name}
-                  </span>
-                  <Cell label={m.colKey}>
-                    <code
-                      aria-label={t(m.maskedLabel, { last4: k.last4 })}
-                      className="font-mono text-xs text-muted-foreground"
-                    >
-                      {t(m.masked, { last4: k.last4 })}
-                    </code>
-                  </Cell>
-                  <Cell label={m.colCreated}>{formatDate(k.createdAt, { locale, timeZone })}</Cell>
-                  <Cell label={m.colLastUsed} testId="api-key-last-used">
-                    {k.lastUsedAt == null ? m.neverUsed : formatDateTime(k.lastUsedAt, { locale, timeZone })}
-                  </Cell>
-                  {showCreator ? (
-                    <Cell label={m.colCreatedBy} testId="api-key-created-by">
-                      <span className="truncate" title={k.createdBy.email ?? undefined}>
-                        {creator}
-                      </span>
-                    </Cell>
-                  ) : null}
-                  <div className="pt-1 md:pt-0 md:text-right">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      data-testid="api-key-revoke"
-                      aria-label={t(m.revokeLabel, { name: k.name })}
-                      disabled={busy}
-                      onClick={() => revoke(k)}
-                      className="-ml-3 text-destructive hover:bg-destructive/10 md:ml-0"
-                    >
-                      <i
-                        aria-hidden
-                        className={`pi ${busy ? 'pi-spinner pi-spin' : 'pi-trash'}`}
-                        style={{ fontSize: 13 }}
-                      />
-                      {m.revoke}
-                    </Button>
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
+          <Button data-testid="api-key-create" onClick={() => setCreating(true)} className="shrink-0">
+            <i aria-hidden className="pi pi-plus" style={{ fontSize: 13 }} />
+            {m.create}
+          </Button>
         </div>
-      )}
 
-      <CreateKeyDialog open={creating} onClose={() => setCreating(false)} onCreated={onCreated} m={m} />
-      {confirmDialog}
-    </section>
+        {loadError ? (
+          <p
+            role="alert"
+            data-testid="api-keys-error"
+            className="rounded-xl border border-destructive/40 bg-destructive/5 p-4 text-sm text-foreground"
+          >
+            {m.loadError}
+          </p>
+        ) : keys.length === 0 ? (
+          <div
+            data-testid="api-keys-empty"
+            className="rounded-xl border border-dashed border-border bg-card/40 px-6 py-10 text-center"
+          >
+            <span className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-muted text-muted-foreground">
+              <i aria-hidden className="pi pi-key" style={{ fontSize: 18 }} />
+            </span>
+            <p className="font-medium text-foreground">{m.emptyTitle}</p>
+            <p className="mx-auto mt-1 max-w-prose text-sm text-muted-foreground">{m.emptyBody}</p>
+          </div>
+        ) : (
+          <div className="rounded-xl border border-border bg-card">
+            <div
+              aria-hidden
+              className={`hidden gap-4 border-b border-border px-4 py-3 text-xs font-medium uppercase tracking-wider text-faint md:grid ${cols}`}
+            >
+              <span>{m.colName}</span>
+              <span>{m.colKey}</span>
+              <span>{m.colCreated}</span>
+              <span>{m.colLastUsed}</span>
+              {showCreator ? <span>{m.colCreatedBy}</span> : null}
+              <span className="sr-only">{m.colActions}</span>
+            </div>
+            <ul>
+              {keys.map((k) => {
+                const mine = k.createdBy.memberId === viewer.memberId;
+                const creator = mine
+                  ? m.you
+                  : k.createdBy.name?.trim() || k.createdBy.email || m.unknownCreator;
+                const busy = revokingId === k.id;
+                return (
+                  <li
+                    key={k.id}
+                    data-testid="api-key-row"
+                    className={`flex flex-col gap-1.5 border-b border-border px-4 py-3.5 text-sm last:border-b-0 md:grid md:items-center md:gap-4 ${cols}`}
+                  >
+                    <span className="min-w-0 truncate font-medium text-foreground" title={k.name}>
+                      {k.name}
+                    </span>
+                    <Cell label={m.colKey}>
+                      <code
+                        aria-label={t(m.maskedLabel, { last4: k.last4 })}
+                        className="font-mono text-xs text-muted-foreground"
+                      >
+                        {t(m.masked, { last4: k.last4 })}
+                      </code>
+                    </Cell>
+                    <Cell label={m.colCreated}>{formatDate(k.createdAt, { locale, timeZone })}</Cell>
+                    <Cell label={m.colLastUsed} testId="api-key-last-used">
+                      {k.lastUsedAt == null ? m.neverUsed : formatDateTime(k.lastUsedAt, { locale, timeZone })}
+                    </Cell>
+                    {showCreator ? (
+                      <Cell label={m.colCreatedBy} testId="api-key-created-by">
+                        <span className="truncate" title={k.createdBy.email ?? undefined}>
+                          {creator}
+                        </span>
+                      </Cell>
+                    ) : null}
+                    <div className="pt-1 md:pt-0 md:text-right">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        data-testid="api-key-revoke"
+                        aria-label={t(m.revokeLabel, { name: k.name })}
+                        disabled={busy}
+                        onClick={() => revoke(k)}
+                        className="-ml-3 text-destructive hover:bg-destructive/10 md:ml-0"
+                      >
+                        <i
+                          aria-hidden
+                          className={`pi ${busy ? 'pi-spinner pi-spin' : 'pi-trash'}`}
+                          style={{ fontSize: 13 }}
+                        />
+                        {m.revoke}
+                      </Button>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        )}
+
+        <CreateKeyDialog open={creating} onClose={() => setCreating(false)} onCreated={onCreated} m={m} />
+        {confirmDialog}
+      </section>
+    </>
   );
 }
 
@@ -347,6 +379,15 @@ function CreateKeyDialogBody({
         <p aria-live="polite" className="mt-2 min-h-[1.25rem] text-xs text-destructive">
           {copy === 'failed' ? m.copyFailed : ''}
         </p>
+        <p className="mb-2 mt-2 text-sm text-foreground">{m.createdNext}</p>
+        <CodePanel
+          label={m.exportLabel}
+          code={exportKeyCommand(secret)}
+          language="curl"
+          copyLabel={m.copyExport}
+          m={{ copy: m.copy, copied: m.copied, copyFailed: m.copyFailed }}
+          testId="api-key-export"
+        />
         <div className="mt-4 flex justify-end">
           <Button data-testid="api-key-done" onClick={onClose}>
             {m.done}

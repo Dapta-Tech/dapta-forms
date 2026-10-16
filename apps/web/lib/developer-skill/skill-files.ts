@@ -1,4 +1,6 @@
 import { formConfigJsonSchema } from './config-schema';
+import { API_KEY_ENV, exportKeyCommand, installCommand } from './agent-setup';
+import { SKILL_DIR, SKILL_ZIP_NAME } from './skill-names';
 import { LEAD_CONFIG, LEAD_CONFIG_EDITED, QUIZ_CONFIG, SCORE_GATE_CONFIG } from './examples';
 
 /**
@@ -25,11 +27,7 @@ export interface SkillFile {
   content: string;
 }
 
-/** The folder the zip unpacks to; also the skill's `name`. */
-export const SKILL_DIR = 'dforms-api';
-
-/** The archive's file name; `INSTALL.md` refers to it by this name. */
-export const SKILL_ZIP_NAME = `${SKILL_DIR}-skill.zip`;
+export { SKILL_DIR, SKILL_ZIP_NAME };
 
 const json = (value: unknown): string => JSON.stringify(value, null, 2);
 
@@ -519,39 +517,34 @@ function installMd({ apiUrl, appUrl }: SkillUrls): string {
 2. Put it in the environment the agent runs in, never in a file you commit:
 
 ~~~bash
-export DFORMS_API_KEY="dforms_your_key_here"
+${exportKeyCommand()}
 ~~~
 
 3. Check it:
 
 ~~~bash
-curl -sS "${apiUrl}/v1/me" -H "Authorization: Bearer $DFORMS_API_KEY"
+curl -sS "${apiUrl}/v1/me" -H "Authorization: Bearer $${API_KEY_ENV}"
 ~~~
 
 ## Claude Code
 
-Unzip so that \`SKILL.md\` ends up in a folder named \`dforms-api\` inside a skills folder:
+Unzip so that \`SKILL.md\` ends up in a folder named \`${SKILL_DIR}\` inside a skills folder:
 
-- For all your projects: \`~/.claude/skills/dforms-api/SKILL.md\`
-- For one project: \`.claude/skills/dforms-api/SKILL.md\` in that project
+- For all your projects: \`~/.claude/skills/${SKILL_DIR}/SKILL.md\`
+- For one project: \`.claude/skills/${SKILL_DIR}/SKILL.md\` in that project
 
 ~~~bash
-unzip ${SKILL_ZIP_NAME} -d ~/.claude/skills/
+${installCommand('claude-code')}
 ~~~
 
-Claude Code picks the skill up on its own when a request is about dForms. You can also ask for it by name: "use the dforms-api skill".
+Claude Code picks the skill up on its own when a request is about dForms. You can also ask for it by name: "use the ${SKILL_DIR} skill".
 
 ## Codex
 
 Codex reads \`AGENTS.md\`. Unzip the folder into your project and point \`AGENTS.md\` at it:
 
 ~~~bash
-unzip ${SKILL_ZIP_NAME} -d .
-cat >> AGENTS.md <<'EOF'
-
-## dForms
-For any task about dForms forms, responses or analytics, read dforms-api/SKILL.md first and follow its rules. The references and recipes it names are in dforms-api/.
-EOF
+${installCommand('codex')}
 ~~~
 
 ## Cursor
@@ -559,15 +552,7 @@ EOF
 Unzip the folder into your project and add a project rule that sends Cursor to it:
 
 ~~~bash
-unzip ${SKILL_ZIP_NAME} -d .
-mkdir -p .cursor/rules
-cat > .cursor/rules/dforms-api.mdc <<'EOF'
----
-description: Use the dForms API to create, edit, publish and revert forms and to read responses and analytics.
-alwaysApply: false
----
-Read dforms-api/SKILL.md and follow its rules. References and recipes are in dforms-api/.
-EOF
+${installCommand('cursor')}
 ~~~
 
 ## Other agents

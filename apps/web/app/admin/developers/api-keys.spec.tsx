@@ -28,7 +28,7 @@ vi.mock('./actions', () => actions);
 const toasts = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn(), toast: vi.fn() }));
 vi.mock('@/components/toast', () => ({ useToast: () => toasts }));
 
-import { ApiKeysPanel, type ApiKeysViewer } from './api-keys';
+import { ApiKeysPanel, type ApiKeysGuide, type ApiKeysViewer } from './api-keys';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -59,7 +59,13 @@ const $ = <T extends Element = HTMLElement>(sel: string) => document.querySelect
 const $$ = (sel: string) => [...document.querySelectorAll<HTMLElement>(sel)];
 
 async function mount(
-  opts: { keys?: ApiKey[]; viewer?: ApiKeysViewer; loadError?: boolean; locale?: Locale } = {},
+  opts: {
+    keys?: ApiKey[];
+    viewer?: ApiKeysViewer;
+    loadError?: boolean;
+    locale?: Locale;
+    guide?: ApiKeysGuide;
+  } = {},
 ) {
   const locale = opts.locale ?? 'en';
   host = document.createElement('div');
@@ -74,6 +80,7 @@ async function mount(
         m={getMessages(locale).admin.developers.keys}
         locale={locale}
         timeZone="UTC"
+        guide={opts.guide}
       />,
     ),
   );
@@ -361,5 +368,116 @@ describe('ApiKeysPanel: revoke', () => {
     await click($('[data-testid="api-key-revoke"]'));
     await click($('[data-testid="confirm-dialog-confirm"]'));
     expect($('[data-testid="api-keys-empty"]')).not.toBeNull();
+  });
+});
+
+describe('setup guide', () => {
+  const g = getMessages('en').admin.developers.guide;
+  const guide = (available = true): ApiKeysGuide => ({
+    m: g,
+    skill: { available, href: '/api/developers/skill', button: 'Download the skill', unavailable: 'Not yet' },
+  });
+  const step = (id: string) => $(`[data-testid="setup-step-${id}"]`)!;
+
+  beforeEach(() => window.localStorage.clear());
+
+  it('is not drawn when the page does not ask for it', async () => {
+    await mount({ keys: [] });
+    expect($('[data-testid="setup-guide"]')).toBeNull();
+  });
+
+  it('starts with nothing done on an empty workspace', async () => {
+    await mount({ keys: [], guide: guide() });
+    for (const id of ['download', 'key', 'agent']) expect(step(id).dataset.done).toBeUndefined();
+    expect(step('key').textContent).toContain(g.keyBody);
+  });
+
+  it('marks the key step done with a key of your own, and the agent step once a key was used', async () => {
+    await mount({ keys: [key()], guide: guide() });
+    expect(step('key').dataset.done).toBe('true');
+    expect(step('key').textContent).toContain(g.keyDone);
+    expect(step('agent').dataset.done).toBeUndefined();
+
+    await act(async () => root.unmount());
+    host.remove();
+    await mount({ keys: [key({ lastUsedAt: Date.UTC(2026, 9, 2) })], guide: guide() });
+    expect(step('agent').dataset.done).toBe('true');
+    expect(step('agent').textContent).toContain(g.agentDone);
+  });
+
+  it('does not count a teammate key as yours, and claims nothing when the list failed', async () => {
+    const theirs = key({ createdBy: { memberId: 'mem-other', name: 'Sam', email: null } });
+    await mount({ keys: [theirs], viewer: admin, guide: guide() });
+    expect(step('key').dataset.done).toBeUndefined();
+
+    await act(async () => root.unmount());
+    host.remove();
+    await mount({ keys: [key({ lastUsedAt: 1 })], loadError: true, guide: guide() });
+    expect(step('key').dataset.done).toBeUndefined();
+    expect(step('agent').dataset.done).toBeUndefined();
+  });
+
+  it('remembers the download in this browser', async () => {
+    await mount({ keys: [], guide: guide() });
+    const link = $<HTMLAnchorElement>('[data-testid="api-keys-skill-download"]')!;
+    link.addEventListener('click', (e) => e.preventDefault());
+    await click(link);
+    expect(step('download').dataset.done).toBe('true');
+    expect(window.localStorage.getItem('dforms.mcp.skillDownloaded')).toBe('1');
+  });
+
+  it('says the download is unavailable instead of a link that would fail', async () => {
+    await mount({ keys: [], guide: guide(false) });
+    expect($('[data-testid="api-keys-skill-download"]')).toBeNull();
+    expect($('[data-testid="api-keys-skill-unavailable"]')?.textContent).toBe('Not yet');
+  });
+
+  it('opens the same create dialog from step 2', async () => {
+    await mount({ keys: [], guide: guide() });
+    await click($('[data-testid="setup-create-key"]'));
+    expect($('[data-testid="api-key-name"]')).not.toBeNull();
+  });
+
+  it('shows each agent its own install command, and the same key line and prompt', async () => {
+    await mount({ keys: [], guide: guide() });
+    const panel = () => $('[data-testid="setup-agent-panel"]')!;
+    expect(panel().dataset.agent).toBe('claude-code');
+    expect(panel().textContent).toContain('unzip dforms-api-skill.zip -d ~/.claude/skills/');
+    expect(panel().textContent).toContain('export DFORMS_API_KEY="dforms_your_key_here"');
+    expect(panel().textContent).toContain(g.prompt);
+
+    await click($('[data-testid="setup-agent-codex"]'));
+    expect(panel().dataset.agent).toBe('codex');
+    expect(panel().textContent).toContain('AGENTS.md');
+    expect($('[data-testid="setup-agent-codex"]')?.getAttribute('aria-selected')).toBe('true');
+
+    await click($('[data-testid="setup-agent-cursor"]'));
+    expect(panel().textContent).toContain('.cursor/rules/dforms-api.mdc');
+    expect(window.localStorage.getItem('dforms.mcp.agent')).toBe('cursor');
+  });
+
+  it('says that Claude in the browser and ChatGPT go through the MCP', async () => {
+    await mount({ keys: [], guide: guide() });
+    expect($('[data-testid="setup-chat-note"]')?.textContent).toBe(g.chatNote);
+  });
+});
+
+describe('created key, next step', () => {
+  it('hands over the export line with the new key, and drops it with the dialog', async () => {
+    actions.createApiKeyAction.mockResolvedValue({
+      ok: true,
+      key: { id: 'key-9', name: 'Cursor', last4: 'a1b2', createdAt: Date.UTC(2026, 9, 12), key: SECRET },
+    });
+    await mount({ keys: [] });
+    await click($('[data-testid="api-key-create"]'));
+    const input = $<HTMLInputElement>('[data-testid="api-key-name"]')!;
+    await act(async () => type(input, 'Cursor'));
+    await click($('[data-testid="api-key-create-submit"]'));
+
+    expect($('[data-testid="api-key-export"]')?.textContent).toContain(`export DFORMS_API_KEY="${SECRET}"`);
+    expect($('[role="dialog"]')?.textContent).toContain(m.createdNext);
+
+    await click($('[data-testid="api-key-done"]'));
+    expect(document.body.innerHTML).not.toContain(SECRET);
   });
 });

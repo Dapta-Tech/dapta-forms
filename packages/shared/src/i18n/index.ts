@@ -1884,13 +1884,47 @@ export interface FormsMessages {
       title: string;
       subtitle: string;
       /**
-       * The skill download beside the keys: one line on what it is for. The
-       * button and the unavailable note reuse `developerDocs.skillButton` and
-       * `developerDocs.skillUnavailable`, the same download on the API docs page.
+       * The setup guide above the keys: download the skill, create a key, give
+       * both to the agent. The download button and its unavailable note reuse
+       * `developerDocs.skillButton` and `developerDocs.skillUnavailable`, the
+       * same download as on the API docs page.
        */
-      skill: {
+      guide: {
         title: string;
-        body: string;
+        /** Which agents the key and skill work with. */
+        intro: string;
+        /** Screen-reader suffix of a finished step. */
+        stepDone: string;
+        downloadTitle: string;
+        downloadBody: string;
+        /** Step 1 after the download was clicked in this browser. */
+        downloadDone: string;
+        keyTitle: string;
+        keyBody: string;
+        /** Step 2 once the caller has a key. */
+        keyDone: string;
+        agentTitle: string;
+        /** Step 3 once any listed key has been used. */
+        agentDone: string;
+        /** Accessible name of the agent tabs. */
+        agentsLabel: string;
+        /** Where to run the install command, per agent. */
+        installHint: {
+          claudeCode: string;
+          codex: string;
+          cursor: string;
+        };
+        installLabel: string;
+        keyCommandLabel: string;
+        keyCommandHint: string;
+        promptLabel: string;
+        promptHint: string;
+        /** A first request to paste into the agent. */
+        prompt: string;
+        copyCommand: string;
+        copyPrompt: string;
+        /** Claude in the browser and ChatGPT need the MCP, not a key. */
+        chatNote: string;
       };
       keys: {
         title: string;
@@ -1949,6 +1983,10 @@ export interface FormsMessages {
         copy: string;
         copied: string;
         copyFailed: string;
+        /** Under the key: the line that hands this same key to the agent. */
+        createdNext: string;
+        exportLabel: string;
+        copyExport: string;
         done: string;
       };
     };
@@ -3926,9 +3964,38 @@ export const en: FormsMessages = {
     developers: {
       title: 'MCP',
       subtitle: 'Connect an AI agent or your own code to dForms with an API key.',
-      skill: {
-        title: 'Skill for your agent',
-        body: 'Create a key, then give your agent (Claude Code, Codex, Cursor) this skill: it teaches it to use the dForms API with that key, with no explaining on your part.',
+      guide: {
+        title: 'Connect your agent in 3 steps',
+        intro: 'For agents that run in a terminal: Claude Code, Codex and Cursor.',
+        stepDone: 'done',
+        downloadTitle: 'Download the skill',
+        downloadBody:
+          'A zip with everything your agent needs to use dForms: the rules, every endpoint and step-by-step recipes. It already carries the addresses of this environment.',
+        downloadDone: 'Downloaded. You can download it again at any time.',
+        keyTitle: 'Create an API key',
+        keyBody:
+          'The key connects the agent to this workspace and acts as you. It is shown only once, so copy it when you create it.',
+        keyDone: 'You already have a key. Create one per agent so you can revoke each on its own.',
+        agentTitle: 'Give both to your agent',
+        agentDone: 'One of your keys has already been used: your agent is connected.',
+        agentsLabel: 'Agent',
+        installHint: {
+          claudeCode:
+            'Run it in the folder where the zip landed (usually Downloads). It works in all your projects.',
+          codex: 'Move the zip into your project folder and run it there.',
+          cursor: 'Move the zip into your project folder and run it there.',
+        },
+        installLabel: 'Install the skill',
+        keyCommandLabel: 'Set your key',
+        keyCommandHint:
+          'In the terminal you open your agent from, before you open it. Replace the value with your key.',
+        promptLabel: 'Ask it for something',
+        promptHint: 'Open your agent and paste this to check that everything works.',
+        prompt:
+          'Use the dforms-api skill: check that my key works and create a contact form with name, email and message.',
+        copyCommand: 'Copy command',
+        copyPrompt: 'Copy prompt',
+        chatNote: 'Using Claude in the browser or ChatGPT? Those connect through the dForms MCP, not with a key.',
       },
       keys: {
         title: 'API keys',
@@ -3978,6 +4045,9 @@ export const en: FormsMessages = {
         copy: 'Copy',
         copied: 'Copied',
         copyFailed: 'Could not copy. Select the key and copy it by hand.',
+        createdNext: 'Next: paste this line in the terminal you open your agent from.',
+        exportLabel: 'Terminal',
+        copyExport: 'Copy command',
         done: 'Done',
       },
     },
@@ -6110,9 +6180,38 @@ export const es: FormsMessages = {
     developers: {
       title: 'MCP',
       subtitle: 'Conecta un agente de IA o tu propio código a dForms con una llave de API.',
-      skill: {
-        title: 'Skill para tu agente',
-        body: 'Crea una llave y dale a tu agente (Claude Code, Codex, Cursor) este skill: le enseña a usar la API de dForms con esa llave, sin que tengas que explicarle nada.',
+      guide: {
+        title: 'Conecta tu agente en 3 pasos',
+        intro: 'Para agentes que corren en una terminal: Claude Code, Codex y Cursor.',
+        stepDone: 'hecho',
+        downloadTitle: 'Descarga el skill',
+        downloadBody:
+          'Un zip con todo lo que tu agente necesita para usar dForms: las reglas, todos los endpoints y recetas paso a paso. Ya trae las direcciones de este entorno.',
+        downloadDone: 'Descargado. Puedes volver a descargarlo cuando quieras.',
+        keyTitle: 'Crea una llave de API',
+        keyBody:
+          'La llave conecta al agente con este workspace y actúa como tú. Solo se muestra una vez, así que cópiala al crearla.',
+        keyDone: 'Ya tienes una llave. Crea una por agente para poder revocar cada una por separado.',
+        agentTitle: 'Dáselos a tu agente',
+        agentDone: 'Una de tus llaves ya se usó: tu agente está conectado.',
+        agentsLabel: 'Agente',
+        installHint: {
+          claudeCode:
+            'Córrelo en la carpeta donde quedó el zip (normalmente Descargas). Sirve para todos tus proyectos.',
+          codex: 'Mueve el zip a la carpeta de tu proyecto y córrelo ahí.',
+          cursor: 'Mueve el zip a la carpeta de tu proyecto y córrelo ahí.',
+        },
+        installLabel: 'Instala el skill',
+        keyCommandLabel: 'Pon tu llave',
+        keyCommandHint:
+          'En la terminal desde la que abres tu agente, antes de abrirlo. Cambia el valor por tu llave.',
+        promptLabel: 'Pídele algo',
+        promptHint: 'Abre tu agente y pega esto para comprobar que todo funciona.',
+        prompt:
+          'Usa el skill dforms-api: revisa que mi llave funciona y créame un form de contacto con nombre, email y mensaje.',
+        copyCommand: 'Copiar comando',
+        copyPrompt: 'Copiar prompt',
+        chatNote: '¿Usas Claude en el navegador o ChatGPT? Esos se conectan con el MCP de dForms, no con una llave.',
       },
       keys: {
         title: 'Llaves de API',
@@ -6162,6 +6261,9 @@ export const es: FormsMessages = {
         copy: 'Copiar',
         copied: 'Copiada',
         copyFailed: 'No se pudo copiar. Selecciona la llave y cópiala a mano.',
+        createdNext: 'Siguiente paso: pega esta línea en la terminal desde la que abres tu agente.',
+        exportLabel: 'Terminal',
+        copyExport: 'Copiar comando',
         done: 'Listo',
       },
     },

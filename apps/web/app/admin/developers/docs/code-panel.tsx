@@ -176,6 +176,7 @@ export function CodePanel({
   copyLabel,
   m,
   fold,
+  wrap,
   testId,
 }: {
   label: string;
@@ -187,6 +188,8 @@ export function CodePanel({
   m: CopyLabels;
   /** Fold a long block behind a "show the full response" button. */
   fold?: { more: string; less: string };
+  /** Wrap long lines instead of scrolling them: for prose, like a prompt. */
+  wrap?: boolean;
   testId?: string;
 }) {
   const lines = code.split('\n').length;
@@ -211,6 +214,7 @@ export function CodePanel({
           className={cn(
             'max-w-full overflow-x-auto p-3 font-mono text-xs leading-relaxed text-muted-foreground',
             folded && 'max-h-72 overflow-y-hidden',
+            wrap && 'whitespace-pre-wrap break-words',
           )}
         >
           <code>{body}</code>
