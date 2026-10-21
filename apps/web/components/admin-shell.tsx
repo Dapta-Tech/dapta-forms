@@ -87,12 +87,12 @@ const DEVELOPERS_PAGES: readonly SubNavItem[] = [
 // profile button at the bottom of the rail, under /admin/account, the same
 // place Dapta's admin panel keeps it, so no rail item is active on those pages.
 //
-// "MCP" follows Integrations: the workspace's API keys, for connecting an AI
-// agent or a script, and the docs for every route a key can call. Its own item
-// rather than a corner of Account settings, so the API is found without being
-// looked for. It is the one item with pages under it (see `NavGroup`), and its
-// icon is the rotating Claude, ChatGPT and Cursor logos (`McpLogos`). There is
-// no dForms MCP server yet: until there is, the item leads to the API keys.
+// "MCP" follows Integrations: the workspace's API keys, with the guide that
+// connects an AI agent to the dForms MCP server (served by the API at `/mcp`),
+// and the docs for every route a key can call. Its own item rather than a
+// corner of Account settings, so it is found without being looked for. It is
+// the one item with pages under it (see `NavGroup`), and its icon is the
+// rotating Claude, ChatGPT and Cursor logos (`McpLogos`).
 //
 // Then "Docs": the product documentation, always present, in the reader's
 // language (the URL lives in the message catalog, see `docsHref`). External

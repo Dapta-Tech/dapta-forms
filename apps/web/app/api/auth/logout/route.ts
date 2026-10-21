@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { clearSession, getSession, revokeUpstreamSession } from '@/lib/auth-session';
-import { requestOrigin } from '@/lib/request-origin';
+import { canonicalOriginElsewhere, requestOrigin } from '@/lib/request-origin';
 
 /**
  * Logout, Orbit's contract exactly: revoke upstream best-effort (see
@@ -19,11 +19,21 @@ import { requestOrigin } from '@/lib/request-origin';
  * This route serves the contexts that cannot touch the cookie themselves: the
  * 401 path inside a Server Component render (`admin-api.ts`, where
  * `cookies().delete()` throws) and direct navigation.
+ *
+ * On a host other than `PUBLIC_APP_URL` (an old domain still serving after a
+ * move) it signs out of THAT host only: the cookie it clears is that host's,
+ * `revokeUpstreamSession` leaves the upstream session alone there, and the
+ * landing stays on that host too. The landing is a relative Location so the
+ * browser resolves it against the host it asked, with no header trusted to
+ * build it; an absolute one on `PUBLIC_APP_URL` would show a signed-out page
+ * on a host where the person may still be signed in.
  */
 export async function GET(req: NextRequest): Promise<NextResponse> {
-  const origin = requestOrigin(req);
   const session = await getSession();
   await clearSession();
   await revokeUpstreamSession(session);
-  return NextResponse.redirect(new URL('/login?signedout=1', origin));
+  if (canonicalOriginElsewhere((n) => req.headers.get(n))) {
+    return new NextResponse(null, { status: 307, headers: { location: '/login?signedout=1' } });
+  }
+  return NextResponse.redirect(new URL('/login?signedout=1', requestOrigin(req)));
 }

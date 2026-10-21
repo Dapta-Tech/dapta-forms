@@ -1,10 +1,11 @@
 import 'server-only';
-import { cookies } from 'next/headers';
+import { cookies, headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { SESSION_COOKIE, WORKSPACE_COOKIE } from './session';
 import { signValue, unsignValue } from './signed-value';
 import { serverApiUrl } from './api-url';
+import { canonicalOriginElsewhere } from './request-origin';
 
 const API_URL = serverApiUrl;
 
@@ -94,10 +95,13 @@ export async function getSession(): Promise<Session | null> {
  *
  * Never throws and never hangs past its timeout: the caller's local cleanup
  * must not be hostage to the IAM being up.
+ *
+ * Skipped on a host other than `PUBLIC_APP_URL` (see `offCanonicalHost`).
  */
 export async function revokeUpstreamSession(session: Session | null): Promise<string | null> {
   const iam = process.env.IAM_BASE_URL?.replace(/\/$/, '');
   if (!iam || session?.provider !== 'workos') return null;
+  if (await offCanonicalHost()) return null;
   const sessionId = session.sessionId;
   const body = sessionId ? { workos_session_id: sessionId, session_id: sessionId } : {};
   const res = await fetch(`${iam}/auth/logout?redirect=false`, {
@@ -111,6 +115,33 @@ export async function revokeUpstreamSession(session: Session | null): Promise<st
   const out = (await res.json().catch(() => null)) as { logoutUrl?: unknown; logoutURL?: unknown } | null;
   const url = out?.logoutUrl ?? out?.logoutURL;
   return typeof url === 'string' && url ? url : null;
+}
+
+/**
+ * Whether this request arrived on a hostname other than `PUBLIC_APP_URL`'s,
+ * where no logout may revoke upstream.
+ *
+ * Every sign-in starts on `PUBLIC_APP_URL` (the login route hops there), so a
+ * session cookie on any other host (an old domain still serving after a move)
+ * is a leftover from before the move. It can name the same upstream session
+ * the canonical host's cookie does (both sign-ins went through one
+ * identity-provider session), and a revoke ends that session for every host.
+ * Revoking from a stale tab on the old host would then sign the person out of
+ * the canonical host too. So there the logout clears that host's cookie (every
+ * caller does, whatever this returns) and nothing else: the upstream session
+ * ends with its own expiry or a sign-out on `PUBLIC_APP_URL`.
+ *
+ * False outside a request scope or without `PUBLIC_APP_URL`, which keeps the
+ * revoke. A forged `X-Forwarded-Host` only skips the revoke of its sender's own
+ * session.
+ */
+async function offCanonicalHost(): Promise<boolean> {
+  try {
+    const h = await headers();
+    return canonicalOriginElsewhere((n) => h.get(n)) !== null;
+  } catch {
+    return false;
+  }
 }
 
 /**

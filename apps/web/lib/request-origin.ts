@@ -1,4 +1,4 @@
-import type { NextRequest } from 'next/server';
+import { NextResponse, type NextRequest } from 'next/server';
 
 /**
  * Public origin of the running deployment, used to build OAuth `returnTo` URLs
@@ -73,5 +73,86 @@ export function selfHost(get: (name: string) => string | null | undefined): stri
       // Same fall-through as above: a bad env var must not break the request.
     }
   }
+  return headerHost(get);
+}
+
+/**
+ * The host the request itself names, from the headers alone: the first hop of
+ * `X-Forwarded-Host`, else `Host`. That is the order Next's own Server Actions
+ * origin check reads them in, so a deployment whose admin can save at all
+ * already hands the app its public host here.
+ *
+ * NOT an origin to build URLs from (see `selfHost` for that): the headers are
+ * client-supplied. Only fit for a decision whose every outcome is safe for the
+ * person who sent them.
+ */
+export function headerHost(get: (name: string) => string | null | undefined): string | null {
   return get('x-forwarded-host')?.split(',')[0]?.trim() || get('host')?.trim() || null;
+}
+
+/**
+ * The `PUBLIC_APP_URL` origin when the request arrived on a different hostname,
+ * else null (no `PUBLIC_APP_URL`, same hostname, or nothing parseable).
+ *
+ * Built for the login hand-off, whose state cookie is host-only: a login started
+ * on any other hostname comes back to the `PUBLIC_APP_URL` callback without it.
+ *
+ * Hostnames only, case-insensitive (the URL parser lowercases them). Port and
+ * scheme are ignored on purpose: cookies are not isolated by port, so a login on
+ * another port of the same hostname already works; and behind TLS termination the
+ * app cannot see the public scheme or port reliably, so comparing them could send
+ * a login on the right host into a redirect loop.
+ *
+ * Safe on spoofed headers because the answer is never taken FROM them: it is the
+ * configured origin or nothing. A forged `X-Forwarded-Host` can only send its
+ * sender to `PUBLIC_APP_URL`, or keep today's behavior for its sender.
+ */
+export function canonicalOriginElsewhere(
+  get: (name: string) => string | null | undefined,
+): string | null {
+  const configured = process.env.PUBLIC_APP_URL?.trim();
+  if (!configured) return null;
+  let canonical: URL;
+  try {
+    canonical = new URL(configured);
+  } catch {
+    // Same rule as `originFrom`: a bad env var never breaks the request.
+    return null;
+  }
+  const arrived = headerHost(get);
+  if (!arrived) return null;
+  let arrivedHostname: string;
+  try {
+    arrivedHostname = new URL(`http://${arrived}`).hostname;
+  } catch {
+    return null;
+  }
+  return arrivedHostname === canonical.hostname ? null : canonical.origin;
+}
+
+/**
+ * The hop itself: a 302 to the same path and query on the `PUBLIC_APP_URL`
+ * origin when a GET or HEAD arrives on another hostname, else null (see
+ * `canonicalOriginElsewhere` for when that is). Used by the routes and pages
+ * that only work where the session cookies live: the login hand-off, the
+ * dashboard, the first-run wizard and the session refresh (`proxy.ts`).
+ *
+ * GET and HEAD only. A 302 turns a POST into a GET and drops its body, so a
+ * Server Action or a form post sent from a tab opened before a domain move
+ * keeps running on the host it was sent to.
+ *
+ * The path and query go over exactly as this request got them (Next has
+ * already normalized the encoding, so the canonical host parses what it would
+ * on a direct visit). No cookie is read or written. `no-store`: the answer
+ * depends on request headers, and a cached hop served back to the canonical
+ * host would loop.
+ */
+export function canonicalHop(req: NextRequest): NextResponse | null {
+  if (req.method !== 'GET' && req.method !== 'HEAD') return null;
+  const canonical = canonicalOriginElsewhere((n) => req.headers.get(n));
+  if (!canonical) return null;
+  const { pathname, search } = new URL(req.url);
+  const hop = NextResponse.redirect(`${canonical}${pathname}${search}`, 302);
+  hop.headers.set('cache-control', 'no-store');
+  return hop;
 }

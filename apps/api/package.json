@@ -12,6 +12,7 @@
     "build": "tsc --noEmit -p tsconfig.json",
     "lint": "eslint src",
     "test": "vitest run",
+    "e2e:mcp": "tsx scripts/mcp-e2e.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
@@ -24,6 +25,7 @@
     "@quill/db": "workspace:*",
     "@quill/destinations": "workspace:*",
     "@quill/engine": "workspace:*",
+    "@quill/mcp": "workspace:*",
     "@quill/notifications": "workspace:*",
     "@quill/shared": "workspace:*",
     "@quill/types": "workspace:*",
@@ -34,6 +36,7 @@
     "zod": "^3.24.1"
   },
   "devDependencies": {
+    "@modelcontextprotocol/client": "^2.3.1",
     "@types/node": "^22.10.2",
     "eslint": "^9.17.0",
     "typescript": "^5.7.2",

@@ -18,6 +18,16 @@ describe('publicApiUrl', () => {
     );
   });
 
+  it('trims trailing slashes in linear time, even after a long run of them in the path', () => {
+    const path = `${'/'.repeat(100_000)}x`;
+    const started = performance.now();
+    expect(publicApiUrl({ PUBLIC_API_URL: `https://example.com${path}` })).toBe(`https://example.com${path}`);
+    expect(publicApiUrl({ PUBLIC_API_URL: `https://example.com/forms-api${'/'.repeat(100_000)}` })).toBe(
+      'https://example.com/forms-api',
+    );
+    expect(performance.now() - started).toBeLessThan(100);
+  });
+
   it('never prints a cluster-internal API_URL to a customer', () => {
     expect(publicApiUrl({ API_URL: 'http://forms-api.lab.svc.cluster.local' })).toBeNull();
     expect(publicApiUrl({ API_URL: 'http://api:4000' })).toBeNull();

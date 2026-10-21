@@ -4,6 +4,7 @@ import { getMessages } from '@quill/shared';
 import { adminApi, type ApiKey } from '@/lib/admin-api';
 import { getLocale } from '@/lib/locale';
 import { publicApiUrl } from '@/lib/developer-skill/public-api-url';
+import { mcpSnippets, publicMcpUrl } from '@/lib/developer-skill/mcp-connect';
 import { PageHeader } from '@/components/ui/page-header';
 import { buttonVariants } from '@/components/ui/button';
 import { ApiKeysPanel } from '../api-keys';
@@ -12,10 +13,14 @@ import { SKILL_DOWNLOAD_PATH } from '../docs/docs-model';
 export const dynamic = 'force-dynamic';
 
 /**
- * MCP, API keys: a three-step guide (download the skill, create a key, give
- * both to the agent) above the workspace's keys. The skill is the same zip as
- * on the API docs page. What a key can call lives on the docs page next door
- * (`/admin/developers/docs`), linked from the header.
+ * MCP, API keys: a three-step guide (create a key, connect the agent to the
+ * dForms MCP server, try it) above the workspace's keys. The MCP address is
+ * read from the server's runtime environment on every request (`publicMcpUrl`),
+ * never from a build-time variable, and every snippet names the key's
+ * environment variable, never a key. The skill zip, the same as on the API
+ * docs page, stays as the way in for an agent without MCP. What a key can call
+ * lives on the docs page next door (`/admin/developers/docs`), linked from the
+ * header.
  *
  * The keys come from `GET /v1/api-keys`, which already scopes them by role (a
  * member gets their own, an owner or admin all of the workspace's). A failed
@@ -34,6 +39,8 @@ export default async function DeveloperKeysPage() {
       (e: unknown) => ({ ok: false as const, error: e }),
     ),
   ]);
+
+  const mcpUrl = publicMcpUrl();
 
   let keys: ApiKey[] = [];
   let loadError = false;
@@ -68,6 +75,7 @@ export default async function DeveloperKeysPage() {
         timeZone={me.timezone ?? 'UTC'}
         guide={{
           m: m.developers.guide,
+          mcp: mcpUrl ? mcpSnippets(mcpUrl) : null,
           skill: {
             // Read at request time like the docs page does: the route answers 503
             // without a public API address, so the button would only fail.

@@ -16,6 +16,15 @@ const boolish = z
   .transform((v) => v === 'true' || v === '1' || v === 'yes')
   .pipe(z.boolean());
 
+/**
+ * A blank value reads as unset, so a deploy template that renders an empty
+ * string falls back to the default instead of failing the boot (a blank
+ * number would coerce to 0 and fail `positive()`; a blank switch would read
+ * as off).
+ */
+const blankAsUnset = <T extends z.ZodTypeAny>(schema: T) =>
+  z.preprocess((v) => (typeof v === 'string' && v.trim() === '' ? undefined : v), schema);
+
 export const serverEnvSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
 
@@ -180,12 +189,58 @@ export const serverEnvSchema = z.object({
   // domains, list them here, e.g. CORS_ORIGINS="https://acme.com,https://foo.io".
   CORS_ORIGINS: z.string().optional(),
 
+  // Deprecated API hosts: a comma-separated list of hostnames this API still
+  // answers on but that callers should stop using, e.g. after the API moved to
+  // a new domain: API_DEPRECATED_HOSTS="api.example.com,api-old.example.com".
+  // Nothing is redirected (a redirect would drop the Authorization header,
+  // and with it every API key call). A request whose Host header names a
+  // listed host gets a `Deprecation` header (RFC 9745) and a `Link` to the
+  // same path on API_SUCCESSOR_URL on every response, and each call made there
+  // with an API key is logged once, by key id (never the key). Unset or blank
+  // (the default, and every fork) = off, and the three settings below are not
+  // read. Entries are trimmed and lowercased and blanks are dropped; an entry
+  // written as an origin (https://api.example.com) is reduced to its hostname;
+  // a wildcard or a host:port refuses to boot, and so does the host of
+  // API_SUCCESSOR_URL.
+  API_DEPRECATED_HOSTS: z.string().optional(),
+  // Required with the list: the https origin callers should move to, e.g.
+  // https://api.example.org (no path, query or credentials).
+  API_SUCCESSOR_URL: z.string().optional(),
+  // Required with the list: when the hosts were (or will be) deprecated, as
+  // YYYY-MM-DD (midnight UTC) or an ISO 8601 date-time with a zone. RFC 9745
+  // makes the Deprecation header a date, so the operator states it.
+  API_DEPRECATION_DATE: z.string().optional(),
+  // Optional: when the hosts stop answering, sent as a `Sunset` header (RFC
+  // 8594). Same formats, and never earlier than API_DEPRECATION_DATE (RFC 9745
+  // section 4). Unset = no Sunset header.
+  API_SUNSET_DATE: z.string().optional(),
+
   // Rate limiting (public form submission). A per-IP token bucket: burst up
   // to CAPACITY, sustained REFILL tokens/sec. Enabled by default; a fork can
   // disable it or plug a distributed limiter in the private overlay.
   RATE_LIMIT_ENABLED: boolish.default('true'),
   RATE_LIMIT_CAPACITY: z.coerce.number().int().positive().default(60),
   RATE_LIMIT_REFILL_PER_SEC: z.coerce.number().positive().default(1),
+
+  // MCP endpoint (`POST /mcp`, packages/mcp): the dForms MCP server, served by
+  // this API with the workspace API keys (`Authorization: Bearer dforms_...`).
+  // Every variable is optional and a blank value means unset. On by default;
+  // MCP_ENABLED=false answers 404. A request carrying a browser Origin is
+  // refused unless the origin is listed in MCP_ALLOWED_ORIGINS (MCP clients
+  // send none); the same list is the CORS allowlist of /mcp, kept apart from
+  // CORS_ORIGINS. MCP_ALLOWED_HOSTS, when set, is the only Host names served
+  // (DNS-rebinding guard). Buckets are per API key, in memory per pod, and off
+  // with the rest of the limiting when RATE_LIMIT_ENABLED=false: every request
+  // takes from MCP_RATE_LIMIT_*, write tools also from MCP_WRITE_RATE_LIMIT_*.
+  // Requests without a valid key take from the per-IP RATE_LIMIT_* bucket.
+  MCP_ENABLED: blankAsUnset(boolish.default('true')),
+  MCP_ALLOWED_ORIGINS: z.string().optional(),
+  MCP_ALLOWED_HOSTS: z.string().optional(),
+  MCP_RATE_LIMIT_CAPACITY: blankAsUnset(z.coerce.number().int().positive().default(120)),
+  MCP_RATE_LIMIT_REFILL_PER_SEC: blankAsUnset(z.coerce.number().positive().default(2)),
+  MCP_WRITE_RATE_LIMIT_CAPACITY: blankAsUnset(z.coerce.number().int().positive().default(20)),
+  MCP_WRITE_RATE_LIMIT_REFILL_PER_SEC: blankAsUnset(z.coerce.number().positive().default(0.2)),
+  MCP_TOOL_TIMEOUT_MS: blankAsUnset(z.coerce.number().int().positive().max(120_000).default(20_000)),
 
   // Product analytics — OUR OWN telemetry about the people who USE Dapta Forms
   // (signup, publish, activation), drained from the outbox by AnalyticsCapture.
@@ -316,6 +371,18 @@ export const serverEnvSchema = z.object({
   // follows an outage, inside a total budget of 4 s, so a submit is never held
   // past the browser's own 8 s per-attempt limit.
   CAPTCHA_VERIFY_TIMEOUT_MS: z.coerce.number().int().positive().max(4000).default(2500),
+  // Token hosts: a comma-separated list of the hostnames a challenge token may
+  // have been minted on (bare hostnames, not origins). When UNSET the token's
+  // host must be the host of PUBLIC_APP_URL, and is not checked when that is
+  // empty. When SET it must be one of the list, and the host of PUBLIC_APP_URL
+  // is always included. For a deployment that serves its public forms on more
+  // than one host, e.g. during a domain move,
+  // CAPTCHA_HOSTNAMES="forms.example.com,forms.example.org". Entries are
+  // trimmed and lowercased and blanks are dropped (all blank reads as unset).
+  // An entry written as an origin (https://forms.example.com) is reduced to
+  // its hostname; anything else that is not a plain hostname (a wildcard, a
+  // host:port) refuses to boot while the check is on.
+  CAPTCHA_HOSTNAMES: z.string().optional(),
 });
 
 export type ServerEnv = z.infer<typeof serverEnvSchema>;
@@ -360,13 +427,70 @@ export function captchaSettings(env: CaptchaEnv): CaptchaSettings | null {
   return { provider: 'turnstile', siteKey, secretKey, timeoutMs: env.CAPTCHA_VERIFY_TIMEOUT_MS };
 }
 
+type CaptchaHostEnv = Pick<ServerEnv, 'CAPTCHA_HOSTNAMES' | 'PUBLIC_APP_URL'>;
+
+/** One DNS name: dot-separated labels of letters, digits and inner hyphens. */
+const HOSTNAME = /^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$/;
+
+/**
+ * The hosts a challenge token may have been minted on, or null when the host
+ * is not checked. CAPTCHA_HOSTNAMES unset (or blank) keeps the original rule:
+ * the host of PUBLIC_APP_URL, and no check when that is empty. Set, it is that
+ * list plus the host of PUBLIC_APP_URL, so the app's own host can never be
+ * listed out. Throws on an entry that is not a hostname: a typo there would
+ * otherwise refuse every protected submit made on that host.
+ */
+export function captchaHostnames(env: CaptchaHostEnv): string[] | null {
+  const appHost = appHostnameOf(env.PUBLIC_APP_URL);
+  const listed = (env.CAPTCHA_HOSTNAMES ?? '')
+    .split(',')
+    .map((h) => h.trim().toLowerCase())
+    .filter(Boolean)
+    .map(captchaHostnameOf);
+  if (listed.length === 0) return appHost ? [appHost] : null;
+  return [...new Set(appHost ? [appHost, ...listed] : listed)];
+}
+
+/** An entry of CAPTCHA_HOSTNAMES (trimmed, lowercased) as a bare hostname. */
+function captchaHostnameOf(entry: string): string {
+  let host: string | null = entry;
+  if (entry.includes('://')) {
+    // An origin is what an operator copies from CORS_ORIGINS; the token
+    // carries no scheme or port, so only the hostname is compared.
+    try {
+      const url = new URL(entry);
+      host = url.protocol === 'https:' || url.protocol === 'http:' ? url.hostname : null;
+    } catch {
+      host = null;
+    }
+  }
+  if (!host || !HOSTNAME.test(host)) {
+    throw new Error(
+      `Refusing to boot: CAPTCHA_HOSTNAMES entry "${entry}" is not a hostname. List bare ` +
+        'hostnames (forms.example.com) or origins (https://forms.example.com), comma-separated; ' +
+        'wildcards and ports are not supported.',
+    );
+  }
+  return host;
+}
+
+function appHostnameOf(url: string | undefined): string | null {
+  if (!url) return null;
+  try {
+    return new URL(url).hostname || null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Fail loud on a half-configured check rather than run without it: one key
  * without the other is a typo, not a choice, and quietly treating it as "off"
  * would ship an unprotected form its owner believes is protected. The kill
- * switch is exempt, so reaching for it can never be what stops a pod booting.
+ * switch is exempt, so reaching for it can never be what stops a pod booting,
+ * and so is a deployment without keys, where CAPTCHA_HOSTNAMES is never read.
  */
-function assertCaptchaEnv(env: CaptchaEnv): void {
+function assertCaptchaEnv(env: CaptchaEnv & CaptchaHostEnv): void {
   if (env.CAPTCHA_PROVIDER === 'none') return;
   const site = Boolean(env.CAPTCHA_SITE_KEY?.trim());
   const secret = Boolean(env.CAPTCHA_SECRET_KEY?.trim());
@@ -381,6 +505,7 @@ function assertCaptchaEnv(env: CaptchaEnv): void {
       'Refusing to boot: CAPTCHA_PROVIDER=turnstile needs CAPTCHA_SITE_KEY and CAPTCHA_SECRET_KEY.',
     );
   }
+  if (site && secret) captchaHostnames(env);
 }
 
 export const clientEnvSchema = z.object({
@@ -426,6 +551,9 @@ export function loadServerEnv(source: NodeJS.ProcessEnv = process.env): ServerEn
     );
   }
   assertCaptchaEnv(parsed.data);
+  // A malformed deprecated-hosts setting fails here, at boot, not on the first
+  // request to a listed host.
+  apiDeprecation(parsed.data);
   return parsed.data;
 }
 
@@ -433,4 +561,150 @@ export function loadServerEnv(source: NodeJS.ProcessEnv = process.env): ServerEn
 export function isPostgresUrl(url: string): boolean {
   const u = url.toLowerCase();
   return u.startsWith('postgres://') || u.startsWith('postgresql://');
+}
+
+/** What a deployment sends on the API hosts it lists as deprecated. */
+export interface ApiDeprecation {
+  /** Bare hostnames, lowercased, without duplicates. */
+  hosts: string[];
+  /** The origin callers should move to (`https://api.example.org`), no trailing slash. */
+  successorOrigin: string;
+  /** The `Deprecation` value: an RFC 9651 Date, `@` and Unix seconds. */
+  deprecation: string;
+  /** The `Sunset` value (an HTTP-date), or null when none is configured. */
+  sunset: string | null;
+}
+
+type ApiDeprecationEnv = Pick<
+  ServerEnv,
+  'API_DEPRECATED_HOSTS' | 'API_SUCCESSOR_URL' | 'API_DEPRECATION_DATE' | 'API_SUNSET_DATE'
+>;
+
+/**
+ * One DNS name: dot-separated labels of letters, digits and inner hyphens.
+ * Named apart from the captcha host list's own pattern (a separate change) so
+ * the two cannot collide when both land.
+ */
+const DNS_HOSTNAME = /^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$/;
+
+/**
+ * The deprecated-API-hosts settings, or null when API_DEPRECATED_HOSTS is
+ * unset or blank (the default, and every fork), in which case the other three
+ * are not read. Throws on anything malformed: a typo in a host would silently
+ * measure nothing, and a bad date or successor would send callers a header
+ * they cannot use. `loadServerEnv` calls it, so that happens at boot.
+ */
+export function apiDeprecation(env: ApiDeprecationEnv): ApiDeprecation | null {
+  const listed = (env.API_DEPRECATED_HOSTS ?? '')
+    .split(',')
+    .map((h) => h.trim().toLowerCase())
+    .filter(Boolean)
+    .map(deprecatedHostOf);
+  if (listed.length === 0) return null;
+  const hosts = [...new Set(listed)];
+
+  const successor = successorUrlOf(env.API_SUCCESSOR_URL);
+  if (hosts.includes(successor.hostname)) {
+    throw new Error(
+      `Refusing to boot: API_DEPRECATED_HOSTS lists ${successor.hostname}, the host of API_SUCCESSOR_URL. ` +
+        'The successor cannot be deprecated in favour of itself.',
+    );
+  }
+
+  const deprecatedAt = deprecationDateOf('API_DEPRECATION_DATE', env.API_DEPRECATION_DATE);
+  if (deprecatedAt === null) {
+    throw new Error(
+      'Refusing to boot: API_DEPRECATED_HOSTS is set without API_DEPRECATION_DATE. The Deprecation ' +
+        'header (RFC 9745) is a date: set the day the hosts were deprecated, e.g. 2026-01-31.',
+    );
+  }
+  const sunsetAt = deprecationDateOf('API_SUNSET_DATE', env.API_SUNSET_DATE);
+  if (sunsetAt !== null && sunsetAt < deprecatedAt) {
+    throw new Error(
+      'Refusing to boot: API_SUNSET_DATE is earlier than API_DEPRECATION_DATE (RFC 9745 section 4 ' +
+        'forbids a Sunset before the Deprecation).',
+    );
+  }
+
+  return {
+    hosts,
+    successorOrigin: successor.origin,
+    deprecation: `@${Math.floor(deprecatedAt / 1000)}`,
+    sunset: sunsetAt === null ? null : new Date(sunsetAt).toUTCString(),
+  };
+}
+
+/** An entry of API_DEPRECATED_HOSTS (trimmed, lowercased) as a bare hostname. */
+function deprecatedHostOf(entry: string): string {
+  let host: string | null = entry;
+  if (entry.includes('://')) {
+    // An origin is what an operator copies from CORS_ORIGINS; the Host header
+    // is compared without its port, so only the hostname is kept.
+    try {
+      const url = new URL(entry);
+      host = url.protocol === 'https:' || url.protocol === 'http:' ? url.hostname : null;
+    } catch {
+      host = null;
+    }
+  }
+  if (!host || !DNS_HOSTNAME.test(host)) {
+    throw new Error(
+      `Refusing to boot: API_DEPRECATED_HOSTS entry "${entry}" is not a hostname. List bare ` +
+        'hostnames (api.example.com) or origins (https://api.example.com), comma-separated; ' +
+        'wildcards and ports are not supported.',
+    );
+  }
+  return host;
+}
+
+/** API_SUCCESSOR_URL as a URL, when it is a plain https origin; throws otherwise. */
+function successorUrlOf(value: string | undefined): URL {
+  const raw = value?.trim() ?? '';
+  let url: URL | null = null;
+  try {
+    url = raw ? new URL(raw) : null;
+  } catch {
+    url = null;
+  }
+  const plainOrigin =
+    url !== null &&
+    url.protocol === 'https:' &&
+    !url.username &&
+    !url.password &&
+    url.pathname === '/' &&
+    !raw.includes('?') &&
+    !raw.includes('#') &&
+    DNS_HOSTNAME.test(url.hostname);
+  if (!plainOrigin) {
+    throw new Error(
+      `Refusing to boot: API_SUCCESSOR_URL ${raw ? `"${raw}" ` : ''}must be an https origin such as ` +
+        'https://api.example.org (no path, query or credentials) when API_DEPRECATED_HOSTS is set.',
+    );
+  }
+  return url as URL;
+}
+
+/** `YYYY-MM-DD`, or that day with `THH:MM`, optional seconds and fraction, and a zone. */
+const ISO_DATE =
+  /^(\d{4})-(\d{2})-(\d{2})(?:T(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d{1,3})?)?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d))?$/;
+
+/**
+ * A deprecation or sunset date in epoch ms, or null when unset or blank.
+ * Throws on anything else than the formats above, including a day the
+ * calendar does not have (`Date.parse` rolls 2026-02-30 into March).
+ */
+function deprecationDateOf(name: string, value: string | undefined): number | null {
+  const raw = value?.trim() ?? '';
+  if (!raw) return null;
+  const match = ISO_DATE.exec(raw);
+  const [y, m, d] = match ? [Number(match[1]), Number(match[2]), Number(match[3])] : [0, 0, 0];
+  const day = new Date(Date.UTC(y, m - 1, d));
+  const ms = Date.parse(raw);
+  if (!match || day.getUTCFullYear() !== y || day.getUTCMonth() !== m - 1 || day.getUTCDate() !== d || Number.isNaN(ms)) {
+    throw new Error(
+      `Refusing to boot: ${name} "${raw}" is not a date. Use YYYY-MM-DD (midnight UTC) or an ISO 8601 ` +
+        'date-time with a zone, e.g. 2026-01-31T00:00:00Z.',
+    );
+  }
+  return ms;
 }

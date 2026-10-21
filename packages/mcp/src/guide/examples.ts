@@ -1,10 +1,10 @@
 import type { FormConfig } from '@quill/types';
 
 /**
- * The form configs the skill's recipes show. Typed as `FormConfig` so the
- * compiler checks them against the real contract, and validated in the specs
- * against the JSON Schema the zip ships, so a recipe can never teach an agent a
- * config the API would refuse.
+ * The form configs the skill's recipes and the MCP guide show. Typed as
+ * `FormConfig` so the compiler checks them against the real contract, and
+ * validated in the specs against the JSON Schema both ship, so a recipe can
+ * never teach an agent a config the API would refuse.
  *
  * Every step has a `question` (the API refuses an empty one on any step but a
  * reveal, message or scheduler) and none uses a field without a control in the

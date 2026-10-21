@@ -71,3 +71,45 @@ describe('GET /api/auth/logout', () => {
     expect(res.headers.get('location')).toBe('https://forms.example.com/login?signedout=1');
   });
 });
+
+/**
+ * An old domain still serving after a move. The pod sees its own listen
+ * address; the public host only exists in the headers.
+ */
+describe('GET /api/auth/logout on a host other than PUBLIC_APP_URL', () => {
+  const at = (host: string, path = '/api/auth/logout') =>
+    GET(new NextRequest(`http://0.0.0.0:3000${path}`, { headers: { host } }));
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubEnv('PUBLIC_APP_URL', 'https://app.example.com');
+    revokeUpstreamSession.mockResolvedValue(null);
+    getSession.mockResolvedValue(workosSession);
+  });
+
+  it('clears that host\'s cookie and lands on that host, never on PUBLIC_APP_URL', async () => {
+    const res = await at('forms.example.org', '/api/auth/logout?reason=expired');
+
+    expect(clearSession).toHaveBeenCalled();
+    // Relative: the browser resolves it against the host it asked; no header
+    // is trusted to build it.
+    expect(res.status).toBe(307);
+    expect(res.headers.get('location')).toBe('/login?signedout=1');
+  });
+
+  it('a forged X-Forwarded-Host gets the same relative landing, never a header value', async () => {
+    const res = await GET(
+      new NextRequest('http://0.0.0.0:3000/api/auth/logout', {
+        headers: { 'x-forwarded-host': 'evil.example.net', host: 'app.example.com' },
+      }),
+    );
+
+    expect(res.headers.get('location')).toBe('/login?signedout=1');
+  });
+
+  it('on the PUBLIC_APP_URL host: the landing is unchanged', async () => {
+    const res = await at('app.example.com');
+
+    expect(res.headers.get('location')).toBe('https://app.example.com/login?signedout=1');
+  });
+});

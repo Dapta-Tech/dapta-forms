@@ -22,7 +22,7 @@
 import { Logger } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import { isIP } from 'node:net';
-import { captchaSettings, type ServerEnv } from '@quill/config/env';
+import { captchaHostnames, captchaSettings, type ServerEnv } from '@quill/config/env';
 import { CAPTCHA_ACTION, captchaCData } from '@quill/types';
 
 export const TURNSTILE_SITEVERIFY_URL = 'https://challenges.cloudflare.com/turnstile/v0/siteverify';
@@ -72,8 +72,11 @@ export class NoopCaptchaVerifier implements CaptchaVerifier {
 export interface TurnstileOptions {
   siteKey: string;
   secretKey: string;
-  /** The host the widget must have been served on; null skips the check. */
-  expectedHostname?: string | null;
+  /**
+   * The hosts the widget may have been served on, as exact lowercase
+   * hostnames; null skips the check. An empty list accepts no host.
+   */
+  expectedHostnames?: readonly string[] | null;
   /** Per-attempt ceiling in ms. */
   timeoutMs?: number;
   /** Everything, retry included, must fit in this many ms. */
@@ -181,8 +184,8 @@ export class TurnstileVerifier implements CaptchaVerifier {
     if (payload.metadata?.result_with_testing_key === true) return { final: { outcome: 'passed' } };
     if (payload.action !== CAPTCHA_ACTION) return { final: { outcome: 'failed', reason: 'action-mismatch' } };
     if (payload.cdata !== captchaCData(sessionId)) return { final: { outcome: 'failed', reason: 'session-mismatch' } };
-    const expected = this.opts.expectedHostname;
-    if (expected && payload.hostname !== expected) {
+    const expected = this.opts.expectedHostnames;
+    if (expected && !expected.includes(payload.hostname ?? '')) {
       return { final: { outcome: 'failed', reason: 'hostname-mismatch' } };
     }
     return { final: { outcome: 'passed' } };
@@ -202,7 +205,9 @@ interface SiteverifyResponse {
  * The verifier for this deployment: Turnstile when both keys are set and the
  * kill switch is not, the no-op otherwise. The expected token host is the host
  * of `PUBLIC_APP_URL`, which is where the public form (and so the widget) is
- * served, including inside an iframe on a customer's page.
+ * served, including inside an iframe on a customer's page; with
+ * `CAPTCHA_HOSTNAMES` set, any host of that list as well (a deployment that
+ * serves its forms on more than one host, e.g. during a domain move).
  */
 export function createCaptchaVerifier(
   env: ServerEnv,
@@ -219,7 +224,7 @@ export function createCaptchaVerifier(
     siteKey: settings.siteKey,
     secretKey: settings.secretKey,
     timeoutMs: settings.timeoutMs,
-    expectedHostname: hostnameOf(env.PUBLIC_APP_URL),
+    expectedHostnames: captchaHostnames(env),
     fetchImpl: opts.fetchImpl,
   });
 }
@@ -287,15 +292,6 @@ export function publicRemoteIp(raw: string | null | undefined): string | undefin
     return ip;
   }
   return undefined;
-}
-
-function hostnameOf(url: string | undefined): string | null {
-  if (!url) return null;
-  try {
-    return new URL(url).hostname || null;
-  } catch {
-    return null;
-  }
 }
 
 function sleep(ms: number): Promise<void> {

@@ -1884,47 +1884,54 @@ export interface FormsMessages {
       title: string;
       subtitle: string;
       /**
-       * The setup guide above the keys: download the skill, create a key, give
-       * both to the agent. The download button and its unavailable note reuse
+       * The setup guide above the keys: create a key, connect the agent to the
+       * dForms MCP server, try it. The skill download stays as the way in for an
+       * agent without MCP; its button and unavailable note reuse
        * `developerDocs.skillButton` and `developerDocs.skillUnavailable`, the
        * same download as on the API docs page.
        */
       guide: {
         title: string;
-        /** Which agents the key and skill work with. */
+        /** What the MCP is for and which agents connect to it. */
         intro: string;
         /** Screen-reader suffix of a finished step. */
         stepDone: string;
-        downloadTitle: string;
-        downloadBody: string;
-        /** Step 1 after the download was clicked in this browser. */
-        downloadDone: string;
         keyTitle: string;
         keyBody: string;
-        /** Step 2 once the caller has a key. */
+        /** Step 1 once the caller has a key. */
         keyDone: string;
         agentTitle: string;
-        /** Step 3 once any listed key has been used. */
+        agentBody: string;
+        /** Step 2 once any listed key has been used. */
         agentDone: string;
         /** Accessible name of the agent tabs. */
         agentsLabel: string;
-        /** Where to run the install command, per agent. */
-        installHint: {
+        keyCommandLabel: string;
+        keyCommandHint: string;
+        mcpLabel: string;
+        /** Where the MCP snippet goes, per agent. */
+        mcpHint: {
           claudeCode: string;
           codex: string;
           cursor: string;
         };
-        installLabel: string;
-        keyCommandLabel: string;
-        keyCommandHint: string;
-        promptLabel: string;
+        /** Cursor's one-click install button. */
+        addToCursor: string;
+        /** Under the button: the same entry, for a config file. */
+        cursorFileHint: string;
+        /** This deployment has no public address for its MCP server. */
+        mcpUnavailable: string;
+        tryTitle: string;
         promptHint: string;
         /** A first request to paste into the agent. */
         prompt: string;
         copyCommand: string;
         copyPrompt: string;
-        /** Claude in the browser and ChatGPT need the MCP, not a key. */
+        /** Claude in the browser and ChatGPT need a sign-in the MCP does not offer yet. */
         chatNote: string;
+        /** The way in for an agent without MCP: the API skill zip. */
+        skillTitle: string;
+        skillBody: string;
       };
       keys: {
         title: string;
@@ -3966,36 +3973,42 @@ export const en: FormsMessages = {
       subtitle: 'Connect an AI agent or your own code to dForms with an API key.',
       guide: {
         title: 'Connect your agent in 3 steps',
-        intro: 'For agents that run in a terminal: Claude Code, Codex and Cursor.',
+        intro:
+          'dForms has an MCP server. Claude Code, Codex and Cursor connect to it with an API key, then create, edit and publish forms and read responses and analytics for you.',
         stepDone: 'done',
-        downloadTitle: 'Download the skill',
-        downloadBody:
-          'A zip with everything your agent needs to use dForms: the rules, every endpoint and step-by-step recipes. It already carries the addresses of this environment.',
-        downloadDone: 'Downloaded. You can download it again at any time.',
         keyTitle: 'Create an API key',
         keyBody:
           'The key connects the agent to this workspace and acts as you. It is shown only once, so copy it when you create it.',
         keyDone: 'You already have a key. Create one per agent so you can revoke each on its own.',
-        agentTitle: 'Give both to your agent',
+        agentTitle: 'Connect your agent',
+        agentBody: 'Put the key in your environment, then add the dForms MCP to your agent.',
         agentDone: 'One of your keys has already been used: your agent is connected.',
         agentsLabel: 'Agent',
-        installHint: {
-          claudeCode:
-            'Run it in the folder where the zip landed (usually Downloads). It works in all your projects.',
-          codex: 'Move the zip into your project folder and run it there.',
-          cursor: 'Move the zip into your project folder and run it there.',
-        },
-        installLabel: 'Install the skill',
         keyCommandLabel: 'Set your key',
         keyCommandHint:
           'In the terminal you open your agent from, before you open it. Replace the value with your key.',
-        promptLabel: 'Ask it for something',
+        mcpLabel: 'Add the dForms MCP',
+        mcpHint: {
+          claudeCode:
+            'Run it once in a terminal. Claude Code keeps the name of the variable, not the key, and reads the key each time it connects.',
+          codex: 'Add it to `~/.codex/config.toml`. Codex reads the key from the variable each time it connects.',
+          cursor: 'Add it in one click. Cursor reads the key from the variable when it starts the server.',
+        },
+        addToCursor: 'Add to Cursor',
+        cursorFileHint: 'Or paste this into `.cursor/mcp.json` (one project) or `~/.cursor/mcp.json` (every project).',
+        mcpUnavailable:
+          'This deployment has no public address for its MCP server yet, so there is nothing to connect to. Ask whoever runs it to set one.',
+        tryTitle: 'Ask it for something',
         promptHint: 'Open your agent and paste this to check that everything works.',
         prompt:
-          'Use the dforms-api skill: check that my key works and create a contact form with name, email and message.',
+          'Use the dForms MCP: check that my key works, then create a contact form with name, email and message and give me its link.',
         copyCommand: 'Copy command',
         copyPrompt: 'Copy prompt',
-        chatNote: 'Using Claude in the browser or ChatGPT? Those connect through the dForms MCP, not with a key.',
+        chatNote:
+          'Claude in the browser and ChatGPT connect with a sign-in that the dForms MCP does not offer yet. Use Claude Code, Codex or Cursor for now.',
+        skillTitle: 'No MCP in your agent?',
+        skillBody:
+          'Download the skill: a zip that teaches any agent with a terminal to use the dForms API with the same key.',
       },
       keys: {
         title: 'API keys',
@@ -6182,36 +6195,42 @@ export const es: FormsMessages = {
       subtitle: 'Conecta un agente de IA o tu propio código a dForms con una llave de API.',
       guide: {
         title: 'Conecta tu agente en 3 pasos',
-        intro: 'Para agentes que corren en una terminal: Claude Code, Codex y Cursor.',
+        intro:
+          'dForms tiene un servidor MCP. Claude Code, Codex y Cursor se conectan con una llave de API y desde ahí crean, editan y publican forms y leen respuestas y analítica por ti.',
         stepDone: 'hecho',
-        downloadTitle: 'Descarga el skill',
-        downloadBody:
-          'Un zip con todo lo que tu agente necesita para usar dForms: las reglas, todos los endpoints y recetas paso a paso. Ya trae las direcciones de este entorno.',
-        downloadDone: 'Descargado. Puedes volver a descargarlo cuando quieras.',
         keyTitle: 'Crea una llave de API',
         keyBody:
           'La llave conecta al agente con este workspace y actúa como tú. Solo se muestra una vez, así que cópiala al crearla.',
         keyDone: 'Ya tienes una llave. Crea una por agente para poder revocar cada una por separado.',
-        agentTitle: 'Dáselos a tu agente',
+        agentTitle: 'Conecta tu agente',
+        agentBody: 'Pon la llave en tu entorno y agrega el MCP de dForms a tu agente.',
         agentDone: 'Una de tus llaves ya se usó: tu agente está conectado.',
         agentsLabel: 'Agente',
-        installHint: {
-          claudeCode:
-            'Córrelo en la carpeta donde quedó el zip (normalmente Descargas). Sirve para todos tus proyectos.',
-          codex: 'Mueve el zip a la carpeta de tu proyecto y córrelo ahí.',
-          cursor: 'Mueve el zip a la carpeta de tu proyecto y córrelo ahí.',
-        },
-        installLabel: 'Instala el skill',
         keyCommandLabel: 'Pon tu llave',
         keyCommandHint:
           'En la terminal desde la que abres tu agente, antes de abrirlo. Cambia el valor por tu llave.',
-        promptLabel: 'Pídele algo',
+        mcpLabel: 'Agrega el MCP de dForms',
+        mcpHint: {
+          claudeCode:
+            'Córrelo una vez en una terminal. Claude Code guarda el nombre de la variable, no la llave, y la lee cada vez que se conecta.',
+          codex: 'Agrégalo a `~/.codex/config.toml`. Codex lee la llave de la variable cada vez que se conecta.',
+          cursor: 'Agrégalo con un clic. Cursor lee la llave de la variable cuando inicia el servidor.',
+        },
+        addToCursor: 'Agregar a Cursor',
+        cursorFileHint: 'O pega esto en `.cursor/mcp.json` (un proyecto) o en `~/.cursor/mcp.json` (todos tus proyectos).',
+        mcpUnavailable:
+          'Este entorno todavía no tiene una dirección pública para su servidor MCP, así que no hay a qué conectarse. Pídele a quien lo administra que la configure.',
+        tryTitle: 'Pídele algo',
         promptHint: 'Abre tu agente y pega esto para comprobar que todo funciona.',
         prompt:
-          'Usa el skill dforms-api: revisa que mi llave funciona y créame un form de contacto con nombre, email y mensaje.',
+          'Usa el MCP de dForms: revisa que mi llave funciona, créame un form de contacto con nombre, email y mensaje y dame su link.',
         copyCommand: 'Copiar comando',
         copyPrompt: 'Copiar prompt',
-        chatNote: '¿Usas Claude en el navegador o ChatGPT? Esos se conectan con el MCP de dForms, no con una llave.',
+        chatNote:
+          'Claude en el navegador y ChatGPT se conectan con un inicio de sesión que el MCP de dForms todavía no ofrece. Por ahora usa Claude Code, Codex o Cursor.',
+        skillTitle: '¿Tu agente no tiene MCP?',
+        skillBody:
+          'Descarga el skill: un zip que le enseña a cualquier agente con terminal a usar la API de dForms con la misma llave.',
       },
       keys: {
         title: 'Llaves de API',

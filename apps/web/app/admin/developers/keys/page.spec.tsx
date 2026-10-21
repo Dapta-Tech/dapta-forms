@@ -4,8 +4,9 @@
  * a link to the API docs page, in the reader's language. The docs themselves
  * are not on this page any more.
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { Window } from 'happy-dom';
 import type { ReactElement } from 'react';
 import { getMessages, type Locale } from '@quill/shared';
 
@@ -121,24 +122,57 @@ describe('DevelopersPage', () => {
   describe('setup guide', () => {
     const download = (html: string) =>
       html.match(/<a [^>]*data-testid="api-keys-skill-download"[^>]*>.*?<\/a>/)?.[0];
+    /**
+     * The text a reader sees: the markup parsed by a real HTML parser and its
+     * text read back, so the code highlight's spans are gone and entities are
+     * decoded.
+     */
+    const reader = new Window();
+    afterAll(() => reader.happyDOM.close());
+    const decode = (html: string) => {
+      const template = reader.document.createElement('template');
+      template.innerHTML = html;
+      return template.content.textContent ?? '';
+    };
 
-    it('opens the page with the three steps, the skill download first, above the keys', async () => {
+    afterEach(() => {
+      delete process.env.MCP_PUBLIC_URL;
+    });
+
+    it('opens the page with the three steps above the keys, and the skill below them', async () => {
       me.mockResolvedValue(caller('member'));
       listApiKeys.mockResolvedValue({ keys });
       const html = await render();
       const m = getMessages('en').admin;
+      expect(html).toContain(m.developers.guide.title);
+      // Key, agent, try, then the skill alternative, all of it before the list.
+      const at = (id: string) => html.indexOf(`data-testid="${id}"`);
+      expect(at('setup-step-key')).toBeGreaterThan(-1);
+      expect(at('setup-step-key')).toBeLessThan(at('setup-step-agent'));
+      expect(at('setup-step-agent')).toBeLessThan(at('setup-step-try'));
+      expect(at('setup-step-try')).toBeLessThan(at('setup-skill'));
+      expect(at('setup-guide')).toBeLessThan(at('api-keys'));
       const link = download(html)!;
       expect(link).toContain('href="/api/developers/skill"');
       expect(link).toMatch(/\sdownload=""/);
       expect(link).toContain(m.developerDocs.skillButton);
-      expect(html).toContain(m.developers.guide.title);
-      expect(html).toContain(m.developers.guide.downloadTitle);
-      // Download, key, agent, in that order, and all of it before the list.
-      const at = (id: string) => html.indexOf(`data-testid="${id}"`);
-      expect(at('setup-step-download')).toBeGreaterThan(-1);
-      expect(at('setup-step-download')).toBeLessThan(at('setup-step-key'));
-      expect(at('setup-step-key')).toBeLessThan(at('setup-step-agent'));
-      expect(at('setup-guide')).toBeLessThan(at('api-keys'));
+    });
+
+    it('points the agent at the MCP endpoint of the public API, read at request time', async () => {
+      me.mockResolvedValue(caller('member'));
+      listApiKeys.mockResolvedValue({ keys });
+      const html = decode(await render());
+      expect(html).toContain('claude mcp add --transport http dforms https://api.forms.example.com/mcp');
+      expect(html).toContain("--header 'Authorization: Bearer ${DFORMS_API_KEY}'");
+    });
+
+    it('prefers MCP_PUBLIC_URL from the server environment when it is set', async () => {
+      process.env.MCP_PUBLIC_URL = 'https://mcp.forms.example.com/mcp/';
+      me.mockResolvedValue(caller('member'));
+      listApiKeys.mockResolvedValue({ keys });
+      const html = decode(await render());
+      expect(html).toContain('claude mcp add --transport http dforms https://mcp.forms.example.com/mcp \\');
+      expect(html).not.toContain('https://api.forms.example.com/mcp');
     });
 
     it('is there with no keys yet and when the list failed: it does not depend on them', async () => {
@@ -149,13 +183,16 @@ describe('DevelopersPage', () => {
       expect(download(await render())).toBeDefined();
     });
 
-    it('says it is unavailable instead of a button that would fail, without a public API address', async () => {
+    it('says what is unavailable instead of links that would fail, without a public API address', async () => {
       apiUrl.value = null;
       me.mockResolvedValue(caller('member'));
       listApiKeys.mockResolvedValue({ keys });
       const html = await render();
+      const m = getMessages('en').admin;
       expect(download(html)).toBeUndefined();
-      expect(html).toContain(getMessages('en').admin.developerDocs.skillUnavailable);
+      expect(html).toContain(m.developerDocs.skillUnavailable);
+      expect(decode(html)).toContain(m.developers.guide.mcpUnavailable);
+      expect(html).not.toContain('claude mcp add');
     });
 
     it('speaks Spanish to a Spanish reader', async () => {
@@ -164,7 +201,8 @@ describe('DevelopersPage', () => {
       listApiKeys.mockResolvedValue({ keys });
       const html = await render();
       const es = getMessages('es').admin;
-      expect(html).toContain(es.developers.guide.title);
+      expect(decode(html)).toContain(es.developers.guide.title);
+      expect(decode(html)).toContain(es.developers.guide.mcpLabel);
       expect(download(html)).toContain(es.developerDocs.skillButton);
     });
   });

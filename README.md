@@ -145,6 +145,7 @@ packages/
   db/             Drizzle schema for Postgres and SQLite, migrations, seed, repositories
   destinations/   SubmissionDestination port + webhook, HubSpot and log-only adapters
   notifications/  EmailProvider port + log-only, noop, SMTP and HTTP adapters
+  mcp/            the dForms MCP server (tools, HTTP door, agent guide), mounted by the api at /mcp
   shared/         i18n (EN/ES), handle utils, growth attribution, design tokens
   config/         zod env schema + shared tsconfig and prettier presets
 ```

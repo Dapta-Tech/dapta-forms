@@ -45,10 +45,28 @@ export function apiKeyFromRequest(req: ReqLike): string | null {
 }
 
 /**
- * How a principal creates things, for `form.created_via` and the `via`
- * property of the product events: `api` with an API key, `web` with a session
- * (the dashboard and the onboarding).
+ * Marks a request the MCP adapter builds in-process, so the principal it
+ * resolves to carries `channel: 'mcp'`. A symbol, not a header: nothing that
+ * arrives over HTTP can set it, so a REST caller cannot pass for the MCP.
  */
-export function createdVia(p: Pick<HostPrincipal, 'via'>): 'api' | 'web' {
-  return isApiKeyPrincipal(p) ? 'api' : 'web';
+const MCP_REQUEST = Symbol('dforms.mcpRequest');
+
+export function markMcpRequest<T extends object>(req: T): T {
+  Object.defineProperty(req, MCP_REQUEST, { value: true, enumerable: false });
+  return req;
+}
+
+export function isMcpRequest(req: object): boolean {
+  return (req as Record<symbol, unknown>)[MCP_REQUEST] === true;
+}
+
+/**
+ * How a principal creates things, for `form.created_via` and the `via`
+ * property of the product events: `api` with an API key, `mcp` with an API key
+ * through the MCP endpoint, `web` with a session (the dashboard and the
+ * onboarding).
+ */
+export function createdVia(p: Pick<HostPrincipal, 'via' | 'channel'>): 'api' | 'mcp' | 'web' {
+  if (!isApiKeyPrincipal(p)) return 'web';
+  return p.channel === 'mcp' ? 'mcp' : 'api';
 }

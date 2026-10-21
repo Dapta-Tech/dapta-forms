@@ -58,6 +58,12 @@ export interface HostPrincipal extends ResolvedHost {
   via: PrincipalVia;
   /** The `api_key.id` the request authenticated with; set only when `via` is `'api_key'`. */
   apiKeyId?: string;
+  /**
+   * `'mcp'` when an API-key request came through the MCP endpoint rather than
+   * the REST routes. A label for the created-via metric only: it grants and
+   * refuses nothing, and only the MCP adapter can set it (see `markMcpRequest`).
+   */
+  channel?: 'mcp';
 }
 
 /**

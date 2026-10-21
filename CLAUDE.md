@@ -18,7 +18,7 @@ you at them.
 An open-source, self-hostable forms platform: multi-step forms with skip-logic,
 lead scoring, outcome buckets, partial + complete submissions, a first-party
 funnel-event stream, durable email notifications, and short shareable links. A
-Turborepo + pnpm-workspaces monorepo of two apps and seven packages. **Postgres
+Turborepo + pnpm-workspaces monorepo of two apps and eight packages. **Postgres
 is the source of truth** (CI and production); **SQLite is a zero-infra dev
 accelerator** so a bare clone runs in seconds.
 
@@ -34,6 +34,7 @@ packages/
   db/             Drizzle schema (pg + sqlite) + migrations + seed + repositories
   notifications/  EmailProvider port + adapters (log-only/noop/smtp/http) + notifier
   destinations/   SubmissionDestination port + adapters (webhook/hubspot/log-only)
+  mcp/            dForms MCP server: tools over a FormsBackend port, HTTP door, agent guide (api mounts it at /mcp)
   shared/         i18n (en/es), handle utils, growth attribution, design tokens
   config/         zod env schema + shared tsconfig/prettier presets
 ```

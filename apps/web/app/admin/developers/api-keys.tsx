@@ -11,6 +11,7 @@ import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import type { AccountRole, ApiKey, CreatedApiKey } from '@/lib/admin-api';
 import { callAction, isTransportError } from '@/lib/call-action';
 import { exportKeyCommand } from '@/lib/developer-skill/agent-setup';
+import type { McpSnippets } from '@/lib/developer-skill/mcp-connect';
 import { createApiKeyAction, revokeApiKeyAction } from './actions';
 import { CodePanel } from './docs/code-panel';
 import { API_KEY_NAME_MAX } from './limits';
@@ -19,9 +20,14 @@ import { SetupGuide } from './setup-guide';
 type KeysMessages = FormsMessages['admin']['developers']['keys'];
 type GuideMessages = FormsMessages['admin']['developers']['guide'];
 
-/** What the setup guide above the list needs from the page: its copy and the skill download. */
+/**
+ * What the setup guide above the list needs from the page: its copy, the MCP
+ * snippets built on the server for this environment's address (null without
+ * one), and the skill download.
+ */
 export interface ApiKeysGuide {
   m: GuideMessages;
+  mcp: McpSnippets | null;
   skill: { available: boolean; href: string; button: string; unavailable: string };
 }
 
@@ -130,6 +136,7 @@ export function ApiKeysPanel({
         <SetupGuide
           m={guide.m}
           copy={{ copy: m.copy, copied: m.copied, copyFailed: m.copyFailed }}
+          mcp={guide.mcp}
           skill={guide.skill}
           createLabel={m.create}
           hasKey={hasOwnKey}

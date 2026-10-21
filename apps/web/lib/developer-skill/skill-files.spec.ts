@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { interpolate, resolveOutcome, computeScore, visibleSteps } from '@quill/engine';
 import { buildSkillFiles, SKILL_DIR } from './skill-files';
-import { EXAMPLE_CONFIGS, SCORE_GATE_CONFIG } from './examples';
+import { EXAMPLE_CONFIGS, SCORE_GATE_CONFIG } from '@quill/mcp/guide';
 
 const urls = { apiUrl: 'https://api.forms.example.com', appUrl: 'https://forms.example.com' };
 const files = new Map(buildSkillFiles(urls).map((f) => [f.path, f.content]));

@@ -15,6 +15,12 @@ import { requestOrigin } from '@/lib/request-origin';
  * an open-redirect surface on the auth path, and landing on /admin matches
  * what the pre-refresh flow already did. Server actions never come through
  * here; `hostFetch` refreshes inline.
+ *
+ * Only ever runs on the `PUBLIC_APP_URL` host when that is set: `proxy.ts`
+ * hops a GET or HEAD from any other hostname here first, so the refresh reads
+ * the cookie of the host that holds the session, and its redirects, which are
+ * built on `PUBLIC_APP_URL`, never send another host's visitor to the
+ * canonical host's logout.
  */
 export async function GET(req: NextRequest): Promise<NextResponse> {
   const origin = requestOrigin(req);

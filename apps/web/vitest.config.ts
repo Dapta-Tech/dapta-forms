@@ -18,6 +18,6 @@ export default defineConfig({
   },
   test: {
     environment: 'node',
-    include: ['app/**/*.spec.{ts,tsx}', 'components/**/*.spec.{ts,tsx}', 'lib/**/*.spec.{ts,tsx}'],
+    include: ['app/**/*.spec.{ts,tsx}', 'components/**/*.spec.{ts,tsx}', 'lib/**/*.spec.{ts,tsx}', 'proxy.spec.ts'],
   },
 });

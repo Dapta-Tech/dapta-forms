@@ -221,6 +221,69 @@ on, the default), the seeded demo form (`ONBOARDING_WIZARD=false` +
 **not** seed a form — the wizard suppresses it, so that the two can never both
 write a "first" form into the same account.
 
+### MCP endpoint (API, optional)
+
+The API serves the dForms MCP server at `POST /mcp` with the workspace API keys
+(see [`docs/MCP.md`](docs/MCP.md)). Every variable is optional and a blank
+value counts as unset, so a deployment that sets none of them gets the safe
+defaults below.
+
+| Var | Default | Required when | Secret |
+|---|---|---|---|
+| `MCP_ENABLED` | `true` | set `false` to answer 404 on `/mcp` | no |
+| `MCP_ALLOWED_ORIGINS` | _(unset: any browser `Origin` is refused)_ | a browser-based MCP client must reach the endpoint; also the CORS allowlist of `/mcp`, apart from `CORS_ORIGINS` | no |
+| `MCP_ALLOWED_HOSTS` | _(unset: no `Host` check)_ | to restrict the `Host` header (DNS-rebinding guard) | no |
+| `MCP_RATE_LIMIT_CAPACITY` / `MCP_RATE_LIMIT_REFILL_PER_SEC` | `120` / `2` | per API key, every request; off with `RATE_LIMIT_ENABLED=false` | no |
+| `MCP_WRITE_RATE_LIMIT_CAPACITY` / `MCP_WRITE_RATE_LIMIT_REFILL_PER_SEC` | `20` / `0.2` | per API key, write tools only | no |
+| `MCP_TOOL_TIMEOUT_MS` | `20000` | a tool call that runs longer is abandoned | no |
+
+### Deprecated API hosts (API, optional)
+
+When the API moves to a new domain, the old host has to keep answering for a
+while: a redirect would drop the `Authorization: Bearer dforms_...` header, so
+every API key call (and every MCP client) on the old host would break. List the
+old hostnames in `API_DEPRECATED_HOSTS` and the API keeps serving them, but it
+tells callers to move and shows you who has not.
+
+| Var | Default | Required when | Secret |
+|---|---|---|---|
+| `API_DEPRECATED_HOSTS` | _(unset: off)_ | the API answers on hosts callers should leave; comma-separated bare hostnames | no |
+| `API_SUCCESSOR_URL` | _(unset)_ | with `API_DEPRECATED_HOSTS`: the https origin to move to, e.g. `https://api.example.org` | no |
+| `API_DEPRECATION_DATE` | _(unset)_ | with `API_DEPRECATED_HOSTS`: when the hosts were deprecated, `YYYY-MM-DD` (midnight UTC) or an ISO 8601 date-time with a zone | no |
+| `API_SUNSET_DATE` | _(unset: no `Sunset` header)_ | you know when the hosts stop answering; same formats, never earlier than `API_DEPRECATION_DATE` | no |
+
+A request is on a listed host when its `Host` header names one, compared
+case-insensitively and without the port. `X-Forwarded-Host` is never read, as
+everywhere else in the API. Every response there, errors included, carries:
+
+- `Deprecation: @<unix seconds>` ([RFC 9745](https://www.rfc-editor.org/rfc/rfc9745)),
+  from `API_DEPRECATION_DATE`;
+- `Link: <API_SUCCESSOR_URL + the same path>; rel="successor-version"`, the
+  path without its query (`successor-version` is the RFC 5829 relation for the
+  resource that replaces this one; RFC 9745's own `deprecation` relation is for
+  human-readable documentation, which this setting does not point at);
+- `Sunset: <HTTP-date>` ([RFC 8594](https://www.rfc-editor.org/rfc/rfc8594)),
+  only when `API_SUNSET_DATE` is set.
+
+Each call made there with an API key, on the REST routes or on `/mcp`, is
+logged once when its response ends, as one JSON line through the API's logger
+(context `DeprecatedApiHost`):
+
+```
+{"event":"deprecated_api_host_call","host":"api.example.com","keyId":"<api_key.id>","accountId":"<workspace id>","method":"GET","route":"/v1/forms/:id","status":200}
+```
+
+`route` is the route pattern (null when no route matched), never the URL, and
+the line carries the key's id, never the key. A call without a key gets the
+headers and no line. When those lines stop appearing for long enough, the old
+host can be redirected safely. Health checks and in-cluster calls reach the API
+by its IP or its service name, which you do not list, so they are never
+affected. Entries are trimmed and lowercased and blanks are dropped (an empty
+value means off, and the other three are then not read); an entry written as an
+origin is reduced to its hostname. A wildcard, a `host:port`, the successor's
+own host, a successor that is not a plain https origin, a missing or malformed
+date, or a sunset before the deprecation refuses to boot.
+
 ### Auth
 
 | Var | Default | Required when | Secret |
@@ -274,13 +337,23 @@ the switch disabled, and no form loads anything from Cloudflare.
 | `CAPTCHA_SECRET_KEY` | _(unset)_ | to enable the check (API only) | yes |
 | `CAPTCHA_PROVIDER` | _(unset)_ | `none` turns the check off everywhere while keeping the keys loaded; unset with both keys means `turnstile` | no |
 | `CAPTCHA_VERIFY_TIMEOUT_MS` | `2500` | per-attempt timeout of the server-side check (one retry, 4 s budget; max 4000) | no |
+| `CAPTCHA_HOSTNAMES` | _(unset: the host of `PUBLIC_APP_URL`)_ | the public forms are served on more than one host; comma-separated bare hostnames, the host of `PUBLIC_APP_URL` always included | no |
 
 The two keys come as a pair: one without the other refuses to boot, and so does
 `CAPTCHA_PROVIDER=turnstile` without them. Create a **Managed** widget in the
 Cloudflare dashboard and list the host your forms are served from (the host of
 `PUBLIC_APP_URL`); forms embedded on other sites need nothing more, because the
 widget runs inside the form's own iframe. The token's host is checked against
-`PUBLIC_APP_URL` when it is set. Nothing is needed on the web container. If a
+`PUBLIC_APP_URL` when it is set. A deployment that serves its public forms on
+more than one host (for example while it moves to a new domain, with both the
+old and the new host live) lists them in `CAPTCHA_HOSTNAMES`, such as
+`CAPTCHA_HOSTNAMES=forms.example.com,forms.example.org`, and lists the same
+hosts on the widget. A token is then accepted from any listed host or from the
+host of `PUBLIC_APP_URL`, which is always included. Entries are trimmed and
+lowercased and blanks are dropped, so an empty value means unset; an entry
+written as an origin (`https://forms.example.com`) is reduced to its hostname,
+and anything else that is not a plain hostname (a wildcard, a `host:port`)
+refuses to boot. Nothing is needed on the web container. If a
 proxy in front of the web app adds a Content-Security-Policy, allow
 `https://challenges.cloudflare.com` in `script-src` and `frame-src`. For CI and
 local runs, Cloudflare publishes test keys (for example site key
@@ -329,6 +402,8 @@ are runtime server env for the web container.
 | `IAM_BASE_URL` | _(unset)_ | **required** when `AUTH_PROVIDER=workos` — upstream identity service the web calls for the login URL / logout | no |
 | `IAM_API_KEY` | _(unset)_ | the onboarding cohort probe (key-gated IAM status endpoint); unset probes fail closed to the short wizard | yes |
 | `PUBLIC_APP_URL` | _(empty)_ | trusted origin for OAuth redirects (same as API) | no |
+| `PUBLIC_API_URL` | `API_URL` when public, else `NEXT_PUBLIC_API_URL`, else `http://localhost:4000` | `API_URL` is a cluster-internal address: where customers reach the API (docs page, skill zip) | no |
+| `MCP_PUBLIC_URL` | `<PUBLIC_API_URL>/mcp` | the MCP endpoint customers reach is on another host (a dedicated MCP hostname); runtime, shown in the MCP setup guide | no |
 
 ## Reverse proxy + TLS
 
@@ -339,6 +414,25 @@ Terminate TLS at a proxy in front of both apps and forward to web (3000) and API
   `https://forms.example.com`). This is the **trusted origin**: the web builds OAuth
   `returnTo` / post-login redirects from it (never from attacker-controllable `Host`
   / `X-Forwarded-Host` headers) and it is the default CORS allowlist entry.
+  The sign-in hand-off only starts on this host: a request to `/api/auth/login`
+  that arrives on any other hostname (an old domain still serving after a move,
+  say) gets a 302 to the same path and query on `PUBLIC_APP_URL`, before any
+  cookie is set, because the sign-in state cookie only lives on the host that
+  set it. Hostnames are compared case-insensitively; port and scheme are
+  ignored. The request's host is read from the first `X-Forwarded-Host` entry,
+  else `Host`, so the proxy must pass the public host in one of them, which
+  Next's Server Actions origin check already requires.
+  The dashboard and the session refresh follow the same rule, because the
+  session cookie is host-only too: a GET or HEAD for `/admin` or anything
+  under it, or for `/onboarding`, opened in the browser on another hostname
+  (an old link in an email, a bookmark) gets the same 302 to `PUBLIC_APP_URL`
+  before any session is read, and so does any GET or HEAD for
+  `/api/auth/refresh`. Nothing else moves: public forms, embeds, `/embed.js`,
+  file links, `/api/public/*`, static assets and images keep serving on every
+  host, and POSTs (Server Actions, form posts from a tab opened before the
+  move) are never redirected. On another hostname, sign-out clears that host's
+  session cookie, stays on that host and does not revoke the upstream session,
+  which can be the one the `PUBLIC_APP_URL` host is signed in with.
 - Set **`TRUST_PROXY_HOPS`** to the number of trusted proxies in front of the API.
   `X-Forwarded-For` is client-appended and spoofable from the left; behind exactly N
   trusted proxies the real client IP is the Nth entry from the right (used by the
@@ -447,4 +541,5 @@ through the same outbox with retry + backoff).
 - [`README.md`](README.md) — quickstart + feature overview.
 - [`ARCHITECTURE.md`](ARCHITECTURE.md) — request flow, package boundaries, ports/adapters.
 - [`.env.example`](.env.example) — every variable with inline notes.
+- [`docs/MCP.md`](docs/MCP.md): the MCP endpoint, its tools and how to connect an agent.
 - [`docker-compose.prod.yml`](docker-compose.prod.yml) — the reference production stack.

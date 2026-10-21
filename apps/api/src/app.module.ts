@@ -49,6 +49,7 @@ import { AdminCrudController } from './admin-crud.controller';
 import { BrandingController } from './branding.controller';
 import { AnalyticsController } from './analytics.controller';
 import { AnalyticsService } from './analytics.service';
+import { McpController } from './mcp.controller';
 import {
   CalendlyEventTypesService,
   FormDestinationsController,
@@ -84,6 +85,9 @@ function signupObserver(productAnalytics: AnalyticsEffects): SignupObserver {
     AnalyticsController,
     IntegrationsController,
     FormDestinationsController,
+    // POST /mcp: the dForms MCP server (@quill/mcp). Runs each tool through the
+    // form handlers above, so it resolves them from the module once it is built.
+    McpController,
   ],
   providers: [
     { provide: ENV, useFactory: () => loadServerEnv() },

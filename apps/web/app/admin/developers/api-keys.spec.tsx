@@ -29,6 +29,7 @@ const toasts = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn(), toast: vi.f
 vi.mock('@/components/toast', () => ({ useToast: () => toasts }));
 
 import { ApiKeysPanel, type ApiKeysGuide, type ApiKeysViewer } from './api-keys';
+import { mcpSnippets } from '@/lib/developer-skill/mcp-connect';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -373,9 +374,11 @@ describe('ApiKeysPanel: revoke', () => {
 
 describe('setup guide', () => {
   const g = getMessages('en').admin.developers.guide;
-  const guide = (available = true): ApiKeysGuide => ({
+  const MCP_URL = 'https://api.forms.example.test/mcp';
+  const guide = (opts: { available?: boolean; mcp?: boolean } = {}): ApiKeysGuide => ({
     m: g,
-    skill: { available, href: '/api/developers/skill', button: 'Download the skill', unavailable: 'Not yet' },
+    mcp: opts.mcp === false ? null : mcpSnippets(MCP_URL),
+    skill: { available: opts.available ?? true, href: '/api/developers/skill', button: 'Download the skill', unavailable: 'Not yet' },
   });
   const step = (id: string) => $(`[data-testid="setup-step-${id}"]`)!;
 
@@ -386,10 +389,12 @@ describe('setup guide', () => {
     expect($('[data-testid="setup-guide"]')).toBeNull();
   });
 
-  it('starts with nothing done on an empty workspace', async () => {
+  it('starts with nothing done on an empty workspace, in the order key, agent, try', async () => {
     await mount({ keys: [], guide: guide() });
-    for (const id of ['download', 'key', 'agent']) expect(step(id).dataset.done).toBeUndefined();
+    for (const id of ['key', 'agent', 'try']) expect(step(id).dataset.done).toBeUndefined();
     expect(step('key').textContent).toContain(g.keyBody);
+    const order = $$('[data-testid^="setup-step-"]').map((el) => el.dataset.testid);
+    expect(order).toEqual(['setup-step-key', 'setup-step-agent', 'setup-step-try']);
   });
 
   it('marks the key step done with a key of your own, and the agent step once a key was used', async () => {
@@ -417,47 +422,60 @@ describe('setup guide', () => {
     expect(step('agent').dataset.done).toBeUndefined();
   });
 
-  it('remembers the download in this browser', async () => {
-    await mount({ keys: [], guide: guide() });
-    const link = $<HTMLAnchorElement>('[data-testid="api-keys-skill-download"]')!;
-    link.addEventListener('click', (e) => e.preventDefault());
-    await click(link);
-    expect(step('download').dataset.done).toBe('true');
-    expect(window.localStorage.getItem('dforms.mcp.skillDownloaded')).toBe('1');
-  });
-
-  it('says the download is unavailable instead of a link that would fail', async () => {
-    await mount({ keys: [], guide: guide(false) });
-    expect($('[data-testid="api-keys-skill-download"]')).toBeNull();
-    expect($('[data-testid="api-keys-skill-unavailable"]')?.textContent).toBe('Not yet');
-  });
-
-  it('opens the same create dialog from step 2', async () => {
+  it('opens the same create dialog from step 1', async () => {
     await mount({ keys: [], guide: guide() });
     await click($('[data-testid="setup-create-key"]'));
     expect($('[data-testid="api-key-name"]')).not.toBeNull();
   });
 
-  it('shows each agent its own install command, and the same key line and prompt', async () => {
+  it('shows each agent the key line and its own MCP entry, naming the variable and never a key', async () => {
     await mount({ keys: [], guide: guide() });
     const panel = () => $('[data-testid="setup-agent-panel"]')!;
+    const config = () => $('[data-testid="setup-mcp-config"]')!.textContent ?? '';
     expect(panel().dataset.agent).toBe('claude-code');
-    expect(panel().textContent).toContain('unzip dforms-api-skill.zip -d ~/.claude/skills/');
     expect(panel().textContent).toContain('export DFORMS_API_KEY="dforms_your_key_here"');
-    expect(panel().textContent).toContain(g.prompt);
+    expect(config()).toContain(`claude mcp add --transport http dforms ${MCP_URL}`);
+    expect(config()).toContain("--header 'Authorization: Bearer ${DFORMS_API_KEY}'");
+    expect(panel().textContent).toContain(g.mcpHint.claudeCode);
 
     await click($('[data-testid="setup-agent-codex"]'));
     expect(panel().dataset.agent).toBe('codex');
-    expect(panel().textContent).toContain('AGENTS.md');
+    expect(config()).toContain('[mcp_servers.dforms]');
+    expect(config()).toContain('bearer_token_env_var = "DFORMS_API_KEY"');
     expect($('[data-testid="setup-agent-codex"]')?.getAttribute('aria-selected')).toBe('true');
 
     await click($('[data-testid="setup-agent-cursor"]'));
-    expect(panel().textContent).toContain('.cursor/rules/dforms-api.mdc');
+    const deeplink = $<HTMLAnchorElement>('[data-testid="setup-cursor-deeplink"]')!;
+    expect(deeplink.getAttribute('href')).toMatch(/^cursor:\/\/anysphere\.cursor-deeplink\/mcp\/install\?name=dforms&config=/);
+    expect(deeplink.textContent).toContain(g.addToCursor);
+    expect(config()).toContain('"Authorization": "Bearer ${env:DFORMS_API_KEY}"');
     expect(window.localStorage.getItem('dforms.mcp.agent')).toBe('cursor');
+    expect($('[data-testid="setup-guide"]')!.textContent).not.toMatch(/dforms_[A-Za-z0-9_-]{20,}/);
   });
 
-  it('says that Claude in the browser and ChatGPT go through the MCP', async () => {
+  it('says there is nothing to connect to when this deployment has no MCP address', async () => {
+    await mount({ keys: [], guide: guide({ mcp: false }) });
+    expect($('[data-testid="setup-mcp-unavailable"]')?.textContent).toBe(g.mcpUnavailable);
+    expect($('[data-testid="setup-mcp-config"]')).toBeNull();
+    // The key line still shows: the key is useful to the skill too.
+    expect($('[data-testid="setup-agent-panel"]')!.textContent).toContain('export DFORMS_API_KEY=');
+  });
+
+  it('offers the skill below the steps for agents without MCP, or says it is unavailable', async () => {
     await mount({ keys: [], guide: guide() });
+    expect($('[data-testid="setup-skill"]')!.textContent).toContain(g.skillTitle);
+    expect($<HTMLAnchorElement>('[data-testid="api-keys-skill-download"]')!.getAttribute('href')).toBe('/api/developers/skill');
+
+    await act(async () => root.unmount());
+    host.remove();
+    await mount({ keys: [], guide: guide({ available: false }) });
+    expect($('[data-testid="api-keys-skill-download"]')).toBeNull();
+    expect($('[data-testid="api-keys-skill-unavailable"]')?.textContent).toBe('Not yet');
+  });
+
+  it('gives a first prompt to try, and says Claude in the browser and ChatGPT cannot connect yet', async () => {
+    await mount({ keys: [], guide: guide() });
+    expect($('[data-testid="setup-prompt"]')!.textContent).toContain(g.prompt);
     expect($('[data-testid="setup-chat-note"]')?.textContent).toBe(g.chatNote);
   });
 });

@@ -1,3 +1,5 @@
+import { cleanPublicUrl as clean } from './public-url';
+
 /**
  * The API address a CUSTOMER should call, as opposed to the one this server
  * calls (`serverApiUrl`).
@@ -38,22 +40,6 @@ export function publicApiUrl(env: Record<string, string | undefined> = process.e
   if (env.API_URL?.trim() || env.NEXT_PUBLIC_API_URL?.trim()) return null;
 
   return 'http://localhost:4000';
-}
-
-/** An absolute http(s) URL with no trailing slash, or null. */
-function clean(raw: string | undefined): string | null {
-  const value = raw?.trim();
-  if (!value) return null;
-  let url: URL;
-  try {
-    url = new URL(value);
-  } catch {
-    return null;
-  }
-  if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
-  // Keep a path prefix (an API mounted under /forms-api), drop query and hash.
-  const path = url.pathname.replace(/\/+$/, '');
-  return `${url.origin}${path}`;
 }
 
 /**

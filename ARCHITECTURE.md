@@ -1,7 +1,7 @@
 # Architecture
 
 Dapta Forms is a Turborepo + pnpm-workspaces monorepo: two deployable apps over
-seven packages. This page is the map — the request flow, the dependency direction,
+eight packages. This page is the map: the request flow, the dependency direction,
 and the ports/adapters seams that keep the project self-hostable. For how to run
 and change it, see [`CLAUDE.md`](CLAUDE.md); for contribution mechanics,
 [`CONTRIBUTING.md`](CONTRIBUTING.md).
@@ -82,6 +82,12 @@ shared foundation.
 - **`@quill/shared`** — i18n (`en`/`es`), design tokens, handle utils, growth
   attribution. **`@quill/config`** — the zod env schema and shared TS/prettier
   presets.
+- **`@quill/mcp`**: the dForms MCP server (tools, the HTTP door in front of the
+  official SDK, and the agent guide). It depends on `types` and `engine` only and
+  reaches forms through its own `FormsBackend` port; `apps/api` implements that
+  port over its form handlers and mounts the server at `POST /mcp`, and
+  `apps/web` imports only `@quill/mcp/guide` (the config JSON Schema and examples
+  of the API skill). See [`docs/MCP.md`](docs/MCP.md).
 
 ## The ports/adapters seams
 
@@ -96,6 +102,7 @@ with an empty `.env` runs end-to-end.
 | **Destinations** | `packages/destinations/src/destination.port.ts` | `log-only`, `webhook`, `hubspot` | per-form config + env | `log-only` |
 | **Database** | `createDb(url)` in `packages/db/src/client.ts` | Postgres (`postgres://…`) or SQLite (`file:…`) | `DATABASE_URL` | SQLite at `.data/dev.db` |
 | **Auth** | `apps/api/src/auth.provider.ts` | `local` stub, `workos` (HS256 JWT) | `AUTH_PROVIDER` | `local` (no identity server) |
+| **MCP backend** | `packages/mcp/src/backend.ts` (`FormsBackend`) | forms-api's handlers (`apps/api/src/mcp.backend.ts`) | always on, `MCP_ENABLED` | on, API keys only |
 
 Rules that keep the seams intact (enforced by the `forms-reviewer` agent):
 

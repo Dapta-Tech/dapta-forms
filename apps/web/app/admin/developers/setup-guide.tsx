@@ -4,22 +4,17 @@ import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode 
 import type { FormsMessages } from '@quill/shared';
 import { buttonVariants, Button } from '@/components/ui/button';
 import { cn } from '@/lib/cn';
-import {
-  SETUP_AGENTS,
-  SETUP_AGENT_NAMES,
-  exportKeyCommand,
-  installCommand,
-  type SetupAgent,
-} from '@/lib/developer-skill/agent-setup';
+import { SETUP_AGENTS, SETUP_AGENT_NAMES, exportKeyCommand, type SetupAgent } from '@/lib/developer-skill/agent-setup';
+// Types only: the builders run on the server, where the MCP address is read.
+import type { McpSnippets } from '@/lib/developer-skill/mcp-connect';
 import { CodePanel, rich, type CopyLabels } from './docs/code-panel';
 
 type GuideMessages = FormsMessages['admin']['developers']['guide'];
 
 /** Per-browser memory of the guide: a convenience, never a source of truth. */
-const DOWNLOADED_KEY = 'dforms.mcp.skillDownloaded';
 const AGENT_KEY = 'dforms.mcp.agent';
 
-const HINT_KEY: Record<SetupAgent, keyof GuideMessages['installHint']> = {
+const HINT_KEY: Record<SetupAgent, keyof GuideMessages['mcpHint']> = {
   'claude-code': 'claudeCode',
   codex: 'codex',
   cursor: 'cursor',
@@ -42,17 +37,23 @@ function writeStored(key: string, value: string) {
 }
 
 /**
- * The three steps that connect an agent with a terminal to this workspace:
- * download the skill, create a key, give both to the agent. It sits above the
+ * The three steps that connect an agent to this workspace through the dForms
+ * MCP server: create a key, connect the agent (the key in the environment,
+ * then the MCP entry for that agent), ask it for something. It sits above the
  * key list and opens the same create dialog, so there is one way to make a key.
  *
- * A step shows as done from what the page can know: the download was clicked
- * in this browser, the caller has a key, one of the listed keys has been used.
- * None of that blocks a step; they are all reachable in any order.
+ * Every snippet names the `DFORMS_API_KEY` variable, never a key, and comes
+ * from the server already built for this environment's MCP address (`mcp`);
+ * with no public address it is null and the guide says so. The skill zip stays
+ * below, for an agent without MCP.
+ *
+ * A step shows as done from what the page can know: the caller has a key, one
+ * of the listed keys has been used. None of that blocks a step.
  */
 export function SetupGuide({
   m,
   copy,
+  mcp,
   skill,
   createLabel,
   hasKey,
@@ -61,6 +62,7 @@ export function SetupGuide({
 }: {
   m: GuideMessages;
   copy: CopyLabels;
+  mcp: McpSnippets | null;
   skill: {
     available: boolean;
     href: string;
@@ -72,10 +74,8 @@ export function SetupGuide({
   agentConnected: boolean;
   onCreate: () => void;
 }) {
-  const [downloaded, setDownloaded] = useState(false);
   const [agent, setAgent] = useState<SetupAgent>('claude-code');
   useEffect(() => {
-    if (readStored(DOWNLOADED_KEY) === '1') setDownloaded(true);
     const stored = readStored(AGENT_KEY);
     if (stored && (SETUP_AGENTS as readonly string[]).includes(stored)) setAgent(stored as SetupAgent);
   }, []);
@@ -97,34 +97,7 @@ export function SetupGuide({
       <p className="mt-1 text-sm text-muted-foreground">{m.intro}</p>
 
       <ol className="mt-6 flex flex-col">
-        <Step n={1} title={m.downloadTitle} done={downloaded} doneLabel={m.stepDone} testId="setup-step-download">
-          <p className="text-sm text-muted-foreground">{downloaded ? m.downloadDone : m.downloadBody}</p>
-          <div className="mt-3">
-            {skill.available ? (
-              <a
-                href={skill.href}
-                download
-                data-testid="api-keys-skill-download"
-                onClick={() => {
-                  setDownloaded(true);
-                  writeStored(DOWNLOADED_KEY, '1');
-                }}
-                className={buttonVariants({
-                  variant: downloaded ? 'soft' : 'default',
-                })}
-              >
-                <i aria-hidden className="pi pi-download" style={{ fontSize: 14 }} />
-                {skill.button}
-              </a>
-            ) : (
-              <p data-testid="api-keys-skill-unavailable" className="text-sm text-muted-foreground">
-                {skill.unavailable}
-              </p>
-            )}
-          </div>
-        </Step>
-
-        <Step n={2} title={m.keyTitle} done={hasKey} doneLabel={m.stepDone} testId="setup-step-key">
+        <Step n={1} title={m.keyTitle} done={hasKey} doneLabel={m.stepDone} testId="setup-step-key">
           <p className="text-sm text-muted-foreground">{hasKey ? m.keyDone : m.keyBody}</p>
           <div className="mt-3">
             <Button variant={hasKey ? 'soft' : 'default'} data-testid="setup-create-key" onClick={onCreate}>
@@ -134,15 +107,50 @@ export function SetupGuide({
           </div>
         </Step>
 
-        <Step n={3} title={m.agentTitle} done={agentConnected} doneLabel={m.stepDone} last testId="setup-step-agent">
-          {agentConnected ? <p className="mb-3 text-sm text-muted-foreground">{m.agentDone}</p> : null}
-          <AgentTabs m={m} copy={copy} agent={agent} onPick={pickAgent} />
+        <Step n={2} title={m.agentTitle} done={agentConnected} doneLabel={m.stepDone} testId="setup-step-agent">
+          <p className="mb-3 text-sm text-muted-foreground">{agentConnected ? m.agentDone : m.agentBody}</p>
+          <AgentTabs m={m} copy={copy} mcp={mcp} agent={agent} onPick={pickAgent} />
+        </Step>
+
+        <Step n={3} title={m.tryTitle} done={false} doneLabel={m.stepDone} last testId="setup-step-try">
+          <p className="mb-2 text-sm text-muted-foreground">{m.promptHint}</p>
+          <CodePanel
+            label={SETUP_AGENT_NAMES[agent]}
+            code={m.prompt}
+            language="text"
+            copyLabel={m.copyPrompt}
+            m={copy}
+            wrap
+            testId="setup-prompt"
+          />
           <p className="mt-4 flex gap-2 text-xs text-muted-foreground" data-testid="setup-chat-note">
             <i aria-hidden className="pi pi-info-circle mt-px shrink-0" style={{ fontSize: 12 }} />
             <span>{m.chatNote}</span>
           </p>
         </Step>
       </ol>
+
+      <div data-testid="setup-skill" className="mt-6 border-t border-border pt-5">
+        <h3 className="text-sm font-semibold text-foreground">{m.skillTitle}</h3>
+        <p className="mt-1 text-sm text-muted-foreground">{m.skillBody}</p>
+        <div className="mt-3">
+          {skill.available ? (
+            <a
+              href={skill.href}
+              download
+              data-testid="api-keys-skill-download"
+              className={buttonVariants({ variant: 'soft' })}
+            >
+              <i aria-hidden className="pi pi-download" style={{ fontSize: 14 }} />
+              {skill.button}
+            </a>
+          ) : (
+            <p data-testid="api-keys-skill-unavailable" className="text-sm text-muted-foreground">
+              {skill.unavailable}
+            </p>
+          )}
+        </div>
+      </div>
     </section>
   );
 }
@@ -190,15 +198,17 @@ function Step({
   );
 }
 
-/** Claude Code, Codex, Cursor: the same three moves, in each agent's words. */
+/** Claude Code, Codex, Cursor: the key line, then the MCP entry in each agent's own form. */
 function AgentTabs({
   m,
   copy,
+  mcp,
   agent,
   onPick,
 }: {
   m: GuideMessages;
   copy: CopyLabels;
+  mcp: McpSnippets | null;
   agent: SetupAgent;
   onPick: (agent: SetupAgent) => void;
 }) {
@@ -268,17 +278,7 @@ function AgentTabs({
         data-agent={agent}
         className="mt-4 flex flex-col gap-5"
       >
-        <SubStep label={`1. ${m.installLabel}`} hint={m.installHint[HINT_KEY[agent]]}>
-          <CodePanel
-            label="bash"
-            code={installCommand(agent)}
-            language="curl"
-            copyLabel={m.copyCommand}
-            m={copy}
-            testId="setup-install"
-          />
-        </SubStep>
-        <SubStep label={`2. ${m.keyCommandLabel}`} hint={m.keyCommandHint}>
+        <SubStep label={`1. ${m.keyCommandLabel}`} hint={m.keyCommandHint}>
           <CodePanel
             label="bash"
             code={exportKeyCommand()}
@@ -288,16 +288,43 @@ function AgentTabs({
             testId="setup-export"
           />
         </SubStep>
-        <SubStep label={`3. ${m.promptLabel}`} hint={m.promptHint}>
-          <CodePanel
-            label={SETUP_AGENT_NAMES[agent]}
-            code={m.prompt}
-            language="text"
-            copyLabel={m.copyPrompt}
-            m={copy}
-            wrap
-            testId="setup-prompt"
-          />
+        <SubStep label={`2. ${m.mcpLabel}`} hint={mcp ? m.mcpHint[HINT_KEY[agent]] : ''}>
+          {mcp === null ? (
+            <p data-testid="setup-mcp-unavailable" className="text-sm text-muted-foreground">
+              {m.mcpUnavailable}
+            </p>
+          ) : agent === 'cursor' ? (
+            <div className="flex flex-col gap-3">
+              <div>
+                <a
+                  href={mcp.cursorDeeplink}
+                  data-testid="setup-cursor-deeplink"
+                  className={buttonVariants({ variant: 'default' })}
+                >
+                  <i aria-hidden className="pi pi-external-link" style={{ fontSize: 13 }} />
+                  {m.addToCursor}
+                </a>
+              </div>
+              <p className="text-xs text-muted-foreground">{rich(m.cursorFileHint)}</p>
+              <CodePanel
+                label="mcp.json"
+                code={mcp.cursorJson}
+                language="json"
+                copyLabel={m.copyCommand}
+                m={copy}
+                testId="setup-mcp-config"
+              />
+            </div>
+          ) : (
+            <CodePanel
+              label={agent === 'codex' ? 'config.toml' : 'bash'}
+              code={agent === 'codex' ? mcp.codexToml : mcp.claudeCode}
+              language={agent === 'codex' ? 'text' : 'curl'}
+              copyLabel={m.copyCommand}
+              m={copy}
+              testId="setup-mcp-config"
+            />
+          )}
         </SubStep>
       </div>
     </div>
@@ -308,7 +335,7 @@ function SubStep({ label, hint, children }: { label: string; hint: string; child
   return (
     <div className="min-w-0">
       <p className="text-sm font-medium text-foreground">{label}</p>
-      <p className="mb-2 mt-0.5 text-xs text-muted-foreground">{rich(hint)}</p>
+      {hint ? <p className="mb-2 mt-0.5 text-xs text-muted-foreground">{rich(hint)}</p> : <div className="mb-2" />}
       {children}
     </div>
   );

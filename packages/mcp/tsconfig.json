@@ -1,0 +1,6 @@
+{
+  "extends": "@quill/config/tsconfig/base.json",
+  "compilerOptions": { "outDir": "dist", "rootDir": "src", "types": ["node"] },
+  "include": ["src/**/*"],
+  "exclude": ["**/*.spec.ts", "src/__tests__/**", "dist", "node_modules"]
+}

@@ -10,12 +10,13 @@
  *      bounded time budget;
  *   3. that a token minted for another session, another action or another host
  *      is refused, and that the provider's public test keys are recognised;
- *   4. the deployment switch: both keys or none, and `none` as a kill switch;
+ *   4. the deployment switch: both keys or none, and `none` as a kill switch,
+ *      and the hosts a token may come from (`CAPTCHA_HOSTNAMES`);
  *   5. that the token never reaches a log line.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Logger } from '@nestjs/common';
-import { loadServerEnv, type ServerEnv } from '@quill/config/env';
+import { captchaHostnames, loadServerEnv, type ServerEnv } from '@quill/config/env';
 import { createDb, migrate, seed, type Db } from '@quill/db';
 import { AdminCrudController } from './admin-crud.controller';
 import { AdminService } from './admin.service';
@@ -71,7 +72,7 @@ function verifier(fetchImpl: typeof fetch, over: Partial<ConstructorParameters<t
   return new TurnstileVerifier({
     siteKey: 'site-key',
     secretKey: 'secret-key',
-    expectedHostname: 'forms.example.com',
+    expectedHostnames: ['forms.example.com'],
     timeoutMs: 50,
     budgetMs: 200,
     retryDelayMs: 1,
@@ -128,9 +129,52 @@ describe('TurnstileVerifier: verdicts', () => {
 
   it('does not check the host when the deployment has no public URL to compare it with', async () => {
     const v = verifier(scriptedFetch([], [() => passed({ hostname: 'anything.example.org' })]), {
-      expectedHostname: null,
+      expectedHostnames: null,
     });
     expect(await v.verify({ token: TOKEN, sessionId: SESSION })).toEqual({ outcome: 'passed' });
+  });
+
+  it('accepts a token from any host of the list, and refuses one from a host not on it', async () => {
+    const hosts = ['forms.example.com', 'forms.example.org'];
+    for (const hostname of hosts) {
+      const v = verifier(scriptedFetch([], [() => passed({ hostname })]), { expectedHostnames: hosts });
+      expect(await v.verify({ token: TOKEN, sessionId: SESSION })).toEqual({ outcome: 'passed' });
+    }
+    for (const hostname of ['evil.example.net', '', undefined]) {
+      const v = verifier(scriptedFetch([], [() => passed({ hostname })]), { expectedHostnames: hosts });
+      expect(await v.verify({ token: TOKEN, sessionId: SESSION })).toEqual({
+        outcome: 'failed',
+        reason: 'hostname-mismatch',
+      });
+    }
+  });
+
+  it('accepts no host at all from an empty list (only null skips the check)', async () => {
+    const v = verifier(scriptedFetch([], [() => passed()]), { expectedHostnames: [] });
+    expect(await v.verify({ token: TOKEN, sessionId: SESSION })).toEqual({
+      outcome: 'failed',
+      reason: 'hostname-mismatch',
+    });
+  });
+
+  it('still refuses another action or session from a listed host', async () => {
+    const hosts = ['forms.example.com', 'forms.example.org'];
+    const wrongAction = verifier(
+      scriptedFetch([], [() => passed({ hostname: 'forms.example.org', action: 'login' })]),
+      { expectedHostnames: hosts },
+    );
+    const wrongSession = verifier(
+      scriptedFetch([], [() => passed({ hostname: 'forms.example.org', cdata: 'another-session' })]),
+      { expectedHostnames: hosts },
+    );
+    expect(await wrongAction.verify({ token: TOKEN, sessionId: SESSION })).toEqual({
+      outcome: 'failed',
+      reason: 'action-mismatch',
+    });
+    expect(await wrongSession.verify({ token: TOKEN, sessionId: SESSION })).toEqual({
+      outcome: 'failed',
+      reason: 'session-mismatch',
+    });
   });
 
   it('accepts a result produced by the provider test keys, which echo no action or session', async () => {
@@ -334,6 +378,112 @@ describe('the deployment switch (env)', () => {
     );
     expect(await v.verify({ token: TOKEN, sessionId: SESSION })).toEqual({ outcome: 'passed' });
     expect((await v.verify({ token: TOKEN, sessionId: SESSION })).outcome).toBe('failed');
+  });
+});
+
+describe('the hosts a token may come from (CAPTCHA_HOSTNAMES)', () => {
+  const KEYS = { CAPTCHA_SITE_KEY: 'site', CAPTCHA_SECRET_KEY: 'secret' };
+  const env = (vars: Record<string, string>): ServerEnv =>
+    loadServerEnv({ NODE_ENV: 'test', ...vars } as unknown as NodeJS.ProcessEnv);
+
+  /** A verifier for this env whose provider says the token was minted on `host`. */
+  function onHost(vars: Record<string, string>) {
+    let host: string | undefined;
+    const v = createCaptchaVerifier(env({ ...KEYS, ...vars }), {
+      fetchImpl: (async () => passed({ hostname: host })) as unknown as typeof fetch,
+    });
+    return (hostname: string) => {
+      host = hostname;
+      return v.verify({ token: TOKEN, sessionId: SESSION });
+    };
+  }
+  const PASSED = { outcome: 'passed' };
+  const MISMATCH = { outcome: 'failed', reason: 'hostname-mismatch' };
+  const APP = 'https://forms.example.com';
+
+  it('unset keeps the original rule: only the host of PUBLIC_APP_URL', async () => {
+    expect(captchaHostnames(env({ PUBLIC_APP_URL: APP }))).toEqual(['forms.example.com']);
+    const verify = onHost({ PUBLIC_APP_URL: APP });
+    expect(await verify('forms.example.com')).toEqual(PASSED);
+    expect(await verify('forms.example.org')).toEqual(MISMATCH);
+  });
+
+  it('unset with no PUBLIC_APP_URL skips the host check, as before', async () => {
+    expect(captchaHostnames(env({}))).toBeNull();
+    expect(await onHost({})('anything.example.org')).toEqual(PASSED);
+  });
+
+  it('an empty or all-blank value behaves as unset', async () => {
+    for (const blank of ['', '   ', ' , ,', ',']) {
+      const vars = { CAPTCHA_HOSTNAMES: blank, PUBLIC_APP_URL: APP };
+      expect(captchaHostnames(env(vars))).toEqual(['forms.example.com']);
+      expect(captchaHostnames(env({ CAPTCHA_HOSTNAMES: blank }))).toBeNull();
+      const verify = onHost(vars);
+      expect(await verify('forms.example.com')).toEqual(PASSED);
+      expect(await verify('forms.example.org')).toEqual(MISMATCH);
+    }
+  });
+
+  it('set, accepts each listed host and the host of PUBLIC_APP_URL, and refuses any other', async () => {
+    const vars = {
+      CAPTCHA_HOSTNAMES: 'forms.example.org,forms.example.net',
+      PUBLIC_APP_URL: 'https://app.example.com',
+    };
+    const hosts = ['app.example.com', 'forms.example.org', 'forms.example.net'];
+    expect(captchaHostnames(env(vars))).toEqual(hosts);
+    const verify = onHost(vars);
+    for (const host of hosts) {
+      expect(await verify(host)).toEqual(PASSED);
+    }
+    for (const host of ['evil.example.net', 'example.org', 'sub.forms.example.org']) {
+      expect(await verify(host)).toEqual(MISMATCH);
+    }
+  });
+
+  it('set with no PUBLIC_APP_URL, accepts exactly the list', async () => {
+    expect(captchaHostnames(env({ CAPTCHA_HOSTNAMES: 'forms.example.org' }))).toEqual(['forms.example.org']);
+    const verify = onHost({ CAPTCHA_HOSTNAMES: 'forms.example.org' });
+    expect(await verify('forms.example.org')).toEqual(PASSED);
+    expect(await verify('forms.example.com')).toEqual(MISMATCH);
+  });
+
+  it('trims, lowercases, drops blanks and de-duplicates the list', async () => {
+    const vars = {
+      CAPTCHA_HOSTNAMES: '  Forms.Example.ORG , ,forms.example.net,APP.example.com, forms.example.org ',
+      PUBLIC_APP_URL: 'https://app.example.com',
+    };
+    const hosts = ['app.example.com', 'forms.example.org', 'forms.example.net'];
+    expect(captchaHostnames(env(vars))).toEqual(hosts);
+    expect(await onHost(vars)('forms.example.org')).toEqual(PASSED);
+  });
+
+  it('reduces an entry written as an origin to its hostname', () => {
+    const origins = 'https://Forms.Example.org, http://forms.example.net:8080/';
+    expect(captchaHostnames(env({ CAPTCHA_HOSTNAMES: origins }))).toEqual(['forms.example.org', 'forms.example.net']);
+  });
+
+  it('refuses to boot on an entry that is not a hostname while the check is on', () => {
+    const bad = [
+      '*.example.com',
+      'forms.example.com:443',
+      'forms.example.com/path',
+      'forms..example.com',
+      'a b.example.com',
+      'ftp://forms.example.com',
+      'https://',
+    ];
+    for (const entry of bad) {
+      expect(() => env({ ...KEYS, CAPTCHA_HOSTNAMES: `forms.example.org,${entry}` })).toThrow(
+        /CAPTCHA_HOSTNAMES/,
+      );
+    }
+  });
+
+  it('never stops a boot where the check is off: no keys, or the kill switch', () => {
+    const wildcard = { CAPTCHA_HOSTNAMES: '*.example.com' };
+    expect(() => env(wildcard)).not.toThrow();
+    expect(() => env({ ...KEYS, CAPTCHA_PROVIDER: 'none', ...wildcard })).not.toThrow();
+    expect(createCaptchaVerifier(env(wildcard)).enabled).toBe(false);
   });
 });
 

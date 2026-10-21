@@ -4,6 +4,8 @@ import { loadServerEnv } from '@quill/config/env';
 import { loadDotenv } from '@quill/config/dotenv';
 import { AppModule } from './app.module';
 import { databaseLogLabel } from './database-log-label';
+import { configureCors } from './cors';
+import { configureDeprecatedHosts } from './deprecated-hosts';
 
 async function bootstrap() {
   // Load .env (root + app-local) before reading env — a self-hoster's .env must
@@ -11,17 +13,16 @@ async function bootstrap() {
   loadDotenv();
   const env = loadServerEnv();
   const app = await NestFactory.create(AppModule, { logger: ['error', 'warn', 'log'] });
-  // CORS (P1-4): NEVER reflect an arbitrary origin. Use the explicit allowlist
-  // (CORS_ORIGINS="https://a.com,https://b.com") when set; otherwise default to
-  // the app's OWN web origin (PUBLIC_APP_URL) so clone-and-run works
-  // (web:3000 → api) without opening the authed surface to every site. Embed the
-  // public widget on other domains by adding them to CORS_ORIGINS.
-  const configured = env.CORS_ORIGINS?.split(',').map((s) => s.trim()).filter(Boolean);
-  // PUBLIC_APP_URL defaults to empty (self-host dev); fall back to the local web
-  // origin so clone-and-run stays open only to the app's own web app.
-  const publicOrigin = env.PUBLIC_APP_URL || 'http://localhost:3000';
-  const origins = configured && configured.length > 0 ? configured : [publicOrigin];
-  app.enableCors({ origin: origins, credentials: true });
+  // Deprecated API hosts (off unless API_DEPRECATED_HOSTS is set): mounted
+  // first, so every response on a listed host carries the headers, errors and
+  // CORS refusals included. See deprecated-hosts.ts.
+  const deprecated = configureDeprecatedHosts(app, env);
+  if (deprecated) {
+    console.log(`[api] deprecated hosts: ${deprecated.hosts.join(', ')} (successor ${deprecated.successorOrigin})`);
+  }
+  // CORS (P1-4): an explicit allowlist, never a reflected origin; `/mcp` has
+  // its own (MCP_ALLOWED_ORIGINS, no credentials). See cors.ts.
+  const origins = configureCors(app, env);
   console.log(`[api] CORS allowlist: ${origins.join(', ')}`);
   await app.listen(env.API_PORT);
   console.log(`[api] listening on http://localhost:${env.API_PORT} (db=${databaseLogLabel(env.DATABASE_URL)})`);

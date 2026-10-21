@@ -1,7 +1,12 @@
-import { formConfigJsonSchema } from './config-schema';
+import {
+  LEAD_CONFIG,
+  LEAD_CONFIG_EDITED,
+  QUIZ_CONFIG,
+  SCORE_GATE_CONFIG,
+  formConfigJsonSchema,
+} from '@quill/mcp/guide';
 import { API_KEY_ENV, exportKeyCommand, installCommand } from './agent-setup';
 import { SKILL_DIR, SKILL_ZIP_NAME } from './skill-names';
-import { LEAD_CONFIG, LEAD_CONFIG_EDITED, QUIZ_CONFIG, SCORE_GATE_CONFIG } from './examples';
 
 /**
  * The dForms API skill, as the files of the zip a member downloads from the

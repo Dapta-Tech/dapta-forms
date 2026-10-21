@@ -13,14 +13,19 @@
  *      `RATE_LIMITED` with `retryAfterSec` and a `Retry-After` header;
  *   4. `last_used_at_ms` stamped at most once a minute.
  *
+ * A key that resolves (step 1 passed) is noted on the request for the
+ * deprecated-hosts log (`noteApiKeyCall`), whatever steps 2 and 3 answer: a
+ * 403 or a 429 is still a call that key made on that host.
+ *
  * Which routes a key may call at all is decided before any handler runs, by
  * `ApiKeyRouteGuard` (api-key-routes.ts).
  */
 import { ForbiddenException, HttpException, HttpStatus, Logger, UnauthorizedException } from '@nestjs/common';
 import { findApiKeyPrincipal, touchApiKeyLastUsed, type Db } from '@quill/db';
 import type { ServerEnv } from '@quill/config/env';
-import { hashApiKey } from './api-keys';
+import { hashApiKey, isMcpRequest } from './api-keys';
 import { header, type HostPrincipal, type ReqLike } from './auth.provider';
+import { noteApiKeyCall } from './deprecated-hosts';
 import { NoopRateLimiter, TokenBucketRateLimiter, type RateLimiter } from './rate-limit';
 
 /** Calls a key may make per minute (burst and sustained). */
@@ -71,6 +76,7 @@ export class ApiKeyAuthenticator {
   async resolve(req: ReqLike, key: string): Promise<HostPrincipal> {
     const row = await findApiKeyPrincipal(this.db, hashApiKey(key));
     if (!row || row.memberStatus !== 'active') invalidKey();
+    noteApiKeyCall(req, row.keyId, row.accountId);
 
     const requested = header(req, WORKSPACE_HEADER)?.trim();
     if (requested && requested !== row.accountId) {
@@ -101,6 +107,7 @@ export class ApiKeyAuthenticator {
       role: row.role,
       via: 'api_key',
       apiKeyId: row.keyId,
+      ...(isMcpRequest(req) ? { channel: 'mcp' as const } : {}),
     };
   }
 

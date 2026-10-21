@@ -5,8 +5,9 @@ import { zodToJsonSchema } from 'zod-to-json-schema';
  * Config fields the editor has no control for, as dot paths (`[]` = every item
  * of an array). With an API key the API refuses them (`UNSUPPORTED_FIELD`),
  * because a form an agent saves with one of them is a form a person can no
- * longer edit in full. The JSON Schema in the skill leaves them out, so an
- * agent that validates against it never sends one in the first place.
+ * longer edit in full. The JSON Schema in the skill and in the MCP guide
+ * leaves them out, so an agent that validates against it never sends one in
+ * the first place.
  *
  * The list is the API spec's, from the research on fields without a control.
  * Webhook `signatureHeader` and `timeoutMs` live under the webhook variant of

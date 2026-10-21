@@ -1,6 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('next/headers', () => ({ cookies: vi.fn() }));
+const requestHeaders = vi.hoisted(() => ({ value: null as Headers | null }));
+vi.mock('next/headers', () => ({
+  cookies: vi.fn(),
+  headers: vi.fn(async () => {
+    if (!requestHeaders.value) throw new Error('outside a request scope');
+    return requestHeaders.value;
+  }),
+}));
 vi.mock('next/navigation', () => ({ redirect: vi.fn() }));
 
 import {
@@ -20,6 +27,7 @@ describe('revokeUpstreamSession', () => {
     vi.stubGlobal('fetch', fetchMock);
     vi.stubEnv('IAM_BASE_URL', 'https://iam.example.com/iam');
     fetchMock.mockResolvedValue({ ok: true, json: async () => ({}) });
+    requestHeaders.value = null;
   });
 
   afterEach(() => {
@@ -88,6 +96,34 @@ describe('revokeUpstreamSession', () => {
     await expect(revokeUpstreamSession(workosSession)).resolves.toBeNull();
 
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  // A cookie on an old domain still serving after a move can name the same
+  // upstream session as the canonical host's: revoking it would sign the person
+  // out there too.
+  it('never revokes from a host other than PUBLIC_APP_URL', async () => {
+    vi.stubEnv('PUBLIC_APP_URL', 'https://app.example.com');
+    requestHeaders.value = new Headers({ host: 'forms.example.org' });
+
+    await expect(revokeUpstreamSession(workosSession)).resolves.toBeNull();
+
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('revokes on the PUBLIC_APP_URL host, without PUBLIC_APP_URL, and outside a request scope', async () => {
+    vi.stubEnv('PUBLIC_APP_URL', 'https://app.example.com');
+    requestHeaders.value = new Headers({ host: 'APP.example.com:443' });
+    await revokeUpstreamSession(workosSession);
+
+    vi.stubEnv('PUBLIC_APP_URL', '');
+    requestHeaders.value = new Headers({ host: 'forms.example.org' });
+    await revokeUpstreamSession(workosSession);
+
+    vi.stubEnv('PUBLIC_APP_URL', 'https://app.example.com');
+    requestHeaders.value = null;
+    await revokeUpstreamSession(workosSession);
+
+    expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 });
 

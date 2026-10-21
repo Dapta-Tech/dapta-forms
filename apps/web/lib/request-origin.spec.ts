@@ -1,6 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import type { NextRequest } from 'next/server';
-import { originFrom, requestOrigin, selfHost } from './request-origin';
+import { NextRequest } from 'next/server';
+import {
+  canonicalHop,
+  canonicalOriginElsewhere,
+  headerHost,
+  originFrom,
+  requestOrigin,
+  selfHost,
+} from './request-origin';
 
 /** The two things `requestOrigin` reads off a request, and nothing else. */
 function request(url: string, headers: Record<string, string> = {}): NextRequest {
@@ -91,5 +98,99 @@ describe('selfHost', () => {
     const get = (k: string) =>
       k.toLowerCase() === 'x-forwarded-host' ? 'a.example, b.example' : null;
     expect(selfHost(get)).toBe('a.example');
+  });
+});
+
+describe('headerHost', () => {
+  const get = (entries: Record<string, string>) => (k: string) => entries[k.toLowerCase()] ?? null;
+
+  it('reads the headers even when PUBLIC_APP_URL is set (selfHost would not)', () => {
+    process.env.PUBLIC_APP_URL = 'https://forms.example';
+    expect(headerHost(get({ host: 'old.example' }))).toBe('old.example');
+    expect(selfHost(get({ host: 'old.example' }))).toBe('forms.example');
+  });
+
+  it('prefers the first hop of X-Forwarded-Host over Host', () => {
+    expect(headerHost(get({ 'x-forwarded-host': ' a.example , b.example', host: 'web:3000' }))).toBe('a.example');
+    expect(headerHost(get({ host: ' web:3000 ' }))).toBe('web:3000');
+  });
+
+  it('is null when neither header carries anything', () => {
+    expect(headerHost(get({}))).toBeNull();
+    expect(headerHost(get({ 'x-forwarded-host': ' ', host: '' }))).toBeNull();
+  });
+});
+
+describe('canonicalOriginElsewhere', () => {
+  const get = (entries: Record<string, string>) => (k: string) => entries[k.toLowerCase()] ?? null;
+
+  it('is null without PUBLIC_APP_URL, whatever the request host', () => {
+    expect(canonicalOriginElsewhere(get({ host: 'old.example' }))).toBeNull();
+    process.env.PUBLIC_APP_URL = '  ';
+    expect(canonicalOriginElsewhere(get({ host: 'old.example' }))).toBeNull();
+  });
+
+  it('is null with an unparseable PUBLIC_APP_URL', () => {
+    process.env.PUBLIC_APP_URL = 'not a url';
+    expect(canonicalOriginElsewhere(get({ host: 'old.example' }))).toBeNull();
+  });
+
+  it('answers the configured origin, without its path, for another hostname', () => {
+    process.env.PUBLIC_APP_URL = 'https://forms.example/some/path/';
+    expect(canonicalOriginElsewhere(get({ host: 'old.example' }))).toBe('https://forms.example');
+  });
+
+  it('is null on the same hostname, whatever the case, port or scheme', () => {
+    process.env.PUBLIC_APP_URL = 'https://Forms.Example';
+    for (const host of ['forms.example', 'FORMS.EXAMPLE', 'forms.example:443', 'forms.example:8080']) {
+      expect(canonicalOriginElsewhere(get({ host, 'x-forwarded-proto': 'http' }))).toBeNull();
+    }
+  });
+
+  it('handles bracketed IPv6 hosts', () => {
+    process.env.PUBLIC_APP_URL = 'http://[::1]:3000';
+    expect(canonicalOriginElsewhere(get({ host: '[::1]:3400' }))).toBeNull();
+    expect(canonicalOriginElsewhere(get({ host: '127.0.0.1:3000' }))).toBe('http://[::1]:3000');
+  });
+
+  it('is null when no host is readable or it does not parse', () => {
+    process.env.PUBLIC_APP_URL = 'https://forms.example';
+    expect(canonicalOriginElsewhere(get({}))).toBeNull();
+    expect(canonicalOriginElsewhere(get({ host: 'bad host' }))).toBeNull();
+    expect(canonicalOriginElsewhere(get({ host: 'forms.example:notaport' }))).toBeNull();
+  });
+
+  it('a trailing-dot hostname is another cookie host, so it hops (once: the target has no dot)', () => {
+    process.env.PUBLIC_APP_URL = 'https://forms.example';
+    expect(canonicalOriginElsewhere(get({ host: 'forms.example.' }))).toBe('https://forms.example');
+  });
+});
+
+describe('canonicalHop', () => {
+  const at = (path: string, method = 'GET', host = 'forms.example.org') =>
+    canonicalHop(new NextRequest(`http://0.0.0.0:3000${path}`, { method, headers: { host } }));
+
+  beforeEach(() => {
+    process.env.PUBLIC_APP_URL = 'https://app.example.com';
+  });
+
+  it('is a 302 to the same path and query on PUBLIC_APP_URL, uncached, with no cookie', () => {
+    const hop = at('/admin/forms?tab=all&q=a+b&empty=&bare');
+
+    expect(hop?.status).toBe(302);
+    expect(hop?.headers.get('location')).toBe('https://app.example.com/admin/forms?tab=all&q=a+b&empty=&bare');
+    expect(hop?.headers.get('cache-control')).toBe('no-store');
+    expect(hop?.headers.get('set-cookie')).toBeNull();
+  });
+
+  it('hops GET and HEAD only: a 302 would turn a POST into a GET and drop its body', () => {
+    expect(at('/admin', 'HEAD')?.status).toBe(302);
+    for (const method of ['POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS']) expect(at('/admin', method)).toBeNull();
+  });
+
+  it('is null wherever canonicalOriginElsewhere is', () => {
+    expect(at('/admin', 'GET', 'app.example.com')).toBeNull();
+    delete process.env.PUBLIC_APP_URL;
+    expect(at('/admin')).toBeNull();
   });
 });
